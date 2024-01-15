@@ -3,6 +3,7 @@
 export(addTable)
 export(addTables)
 export(cleanTable)
+export(createOMOPCDMTableDS)
 export(createTable)
 export(extendColumn)
 export(extendTable)

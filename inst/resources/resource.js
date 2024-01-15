@@ -13,7 +13,7 @@ var dsOMOP = {
     "types": [
       {
         "name": "omop-cdm-db",
-        "title": "Database connection",
+        "title": "OMOP CDM database connection",
         "description": "Connection to an OMOP CDM database. The connection will be established using <a href=\"https://www.r-dbi.org\" target=\"_blank\">DBI</a>.",
         "tags": ["omop-cdm-db"],
         "parameters": {
