@@ -14,6 +14,10 @@ createTable <- function(resource, removeConceptId = TRUE, removeNA = FALSE) {
   table <- extendTable(connection, table)
   # Sort the column names by their categories in the table
   table <- sortTableCategories(table)
+  # Check if there is a "concept" table in the database before removing concept IDs
+  if (!("concept" %in% getTableNames(connection))) {
+    removeConceptId <- FALSE
+  }
   # Clean the table by removing specified columns
   table <- cleanTable(table, removeConceptId = removeConceptId, removeNA = removeNA)
   return(table)
