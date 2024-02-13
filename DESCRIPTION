@@ -1,6 +1,6 @@
 Package: dsOMOP
 Title: DataSHIELD integration for OMOP CDM
-Version: 0.1.0
+Version: 0.2.0
 Authors@R:
     c(person("David", "Sarrat González", , "david.sarrat@isglobal.org", role = c("aut", "cre")),
       person("Xavier", "Escribà Montagut", , "xavier.escriba@isglobal.org", role = c("aut")),
@@ -9,11 +9,16 @@ Description:
 License: MIT
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.2.3
+RoxygenNote: 7.3.1
 Depends:
     DBI,
-    resourcer
+    resourcer,
+    dplyr
 Remotes:
     datashield/dsBase
 AssignMethods:
-    createOMOPCDMTableDS
+    getOMOPCDMTableDS
+AggregateMethods:
+    getTableCatalogDS,
+    getColumnCatalogDS,
+    getConceptCatalogDS

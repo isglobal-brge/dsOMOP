@@ -69,13 +69,9 @@ var dsOMOP = {
       }
     ]
   },
-  // Function to convert parameters into a specific resource type
   asResource: function (type, name, params, credentials) {
-    // Function to create an OMOP CDM resource
     var OMOPCDMResource = function (name, params, credentials) {
-      // Construct the resource URL from the parameters
       var resourceUrl = params.driver + "://" + params.host + ":" + params.port + "/" + params.db;
-      // Return an object representing the resource
       return {
         name: name,
         url: resourceUrl,
@@ -84,15 +80,12 @@ var dsOMOP = {
         secret: credentials.password
       };
     };
-    // Map of resource types to their corresponding factory functions
     var toResourceFactories = {
       "omop-cdm-db": OMOPCDMResource
     };
-    // If the requested type exists in the map, use its factory function to create the resource
     if (toResourceFactories[type]) {
       return toResourceFactories[type](name, params, credentials);
     }
-    // If the requested type does not exist in the map, return undefined
     return undefined;
   }
 };
