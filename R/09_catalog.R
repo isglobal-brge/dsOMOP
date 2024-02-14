@@ -1,17 +1,20 @@
 #' @export
-getTableCatalogDS <- function(connection) {
+getTableCatalogDS <- function(resource) {
+  connection <- getConnection(resource)
   tables <- getTables(connection)
   return(tableCatalog)
 }
 
 #' @export
-getColumnCatalogDS <- function(connection, tableName) {
+getColumnCatalogDS <- function(resource, tableName) {
+  connection <- getConnection(resource)
   columnCatalog <- getColumns(connection, tableName)
   return(columnCatalog)
 }
 
 #' @export
-getConceptCatalogDS <- function(connection, tableName) {
+getConceptCatalogDS <- function(resource, tableName) {
+  connection <- getConnection(resource)
   columns <- getColumns(connection, tableName)
   conceptIdColumn <- getConceptIdColumn(tableName)
 

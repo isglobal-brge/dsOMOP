@@ -1,13 +1,12 @@
-getPersonIds <- function(tableName) {
-  # Checks if the given table exists in the environment and retrieves it
-  if (!exists(tableName, envir = .GlobalEnv)) {
-    stop(paste0("The table '", tableName, "' does not exist in the environment."))
+getPersonIds <- function(table) {
+  # Checks if the table exists
+  if (!exists("table")) {
+    stop("The personFilter table parameter is missing or undefined.")
   }
-  table <- get(tableName, envir = .GlobalEnv)
 
   # Checks if the table has a 'person_id' column
   if (!"person_id" %in% names(table)) {
-    stop(paste0("The table '", tableName, "' does not have a 'person_id' column."))
+    stop("The personFilter table does not have a 'person_id' column.")
   }
   
   # Retrieves the unique values of the 'person_id' column

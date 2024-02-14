@@ -1,10 +1,12 @@
-getTable <- function(connection,
+getTable <- function(resource,
                      tableName,
                      conceptFilter = NULL,
                      columnFilter = NULL,
                      personFilter = NULL,
                      mergeColumn = "person_id",
                      dropNA = FALSE) {
+                      
+  connection <- getConnection(resource)
 
   # Checks if the table exists in the database
   tables <- getTables(connection)
