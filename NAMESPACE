@@ -2,6 +2,5 @@
 
 export(getColumnCatalogDS)
 export(getConceptCatalogDS)
-export(getConnection)
 export(getOMOPCDMTableDS)
 export(getTableCatalogDS)

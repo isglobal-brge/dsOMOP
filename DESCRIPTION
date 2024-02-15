@@ -1,11 +1,13 @@
 Package: dsOMOP
-Title: DataSHIELD integration for OMOP CDM
-Version: 0.2.0
+Title: Server-Side DataSHIELD Integration for OMOP CDM
+Version: 1.0.0
 Authors@R:
     c(person("David", "Sarrat González", , "david.sarrat@isglobal.org", role = c("aut", "cre")),
       person("Xavier", "Escribà Montagut", , "xavier.escriba@isglobal.org", role = c("aut")),
       person("Juan R", "González", , "juanr.gonzalez@isglobal.org", role = c("aut")))
-Description:
+Description: This package facilitates interaction with remote databases in the OMOP CDM format from a DataSHIELD environment. 
+    It is responsible for fetching and transforming data from databases into a user-intelligible table format, integrated 
+    into the DataSHIELD workflow to ensure compliance with the DataSHIELD security model.
 License: MIT
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
