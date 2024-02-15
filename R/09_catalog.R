@@ -22,13 +22,13 @@ getTableCatalogDS <- function(resource) {
 #'
 #' @param resource A resource object representing the database connection.
 #' @param tableName The name of the table from which to retrieve the column names.
-#' @param dropNA A logical flag indicating whether to exclude columns that are completely empty (default is TRUE).
+#' @param dropNA A logical flag indicating whether to exclude columns that are completely empty (default is FALSE).
 #'
 #' @return A character vector containing the names of all columns in the specified table, optionally excluding empty ones.
 #'
 #' @export
 #' 
-getColumnCatalogDS <- function(resource, tableName, dropNA = TRUE) {
+getColumnCatalogDS <- function(resource, tableName, dropNA = FALSE) {
   connection <- getConnection(resource)
   columnCatalog <- getColumns(connection, tableName, dropNA)
   return(columnCatalog)

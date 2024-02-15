@@ -4,14 +4,14 @@
 \alias{getColumnCatalogDS}
 \title{Get Columns Catalog}
 \usage{
-getColumnCatalogDS(resource, tableName, dropNA = TRUE)
+getColumnCatalogDS(resource, tableName, dropNA = FALSE)
 }
 \arguments{
 \item{resource}{A resource object representing the database connection.}
 
 \item{tableName}{The name of the table from which to retrieve the column names.}
 
-\item{dropNA}{A logical flag indicating whether to exclude columns that are completely empty (default is TRUE).}
+\item{dropNA}{A logical flag indicating whether to exclude columns that are completely empty (default is FALSE).}
 }
 \value{
 A character vector containing the names of all columns in the specified table, optionally excluding empty ones.
