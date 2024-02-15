@@ -1,14 +1,14 @@
 #' @export
 getTableCatalogDS <- function(resource) {
   connection <- getConnection(resource)
-  tables <- getTables(connection)
+  tableCatalog <- getTables(connection)
   return(tableCatalog)
 }
 
 #' @export
-getColumnCatalogDS <- function(resource, tableName) {
+getColumnCatalogDS <- function(resource, tableName, dropNA = TRUE) {
   connection <- getConnection(resource)
-  columnCatalog <- getColumns(connection, tableName)
+  columnCatalog <- getColumns(connection, tableName, dropNA)
   return(columnCatalog)
 }
 
