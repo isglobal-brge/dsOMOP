@@ -84,6 +84,9 @@ getTable <- function(resource,
     table <- reshapeTable(table, conceptIdColumn, mergeColumn)
   }
 
+  # Flags the table as an OMOP CDM table
+  class(table) <- c("omop.cdm.table", class(table))
+
   return(table)
 }
 
