@@ -7,7 +7,7 @@
 #' @param resource An object of class OMOPCDMResourceClient representing the OMOP CDM resource client.
 #'
 #' @return A DBI database connection object.
-#' 
+#'
 getConnection <- function(resource) {
   # Checks if the provided resource is an OMOP CDM resource client
   if (!inherits(resource, "OMOPCDMResourceClient")) {
@@ -28,7 +28,7 @@ getConnection <- function(resource) {
 #' @param connection A DBI database connection object.
 #'
 #' @return A character vector containing the names of all tables in the database.
-#' 
+#'
 getTables <- function(connection) {
   tables <- DBI::dbListTables(connection)
   return(tables)
@@ -46,7 +46,7 @@ getTables <- function(connection) {
 #' @param dropNA A logical value indicating whether to exclude completely empty columns from the result.
 #'
 #' @return A character vector containing the names of all columns in the table, optionally excluding empty ones.
-#' 
+#'
 getColumns <- function(connection, tableName, dropNA = FALSE) {
   if (!DBI::dbExistsTable(connection, tableName)) {
     stop(paste0("Table '", tableName, "' does not exist in the database."))
@@ -76,19 +76,22 @@ getColumns <- function(connection, tableName, dropNA = FALSE) {
 #' @param tableName The name of the table to check for empty columns.
 #'
 #' @return A character vector containing the names of all completely empty columns in the table.
-#' 
+#'
 getEmptyColumns <- function(connection, tableName) {
   emptyColumns <- vector("list") # Initializes an empty list to store the names of empty columnss
   columns <- getColumns(connection, tableName)
 
   for (column in columns) {
-    columnCount <- DBI::dbGetQuery(connection,
+    columnCount <- DBI::dbGetQuery(
+      connection,
 
       # Count the number of non-empty values in the column
-      paste0("SELECT COUNT(", column, ") FROM ", tableName, 
-             " WHERE ", column, " IS NOT NULL AND", 
-             " CAST(", column, " AS TEXT) != ''")
-             )$count
+      paste0(
+        "SELECT COUNT(", column, ") FROM ", tableName,
+        " WHERE ", column, " IS NOT NULL AND",
+        " CAST(", column, " AS TEXT) != ''"
+      )
+    )$count
 
     # If the column is empty, adds it to the list of empty columns
     if (columnCount == 0) {

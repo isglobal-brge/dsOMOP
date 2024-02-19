@@ -16,12 +16,11 @@
 #'
 #' @field close Closes the active database connection if it exists and sets the connection to NULL. This method
 #' ensures that resources are properly released when the connection is no longer needed.
-#' 
+#'
 OMOPCDMResourceClient <- R6::R6Class(
   "OMOPCDMResourceClient",
   inherit = ResourceClient,
   public = list(
-
     initialize = function(resource, dbi.connector = NULL) {
       super$initialize(resource)
       private$.dbi.connector <- if (is.null(dbi.connector)) {
@@ -33,7 +32,6 @@ OMOPCDMResourceClient <- R6::R6Class(
         stop("DBI resource connector cannot be found: either provide one or register one.")
       }
     },
-
     getConnection = function() {
       connection <- super$getConnection()
       if (is.null(connection)) {
@@ -43,7 +41,6 @@ OMOPCDMResourceClient <- R6::R6Class(
       }
       return(connection)
     },
-
     close = function() {
       connection <- super$getConnection()
       if (!is.null(connection)) {
@@ -52,7 +49,6 @@ OMOPCDMResourceClient <- R6::R6Class(
       }
     }
   ),
-
   private = list(
     .dbi.connector = NULL
   )
@@ -67,19 +63,17 @@ OMOPCDMResourceClient <- R6::R6Class(
 #'
 #' @field isFor Checks if the given resource is suitable for OMOP CDM based on specific criteria.
 #' @field newClient Creates a new OMOPCDMResourceClient for the given resource if it is suitable.
-#' 
+#'
 OMOPCDMResourceResolver <- R6::R6Class(
   "OMOPCDMResourceResolver",
   inherit = ResourceResolver,
   public = list(
-
     isFor = function(resource) {
       isSuitable <- super$isFor(resource) &&
         !is.null(findDBIResourceConnector(resource)) &&
         tolower(resource$format) %in% c("omop.cdm.db")
       return(isSuitable)
     },
-
     newClient = function(resource) {
       if (self$isFor(resource)) {
         client <- OMOPCDMResourceClient$new(resource)
@@ -90,4 +84,3 @@ OMOPCDMResourceResolver <- R6::R6Class(
     }
   )
 )
-

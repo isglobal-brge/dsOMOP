@@ -7,7 +7,7 @@
 #' @param table A data frame or tibble containing the data from which to extract person IDs.
 #'
 #' @return A vector containing all unique person IDs from the table.
-#' 
+#'
 getPersonIds <- function(table) {
   # Checks if the table has a 'person_id' column
   if (!"person_id" %in% names(table)) {

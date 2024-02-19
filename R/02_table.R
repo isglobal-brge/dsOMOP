@@ -29,7 +29,6 @@ getTable <- function(resource,
                      personFilter = NULL,
                      mergeColumn = "person_id",
                      dropNA = FALSE) {
-                      
   connection <- getConnection(resource)
 
   # Checks if the table exists in the database
@@ -61,14 +60,14 @@ getTable <- function(resource,
 
   # If the dropNA flag is set, removes columns with all NA values
   if (dropNA) {
-    table <- table %>% select_if(~!all(is.na(.)))
+    table <- table %>% select_if(~ !all(is.na(.)))
   }
-  
+
   # Retrieves the table as a data frame
   table <- as.data.frame(table)
 
   # If it is a person-related table, checks if the count of person IDs is lower than nfilter.subset
-  if("person_id" %in% columns) {
+  if ("person_id" %in% columns) {
     subsetFilter <- getSubsetFilter()
     personCount <- length(unique(table$person_id))
     if (personCount < subsetFilter) {
@@ -80,7 +79,7 @@ getTable <- function(resource,
   table <- translateTable(connection, table)
 
   # If a concept ID column is present, reshapes the table
-  if(conceptIdColumn %in% names(table)) {
+  if (conceptIdColumn %in% names(table)) {
     table <- reshapeTable(table, conceptIdColumn, mergeColumn)
   }
 
@@ -93,9 +92,9 @@ getTable <- function(resource,
 
 #' Assign OMOP CDM Table to the DataSHIELD Environment
 #'
-#' This function is designed to be called from the DataSHIELD client. It retrieves a specified table from an OMOP CDM database. 
-#' 
-#' It calls the `getTable` function, which is responsible for filtering and performing additional transformation and processing 
+#' This function is designed to be called from the DataSHIELD client. It retrieves a specified table from an OMOP CDM database.
+#'
+#' It calls the `getTable` function, which is responsible for filtering and performing additional transformation and processing
 #' operations on the table. Once processed, the table is assigned in the DataSHIELD environment.
 #'
 #' @param connection A DBI database connection object.
@@ -107,16 +106,16 @@ getTable <- function(resource,
 #' @param dropNA (Optional) A logical flag indicating whether to drop columns with all NA values, defaults to FALSE.
 #'
 #' @return A data frame representing the processed table.
-#' 
+#'
 #' @export
-#' 
+#'
 getOMOPCDMTableDS <- function(connection,
-                      tableName,
-                      conceptFilter = NULL,
-                      columnFilter = NULL,
-                      personFilter = NULL,
-                      mergeColumn = "person_id",
-                      dropNA = FALSE) {
+                              tableName,
+                              conceptFilter = NULL,
+                              columnFilter = NULL,
+                              personFilter = NULL,
+                              mergeColumn = "person_id",
+                              dropNA = FALSE) {
   table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA)
   return(table)
 }

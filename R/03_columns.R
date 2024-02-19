@@ -10,7 +10,7 @@
 #' @param keepColumns A character vector of columns that must be included in the output regardless of the filter.
 #'
 #' @return A character vector of the filtered column names.
-#' 
+#'
 filterColumns <- function(table, tableColumns, selectedColumns, keepColumns) {
   # If no column filter is provided, all columns are included except source value ones
   if (is.null(selectedColumns)) {
@@ -38,7 +38,7 @@ filterColumns <- function(table, tableColumns, selectedColumns, keepColumns) {
 #' @param tableName The name of the table for which to generate the concept ID column name.
 #'
 #' @return A string containing the name of the concept ID column.
-#' 
+#'
 getConceptIdColumn <- function(tableName) {
   baseName <- gsub("_occurrence", "", tableName)
   conceptIdColumn <- paste0(baseName, "_concept_id")
@@ -56,7 +56,7 @@ getConceptIdColumn <- function(tableName) {
 #' @param tableName The name of the table for which to generate the ID column name.
 #'
 #' @return A string containing the name of the ID column.
-#' 
+#'
 getIdColumn <- function(tableName) {
   baseName <- gsub("_occurrence", "", tableName)
   idColumn <- paste0(baseName, "_id")

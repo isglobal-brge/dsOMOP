@@ -1,10 +1,10 @@
 #' Translate Table Concepts
 #'
-#' This function translates concept IDs in a table to their corresponding concept names. 
-#' 
-#' It first checks if the 'concept' table exists in the database. If it does, the function identifies columns containing 
-#' concept IDs, retrieves these IDs, and then fetches the corresponding concept names from the 'concept' table. 
-#' 
+#' This function translates concept IDs in a table to their corresponding concept names.
+#'
+#' It first checks if the 'concept' table exists in the database. If it does, the function identifies columns containing
+#' concept IDs, retrieves these IDs, and then fetches the corresponding concept names from the 'concept' table.
+#'
 #' Finally, it replaces the concept IDs in the original table with the fetched concept names.
 #'
 #' @param connection A DBI database connection object.
@@ -33,9 +33,9 @@ translateTable <- function(connection, table) {
 
 #' Get Concept ID Columns from a Table
 #'
-#' This function examines each column in a given table to identify those that contain concept IDs. 
-#' Concept ID columns are recognized by the presence of "_concept_id" in their names. These columns 
-#' are essential for the translation process, where concept IDs are replaced with their corresponding 
+#' This function examines each column in a given table to identify those that contain concept IDs.
+#' Concept ID columns are recognized by the presence of "_concept_id" in their names. These columns
+#' are essential for the translation process, where concept IDs are replaced with their corresponding
 #' concept names.
 #'
 #' @param table A data frame representing the table to be examined.
@@ -51,7 +51,7 @@ getConceptIdColumns <- function(table) {
 #' Get Concept IDs from a Table
 #'
 #' This function extracts all unique concept IDs from specified concept ID columns within a table. It iterates
-#' over each concept ID column, collects all unique concept IDs while omitting any NA values, and returns a 
+#' over each concept ID column, collects all unique concept IDs while omitting any NA values, and returns a
 #' vector of these unique concept IDs. This is crucial for identifying the distinct concepts present in the table
 #' that may require translation or further processing.
 #'
@@ -68,8 +68,8 @@ getConceptIds <- function(table, conceptIdColumns) {
 
 #' Get Concept Names from Concept IDs
 #'
-#' This function queries the "concept" table to find the corresponding concept names for a given list of concept IDs. 
-#' It constructs a dictionary of concept IDs and their associated names, which is essential for translating concept IDs 
+#' This function queries the "concept" table to find the corresponding concept names for a given list of concept IDs.
+#' It constructs a dictionary of concept IDs and their associated names, which is essential for translating concept IDs
 #' in tables to their meaningful names.
 #'
 #' @param connection A database connection object through which the query will be executed.
@@ -78,10 +78,12 @@ getConceptIds <- function(table, conceptIdColumns) {
 #' @return A data frame with columns "concept_id" and "concept_name", representing the mapping from concept IDs to their names.
 #'
 getConcepts <- function(connection, conceptIds) {
-  query <- sprintf("SELECT concept_id, concept_name FROM concept WHERE concept_id IN (%s)", 
-                   paste(conceptIds, collapse = ", "))
+  query <- sprintf(
+    "SELECT concept_id, concept_name FROM concept WHERE concept_id IN (%s)",
+    paste(conceptIds, collapse = ", ")
+  )
 
-  concepts <- DBI::dbGetQuery(connection, query)  
+  concepts <- DBI::dbGetQuery(connection, query)
   return(concepts)
 }
 
