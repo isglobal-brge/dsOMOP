@@ -47,9 +47,18 @@ getColumnCatalogDS <- function(resource, tableName, dropNA = FALSE) {
   # Attempts to retrieve the list of columns from the specified table
   tryCatch(
     {
+      # Finds the case-insensitive table name to ensure correct retrieval
+      tables <- getTables(connection)
+      caseInsensitiveTableName <- findCaseInsensitiveTable(tables, tableName)
+      if (is.null(caseInsensitiveTableName)) {
+        stop(paste0("The table '", tableName, "' does not exist in the database."))
+      }
+      tableName <- caseInsensitiveTableName
+
+      # Retrieves the list of columns from the specified table
       columnCatalog <- getColumns(connection, tableName, dropNA)
 
-      # In case of an error, closes the database connection and propagates the error
+    # In case of an error, closes the database connection and propagates the error
     },
     error = function(error) {
       closeConnection(connection, error)
@@ -81,10 +90,18 @@ getConceptCatalogDS <- function(resource, tableName) {
 
   # Attempts to retrieve the concept catalog from the specified table
   tryCatch({
+    # Finds the case-insensitive table name to ensure correct retrieval
+    tables <- getTables(connection)
+    caseInsensitiveTableName <- findCaseInsensitiveTable(tables, tableName)
+    if (is.null(caseInsensitiveTableName)) {
+      stop(paste0("The table '", tableName, "' does not exist in the database."))
+    }
+    tableName <- caseInsensitiveTableName
+
     # Attempts to identify the 'concept' table in the database
     tables <- getTables(connection)
     conceptTable <- findCaseInsensitiveTable(tables, "concept")
-
+    
     # Gets the required column names for this operation
     columns <- getColumns(connection, tableName)
     conceptIdColumn <- getConceptIdColumn(tableName)

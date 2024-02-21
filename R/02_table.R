@@ -29,11 +29,16 @@ getTable <- function(connection,
                      personFilter = NULL,
                      mergeColumn = "person_id",
                      dropNA = FALSE) {
+
   # Checks if the table exists in the database
   tables <- getTables(connection)
-  if (!tableName %in% tables) {
+  caseInsensitiveTableName <- findCaseInsensitiveTable(tables, tableName) # Case-insensitive table search
+  if (is.null(caseInsensitiveTableName)) {
     stop(paste0("The table '", tableName, "' does not exist in the database."))
   }
+
+  # Ensures that the table name is in the correct case
+  tableName <- caseInsensitiveTableName
 
   # Retrieves the table and its column names
   table <- dplyr::tbl(connection, tableName)
@@ -145,16 +150,22 @@ getOMOPCDMTableDS <- function(resource,
 findCaseInsensitiveTable <- function(tableNames, target) {
   caseInsensitiveTable <- NULL
 
-  # Convert both input and target to lowercase for case-insensitive comparison
-  lowerTableNames <- tolower(tableNames)
-  lowerTarget <- tolower(target)
+  # Check for an exact match first
+  exactMatchIndex <- match(target, tableNames)
+  if (!is.na(exactMatchIndex)) {
+    caseInsensitiveTable <- tableNames[exactMatchIndex]
+  } else {
+    # Convert both input and target to lowercase for case-insensitive comparison
+    lowerTableNames <- tolower(tableNames)
+    lowerTarget <- tolower(target)
 
-  # Search for the target table
-  matchIndex <- match(lowerTarget, lowerTableNames)
+    # Search for the target table in a case-insensitive manner
+    matchIndex <- match(lowerTarget, lowerTableNames)
 
-  # If a match is found, return the original table name
-  if (!is.na(matchIndex)) {
-    caseInsensitiveTable <- tableNames[matchIndex]
+    # If a case-insensitive match is found, return the original table name
+    if (!is.na(matchIndex)) {
+      caseInsensitiveTable <- tableNames[matchIndex]
+    }
   }
 
   return(caseInsensitiveTable)
