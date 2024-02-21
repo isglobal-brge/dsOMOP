@@ -81,6 +81,13 @@ getConceptCatalogDS <- function(resource, tableName) {
 
   # Attempts to retrieve the concept catalog from the specified table
   tryCatch({
+    # Checks if the 'concept' table exists in the database
+    tables <- getTables(connection)
+    if (!"concept" %in% tables) {
+      stop("The table 'concept' does not exist in the database.")
+    }
+
+    # Gets the required column names for this operation
     columns <- getColumns(connection, tableName)
     conceptIdColumn <- getConceptIdColumn(tableName)
 
