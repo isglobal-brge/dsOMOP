@@ -40,6 +40,7 @@ filterColumns <- function(table, tableColumns, selectedColumns, keepColumns) {
 #' @return A string containing the name of the concept ID column.
 #'
 getConceptIdColumn <- function(tableName) {
+  tableName <- tolower(tableName)
   baseName <- gsub("_occurrence", "", tableName)
   conceptIdColumn <- paste0(baseName, "_concept_id")
   return(conceptIdColumn)
@@ -58,6 +59,7 @@ getConceptIdColumn <- function(tableName) {
 #' @return A string containing the name of the ID column.
 #'
 getIdColumn <- function(tableName) {
+  tableName <- tolower(tableName)
   baseName <- gsub("_occurrence", "", tableName)
   idColumn <- paste0(baseName, "_id")
   return(idColumn)

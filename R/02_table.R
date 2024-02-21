@@ -131,3 +131,31 @@ getOMOPCDMTableDS <- function(resource,
   closeConnection(connection)
   return(table)
 }
+
+
+#' Find Case-Insensitive Table
+#'
+#' Given a list of table names, this function searches for a table whose name matches a given target in a case-insensitive manner.
+#'
+#' @param tableNames A character vector containing the names of the tables to search through.
+#' @param target A character string representing the name of the table to find, case-insensitively.
+#'
+#' @return A character string with the name of the target table if found, otherwise NULL.
+#'
+findCaseInsensitiveTable <- function(tableNames, target) {
+  caseInsensitiveTable <- NULL
+
+  # Convert both input and target to lowercase for case-insensitive comparison
+  lowerTableNames <- tolower(tableNames)
+  lowerTarget <- tolower(target)
+
+  # Search for the target table
+  matchIndex <- match(lowerTarget, lowerTableNames)
+
+  # If a match is found, return the original table name
+  if (!is.na(matchIndex)) {
+    caseInsensitiveTable <- tableNames[matchIndex]
+  }
+
+  return(caseInsensitiveTable)
+}

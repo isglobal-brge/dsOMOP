@@ -81,11 +81,9 @@ getConceptCatalogDS <- function(resource, tableName) {
 
   # Attempts to retrieve the concept catalog from the specified table
   tryCatch({
-    # Checks if the 'concept' table exists in the database
+    # Attempts to identify the 'concept' table in the database
     tables <- getTables(connection)
-    if (!"concept" %in% tables) {
-      stop("The table 'concept' does not exist in the database.")
-    }
+    conceptTable <- findCaseInsensitiveTable(tables, "concept")
 
     # Gets the required column names for this operation
     columns <- getColumns(connection, tableName)
@@ -101,7 +99,15 @@ getConceptCatalogDS <- function(resource, tableName) {
     conceptIds <- conceptIds[[1]]
 
     # Retrieves the concepts from the 'concept' table
-    conceptCatalog <- getConcepts(connection, conceptIds)
+    conceptCatalog <- tryCatch(
+      {
+        getConcepts(connection, conceptIds, conceptTable)
+      },
+      # In case of an error, returns an empty data frame (with the same structure as the expected output)
+      error = function(error) {
+        data.frame(concept_id = numeric(0), concept_name = character(0))
+      }
+    )
 
     # Merges the concept IDs with the concept names
     # This is done to ensure that even concept IDs that are not present in the 'concept' table are included

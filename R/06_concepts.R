@@ -14,7 +14,9 @@
 #'
 translateTable <- function(connection, table) {
   # Checks if the 'concept' table exists in the database
-  if (!DBI::dbExistsTable(connection, "concept")) {
+  tables <- getTables(connection)
+  conceptTable <- findCaseInsensitiveTable(tables, "concept")
+  if (is.null(conceptTable)) {
     return(table)
   }
 
@@ -24,7 +26,7 @@ translateTable <- function(connection, table) {
 
   # If there are concept IDs, retrieves the concept names and translates them
   if (!is.null(conceptIds) && length(conceptIds) > 0) {
-    concepts <- getConcepts(connection, conceptIds)
+    concepts <- getConcepts(connection, conceptIds, conceptTable)
     table <- translateConcepts(table, conceptIdColumns, concepts)
   }
   return(table)
@@ -68,18 +70,20 @@ getConceptIds <- function(table, conceptIdColumns) {
 
 #' Get Concept Names from Concept IDs
 #'
-#' This function queries the "concept" table to find the corresponding concept names for a given list of concept IDs.
+#' This function queries the specified "concept" table to find the corresponding concept names for a given list of concept IDs.
 #' It constructs a dictionary of concept IDs and their associated names, which is essential for translating concept IDs
 #' in tables to their meaningful names.
 #'
 #' @param connection A database connection object through which the query will be executed.
 #' @param conceptIds A numeric vector containing the concept IDs for which names are to be retrieved.
+#' @param conceptTable A character string specifying the exact name of the concept table to be queried.
 #'
 #' @return A data frame with columns "concept_id" and "concept_name", representing the mapping from concept IDs to their names.
 #'
-getConcepts <- function(connection, conceptIds) {
+getConcepts <- function(connection, conceptIds, conceptTable) {
   query <- sprintf(
-    "SELECT concept_id, concept_name FROM concept WHERE concept_id IN (%s)",
+    "SELECT concept_id, concept_name FROM \"%s\" WHERE concept_id IN (%s)",
+    conceptTable,
     paste(conceptIds, collapse = ", ")
   )
 
