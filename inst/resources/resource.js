@@ -1,24 +1,24 @@
 var dsOMOP = {
   settings: {
-    title: "OMOP CDM database resources",
+    title: "OMOP CDM Database Resources",
     description:
-      "Provides structured access to OMOP CDM databases, supporting various database management systems.",
+      "Provides structured access to OMOP CDM databases, supporting various database management systems (DBMS).",
     web: "https://github.com/isglobal-brge/dsOMOP",
     categories: [
       {
-        name: "omop-cdm-db",
-        title: "OMOP CDM database",
+        name: "omop-cdm",
+        title: "OMOP CDM",
         description:
-          'The resource is an <a href="https://www.ohdsi.org/data-standardization/" target="_blank">OMOP CDM</a> database.',
+          'The resource is in <a href="https://www.ohdsi.org/data-standardization/" target="_blank">OMOP CDM</a> format.',
       },
     ],
     types: [
       {
         name: "omop-cdm-db",
-        title: "OMOP CDM database connection",
+        title: "OMOP CDM Database",
         description:
           'Connection to an OMOP CDM database. The connection will be established using <a href="https://www.r-dbi.org" target="_blank">DBI</a>.',
-        tags: ["omop-cdm-db"],
+        tags: ["omop-cdm"],
         parameters: {
           $schema: "http://json-schema.org/schema#",
           type: "array",
