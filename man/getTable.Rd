@@ -5,7 +5,7 @@
 \title{Get a Table from the Database}
 \usage{
 getTable(
-  resource,
+  connection,
   tableName,
   conceptFilter = NULL,
   columnFilter = NULL,
@@ -15,8 +15,6 @@ getTable(
 )
 }
 \arguments{
-\item{resource}{A resource object representing the database connection.}
-
 \item{tableName}{The name of the table to be retrieved, as a character string.}
 
 \item{conceptFilter}{An optional vector of concept IDs for filtering the table.}
@@ -28,6 +26,8 @@ getTable(
 \item{mergeColumn}{The column name to be used for merging, defaults to "person_id".}
 
 \item{dropNA}{Whether to exclude columns with all NA values, defaults to FALSE.}
+
+\item{resource}{A resource object representing the database connection.}
 }
 \value{
 A data frame containing the filtered table, ready for integration into the DataSHIELD workflow.

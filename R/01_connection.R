@@ -48,6 +48,7 @@ getTables <- function(connection) {
 #' @return A character vector containing the names of all columns in the table, optionally excluding empty ones.
 #'
 getColumns <- function(connection, tableName, dropNA = FALSE) {
+  # Checks if the specified table exists in the database
   if (!DBI::dbExistsTable(connection, tableName)) {
     stop(paste0("Table '", tableName, "' does not exist in the database."))
   }
@@ -100,4 +101,24 @@ getEmptyColumns <- function(connection, tableName) {
   }
 
   return(emptyColumns)
+}
+
+
+#' Close Database Connection
+#'
+#' Closes an active database connection. If an error parameter is provided, the function will propagate the specified error.
+#'
+#' @param connection A DBI database connection object.
+#' @param error An optional error message to be thrown if not NULL.
+#'
+closeConnection <- function(connection, error = NULL) {
+  # Checks if the connection is valid and disconnects if necessary
+  if (!is.null(connection) && DBI::dbIsValid(connection)) {
+    DBI::dbDisconnect(connection)
+  }
+
+  # If an error message is provided, throws the error
+  if (!is.null(error)) {
+    stop(error)
+  }
 }

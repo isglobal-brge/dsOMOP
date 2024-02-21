@@ -9,8 +9,20 @@
 #' @export
 #'
 getTableCatalogDS <- function(resource) {
+  # Opens a connection to the database
   connection <- getConnection(resource)
-  tableCatalog <- getTables(connection)
+
+  # Attempts to retrieve the list of tables from the database
+  tryCatch({
+    tableCatalog <- getTables(connection)
+
+  # In case of an error, closes the database connection and propagates the error
+  }, error = function(error) {
+    closeConnection(connection, error)
+  })
+  
+  # If the retrieval was successful, closes the database connection and returns the table catalog
+  closeConnection(connection)
   return(tableCatalog)
 }
 
@@ -29,8 +41,23 @@ getTableCatalogDS <- function(resource) {
 #' @export
 #'
 getColumnCatalogDS <- function(resource, tableName, dropNA = FALSE) {
+  # Opens a connection to the database
   connection <- getConnection(resource)
-  columnCatalog <- getColumns(connection, tableName, dropNA)
+
+  # Attempts to retrieve the list of columns from the specified table
+  tryCatch(
+    {
+      columnCatalog <- getColumns(connection, tableName, dropNA)
+
+      # In case of an error, closes the database connection and propagates the error
+    },
+    error = function(error) {
+      closeConnection(connection, error)
+    }
+  )
+  
+  # If the retrieval was successful, closes the database connection and returns the column catalog
+  DBI::dbDisconnect(connection)
   return(columnCatalog)
 }
 
@@ -49,26 +76,37 @@ getColumnCatalogDS <- function(resource, tableName, dropNA = FALSE) {
 #' @export
 #'
 getConceptCatalogDS <- function(resource, tableName) {
+  # Opens a connection to the database
   connection <- getConnection(resource)
-  columns <- getColumns(connection, tableName)
-  conceptIdColumn <- getConceptIdColumn(tableName)
 
-  # Checks if the concept ID column exists in the table
-  if (!conceptIdColumn %in% columns) {
-    stop(paste0("The column '", conceptIdColumn, "' does not exist in the table '", tableName, "'."))
-  }
+  # Attempts to retrieve the concept catalog from the specified table
+  tryCatch({
+    columns <- getColumns(connection, tableName)
+    conceptIdColumn <- getConceptIdColumn(tableName)
 
-  # Retrieves the unique concept IDs from the table
-  conceptIds <- DBI::dbGetQuery(connection, paste0("SELECT DISTINCT ", conceptIdColumn, " FROM ", tableName))
-  conceptIds <- conceptIds[[1]]
+    # Checks if the concept ID column exists in the table
+    if (!conceptIdColumn %in% columns) {
+      stop(paste0("The column '", conceptIdColumn, "' does not exist in the table '", tableName, "'."))
+    }
 
-  # Retrieves the concepts from the 'concept' table
-  conceptCatalog <- getConcepts(connection, conceptIds)
+    # Retrieves the unique concept IDs from the table
+    conceptIds <- DBI::dbGetQuery(connection, paste0("SELECT DISTINCT ", conceptIdColumn, " FROM ", tableName))
+    conceptIds <- conceptIds[[1]]
 
-  # Merges the concept IDs with the concept names
-  # This is done to ensure that even concept IDs that are not present in the 'concept' table are included
-  conceptIds <- data.frame(concept_id = conceptIds)
-  conceptCatalog <- merge(conceptIds, conceptCatalog, by = "concept_id", all.x = TRUE)
+    # Retrieves the concepts from the 'concept' table
+    conceptCatalog <- getConcepts(connection, conceptIds)
 
+    # Merges the concept IDs with the concept names
+    # This is done to ensure that even concept IDs that are not present in the 'concept' table are included
+    conceptIds <- data.frame(concept_id = conceptIds)
+    conceptCatalog <- merge(conceptIds, conceptCatalog, by = "concept_id", all.x = TRUE)
+
+  # In case of an error, closes the database connection and propagates the error
+  }, error = function(error) {
+    closeConnection(connection, error)
+  })
+
+  # If the retrieval was successful, closes the database connection and returns the concept catalog
+  closeConnection(connection)
   return(conceptCatalog)
 }

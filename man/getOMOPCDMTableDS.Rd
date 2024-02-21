@@ -5,7 +5,7 @@
 \title{Assign OMOP CDM Table to the DataSHIELD Environment}
 \usage{
 getOMOPCDMTableDS(
-  connection,
+  resource,
   tableName,
   conceptFilter = NULL,
   columnFilter = NULL,
@@ -15,7 +15,7 @@ getOMOPCDMTableDS(
 )
 }
 \arguments{
-\item{connection}{A DBI database connection object.}
+\item{resource}{A resource object representing the database connection.}
 
 \item{tableName}{The name of the table to be retrieved from the database.}
 

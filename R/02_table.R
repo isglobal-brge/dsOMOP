@@ -22,15 +22,13 @@
 #'
 #' @return A data frame containing the filtered table, ready for integration into the DataSHIELD workflow.
 #'
-getTable <- function(resource,
+getTable <- function(connection,
                      tableName,
                      conceptFilter = NULL,
                      columnFilter = NULL,
                      personFilter = NULL,
                      mergeColumn = "person_id",
                      dropNA = FALSE) {
-  connection <- getConnection(resource)
-
   # Checks if the table exists in the database
   tables <- getTables(connection)
   if (!tableName %in% tables) {
@@ -97,7 +95,7 @@ getTable <- function(resource,
 #' It calls the `getTable` function, which is responsible for filtering and performing additional transformation and processing
 #' operations on the table. Once processed, the table is assigned in the DataSHIELD environment.
 #'
-#' @param connection A DBI database connection object.
+#' @param resource A resource object representing the database connection.
 #' @param tableName The name of the table to be retrieved from the database.
 #' @param conceptFilter (Optional) A vector of concept IDs to filter the table by specific concepts.
 #' @param columnFilter (Optional) A vector of column names to keep in the table.
@@ -109,13 +107,27 @@ getTable <- function(resource,
 #'
 #' @export
 #'
-getOMOPCDMTableDS <- function(connection,
+getOMOPCDMTableDS <- function(resource,
                               tableName,
                               conceptFilter = NULL,
                               columnFilter = NULL,
                               personFilter = NULL,
                               mergeColumn = "person_id",
                               dropNA = FALSE) {
-  table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA)
+
+  # Opens a connection to the database
+  connection <- getConnection(resource)
+  
+  # Attempts to retrieve the table from the database
+  tryCatch({
+    table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA)
+
+  # In case of an error, closes the database connection and propagates the error
+  }, error = function(error) {
+    closeConnection(connection, error)
+  })
+
+  # If the retrieval was successful, closes the database connection and returns the table
+  closeConnection(connection)
   return(table)
 }
