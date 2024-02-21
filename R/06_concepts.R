@@ -13,22 +13,27 @@
 #' @return A data frame with concept IDs replaced by their corresponding concept names.
 #'
 translateTable <- function(connection, table) {
-  # Checks if the 'concept' table exists in the database
   tables <- getTables(connection)
   conceptTable <- findCaseInsensitiveTable(tables, "concept")
-  if (is.null(conceptTable)) {
-    return(table)
-  }
 
   # Retrieves the concept IDs from the table
   conceptIdColumns <- getConceptIdColumns(table)
   conceptIds <- getConceptIds(table, conceptIdColumns)
 
-  # If there are concept IDs, retrieves the concept names and translates them
-  if (!is.null(conceptIds) && length(conceptIds) > 0) {
-    concepts <- getConcepts(connection, conceptIds, conceptTable)
-    table <- translateConcepts(table, conceptIdColumns, concepts)
-  }
+  # Attempts to retrieve the concept names from the 'concept' table
+  concepts <- tryCatch(
+    {
+      getConcepts(connection, conceptIds, conceptTable)
+    },
+    # In case of an error, returns an empty data frame (with the same structure as the expected output)
+    error = function(error) {
+      data.frame(concept_id = integer(), concept_name = character(), stringsAsFactors = FALSE)
+    }
+  )
+  
+  # Translates the concept IDs in the table
+  table <- translateConcepts(table, conceptIdColumns, concepts)
+  
   return(table)
 }
 
@@ -106,12 +111,21 @@ getConcepts <- function(connection, conceptIds, conceptTable) {
 #'
 translateConcepts <- function(table, conceptIdColumns, concepts) {
   for (column in conceptIdColumns) {
+    # Attempts to replace concept IDs with their corresponding concept names
     table[[column]] <- sapply(table[[column]], function(id) {
-      name <- concepts$concept_name[match(id, concepts$concept_id)]
-      if (is.na(name)) {
-        return(id) # If the concept ID is not found, returns the original value
+      # If the ID is NA, NULL, or empty, returns NA
+      if (is.na(id) || is.null(id) || id == "") {
+        return(NA)
       } else {
-        return(name)
+        # Otherwise, attempts to find the concept name for the given concept ID
+        name <- concepts$concept_name[match(id, concepts$concept_id)]
+        if (is.na(name)) {
+          # If the concept name is not found, returns "concept_id_" + the concept ID
+          return(paste0("concept_id_", id))
+        } else {
+          # Otherwise, returns the corresponding concept name
+          return(name)
+        }
       }
     })
   }
