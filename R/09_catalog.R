@@ -113,7 +113,7 @@ getConceptCatalogDS <- function(resource, tableName) {
       }
 
       # Retrieves the unique concept IDs from the table
-      conceptIds <- DBI::dbGetQuery(connection, paste0("SELECT DISTINCT ", conceptIdColumn, " FROM ", tableName))
+      conceptIds <- DBI::dbGetQuery(connection, paste0("SELECT DISTINCT \"", conceptIdColumn, "\" FROM \"", tableName, "\""))
       conceptIds <- conceptIds[[1]]
 
       # Retrieves the concepts from the 'concept' table
