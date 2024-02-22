@@ -24,6 +24,8 @@ Remotes:
 AssignMethods:
     getOMOPCDMTableDS
 AggregateMethods:
+    checkConnectionDS,
+    checkPrivacyControlLevelDS,
     getTableCatalogDS,
     getColumnCatalogDS,
     getConceptCatalogDS
