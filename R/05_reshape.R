@@ -25,9 +25,6 @@ reshapeTable <- function(table, conceptIdColumn, mergeColumn) {
     stop(paste0("The column '", mergeColumn, "' is not present in the table."))
   }
 
-  # Standardizes the concept ID column name to ensure that the reshaping process works
-  table <- standardizeColumn(table, conceptIdColumn)
-
   # Sequences repeated data in the concept ID colum in case there is longitudinal data
   table <- sequenceColumn(table, conceptIdColumn, mergeColumn)
 

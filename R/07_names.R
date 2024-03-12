@@ -1,6 +1,6 @@
 #' Standardize Name
 #'
-#' This function standardizes a given name to ensure it conforms to a valid data frame column name.
+#' This function standardizes a given name to ensure compatibility with the translation process.
 #' It performs the following operations:
 #' 1. Converts the name to a valid R object name (make.names)
 #' 2. Changes all characters to lowercase

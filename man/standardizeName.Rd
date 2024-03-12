@@ -13,7 +13,7 @@ standardizeName(name)
 A character string representing the standardized name.
 }
 \description{
-This function standardizes a given name to ensure it conforms to a valid data frame column name.
+This function standardizes a given name to ensure compatibility with the translation process.
 It performs the following operations:
 \enumerate{
 \item Converts the name to a valid R object name (make.names)

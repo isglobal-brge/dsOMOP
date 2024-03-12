@@ -30,10 +30,10 @@ translateTable <- function(connection, table) {
       data.frame(concept_id = integer(), concept_name = character(), stringsAsFactors = FALSE)
     }
   )
-  
+
   # Translates the concept IDs in the table
   table <- translateConcepts(table, conceptIdColumns, concepts)
-  
+
   return(table)
 }
 
@@ -93,6 +93,10 @@ getConcepts <- function(connection, conceptIds, conceptTable) {
   )
 
   concepts <- DBI::dbGetQuery(connection, query)
+
+  # Standardizes the concept names to ensure compatibility with the translation process
+  concepts <- standardizeColumn(concepts, "concept_name")
+
   return(concepts)
 }
 
