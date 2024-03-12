@@ -94,9 +94,6 @@ getConcepts <- function(connection, conceptIds, conceptTable) {
 
   concepts <- DBI::dbGetQuery(connection, query)
 
-  # Standardizes the concept names to ensure compatibility with the translation process
-  concepts <- standardizeColumn(concepts, "concept_name")
-
   return(concepts)
 }
 
@@ -127,8 +124,8 @@ translateConcepts <- function(table, conceptIdColumns, concepts) {
           # If the concept name is not found, returns "concept_id_" + the concept ID
           return(paste0("concept_id_", id))
         } else {
-          # Otherwise, returns the corresponding concept name
-          return(name)
+          # Otherwise, returns the corresponding concept name (standardized)
+          return(standardizeName(name))
         }
       }
     })

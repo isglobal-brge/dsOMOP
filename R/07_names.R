@@ -20,18 +20,3 @@ standardizeName <- function(name) {
   name <- gsub("^_|_$", "", name) # Removes leading and trailing underscores
   return(name)
 }
-
-
-#' Standardize Names in a Column
-#'
-#' This function applies the `standardizeName` function to each name in a specified column of a table.
-#'
-#' @param table A data frame representing the table containing the column to be standardized.
-#' @param column A character string specifying the name of the column whose names are to be standardized.
-#'
-#' @return A data frame with the specified column's names standardized.
-#'
-standardizeColumn <- function(table, column) {
-  table[[column]] <- sapply(table[[column]], standardizeName)
-  return(table)
-}
