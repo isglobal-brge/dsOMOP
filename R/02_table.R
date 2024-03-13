@@ -29,7 +29,6 @@ getTable <- function(connection,
                      personFilter = NULL,
                      mergeColumn = "person_id",
                      dropNA = FALSE) {
-
   # Checks if the table exists in the database
   tables <- getTables(connection)
   caseInsensitiveTableName <- findCaseInsensitiveTable(tables, tableName) # Case-insensitive table search
@@ -61,11 +60,6 @@ getTable <- function(connection,
     table <- dplyr::filter(table, person_id %in% personIds)
   }
 
-  # If the dropNA flag is set, removes columns with all NA values
-  if (dropNA) {
-    table <- table %>% select_if(~ !all(is.na(.)))
-  }
-
   # Retrieves the table as a data frame
   table <- as.data.frame(table)
 
@@ -84,6 +78,11 @@ getTable <- function(connection,
   # If a concept ID column is present, reshapes the table
   if (conceptIdColumn %in% names(table)) {
     table <- reshapeTable(table, conceptIdColumn, mergeColumn)
+  }
+
+  # If the dropNA flag is set, removes columns with all NA values
+  if (dropNA) {
+    table <- table %>% select_if(~ !all(is.na(.)))
   }
 
   # Flags the table as an OMOP CDM table
@@ -119,18 +118,20 @@ getOMOPCDMTableDS <- function(resource,
                               personFilter = NULL,
                               mergeColumn = "person_id",
                               dropNA = FALSE) {
-
   # Opens a connection to the database
   connection <- getConnection(resource)
-  
-  # Attempts to retrieve the table from the database
-  tryCatch({
-    table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA)
 
-  # In case of an error, closes the database connection and propagates the error
-  }, error = function(error) {
-    closeConnection(connection, error)
-  })
+  # Attempts to retrieve the table from the database
+  tryCatch(
+    {
+      table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA)
+
+      # In case of an error, closes the database connection and propagates the error
+    },
+    error = function(error) {
+      closeConnection(connection, error)
+    }
+  )
 
   # If the retrieval was successful, closes the database connection and returns the table
   closeConnection(connection)
