@@ -105,8 +105,8 @@ getConceptCatalogDS <- function(resource, tableName) {
       conceptTable <- findCaseInsensitiveTable(tables, "concept")
 
       # Gets the required column names for this operation
-      columns <- getColumns(connection, tableName)
-      conceptIdColumn <- getConceptIdColumn(tableName)
+      columns <- getColumns(connection, tableName, caseInsensitive = FALSE)
+      conceptIdColumn <- findCaseInsensitiveColumn(columns, getConceptIdColumn(tableName))
 
       # Checks if the concept ID column exists in the table
       if (!conceptIdColumn %in% columns) {
