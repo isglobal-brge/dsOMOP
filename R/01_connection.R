@@ -44,10 +44,11 @@ getTables <- function(connection) {
 #' @param connection A DBI database connection object.
 #' @param tableName The name of the table from which to retrieve column names.
 #' @param dropNA A logical value indicating whether to exclude completely empty columns from the result.
+#' @param caseInsensitive A logical value indicating whether to convert all column names to lowercase.
 #'
 #' @return A character vector containing the names of all columns in the table, optionally excluding empty ones.
 #'
-getColumns <- function(connection, tableName, dropNA = FALSE) {
+getColumns <- function(connection, tableName, dropNA = FALSE, caseInsensitive = TRUE) {
   # Checks if the specified table exists in the database
   if (!DBI::dbExistsTable(connection, tableName)) {
     stop(paste0("Table '", tableName, "' does not exist in the database."))
@@ -55,6 +56,9 @@ getColumns <- function(connection, tableName, dropNA = FALSE) {
 
   # Retrieves the list of columns from the specified table
   columns <- DBI::dbListFields(connection, tableName)
+
+  # If the caseInsensitive flag is set, converts all column names to lowercase
+  if (caseInsensitive) columns <- tolower(columns)
 
   # If the dropNA flag is set, removes columns with all NA values
   if (dropNA) {

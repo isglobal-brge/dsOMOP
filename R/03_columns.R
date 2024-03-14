@@ -64,3 +64,37 @@ getIdColumn <- function(tableName) {
   idColumn <- paste0(baseName, "_id")
   return(idColumn)
 }
+
+
+#' Find Case-Insensitive Column
+#'
+#' Given a list of column names, this function searches for a column whose name matches a given target in a case-insensitive manner.
+#'
+#' @param columnNames A character vector containing the names of the columns to search through.
+#' @param target A character string representing the name of the column to find, case-insensitively.
+#'
+#' @return A character string with the name of the target column if found, otherwise NULL.
+#'
+findCaseInsensitiveColumn <- function(columnNames, target) {
+  caseInsensitiveColumn <- NULL
+
+  # Check for an exact match first
+  exactMatchIndex <- match(target, columnNames)
+  if (!is.na(exactMatchIndex)) {
+    caseInsensitiveColumn <- columnNames[exactMatchIndex]
+  } else {
+    # Convert both input and target to lowercase for case-insensitive comparison
+    lowerColumnNames <- tolower(columnNames)
+    lowerTarget <- tolower(target)
+
+    # Search for the target column in a case-insensitive manner
+    matchIndex <- match(lowerTarget, lowerColumnNames)
+
+    # If a case-insensitive match is found, return the original column name
+    if (!is.na(matchIndex)) {
+      caseInsensitiveColumn <- columnNames[matchIndex]
+    }
+  }
+
+  return(caseInsensitiveColumn)
+}

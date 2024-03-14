@@ -13,14 +13,16 @@ getTableCatalogDS <- function(resource) {
   connection <- getConnection(resource)
 
   # Attempts to retrieve the list of tables from the database
-  tryCatch({
-    tableCatalog <- getTables(connection)
+  tryCatch(
+    {
+      tableCatalog <- getTables(connection)
+    },
+    # In case of an error, closes the database connection and propagates the error
+    error = function(error) {
+      closeConnection(connection, error)
+    }
+  )
 
-  # In case of an error, closes the database connection and propagates the error
-  }, error = function(error) {
-    closeConnection(connection, error)
-  })
-  
   # If the retrieval was successful, closes the database connection and returns the table catalog
   closeConnection(connection)
   return(tableCatalog)
@@ -57,14 +59,13 @@ getColumnCatalogDS <- function(resource, tableName, dropNA = FALSE) {
 
       # Retrieves the list of columns from the specified table
       columnCatalog <- getColumns(connection, tableName, dropNA)
-
-    # In case of an error, closes the database connection and propagates the error
     },
+    # In case of an error, closes the database connection and propagates the error
     error = function(error) {
       closeConnection(connection, error)
     }
   )
-  
+
   # If the retrieval was successful, closes the database connection and returns the column catalog
   DBI::dbDisconnect(connection)
   return(columnCatalog)
@@ -131,9 +132,8 @@ getConceptCatalogDS <- function(resource, tableName) {
       # This is done to ensure that even concept IDs that are not present in the 'concept' table are included
       conceptIds <- data.frame(concept_id = conceptIds)
       conceptCatalog <- merge(conceptIds, conceptCatalog, by = "concept_id", all.x = TRUE)
-
-      # In case of an error, closes the database connection and propagates the error
     },
+    # In case of an error, closes the database connection and propagates the error
     error = function(error) {
       closeConnection(connection, error)
     }
@@ -148,20 +148,23 @@ getConceptCatalogDS <- function(resource, tableName) {
 #' Check Privacy Control Level
 #'
 #' This function checks if the current privacy control level is set to either 'permissive' or 'banana'.
-#' It is designed to be called from the DataSHIELD client to verify that the privacy control level is permissive enough to allow the 
+#' It is designed to be called from the DataSHIELD client to verify that the privacy control level is permissive enough to allow the
 #' required operations used by the package.
 #' If the privacy control level is not set to 'permissive' or 'banana', the resulting error is returned.
 #'
 #' @return An error message if the privacy control level is not set to 'permissive' or 'banana'.
 #'
 #' @export
-#' 
+#'
 checkPrivacyControlLevelDS <- function() {
-  tryCatch({
-    dsBase::checkPermissivePrivacyControlLevel(c('permissive', 'banana'))
-  }, error = function(error) {
-    return(error$message)
-  })
+  tryCatch(
+    {
+      dsBase::checkPermissivePrivacyControlLevel(c("permissive", "banana"))
+    },
+    error = function(error) {
+      return(error$message)
+    }
+  )
 }
 
 
@@ -173,7 +176,7 @@ checkPrivacyControlLevelDS <- function() {
 #' @param resource An object representing the database resource.
 #'
 #' @export
-#' 
+#'
 checkConnectionDS <- function(resource) {
   connection <- getConnection(resource)
   closeConnection(connection)

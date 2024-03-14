@@ -40,12 +40,15 @@ getTable <- function(connection,
   tableName <- caseInsensitiveTableName
 
   # Retrieves the table and its column names
-  table <- dplyr::tbl(connection, tableName)
+  table <- dplyr::tbl(connection, tableName) %>% dplyr::rename_with(tolower)
   columns <- getColumns(connection, tableName)
   conceptIdColumn <- getConceptIdColumn(tableName)
 
   # Applies the column filter to the table
   keepColumns <- c("person_id", conceptIdColumn)
+  if (!is.null(columnFilter)) {
+    columnFilter <- tolower(columnFilter) # Since all column names will be lowercase, converts the filter columns to lowercase as well
+  }
   selectedColumns <- filterColumns(table, columns, columnFilter, keepColumns)
   table <- dplyr::select(table, all_of(selectedColumns))
 

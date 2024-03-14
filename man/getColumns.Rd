@@ -4,7 +4,7 @@
 \alias{getColumns}
 \title{Get Table Columns}
 \usage{
-getColumns(connection, tableName, dropNA = FALSE)
+getColumns(connection, tableName, dropNA = FALSE, caseInsensitive = TRUE)
 }
 \arguments{
 \item{connection}{A DBI database connection object.}
@@ -12,6 +12,8 @@ getColumns(connection, tableName, dropNA = FALSE)
 \item{tableName}{The name of the table from which to retrieve column names.}
 
 \item{dropNA}{A logical value indicating whether to exclude completely empty columns from the result.}
+
+\item{caseInsensitive}{A logical value indicating whether to convert all column names to lowercase.}
 }
 \value{
 A character vector containing the names of all columns in the table, optionally excluding empty ones.

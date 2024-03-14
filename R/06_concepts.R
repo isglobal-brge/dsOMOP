@@ -86,13 +86,24 @@ getConceptIds <- function(table, conceptIdColumns) {
 #' @return A data frame with columns "concept_id" and "concept_name", representing the mapping from concept IDs to their names.
 #'
 getConcepts <- function(connection, conceptIds, conceptTable) {
+  # Identifies the column names for the concept table (case-insensitive)
+  conceptTableColumns <- getColumns(connection, conceptTable, caseInsensitive = FALSE) # Case-insensitive so it can find the actual column names
+
+  # Finds the correct capitalization for the concept ID and concept name columns
+  conceptIdColumnName <- findCaseInsensitiveColumn(conceptTableColumns, "concept_id")
+  conceptNameColumnName <- findCaseInsensitiveColumn(conceptTableColumns, "concept_name")
+
   query <- sprintf(
-    "SELECT concept_id, concept_name FROM \"%s\" WHERE concept_id IN (%s)",
+    "SELECT \"%s\", \"%s\" FROM \"%s\" WHERE \"%s\" IN (%s)",
+    conceptIdColumnName,
+    conceptNameColumnName,
     conceptTable,
+    conceptIdColumnName,
     paste(conceptIds, collapse = ", ")
   )
 
   concepts <- DBI::dbGetQuery(connection, query)
+  names(concepts) <- tolower(names(concepts))
 
   return(concepts)
 }
