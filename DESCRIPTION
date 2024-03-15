@@ -1,5 +1,5 @@
 Package: dsOMOP
-Title: Server-Side DataSHIELD Integration for OMOP CDM
+Title: Server-Side DataSHIELD Integration for OMOP CDM Databases
 Version: 1.0.0
 Authors@R:
     c(person("David", "Sarrat González", , "david.sarrat@isglobal.org", role = c("aut", "cre")),
