@@ -138,7 +138,9 @@ opal.resource_create(o,
 
 ## Acknowledgements
 
-The development of dsOMOP has been supported by the **RadGen4COPD**, **P4COPD**, and **DATOS-CAT** projects. These collaborations have not only provided essential financial backing but have also affirmed the project's relevance and application in significant research endeavors.
+- The development of dsOMOP has been supported by the **RadGen4COPD**, **[P4COPD](https://www.clinicbarcelona.org/en/projects-and-clinical-assays/detail/p4copd-prediction-prevention-personalized-and-precision-management-of-copd-in-young-adults)**, and **[DATOS-CAT](https://datos-cat.github.io/LandingPage)** projects. These collaborations have not only provided essential financial backing but have also affirmed the project's relevance and application in significant research endeavors.
+- Funded by the **"Complementary Plan for Biotechnology Applied to Health"**, coordinated by the **[Institut de Bioenginyeria de Catalunya (IBEC)](https://ibecbarcelona.eu/)** within the framework of the **Recovery, Transformation, and Resilience Plan (C17.I1)** - Funded by the **European Union** - **[NextGenerationEU](https://next-generation-eu.europa.eu/index_en)**.
+- Special thanks to **[Xavier Escribà-Montagut](https://github.com/ESCRI11)** for his invaluable support in the development process.
 
 ## Contact
 
@@ -146,7 +148,6 @@ For further information or inquiries, please contact:
 
 - Juan R González: juanr.gonzalez@isglobal.org
 - David Sarrat González: david.sarrat@isglobal.org
-- Xavier Escribá Montagut: xavier.escriba@isglobal.org
 
 For more details about DataSHIELD, visit [datashield.org](https://datashield.org)
 
