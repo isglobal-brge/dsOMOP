@@ -130,6 +130,7 @@ getConceptCatalogDS <- function(resource, tableName) {
 
       # Merges the concept IDs with the concept names
       # This is done to ensure that even concept IDs that are not present in the 'concept' table are included
+      # It does not involve sensitive data, so there is no need to use DataSHIELD's mergeDS function
       conceptIds <- data.frame(concept_id = conceptIds)
       conceptCatalog <- merge(conceptIds, conceptCatalog, by = "concept_id", all.x = TRUE)
     },
