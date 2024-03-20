@@ -149,6 +149,6 @@ For further information or inquiries, please contact:
 - **Juan R González**: juanr.gonzalez@isglobal.org
 - **David Sarrat González**: david.sarrat@isglobal.org
 
-For more details about **DataSHIELD**, visit [datashield.org](https://datashield.org)
+For more details about **DataSHIELD**, visit [https://www.datashield.org](https://www.datashield.org).
 
-For more information about the **Barcelona Institute for Global Health (ISGlobal)**, visit [isglobal.org](https://www.isglobal.org)
+For more information about the **Barcelona Institute for Global Health (ISGlobal)**, visit [https://www.isglobal.org](https://www.isglobal.org).
