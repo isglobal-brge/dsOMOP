@@ -2,10 +2,9 @@
 
 ## Introduction
 
-<p style="display: flex; align-items: center;">
-  <img src="doc/img/dsomop_logo.png" alt="dsOMOP logo" height="128" style="margin-right: 20px;"/>
-  <span>The <code>dsOMOP</code> package is designed to facilitate the interaction with remote databases formatted in the <a href="https://www.ohdsi.org/data-standardization/">Observational Medical Outcomes Partnership (OMOP) Common Data Model (CDM)</a> from within a <a href="https://www.datashield.org/about/about-datashield-collated">DataSHIELD</a> environment. It provides a suite of functions that allow users to fetch and transform data from these databases into a format that is intelligible and usable within the DataSHIELD analytical workflow. This integration ensures that data analysis complies with the DataSHIELD security model, which is crucial for maintaining the privacy and security of the data.</span>
-</p>
+<img src="doc/img/dsomop_logo.png" align="left" height="120" style="margin-right: 20px;"/>
+
+The `dsOMOP` package is designed to facilitate the interaction with remote databases formatted in the [Observational Medical Outcomes Partnership (OMOP) Common Data Model (CDM)](https://www.ohdsi.org/data-standardization/) from within a [DataSHIELD](https://www.datashield.org/about/about-datashield-collated) environment. It provides a suite of functions that allow users to fetch and transform data from these databases into a format that is intelligible and usable within the DataSHIELD analytical workflow. This integration ensures that data analysis complies with the DataSHIELD security model, which is crucial for maintaining the privacy and security of the data.
 
 Key features of the `dsOMOP` package include:
 - **Data retrieval and transformation:** Functions to fetch data from OMOP CDM databases and transform it into a user-friendly table format.
