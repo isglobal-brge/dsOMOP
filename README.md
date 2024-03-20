@@ -1,4 +1,4 @@
-# dsOMOP
+# dsOMOP <img src="doc/img/dsomop_logo.png" align="right" height="138" /></a>
 
 ## Introduction
 
