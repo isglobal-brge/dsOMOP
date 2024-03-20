@@ -138,7 +138,7 @@ opal.resource_create(o,
 
 ## Acknowledgements
 
-The development of dsOMOP has been notably supported by the **RadGen4COPD**, **P4COPD**, and **DATOS-CAT** projects. These collaborations have not only provided essential financial backing but have also affirmed the project's relevance and application in significant research endeavors.
+The development of dsOMOP has been supported by the **RadGen4COPD**, **P4COPD**, and **DATOS-CAT** projects. These collaborations have not only provided essential financial backing but have also affirmed the project's relevance and application in significant research endeavors.
 
 ## Contact
 
