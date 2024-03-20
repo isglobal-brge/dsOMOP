@@ -99,7 +99,7 @@ dsOMOP modifies the interface provided by the Opal server to incorporate an opti
 To use it, simply access the management dashboard of a project and go to the `Resources` subsection. In the `Add Resource` option, you will find the `OMOP CDM` category:
 
 <p align="center">
-  <img src="docs/img/add_resource.png" alt="Add Resource">
+  <img src="doc/img/add_resource.png" alt="Add Resource">
 </p>
 
 ### Creating resources from the R console
