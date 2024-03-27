@@ -14,7 +14,7 @@ A string containing the name of the ID column.
 }
 \description{
 This function generates the name of the ID column based on the provided table name.
-It removes the suffix "_occurrence" from the table name, if present, and appends "_id"
+It removes the suffixes "_occurrence" and "_exposure" from the table name, if present, and appends "_id"
 to form the ID column name. This is useful for dynamically identifying the ID column
 in tables where the base name of the table is used to construct column names.
 }

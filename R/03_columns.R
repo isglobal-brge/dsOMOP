@@ -31,7 +31,7 @@ filterColumns <- function(table, tableColumns, selectedColumns, keepColumns) {
 #' Get Concept ID Column Name
 #'
 #' This function generates the name of the concept ID column based on the provided table name.
-#' It removes the suffix "_occurrence" from the table name, if present, and appends "_concept_id"
+#' It removes the suffixes "_occurrence" and "_exposure" from the table name, if present, and appends "_concept_id"
 #' to form the concept ID column name. This is useful for dynamically identifying the concept ID
 #' column in tables where the base name of the table is used to construct column names.
 #'
@@ -42,6 +42,7 @@ filterColumns <- function(table, tableColumns, selectedColumns, keepColumns) {
 getConceptIdColumn <- function(tableName) {
   tableName <- tolower(tableName)
   baseName <- gsub("_occurrence", "", tableName)
+  baseName <- gsub("_exposure", "", baseName)
   conceptIdColumn <- paste0(baseName, "_concept_id")
   return(conceptIdColumn)
 }
@@ -50,7 +51,7 @@ getConceptIdColumn <- function(tableName) {
 #' Get ID Column Name
 #'
 #' This function generates the name of the ID column based on the provided table name.
-#' It removes the suffix "_occurrence" from the table name, if present, and appends "_id"
+#' It removes the suffixes "_occurrence" and "_exposure" from the table name, if present, and appends "_id"
 #' to form the ID column name. This is useful for dynamically identifying the ID column
 #' in tables where the base name of the table is used to construct column names.
 #'
@@ -61,6 +62,7 @@ getConceptIdColumn <- function(tableName) {
 getIdColumn <- function(tableName) {
   tableName <- tolower(tableName)
   baseName <- gsub("_occurrence", "", tableName)
+  baseName <- gsub("_exposure", "", baseName)
   idColumn <- paste0(baseName, "_id")
   return(idColumn)
 }

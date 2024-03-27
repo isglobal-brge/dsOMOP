@@ -14,7 +14,7 @@ A string containing the name of the concept ID column.
 }
 \description{
 This function generates the name of the concept ID column based on the provided table name.
-It removes the suffix "_occurrence" from the table name, if present, and appends "_concept_id"
+It removes the suffixes "_occurrence" and "_exposure" from the table name, if present, and appends "_concept_id"
 to form the concept ID column name. This is useful for dynamically identifying the concept ID
 column in tables where the base name of the table is used to construct column names.
 }
