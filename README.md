@@ -2,7 +2,7 @@
 
 ## Introduction
 
-<img src="doc/img/dsomop_logo.png" align="left" height="140" style="margin-right: 10px;" />
+<img src="man/figures/dsomop_logo.png" align="left" height="140" style="margin-right: 10px;" />
 
 
 The `dsOMOP` package is designed to facilitate the interaction with remote databases formatted in the [Observational Medical Outcomes Partnership (OMOP) Common Data Model (CDM)](https://www.ohdsi.org/data-standardization/) from within a [DataSHIELD](https://www.datashield.org/about/about-datashield-collated) environment. It provides a suite of functions that allow users to fetch and transform data from these databases into a format that is intelligible and usable within the DataSHIELD analytical workflow. This integration ensures that data analysis complies with the DataSHIELD security model, which is crucial for maintaining the privacy and security of the data.
@@ -102,7 +102,7 @@ dsOMOP modifies the interface provided by the Opal server to incorporate an opti
 To use it, simply access the management dashboard of a project and go to the `Resources` subsection. In the `Add Resource` option, you will find the `OMOP CDM` category:
 
 <p align="center">
-  <img src="doc/img/add_resource.png" alt="Add Resource">
+  <img src="man/figures/add_resource.png" alt="Add Resource">
 </p>
 
 ### Creating resources from the R console
