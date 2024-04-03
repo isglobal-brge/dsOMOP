@@ -45,7 +45,7 @@ getTable <- function(connection,
   conceptIdColumn <- getConceptIdColumn(tableName)
 
   # Applies the column filter to the table
-  keepColumns <- c(mergeColumn, conceptIdColumn)
+  keepColumns <- c("person_id", mergeColumn, conceptIdColumn)
   if (!is.null(columnFilter)) {
     columnFilter <- tolower(columnFilter) # Since all column names will be lowercase, converts the filter columns to lowercase as well
   }
