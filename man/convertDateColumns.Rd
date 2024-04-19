@@ -2,17 +2,18 @@
 % Please edit documentation in R/10_types.R
 \name{convertDateColumns}
 \alias{convertDateColumns}
-\title{Convert Date Columns to Date Type in the Table}
+\title{Convert Date and DateTime Columns in the Table}
 \usage{
 convertDateColumns(table)
 }
 \arguments{
-\item{table}{A data frame with one or more columns that contain "_date" in their name.}
+\item{table}{A data frame with one or more columns that may contain "_date" or "_datetime" in their name.}
 }
 \value{
-A data frame with columns that contain "_date" in their name converted to Date type.
+A data frame with columns that contain "_datetime" converted to DateTime type and columns that contain "_date"
+converted to Date type.
 }
 \description{
-This function takes a data frame and converts all columns that contain "_date" in their name to Date type in R,
-ignoring case.
+This function takes a data frame and converts all columns that contain "_datetime" in their name to DateTime type in R,
+and all columns that contain "_date" in their name to Date type, ignoring case.
 }
