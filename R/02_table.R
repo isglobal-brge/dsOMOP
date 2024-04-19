@@ -88,8 +88,8 @@ getTable <- function(connection,
     table <- table %>% select_if(~ !all(is.na(.)))
   }
 
-  # Converts string columns to factors
-  table <- stringsToFactors(table)
+  # Converts concept columns to factors
+  table <- conceptsToFactors(table)
 
   # Flags the table as an OMOP CDM table
   class(table) <- c("omop.cdm.table", class(table))

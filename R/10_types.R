@@ -1,14 +1,14 @@
-#' Convert String Columns to Factors in the Table
+#' Convert Concept ID Columns to Factors in the Table
 #'
-#' This function takes a data frame and converts all columns of type character to factors.
+#' This function takes a data frame and converts all columns that contain "concept_id" in their name to factors.
 #'
-#' @param table A data frame with one or more columns of type character.
+#' @param table A data frame with one or more columns that contain "concept_id" in their name.
 #'
-#' @return A data frame with character columns converted to factors.
+#' @return A data frame with columns that contain "concept_id" in their name converted to factors.
 #'
-stringsToFactors <- function(table) {
+conceptsToFactors <- function(table) {
   for (column in names(table)) {
-    if (is.character(table[[column]])) {
+    if (grepl("concept_id", column)) {
       table[[column]] <- as.factor(table[[column]])
     }
   }
