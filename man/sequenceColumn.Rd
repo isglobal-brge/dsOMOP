@@ -20,6 +20,5 @@ combination of concept ID column and merge column values.
 \description{
 This function adds a sequence number to rows within a table that have the same combination of concept ID column
 and merge column values. It is particularly useful for distinguishing between multiple occurrences of the same
-entity in longitudinal data. The sequence number is appended to the concept ID column for duplicates, starting
-from the second occurrence.
+entity in longitudinal data. The sequence number is appended to the concept ID column for duplicates.
 }

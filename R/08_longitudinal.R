@@ -2,8 +2,7 @@
 #'
 #' This function adds a sequence number to rows within a table that have the same combination of concept ID column
 #' and merge column values. It is particularly useful for distinguishing between multiple occurrences of the same
-#' entity in longitudinal data. The sequence number is appended to the concept ID column for duplicates, starting
-#' from the second occurrence.
+#' entity in longitudinal data. The sequence number is appended to the concept ID column for duplicates.
 #'
 #' @param table A data frame representing the table to be processed.
 #' @param conceptIdColumn A character string specifying the name of the column that contains concept IDs.
@@ -23,9 +22,9 @@ sequenceColumn <- function(table, conceptIdColumn, mergeColumn) {
       mutate(rowSequence = row_number()) %>%
       ungroup()
 
-    # Appends the sequence number to the concept ID column for duplicates, starting from the second occurrence
+    # Appends the sequence number to the concept ID column for duplicates
     table <- table %>%
-      mutate(!!sym(conceptIdColumn) := if_else(rowSequence > 1, paste0(!!sym(conceptIdColumn), ".", rowSequence), as.character(!!sym(conceptIdColumn)))) %>%
+      mutate(!!sym(conceptIdColumn) := paste0(!!sym(conceptIdColumn), ".", rowSequence)) %>%
       select(-rowSequence)
   }
 
