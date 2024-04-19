@@ -91,6 +91,9 @@ getTable <- function(connection,
   # Converts concept columns to factors
   table <- conceptsToFactors(table)
 
+  # Converts date columns to Date type
+  table <- convertDateColumns(table)
+
   # Flags the table as an OMOP CDM table
   class(table) <- c("omop.cdm.table", class(table))
 

@@ -13,5 +13,6 @@ conceptsToFactors(table)
 A data frame with columns that contain "concept_id" in their name converted to factors.
 }
 \description{
-This function takes a data frame and converts all columns that contain "concept_id" in their name to factors.
+This function takes a data frame and converts all columns that contain "concept_id" in their name to factors,
+ignoring case.
 }
