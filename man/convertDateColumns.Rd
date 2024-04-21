@@ -14,6 +14,7 @@ A data frame with columns that contain "_datetime" converted to DateTime type an
 converted to Date type.
 }
 \description{
-This function takes a data frame and converts all columns that contain "_datetime" in their name to DateTime type in R,
-and all columns that contain "_date" in their name to Date type, ignoring case.
+This function takes a data frame and checks each column name by splitting it at each period ('.').
+It then converts columns to DateTime type in R if "_datetime" is found in any part of the name except the first token,
+and to Date type if "_date" is found under the same conditions, ignoring case.
 }
