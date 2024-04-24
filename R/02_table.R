@@ -19,6 +19,7 @@
 #' @param personFilter An optional vector of person IDs for filtering the table.
 #' @param mergeColumn The column name to be used for merging, defaults to "person_id".
 #' @param dropNA Whether to exclude columns with all NA values, defaults to FALSE.
+#' @param sequenceLongitudinal A logical flag indicating whether to sequence longitudinal data, defaults to FALSE.
 #'
 #' @return A data frame containing the filtered table, ready for integration into the DataSHIELD workflow.
 #'
@@ -28,7 +29,8 @@ getTable <- function(connection,
                      columnFilter = NULL,
                      personFilter = NULL,
                      mergeColumn = "person_id",
-                     dropNA = FALSE) {
+                     dropNA = FALSE,
+                     sequenceLongitudinal = FALSE) {
   # Checks if the table exists in the database
   tables <- getTables(connection)
   caseInsensitiveTableName <- findCaseInsensitiveTable(tables, tableName) # Case-insensitive table search
@@ -80,7 +82,7 @@ getTable <- function(connection,
 
   # If a concept ID column is present, reshapes the table
   if (conceptIdColumn %in% names(table)) {
-    table <- reshapeTable(table, conceptIdColumn, mergeColumn)
+    table <- reshapeTable(table, conceptIdColumn, mergeColumn, sequenceLongitudinal)
   }
 
   # If the dropNA flag is set, removes columns with all NA values

@@ -11,7 +11,8 @@ getTable(
   columnFilter = NULL,
   personFilter = NULL,
   mergeColumn = "person_id",
-  dropNA = FALSE
+  dropNA = FALSE,
+  sequenceLongitudinal = FALSE
 )
 }
 \arguments{
@@ -26,6 +27,8 @@ getTable(
 \item{mergeColumn}{The column name to be used for merging, defaults to "person_id".}
 
 \item{dropNA}{Whether to exclude columns with all NA values, defaults to FALSE.}
+
+\item{sequenceLongitudinal}{A logical flag indicating whether to sequence longitudinal data, defaults to FALSE.}
 
 \item{resource}{A resource object representing the database connection.}
 }

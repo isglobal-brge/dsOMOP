@@ -4,7 +4,7 @@
 \alias{reshapeTable}
 \title{Reshape Table to Wide Format}
 \usage{
-reshapeTable(table, conceptIdColumn, mergeColumn)
+reshapeTable(table, conceptIdColumn, mergeColumn, sequenceLongitudinal = FALSE)
 }
 \arguments{
 \item{table}{A data frame representing the table to be reshaped.}
@@ -12,6 +12,8 @@ reshapeTable(table, conceptIdColumn, mergeColumn)
 \item{conceptIdColumn}{A string specifying the name of the concept ID column, which characterizes the types of elements.}
 
 \item{mergeColumn}{A string specifying the name of the merge column, typically "person_id", used as the identifier variable.}
+
+\item{sequenceLongitudinal}{A logical flag indicating whether to sequence longitudinal data, defaults to FALSE.}
 }
 \value{
 A data frame in wide format with standardized and sequenced column names based on the concept ID column.

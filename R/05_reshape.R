@@ -16,17 +16,20 @@
 #' @param table A data frame representing the table to be reshaped.
 #' @param conceptIdColumn A string specifying the name of the concept ID column, which characterizes the types of elements.
 #' @param mergeColumn A string specifying the name of the merge column, typically "person_id", used as the identifier variable.
-#'
+#' @param sequenceLongitudinal A logical flag indicating whether to sequence longitudinal data, defaults to FALSE.
+#' 
 #' @return A data frame in wide format with standardized and sequenced column names based on the concept ID column.
 #'
-reshapeTable <- function(table, conceptIdColumn, mergeColumn) {
+reshapeTable <- function(table, conceptIdColumn, mergeColumn, sequenceLongitudinal = FALSE) {
   # Checks if the merge column is present in the table
   if (!mergeColumn %in% names(table)) {
     stop(paste0("The column '", mergeColumn, "' is not present in the table."))
   }
 
   # Sequences repeated data in the concept ID colum in case there is longitudinal data
-  table <- sequenceColumn(table, conceptIdColumn, mergeColumn)
+  if(sequenceLongitudinal) {
+    table <- sequenceColumn(table, conceptIdColumn, mergeColumn)
+  }
 
   table <- dsBase::reShapeDS(
     data.name = "table",
