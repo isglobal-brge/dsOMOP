@@ -12,7 +12,7 @@ getTable(
   personFilter = NULL,
   mergeColumn = "person_id",
   dropNA = FALSE,
-  sequenceLongitudinal = FALSE
+  wideLongitudinal = FALSE
 )
 }
 \arguments{
@@ -28,7 +28,9 @@ getTable(
 
 \item{dropNA}{Whether to exclude columns with all NA values, defaults to FALSE.}
 
-\item{sequenceLongitudinal}{A logical flag indicating whether to sequence longitudinal data, defaults to FALSE.}
+\item{wideLongitudinal}{A logical flag indicating whether to reshape the longitudinal data entries to a wide format
+with numerically suffixed columns if it detects the presence of longitudinal data, defaults
+to FALSE.}
 
 \item{resource}{A resource object representing the database connection.}
 }

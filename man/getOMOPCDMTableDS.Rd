@@ -11,7 +11,8 @@ getOMOPCDMTableDS(
   columnFilter = NULL,
   personFilter = NULL,
   mergeColumn = "person_id",
-  dropNA = FALSE
+  dropNA = FALSE,
+  wideLongitudinal = FALSE
 )
 }
 \arguments{
@@ -28,6 +29,9 @@ getOMOPCDMTableDS(
 \item{mergeColumn}{(Optional) The name of the column used for merging tables, defaults to "person_id".}
 
 \item{dropNA}{(Optional) A logical flag indicating whether to drop columns with all NA values, defaults to FALSE.}
+
+\item{wideLongitudinal}{(Optional) A logical flag indicating whether to reshape longitudinal data to a wide format,
+defaults to FALSE.}
 }
 \value{
 A data frame representing the processed table.

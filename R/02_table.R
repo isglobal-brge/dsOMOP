@@ -19,7 +19,9 @@
 #' @param personFilter An optional vector of person IDs for filtering the table.
 #' @param mergeColumn The column name to be used for merging, defaults to "person_id".
 #' @param dropNA Whether to exclude columns with all NA values, defaults to FALSE.
-#' @param sequenceLongitudinal A logical flag indicating whether to sequence longitudinal data, defaults to FALSE.
+#' @param wideLongitudinal A logical flag indicating whether to reshape the longitudinal data entries to a wide format 
+#'                         with numerically suffixed columns if it detects the presence of longitudinal data, defaults 
+#'                         to FALSE.
 #'
 #' @return A data frame containing the filtered table, ready for integration into the DataSHIELD workflow.
 #'
@@ -30,7 +32,7 @@ getTable <- function(connection,
                      personFilter = NULL,
                      mergeColumn = "person_id",
                      dropNA = FALSE,
-                     sequenceLongitudinal = FALSE) {
+                     wideLongitudinal = FALSE) {
   # Checks if the table exists in the database
   tables <- getTables(connection)
   caseInsensitiveTableName <- findCaseInsensitiveTable(tables, tableName) # Case-insensitive table search
@@ -82,7 +84,7 @@ getTable <- function(connection,
 
   # If a concept ID column is present, reshapes the table
   if (conceptIdColumn %in% names(table)) {
-    table <- reshapeTable(table, conceptIdColumn, mergeColumn, sequenceLongitudinal)
+    table <- reshapeTable(table, conceptIdColumn, mergeColumn, wideLongitudinal)
   }
 
   # If the dropNA flag is set, removes columns with all NA values
@@ -114,6 +116,8 @@ getTable <- function(connection,
 #' @param personFilter (Optional) A vector of person IDs to filter the table by specific individuals.
 #' @param mergeColumn (Optional) The name of the column used for merging tables, defaults to "person_id".
 #' @param dropNA (Optional) A logical flag indicating whether to drop columns with all NA values, defaults to FALSE.
+#' @param wideLongitudinal (Optional) A logical flag indicating whether to reshape longitudinal data to a wide format,
+#'                             defaults to FALSE.
 #'
 #' @return A data frame representing the processed table.
 #'
@@ -125,14 +129,15 @@ getOMOPCDMTableDS <- function(resource,
                               columnFilter = NULL,
                               personFilter = NULL,
                               mergeColumn = "person_id",
-                              dropNA = FALSE) {
+                              dropNA = FALSE,
+                              wideLongitudinal = FALSE) {
   # Opens a connection to the database
   connection <- getConnection(resource)
 
   # Attempts to retrieve the table from the database
   tryCatch(
     {
-      table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA)
+      table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA, wideLongitudinal)
 
       # In case of an error, closes the database connection and propagates the error
     },
