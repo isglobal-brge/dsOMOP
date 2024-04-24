@@ -94,9 +94,6 @@ getTable <- function(connection,
   # Converts date columns to Date type
   table <- convertDateColumns(table)
 
-  # Flags the table as an OMOP CDM table
-  class(table) <- c("omop.cdm.table", class(table))
-
   return(table)
 }
 
