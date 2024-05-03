@@ -117,9 +117,11 @@ getEmptyColumns <- function(connection, tableName) {
 #'
 closeConnection <- function(connection, error = NULL) {
   # Checks if the connection is valid and disconnects if necessary
-  if (!is.null(connection) && DBI::dbIsValid(connection)) {
-    DBI::dbDisconnect(connection)
-  }
+  try({
+    if (!is.null(connection)) {
+      DBI::dbDisconnect(connection)
+    }
+  }, silent = TRUE)
 
   # If an error message is provided, throws the error
   if (!is.null(error)) {
