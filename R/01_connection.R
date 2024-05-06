@@ -83,20 +83,18 @@ getColumns <- function(connection, tableName, dropNA = FALSE, caseInsensitive = 
 #' @return A character vector containing the names of all completely empty columns in the table.
 #'
 getEmptyColumns <- function(connection, tableName) {
-  emptyColumns <- vector("list") # Initializes an empty list to store the names of empty columnss
+  emptyColumns <- vector("list") # Initializes an empty list to store the names of empty columns
   columns <- getColumns(connection, tableName)
 
-  for (column in columns) {
-    columnCount <- DBI::dbGetQuery(
-      connection,
+  # Create a tbl object from the database connection and table name
+  tableRef <- dplyr::tbl(connection, dplyr::sql(tableName))
 
-      # Count the number of non-empty values in the column
-      paste0(
-        "SELECT COUNT(", column, ") FROM ", tableName,
-        " WHERE ", column, " IS NOT NULL AND",
-        " CAST(", column, " AS TEXT) != ''"
-      )
-    )$count
+  for (column in columns) {
+    # Use dplyr to count non-empty values in the column
+    columnCount <- tableRef %>%
+      dplyr::summarize(count = sum(!is.na(!!dplyr::sym(column)) & as.character(!!dplyr::sym(column)) != "")) %>%
+      dplyr::collect() %>%
+      dplyr::pull(count)
 
     # If the column is empty, adds it to the list of empty columns
     if (columnCount == 0) {
