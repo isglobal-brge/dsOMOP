@@ -94,12 +94,12 @@ getConcepts <- function(connection, conceptIds, conceptTable) {
   conceptNameColumnName <- findCaseInsensitiveColumn(conceptTableColumns, "concept_name")
 
   query <- sprintf(
-    "SELECT \"%s\", \"%s\" FROM \"%s\" WHERE \"%s\" IN (%s)",
-    conceptIdColumnName,
-    conceptNameColumnName,
-    conceptTable,
-    conceptIdColumnName,
-    paste(conceptIds, collapse = ", ")
+    "SELECT %s, %s FROM %s WHERE %s IN (%s)",
+    DBI::dbQuoteIdentifier(connection, conceptIdColumnName),
+    DBI::dbQuoteIdentifier(connection, conceptNameColumnName),
+    DBI::dbQuoteIdentifier(connection, conceptTable),
+    DBI::dbQuoteIdentifier(connection, conceptIdColumnName),
+    paste(DBI::dbQuoteLiteral(connection, conceptIds), collapse = ", ")
   )
 
   concepts <- DBI::dbGetQuery(connection, query)
