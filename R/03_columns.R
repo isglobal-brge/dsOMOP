@@ -48,26 +48,6 @@ getConceptIdColumn <- function(tableName) {
 }
 
 
-#' Get ID Column Name
-#'
-#' This function generates the name of the ID column based on the provided table name.
-#' It removes the suffixes "_occurrence" and "_exposure" from the table name, if present, and appends "_id"
-#' to form the ID column name. This is useful for dynamically identifying the ID column
-#' in tables where the base name of the table is used to construct column names.
-#'
-#' @param tableName The name of the table for which to generate the ID column name.
-#'
-#' @return A string containing the name of the ID column.
-#'
-getIdColumn <- function(tableName) {
-  tableName <- tolower(tableName)
-  baseName <- gsub("_occurrence", "", tableName)
-  baseName <- gsub("_exposure", "", baseName)
-  idColumn <- paste0(baseName, "_id")
-  return(idColumn)
-}
-
-
 #' Find Case-Insensitive Column
 #'
 #' Given a list of column names, this function searches for a column whose name matches a given target in a case-insensitive manner.
