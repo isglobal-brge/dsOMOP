@@ -30,6 +30,15 @@ getPersonIds <- function(table) {
 #'
 getSubsetFilter <- function() {
   nFilter <- dsBase::listDisclosureSettingsDS()
-  subsetFilter <- nFilter$nfilter.subset
+  subsetFilter <- 0
+  
+  if (!is.null(nFilter$nfilter.subset)) {
+    subsetFilter <- nFilter$nfilter.subset
+  } else if (!is.null(nFilter$datashield.nfilter.subset)) {
+    subsetFilter <- nFilter$datashield.nfilter.subset
+  } else if (!is.null(nFilter$default.nfilter.subset)) {
+    subsetFilter <- nFilter$default.nfilter.subset
+  }
+  
   return(subsetFilter)
 }
