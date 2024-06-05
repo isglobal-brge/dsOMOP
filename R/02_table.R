@@ -73,9 +73,28 @@ getTable <- function(connection,
   # If it is a person-related table, checks if the count of person IDs is lower than nfilter.subset
   if ("person_id" %in% columns) {
     subsetFilter <- getSubsetFilter()
-    personCount <- length(unique(table$person_id))
-    if (personCount < subsetFilter) {
-      stop(paste0("The count of resulting person IDs is lower than the subset filter (nfilter.subset = ", subsetFilter, ")."))
+    conceptIdColumn <- getConceptIdColumn(tableName)
+    
+    if (conceptIdColumn %in% columns) {
+      # Group by concept ID and count unique person IDs for each concept
+      conceptPersonCounts <- table %>%
+        dplyr::group_by(!!sym(conceptIdColumn)) %>%
+        dplyr::summarize(personCount = n_distinct(person_id)) %>%
+        dplyr::filter(personCount >= subsetFilter)
+      
+      # Filter the table to exclude rows with concept IDs that don't pass the filter
+      table <- table %>%
+        dplyr::filter(!!sym(conceptIdColumn) %in% conceptPersonCounts[[conceptIdColumn]])
+      
+      # If the table is empty after the subset filter, stop the execution
+      if (nrow(table) == 0) {
+        stop(paste0("The resulting table is empty after applying the subset filter (nfilter.subset = ", subsetFilter, ")."))
+      }
+    } else {
+      personCount <- length(unique(table$person_id))
+      if (personCount < subsetFilter) {
+        stop(paste0("The count of resulting person IDs is lower than the subset filter (nfilter.subset = ", subsetFilter, ")."))
+      }
     }
   }
 
