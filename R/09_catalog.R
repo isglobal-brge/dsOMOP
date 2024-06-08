@@ -89,6 +89,9 @@ getConceptCatalogDS <- function(resource, tableName) {
   # Opens a connection to the database
   connection <- getConnection(resource)
 
+  # Gets the nfilter subset value from the DataSHIELD configuration
+  subsetFilter <- getSubsetFilter()
+
   # Attempts to retrieve the concept catalog from the specified table
   tryCatch(
     {
@@ -113,8 +116,11 @@ getConceptCatalogDS <- function(resource, tableName) {
         stop(paste0("The column '", conceptIdColumn, "' does not exist in the table '", tableName, "'."))
       }
 
-      # Retrieves the unique concept IDs from the table
+      # Retrieves the unique concept IDs from the table that have a higher number of unique person IDs than the nFilter value
       query <- paste0("SELECT DISTINCT ", DBI::dbQuoteIdentifier(connection, conceptIdColumn), " FROM ", DBI::dbQuoteIdentifier(connection, tableName))
+      if ("person_id" %in% columns) {
+        query <- paste0(query, " WHERE ", conceptIdColumn, " IN (SELECT ", conceptIdColumn, " FROM ", DBI::dbQuoteIdentifier(connection, tableName), " GROUP BY ", conceptIdColumn, " HAVING COUNT(DISTINCT person_id) >= ", subsetFilter, ")")
+      }
       conceptIds <- DBI::dbGetQuery(connection, query)
       conceptIds <- conceptIds[[1]]
 
