@@ -140,6 +140,12 @@ opal.resource_create(o,
 )
 ```
 
+## Community development and extensions
+
+The modular design of `dsOMOP` supports the development of community-driven extensions to enhance its functionality. This design allows users to easily extend the package’s capabilities to support additional database management systems (DBMS) and expand its core functionalities.
+
+One example is the [`dsOMOP.oracle`](https://github.com/isglobal-brge/dsOMOP.oracle) package, which incorporates the use of [`oracle.resourcer`](https://github.com/isglobal-brge/oracle.resourcer) (an extension of the [`resourcer`](https://cran.r-project.org/package=resourcer) package that enables interaction with Oracle databases), allowing `dsOMOP` to work with OMOP CDM databases in Oracle.
+
 ## Acknowledgements
 
 - The development of dsOMOP has been supported by the **[RadGen4COPD](https://github.com/isglobal-brge/RadGen4COPD)**, **[P4COPD](https://www.clinicbarcelona.org/en/projects-and-clinical-assays/detail/p4copd-prediction-prevention-personalized-and-precision-management-of-copd-in-young-adults)**, and **[DATOS-CAT](https://datos-cat.github.io/LandingPage)** projects. These collaborations have not only provided essential financial backing but have also affirmed the project's relevance and application in significant research endeavors.
