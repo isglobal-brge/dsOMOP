@@ -20,7 +20,7 @@ Depends:
 Imports:
     DBI
 Remotes:
-    datashield/dsBase
+    github::datashield/dsBase
 AssignMethods:
     getOMOPCDMTableDS
 AggregateMethods:
