@@ -32,6 +32,12 @@ OMOPCDMResourceClient <- R6::R6Class(
         stop("DBI resource connector cannot be found: either provide one or register one.")
       }
     },
+    
+    #' @description
+    #' Retrieves an active database connection. If no connection exists, it creates one using
+    #' the DBI connector and sets it for future use. This ensures that database operations are
+    #' performed over a valid connection.
+    #' @return A DBI connection object.
     getConnection = function() {
       connection <- super$getConnection()
       if (is.null(connection)) {
@@ -44,6 +50,10 @@ OMOPCDMResourceClient <- R6::R6Class(
       }
       return(connection)
     },
+    
+    #' @description
+    #' Extracts the schema part from the resource URL if it exists.
+    #' @return The schema as a string, or NULL if no schema is specified.
     getSchema = function() {
       resource <- super$getResource()
       # Extract the schema part if it exists
@@ -53,31 +63,24 @@ OMOPCDMResourceClient <- R6::R6Class(
       }
       return(schema)
     },
+    
+    #' @description
+    #' Extracts the DBMS part from the resource URL.
+    #' @return The DBMS as a string.
     getDBMS = function() {
       resource <- super$getResource()
+      # Extract the DBMS part from the resource URL
       dbms <- sub("^(.*)://.*$", "\\1", resource$url)
       return(dbms)
     },
-    getSchemaQuery = function() {
-      schema <- self$getSchema()
-      dbms <- self$getDBMS()
-      if (!is.null(schema) && !is.null(dbms) && dbms %in% names(self$schemaQueries)) {
-        return(gsub("\\{schema\\}", schema, self$schemaQueries[[dbms]]))
-      }
-      return(NULL)
-    },
+
     close = function() {
       connection <- super$getConnection()
       if (!is.null(connection)) {
         private$.dbi.connector$closeDBIConnection(connection)
         super$setConnection(NULL)
       }
-    },
-    schemaQueries = list(
-      "postgresql" = "SET search_path TO {schema}",
-      "mysql" = "USE {schema}",
-      "mariadb" = "USE {schema}"
-    )
+    }
   ),
   private = list(
     .dbi.connector = NULL

@@ -15,12 +15,22 @@ getConnection <- function(resource) {
     stop("The provided resource is not an OMOP CDM database.")
   }
 
+  # Get the connection
   connection <- resource$getConnection()
 
-  # Set the schema, if provided
+  # Get the schema
   schema <- resource$getSchema()
+
+  # If a schema is provided, set the schema
   if (!is.null(schema)) {
-    DBI::dbExecute(connection, resource$getSchemaQuery())
+    # Get the DBMS
+    dbms <- resource$getDBMS()
+
+    # Get the schema query
+    schemaQuery <- getSchemaQuery(dbms)
+
+    # Set the schema
+    DBI::dbExecute(connection, fillSchemaQuery(schema, schemaQuery))
   }
   
   return(connection)

@@ -2,7 +2,12 @@
 
 export(checkConnectionDS)
 export(checkPrivacyControlLevelDS)
+export(fillSchemaQuery)
 export(getColumnCatalogDS)
 export(getConceptCatalogDS)
 export(getOMOPCDMTableDS)
+export(getSchemaQueries)
+export(getSchemaQuery)
 export(getTableCatalogDS)
+export(registerSchemaQueries)
+export(registerSchemaQuery)

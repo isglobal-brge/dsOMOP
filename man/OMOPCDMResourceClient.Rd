@@ -4,6 +4,11 @@
 \alias{OMOPCDMResourceClient}
 \title{OMOP CDM Resource Client}
 \description{
+OMOP CDM Resource Client
+
+OMOP CDM Resource Client
+}
+\details{
 This class is designed to manage connections and interactions with OMOP Common Data Model (CDM) resources.
 It extends the functionality of the generic ResourceClient class to specifically support OMOP CDM databases.
 The class provides methods to initialize the resource client with a specific DBI connector if provided,
@@ -52,7 +57,6 @@ ensures that resources are properly released when the connection is no longer ne
 \item \href{#method-OMOPCDMResourceClient-getConnection}{\code{OMOPCDMResourceClient$getConnection()}}
 \item \href{#method-OMOPCDMResourceClient-getSchema}{\code{OMOPCDMResourceClient$getSchema()}}
 \item \href{#method-OMOPCDMResourceClient-getDBMS}{\code{OMOPCDMResourceClient$getDBMS()}}
-\item \href{#method-OMOPCDMResourceClient-getSchemaQuery}{\code{OMOPCDMResourceClient$getSchemaQuery()}}
 \item \href{#method-OMOPCDMResourceClient-close}{\code{OMOPCDMResourceClient$close()}}
 \item \href{#method-OMOPCDMResourceClient-clone}{\code{OMOPCDMResourceClient$clone()}}
 }
@@ -81,37 +85,42 @@ ensures that resources are properly released when the connection is no longer ne
 \if{html}{\out{<a id="method-OMOPCDMResourceClient-getConnection"></a>}}
 \if{latex}{\out{\hypertarget{method-OMOPCDMResourceClient-getConnection}{}}}
 \subsection{Method \code{getConnection()}}{
+Retrieves an active database connection. If no connection exists, it creates one using
+the DBI connector and sets it for future use. This ensures that database operations are
+performed over a valid connection.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{OMOPCDMResourceClient$getConnection()}\if{html}{\out{</div>}}
 }
 
+\subsection{Returns}{
+A DBI connection object.
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-OMOPCDMResourceClient-getSchema"></a>}}
 \if{latex}{\out{\hypertarget{method-OMOPCDMResourceClient-getSchema}{}}}
 \subsection{Method \code{getSchema()}}{
+Extracts the schema part from the resource URL if it exists.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{OMOPCDMResourceClient$getSchema()}\if{html}{\out{</div>}}
 }
 
+\subsection{Returns}{
+The schema as a string, or NULL if no schema is specified.
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-OMOPCDMResourceClient-getDBMS"></a>}}
 \if{latex}{\out{\hypertarget{method-OMOPCDMResourceClient-getDBMS}{}}}
 \subsection{Method \code{getDBMS()}}{
+Extracts the DBMS part from the resource URL.
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{OMOPCDMResourceClient$getDBMS()}\if{html}{\out{</div>}}
 }
 
+\subsection{Returns}{
+The DBMS as a string.
 }
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-OMOPCDMResourceClient-getSchemaQuery"></a>}}
-\if{latex}{\out{\hypertarget{method-OMOPCDMResourceClient-getSchemaQuery}{}}}
-\subsection{Method \code{getSchemaQuery()}}{
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{OMOPCDMResourceClient$getSchemaQuery()}\if{html}{\out{</div>}}
-}
-
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-OMOPCDMResourceClient-close"></a>}}
