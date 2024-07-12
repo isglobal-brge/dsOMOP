@@ -16,11 +16,11 @@ getConnection <- function(resource) {
   }
 
   connection <- resource$getConnection()
+
+  # Set the schema, if provided
   schema <- resource$getSchema()
-  
-  # Set the search path to the specified schema
   if (!is.null(schema)) {
-    DBI::dbExecute(connection, paste0("SET search_path TO ", schema))
+    DBI::dbExecute(connection, resource$getSchemaQuery())
   }
   
   return(connection)

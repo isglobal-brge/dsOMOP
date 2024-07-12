@@ -53,13 +53,31 @@ OMOPCDMResourceClient <- R6::R6Class(
       }
       return(schema)
     },
+    getDBMS = function() {
+      resource <- super$getResource()
+      dbms <- sub("^(.*)://.*$", "\\1", resource$url)
+      return(dbms)
+    },
+    getSchemaQuery = function() {
+      schema <- self$getSchema()
+      dbms <- self$getDBMS()
+      if (!is.null(schema) && !is.null(dbms) && dbms %in% names(self$schemaQueries)) {
+        return(gsub("\\{schema\\}", schema, self$schemaQueries[[dbms]]))
+      }
+      return(NULL)
+    },
     close = function() {
       connection <- super$getConnection()
       if (!is.null(connection)) {
         private$.dbi.connector$closeDBIConnection(connection)
         super$setConnection(NULL)
       }
-    }
+    },
+    schemaQueries = list(
+      "postgresql" = "SET search_path TO {schema}",
+      "mysql" = "USE {schema}",
+      "mariadb" = "USE {schema}"
+    )
   ),
   private = list(
     .dbi.connector = NULL
