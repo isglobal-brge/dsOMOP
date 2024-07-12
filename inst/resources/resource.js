@@ -48,6 +48,13 @@ var dsOMOP = {
               type: "string",
               title: "Database name",
             },
+            {
+              key: "schema",
+              type: "string",
+              title: "Schema (optional)",
+              description:
+                "If not provided, the default schema will be used.",
+            },
           ],
           required: ["driver", "host", "port", "db"],
         },
@@ -81,7 +88,8 @@ var dsOMOP = {
         ":" +
         params.port +
         "/" +
-        params.db;
+        params.db +
+        (params.schema ? "?schema=" + params.schema : "");
       return {
         name: name,
         url: resourceUrl,

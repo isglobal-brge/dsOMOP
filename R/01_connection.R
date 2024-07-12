@@ -3,6 +3,7 @@
 #' Retrieves an active database connection from the specified OMOP CDM resource client.
 #' If no connection exists, it creates one using the DBI connector and sets it for future use.
 #' This ensures that database operations are performed over a valid connection.
+#' Additionally, it sets the search path to the schema specified in the resource, if present.
 #'
 #' @param resource An object of class OMOPCDMResourceClient representing the OMOP CDM resource client.
 #'
@@ -15,6 +16,13 @@ getConnection <- function(resource) {
   }
 
   connection <- resource$getConnection()
+  schema <- resource$getSchema()
+  
+  # Set the search path to the specified schema
+  if (!is.null(schema)) {
+    DBI::dbExecute(connection, paste0("SET search_path TO ", schema))
+  }
+  
   return(connection)
 }
 

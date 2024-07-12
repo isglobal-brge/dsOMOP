@@ -50,6 +50,7 @@ ensures that resources are properly released when the connection is no longer ne
 \itemize{
 \item \href{#method-OMOPCDMResourceClient-new}{\code{OMOPCDMResourceClient$new()}}
 \item \href{#method-OMOPCDMResourceClient-getConnection}{\code{OMOPCDMResourceClient$getConnection()}}
+\item \href{#method-OMOPCDMResourceClient-getSchema}{\code{OMOPCDMResourceClient$getSchema()}}
 \item \href{#method-OMOPCDMResourceClient-close}{\code{OMOPCDMResourceClient$close()}}
 \item \href{#method-OMOPCDMResourceClient-clone}{\code{OMOPCDMResourceClient$clone()}}
 }
@@ -80,6 +81,15 @@ ensures that resources are properly released when the connection is no longer ne
 \subsection{Method \code{getConnection()}}{
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{OMOPCDMResourceClient$getConnection()}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-OMOPCDMResourceClient-getSchema"></a>}}
+\if{latex}{\out{\hypertarget{method-OMOPCDMResourceClient-getSchema}{}}}
+\subsection{Method \code{getSchema()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{OMOPCDMResourceClient$getSchema()}\if{html}{\out{</div>}}
 }
 
 }

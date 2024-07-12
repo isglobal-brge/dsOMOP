@@ -36,10 +36,22 @@ OMOPCDMResourceClient <- R6::R6Class(
       connection <- super$getConnection()
       if (is.null(connection)) {
         resource <- super$getResource()
+        # Exclude the schema part if it exists
+        resourceUrl <- sub("\\?schema=.*$", "", resource$url)
+        resource$url <- resourceUrl
         connection <- private$.dbi.connector$createDBIConnection(resource)
         super$setConnection(connection)
       }
       return(connection)
+    },
+    getSchema = function() {
+      resource <- super$getResource()
+      # Extract the schema part if it exists
+      schema <- sub(".*\\?schema=(.*)$", "\\1", resource$url)
+      if (schema == resource$url) {
+        schema <- NULL
+      }
+      return(schema)
     },
     close = function() {
       connection <- super$getConnection()

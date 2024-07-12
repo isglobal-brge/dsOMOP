@@ -16,4 +16,5 @@ A DBI database connection object.
 Retrieves an active database connection from the specified OMOP CDM resource client.
 If no connection exists, it creates one using the DBI connector and sets it for future use.
 This ensures that database operations are performed over a valid connection.
+Additionally, it sets the search path to the schema specified in the resource, if present.
 }
