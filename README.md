@@ -34,12 +34,12 @@ This privacy control setting is managed by the server administrator. For more in
 #### Changing privacy control level from the R console
 
 If you are using an Opal server and have access to an administrator account, you can access the server's settings using the `opalr` package. If you do not have the `opalr` package installed, you can install it using the following command:
-```
+```R
 install.packages("opalr")
 ```
 
 To create a login object for the server, change the following code to match your specific server details and administrator credentials:
-```
+```R
 library(opalr)
 
 # Change the URL and credentials to match your Opal server and administrator account!
@@ -47,12 +47,12 @@ o <- opal.login(username = "administrator", password = "password", url = "https:
 ```
 
 To verify the server settings and ensure that the `privacyControlLevel` is set to either `permissive` or `banana`, you can use the following code. This will fetch the current privacy settings from the server and print them out:
-```
+```R
 dsadmin.get_options(o)
 ```
 
 If the setting is not as required, you should then set the privacy control level to `permissive` using the following code:
-```
+```R
 dsadmin.set_option(o, "datashield.privacyControlLevel", "permissive")
 ```
 
@@ -67,12 +67,12 @@ If you prefer using a graphical user interface (GUI) provided by your server for
 #### Installing from the R console
 
 If you are using an Opal server and have access to an administrator account, you can install the package from the R console using the `opalr` package. If you do not have the `opalr` package installed, you can install it using the following command:
-```
+```R
 install.packages("opalr")
 ```
 
 To create a login object for the server, change the following code to match your specific server details and administrator credentials:
-```
+```R
 library(opalr)
 
 # Change the URL and credentials to match your Opal server and administrator account!
@@ -80,7 +80,7 @@ o <- opal.login(username = "administrator", password = "password", url = "https:
 ```
 
 You can then install the `dsOMOP` package using the following command:
-```
+```R
 dsadmin.install_github_package(o, 'dsOMOP', username='isglobal-brge')
 ```
 
@@ -109,12 +109,12 @@ To use it, simply access the management dashboard of a project and go to the `Re
 ### Creating resources from the R console
 
 If you are using an Opal server and have access to an administrator account, you can create the OMOP CDM resources from the R console using the `opalr` package. If you do not have the `opalr` package installed, you can install it using the following command:
-```
+```R
 install.packages("opalr")
 ```
 
 To create a login object for the server, change the following code to match your specific server details and administrator credentials:
-```
+```R
 library(opalr)
 
 # Change the URL and credentials to match your Opal server and administrator account!
@@ -122,7 +122,7 @@ o <- opal.login(username = "administrator", password = "password", url = "https:
 ```
 
 You can then use the following function to create an OMOP CDM resource:
-```
+```R
 driver <- "postgresql"
 host <- "localhost"
 port <- 5432
