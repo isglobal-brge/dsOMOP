@@ -1,13 +1,48 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import Confetti from 'react-confetti';
 
 function Acknowledgements() {
+  const [showConfetti, setShowConfetti] = useState(true);
+  const [windowDimensions, setWindowDimensions] = useState({ width: window.innerWidth, height: document.documentElement.scrollHeight });
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowConfetti(false);
+    }, 5000); // The confetti will show for 5 seconds
+
+    const handleResize = () => {
+      setWindowDimensions({
+        width: window.innerWidth,
+        height: document.documentElement.scrollHeight
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
   const justifiedTextStyle = {
-    textAlign: 'justify'
+    textAlign: 'justify',
+    textJustify: 'inter-word'
   };
 
   return (
     <div className="acknowledgements">
-      <h2>Acknowledgements 🤗</h2>
+      {showConfetti && (
+        <div className="confetti-container">
+          <Confetti
+            width={windowDimensions.width}
+            height={windowDimensions.height}
+            recycle={false}
+            numberOfPieces={200}
+          />
+        </div>
+      )}
+      <h2 className="section-title">Acknowledgements</h2>
       <div className="acknowledgements-grid">
         <div className="acknowledgement-card">
           <div className="card-content">
