@@ -22,7 +22,7 @@ function Footer() {
           </a>
         </div>
         <div className="footer-copyright">
-          © {new Date().getFullYear()} dsOMOP.<br />
+          © 2024 dsOMOP.<br />
           This project is licensed under the <Link to="/license" className="license-link"><strong>MIT License</strong></Link>.
         </div>
       </div>

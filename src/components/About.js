@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { FaDatabase, FaShieldAlt, FaLock, FaExchangeAlt, FaPuzzlePiece, FaSearch, FaUser, FaServer, FaFilter, FaChartBar, FaCheckCircle, FaArrowRight, FaCogs } from 'react-icons/fa';
+import { FaDatabase, FaShieldAlt, FaLock, FaExchangeAlt, FaPuzzlePiece, FaSearch, FaUser, FaServer, FaFilter, FaChartBar, FaCheckCircle, FaArrowRight, FaCogs, FaUserShield } from 'react-icons/fa';
 
 function About() {
   return (
@@ -67,9 +67,9 @@ function About() {
             <p>Retrieved data is transformed into a format compatible with DataSHIELD's analytical tools.</p>
           </div>
           <div className="card process-card">
-            <FaLock className="card-icon" />
+            <FaUserShield className="card-icon" />
             <h4>5. Privacy Checks</h4>
-            <p>Disclosure control measures are applied to ensure data privacy and compliance with DataSHIELD's security model.</p>
+            <p>Disclosure control measures are applied to ensure patient data privacy and compliance with DataSHIELD's security model.</p>
           </div>
           <div className="card process-card">
             <FaChartBar className="card-icon" />
