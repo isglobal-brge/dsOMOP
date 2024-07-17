@@ -18,7 +18,7 @@ function Authors() {
       }
     },
     {
-      name: 'Juan R. González',
+      name: 'Juan R González',
       photo: juanrPhoto,
       links: {
         github: 'https://github.com/isglobal-brge',
