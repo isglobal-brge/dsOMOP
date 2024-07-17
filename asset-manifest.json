@@ -1,7 +1,7 @@
 {
   "files": {
-    "main.css": "/dsOMOP/static/css/main.2c45c010.css",
-    "main.js": "/dsOMOP/static/js/main.4d6c7a86.js",
+    "main.css": "/dsOMOP/static/css/main.8fb43ca7.css",
+    "main.js": "/dsOMOP/static/js/main.351d04d9.js",
     "static/js/453.aa434637.chunk.js": "/dsOMOP/static/js/453.aa434637.chunk.js",
     "static/media/logo.png": "/dsOMOP/static/media/logo.471583bd516a8db546f2.png",
     "static/media/xavi.jpeg": "/dsOMOP/static/media/xavi.8e5c5560043d0c8fba2f.jpeg",
@@ -9,12 +9,12 @@
     "static/media/isglobal-logo.png": "/dsOMOP/static/media/isglobal-logo.c86bb7fcedd290761048.png",
     "static/media/juanr.jpg": "/dsOMOP/static/media/juanr.1c1c23844fc6780eee45.jpg",
     "index.html": "/dsOMOP/index.html",
-    "main.2c45c010.css.map": "/dsOMOP/static/css/main.2c45c010.css.map",
-    "main.4d6c7a86.js.map": "/dsOMOP/static/js/main.4d6c7a86.js.map",
+    "main.8fb43ca7.css.map": "/dsOMOP/static/css/main.8fb43ca7.css.map",
+    "main.351d04d9.js.map": "/dsOMOP/static/js/main.351d04d9.js.map",
     "453.aa434637.chunk.js.map": "/dsOMOP/static/js/453.aa434637.chunk.js.map"
   },
   "entrypoints": [
-    "static/css/main.2c45c010.css",
-    "static/js/main.4d6c7a86.js"
+    "static/css/main.8fb43ca7.css",
+    "static/js/main.351d04d9.js"
   ]
 }
