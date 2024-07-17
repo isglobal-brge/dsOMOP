@@ -1,13 +1,28 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
-const CustomLink = ({ children, to, ...props }) => {
-  const handleClick = () => {
-    if (to.startsWith('/')) {
-      const mainElement = document.querySelector('main');
-      if (mainElement) {
-        mainElement.scrollIntoView({ behavior: 'smooth' });
-      }
+const CustomLink = ({ children, to, setIsOpen, ...props }) => {
+  const location = useLocation();
+
+  const handleClick = (e) => {
+    if (to === location.pathname) {
+      e.preventDefault();
+    }
+
+    // Perform the scroll action
+    const mainElement = document.querySelector('main');
+    if (mainElement) {
+      mainElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // Close the dropdown menu
+    if (setIsOpen) {
+      setIsOpen(false);
+    }
+
+    // Call the original onClick handler if provided
+    if (props.onClick) {
+      props.onClick(e);
     }
   };
 

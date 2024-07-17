@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import CustomLink from './CustomLink';
 import { FaHome, FaBox, FaUsers, FaFileAlt, FaHandsHelping, FaBars } from 'react-icons/fa';
 
 function Navbar() {
@@ -29,11 +29,11 @@ function Navbar() {
         <FaBars style={{ color: isOpen ? 'orange' : 'white' }} />
       </button>
       <ul className={`navbar-menu ${isOpen ? 'open' : ''}`}>
-        <li><Link to="/" onClick={toggleMenu}><FaHome /> About</Link></li>
-        <li><Link to="/packages" onClick={toggleMenu}><FaBox /> Packages</Link></li>
-        <li><Link to="/authors" onClick={toggleMenu}><FaUsers /> Authors</Link></li>
-        <li><Link to="/license" onClick={toggleMenu}><FaFileAlt /> License</Link></li>
-        <li><Link to="/acknowledgements" onClick={toggleMenu}><FaHandsHelping /> Acknowledgements</Link></li>
+        <li><CustomLink to="/" setIsOpen={setIsOpen}><FaHome /> About</CustomLink></li>
+        <li><CustomLink to="/packages" setIsOpen={setIsOpen}><FaBox /> Packages</CustomLink></li>
+        <li><CustomLink to="/authors" setIsOpen={setIsOpen}><FaUsers /> Authors</CustomLink></li>
+        <li><CustomLink to="/license" setIsOpen={setIsOpen}><FaFileAlt /> License</CustomLink></li>
+        <li><CustomLink to="/acknowledgements" setIsOpen={setIsOpen}><FaHandsHelping /> Acknowledgements</CustomLink></li>
       </ul>
     </nav>
   );

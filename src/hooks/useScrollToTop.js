@@ -3,20 +3,18 @@ import { useLocation } from 'react-router-dom';
 
 const useScrollToTop = () => {
   const { pathname } = useLocation();
-  const isFirstRender = useRef(true);
+  const prevPathname = useRef(pathname);
 
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
+    if (prevPathname.current !== pathname) {
+      const mainElement = document.querySelector('main');
+      if (mainElement) {
+        window.requestAnimationFrame(() => {
+          mainElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
     }
-
-    const mainElement = document.querySelector('main');
-    if (mainElement) {
-      window.requestAnimationFrame(() => {
-        mainElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    }
+    prevPathname.current = pathname;
   }, [pathname]);
 };
 
