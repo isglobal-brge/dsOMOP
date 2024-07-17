@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import CustomLink from './CustomLink';
 import { FaHeart } from 'react-icons/fa';
 import brgeLogo from '../assets/images/brge-logo.png';
 import isglobalLogo from '../assets/images/isglobal-logo.png';
@@ -26,7 +26,7 @@ function Footer() {
         <div className="footer-section">
           <div className="footer-copyright">
             © {new Date().getFullYear()} dsOMOP.<br />
-            This project is licensed under the <Link to="/license" className="license-link"><strong>MIT License</strong></Link>.
+            This project is licensed under the <CustomLink to="/license" className="license-link"><strong>MIT License</strong></CustomLink>.
           </div>
         </div>
       </div>
