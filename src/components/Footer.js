@@ -17,7 +17,7 @@ function Footer() {
         </div>
         <div className="footer-made-by">
           <a href="https://github.com/davidsarratgonzalez" target="_blank" rel="noopener noreferrer" className="footer-link">
-            Website made with <FaHeart className="heart-icon" /> by David Sarrat González
+            Website made with 🧡 by David Sarrat González
           </a>
         </div>
         <div className="footer-copyright">
