@@ -160,7 +160,7 @@ main {
 
 .card-container {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 1.5rem;
   margin-top: 2rem;
 }
@@ -796,6 +796,101 @@ main {
 @media (max-width: 768px) {
   .process-card {
     padding: 1rem;
+  }
+}
+
+.license-link {
+  color: #ffffff !important;
+  text-decoration: none;
+}
+
+.license-link:hover,
+.license-link:visited,
+.license-link:active,
+.license-link strong {
+  color: #ffffff !important;
+  text-decoration: none;
+}
+
+.btn-large {
+  display: inline-block;
+  padding: 1rem 2rem;
+  background-color: var(--primary-color);
+  color: white;
+  text-decoration: none;
+  border-radius: 30px;
+  font-size: 1.2rem;
+  font-weight: bold;
+  transition: background-color 0.3s ease, transform 0.3s ease;
+  margin-top: 1rem;
+}
+
+.btn-large:hover {
+  background-color: var(--primary-dark);
+  transform: scale(1.05);
+}
+
+.center-button {
+  display: flex;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+.btn-large {
+  display: inline-flex;
+  align-items: center;
+  padding: 1rem 2rem;
+  background-color: var(--primary-color);
+  color: white;
+  text-decoration: none;
+  border-radius: 30px;
+  font-size: 1.2rem;
+  font-weight: bold;
+  transition: background-color 0.3s ease, transform 0.3s ease;
+}
+
+.btn-large:hover {
+  background-color: var(--primary-dark);
+  transform: scale(1.05);
+}
+
+.btn-icon {
+  margin-left: 0.5rem;
+  transition: transform 0.3s ease;
+}
+
+.btn-large:hover .btn-icon {
+  transform: translateX(5px);
+}
+
+.dsomop-workflow-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 1200px) {
+  .dsomop-workflow-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .dsomop-workflow-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Ensure other card containers remain unchanged */
+.card-container:not(.dsomop-workflow-cards) {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .card-container:not(.dsomop-workflow-cards) {
+    grid-template-columns: 1fr;
   }
 }
 

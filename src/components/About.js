@@ -47,12 +47,12 @@ function About() {
         </p>
       </div>
 
-      <div className="about-section">
+      <div className="about-section how-it-works-section">
         <h3>How does dsOMOP work?</h3>
         <p>
           dsOMOP operates as a middleware between OMOP CDM databases and the DataSHIELD environment, facilitating secure and privacy-preserving analysis of sensitive medical data. The process involves several steps, with the user driving the data selection and tailoring to meet their specific research needs:
         </p>
-        <div className="card-container">
+        <div className="dsomop-workflow-cards">
           <div className="card process-card">
             <FaUser className="card-icon" />
             <h4>1. User Request</h4>
