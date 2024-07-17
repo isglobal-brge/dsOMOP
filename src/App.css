@@ -477,9 +477,17 @@ main {
   padding: 0 1rem;
 }
 
+.footer-section {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
 .footer-logos {
   display: flex;
   gap: 0.5rem;
+  justify-content: flex-start;
 }
 
 .footer-logo {
@@ -488,18 +496,9 @@ main {
   transition: transform 0.3s ease;
 }
 
-.footer-logo:hover {
-  transform: scale(1.1);
-}
-
 .footer-made-by {
   text-align: center;
   font-size: 0.9rem;
-}
-
-.heart-icon {
-  color: var(--primary-color);
-  margin: 0 0.2rem;
 }
 
 .footer-copyright {
@@ -512,7 +511,12 @@ main {
   .footer-content {
     flex-direction: column;
     gap: 0.5rem;
-    text-align: center;
+  }
+
+  .footer-section {
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 0.5rem;
   }
 
   .footer-logos {
@@ -523,12 +527,7 @@ main {
     width: 50px;
   }
 
-  .footer-made-by {
-    order: 2;
-  }
-
   .footer-copyright {
-    order: 3;
     text-align: center;
   }
 }
@@ -956,68 +955,4 @@ main {
   .card-container:not(.dsomop-workflow-cards) {
     grid-template-columns: 1fr;
   }
-}
-
-.license-link {
-  color: #ffffff !important;
-  text-decoration: none;
-}
-
-.license-link:hover,
-.license-link:visited,
-.license-link:active,
-.license-link strong {
-  color: #ffffff !important;
-  text-decoration: none;
-}
-
-.btn-large {
-  display: inline-block;
-  padding: 1rem 2rem;
-  background-color: var(--primary-color);
-  color: white;
-  text-decoration: none;
-  border-radius: 30px;
-  font-size: 1.2rem;
-  font-weight: bold;
-  transition: background-color 0.3s ease, transform 0.3s ease;
-  margin-top: 1rem;
-}
-
-.btn-large:hover {
-  background-color: var(--primary-dark);
-  transform: scale(1.05);
-}
-
-.center-button {
-  display: flex;
-  justify-content: center;
-  margin-top: 2rem;
-}
-
-.btn-large {
-  display: inline-flex;
-  align-items: center;
-  padding: 1rem 2rem;
-  background-color: var(--primary-color);
-  color: white;
-  text-decoration: none;
-  border-radius: 30px;
-  font-size: 1.2rem;
-  font-weight: bold;
-  transition: background-color 0.3s ease, transform 0.3s ease;
-}
-
-.btn-large:hover {
-  background-color: var(--primary-dark);
-  transform: scale(1.05);
-}
-
-.btn-icon {
-  margin-left: 0.5rem;
-  transition: transform 0.3s ease;
-}
-
-.btn-large:hover .btn-icon {
-  transform: translateX(5px);
 }
