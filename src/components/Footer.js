@@ -5,6 +5,13 @@ import brgeLogo from '../assets/images/brge-logo.png';
 import isglobalLogo from '../assets/images/isglobal-logo.png';
 
 function Footer() {
+  const handleMITLicenseClick = () => {
+    const mainElement = document.querySelector('main');
+    if (mainElement) {
+      mainElement.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   return (
     <footer className="footer">
       <div className="footer-content">
@@ -22,8 +29,8 @@ function Footer() {
           </a>
         </div>
         <div className="footer-copyright">
-          © 2024 dsOMOP.<br />
-          This project is licensed under the <Link to="/license" className="license-link"><strong>MIT License</strong></Link>.
+          © {new Date().getFullYear()} dsOMOP.<br />
+          This project is licensed under the <Link to="/license" className="license-link" onClick={handleMITLicenseClick}><strong>MIT License</strong></Link>.
         </div>
       </div>
     </footer>

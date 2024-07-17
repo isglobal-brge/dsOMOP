@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { HashRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
+import React from 'react';
+import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import './App.css';
 import Header from './components/Header';
 import Navbar from './components/Navbar';
@@ -10,26 +10,9 @@ import License from './components/License';
 import Footer from './components/Footer';
 import Acknowledgements from './components/Acknowledgements';
 
-function TitleUpdater() {
-  const location = useLocation();
-  const pageName = location.pathname.slice(1) || 'About';
-  React.useEffect(() => {
-    document.title = `dsOMOP - ${pageName.charAt(0).toUpperCase() + pageName.slice(1)}`;
-  }, [pageName]);
-  return null;
-}
-
 function App() {
-  useEffect(() => {
-    const link = document.querySelector("link[rel~='icon']");
-    if (link) {
-      link.href = process.env.PUBLIC_URL + '/favicon.ico?v=' + new Date().getTime();
-    }
-  }, []);
-
   return (
     <Router>
-      <TitleUpdater />
       <div className="App">
         <Header />
         <Navbar />

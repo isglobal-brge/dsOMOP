@@ -3,6 +3,13 @@ import { Link } from 'react-router-dom';
 import { FaDatabase, FaShieldAlt, FaLock, FaExchangeAlt, FaPuzzlePiece, FaSearch, FaUser, FaServer, FaFilter, FaChartBar, FaCheckCircle, FaArrowRight, FaCogs, FaUserShield } from 'react-icons/fa';
 
 function About() {
+  const handleGetStartedClick = () => {
+    const mainElement = document.querySelector('main');
+    if (mainElement) {
+      mainElement.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   return (
     <div className="about">
       <h2 className="section-title">About dsOMOP</h2>
@@ -69,7 +76,7 @@ function About() {
           <div className="card process-card">
             <FaUserShield className="card-icon" />
             <h4>5. Privacy Checks</h4>
-            <p>Disclosure control measures are applied to ensure patient data privacy and compliance with DataSHIELD's security model.</p>
+            <p>Disclosure control measures are applied to ensure data privacy and compliance with DataSHIELD's security model.</p>
           </div>
           <div className="card process-card">
             <FaChartBar className="card-icon" />
@@ -112,7 +119,7 @@ function About() {
         <h3>Ready to get started?</h3>
         <p>If you want to use dsOMOP in your research, you can install our packages now!</p>
         <div className="center-button">
-          <Link to="/packages" className="btn-large">
+          <Link to="/packages" className="btn-large" onClick={handleGetStartedClick}>
             Get started <FaArrowRight className="btn-icon" />
           </Link>
         </div>
