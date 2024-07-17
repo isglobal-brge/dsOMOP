@@ -22,7 +22,7 @@ function About() {
       </div>
 
       <div className="about-section">
-        <h3>What are the OMOP CDM and DataSHIELD?</h3>
+        <h3>What are OMOP CDM and DataSHIELD?</h3>
         <div className="card-container">
           <div className="card">
             <FaDatabase className="card-icon" />
