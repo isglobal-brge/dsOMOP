@@ -1,5 +1,5 @@
-import React from 'react';
-import { HashRouter as Router, Routes, Route } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { HashRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import './App.css';
 import Header from './components/Header';
 import Navbar from './components/Navbar';
@@ -13,6 +13,29 @@ import useScrollToTop from './hooks/useScrollToTop';
 
 function AppContent() {
   useScrollToTop();
+  const location = useLocation();
+
+  useEffect(() => {
+    const pageName = getPageName(location.pathname);
+    document.title = `dsOMOP - ${pageName}`;
+  }, [location]);
+
+  const getPageName = (pathname) => {
+    switch (pathname) {
+      case '/':
+        return 'About';
+      case '/packages':
+        return 'Packages';
+      case '/authors':
+        return 'Authors';
+      case '/license':
+        return 'License';
+      case '/acknowledgements':
+        return 'Acknowledgements';
+      default:
+        return 'Not Found';
+    }
+  };
 
   return (
     <div className="App">
