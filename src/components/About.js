@@ -49,32 +49,32 @@ function About() {
           <div className="card process-card">
             <FaUser className="card-icon" />
             <h4>1. User Request</h4>
-            <p>The user initiates a request through the DataSHIELD client, specifying the data they need and the analysis to be performed.</p>
-          </div>
-          <div className="card process-card">
-            <FaServer className="card-icon" />
-            <h4>2. Server Processing</h4>
-            <p>The dsOMOP server receives the request and prepares to interact with the OMOP CDM database.</p>
+            <p>The user initiates a request through the DataSHIELD client, specifying the data they need in a format that suits their research needs.</p>
           </div>
           <div className="card process-card">
             <FaDatabase className="card-icon" />
-            <h4>3. Database Interaction</h4>
-            <p>dsOMOP connects to the OMOP CDM database and executes SQL queries based on the user's specifications.</p>
+            <h4>2. Data Retrieval</h4>
+            <p>The dsOMOP server receives the request and retrieves the relevant data from the OMOP CDM database.</p>
           </div>
           <div className="card process-card">
             <FaFilter className="card-icon" />
-            <h4>4. Data Processing</h4>
-            <p>Retrieved data is transformed into a format compatible with DataSHIELD's analytical tools.</p>
+            <h4>3. Data Processing</h4>
+            <p>Retrieved data is transformed into a user-intelligible format, including concept translation, and made compatible with DataSHIELD's analytical tools.</p>
           </div>
           <div className="card process-card">
             <FaUserShield className="card-icon" />
-            <h4>5. Privacy Checks</h4>
+            <h4>4. Privacy Checks</h4>
             <p>Disclosure control measures are applied to ensure data privacy and compliance with DataSHIELD's security model.</p>
           </div>
           <div className="card process-card">
             <FaChartBar className="card-icon" />
-            <h4>6. Analysis</h4>
-            <p>The processed data is integrated into DataSHIELD's server-side environment for analysis. Only aggregate results that pass all privacy checks are returned to the user's client interface.</p>
+            <h4>5. Analysis</h4>
+            <p>The processed data is integrated into DataSHIELD's server-side environment for analysis.</p>
+          </div>
+          <div className="card process-card">
+            <FaCheckCircle className="card-icon" />
+            <h4>6. Results</h4>
+            <p>Only aggregate results that pass all privacy checks are returned to the user's client interface.</p>
           </div>
         </div>
       </div>
