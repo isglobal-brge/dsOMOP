@@ -36,7 +36,7 @@ function About() {
       <div className="about-section">
         <h3>What is the goal of dsOMOP?</h3>
         <p>
-          The primary goal of dsOMOP is to enable secure and privacy-preserving analysis of sensitive medical data across multiple institutions without the need for physical data transfer. This approach facilitates collaborative research while maintaining strict data protection standards, a critical requirement in the field of medical research. By integrating OMOP CDM with DataSHIELD, dsOMOP allows researchers to perform standardized analyses on harmonized data from various sources, enhancing the power and scope of epidemiological studies.
+          The primary goal of dsOMOP is to enable secure and privacy-preserving analysis of sensitive medical data across multiple institutions without the need for physical data transfer. This approach facilitates collaborative research while maintaining strict data protection standards, a critical requirement in the field of medical research. By integrating OMOP CDM with DataSHIELD, dsOMOP allows researchers to perform standardized analyses on harmonized data from various sources, enhancing the power and scope of clinical research studies.
         </p>
       </div>
 
@@ -64,7 +64,7 @@ function About() {
           <div className="card process-card">
             <FaUserShield className="card-icon" />
             <h4>4. Privacy Checks</h4>
-            <p>Disclosure control measures are applied to ensure data privacy and compliance with DataSHIELD's security model.</p>
+            <p>Disclosure control measures are applied to ensure patient data privacy and compliance with DataSHIELD's security model.</p>
           </div>
           <div className="card process-card">
             <FaChartBar className="card-icon" />
