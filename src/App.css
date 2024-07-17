@@ -95,7 +95,7 @@ body {
 }
 
 .navbar-menu li {
-  margin: 0 1rem; /* Restauramos el margen horizontal entre elementos en desktop */
+  margin: 0 1rem;
 }
 
 @media (max-width: 768px) {
@@ -113,20 +113,32 @@ body {
     background: var(--secondary-color);
     max-height: 0;
     overflow: hidden;
-    transition: max-height 0.6s ease-in-out, padding 0.6s ease-in-out;
+    transition: max-height 0.6s ease-in-out;
     padding: 0;
   }
 
   .navbar-menu.open {
     max-height: 300px;
-    padding: 0.75rem 0; /* Aumentado de 0.5rem a 0.75rem */
   }
 
   .navbar-menu li {
-    margin: 0; /* Quitamos el margen horizontal en mobile */
+    margin: 0;
     opacity: 0;
     transform: translateY(-10px);
     transition: opacity 0.4s ease-out, transform 0.4s ease-out;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .navbar-menu li:last-child {
+    border-bottom: none;
+  }
+
+  .navbar-menu li:nth-child(odd) {
+    background-color: rgba(255, 255, 255, 0.03);
+  }
+
+  .navbar-menu li:nth-child(even) {
+    background-color: rgba(255, 255, 255, 0.01);
   }
 
   .navbar-menu.open li {
@@ -136,7 +148,7 @@ body {
   }
 
   .navbar-menu a {
-    padding: 0.75rem 1rem; /* Aumentado de 0.5rem a 0.75rem */
+    padding: 1rem 1rem;
     display: block;
     width: 100%;
     box-sizing: border-box;
@@ -147,14 +159,15 @@ body {
   color: white;
   text-decoration: none;
   font-weight: bold;
-  transition: color 0.3s ease;
+  transition: color 0.3s ease, background-color 0.3s ease;
   display: flex;
   align-items: center;
-  gap: 0.75rem; /* Aumentado de 0.5rem a 0.75rem para consistencia */
+  gap: 0.75rem;
 }
 
 .navbar-menu a:hover {
   color: var(--primary-light);
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 main {
