@@ -1,15 +1,8 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { FaDatabase, FaShieldAlt, FaLock, FaExchangeAlt, FaPuzzlePiece, FaSearch, FaUser, FaServer, FaFilter, FaChartBar, FaCheckCircle, FaArrowRight, FaCogs, FaUserShield } from 'react-icons/fa';
+import { Link } from 'react-router-dom';
 
 function About() {
-  const handleGetStartedClick = () => {
-    const mainElement = document.querySelector('main');
-    if (mainElement) {
-      mainElement.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
-
   return (
     <div className="about">
       <h2 className="section-title">About dsOMOP</h2>
@@ -119,7 +112,7 @@ function About() {
         <h3>Ready to get started?</h3>
         <p>If you want to use dsOMOP in your research, you can install our packages now!</p>
         <div className="center-button">
-          <Link to="/packages" className="btn-large" onClick={handleGetStartedClick}>
+          <Link to="/packages" className="btn-large">
             Get started <FaArrowRight className="btn-icon" />
           </Link>
         </div>
