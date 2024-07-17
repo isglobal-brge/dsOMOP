@@ -505,6 +505,7 @@ main {
 .footer-copyright {
   font-size: 0.9rem;
   opacity: 0.8;
+  text-align: right;
 }
 
 @media (max-width: 768px) {
@@ -528,6 +529,7 @@ main {
 
   .footer-copyright {
     order: 3;
+    text-align: center;
   }
 }
 
@@ -795,6 +797,19 @@ main {
   .process-card {
     padding: 1rem;
   }
+}
+
+.license-link {
+  color: #ffffff !important;
+  text-decoration: none;
+}
+
+.license-link:hover,
+.license-link:visited,
+.license-link:active,
+.license-link strong {
+  color: #ffffff !important;
+  text-decoration: none;
 }
 
 .btn-large {
