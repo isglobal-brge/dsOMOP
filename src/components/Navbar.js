@@ -25,8 +25,8 @@ function Navbar() {
 
   return (
     <nav className="navbar" ref={menuRef}>
-      <button className="navbar-toggle" onClick={toggleMenu}>
-        <FaBars />
+      <button className={`navbar-toggle ${isOpen ? 'open' : ''}`} onClick={toggleMenu}>
+        <FaBars style={{ color: isOpen ? 'orange' : 'white' }} />
       </button>
       <ul className={`navbar-menu ${isOpen ? 'open' : ''}`}>
         <li><Link to="/" onClick={toggleMenu}><FaHome /> About</Link></li>

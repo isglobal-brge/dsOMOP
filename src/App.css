@@ -84,6 +84,11 @@ body {
   color: white;
   font-size: 1.5rem;
   cursor: pointer;
+  transition: color 0.3s ease;
+}
+
+.navbar-toggle.open {
+  color: var(--primary-color);
 }
 
 .navbar-menu {
