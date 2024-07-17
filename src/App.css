@@ -94,6 +94,10 @@ body {
   justify-content: center;
 }
 
+.navbar-menu li {
+  margin: 0 1rem; /* Restauramos el margen horizontal entre elementos en desktop */
+}
+
 @media (max-width: 768px) {
   .navbar-toggle {
     display: block;
@@ -107,17 +111,19 @@ body {
     left: 0;
     right: 0;
     background: var(--secondary-color);
-    padding: 0;
     max-height: 0;
     overflow: hidden;
-    transition: max-height 0.6s ease-in-out;
+    transition: max-height 0.6s ease-in-out, padding 0.6s ease-in-out;
+    padding: 0;
   }
 
   .navbar-menu.open {
     max-height: 300px;
+    padding: 0.75rem 0;
   }
 
   .navbar-menu li {
+    margin: 0;
     opacity: 0;
     transform: translateY(-10px);
     transition: opacity 0.4s ease-out, transform 0.4s ease-out;
