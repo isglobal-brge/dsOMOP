@@ -28,7 +28,7 @@ function Authors() {
       }
     },
     {
-      name: 'Xavier Escribà-Montagut',
+      name: 'Xavier Escribà Montagut',
       photo: xaviPhoto,
       links: {
         github: 'https://github.com/ESCRI11',
