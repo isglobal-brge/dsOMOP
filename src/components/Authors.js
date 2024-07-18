@@ -18,6 +18,15 @@ function Authors() {
       }
     },
     {
+      name: 'Xavier Escribà Montagut',
+      photo: xaviPhoto,
+      links: {
+        github: 'https://github.com/ESCRI11',
+        linkedin: 'https://www.linkedin.com/in/xavier-escriba-montagut/',
+        orcid: 'https://orcid.org/0000-0003-2888-8948'
+      }
+    },
+    {
       name: 'Juan R González',
       photo: juanrPhoto,
       links: {
@@ -25,15 +34,6 @@ function Authors() {
         linkedin: 'https://www.linkedin.com/in/juan-r-gonzalez-50a808171/',
         orcid: 'https://orcid.org/0000-0003-3267-2146',
         email: 'juanr.gonzalez@isglobal.org'
-      }
-    },
-    {
-      name: 'Xavier Escribà Montagut',
-      photo: xaviPhoto,
-      links: {
-        github: 'https://github.com/ESCRI11',
-        linkedin: 'https://www.linkedin.com/in/xavier-escriba-montagut/',
-        orcid: 'https://orcid.org/0000-0003-2888-8948'
       }
     }
   ];
