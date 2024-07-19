@@ -1,29 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import Confetti from 'react-confetti';
+import React, { useEffect } from 'react';
 
 function Acknowledgements() {
-  const [showConfetti, setShowConfetti] = useState(true);
-  const [windowDimensions, setWindowDimensions] = useState({ width: window.innerWidth, height: document.documentElement.scrollHeight });
-
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowConfetti(false);
-    }, 5000); // The confetti will show for 5 seconds
-
-    const handleResize = () => {
-      setWindowDimensions({
-        width: window.innerWidth,
-        height: document.documentElement.scrollHeight
+    if (window.confetti) {
+      // Left cannon
+      window.confetti({
+        particleCount: 50,
+        angle: 60,
+        spread: 55,
+        origin: { x: 0, y: 1 },
+        colors: ['#ff0000', '#00ff00', '#0000ff'],
       });
-    };
 
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('resize', handleResize);
-    };
-  }, []);
+      // Right cannon
+      window.confetti({
+        particleCount: 50,
+        angle: 120,
+        spread: 55,
+        origin: { x: 1, y: 1 },
+        colors: ['#ff0000', '#00ff00', '#0000ff'],
+      });
+    }
+  }, []); // Empty dependency array ensures this runs only once on mount
 
   const justifiedTextStyle = {
     textAlign: 'justify',
@@ -32,16 +30,6 @@ function Acknowledgements() {
 
   return (
     <div className="acknowledgements">
-      {showConfetti && (
-        <div className="confetti-container">
-          <Confetti
-            width={windowDimensions.width}
-            height={windowDimensions.height}
-            recycle={false}
-            numberOfPieces={200}
-          />
-        </div>
-      )}
       <h2 className="section-title">Acknowledgements</h2>
       <div className="acknowledgements-grid">
         <div className="acknowledgement-card">
