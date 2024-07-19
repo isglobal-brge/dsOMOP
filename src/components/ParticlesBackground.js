@@ -25,7 +25,7 @@ const ParticlesBackground = () => {
             },
           },
           opacity: {
-            value: 0.5,
+            value: 0.4,
             random: false,
             anim: {
               enable: false,
@@ -48,12 +48,12 @@ const ParticlesBackground = () => {
             enable: true,
             distance: 150,
             color: '#ffffff',
-            opacity: 0.4,
+            opacity: 0.3,
             width: 1
           },
           move: {
             enable: true,
-            speed: 6,
+            speed: 2,
             direction: 'none',
             random: false,
             straight: false,
@@ -74,8 +74,7 @@ const ParticlesBackground = () => {
               mode: 'grab'
             },
             onclick: {
-              enable: true,
-              mode: 'push'
+              enable: false
             },
             resize: true
           },
@@ -83,12 +82,9 @@ const ParticlesBackground = () => {
             grab: {
               distance: 140,
               line_linked: {
-                opacity: 1
+                opacity: 0.5
               }
-            },
-            push: {
-              particles_nb: 4
-            },
+            }
           }
         },
         retina_detect: true
