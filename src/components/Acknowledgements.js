@@ -13,9 +13,11 @@ function Acknowledgements() {
         const width = window.innerWidth;
         const height = window.innerHeight;
 
-        // Reduce particleCount and spread for less intensity
+        // Adjust particleCount and spread based on screen size
         const particleCount = Math.min(200, Math.max(30, (width * height) / 5000));
-        const spread = Math.min(120, Math.max(60, (width + height) / 20));
+        const spread = isMobile 
+          ? Math.min(60, Math.max(30, (width + height) / 30)) // Reduced spread for mobile
+          : Math.min(120, Math.max(60, (width + height) / 20));
 
         // Calculate angles and origins based on screen orientation
         let leftAngle, rightAngle, leftOrigin, rightOrigin;
@@ -40,7 +42,7 @@ function Acknowledgements() {
           angle: leftAngle,
           spread: spread,
           origin: leftOrigin,
-          startVelocity: 45, // Reduced from 60
+          startVelocity: 45,
           zIndex: 10000,
         });
 
@@ -51,7 +53,7 @@ function Acknowledgements() {
             angle: rightAngle,
             spread: spread,
             origin: rightOrigin,
-            startVelocity: 45, // Reduced from 60
+            startVelocity: 45,
             zIndex: 10000,
           });
         }, 250); // 250ms delay
