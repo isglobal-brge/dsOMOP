@@ -10,7 +10,6 @@ import License from './components/License';
 import Footer from './components/Footer';
 import Acknowledgements from './components/Acknowledgements';
 import useScrollToTop from './hooks/useScrollToTop';
-import Favicon from 'react-favicon';
 
 function AppContent() {
   useScrollToTop();
@@ -60,7 +59,6 @@ function App() {
   return (
     <Router>
       <AppContent />
-      <Favicon url="/path/to/your/favicon.png" />
     </Router>
   );
 }
