@@ -1016,3 +1016,16 @@ main {
   z-index: 9999;
   pointer-events: none;
 }
+
+#navbar-anchor {
+  position: relative;
+  height: 0;
+  width: 100%;
+  visibility: hidden;
+}
+
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}

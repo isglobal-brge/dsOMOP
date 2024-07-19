@@ -10,9 +10,9 @@ const CustomLink = ({ children, to, setIsOpen, ...props }) => {
     }
 
     // Perform the scroll action
-    const mainElement = document.querySelector('main');
-    if (mainElement) {
-      mainElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const navbarAnchor = document.getElementById('navbar-anchor');
+    if (navbarAnchor) {
+      navbarAnchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     // Close the dropdown menu

@@ -40,6 +40,7 @@ function AppContent() {
   return (
     <div className="App">
       <Header />
+      <div id="navbar-anchor"></div>
       <Navbar />
       <main>
         <Routes>

@@ -7,10 +7,10 @@ const useScrollToTop = () => {
 
   useEffect(() => {
     if (prevPathname.current !== pathname) {
-      const mainElement = document.querySelector('main');
-      if (mainElement) {
+      const navbarAnchor = document.getElementById('navbar-anchor');
+      if (navbarAnchor) {
         window.requestAnimationFrame(() => {
-          mainElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          navbarAnchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
       }
     }
