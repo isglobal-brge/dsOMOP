@@ -1,9 +1,11 @@
 import React from 'react';
 import logo from '../assets/images/logo.png';
+import ParticlesBackground from './ParticlesBackground';
 
 function Header() {
   return (
     <header className="App-header">
+      <ParticlesBackground />
       <div className="header-content">
         <img src={logo} alt="dsOMOP Logo" className="logo" />
         <div className="title-container">
