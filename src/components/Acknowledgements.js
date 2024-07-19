@@ -1,27 +1,68 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 
 function Acknowledgements() {
-  useEffect(() => {
-    if (window.confetti) {
-      // Left cannon
-      window.confetti({
-        particleCount: 50,
-        angle: 60,
-        spread: 55,
-        origin: { x: 0, y: 1 },
-        colors: ['#ff0000', '#00ff00', '#0000ff'],
-      });
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
 
-      // Right cannon
-      window.confetti({
-        particleCount: 50,
-        angle: 120,
-        spread: 55,
-        origin: { x: 1, y: 1 },
-        colors: ['#ff0000', '#00ff00', '#0000ff'],
-      });
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    if (window.confetti) {
+      const fireConfetti = () => {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        // Reduce particleCount and spread for less intensity
+        const particleCount = Math.min(200, Math.max(30, (width * height) / 5000));
+        const spread = Math.min(120, Math.max(60, (width + height) / 20));
+
+        // Calculate angles and origins based on screen orientation
+        let leftAngle, rightAngle, leftOrigin, rightOrigin;
+
+        if (isMobile) {
+          // Aim for the middle of the screen on mobile
+          leftAngle = Math.atan2(height / 2, width / 2) * (180 / Math.PI);
+          rightAngle = 180 - leftAngle;
+          leftOrigin = { x: 0, y: 1 };
+          rightOrigin = { x: 1, y: 1 };
+        } else {
+          // Aim for the exact bottom corners on larger screens
+          leftAngle = 60;
+          rightAngle = 120;
+          leftOrigin = { x: 0, y: 1 };
+          rightOrigin = { x: 1, y: 1 };
+        }
+
+        // Left cannon
+        window.confetti({
+          particleCount: particleCount,
+          angle: leftAngle,
+          spread: spread,
+          origin: leftOrigin,
+          startVelocity: 45, // Reduced from 60
+          zIndex: 10000,
+        });
+
+        // Right cannon (delayed)
+        setTimeout(() => {
+          window.confetti({
+            particleCount: particleCount,
+            angle: rightAngle,
+            spread: spread,
+            origin: rightOrigin,
+            startVelocity: 45, // Reduced from 60
+            zIndex: 10000,
+          });
+        }, 250); // 250ms delay
+      };
+
+      fireConfetti();
+      window.addEventListener('resize', handleResize);
+
+      return () => window.removeEventListener('resize', handleResize);
     }
-  }, []); // Empty dependency array ensures this runs only once on mount
+  }, [isMobile]);
 
   const justifiedTextStyle = {
     textAlign: 'justify',
