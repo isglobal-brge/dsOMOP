@@ -21,15 +21,12 @@ body {
   text-align: center;
 }
 
-@keyframes diagonalWaveFlow {
-  0% {
-    background-position: 0% 0%;
+@keyframes lavaLampFlow {
+  0%, 100% {
+    background-position: 20% 0%;
   }
   50% {
-    background-position: 100% 100%;
-  }
-  100% {
-    background-position: 0% 0%;
+    background-position: 80% 100%;
   }
 }
 
@@ -38,11 +35,14 @@ body {
   background: linear-gradient(
     135deg,
     var(--primary-color) 0%,
-    var(--primary-light) 50%,
-    var(--primary-dark) 100%
+    var(--primary-color) 20%,
+    var(--primary-light) 40%,
+    var(--primary-light) 60%,
+    var(--primary-color) 80%,
+    var(--primary-color) 100%
   );
-  background-size: 200% 200%;
-  animation: diagonalWaveFlow 15s ease infinite;
+  background-size: 300% 300%;
+  animation: lavaLampFlow 20s ease-in-out infinite alternate;
   padding: 2rem 1rem;
   color: white;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
