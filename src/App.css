@@ -21,23 +21,28 @@ body {
   text-align: center;
 }
 
-@keyframes gradientAnimation {
+@keyframes diagonalWaveFlow {
   0% {
-    background-position: 0% 50%;
+    background-position: 0% 0%;
   }
   50% {
-    background-position: 100% 50%;
+    background-position: 100% 100%;
   }
   100% {
-    background-position: 0% 50%;
+    background-position: 0% 0%;
   }
 }
 
 .App-header {
   position: relative;
-  background: linear-gradient(135deg, var(--primary-color), var(--primary-light), var(--primary-dark));
+  background: linear-gradient(
+    135deg,
+    var(--primary-color) 0%,
+    var(--primary-light) 50%,
+    var(--primary-dark) 100%
+  );
   background-size: 200% 200%;
-  animation: gradientAnimation 15s ease infinite;
+  animation: diagonalWaveFlow 15s ease infinite;
   padding: 2rem 1rem;
   color: white;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
