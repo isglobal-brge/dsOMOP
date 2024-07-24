@@ -42,8 +42,8 @@ OMOPCDMResourceClient <- R6::R6Class(
       connection <- super$getConnection()
       if (is.null(connection)) {
         resource <- super$getResource()
-        # Exclude the schema part if it exists
-        resourceUrl <- sub("\\?schema=.*$", "", resource$url)
+        # Remove schema and vocabulary_schema parameters from the URL
+        resourceUrl <- sub("\\?.*$", "", resource$url)
         resource$url <- resourceUrl
         connection <- private$.dbi.connector$createDBIConnection(resource)
         super$setConnection(connection)
@@ -56,12 +56,23 @@ OMOPCDMResourceClient <- R6::R6Class(
     #' @return The schema as a string, or NULL if no schema is specified.
     getSchema = function() {
       resource <- super$getResource()
-      # Extract the schema part if it exists
-      schema <- sub(".*\\?schema=(.*)$", "\\1", resource$url)
+      schema <- sub(".*\\?schema=([^&]*).*", "\\1", resource$url)
       if (schema == resource$url) {
-        schema <- NULL
+        return(NULL)
       }
       return(schema)
+    },
+    
+    #' @description
+    #' Extracts the vocabulary schema part from the resource URL if it exists.
+    #' @return The vocabulary schema as a string, or NULL if no vocabulary schema is specified.
+    getVocabularySchema = function() {
+      resource <- super$getResource()
+      vocabSchema <- sub(".*\\?.*vocabulary_schema=([^&]*).*", "\\1", resource$url)
+      if (vocabSchema == resource$url) {
+        return(NULL)
+      }
+      return(vocabSchema)
     },
     
     #' @description

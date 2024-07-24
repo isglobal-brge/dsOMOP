@@ -4,7 +4,14 @@
 \alias{getConcepts}
 \title{Get Concept Names from Concept IDs}
 \usage{
-getConcepts(connection, conceptIds, conceptTable)
+getConcepts(
+  connection,
+  conceptIds,
+  conceptTable,
+  dbms = NULL,
+  schema = NULL,
+  vocabularySchema = NULL
+)
 }
 \arguments{
 \item{connection}{A database connection object through which the query will be executed.}
@@ -12,6 +19,12 @@ getConcepts(connection, conceptIds, conceptTable)
 \item{conceptIds}{A numeric vector containing the concept IDs for which names are to be retrieved.}
 
 \item{conceptTable}{A character string specifying the exact name of the concept table to be queried.}
+
+\item{dbms}{An optional parameter specifying the database management system.}
+
+\item{schema}{An optional parameter specifying the database schema.}
+
+\item{vocabularySchema}{An optional parameter specifying the vocabulary schema.}
 }
 \value{
 A data frame with columns "concept_id" and "concept_name", representing the mapping from concept IDs to their names.

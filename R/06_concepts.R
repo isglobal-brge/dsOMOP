@@ -9,10 +9,13 @@
 #'
 #' @param connection A DBI database connection object.
 #' @param table A data frame representing the table with concept IDs to be translated.
+#' @param dbms An optional parameter specifying the database management system.
+#' @param schema An optional parameter specifying the database schema.
+#' @param vocabularySchema An optional parameter specifying the vocabulary schema.
 #'
 #' @return A data frame with concept IDs replaced by their corresponding concept names.
 #'
-translateTable <- function(connection, table) {
+translateTable <- function(connection, table, dbms = NULL, schema = NULL, vocabularySchema = NULL) {
   tables <- getTables(connection)
   conceptTable <- findCaseInsensitiveTable(tables, "concept")
 
@@ -23,7 +26,7 @@ translateTable <- function(connection, table) {
   # Attempts to retrieve the concept names from the 'concept' table
   concepts <- tryCatch(
     {
-      getConcepts(connection, conceptIds, conceptTable)
+      getConcepts(connection, conceptIds, conceptTable, vocabularySchema = vocabularySchema)
     },
     # In case of an error, returns an empty data frame (with the same structure as the expected output)
     error = function(error) {
@@ -82,10 +85,13 @@ getConceptIds <- function(table, conceptIdColumns) {
 #' @param connection A database connection object through which the query will be executed.
 #' @param conceptIds A numeric vector containing the concept IDs for which names are to be retrieved.
 #' @param conceptTable A character string specifying the exact name of the concept table to be queried.
+#' @param dbms An optional parameter specifying the database management system.
+#' @param schema An optional parameter specifying the database schema.
+#' @param vocabularySchema An optional parameter specifying the vocabulary schema.
 #'
 #' @return A data frame with columns "concept_id" and "concept_name", representing the mapping from concept IDs to their names.
 #'
-getConcepts <- function(connection, conceptIds, conceptTable) {
+getConcepts <- function(connection, conceptIds, conceptTable, dbms = NULL, schema = NULL, vocabularySchema = NULL) {
   # Identifies the column names for the concept table (case-insensitive)
   conceptTableColumns <- getColumns(connection, conceptTable, caseInsensitive = FALSE) # Case-insensitive so it can find the actual column names
 
@@ -93,11 +99,23 @@ getConcepts <- function(connection, conceptIds, conceptTable) {
   conceptIdColumnName <- findCaseInsensitiveColumn(conceptTableColumns, "concept_id")
   conceptNameColumnName <- findCaseInsensitiveColumn(conceptTableColumns, "concept_name")
 
+  # Determine the fully qualified table name based on the presence of a specific vocabulary schema
+  fullyQualifiedTable <- if (!is.null(vocabularySchema)) {
+    paste0(
+      DBI::dbQuoteIdentifier(connection, vocabularySchema),
+      ".",
+      DBI::dbQuoteIdentifier(connection, conceptTable)
+    )
+  } else {
+    DBI::dbQuoteIdentifier(connection, conceptTable)
+  }
+
+  # Construct the query using the fully qualified table name
   query <- sprintf(
     "SELECT %s, %s FROM %s WHERE %s IN (%s)",
     DBI::dbQuoteIdentifier(connection, conceptIdColumnName),
     DBI::dbQuoteIdentifier(connection, conceptNameColumnName),
-    DBI::dbQuoteIdentifier(connection, conceptTable),
+    fullyQualifiedTable,
     DBI::dbQuoteIdentifier(connection, conceptIdColumnName),
     paste(DBI::dbQuoteLiteral(connection, conceptIds), collapse = ", ")
   )
