@@ -55,6 +55,13 @@ var dsOMOP = {
               description:
                 "If not provided, the default schema will be used.",
             },
+            {
+              key: "vocabulary_schema",
+              type: "string",
+              title: "Vocabulary schema (optional)",
+              description:
+                "Use in case the vocabulary tables are in a different schema. If not provided, the default schema will be used.",
+            },
           ],
           required: ["driver", "host", "port", "db"],
         },
@@ -88,8 +95,18 @@ var dsOMOP = {
         ":" +
         params.port +
         "/" +
-        params.db +
-        (params.schema ? "?schema=" + params.schema : "");
+        params.db;
+      
+      if (params.schema || params.vocabulary_schema) {
+        resourceUrl += "?";
+        if (params.schema) {
+          resourceUrl += "schema=" + params.schema;
+        }
+        if (params.vocabulary_schema) {
+          resourceUrl += (params.schema ? "&" : "") + "vocabulary_schema=" + params.vocabulary_schema;
+        }
+      }
+      
       return {
         name: name,
         url: resourceUrl,

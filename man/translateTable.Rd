@@ -4,12 +4,24 @@
 \alias{translateTable}
 \title{Translate Table Concepts}
 \usage{
-translateTable(connection, table)
+translateTable(
+  connection,
+  table,
+  dbms = NULL,
+  schema = NULL,
+  vocabularySchema = NULL
+)
 }
 \arguments{
 \item{connection}{A DBI database connection object.}
 
 \item{table}{A data frame representing the table with concept IDs to be translated.}
+
+\item{dbms}{An optional parameter specifying the database management system.}
+
+\item{schema}{An optional parameter specifying the database schema.}
+
+\item{vocabularySchema}{An optional parameter specifying the vocabulary schema.}
 }
 \value{
 A data frame with concept IDs replaced by their corresponding concept names.

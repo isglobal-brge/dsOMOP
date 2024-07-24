@@ -12,10 +12,15 @@ getTable(
   personFilter = NULL,
   mergeColumn = "person_id",
   dropNA = FALSE,
-  wideLongitudinal = FALSE
+  wideLongitudinal = FALSE,
+  dbms = NULL,
+  schema = NULL,
+  vocabularySchema = NULL
 )
 }
 \arguments{
+\item{connection}{A DBI connection object representing the database connection.}
+
 \item{tableName}{The name of the table to be retrieved, as a character string.}
 
 \item{conceptFilter}{An optional vector of concept IDs for filtering the table.}
@@ -32,7 +37,11 @@ getTable(
 with numerically suffixed columns if it detects the presence of longitudinal data, defaults
 to FALSE.}
 
-\item{resource}{A resource object representing the database connection.}
+\item{dbms}{An optional parameter specifying the database management system.}
+
+\item{schema}{An optional parameter specifying the database schema.}
+
+\item{vocabularySchema}{An optional parameter specifying the vocabulary schema.}
 }
 \value{
 A data frame containing the filtered table, ready for integration into the DataSHIELD workflow.

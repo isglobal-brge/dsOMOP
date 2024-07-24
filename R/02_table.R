@@ -12,7 +12,7 @@
 #'
 #' Additionally, users have the option to exclude empty tables from the output, further tailoring the dataset to their needs.
 #'
-#' @param resource A resource object representing the database connection.
+#' @param connection A DBI connection object representing the database connection.
 #' @param tableName The name of the table to be retrieved, as a character string.
 #' @param conceptFilter An optional vector of concept IDs for filtering the table.
 #' @param columnFilter An optional vector specifying which columns to include in the output.
@@ -22,6 +22,9 @@
 #' @param wideLongitudinal A logical flag indicating whether to reshape the longitudinal data entries to a wide format 
 #'                         with numerically suffixed columns if it detects the presence of longitudinal data, defaults 
 #'                         to FALSE.
+#' @param dbms An optional parameter specifying the database management system.
+#' @param schema An optional parameter specifying the database schema.
+#' @param vocabularySchema An optional parameter specifying the vocabulary schema.
 #'
 #' @return A data frame containing the filtered table, ready for integration into the DataSHIELD workflow.
 #'
@@ -32,7 +35,10 @@ getTable <- function(connection,
                      personFilter = NULL,
                      mergeColumn = "person_id",
                      dropNA = FALSE,
-                     wideLongitudinal = FALSE) {
+                     wideLongitudinal = FALSE,
+                     dbms = NULL,
+                     schema = NULL,
+                     vocabularySchema = NULL) {
   # Checks if the table exists in the database
   tables <- getTables(connection)
   caseInsensitiveTableName <- findCaseInsensitiveTable(tables, tableName) # Case-insensitive table search
@@ -99,7 +105,7 @@ getTable <- function(connection,
   }
 
   # Translates the table concepts
-  table <- translateTable(connection, table)
+  table <- translateTable(connection, table, vocabularySchema = vocabularySchema)
 
   # If a concept ID column is present, reshapes the table
   if (conceptIdColumn %in% names(table)) {
@@ -153,10 +159,13 @@ getOMOPCDMTableDS <- function(resource,
   # Opens a connection to the database
   connection <- getConnection(resource)
 
+  # Gets the vocabulary schema from the resource
+  vocabularySchema <- resource$getVocabularySchema()
+
   # Attempts to retrieve the table from the database
   tryCatch(
     {
-      table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA, wideLongitudinal)
+      table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA, wideLongitudinal, vocabularySchema = vocabularySchema)
 
       # In case of an error, closes the database connection and propagates the error
     },

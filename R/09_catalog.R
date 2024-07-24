@@ -89,6 +89,9 @@ getConceptCatalogDS <- function(resource, tableName) {
   # Opens a connection to the database
   connection <- getConnection(resource)
 
+  # Get the vocabulary schema from the resource
+  vocabularySchema <- resource$getVocabularySchema()
+
   # Gets the nfilter subset value from the DataSHIELD configuration
   subsetFilter <- getSubsetFilter()
 
@@ -127,7 +130,7 @@ getConceptCatalogDS <- function(resource, tableName) {
       # Retrieves the concepts from the 'concept' table
       conceptCatalog <- tryCatch(
         {
-          getConcepts(connection, conceptIds, conceptTable)
+          getConcepts(connection, conceptIds, conceptTable, vocabularySchema = vocabularySchema)
         },
         # In case of an error, returns an empty data frame (with the same structure as the expected output)
         error = function(error) {

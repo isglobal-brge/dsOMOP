@@ -56,6 +56,7 @@ ensures that resources are properly released when the connection is no longer ne
 \item \href{#method-OMOPCDMResourceClient-new}{\code{OMOPCDMResourceClient$new()}}
 \item \href{#method-OMOPCDMResourceClient-getConnection}{\code{OMOPCDMResourceClient$getConnection()}}
 \item \href{#method-OMOPCDMResourceClient-getSchema}{\code{OMOPCDMResourceClient$getSchema()}}
+\item \href{#method-OMOPCDMResourceClient-getVocabularySchema}{\code{OMOPCDMResourceClient$getVocabularySchema()}}
 \item \href{#method-OMOPCDMResourceClient-getDBMS}{\code{OMOPCDMResourceClient$getDBMS()}}
 \item \href{#method-OMOPCDMResourceClient-close}{\code{OMOPCDMResourceClient$close()}}
 \item \href{#method-OMOPCDMResourceClient-clone}{\code{OMOPCDMResourceClient$clone()}}
@@ -107,6 +108,19 @@ Extracts the schema part from the resource URL if it exists.
 
 \subsection{Returns}{
 The schema as a string, or NULL if no schema is specified.
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-OMOPCDMResourceClient-getVocabularySchema"></a>}}
+\if{latex}{\out{\hypertarget{method-OMOPCDMResourceClient-getVocabularySchema}{}}}
+\subsection{Method \code{getVocabularySchema()}}{
+Extracts the vocabulary schema part from the resource URL if it exists.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{OMOPCDMResourceClient$getVocabularySchema()}\if{html}{\out{</div>}}
+}
+
+\subsection{Returns}{
+The vocabulary schema as a string, or NULL if no vocabulary schema is specified.
 }
 }
 \if{html}{\out{<hr>}}
