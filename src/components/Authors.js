@@ -1,5 +1,5 @@
 import React from 'react';
-import { FaGithub, FaLinkedin, FaEnvelope } from 'react-icons/fa';
+import { FaGithub, FaLinkedin, FaEnvelope, FaGlobe } from 'react-icons/fa';
 import { SiOrcid } from 'react-icons/si';
 import davidPhoto from '../assets/images/david.jpeg';
 import juanrPhoto from '../assets/images/juanr.jpg';
@@ -14,6 +14,7 @@ function Authors() {
         github: 'https://github.com/davidsarratgonzalez',
         linkedin: 'https://www.linkedin.com/in/davidsarratgonzalez/',
         orcid: 'https://orcid.org/0000-0002-9064-3303',
+        website: 'https://davidsarratgonzalez.github.io/',
         email: 'david.sarrat@isglobal.org'
       }
     },
@@ -23,7 +24,8 @@ function Authors() {
       links: {
         github: 'https://github.com/ESCRI11',
         linkedin: 'https://www.linkedin.com/in/xavier-escriba-montagut/',
-        orcid: 'https://orcid.org/0000-0003-2888-8948'
+        orcid: 'https://orcid.org/0000-0003-2888-8948',
+        website: 'https://escri11.github.io/'
       }
     },
     {
@@ -60,6 +62,11 @@ function Authors() {
               {author.links.orcid && (
                 <a href={author.links.orcid} target="_blank" rel="noopener noreferrer">
                   <SiOrcid />
+                </a>
+              )}
+              {author.links.website && (
+                <a href={author.links.website} target="_blank" rel="noopener noreferrer">
+                  <FaGlobe />
                 </a>
               )}
               {author.links.email && (
