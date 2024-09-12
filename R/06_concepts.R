@@ -110,6 +110,21 @@ getConcepts <- function(connection, conceptIds, conceptTable, dbms = NULL, schem
     DBI::dbQuoteIdentifier(connection, conceptTable)
   }
 
+  # Get the type of the concept_id column from the first row of the concept table
+  queryTypeCheck <- sprintf(
+    "SELECT %s FROM %s LIMIT 1",
+    DBI::dbQuoteIdentifier(connection, conceptIdColumnName),
+    fullyQualifiedTable
+  )
+  conceptIdType <- DBI::dbGetQuery(connection, queryTypeCheck)[[1]]
+
+  # Cast conceptIds to the same type as the concept_id column in the database
+  if (is.numeric(conceptIdType)) {
+    conceptIds <- as.numeric(conceptIds)
+  } else {
+    conceptIds <- as.character(conceptIds)
+  }
+
   # Construct the query using the fully qualified table name
   query <- sprintf(
     "SELECT %s, %s FROM %s WHERE %s IN (%s)",
@@ -141,6 +156,12 @@ getConcepts <- function(connection, conceptIds, conceptTable, dbms = NULL, schem
 #'
 translateConcepts <- function(table, conceptIdColumns, concepts) {
   for (column in conceptIdColumns) {
+    # Convert the concept_id column in concepts to character to ensure matching works correctly
+    concepts$concept_id <- as.character(concepts$concept_id)
+    
+    # Convert the column in the table to character to ensure matching works correctly
+    table[[column]] <- as.character(table[[column]])
+    
     # Attempts to replace concept IDs with their corresponding concept names
     table[[column]] <- sapply(table[[column]], function(id) {
       # If the ID is NA, NULL, or empty, returns NA
