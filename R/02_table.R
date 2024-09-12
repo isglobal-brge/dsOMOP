@@ -94,12 +94,19 @@ getTable <- function(connection,
     table
   })
 
-  # Cast columns ending with "_id" but not "_concept_id" to numeric
+  # Convert columns ending with "concept_id" to factor
+  concept_id_cols <- grep("concept_id$", names(table), value = TRUE)
+  if (length(concept_id_cols) > 0) {
+    table <- table %>%
+      dplyr::mutate(across(all_of(concept_id_cols), ~as.factor(.)))
+  }
+
+  # Convert columns ending with "_id" (but not "concept_id") to character
   id_cols <- grep("_id$", names(table), value = TRUE)
-  id_cols <- id_cols[!grepl("_concept_id$", id_cols)]
+  id_cols <- id_cols[!grepl("concept_id$", id_cols)]
   if (length(id_cols) > 0) {
     table <- table %>%
-      dplyr::mutate(across(all_of(id_cols), ~as.numeric(as.character(.))))
+      dplyr::mutate(across(all_of(id_cols), ~as.character(.)))
   }
   
   # Cast columns ending with "_as_number" and "range_low", "range_high" to numeric
