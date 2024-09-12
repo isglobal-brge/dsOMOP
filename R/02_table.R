@@ -74,7 +74,40 @@ getTable <- function(connection,
   }
 
   # Retrieves the table as a data frame
-  table <- as.data.frame(table)
+  table <- tryCatch({
+    as.data.frame(table)
+  }, error = function(e) {
+    # If as.data.frame fails, recreate the tbl and collect it
+    table <- dplyr::tbl(connection, tableName) %>% 
+      dplyr::rename_with(tolower) %>%
+      dplyr::select(all_of(selectedColumns)) %>%
+      dplyr::collect() %>%
+      as.data.frame()
+    
+    # Apply filters
+    if (!is.null(conceptFilter) && conceptIdColumn %in% columns) {
+      table <- table[table[[conceptIdColumn]] %in% conceptFilter, ]
+    }
+    if (!is.null(personFilter) && "person_id" %in% columns) {
+      table <- table[table$person_id %in% personIds, ]
+    }
+    table
+  })
+
+  # Cast columns ending with "_id" but not "_concept_id" to numeric
+  id_cols <- grep("_id$", names(table), value = TRUE)
+  id_cols <- id_cols[!grepl("_concept_id$", id_cols)]
+  if (length(id_cols) > 0) {
+    table <- table %>%
+      dplyr::mutate(across(all_of(id_cols), ~as.numeric(as.character(.))))
+  }
+  
+  # Cast columns ending with "_as_number" and "range_low", "range_high" to numeric
+  number_cols <- grep("_as_number$|^range_low$|^range_high$", names(table), value = TRUE)
+  if (length(number_cols) > 0) {
+    table <- table %>%
+      dplyr::mutate(across(all_of(number_cols), ~as.numeric(as.character(.))))
+  }
 
   # If it is a person-related table, checks if the count of person IDs is lower than nfilter.subset
   if ("person_id" %in% columns) {
