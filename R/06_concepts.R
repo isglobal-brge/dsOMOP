@@ -23,6 +23,9 @@ translateTable <- function(connection, table, dbms = NULL, schema = NULL, vocabu
   conceptIdColumns <- getConceptIdColumns(table)
   conceptIds <- getConceptIds(table, conceptIdColumns)
 
+  # Remove NaN values from conceptIds
+  conceptIds <- conceptIds[!is.nan(conceptIds)]
+
   # Attempts to retrieve the concept names from the 'concept' table
   concepts <- tryCatch(
     {
@@ -116,28 +119,34 @@ getConcepts <- function(connection, conceptIds, conceptTable, dbms = NULL, schem
     DBI::dbQuoteIdentifier(connection, conceptIdColumnName),
     fullyQualifiedTable
   )
-  conceptIdType <- DBI::dbGetQuery(connection, queryTypeCheck)[[1]]
+  conceptIdType <- DBI::dbGetQuery(connection, queryTypeCheck)[[1]] # Get the type of the concept_id column
 
-  # Cast conceptIds to the same type as the concept_id column in the database
-  if (is.numeric(conceptIdType)) {
-    conceptIds <- as.numeric(conceptIds)
+  # Ensure there are no NA values before processing
+  conceptIds <- conceptIds[!is.na(conceptIds)]
+
+  # Adjust the IN clause based on the concept_id column type
+  inClause <- if (is.numeric(conceptIdType)) {
+    # Remove any rows with NaN values (they may have been converted to textual "NaN" or "NA" during the cast)
+    conceptIds <- conceptIds[!is.nan(conceptIds) & !is.na(conceptIds) & conceptIds != "NaN" & conceptIds != "NA"]
+    # Remove any decimals (we are working with integers, so removing ".0" is safe)
+    conceptIds <- gsub("\\.0$", "", conceptIds)
+    paste(conceptIds, collapse = ", ")
   } else {
-    conceptIds <- as.character(conceptIds)
+    # If the concept_id column is not numeric, quote the values as strings (DBMS-agnostic)
+    paste(sapply(conceptIds, function(id) DBI::dbQuoteLiteral(connection, as.character(id))), collapse = ", ")
   }
 
-  # Construct the query using the fully qualified table name
   query <- sprintf(
     "SELECT %s, %s FROM %s WHERE %s IN (%s)",
     DBI::dbQuoteIdentifier(connection, conceptIdColumnName),
     DBI::dbQuoteIdentifier(connection, conceptNameColumnName),
     fullyQualifiedTable,
     DBI::dbQuoteIdentifier(connection, conceptIdColumnName),
-    paste(DBI::dbQuoteLiteral(connection, conceptIds), collapse = ", ")
+    inClause
   )
 
   concepts <- DBI::dbGetQuery(connection, query)
-  names(concepts) <- tolower(names(concepts))
-
+  names(concepts) <- tolower(names(concepts)) # Ensure the resulting column names are in lowercase
   return(concepts)
 }
 
