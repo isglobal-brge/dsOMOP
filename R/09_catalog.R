@@ -143,6 +143,12 @@ getConceptCatalogDS <- function(resource, tableName) {
       # It does not involve sensitive data, so there is no need to use DataSHIELD's mergeDS function
       conceptIds <- data.frame(concept_id = conceptIds)
       conceptCatalog <- merge(conceptIds, conceptCatalog, by = "concept_id", all.x = TRUE)
+
+      # Cast the concept_id column to numeric
+      conceptCatalog$concept_id <- as.numeric(conceptCatalog$concept_id)
+
+      # Sort the conceptCatalog by concept_id
+      conceptCatalog <- conceptCatalog[order(conceptCatalog$concept_id), ]
     },
     # In case of an error, closes the database connection and propagates the error
     error = function(error) {
