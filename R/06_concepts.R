@@ -9,15 +9,42 @@
 #'
 #' @param connection A DBI database connection object.
 #' @param table A data frame representing the table with concept IDs to be translated.
-#' @param dbms An optional parameter specifying the database management system.
+#' @param dbms A string specifying the database management system.
 #' @param schema An optional parameter specifying the database schema.
 #' @param vocabularySchema An optional parameter specifying the vocabulary schema.
 #'
 #' @return A data frame with concept IDs replaced by their corresponding concept names.
 #'
-translateTable <- function(connection, table, dbms = NULL, schema = NULL, vocabularySchema = NULL) {
+translateTable <- function(connection, table, dbms, schema = NULL, vocabularySchema = NULL) {
+  # Get the schema query for the DBMS
+  schemaQuery <- getSchemaQuery(dbms)
+
+  # Get the schema retrieval query for the DBMS
+  schemaRetrievalQuery <- getSchemaRetrievalQuery(dbms)
+
+  # Store the current schema
+  currentSchema <- DBI::dbGetQuery(connection, schemaRetrievalQuery)[[1]]
+
+  # Determine which schema to use for the concept table
+  schemaToUse <- if (!is.null(vocabularySchema)) vocabularySchema else schema
+
+  # Switch to the appropriate schema if necessary
+  if (!is.null(schemaToUse) && schemaToUse != currentSchema) {
+    DBI::dbExecute(connection, fillSchemaQuery(schemaToUse, schemaQuery))
+  }
+
+  # Get tables from the correct schema
   tables <- getTables(connection)
   conceptTable <- findCaseInsensitiveTable(tables, "concept")
+
+  if (is.null(conceptTable)) {
+    warning("Concept table not found in the specified schema. Concept translation will be skipped.")
+    # Switch back to the original schema if necessary
+    if (!is.null(schemaToUse) && schemaToUse != currentSchema) {
+      DBI::dbExecute(connection, fillSchemaQuery(currentSchema, schemaQuery))
+    }
+    return(table)
+  }
 
   # Retrieves the concept IDs from the table
   conceptIdColumns <- getConceptIdColumns(table)
@@ -29,13 +56,19 @@ translateTable <- function(connection, table, dbms = NULL, schema = NULL, vocabu
   # Attempts to retrieve the concept names from the 'concept' table
   concepts <- tryCatch(
     {
-      getConcepts(connection, conceptIds, conceptTable, vocabularySchema = vocabularySchema)
+      getConcepts(connection, conceptIds, conceptTable, dbms, schema, vocabularySchema)
     },
     # In case of an error, returns an empty data frame (with the same structure as the expected output)
     error = function(error) {
+      warning(paste("Error retrieving concepts:", error))
       data.frame(concept_id = integer(), concept_name = character(), stringsAsFactors = FALSE)
     }
   )
+
+  # Switch back to the original schema if necessary
+  if (!is.null(schemaToUse) && schemaToUse != currentSchema) {
+    DBI::dbExecute(connection, fillSchemaQuery(currentSchema, schemaQuery))
+  }
 
   # Translates the concept IDs in the table
   table <- translateConcepts(table, conceptIdColumns, concepts)
@@ -88,13 +121,30 @@ getConceptIds <- function(table, conceptIdColumns) {
 #' @param connection A database connection object through which the query will be executed.
 #' @param conceptIds A numeric vector containing the concept IDs for which names are to be retrieved.
 #' @param conceptTable A character string specifying the exact name of the concept table to be queried.
-#' @param dbms An optional parameter specifying the database management system.
+#' @param dbms A string specifying the database management system.
 #' @param schema An optional parameter specifying the database schema.
 #' @param vocabularySchema An optional parameter specifying the vocabulary schema.
 #'
 #' @return A data frame with columns "concept_id" and "concept_name", representing the mapping from concept IDs to their names.
 #'
-getConcepts <- function(connection, conceptIds, conceptTable, dbms = NULL, schema = NULL, vocabularySchema = NULL) {
+getConcepts <- function(connection, conceptIds, conceptTable, dbms, schema = NULL, vocabularySchema = NULL) {
+  # Get the schema query for the DBMS
+  schemaQuery <- getSchemaQuery(dbms)
+
+  # Get the schema retrieval query for the DBMS
+  schemaRetrievalQuery <- getSchemaRetrievalQuery(dbms)
+
+  # Store the current schema
+  currentSchema <- DBI::dbGetQuery(connection, schemaRetrievalQuery)[[1]]
+
+  # Determine which schema to use
+  schemaToUse <- if (!is.null(vocabularySchema)) vocabularySchema else schema
+
+  # Switch to the appropriate schema if necessary
+  if (!is.null(schemaToUse) && schemaToUse != currentSchema) {
+    DBI::dbExecute(connection, fillSchemaQuery(schemaToUse, schemaQuery))
+  }
+
   # Identifies the column names for the concept table (case-insensitive)
   conceptTableColumns <- getColumns(connection, conceptTable, caseInsensitive = FALSE) # Case-insensitive so it can find the actual column names
 
@@ -102,16 +152,8 @@ getConcepts <- function(connection, conceptIds, conceptTable, dbms = NULL, schem
   conceptIdColumnName <- findCaseInsensitiveColumn(conceptTableColumns, "concept_id")
   conceptNameColumnName <- findCaseInsensitiveColumn(conceptTableColumns, "concept_name")
 
-  # Determine the fully qualified table name based on the presence of a specific vocabulary schema
-  fullyQualifiedTable <- if (!is.null(vocabularySchema)) {
-    paste0(
-      DBI::dbQuoteIdentifier(connection, vocabularySchema),
-      ".",
-      DBI::dbQuoteIdentifier(connection, conceptTable)
-    )
-  } else {
-    DBI::dbQuoteIdentifier(connection, conceptTable)
-  }
+  # Determine the fully qualified table name
+  fullyQualifiedTable <- DBI::dbQuoteIdentifier(connection, conceptTable)
 
   # Get the type of the concept_id column from the first row of the concept table
   queryTypeCheck <- sprintf(
@@ -147,6 +189,12 @@ getConcepts <- function(connection, conceptIds, conceptTable, dbms = NULL, schem
 
   concepts <- DBI::dbGetQuery(connection, query)
   names(concepts) <- tolower(names(concepts)) # Ensure the resulting column names are in lowercase
+
+  # Switch back to the original schema if necessary
+  if (!is.null(schemaToUse) && schemaToUse != currentSchema) {
+    DBI::dbExecute(connection, fillSchemaQuery(currentSchema, schemaQuery))
+  }
+
   return(concepts)
 }
 

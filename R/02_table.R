@@ -22,7 +22,7 @@
 #' @param wideLongitudinal A logical flag indicating whether to reshape the longitudinal data entries to a wide format 
 #'                         with numerically suffixed columns if it detects the presence of longitudinal data, defaults 
 #'                         to FALSE.
-#' @param dbms An optional parameter specifying the database management system.
+#' @param dbms A parameter specifying the database management system.
 #' @param schema An optional parameter specifying the database schema.
 #' @param vocabularySchema An optional parameter specifying the vocabulary schema.
 #'
@@ -36,11 +36,11 @@ getTable <- function(connection,
                      mergeColumn = "person_id",
                      dropNA = FALSE,
                      wideLongitudinal = FALSE,
-                     dbms = NULL,
+                     dbms,
                      schema = NULL,
                      vocabularySchema = NULL) {
   # Checks if the table exists in the database
-  tables <- getTables(connection)
+  tables <- getTables(connection, schema)
   caseInsensitiveTableName <- findCaseInsensitiveTable(tables, tableName) # Case-insensitive table search
   if (is.null(caseInsensitiveTableName)) {
     stop(paste0("The table '", tableName, "' does not exist in the database."))
@@ -50,7 +50,11 @@ getTable <- function(connection,
   tableName <- caseInsensitiveTableName
 
   # Retrieves the table and its column names
-  table <- dplyr::tbl(connection, tableName) %>% dplyr::rename_with(tolower)
+  if (!is.null(schema)) {
+    table <- dplyr::tbl(connection, dbplyr::in_schema(schema, tableName)) %>% dplyr::rename_with(tolower)
+  } else {
+    table <- dplyr::tbl(connection, tableName) %>% dplyr::rename_with(tolower)
+  }
   columns <- getColumns(connection, tableName)
   conceptIdColumn <- getConceptIdColumn(tableName)
 
@@ -145,7 +149,7 @@ getTable <- function(connection,
   }
 
   # Translates the table concepts
-  table <- translateTable(connection, table, vocabularySchema = vocabularySchema)
+  table <- translateTable(connection, table, dbms, schema, vocabularySchema)
 
   # If a concept ID column is present, reshapes the table
   if (conceptIdColumn %in% names(table)) {
@@ -202,10 +206,16 @@ getOMOPCDMTableDS <- function(resource,
   # Gets the vocabulary schema from the resource
   vocabularySchema <- resource$getVocabularySchema()
 
+  # Get the DBMS from the resource
+  dbms <- resource$getDBMS()
+
+  # Get the schema from the resource
+  schema <- resource$getSchema()
+
   # Attempts to retrieve the table from the database
   tryCatch(
     {
-      table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA, wideLongitudinal, vocabularySchema = vocabularySchema)
+      table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA, wideLongitudinal, dbms, schema, vocabularySchema)
 
       # In case of an error, closes the database connection and propagates the error
     },
