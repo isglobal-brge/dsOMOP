@@ -92,8 +92,21 @@ getConceptCatalogDS <- function(resource, tableName) {
   # Get the vocabulary schema from the resource
   vocabularySchema <- resource$getVocabularySchema()
 
+  # Get the DBMS from the resource
+  dbms <- resource$getDBMS()
+
   # Gets the nfilter subset value from the DataSHIELD configuration
   subsetFilter <- getSubsetFilter()
+
+  # Get the schema query for the DBMS
+  schemaQuery <- getSchemaQuery(dbms)
+
+  # Get the schema retrieval query for the DBMS
+  schemaRetrievalQuery <- getSchemaRetrievalQuery(dbms)
+
+  # Store the current schema
+  currentSchema <- DBI::dbGetQuery(connection, schemaRetrievalQuery)[[1]]
+  schema <- currentSchema
 
   # Attempts to retrieve the concept catalog from the specified table
   tryCatch(
@@ -101,14 +114,26 @@ getConceptCatalogDS <- function(resource, tableName) {
       # Finds the case-insensitive table name to ensure correct retrieval
       tables <- getTables(connection)
       caseInsensitiveTableName <- findCaseInsensitiveTable(tables, tableName)
+
+      # If the table does not exist, stop and return an error message
       if (is.null(caseInsensitiveTableName)) {
         stop(paste0("The table '", tableName, "' does not exist in the database."))
       }
       tableName <- caseInsensitiveTableName
 
+      # Switch to the vocabulary schema if it exists
+      if (!is.null(vocabularySchema) && vocabularySchema != currentSchema) {
+        DBI::dbExecute(connection, fillSchemaQuery(vocabularySchema, schemaQuery))
+      }
+
       # Attempts to identify the 'concept' table in the database
       tables <- getTables(connection)
       conceptTable <- findCaseInsensitiveTable(tables, "concept")
+
+      # Switch to the base schema
+      if (!is.null(schema)) {
+        DBI::dbExecute(connection, fillSchemaQuery(schema, schemaQuery))
+      }
 
       # Gets the required column names for this operation
       columns <- getColumns(connection, tableName, caseInsensitive = FALSE)
@@ -130,7 +155,7 @@ getConceptCatalogDS <- function(resource, tableName) {
       # Retrieves the concepts from the 'concept' table
       conceptCatalog <- tryCatch(
         {
-          getConcepts(connection, conceptIds, conceptTable, vocabularySchema = vocabularySchema)
+          getConcepts(connection, conceptIds, conceptTable, dbms, schema, vocabularySchema)
         },
         # In case of an error, returns an empty data frame (with the same structure as the expected output)
         error = function(error) {

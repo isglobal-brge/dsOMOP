@@ -74,10 +74,71 @@ fillSchemaQuery <- function(schema, query) {
 }
 
 
+#' Register a new schema retrieval query for a specific DBMS
+#'
+#' @param dbms The name of the DBMS (e.g., "postgresql", "mysql").
+#' @param query The schema retrieval query to be registered.
+#' @param override A logical value indicating whether to override an existing query for the DBMS.
+#'
+#' @export
+registerSchemaRetrievalQuery <- function(dbms, query, override = TRUE) {
+  if (!is.character(dbms) || !is.character(query)) {
+    stop("Both dbms and query must be character strings.")
+  }
+  if (!override && !is.null(private$.schemaRetrievalQueries[[dbms]])) {
+    stop(paste("A retrieval query for", dbms, "already exists. Use override = TRUE to replace it."))
+  }
+  private$.schemaRetrievalQueries[[dbms]] <- query
+}
 
-# Initialize the private schemaQueries variable
+
+#' Register multiple schema retrieval queries
+#'
+#' @param queries A named list of schema retrieval queries where names are DBMS names and values are queries.
+#' @param override A logical value indicating whether to override existing queries for the DBMS.
+#'
+#' @export
+registerSchemaRetrievalQueries <- function(queries, override = TRUE) {
+  if (!is.list(queries) || !all(sapply(queries, is.character))) {
+    stop("Queries must be a named list of character strings.")
+  }
+  for (dbms in names(queries)) {
+    registerSchemaRetrievalQuery(dbms, queries[[dbms]], override)
+  }
+}
+
+
+#' Get registered schema retrieval queries
+#'
+#' @return A named list of registered schema retrieval queries.
+#'
+#' @export
+getSchemaRetrievalQueries <- function() {
+  return(private$.schemaRetrievalQueries)
+}
+
+
+#' Get the schema retrieval query for a specific DBMS
+#'
+#' @param dbms The name of the DBMS (e.g., "postgresql", "mysql").
+#' @return The schema retrieval query corresponding to the specified DBMS.
+#' @export
+getSchemaRetrievalQuery <- function(dbms) {
+  if (!is.character(dbms)) {
+    stop("DBMS must be a character string.")
+  }
+  query <- private$.schemaRetrievalQueries[[dbms]]
+  if (is.null(query)) {
+    stop(paste("No schema retrieval query found for DBMS:", dbms))
+  }
+  return(query)
+}
+
+
+# Initialize the private schemaQueries and schemaRetrievalQueries variables
 private <- new.env()
 private$.schemaQueries <- list()
+private$.schemaRetrievalQueries <- list()
 
 # Register the schema queries for the supported DBMS
 registerSchemaQueries(
@@ -85,6 +146,16 @@ registerSchemaQueries(
     "postgresql" = "SET search_path TO {schema}",
     "mysql" = "USE {schema}",
     "mariadb" = "USE {schema}"
+  ),
+  override = TRUE
+)
+
+# Register the schema retrieval queries for the supported DBMS
+registerSchemaRetrievalQueries(
+  queries = list(
+    "postgresql" = "SHOW search_path",
+    "mysql" = "SELECT DATABASE()",
+    "mariadb" = "SELECT DATABASE()"
   ),
   override = TRUE
 )
