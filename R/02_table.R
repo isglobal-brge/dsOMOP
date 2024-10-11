@@ -40,7 +40,7 @@ getTable <- function(connection,
                      schema = NULL,
                      vocabularySchema = NULL) {
   # Checks if the table exists in the database
-  tables <- getTables(connection, schema)
+  tables <- getTables(connection)
   caseInsensitiveTableName <- findCaseInsensitiveTable(tables, tableName) # Case-insensitive table search
   if (is.null(caseInsensitiveTableName)) {
     stop(paste0("The table '", tableName, "' does not exist in the database."))

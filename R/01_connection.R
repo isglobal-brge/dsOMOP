@@ -42,16 +42,11 @@ getConnection <- function(resource) {
 #' Retrieves a list of all tables available in the specified database connection and schema.
 #'
 #' @param connection A DBI database connection object.
-#' @param schema An optional parameter specifying the database schema.
 #'
 #' @return A character vector containing the names of all tables in the database.
 #'
-getTables <- function(connection, schema = NULL) {
-  if (!is.null(schema)) {
-    tables <- DBI::dbGetQuery(connection, sprintf("SELECT table_name FROM information_schema.tables WHERE table_schema = '%s'", schema))$table_name
-  } else {
-    tables <- DBI::dbListTables(connection)
-  }
+getTables <- function(connection) {
+  tables <- DBI::dbListTables(connection)
   return(tables)
 }
 
