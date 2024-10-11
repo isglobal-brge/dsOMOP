@@ -42,8 +42,8 @@ OMOPCDMResourceClient <- R6::R6Class(
       connection <- super$getConnection()
       if (is.null(connection)) {
         resource <- super$getResource()
-        # Remove schema and vocabulary_schema parameters from the URL
-        resourceUrl <- sub("\\?.*$", "", resource$url)
+        # Extract the base URL
+        resourceUrl <- strsplit(resource$url, "//dsomop::")[[1]][1]
         resource$url <- resourceUrl
         connection <- private$.dbi.connector$createDBIConnection(resource)
         super$setConnection(connection)
@@ -56,11 +56,15 @@ OMOPCDMResourceClient <- R6::R6Class(
     #' @return The schema as a string, or NULL if no schema is specified.
     getSchema = function() {
       resource <- super$getResource()
-      schema <- sub(".*\\?schema=([^&]*).*", "\\1", resource$url)
-      if (schema == resource$url) {
-        return(NULL)
+      parts <- strsplit(resource$url, "//dsomop::")[[1]]
+      if (length(parts) > 1) {
+        config_part <- parts[2]
+        schema_match <- regexec("/schema:([^/]+)", config_part)
+        if (schema_match[[1]][1] != -1) {
+          return(regmatches(config_part, schema_match)[[1]][2])
+        }
       }
-      return(schema)
+      return(NULL)
     },
     
     #' @description
@@ -68,11 +72,15 @@ OMOPCDMResourceClient <- R6::R6Class(
     #' @return The vocabulary schema as a string, or NULL if no vocabulary schema is specified.
     getVocabularySchema = function() {
       resource <- super$getResource()
-      vocabSchema <- sub(".*\\?.*vocabulary_schema=([^&]*).*", "\\1", resource$url)
-      if (vocabSchema == resource$url) {
-        return(NULL)
+      parts <- strsplit(resource$url, "//dsomop::")[[1]]
+      if (length(parts) > 1) {
+        config_part <- parts[2]
+        vocab_schema_match <- regexec("/vocabulary_schema:([^/]+)", config_part)
+        if (vocab_schema_match[[1]][1] != -1) {
+          return(regmatches(config_part, vocab_schema_match)[[1]][2])
+        }
       }
-      return(vocabSchema)
+      return(NULL)
     },
     
     #' @description

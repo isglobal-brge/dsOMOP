@@ -98,12 +98,12 @@ var dsOMOP = {
         params.db;
       
       if (params.schema || params.vocabulary_schema) {
-        resourceUrl += "?";
+        resourceUrl += "//dsomop::";
         if (params.schema) {
-          resourceUrl += "schema=" + params.schema;
+          resourceUrl += "/schema:" + params.schema;
         }
         if (params.vocabulary_schema) {
-          resourceUrl += (params.schema ? "&" : "") + "vocabulary_schema=" + params.vocabulary_schema;
+          resourceUrl += "/vocabulary_schema:" + params.vocabulary_schema;
         }
       }
       
