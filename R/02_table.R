@@ -38,7 +38,8 @@ getTable <- function(connection,
                      wideLongitudinal = FALSE,
                      dbms,
                      schema = NULL,
-                     vocabularySchema = NULL) {
+                     vocabularySchema = NULL,
+                     skipReshape = FALSE) {
   # Checks if the table exists in the database
   tables <- getTables(connection)
   caseInsensitiveTableName <- findCaseInsensitiveTable(tables, tableName) # Case-insensitive table search
@@ -151,8 +152,8 @@ getTable <- function(connection,
   # Translates the table concepts
   table <- translateTable(connection, table, dbms, schema, vocabularySchema)
 
-  # If a concept ID column is present, reshapes the table
-  if (conceptIdColumn %in% names(table)) {
+  # If a concept ID column is present and skipReshape is FALSE, reshapes the table
+  if (!skipReshape && conceptIdColumn %in% names(table)) {
     table <- reshapeTable(table, conceptIdColumn, mergeColumn, wideLongitudinal)
   }
 
@@ -187,6 +188,7 @@ getTable <- function(connection,
 #' @param dropNA (Optional) A logical flag indicating whether to drop columns with all NA values, defaults to FALSE.
 #' @param wideLongitudinal (Optional) A logical flag indicating whether to reshape longitudinal data to a wide format,
 #'                             defaults to FALSE.
+#' @param skipReshape (Optional) A logical flag indicating whether to skip reshaping the table, defaults to FALSE.
 #'
 #' @return A data frame representing the processed table.
 #'
@@ -199,7 +201,8 @@ getOMOPCDMTableDS <- function(resource,
                               personFilter = NULL,
                               mergeColumn = "person_id",
                               dropNA = FALSE,
-                              wideLongitudinal = FALSE) {
+                              wideLongitudinal = FALSE,
+                              skipReshape = FALSE) {
   # Opens a connection to the database
   connection <- getConnection(resource)
 
@@ -215,7 +218,7 @@ getOMOPCDMTableDS <- function(resource,
   # Attempts to retrieve the table from the database
   tryCatch(
     {
-      table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA, wideLongitudinal, dbms, schema, vocabularySchema)
+      table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA, wideLongitudinal, dbms, schema, vocabularySchema, skipReshape)
 
       # In case of an error, closes the database connection and propagates the error
     },
