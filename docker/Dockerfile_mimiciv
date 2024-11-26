@@ -1,0 +1,16 @@
+# Use PostgreSQL 15 as base image
+FROM postgres:15
+
+# Set environment variables for PostgreSQL configuration
+ENV POSTGRES_DB=mimiciv
+ENV POSTGRES_USER=postgres
+ENV POSTGRES_PASSWORD=postgres
+
+# Copy initialization SQL script
+COPY mimiciv.sql /docker-entrypoint-initdb.d/
+
+# Set appropriate permissions on SQL script
+RUN chmod 644 /docker-entrypoint-initdb.d/mimiciv.sql
+
+# Expose PostgreSQL default port
+EXPOSE 5432
