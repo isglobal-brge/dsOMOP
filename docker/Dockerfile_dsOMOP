@@ -1,0 +1,18 @@
+#
+# Rock R Server Dockerfile with DataSHIELD dsOMOP
+#
+# Based on https://github.com/datashield/docker-rock
+#
+
+# Use Rock base image with R 4.4
+FROM datashield/rock-base:6.3.0-R4.4
+
+# Set version of dsOMOP package to install
+ENV DSOMOP_VERSION 1.1.0
+
+# Set library path for R packages
+ENV ROCK_LIB /var/lib/rock/R/library
+
+# Install dsOMOP package from GitHub
+RUN Rscript -e "remotes::install_github('isglobal-brge/dsOMOP', ref = '$DSOMOP_VERSION', upgrade = FALSE, lib = '$ROCK_LIB')" \
+ && chown -R rock $ROCK_LIB
