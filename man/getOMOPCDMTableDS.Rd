@@ -2,7 +2,7 @@
 % Please edit documentation in R/02_table.R
 \name{getOMOPCDMTableDS}
 \alias{getOMOPCDMTableDS}
-\title{Assign OMOP CDM Table to the DataSHIELD Environment}
+\title{Assign OMOP CDM Table to DataSHIELD Environment}
 \usage{
 getOMOPCDMTableDS(
   resource,
@@ -12,7 +12,8 @@ getOMOPCDMTableDS(
   personFilter = NULL,
   mergeColumn = "person_id",
   dropNA = FALSE,
-  wideLongitudinal = FALSE
+  wideLongitudinal = FALSE,
+  skipReshape = FALSE
 )
 }
 \arguments{
@@ -32,14 +33,17 @@ getOMOPCDMTableDS(
 
 \item{wideLongitudinal}{(Optional) A logical flag indicating whether to reshape longitudinal data to a wide format,
 defaults to FALSE.}
+
+\item{skipReshape}{(Optional) A logical flag indicating whether to skip reshaping the table, defaults to FALSE.}
 }
 \value{
 A data frame representing the processed table.
 }
 \description{
-This function is designed to be called from the DataSHIELD client. It retrieves a specified table from an OMOP CDM database.
+Provides a DataSHIELD-compliant interface for retrieving and processing OMOP CDM tables. This function
+manages the database connection lifecycle and ensures proper error handling while delegating the actual
+table processing to the \code{getTable} function.
 }
 \details{
-It calls the \code{getTable} function, which is responsible for filtering and performing additional transformation and processing
-operations on the table. Once processed, the table is assigned in the DataSHIELD environment.
+DataSHIELD Interface for OMOP CDM Table Retrieval
 }

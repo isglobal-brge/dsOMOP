@@ -2,22 +2,77 @@
 % Please edit documentation in R/06_concepts.R
 \name{translateConcepts}
 \alias{translateConcepts}
-\title{Replace Concept IDs with Concept Names in a Table}
+\title{Concept ID to Name Translation}
 \usage{
 translateConcepts(table, conceptIdColumns, concepts)
 }
 \arguments{
-\item{table}{A data frame representing the table in which concept IDs are to be translated.}
+\item{table}{Data frame containing OMOP CDM data}
 
-\item{conceptIdColumns}{A character vector specifying the names of the columns that contain concept IDs.}
+\item{conceptIdColumns}{Character vector of columns containing concept IDs}
 
-\item{concepts}{A data frame serving as a dictionary, mapping concept IDs to concept names, obtained from the "concept" table.}
+\item{concepts}{Data frame mapping concept IDs to names}
 }
 \value{
-A data frame with concept IDs replaced by concept names in the specified columns.
+Data frame with concept IDs replaced by standardized concept names
 }
 \description{
-This function replaces concept IDs with their corresponding concept names within a table. For each column that contains concept IDs,
-it substitutes the concept ID values with the concept names using a provided dictionary (concepts) obtained from the "concept" table
-in the database. This is essential for converting concept IDs into a more human-readable format.
+Transforms concept IDs to their corresponding concept names within an OMOP CDM table,
+handling missing values and providing fallback naming for unmapped concepts.
+}
+\details{
+Replace Concept IDs with Names in OMOP CDM Tables
+
+The function performs the following operations:
+\enumerate{
+\item Data Type Standardization:
+\itemize{
+\item Converts concept IDs to character type for consistent matching
+\item Ensures concept dictionary uses character IDs
+}
+\item Value Translation Process:
+\itemize{
+\item Iterates through each concept ID column
+\item Handles special cases:
+\itemize{
+\item NA values
+\item NULL values
+\item Empty strings
+}
+\item Maps IDs to names using concept dictionary
+\item Provides fallback naming ("concept_id_" + ID) for unmapped concepts
+}
+\item Name Standardization:
+\itemize{
+\item Applies standardizeName() function to concept names
+\item Ensures consistent formatting
+\item Maintains traceability for unmapped concepts
+}
+}
+
+Translation Rules:
+\itemize{
+\item NA/NULL/Empty -> NA
+\item Mapped ID -> Standardized concept name
+\item Unmapped ID -> "concept_id_" + original ID
+}
+}
+\examples{
+\dontrun{
+# Example with concept mapping
+test_data <- data.frame(
+  condition_concept_id = c("1", "2", NA, "3"),
+  drug_concept_id = c("4", "5", "6", NA)
+)
+concept_map <- data.frame(
+  concept_id = c("1", "2", "4", "5"),
+  concept_name = c("Diabetes", "Hypertension", "Aspirin", "Metformin")
+)
+translated <- translateConcepts(
+  test_data,
+  c("condition_concept_id", "drug_concept_id"),
+  concept_map
+)
+}
+
 }

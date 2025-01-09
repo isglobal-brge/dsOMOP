@@ -2,35 +2,100 @@
 % Please edit documentation in R/06_concepts.R
 \name{getConcepts}
 \alias{getConcepts}
-\title{Get Concept Names from Concept IDs}
+\title{Concept Name Retrieval from Vocabulary}
 \usage{
 getConcepts(
   connection,
   conceptIds,
   conceptTable,
-  dbms = NULL,
+  dbms,
   schema = NULL,
   vocabularySchema = NULL
 )
 }
 \arguments{
-\item{connection}{A database connection object through which the query will be executed.}
+\item{connection}{DBI database connection object}
 
-\item{conceptIds}{A numeric vector containing the concept IDs for which names are to be retrieved.}
+\item{conceptIds}{Numeric vector of concept IDs to look up}
 
-\item{conceptTable}{A character string specifying the exact name of the concept table to be queried.}
+\item{conceptTable}{Character string specifying concept table name}
 
-\item{dbms}{An optional parameter specifying the database management system.}
+\item{dbms}{Character string identifying the database system}
 
-\item{schema}{An optional parameter specifying the database schema.}
+\item{schema}{Optional character string for database schema}
 
-\item{vocabularySchema}{An optional parameter specifying the vocabulary schema.}
+\item{vocabularySchema}{Optional character string for vocabulary schema}
 }
 \value{
-A data frame with columns "concept_id" and "concept_name", representing the mapping from concept IDs to their names.
+Data frame with columns "concept_id" and "concept_name"
 }
 \description{
-This function queries the specified "concept" table to find the corresponding concept names for a given list of concept IDs.
-It constructs a dictionary of concept IDs and their associated names, which is essential for translating concept IDs
-in tables to their meaningful names.
+Queries the OMOP vocabulary tables to retrieve concept names for a given set of concept IDs,
+handling different database systems, schemas, and data types.
+}
+\details{
+Retrieve Concept Names from OMOP Vocabulary
+
+The function performs the following operations:
+\enumerate{
+\item Schema Management:
+\itemize{
+\item Validates schema specifications
+\item Handles schema switching
+\item Ensures proper cleanup
+}
+\item Column Identification:
+\itemize{
+\item Locates concept_id and concept_name columns case-insensitively
+\item Validates column existence
+\item Determines column data types
+}
+\item Query Construction:
+\itemize{
+\item Builds DBMS-specific queries
+\item Handles numeric vs character concept IDs
+\item Ensures proper SQL syntax and quoting
+}
+\item Data Type Handling:
+\itemize{
+\item Manages numeric concept IDs
+\item Handles string-based concept IDs
+\item Processes decimal values (removes .0 suffix)
+}
+\item Error Handling:
+\itemize{
+\item Validates input data
+\item Handles missing concepts
+\item Manages schema transitions
+}
+}
+
+Query Process:
+\enumerate{
+\item Determine concept_id column type
+\item Format concept IDs based on type
+\item Construct and execute SQL query
+\item Process and return results
+}
+}
+\examples{
+\dontrun{
+# Basic concept retrieval
+concepts <- getConcepts(
+  connection = db_conn,
+  conceptIds = c(1, 2, 3),
+  conceptTable = "concept",
+  dbms = "postgresql"
+)
+
+# With separate vocabulary schema
+concepts <- getConcepts(
+  connection = db_conn,
+  conceptIds = c(1, 2, 3),
+  conceptTable = "concept",
+  dbms = "postgresql",
+  vocabularySchema = "vocabulary"
+)
+}
+
 }

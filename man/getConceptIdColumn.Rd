@@ -2,19 +2,47 @@
 % Please edit documentation in R/03_columns.R
 \name{getConceptIdColumn}
 \alias{getConceptIdColumn}
-\title{Get Concept ID Column Name}
+\title{Dynamic Concept ID Column Name Generation}
 \usage{
 getConceptIdColumn(tableName)
 }
 \arguments{
-\item{tableName}{The name of the table for which to generate the concept ID column name.}
+\item{tableName}{Character string containing the OMOP CDM table name}
 }
 \value{
-A string containing the name of the concept ID column.
+Character string representing the standardized concept ID column name
 }
 \description{
-This function generates the name of the concept ID column based on the provided table name.
-It removes the suffixes "_occurrence" and "_exposure" from the table name, if present, and appends "_concept_id"
-to form the concept ID column name. This is useful for dynamically identifying the concept ID
-column in tables where the base name of the table is used to construct column names.
+Generates standardized concept ID column names for OMOP CDM tables by applying
+consistent naming conventions and handling special table name cases.
+}
+\details{
+Generate Concept ID Column Name
+
+The function performs the following transformations:
+\enumerate{
+\item Converts table name to lowercase for consistency
+\item Removes specific suffixes ('_occurrence', '_exposure')
+\item Appends '_concept_id' to create the final column name
+}
+
+This standardization is crucial for:
+\itemize{
+\item Maintaining consistent column naming across the OMOP CDM
+\item Supporting automated concept ID column identification
+\item Ensuring compatibility with standard OMOP CDM tools
+}
+}
+\examples{
+\dontrun{
+# Basic table name
+getConceptIdColumn("condition")  # Returns "condition_concept_id"
+
+# Table with occurrence suffix
+getConceptIdColumn("drug_exposure")  # Returns "drug_concept_id"
+
+# Case-insensitive handling
+getConceptIdColumn("OBSERVATION")  # Returns "observation_concept_id"
+}
+
 }

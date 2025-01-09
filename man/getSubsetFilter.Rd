@@ -2,16 +2,49 @@
 % Please edit documentation in R/04_person.R
 \name{getSubsetFilter}
 \alias{getSubsetFilter}
-\title{Get DataSHIELD's Subset Filter Value}
+\title{Get DataSHIELD Subset Filter Threshold}
 \usage{
 getSubsetFilter()
 }
 \value{
-A numeric value representing the minimum number of patients required for subset operations.
+A numeric value representing the minimum required number of patients for subset operations.
+Returns 0 if no filter setting is found.
 }
 \description{
-This function retrieves the subset filter value (nfilter.subset) from DataSHIELD's disclosure settings.
-The subset filter value determines the minimum number of patients that can result from a subset operation.
-It is used as a measure of the minimum number of patients that can be processed, as many tables in OMOP CDM
-may contain multiple records related to the same patient (person).
+Retrieves and determines the appropriate subset filter threshold from DataSHIELD's disclosure control
+settings. This value represents the minimum allowable number of patients in any data subset to
+maintain privacy and prevent potential re-identification.
+}
+\details{
+Retrieve DataSHIELD's Privacy-Preserving Subset Filter Value
+
+The function follows a hierarchical approach to determine the appropriate filter value:
+\enumerate{
+\item Checks for 'nfilter.subset' setting (primary)
+\item Falls back to 'datashield.nfilter.subset' if primary not found
+\item Uses 'default.nfilter.subset' as final fallback
+\item Returns 0 if no valid setting is found
+}
+
+This threshold is crucial for:
+\itemize{
+\item Maintaining patient privacy
+\item Preventing disclosure of sensitive information
+\item Ensuring compliance with data protection regulations
+\item Supporting safe analysis of OMOP CDM data
+}
+}
+\examples{
+\dontrun{
+# Get the current subset filter threshold
+min_patients <- getSubsetFilter()
+
+# Example usage in data filtering
+if (nrow(patient_subset) >= min_patients) {
+  # Proceed with analysis
+} else {
+  # Handle insufficient data case
+}
+}
+
 }

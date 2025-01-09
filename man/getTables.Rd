@@ -2,18 +2,34 @@
 % Please edit documentation in R/01_connection.R
 \name{getTables}
 \alias{getTables}
-\title{Get Database Tables}
+\title{List Available Database Tables}
 \usage{
 getTables(connection)
 }
 \arguments{
-\item{connection}{A DBI database connection object.}
+\item{connection}{A DBI database connection object. Must be an active connection.}
 }
 \value{
-A character vector containing the names of all tables in the database.
+A character vector containing the names of all accessible tables in the database.
 }
 \description{
-Retrieves a list of all tables available in the specified database connection.
-This function utilizes the DBI package to list all tables present in the database
-connected through the provided DBI connection object.
+This function provides a simple interface to list all available tables in the database.
+It uses the DBI interface to ensure compatibility across different database management systems.
+}
+\details{
+Retrieves a comprehensive list of all tables accessible in the connected database and schema.
+}
+\examples{
+\dontrun{
+# Get connection
+conn <- getConnection(resource)
+
+# List all tables
+available_tables <- getTables(conn)
+print(available_tables)
+
+# Close connection
+closeConnection(conn)
+}
+
 }

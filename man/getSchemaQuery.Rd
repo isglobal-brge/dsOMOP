@@ -7,11 +7,17 @@
 getSchemaQuery(dbms)
 }
 \arguments{
-\item{dbms}{The name of the DBMS (e.g., "postgresql", "mysql").}
+\item{dbms}{The name of the DBMS (e.g., "postgresql", "mysql", "mariadb").}
 }
 \value{
-The schema query corresponding to the specified DBMS.
+The schema query string corresponding to the specified DBMS.
 }
 \description{
-Get the schema query for a specific DBMS
+Retrieves the registered schema query for a particular database management system.
+}
+\examples{
+# Get PostgreSQL schema query
+query <- getSchemaQuery("postgresql")
+print(query)  # Should print: SET search_path TO {schema}
+
 }

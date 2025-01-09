@@ -2,16 +2,42 @@
 % Please edit documentation in R/09_catalog.R
 \name{checkPrivacyControlLevelDS}
 \alias{checkPrivacyControlLevelDS}
-\title{Check Privacy Control Level}
+\title{Check DataSHIELD Privacy Settings}
 \usage{
 checkPrivacyControlLevelDS()
 }
 \value{
-An error message if the privacy control level is not set to 'permissive' or 'banana'.
+Character string containing error message if privacy level is insufficient,
+NULL otherwise
 }
 \description{
-This function checks if the current privacy control level is set to either 'permissive' or 'banana'.
-It is designed to be called from the DataSHIELD client to verify that the privacy control level is permissive enough to allow the
-required operations used by the package.
-If the privacy control level is not set to 'permissive' or 'banana', the resulting error is returned.
+Validates that the current DataSHIELD privacy control level is set to either
+'permissive' or 'banana', which are required for package operations. Returns
+any error messages if privacy settings are insufficient.
+}
+\details{
+Verify DataSHIELD Privacy Control Level
+
+Privacy Levels:
+\itemize{
+\item permissive: Standard permissive mode
+\item banana: Alternative permissive mode
+}
+
+The function checks these levels to ensure:
+\itemize{
+\item Proper data access permissions
+\item Required operation capabilities
+\item Compliance with DataSHIELD security model
+}
+}
+\examples{
+\dontrun{
+# Check privacy settings
+error <- checkPrivacyControlLevelDS()
+if (!is.null(error)) {
+  print(paste("Privacy check failed:", error))
+}
+}
+
 }

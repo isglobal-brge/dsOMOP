@@ -2,17 +2,51 @@
 % Please edit documentation in R/10_types.R
 \name{conceptsToFactors}
 \alias{conceptsToFactors}
-\title{Convert Concept ID Columns to Factors in the Table}
+\title{Convert Concept ID Columns to Factors}
 \usage{
 conceptsToFactors(table)
 }
 \arguments{
-\item{table}{A data frame with one or more columns that contain "concept_id" in their name.}
+\item{table}{A data frame containing one or more columns with "concept_id" in their names.
+The columns can be of any type that can be converted to factors.}
 }
 \value{
-A data frame with columns that contain "concept_id" in their name converted to factors.
+A data frame with all concept ID columns converted to factors. All other
+columns remain unchanged.
 }
 \description{
-This function takes a data frame and converts all columns that contain "concept_id" in their name to factors,
-ignoring case.
+Converts all columns in a data frame that contain "concept_id" in their name to factors,
+ignoring case sensitivity. This is useful for ensuring consistent data types across
+concept identifier columns in OMOP CDM data.
+}
+\details{
+Convert Concept ID Columns to Factors in the Table
+
+The function performs the following operations:
+\enumerate{
+\item Identifies columns containing "concept_id" in their name (case-insensitive)
+\item Converts identified columns to factor type using as.factor()
+\item Preserves all other columns unchanged
+}
+
+Common Use Cases:
+\itemize{
+\item Standardizing concept ID columns after data import
+\item Preparing data for statistical analysis
+\item Ensuring consistent data types across concept identifiers
+}
+}
+\examples{
+\dontrun{
+# Example with concept ID columns
+data <- data.frame(
+  person_id = 1:3,
+  condition_concept_id = c(1234, 5678, 1234),
+  drug_concept_id = c(8901, 2345, 6789)
+)
+
+# Convert concept IDs to factors
+data_with_factors <- conceptsToFactors(data)
+}
+
 }

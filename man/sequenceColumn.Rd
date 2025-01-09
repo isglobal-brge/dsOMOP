@@ -2,23 +2,78 @@
 % Please edit documentation in R/08_longitudinal.R
 \name{sequenceColumn}
 \alias{sequenceColumn}
-\title{Sequence Column in a Table}
+\title{Sequence Numbering for Longitudinal Data}
 \usage{
 sequenceColumn(table, conceptIdColumn, mergeColumn)
 }
 \arguments{
-\item{table}{A data frame representing the table to be processed.}
+\item{table}{A data frame containing the longitudinal data to be processed}
 
-\item{conceptIdColumn}{A character string specifying the name of the column that contains concept IDs.}
+\item{conceptIdColumn}{A character string specifying the column name containing
+concept identifiers that need sequential numbering}
 
-\item{mergeColumn}{A character string specifying the name of the column used for merging.}
+\item{mergeColumn}{A character string specifying the column name used in
+combination with conceptIdColumn to identify unique entries}
 }
 \value{
-A data frame with sequence numbers appended to the concept ID column for rows that have the same
-combination of concept ID column and merge column values.
+A data frame with modified concept IDs, where duplicate entries have
+sequential numbers appended (e.g., "concept_1.1", "concept_1.2")
 }
 \description{
-This function adds a sequence number to rows within a table that have the same combination of concept ID column
-and merge column values. It is particularly useful for distinguishing between multiple occurrences of the same
-entity in longitudinal data. The sequence number is appended to the concept ID column for duplicates.
+Adds sequential numbers to rows that share identical values across specified columns
+in longitudinal data. This function is essential for distinguishing between multiple
+occurrences of the same entity over time by appending sequence numbers to the
+concept ID values.
+}
+\details{
+Add Sequential Numbering to Duplicate Entries in Longitudinal Data
+
+The function performs the following key operations:
+\enumerate{
+\item Duplicate Detection:
+\itemize{
+\item Identifies rows sharing the same concept ID and merge column values
+\item Checks for duplicates from both directions (start and end)
+\item Only processes data if duplicates are found
+}
+\item Sequence Generation:
+\itemize{
+\item Groups data by concept ID and merge column
+\item Assigns sequential numbers within each group
+\item Maintains original order of entries
+}
+\item Value Modification:
+\itemize{
+\item Appends sequence numbers to concept IDs using dot notation
+\item Preserves original values for non-duplicate entries
+\item Removes temporary sequence column
+}
+}
+
+Common Use Cases:
+\itemize{
+\item Longitudinal patient data with multiple visits
+\item Time-series measurements of the same concept
+\item Sequential medical procedures or observations
+}
+}
+\examples{
+\dontrun{
+# Example with patient visit data
+visits <- data.frame(
+  patient_id = c(1, 1, 1, 2, 2),
+  visit_concept = c("checkup", "checkup", "checkup", "surgery", "surgery"),
+  visit_date = as.Date(c("2023-01-01", "2023-02-01", "2023-03-01",
+                        "2023-01-15", "2023-02-15"))
+)
+
+# Add sequence numbers to duplicate visits
+sequenced_visits <- sequenceColumn(
+  table = visits,
+  conceptIdColumn = "visit_concept",
+  mergeColumn = "patient_id"
+)
+# Results in visit_concept values: "checkup.1", "checkup.2", "checkup.3", "surgery.1", "surgery.2"
+}
+
 }

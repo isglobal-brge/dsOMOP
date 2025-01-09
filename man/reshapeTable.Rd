@@ -2,34 +2,81 @@
 % Please edit documentation in R/05_reshape.R
 \name{reshapeTable}
 \alias{reshapeTable}
-\title{Reshape Table to Wide Format}
+\title{Wide Format Reshaping for OMOP CDM Tables}
 \usage{
 reshapeTable(table, conceptIdColumn, mergeColumn, sequenceLongitudinal = FALSE)
 }
 \arguments{
-\item{table}{A data frame representing the table to be reshaped.}
+\item{table}{A data frame containing OMOP CDM data to be reshaped}
 
-\item{conceptIdColumn}{A string specifying the name of the concept ID column, which characterizes the types of elements.}
+\item{conceptIdColumn}{Character string specifying the concept ID column name that defines element types}
 
-\item{mergeColumn}{A string specifying the name of the merge column, typically "person_id", used as the identifier variable.}
+\item{mergeColumn}{Character string specifying the identifier column name (usually "person_id")}
 
-\item{sequenceLongitudinal}{A logical flag indicating whether to sequence longitudinal data, defaults to FALSE.}
+\item{sequenceLongitudinal}{Logical indicating whether to sequence repeated measurements (default: FALSE)}
 }
 \value{
-A data frame in wide format with standardized and sequenced column names based on the concept ID column.
+A data frame in wide format where:
+\itemize{
+\item Rows represent unique entities (e.g., persons)
+\item Columns combine concept types with original measurements
+\item Column names are standardized and properly sequenced
+}
 }
 \description{
-This function reshapes a given table to a wide format, which facilitates merging with the rest of the tables in the
-database using the specified 'merge column'.
+Transforms an OMOP CDM table from long to wide format to facilitate merging with other tables
+in the database. The function handles concept standardization, longitudinal data sequencing,
+and column name reorganization.
 }
 \details{
-It standardizes the names in the concept ID column since these names will become column names in the reshaped table and
-must be compatible with the data frame column naming system.
+Reshape OMOP CDM Table to Wide Format
 
-It also sequences repeated elements of the same type for the same person in the columns to separate these instances
-for the reshaping process. This is necessary to handle repeated concept names and longitudinal data.
+The function performs several key operations:
+\enumerate{
+\item Validates the presence of required merge column
+\item Optionally sequences longitudinal data to handle repeated measurements
+\item Reshapes the table using DataSHIELD's reShapeDS function
+\item Standardizes column names for consistency and readability
+}
 
-The reshaping process uses the merge column as the identifier variable (idvar), which is typically "person_id" unless
-another connecting element to the rest of the database is specified. The time variable (timevar) is the concept ID column,
-characterizing the types of elements for each row in the table. This creates a merge column x concept ID column relationship.
+The reshaping process uses:
+\itemize{
+\item Merge column (typically person_id) as the identifier variable
+\item Concept ID column as the time variable to characterize element types
+\item Remaining columns as measurement variables
+}
+
+This transformation is essential for:
+\itemize{
+\item Creating person-centric views of the data
+\item Facilitating joins between OMOP CDM tables
+\item Handling repeated measurements properly
+\item Maintaining data integrity during transformations
+}
+}
+\examples{
+\dontrun{
+# Basic reshaping of a condition table
+condition_data <- data.frame(
+  person_id = c(1, 1, 2),
+  condition_concept_id = c("diabetes", "hypertension", "diabetes"),
+  start_date = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01"))
+)
+
+# Reshape without longitudinal sequencing
+wide_data <- reshapeTable(
+  table = condition_data,
+  conceptIdColumn = "condition_concept_id",
+  mergeColumn = "person_id"
+)
+
+# Reshape with longitudinal sequencing
+wide_data_seq <- reshapeTable(
+  table = condition_data,
+  conceptIdColumn = "condition_concept_id",
+  mergeColumn = "person_id",
+  sequenceLongitudinal = TRUE
+)
+}
+
 }

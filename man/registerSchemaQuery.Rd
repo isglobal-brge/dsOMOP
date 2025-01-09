@@ -7,12 +7,25 @@
 registerSchemaQuery(dbms, query, override = TRUE)
 }
 \arguments{
-\item{dbms}{The name of the DBMS (e.g., "postgresql", "mysql").}
+\item{dbms}{The name of the DBMS (e.g., "postgresql", "mysql", "mariadb").}
 
-\item{query}{The schema query to be registered.}
+\item{query}{The schema query to be registered. Should contain {schema} placeholder.}
 
-\item{override}{A logical value indicating whether to override an existing query for the DBMS.}
+\item{override}{A logical value indicating whether to override an existing query for the DBMS.
+Default is TRUE.}
 }
 \description{
-Register a new schema query for a specific DBMS
+This function allows registering a SQL query that will be used to set/change the schema
+for a specific database management system (DBMS). The query should contain a {schema}
+placeholder that will be replaced with the actual schema name when executed.
+}
+\examples{
+# Register a schema query for PostgreSQL
+registerSchemaQuery("postgresql", "SET search_path TO {schema}")
+
+# Register without overriding existing query
+\dontrun{
+registerSchemaQuery("mysql", "USE {schema}", override = FALSE)
+}
+
 }

@@ -2,21 +2,67 @@
 % Please edit documentation in R/06_concepts.R
 \name{getConceptIds}
 \alias{getConceptIds}
-\title{Get Concept IDs from a Table}
+\title{Unique Concept ID Extraction}
 \usage{
 getConceptIds(table, conceptIdColumns)
 }
 \arguments{
-\item{table}{A data frame representing the table from which to extract concept IDs.}
+\item{table}{A data frame containing OMOP CDM data}
 
-\item{conceptIdColumns}{A character vector specifying the names of the columns that contain concept IDs.}
+\item{conceptIdColumns}{Character vector of column names containing concept IDs}
 }
 \value{
-A numeric vector containing all unique concept IDs from the specified concept ID columns.
+Numeric vector of unique, non-NA concept IDs
 }
 \description{
-This function extracts all unique concept IDs from specified concept ID columns within a table. It iterates
-over each concept ID column, collects all unique concept IDs while omitting any NA values, and returns a
-vector of these unique concept IDs. This is crucial for identifying the distinct concepts present in the table
-that may require translation or further processing.
+Extracts and deduplicates concept IDs from specified columns in an OMOP CDM table,
+handling NA values and ensuring clean data for concept translation.
+}
+\details{
+Extract Unique Concept IDs from OMOP CDM Tables
+
+The function performs several key operations:
+\enumerate{
+\item Column Processing:
+\itemize{
+\item Iterates through each specified concept ID column
+\item Extracts all values using column subsetting
+\item Handles missing and NULL values
+}
+\item Data Cleaning:
+\itemize{
+\item Removes NA values using na.omit()
+\item Combines IDs from all columns using unlist()
+\item Deduplicates using unique()
+}
+\item Special Value Handling:
+\itemize{
+\item Manages NULL values
+\item Handles missing data
+\item Processes empty strings
+}
+}
+
+Common Concept ID Types:
+\itemize{
+\item Standard concepts (usually positive integers)
+\item Source concepts (can be negative integers)
+\item Custom concepts (system-specific IDs)
+}
+}
+\examples{
+\dontrun{
+# Example with duplicate and NA values
+test_data <- data.frame(
+  condition_concept_id = c(1, 1, NA, 2),
+  drug_concept_id = c(3, NA, 4, 4),
+  observation_concept_id = c(5, 5, NA, 6)
+)
+unique_ids <- getConceptIds(
+  test_data,
+  c("condition_concept_id", "drug_concept_id", "observation_concept_id")
+)
+# Returns c(1, 2, 3, 4, 5, 6)
+}
+
 }

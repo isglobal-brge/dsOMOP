@@ -2,7 +2,7 @@
 % Please edit documentation in R/11_schema.R
 \name{fillSchemaQuery}
 \alias{fillSchemaQuery}
-\title{Fill Schema Query}
+\title{Fill Schema Query with actual schema name}
 \usage{
 fillSchemaQuery(schema, query)
 }
@@ -15,5 +15,13 @@ fillSchemaQuery(schema, query)
 The schema query with the {schema} placeholder replaced by the actual schema name.
 }
 \description{
-Fill Schema Query
+Replaces the {schema} placeholder in a schema query template with the actual schema name.
+This function is used internally to prepare the final query for execution.
+}
+\examples{
+# Fill a PostgreSQL schema query
+template <- "SET search_path TO {schema}"
+filled <- fillSchemaQuery("public", template)
+print(filled)  # Prints: "SET search_path TO public"
+
 }

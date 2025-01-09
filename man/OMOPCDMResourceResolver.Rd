@@ -4,30 +4,35 @@
 \alias{OMOPCDMResourceResolver}
 \title{OMOP CDM Resource Resolver}
 \description{
-This class is responsible for resolving resources specific to the OMOP Common Data Model (CDM).
-It inherits from the ResourceResolver class and implements methods to determine if a resource
-is suitable for OMOP CDM and to create a new client for interacting with OMOP CDM resources.
+The resolver performs two main functions:
+\enumerate{
+\item Validates if a resource configuration is suitable for OMOP CDM
+\item Creates new OMOPCDMResourceClient instances for valid resources
+}
+}
+\details{
+This R6 class handles resolution of OMOP CDM database resources. It validates
+resource configurations and creates appropriate client instances for interacting
+with OMOP CDM databases.
+}
+\examples{
+\dontrun{
+resolver <- OMOPCDMResourceResolver$new()
+
+# Check if resource is suitable
+resource <- list(
+  url = "postgresql://localhost/omop",
+  format = "omop.cdm.db"
+)
+is_suitable <- resolver$isFor(resource)
+
+# Create client if suitable
+client <- resolver$newClient(resource)
+}
+
 }
 \section{Super class}{
 \code{\link[resourcer:ResourceResolver]{resourcer::ResourceResolver}} -> \code{OMOPCDMResourceResolver}
-}
-\section{Public fields}{
-\if{html}{\out{<div class="r6-fields">}}
-\describe{
-\item{\code{isFor}}{Checks if the given resource is suitable for OMOP CDM based on specific criteria.}
-
-\item{\code{newClient}}{Creates a new OMOPCDMResourceClient for the given resource if it is suitable.}
-}
-\if{html}{\out{</div>}}
-}
-\section{Active bindings}{
-\if{html}{\out{<div class="r6-active-bindings">}}
-\describe{
-\item{\code{isFor}}{Checks if the given resource is suitable for OMOP CDM based on specific criteria.}
-
-\item{\code{newClient}}{Creates a new OMOPCDMResourceClient for the given resource if it is suitable.}
-}
-\if{html}{\out{</div>}}
 }
 \section{Methods}{
 \subsection{Public methods}{
@@ -48,19 +53,41 @@ is suitable for OMOP CDM and to create a new client for interacting with OMOP CD
 \if{html}{\out{<a id="method-OMOPCDMResourceResolver-isFor"></a>}}
 \if{latex}{\out{\hypertarget{method-OMOPCDMResourceResolver-isFor}{}}}
 \subsection{Method \code{isFor()}}{
+Check if a resource is suitable for OMOP CDM handling
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{OMOPCDMResourceResolver$isFor(resource)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{resource}}{Resource configuration to validate}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Logical indicating if resource is suitable
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-OMOPCDMResourceResolver-newClient"></a>}}
 \if{latex}{\out{\hypertarget{method-OMOPCDMResourceResolver-newClient}{}}}
 \subsection{Method \code{newClient()}}{
+Create new client for OMOP CDM resource
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{OMOPCDMResourceResolver$newClient(resource)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{resource}}{Resource configuration}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+New OMOPCDMResourceClient instance or NULL if resource unsuitable
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-OMOPCDMResourceResolver-clone"></a>}}
