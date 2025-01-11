@@ -2,15 +2,33 @@
 % Please edit documentation in R/01_connection.R
 \name{closeConnection}
 \alias{closeConnection}
-\title{Close Database Connection}
+\title{Close Database Connection Safely}
 \usage{
 closeConnection(connection, error = NULL)
 }
 \arguments{
-\item{connection}{A DBI database connection object.}
+\item{connection}{A DBI database connection object to be closed}
 
-\item{error}{An optional error message to be thrown if not NULL.}
+\item{error}{Optional error message to propagate after closing connection}
 }
 \description{
-Closes an active database connection. If an error parameter is provided, the function will propagate the specified error.
+This function provides a safe way to:
+\itemize{
+\item Close active database connections
+\item Handle any connection-related errors
+\item Propagate specific error messages if needed
+}
+}
+\details{
+Ensures safe termination of database connections with optional error handling.
+}
+\examples{
+\dontrun{
+# Simple connection close
+closeConnection(conn)
+
+# Close with error propagation
+closeConnection(conn, error = "Database operation failed")
+}
+
 }

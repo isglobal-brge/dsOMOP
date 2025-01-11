@@ -1,5 +1,5 @@
 Package: dsOMOP
-Title: Server-Side DataSHIELD Integration for OMOP CDM Databases
+Title: DataSHIELD Integration for OMOP CDM Databases
 Version: 1.1.0
 Authors@R:
     c(person("David", "Sarrat González", , "david.sarrat@isglobal.org", role = c("aut", "cre")),
@@ -11,7 +11,7 @@ Description: This package facilitates interaction with remote databases in the O
 License: MIT
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.1
+RoxygenNote: 7.3.2
 Depends:
     dbplyr,
     dplyr,

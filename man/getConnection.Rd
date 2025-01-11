@@ -7,14 +7,47 @@
 getConnection(resource)
 }
 \arguments{
-\item{resource}{An object of class OMOPCDMResourceClient representing the OMOP CDM resource client.}
+\item{resource}{An object of class OMOPCDMResourceClient representing the OMOP CDM resource client.
+Must be properly initialized with valid connection parameters.}
 }
 \value{
-A DBI database connection object.
+A DBI database connection object configured for the specified OMOP CDM database.
 }
 \description{
-Retrieves an active database connection from the specified OMOP CDM resource client.
-If no connection exists, it creates one using the DBI connector and sets it for future use.
-This ensures that database operations are performed over a valid connection.
-Additionally, it sets the search path to the schema specified in the resource, if present.
+This function performs several key operations:
+\enumerate{
+\item Validates that the provided resource is a valid OMOP CDM resource client
+\item Retrieves or creates a database connection using the client
+\item Configures the database schema if specified
+\item Returns an active DBI connection object
+}
+}
+\details{
+Establishes and retrieves an active database connection from an OMOP CDM resource client.
+This function handles connection management and schema configuration for OMOP CDM databases.
+}
+\examples{
+\dontrun{
+# Create a resource client
+resource <- OMOPCDMResourceClient$new(list(
+  url = "postgresql://localhost:5432/omop_db//dsomop::/schema:cdm",
+  format = "omop.cdm.db"
+))
+
+# Get database connection
+conn <- getConnection(resource)
+
+# Use connection for database operations
+tables <- DBI::dbListTables(conn)
+
+# Close connection when done
+closeConnection(conn)
+}
+
+}
+\seealso{
+\itemize{
+\item \code{\link{closeConnection}} for properly closing database connections
+\item \code{\link{OMOPCDMResourceClient}} for details on the resource client class
+}
 }

@@ -2,19 +2,56 @@
 % Please edit documentation in R/06_concepts.R
 \name{getConceptIdColumns}
 \alias{getConceptIdColumns}
-\title{Get Concept ID Columns from a Table}
+\title{Concept ID Column Identification}
 \usage{
 getConceptIdColumns(table)
 }
 \arguments{
-\item{table}{A data frame representing the table to be examined.}
+\item{table}{A data frame containing OMOP CDM data}
 }
 \value{
-A character vector containing the names of the columns that include concept IDs.
+Character vector of column names that contain concept IDs
 }
 \description{
-This function examines each column in a given table to identify those that contain concept IDs.
-Concept ID columns are recognized by the presence of "_concept_id" in their names. These columns
-are essential for the translation process, where concept IDs are replaced with their corresponding
-concept names.
+Identifies columns in an OMOP CDM table that contain concept IDs by examining column names
+for the standard "_concept_id" suffix pattern.
+}
+\details{
+Identify Concept ID Columns in OMOP CDM Tables
+
+The function performs pattern matching to identify concept ID columns:
+\itemize{
+\item Searches for "_concept_id" suffix in column names (case-sensitive)
+\item Handles standard OMOP column naming patterns:
+\itemize{
+\item condition_concept_id
+\item drug_concept_id
+\item procedure_concept_id
+\item measurement_concept_id
+\item observation_concept_id
+etc.
+}
+}
+
+Column Identification Process:
+\enumerate{
+\item Examines all column names in the input table
+\item Uses regex pattern "_concept_id" for matching
+\item Maintains case sensitivity for OMOP standard compliance
+\item Returns vector of matching column names
+}
+}
+\examples{
+\dontrun{
+# Example with multiple concept ID columns
+test_data <- data.frame(
+  person_id = 1:3,
+  condition_concept_id = c(1, 2, 3),
+  drug_concept_id = c(4, 5, 6),
+  visit_occurrence_id = c(7, 8, 9)  # Not a concept ID column
+)
+concept_columns <- getConceptIdColumns(test_data)
+# Returns c("condition_concept_id", "drug_concept_id")
+}
+
 }

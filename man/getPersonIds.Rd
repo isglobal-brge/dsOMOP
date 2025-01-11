@@ -2,18 +2,52 @@
 % Please edit documentation in R/04_person.R
 \name{getPersonIds}
 \alias{getPersonIds}
-\title{Get Unique Person IDs from a Table}
+\title{Get Unique Person IDs from Table}
 \usage{
 getPersonIds(table)
 }
 \arguments{
-\item{table}{A data frame or tibble containing the data from which to extract person IDs.}
+\item{table}{A data frame or tibble containing OMOP CDM data. Must include a 'person_id' column.}
 }
 \value{
-A vector containing all unique person IDs from the table.
+A vector containing unique person IDs extracted from the input table.
 }
 \description{
-This function extracts all unique person IDs from the specified table. It checks if the table
-contains a 'person_id' column and returns a vector of unique person IDs. If the 'person_id'
-column is not present, it stops the execution with an error message.
+Extracts all unique person identifiers from a specified OMOP CDM table. This function performs
+validation checks on the input table structure and returns a deduplicated vector of person IDs.
+}
+\details{
+Extract Unique Person IDs from OMOP CDM Table
+
+The function performs the following operations:
+\enumerate{
+\item Validates the presence of a required 'person_id' column in the input table
+\item Extracts all person IDs from the validated table
+\item Deduplicates the IDs to ensure uniqueness
+}
+
+This function is particularly useful for:
+\itemize{
+\item Patient cohort identification
+\item Data filtering operations
+\item Ensuring unique patient counts
+}
+}
+\examples{
+\dontrun{
+# Example with a valid table
+patient_data <- data.frame(
+  person_id = c(1, 1, 2, 3, 3),
+  value = c(10, 20, 30, 40, 50)
+)
+unique_ids <- getPersonIds(patient_data)  # Returns c(1, 2, 3)
+
+# Example that would raise an error
+invalid_data <- data.frame(
+  subject_id = c(1, 2, 3),
+  value = c(10, 20, 30)
+)
+# getPersonIds(invalid_data)  # Would throw error: "Invalid person filter!"
+}
+
 }

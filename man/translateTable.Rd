@@ -2,36 +2,87 @@
 % Please edit documentation in R/06_concepts.R
 \name{translateTable}
 \alias{translateTable}
-\title{Translate Table Concepts}
+\title{Concept Translation for OMOP CDM Tables}
 \usage{
-translateTable(
-  connection,
-  table,
-  dbms = NULL,
-  schema = NULL,
-  vocabularySchema = NULL
-)
+translateTable(connection, table, dbms, schema = NULL, vocabularySchema = NULL)
 }
 \arguments{
-\item{connection}{A DBI database connection object.}
+\item{connection}{A DBI database connection object for database operations}
 
-\item{table}{A data frame representing the table with concept IDs to be translated.}
+\item{table}{A data frame containing OMOP CDM data with concept IDs}
 
-\item{dbms}{An optional parameter specifying the database management system.}
+\item{dbms}{Character string specifying the database management system (e.g., "postgresql", "oracle")}
 
-\item{schema}{An optional parameter specifying the database schema.}
+\item{schema}{Optional character string specifying the primary database schema}
 
-\item{vocabularySchema}{An optional parameter specifying the vocabulary schema.}
+\item{vocabularySchema}{Optional character string specifying a separate vocabulary schema}
 }
 \value{
 A data frame with concept IDs replaced by their corresponding concept names.
+Unmapped concepts are prefixed with "concept_id_" for traceability.
 }
 \description{
-This function translates concept IDs in a table to their corresponding concept names.
+Translates concept IDs in an OMOP CDM table to their corresponding concept names by querying
+the vocabulary tables. Handles schema management, case-insensitive matching, and graceful
+fallbacks when concepts cannot be found.
 }
 \details{
-It first checks if the 'concept' table exists in the database. If it does, the function identifies columns containing
-concept IDs, retrieves these IDs, and then fetches the corresponding concept names from the 'concept' table.
+Translate Concept IDs to Concept Names in OMOP CDM Tables
 
-Finally, it replaces the concept IDs in the original table with the fetched concept names.
+The function performs the following key operations:
+\enumerate{
+\item Schema Management:
+\itemize{
+\item Validates and switches between schemas as needed
+\item Handles vocabulary schema separately if specified
+\item Restores original schema after operations
+}
+\item Concept Table Operations:
+\itemize{
+\item Locates the concept table case-insensitively
+\item Validates concept table structure
+\item Extracts relevant concept mappings
+}
+\item Translation Process:
+\itemize{
+\item Identifies columns containing concept IDs (e.g., "condition_concept_id", "drug_concept_id")
+\item Retrieves unique concept IDs from the table
+\item Maps IDs to concept names from vocabulary
+\item Replaces IDs with standardized concept names
+}
+}
+
+Schema Handling:
+\itemize{
+\item Primary schema: Used for main table operations
+\item Vocabulary schema: Optional separate schema for concept lookups
+\item Schema switching: Ensures queries target correct tables
+}
+
+Error Handling:
+\itemize{
+\item Missing concept table: Returns original table with warning
+\item Failed concept retrieval: Maintains original IDs with "concept_id_" prefix
+\item Schema errors: Restores original schema and reports error
+}
+}
+\examples{
+\dontrun{
+# Basic usage with default schema
+translated_data <- translateTable(
+  connection = db_conn,
+  table = condition_table,
+  dbms = "postgresql"
+)
+
+# Using separate vocabulary schema
+translated_data <- translateTable(
+  connection = db_conn,
+  table = condition_table,
+  dbms = "postgresql",
+  schema = "cdm",
+  vocabularySchema = "vocabulary"
+)
+}
+
 }

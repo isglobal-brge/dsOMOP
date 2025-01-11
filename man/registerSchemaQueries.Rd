@@ -2,15 +2,28 @@
 % Please edit documentation in R/11_schema.R
 \name{registerSchemaQueries}
 \alias{registerSchemaQueries}
-\title{Register multiple schema queries}
+\title{Register multiple schema queries at once}
 \usage{
 registerSchemaQueries(queries, override = TRUE)
 }
 \arguments{
-\item{queries}{A named list of schema queries where names are DBMS names and values are queries.}
+\item{queries}{A named list of schema queries where names are DBMS names and values are queries.
+Each query should contain a {schema} placeholder.}
 
-\item{override}{A logical value indicating whether to override existing queries for the DBMS.}
+\item{override}{A logical value indicating whether to override existing queries for the DBMS.
+Default is TRUE.}
 }
 \description{
-Register multiple schema queries
+This function allows bulk registration of schema queries for multiple DBMS systems.
+It provides a convenient way to register multiple queries in one call.
+}
+\examples{
+# Register queries for multiple DBMS systems
+queries <- list(
+  postgresql = "SET search_path TO {schema}",
+  mysql = "USE {schema}",
+  mariadb = "USE {schema}"
+)
+registerSchemaQueries(queries)
+
 }

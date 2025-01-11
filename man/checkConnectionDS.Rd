@@ -2,14 +2,36 @@
 % Please edit documentation in R/09_catalog.R
 \name{checkConnectionDS}
 \alias{checkConnectionDS}
-\title{Check Database Connection}
+\title{Test Database Connection}
 \usage{
 checkConnectionDS(resource)
 }
 \arguments{
-\item{resource}{An object representing the database resource.}
+\item{resource}{Database resource object containing connection parameters}
 }
 \description{
-This function checks if a connection to the database can be established using the provided resource.
-It is designed to be called from the DataSHIELD client to verify that the database connection is active and valid.
+Validates that a database connection can be successfully established and closed
+using the provided resource object. Serves as a connection test utility for
+DataSHIELD clients.
+}
+\details{
+Verify Database Connection Status
+
+The function performs these checks:
+\enumerate{
+\item Connection establishment
+\item Proper connection closure
+\item Error handling for connection issues
+}
+}
+\examples{
+\dontrun{
+# Test connection with database resource
+resource <- DatabaseResource$new(
+  driver = "PostgreSQL",
+  dbname = "test_db"
+)
+checkConnectionDS(resource)
+}
+
 }

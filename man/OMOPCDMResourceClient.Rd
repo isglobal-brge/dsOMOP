@@ -4,51 +4,68 @@
 \alias{OMOPCDMResourceClient}
 \title{OMOP CDM Resource Client}
 \description{
-OMOP CDM Resource Client
-
-OMOP CDM Resource Client
+The OMOPCDMResourceClient class provides methods to:
+\itemize{
+\item Initialize connections with OMOP CDM databases
+\item Manage database connections lifecycle
+\item Extract and handle schema information
+\item Parse and utilize DBMS configuration
+}
 }
 \details{
-This class is designed to manage connections and interactions with OMOP Common Data Model (CDM) resources.
-It extends the functionality of the generic ResourceClient class to specifically support OMOP CDM databases.
-The class provides methods to initialize the resource client with a specific DBI connector if provided,
-otherwise, it attempts to find a suitable connector. It also manages database connections, ensuring
-that a connection is established when needed and properly closed when no longer in use.
+This R6 class manages connections and interactions with OMOP Common Data Model (CDM) databases.
+It extends the generic ResourceClient class to provide OMOP CDM-specific functionality for database
+connections, schema management, and resource handling.
+
+The class uses a URL-based configuration system with the format:
+\verb{dbms://host:port/database//dsomop::/schema:schema_name/vocabulary_schema:vocab_schema}
+
+Where:
+\itemize{
+\item dbms: Database management system (e.g., postgresql, mysql)
+\item schema: Main database schema name
+\item vocabulary_schema: Schema containing OMOP vocabulary tables
+}
+
+This method manages the database connection lifecycle:
+\enumerate{
+\item Checks for existing connection
+\item If none exists, extracts base URL from resource
+\item Creates new connection using DBI connector
+\item Stores connection for reuse
+}
+
+Parses the resource URL to find schema configuration in format:
+\verb{/schema:schema_name}
+
+Parses the resource URL to find vocabulary schema configuration in format:
+\verb{/vocabulary_schema:schema_name}
+
+Extracts DBMS identifier from start of URL (e.g., "postgresql", "mysql")
+
+Safely closes connection if one exists and resets connection state
+}
+\examples{
+\dontrun{
+# Create a resource object
+resource <- list(
+  url = "postgresql://localhost:5432/omop_db//dsomop::/schema:cdm/vocabulary_schema:vocab",
+  format = "omop.cdm.db"
+)
+
+# Initialize client
+client <- OMOPCDMResourceClient$new(resource)
+
+# Get database connection
+conn <- client$getConnection()
+
+# Close connection when done
+client$close()
+}
+
 }
 \section{Super class}{
 \code{\link[resourcer:ResourceClient]{resourcer::ResourceClient}} -> \code{OMOPCDMResourceClient}
-}
-\section{Public fields}{
-\if{html}{\out{<div class="r6-fields">}}
-\describe{
-\item{\code{initialize}}{Constructor method to initialize the OMOPCDMResourceClient object with a specific resource
-and an optional DBI connector. If no DBI connector is provided, it attempts to find one. It throws an error
-if no suitable DBI connector can be found.}
-
-\item{\code{getConnection}}{Retrieves an active database connection. If no connection exists, it creates one using
-the DBI connector and sets it for future use. This ensures that database operations are performed over
-a valid connection.}
-
-\item{\code{close}}{Closes the active database connection if it exists and sets the connection to NULL. This method
-ensures that resources are properly released when the connection is no longer needed.}
-}
-\if{html}{\out{</div>}}
-}
-\section{Active bindings}{
-\if{html}{\out{<div class="r6-active-bindings">}}
-\describe{
-\item{\code{initialize}}{Constructor method to initialize the OMOPCDMResourceClient object with a specific resource
-and an optional DBI connector. If no DBI connector is provided, it attempts to find one. It throws an error
-if no suitable DBI connector can be found.}
-
-\item{\code{getConnection}}{Retrieves an active database connection. If no connection exists, it creates one using
-the DBI connector and sets it for future use. This ensures that database operations are performed over
-a valid connection.}
-
-\item{\code{close}}{Closes the active database connection if it exists and sets the connection to NULL. This method
-ensures that resources are properly released when the connection is no longer needed.}
-}
-\if{html}{\out{</div>}}
 }
 \section{Methods}{
 \subsection{Public methods}{
@@ -77,69 +94,81 @@ ensures that resources are properly released when the connection is no longer ne
 \if{html}{\out{<a id="method-OMOPCDMResourceClient-new"></a>}}
 \if{latex}{\out{\hypertarget{method-OMOPCDMResourceClient-new}{}}}
 \subsection{Method \code{new()}}{
+Initialize a new OMOPCDMResourceClient instance
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{OMOPCDMResourceClient$new(resource, dbi.connector = NULL)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{resource}}{A list containing resource configuration (url, format)}
+
+\item{\code{dbi.connector}}{Optional DBI connector object. If NULL, attempts to find suitable connector}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+A new OMOPCDMResourceClient object
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-OMOPCDMResourceClient-getConnection"></a>}}
 \if{latex}{\out{\hypertarget{method-OMOPCDMResourceClient-getConnection}{}}}
 \subsection{Method \code{getConnection()}}{
-Retrieves an active database connection. If no connection exists, it creates one using
-the DBI connector and sets it for future use. This ensures that database operations are
-performed over a valid connection.
+Get or create an active database connection
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{OMOPCDMResourceClient$getConnection()}\if{html}{\out{</div>}}
 }
 
 \subsection{Returns}{
-A DBI connection object.
+A DBI connection object
 }
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-OMOPCDMResourceClient-getSchema"></a>}}
 \if{latex}{\out{\hypertarget{method-OMOPCDMResourceClient-getSchema}{}}}
 \subsection{Method \code{getSchema()}}{
-Extracts the schema part from the resource URL if it exists.
+Extract database schema name from resource URL
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{OMOPCDMResourceClient$getSchema()}\if{html}{\out{</div>}}
 }
 
 \subsection{Returns}{
-The schema as a string, or NULL if no schema is specified.
+Character string containing schema name, or NULL if not specified
 }
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-OMOPCDMResourceClient-getVocabularySchema"></a>}}
 \if{latex}{\out{\hypertarget{method-OMOPCDMResourceClient-getVocabularySchema}{}}}
 \subsection{Method \code{getVocabularySchema()}}{
-Extracts the vocabulary schema part from the resource URL if it exists.
+Extract vocabulary schema name from resource URL
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{OMOPCDMResourceClient$getVocabularySchema()}\if{html}{\out{</div>}}
 }
 
 \subsection{Returns}{
-The vocabulary schema as a string, or NULL if no vocabulary schema is specified.
+Character string containing vocabulary schema name, or NULL if not specified
 }
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-OMOPCDMResourceClient-getDBMS"></a>}}
 \if{latex}{\out{\hypertarget{method-OMOPCDMResourceClient-getDBMS}{}}}
 \subsection{Method \code{getDBMS()}}{
-Extracts the DBMS part from the resource URL.
+Extract database management system type from resource URL
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{OMOPCDMResourceClient$getDBMS()}\if{html}{\out{</div>}}
 }
 
 \subsection{Returns}{
-The DBMS as a string.
+Character string containing DBMS type
 }
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-OMOPCDMResourceClient-close"></a>}}
 \if{latex}{\out{\hypertarget{method-OMOPCDMResourceClient-close}{}}}
 \subsection{Method \code{close()}}{
+Close active database connection
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{OMOPCDMResourceClient$close()}\if{html}{\out{</div>}}
 }

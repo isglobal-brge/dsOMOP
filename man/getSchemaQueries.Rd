@@ -2,13 +2,20 @@
 % Please edit documentation in R/11_schema.R
 \name{getSchemaQueries}
 \alias{getSchemaQueries}
-\title{Get registered schema queries}
+\title{Get all registered schema queries}
 \usage{
 getSchemaQueries()
 }
 \value{
-A named list of registered schema queries.
+A named list of registered schema queries, where names are DBMS identifiers
+and values are the corresponding schema queries.
 }
 \description{
-Get registered schema queries
+Retrieves all currently registered schema queries across all supported DBMS systems.
+}
+\examples{
+# Get all registered queries
+queries <- getSchemaQueries()
+print(queries)
+
 }

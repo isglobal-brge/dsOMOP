@@ -1,40 +1,84 @@
-#' Reshape Table to Wide Format
+#' Reshape OMOP CDM Table to Wide Format
 #'
-#' This function reshapes a given table to a wide format, which facilitates merging with the rest of the tables in the
-#' database using the specified 'merge column'.
+#' @title Wide Format Reshaping for OMOP CDM Tables
+#' @description
+#' Transforms an OMOP CDM table from long to wide format to facilitate merging with other tables
+#' in the database. The function handles concept standardization, longitudinal data sequencing,
+#' and column name reorganization.
 #'
-#' It standardizes the names in the concept ID column since these names will become column names in the reshaped table and
-#' must be compatible with the data frame column naming system.
+#' @details
+#' The function performs several key operations:
+#' 1. Validates the presence of required merge column
+#' 2. Optionally sequences longitudinal data to handle repeated measurements
+#' 3. Reshapes the table using DataSHIELD's reShapeDS function
+#' 4. Standardizes column names for consistency and readability
 #'
-#' It also sequences repeated elements of the same type for the same person in the columns to separate these instances
-#' for the reshaping process. This is necessary to handle repeated concept names and longitudinal data.
+#' The reshaping process uses:
+#' * Merge column (typically person_id) as the identifier variable
+#' * Concept ID column as the time variable to characterize element types
+#' * Remaining columns as measurement variables
 #'
-#' The reshaping process uses the merge column as the identifier variable (idvar), which is typically "person_id" unless
-#' another connecting element to the rest of the database is specified. The time variable (timevar) is the concept ID column,
-#' characterizing the types of elements for each row in the table. This creates a merge column x concept ID column relationship.
+#' This transformation is essential for:
+#' * Creating person-centric views of the data
+#' * Facilitating joins between OMOP CDM tables
+#' * Handling repeated measurements properly
+#' * Maintaining data integrity during transformations
 #'
-#' @param table A data frame representing the table to be reshaped.
-#' @param conceptIdColumn A string specifying the name of the concept ID column, which characterizes the types of elements.
-#' @param mergeColumn A string specifying the name of the merge column, typically "person_id", used as the identifier variable.
-#' @param sequenceLongitudinal A logical flag indicating whether to sequence longitudinal data, defaults to FALSE.
+#' @param table A data frame containing OMOP CDM data to be reshaped
+#' @param conceptIdColumn Character string specifying the concept ID column name that defines element types
+#' @param mergeColumn Character string specifying the identifier column name (usually "person_id")
+#' @param sequenceLongitudinal Logical indicating whether to sequence repeated measurements (default: FALSE)
 #' 
-#' @return A data frame in wide format with standardized and sequenced column names based on the concept ID column.
+#' @return A data frame in wide format where:
+#' * Rows represent unique entities (e.g., persons)
+#' * Columns combine concept types with original measurements
+#' * Column names are standardized and properly sequenced
+#'
+#' @examples
+#' \dontrun{
+#' # Basic reshaping of a condition table
+#' condition_data <- data.frame(
+#'   person_id = c(1, 1, 2),
+#'   condition_concept_id = c("diabetes", "hypertension", "diabetes"),
+#'   start_date = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01"))
+#' )
+#' 
+#' # Reshape without longitudinal sequencing
+#' wide_data <- reshapeTable(
+#'   table = condition_data,
+#'   conceptIdColumn = "condition_concept_id",
+#'   mergeColumn = "person_id"
+#' )
+#'
+#' # Reshape with longitudinal sequencing
+#' wide_data_seq <- reshapeTable(
+#'   table = condition_data,
+#'   conceptIdColumn = "condition_concept_id",
+#'   mergeColumn = "person_id",
+#'   sequenceLongitudinal = TRUE
+#' )
+#' }
 #'
 reshapeTable <- function(table, conceptIdColumn, mergeColumn, sequenceLongitudinal = FALSE) {
-  # Checks if the merge column is present in the table
+  # Step 1: Validate merge column presence
   if (!mergeColumn %in% names(table)) {
     stop(paste0("The column '", mergeColumn, "' is not present in the table."))
   }
 
-  # Sequences repeated data in the concept ID colum in case there is longitudinal data
+  # Step 2: Handle longitudinal data sequencing if requested
   if(sequenceLongitudinal) {
     table <- sequenceColumn(table, conceptIdColumn, mergeColumn)
   }
 
+  # Step 3: Perform wide format reshaping
+  # Identify measurement variables (all columns except merge and concept columns)
+  measureVars <- names(table)[!names(table) %in% c(mergeColumn, conceptIdColumn)]
+  
+  # Execute reshape operation using DataSHIELD
   table <- dsBase::reShapeDS(
     data.name = "table",
     varying.transmit = NULL,
-    v.names.transmit = names(table)[!names(table) %in% c(mergeColumn, conceptIdColumn)],
+    v.names.transmit = measureVars,
     timevar.name = conceptIdColumn,
     idvar.name = mergeColumn,
     drop.transmit = NULL,
@@ -42,37 +86,67 @@ reshapeTable <- function(table, conceptIdColumn, mergeColumn, sequenceLongitudin
     sep = "."
   )
 
-  # Rearranges the column name structure for better readability
+  # Step 4: Standardize column naming structure
   table <- rearrangeColumnNames(table)
   return(table)
 }
 
-
-#' Rearrange Column Name Tokens
+#' Rearrange Column Names for Reshaped OMOP CDM Tables
 #'
-#' This function rearranges the tokens in the column names of a reshaped table. In the reshaped table,
-#' column names consist of tokens separated by ".", where the first token refers to the original table column
-#' and the second token refers to the related concept type. This function modifies the column names so that
-#' the concept type appears first, followed by the original table column name, improving the readability
-#' of the resulting columns.
+#' @title Column Name Standardization for Reshaped Tables
+#' @description
+#' Standardizes and rearranges column names in reshaped OMOP CDM tables to improve readability
+#' and maintain consistent naming conventions. Handles the reorganization of composite column
+#' names created during the reshaping process.
 #'
-#' @param table A data frame with column names to be rearranged.
+#' @details
+#' The function performs the following operations:
+#' 1. Splits column names into constituent tokens
+#' 2. Reorders tokens to prioritize concept information
+#' 3. Reconstructs column names with standardized structure
 #'
-#' @return A data frame with rearranged column names.
+#' Column name transformation process:
+#' * Original format: "measurement.concept"
+#' * Transformed format: "concept.measurement"
+#'
+#' This standardization is important for:
+#' * Maintaining consistent naming conventions
+#' * Improving column name readability
+#' * Facilitating data analysis and filtering
+#' * Supporting automated processing
+#'
+#' @param table A data frame containing reshaped OMOP CDM data with composite column names
+#'
+#' @return A data frame with standardized column names following the concept-first convention
+#'
+#' @examples
+#' \dontrun{
+#' # Example with reshaped data
+#' df <- data.frame(
+#'   person_id = 1:3,
+#'   value.diabetes = c(1, 0, 1),
+#'   date.diabetes = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01"))
+#' )
+#'
+#' # Standardize column names
+#' df_standard <- rearrangeColumnNames(df)
+#' # Results in: person_id, diabetes.value, diabetes.date
+#' }
 #'
 rearrangeColumnNames <- function(table) {
-  # Splits the column names into tokens
+  # Step 1: Split column names into tokens
   tokens <- strsplit(names(table), "\\.")
 
-  # Moves every first token to the end for each column name
+  # Step 2: Rearrange tokens to prioritize concept information
   rearrangedTokens <- lapply(tokens, function(token) {
     if (length(token) > 1) {
+      # Move measurement type to end, bringing concept to front
       token <- c(token[-1], token[1])
     }
     return(token)
   })
 
-  # Joins the rearranged tokens back together to form the new column names
+  # Step 3: Reconstruct column names with standardized structure
   newColumns <- sapply(rearrangedTokens, paste, collapse = ".")
   names(table) <- newColumns
   return(table)

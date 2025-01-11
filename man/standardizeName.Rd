@@ -2,24 +2,66 @@
 % Please edit documentation in R/07_names.R
 \name{standardizeName}
 \alias{standardizeName}
-\title{Standardize Name}
+\title{Name Standardization for OMOP CDM}
 \usage{
 standardizeName(name)
 }
 \arguments{
-\item{name}{A character string representing the name to be standardized.}
+\item{name}{A character string to be standardized. Can include spaces, special
+characters, or mixed case formatting.}
 }
 \value{
-A character string representing the standardized name.
+A character string containing the standardized name, formatted according
+to the specified rules and suitable for use in R operations.
 }
 \description{
-This function standardizes a given name to ensure compatibility with the translation process.
-It performs the following operations:
-\enumerate{
-\item Converts the name to a valid R object name (make.names)
-\item Changes all characters to lowercase
-\item Replaces periods with underscores
-\item Removes repeated underscores
-\item Trims leading and trailing underscores
+Standardizes names to ensure consistent formatting and compatibility across the OMOP CDM
+data processing pipeline. Implements a series of transformations to create valid,
+standardized R object names while maintaining readability and usability.
 }
+\details{
+Standardize Names for OMOP CDM Data Processing
+
+The function applies the following standardization steps in sequence:
+\enumerate{
+\item Syntax Validation:
+\itemize{
+\item Converts input to valid R object names using make.names()
+\item Handles special characters and spaces appropriately
+}
+\item Case Standardization:
+\itemize{
+\item Converts all characters to lowercase
+\item Ensures consistent case formatting across names
+}
+\item Delimiter Processing:
+\itemize{
+\item Replaces periods with underscores for better readability
+\item Consolidates multiple underscores into single ones
+\item Removes leading and trailing underscores
+}
+}
+
+Common Use Cases:
+\itemize{
+\item Standardizing concept names from vocabulary
+\item Processing column names in reshaped tables
+\item Preparing names for database operations
+}
+}
+\examples{
+\dontrun{
+# Basic name standardization
+standardizeName("Blood Pressure")  # Returns "blood_pressure"
+
+# Handling special characters
+standardizeName("HDL-C (mg/dL)")  # Returns "hdl_c_mg_dl"
+
+# Processing multiple delimiters
+standardizeName("lab.test...result")  # Returns "lab_test_result"
+
+# Removing extra underscores
+standardizeName("__extra_spaces__")  # Returns "extra_spaces"
+}
+
 }

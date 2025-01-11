@@ -2,19 +2,62 @@
 % Please edit documentation in R/10_types.R
 \name{convertDateColumns}
 \alias{convertDateColumns}
-\title{Convert Date and DateTime Columns in the Table}
+\title{Convert Date and DateTime Columns}
 \usage{
 convertDateColumns(table)
 }
 \arguments{
-\item{table}{A data frame with one or more columns that may contain "_date" or "_datetime" in their name.}
+\item{table}{A data frame containing columns that may have "_date" or "_datetime"
+in their names. The date/time data should be in a format convertible
+by as.Date() or as.POSIXct().}
 }
 \value{
-A data frame with columns that contain "_datetime" converted to DateTime type and columns that contain "_date"
-converted to Date type.
+A data frame with date/datetime columns converted to appropriate R types.
+All other columns remain unchanged.
 }
 \description{
-This function takes a data frame and checks each column name by splitting it at each period ('.').
-It then converts columns to DateTime type in R if "_datetime" is found in any part of the name except the first token,
-and to Date type if "_date" is found under the same conditions, ignoring case.
+Processes a data frame to convert columns containing date or datetime information
+to appropriate R date types. The function identifies relevant columns based on
+their names and converts them to either Date or POSIXct format.
+}
+\details{
+Convert Date and DateTime Columns in the Table
+
+The function performs these key operations:
+\enumerate{
+\item Column Name Analysis:
+\itemize{
+\item Splits column names at periods
+\item Examines all parts except the first token
+\item Identifies date/datetime patterns
+}
+\item Type Conversion:
+\itemize{
+\item Converts "_datetime" columns to POSIXct
+\item Converts "_date" columns to Date
+\item Preserves other columns unchanged
+}
+}
+
+Column Naming Rules:
+\itemize{
+\item "_datetime" suffix triggers POSIXct conversion
+\item "_date" suffix triggers Date conversion
+\item First token in period-separated names is ignored
+\item Case-insensitive pattern matching
+}
+}
+\examples{
+\dontrun{
+# Example with various date columns
+data <- data.frame(
+  visit.start_date = c("2023-01-01", "2023-01-02"),
+  measurement.measurement_datetime = c("2023-01-01 10:30:00", "2023-01-02 14:45:00"),
+  other_column = c("A", "B")
+)
+
+# Convert date/datetime columns
+converted_data <- convertDateColumns(data)
+}
+
 }

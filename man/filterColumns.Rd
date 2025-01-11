@@ -2,24 +2,64 @@
 % Please edit documentation in R/03_columns.R
 \name{filterColumns}
 \alias{filterColumns}
-\title{Filter Columns from a Table}
+\title{Column Filtering with Mandatory Column Support}
 \usage{
 filterColumns(table, tableColumns, selectedColumns, keepColumns)
 }
 \arguments{
-\item{table}{The table from which columns are to be filtered.}
+\item{table}{The input data frame or tibble to filter columns from}
 
-\item{tableColumns}{A character vector of all column names in the table.}
+\item{tableColumns}{Character vector containing all available column names in the table}
 
-\item{selectedColumns}{A character vector specifying which columns to include in the filter.}
+\item{selectedColumns}{Character vector specifying which columns to include. If NULL, applies default filtering}
 
-\item{keepColumns}{A character vector of columns that must be included in the output regardless of the filter.}
+\item{keepColumns}{Character vector of mandatory columns that must be retained regardless of other filters}
 }
 \value{
-A character vector of the filtered column names.
+Character vector containing the filtered column names
 }
 \description{
-This function filters columns from a given table based on the specified criteria. It allows for the inclusion
-of mandatory columns (keepColumns) regardless of the filter applied. If no specific columns are selected,
-it defaults to excluding columns that contain '_source' in their names.
+Filters columns from a given table based on specified criteria while preserving mandatory columns.
+Provides flexible column selection with built-in handling of source value columns.
+}
+\details{
+Filter Columns from a Table
+
+The function operates in two modes:
+\enumerate{
+\item Default mode: When no specific columns are selected, automatically excludes columns containing '_source'
+\item Selective mode: Filters based on provided column names while ensuring mandatory columns are retained
+}
+
+The filtering process follows these steps:
+\enumerate{
+\item Checks if specific columns are requested
+\item If not, applies default source column exclusion
+\item Merges mandatory columns with selected columns
+\item Validates final column selection against available table columns
+}
+}
+\examples{
+\dontrun{
+# Example table with various columns
+myTable <- data.frame(
+  id = 1:3,
+  name = c("A", "B", "C"),
+  value_source = c("X", "Y", "Z"),
+  status = c(TRUE, FALSE, TRUE)
+)
+
+# Get all columns except source columns
+cols <- filterColumns(myTable, 
+                     names(myTable), 
+                     selectedColumns = NULL,
+                     keepColumns = NULL)
+
+# Select specific columns while keeping mandatory ones
+cols <- filterColumns(myTable,
+                     names(myTable),
+                     selectedColumns = c("name", "status"),
+                     keepColumns = "id")
+}
+
 }

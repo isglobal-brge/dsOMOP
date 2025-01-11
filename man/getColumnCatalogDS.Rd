@@ -2,21 +2,61 @@
 % Please edit documentation in R/09_catalog.R
 \name{getColumnCatalogDS}
 \alias{getColumnCatalogDS}
-\title{Get Columns Catalog}
+\title{Get Columns Catalog from Database Table}
 \usage{
 getColumnCatalogDS(resource, tableName, dropNA = FALSE)
 }
 \arguments{
-\item{resource}{A resource object representing the database connection.}
+\item{resource}{A database resource object containing connection details}
 
-\item{tableName}{The name of the table from which to retrieve the column names.}
+\item{tableName}{Character string specifying target table name}
 
-\item{dropNA}{A logical flag indicating whether to exclude columns that are completely empty (default is FALSE).}
+\item{dropNA}{Logical flag to exclude empty columns (default: FALSE)}
 }
 \value{
-A character vector containing the names of all columns in the specified table, optionally excluding empty ones.
+Character vector of column names from specified table
 }
 \description{
-This function is called from the DataSHIELD client to fetch a catalog of all available columns from a specific table within
-the database. It allows for an optional filtering to exclude columns that are empty.
+Retrieves a catalog of all available columns from a specified database table. Provides
+options for filtering empty columns and handles case-insensitive table name matching.
+}
+\details{
+Retrieve Column Catalog for Database Table
+
+The function performs these key operations:
+\enumerate{
+\item Connection Management:
+\itemize{
+\item Establishes database connection
+\item Ensures proper cleanup
+}
+\item Table Validation:
+\itemize{
+\item Performs case-insensitive table name matching
+\item Validates table existence
+}
+\item Column Retrieval:
+\itemize{
+\item Gets all columns from specified table
+\item Optionally filters empty columns
+\item Handles retrieval errors gracefully
+}
+}
+}
+\examples{
+\dontrun{
+# Get all columns from person table
+columns <- getColumnCatalogDS(
+  resource = dbResource,
+  tableName = "person"
+)
+
+# Get non-empty columns from observation table
+active_columns <- getColumnCatalogDS(
+  resource = dbResource,
+  tableName = "observation",
+  dropNA = TRUE
+)
+}
+
 }

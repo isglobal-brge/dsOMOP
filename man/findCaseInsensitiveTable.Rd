@@ -2,18 +2,37 @@
 % Please edit documentation in R/02_table.R
 \name{findCaseInsensitiveTable}
 \alias{findCaseInsensitiveTable}
-\title{Find Case-Insensitive Table}
+\title{Find Table Name with Case-Insensitive Matching}
 \usage{
 findCaseInsensitiveTable(tableNames, target)
 }
 \arguments{
-\item{tableNames}{A character vector containing the names of the tables to search through.}
+\item{tableNames}{Character vector of available table names}
 
-\item{target}{A character string representing the name of the table to find, case-insensitively.}
+\item{target}{Character string of the target table name to find}
 }
 \value{
-A character string with the name of the target table if found, otherwise NULL.
+Character string of the matched table name or NULL if no match found
 }
 \description{
-Given a list of table names, this function searches for a table whose name matches a given target in a case-insensitive manner.
+Performs case-insensitive matching of table names to support flexible table name references.
+Prioritizes exact matches before falling back to case-insensitive matching.
+}
+\details{
+Case-Insensitive Table Name Matching
+}
+\examples{
+\dontrun{
+tables <- c("Person", "Measurement", "Observation")
+
+# Exact match
+findCaseInsensitiveTable(tables, "Person")  # Returns "Person"
+
+# Case-insensitive match
+findCaseInsensitiveTable(tables, "person")  # Returns "Person"
+
+# No match
+findCaseInsensitiveTable(tables, "Drug")    # Returns NULL
+}
+
 }

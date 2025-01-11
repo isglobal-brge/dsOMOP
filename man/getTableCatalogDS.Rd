@@ -2,16 +2,40 @@
 % Please edit documentation in R/09_catalog.R
 \name{getTableCatalogDS}
 \alias{getTableCatalogDS}
-\title{Get Tables Catalog}
+\title{Get Tables Catalog from Database}
 \usage{
 getTableCatalogDS(resource)
 }
 \arguments{
-\item{connection}{A DBI database connection object.}
+\item{resource}{A database resource object containing connection details and credentials}
 }
 \value{
-A character vector containing the names of all tables in the database.
+A character vector containing names of all tables in the database
 }
 \description{
-This function is called from the DataSHIELD client to fetch a catalog of all available tables within the database.
+Retrieves a catalog of all available tables within the connected database. This function
+is designed to be called from the DataSHIELD client and handles database connections
+safely with proper error handling and cleanup.
+}
+\details{
+Retrieve Database Table Catalog
+
+The function performs the following operations:
+\enumerate{
+\item Establishes database connection using provided resource
+\item Retrieves list of all tables in database
+\item Handles any errors during retrieval
+\item Ensures proper connection cleanup
+}
+}
+\examples{
+\dontrun{
+# Get catalog of tables using database resource
+resource <- DatabaseResource$new(
+  driver = "PostgreSQL",
+  dbname = "my_database"
+)
+tables <- getTableCatalogDS(resource)
+}
+
 }

@@ -2,24 +2,47 @@
 % Please edit documentation in R/01_connection.R
 \name{getColumns}
 \alias{getColumns}
-\title{Get Table Columns}
+\title{Get Table Column Information}
 \usage{
 getColumns(connection, tableName, dropNA = FALSE, caseInsensitive = TRUE)
 }
 \arguments{
-\item{connection}{A DBI database connection object.}
+\item{connection}{A DBI database connection object}
 
-\item{tableName}{The name of the table from which to retrieve column names.}
+\item{tableName}{Character string specifying the target table name}
 
-\item{dropNA}{A logical value indicating whether to exclude completely empty columns from the result.}
+\item{dropNA}{Logical; if TRUE, excludes columns containing only NA values (default: FALSE)}
 
-\item{caseInsensitive}{A logical value indicating whether to convert all column names to lowercase.}
+\item{caseInsensitive}{Logical; if TRUE, converts all column names to lowercase (default: TRUE)}
 }
 \value{
-A character vector containing the names of all columns in the table, optionally excluding empty ones.
+A character vector containing the processed column names
 }
 \description{
-Retrieves a list of all column names from the specified table within the database connection.
-Optionally, it can exclude columns that are completely empty (NA values) by setting the \code{dropNA} parameter to TRUE.
-When \code{dropNA} is TRUE, it first identifies empty columns and then excludes them from the list of returned columns.
+This function provides detailed column information with options for:
+\itemize{
+\item Listing all columns in a table
+\item Excluding empty columns (containing only NA values)
+\item Case-insensitive column name handling
+}
+}
+\details{
+Retrieves and processes column information from a specified database table.
+}
+\examples{
+\dontrun{
+conn <- getConnection(resource)
+
+# Get all columns
+cols <- getColumns(conn, "person")
+
+# Get non-empty columns only
+cols_no_empty <- getColumns(conn, "person", dropNA = TRUE)
+
+# Get case-sensitive column names
+cols_case <- getColumns(conn, "person", caseInsensitive = FALSE)
+
+closeConnection(conn)
+}
+
 }

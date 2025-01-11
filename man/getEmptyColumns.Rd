@@ -2,21 +2,40 @@
 % Please edit documentation in R/01_connection.R
 \name{getEmptyColumns}
 \alias{getEmptyColumns}
-\title{Get Empty Columns}
+\title{Identify Empty Database Columns}
 \usage{
 getEmptyColumns(connection, tableName)
 }
 \arguments{
-\item{connection}{A DBI database connection object.}
+\item{connection}{A DBI database connection object}
 
-\item{tableName}{The name of the table to check for empty columns.}
+\item{tableName}{Character string specifying the target table name}
 }
 \value{
-A character vector containing the names of all completely empty columns in the table.
+Character vector containing names of empty columns
 }
 \description{
-Identifies and retrieves a list of column names from the specified table within the database connection
-that are completely empty (i.e., all values are NA or empty strings). This function is useful for data
-cleaning and preprocessing steps, allowing users to easily identify and exclude columns that contain no
-useful information.
+This function performs a comprehensive analysis of table columns to identify those that:
+\itemize{
+\item Contain only NULL values
+\item Contain only empty strings
+\item Have no meaningful data
+}
+
+The analysis is performed efficiently using SQL-level operations.
+}
+\details{
+Analyzes a database table to identify columns containing only NULL or empty values.
+}
+\examples{
+\dontrun{
+conn <- getConnection(resource)
+
+# Find empty columns in person table
+empty_cols <- getEmptyColumns(conn, "person")
+print(empty_cols)
+
+closeConnection(conn)
+}
+
 }

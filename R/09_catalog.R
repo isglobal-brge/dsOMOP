@@ -1,200 +1,292 @@
-#' Get Tables Catalog
+#' Retrieve Database Table Catalog
 #'
-#' This function is called from the DataSHIELD client to fetch a catalog of all available tables within the database.
+#' @title Get Tables Catalog from Database
+#' @description
+#' Retrieves a catalog of all available tables within the connected database. This function
+#' is designed to be called from the DataSHIELD client and handles database connections
+#' safely with proper error handling and cleanup.
 #'
-#' @param connection A DBI database connection object.
+#' @details
+#' The function performs the following operations:
+#' 1. Establishes database connection using provided resource
+#' 2. Retrieves list of all tables in database
+#' 3. Handles any errors during retrieval
+#' 4. Ensures proper connection cleanup
 #'
-#' @return A character vector containing the names of all tables in the database.
+#' @param resource A database resource object containing connection details and credentials
+#'
+#' @return A character vector containing names of all tables in the database
+#'
+#' @examples
+#' \dontrun{
+#' # Get catalog of tables using database resource
+#' resource <- DatabaseResource$new(
+#'   driver = "PostgreSQL",
+#'   dbname = "my_database"
+#' )
+#' tables <- getTableCatalogDS(resource)
+#' }
 #'
 #' @export
 #'
 getTableCatalogDS <- function(resource) {
-  # Opens a connection to the database
+  # Step 1: Establish database connection
   connection <- getConnection(resource)
 
-  # Attempts to retrieve the list of tables from the database
+  # Step 2: Retrieve table catalog with error handling
   tryCatch(
     {
       tableCatalog <- getTables(connection)
     },
-    # In case of an error, closes the database connection and propagates the error
     error = function(error) {
       closeConnection(connection, error)
     }
   )
 
-  # If the retrieval was successful, closes the database connection and returns the table catalog
+  # Step 3: Clean up and return results
   closeConnection(connection)
   return(tableCatalog)
 }
 
-
-#' Get Columns Catalog
+#' Retrieve Column Catalog for Database Table
 #'
-#' This function is called from the DataSHIELD client to fetch a catalog of all available columns from a specific table within
-#' the database. It allows for an optional filtering to exclude columns that are empty.
+#' @title Get Columns Catalog from Database Table
+#' @description
+#' Retrieves a catalog of all available columns from a specified database table. Provides
+#' options for filtering empty columns and handles case-insensitive table name matching.
 #'
-#' @param resource A resource object representing the database connection.
-#' @param tableName The name of the table from which to retrieve the column names.
-#' @param dropNA A logical flag indicating whether to exclude columns that are completely empty (default is FALSE).
+#' @details
+#' The function performs these key operations:
+#' 1. Connection Management:
+#'    * Establishes database connection
+#'    * Ensures proper cleanup
 #'
-#' @return A character vector containing the names of all columns in the specified table, optionally excluding empty ones.
+#' 2. Table Validation:
+#'    * Performs case-insensitive table name matching
+#'    * Validates table existence
+#'
+#' 3. Column Retrieval:
+#'    * Gets all columns from specified table
+#'    * Optionally filters empty columns
+#'    * Handles retrieval errors gracefully
+#'
+#' @param resource A database resource object containing connection details
+#' @param tableName Character string specifying target table name
+#' @param dropNA Logical flag to exclude empty columns (default: FALSE)
+#'
+#' @return Character vector of column names from specified table
+#'
+#' @examples
+#' \dontrun{
+#' # Get all columns from person table
+#' columns <- getColumnCatalogDS(
+#'   resource = dbResource,
+#'   tableName = "person"
+#' )
+#'
+#' # Get non-empty columns from observation table
+#' active_columns <- getColumnCatalogDS(
+#'   resource = dbResource,
+#'   tableName = "observation",
+#'   dropNA = TRUE
+#' )
+#' }
 #'
 #' @export
 #'
 getColumnCatalogDS <- function(resource, tableName, dropNA = FALSE) {
-  # Opens a connection to the database
+  # Step 1: Establish database connection
   connection <- getConnection(resource)
 
-  # Attempts to retrieve the list of columns from the specified table
+  # Step 2: Retrieve columns with error handling
   tryCatch(
     {
-      # Finds the case-insensitive table name to ensure correct retrieval
+      # Find case-insensitive table match
       tables <- getTables(connection)
       caseInsensitiveTableName <- findCaseInsensitiveTable(tables, tableName)
+      
+      # Validate table existence
       if (is.null(caseInsensitiveTableName)) {
         stop(paste0("The table '", tableName, "' does not exist in the database."))
       }
       tableName <- caseInsensitiveTableName
 
-      # Retrieves the list of columns from the specified table
+      # Get column list with optional NA filtering
       columnCatalog <- getColumns(connection, tableName, dropNA)
     },
-    # In case of an error, closes the database connection and propagates the error
     error = function(error) {
       closeConnection(connection, error)
     }
   )
 
-  # If the retrieval was successful, closes the database connection and returns the column catalog
+  # Step 3: Clean up and return results
   DBI::dbDisconnect(connection)
   return(columnCatalog)
 }
 
-
-#' Get Concept Catalog
+#' Retrieve Concept Catalog from Database Table
 #'
-#' This function is called from the DataSHIELD client to fetch a catalog of available concept types from a specific table within
-#' the database. It retrieves the unique concept IDs from the specified table and then fetches the corresponding concept types
-#' from the 'concept' table.
+#' @title Get Concept Catalog from OMOP CDM Table
+#' @description
+#' Retrieves a catalog of concepts from a specified OMOP CDM table, mapping concept IDs
+#' to their corresponding concept names from the vocabulary tables. Handles schema
+#' management, privacy filtering, and proper error handling.
 #'
-#' @param resource A resource object representing the database connection.
-#' @param tableName The name of the table from which to retrieve the concept types.
+#' @details
+#' The function performs these major operations:
+#' 1. Connection & Schema Management:
+#'    * Establishes database connection
+#'    * Manages vocabulary and base schemas
+#'    * Ensures proper schema restoration
 #'
-#' @return A data frame containing the unique concept IDs and their corresponding concept types from the specified table.
+#' 2. Concept ID Retrieval:
+#'    * Identifies relevant concept ID column
+#'    * Applies privacy filters based on person count
+#'    * Retrieves unique concept IDs
+#'
+#' 3. Concept Name Mapping:
+#'    * Queries vocabulary tables for concept names
+#'    * Handles missing concept mappings
+#'    * Merges IDs with names preserving order
+#'
+#' Privacy Controls:
+#' * Applies minimum person count filter for concepts
+#' * Only retrieves concepts meeting privacy thresholds
+#' * Handles sensitive data appropriately
+#'
+#' @param resource Database resource object with connection details
+#' @param tableName Character string specifying the source table name
+#'
+#' @return Data frame containing:
+#'   * concept_id: Numeric identifier for each concept
+#'   * concept_name: Character string of concept names (NA if unmapped)
+#'
+#' @examples
+#' \dontrun{
+#' # Get concepts from condition table
+#' condition_concepts <- getConceptCatalogDS(
+#'   resource = dbResource,
+#'   tableName = "condition_occurrence"
+#' )
+#'
+#' # Get concepts from measurement table
+#' measurement_concepts <- getConceptCatalogDS(
+#'   resource = dbResource,
+#'   tableName = "measurement"
+#' )
+#' }
 #'
 #' @export
 #'
 getConceptCatalogDS <- function(resource, tableName) {
-  # Opens a connection to the database
+  # Step 1: Initialize connection and schema information
   connection <- getConnection(resource)
-
-  # Get the vocabulary schema from the resource
   vocabularySchema <- resource$getVocabularySchema()
-
-  # Get the DBMS from the resource
   dbms <- resource$getDBMS()
-
-  # Gets the nfilter subset value from the DataSHIELD configuration
   subsetFilter <- getSubsetFilter()
-
-  # Get the schema query for the DBMS
   schemaQuery <- getSchemaQuery(dbms)
-
-  # Get the schema retrieval query for the DBMS
   schemaRetrievalQuery <- getSchemaRetrievalQuery(dbms)
-
-  # Store the current schema
   currentSchema <- DBI::dbGetQuery(connection, schemaRetrievalQuery)[[1]]
   schema <- currentSchema
 
-  # Attempts to retrieve the concept catalog from the specified table
+  # Step 2: Retrieve concept catalog with error handling
   tryCatch(
     {
-      # Finds the case-insensitive table name to ensure correct retrieval
+      # Validate table existence
       tables <- getTables(connection)
       caseInsensitiveTableName <- findCaseInsensitiveTable(tables, tableName)
-
-      # If the table does not exist, stop and return an error message
       if (is.null(caseInsensitiveTableName)) {
         stop(paste0("The table '", tableName, "' does not exist in the database."))
       }
       tableName <- caseInsensitiveTableName
 
-      # Switch to the vocabulary schema if it exists
+      # Switch to vocabulary schema if needed
       if (!is.null(vocabularySchema) && vocabularySchema != currentSchema) {
         DBI::dbExecute(connection, fillSchemaQuery(vocabularySchema, schemaQuery))
       }
 
-      # Attempts to identify the 'concept' table in the database
+      # Locate concept table
       tables <- getTables(connection)
       conceptTable <- findCaseInsensitiveTable(tables, "concept")
 
-      # Switch to the base schema
+      # Restore base schema
       if (!is.null(schema)) {
         DBI::dbExecute(connection, fillSchemaQuery(schema, schemaQuery))
       }
 
-      # Gets the required column names for this operation
+      # Get and validate columns
       columns <- getColumns(connection, tableName, caseInsensitive = FALSE)
       conceptIdColumn <- findCaseInsensitiveColumn(columns, getConceptIdColumn(tableName))
-
-      # Checks if the concept ID column exists in the table
       if (!conceptIdColumn %in% columns) {
         stop(paste0("The column '", conceptIdColumn, "' does not exist in the table '", tableName, "'."))
       }
 
-      # Retrieves the unique concept IDs from the table that have a higher number of unique person IDs than the nFilter value
-      query <- paste0("SELECT DISTINCT ", DBI::dbQuoteIdentifier(connection, conceptIdColumn), " FROM ", DBI::dbQuoteIdentifier(connection, tableName))
+      # Build and execute concept ID query with privacy filter
+      query <- paste0("SELECT DISTINCT ", DBI::dbQuoteIdentifier(connection, conceptIdColumn), 
+                     " FROM ", DBI::dbQuoteIdentifier(connection, tableName))
       if ("person_id" %in% columns) {
-        query <- paste0(query, " WHERE ", conceptIdColumn, " IN (SELECT ", conceptIdColumn, " FROM ", DBI::dbQuoteIdentifier(connection, tableName), " GROUP BY ", conceptIdColumn, " HAVING COUNT(DISTINCT person_id) >= ", subsetFilter, ")")
+        query <- paste0(query, " WHERE ", conceptIdColumn, " IN (SELECT ", 
+                       conceptIdColumn, " FROM ", DBI::dbQuoteIdentifier(connection, tableName),
+                       " GROUP BY ", conceptIdColumn, 
+                       " HAVING COUNT(DISTINCT person_id) >= ", subsetFilter, ")")
       }
-      conceptIds <- DBI::dbGetQuery(connection, query)
-      conceptIds <- conceptIds[[1]]
+      conceptIds <- DBI::dbGetQuery(connection, query)[[1]]
 
-      # Retrieves the concepts from the 'concept' table
+      # Retrieve concept names
       conceptCatalog <- tryCatch(
         {
           getConcepts(connection, conceptIds, conceptTable, dbms, schema, vocabularySchema)
         },
-        # In case of an error, returns an empty data frame (with the same structure as the expected output)
         error = function(error) {
           data.frame(concept_id = numeric(0), concept_name = character(0))
         }
       )
 
-      # Merges the concept IDs with the concept names
-      # This is done to ensure that even concept IDs that are not present in the 'concept' table are included
-      # It does not involve sensitive data, so there is no need to use DataSHIELD's mergeDS function
+      # Merge and format results
       conceptIds <- data.frame(concept_id = conceptIds)
       conceptCatalog <- merge(conceptIds, conceptCatalog, by = "concept_id", all.x = TRUE)
-
-      # Cast the concept_id column to numeric
       conceptCatalog$concept_id <- as.numeric(conceptCatalog$concept_id)
-
-      # Sort the conceptCatalog by concept_id
       conceptCatalog <- conceptCatalog[order(conceptCatalog$concept_id), ]
     },
-    # In case of an error, closes the database connection and propagates the error
     error = function(error) {
       closeConnection(connection, error)
     }
   )
 
-  # If the retrieval was successful, closes the database connection and returns the concept catalog
+  # Step 3: Clean up and return results
   closeConnection(connection)
   return(conceptCatalog)
 }
 
-
-#' Check Privacy Control Level
+#' Verify DataSHIELD Privacy Control Level
 #'
-#' This function checks if the current privacy control level is set to either 'permissive' or 'banana'.
-#' It is designed to be called from the DataSHIELD client to verify that the privacy control level is permissive enough to allow the
-#' required operations used by the package.
-#' If the privacy control level is not set to 'permissive' or 'banana', the resulting error is returned.
+#' @title Check DataSHIELD Privacy Settings
+#' @description
+#' Validates that the current DataSHIELD privacy control level is set to either
+#' 'permissive' or 'banana', which are required for package operations. Returns
+#' any error messages if privacy settings are insufficient.
 #'
-#' @return An error message if the privacy control level is not set to 'permissive' or 'banana'.
+#' @details
+#' Privacy Levels:
+#' * permissive: Standard permissive mode
+#' * banana: Alternative permissive mode
+#' 
+#' The function checks these levels to ensure:
+#' * Proper data access permissions
+#' * Required operation capabilities
+#' * Compliance with DataSHIELD security model
+#'
+#' @return Character string containing error message if privacy level is insufficient,
+#'         NULL otherwise
+#'
+#' @examples
+#' \dontrun{
+#' # Check privacy settings
+#' error <- checkPrivacyControlLevelDS()
+#' if (!is.null(error)) {
+#'   print(paste("Privacy check failed:", error))
+#' }
+#' }
 #'
 #' @export
 #'
@@ -209,13 +301,31 @@ checkPrivacyControlLevelDS <- function() {
   )
 }
 
-
-#' Check Database Connection
+#' Verify Database Connection Status
 #'
-#' This function checks if a connection to the database can be established using the provided resource.
-#' It is designed to be called from the DataSHIELD client to verify that the database connection is active and valid.
+#' @title Test Database Connection
+#' @description
+#' Validates that a database connection can be successfully established and closed
+#' using the provided resource object. Serves as a connection test utility for
+#' DataSHIELD clients.
 #'
-#' @param resource An object representing the database resource.
+#' @details
+#' The function performs these checks:
+#' 1. Connection establishment
+#' 2. Proper connection closure
+#' 3. Error handling for connection issues
+#'
+#' @param resource Database resource object containing connection parameters
+#'
+#' @examples
+#' \dontrun{
+#' # Test connection with database resource
+#' resource <- DatabaseResource$new(
+#'   driver = "PostgreSQL",
+#'   dbname = "test_db"
+#' )
+#' checkConnectionDS(resource)
+#' }
 #'
 #' @export
 #'

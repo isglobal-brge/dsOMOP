@@ -2,20 +2,72 @@
 % Please edit documentation in R/09_catalog.R
 \name{getConceptCatalogDS}
 \alias{getConceptCatalogDS}
-\title{Get Concept Catalog}
+\title{Get Concept Catalog from OMOP CDM Table}
 \usage{
 getConceptCatalogDS(resource, tableName)
 }
 \arguments{
-\item{resource}{A resource object representing the database connection.}
+\item{resource}{Database resource object with connection details}
 
-\item{tableName}{The name of the table from which to retrieve the concept types.}
+\item{tableName}{Character string specifying the source table name}
 }
 \value{
-A data frame containing the unique concept IDs and their corresponding concept types from the specified table.
+Data frame containing:
+\itemize{
+\item concept_id: Numeric identifier for each concept
+\item concept_name: Character string of concept names (NA if unmapped)
+}
 }
 \description{
-This function is called from the DataSHIELD client to fetch a catalog of available concept types from a specific table within
-the database. It retrieves the unique concept IDs from the specified table and then fetches the corresponding concept types
-from the 'concept' table.
+Retrieves a catalog of concepts from a specified OMOP CDM table, mapping concept IDs
+to their corresponding concept names from the vocabulary tables. Handles schema
+management, privacy filtering, and proper error handling.
+}
+\details{
+Retrieve Concept Catalog from Database Table
+
+The function performs these major operations:
+\enumerate{
+\item Connection & Schema Management:
+\itemize{
+\item Establishes database connection
+\item Manages vocabulary and base schemas
+\item Ensures proper schema restoration
+}
+\item Concept ID Retrieval:
+\itemize{
+\item Identifies relevant concept ID column
+\item Applies privacy filters based on person count
+\item Retrieves unique concept IDs
+}
+\item Concept Name Mapping:
+\itemize{
+\item Queries vocabulary tables for concept names
+\item Handles missing concept mappings
+\item Merges IDs with names preserving order
+}
+}
+
+Privacy Controls:
+\itemize{
+\item Applies minimum person count filter for concepts
+\item Only retrieves concepts meeting privacy thresholds
+\item Handles sensitive data appropriately
+}
+}
+\examples{
+\dontrun{
+# Get concepts from condition table
+condition_concepts <- getConceptCatalogDS(
+  resource = dbResource,
+  tableName = "condition_occurrence"
+)
+
+# Get concepts from measurement table
+measurement_concepts <- getConceptCatalogDS(
+  resource = dbResource,
+  tableName = "measurement"
+)
+}
+
 }

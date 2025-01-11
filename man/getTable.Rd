@@ -2,7 +2,7 @@
 % Please edit documentation in R/02_table.R
 \name{getTable}
 \alias{getTable}
-\title{Get a Table from the Database}
+\title{Get a Table from the OMOP CDM Database}
 \usage{
 getTable(
   connection,
@@ -13,50 +13,110 @@ getTable(
   mergeColumn = "person_id",
   dropNA = FALSE,
   wideLongitudinal = FALSE,
-  dbms = NULL,
+  dbms,
   schema = NULL,
-  vocabularySchema = NULL
+  vocabularySchema = NULL,
+  skipReshape = FALSE
 )
 }
 \arguments{
-\item{connection}{A DBI connection object representing the database connection.}
+\item{connection}{A DBI connection object to the OMOP CDM database}
 
-\item{tableName}{The name of the table to be retrieved, as a character string.}
+\item{tableName}{Character string specifying the target table name}
 
-\item{conceptFilter}{An optional vector of concept IDs for filtering the table.}
+\item{conceptFilter}{Optional vector of concept IDs for filtering}
 
-\item{columnFilter}{An optional vector specifying which columns to include in the output.}
+\item{columnFilter}{Optional vector of column names to include}
 
-\item{personFilter}{An optional vector of person IDs for filtering the table.}
+\item{personFilter}{Optional vector of person IDs for filtering}
 
-\item{mergeColumn}{The column name to be used for merging, defaults to "person_id".}
+\item{mergeColumn}{Character string specifying the merge key column (default: "person_id")}
 
-\item{dropNA}{Whether to exclude columns with all NA values, defaults to FALSE.}
+\item{dropNA}{Logical; whether to remove columns containing only NA values (default: FALSE)}
 
-\item{wideLongitudinal}{A logical flag indicating whether to reshape the longitudinal data entries to a wide format
-with numerically suffixed columns if it detects the presence of longitudinal data, defaults
-to FALSE.}
+\item{wideLongitudinal}{Logical; whether to reshape longitudinal data to wide format (default: FALSE)}
 
-\item{dbms}{An optional parameter specifying the database management system.}
+\item{dbms}{Character string specifying the database management system}
 
-\item{schema}{An optional parameter specifying the database schema.}
+\item{schema}{Optional character string specifying the database schema}
 
-\item{vocabularySchema}{An optional parameter specifying the vocabulary schema.}
+\item{vocabularySchema}{Optional character string specifying the vocabulary schema}
+
+\item{skipReshape}{Logical; whether to skip the reshaping process entirely (default: FALSE)}
 }
 \value{
-A data frame containing the filtered table, ready for integration into the DataSHIELD workflow.
+A processed data frame containing the requested table data
 }
 \description{
-This function fetches a specified table from the database for use within the DataSHIELD environment. It allows users to
-filter the table based on columns of interest, specific concept types present in the table, and person IDs from another
-table in the system. Filtering at the database query level enhances execution times. The function also checks against
-DataSHIELD's disclosure control to ensure that the subset operation does not return fewer patients than the minimum allowed.
+Fetches and processes a specified table from an OMOP Common Data Model (CDM) database for use within
+the DataSHIELD environment. This function provides comprehensive data retrieval, filtering, and
+transformation capabilities while ensuring compliance with DataSHIELD's disclosure control rules.
 }
 \details{
-In cases where the table contains multiple elements with concept types that can be reshaped to a wide format, the function
-will automatically reshape the table to facilitate merging with related tables. Users can specify an alternative column
-for reshaping (default is "person_id"), useful for tables indirectly related to persons where another column serves as the
-identifier in the reshape operation.
+Retrieve and Process OMOP CDM Table
 
-Additionally, users have the option to exclude empty tables from the output, further tailoring the dataset to their needs.
+The function performs several key operations:
+\enumerate{
+\item Table Retrieval and Validation:
+\itemize{
+\item Verifies table existence using case-insensitive matching
+\item Handles schema-specific table access
+\item Manages column name standardization
+}
+\item Filtering Operations:
+\itemize{
+\item Column filtering to select specific variables
+\item Concept-based filtering using concept IDs
+\item Person-level filtering using person IDs
+\item Empty column removal (optional)
+}
+\item Data Type Management:
+\itemize{
+\item Converts concept_id columns to factors
+\item Transforms ID columns to character type
+\item Handles numeric and date columns appropriately
+}
+\item Disclosure Control:
+\itemize{
+\item Enforces minimum patient count thresholds
+\item Validates subset sizes against DataSHIELD parameters
+}
+\item Data Reshaping:
+\itemize{
+\item Supports longitudinal data transformation
+\item Handles wide/long format conversions
+\item Manages concept translations
+}
+}
+}
+\examples{
+\dontrun{
+# Basic table retrieval
+conn <- getDatabaseConnection()
+person_table <- getTable(conn, "person")
+
+# Filtered retrieval with concept IDs
+condition_table <- getTable(
+  connection = conn,
+  tableName = "condition_occurrence",
+  conceptFilter = c(201820, 201254),
+  dropNA = TRUE
+)
+
+# Longitudinal data with custom merge column
+measurement_table <- getTable(
+  connection = conn,
+  tableName = "measurement",
+  mergeColumn = "visit_occurrence_id",
+  wideLongitudinal = TRUE
+)
+}
+
+}
+\seealso{
+\itemize{
+\item \code{\link{getOMOPCDMTableDS}} for the DataSHIELD interface
+\item \code{\link{translateTable}} for concept translation details
+\item \code{\link{reshapeTable}} for data reshaping operations
+}
 }
