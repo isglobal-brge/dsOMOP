@@ -18,6 +18,7 @@
 #'    - Column filtering to select specific variables
 #'    - Concept-based filtering using concept IDs
 #'    - Person-level filtering using person IDs
+#'    - Date range filtering (if applicable)
 #'    - Empty column removal (optional)
 #'
 #' 3. Data Type Management:
@@ -46,6 +47,8 @@
 #' @param schema Optional character string specifying the database schema
 #' @param vocabularySchema Optional character string specifying the vocabulary schema
 #' @param skipReshape Logical; whether to skip the reshaping process entirely (default: FALSE)
+#' @param startDate Optional character string specifying start date for filtering (format: "YYYY-MM-DD")
+#' @param endDate Optional character string specifying end date for filtering (format: "YYYY-MM-DD")
 #'
 #' @return A processed data frame containing the requested table data
 #'
@@ -63,12 +66,14 @@
 #'   dropNA = TRUE
 #' )
 #'
-#' # Longitudinal data with custom merge column
+#' # Longitudinal data with custom merge column and date range
 #' measurement_table <- getTable(
 #'   connection = conn,
 #'   tableName = "measurement",
 #'   mergeColumn = "visit_occurrence_id",
-#'   wideLongitudinal = TRUE
+#'   wideLongitudinal = TRUE,
+#'   startDate = "2020-01-01",
+#'   endDate = "2020-12-31"
 #' )
 #' }
 #'
@@ -88,7 +93,9 @@ getTable <- function(connection,
                      dbms,
                      schema = NULL,
                      vocabularySchema = NULL,
-                     skipReshape = FALSE) {
+                     skipReshape = FALSE,
+                     startDate = NULL,
+                     endDate = NULL) {
   # Checks if the table exists in the database
   tables <- getTables(connection)
   caseInsensitiveTableName <- findCaseInsensitiveTable(tables, tableName)
@@ -109,9 +116,10 @@ getTable <- function(connection,
   # Get column information
   columns <- getColumns(connection, tableName)
   conceptIdColumn <- getConceptIdColumn(tableName)
-
+  dateColumn <- getDateColumn(tableName)
+  
   # Step 3: Column Selection
-  keepColumns <- c("person_id", mergeColumn, conceptIdColumn)
+  keepColumns <- c("person_id", mergeColumn, conceptIdColumn, dateColumn)
   if (!is.null(columnFilter)) {
     columnFilter <- tolower(columnFilter)
   }
@@ -128,6 +136,16 @@ getTable <- function(connection,
   if (!is.null(personFilter) && "person_id" %in% columns) {
     personIds <- getPersonIds(personFilter)
     table <- dplyr::filter(table, person_id %in% personIds)
+  }
+
+  # Date range filtering
+  if (!is.null(dateColumn) && dateColumn %in% columns) {
+    if (!is.null(startDate)) {
+      table <- dplyr::filter(table, !!sym(dateColumn) >= as.Date(startDate))
+    }
+    if (!is.null(endDate)) {
+      table <- dplyr::filter(table, !!sym(dateColumn) <= as.Date(endDate))
+    }
   }
 
   # Step 5: Data Collection
@@ -147,6 +165,14 @@ getTable <- function(connection,
     }
     if (!is.null(personFilter) && "person_id" %in% columns) {
       table <- table[table$person_id %in% personIds, ]
+    }
+    if (!is.null(dateColumn) && dateColumn %in% columns) {
+      if (!is.null(startDate)) {
+        table <- table[table[[dateColumn]] >= as.Date(startDate), ]
+      }
+      if (!is.null(endDate)) {
+        table <- table[table[[dateColumn]] <= as.Date(endDate), ]
+      }
     }
     table
   })
@@ -240,6 +266,8 @@ getTable <- function(connection,
 #' @param wideLongitudinal (Optional) A logical flag indicating whether to reshape longitudinal data to a wide format,
 #'                             defaults to FALSE.
 #' @param skipReshape (Optional) A logical flag indicating whether to skip reshaping the table, defaults to FALSE.
+#' @param startDate (Optional) A character string specifying start date for filtering (format: "YYYY-MM-DD").
+#' @param endDate (Optional) A character string specifying end date for filtering (format: "YYYY-MM-DD").
 #'
 #' @return A data frame representing the processed table.
 #'
@@ -252,7 +280,9 @@ getOMOPCDMTableDS <- function(resource,
                               mergeColumn = "person_id",
                               dropNA = FALSE,
                               wideLongitudinal = FALSE,
-                              skipReshape = FALSE) {
+                              skipReshape = FALSE,
+                              startDate = NULL,
+                              endDate = NULL) {
   # Opens a connection to the database
   connection <- getConnection(resource)
 
@@ -264,7 +294,7 @@ getOMOPCDMTableDS <- function(resource,
   # Step 3: Table Processing with Error Handling
   tryCatch(
     {
-      table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA, wideLongitudinal, dbms, schema, vocabularySchema, skipReshape)
+      table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA, wideLongitudinal, dbms, schema, vocabularySchema, skipReshape, startDate, endDate)
 
       # In case of an error, closes the database connection and propagates the error
     },

@@ -113,6 +113,53 @@ getConceptIdColumn <- function(tableName) {
   return(conceptIdColumn)
 }
 
+#' Generate Date Column Name
+#'
+#' @title Dynamic Date Column Name Generation
+#' @description
+#' Generates standardized date column names for OMOP CDM tables by applying
+#' consistent naming conventions and handling special table name cases.
+#'
+#' @details
+#' The function performs the following transformations:
+#' 1. Converts table name to lowercase for consistency
+#' 2. Removes specific suffixes ('_occurrence', '_exposure')
+#' 3. Appends '_date' to create the final column name
+#'
+#' This standardization is crucial for:
+#' * Maintaining consistent column naming across the OMOP CDM
+#' * Supporting automated date column identification
+#' * Ensuring compatibility with standard OMOP CDM tools
+#'
+#' @param tableName Character string containing the OMOP CDM table name
+#'
+#' @return Character string representing the standardized date column name
+#'
+#' @examples
+#' \dontrun{
+#' # Basic table name
+#' getDateColumn("condition")  # Returns "condition_date"
+#'
+#' # Table with occurrence suffix
+#' getDateColumn("drug_exposure")  # Returns "drug_date"
+#'
+#' # Case-insensitive handling
+#' getDateColumn("OBSERVATION")  # Returns "observation_date"
+#' }
+#'
+getDateColumn <- function(tableName) {
+  # Step 1: Standardize case
+  tableName <- tolower(tableName)
+  
+  # Step 2: Remove special suffixes
+  baseName <- gsub("_occurrence", "", tableName)
+  baseName <- gsub("_exposure", "", baseName)
+  
+  # Step 3: Generate date column name
+  dateColumn <- paste0(baseName, "_date")
+  return(dateColumn)
+}
+
 #' Case-Insensitive Column Name Matching
 #'
 #' @title Find Column Names with Case-Insensitive Matching

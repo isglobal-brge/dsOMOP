@@ -1,6 +1,6 @@
 Package: dsOMOP
 Title: DataSHIELD Integration for OMOP CDM Databases
-Version: 1.1.0
+Version: 1.1.1
 Authors@R:
     c(person("David", "Sarrat González", , "david.sarrat@isglobal.org", role = c("aut", "cre")),
       person("Xavier", "Escribà-Montagut", , "xavier.escriba@isglobal.org", role = c("aut")),
