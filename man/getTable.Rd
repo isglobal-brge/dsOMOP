@@ -16,7 +16,9 @@ getTable(
   dbms,
   schema = NULL,
   vocabularySchema = NULL,
-  skipReshape = FALSE
+  skipReshape = FALSE,
+  startDate = NULL,
+  endDate = NULL
 )
 }
 \arguments{
@@ -43,6 +45,10 @@ getTable(
 \item{vocabularySchema}{Optional character string specifying the vocabulary schema}
 
 \item{skipReshape}{Logical; whether to skip the reshaping process entirely (default: FALSE)}
+
+\item{startDate}{Optional character string specifying start date for filtering (format: "YYYY-MM-DD")}
+
+\item{endDate}{Optional character string specifying end date for filtering (format: "YYYY-MM-DD")}
 }
 \value{
 A processed data frame containing the requested table data
@@ -68,6 +74,7 @@ The function performs several key operations:
 \item Column filtering to select specific variables
 \item Concept-based filtering using concept IDs
 \item Person-level filtering using person IDs
+\item Date range filtering (if applicable)
 \item Empty column removal (optional)
 }
 \item Data Type Management:
@@ -103,12 +110,14 @@ condition_table <- getTable(
   dropNA = TRUE
 )
 
-# Longitudinal data with custom merge column
+# Longitudinal data with custom merge column and date range
 measurement_table <- getTable(
   connection = conn,
   tableName = "measurement",
   mergeColumn = "visit_occurrence_id",
-  wideLongitudinal = TRUE
+  wideLongitudinal = TRUE,
+  startDate = "2020-01-01",
+  endDate = "2020-12-31"
 )
 }
 

@@ -140,11 +140,23 @@ getTable <- function(connection,
 
   # Date range filtering
   if (!is.null(dateColumn) && dateColumn %in% columns) {
+    # Ensure date column is in Date format
+    table <- table %>% 
+      dplyr::mutate(!!sym(dateColumn) := as.Date(!!sym(dateColumn)))
+      
     if (!is.null(startDate)) {
-      table <- dplyr::filter(table, !!sym(dateColumn) >= as.Date(startDate))
+      startDateVal <- as.Date(startDate)
+      if (is.na(startDateVal)) {
+        stop(paste0("Invalid start date format. Expected YYYY-MM-DD, got: ", startDate))
+      }
+      table <- dplyr::filter(table, !!sym(dateColumn) >= startDateVal)
     }
     if (!is.null(endDate)) {
-      table <- dplyr::filter(table, !!sym(dateColumn) <= as.Date(endDate))
+      endDateVal <- as.Date(endDate)
+      if (is.na(endDateVal)) {
+        stop(paste0("Invalid end date format. Expected YYYY-MM-DD, got: ", endDate))
+      }
+      table <- dplyr::filter(table, !!sym(dateColumn) <= endDateVal)
     }
   }
 
@@ -167,11 +179,22 @@ getTable <- function(connection,
       table <- table[table$person_id %in% personIds, ]
     }
     if (!is.null(dateColumn) && dateColumn %in% columns) {
+      # Ensure date column is in Date format for fallback method
+      table[[dateColumn]] <- as.Date(table[[dateColumn]])
+      
       if (!is.null(startDate)) {
-        table <- table[table[[dateColumn]] >= as.Date(startDate), ]
+        startDateVal <- as.Date(startDate)
+        if (is.na(startDateVal)) {
+          stop(paste0("Invalid start date format. Expected YYYY-MM-DD, got: ", startDate))
+        }
+        table <- table[table[[dateColumn]] >= startDateVal, ]
       }
       if (!is.null(endDate)) {
-        table <- table[table[[dateColumn]] <= as.Date(endDate), ]
+        endDateVal <- as.Date(endDate)
+        if (is.na(endDateVal)) {
+          stop(paste0("Invalid end date format. Expected YYYY-MM-DD, got: ", endDate))
+        }
+        table <- table[table[[dateColumn]] <= endDateVal, ]
       }
     }
     table

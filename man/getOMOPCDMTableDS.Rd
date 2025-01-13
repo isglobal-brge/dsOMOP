@@ -13,7 +13,9 @@ getOMOPCDMTableDS(
   mergeColumn = "person_id",
   dropNA = FALSE,
   wideLongitudinal = FALSE,
-  skipReshape = FALSE
+  skipReshape = FALSE,
+  startDate = NULL,
+  endDate = NULL
 )
 }
 \arguments{
@@ -35,6 +37,10 @@ getOMOPCDMTableDS(
 defaults to FALSE.}
 
 \item{skipReshape}{(Optional) A logical flag indicating whether to skip reshaping the table, defaults to FALSE.}
+
+\item{startDate}{(Optional) A character string specifying start date for filtering (format: "YYYY-MM-DD").}
+
+\item{endDate}{(Optional) A character string specifying end date for filtering (format: "YYYY-MM-DD").}
 }
 \value{
 A data frame representing the processed table.
