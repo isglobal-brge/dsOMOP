@@ -130,14 +130,24 @@ db_name <- "my_database"
 username <- "my_username"
 password <- "my_password"
 
-opal.resource_create(o,
+opal.resource_extension_create(o,
   project = "my_project",
   name = "my_resource",
-  url = paste0(driver, "://", host, ":", port, "/", db_name),
-  format = "omop.cdm.db", # It is very important that the format is set to omop.cdm.db!
-  identity = username,
-  secret = password
+  provider = 'dsOMOP', 
+  factory = 'omop-cdm-db',
+  parameters = list(
+    driver = driver,
+    host = host,
+    port = port,
+    db = db_name
+  ),
+  credentials = list(
+    username = username,
+    password = password
+  )
 )
+
+
 ```
 
 ## Community development and extensions
