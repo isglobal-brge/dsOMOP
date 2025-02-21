@@ -81,7 +81,7 @@ o <- opal.login(username = "administrator", password = "password", url = "https:
 
 You can then install the `dsOMOP` package using the following command:
 ```R
-dsadmin.install_github_package(o, 'dsOMOP', username='isglobal-brge')
+dsadmin.install_github_package(o, 'dsOMOP', username='isglobal-brge', ref='main')
 ```
 
 ## Creating OMOP CDM resources
