@@ -42,6 +42,7 @@
 #' @param mergeColumn Character string specifying the merge key column (default: "person_id")
 #' @param dropNA Logical; whether to remove columns containing only NA values (default: FALSE)
 #' @param wideLongitudinal Logical; whether to reshape longitudinal data to wide format (default: FALSE)
+#' @param completeTimePoints Logical; whether to ensure all entities have rows for each date point (default: FALSE)
 #' @param dbms Character string specifying the database management system
 #' @param schema Optional character string specifying the database schema
 #' @param vocabularySchema Optional character string specifying the vocabulary schema
@@ -70,6 +71,15 @@
 #'   mergeColumn = "visit_occurrence_id",
 #'   wideLongitudinal = TRUE
 #' )
+#'
+#' # Longitudinal data with complete time points
+#' lab_table <- getTable(
+#'   connection = conn,
+#'   tableName = "measurement",
+#'   conceptFilter = c(3023314, 3024561),  # Glucose and HbA1c
+#'   completeTimePoints = TRUE,
+#'   wideLongitudinal = TRUE
+#' )
 #' }
 #'
 #' @seealso 
@@ -85,6 +95,7 @@ getTable <- function(connection,
                      mergeColumn = "person_id",
                      dropNA = FALSE,
                      wideLongitudinal = FALSE,
+                     completeTimePoints = FALSE,
                      dbms,
                      schema = NULL,
                      vocabularySchema = NULL,
@@ -207,7 +218,13 @@ getTable <- function(connection,
 
   # If a concept ID column is present and reshaping is not explicitly skipped, reshapes the table
   if (!skipReshape && conceptIdColumn %in% names(table)) {
-    table <- reshapeTable(table, conceptIdColumn, mergeColumn, wideLongitudinal)
+    table <- reshapeTable(
+      table, 
+      conceptIdColumn, 
+      mergeColumn, 
+      wideLongitudinal, 
+      completeTimePoints
+    )
   }
 
   # Remove empty columns if requested
@@ -239,6 +256,8 @@ getTable <- function(connection,
 #' @param dropNA (Optional) A logical flag indicating whether to drop columns with all NA values, defaults to FALSE.
 #' @param wideLongitudinal (Optional) A logical flag indicating whether to reshape longitudinal data to a wide format,
 #'                             defaults to FALSE.
+#' @param completeTimePoints (Optional) A logical flag indicating whether to ensure all entities have rows for each date point,
+#'                             defaults to FALSE.
 #' @param skipReshape (Optional) A logical flag indicating whether to skip reshaping the table, defaults to FALSE.
 #'
 #' @return A data frame representing the processed table.
@@ -252,6 +271,7 @@ getOMOPCDMTableDS <- function(resource,
                               mergeColumn = "person_id",
                               dropNA = FALSE,
                               wideLongitudinal = FALSE,
+                              completeTimePoints = FALSE,
                               skipReshape = FALSE) {
   # Opens a connection to the database
   connection <- getConnection(resource)
@@ -264,7 +284,7 @@ getOMOPCDMTableDS <- function(resource,
   # Step 3: Table Processing with Error Handling
   tryCatch(
     {
-      table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA, wideLongitudinal, dbms, schema, vocabularySchema, skipReshape)
+      table <- getTable(connection, tableName, conceptFilter, columnFilter, personFilter, mergeColumn, dropNA, wideLongitudinal, completeTimePoints, dbms, schema, vocabularySchema, skipReshape)
 
       # In case of an error, closes the database connection and propagates the error
     },

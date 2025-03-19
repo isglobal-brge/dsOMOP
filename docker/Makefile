@@ -3,7 +3,7 @@ DOCKERFILE_DSOMOP := Dockerfile_dsOMOP
 DOCKERFILE_MIMICIV := Dockerfile_mimiciv
 IMAGE_DSOMOP := brgelab/rock-dsomop
 IMAGE_MIMICIV := brgelab/mimiciv-db
-DSOMOP_VERSION := 1.1.0
+DSOMOP_VERSION := 1.1.1
 R_VERSION := 4.4
 
 # Build and push all images

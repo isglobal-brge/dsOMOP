@@ -13,6 +13,7 @@ getOMOPCDMTableDS(
   mergeColumn = "person_id",
   dropNA = FALSE,
   wideLongitudinal = FALSE,
+  completeTimePoints = FALSE,
   skipReshape = FALSE
 )
 }
@@ -32,6 +33,9 @@ getOMOPCDMTableDS(
 \item{dropNA}{(Optional) A logical flag indicating whether to drop columns with all NA values, defaults to FALSE.}
 
 \item{wideLongitudinal}{(Optional) A logical flag indicating whether to reshape longitudinal data to a wide format,
+defaults to FALSE.}
+
+\item{completeTimePoints}{(Optional) A logical flag indicating whether to ensure all entities have rows for each date point,
 defaults to FALSE.}
 
 \item{skipReshape}{(Optional) A logical flag indicating whether to skip reshaping the table, defaults to FALSE.}

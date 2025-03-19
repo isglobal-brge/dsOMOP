@@ -4,7 +4,13 @@
 \alias{reshapeTable}
 \title{Wide Format Reshaping for OMOP CDM Tables}
 \usage{
-reshapeTable(table, conceptIdColumn, mergeColumn, sequenceLongitudinal = FALSE)
+reshapeTable(
+  table,
+  conceptIdColumn,
+  mergeColumn,
+  sequenceLongitudinal = FALSE,
+  completeTimePoints = FALSE
+)
 }
 \arguments{
 \item{table}{A data frame containing OMOP CDM data to be reshaped}
@@ -14,6 +20,8 @@ reshapeTable(table, conceptIdColumn, mergeColumn, sequenceLongitudinal = FALSE)
 \item{mergeColumn}{Character string specifying the identifier column name (usually "person_id")}
 
 \item{sequenceLongitudinal}{Logical indicating whether to sequence repeated measurements (default: FALSE)}
+
+\item{completeTimePoints}{Logical indicating whether to ensure all entities have rows for each date (default: FALSE)}
 }
 \value{
 A data frame in wide format where:
@@ -34,6 +42,7 @@ Reshape OMOP CDM Table to Wide Format
 The function performs several key operations:
 \enumerate{
 \item Validates the presence of required merge column
+\item Completes time series data to ensure all entities have rows for each date
 \item Optionally sequences longitudinal data to handle repeated measurements
 \item Reshapes the table using DataSHIELD's reShapeDS function
 \item Standardizes column names for consistency and readability
@@ -70,11 +79,12 @@ wide_data <- reshapeTable(
   mergeColumn = "person_id"
 )
 
-# Reshape with longitudinal sequencing
-wide_data_seq <- reshapeTable(
+# Reshape with complete time points and longitudinal sequencing
+wide_data_complete <- reshapeTable(
   table = condition_data,
   conceptIdColumn = "condition_concept_id",
   mergeColumn = "person_id",
+  completeTimePoints = TRUE,
   sequenceLongitudinal = TRUE
 )
 }

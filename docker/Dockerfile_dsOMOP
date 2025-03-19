@@ -8,7 +8,7 @@
 FROM datashield/rock-base:6.3.0-R4.4
 
 # Set version of dsOMOP package to install
-ENV DSOMOP_VERSION 1.1.0
+ENV DSOMOP_VERSION 1.1.1
 
 # Set library path for R packages
 ENV ROCK_LIB /var/lib/rock/R/library

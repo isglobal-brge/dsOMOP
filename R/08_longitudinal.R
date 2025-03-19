@@ -85,3 +85,94 @@ sequenceColumn <- function(table, conceptIdColumn, mergeColumn) {
 
   return(table)
 }
+
+#' Complete Time Series for Longitudinal Data
+#'
+#' @title Time Series Completion for Longitudinal Data
+#' @description
+#' Expands a longitudinal dataset to include a row for each date within the observed range
+#' for each entity, even when no data exists for that date. This standardizes the dataset
+#' so all entities have observations at the same time points, making analysis and merging easier.
+#'
+#' @details
+#' The function performs the following operations:
+#' 1. Date Identification:
+#'    * Automatically detects the date column based on the concept ID column
+#'    * Ensures proper date type casting
+#'
+#' 2. Range Determination:
+#'    * Identifies the full range of dates across all entities
+#'    * Creates a complete set of all possible entity-date combinations
+#'
+#' 3. Data Expansion:
+#'    * Joins the original data with the complete set of combinations
+#'    * Adds rows with NA values for missing observations
+#'    * Preserves all original data values
+#'
+#' This function is essential for:
+#' * Standardizing longitudinal datasets
+#' * Ensuring consistent time points across all entities
+#' * Facilitating time-based comparisons
+#' * Preparing data for time series analysis
+#'
+#' @param table A data frame containing longitudinal data
+#' @param mergeColumn A character string specifying the entity identifier column (usually "person_id")
+#' @param conceptIdColumn A character string specifying the concept ID column name
+#'
+#' @return A data frame with expanded rows to include all date combinations for each entity
+#'
+#' @examples
+#' \dontrun{
+#' # Example with patient observation data
+#' observations <- data.frame(
+#'   person_id = c(1, 1, 2),
+#'   observation_concept_id = c("weight", "weight", "weight"),
+#'   observation_date = as.Date(c("2023-01-01", "2023-03-01", "2023-02-15")),
+#'   value = c(70, 72, 65)
+#' )
+#'
+#' # Complete the time series
+#' complete_observations <- completeTimeSeries(
+#'   table = observations,
+#'   mergeColumn = "person_id",
+#'   conceptIdColumn = "observation_concept_id"
+#' )
+#' # Results in a table with rows for all dates between Jan 1 and Mar 1
+#' # for both person_id 1 and 2, with NA values where no data existed
+#' }
+#'
+completeTimeSeries <- function(table, mergeColumn, conceptIdColumn) {
+  # Step 1: Identify and validate the date column
+  dateColumn <- paste0(conceptIdColumn, "_date")
+  if (!dateColumn %in% names(table)) {
+    stop(paste0("Date column '", dateColumn, "' not found in table."))
+  }
+  
+  # Step 2: Ensure the date column is properly cast as Date type
+  if (!inherits(table[[dateColumn]], "Date")) {
+    table[[dateColumn]] <- as.Date(table[[dateColumn]])
+  }
+  
+  # Step 3: Get the full range of dates and entities
+  allDates <- sort(unique(table[[dateColumn]]))
+  allEntities <- unique(table[[mergeColumn]])
+  
+  # Step 4: Create a complete data frame with all combinations
+  dateGrid <- expand.grid(
+    entity = allEntities,
+    date = allDates,
+    stringsAsFactors = FALSE
+  )
+  names(dateGrid) <- c(mergeColumn, dateColumn)
+  
+  # Step 5: Join the original data with the complete grid
+  # Using left_join to keep all combinations and fill with NA where needed
+  result <- merge(
+    dateGrid,
+    table,
+    by = c(mergeColumn, dateColumn),
+    all.x = TRUE
+  )
+  
+  return(result)
+}

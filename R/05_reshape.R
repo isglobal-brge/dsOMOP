@@ -9,9 +9,10 @@
 #' @details
 #' The function performs several key operations:
 #' 1. Validates the presence of required merge column
-#' 2. Optionally sequences longitudinal data to handle repeated measurements
-#' 3. Reshapes the table using DataSHIELD's reShapeDS function
-#' 4. Standardizes column names for consistency and readability
+#' 2. Completes time series data to ensure all entities have rows for each date
+#' 3. Optionally sequences longitudinal data to handle repeated measurements
+#' 4. Reshapes the table using DataSHIELD's reShapeDS function
+#' 5. Standardizes column names for consistency and readability
 #'
 #' The reshaping process uses:
 #' * Merge column (typically person_id) as the identifier variable
@@ -28,6 +29,7 @@
 #' @param conceptIdColumn Character string specifying the concept ID column name that defines element types
 #' @param mergeColumn Character string specifying the identifier column name (usually "person_id")
 #' @param sequenceLongitudinal Logical indicating whether to sequence repeated measurements (default: FALSE)
+#' @param completeTimePoints Logical indicating whether to ensure all entities have rows for each date (default: FALSE)
 #' 
 #' @return A data frame in wide format where:
 #' * Rows represent unique entities (e.g., persons)
@@ -50,27 +52,49 @@
 #'   mergeColumn = "person_id"
 #' )
 #'
-#' # Reshape with longitudinal sequencing
-#' wide_data_seq <- reshapeTable(
+#' # Reshape with complete time points and longitudinal sequencing
+#' wide_data_complete <- reshapeTable(
 #'   table = condition_data,
 #'   conceptIdColumn = "condition_concept_id",
 #'   mergeColumn = "person_id",
+#'   completeTimePoints = TRUE,
 #'   sequenceLongitudinal = TRUE
 #' )
 #' }
 #'
-reshapeTable <- function(table, conceptIdColumn, mergeColumn, sequenceLongitudinal = FALSE) {
+reshapeTable <- function(table, conceptIdColumn, mergeColumn, sequenceLongitudinal = FALSE, completeTimePoints = FALSE) {
   # Step 1: Validate merge column presence
   if (!mergeColumn %in% names(table)) {
     stop(paste0("The column '", mergeColumn, "' is not present in the table."))
   }
 
-  # Step 2: Handle longitudinal data sequencing if requested
+  # Step 2: Complete time series if requested
+  if(completeTimePoints) {
+    tryCatch({
+      table <- completeTimeSeries(table, mergeColumn, conceptIdColumn)
+      
+      # Sort the table by entity (merge column) and date
+      dateColumn <- paste0(conceptIdColumn, "_date")
+      if (dateColumn %in% names(table)) {
+        # Ensure date column is properly typed
+        if (!inherits(table[[dateColumn]], "Date")) {
+          table[[dateColumn]] <- as.Date(table[[dateColumn]])
+        }
+        
+        # Sort by merge column first, then by date
+        table <- table[order(table[[mergeColumn]], table[[dateColumn]]), ]
+      }
+    }, error = function(e) {
+      warning(paste("Failed to complete time series:", e$message))
+    })
+  }
+  
+  # Step 3: Handle longitudinal data sequencing if requested
   if(sequenceLongitudinal) {
     table <- sequenceColumn(table, conceptIdColumn, mergeColumn)
   }
 
-  # Step 3: Perform wide format reshaping
+  # Step 4: Perform wide format reshaping
   # Identify measurement variables (all columns except merge and concept columns)
   measureVars <- names(table)[!names(table) %in% c(mergeColumn, conceptIdColumn)]
   
@@ -86,7 +110,7 @@ reshapeTable <- function(table, conceptIdColumn, mergeColumn, sequenceLongitudin
     sep = "."
   )
 
-  # Step 4: Standardize column naming structure
+  # Step 5: Standardize column naming structure
   table <- rearrangeColumnNames(table)
   return(table)
 }

@@ -13,6 +13,7 @@ getTable(
   mergeColumn = "person_id",
   dropNA = FALSE,
   wideLongitudinal = FALSE,
+  completeTimePoints = FALSE,
   dbms,
   schema = NULL,
   vocabularySchema = NULL,
@@ -35,6 +36,8 @@ getTable(
 \item{dropNA}{Logical; whether to remove columns containing only NA values (default: FALSE)}
 
 \item{wideLongitudinal}{Logical; whether to reshape longitudinal data to wide format (default: FALSE)}
+
+\item{completeTimePoints}{Logical; whether to ensure all entities have rows for each date point (default: FALSE)}
 
 \item{dbms}{Character string specifying the database management system}
 
@@ -108,6 +111,15 @@ measurement_table <- getTable(
   connection = conn,
   tableName = "measurement",
   mergeColumn = "visit_occurrence_id",
+  wideLongitudinal = TRUE
+)
+
+# Longitudinal data with complete time points
+lab_table <- getTable(
+  connection = conn,
+  tableName = "measurement",
+  conceptFilter = c(3023314, 3024561),  # Glucose and HbA1c
+  completeTimePoints = TRUE,
   wideLongitudinal = TRUE
 )
 }
