@@ -175,10 +175,11 @@ body {
     overflow: hidden;
     transition: max-height 0.6s ease-in-out;
     padding: 0;
+    z-index: 1001;
   }
 
   .navbar-menu.open {
-    max-height: 300px;
+    max-height: 400px;
   }
 
   .navbar-menu li {
@@ -1014,8 +1015,195 @@ main {
   visibility: hidden;
 }
 
-.navbar {
-  position: sticky;
+/* Publication Section Styles */
+.publication-highlight {
+  background: linear-gradient(to bottom, var(--secondary-color), var(--secondary-dark));
+  max-width: 1200px;
+  margin: 2rem auto;
+  padding: 1.5rem 2rem;
+  border-radius: 15px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.publication-icon {
+  flex-shrink: 0;
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-light));
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.2rem;
+  color: white;
+  box-shadow: 0 0 20px rgba(240, 133, 10, 0.3);
+  animation: celebrationPulse 2s ease-in-out infinite alternate;
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes celebrationPulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 20px rgba(240, 133, 10, 0.3);
+  }
+  100% {
+    transform: scale(1.05);
+    box-shadow: 0 0 25px rgba(240, 133, 10, 0.4);
+  }
+}
+
+.publication-content {
+  flex: 1;
+  text-align: left;
+  position: relative;
+  z-index: 1;
+}
+
+.publication-content h4 {
+  color: white;
+  font-size: 1.8rem;
+  margin: 0 0 0.5rem 0;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.publication-description {
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 1rem;
+  line-height: 1.5;
+  margin-bottom: 1rem;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.publication-actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  position: relative;
+  z-index: 1;
+}
+
+.publication-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.2rem;
+  border-radius: 20px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.publication-btn.primary {
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-light));
+  color: white;
+  box-shadow: 0 4px 15px rgba(240, 133, 10, 0.2);
+}
+
+.publication-btn.primary::before {
+  content: '';
+  position: absolute;
   top: 0;
-  z-index: 1000;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.publication-btn.primary:hover::before {
+  left: 100%;
+}
+
+.publication-btn.primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(240, 133, 10, 0.2);
+}
+
+/* Publication particles container */
+.publication-particles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Responsive design for publication section */
+@media (max-width: 1024px) {
+  .publication-highlight {
+    margin: 2rem 1rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .publication-highlight {
+    flex-direction: column;
+    text-align: center;
+    padding: 1.5rem;
+    gap: 1rem;
+    margin: 2rem 0.5rem;
+  }
+
+  .publication-icon {
+    align-self: center;
+    width: 70px;
+    height: 70px;
+    font-size: 2rem;
+  }
+
+  .publication-content h4 {
+    font-size: 1.5rem;
+  }
+
+  .publication-description {
+    font-size: 1rem;
+  }
+
+  .publication-actions {
+    justify-content: center;
+  }
+
+  .publication-btn {
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .publication-highlight {
+    margin: 2rem 0.5rem;
+    padding: 1rem;
+  }
+  
+  .publication-content h4 {
+    font-size: 1.2rem;
+  }
+  
+  .publication-description {
+    font-size: 0.9rem;
+  }
+  
+  .publication-actions {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .publication-btn {
+    width: 100%;
+    max-width: 200px;
+    justify-content: center;
+    font-size: 0.9rem;
+  }
 }

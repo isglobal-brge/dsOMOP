@@ -12,6 +12,9 @@ function About() {
         <p>
           dsOMOP is an innovative, open-source project designed to bridge the gap between Observational Medical Outcomes Partnership Common Data Model (OMOP CDM) databases and the DataSHIELD environment. It was developed by the <strong><a href="https://brge.isglobal.org/" target="_blank" rel="noopener noreferrer" className="highlight-link">Bioinformatics Research Group in Epidemiology (BRGE)</a></strong> at the <strong><a href="https://www.isglobal.org/" target="_blank" rel="noopener noreferrer" className="highlight-link">Barcelona Institute for Global Health (ISGlobal)</a></strong>.
         </p>
+        <p>
+          Our project enables researchers to perform sophisticated statistical analyses across multiple OMOP CDM databases without compromising patient privacy. By leveraging DataSHIELD's federated learning capabilities, dsOMOP allows for the analysis of distributed healthcare datasets while ensuring that sensitive patient information never leaves its original location.
+        </p>
       </div>
 
       <div className="about-section">
