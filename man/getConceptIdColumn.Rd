@@ -22,7 +22,7 @@ Generate Concept ID Column Name
 The function performs the following transformations:
 \enumerate{
 \item Converts table name to lowercase for consistency
-\item Removes specific suffixes ('_occurrence', '_exposure', '_era')
+\item Removes specific suffixes ('_occurrence', '_exposure', '_era', '_strength')
 \item Appends '_concept_id' to create the final column name
 }
 
