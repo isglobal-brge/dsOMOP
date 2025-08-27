@@ -76,7 +76,7 @@ filterColumns <- function(table, tableColumns, selectedColumns, keepColumns) {
 #' @details
 #' The function performs the following transformations:
 #' 1. Converts table name to lowercase for consistency
-#' 2. Removes specific suffixes ('_occurrence', '_exposure')
+#' 2. Removes specific suffixes ('_occurrence', '_exposure', '_era')
 #' 3. Appends '_concept_id' to create the final column name
 #'
 #' This standardization is crucial for:
@@ -107,6 +107,7 @@ getConceptIdColumn <- function(tableName) {
   # Step 2: Remove special suffixes
   baseName <- gsub("_occurrence", "", tableName)
   baseName <- gsub("_exposure", "", baseName)
+  baseName <- gsub("_era", "", baseName)
   
   # Step 3: Generate concept ID column name
   conceptIdColumn <- paste0(baseName, "_concept_id")
