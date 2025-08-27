@@ -105,10 +105,11 @@ getConceptIdColumn <- function(tableName) {
   tableName <- tolower(tableName)
   
   # Step 2: Remove special suffixes
-  baseName <- gsub("_occurrence", "", tableName)
-  baseName <- gsub("_exposure", "", baseName)
-  baseName <- gsub("_era", "", baseName)
-  baseName <- gsub("_strength", "", baseName)
+  suffixes <- c("_occurrence", "_exposure", "_era", "_strength")
+  baseName <- tableName
+  for (suffix in suffixes) {
+    baseName <- gsub(suffix, "", baseName)
+  }
   
   # Step 3: Generate concept ID column name
   conceptIdColumn <- paste0(baseName, "_concept_id")
