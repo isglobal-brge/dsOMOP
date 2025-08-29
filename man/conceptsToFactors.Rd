@@ -15,38 +15,48 @@ A data frame with all concept ID columns converted to factors. All other
 columns remain unchanged.
 }
 \description{
-Converts all columns in a data frame that contain "concept_id" in their name to factors,
-ignoring case sensitivity. This is useful for ensuring consistent data types across
-concept identifier columns in OMOP CDM data.
+Converts original concept ID columns in a data frame to factors, while preserving
+the data types of fallback columns created during concept translation failures.
+This ensures proper handling of both translated and untranslated concept data.
 }
 \details{
 Convert Concept ID Columns to Factors in the Table
 
 The function performs the following operations:
 \enumerate{
-\item Identifies columns containing "concept_id" in their name (case-insensitive)
-\item Converts identified columns to factor type using as.factor()
-\item Preserves all other columns unchanged
+\item Identifies columns ending with "_concept_id" (case-insensitive)
+\item Distinguishes between simple numeric fallback patterns and real concept ID columns:
+\itemize{
+\item Simple fallback: "concept_id_123" (numeric data, preserved as-is)
+\item Real concept ID: "condition_concept_id" or "concept_id_123.value_as_concept_id"
+}
+\item Converts real concept ID columns to factor type using as.factor()
+\item Preserves data types of simple numeric fallback columns
 }
 
 Common Use Cases:
 \itemize{
-\item Standardizing concept ID columns after data import
-\item Preparing data for statistical analysis
-\item Ensuring consistent data types across concept identifiers
+\item Standardizing original concept ID columns after data import
+\item Preparing data for statistical analysis while preserving numeric fallback columns
+\item Ensuring consistent data types across concept identifiers without breaking numeric data
 }
 }
 \examples{
 \dontrun{
-# Example with concept ID columns
+# Example with various concept ID column types
 data <- data.frame(
   person_id = 1:3,
-  condition_concept_id = c(1234, 5678, 1234),
-  drug_concept_id = c(8901, 2345, 6789)
+  condition_concept_id = c(1234, 5678, 1234),      # Original -> factor
+  drug_concept_id = c(8901, 2345, 6789),           # Original -> factor  
+  concept_id_123 = c(1.5, 2.3, 3.1),               # Simple fallback -> numeric
+  concept_id_456.value_as_concept_id = c("A", "B", "C")  # Complex fallback -> factor
 )
 
-# Convert concept IDs to factors
 data_with_factors <- conceptsToFactors(data)
+# condition_concept_id: factor
+# drug_concept_id: factor
+# concept_id_123: numeric (preserved)
+# concept_id_456.value_as_concept_id: factor
 }
 
 }

@@ -2,20 +2,23 @@
 #'
 #' @title Convert Concept ID Columns to Factors
 #' @description
-#' Converts all columns in a data frame that contain "concept_id" in their name to factors,
-#' ignoring case sensitivity. This is useful for ensuring consistent data types across
-#' concept identifier columns in OMOP CDM data.
+#' Converts original concept ID columns in a data frame to factors, while preserving
+#' the data types of fallback columns created during concept translation failures.
+#' This ensures proper handling of both translated and untranslated concept data.
 #'
 #' @details
 #' The function performs the following operations:
-#' 1. Identifies columns containing "concept_id" in their name (case-insensitive)
-#' 2. Converts identified columns to factor type using as.factor()
-#' 3. Preserves all other columns unchanged
+#' 1. Identifies columns ending with "_concept_id" (case-insensitive)
+#' 2. Distinguishes between simple numeric fallback patterns and real concept ID columns:
+#'    - Simple fallback: "concept_id_123" (numeric data, preserved as-is)
+#'    - Real concept ID: "condition_concept_id" or "concept_id_123.value_as_concept_id" 
+#' 3. Converts real concept ID columns to factor type using as.factor()
+#' 4. Preserves data types of simple numeric fallback columns
 #'
 #' Common Use Cases:
-#' * Standardizing concept ID columns after data import
-#' * Preparing data for statistical analysis
-#' * Ensuring consistent data types across concept identifiers
+#' * Standardizing original concept ID columns after data import
+#' * Preparing data for statistical analysis while preserving numeric fallback columns
+#' * Ensuring consistent data types across concept identifiers without breaking numeric data
 #'
 #' @param table A data frame containing one or more columns with "concept_id" in their names.
 #'              The columns can be of any type that can be converted to factors.
@@ -25,22 +28,44 @@
 #'
 #' @examples
 #' \dontrun{
-#' # Example with concept ID columns
+#' # Example with various concept ID column types
 #' data <- data.frame(
 #'   person_id = 1:3,
-#'   condition_concept_id = c(1234, 5678, 1234),
-#'   drug_concept_id = c(8901, 2345, 6789)
+#'   condition_concept_id = c(1234, 5678, 1234),      # Original -> factor
+#'   drug_concept_id = c(8901, 2345, 6789),           # Original -> factor  
+#'   concept_id_123 = c(1.5, 2.3, 3.1),               # Simple fallback -> numeric
+#'   concept_id_456.value_as_concept_id = c("A", "B", "C")  # Complex fallback -> factor
 #' )
 #' 
-#' # Convert concept IDs to factors
 #' data_with_factors <- conceptsToFactors(data)
+#' # condition_concept_id: factor
+#' # drug_concept_id: factor
+#' # concept_id_123: numeric (preserved)
+#' # concept_id_456.value_as_concept_id: factor
 #' }
 #'
 conceptsToFactors <- function(table) {
   # Step 1: Iterate through all columns in the table
   for (column in names(table)) {
-    # Step 2: Check if column name contains "concept_id" (case-insensitive)
-    if (grepl("concept_id", column, ignore.case = TRUE)) {
+    # Step 2: Determine if this column should be converted to factor
+    # Logic: Convert to factor if column name ends with "_concept_id" 
+    # BUT NOT if it's a simple fallback pattern like "concept_id_123"
+    should_convert <- FALSE
+    
+    if (grepl("_concept_id$", column, ignore.case = TRUE)) {
+      # Column ends with "_concept_id", check if it's a simple fallback pattern
+      # Simple fallback pattern: starts with "concept_id_" and has only digits after
+      if (grepl("^concept_id_[0-9]+$", column, ignore.case = TRUE)) {
+        # This is a simple numeric fallback like "concept_id_123", don't convert
+        should_convert <- FALSE
+      } else {
+        # This is either an original concept_id column or a complex fallback
+        # like "concept_id_123.value_as_concept_id", so convert it
+        should_convert <- TRUE
+      }
+    }
+    
+    if (should_convert) {
       # Step 3: Convert matching columns to factor type
       table[[column]] <- as.factor(table[[column]])
     }
