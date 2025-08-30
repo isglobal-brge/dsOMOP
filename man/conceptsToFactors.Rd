@@ -22,17 +22,27 @@ This ensures proper handling of both translated and untranslated concept data.
 \details{
 Convert Concept ID Columns to Factors in the Table
 
-The function performs the following operations:
-\enumerate{
-\item Identifies columns ending with "_concept_id" (case-insensitive)
-\item Distinguishes between simple numeric fallback patterns and real concept ID columns:
+The function applies intelligent logic to determine which columns should be converted to factors:
+
+Conversion Rules:
 \itemize{
-\item Simple fallback: "concept_id_123" (numeric data, preserved as-is)
-\item Real concept ID: "condition_concept_id" or "concept_id_123.value_as_concept_id"
+\item Columns ending with "_concept_id" are converted to factors
+\item Exception: Simple numeric fallback patterns like "concept_id_123" are preserved as numeric
 }
-\item Converts real concept ID columns to factor type using as.factor()
-\item Preserves data types of simple numeric fallback columns
+
+Examples of conversion behavior:
+\itemize{
+\item "condition_concept_id" -> factor (standard OMOP concept column)
+\item "concept_id_123" -> numeric (simple fallback, preserve original type)
+\item "concept_id_123.value_as_concept_id" -> factor (ends with _concept_id)
+\item "concept_id_123.value_as_number" -> numeric (does not end with _concept_id)
+\item "blood_pressure.value_as_concept_id" -> factor (ends with _concept_id)
+\item "blood_pressure.value_as_number" -> numeric (does not end with _concept_id)
 }
+
+This ensures that concept identifier columns maintain factor type for proper statistical
+analysis, while preserving numeric data types for measurement values created during
+the concept translation fallback mechanism.
 
 Common Use Cases:
 \itemize{
@@ -43,20 +53,21 @@ Common Use Cases:
 }
 \examples{
 \dontrun{
-# Example with various concept ID column types
+# Example demonstrating conversion rules
 data <- data.frame(
   person_id = 1:3,
-  condition_concept_id = c(1234, 5678, 1234),      # Original -> factor
-  drug_concept_id = c(8901, 2345, 6789),           # Original -> factor  
-  concept_id_123 = c(1.5, 2.3, 3.1),               # Simple fallback -> numeric
-  concept_id_456.value_as_concept_id = c("A", "B", "C")  # Complex fallback -> factor
+  condition_concept_id = c(1234, 5678, 1234),                      # -> factor (ends with _concept_id)
+  concept_id_123 = c(1.5, 2.3, 3.1),                               # -> numeric (simple fallback pattern)
+  concept_id_123.value_as_concept_id = c("A", "B", "C"),           # -> factor (ends with _concept_id)
+  concept_id_123.value_as_number = c(10.1, 20.2, 30.3),            # -> numeric (ends with _as_number)
+  blood_pressure.value_as_concept_id = c("normal", "hypertension", # -> factor (ends with _concept_id)
+                                         "hypotension"),            
+  blood_pressure.value_as_number = c(120.0, 180.5, 90.2)           # -> numeric (ends with _as_number)
 )
 
-data_with_factors <- conceptsToFactors(data)
-# condition_concept_id: factor
-# drug_concept_id: factor
-# concept_id_123: numeric (preserved)
-# concept_id_456.value_as_concept_id: factor
+result <- conceptsToFactors(data)
+# Only columns ending with "_concept_id" become factors
+# Simple numeric fallback patterns like "concept_id_123" remain numeric
 }
 
 }

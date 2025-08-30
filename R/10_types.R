@@ -7,13 +7,23 @@
 #' This ensures proper handling of both translated and untranslated concept data.
 #'
 #' @details
-#' The function performs the following operations:
-#' 1. Identifies columns ending with "_concept_id" (case-insensitive)
-#' 2. Distinguishes between simple numeric fallback patterns and real concept ID columns:
-#'    - Simple fallback: "concept_id_123" (numeric data, preserved as-is)
-#'    - Real concept ID: "condition_concept_id" or "concept_id_123.value_as_concept_id" 
-#' 3. Converts real concept ID columns to factor type using as.factor()
-#' 4. Preserves data types of simple numeric fallback columns
+#' The function applies intelligent logic to determine which columns should be converted to factors:
+#' 
+#' Conversion Rules:
+#' - Columns ending with "_concept_id" are converted to factors
+#' - Exception: Simple numeric fallback patterns like "concept_id_123" are preserved as numeric
+#' 
+#' Examples of conversion behavior:
+#' - "condition_concept_id" -> factor (standard OMOP concept column)
+#' - "concept_id_123" -> numeric (simple fallback, preserve original type)
+#' - "concept_id_123.value_as_concept_id" -> factor (ends with _concept_id)
+#' - "concept_id_123.value_as_number" -> numeric (does not end with _concept_id)
+#' - "blood_pressure.value_as_concept_id" -> factor (ends with _concept_id)
+#' - "blood_pressure.value_as_number" -> numeric (does not end with _concept_id)
+#' 
+#' This ensures that concept identifier columns maintain factor type for proper statistical
+#' analysis, while preserving numeric data types for measurement values created during
+#' the concept translation fallback mechanism.
 #'
 #' Common Use Cases:
 #' * Standardizing original concept ID columns after data import
@@ -28,50 +38,58 @@
 #'
 #' @examples
 #' \dontrun{
-#' # Example with various concept ID column types
+#' # Example demonstrating conversion rules
 #' data <- data.frame(
 #'   person_id = 1:3,
-#'   condition_concept_id = c(1234, 5678, 1234),      # Original -> factor
-#'   drug_concept_id = c(8901, 2345, 6789),           # Original -> factor  
-#'   concept_id_123 = c(1.5, 2.3, 3.1),               # Simple fallback -> numeric
-#'   concept_id_456.value_as_concept_id = c("A", "B", "C")  # Complex fallback -> factor
+#'   condition_concept_id = c(1234, 5678, 1234),                      # -> factor (ends with _concept_id)
+#'   concept_id_123 = c(1.5, 2.3, 3.1),                               # -> numeric (simple fallback pattern)
+#'   concept_id_123.value_as_concept_id = c("A", "B", "C"),           # -> factor (ends with _concept_id)
+#'   concept_id_123.value_as_number = c(10.1, 20.2, 30.3),            # -> numeric (ends with _as_number)
+#'   blood_pressure.value_as_concept_id = c("normal", "hypertension", # -> factor (ends with _concept_id)
+#'                                          "hypotension"),            
+#'   blood_pressure.value_as_number = c(120.0, 180.5, 90.2)           # -> numeric (ends with _as_number)
 #' )
 #' 
-#' data_with_factors <- conceptsToFactors(data)
-#' # condition_concept_id: factor
-#' # drug_concept_id: factor
-#' # concept_id_123: numeric (preserved)
-#' # concept_id_456.value_as_concept_id: factor
+#' result <- conceptsToFactors(data)
+#' # Only columns ending with "_concept_id" become factors
+#' # Simple numeric fallback patterns like "concept_id_123" remain numeric
 #' }
 #'
 conceptsToFactors <- function(table) {
   # Step 1: Iterate through all columns in the table
   for (column in names(table)) {
-    # Step 2: Determine if this column should be converted to factor
-    # Logic: Convert to factor if column name ends with "_concept_id" 
-    # BUT NOT if it's a simple fallback pattern like "concept_id_123"
+    
+    # Step 2: Apply conversion logic based on column name patterns
+    # Rule: Convert to factor ONLY if column ends with "_concept_id"
+    # Exception: Preserve simple numeric fallback patterns like "concept_id_123"
     should_convert <- FALSE
     
     if (grepl("_concept_id$", column, ignore.case = TRUE)) {
-      # Column ends with "_concept_id", check if it's a simple fallback pattern
-      # Simple fallback pattern: starts with "concept_id_" and has only digits after
+      # Column ends with "_concept_id" - candidate for conversion
+      
+      # Check for simple numeric fallback pattern: "concept_id_[digits]"
+      # Examples: concept_id_123, concept_id_456, CONCEPT_ID_789
       if (grepl("^concept_id_[0-9]+$", column, ignore.case = TRUE)) {
-        # This is a simple numeric fallback like "concept_id_123", don't convert
+        # Simple fallback pattern - preserve original type (usually numeric)
+        # These represent raw numeric values from failed concept translations
         should_convert <- FALSE
       } else {
-        # This is either an original concept_id column or a complex fallback
-        # like "concept_id_123.value_as_concept_id", so convert it
+        # All other "_concept_id" columns should be factors:
+        # - Standard OMOP columns: "condition_concept_id", "drug_concept_id"
+        # - Complex fallbacks: "concept_id_123.value_as_concept_id", "blood_pressure.value_as_concept_id"
         should_convert <- TRUE
       }
     }
+    # Note: Columns NOT ending with "_concept_id" are never converted
+    # Examples that remain unchanged: "concept_id_123.value_as_number", "blood_pressure.value_as_number"
     
     if (should_convert) {
-      # Step 3: Convert matching columns to factor type
+      # Step 3: Convert to factor for proper statistical analysis
       table[[column]] <- as.factor(table[[column]])
     }
   }
   
-  # Step 4: Return modified table
+  # Step 4: Return table with appropriate factor conversions
   return(table)
 }
 
@@ -126,7 +144,7 @@ convertDateColumns <- function(table) {
   for (column in names(table)) {
     # Step 2: Split column name into tokens at periods
     tokens <- unlist(strsplit(column, ".", fixed = TRUE))
-    
+
     # Step 3: Process columns with multiple period-separated parts
     if (length(tokens) > 1) {
       # Remove first token and rejoin remaining parts
