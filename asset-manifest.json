@@ -1,6 +1,6 @@
 {
   "files": {
-    "main.css": "/dsOMOP/static/css/main.3536ee7c.css",
+    "main.css": "/dsOMOP/static/css/main.0bfc183d.css",
     "main.js": "/dsOMOP/static/js/main.111da750.js",
     "static/js/453.aa434637.chunk.js": "/dsOMOP/static/js/453.aa434637.chunk.js",
     "static/media/logo.png": "/dsOMOP/static/media/logo.471583bd516a8db546f2.png",
@@ -10,12 +10,12 @@
     "static/media/isglobal-logo.png": "/dsOMOP/static/media/isglobal-logo.c86bb7fcedd290761048.png",
     "static/media/juanr.jpg": "/dsOMOP/static/media/juanr.1c1c23844fc6780eee45.jpg",
     "index.html": "/dsOMOP/index.html",
-    "main.3536ee7c.css.map": "/dsOMOP/static/css/main.3536ee7c.css.map",
+    "main.0bfc183d.css.map": "/dsOMOP/static/css/main.0bfc183d.css.map",
     "main.111da750.js.map": "/dsOMOP/static/js/main.111da750.js.map",
     "453.aa434637.chunk.js.map": "/dsOMOP/static/js/453.aa434637.chunk.js.map"
   },
   "entrypoints": [
-    "static/css/main.3536ee7c.css",
+    "static/css/main.0bfc183d.css",
     "static/js/main.111da750.js"
   ]
 }
