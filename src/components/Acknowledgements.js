@@ -1,4 +1,5 @@
 import React from 'react';
+import cienciaLogo from '../assets/images/ciencia.png';
 
 function Acknowledgements() {
   const justifiedTextStyle = {
@@ -28,6 +29,18 @@ function Acknowledgements() {
           <div className="card-content">
             <p style={justifiedTextStyle}>
               Additionally, this project has received funding from the <strong><a href="https://www.isciii.es/" className="highlight-link">Instituto de Salud Carlos III (ISCIII)</a></strong> through the project <strong>"PMP21/00090,"</strong> co-funded by the <strong><a href="https://european-union.europa.eu/index_en" className="highlight-link">European Union's</a></strong> <strong>Resilience and Recovery Facility</strong>. It has also been partially funded by the <strong>"Complementary Plan for Biotechnology Applied to Health,"</strong> coordinated by the <strong><a href="https://ibecbarcelona.eu/" className="highlight-link">Institut de Bioenginyeria de Catalunya (IBEC)</a></strong> within the framework of the <strong>Recovery, Transformation, and Resilience Plan (C17.I1)</strong> – Funded by the <strong><a href="https://european-union.europa.eu/index_en" className="highlight-link">European Union</a></strong> – <strong><a href="https://next-generation-eu.europa.eu/index_en" className="highlight-link">NextGenerationEU</a></strong>.
+            </p>
+          </div>
+        </div>
+        <div className="acknowledgement-card funding-card">
+          <img
+            src={cienciaLogo}
+            alt="MCIN/AEI/FEDER"
+            className="funding-logo"
+          />
+          <div className="card-content">
+            <p style={justifiedTextStyle}>
+              This project <strong>(PID2021-122855OB-I00)</strong> has received funding from <strong>MCIN /AEI /10.13039/501100011033 / FEDER, UE</strong>.
             </p>
           </div>
         </div>

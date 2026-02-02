@@ -709,6 +709,29 @@ main {
   text-decoration: underline;
 }
 
+.funding-card {
+  flex-direction: row;
+  gap: 1.5rem;
+}
+
+.funding-card .funding-logo {
+  max-height: 80px;
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .funding-card {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .funding-card .funding-logo {
+    max-height: 60px;
+  }
+}
+
 .section-title {
   color: var(--primary-color);
   font-size: 2.5rem;
