@@ -712,6 +712,7 @@ main {
 .funding-card {
   flex-direction: row;
   gap: 1.5rem;
+  align-items: center;
 }
 
 .funding-card .funding-logo {
