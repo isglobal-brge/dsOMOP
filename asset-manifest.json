@@ -1,20 +1,21 @@
 {
   "files": {
-    "main.css": "/dsOMOP/static/css/main.122f6dd9.css",
-    "main.js": "/dsOMOP/static/js/main.b9207d05.js",
+    "main.css": "/dsOMOP/static/css/main.3536ee7c.css",
+    "main.js": "/dsOMOP/static/js/main.111da750.js",
     "static/js/453.aa434637.chunk.js": "/dsOMOP/static/js/453.aa434637.chunk.js",
     "static/media/logo.png": "/dsOMOP/static/media/logo.471583bd516a8db546f2.png",
+    "static/media/ciencia.png": "/dsOMOP/static/media/ciencia.95f42f386eb8bb4f4c8a.png",
     "static/media/xavi.jpeg": "/dsOMOP/static/media/xavi.8e5c5560043d0c8fba2f.jpeg",
     "static/media/david.jpeg": "/dsOMOP/static/media/david.9938640690ff22930153.jpeg",
     "static/media/isglobal-logo.png": "/dsOMOP/static/media/isglobal-logo.c86bb7fcedd290761048.png",
     "static/media/juanr.jpg": "/dsOMOP/static/media/juanr.1c1c23844fc6780eee45.jpg",
     "index.html": "/dsOMOP/index.html",
-    "main.122f6dd9.css.map": "/dsOMOP/static/css/main.122f6dd9.css.map",
-    "main.b9207d05.js.map": "/dsOMOP/static/js/main.b9207d05.js.map",
+    "main.3536ee7c.css.map": "/dsOMOP/static/css/main.3536ee7c.css.map",
+    "main.111da750.js.map": "/dsOMOP/static/js/main.111da750.js.map",
     "453.aa434637.chunk.js.map": "/dsOMOP/static/js/453.aa434637.chunk.js.map"
   },
   "entrypoints": [
-    "static/css/main.122f6dd9.css",
-    "static/js/main.b9207d05.js"
+    "static/css/main.3536ee7c.css",
+    "static/js/main.111da750.js"
   ]
 }
