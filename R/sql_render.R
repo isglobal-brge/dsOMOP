@@ -1,0 +1,79 @@
+# ==============================================================================
+# dsOMOP v2 - SQL Rendering and Execution
+# ==============================================================================
+# All SQL is authored in OHDSI SQL (SQL Server dialect) and translated at
+# execution time via the pure R engine in sql_translate.R.
+# ==============================================================================
+
+# --- DBMS Dialect Mapping ---
+
+#' Resolve a DBMS name to a target dialect
+#'
+#' @param dbms Character; DBMS name from resource driver
+#' @return Character; target dialect string
+#' @keywords internal
+.resolve_target_dialect <- function(dbms) {
+  dbms <- tolower(dbms)
+  mapping <- list(
+    postgresql = "postgresql",
+    postgres   = "postgresql",
+    sql_server = "sql server",
+    sqlserver  = "sql server",
+    oracle     = "oracle",
+    redshift   = "redshift",
+    bigquery   = "bigquery",
+    snowflake  = "snowflake",
+    spark      = "spark",
+    sqlite     = "sqlite",
+    duckdb     = "sqlite"
+  )
+  dialect <- mapping[[dbms]]
+  if (is.null(dialect)) {
+    stop("Unsupported DBMS: '", dbms, "'. Supported: ",
+         paste(unique(unlist(mapping)), collapse = ", "), call. = FALSE)
+  }
+  dialect
+}
+
+# --- Core SQL Execution ---
+
+#' Render, translate, and execute SQL (no result set)
+#'
+#' @param handle CDM handle
+#' @param sql Character; OHDSI SQL with \code{@param} placeholders
+#' @param ... Named parameters for substitution
+#' @keywords internal
+.execSql <- function(handle, sql, ...) {
+  rendered <- .sql_render(sql, ...)
+  translated <- .sql_translate(rendered, handle$target_dialect)
+  statements <- .sql_split(translated)
+  for (stmt in statements) {
+    DBI::dbExecute(handle$conn, stmt)
+  }
+  invisible(NULL)
+}
+
+#' Render, translate, and query SQL (returns data.frame)
+#'
+#' @param handle CDM handle
+#' @param sql Character; OHDSI SQL with \code{@param} placeholders
+#' @param ... Named parameters for substitution
+#' @return Data frame
+#' @keywords internal
+.querySql <- function(handle, sql, ...) {
+  rendered <- .sql_render(sql, ...)
+  translated <- .sql_translate(rendered, handle$target_dialect)
+  DBI::dbGetQuery(handle$conn, translated)
+}
+
+#' Render and translate SQL (returns SQL string, no execution)
+#'
+#' @param handle CDM handle
+#' @param sql Character; OHDSI SQL with \code{@param} placeholders
+#' @param ... Named parameters for substitution
+#' @return Character; translated SQL string
+#' @keywords internal
+.renderSql <- function(handle, sql, ...) {
+  rendered <- .sql_render(sql, ...)
+  .sql_translate(rendered, handle$target_dialect)
+}

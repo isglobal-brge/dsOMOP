@@ -1,52 +1,33 @@
-#' Package Initialization and Cleanup Functions
-#'
-#' @description
-#' These functions handle the initialization and cleanup of the package when it is
-#' loaded into or unloaded from an R session. They manage the registration and
-#' unregistration of the OMOP CDM resource resolver.
-#'
-#' @details
-#' The package uses two special R functions:
-#' * .onAttach: Called when package is attached to R session
-#' * .onDetach: Called when package is detached from R session
-#'
-#' The .onAttach function performs these steps:
-#' 1. Defines an inner helper function to register resolvers
-#' 2. Creates and registers the OMOP CDM resource resolver
-#' 3. Displays registration status message to user
-#'
-#' The .onDetach function:
-#' 1. Cleans up by unregistering the OMOP CDM resolver
-#' 2. Ensures proper resource cleanup on package unload
-#'
-#' @param lib The library where the package is installed
-#' @param pkg The name of the package being loaded
-#'
-#' @keywords internal
-#' @noRd
+# ==============================================================================
+# dsOMOP v2 - Package Lifecycle
+# ==============================================================================
+
+# Null-coalescing operator
+`%||%` <- function(x, y) if (is.null(x)) y else x
+
+# Mutable package state
+.pkg_state <- new.env(parent = emptyenv())
+.pkg_state$resolver <- NULL
+
+# Session-level handle storage
+.dsomop_env <- new.env(parent = emptyenv())
 
 .onAttach <- function(lib, pkg) {
-  # Helper function to register resource resolvers
-  registerResolver <- function(res) {
-    # Get class name of resolver for status message
-    class <- class(res)[[1]]
-    
-    # Display registration status message
-    packageStartupMessage(paste0("Registering ", class, "..."))
-    
-    # Register the resolver
-    registerResourceResolver(res)
-  }
-  
-  # Create and register OMOP CDM resolver on package attach
-  registerResolver(OMOPCDMResourceResolver$new())
+  .pkg_state$resolver <- OMOPResourceResolver$new()
+  resourcer::registerResourceResolver(.pkg_state$resolver)
+
+  packageStartupMessage(
+    "dsOMOP v", utils::packageVersion("dsOMOP"),
+    " loaded. OMOP CDM resource resolver registered."
+  )
 }
 
-#' @param lib The library where the package is installed
-#' @keywords internal
-#' @noRd
-
 .onDetach <- function(lib) {
-  # Clean up by unregistering the OMOP CDM resolver
-  unregisterResourceResolver("OMOPCDMResourceResolver")
+  if (!is.null(.pkg_state$resolver)) {
+    tryCatch(
+      resourcer::unregisterResourceResolver(.pkg_state$resolver),
+      error = function(e) NULL
+    )
+    .pkg_state$resolver <- NULL
+  }
 }

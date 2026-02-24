@@ -1,126 +1,99 @@
 var dsOMOP = {
   settings: {
-    title: "OMOP CDM Database Resources",
-    description:
-      "Provides structured access to OMOP CDM databases, supporting various database management systems (DBMS).",
+    title: "OMOP CDM Database Resources (HADES)",
+    description: "Provides access to OMOP CDM databases. Supports PostgreSQL, SQL Server, Oracle, Redshift, BigQuery, Snowflake, Spark, and SQLite.",
     web: "https://github.com/isglobal-brge/dsOMOP",
     categories: [
       {
         name: "omop-cdm",
         title: "OMOP CDM",
-        description:
-          'The resource is in <a href="https://www.ohdsi.org/data-standardization/" target="_blank">OMOP CDM</a> format.',
-      },
+        description: "Observational Medical Outcomes Partnership Common Data Model. See <a href='https://ohdsi.github.io/CommonDataModel/' target='_blank'>OHDSI CDM documentation</a>."
+      }
     ],
     types: [
       {
         name: "omop-cdm-db",
-        title: "OMOP CDM Database",
-        description:
-          'Connection to an OMOP CDM database. The connection will be established using <a href="https://www.r-dbi.org" target="_blank">DBI</a>.',
+        title: "OMOP CDM Database (HADES)",
+        description: "Connection to an OMOP CDM database via OHDSI HADES tooling.",
         tags: ["omop-cdm"],
         parameters: {
-          $schema: "http://json-schema.org/schema#",
-          type: "array",
-          items: [
-            {
-              key: "driver",
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          type: "object",
+          properties: {
+            dbms: {
               type: "string",
-              title: "Database engine",
-              enum: [
-                { key: "mariadb", title: "MariaDB" },
-                { key: "mysql", title: "MySQL" },
-                { key: "postgresql", title: "PostgreSQL" },
-              ],
+              title: "Database Engine",
+              enum: ["postgresql", "sql_server", "oracle", "redshift", "bigquery", "snowflake", "spark", "sqlite"]
             },
-            {
-              key: "host",
+            server: {
               type: "string",
-              title: "Host name or IP address",
+              title: "Server",
+              description: "host/database (DatabaseConnector format)"
             },
-            {
-              key: "port",
+            port: {
               type: "integer",
-              title: "Port number",
+              title: "Port"
             },
-            {
-              key: "db",
+            cdm_schema: {
               type: "string",
-              title: "Database name",
+              title: "CDM Schema",
+              description: "Schema containing OMOP CDM tables (e.g., 'cdm'). Leave empty for default schema."
             },
-            {
-              key: "schema",
+            vocabulary_schema: {
               type: "string",
-              title: "Schema (optional)",
-              description:
-                "If not provided, the default schema will be used.",
+              title: "Vocabulary Schema",
+              description: "Schema containing vocabulary tables if separate from CDM schema."
             },
-            {
-              key: "vocabulary_schema",
+            results_schema: {
               type: "string",
-              title: "Vocabulary schema (optional)",
-              description:
-                "Use in case the vocabulary tables are in a different schema. If not provided, the default schema will be used.",
+              title: "Results Schema",
+              description: "Schema for cohort tables and analysis results."
             },
-          ],
-          required: ["driver", "host", "port", "db"],
+            temp_schema: {
+              type: "string",
+              title: "Temp Schema",
+              description: "Schema for temporary tables. If not set, DB temp tables are used."
+            }
+          },
+          required: ["dbms", "server", "port"]
         },
         credentials: {
-          $schema: "http://json-schema.org/schema#",
-          type: "array",
-          items: [
-            {
-              key: "username",
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          type: "object",
+          properties: {
+            username: {
               type: "string",
-              title: "Username",
+              title: "Username"
             },
-            {
-              key: "password",
+            password: {
               type: "string",
               title: "Password",
-              format: "password",
-            },
-          ],
-          required: ["username", "password"],
-        },
-      },
-    ],
-  },
-  asResource: function (type, name, params, credentials) {
-    var OMOPCDMResource = function (name, params, credentials) {
-      var resourceUrl =
-        params.driver +
-        "://" +
-        params.host +
-        ":" +
-        params.port +
-        "/" +
-        params.db;
-      
-      if (params.schema || params.vocabulary_schema) {
-        resourceUrl += "//dsomop::";
-        if (params.schema) {
-          resourceUrl += "/schema:" + params.schema;
-        }
-        if (params.vocabulary_schema) {
-          resourceUrl += "/vocabulary_schema:" + params.vocabulary_schema;
+              format: "password"
+            }
+          },
+          required: ["username", "password"]
         }
       }
-      
-      return {
-        name: name,
-        url: resourceUrl,
-        format: "omop.cdm.db",
-        identity: credentials.username,
-        secret: credentials.password,
-      };
-    };
-    var toResourceFactories = {
-      "omop-cdm-db": OMOPCDMResource,
-    };
-    if (toResourceFactories[type]) {
-      return toResourceFactories[type](name, params, credentials);
-    }
-    return undefined;
+    ]
   },
+
+  asResource: function(type, name, params, credentials) {
+    if (type !== "omop-cdm-db") return undefined;
+
+    var url = "omop+hades:///dbms=" + params.dbms
+            + ";server=" + params.server
+            + ";port=" + params.port;
+    if (params.cdm_schema) url += ";cdm_schema=" + params.cdm_schema;
+    if (params.vocabulary_schema) url += ";vocabulary_schema=" + params.vocabulary_schema;
+    if (params.results_schema) url += ";results_schema=" + params.results_schema;
+    if (params.temp_schema) url += ";temp_schema=" + params.temp_schema;
+
+    return {
+      name: name,
+      url: url,
+      format: "omop.hades.db",
+      identity: credentials.username,
+      secret: credentials.password
+    };
+  }
 };

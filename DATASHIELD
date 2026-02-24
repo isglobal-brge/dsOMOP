@@ -1,0 +1,32 @@
+AssignMethods:
+  omopInitDS,
+  omopPlanExecuteDS,
+  omopCohortCreateDS,
+  omopCohortCombineDS,
+  omopCleanupDS
+AggregateMethods:
+  omopPingDS,
+  omopGetCapabilitiesDS,
+  omopListTablesDS,
+  omopListColumnsDS,
+  omopRelationshipGraphDS,
+  omopTableStatsDS,
+  omopColumnStatsDS,
+  omopDomainCoverageDS,
+  omopMissingnessDS,
+  omopValueCountsDS,
+  omopSearchConceptsDS,
+  omopLookupConceptsDS,
+  omopGetDescendantsDS,
+  omopExpandConceptSetDS,
+  omopPlanPreviewDS,
+  omopCohortListDS,
+  omopCohortGetDefinitionDS
+Options:
+  datashield.privacyControlLevel=banana,
+  nfilter.subset=3,
+  nfilter.tab=3,
+  nfilter.levels.max=40,
+  nfilter.levels.density=0.33,
+  nfilter.string=80,
+  nfilter.stringShort=20

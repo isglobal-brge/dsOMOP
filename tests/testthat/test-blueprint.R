@@ -1,0 +1,219 @@
+test_that("OHDSI metadata loads successfully", {
+  ohdsi <- .loadOHDSIMetadata()
+  expect_true(is.data.frame(ohdsi$table_level))
+  expect_true(is.data.frame(ohdsi$field_level))
+  expect_true(nrow(ohdsi$table_level) > 0)
+  expect_true(nrow(ohdsi$field_level) > 0)
+  expect_true("cdmTableName" %in% names(ohdsi$table_level))
+  expect_true("schema" %in% names(ohdsi$table_level))
+  expect_true("conceptPrefix" %in% names(ohdsi$table_level))
+  expect_true("cdmFieldName" %in% names(ohdsi$field_level))
+})
+
+test_that("blueprint builds from test handle", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  bp <- .buildBlueprint(handle)
+
+  expect_true(is.environment(bp))
+  expect_true(is.data.frame(bp$tables))
+  expect_true(is.list(bp$columns))
+  expect_true(is.data.frame(bp$join_graph))
+
+  # Tables present in test DB
+  present <- bp$tables$table_name[bp$tables$present_in_db]
+  expect_true("person" %in% present)
+  expect_true("condition_occurrence" %in% present)
+  expect_true("measurement" %in% present)
+  expect_true("concept" %in% present)
+  expect_true("concept_ancestor" %in% present)
+})
+
+test_that("blueprint caches and reuses", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  bp1 <- .buildBlueprint(handle)
+  bp2 <- .buildBlueprint(handle)
+  expect_identical(bp1, bp2)
+
+  # Force rebuild
+  bp3 <- .buildBlueprint(handle, force = TRUE)
+  expect_true(is.environment(bp3))
+})
+
+test_that("blueprint columns have correct metadata", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  bp <- .buildBlueprint(handle)
+
+  person_cols <- bp$columns[["person"]]
+  expect_true(is.data.frame(person_cols))
+  expect_true("person_id" %in% person_cols$column_name)
+  expect_true("gender_concept_id" %in% person_cols$column_name)
+
+  # Check column metadata fields
+  expect_true(all(c("column_name", "concept_role", "is_date",
+                     "is_sensitive", "is_blocked") %in% names(person_cols)))
+})
+
+test_that("concept role classification works correctly", {
+  # Domain concept: matches conceptPrefix
+  expect_equal(
+    .classifyConceptRole("condition_occurrence", "condition_concept_id",
+                          "condition", "", is_fk = TRUE, fk_table = "CONCEPT"),
+    "domain_concept"
+  )
+
+  # Type concept: fk_domain is "Type Concept"
+  expect_equal(
+    .classifyConceptRole("condition_occurrence", "condition_type_concept_id",
+                          "condition", "Type Concept", is_fk = TRUE, fk_table = "CONCEPT"),
+    "type_concept"
+  )
+
+  # Source concept: ends in _source_concept_id
+  expect_equal(
+    .classifyConceptRole("condition_occurrence", "condition_source_concept_id",
+                          "condition", "", is_fk = TRUE, fk_table = "CONCEPT"),
+    "source_concept"
+  )
+
+  # Attribute concept: FK to CONCEPT but not domain/type/source
+  expect_equal(
+    .classifyConceptRole("measurement", "unit_concept_id",
+                          "measurement", "", is_fk = TRUE, fk_table = "CONCEPT"),
+    "attribute_concept"
+  )
+
+  # Non-concept: doesn't end in _concept_id
+  expect_equal(
+    .classifyConceptRole("person", "person_id", "gender", "",
+                          is_fk = FALSE, fk_table = ""),
+    "non_concept"
+  )
+})
+
+test_that("sensitive column detection works", {
+  expect_true(.detectSensitiveColumns("condition_source_value"))
+  expect_true(.detectSensitiveColumns("drug_source_value"))
+  expect_true(.detectSensitiveColumns("value_as_string"))
+  expect_true(.detectSensitiveColumns("note_text"))
+  expect_true(.detectSensitiveColumns("condition_source_concept_id"))
+
+  expect_false(.detectSensitiveColumns("person_id"))
+  expect_false(.detectSensitiveColumns("condition_concept_id"))
+  expect_false(.detectSensitiveColumns("value_as_number"))
+  expect_false(.detectSensitiveColumns("measurement_date"))
+})
+
+test_that("getDomainConceptColumn returns correct columns", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  bp <- .buildBlueprint(handle)
+
+  expect_equal(.getDomainConceptColumn(bp, "condition_occurrence"), "condition_concept_id")
+  expect_equal(.getDomainConceptColumn(bp, "measurement"), "measurement_concept_id")
+  expect_equal(.getDomainConceptColumn(bp, "drug_exposure"), "drug_concept_id")
+  expect_equal(.getDomainConceptColumn(bp, "observation"), "observation_concept_id")
+  expect_equal(.getDomainConceptColumn(bp, "person"), "gender_concept_id")
+})
+
+test_that("getDateColumn returns correct columns", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  bp <- .buildBlueprint(handle)
+
+  expect_equal(.getDateColumn(bp, "condition_occurrence"), "condition_start_date")
+  expect_equal(.getDateColumn(bp, "measurement"), "measurement_date")
+  expect_equal(.getDateColumn(bp, "drug_exposure"), "drug_exposure_start_date")
+  expect_equal(.getDateColumn(bp, "observation_period"), "observation_period_start_date")
+})
+
+test_that("findJoinPath finds person_id directly", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  bp <- .buildBlueprint(handle)
+
+  # person table has person_id directly
+  path <- .findJoinPath(bp, "person", "person_id")
+  expect_equal(path$path, "person")
+  expect_equal(length(path$joins), 0)
+
+  # condition_occurrence has person_id directly
+  path2 <- .findJoinPath(bp, "condition_occurrence", "person_id")
+  expect_equal(path2$path, "condition_occurrence")
+})
+
+test_that("getCapabilities returns valid structure", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  .buildBlueprint(handle)
+  caps <- .getCapabilities(handle)
+
+  expect_true(is.list(caps))
+  expect_true(!is.null(caps$hash))
+  expect_true(caps$n_tables > 0)
+  expect_true("person" %in% caps$tables)
+  expect_equal(caps$dbms, "sqlite")
+  expect_true(is.list(caps$cdm_info))
+})
+
+test_that("CDM info is detected from cdm_source table", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  bp <- .buildBlueprint(handle)
+
+  expect_true(!is.null(bp$cdm_info))
+  expect_equal(bp$cdm_info$source_name, "dsOMOP Test")
+  expect_equal(bp$cdm_info$cdm_version, "v5.4")
+})
+
+test_that("blueprint tables have schema categories", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  bp <- .buildBlueprint(handle)
+
+  # Check schema categories from OHDSI metadata
+  person_row <- bp$tables[bp$tables$table_name == "person", ]
+  expect_equal(person_row$schema_category, "CDM")
+
+  concept_row <- bp$tables[bp$tables$table_name == "concept", ]
+  expect_equal(concept_row$schema_category, "Vocabulary")
+})
+
+test_that("blueprint has_person_id is set correctly", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  bp <- .buildBlueprint(handle)
+
+  expect_true(bp$tables$has_person_id[bp$tables$table_name == "condition_occurrence"])
+  expect_true(bp$tables$has_person_id[bp$tables$table_name == "measurement"])
+  expect_false(bp$tables$has_person_id[bp$tables$table_name == "concept"])
+})
+
+test_that("join graph is built from OHDSI FK metadata", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  bp <- .buildBlueprint(handle)
+
+  expect_true(is.data.frame(bp$join_graph))
+  expect_true(nrow(bp$join_graph) > 0)
+  expect_true(all(c("from_table", "from_column", "to_table", "to_column") %in%
+                    names(bp$join_graph)))
+
+  # condition_occurrence should join to person via person_id
+  co_joins <- bp$join_graph[bp$join_graph$from_table == "condition_occurrence", ]
+  person_join <- co_joins[co_joins$to_table == "person", ]
+  expect_true(nrow(person_join) > 0)
+})
