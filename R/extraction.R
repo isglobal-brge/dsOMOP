@@ -1064,6 +1064,363 @@
   result
 }
 
+# --- Cohort Membership Extraction ---
+
+#' Extract standard OHDSI cohort membership table
+#'
+#' Simple query on the materialized cohort temp table. Produces output
+#' with the standard OHDSI cohort columns.
+#'
+#' @param handle CDM handle
+#' @param cohort_table Character; temp table name with cohort members
+#' @param cohort_definition_id Integer; cohort definition ID
+#' @return Data frame with row_id, subject_id, cohort_definition_id,
+#'   cohort_start_date, cohort_end_date
+#' @keywords internal
+.extractCohortMembership <- function(handle, cohort_table,
+                                      cohort_definition_id) {
+  if (is.null(cohort_table)) {
+    warning("Cohort membership output requires a cohort; returning NULL.",
+            call. = FALSE)
+    return(NULL)
+  }
+
+  .assertMinPersons(
+    conn = handle$conn,
+    sql = paste0("SELECT COUNT(DISTINCT subject_id) AS n_persons FROM ",
+                 cohort_table)
+  )
+
+  sql <- paste0(
+    "SELECT subject_id, cohort_start_date, cohort_end_date",
+    " FROM ", cohort_table,
+    " ORDER BY subject_id, cohort_start_date"
+  )
+
+  result <- .executeQuery(handle, sql)
+  if (nrow(result) == 0) return(result)
+
+  result$row_id <- seq_len(nrow(result))
+  result$cohort_definition_id <- as.integer(cohort_definition_id)
+
+  # Reorder columns: row_id, subject_id, cohort_definition_id, dates
+  result[, c("row_id", "subject_id", "cohort_definition_id",
+             "cohort_start_date", "cohort_end_date")]
+}
+
+# --- Intervals Long Extraction ---
+
+#' Extract interval data from multiple tables relative to index date
+#'
+#' For each table, joins to the cohort, computes start/end days relative
+#' to cohort_start_date, and combines into a single long data frame.
+#'
+#' @param handle CDM handle
+#' @param cohort_table Character; temp table name with cohort members
+#' @param tables Character vector; table names to extract intervals from
+#' @param concept_filter Named list; per-table concept ID filters
+#' @return Data frame with row_id, subject_id, interval_type, concept_id,
+#'   start_days_from_index, end_days_from_index
+#' @keywords internal
+.extractIntervalsLong <- function(handle, cohort_table, tables,
+                                   concept_filter = NULL) {
+  if (is.null(cohort_table)) {
+    warning("Intervals output requires a cohort; returning NULL.",
+            call. = FALSE)
+    return(NULL)
+  }
+
+  .assertMinPersons(
+    conn = handle$conn,
+    sql = paste0("SELECT COUNT(DISTINCT subject_id) AS n_persons FROM ",
+                 cohort_table)
+  )
+
+  bp <- .buildBlueprint(handle)
+  all_intervals <- list()
+
+  for (tbl_name in tables) {
+    tbl_lower <- tolower(tbl_name)
+
+    # Skip if not present in DB
+    tbl_row <- bp$tables[bp$tables$table_name == tbl_lower, , drop = FALSE]
+    if (nrow(tbl_row) == 0 || !tbl_row$present_in_db[1]) next
+
+    # Get date pair — skip if no start/end pair
+    date_pair <- .getDatePair(bp, tbl_lower)
+    if (is.null(date_pair)) next
+
+    # Get domain concept column — use concept_role to avoid
+    # returning type_concept columns (e.g. period_type_concept_id)
+    col_df <- bp$columns[[tbl_lower]]
+    domain_cols <- col_df$column_name[col_df$concept_role == "domain_concept"]
+    concept_col <- if (length(domain_cols) > 0) domain_cols[1] else NULL
+
+    # Resolve qualified table name
+    schema <- .resolveTableSchema(
+      handle, tbl_lower, tbl_row$schema_category[1]
+    )
+    qualified <- .qualifyTable(handle, tbl_lower, schema)
+
+    # Build SELECT
+    select_parts <- paste0(
+      "t.person_id, t.", date_pair$start, ", t.", date_pair$end
+    )
+    if (!is.null(concept_col)) {
+      select_parts <- paste0(select_parts, ", t.", concept_col)
+    }
+    select_parts <- paste0(select_parts, ", c.cohort_start_date")
+
+    sql <- paste0(
+      "SELECT ", select_parts,
+      " FROM ", qualified, " AS t",
+      " INNER JOIN ", cohort_table,
+      " AS c ON c.subject_id = t.person_id"
+    )
+
+    # Apply per-table concept filter
+    tbl_concepts <- concept_filter[[tbl_lower]] %||%
+      concept_filter[[tbl_name]]
+    if (!is.null(tbl_concepts) && !is.null(concept_col)) {
+      ids_str <- paste(as.integer(tbl_concepts), collapse = ", ")
+      sql <- paste0(sql, " WHERE t.", concept_col, " IN (", ids_str, ")")
+    }
+
+    tbl_df <- .executeQuery(handle, sql)
+    if (nrow(tbl_df) == 0) next
+
+    # Compute relative days
+    start_dates <- as.Date(tbl_df[[date_pair$start]])
+    end_dates <- as.Date(tbl_df[[date_pair$end]])
+    index_dates <- as.Date(tbl_df$cohort_start_date)
+
+    interval_df <- data.frame(
+      subject_id = as.integer(tbl_df$person_id),
+      interval_type = rep(tbl_lower, nrow(tbl_df)),
+      concept_id = if (!is.null(concept_col))
+        as.integer(tbl_df[[concept_col]])
+      else
+        rep(NA_integer_, nrow(tbl_df)),
+      start_days_from_index = as.integer(start_dates - index_dates),
+      end_days_from_index = as.integer(end_dates - index_dates),
+      stringsAsFactors = FALSE
+    )
+
+    all_intervals[[tbl_lower]] <- interval_df
+  }
+
+  if (length(all_intervals) == 0) {
+    return(data.frame(
+      row_id = integer(0), subject_id = integer(0),
+      interval_type = character(0), concept_id = integer(0),
+      start_days_from_index = integer(0),
+      end_days_from_index = integer(0),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  result <- do.call(rbind, all_intervals)
+  rownames(result) <- NULL
+  result$row_id <- seq_len(nrow(result))
+
+  result[, c("row_id", "subject_id", "interval_type", "concept_id",
+             "start_days_from_index", "end_days_from_index")]
+}
+
+# --- Temporal Covariates ---
+
+#' Generate time window bins
+#'
+#' @param bin_width Integer; bin width in days
+#' @param window_start Integer; start of window (days from index)
+#' @param window_end Integer; end of window (days from index)
+#' @return Data frame with timeId, startDay, endDay
+#' @keywords internal
+.generateTimeWindows <- function(bin_width, window_start, window_end) {
+  starts <- seq(as.integer(window_start),
+                as.integer(window_end) - 1L,
+                by = as.integer(bin_width))
+  ends <- pmin(starts + as.integer(bin_width) - 1L,
+               as.integer(window_end))
+
+  data.frame(
+    timeId = seq_along(starts),
+    startDay = as.integer(starts),
+    endDay = as.integer(ends),
+    stringsAsFactors = FALSE
+  )
+}
+
+#' Extract temporal (time-binned) covariates in sparse format
+#'
+#' R-side binning approach matching the existing \code{.toSparse()} pattern.
+#' Extracts events within the time window, assigns to bins, and computes
+#' binary/count analyses per concept x time bin.
+#'
+#' @param handle CDM handle
+#' @param cohort_table Character; temp table name with cohort members
+#' @param table Character; source OMOP table
+#' @param concept_filter Numeric vector; concept IDs to include
+#' @param bin_width Integer; bin width in days
+#' @param window_start Integer; start of window (days from index)
+#' @param window_end Integer; end of window (days from index)
+#' @param analyses Character vector; analyses to compute
+#' @return Named list with temporalCovariates, covariateRef, timeRef
+#' @keywords internal
+.extractTemporalCovariates <- function(handle, cohort_table, table,
+                                        concept_filter = NULL,
+                                        bin_width = 30L,
+                                        window_start = -365L,
+                                        window_end = 0L,
+                                        analyses = c("binary")) {
+  if (is.null(cohort_table)) {
+    warning("Temporal covariates output requires a cohort; returning NULL.",
+            call. = FALSE)
+    return(NULL)
+  }
+
+  bin_width <- as.integer(bin_width)
+  window_start <- as.integer(window_start)
+  window_end <- as.integer(window_end)
+
+  # Extract events with days_from_index via .extractTable
+  events <- .extractTable(
+    handle,
+    table = table,
+    concept_filter = concept_filter,
+    cohort_table = cohort_table,
+    add_cohort_date = TRUE,
+    temporal = list(
+      index_window = list(start = window_start, end = window_end)
+    ),
+    block_sensitive = TRUE
+  )
+
+  # Generate time windows
+  time_ref <- .generateTimeWindows(bin_width, window_start, window_end)
+
+  # Empty result template
+  empty_result <- list(
+    temporalCovariates = data.frame(
+      rowId = integer(0), timeId = integer(0),
+      covariateId = numeric(0), covariateValue = numeric(0),
+      stringsAsFactors = FALSE
+    ),
+    covariateRef = data.frame(
+      covariateId = numeric(0), covariateName = character(0),
+      analysisId = integer(0), conceptId = integer(0),
+      stringsAsFactors = FALSE
+    ),
+    timeRef = time_ref
+  )
+
+  if (nrow(events) == 0 || !"days_from_index" %in% names(events)) {
+    return(empty_result)
+  }
+
+  # Find concept column
+  possible <- grep("_concept_id$", names(events), value = TRUE)
+  possible <- possible[!grepl("_type_concept_id$|_source_concept_id$",
+                               possible)]
+  concept_col <- if (length(possible) > 0) possible[1] else NULL
+
+  if (is.null(concept_col)) return(empty_result)
+
+  # Assign each event to a time bin
+  dfi <- events$days_from_index
+  time_ids <- floor((dfi - window_start) / bin_width) + 1L
+  time_ids <- as.integer(time_ids)
+  # Clamp to valid range
+  time_ids <- pmin(pmax(time_ids, 1L), nrow(time_ref))
+  events$.timeId <- time_ids
+
+  # Build row_id mapping
+  persons <- sort(unique(events$person_id))
+  row_map <- stats::setNames(seq_along(persons),
+                              as.character(persons))
+
+  concepts <- sort(unique(events[[concept_col]]))
+
+  covariates <- data.frame(
+    rowId = integer(0), timeId = integer(0),
+    covariateId = numeric(0), covariateValue = numeric(0),
+    stringsAsFactors = FALSE
+  )
+  covariate_ref <- data.frame(
+    covariateId = numeric(0), covariateName = character(0),
+    analysisId = integer(0), conceptId = integer(0),
+    stringsAsFactors = FALSE
+  )
+
+  analysis_map <- list(binary = 1L, count = 2L)
+
+  for (cid in concepts) {
+    concept_label <- .standardizeName(as.character(cid))
+    if (is.na(concept_label) || concept_label == "") {
+      concept_label <- paste0("concept_", cid)
+    }
+
+    c_events <- events[events[[concept_col]] == cid, , drop = FALSE]
+
+    for (analysis_name in analyses) {
+      aid <- analysis_map[[analysis_name]]
+      if (is.null(aid)) next
+
+      cov_id <- as.numeric(cid) * 1000 + aid
+
+      if (analysis_name == "binary") {
+        # Unique (person, time_bin) pairs
+        uniq <- unique(c_events[, c("person_id", ".timeId"),
+                                 drop = FALSE])
+        if (nrow(uniq) > 0) {
+          covariates <- rbind(covariates, data.frame(
+            rowId = as.integer(
+              row_map[as.character(uniq$person_id)]
+            ),
+            timeId = uniq$.timeId,
+            covariateId = rep(cov_id, nrow(uniq)),
+            covariateValue = rep(1, nrow(uniq)),
+            stringsAsFactors = FALSE
+          ))
+        }
+      } else if (analysis_name == "count") {
+        # Count events per (person, time_bin)
+        count_agg <- stats::aggregate(
+          c_events[[concept_col]],
+          by = list(person_id = c_events$person_id,
+                    timeId = c_events$.timeId),
+          FUN = length
+        )
+        if (nrow(count_agg) > 0) {
+          covariates <- rbind(covariates, data.frame(
+            rowId = as.integer(
+              row_map[as.character(count_agg$person_id)]
+            ),
+            timeId = count_agg$timeId,
+            covariateId = rep(cov_id, nrow(count_agg)),
+            covariateValue = as.numeric(count_agg$x),
+            stringsAsFactors = FALSE
+          ))
+        }
+      }
+
+      covariate_ref <- rbind(covariate_ref, data.frame(
+        covariateId = cov_id,
+        covariateName = paste0(concept_label, "_", analysis_name),
+        analysisId = aid,
+        conceptId = as.integer(cid),
+        stringsAsFactors = FALSE
+      ))
+    }
+  }
+
+  list(
+    temporalCovariates = covariates,
+    covariateRef = covariate_ref,
+    timeRef = time_ref
+  )
+}
+
 # --- Concept Dictionary ---
 
 #' Build a concept dictionary from extracted results
@@ -1095,6 +1452,18 @@
         vals <- res[[col]]
         vals <- vals[!is.na(vals)]
         ids <- c(ids, as.integer(vals))
+      }
+      # intervals_long: bare concept_id column
+      if ("concept_id" %in% names(res)) {
+        vals <- res[["concept_id"]]
+        ids <- c(ids, as.integer(vals[!is.na(vals)]))
+      }
+    } else if (is.list(res) &&
+               "temporalCovariates" %in% names(res)) {
+      # temporal_covariates: extract from covariateRef
+      if ("covariateRef" %in% names(res) &&
+          "conceptId" %in% names(res$covariateRef)) {
+        ids <- as.integer(res$covariateRef$conceptId)
       }
     } else if (is.list(res) && "covariateRef" %in% names(res)) {
       if ("conceptId" %in% names(res$covariateRef)) {

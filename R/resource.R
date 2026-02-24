@@ -19,7 +19,6 @@ OMOPResourceClient <- R6::R6Class(
   inherit = resourcer::ResourceClient,
 
   private = list(
-    .dbi_connector = NULL,
     .connection = NULL,
     .parsed = NULL,
 
@@ -53,22 +52,60 @@ OMOPResourceClient <- R6::R6Class(
         temp_schema       = params$temp_schema
       )
       private$.parsed <- parsed
+    },
+
+    #' Create a DBI connection directly from parsed URL parameters
+    connect_dbi = function() {
+      res <- self$getResource()
+      p <- private$.parsed
+      user <- res$identity
+      pass <- res$secret
+
+      dbms <- tolower(p$dbms %||% "")
+
+      if (dbms == "postgresql") {
+        if (requireNamespace("RPostgres", quietly = TRUE)) {
+          return(DBI::dbConnect(RPostgres::Postgres(),
+                                host = p$host, port = p$port,
+                                dbname = p$database,
+                                user = user, password = pass))
+        }
+        if (requireNamespace("RPostgreSQL", quietly = TRUE)) {
+          return(DBI::dbConnect(RPostgreSQL::PostgreSQL(),
+                                host = p$host, port = p$port,
+                                dbname = p$database,
+                                user = user, password = pass))
+        }
+        stop("No PostgreSQL driver found. Install RPostgres or RPostgreSQL.",
+             call. = FALSE)
+      }
+
+      if (dbms == "sqlite") {
+        if (!requireNamespace("RSQLite", quietly = TRUE))
+          stop("RSQLite package required for SQLite connections.", call. = FALSE)
+        return(DBI::dbConnect(RSQLite::SQLite(), dbname = p$database))
+      }
+
+      if (dbms %in% c("sql server", "sqlserver", "mssql")) {
+        if (!requireNamespace("odbc", quietly = TRUE))
+          stop("odbc package required for SQL Server connections.", call. = FALSE)
+        return(DBI::dbConnect(odbc::odbc(),
+                              driver = "ODBC Driver 17 for SQL Server",
+                              server = paste0(p$host, ",", p$port),
+                              database = p$database,
+                              uid = user, pwd = pass))
+      }
+
+      stop("Unsupported DBMS: '", dbms, "'. ",
+           "Supported: postgresql, sqlite, sql server.", call. = FALSE)
     }
   ),
 
   public = list(
     #' @description Create a new OMOP resource client
     #' @param resource A resourcer resource object
-    #' @param dbi.connector An optional DBI connector
-    initialize = function(resource, dbi.connector = NULL) {
+    initialize = function(resource, ...) {
       super$initialize(resource)
-      if (is.null(dbi.connector)) {
-        dbi.connector <- resourcer::findDBIResourceConnector(resource)
-      }
-      if (is.null(dbi.connector)) {
-        stop("No DBI connector found for OMOP resource.", call. = FALSE)
-      }
-      private$.dbi_connector <- dbi.connector
       private$parse_url()
     },
 
@@ -76,13 +113,7 @@ OMOPResourceClient <- R6::R6Class(
     #' @return A DBI connection object
     getConnection = function() {
       if (is.null(private$.connection) || !DBI::dbIsValid(private$.connection)) {
-        res <- self$getResource()
-        p <- private$.parsed
-        # Build standard URL for resourcer DBI connector
-        base_url <- paste0(p$dbms, "://", p$host, ":", p$port, "/", p$database)
-        base_res <- res
-        base_res$url <- base_url
-        private$.connection <- private$.dbi_connector$createDBIConnection(base_res)
+        private$.connection <- private$connect_dbi()
       }
       private$.connection
     },

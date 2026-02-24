@@ -374,6 +374,41 @@
   date_cols[1]
 }
 
+#' Get start/end date column pair for interval tables
+#'
+#' Returns a list with \code{start} and \code{end} date column names for
+#' tables that have interval data (e.g. observation_period, visit_occurrence,
+#' condition_occurrence, drug_exposure, drug_era, condition_era).
+#' Returns NULL for single-date tables (measurement, procedure_occurrence).
+#'
+#' @param blueprint The schema blueprint
+#' @param table Character; table name
+#' @return Named list with \code{start} and \code{end}, or NULL
+#' @keywords internal
+.getDatePair <- function(blueprint, table) {
+  table <- tolower(table)
+  cols <- blueprint$columns[[table]]
+  if (is.null(cols)) return(NULL)
+
+  date_cols <- cols$column_name[cols$is_date]
+  if (length(date_cols) == 0) return(NULL)
+
+  # Find a _start_date column
+  start_cols <- grep("_start_date$", date_cols, value = TRUE)
+  if (length(start_cols) == 0) return(NULL)
+
+  start_col <- start_cols[1]
+
+  # Derive the _end_date column by substitution
+
+  end_col <- sub("_start_date$", "_end_date", start_col)
+
+  # Verify the end column exists
+  if (!end_col %in% cols$column_name) return(NULL)
+
+  list(start = start_col, end = end_col)
+}
+
 #' Find a join path between tables using BFS
 #'
 #' @param blueprint The schema blueprint

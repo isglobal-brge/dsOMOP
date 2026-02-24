@@ -122,6 +122,52 @@ test_that("getDomainConceptColumn returns correct columns", {
   expect_equal(.getDomainConceptColumn(bp, "person"), "gender_concept_id")
 })
 
+test_that("getDatePair returns correct pairs for interval tables", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  bp <- .buildBlueprint(handle)
+
+  # condition_occurrence has start/end pair
+  pair <- .getDatePair(bp, "condition_occurrence")
+  expect_true(!is.null(pair))
+  expect_equal(pair$start, "condition_start_date")
+  expect_equal(pair$end, "condition_end_date")
+
+  # drug_exposure has start/end pair
+  pair <- .getDatePair(bp, "drug_exposure")
+  expect_true(!is.null(pair))
+  expect_equal(pair$start, "drug_exposure_start_date")
+  expect_equal(pair$end, "drug_exposure_end_date")
+
+  # observation_period has start/end pair
+  pair <- .getDatePair(bp, "observation_period")
+  expect_true(!is.null(pair))
+  expect_equal(pair$start, "observation_period_start_date")
+  expect_equal(pair$end, "observation_period_end_date")
+
+  # visit_occurrence has start/end pair
+  pair <- .getDatePair(bp, "visit_occurrence")
+  expect_true(!is.null(pair))
+  expect_equal(pair$start, "visit_start_date")
+  expect_equal(pair$end, "visit_end_date")
+})
+
+test_that("getDatePair returns NULL for single-date tables", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  bp <- .buildBlueprint(handle)
+
+  # measurement has measurement_date but no end_date
+  pair <- .getDatePair(bp, "measurement")
+  expect_null(pair)
+
+  # procedure_occurrence has procedure_date but no end_date
+  pair <- .getDatePair(bp, "procedure_occurrence")
+  expect_null(pair)
+})
+
 test_that("getDateColumn returns correct columns", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))

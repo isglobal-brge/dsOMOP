@@ -50,9 +50,16 @@ omopInitDS <- function(resource_symbol,
                        vocab_schema = NULL,
                        temp_schema = NULL,
                        config = list()) {
-  resource_client <- resourcer::newResourceClient(
-    eval(parse(text = resource_symbol),
-         envir = parent.frame()))
+  resolved <- eval(parse(text = resource_symbol),
+                   envir = parent.frame())
+
+  # DSLite resolves resources to ResourceClient objects during assign.resource;
+  # Opal passes raw resource objects. Handle both cases.
+  if (inherits(resolved, "ResourceClient")) {
+    resource_client <- resolved
+  } else {
+    resource_client <- resourcer::newResourceClient(resolved)
+  }
 
   handle <- .createHandle(
     resource_client,
@@ -71,14 +78,55 @@ omopInitDS <- function(resource_symbol,
 
 #' Execute an extraction plan (Assign)
 #'
+#' Runs the extraction plan and assigns each output directly into the
+#' DataSHIELD session as a named symbol. Sparse outputs are split into
+#' two symbols: \code{<name>.covariates} and \code{<name>.covariateRef}.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param plan List; the extraction plan
-#' @param out_symbols Named list; output name -> R symbol mapping
-#' @return Named list of data frames
+#' @param out Named character vector; output_name -> symbol_name mapping
+#' @return Invisible TRUE (outputs are assigned into caller's environment)
 #' @export
-omopPlanExecuteDS <- function(omop_symbol, plan, out_symbols) {
+omopPlanExecuteDS <- function(omop_symbol, plan, out) {
   handle <- .getHandle(omop_symbol)
-  .planExecute(handle, plan, out_symbols)
+  outputs <- .planExecute(handle, plan, out)
+
+  # Validate that requested outputs were produced
+  missing <- setdiff(names(out), names(outputs))
+  if (length(missing) > 0) {
+    warning("Plan did not produce outputs: ",
+            paste(missing, collapse = ", "), call. = FALSE)
+  }
+
+  assign_env <- parent.frame()
+
+  for (nm in names(out)) {
+    sym <- out[[nm]]
+    result <- outputs[[nm]]
+    if (is.null(result)) next
+
+    # Temporal covariates: split into 3 symbols
+    if (is.list(result) && !is.data.frame(result) &&
+        "temporalCovariates" %in% names(result)) {
+      assign(paste0(sym, ".temporalCovariates"),
+             result$temporalCovariates, envir = assign_env)
+      assign(paste0(sym, ".covariateRef"),
+             result$covariateRef, envir = assign_env)
+      assign(paste0(sym, ".timeRef"),
+             result$timeRef, envir = assign_env)
+    # Sparse outputs: split list into two data.frame symbols
+    } else if (is.list(result) && !is.data.frame(result) &&
+        all(c("covariates", "covariateRef") %in% names(result))) {
+      assign(paste0(sym, ".covariates"),
+             result$covariates, envir = assign_env)
+      assign(paste0(sym, ".covariateRef"),
+             result$covariateRef, envir = assign_env)
+    } else {
+      assign(sym, result, envir = assign_env)
+    }
+  }
+
+  invisible(TRUE)
 }
 
 #' Create a cohort (Assign)

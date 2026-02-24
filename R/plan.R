@@ -120,6 +120,30 @@
                  "': concept table not found; dictionary will be empty."))
       }
     }
+
+    if (out_type == "cohort_membership") {
+      # No specific table requirements beyond cohort existing
+    }
+
+    if (out_type == "intervals_long") {
+      interval_tables <- out$tables %||% character(0)
+      for (itbl in interval_tables) {
+        if (!tolower(itbl) %in% present_tables) {
+          warnings <- c(warnings,
+            paste0("Output '", out_name,
+                   "': table '", itbl, "' not found; will be skipped."))
+        }
+      }
+    }
+
+    if (out_type == "temporal_covariates") {
+      tc_table <- tolower(out$table %||% "")
+      if (tc_table != "" && !tc_table %in% present_tables) {
+        errors <- c(errors,
+          paste0("Output '", out_name,
+                 "': table '", tc_table, "' not found."))
+      }
+    }
   }
 
   list(
@@ -229,6 +253,30 @@
     if (out_type == "concept_dictionary") {
       out_preview$source_outputs <- out$source_outputs %||% "all"
       out_preview$description <- "Concept lookup table for referenced concepts"
+    }
+
+    if (out_type == "cohort_membership") {
+      out_preview$description <- "Standard OHDSI cohort table format"
+    }
+
+    if (out_type == "intervals_long") {
+      out_preview$tables <- out$tables %||% character(0)
+      out_preview$description <- paste0(
+        "Interval data from ",
+        length(out$tables %||% character(0)), " tables"
+      )
+    }
+
+    if (out_type == "temporal_covariates") {
+      out_preview$table <- out$table
+      out_preview$bin_width <- out$bin_width %||% 30L
+      out_preview$window <- list(
+        start = out$window_start %||% -365L,
+        end = out$window_end %||% 0L
+      )
+      out_preview$description <- paste0(
+        "Time-binned covariates from ", out$table
+      )
     }
 
     preview$outputs[[out_name]] <- out_preview
@@ -426,6 +474,51 @@
             outcome = out$outcome,
             tar = out$tar,
             event_order = out$event_order %||% "first"
+          )
+        }
+
+      } else if (out_type == "cohort_membership") {
+        if (is.null(cohort_table)) {
+          warning("Cohort membership output '", out_name,
+                  "' requires a cohort; skipping.", call. = FALSE)
+          results[[out_name]] <- NULL
+        } else {
+          results[[out_name]] <- .extractCohortMembership(
+            handle,
+            cohort_table = cohort_table,
+            cohort_definition_id = plan$cohort$cohort_definition_id
+          )
+        }
+
+      } else if (out_type == "intervals_long") {
+        if (is.null(cohort_table)) {
+          warning("Intervals output '", out_name,
+                  "' requires a cohort; skipping.", call. = FALSE)
+          results[[out_name]] <- NULL
+        } else {
+          results[[out_name]] <- .extractIntervalsLong(
+            handle,
+            cohort_table = cohort_table,
+            tables = out$tables,
+            concept_filter = out$concept_filter
+          )
+        }
+
+      } else if (out_type == "temporal_covariates") {
+        if (is.null(cohort_table)) {
+          warning("Temporal covariates output '", out_name,
+                  "' requires a cohort; skipping.", call. = FALSE)
+          results[[out_name]] <- NULL
+        } else {
+          results[[out_name]] <- .extractTemporalCovariates(
+            handle,
+            cohort_table = cohort_table,
+            table = out$table,
+            concept_filter = out$concept_set,
+            bin_width = out$bin_width %||% 30L,
+            window_start = out$window_start %||% -365L,
+            window_end = out$window_end %||% 0L,
+            analyses = out$analyses %||% c("binary")
           )
         }
       }

@@ -428,6 +428,273 @@ test_that("concept dictionary source_outputs filtering works", {
   })
 })
 
+# --- Cohort Membership Tests ---
+
+test_that("cohort_membership output has correct structure", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  plan <- list(
+    cohort = list(type = "cohort_table", cohort_definition_id = 1),
+    outputs = list(
+      cm = list(type = "cohort_membership")
+    ),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  class(plan) <- c("omop_plan", "list")
+
+  withr::with_options(list(nfilter.subset = 3), {
+    result <- .planExecute(handle, plan, list(cm = "cm_df"))
+    df <- result$cm
+    expect_true(is.data.frame(df))
+
+    # Cohort 1 has 6 members
+    expect_equal(nrow(df), 6)
+
+    # Correct columns present
+    expect_true(all(c("row_id", "subject_id", "cohort_definition_id",
+                       "cohort_start_date", "cohort_end_date") %in% names(df)))
+
+    # Uses subject_id, NOT person_id
+    expect_true("subject_id" %in% names(df))
+    expect_false("person_id" %in% names(df))
+
+    # row_id is sequential
+    expect_equal(df$row_id, 1:6)
+
+    # cohort_definition_id matches
+    expect_true(all(df$cohort_definition_id == 1L))
+  })
+})
+
+test_that("cohort_membership without cohort returns NULL with warning", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  plan <- list(
+    cohort = NULL,
+    outputs = list(
+      cm = list(type = "cohort_membership")
+    ),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  class(plan) <- c("omop_plan", "list")
+
+  withr::with_options(list(nfilter.subset = 3), {
+    expect_warning(
+      result <- .planExecute(handle, plan, list(cm = "cm_df")),
+      "requires a cohort"
+    )
+    expect_null(result$cm)
+  })
+})
+
+# --- Intervals Long Tests ---
+
+test_that("intervals_long has rows from multiple tables", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  plan <- list(
+    cohort = list(type = "cohort_table", cohort_definition_id = 1),
+    outputs = list(
+      iv = list(
+        type = "intervals_long",
+        tables = c("condition_occurrence", "drug_exposure",
+                    "visit_occurrence", "observation_period")
+      )
+    ),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  class(plan) <- c("omop_plan", "list")
+
+  withr::with_options(list(nfilter.subset = 3), {
+    result <- .planExecute(handle, plan, list(iv = "iv_df"))
+    df <- result$iv
+    expect_true(is.data.frame(df))
+    expect_true(nrow(df) > 0)
+
+    # Correct columns
+    expect_true(all(c("row_id", "subject_id", "interval_type",
+                       "concept_id", "start_days_from_index",
+                       "end_days_from_index") %in% names(df)))
+
+    # Multiple interval_type values from different tables
+    types <- unique(df$interval_type)
+    expect_true(length(types) > 1)
+
+    # No calendar dates; days are integers
+    date_cols <- grep("_date$|_datetime$", names(df), value = TRUE)
+    expect_equal(length(date_cols), 0)
+    expect_true(is.integer(df$start_days_from_index))
+    expect_true(is.integer(df$end_days_from_index))
+
+    # end >= start
+    expect_true(all(df$end_days_from_index >= df$start_days_from_index))
+
+    # observation_period rows have NA concept_id
+    op_rows <- df[df$interval_type == "observation_period", ]
+    expect_true(nrow(op_rows) > 0)
+    expect_true(all(is.na(op_rows$concept_id)))
+
+    # row_id is sequential
+    expect_equal(df$row_id, seq_len(nrow(df)))
+  })
+})
+
+test_that("intervals_long concept_filter narrows results", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  plan <- list(
+    cohort = list(type = "cohort_table", cohort_definition_id = 1),
+    outputs = list(
+      iv = list(
+        type = "intervals_long",
+        tables = c("condition_occurrence"),
+        concept_filter = list(condition_occurrence = c(201820))
+      )
+    ),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  class(plan) <- c("omop_plan", "list")
+
+  withr::with_options(list(nfilter.subset = 3), {
+    result <- .planExecute(handle, plan, list(iv = "iv_df"))
+    df <- result$iv
+    expect_true(is.data.frame(df))
+    expect_true(nrow(df) > 0)
+
+    # Only diabetes concept
+    expect_true(all(df$concept_id == 201820L))
+  })
+})
+
+test_that("intervals_long without cohort returns NULL with warning", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  plan <- list(
+    cohort = NULL,
+    outputs = list(
+      iv = list(
+        type = "intervals_long",
+        tables = c("condition_occurrence")
+      )
+    ),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  class(plan) <- c("omop_plan", "list")
+
+  withr::with_options(list(nfilter.subset = 3), {
+    expect_warning(
+      result <- .planExecute(handle, plan, list(iv = "iv_df")),
+      "requires a cohort"
+    )
+    expect_null(result$iv)
+  })
+})
+
+# --- Temporal Covariates Tests ---
+
+test_that("temporal_covariates returns 3-element list", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  plan <- list(
+    cohort = list(type = "cohort_table", cohort_definition_id = 1),
+    outputs = list(
+      tc = list(
+        type = "temporal_covariates",
+        table = "condition_occurrence",
+        concept_set = c(201820, 255573),
+        bin_width = 90L,
+        window_start = -365L,
+        window_end = 0L,
+        analyses = c("binary", "count")
+      )
+    ),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  class(plan) <- c("omop_plan", "list")
+
+  withr::with_options(list(nfilter.subset = 3), {
+    result <- .planExecute(handle, plan, list(tc = "tc_df"))
+    tc <- result$tc
+    expect_true(is.list(tc))
+    expect_true(all(c("temporalCovariates", "covariateRef", "timeRef") %in%
+                      names(tc)))
+
+    # Check column names
+    expect_true(all(c("rowId", "timeId", "covariateId", "covariateValue") %in%
+                      names(tc$temporalCovariates)))
+    expect_true(all(c("covariateId", "covariateName", "analysisId",
+                       "conceptId") %in% names(tc$covariateRef)))
+    expect_true(all(c("timeId", "startDay", "endDay") %in%
+                      names(tc$timeRef)))
+
+    # All timeIds in covariates reference timeRef
+    if (nrow(tc$temporalCovariates) > 0) {
+      expect_true(all(tc$temporalCovariates$timeId %in%
+                        tc$timeRef$timeId))
+    }
+
+    # All covariateIds in covariates reference covariateRef
+    if (nrow(tc$temporalCovariates) > 0) {
+      expect_true(all(tc$temporalCovariates$covariateId %in%
+                        tc$covariateRef$covariateId))
+    }
+
+    # CovariateId = conceptId * 1000 + analysisId
+    for (i in seq_len(nrow(tc$covariateRef))) {
+      expected <- tc$covariateRef$conceptId[i] * 1000 +
+        tc$covariateRef$analysisId[i]
+      expect_equal(tc$covariateRef$covariateId[i], expected)
+    }
+
+    # timeRef bins span the requested window
+    expect_equal(min(tc$timeRef$startDay), -365L)
+    expect_true(max(tc$timeRef$endDay) >= -1L)
+  })
+})
+
+test_that("temporal_covariates without cohort returns NULL with warning", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  plan <- list(
+    cohort = NULL,
+    outputs = list(
+      tc = list(
+        type = "temporal_covariates",
+        table = "condition_occurrence",
+        concept_set = c(201820),
+        bin_width = 30L,
+        window_start = -365L,
+        window_end = 0L,
+        analyses = c("binary")
+      )
+    ),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  class(plan) <- c("omop_plan", "list")
+
+  withr::with_options(list(nfilter.subset = 3), {
+    expect_warning(
+      result <- .planExecute(handle, plan, list(tc = "tc_df")),
+      "requires a cohort"
+    )
+    expect_null(result$tc)
+  })
+})
+
 # --- Integration Test ---
 
 test_that("single plan with all output types executes successfully", {
