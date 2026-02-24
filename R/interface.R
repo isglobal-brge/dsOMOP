@@ -398,3 +398,91 @@ omopCohortGetDefinitionDS <- function(omop_symbol,
   handle <- .getHandle(omop_symbol)
   .cohortGetDefinition(handle, cohort_definition_id)
 }
+
+# ==============================================================================
+# EXPLORATION AGGREGATE METHODS (OMOP Studio)
+# ==============================================================================
+
+#' Get concept prevalence (Aggregate)
+#'
+#' Returns the top concepts in a table ranked by person count or record count,
+#' with disclosure control applied.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param table Character; table name
+#' @param concept_col Character; concept column name (NULL = auto-detect)
+#' @param metric Character; "persons" or "records"
+#' @param top_n Integer; number of top concepts to return
+#' @param cohort_table Character; cohort temp table for filtering (NULL)
+#' @param window List with start/end dates for filtering (NULL)
+#' @return Data frame with concept_id, concept_name, n_persons, n_records
+#' @export
+omopConceptPrevalenceDS <- function(omop_symbol, table, concept_col = NULL,
+                                     metric = "persons", top_n = 50,
+                                     cohort_table = NULL, window = NULL) {
+  handle <- .getHandle(omop_symbol)
+  .profileConceptPrevalence(handle, table, concept_col, metric, top_n,
+                            cohort_table, window)
+}
+
+#' Get numeric histogram (Aggregate)
+#'
+#' Computes a safe histogram for a numeric column with suppressed low-count bins.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param table Character; table name
+#' @param value_col Character; numeric column name
+#' @param bins Integer; number of bins
+#' @param cohort_table Character; cohort temp table for filtering (NULL)
+#' @param window List with start/end dates for filtering (NULL)
+#' @return Data frame with bin_start, bin_end, count, suppressed
+#' @export
+omopNumericHistogramDS <- function(omop_symbol, table, value_col,
+                                    bins = 20L, cohort_table = NULL,
+                                    window = NULL) {
+  handle <- .getHandle(omop_symbol)
+  .profileNumericHistogram(handle, table, value_col, bins,
+                           cohort_table, window)
+}
+
+#' Get numeric quantiles (Aggregate)
+#'
+#' Computes quantiles at specified probabilities using SQL approximation.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param table Character; table name
+#' @param value_col Character; numeric column name
+#' @param probs Numeric vector; probabilities
+#' @param cohort_table Character; cohort temp table for filtering (NULL)
+#' @param window List with start/end dates for filtering (NULL)
+#' @param rounding Integer; decimal places for rounding
+#' @return Data frame with probability and value
+#' @export
+omopNumericQuantilesDS <- function(omop_symbol, table, value_col,
+                                    probs = c(0.05, 0.25, 0.5, 0.75, 0.95),
+                                    cohort_table = NULL, window = NULL,
+                                    rounding = 2L) {
+  handle <- .getHandle(omop_symbol)
+  .profileNumericQuantiles(handle, table, value_col, probs,
+                           cohort_table, window, rounding)
+}
+
+#' Get date counts (Aggregate)
+#'
+#' Counts records by time bin (year, quarter, or month) with disclosure control.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param table Character; table name
+#' @param date_col Character; date column (NULL = auto-detect)
+#' @param granularity Character; "year", "quarter", or "month"
+#' @param cohort_table Character; cohort temp table for filtering (NULL)
+#' @param window List with start/end dates for filtering (NULL)
+#' @return Data frame with period, n_records, suppressed
+#' @export
+omopDateCountsDS <- function(omop_symbol, table, date_col = NULL,
+                              granularity = "year", cohort_table = NULL,
+                              window = NULL) {
+  handle <- .getHandle(omop_symbol)
+  .profileDateCounts(handle, table, date_col, granularity,
+                     cohort_table, window)
+}

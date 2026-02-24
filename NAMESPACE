@@ -26,6 +26,12 @@ export(omopPlanPreviewDS)
 export(omopCohortListDS)
 export(omopCohortGetDefinitionDS)
 
+# Exported server-side DS methods (exploration aggregate)
+export(omopConceptPrevalenceDS)
+export(omopNumericHistogramDS)
+export(omopNumericQuantilesDS)
+export(omopDateCountsDS)
+
 # Imports
 import(DBI)
 import(R6)
