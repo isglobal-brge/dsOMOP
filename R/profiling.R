@@ -838,3 +838,459 @@
 
   result
 }
+
+# ==============================================================================
+# Concept Drilldown & Locator
+# ==============================================================================
+
+#' Full drilldown profile for a single concept within a table
+#'
+#' Returns summary stats, numeric distribution, categorical values, date
+#' coverage, and missingness — all disclosure-controlled — for records
+#' matching a given concept_id.
+#'
+#' @param handle CDM handle
+#' @param table Character; table name
+#' @param concept_id Integer; concept ID to drill into
+#' @param concept_col Character; concept column (NULL = auto-detect)
+#' @return Named list with summary, numeric_summary, categorical_values,
+#'   date_range, missingness
+#' @keywords internal
+.profileConceptDrilldown <- function(handle, table, concept_id,
+                                      concept_col = NULL) {
+  table <- tolower(.validateIdentifier(table, "table"))
+  concept_id <- as.integer(concept_id)
+  bp <- .buildBlueprint(handle)
+  settings <- .omopDisclosureSettings()
+
+  tbl_row <- bp$tables[bp$tables$table_name == table & bp$tables$present_in_db, ,
+                       drop = FALSE]
+  if (nrow(tbl_row) == 0) stop("Table '", table, "' not found.", call. = FALSE)
+
+  qualified <- tbl_row$qualified_name[1]
+  col_df <- bp$columns[[table]]
+  tbl_cols <- col_df$column_name
+
+  # Auto-detect concept column
+  if (is.null(concept_col)) {
+    concept_col <- .getDomainConceptColumn(bp, table)
+    if (is.null(concept_col)) {
+      stop("No domain concept column found for table '", table,
+           "'. Provide concept_col explicitly.", call. = FALSE)
+    }
+  } else {
+    concept_col <- tolower(.validateIdentifier(concept_col, "column"))
+  }
+  if (!concept_col %in% tbl_cols) {
+    stop("Column '", concept_col, "' not found in '", table, "'.",
+         call. = FALSE)
+  }
+
+  where_concept <- paste0(concept_col, " = ", concept_id)
+
+  # --- 1. Summary statistics ---
+  has_person <- "person_id" %in% tbl_cols
+
+  if (has_person) {
+    summary_sql <- paste0(
+      "SELECT COUNT(*) AS n_records, ",
+      "COUNT(DISTINCT person_id) AS n_persons, ",
+      "CAST(COUNT(*) AS REAL) / NULLIF(COUNT(DISTINCT person_id), 0) AS records_per_person_mean ",
+      "FROM ", qualified,
+      " WHERE ", where_concept
+    )
+  } else {
+    summary_sql <- paste0(
+      "SELECT COUNT(*) AS n_records ",
+      "FROM ", qualified,
+      " WHERE ", where_concept
+    )
+  }
+  summary_raw <- .executeQuery(handle, summary_sql)
+
+  n_records <- summary_raw$n_records[1]
+  n_persons <- if (has_person) summary_raw$n_persons[1] else NA_real_
+
+  # Disclosure check on persons
+  if (has_person) {
+    .assertMinPersons(n_persons = n_persons)
+  }
+
+  # Suppress small counts
+  if (!is.na(n_records) && n_records < settings$nfilter_tab) {
+    n_records <- NA_real_
+  }
+  if (has_person && !is.na(n_persons) && n_persons < settings$nfilter_tab) {
+    n_persons <- NA_real_
+  }
+
+  rpm <- if (has_person) summary_raw$records_per_person_mean[1] else NA_real_
+
+  # Longitudinal: % persons with >1 record
+  pct_persons_multi <- NA_real_
+  if (has_person && !is.na(summary_raw$n_persons[1]) &&
+      summary_raw$n_persons[1] >= settings$nfilter_tab) {
+    multi_sql <- paste0(
+      "SELECT COUNT(*) AS n_multi FROM (",
+      "SELECT person_id FROM ", qualified,
+      " WHERE ", where_concept,
+      " GROUP BY person_id HAVING COUNT(*) > 1)"
+    )
+    n_multi <- tryCatch(.executeQuery(handle, multi_sql)$n_multi[1],
+                        error = function(e) NA_real_)
+    if (!is.na(n_multi) && n_multi >= settings$nfilter_tab) {
+      pct_persons_multi <- round(n_multi / summary_raw$n_persons[1] * 100, 2)
+    }
+  }
+
+  # Look up concept name
+  concept_name <- ""
+  cinfo <- tryCatch(.vocabLookupConcepts(handle, concept_id),
+                    error = function(e) NULL)
+  if (!is.null(cinfo) && nrow(cinfo) > 0) {
+    concept_name <- cinfo$concept_name[1]
+  }
+
+  summary_out <- list(
+    concept_id = concept_id,
+    concept_name = concept_name,
+    n_records = n_records,
+    n_persons = n_persons,
+    records_per_person_mean = if (!is.na(rpm)) round(rpm, 2) else NA_real_,
+    pct_persons_multi = pct_persons_multi
+  )
+
+  # --- 2. Numeric summary (only if value_as_number exists) ---
+  numeric_summary <- NULL
+  if ("value_as_number" %in% tbl_cols) {
+    val_col <- "value_as_number"
+    from_clause <- paste0(qualified, " AS t")
+    where_parts <- paste0("t.", where_concept,
+                          " AND t.", val_col, " IS NOT NULL")
+    where_sql <- paste0(" WHERE ", where_parts)
+
+    count_sql <- paste0("SELECT COUNT(*) AS n FROM ", from_clause, where_sql)
+    n_vals <- tryCatch(.executeQuery(handle, count_sql)$n[1],
+                       error = function(e) 0L)
+
+    if (!is.na(n_vals) && n_vals >= settings$nfilter_subset) {
+      # Quantiles
+      probs <- c(0.05, 0.25, 0.5, 0.75, 0.95)
+      quantiles <- data.frame(probability = probs, value = numeric(length(probs)),
+                              stringsAsFactors = FALSE)
+      for (i in seq_along(probs)) {
+        offset_val <- max(0L, as.integer(floor(n_vals * probs[i])) - 1L)
+        q_sql <- paste0(
+          "SELECT CAST(t.", val_col, " AS REAL) AS val FROM ", from_clause,
+          where_sql,
+          " ORDER BY t.", val_col, " ASC LIMIT 1 OFFSET ", offset_val
+        )
+        val <- tryCatch(.executeQuery(handle, q_sql)$val[1],
+                        error = function(e) NA_real_)
+        quantiles$value[i] <- if (!is.na(val)) round(val, 2) else NA_real_
+      }
+
+      # Histogram using 5th/95th from quantiles as range
+      p05 <- quantiles$value[1]
+      p95 <- quantiles$value[5]
+      histogram <- NULL
+
+      if (!is.na(p05) && !is.na(p95) && p05 != p95) {
+        bins <- 20L
+        bin_width <- (p95 - p05) / bins
+        breaks <- seq(p05, p95, by = bin_width)
+        if (length(breaks) < bins + 1L) breaks <- c(breaks, p95)
+        breaks <- breaks[seq_len(bins + 1L)]
+
+        case_parts <- character(bins)
+        for (j in seq_len(bins)) {
+          lo <- breaks[j]; hi <- breaks[j + 1L]
+          op <- if (j == bins) " <= " else " < "
+          case_parts[j] <- paste0(
+            "SUM(CASE WHEN CAST(t.", val_col, " AS REAL) >= ", lo,
+            " AND CAST(t.", val_col, " AS REAL)", op, hi,
+            " THEN 1 ELSE 0 END) AS bin_", j
+          )
+        }
+        bin_sql <- paste0("SELECT ", paste(case_parts, collapse = ", "),
+                          " FROM ", from_clause, where_sql)
+        bin_result <- tryCatch(.executeQuery(handle, bin_sql),
+                               error = function(e) NULL)
+
+        if (!is.null(bin_result)) {
+          histogram <- data.frame(
+            bin_start = breaks[seq_len(bins)],
+            bin_end = breaks[seq_len(bins) + 1L],
+            count = integer(bins), suppressed = logical(bins),
+            stringsAsFactors = FALSE
+          )
+          for (j in seq_len(bins)) {
+            col_name <- paste0("bin_", j)
+            cnt <- if (col_name %in% names(bin_result))
+              as.integer(bin_result[[col_name]][1]) else 0L
+            if (!is.na(cnt) && cnt < settings$nfilter_tab) {
+              histogram$count[j] <- NA_integer_
+              histogram$suppressed[j] <- TRUE
+            } else {
+              histogram$count[j] <- cnt
+              histogram$suppressed[j] <- FALSE
+            }
+          }
+        }
+      }
+
+      numeric_summary <- list(quantiles = quantiles, histogram = histogram)
+    }
+  }
+
+  # --- 3. Categorical values (only if value_as_concept_id exists) ---
+  categorical_values <- NULL
+  if ("value_as_concept_id" %in% tbl_cols) {
+    cat_sql <- paste0(
+      "SELECT value_as_concept_id, COUNT(*) AS n ",
+      "FROM ", qualified,
+      " WHERE ", where_concept,
+      " AND value_as_concept_id IS NOT NULL ",
+      "GROUP BY value_as_concept_id ",
+      "ORDER BY COUNT(*) DESC"
+    )
+    cat_result <- tryCatch(.executeQuery(handle, cat_sql),
+                           error = function(e) NULL)
+
+    if (!is.null(cat_result) && nrow(cat_result) > 0) {
+      # Check safe levels
+      safe <- tryCatch({
+        n_cat_total_sql <- paste0(
+          "SELECT COUNT(*) AS n FROM ", qualified,
+          " WHERE ", where_concept,
+          " AND value_as_concept_id IS NOT NULL")
+        n_cat_total <- .executeQuery(handle, n_cat_total_sql)$n[1]
+        .assertSafeLevels(nrow(cat_result), n_cat_total)
+        TRUE
+      }, error = function(e) FALSE)
+
+      if (safe) {
+        cat_result <- .suppressSmallCounts(cat_result, "n")
+
+        # Decorate with concept names
+        cat_ids <- cat_result$value_as_concept_id[!is.na(cat_result$value_as_concept_id)]
+        if (length(cat_ids) > 0) {
+          cat_concepts <- tryCatch(
+            .vocabLookupConcepts(handle, cat_ids),
+            error = function(e) data.frame(concept_id = integer(0),
+                                           concept_name = character(0),
+                                           stringsAsFactors = FALSE)
+          )
+          if (nrow(cat_concepts) > 0) {
+            cmap <- stats::setNames(cat_concepts$concept_name,
+                                    as.character(cat_concepts$concept_id))
+            cat_result$concept_name <- cmap[as.character(cat_result$value_as_concept_id)]
+            cat_result$concept_name[is.na(cat_result$concept_name)] <- ""
+          } else {
+            cat_result$concept_name <- ""
+          }
+        } else {
+          cat_result$concept_name <- ""
+        }
+        categorical_values <- cat_result[, c("value_as_concept_id",
+                                             "concept_name", "n"),
+                                         drop = FALSE]
+      }
+    }
+  }
+
+  # --- 4. Date coverage ---
+  date_range <- NULL
+  date_col <- .getDateColumn(bp, table)
+  if (!is.null(date_col)) {
+    # Use 5th/95th percentile for safe date range
+    date_count_sql <- paste0(
+      "SELECT COUNT(*) AS n FROM ", qualified,
+      " WHERE ", where_concept,
+      " AND ", date_col, " IS NOT NULL"
+    )
+    n_dates <- tryCatch(.executeQuery(handle, date_count_sql)$n[1],
+                        error = function(e) 0L)
+
+    if (!is.na(n_dates) && n_dates >= settings$nfilter_subset) {
+      off_p05 <- max(0L, as.integer(floor(n_dates * 0.05)) - 1L)
+      off_p95 <- max(0L, as.integer(floor(n_dates * 0.95)) - 1L)
+
+      p05_sql <- paste0(
+        "SELECT ", date_col, " AS val FROM ", qualified,
+        " WHERE ", where_concept,
+        " AND ", date_col, " IS NOT NULL",
+        " ORDER BY ", date_col, " ASC LIMIT 1 OFFSET ", off_p05
+      )
+      p95_sql <- paste0(
+        "SELECT ", date_col, " AS val FROM ", qualified,
+        " WHERE ", where_concept,
+        " AND ", date_col, " IS NOT NULL",
+        " ORDER BY ", date_col, " ASC LIMIT 1 OFFSET ", off_p95
+      )
+
+      min_date_safe <- tryCatch(.executeQuery(handle, p05_sql)$val[1],
+                                error = function(e) NA_character_)
+      max_date_safe <- tryCatch(.executeQuery(handle, p95_sql)$val[1],
+                                error = function(e) NA_character_)
+
+      # Date counts by year for concept-filtered records
+      if (handle$target_dialect == "sqlite") {
+        date_expr <- paste0("strftime('%Y', ", date_col, ")")
+      } else {
+        date_expr <- paste0("CAST(EXTRACT(YEAR FROM ", date_col, ") AS VARCHAR)")
+      }
+      dc_sql <- paste0(
+        "SELECT ", date_expr, " AS period, COUNT(*) AS n_records",
+        " FROM ", qualified,
+        " WHERE ", where_concept,
+        " AND ", date_col, " IS NOT NULL",
+        " GROUP BY ", date_expr,
+        " ORDER BY period ASC"
+      )
+      dc_result <- tryCatch(.executeQuery(handle, dc_sql),
+                            error = function(e) NULL)
+      if (!is.null(dc_result) && nrow(dc_result) > 0) {
+        dc_result$suppressed <- !is.na(dc_result$n_records) &
+          dc_result$n_records < settings$nfilter_tab
+        dc_result$n_records[dc_result$suppressed] <- NA_integer_
+      }
+
+      date_range <- list(
+        column = date_col,
+        min_date_safe = min_date_safe,
+        max_date_safe = max_date_safe,
+        date_counts = dc_result
+      )
+    }
+  }
+
+  # --- 5. Missingness within concept-filtered rows ---
+  check_cols <- col_df$column_name[!col_df$is_blocked]
+  total_sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified,
+                      " WHERE ", where_concept)
+  total <- tryCatch(.executeQuery(handle, total_sql)$n[1],
+                    error = function(e) 0L)
+
+  missingness <- data.frame(column_name = character(0),
+                            missing_rate = numeric(0),
+                            stringsAsFactors = FALSE)
+
+  if (!is.na(total) && total > 0) {
+    for (col in check_cols) {
+      miss_sql <- paste0(
+        "SELECT COUNT(*) AS n_missing FROM ", qualified,
+        " WHERE ", where_concept,
+        " AND ", col, " IS NULL"
+      )
+      n_missing <- tryCatch(.executeQuery(handle, miss_sql)$n_missing[1],
+                            error = function(e) NA_real_)
+      missingness <- rbind(missingness, data.frame(
+        column_name = col,
+        missing_rate = if (!is.na(n_missing)) round(n_missing / total, 4)
+                       else NA_real_,
+        stringsAsFactors = FALSE
+      ))
+    }
+  }
+
+  list(
+    summary = summary_out,
+    numeric_summary = numeric_summary,
+    categorical_values = categorical_values,
+    date_range = date_range,
+    missingness = missingness
+  )
+}
+
+#' Locate a concept across all CDM tables
+#'
+#' Searches all clinical tables with concept columns and returns a presence
+#' matrix showing where the given concept IDs appear, with record and person
+#' counts (disclosure-controlled).
+#'
+#' @param handle CDM handle
+#' @param concept_ids Integer vector; concept IDs to locate
+#' @return Data frame with table_name, concept_column, concept_id, n_records,
+#'   n_persons
+#' @keywords internal
+.profileLocateConcept <- function(handle, concept_ids) {
+  concept_ids <- as.integer(concept_ids)
+  if (length(concept_ids) == 0) {
+    return(data.frame(table_name = character(0), concept_column = character(0),
+                      concept_id = integer(0), n_records = numeric(0),
+                      n_persons = numeric(0), stringsAsFactors = FALSE))
+  }
+
+  bp <- .buildBlueprint(handle)
+  ids_csv <- paste(concept_ids, collapse = ", ")
+
+  results <- data.frame(table_name = character(0),
+                        concept_column = character(0),
+                        concept_id = integer(0),
+                        n_records = numeric(0),
+                        n_persons = numeric(0),
+                        stringsAsFactors = FALSE)
+
+  # Iterate over present CDM tables
+  present <- bp$tables[bp$tables$present_in_db &
+                         bp$tables$schema_category == "CDM", , drop = FALSE]
+
+  for (i in seq_len(nrow(present))) {
+    tbl_name <- present$table_name[i]
+    qualified <- present$qualified_name[i]
+    col_df <- bp$columns[[tbl_name]]
+    if (is.null(col_df)) next
+
+    tbl_cols <- col_df$column_name
+    has_person <- "person_id" %in% tbl_cols
+
+    # Find concept columns (concept_role != "non_concept")
+    concept_cols <- col_df$column_name[col_df$concept_role != "non_concept"]
+    if (length(concept_cols) == 0) next
+
+    for (ccol in concept_cols) {
+      if (has_person) {
+        sql <- paste0(
+          "SELECT ", ccol, " AS concept_id, ",
+          "COUNT(*) AS n_records, ",
+          "COUNT(DISTINCT person_id) AS n_persons ",
+          "FROM ", qualified,
+          " WHERE ", ccol, " IN (", ids_csv, ") ",
+          "GROUP BY ", ccol
+        )
+      } else {
+        sql <- paste0(
+          "SELECT ", ccol, " AS concept_id, ",
+          "COUNT(*) AS n_records ",
+          "FROM ", qualified,
+          " WHERE ", ccol, " IN (", ids_csv, ") ",
+          "GROUP BY ", ccol
+        )
+      }
+
+      res <- tryCatch(.executeQuery(handle, sql), error = function(e) NULL)
+      if (is.null(res) || nrow(res) == 0) next
+
+      res$table_name <- tbl_name
+      res$concept_column <- ccol
+      if (!has_person) res$n_persons <- NA_real_
+
+      results <- rbind(results, res[, c("table_name", "concept_column",
+                                         "concept_id", "n_records",
+                                         "n_persons"),
+                                    drop = FALSE])
+    }
+  }
+
+  # Suppress small counts
+  if (nrow(results) > 0) {
+    results <- .suppressSmallCounts(results, "n_records")
+    results <- .suppressSmallCounts(results, "n_persons")
+    # Filter out rows where n_records == 0 or is NA after suppression
+    results <- results[is.na(results$n_records) | results$n_records > 0, ,
+                       drop = FALSE]
+  }
+
+  results
+}

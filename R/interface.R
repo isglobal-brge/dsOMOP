@@ -486,3 +486,34 @@ omopDateCountsDS <- function(omop_symbol, table, date_col = NULL,
   .profileDateCounts(handle, table, date_col, granularity,
                      cohort_table, window)
 }
+
+#' Get concept drilldown (Aggregate)
+#'
+#' Returns a full drilldown profile for a single concept within a table,
+#' including summary stats, numeric distribution, categorical values,
+#' date coverage, and missingness.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param table Character; table name
+#' @param concept_id Integer; concept ID to drill into
+#' @return Named list with drilldown results
+#' @export
+omopConceptDrilldownDS <- function(omop_symbol, table, concept_id) {
+  handle <- .getHandle(omop_symbol)
+  .profileConceptDrilldown(handle, table, as.integer(concept_id))
+}
+
+#' Locate concept across tables (Aggregate)
+#'
+#' Searches all CDM tables with concept columns and returns a presence
+#' matrix showing where the given concept IDs appear.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param concept_ids Integer vector; concept IDs to locate
+#' @return Data frame with table_name, concept_column, concept_id, n_records,
+#'   n_persons
+#' @export
+omopLocateConceptDS <- function(omop_symbol, concept_ids) {
+  handle <- .getHandle(omop_symbol)
+  .profileLocateConcept(handle, as.integer(concept_ids))
+}

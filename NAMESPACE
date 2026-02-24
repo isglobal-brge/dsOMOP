@@ -31,6 +31,8 @@ export(omopConceptPrevalenceDS)
 export(omopNumericHistogramDS)
 export(omopNumericQuantilesDS)
 export(omopDateCountsDS)
+export(omopConceptDrilldownDS)
+export(omopLocateConceptDS)
 
 # Imports
 import(DBI)
