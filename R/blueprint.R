@@ -209,6 +209,36 @@
       "person_id" %in% col_df$column_name
   }
 
+  # Discover Achilles tables in results_schema (not in vendored OHDSI CSVs)
+  achilles_table_names <- c("achilles_results", "achilles_results_dist",
+                             "achilles_heel_results")
+  found_achilles <- intersect(tolower(db_tables_results), achilles_table_names)
+  # Also check CDM tables for SQLite (no separate schemas)
+  if (length(found_achilles) == 0) {
+    found_achilles <- intersect(tolower(db_tables_cdm), achilles_table_names)
+  }
+  if (length(found_achilles) > 0) {
+    achilles_schema <- if (length(intersect(tolower(db_tables_results),
+                                             achilles_table_names)) > 0) {
+      handle$results_schema
+    } else {
+      handle$cdm_schema
+    }
+    achilles_rows <- data.frame(
+      table_name      = found_achilles,
+      schema_category = rep("Results", length(found_achilles)),
+      concept_prefix  = rep(NA_character_, length(found_achilles)),
+      has_person_id   = rep(FALSE, length(found_achilles)),
+      present_in_db   = rep(TRUE, length(found_achilles)),
+      qualified_name  = vapply(found_achilles, function(t) {
+        .qualifyTable(handle, t, achilles_schema)
+      }, character(1)),
+      stringsAsFactors = FALSE
+    )
+    tables <- rbind(tables, achilles_rows)
+  }
+  handle$has_achilles <- length(found_achilles) > 0
+
   # Build join graph from OHDSI FK metadata
   join_graph <- .buildJoinGraph(fld_meta, tables$table_name[tables$present_in_db])
 

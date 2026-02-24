@@ -517,3 +517,56 @@ omopLocateConceptDS <- function(omop_symbol, concept_ids) {
   handle <- .getHandle(omop_symbol)
   .profileLocateConcept(handle, as.integer(concept_ids))
 }
+
+# ==============================================================================
+# ACHILLES AGGREGATE METHODS (Data Sources)
+# ==============================================================================
+
+#' Check Achilles availability (Aggregate)
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @return Named list with availability status
+#' @export
+omopAchillesStatusDS <- function(omop_symbol) {
+  handle <- .getHandle(omop_symbol)
+  .achillesStatus(handle)
+}
+
+#' List Achilles analyses (Aggregate)
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param domain Character; optional domain filter
+#' @return Data frame with analysis catalog
+#' @export
+omopAchillesAnalysesDS <- function(omop_symbol, domain = NULL) {
+  handle <- .getHandle(omop_symbol)
+  .achillesListAnalyses(handle, domain)
+}
+
+#' Get Achilles count results (Aggregate)
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param analysis_ids Integer vector; analysis IDs
+#' @param stratum_filters Named list; stratum filters
+#' @param min_cell_count Integer; minimum cell count
+#' @return Data frame with analysis results
+#' @export
+omopAchillesResultsDS <- function(omop_symbol, analysis_ids,
+                                   stratum_filters = NULL,
+                                   min_cell_count = NULL) {
+  handle <- .getHandle(omop_symbol)
+  .achillesGetResults(handle, analysis_ids, stratum_filters, min_cell_count)
+}
+
+#' Get Achilles distribution results (Aggregate)
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param analysis_ids Integer vector; analysis IDs
+#' @param stratum_filters Named list; stratum filters
+#' @return Data frame with distribution statistics
+#' @export
+omopAchillesDistributionDS <- function(omop_symbol, analysis_ids,
+                                        stratum_filters = NULL) {
+  handle <- .getHandle(omop_symbol)
+  .achillesGetDistributions(handle, analysis_ids, stratum_filters)
+}

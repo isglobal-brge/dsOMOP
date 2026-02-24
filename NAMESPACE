@@ -34,6 +34,12 @@ export(omopDateCountsDS)
 export(omopConceptDrilldownDS)
 export(omopLocateConceptDS)
 
+# Exported server-side DS methods (Achilles / Data Sources)
+export(omopAchillesStatusDS)
+export(omopAchillesAnalysesDS)
+export(omopAchillesResultsDS)
+export(omopAchillesDistributionDS)
+
 # Imports
 import(DBI)
 import(R6)
