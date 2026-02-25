@@ -3,7 +3,8 @@ AssignMethods:
   omopPlanExecuteDS,
   omopCohortCreateDS,
   omopCohortCombineDS,
-  omopCleanupDS
+  omopCleanupDS,
+  omopCatalogExecDS
 AggregateMethods:
   omopPingDS,
   omopGetCapabilitiesDS,
@@ -22,11 +23,21 @@ AggregateMethods:
   omopPlanPreviewDS,
   omopCohortListDS,
   omopCohortGetDefinitionDS,
+  omopConceptPrevalenceDS,
+  omopNumericHistogramDS,
+  omopNumericQuantilesDS,
+  omopDateCountsDS,
+  omopConceptDrilldownDS,
+  omopLocateConceptDS,
+  omopSafeCutpointsDS,
   omopAchillesStatusDS,
   omopAchillesAnalysesDS,
   omopAchillesResultsDS,
   omopAchillesDistributionDS,
-  omopAchillesCatalogDS
+  omopAchillesCatalogDS,
+  omopCatalogListDS,
+  omopCatalogGetDS,
+  omopCatalogExecDS
 Options:
   datashield.privacyControlLevel=banana,
   nfilter.subset=3,
