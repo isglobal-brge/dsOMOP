@@ -1,0 +1,79 @@
+[
+  {
+    "id": "condition.prevalence_by_concept",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": ["n_persons", "n_records"],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "drug.prevalence_by_concept",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": ["n_persons", "n_records"],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "measurement.prevalence_by_concept",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": ["n_persons", "n_records"],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "person.demographic_summary",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": ["n_persons"],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "person.age_distribution_decade",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": ["n_persons"],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "observation_period.length_stats",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": ["n_persons"],
+    "pool_strategy": "weighted_mean"
+  },
+  {
+    "id": "condition.prevalence_by_gender",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": ["n_persons"],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "visit.type_summary",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": ["n_persons", "n_records"],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "general.domain_coverage",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": ["n_persons", "n_records"],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "procedure.prevalence_by_concept",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": ["n_persons", "n_records"],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "measurement.value_stats",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": ["n_persons", "n_values"],
+    "pool_strategy": "weighted_mean"
+  }
+]
