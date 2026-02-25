@@ -303,6 +303,134 @@
 }
 
 # ==============================================================================
+# Safe Numeric Cutpoints
+# ==============================================================================
+
+#' Compute safe histogram bin edges for a numeric column
+#'
+#' Returns quantile-based bin edges that can be safely used as filter
+#' thresholds. Each bin is guaranteed to contain >= nfilter.tab persons.
+#'
+#' @param handle CDM handle
+#' @param table Character; table name
+#' @param column Character; numeric column name
+#' @param concept_id Integer or NULL; concept filter
+#' @param n_bins Integer; target number of bins (default 10)
+#' @return List with breaks (numeric vector) and counts (integer vector)
+#' @keywords internal
+.profileSafeCutpoints <- function(handle, table, column, concept_id = NULL,
+                                   n_bins = 10L) {
+  table <- tolower(.validateIdentifier(table, "table"))
+  column <- tolower(.validateIdentifier(column, "column"))
+  bp <- .buildBlueprint(handle)
+  settings <- .omopDisclosureSettings()
+
+  tbl_row <- bp$tables[bp$tables$table_name == table & bp$tables$present_in_db, ,
+                       drop = FALSE]
+  if (nrow(tbl_row) == 0) stop("Table '", table, "' not found.", call. = FALSE)
+
+  qualified <- tbl_row$qualified_name[1]
+  col_df <- bp$columns[[table]]
+  tbl_cols <- col_df$column_name
+
+  if (!column %in% tbl_cols) {
+    stop("Column '", column, "' not found in '", table, "'.", call. = FALSE)
+  }
+
+  n_bins <- max(as.integer(n_bins), 2L)
+  n_bins <- min(n_bins, 100L)
+
+  # Build WHERE clauses
+  where_parts <- paste0(column, " IS NOT NULL")
+  if (!is.null(concept_id)) {
+    concept_col <- .getDomainConceptColumn(bp, table)
+    if (!is.null(concept_col) && concept_col %in% tbl_cols) {
+      where_parts <- c(where_parts,
+                       paste0(concept_col, " = ", as.integer(concept_id)))
+    }
+  }
+  where_sql <- paste0(" WHERE ", paste(where_parts, collapse = " AND "))
+
+  # Get total count
+  count_sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified, where_sql)
+  n_total <- .executeQuery(handle, count_sql)$n[1]
+
+  if (is.na(n_total) || n_total < settings$nfilter_subset) {
+    stop("Disclosive: operation blocked — insufficient individuals to meet ",
+         "disclosure threshold. No further details available.",
+         call. = FALSE)
+  }
+
+  # Compute quantile-based breaks
+  probs <- seq(0, 1, length.out = n_bins + 1L)
+  breaks <- numeric(length(probs))
+
+  for (i in seq_along(probs)) {
+    offset_val <- max(0L, as.integer(floor(n_total * probs[i])) - 1L)
+    if (offset_val >= n_total) offset_val <- n_total - 1L
+
+    q_sql <- paste0(
+      "SELECT CAST(", column, " AS REAL) AS val FROM ", qualified,
+      where_sql,
+      " ORDER BY ", column, " ASC LIMIT 1 OFFSET ", offset_val
+    )
+    val <- tryCatch(.executeQuery(handle, q_sql)$val[1],
+                    error = function(e) NA_real_)
+    breaks[i] <- if (!is.na(val)) round(val, 4) else NA_real_
+  }
+
+  # Remove NAs and duplicates while preserving order
+  breaks <- unique(breaks[!is.na(breaks)])
+
+  if (length(breaks) < 2) {
+    return(list(breaks = breaks, counts = integer(0)))
+  }
+
+  # Compute counts per bin
+  n_result_bins <- length(breaks) - 1L
+  counts <- integer(n_result_bins)
+
+  for (i in seq_len(n_result_bins)) {
+    lo <- breaks[i]
+    hi <- breaks[i + 1L]
+    op <- if (i == n_result_bins) " <= " else " < "
+    bin_sql <- paste0(
+      "SELECT COUNT(*) AS n FROM ", qualified, where_sql,
+      " AND CAST(", column, " AS REAL) >= ", lo,
+      " AND CAST(", column, " AS REAL)", op, hi
+    )
+    cnt <- tryCatch(.executeQuery(handle, bin_sql)$n[1],
+                    error = function(e) 0L)
+    counts[i] <- as.integer(cnt)
+  }
+
+  # Merge small bins until all >= min_cell
+  min_cell <- settings$nfilter_tab
+  while (length(counts) > 1) {
+    small_idx <- which(counts < min_cell)
+    if (length(small_idx) == 0) break
+    # Merge smallest with its neighbor
+    idx <- small_idx[1]
+    if (idx == length(counts)) {
+      # Merge with previous
+      counts[idx - 1L] <- counts[idx - 1L] + counts[idx]
+      counts <- counts[-idx]
+      breaks <- breaks[-(idx + 1L)]
+    } else {
+      # Merge with next
+      counts[idx] <- counts[idx] + counts[idx + 1L]
+      counts <- counts[-(idx + 1L)]
+      breaks <- breaks[-(idx + 1L)]
+    }
+  }
+
+  # Suppress counts below threshold
+  counts[counts < min_cell] <- NA_integer_
+
+  list(breaks = breaks, counts = counts)
+}
+
+# ==============================================================================
 # Exploration Profiling (OMOP Studio)
 # ==============================================================================
 

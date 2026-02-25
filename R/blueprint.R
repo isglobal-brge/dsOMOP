@@ -5,30 +5,92 @@
 # introspection. Replaces the legacy introspection.R + handle.R.
 # ==============================================================================
 
-# --- OHDSI Metadata Loading ---
+# --- CDM Spec Loading ---
 
-#' Load vendored OHDSI CDM metadata CSVs
+#' Load CDM spec for a given version using CommonDataModel package
 #'
-#' @return List with table_level and field_level data frames
+#' @param cdm_version Character; CDM version string (e.g. "5.4", "5.3")
+#' @return List with table_level and field_level data.frames, or NULL if unsupported
 #' @keywords internal
-.loadOHDSIMetadata <- function() {
+.loadCdmSpec <- function(cdm_version = NULL) {
+  has_cdm_pkg <- tryCatch(
+    requireNamespace("CommonDataModel", quietly = TRUE),
+    warning = function(w) FALSE
+  )
+  supported <- if (has_cdm_pkg) {
+    tryCatch(CommonDataModel::listSupportedVersions(), error = function(e) character(0))
+  } else {
+    character(0)
+  }
+
+  # Normalize version (e.g. "v5.4" -> "5.4", "5.4.0" -> "5.4")
+  if (!is.null(cdm_version)) {
+    cdm_version <- sub("^[vV]", "", trimws(cdm_version))
+    cdm_version <- sub("\\.0$", "", cdm_version)
+  }
+
+  # Find matching version
+  version_to_load <- NULL
+  if (!is.null(cdm_version) && cdm_version %in% supported) {
+    version_to_load <- cdm_version
+  } else if (!is.null(cdm_version) && length(supported) > 0) {
+    # Try prefix match (e.g. "5.4.1" matches "5.4")
+    for (sv in supported) {
+      if (startsWith(cdm_version, sv)) { version_to_load <- sv; break }
+    }
+  }
+
+  if (is.null(version_to_load)) {
+    # Fallback: try vendored files (backward compat)
+    return(.loadVendoredSpec())
+  }
+
+  # Load from CommonDataModel package
+  pkg_csv <- system.file("csv", package = "CommonDataModel")
+  tbl_file <- file.path(pkg_csv, paste0("OMOP_CDMv", version_to_load, "_Table_Level.csv"))
+  fld_file <- file.path(pkg_csv, paste0("OMOP_CDMv", version_to_load, "_Field_Level.csv"))
+
+  if (!file.exists(tbl_file) || !file.exists(fld_file)) {
+    warning("CDM v", version_to_load, " spec files not found in CommonDataModel package. ",
+            "Falling back to vendored spec.", call. = FALSE)
+    return(.loadVendoredSpec())
+  }
+
+  list(
+    table_level = utils::read.csv(tbl_file, stringsAsFactors = FALSE),
+    field_level = utils::read.csv(fld_file, stringsAsFactors = FALSE),
+    version     = version_to_load,
+    source      = "CommonDataModel"
+  )
+}
+
+#' Load vendored OHDSI metadata as fallback
+#' @keywords internal
+.loadVendoredSpec <- function() {
   pkg_dir <- system.file("ohdsi", package = "dsOMOP")
   if (pkg_dir == "") {
     pkg_dir <- system.file("ohdsi", package = "dsOMOP", lib.loc = .libPaths())
   }
-
   tbl_file <- file.path(pkg_dir, "OMOP_CDMv5.4_Table_Level.csv")
   fld_file <- file.path(pkg_dir, "OMOP_CDMv5.4_Field_Level.csv")
+  if (!file.exists(tbl_file) || !file.exists(fld_file)) return(NULL)
+  list(
+    table_level = utils::read.csv(tbl_file, stringsAsFactors = FALSE),
+    field_level = utils::read.csv(fld_file, stringsAsFactors = FALSE),
+    version     = "5.4",
+    source      = "vendored"
+  )
+}
 
-  if (!file.exists(tbl_file) || !file.exists(fld_file)) {
-    stop("OHDSI metadata files not found in inst/ohdsi/. ",
-         "Ensure package is properly installed.", call. = FALSE)
+#' Heuristic concept role classification (no spec)
+#' @keywords internal
+.classifyConceptRoleHeuristic <- function(table, column) {
+  if (grepl("_concept_id$", column)) {
+    if (grepl("_source_concept_id$", column)) return("source_concept")
+    if (grepl("_type_concept_id$", column)) return("type_concept")
+    return("domain_concept")
   }
-
-  table_level <- utils::read.csv(tbl_file, stringsAsFactors = FALSE)
-  field_level <- utils::read.csv(fld_file, stringsAsFactors = FALSE)
-
-  list(table_level = table_level, field_level = field_level)
+  "non_concept"
 }
 
 # --- Handle Creation ---
@@ -108,11 +170,7 @@
     return(handle$blueprint)
   }
 
-  ohdsi <- .loadOHDSIMetadata()
-  tbl_meta <- ohdsi$table_level
-  fld_meta <- ohdsi$field_level
-
-  # Discover tables actually present in the DB
+  # Step 1: Discover tables actually present in the DB
   db_tables_cdm <- .listTablesRaw(handle, handle$cdm_schema)
 
   db_tables_vocab <- character(0)
@@ -127,31 +185,82 @@
 
   all_db_tables <- unique(c(db_tables_cdm, db_tables_vocab, db_tables_results))
 
+  # Step 2: Detect CDM version from cdm_source (before spec loading)
+  cdm_info <- .detectCDMInfo(handle, all_db_tables)
+  cdm_version <- cdm_info$cdm_version  # may be NULL
+
+  # Step 3: Load spec for detected version
+  spec <- .loadCdmSpec(cdm_version)
+  has_spec <- !is.null(spec)
+  if (!has_spec) {
+    warning("No CDM spec available for version '", cdm_version %||% "unknown",
+            "'. Running in introspection-only mode.", call. = FALSE)
+  }
+
+  tbl_meta <- if (has_spec) spec$table_level else NULL
+  fld_meta <- if (has_spec) spec$field_level else NULL
+
   # Build tables data.frame
-  tables <- data.frame(
-    table_name      = tolower(tbl_meta$cdmTableName),
-    schema_category = tbl_meta$schema,
-    concept_prefix  = tbl_meta$conceptPrefix,
-    has_person_id   = logical(nrow(tbl_meta)),
-    present_in_db   = logical(nrow(tbl_meta)),
-    qualified_name  = character(nrow(tbl_meta)),
-    stringsAsFactors = FALSE
-  )
+  if (has_spec) {
+    tables <- data.frame(
+      table_name      = tolower(tbl_meta$cdmTableName),
+      schema_category = tbl_meta$schema,
+      concept_prefix  = tbl_meta$conceptPrefix,
+      has_person_id   = logical(nrow(tbl_meta)),
+      present_in_db   = logical(nrow(tbl_meta)),
+      qualified_name  = character(nrow(tbl_meta)),
+      stringsAsFactors = FALSE
+    )
 
-  # Determine which tables exist and where
-  for (i in seq_len(nrow(tables))) {
-    tbl_name <- tables$table_name[i]
-    category <- tables$schema_category[i]
-    tables$present_in_db[i] <- tbl_name %in% all_db_tables
+    # Determine which tables exist and where
+    for (i in seq_len(nrow(tables))) {
+      tbl_name <- tables$table_name[i]
+      category <- tables$schema_category[i]
+      tables$present_in_db[i] <- tbl_name %in% all_db_tables
 
-    schema <- .resolveTableSchema(handle, tbl_name, category)
-    tables$qualified_name[i] <- .qualifyTable(handle, tbl_name, schema)
+      schema <- .resolveTableSchema(handle, tbl_name, category)
+      tables$qualified_name[i] <- .qualifyTable(handle, tbl_name, schema)
+    }
+
+    # Add DB tables not in spec (introspection discovers extra tables)
+    extra_db <- setdiff(all_db_tables, tables$table_name)
+    if (length(extra_db) > 0) {
+      extra_rows <- data.frame(
+        table_name      = extra_db,
+        schema_category = rep("CDM", length(extra_db)),
+        concept_prefix  = rep(NA_character_, length(extra_db)),
+        has_person_id   = rep(FALSE, length(extra_db)),
+        present_in_db   = rep(TRUE, length(extra_db)),
+        qualified_name  = vapply(extra_db, function(t) {
+          .qualifyTable(handle, t, handle$cdm_schema)
+        }, character(1)),
+        stringsAsFactors = FALSE
+      )
+      tables <- rbind(tables, extra_rows)
+    }
+  } else {
+    # Introspection-only mode: build from DB tables
+    tables <- data.frame(
+      table_name      = all_db_tables,
+      schema_category = rep("CDM", length(all_db_tables)),
+      concept_prefix  = rep(NA_character_, length(all_db_tables)),
+      has_person_id   = rep(FALSE, length(all_db_tables)),
+      present_in_db   = rep(TRUE, length(all_db_tables)),
+      qualified_name  = vapply(all_db_tables, function(t) {
+        .qualifyTable(handle, t, handle$cdm_schema)
+      }, character(1)),
+      stringsAsFactors = FALSE
+    )
   }
 
   # Build columns: named list of data.frames per table
   columns <- list()
   for (tbl_name in tables$table_name[tables$present_in_db]) {
-    tbl_flds <- fld_meta[tolower(fld_meta$cdmTableName) == tbl_name, , drop = FALSE]
+    tbl_flds <- if (has_spec) {
+      fld_meta[tolower(fld_meta$cdmTableName) == tbl_name, , drop = FALSE]
+    } else {
+      data.frame(cdmFieldName = character(0), stringsAsFactors = FALSE)
+    }
     category <- tables$schema_category[tables$table_name == tbl_name]
     schema <- .resolveTableSchema(handle, tbl_name, category)
 
@@ -161,7 +270,7 @@
 
     if (nrow(db_cols) == 0) next
 
-    # Build column metadata by merging OHDSI + DB
+    # Build column metadata by merging spec + DB
     col_df <- data.frame(
       column_name  = db_cols$column_name,
       cdm_datatype = character(nrow(db_cols)),
@@ -176,23 +285,29 @@
 
     for (j in seq_len(nrow(col_df))) {
       col_name <- col_df$column_name[j]
-      ohdsi_row <- tbl_flds[tolower(tbl_flds$cdmFieldName) == col_name, , drop = FALSE]
 
-      if (nrow(ohdsi_row) > 0) {
-        col_df$cdm_datatype[j] <- ohdsi_row$cdmDatatype[1]
-        fk_domain <- ohdsi_row$fkDomain[1]
-        col_df$fk_domain[j] <- if (is.na(fk_domain)) "" else fk_domain
-        is_fk <- ohdsi_row$isForeignKey[1]
-        fk_table <- ohdsi_row$fkTableName[1]
+      if (has_spec && nrow(tbl_flds) > 0) {
+        ohdsi_row <- tbl_flds[tolower(tbl_flds$cdmFieldName) == col_name, , drop = FALSE]
 
-        col_df$concept_role[j] <- .classifyConceptRole(
-          tbl_name, col_name, concept_prefix,
-          col_df$fk_domain[j],
-          is_fk = (!is.na(is_fk) && toupper(is_fk) == "YES"),
-          fk_table = if (is.na(fk_table)) "" else fk_table
-        )
+        if (nrow(ohdsi_row) > 0) {
+          col_df$cdm_datatype[j] <- ohdsi_row$cdmDatatype[1]
+          fk_domain <- ohdsi_row$fkDomain[1]
+          col_df$fk_domain[j] <- if (is.na(fk_domain)) "" else fk_domain
+          is_fk <- ohdsi_row$isForeignKey[1]
+          fk_table <- ohdsi_row$fkTableName[1]
+
+          col_df$concept_role[j] <- .classifyConceptRole(
+            tbl_name, col_name, concept_prefix,
+            col_df$fk_domain[j],
+            is_fk = (!is.na(is_fk) && toupper(is_fk) == "YES"),
+            fk_table = if (is.na(fk_table)) "" else fk_table
+          )
+        } else {
+          col_df$concept_role[j] <- .classifyConceptRoleHeuristic(tbl_name, col_name)
+        }
       } else {
-        col_df$concept_role[j] <- "non_concept"
+        # Introspection-only: use heuristic classification
+        col_df$concept_role[j] <- .classifyConceptRoleHeuristic(tbl_name, col_name)
       }
 
       col_df$is_date[j] <- grepl("_date$|_datetime$", col_name) ||
@@ -209,15 +324,17 @@
       "person_id" %in% col_df$column_name
   }
 
-  # Discover Achilles tables in results_schema (not in vendored OHDSI CSVs)
-  achilles_table_names <- c("achilles_results", "achilles_results_dist",
-                             "achilles_heel_results")
+  # Discover Achilles tables in results_schema (not in OHDSI spec CSVs)
+  achilles_table_names <- c("achilles_analysis", "achilles_results",
+                             "achilles_results_dist", "achilles_heel_results")
   found_achilles <- intersect(tolower(db_tables_results), achilles_table_names)
   # Also check CDM tables for SQLite (no separate schemas)
   if (length(found_achilles) == 0) {
     found_achilles <- intersect(tolower(db_tables_cdm), achilles_table_names)
   }
-  if (length(found_achilles) > 0) {
+  # Avoid duplicating tables already in the tables data.frame
+  new_achilles <- setdiff(found_achilles, tables$table_name)
+  if (length(new_achilles) > 0) {
     achilles_schema <- if (length(intersect(tolower(db_tables_results),
                                              achilles_table_names)) > 0) {
       handle$results_schema
@@ -225,31 +342,45 @@
       handle$cdm_schema
     }
     achilles_rows <- data.frame(
-      table_name      = found_achilles,
-      schema_category = rep("Results", length(found_achilles)),
-      concept_prefix  = rep(NA_character_, length(found_achilles)),
-      has_person_id   = rep(FALSE, length(found_achilles)),
-      present_in_db   = rep(TRUE, length(found_achilles)),
-      qualified_name  = vapply(found_achilles, function(t) {
+      table_name      = new_achilles,
+      schema_category = rep("Results", length(new_achilles)),
+      concept_prefix  = rep(NA_character_, length(new_achilles)),
+      has_person_id   = rep(FALSE, length(new_achilles)),
+      present_in_db   = rep(TRUE, length(new_achilles)),
+      qualified_name  = vapply(new_achilles, function(t) {
         .qualifyTable(handle, t, achilles_schema)
       }, character(1)),
       stringsAsFactors = FALSE
     )
     tables <- rbind(tables, achilles_rows)
   }
+  # Also mark already-present achilles tables as present_in_db
+  existing_achilles <- intersect(found_achilles, tables$table_name)
+  if (length(existing_achilles) > 0) {
+    tables$present_in_db[tables$table_name %in% existing_achilles] <- TRUE
+    tables$schema_category[tables$table_name %in% existing_achilles &
+                            tables$schema_category == "CDM"] <- "Results"
+  }
   handle$has_achilles <- length(found_achilles) > 0
 
-  # Build join graph from OHDSI FK metadata
-  join_graph <- .buildJoinGraph(fld_meta, tables$table_name[tables$present_in_db])
-
-  # Detect CDM info
-  cdm_info <- .detectCDMInfo(handle, tables$table_name[tables$present_in_db])
+  # Build join graph from spec FK metadata (if available)
+  if (has_spec) {
+    join_graph <- .buildJoinGraph(fld_meta, tables$table_name[tables$present_in_db])
+  } else {
+    join_graph <- data.frame(
+      from_table = character(0), from_column = character(0),
+      to_table = character(0), to_column = character(0),
+      stringsAsFactors = FALSE
+    )
+  }
 
   blueprint <- new.env(parent = emptyenv())
-  blueprint$tables     <- tables
-  blueprint$columns    <- columns
-  blueprint$join_graph <- join_graph
-  blueprint$cdm_info   <- cdm_info
+  blueprint$tables       <- tables
+  blueprint$columns      <- columns
+  blueprint$join_graph   <- join_graph
+  blueprint$cdm_info     <- cdm_info
+  blueprint$spec_version <- if (has_spec) spec$version else NULL
+  blueprint$spec_source  <- if (has_spec) spec$source else "introspection_only"
 
   handle$blueprint <- blueprint
   blueprint
@@ -517,6 +648,16 @@
     1, 32
   )
 
+  achilles_table_names <- c("achilles_analysis", "achilles_results",
+                              "achilles_results_dist", "achilles_heel_results")
+
+  supported_versions <- if (tryCatch(requireNamespace("CommonDataModel", quietly = TRUE),
+                                      warning = function(w) FALSE)) {
+    tryCatch(CommonDataModel::listSupportedVersions(), error = function(e) character(0))
+  } else {
+    character(0)
+  }
+
   list(
     hash = sig_hash,
     n_tables = nrow(present),
@@ -526,7 +667,13 @@
     dbms = handle$dbms,
     cdm_schema = handle$cdm_schema,
     vocab_schema = handle$vocab_schema,
-    results_schema = handle$results_schema
+    results_schema = handle$results_schema,
+    spec_version = bp$spec_version,
+    spec_source = bp$spec_source,
+    supported_versions = supported_versions,
+    achilles_available = isTRUE(handle$has_achilles),
+    achilles_tables = intersect(achilles_table_names,
+                                 bp$tables$table_name[bp$tables$present_in_db])
   )
 }
 

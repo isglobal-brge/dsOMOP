@@ -38,15 +38,19 @@ test_that("baseline output produces one row per cohort member", {
     expect_true("row_id" %in% names(df))
     expect_true("person_id" %in% names(df))
     expect_true("gender_concept_id" %in% names(df))
-    expect_true("year_of_birth" %in% names(df))
     expect_true("race_concept_id" %in% names(df))
 
     # Derived fields present and valid
-    expect_true("age_at_index" %in% names(df))
+    # age_at_index is now returned as age_group (binned, not exact)
+    expect_true("age_group" %in% names(df))
     expect_true("prior_observation" %in% names(df))
     expect_true("future_observation" %in% names(df))
 
-    expect_true(all(df$age_at_index > 0))
+    # year_of_birth should be removed when age_at_index is derived
+    expect_false("year_of_birth" %in% names(df))
+    expect_false("age_at_index" %in% names(df))
+
+    expect_true(all(!is.na(df$age_group)))
     # Some persons may have cohort_start before obs_period (LEFT JOIN → NA)
     valid_obs <- !is.na(df$prior_observation)
     expect_true(any(valid_obs))
@@ -752,7 +756,7 @@ test_that("single plan with all output types executes successfully", {
     # demo: data.frame with derived fields
     expect_true(is.data.frame(result$demo))
     expect_equal(nrow(result$demo), 6)
-    expect_true("age_at_index" %in% names(result$demo))
+    expect_true("age_group" %in% names(result$demo))
 
     # tte: data.frame with event/censoring
     expect_true(is.data.frame(result$tte))

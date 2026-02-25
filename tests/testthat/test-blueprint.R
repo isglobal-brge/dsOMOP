@@ -1,13 +1,65 @@
-test_that("OHDSI metadata loads successfully", {
-  ohdsi <- .loadOHDSIMetadata()
-  expect_true(is.data.frame(ohdsi$table_level))
-  expect_true(is.data.frame(ohdsi$field_level))
-  expect_true(nrow(ohdsi$table_level) > 0)
-  expect_true(nrow(ohdsi$field_level) > 0)
-  expect_true("cdmTableName" %in% names(ohdsi$table_level))
-  expect_true("schema" %in% names(ohdsi$table_level))
-  expect_true("conceptPrefix" %in% names(ohdsi$table_level))
-  expect_true("cdmFieldName" %in% names(ohdsi$field_level))
+test_that("loadCdmSpec returns spec for version 5.4", {
+  spec <- .loadCdmSpec("5.4")
+  expect_true(is.list(spec))
+  expect_true("table_level" %in% names(spec))
+  expect_true("field_level" %in% names(spec))
+  expect_true(nrow(spec$table_level) > 0)
+  expect_true(nrow(spec$field_level) > 0)
+  expect_true("cdmTableName" %in% names(spec$table_level))
+  expect_true("schema" %in% names(spec$table_level))
+  expect_true("conceptPrefix" %in% names(spec$table_level))
+  expect_true("cdmFieldName" %in% names(spec$field_level))
+  expect_true(spec$version %in% c("5.4"))
+  expect_true(spec$source %in% c("CommonDataModel", "vendored"))
+})
+
+test_that("loadCdmSpec falls back for unsupported version", {
+  spec <- .loadCdmSpec("99.9")
+  # Should fall back to vendored
+  expect_true(is.list(spec) || is.null(spec))
+  if (is.list(spec)) {
+    expect_equal(spec$source, "vendored")
+  }
+})
+
+test_that("loadCdmSpec normalizes version strings", {
+  spec_a <- .loadCdmSpec("v5.4")
+  spec_b <- .loadCdmSpec("5.4.0")
+  expect_equal(spec_a$version, "5.4")
+  expect_equal(spec_b$version, "5.4")
+})
+
+test_that("loadCdmSpec returns spec with NULL version", {
+  spec <- .loadCdmSpec(NULL)
+  # Should fall back to vendored
+  expect_true(is.list(spec))
+  expect_equal(spec$version, "5.4")
+  expect_equal(spec$source, "vendored")
+})
+
+test_that("loadVendoredSpec returns vendored spec", {
+  spec <- .loadVendoredSpec()
+  expect_true(is.list(spec))
+  expect_equal(spec$version, "5.4")
+  expect_equal(spec$source, "vendored")
+})
+
+test_that("listSupportedVersions is accessible", {
+  skip_if_not_installed("CommonDataModel")
+  versions <- CommonDataModel::listSupportedVersions()
+  expect_true(is.character(versions))
+  expect_true("5.4" %in% versions)
+})
+
+test_that("classifyConceptRoleHeuristic works correctly", {
+  expect_equal(.classifyConceptRoleHeuristic("test", "condition_concept_id"),
+               "domain_concept")
+  expect_equal(.classifyConceptRoleHeuristic("test", "condition_source_concept_id"),
+               "source_concept")
+  expect_equal(.classifyConceptRoleHeuristic("test", "condition_type_concept_id"),
+               "type_concept")
+  expect_equal(.classifyConceptRoleHeuristic("test", "person_id"),
+               "non_concept")
 })
 
 test_that("blueprint builds from test handle", {
@@ -220,6 +272,17 @@ test_that("CDM info is detected from cdm_source table", {
   expect_true(!is.null(bp$cdm_info))
   expect_equal(bp$cdm_info$source_name, "dsOMOP Test")
   expect_equal(bp$cdm_info$cdm_version, "v5.4")
+})
+
+test_that("blueprint stores spec metadata", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  bp <- .buildBlueprint(handle)
+
+  expect_true(!is.null(bp$spec_version))
+  expect_true(!is.null(bp$spec_source))
+  expect_true(bp$spec_source %in% c("CommonDataModel", "vendored"))
 })
 
 test_that("blueprint tables have schema categories", {

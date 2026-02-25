@@ -21,7 +21,12 @@ AggregateMethods:
   omopExpandConceptSetDS,
   omopPlanPreviewDS,
   omopCohortListDS,
-  omopCohortGetDefinitionDS
+  omopCohortGetDefinitionDS,
+  omopAchillesStatusDS,
+  omopAchillesAnalysesDS,
+  omopAchillesResultsDS,
+  omopAchillesDistributionDS,
+  omopAchillesCatalogDS
 Options:
   datashield.privacyControlLevel=banana,
   nfilter.subset=3,

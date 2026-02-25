@@ -34,11 +34,15 @@ export(omopDateCountsDS)
 export(omopConceptDrilldownDS)
 export(omopLocateConceptDS)
 
+# Exported server-side DS methods (safe cutpoints)
+export(omopSafeCutpointsDS)
+
 # Exported server-side DS methods (Achilles / Data Sources)
 export(omopAchillesStatusDS)
 export(omopAchillesAnalysesDS)
 export(omopAchillesResultsDS)
 export(omopAchillesDistributionDS)
+export(omopAchillesCatalogDS)
 
 # Imports
 import(DBI)

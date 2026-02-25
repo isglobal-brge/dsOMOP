@@ -518,6 +518,24 @@ omopLocateConceptDS <- function(omop_symbol, concept_ids) {
   .profileLocateConcept(handle, as.integer(concept_ids))
 }
 
+#' Get safe numeric cutpoints (Aggregate)
+#'
+#' Returns bin edges that are safe to use as filter thresholds. Each bin
+#' is guaranteed to contain enough persons to pass disclosure.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param table Character; table name
+#' @param column Character; numeric column name
+#' @param concept_id Integer or NULL; concept filter
+#' @param n_bins Integer; target number of bins (default 10)
+#' @return List with breaks (numeric vector) and counts (integer vector)
+#' @export
+omopSafeCutpointsDS <- function(omop_symbol, table, column,
+                                 concept_id = NULL, n_bins = 10L) {
+  handle <- .getHandle(omop_symbol)
+  .profileSafeCutpoints(handle, table, column, concept_id, as.integer(n_bins))
+}
+
 # ==============================================================================
 # ACHILLES AGGREGATE METHODS (Data Sources)
 # ==============================================================================
@@ -569,4 +587,17 @@ omopAchillesDistributionDS <- function(omop_symbol, analysis_ids,
                                         stratum_filters = NULL) {
   handle <- .getHandle(omop_symbol)
   .achillesGetDistributions(handle, analysis_ids, stratum_filters)
+}
+
+#' Get Achilles analysis catalog (Aggregate)
+#'
+#' Returns the full catalog of available Achilles analyses, either from
+#' the achilles_analysis table or dynamically discovered from results.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @return Data frame with analysis catalog
+#' @export
+omopAchillesCatalogDS <- function(omop_symbol) {
+  handle <- .getHandle(omop_symbol)
+  .achillesDiscoverCatalog(handle)
 }

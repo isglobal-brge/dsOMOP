@@ -217,6 +217,9 @@
   # Block sensitive columns
   if (block_sensitive) {
     blocked <- col_df$column_name[col_df$is_blocked]
+    # Always block exact birth dates/times (quasi-identifiers)
+    always_block <- c("day_of_birth", "birth_datetime")
+    blocked <- union(blocked, intersect(always_block, col_df$column_name))
     select_cols <- setdiff(select_cols, blocked)
   }
 
@@ -860,6 +863,8 @@
   op_table <- .qualifyTable(handle, "observation_period", op_schema)
 
   # Default columns if not specified
+  # Note: year_of_birth is included for age_group computation but removed
+  # from final output when age_at_index is a derived field
   if (is.null(columns)) {
     columns <- c("gender_concept_id", "year_of_birth", "race_concept_id")
   }
@@ -909,7 +914,9 @@
 
   if ("age_at_index" %in% derived && "year_of_birth" %in% names(result)) {
     index_year <- as.integer(format(as.Date(result$cohort_start_date), "%Y"))
-    result$age_at_index <- index_year - as.integer(result$year_of_birth)
+    result$age_group <- .computeAgeGroups(result$year_of_birth, index_year)
+    # Remove exact year_of_birth from output (quasi-identifier)
+    result$year_of_birth <- NULL
   }
 
   if ("prior_observation" %in% derived &&
@@ -929,7 +936,13 @@
   }
 
   # Select final columns: row_id, person_id, requested columns, derived
-  keep <- c("row_id", "person_id", select_person_cols, derived)
+  # Replace "age_at_index" with "age_group" in the keep list
+  derived_keep <- derived
+  if ("age_at_index" %in% derived_keep) {
+    derived_keep <- setdiff(derived_keep, "age_at_index")
+    derived_keep <- c(derived_keep, "age_group")
+  }
+  keep <- c("row_id", "person_id", select_person_cols, derived_keep)
   keep <- intersect(keep, names(result))
   result <- result[, keep, drop = FALSE]
 

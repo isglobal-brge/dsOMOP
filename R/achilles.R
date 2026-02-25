@@ -7,11 +7,11 @@
 
 # --- Analysis Catalog --------------------------------------------------------
 
-#' Hardcoded catalog of supported Achilles analysis IDs
+#' Static catalog of known Achilles analysis IDs (fallback)
 #' @return data.frame with analysis_id, analysis_name, domain, stratum_1_name,
 #'   stratum_2_name, result_table
 #' @keywords internal
-.achilles_catalog <- function() {
+.achilles_catalog_static <- function() {
   data.frame(
     analysis_id = c(
       0L, 1L, 2L, 3L, 5L, 8L,
@@ -132,8 +132,8 @@
 #' @return list(available, tables, n_analyses, n_heel_warnings)
 #' @keywords internal
 .achillesStatus <- function(handle) {
-  achilles_tables <- c("achilles_results", "achilles_results_dist",
-                        "achilles_heel_results")
+  achilles_tables <- c("achilles_analysis", "achilles_results",
+                        "achilles_results_dist", "achilles_heel_results")
 
   # Check which tables exist
   bp <- .buildBlueprint(handle)
@@ -142,9 +142,11 @@
     bp$tables$table_name[bp$tables$present_in_db]
   )
 
-  if (length(found) == 0) {
+  # At minimum need achilles_results to be considered available
+  if (!"achilles_results" %in% found && !"achilles_results_dist" %in% found) {
     return(list(available = FALSE, tables = character(0),
-                n_analyses = 0L, n_heel_warnings = 0L))
+                n_analyses = 0L, n_heel_warnings = 0L,
+                has_analysis_table = FALSE))
   }
 
   n_analyses <- 0L
@@ -171,7 +173,8 @@
   }
 
   list(available = TRUE, tables = found,
-       n_analyses = n_analyses, n_heel_warnings = n_heel)
+       n_analyses = n_analyses, n_heel_warnings = n_heel,
+       has_analysis_table = "achilles_analysis" %in% found)
 }
 
 #' List available Achilles analyses
@@ -181,7 +184,7 @@
 #' @return data.frame from the analysis catalog, filtered by domain if given
 #' @keywords internal
 .achillesListAnalyses <- function(handle, domain = NULL) {
-  catalog <- .achilles_catalog()
+  catalog <- .achilles_catalog_static()
 
   if (!is.null(domain)) {
     domain <- tolower(trimws(domain))
@@ -357,4 +360,108 @@
                 " ORDER BY rule_id")
 
   tryCatch(.executeQuery(handle, sql), error = function(e) empty)
+}
+
+# --- Dynamic Catalog Discovery ------------------------------------------------
+
+#' Get Achilles analysis catalog from database
+#'
+#' Queries the achilles_analysis table if available. Falls back to
+#' querying DISTINCT analysis_id from achilles_results with the
+#' hardcoded catalog as metadata enrichment.
+#'
+#' @param handle CDM handle
+#' @return data.frame with analysis_id, analysis_name, domain, stratum_*_name, result_table
+#' @keywords internal
+.achillesDiscoverCatalog <- function(handle) {
+  bp <- .buildBlueprint(handle)
+
+  # Try achilles_analysis table first
+  if ("achilles_analysis" %in% bp$tables$table_name[bp$tables$present_in_db]) {
+    qualified <- .qualifyTable(handle, "achilles_analysis",
+                                handle$results_schema %||% handle$cdm_schema)
+    sql <- paste0("SELECT analysis_id, analysis_name, stratum_1_name, ",
+                  "stratum_2_name, stratum_3_name, stratum_4_name, stratum_5_name ",
+                  "FROM ", qualified, " ORDER BY analysis_id")
+    catalog <- tryCatch(.executeQuery(handle, sql), error = function(e) NULL)
+    if (!is.null(catalog) && nrow(catalog) > 0) {
+      names(catalog) <- tolower(names(catalog))
+      # Add domain classification + result_table from analysis_id ranges
+      catalog$domain <- .achillesAnalysisDomain(catalog$analysis_id)
+      catalog$result_table <- .achillesAnalysisResultTable(catalog$analysis_id)
+      return(catalog)
+    }
+  }
+
+  # Fallback: query distinct analysis_ids from achilles_results
+  avail_ids <- .achillesDiscoverIds(handle)
+  if (length(avail_ids) == 0) return(.achilles_catalog_static())  # ultimate fallback
+
+  # Filter static catalog to only available IDs
+  static <- .achilles_catalog_static()
+  found <- static[static$analysis_id %in% avail_ids, , drop = FALSE]
+
+  # Add any unknown IDs with minimal metadata
+  unknown_ids <- setdiff(avail_ids, static$analysis_id)
+  if (length(unknown_ids) > 0) {
+    unknown_rows <- data.frame(
+      analysis_id = unknown_ids,
+      analysis_name = paste("Analysis", unknown_ids),
+      domain = .achillesAnalysisDomain(unknown_ids),
+      stratum_1_name = NA_character_,
+      stratum_2_name = NA_character_,
+      result_table = .achillesAnalysisResultTable(unknown_ids),
+      stringsAsFactors = FALSE
+    )
+    found <- rbind(found, unknown_rows)
+  }
+  found[order(found$analysis_id), , drop = FALSE]
+}
+
+#' Query distinct analysis_ids from achilles_results
+#' @keywords internal
+.achillesDiscoverIds <- function(handle) {
+  bp <- .buildBlueprint(handle)
+  ids <- integer(0)
+  for (tbl in c("achilles_results", "achilles_results_dist")) {
+    if (tbl %in% bp$tables$table_name[bp$tables$present_in_db]) {
+      qualified <- .qualifyTable(handle, tbl,
+                                  handle$results_schema %||% handle$cdm_schema)
+      sql <- paste0("SELECT DISTINCT analysis_id FROM ", qualified)
+      res <- tryCatch(.executeQuery(handle, sql), error = function(e) NULL)
+      if (!is.null(res)) ids <- c(ids, as.integer(res$analysis_id))
+    }
+  }
+  sort(unique(ids))
+}
+
+#' Classify analysis domain from analysis_id range
+#' @keywords internal
+.achillesAnalysisDomain <- function(analysis_ids) {
+  vapply(analysis_ids, function(id) {
+    if (id < 100) return("person")
+    if (id < 200) return("observation_period")
+    if (id < 300) return("visit")
+    if (id < 400) return("provider")
+    if (id < 500) return("condition")
+    if (id < 600) return("death")
+    if (id < 700) return("procedure")
+    if (id < 800) return("drug")
+    if (id < 900) return("observation")
+    if (id < 1000) return("location")
+    if (id < 1100) return("care_site")
+    if (id < 1800) return("other")
+    if (id < 1900) return("measurement")
+    if (id < 2000) return("cohort")
+    if (id < 2200) return("device")
+    "other"
+  }, character(1))
+}
+
+#' Determine result table from analysis_id
+#' @keywords internal
+.achillesAnalysisResultTable <- function(analysis_ids) {
+  # Distribution analyses (by Achilles convention): xx03, xx04, xx07, xx08
+  dist_suffix <- analysis_ids %% 100
+  ifelse(dist_suffix %in% c(3L, 4L, 7L, 8L), "achilles_results_dist", "achilles_results")
 }

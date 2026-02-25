@@ -184,8 +184,8 @@ test_that("achillesGetHeelResults returns heel warnings", {
   expect_true("rule_id" %in% names(result))
 })
 
-test_that("achilles_catalog returns well-formed data.frame", {
-  catalog <- .achilles_catalog()
+test_that("achilles_catalog_static returns well-formed data.frame", {
+  catalog <- .achilles_catalog_static()
   expect_true(is.data.frame(catalog))
   expect_true(nrow(catalog) > 20)
   expect_true(all(c("analysis_id", "analysis_name", "domain",
@@ -204,5 +204,66 @@ test_that("blueprint discovers Achilles tables", {
   expect_true("achilles_results" %in% present$table_name)
   expect_true("achilles_results_dist" %in% present$table_name)
   expect_true("achilles_heel_results" %in% present$table_name)
+  expect_true("achilles_analysis" %in% present$table_name)
   expect_true(isTRUE(handle$has_achilles))
+})
+
+test_that("achillesAnalysisDomain classifies by ID range", {
+  expect_equal(.achillesAnalysisDomain(1L), "person")
+  expect_equal(.achillesAnalysisDomain(101L), "observation_period")
+  expect_equal(.achillesAnalysisDomain(200L), "visit")
+  expect_equal(.achillesAnalysisDomain(400L), "condition")
+  expect_equal(.achillesAnalysisDomain(600L), "procedure")
+  expect_equal(.achillesAnalysisDomain(700L), "drug")
+  expect_equal(.achillesAnalysisDomain(800L), "observation")
+  expect_equal(.achillesAnalysisDomain(1800L), "measurement")
+  expect_equal(.achillesAnalysisDomain(2100L), "device")
+})
+
+test_that("achillesAnalysisResultTable classifies correctly", {
+  expect_equal(.achillesAnalysisResultTable(0L), "achilles_results")
+  expect_equal(.achillesAnalysisResultTable(1L), "achilles_results")
+  expect_equal(.achillesAnalysisResultTable(3L), "achilles_results_dist")
+  expect_equal(.achillesAnalysisResultTable(103L), "achilles_results_dist")
+  expect_equal(.achillesAnalysisResultTable(404L), "achilles_results_dist")
+  expect_equal(.achillesAnalysisResultTable(400L), "achilles_results")
+})
+
+test_that("achillesDiscoverIds returns analysis IDs from DB", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  ids <- .achillesDiscoverIds(handle)
+  expect_true(length(ids) > 0)
+  expect_true(0L %in% ids)
+  expect_true(400L %in% ids)
+  expect_true(113L %in% ids)  # from achilles_results_dist
+})
+
+test_that("achillesDiscoverCatalog returns catalog from achilles_analysis table", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  catalog <- .achillesDiscoverCatalog(handle)
+  expect_true(is.data.frame(catalog))
+  expect_true(nrow(catalog) > 0)
+  expect_true("analysis_id" %in% names(catalog))
+  expect_true("analysis_name" %in% names(catalog))
+  expect_true("domain" %in% names(catalog))
+  expect_true("result_table" %in% names(catalog))
+  expect_true(0L %in% catalog$analysis_id)
+  expect_true(400L %in% catalog$analysis_id)
+})
+
+test_that("achillesStatus reports has_analysis_table", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  status <- .achillesStatus(handle)
+  expect_true(status$available)
+  expect_true(status$has_analysis_table)
+  expect_true("achilles_analysis" %in% status$tables)
 })

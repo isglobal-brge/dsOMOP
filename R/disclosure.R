@@ -62,8 +62,8 @@
 
   if (is.na(n) || n < threshold) {
     stop(
-      "Disclosive: unique persons (", ifelse(is.na(n), "NA", n),
-      ") < nfilter.subset (", threshold, "). Operation blocked.",
+      "Disclosive: operation blocked — insufficient individuals to meet ",
+      "disclosure threshold. No further details available.",
       call. = FALSE
     )
   }
@@ -136,6 +136,180 @@
     )
   }
   s
+}
+
+# ==============================================================================
+# Age Safety: Binned Age Groups
+# ==============================================================================
+
+#' Compute safe age groups from year_of_birth
+#'
+#' Bins ages into groups with minimum bin width (default 5 years).
+#' Merges small-count bins at extremes to prevent identification.
+#'
+#' @param year_of_birth Integer vector; birth years
+#' @param index_year Integer vector; reference years (same length or scalar)
+#' @param bin_width Integer; minimum bin width in years (default 5, minimum 5)
+#' @param min_cell Integer; merge bins with fewer than this many persons (nfilter.tab)
+#' @return Character vector of age group labels (e.g. "40-44", "85+")
+#' @keywords internal
+.computeAgeGroups <- function(year_of_birth, index_year, bin_width = 5L,
+                               min_cell = NULL) {
+  bin_width <- max(as.integer(bin_width), 5L)  # Floor at 5
+  if (is.null(min_cell)) {
+    min_cell <- .omopDisclosureSettings()$nfilter_tab
+  }
+
+  ages <- as.integer(index_year) - as.integer(year_of_birth)
+  ages[ages < 0] <- NA_integer_
+
+  # Handle all-NA case
+  if (all(is.na(ages))) return(rep(NA_character_, length(ages)))
+
+  max_age <- max(ages, na.rm = TRUE)
+
+  # Create initial breaks
+
+  breaks <- seq(0, max_age + bin_width, by = bin_width)
+  if (breaks[length(breaks)] <= max_age) {
+    breaks <- c(breaks, breaks[length(breaks)] + bin_width)
+  }
+
+  # Assign each age to a bin index
+  bin_idx <- findInterval(ages, breaks, rightmost.closed = FALSE)
+  bin_idx[is.na(ages)] <- NA_integer_
+
+  # Create initial labels
+  n_bins <- length(breaks) - 1L
+  bin_labels <- character(n_bins)
+  for (i in seq_len(n_bins)) {
+    bin_labels[i] <- paste0(breaks[i], "-", breaks[i + 1L] - 1L)
+  }
+
+  # Count persons per bin
+  bin_counts <- tabulate(bin_idx, nbins = n_bins)
+
+  # Merge small-count bins from the top end
+  while (n_bins > 1 && bin_counts[n_bins] < min_cell) {
+    # Merge last two bins
+    bin_counts[n_bins - 1L] <- bin_counts[n_bins - 1L] + bin_counts[n_bins]
+    bin_counts <- bin_counts[-n_bins]
+    bin_labels[n_bins - 1L] <- paste0(breaks[n_bins - 1L], "+")
+    bin_labels <- bin_labels[-n_bins]
+    bin_idx[!is.na(bin_idx) & bin_idx == n_bins] <- n_bins - 1L
+    n_bins <- n_bins - 1L
+  }
+
+  # Merge small-count bins from the bottom end
+  while (n_bins > 1 && bin_counts[1] < min_cell) {
+    bin_counts[2] <- bin_counts[1] + bin_counts[2]
+    bin_counts <- bin_counts[-1]
+    lo <- breaks[1]
+    # Update label for merged bin
+    if (grepl("\\+$", bin_labels[2])) {
+      bin_labels[2] <- paste0(lo, "+")
+    } else {
+      hi_part <- sub("^[0-9]+-", "", bin_labels[2])
+      bin_labels[2] <- paste0(lo, "-", hi_part)
+    }
+    bin_labels <- bin_labels[-1]
+    bin_idx[!is.na(bin_idx) & bin_idx == 1L] <- 2L
+    bin_idx[!is.na(bin_idx)] <- bin_idx[!is.na(bin_idx)] - 1L
+    n_bins <- n_bins - 1L
+  }
+
+  # Map bin indices to labels
+  result <- rep(NA_character_, length(ages))
+  for (i in seq_along(ages)) {
+    if (!is.na(bin_idx[i]) && bin_idx[i] >= 1 && bin_idx[i] <= n_bins) {
+      result[i] <- bin_labels[bin_idx[i]]
+    }
+  }
+  result
+}
+
+# ==============================================================================
+# Filter Safety Policy
+# ==============================================================================
+
+#' Classify a filter operation by safety level
+#'
+#' @param filter_type Character; filter type from the DSL
+#' @param filter_params List; filter parameters
+#' @return Character; "allowed", "constrained", or "blocked"
+#' @keywords internal
+.classifyFilter <- function(filter_type, filter_params = list()) {
+  # Always allowed: categorical with known small domains
+  always_allowed <- c("sex", "age_group", "cohort", "concept_set")
+
+  # Constrained: allowed with validation
+  constrained <- c("age_range", "has_concept", "date_range", "min_count")
+
+  # Blocked: could fingerprint individuals
+  blocked <- c("value_threshold", "custom")
+
+  if (filter_type %in% always_allowed) return("allowed")
+  if (filter_type %in% blocked) return("blocked")
+  if (filter_type %in% constrained) {
+    # Additional validation for constrained filters
+    if (filter_type == "age_range") {
+      range_width <- (filter_params$max %||% 150) - (filter_params$min %||% 0)
+      if (range_width < 5) return("blocked")
+    }
+    if (filter_type == "date_range") {
+      if (!is.null(filter_params$start) && !is.null(filter_params$end)) {
+        diff_days <- as.numeric(
+          as.Date(filter_params$end) - as.Date(filter_params$start)
+        )
+        if (diff_days < 30) return("blocked")
+      }
+    }
+    return("constrained")
+  }
+  "blocked"  # Unknown filters are blocked
+}
+
+#' Validate a filter before execution
+#'
+#' Checks classification and stops with a disclosure error if the filter
+#' type is blocked.
+#'
+#' @param filter_type Character
+#' @param filter_params List
+#' @return TRUE invisibly if safe; stops otherwise
+#' @keywords internal
+.validateFilter <- function(filter_type, filter_params = list()) {
+  classification <- .classifyFilter(filter_type, filter_params)
+
+  if (classification == "blocked") {
+    stop(
+      "Disclosive: filter type '", filter_type,
+      "' is not allowed (could fingerprint individuals).",
+      call. = FALSE
+    )
+  }
+
+  invisible(TRUE)
+}
+
+#' Assert that a filter doesn't reduce population below threshold
+#'
+#' @param handle CDM handle
+#' @param post_sql Character; SQL returning COUNT(DISTINCT person_id) after filter
+#' @return TRUE invisibly; stops otherwise
+#' @keywords internal
+.assertFilterSafe <- function(handle, post_sql) {
+  settings <- .omopDisclosureSettings()
+  threshold <- settings$nfilter_subset
+
+  post_result <- DBI::dbGetQuery(handle$conn, post_sql)
+  post_n <- as.numeric(post_result[[1]][1])
+
+  if (is.na(post_n) || post_n < threshold) {
+    stop("Disclosive: filter would reduce population below disclosure threshold.",
+         call. = FALSE)
+  }
+  invisible(TRUE)
 }
 
 #' Validate a table or column identifier (whitelist-based)
