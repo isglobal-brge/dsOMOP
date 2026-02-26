@@ -198,6 +198,25 @@
   cdm_info <- .detectCDMInfo(handle, all_db_tables)
   cdm_version <- cdm_info$cdm_version  # may be NULL
 
+  # Step 2b: Structural version detection (fallback / cross-validation)
+  struct <- .detectCDMVersionFromStructure(handle, all_db_tables)
+
+  if (is.null(cdm_version) && !is.null(struct)) {
+    cdm_version <- struct$version
+    message("CDM version ", cdm_version, " inferred from table structure",
+            " (evidence: v5.4=", struct$evidence_54,
+            ", v5.3=", struct$evidence_53, ")")
+  } else if (!is.null(cdm_version) && !is.null(struct)) {
+    normalized <- sub("^[vV]", "", trimws(cdm_version))
+    normalized <- sub("\\.0$", "", normalized)
+    if (normalized != struct$version) {
+      warning("cdm_source reports version '", cdm_version,
+              "' but table structure suggests '", struct$version,
+              "' (evidence: v5.4=", struct$evidence_54,
+              ", v5.3=", struct$evidence_53, ")", call. = FALSE)
+    }
+  }
+
   # Step 3: Load spec for detected version
   spec <- .loadCdmSpec(cdm_version)
   has_spec <- !is.null(spec)
@@ -831,6 +850,105 @@
 
   if (nrow(edges) > 0) edges <- unique(edges)
   edges
+}
+
+#' Detect CDM version from table/column structure using weighted evidence scoring
+#'
+#' Uses multiple structural signals to infer whether the database matches
+#' CDM v5.3 or v5.4. Table-level checks (episode, episode_event) are free
+#' since the table list is already discovered. Column-level checks query
+#' only tables that exist.
+#'
+#' @param handle CDM handle
+#' @param db_tables Character vector of table names present in the database
+#' @return List with \code{version}, \code{evidence_54}, \code{evidence_53},
+#'   and \code{checks} (named list of individual check results), or NULL if
+#'   inconclusive (zero evidence or tie).
+#' @keywords internal
+.detectCDMVersionFromStructure <- function(handle, db_tables) {
+  evidence_54 <- 0
+  evidence_53 <- 0
+  checks <- list()
+
+
+  # Check 1: episode table exists (+3 for 5.4)
+  if ("episode" %in% db_tables) {
+    evidence_54 <- evidence_54 + 3
+    checks$episode_table <- "5.4"
+  }
+
+  # Check 2: episode_event table exists (+3 for 5.4)
+  if ("episode_event" %in% db_tables) {
+    evidence_54 <- evidence_54 + 3
+    checks$episode_event_table <- "5.4"
+  }
+
+  # Check 3: procedure_occurrence columns (+2 for winner)
+  if ("procedure_occurrence" %in% db_tables) {
+    schema <- .resolveTableSchema(handle, "procedure_occurrence",
+      tryCatch(handle$blueprint$tables$schema_category[
+        handle$blueprint$tables$table_name == "procedure_occurrence"],
+        error = function(e) "CDM"))
+    proc_cols <- .listColumnsRaw(handle, "procedure_occurrence", schema)
+    if (nrow(proc_cols) > 0) {
+      if ("procedure_end_date" %in% proc_cols$column_name) {
+        evidence_54 <- evidence_54 + 2
+        checks$procedure_end_date <- "5.4"
+      } else {
+        evidence_53 <- evidence_53 + 2
+        checks$procedure_end_date <- "5.3"
+      }
+    }
+  }
+
+  # Check 4: location columns (+1 for winner)
+  if ("location" %in% db_tables) {
+    schema <- .resolveTableSchema(handle, "location",
+      tryCatch(handle$blueprint$tables$schema_category[
+        handle$blueprint$tables$table_name == "location"],
+        error = function(e) "CDM"))
+    loc_cols <- .listColumnsRaw(handle, "location", schema)
+    if (nrow(loc_cols) > 0) {
+      if ("latitude" %in% loc_cols$column_name) {
+        evidence_54 <- evidence_54 + 1
+        checks$location_latitude <- "5.4"
+      } else {
+        evidence_53 <- evidence_53 + 1
+        checks$location_latitude <- "5.3"
+      }
+    }
+  }
+
+  # Check 5: visit_detail columns (+2 for winner)
+  if ("visit_detail" %in% db_tables) {
+    schema <- .resolveTableSchema(handle, "visit_detail",
+      tryCatch(handle$blueprint$tables$schema_category[
+        handle$blueprint$tables$table_name == "visit_detail"],
+        error = function(e) "CDM"))
+    vd_cols <- .listColumnsRaw(handle, "visit_detail", schema)
+    if (nrow(vd_cols) > 0) {
+      if ("parent_visit_detail_id" %in% vd_cols$column_name) {
+        evidence_54 <- evidence_54 + 2
+        checks$visit_detail_parent <- "5.4"
+      } else if ("visit_detail_parent_id" %in% vd_cols$column_name) {
+        evidence_53 <- evidence_53 + 2
+        checks$visit_detail_parent <- "5.3"
+      }
+    }
+  }
+
+  # Decision: higher score wins; tie or zero evidence -> NULL
+  if (evidence_54 == 0 && evidence_53 == 0) return(NULL)
+  if (evidence_54 == evidence_53) return(NULL)
+
+  version <- if (evidence_54 > evidence_53) "5.4" else "5.3"
+
+  list(
+    version     = version,
+    evidence_54 = evidence_54,
+    evidence_53 = evidence_53,
+    checks      = checks
+  )
 }
 
 #' Detect CDM info from cdm_source table

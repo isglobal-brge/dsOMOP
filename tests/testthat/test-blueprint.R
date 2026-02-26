@@ -326,3 +326,89 @@ test_that("join graph is built from OHDSI FK metadata", {
   person_join <- co_joins[co_joins$to_table == "person", ]
   expect_true(nrow(person_join) > 0)
 })
+
+# --- Structural CDM Version Detection Tests ---
+
+test_that("structural detection identifies v5.4 DB", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  db_tables <- tolower(DBI::dbGetQuery(handle$conn,
+    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")$name)
+
+  result <- .detectCDMVersionFromStructure(handle, db_tables)
+
+  expect_true(!is.null(result))
+  expect_equal(result$version, "5.4")
+  expect_true(result$evidence_54 > result$evidence_53)
+  # Should have detected episode table
+  expect_equal(result$checks$episode_table, "5.4")
+  # Should have detected procedure_end_date
+  expect_equal(result$checks$procedure_end_date, "5.4")
+})
+
+test_that("structural detection identifies v5.3 DB", {
+  handle <- create_test_handle_v53()
+  on.exit(cleanup_handle(handle))
+
+  db_tables <- tolower(DBI::dbGetQuery(handle$conn,
+    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")$name)
+
+  result <- .detectCDMVersionFromStructure(handle, db_tables)
+
+  expect_true(!is.null(result))
+  expect_equal(result$version, "5.3")
+  expect_true(result$evidence_53 > result$evidence_54)
+  # No episode table
+  expect_null(result$checks$episode_table)
+  # No procedure_end_date
+  expect_equal(result$checks$procedure_end_date, "5.3")
+})
+
+test_that("structural detection used as fallback when cdm_source missing", {
+  handle <- create_test_handle_no_source()
+  on.exit(cleanup_handle(handle))
+
+  # cdm_source was dropped, so .detectCDMInfo returns NULL
+  db_tables <- tolower(DBI::dbGetQuery(handle$conn,
+    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")$name)
+  cdm_info <- .detectCDMInfo(handle, db_tables)
+  expect_null(cdm_info)
+
+  # buildBlueprint should use structural detection as fallback
+  expect_message(
+    bp <- .buildBlueprint(handle),
+    "CDM version .* inferred from table structure"
+  )
+
+  # Should have picked up the version from structure
+  expect_true(!is.null(bp$spec_version))
+})
+
+test_that("warning emitted when cdm_source disagrees with structure", {
+  handle <- create_test_handle_mismatch()
+  on.exit(cleanup_handle(handle))
+
+  expect_warning(
+    bp <- .buildBlueprint(handle),
+    "cdm_source reports version.*but table structure suggests"
+  )
+})
+
+test_that("structural detection returns NULL for empty DB", {
+  conn <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(conn))
+
+  # Create a minimal DB with no CDM-specific tables
+  DBI::dbExecute(conn, "CREATE TABLE some_random_table (id INTEGER)")
+
+  handle <- new.env(parent = emptyenv())
+  handle$conn <- conn
+  handle$dbms <- "sqlite"
+  handle$target_dialect <- "sqlite"
+  handle$cdm_schema <- NULL
+  handle$blueprint <- NULL
+
+  result <- .detectCDMVersionFromStructure(handle, c("some_random_table"))
+  expect_null(result)
+})
