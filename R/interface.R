@@ -425,6 +425,24 @@ omopConceptPrevalenceDS <- function(omop_symbol, table, concept_col = NULL,
                             cohort_table, window)
 }
 
+#' Get numeric range (p05/p95) for two-pass histogram pooling (Aggregate)
+#'
+#' Returns the 5th and 95th percentile approximations and total count.
+#' Used as pass 1 of two-pass histogram pooling to compute shared bin edges.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param table Character; table name
+#' @param value_col Character; numeric column name
+#' @param cohort_table Character; cohort temp table for filtering (NULL)
+#' @param window List with start/end dates for filtering (NULL)
+#' @return List with p05, p95, n_total
+#' @export
+omopNumericRangeDS <- function(omop_symbol, table, value_col,
+                                cohort_table = NULL, window = NULL) {
+  handle <- .getHandle(omop_symbol)
+  .profileNumericRange(handle, table, value_col, cohort_table, window)
+}
+
 #' Get numeric histogram (Aggregate)
 #'
 #' Computes a safe histogram for a numeric column with suppressed low-count bins.
@@ -435,14 +453,15 @@ omopConceptPrevalenceDS <- function(omop_symbol, table, concept_col = NULL,
 #' @param bins Integer; number of bins
 #' @param cohort_table Character; cohort temp table for filtering (NULL)
 #' @param window List with start/end dates for filtering (NULL)
+#' @param breaks Numeric vector; shared bin edges from two-pass pooling (NULL)
 #' @return Data frame with bin_start, bin_end, count, suppressed
 #' @export
 omopNumericHistogramDS <- function(omop_symbol, table, value_col,
                                     bins = 20L, cohort_table = NULL,
-                                    window = NULL) {
+                                    window = NULL, breaks = NULL) {
   handle <- .getHandle(omop_symbol)
   .profileNumericHistogram(handle, table, value_col, bins,
-                           cohort_table, window)
+                           cohort_table, window, breaks)
 }
 
 #' Get numeric quantiles (Aggregate)

@@ -106,7 +106,8 @@
       "sqlite"     = paste0("DATE(", expr, ", '", n, " days')"),
       "oracle"     = paste0("(", expr, " + ", n, ")"),
       "bigquery"   = paste0("DATE_ADD(", expr, ", INTERVAL ", n, " DAY)"),
-      "spark"      = paste0("DATE_ADD(", expr, ", ", n, ")")
+      "spark"      = paste0("DATE_ADD(", expr, ", ", n, ")"),
+      "mysql"      = paste0("DATE_ADD(", expr, ", INTERVAL ", n, " DAY)")
     )
 
     # Replace the matched DATEADD(...) with the translation

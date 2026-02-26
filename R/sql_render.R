@@ -25,7 +25,9 @@
     snowflake  = "snowflake",
     spark      = "spark",
     sqlite     = "sqlite",
-    duckdb     = "sqlite"
+    duckdb     = "sqlite",
+    mysql      = "mysql",
+    mariadb    = "mysql"
   )
   dialect <- mapping[[dbms]]
   if (is.null(dialect)) {

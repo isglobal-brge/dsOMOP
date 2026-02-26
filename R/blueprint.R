@@ -13,39 +13,40 @@
 #' @return List with table_level and field_level data.frames, or NULL if unsupported
 #' @keywords internal
 .loadCdmSpec <- function(cdm_version = NULL) {
-  has_cdm_pkg <- tryCatch(
-    requireNamespace("CommonDataModel", quietly = TRUE),
-    warning = function(w) FALSE
-  )
-  supported <- if (has_cdm_pkg) {
-    tryCatch(CommonDataModel::listSupportedVersions(), error = function(e) character(0))
-  } else {
-    character(0)
-  }
-
   # Normalize version (e.g. "v5.4" -> "5.4", "5.4.0" -> "5.4")
   if (!is.null(cdm_version)) {
     cdm_version <- sub("^[vV]", "", trimws(cdm_version))
     cdm_version <- sub("\\.0$", "", cdm_version)
   }
 
+  # Try vendored first (no Java dependency)
+  vendored <- .loadVendoredSpec(cdm_version)
+  if (!is.null(vendored)) return(vendored)
+
+  # Fall back to CommonDataModel package (may need Java)
+  has_cdm_pkg <- tryCatch(
+    requireNamespace("CommonDataModel", quietly = TRUE),
+    warning = function(w) FALSE
+  )
+  if (!has_cdm_pkg) return(.loadVendoredSpec("5.4"))
+
+  supported <- tryCatch(
+    CommonDataModel::listSupportedVersions(),
+    error = function(e) character(0)
+  )
+
   # Find matching version
   version_to_load <- NULL
   if (!is.null(cdm_version) && cdm_version %in% supported) {
     version_to_load <- cdm_version
   } else if (!is.null(cdm_version) && length(supported) > 0) {
-    # Try prefix match (e.g. "5.4.1" matches "5.4")
     for (sv in supported) {
       if (startsWith(cdm_version, sv)) { version_to_load <- sv; break }
     }
   }
 
-  if (is.null(version_to_load)) {
-    # Fallback: try vendored files (backward compat)
-    return(.loadVendoredSpec())
-  }
+  if (is.null(version_to_load)) return(.loadVendoredSpec("5.4"))
 
-  # Load from CommonDataModel package
   pkg_csv <- system.file("csv", package = "CommonDataModel")
   tbl_file <- file.path(pkg_csv, paste0("OMOP_CDMv", version_to_load, "_Table_Level.csv"))
   fld_file <- file.path(pkg_csv, paste0("OMOP_CDMv", version_to_load, "_Field_Level.csv"))
@@ -53,7 +54,7 @@
   if (!file.exists(tbl_file) || !file.exists(fld_file)) {
     warning("CDM v", version_to_load, " spec files not found in CommonDataModel package. ",
             "Falling back to vendored spec.", call. = FALSE)
-    return(.loadVendoredSpec())
+    return(.loadVendoredSpec("5.4"))
   }
 
   list(
@@ -65,21 +66,29 @@
 }
 
 #' Load vendored OHDSI metadata as fallback
+#'
+#' @param version Character; CDM version to load (e.g. "5.3", "5.4"). Defaults to "5.4".
 #' @keywords internal
-.loadVendoredSpec <- function() {
+.loadVendoredSpec <- function(version = NULL) {
   pkg_dir <- system.file("ohdsi", package = "dsOMOP")
   if (pkg_dir == "") {
     pkg_dir <- system.file("ohdsi", package = "dsOMOP", lib.loc = .libPaths())
   }
-  tbl_file <- file.path(pkg_dir, "OMOP_CDMv5.4_Table_Level.csv")
-  fld_file <- file.path(pkg_dir, "OMOP_CDMv5.4_Field_Level.csv")
-  if (!file.exists(tbl_file) || !file.exists(fld_file)) return(NULL)
-  list(
-    table_level = utils::read.csv(tbl_file, stringsAsFactors = FALSE),
-    field_level = utils::read.csv(fld_file, stringsAsFactors = FALSE),
-    version     = "5.4",
-    source      = "vendored"
-  )
+  version <- sub("^[vV]", "", trimws(version %||% "5.4"))
+  version <- sub("\\.0$", "", version)
+  for (v in unique(c(version, "5.4"))) {
+    tbl_file <- file.path(pkg_dir, paste0("OMOP_CDMv", v, "_Table_Level.csv"))
+    fld_file <- file.path(pkg_dir, paste0("OMOP_CDMv", v, "_Field_Level.csv"))
+    if (file.exists(tbl_file) && file.exists(fld_file)) {
+      return(list(
+        table_level = utils::read.csv(tbl_file, stringsAsFactors = FALSE),
+        field_level = utils::read.csv(fld_file, stringsAsFactors = FALSE),
+        version     = v,
+        source      = "vendored"
+      ))
+    }
+  }
+  NULL
 }
 
 #' Heuristic concept role classification (no spec)

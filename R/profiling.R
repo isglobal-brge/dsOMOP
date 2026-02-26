@@ -551,11 +551,8 @@
                       stringsAsFactors = FALSE))
   }
 
-  # Suppress small counts
-  if ("n_persons" %in% names(result)) {
-    result <- .suppressSmallCounts(result, "n_persons")
-  }
-  result <- .suppressSmallCounts(result, "n_records")
+  # Suppress small counts (drops rows)
+  result <- .suppressSmallCounts(result, c("n_persons", "n_records"))
 
   # Decorate with concept names from vocabulary
   concept_ids <- result$concept_id[!is.na(result$concept_id)]
@@ -584,6 +581,102 @@
   result[, out_cols, drop = FALSE]
 }
 
+#' Get the numeric range (p05/p95) for a column
+#'
+#' Returns the 5th and 95th percentile approximations and total count.
+#' Used as pass 1 of two-pass histogram pooling.
+#'
+#' @param handle CDM handle
+#' @param table Character; table name
+#' @param value_col Character; numeric column name
+#' @param cohort_table Character; cohort temp table name (NULL)
+#' @param window List with start/end dates (NULL)
+#' @return List with p05, p95, n_total
+#' @keywords internal
+.profileNumericRange <- function(handle, table, value_col,
+                                  cohort_table = NULL, window = NULL) {
+  table <- tolower(.validateIdentifier(table, "table"))
+  value_col <- tolower(.validateIdentifier(value_col, "column"))
+  bp <- .buildBlueprint(handle)
+
+  tbl_row <- bp$tables[bp$tables$table_name == table & bp$tables$present_in_db, ,
+                       drop = FALSE]
+  if (nrow(tbl_row) == 0) stop("Table '", table, "' not found.", call. = FALSE)
+
+  qualified <- tbl_row$qualified_name[1]
+  col_df <- bp$columns[[table]]
+  tbl_cols <- col_df$column_name
+
+  if (!value_col %in% tbl_cols) {
+    stop("Column '", value_col, "' not found in '", table, "'.", call. = FALSE)
+  }
+
+  from_clause <- paste0(qualified, " AS t")
+  where_parts <- paste0("t.", value_col, " IS NOT NULL")
+
+  if (!is.null(cohort_table) && "person_id" %in% tbl_cols) {
+    cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
+    from_clause <- paste0(from_clause,
+                          " INNER JOIN ", cohort_table, " AS coh",
+                          " ON t.person_id = coh.subject_id")
+  }
+
+  if (!is.null(window)) {
+    date_col <- .getDateColumn(bp, table)
+    if (!is.null(date_col)) {
+      if (!is.null(window$start)) {
+        where_parts <- c(where_parts,
+                         paste0("t.", date_col, " >= ", .quoteLiteral(window$start)))
+      }
+      if (!is.null(window$end)) {
+        where_parts <- c(where_parts,
+                         paste0("t.", date_col, " <= ", .quoteLiteral(window$end)))
+      }
+    }
+  }
+
+  where_sql <- paste0(" WHERE ", paste(where_parts, collapse = " AND "))
+
+  count_sql <- paste0("SELECT COUNT(*) AS n FROM ", from_clause, where_sql)
+  n_total <- .executeQuery(handle, count_sql)$n[1]
+
+  if (is.na(n_total) || n_total == 0) {
+    return(list(p05 = NA_real_, p95 = NA_real_, n_total = 0L))
+  }
+
+  offset_p05 <- max(0L, as.integer(floor(n_total * 0.05)) - 1L)
+  offset_p95 <- max(0L, as.integer(floor(n_total * 0.95)) - 1L)
+
+  if (handle$target_dialect == "sqlite") {
+    p05_sql <- paste0(
+      "SELECT CAST(t.", value_col, " AS REAL) AS val FROM ", from_clause,
+      where_sql,
+      " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p05
+    )
+    p95_sql <- paste0(
+      "SELECT CAST(t.", value_col, " AS REAL) AS val FROM ", from_clause,
+      where_sql,
+      " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p95
+    )
+  } else {
+    p05_sql <- .renderSql(handle, paste0(
+      "SELECT CAST(t.", value_col, " AS FLOAT) AS val FROM ", from_clause,
+      where_sql,
+      " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p05
+    ))
+    p95_sql <- .renderSql(handle, paste0(
+      "SELECT CAST(t.", value_col, " AS FLOAT) AS val FROM ", from_clause,
+      where_sql,
+      " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p95
+    ))
+  }
+
+  p05_val <- tryCatch(.executeQuery(handle, p05_sql)$val[1], error = function(e) NA_real_)
+  p95_val <- tryCatch(.executeQuery(handle, p95_sql)$val[1], error = function(e) NA_real_)
+
+  list(p05 = p05_val, p95 = p95_val, n_total = as.integer(n_total))
+}
+
 #' Compute a safe histogram with suppressed low-count bins
 #'
 #' @param handle CDM handle
@@ -592,11 +685,12 @@
 #' @param bins Integer; number of bins
 #' @param cohort_table Character; cohort temp table name (NULL)
 #' @param window List with start/end dates (NULL)
+#' @param breaks Numeric vector; shared bin edges from two-pass pooling (NULL = compute locally)
 #' @return Data frame with bin_start, bin_end, count, suppressed
 #' @keywords internal
 .profileNumericHistogram <- function(handle, table, value_col,
                                       bins = 20L, cohort_table = NULL,
-                                      window = NULL) {
+                                      window = NULL, breaks = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   value_col <- tolower(.validateIdentifier(value_col, "column"))
   bp <- .buildBlueprint(handle)
@@ -656,59 +750,59 @@
                       stringsAsFactors = FALSE))
   }
 
-  # Compute safe range using 5th and 95th percentile approximations
-  # (avoid exact min/max for privacy)
-  offset_p05 <- max(0L, as.integer(floor(n_total * 0.05)) - 1L)
-  offset_p95 <- max(0L, as.integer(floor(n_total * 0.95)) - 1L)
-
-  if (handle$target_dialect == "sqlite") {
-    # SQLite: ORDER BY + LIMIT + OFFSET to approximate percentiles
-    p05_sql <- paste0(
-      "SELECT CAST(t.", value_col, " AS REAL) AS val FROM ", from_clause,
-      where_sql,
-      " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p05
-    )
-    p95_sql <- paste0(
-      "SELECT CAST(t.", value_col, " AS REAL) AS val FROM ", from_clause,
-      where_sql,
-      " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p95
-    )
+  # Use provided breaks (from two-pass pooling) or compute locally
+  if (!is.null(breaks)) {
+    # Shared breaks provided: use them directly
+    bins <- length(breaks) - 1L
   } else {
-    # PostgreSQL / others: use OHDSI SQL TOP convention, rendered via .renderSql
-    p05_sql <- .renderSql(handle, paste0(
-      "SELECT CAST(t.", value_col, " AS FLOAT) AS val FROM ", from_clause,
-      where_sql,
-      " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p05
-    ))
-    p95_sql <- .renderSql(handle, paste0(
-      "SELECT CAST(t.", value_col, " AS FLOAT) AS val FROM ", from_clause,
-      where_sql,
-      " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p95
-    ))
-  }
+    # Compute safe range using 5th and 95th percentile approximations
+    offset_p05 <- max(0L, as.integer(floor(n_total * 0.05)) - 1L)
+    offset_p95 <- max(0L, as.integer(floor(n_total * 0.95)) - 1L)
 
-  p05_val <- tryCatch(.executeQuery(handle, p05_sql)$val[1], error = function(e) NA_real_)
-  p95_val <- tryCatch(.executeQuery(handle, p95_sql)$val[1], error = function(e) NA_real_)
+    if (handle$target_dialect == "sqlite") {
+      p05_sql <- paste0(
+        "SELECT CAST(t.", value_col, " AS REAL) AS val FROM ", from_clause,
+        where_sql,
+        " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p05
+      )
+      p95_sql <- paste0(
+        "SELECT CAST(t.", value_col, " AS REAL) AS val FROM ", from_clause,
+        where_sql,
+        " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p95
+      )
+    } else {
+      p05_sql <- .renderSql(handle, paste0(
+        "SELECT CAST(t.", value_col, " AS FLOAT) AS val FROM ", from_clause,
+        where_sql,
+        " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p05
+      ))
+      p95_sql <- .renderSql(handle, paste0(
+        "SELECT CAST(t.", value_col, " AS FLOAT) AS val FROM ", from_clause,
+        where_sql,
+        " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p95
+      ))
+    }
 
-  if (is.na(p05_val) || is.na(p95_val) || p05_val == p95_val) {
-    # Fallback: if percentiles are equal, return single bin
-    return(data.frame(
-      bin_start = p05_val %||% 0,
-      bin_end = p95_val %||% 0,
-      count = n_total,
-      suppressed = n_total < settings$nfilter_tab,
-      stringsAsFactors = FALSE
-    ))
-  }
+    p05_val <- tryCatch(.executeQuery(handle, p05_sql)$val[1], error = function(e) NA_real_)
+    p95_val <- tryCatch(.executeQuery(handle, p95_sql)$val[1], error = function(e) NA_real_)
 
-  # Build equal-width bins across the safe range
-  bin_width <- (p95_val - p05_val) / bins
-  breaks <- seq(p05_val, p95_val, by = bin_width)
-  # Ensure we have exactly bins + 1 breaks
-  if (length(breaks) < bins + 1L) {
-    breaks <- c(breaks, p95_val)
+    if (is.na(p05_val) || is.na(p95_val) || p05_val == p95_val) {
+      return(data.frame(
+        bin_start = p05_val %||% 0,
+        bin_end = p95_val %||% 0,
+        count = n_total,
+        suppressed = n_total < settings$nfilter_tab,
+        stringsAsFactors = FALSE
+      ))
+    }
+
+    bin_width <- (p95_val - p05_val) / bins
+    breaks <- seq(p05_val, p95_val, by = bin_width)
+    if (length(breaks) < bins + 1L) {
+      breaks <- c(breaks, p95_val)
+    }
+    breaks <- breaks[seq_len(bins + 1L)]
   }
-  breaks <- breaks[seq_len(bins + 1L)]
 
   # Build CASE WHEN for each bin
   case_parts <- character(bins)
@@ -751,15 +845,12 @@
   for (i in seq_len(bins)) {
     col_name <- paste0("bin_", i)
     cnt <- if (col_name %in% names(bin_result)) bin_result[[col_name]][1] else 0L
-    cnt <- as.integer(cnt)
-    if (!is.na(cnt) && cnt < settings$nfilter_tab) {
-      result$count[i] <- NA_integer_
-      result$suppressed[i] <- TRUE
-    } else {
-      result$count[i] <- cnt
-      result$suppressed[i] <- FALSE
-    }
+    result$count[i] <- as.integer(cnt)
+    result$suppressed[i] <- FALSE
   }
+
+  # Drop bins with small counts (no hints)
+  result <- .suppressSmallCounts(result, "count")
 
   result
 }
@@ -909,6 +1000,12 @@
                          "((CAST(strftime('%m', t.", date_col, ") AS INTEGER) + 2) / 3)"),
       "month"   = paste0("strftime('%Y-%m', t.", date_col, ")")
     )
+  } else if (handle$target_dialect == "mysql") {
+    date_expr <- switch(granularity,
+      "year"    = paste0("CAST(YEAR(t.", date_col, ") AS CHAR)"),
+      "quarter" = paste0("CONCAT(YEAR(t.", date_col, "), '-Q', QUARTER(t.", date_col, "))"),
+      "month"   = paste0("DATE_FORMAT(t.", date_col, ", '%Y-%m')")
+    )
   } else {
     # PostgreSQL and other dialects: use EXTRACT
     date_expr <- switch(granularity,
@@ -959,10 +1056,9 @@
                       suppressed = logical(0), stringsAsFactors = FALSE))
   }
 
-  # Suppress bins with count < nfilter_tab
-  result$suppressed <- !is.na(result$n_records) &
-    result$n_records < settings$nfilter_tab
-  result$n_records[result$suppressed] <- NA_integer_
+  # Drop bins with small counts (no hints)
+  result$suppressed <- FALSE
+  result <- .suppressSmallCounts(result, "n_records")
 
   result
 }
@@ -1265,6 +1361,8 @@
       # Date counts by year for concept-filtered records
       if (handle$target_dialect == "sqlite") {
         date_expr <- paste0("strftime('%Y', ", date_col, ")")
+      } else if (handle$target_dialect == "mysql") {
+        date_expr <- paste0("CAST(YEAR(", date_col, ") AS CHAR)")
       } else {
         date_expr <- paste0("CAST(EXTRACT(YEAR FROM ", date_col, ") AS VARCHAR)")
       }
@@ -1411,13 +1509,9 @@
     }
   }
 
-  # Suppress small counts
+  # Suppress small counts (drops rows)
   if (nrow(results) > 0) {
-    results <- .suppressSmallCounts(results, "n_records")
-    results <- .suppressSmallCounts(results, "n_persons")
-    # Filter out rows where n_records == 0 or is NA after suppression
-    results <- results[is.na(results$n_records) | results$n_records > 0, ,
-                       drop = FALSE]
+    results <- .suppressSmallCounts(results, c("n_records", "n_persons"))
   }
 
   results

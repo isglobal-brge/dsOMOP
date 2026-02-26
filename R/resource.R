@@ -96,8 +96,18 @@ OMOPResourceClient <- R6::R6Class(
                               uid = user, pwd = pass))
       }
 
+      if (dbms %in% c("mysql", "mariadb")) {
+        if (!requireNamespace("RMariaDB", quietly = TRUE))
+          stop("RMariaDB package required for MySQL/MariaDB.", call. = FALSE)
+        return(DBI::dbConnect(RMariaDB::MariaDB(),
+                              host = p$host, port = p$port,
+                              dbname = p$database,
+                              user = user, password = pass))
+      }
+
       stop("Unsupported DBMS: '", dbms, "'. ",
-           "Supported: postgresql, sqlite, sql server.", call. = FALSE)
+           "Supported: postgresql, sqlite, sql server, mysql, mariadb.",
+           call. = FALSE)
     }
   ),
 

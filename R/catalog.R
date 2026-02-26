@@ -356,7 +356,14 @@
 #' @keywords internal
 .ql_load_allowlist <- function(package = "dsOMOP") {
   path <- system.file("catalog", "query_allowlist.json", package = package)
-  if (path == "" || !file.exists(path)) return(list())
+  if (path == "" || !file.exists(path)) {
+    settings <- .omopDisclosureSettings()
+    if (isTRUE(settings$catalog_strict)) {
+      warning("Allowlist file not found and strict catalog mode is enabled. ",
+              "All catalog queries will be blocked.", call. = FALSE)
+    }
+    return(list())
+  }
 
   tryCatch({
     raw <- readLines(path, warn = FALSE)
@@ -437,11 +444,20 @@
   queries <- .ql_load_queries()
   allowlist <- .ql_load_allowlist()
 
+  # Check strict mode
+  settings <- .omopDisclosureSettings()
+  strict <- isTRUE(settings$catalog_strict)
+  if (!is.null(handle$config$catalog_strict))
+    strict <- isTRUE(handle$config$catalog_strict)
+
   # Build metadata data frame
   entries <- list()
   for (qid in names(queries)) {
     q <- queries[[qid]]
     al <- allowlist[[qid]]
+
+    # In strict mode, skip queries not on the allowlist
+    if (strict && is.null(al)) next
 
     # Only include queries on the allowlist (or all if no allowlist)
     safety_class <- if (!is.null(al)) al$class else {
@@ -542,6 +558,16 @@
   # Check allowlist
   allowlist <- .ql_load_allowlist()
   al <- allowlist[[query_id]]
+
+  # Enforce strict allowlist mode
+  settings <- .omopDisclosureSettings()
+  strict <- isTRUE(settings$catalog_strict)
+  if (!is.null(handle$config$catalog_strict))
+    strict <- isTRUE(handle$config$catalog_strict)
+  if (strict && is.null(al)) {
+    stop("Query '", query_id, "' not on allowlist (strict mode).", call. = FALSE)
+  }
+
   safety <- if (!is.null(al)) al else .ql_classify(q$sql, q$mode)
   safety_class <- safety$class %||% safety[["class"]]
 
@@ -631,17 +657,18 @@
     sensitive <- cl$sensitive_fields_detected
   }
 
-  # Suppress small counts in sensitive columns
+  # Suppress small counts by dropping rows with any sensitive column below threshold
+  sensitive_matched <- character(0)
   for (field in sensitive) {
     field_lower <- tolower(field)
     matching_col <- intersect(field_lower, tolower(names(result)))
     if (length(matching_col) > 0) {
       col_idx <- which(tolower(names(result)) == matching_col[1])
-      col_name <- names(result)[col_idx[1]]
-      mask <- !is.na(result[[col_name]]) &
-              result[[col_name]] < settings$nfilter_tab
-      result[[col_name]][mask] <- NA_real_
+      sensitive_matched <- c(sensitive_matched, names(result)[col_idx[1]])
     }
+  }
+  if (length(sensitive_matched) > 0) {
+    result <- .suppressSmallCounts(result, sensitive_matched)
   }
 
   # Cap rows to prevent long-tail disclosure
@@ -657,24 +684,16 @@
 
 # --- SDC Helpers -------------------------------------------------------------
 
-#' Suppress counts below threshold in specified columns
+#' Suppress counts below threshold by dropping rows
 #'
 #' @param df Data frame
-#' @param sensitive_cols Character vector; column names to suppress
+#' @param sensitive_cols Character vector; column names to check
 #' @param threshold Numeric; minimum count threshold
-#' @return Data frame with small values replaced by NA
+#' @return Data frame with disclosive rows removed
 #' @keywords internal
 .catalog_suppress_sensitive <- function(df, sensitive_cols, threshold = NULL) {
   if (is.null(threshold)) {
     threshold <- .omopDisclosureSettings()$nfilter_tab
   }
-
-  for (col in sensitive_cols) {
-    if (col %in% names(df)) {
-      mask <- !is.na(df[[col]]) & is.numeric(df[[col]]) &
-              df[[col]] < threshold
-      df[[col]][mask] <- NA_real_
-    }
-  }
-  df
+  .suppressSmallCounts(df, sensitive_cols)
 }

@@ -27,7 +27,9 @@
                                 getOption("default.nfilter.noise", 0.25))),
     privacy_level          = getOption("datashield.privacyControlLevel",
                                 getOption("default.datashield.privacyControlLevel",
-                                          "banana"))
+                                          "banana")),
+    catalog_strict         = as.logical(getOption("dsomop.catalog_strict",
+                                getOption("default.dsomop.catalog_strict", TRUE)))
   )
 }
 
@@ -70,21 +72,30 @@
   invisible(TRUE)
 }
 
-#' Suppress small cell counts in a frequency table
+#' Suppress small cell counts by dropping rows
 #'
-#' @param df Data frame with a count column
-#' @param count_col Character; name of the count column
-#' @return Data frame with small counts replaced by NA
+#' Rows with any count column below the disclosure threshold are removed
+#' entirely. This prevents leaking suppression patterns that could be used
+#' to reverse-engineer individual-level data.
+#'
+#' @param df Data frame with one or more count columns
+#' @param count_cols Character vector; names of count columns to check
+#' @return Data frame with disclosive rows removed
 #' @keywords internal
-.suppressSmallCounts <- function(df, count_col = "n") {
+.suppressSmallCounts <- function(df, count_cols = "n") {
+  if (nrow(df) == 0) return(df)
   settings <- .omopDisclosureSettings()
   threshold <- settings$nfilter_tab
-
-  if (count_col %in% names(df) && nrow(df) > 0) {
-    mask <- !is.na(df[[count_col]]) & df[[count_col]] < threshold
-    df[[count_col]][mask] <- NA_real_
+  count_cols <- intersect(count_cols, names(df))
+  if (length(count_cols) == 0) return(df)
+  safe <- rep(TRUE, nrow(df))
+  for (col in count_cols) {
+    vals <- df[[col]]
+    safe <- safe & (is.na(vals) | vals >= threshold)
   }
-  df
+  result <- df[safe, , drop = FALSE]
+  rownames(result) <- NULL
+  result
 }
 
 #' Check if returning distinct levels is safe
@@ -240,7 +251,7 @@
 #' @keywords internal
 .classifyFilter <- function(filter_type, filter_params = list()) {
   # Always allowed: categorical with known small domains
-  always_allowed <- c("sex", "age_group", "cohort", "concept_set")
+  always_allowed <- c("sex", "age_group", "cohort", "concept_set", "value_bin")
 
   # Constrained: allowed with validation
   constrained <- c("age_range", "has_concept", "date_range", "min_count")

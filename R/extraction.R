@@ -406,6 +406,11 @@
     },
     "is_null"  = paste0(col_ref, " IS NULL"),
     "not_null" = paste0(col_ref, " IS NOT NULL"),
+    "value_bin" = {
+      lo <- as.numeric(value$lower)
+      hi <- as.numeric(value$upper)
+      paste0(col_ref, " >= ", lo, " AND ", col_ref, " < ", hi)
+    },
     stop("Unknown filter op: '", op, "'", call. = FALSE)
   )
 }
@@ -1007,14 +1012,13 @@
                                  tbl_row$schema_category[1])
   qualified <- .qualifyTable(handle, outcome_table, schema)
 
-  person_ids_str <- paste(as.integer(cohort_df$person_id), collapse = ", ")
   concept_ids_str <- paste(outcome_concepts, collapse = ", ")
 
   outcome_sql <- paste0(
     "SELECT t.person_id, t.", date_col, " AS outcome_date",
     " FROM ", qualified, " AS t",
-    " WHERE t.", concept_col, " IN (", concept_ids_str, ")",
-    " AND t.person_id IN (", person_ids_str, ")"
+    " INNER JOIN ", cohort_table, " AS c ON c.subject_id = t.person_id",
+    " WHERE t.", concept_col, " IN (", concept_ids_str, ")"
   )
   outcome_df <- .executeQuery(handle, outcome_sql)
 
