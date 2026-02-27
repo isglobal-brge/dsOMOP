@@ -126,7 +126,7 @@ test_that("achillesGetResults suppresses counts below threshold", {
   })
 })
 
-test_that("achillesGetDistributions retrieves dist stats", {
+test_that("achillesGetDistributions retrieves dist stats without min/max (Fix B)", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
@@ -135,16 +135,18 @@ test_that("achillesGetDistributions retrieves dist stats", {
     result <- .achillesGetDistributions(handle, c(3L, 113L))
     expect_true(is.data.frame(result))
     expect_true(nrow(result) > 0)
-    expect_true(all(c("min_value", "max_value", "avg_value", "median_value") %in%
-                    names(result)))
-    # Age dist (analysis 113) should have plausible values
+    # Fix B: min_value and max_value must NOT be returned
+    expect_false("min_value" %in% names(result))
+    expect_false("max_value" %in% names(result))
+    # Safe stats should be present
+    expect_true(all(c("avg_value", "median_value") %in% names(result)))
     age <- result[result$analysis_id == 113, ]
     expect_true(nrow(age) > 0)
     expect_true(!is.na(age$avg_value[1]))
   })
 })
 
-test_that("achillesGetDistributions suppresses rows with small counts", {
+test_that("achillesGetDistributions drops rows with small counts (Fix A)", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
@@ -155,10 +157,8 @@ test_that("achillesGetDistributions suppresses rows with small counts", {
 
   withr::with_options(list(nfilter.tab = 3), {
     result <- .achillesGetDistributions(handle, 999L)
-    expect_true(nrow(result) > 0)
-    expect_true(is.na(result$count_value[1]))
-    expect_true(is.na(result$avg_value[1]))
-    expect_true(is.na(result$median_value[1]))
+    # Fix A: rows below threshold are DROPPED entirely (no NA skeletons)
+    expect_equal(nrow(result), 0)
   })
 })
 
