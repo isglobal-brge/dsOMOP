@@ -211,13 +211,14 @@
             " (evidence: v5.4=", struct$evidence_54,
             ", v5.3=", struct$evidence_53, ")")
   } else if (!is.null(cdm_version) && !is.null(struct)) {
+    # cdm_source is authoritative; structural detection is advisory only
     normalized <- sub("^[vV]", "", trimws(cdm_version))
     normalized <- sub("\\.0$", "", normalized)
     if (normalized != struct$version) {
-      warning("cdm_source reports version '", cdm_version,
+      message("Note: cdm_source reports version '", cdm_version,
               "' but table structure suggests '", struct$version,
               "' (evidence: v5.4=", struct$evidence_54,
-              ", v5.3=", struct$evidence_53, ")", call. = FALSE)
+              ", v5.3=", struct$evidence_53, "). Using cdm_source version.")
     }
   }
 
@@ -690,22 +691,44 @@
     character(0)
   }
 
+  # Count total persons (privacy-safe: only the count, no individual data)
+  total_persons <- tryCatch({
+    if ("person" %in% present$table_name) {
+      person_qualified <- .qualifyTable(handle, "person")
+      sql <- paste0("SELECT COUNT(*) AS n FROM ", person_qualified)
+      res <- .executeQuery(handle, sql)
+      as.numeric(res$n[1])
+    } else {
+      NULL
+    }
+  }, error = function(e) NULL)
+
+  # Disclosure settings (from DataSHIELD server options)
+  disclosure <- tryCatch(.omopDisclosureSettings(), error = function(e) NULL)
+
+  # Filter tables to only those recognized by CDM spec
+  spec_tables <- if (!is.null(bp$spec_version)) {
+    spec <- .loadCdmSpec(bp$spec_version)
+    if (!is.null(spec)) tolower(spec$table_level$cdmTableName) else NULL
+  } else NULL
+
   list(
     hash = sig_hash,
     n_tables = nrow(present),
+    total_persons = total_persons,
     tables = present$table_name,
+    cdm_tables = if (!is.null(spec_tables)) {
+      intersect(present$table_name, spec_tables)
+    } else present$table_name,
     schema_categories = stats::setNames(present$schema_category, present$table_name),
     cdm_info = bp$cdm_info,
-    dbms = handle$dbms,
-    cdm_schema = handle$cdm_schema,
-    vocab_schema = handle$vocab_schema,
-    results_schema = handle$results_schema,
     spec_version = bp$spec_version,
     spec_source = bp$spec_source,
     supported_versions = supported_versions,
     achilles_available = isTRUE(handle$has_achilles),
     achilles_tables = intersect(achilles_table_names,
-                                 bp$tables$table_name[bp$tables$present_in_db])
+                                 bp$tables$table_name[bp$tables$present_in_db]),
+    disclosure = disclosure
   )
 }
 
