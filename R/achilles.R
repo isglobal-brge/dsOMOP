@@ -200,60 +200,43 @@
 
 #' Get Achilles results (count-based analyses)
 #'
+#' Returns count-based Achilles results for the requested analysis IDs.
+#' Arbitrary stratum filtering is not supported to prevent targeted probing
+#' of rare strata (Fix C). Rows with count_value below nfilter.tab are
+#' dropped entirely ("no hints" policy).
+#'
 #' @param handle CDM handle
 #' @param analysis_ids Integer vector; which analysis IDs to retrieve
-#' @param stratum_filters Named list; e.g. list(stratum_1 = "201820")
-#' @param min_cell_count Integer; minimum count for disclosure (NULL = use default)
 #' @return data.frame with analysis_id, stratum_1..5, count_value
 #' @keywords internal
-.achillesGetResults <- function(handle, analysis_ids,
-                                 stratum_filters = NULL,
-                                 min_cell_count = NULL) {
+.achillesGetResults <- function(handle, analysis_ids) {
   bp <- .buildBlueprint(handle)
-  if (!"achilles_results" %in% bp$tables$table_name[bp$tables$present_in_db]) {
-    return(data.frame(analysis_id = integer(0), stratum_1 = character(0),
+  empty <- data.frame(analysis_id = integer(0), stratum_1 = character(0),
                       stratum_2 = character(0), stratum_3 = character(0),
                       stratum_4 = character(0), stratum_5 = character(0),
-                      count_value = numeric(0), stringsAsFactors = FALSE))
+                      count_value = numeric(0), stringsAsFactors = FALSE)
+
+  if (!"achilles_results" %in% bp$tables$table_name[bp$tables$present_in_db]) {
+    return(empty)
   }
 
   qualified <- .qualifyTable(handle, "achilles_results",
                               handle$results_schema)
   analysis_ids <- as.integer(analysis_ids)
 
-  # Build WHERE clause
   id_list <- paste(analysis_ids, collapse = ", ")
-  where_parts <- paste0("analysis_id IN (", id_list, ")")
-
-  if (!is.null(stratum_filters) && is.list(stratum_filters)) {
-    for (nm in names(stratum_filters)) {
-      if (nm %in% c("stratum_1", "stratum_2", "stratum_3",
-                     "stratum_4", "stratum_5")) {
-        val <- as.character(stratum_filters[[nm]])
-        where_parts <- c(where_parts,
-          paste0(nm, " = '", gsub("'", "''", val), "'"))
-      }
-    }
-  }
 
   sql <- paste0(
     "SELECT analysis_id, stratum_1, stratum_2, stratum_3, stratum_4, ",
     "stratum_5, count_value FROM ", qualified,
-    " WHERE ", paste(where_parts, collapse = " AND "),
+    " WHERE analysis_id IN (", id_list, ")",
     " ORDER BY analysis_id, stratum_1, stratum_2"
   )
 
-  result <- tryCatch(.executeQuery(handle, sql),
-                     error = function(e) {
-    data.frame(analysis_id = integer(0), stratum_1 = character(0),
-               stratum_2 = character(0), stratum_3 = character(0),
-               stratum_4 = character(0), stratum_5 = character(0),
-               count_value = numeric(0), stringsAsFactors = FALSE)
-  })
-
+  result <- tryCatch(.executeQuery(handle, sql), error = function(e) empty)
   if (nrow(result) == 0) return(result)
 
-  # Disclosure control: suppress small counts
+  # Disclosure control: suppress small counts (drop rows, no hints)
   result <- .suppressSmallCounts(result, "count_value")
 
   result
@@ -261,21 +244,23 @@
 
 #' Get Achilles distribution results
 #'
+#' Returns distribution statistics from achilles_results_dist. Extreme values
+#' (min_value, max_value) are never returned to prevent identification of
+#' outlier individuals. Rows with count_value below the disclosure threshold
+#' are dropped entirely (no NA skeleton rows / "no hints" policy).
+#'
 #' @param handle CDM handle
 #' @param analysis_ids Integer vector
-#' @param stratum_filters Named list; optional stratum filters
 #' @return data.frame with analysis_id, stratum_1..5, count_value,
-#'   min/max/avg/stdev/median/p10/p25/p75/p90
+#'   avg/stdev/median/p10/p25/p75/p90 (no min/max)
 #' @keywords internal
-.achillesGetDistributions <- function(handle, analysis_ids,
-                                       stratum_filters = NULL) {
+.achillesGetDistributions <- function(handle, analysis_ids) {
   bp <- .buildBlueprint(handle)
   empty <- data.frame(
     analysis_id = integer(0), stratum_1 = character(0),
     stratum_2 = character(0), stratum_3 = character(0),
     stratum_4 = character(0), stratum_5 = character(0),
-    count_value = numeric(0), min_value = numeric(0),
-    max_value = numeric(0), avg_value = numeric(0),
+    count_value = numeric(0), avg_value = numeric(0),
     stdev_value = numeric(0), median_value = numeric(0),
     p10_value = numeric(0), p25_value = numeric(0),
     p75_value = numeric(0), p90_value = numeric(0),
@@ -291,44 +276,24 @@
   analysis_ids <- as.integer(analysis_ids)
 
   id_list <- paste(analysis_ids, collapse = ", ")
-  where_parts <- paste0("analysis_id IN (", id_list, ")")
 
-  if (!is.null(stratum_filters) && is.list(stratum_filters)) {
-    for (nm in names(stratum_filters)) {
-      if (nm %in% c("stratum_1", "stratum_2", "stratum_3",
-                     "stratum_4", "stratum_5")) {
-        val <- as.character(stratum_filters[[nm]])
-        where_parts <- c(where_parts,
-          paste0(nm, " = '", gsub("'", "''", val), "'"))
-      }
-    }
-  }
-
+  # Fix B: min_value and max_value are never selected — extreme values can
+  # identify individuals (e.g. unique age, unique lab result).
   sql <- paste0(
     "SELECT analysis_id, stratum_1, stratum_2, stratum_3, stratum_4, ",
-    "stratum_5, count_value, min_value, max_value, avg_value, stdev_value, ",
+    "stratum_5, count_value, avg_value, stdev_value, ",
     "median_value, p10_value, p25_value, p75_value, p90_value FROM ",
     qualified,
-    " WHERE ", paste(where_parts, collapse = " AND "),
+    " WHERE analysis_id IN (", id_list, ")",
     " ORDER BY analysis_id, stratum_1"
   )
 
   result <- tryCatch(.executeQuery(handle, sql), error = function(e) empty)
   if (nrow(result) == 0) return(result)
 
-  # Disclosure: suppress entire row stats if count_value is too small
-  settings <- .omopDisclosureSettings()
-  threshold <- settings$nfilter_tab
-  small <- !is.na(result$count_value) & result$count_value < threshold
-  if (any(small)) {
-    result$count_value[small] <- NA_real_
-    stat_cols <- c("min_value", "max_value", "avg_value", "stdev_value",
-                   "median_value", "p10_value", "p25_value", "p75_value",
-                   "p90_value")
-    for (col in stat_cols) {
-      if (col %in% names(result)) result[[col]][small] <- NA_real_
-    }
-  }
+  # Fix A: use the same row-dropping suppression as count-results
+  # (no NA skeleton rows — "no hints" policy)
+  result <- .suppressSmallCounts(result, "count_value")
 
   result
 }

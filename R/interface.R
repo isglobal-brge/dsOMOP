@@ -582,30 +582,35 @@ omopAchillesAnalysesDS <- function(omop_symbol, domain = NULL) {
 
 #' Get Achilles count results (Aggregate)
 #'
+#' Returns count-based Achilles results for the given analysis IDs.
+#' Arbitrary stratum filtering and client-supplied min_cell_count are
+#' intentionally not supported to prevent probing attacks and threshold
+#' weakening (Fixes C, D). Disclosure threshold is always server-controlled
+#' via nfilter.tab.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param analysis_ids Integer vector; analysis IDs
-#' @param stratum_filters Named list; stratum filters
-#' @param min_cell_count Integer; minimum cell count
 #' @return Data frame with analysis results
 #' @export
-omopAchillesResultsDS <- function(omop_symbol, analysis_ids,
-                                   stratum_filters = NULL,
-                                   min_cell_count = NULL) {
+omopAchillesResultsDS <- function(omop_symbol, analysis_ids) {
   handle <- .getHandle(omop_symbol)
-  .achillesGetResults(handle, analysis_ids, stratum_filters, min_cell_count)
+  .achillesGetResults(handle, analysis_ids)
 }
 
 #' Get Achilles distribution results (Aggregate)
 #'
+#' Returns distribution statistics (avg, stdev, median, percentiles) for the
+#' given analysis IDs. Extreme values (min/max) are never returned to prevent
+#' identification of outlier individuals. Arbitrary stratum filtering is not
+#' supported (Fix C).
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param analysis_ids Integer vector; analysis IDs
-#' @param stratum_filters Named list; stratum filters
-#' @return Data frame with distribution statistics
+#' @return Data frame with distribution statistics (no min/max)
 #' @export
-omopAchillesDistributionDS <- function(omop_symbol, analysis_ids,
-                                        stratum_filters = NULL) {
+omopAchillesDistributionDS <- function(omop_symbol, analysis_ids) {
   handle <- .getHandle(omop_symbol)
-  .achillesGetDistributions(handle, analysis_ids, stratum_filters)
+  .achillesGetDistributions(handle, analysis_ids)
 }
 
 #' Get Achilles analysis catalog (Aggregate)

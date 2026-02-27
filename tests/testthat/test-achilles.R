@@ -107,19 +107,10 @@ test_that("achillesGetResults retrieves correct analysis_ids", {
   })
 })
 
-test_that("achillesGetResults applies stratum_filters", {
-  handle <- create_test_handle()
-  on.exit(cleanup_handle(handle))
-  .buildBlueprint(handle)
-
-  withr::with_options(list(nfilter.tab = 1), {
-    result <- .achillesGetResults(handle, 400L,
-                                  stratum_filters = list(stratum_1 = "201820"))
-    expect_true(is.data.frame(result))
-    expect_true(nrow(result) > 0)
-    expect_true(all(result$stratum_1 == "201820"))
-    expect_equal(result$count_value[1], 6)
-  })
+test_that("achillesGetResults no longer accepts stratum_filters (Fix C)", {
+  # Fix C: arbitrary stratum filtering removed to prevent probing attacks.
+  # .achillesGetResults() now only accepts (handle, analysis_ids).
+  expect_equal(length(formals(.achillesGetResults)), 2)
 })
 
 test_that("achillesGetResults suppresses counts below threshold", {
