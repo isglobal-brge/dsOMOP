@@ -1,14 +1,14 @@
 # ==============================================================================
-# dsOMOP v2 - Query Catalog System
+# dsOMOP v2 - Query Library System
 # ==============================================================================
-# Provides a curated, disclosure-safe catalog of SQL query templates for
+# Provides a curated, disclosure-safe library of SQL query templates for
 # OMOP CDM exploration. Inspired by OHDSI QueryLibrary, with DataSHIELD-
 # aligned SDC enforcement at runtime.
 #
 # Architecture:
-#   - Queries stored as Markdown files in inst/catalog/queries/
+#   - Queries stored as Markdown files in inst/queries/queries/
 #   - Static safety classification (SAFE_AGGREGATE / SAFE_ASSIGN / BLOCKED)
-#   - CI-generated allowlist in inst/catalog/query_allowlist.json
+#   - CI-generated allowlist in inst/queries/query_allowlist.json
 #   - Runtime SDC enforcement via DataSHIELD nfilter settings
 #   - Provider interface for extensibility (native, QueryLibrary, Achilles)
 # ==============================================================================
@@ -346,7 +346,7 @@
 
 # --- Allowlist Management ----------------------------------------------------
 
-#' Load the query allowlist from inst/catalog/
+#' Load the query allowlist from inst/queries/
 #'
 #' Reads the curated allowlist JSON file that maps query IDs to their safety
 #' classification and metadata. Falls back to an empty list if not found.
@@ -355,12 +355,12 @@
 #' @return Named list keyed by query ID
 #' @keywords internal
 .ql_load_allowlist <- function(package = "dsOMOP") {
-  path <- system.file("catalog", "query_allowlist.json", package = package)
+  path <- system.file("queries", "query_allowlist.json", package = package)
   if (path == "" || !file.exists(path)) {
     settings <- .omopDisclosureSettings()
-    if (isTRUE(settings$catalog_strict)) {
-      warning("Allowlist file not found and strict catalog mode is enabled. ",
-              "All catalog queries will be blocked.", call. = FALSE)
+    if (isTRUE(settings$query_strict)) {
+      warning("Allowlist file not found and strict query library mode is enabled. ",
+              "All query templates will be blocked.", call. = FALSE)
     }
     return(list())
   }
@@ -397,7 +397,7 @@
 
 # --- Query Template Loading --------------------------------------------------
 
-#' Load all query templates from inst/catalog/queries/
+#' Load all query templates from inst/queries/queries/
 #'
 #' Reads all .md files in the queries directory and parses them into
 #' structured query objects.
@@ -406,7 +406,7 @@
 #' @return Named list of parsed query objects, keyed by query ID
 #' @keywords internal
 .ql_load_queries <- function(package = "dsOMOP") {
-  queries_dir <- system.file("catalog", "queries", package = package)
+  queries_dir <- system.file("queries", "queries", package = package)
   if (queries_dir == "" || !dir.exists(queries_dir)) return(list())
 
   md_files <- list.files(queries_dir, pattern = "\\.md$",
@@ -428,9 +428,9 @@
   result
 }
 
-# --- Catalog Operations (Internal) -------------------------------------------
+# --- Query Library Operations (Internal) -------------------------------------
 
-#' List available catalog queries
+#' List available query templates
 #'
 #' Returns metadata for all queries that are on the allowlist and match
 #' the requested filters.
@@ -440,15 +440,15 @@
 #' @param provider Character; "native" (default) or "all"
 #' @return Data frame with query metadata
 #' @keywords internal
-.catalog_list <- function(handle, domain = NULL, provider = "native") {
+.query_list <- function(handle, domain = NULL, provider = "native") {
   queries <- .ql_load_queries()
   allowlist <- .ql_load_allowlist()
 
   # Check strict mode
   settings <- .omopDisclosureSettings()
-  strict <- isTRUE(settings$catalog_strict)
-  if (!is.null(handle$config$catalog_strict))
-    strict <- isTRUE(handle$config$catalog_strict)
+  strict <- isTRUE(settings$query_strict)
+  if (!is.null(handle$config$query_strict))
+    strict <- isTRUE(handle$config$query_strict)
 
   # Build metadata data frame
   entries <- list()
@@ -503,17 +503,17 @@
   do.call(rbind, entries)
 }
 
-#' Get detailed metadata for a specific catalog query
+#' Get detailed metadata for a specific query template
 #'
 #' @param handle CDM handle (unused, for future schema validation)
 #' @param query_id Character; query ID
 #' @return Named list with full query metadata (excluding SQL)
 #' @keywords internal
-.catalog_get <- function(handle, query_id) {
+.query_get <- function(handle, query_id) {
   queries <- .ql_load_queries()
   q <- queries[[query_id]]
   if (is.null(q)) {
-    stop("Query '", query_id, "' not found in catalog.", call. = FALSE)
+    stop("Query '", query_id, "' not found in query library.", call. = FALSE)
   }
 
   allowlist <- .ql_load_allowlist()
@@ -535,24 +535,24 @@
   )
 }
 
-#' Execute a catalog query with SDC enforcement
+#' Execute a query template with SDC enforcement
 #'
 #' Renders the SQL template with user inputs, translates to target dialect,
 #' executes against the database, and applies disclosure controls.
 #'
 #' @param handle CDM handle
-#' @param query_id Character; query ID from catalog
+#' @param query_id Character; query ID from query library
 #' @param inputs Named list; parameter values for the query template
 #' @param mode Character; "aggregate" or "assign"
 #' @return For aggregate: disclosure-controlled data frame.
 #'   For assign: invisible TRUE (data assigned server-side).
 #' @keywords internal
-.catalog_exec <- function(handle, query_id, inputs = list(),
+.query_exec <- function(handle, query_id, inputs = list(),
                           mode = "aggregate") {
   queries <- .ql_load_queries()
   q <- queries[[query_id]]
   if (is.null(q)) {
-    stop("Query '", query_id, "' not found in catalog.", call. = FALSE)
+    stop("Query '", query_id, "' not found in query library.", call. = FALSE)
   }
 
   # Check allowlist
@@ -561,9 +561,9 @@
 
   # Enforce strict allowlist mode
   settings <- .omopDisclosureSettings()
-  strict <- isTRUE(settings$catalog_strict)
-  if (!is.null(handle$config$catalog_strict))
-    strict <- isTRUE(handle$config$catalog_strict)
+  strict <- isTRUE(settings$query_strict)
+  if (!is.null(handle$config$query_strict))
+    strict <- isTRUE(handle$config$query_strict)
   if (strict && is.null(al)) {
     stop("Query '", query_id, "' not on allowlist (strict mode).", call. = FALSE)
   }
@@ -691,7 +691,7 @@
 #' @param threshold Numeric; minimum count threshold
 #' @return Data frame with disclosive rows removed
 #' @keywords internal
-.catalog_suppress_sensitive <- function(df, sensitive_cols, threshold = NULL) {
+.query_suppress_sensitive <- function(df, sensitive_cols, threshold = NULL) {
   if (is.null(threshold)) {
     threshold <- .omopDisclosureSettings()$nfilter_tab
   }

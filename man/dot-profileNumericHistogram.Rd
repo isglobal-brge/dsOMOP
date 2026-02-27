@@ -10,7 +10,8 @@
   value_col,
   bins = 20L,
   cohort_table = NULL,
-  window = NULL
+  window = NULL,
+  breaks = NULL
 )
 }
 \arguments{
@@ -25,6 +26,8 @@
 \item{cohort_table}{Character; cohort temp table name (NULL)}
 
 \item{window}{List with start/end dates (NULL)}
+
+\item{breaks}{Numeric vector; shared bin edges from two-pass pooling (NULL = compute locally)}
 }
 \value{
 Data frame with bin_start, bin_end, count, suppressed

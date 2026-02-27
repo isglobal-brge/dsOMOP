@@ -2,19 +2,21 @@
 % Please edit documentation in R/disclosure.R
 \name{.suppressSmallCounts}
 \alias{.suppressSmallCounts}
-\title{Suppress small cell counts in a frequency table}
+\title{Suppress small cell counts by dropping rows}
 \usage{
-.suppressSmallCounts(df, count_col = "n")
+.suppressSmallCounts(df, count_cols = "n")
 }
 \arguments{
-\item{df}{Data frame with a count column}
+\item{df}{Data frame with one or more count columns}
 
-\item{count_col}{Character; name of the count column}
+\item{count_cols}{Character vector; names of count columns to check}
 }
 \value{
-Data frame with small counts replaced by NA
+Data frame with disclosive rows removed
 }
 \description{
-Suppress small cell counts in a frequency table
+Rows with any count column below the disclosure threshold are removed
+entirely. This prevents leaking suppression patterns that could be used
+to reverse-engineer individual-level data.
 }
 \keyword{internal}

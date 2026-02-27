@@ -1,5 +1,5 @@
 # ==============================================================================
-# Unit Tests: Catalog System (Query Templates, Classification, SDC)
+# Unit Tests: Query Template System (Templates, Classification, SDC)
 # ==============================================================================
 
 # --- Markdown Parser ----------------------------------------------------------
@@ -321,13 +321,13 @@ test_that(".ql_load_queries: all templates have required metadata", {
   }
 })
 
-# --- Catalog List (Internal) -------------------------------------------------
+# --- Query List (Internal) ---------------------------------------------------
 
-test_that(".catalog_list: returns data frame with expected columns", {
-  # Use a mock handle (catalog_list only uses queries + allowlist, not handle)
+test_that(".query_list: returns data frame with expected columns", {
+  # Use a mock handle (query_list only uses queries + allowlist, not handle)
   mock_handle <- list()
 
-  result <- dsOMOP:::.catalog_list(mock_handle)
+  result <- dsOMOP:::.query_list(mock_handle)
 
   expect_true(is.data.frame(result))
   expected_cols <- c("id", "group", "name", "description", "mode",
@@ -337,11 +337,11 @@ test_that(".catalog_list: returns data frame with expected columns", {
                  paste(setdiff(expected_cols, names(result)), collapse = ", ")))
 })
 
-test_that(".catalog_list: filters by domain", {
+test_that(".query_list: filters by domain", {
   mock_handle <- list()
 
-  all_queries <- dsOMOP:::.catalog_list(mock_handle)
-  cond_queries <- dsOMOP:::.catalog_list(mock_handle, domain = "Condition")
+  all_queries <- dsOMOP:::.query_list(mock_handle)
+  cond_queries <- dsOMOP:::.query_list(mock_handle, domain = "Condition")
 
   if (nrow(all_queries) > 0 && nrow(cond_queries) > 0) {
     expect_true(nrow(cond_queries) <= nrow(all_queries))
@@ -349,13 +349,13 @@ test_that(".catalog_list: filters by domain", {
   }
 })
 
-test_that(".catalog_list: excludes BLOCKED queries", {
+test_that(".query_list: excludes BLOCKED queries from listing", {
   mock_handle <- list()
-  result <- dsOMOP:::.catalog_list(mock_handle)
+  result <- dsOMOP:::.query_list(mock_handle)
 
   if (nrow(result) > 0) {
     expect_false(any(result$class == "BLOCKED"),
-      info = "BLOCKED queries should not appear in catalog list")
+      info = "BLOCKED queries should not appear in query list")
   }
 })
 
@@ -388,7 +388,7 @@ test_that("all allowlisted queries pass classifier validation", {
 
 # --- SDC Suppression ---------------------------------------------------------
 
-test_that(".catalog_suppress_sensitive: drops rows with small counts", {
+test_that(".query_suppress_sensitive: drops rows with small counts", {
   withr::with_options(list(nfilter.tab = 3), {
     df <- data.frame(
       concept = c("A", "B", "C", "D"),
@@ -397,7 +397,7 @@ test_that(".catalog_suppress_sensitive: drops rows with small counts", {
       stringsAsFactors = FALSE
     )
 
-    result <- dsOMOP:::.catalog_suppress_sensitive(
+    result <- dsOMOP:::.query_suppress_sensitive(
       df, c("n_persons", "n_records"), threshold = 3
     )
 
@@ -409,24 +409,24 @@ test_that(".catalog_suppress_sensitive: drops rows with small counts", {
   })
 })
 
-test_that(".catalog_suppress_sensitive: handles missing columns gracefully", {
+test_that(".query_suppress_sensitive: handles missing columns gracefully", {
   df <- data.frame(x = 1:3, y = 4:6, stringsAsFactors = FALSE)
 
-  result <- dsOMOP:::.catalog_suppress_sensitive(
+  result <- dsOMOP:::.query_suppress_sensitive(
     df, c("nonexistent_col"), threshold = 3
   )
 
   expect_equal(result, df)
 })
 
-test_that(".catalog_suppress_sensitive: handles NA values", {
+test_that(".query_suppress_sensitive: handles NA values", {
   df <- data.frame(
     concept = c("A", "B"),
     n_persons = c(NA_real_, 5),
     stringsAsFactors = FALSE
   )
 
-  result <- dsOMOP:::.catalog_suppress_sensitive(
+  result <- dsOMOP:::.query_suppress_sensitive(
     df, "n_persons", threshold = 3
   )
 

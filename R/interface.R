@@ -622,14 +622,14 @@ omopAchillesCatalogDS <- function(omop_symbol) {
 }
 
 # ==============================================================================
-# CATALOG METHODS (Query Template Repository)
+# QUERY LIBRARY METHODS (Query Template Repository)
 # ==============================================================================
 
-#' List catalog queries (Aggregate)
+#' List query library templates (Aggregate)
 #'
-#' Returns metadata for all available catalog queries that pass safety
+#' Returns metadata for all available query templates that pass safety
 #' classification. Queries are sourced from the curated allowlist and
-#' Markdown templates in \code{inst/catalog/queries/}.
+#' Markdown templates in \code{inst/queries/queries/}.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param domain Character; optional domain/group filter (e.g., "Condition")
@@ -637,31 +637,31 @@ omopAchillesCatalogDS <- function(omop_symbol) {
 #' @return Data frame with query ID, name, group, description, mode, class,
 #'   poolable flag, CDM version, and number of input parameters
 #' @export
-omopCatalogListDS <- function(omop_symbol, domain = NULL,
+omopQueryListDS <- function(omop_symbol, domain = NULL,
                                provider = "native") {
   handle <- .getHandle(omop_symbol)
-  .catalog_list(handle, domain, provider)
+  .query_list(handle, domain, provider)
 }
 
-#' Get catalog query details (Aggregate)
+#' Get query template details (Aggregate)
 #'
-#' Returns full metadata for a specific catalog query, including input
+#' Returns full metadata for a specific query template, including input
 #' parameters, output schema, and sensitive field annotations.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
-#' @param query_id Character; the query ID from the catalog
+#' @param query_id Character; the query ID from the query library
 #' @return Named list with query metadata (id, name, description, inputs,
 #'   outputs, sensitive_fields, class, poolable)
 #' @export
-omopCatalogGetDS <- function(omop_symbol, query_id) {
+omopQueryGetDS <- function(omop_symbol, query_id) {
   handle <- .getHandle(omop_symbol)
   .validateIdentifier(query_id, "query_id")
-  .catalog_get(handle, query_id)
+  .query_get(handle, query_id)
 }
 
-#' Execute a catalog query (Aggregate)
+#' Execute a query template (Aggregate)
 #'
-#' Executes a catalog query template against the database with DataSHIELD-
+#' Executes a query template against the database with DataSHIELD-
 #' aligned disclosure controls. Only queries classified as SAFE_AGGREGATE
 #' can be executed in aggregate mode.
 #'
@@ -678,18 +678,18 @@ omopCatalogGetDS <- function(omop_symbol, query_id) {
 #' }
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
-#' @param query_id Character; the query ID from the catalog
+#' @param query_id Character; the query ID from the query library
 #' @param inputs Named list; parameter values for the query template
 #' @param mode Character; "aggregate" (default, returns data to client) or
 #'   "assign" (keeps data server-side)
 #' @return For aggregate mode: disclosure-controlled data frame.
 #'   For assign mode: invisible TRUE.
 #' @export
-omopCatalogExecDS <- function(omop_symbol, query_id,
+omopQueryExecDS <- function(omop_symbol, query_id,
                                inputs = list(),
                                mode = "aggregate") {
   handle <- .getHandle(omop_symbol)
   .validateIdentifier(query_id, "query_id")
   mode <- match.arg(mode, c("aggregate", "assign"))
-  .catalog_exec(handle, query_id, inputs, mode)
+  .query_exec(handle, query_id, inputs, mode)
 }

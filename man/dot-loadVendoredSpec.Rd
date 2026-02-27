@@ -4,7 +4,10 @@
 \alias{.loadVendoredSpec}
 \title{Load vendored OHDSI metadata as fallback}
 \usage{
-.loadVendoredSpec()
+.loadVendoredSpec(version = NULL)
+}
+\arguments{
+\item{version}{Character; CDM version to load (e.g. "5.3", "5.4"). Defaults to "5.4".}
 }
 \description{
 Load vendored OHDSI metadata as fallback

@@ -25,8 +25,8 @@
                                 getOption("default.nfilter.stringShort", 20))),
     nfilter_noise          = as.numeric(getOption("nfilter.noise",
                                 getOption("default.nfilter.noise", 0.25))),
-    catalog_strict         = as.logical(getOption("dsomop.catalog_strict",
-                                getOption("default.dsomop.catalog_strict", TRUE)))
+    query_strict         = as.logical(getOption("dsomop.query_strict",
+                                getOption("default.dsomop.query_strict", TRUE)))
   )
 }
 
