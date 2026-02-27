@@ -5,8 +5,7 @@ test_that("disclosure settings are read from options", {
     nfilter.levels.max = 50,
     nfilter.levels.density = 0.5,
     nfilter.string = 100,
-    nfilter.stringShort = 30,
-    datashield.privacyControlLevel = "banana"
+    nfilter.stringShort = 30
   ), {
     settings <- .omopDisclosureSettings()
     expect_equal(settings$nfilter_tab, 5)
@@ -15,25 +14,6 @@ test_that("disclosure settings are read from options", {
     expect_equal(settings$nfilter_levels_density, 0.5)
     expect_equal(settings$nfilter_string, 100)
     expect_equal(settings$nfilter_stringShort, 30)
-    expect_equal(settings$privacy_level, "banana")
-  })
-})
-
-test_that("assertPrivacyLevel passes at banana level", {
-  withr::with_options(list(
-    datashield.privacyControlLevel = "banana"
-  ), {
-    expect_invisible(.assertPrivacyLevel("banana"))
-  })
-})
-
-test_that("assertPrivacyLevel is a no-op (always succeeds)", {
-  withr::with_options(list(
-    datashield.privacyControlLevel = "non-permissive"
-  ), {
-    # Now a no-op: succeeds regardless of privacy level
-    expect_invisible(.assertPrivacyLevel("banana"))
-    expect_invisible(.assertPrivacyLevel("permissive"))
   })
 })
 
@@ -49,13 +29,14 @@ test_that("assertMinPersons blocks with too few persons", {
   })
 })
 
-test_that("suppressSmallCounts replaces small counts with NA", {
+test_that("suppressSmallCounts drops rows with small counts", {
   withr::with_options(list(nfilter.tab = 3), {
     df <- data.frame(value = c("a", "b", "c"), n = c(1, 2, 5))
     result <- .suppressSmallCounts(df, "n")
-    expect_true(is.na(result$n[1]))  # 1 < 3
-    expect_true(is.na(result$n[2]))  # 2 < 3
-    expect_equal(result$n[3], 5)      # 5 >= 3
+    # Rows with n < 3 are dropped entirely
+    expect_equal(nrow(result), 1)
+    expect_equal(result$value[1], "c")
+    expect_equal(result$n[1], 5)
   })
 })
 

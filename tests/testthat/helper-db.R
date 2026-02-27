@@ -19,7 +19,7 @@ if (is.null(fixture_path)) {
   stop("Could not find create_test_db.R fixture. Tried:\n",
        paste(fixture_candidates, collapse = "\n"))
 }
-source(fixture_path)
+source(fixture_path, local = TRUE)
 
 # Create a test handle for use in tests
 create_test_handle <- function(n_persons = 15) {

@@ -388,27 +388,25 @@ test_that("all allowlisted queries pass classifier validation", {
 
 # --- SDC Suppression ---------------------------------------------------------
 
-test_that(".catalog_suppress_sensitive: suppresses small counts", {
-  df <- data.frame(
-    concept = c("A", "B", "C", "D"),
-    n_persons = c(1, 2, 5, 10),
-    n_records = c(2, 1, 8, 15),
-    stringsAsFactors = FALSE
-  )
+test_that(".catalog_suppress_sensitive: drops rows with small counts", {
+  withr::with_options(list(nfilter.tab = 3), {
+    df <- data.frame(
+      concept = c("A", "B", "C", "D"),
+      n_persons = c(1, 2, 5, 10),
+      n_records = c(2, 1, 8, 15),
+      stringsAsFactors = FALSE
+    )
 
-  # Default threshold is 3 (from nfilter.tab)
-  result <- dsOMOP:::.catalog_suppress_sensitive(
-    df, c("n_persons", "n_records"), threshold = 3
-  )
+    result <- dsOMOP:::.catalog_suppress_sensitive(
+      df, c("n_persons", "n_records"), threshold = 3
+    )
 
-  expect_true(is.na(result$n_persons[1]))  # 1 < 3
-  expect_true(is.na(result$n_persons[2]))  # 2 < 3
-  expect_equal(result$n_persons[3], 5)     # 5 >= 3
-  expect_equal(result$n_persons[4], 10)    # 10 >= 3
-
-  expect_true(is.na(result$n_records[1]))  # 2 < 3
-  expect_true(is.na(result$n_records[2]))  # 1 < 3
-  expect_equal(result$n_records[3], 8)
+    # Rows A and B have counts below threshold → dropped entirely
+    expect_equal(nrow(result), 2)
+    expect_equal(result$concept, c("C", "D"))
+    expect_equal(result$n_persons, c(5, 10))
+    expect_equal(result$n_records, c(8, 15))
+  })
 })
 
 test_that(".catalog_suppress_sensitive: handles missing columns gracefully", {

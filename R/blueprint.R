@@ -199,7 +199,11 @@
   cdm_version <- cdm_info$cdm_version  # may be NULL
 
   # Step 2b: Structural version detection (fallback / cross-validation)
-  struct <- .detectCDMVersionFromStructure(handle, all_db_tables)
+  # Wrapped in tryCatch so structural detection can never crash blueprint build.
+  struct <- tryCatch(
+    .detectCDMVersionFromStructure(handle, all_db_tables),
+    error = function(e) NULL
+  )
 
   if (is.null(cdm_version) && !is.null(struct)) {
     cdm_version <- struct$version
@@ -883,12 +887,13 @@
     checks$episode_event_table <- "5.4"
   }
 
+  # Note: this function runs BEFORE the blueprint is built, so
+
+  # handle$blueprint is NULL. Use handle$cdm_schema directly for column queries.
+  schema <- handle$cdm_schema
+
   # Check 3: procedure_occurrence columns (+2 for winner)
   if ("procedure_occurrence" %in% db_tables) {
-    schema <- .resolveTableSchema(handle, "procedure_occurrence",
-      tryCatch(handle$blueprint$tables$schema_category[
-        handle$blueprint$tables$table_name == "procedure_occurrence"],
-        error = function(e) "CDM"))
     proc_cols <- .listColumnsRaw(handle, "procedure_occurrence", schema)
     if (nrow(proc_cols) > 0) {
       if ("procedure_end_date" %in% proc_cols$column_name) {
@@ -903,10 +908,6 @@
 
   # Check 4: location columns (+1 for winner)
   if ("location" %in% db_tables) {
-    schema <- .resolveTableSchema(handle, "location",
-      tryCatch(handle$blueprint$tables$schema_category[
-        handle$blueprint$tables$table_name == "location"],
-        error = function(e) "CDM"))
     loc_cols <- .listColumnsRaw(handle, "location", schema)
     if (nrow(loc_cols) > 0) {
       if ("latitude" %in% loc_cols$column_name) {
@@ -921,10 +922,6 @@
 
   # Check 5: visit_detail columns (+2 for winner)
   if ("visit_detail" %in% db_tables) {
-    schema <- .resolveTableSchema(handle, "visit_detail",
-      tryCatch(handle$blueprint$tables$schema_category[
-        handle$blueprint$tables$table_name == "visit_detail"],
-        error = function(e) "CDM"))
     vd_cols <- .listColumnsRaw(handle, "visit_detail", schema)
     if (nrow(vd_cols) > 0) {
       if ("parent_visit_detail_id" %in% vd_cols$column_name) {

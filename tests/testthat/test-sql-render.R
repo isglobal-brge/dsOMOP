@@ -14,9 +14,12 @@ test_that(".resolve_target_dialect maps supported DBMS correctly", {
   expect_equal(.resolve_target_dialect("duckdb"), "sqlite")
 })
 
+test_that(".resolve_target_dialect maps mysql and mariadb", {
+  expect_equal(.resolve_target_dialect("mysql"), "mysql")
+  expect_equal(.resolve_target_dialect("mariadb"), "mysql")
+})
+
 test_that(".resolve_target_dialect rejects unsupported DBMS", {
-  expect_error(.resolve_target_dialect("mysql"), "Unsupported DBMS")
-  expect_error(.resolve_target_dialect("mariadb"), "Unsupported DBMS")
   expect_error(.resolve_target_dialect("access"), "Unsupported DBMS")
 })
 

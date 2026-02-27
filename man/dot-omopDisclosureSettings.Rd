@@ -7,7 +7,7 @@
 .omopDisclosureSettings()
 }
 \value{
-Named list of disclosure thresholds and privacy level
+Named list of disclosure thresholds
 }
 \description{
 Read all disclosure settings from DataSHIELD server options

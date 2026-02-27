@@ -129,10 +129,9 @@ test_that("achillesGetResults suppresses counts below threshold", {
 
   withr::with_options(list(nfilter.tab = 3), {
     result <- .achillesGetResults(handle, c(700L))
-    # Albuterol has count_value = 2, which is < 3 threshold
+    # Albuterol has count_value = 2, which is < 3 threshold → row is dropped
     alb <- result[result$stratum_1 == "1154029", ]
-    expect_true(nrow(alb) > 0)
-    expect_true(is.na(alb$count_value[1]))
+    expect_equal(nrow(alb), 0)
   })
 })
 

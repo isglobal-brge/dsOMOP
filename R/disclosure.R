@@ -25,21 +25,9 @@
                                 getOption("default.nfilter.stringShort", 20))),
     nfilter_noise          = as.numeric(getOption("nfilter.noise",
                                 getOption("default.nfilter.noise", 0.25))),
-    privacy_level          = getOption("datashield.privacyControlLevel",
-                                getOption("default.datashield.privacyControlLevel",
-                                          "banana")),
     catalog_strict         = as.logical(getOption("dsomop.catalog_strict",
                                 getOption("default.dsomop.catalog_strict", TRUE)))
   )
-}
-
-#' Check if privacy control level allows an operation
-#'
-#' @param required_level Character; minimum level required
-#' @return TRUE invisibly, or stops with an error
-#' @keywords internal
-.assertPrivacyLevel <- function(required_level = "banana") {
-  invisible(TRUE)
 }
 
 #' Assert minimum unique persons in a dataset
