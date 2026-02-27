@@ -517,9 +517,11 @@ omopDateCountsDS <- function(omop_symbol, table, date_col = NULL,
 #' @param concept_id Integer; concept ID to drill into
 #' @return Named list with drilldown results
 #' @export
-omopConceptDrilldownDS <- function(omop_symbol, table, concept_id) {
+omopConceptDrilldownDS <- function(omop_symbol, table, concept_id,
+                                   concept_col = NULL) {
   handle <- .getHandle(omop_symbol)
-  .profileConceptDrilldown(handle, table, as.integer(concept_id))
+  .profileConceptDrilldown(handle, table, as.integer(concept_id),
+                           concept_col = concept_col)
 }
 
 #' Locate concept across tables (Aggregate)
