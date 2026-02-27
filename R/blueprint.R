@@ -962,7 +962,7 @@
     sql <- .renderSql(handle,
       "SELECT TOP 1 * FROM @qualified",
       qualified = qualified)
-    result <- DBI::dbGetQuery(handle$conn, sql)
+    result <- .coerce_integer64(DBI::dbGetQuery(handle$conn, sql))
     if (nrow(result) == 0) return(NULL)
 
     names(result) <- tolower(names(result))

@@ -94,7 +94,7 @@
   }
 
   # Check if sensitive
-  if (col_df$is_blocked[col_df$column_name == column]) {
+  if (any(col_df$is_blocked[col_df$column_name == column])) {
     stop("Column '", column, "' is blocked (sensitive).", call. = FALSE)
   }
 
@@ -116,7 +116,7 @@
   )
 
   # Numeric stats if applicable
-  col_type <- col_df$db_datatype[col_df$column_name == column]
+  col_type <- col_df$db_datatype[col_df$column_name == column][1]
   if (grepl("int|float|real|numeric|double|decimal", col_type) ||
       grepl("_as_number$|^quantity$|^range_|^dose_value$", column)) {
     num_sql <- paste0(
@@ -261,7 +261,7 @@
     stop("Column '", column, "' not found in '", table, "'.", call. = FALSE)
   }
 
-  if (col_df$is_blocked[col_df$column_name == column]) {
+  if (any(col_df$is_blocked[col_df$column_name == column])) {
     stop("Column '", column, "' is blocked (sensitive).", call. = FALSE)
   }
 
@@ -294,6 +294,7 @@
   translated <- .renderSql(handle, sql)
   result <- DBI::dbGetQuery(handle$conn, translated)
   names(result) <- tolower(names(result))
+  result <- .coerce_integer64(result)
 
   if (suppress_small) {
     result <- .suppressSmallCounts(result, "n")
@@ -544,6 +545,7 @@
   translated <- .renderSql(handle, sql)
   result <- DBI::dbGetQuery(handle$conn, translated)
   names(result) <- tolower(names(result))
+  result <- .coerce_integer64(result)
 
   if (nrow(result) == 0) {
     return(data.frame(concept_id = integer(0), concept_name = character(0),

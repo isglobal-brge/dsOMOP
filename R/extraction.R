@@ -423,10 +423,22 @@
 #' @param sql Character; SQL to execute
 #' @return Data frame
 #' @keywords internal
+# Convert integer64 columns (from PostgreSQL bigint) to regular R numerics.
+# integer64 uses raw double bits internally and breaks is.na(), comparisons,
+# if() conditions, and cat() — causing 'length = 2' errors in R 4.5.2.
+.coerce_integer64 <- function(df) {
+  for (col in names(df)) {
+    if (inherits(df[[col]], "integer64")) {
+      df[[col]] <- as.numeric(df[[col]])
+    }
+  }
+  df
+}
+
 .executeQuery <- function(handle, sql) {
   result <- DBI::dbGetQuery(handle$conn, sql)
   names(result) <- tolower(names(result))
-  result
+  .coerce_integer64(result)
 }
 
 #' Execute a SQL statement (DDL/DML, no result set)

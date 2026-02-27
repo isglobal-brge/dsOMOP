@@ -66,7 +66,7 @@
   translated <- .renderSql(handle, sql)
   result <- DBI::dbGetQuery(handle$conn, translated)
   names(result) <- tolower(names(result))
-  result
+  .coerce_integer64(result)
 }
 
 #' Lookup concepts by ID

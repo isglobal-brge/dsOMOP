@@ -65,7 +65,7 @@
 .querySql <- function(handle, sql, ...) {
   rendered <- .sql_render(sql, ...)
   translated <- .sql_translate(rendered, handle$target_dialect)
-  DBI::dbGetQuery(handle$conn, translated)
+  .coerce_integer64(DBI::dbGetQuery(handle$conn, translated))
 }
 
 #' Render and translate SQL (returns SQL string, no execution)

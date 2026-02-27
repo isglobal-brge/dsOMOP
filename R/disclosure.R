@@ -301,7 +301,7 @@
   settings <- .omopDisclosureSettings()
   threshold <- settings$nfilter_subset
 
-  post_result <- DBI::dbGetQuery(handle$conn, post_sql)
+  post_result <- .coerce_integer64(DBI::dbGetQuery(handle$conn, post_sql))
   post_n <- as.numeric(post_result[[1]][1])
 
   if (is.na(post_n) || post_n < threshold) {
