@@ -483,10 +483,10 @@
 #' @keywords internal
 .resolveTableSchema <- function(handle, table, schema_category) {
   category <- tolower(schema_category)
-  if (category == "vocabulary" && !is.null(handle$vocab_schema)) {
+  if (category %in% c("vocabulary", "vocab") && !is.null(handle$vocab_schema)) {
     return(handle$vocab_schema)
   }
-  if (category == "results" && !is.null(handle$results_schema)) {
+  if (category %in% c("results", "result") && !is.null(handle$results_schema)) {
     return(handle$results_schema)
   }
   handle$cdm_schema
