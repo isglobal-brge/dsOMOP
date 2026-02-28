@@ -390,9 +390,18 @@
   # Also mark already-present achilles tables as present_in_db
   existing_achilles <- intersect(found_achilles, tables$table_name)
   if (length(existing_achilles) > 0) {
-    tables$present_in_db[tables$table_name %in% existing_achilles] <- TRUE
-    tables$schema_category[tables$table_name %in% existing_achilles &
-                            tables$schema_category == "CDM"] <- "Results"
+    achilles_schema <- if (length(intersect(tolower(db_tables_results),
+                                             achilles_table_names)) > 0) {
+      handle$results_schema
+    } else {
+      handle$cdm_schema
+    }
+    mask <- tables$table_name %in% existing_achilles
+    tables$present_in_db[mask] <- TRUE
+    tables$schema_category[mask & tables$schema_category == "CDM"] <- "Results"
+    tables$qualified_name[mask] <- vapply(tables$table_name[mask], function(t) {
+      .qualifyTable(handle, t, achilles_schema)
+    }, character(1))
   }
   handle$has_achilles <- length(found_achilles) > 0
 
