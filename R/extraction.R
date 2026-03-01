@@ -1189,7 +1189,8 @@
     any(kinds == "age" & vapply(derived_specs, function(s) {
       identical(s$reference, "index")
     }, logical(1)))
-  needs_comorbidity <- any(kinds %in% c("charlson", "chadsvasc"))
+  needs_comorbidity <- any(kinds %in% c("charlson", "chads2", "chadsvasc",
+                                         "dcsi", "hfrs"))
 
   if (!needs_person && !needs_obs && !needs_comorbidity) return(NULL)
 
@@ -1346,15 +1347,17 @@
         result[[col_name]] <- NA_integer_
       }
 
-    } else if (spec$kind %in% c("charlson", "chadsvasc")) {
+    } else if (spec$kind %in% c("charlson", "chads2", "chadsvasc",
+                                  "dcsi", "hfrs")) {
       score_df <- .computeComorbidityScore(
         handle, spec$kind, result$person_id)
+      zero_val <- if (spec$kind %in% c("hfrs", "dcsi")) 0 else 0L
       if (!is.null(score_df) && nrow(score_df) > 0) {
         names(score_df)[2] <- col_name
         result <- merge(result, score_df, by = "person_id", all.x = TRUE)
-        result[[col_name]][is.na(result[[col_name]])] <- 0L
+        result[[col_name]][is.na(result[[col_name]])] <- zero_val
       } else {
-        result[[col_name]] <- 0L
+        result[[col_name]] <- zero_val
       }
     }
   }
@@ -1362,22 +1365,320 @@
   result
 }
 
-#' Compute a comorbidity score (Charlson or CHA2DS2-VASc)
+#' Get ICD code patterns and scoring definitions for vocabulary-resolved scores
 #'
-#' Checks condition tables for the presence of category-defining concepts
-#' and computes a weighted sum per person.
+#' Returns category definitions with ICD code patterns, tiers/weights for
+#' DCSI (ICD9CM) and HFRS (ICD10CM). Pure function, no DB access.
+#'
+#' @param score_type Character; "dcsi" or "hfrs"
+#' @return List with source_vocabulary and categories
+#' @keywords internal
+.getScoreDefinitions <- function(score_type) {
+  if (score_type == "dcsi") {
+    list(
+      source_vocabulary = "ICD9CM",
+      scoring_mode = "tiered",
+      categories = list(
+        list(category = "retinopathy", tier = 1L,
+             patterns = c("250.5%", "362.01", "362.1%", "362.83",
+                          "362.53", "362.81", "362.82")),
+        list(category = "retinopathy", tier = 2L,
+             patterns = c("361%", "369%", "362.02", "379.23")),
+        list(category = "nephropathy", tier = 1L,
+             patterns = c("250.4%", "580%", "581%", "582%", "583%")),
+        list(category = "nephropathy", tier = 2L,
+             patterns = c("585%", "586%", "593.9%")),
+        list(category = "neuropathy", tier = 1L,
+             patterns = c("356.9%", "250.6%", "358.1%", "951.0%",
+                          "951.1%", "951.3%", "713.5%", "357.2%",
+                          "596.54", "337.0%", "337.1%", "564.5%",
+                          "536.3%", "458.0%", "354%", "355%")),
+        list(category = "cerebrovascular", tier = 1L,
+             patterns = c("435%")),
+        list(category = "cerebrovascular", tier = 2L,
+             patterns = c("431%", "433%", "434%", "436%")),
+        list(category = "cardiovascular", tier = 1L,
+             patterns = c("440%", "411%", "413%", "414%", "429.2%")),
+        list(category = "cardiovascular", tier = 2L,
+             patterns = c("410%", "427.1%", "427.3%", "427.4%",
+                          "427.5%", "412%", "428%", "441%",
+                          "440.23", "440.24")),
+        list(category = "pvd", tier = 1L,
+             patterns = c("250.7%", "442.3%", "892.1%", "443.9%",
+                          "443.81")),
+        list(category = "pvd", tier = 2L,
+             patterns = c("785.4%", "707.1%", "040.0%", "444.22")),
+        list(category = "metabolic", tier = 2L,
+             patterns = c("250.1%", "250.2%", "250.3%"))
+      )
+    )
+  } else if (score_type == "hfrs") {
+    list(
+      source_vocabulary = c("ICD10CM", "ICD10"),
+      scoring_mode = "weighted_binary",
+      categories = list(
+        list(category = "dementia_alzheimers", patterns = c("F00%"), weight = 7.1),
+        list(category = "hemiplegia", patterns = c("G81%"), weight = 4.4),
+        list(category = "alzheimers_disease", patterns = c("G30%"), weight = 4.0),
+        list(category = "sequelae_cvd", patterns = c("I69%"), weight = 3.7),
+        list(category = "nervous_musculoskeletal", patterns = c("R29%"), weight = 3.6),
+        list(category = "urinary_disorders", patterns = c("N39%"), weight = 3.2),
+        list(category = "delirium", patterns = c("F05%"), weight = 3.2),
+        list(category = "unspecified_fall", patterns = c("W19%"), weight = 3.2),
+        list(category = "superficial_head", patterns = c("S00%"), weight = 3.2),
+        list(category = "haematuria", patterns = c("R31%"), weight = 3.0),
+        list(category = "bacterial_agents", patterns = c("B96%"), weight = 2.9),
+        list(category = "cognitive_functions", patterns = c("R41%"), weight = 2.7),
+        list(category = "gait_mobility", patterns = c("R26%"), weight = 2.6),
+        list(category = "other_cerebrovascular", patterns = c("I67%"), weight = 2.6),
+        list(category = "convulsions", patterns = c("R56%"), weight = 2.6),
+        list(category = "somnolence_stupor_coma", patterns = c("R40%"), weight = 2.5),
+        list(category = "intracranial_injury", patterns = c("S06%"), weight = 2.5),
+        list(category = "gu_prosthesis_complication", patterns = c("T83%"), weight = 2.4),
+        list(category = "fracture_shoulder", patterns = c("S42%"), weight = 2.3),
+        list(category = "fluid_electrolyte", patterns = c("E87%"), weight = 2.3),
+        list(category = "other_joint_disorders", patterns = c("M25%"), weight = 2.3),
+        list(category = "volume_depletion", patterns = c("E86%"), weight = 2.3),
+        list(category = "senility", patterns = c("R54%"), weight = 2.2),
+        list(category = "rehabilitation", patterns = c("Z50%"), weight = 2.1),
+        list(category = "unspecified_dementia", patterns = c("F03%"), weight = 2.1),
+        list(category = "other_fall_same_level", patterns = c("W18%"), weight = 2.1),
+        list(category = "medical_facility_problems", patterns = c("Z75%"), weight = 2.0),
+        list(category = "vascular_dementia", patterns = c("F01%"), weight = 2.0),
+        list(category = "superficial_lower_leg", patterns = c("S80%"), weight = 2.0),
+        list(category = "cellulitis", patterns = c("L03%"), weight = 2.0),
+        list(category = "blindness_low_vision", patterns = c("H54%"), weight = 1.9),
+        list(category = "b_vitamin_deficiency", patterns = c("E53%"), weight = 1.9),
+        list(category = "social_environment", patterns = c("Z60%"), weight = 1.8),
+        list(category = "parkinsons", patterns = c("G20%"), weight = 1.8),
+        list(category = "syncope", patterns = c("R55%"), weight = 1.8),
+        list(category = "fracture_rib_sternum", patterns = c("S22%"), weight = 1.8),
+        list(category = "functional_intestinal", patterns = c("K59%"), weight = 1.8),
+        list(category = "acute_renal_failure", patterns = c("N17%"), weight = 1.8),
+        list(category = "pressure_ulcer", patterns = c("L89%"), weight = 1.7),
+        list(category = "carrier_infectious", patterns = c("Z22%"), weight = 1.7),
+        list(category = "strep_staph", patterns = c("B95%"), weight = 1.7),
+        list(category = "ulcer_lower_limb", patterns = c("L97%"), weight = 1.6),
+        list(category = "perception_symptoms", patterns = c("R44%"), weight = 1.6),
+        list(category = "duodenal_ulcer", patterns = c("K26%"), weight = 1.6),
+        list(category = "hypotension", patterns = c("I95%"), weight = 1.6),
+        list(category = "unspecified_renal_failure", patterns = c("N19%"), weight = 1.6),
+        list(category = "other_septicaemia", patterns = c("A41%"), weight = 1.6),
+        list(category = "personal_history_diseases", patterns = c("Z87%"), weight = 1.5),
+        list(category = "respiratory_failure", patterns = c("J96%"), weight = 1.5),
+        list(category = "exposure_unspecified", patterns = c("X59%"), weight = 1.5),
+        list(category = "other_arthrosis", patterns = c("M19%"), weight = 1.5),
+        list(category = "epilepsy", patterns = c("G40%"), weight = 1.5),
+        list(category = "osteoporosis_no_fracture", patterns = c("M81%"), weight = 1.4),
+        list(category = "fracture_femur", patterns = c("S72%"), weight = 1.4),
+        list(category = "fracture_lumbar_pelvis", patterns = c("S32%"), weight = 1.4),
+        list(category = "pancreatic_secretion", patterns = c("E16%"), weight = 1.4),
+        list(category = "abnormal_function_study", patterns = c("R94%"), weight = 1.4),
+        list(category = "chronic_renal_failure", patterns = c("N18%"), weight = 1.4),
+        list(category = "urinary_retention", patterns = c("R33%"), weight = 1.3),
+        list(category = "unknown_morbidity", patterns = c("R69%"), weight = 1.3),
+        list(category = "other_kidney_ureter", patterns = c("N28%"), weight = 1.3),
+        list(category = "urinary_incontinence", patterns = c("R32%"), weight = 1.2),
+        list(category = "other_degenerative_nervous", patterns = c("G31%"), weight = 1.2),
+        list(category = "nosocomial_condition", patterns = c("Y95%"), weight = 1.2),
+        list(category = "other_head_injuries", patterns = c("S09%"), weight = 1.2),
+        list(category = "emotional_state", patterns = c("R45%"), weight = 1.2),
+        list(category = "transient_cerebral_ischaemia", patterns = c("G45%"), weight = 1.2),
+        list(category = "care_provider_dependency", patterns = c("Z74%"), weight = 1.1),
+        list(category = "other_soft_tissue", patterns = c("M79%"), weight = 1.1),
+        list(category = "fall_involving_bed", patterns = c("W06%"), weight = 1.1),
+        list(category = "open_wound_head", patterns = c("S01%"), weight = 1.1),
+        list(category = "bacterial_intestinal", patterns = c("A04%"), weight = 1.1),
+        list(category = "infectious_diarrhoea", patterns = c("A09%"), weight = 1.1),
+        list(category = "pneumonia_unspecified", patterns = c("J18%"), weight = 1.1),
+        list(category = "pneumonitis_solids_liquids", patterns = c("J69%"), weight = 1.0),
+        list(category = "speech_disturbances", patterns = c("R47%"), weight = 1.0),
+        list(category = "vitamin_d_deficiency", patterns = c("E55%"), weight = 1.0),
+        list(category = "artificial_opening", patterns = c("Z93%"), weight = 1.0),
+        list(category = "gangrene", patterns = c("R02%"), weight = 1.0),
+        list(category = "food_fluid_intake", patterns = c("R63%"), weight = 0.9),
+        list(category = "other_hearing_loss", patterns = c("H91%"), weight = 0.9),
+        list(category = "fall_on_stairs", patterns = c("W10%"), weight = 0.9),
+        list(category = "fall_slipping_tripping", patterns = c("W01%"), weight = 0.9),
+        list(category = "thyrotoxicosis", patterns = c("E05%"), weight = 0.9),
+        list(category = "scoliosis", patterns = c("M41%"), weight = 0.9),
+        list(category = "dysphagia", patterns = c("R13%"), weight = 0.8),
+        list(category = "dependence_machines", patterns = c("Z99%"), weight = 0.8),
+        list(category = "penicillin_resistant", patterns = c("U80%"), weight = 0.8),
+        list(category = "osteoporosis_fracture", patterns = c("M80%"), weight = 0.8),
+        list(category = "other_digestive", patterns = c("K92%"), weight = 0.8),
+        list(category = "cerebral_infarction", patterns = c("I63%"), weight = 0.8),
+        list(category = "kidney_ureter_calculus", patterns = c("N20%"), weight = 0.7),
+        list(category = "alcohol_mental", patterns = c("F10%"), weight = 0.7),
+        list(category = "medical_procedure_reaction", patterns = c("Y84%"), weight = 0.7),
+        list(category = "heartbeat_abnormalities", patterns = c("R00%"), weight = 0.7),
+        list(category = "acute_lower_respiratory", patterns = c("J22%"), weight = 0.7),
+        list(category = "life_management_difficulty", patterns = c("Z73%"), weight = 0.6),
+        list(category = "abnormal_blood_chemistry", patterns = c("R79%"), weight = 0.6),
+        list(category = "personal_history_risk", patterns = c("Z91%"), weight = 0.5),
+        list(category = "open_wound_forearm", patterns = c("S51%"), weight = 0.5),
+        list(category = "depressive_episode", patterns = c("F32%"), weight = 0.5),
+        list(category = "spinal_stenosis", patterns = c("M48%"), weight = 0.5),
+        list(category = "mineral_metabolism", patterns = c("E83%"), weight = 0.4),
+        list(category = "polyarthrosis", patterns = c("M15%"), weight = 0.4),
+        list(category = "other_anaemias", patterns = c("D64%"), weight = 0.4),
+        list(category = "other_skin_infections", patterns = c("L08%"), weight = 0.4),
+        list(category = "nausea_vomiting", patterns = c("R11%"), weight = 0.3),
+        list(category = "noninfective_gastroenteritis", patterns = c("K52%"), weight = 0.3),
+        list(category = "fever_unknown", patterns = c("R50%"), weight = 0.1)
+      )
+    )
+  } else {
+    stop("Unknown score type for definitions: '", score_type,
+         "'. Supported: dcsi, hfrs.", call. = FALSE)
+  }
+}
+
+#' Resolve ICD code patterns to SNOMED concept IDs via concept_relationship
+#'
+#' Queries the vocabulary's concept_relationship table to map ICD source codes
+#' to standard SNOMED targets, then assigns each resolved concept to its
+#' scoring category. Results are cached on the handle.
 #'
 #' @param handle CDM handle
-#' @param score_type Character; "charlson" or "chadsvasc"
+#' @param score_type Character; "dcsi" or "hfrs"
+#' @return Named list: category -> list(concepts, tier/weight)
+#' @keywords internal
+.resolveScoreConcepts <- function(handle, score_type) {
+  # Check cache
+
+  cache_key <- paste0("resolved_", score_type)
+  if (!is.null(handle[[cache_key]])) return(handle[[cache_key]])
+
+  defs <- .getScoreDefinitions(score_type)
+  bp <- .buildBlueprint(handle)
+
+  # Check if concept_relationship table exists
+  cr_row <- bp$tables[bp$tables$table_name == "concept_relationship" &
+                        bp$tables$present_in_db, , drop = FALSE]
+  if (nrow(cr_row) == 0) {
+    warning(score_type, " score requires concept_relationship table ",
+            "but it is not present in the database. ",
+            "All scores will be 0.", call. = FALSE)
+    handle[[cache_key]] <- list()
+    return(list())
+  }
+
+  # Resolve table names
+  cr_table <- cr_row$qualified_name[1]
+  concept_row <- bp$tables[bp$tables$table_name == "concept" &
+                             bp$tables$present_in_db, , drop = FALSE]
+  if (nrow(concept_row) == 0) {
+    handle[[cache_key]] <- list()
+    return(list())
+  }
+  concept_table <- concept_row$qualified_name[1]
+
+  # Build LIKE clauses for all patterns across all categories
+  all_patterns <- character(0)
+  for (cat in defs$categories) {
+    all_patterns <- c(all_patterns, cat$patterns)
+  }
+  all_patterns <- unique(all_patterns)
+
+  if (length(all_patterns) == 0) {
+    handle[[cache_key]] <- list()
+    return(list())
+  }
+
+  # Build SQL LIKE conditions — convert % wildcard to SQL LIKE
+  like_clauses <- vapply(all_patterns, function(p) {
+    paste0("source.concept_code LIKE '", p, "'")
+  }, character(1), USE.NAMES = FALSE)
+  like_sql <- paste(like_clauses, collapse = " OR ")
+
+  # Build vocabulary filter — HFRS accepts both ICD10CM and ICD10
+  src_vocabs <- defs$source_vocabulary
+  if (length(src_vocabs) == 1) {
+    vocab_filter <- paste0("source.vocabulary_id = '", src_vocabs, "'")
+  } else {
+    vocab_filter <- paste0("source.vocabulary_id IN (",
+      paste0("'", src_vocabs, "'", collapse = ", "), ")")
+  }
+
+  sql <- paste0(
+    "SELECT source.concept_code AS source_code, ",
+    "target.concept_id AS target_concept_id ",
+    "FROM ", cr_table, " cr ",
+    "JOIN ", concept_table, " source ON cr.concept_id_1 = source.concept_id ",
+    "JOIN ", concept_table, " target ON cr.concept_id_2 = target.concept_id ",
+    "WHERE ", vocab_filter, " ",
+    "AND target.vocabulary_id = 'SNOMED' ",
+    "AND target.standard_concept = 'S' ",
+    "AND cr.relationship_id = 'Maps to' ",
+    "AND cr.invalid_reason IS NULL ",
+    "AND source.invalid_reason IS NULL ",
+    "AND target.invalid_reason IS NULL ",
+    "AND (", like_sql, ")"
+  )
+
+  resolved_df <- .executeQuery(handle, sql)
+
+  if (nrow(resolved_df) == 0) {
+    warning(score_type, " score: no ICD-to-SNOMED mappings found in ",
+            "concept_relationship (vocabulary may not be loaded). ",
+            "All scores will be 0.", call. = FALSE)
+    handle[[cache_key]] <- list()
+    return(list())
+  }
+
+  # Assign resolved concepts to categories by matching patterns
+  result <- list()
+  for (cat in defs$categories) {
+    cat_name <- cat$category
+    matched_ids <- integer(0)
+    for (p in cat$patterns) {
+      # Convert SQL LIKE pattern to regex
+      regex <- paste0("^", gsub("%", ".*", gsub("\\.", "\\\\.", p)), "$")
+      matching_rows <- grepl(regex, resolved_df$source_code)
+      matched_ids <- c(matched_ids,
+                       resolved_df$target_concept_id[matching_rows])
+    }
+    matched_ids <- unique(as.integer(matched_ids))
+    if (length(matched_ids) > 0) {
+      entry <- list(category = cat_name, concepts = matched_ids)
+      if (!is.null(cat$tier)) entry$tier <- cat$tier
+      if (!is.null(cat$weight)) entry$weight <- cat$weight
+      result <- c(result, list(entry))
+    }
+  }
+
+  handle[[cache_key]] <- result
+  result
+}
+
+#' Compute a comorbidity score
+#'
+#' Checks condition tables for the presence of category-defining concepts
+#' and computes a weighted sum per person. Supports simple weighted (Charlson,
+#' CHADS2, CHA2DS2-VASc), tiered (DCSI), and weighted binary (HFRS) modes.
+#'
+#' @param handle CDM handle
+#' @param score_type Character; "charlson", "chads2", "chadsvasc", "dcsi", "hfrs"
 #' @param person_ids Integer vector of person IDs
 #' @return Data frame with person_id and score columns
 #' @keywords internal
 .computeComorbidityScore <- function(handle, score_type, person_ids = NULL) {
   if (is.null(person_ids) || length(person_ids) == 0) return(NULL)
 
-  # Score definitions: concept IDs from OHDSI FeatureExtraction CharlsonIndex.sql
-  # Each category uses ancestor concept IDs; matching is via condition tables.
-  # Source: https://github.com/OHDSI/FeatureExtraction/blob/main/inst/sql/sql_server/CharlsonIndex.sql
+  # --- Score definitions ---
+  # All concept IDs are ancestor concept IDs from OHDSI FeatureExtraction.
+  # Matching is exact (no concept_ancestor descendant lookup).
+  # Version-pinned to FeatureExtraction v3.5.x / OMOP CDM v5.4.
+  #
+  # IMPORTANT: These scores use ancestor concept IDs directly. In the official
+
+  # FeatureExtraction, descendant concepts are resolved via concept_ancestor.
+  # Our implementation matches on the ancestor IDs themselves, which covers
+  # the most common codings but may miss descendant-only records.
+
+  # Charlson Comorbidity Index (analysis_id = 901)
+  # Source: FeatureExtraction/inst/sql/sql_server/CharlsonIndex.sql
   if (score_type == "charlson") {
     categories <- list(
       mi         = list(concepts = c(4329847L),                    weight = 1L),
@@ -1400,16 +1701,71 @@
       metastatic = list(concepts = c(432851L),                     weight = 6L),
       aids       = list(concepts = c(439727L),                     weight = 6L)
     )
-  } else if (score_type == "chadsvasc") {
+
+  # CHADS2 (analysis_id = 903)
+  # Source: FeatureExtraction/inst/sql/sql_server/Chads2.sql
+  } else if (score_type == "chads2") {
     categories <- list(
       chf          = list(concepts = c(316139L),            weight = 1L),
-      hypertension = list(concepts = c(320128L),            weight = 1L),
+      hypertension = list(concepts = c(316866L),            weight = 1L),
       diabetes     = list(concepts = c(201820L),            weight = 1L),
-      stroke       = list(concepts = c(381591L, 434056L),   weight = 2L),
-      vascular     = list(concepts = c(4329847L, 321052L),  weight = 1L)
+      stroke       = list(concepts = c(381591L, 434056L),   weight = 2L)
     )
+
+  # CHA2DS2-VASc (analysis_id = 904)
+  # Source: FeatureExtraction/inst/sql/sql_server/Chads2Vasc.sql
+  # Uses expanded concept sets from the official SQL definition.
+  } else if (score_type == "chadsvasc") {
+    categories <- list(
+      chf          = list(concepts = c(316139L, 314378L, 318773L,
+                                        321319L),                   weight = 1L),
+      hypertension = list(concepts = c(320128L, 442604L, 201313L), weight = 1L),
+      diabetes     = list(concepts = c(201820L, 442793L),          weight = 1L),
+      stroke       = list(concepts = c(4043731L, 4110192L, 375557L,
+                                        4108356L, 373503L, 434656L,
+                                        433505L, 376714L, 312337L), weight = 2L),
+      vascular     = list(concepts = c(312327L, 43020432L, 314962L,
+                                        312939L, 315288L, 317309L,
+                                        134380L, 196438L, 200138L,
+                                        194393L, 319047L, 40486130L,
+                                        317003L, 4313767L, 321596L,
+                                        317305L, 321886L, 314659L,
+                                        321887L, 437312L, 134057L), weight = 1L)
+    )
+
+  # DCSI (analysis_id = 902) — vocabulary-resolved via concept_relationship
+  } else if (score_type == "dcsi") {
+    resolved <- .resolveScoreConcepts(handle, "dcsi")
+    scoring_mode <- "tiered"
+
+  # HFRS (analysis_id = 926) — vocabulary-resolved via concept_relationship
+  } else if (score_type == "hfrs") {
+    resolved <- .resolveScoreConcepts(handle, "hfrs")
+    scoring_mode <- "weighted_binary"
+
   } else {
-    return(NULL)
+    stop("Unknown score type: '", score_type, "'. Supported: charlson, ",
+         "chads2, chadsvasc, dcsi, hfrs.", call. = FALSE)
+  }
+
+  # For vocabulary-resolved scores, check if resolution returned anything
+  if (score_type %in% c("dcsi", "hfrs")) {
+    if (length(resolved) == 0) {
+      # Graceful fallback: no vocab mappings -> score 0 for everyone
+      score_result <- data.frame(
+        person_id = person_ids, score = 0, stringsAsFactors = FALSE)
+      analysis_ids <- list(dcsi = 902L, hfrs = 926L)
+      attr(score_result, "score_meta") <- list(
+        score_type = score_type,
+        analysis_id = analysis_ids[[score_type]],
+        upstream = "FeatureExtraction",
+        matching = "vocabulary_resolved",
+        note = "No concept_relationship mappings found; all scores 0"
+      )
+      return(score_result)
+    }
+  } else {
+    scoring_mode <- "simple_weighted"
   }
 
   bp <- .buildBlueprint(handle)
@@ -1425,7 +1781,7 @@
     }
   }
   if (length(available_tables) == 0) {
-    return(data.frame(person_id = person_ids, score = 0L,
+    return(data.frame(person_id = person_ids, score = 0,
                       stringsAsFactors = FALSE))
   }
 
@@ -1437,6 +1793,17 @@
     tbl_row <- bp$tables[bp$tables$table_name == ct &
                            bp$tables$present_in_db, , drop = FALSE]
     concept_col <- .getDomainConceptColumn(bp, ct)
+    # Fallback for v5.3 where concept_prefix has trailing underscore
+    if (is.null(concept_col)) {
+      fallback <- paste0(sub("_occurrence$|_era$|_exposure$", "", ct),
+                          "_concept_id")
+      cols <- bp$columns[[ct]]
+      if (!is.null(cols) && fallback %in% cols$column_name) {
+        concept_col <- fallback
+      } else {
+        next
+      }
+    }
     qualified <- tbl_row$qualified_name[1]
     union_parts <- c(union_parts, paste0(
       "SELECT DISTINCT person_id, ", concept_col, " AS concept_id FROM ",
@@ -1447,26 +1814,61 @@
   cond_df <- .executeQuery(handle, union_sql)
 
   # Compute score per person
+  use_numeric <- scoring_mode %in% c("tiered", "weighted_binary")
   score_result <- data.frame(
     person_id = person_ids,
-    score = 0L,
+    score = if (use_numeric) 0 else 0L,
     stringsAsFactors = FALSE)
 
   if (nrow(cond_df) > 0) {
-    for (cat in categories) {
-      cat_concepts <- cat$concepts
-      cat_weight <- cat$weight
-      # Find persons with any matching concept
-      matched_pids <- unique(
-        cond_df$person_id[cond_df$concept_id %in% cat_concepts])
-      idx <- score_result$person_id %in% matched_pids
-      score_result$score[idx] <- score_result$score[idx] + cat_weight
+    if (scoring_mode == "simple_weighted") {
+      # Charlson/CHADS2/CHA2DS2-VASc: binary presence x integer weight
+      for (cat in categories) {
+        matched_pids <- unique(
+          cond_df$person_id[cond_df$concept_id %in% cat$concepts])
+        idx <- score_result$person_id %in% matched_pids
+        score_result$score[idx] <- score_result$score[idx] + cat$weight
+      }
+
+    } else if (scoring_mode == "tiered") {
+      # DCSI: MAX(tier) within each category, then SUM across categories
+      # Group resolved entries by category
+      cat_names <- unique(vapply(resolved, `[[`, character(1), "category"))
+      for (cn in cat_names) {
+        entries <- Filter(function(e) e$category == cn, resolved)
+        # For each person, find the max tier they match
+        person_max_tier <- setNames(rep(0, length(person_ids)), person_ids)
+        for (entry in entries) {
+          matched_pids <- unique(
+            cond_df$person_id[cond_df$concept_id %in% entry$concepts])
+          for (pid in as.character(matched_pids)) {
+            if (pid %in% names(person_max_tier)) {
+              person_max_tier[pid] <- max(person_max_tier[pid], entry$tier)
+            }
+          }
+        }
+        # Add max tier to score
+        for (i in seq_along(person_ids)) {
+          pid_chr <- as.character(person_ids[i])
+          score_result$score[i] <- score_result$score[i] +
+            person_max_tier[pid_chr]
+        }
+      }
+
+    } else if (scoring_mode == "weighted_binary") {
+      # HFRS: binary presence x decimal weight per category
+      for (entry in resolved) {
+        matched_pids <- unique(
+          cond_df$person_id[cond_df$concept_id %in% entry$concepts])
+        idx <- score_result$person_id %in% matched_pids
+        score_result$score[idx] <- score_result$score[idx] + entry$weight
+      }
     }
   }
 
+  # CHADS2: add age-based points (age >= 75: +1)
   # CHA2DS2-VASc: add age-based and sex-based points
-  if (score_type == "chadsvasc") {
-    # Need person data for age and sex
+  if (score_type %in% c("chads2", "chadsvasc")) {
     person_schema <- .resolveTableSchema(handle, "person", "Clinical")
     person_table <- .qualifyTable(handle, "person", person_schema)
     person_sql <- paste0(
@@ -1476,27 +1878,53 @@
     if (nrow(person_df) > 0) {
       current_year <- as.integer(format(Sys.Date(), "%Y"))
       person_df$age <- current_year - person_df$year_of_birth
-      # Age >= 75: +2, age 65-74: +1
       for (i in seq_len(nrow(person_df))) {
         pid <- person_df$person_id[i]
         idx <- which(score_result$person_id == pid)
-        if (length(idx) > 0) {
-          if (!is.na(person_df$age[i])) {
+        if (length(idx) > 0 && !is.na(person_df$age[i])) {
+          if (score_type == "chads2") {
+            # CHADS2: age >= 75 = +1
+            if (person_df$age[i] >= 75) {
+              score_result$score[idx] <- score_result$score[idx] + 1L
+            }
+          } else {
+            # CHA2DS2-VASc: age >= 75 = +2, age 65-74 = +1
             if (person_df$age[i] >= 75) {
               score_result$score[idx] <- score_result$score[idx] + 2L
             } else if (person_df$age[i] >= 65) {
               score_result$score[idx] <- score_result$score[idx] + 1L
             }
           }
-          # Female sex: +1
-          if (!is.na(person_df$gender_concept_id[i]) &&
-              person_df$gender_concept_id[i] == 8532L) {
-            score_result$score[idx] <- score_result$score[idx] + 1L
-          }
+        }
+        # CHA2DS2-VASc only: female sex = +1
+        if (score_type == "chadsvasc" && length(idx) > 0 &&
+            !is.na(person_df$gender_concept_id[i]) &&
+            person_df$gender_concept_id[i] == 8532L) {
+          score_result$score[idx] <- score_result$score[idx] + 1L
         }
       }
     }
   }
+
+  # Attach score metadata for provenance tracking
+  analysis_ids <- list(charlson = 901L, chads2 = 903L, chadsvasc = 904L,
+                       dcsi = 902L, hfrs = 926L)
+  matching_type <- if (score_type %in% c("dcsi", "hfrs")) {
+    "vocabulary_resolved"
+  } else {
+    "exact_ancestor"
+  }
+  attr(score_result, "score_meta") <- list(
+    score_type = score_type,
+    analysis_id = analysis_ids[[score_type]],
+    upstream = "FeatureExtraction",
+    matching = matching_type,
+    note = if (matching_type == "vocabulary_resolved") {
+      "ICD codes resolved to SNOMED via concept_relationship"
+    } else {
+      "Ancestor concept IDs matched directly (no concept_ancestor descendant resolution)"
+    }
+  )
 
   score_result
 }
