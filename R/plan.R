@@ -425,6 +425,25 @@
 
       if (is_filter_list) {
         cohort_person_ids <- .buildCohortFromFilters(handle, spec)
+        # Materialize a cohort temp table so baseline/survival outputs work
+        if (length(cohort_person_ids) > 0) {
+          obs_table <- bp$tables[bp$tables$table_name == "observation_period" &
+                                   bp$tables$present_in_db, , drop = FALSE]
+          if (nrow(obs_table) > 0) {
+            obs_qualified <- obs_table$qualified_name[1]
+            ids_str <- paste(as.integer(cohort_person_ids), collapse = ", ")
+            cohort_sql <- paste0(
+              "SELECT DISTINCT o.person_id AS subject_id, ",
+              "o.observation_period_start_date AS cohort_start_date, ",
+              "o.observation_period_end_date AS cohort_end_date ",
+              "FROM ", obs_qualified, " o ",
+              "WHERE o.person_id IN (", ids_str, ")"
+            )
+            cohort_table <- .createTempTable(
+              handle, "dsomop_plan_cohort", cohort_sql)
+          }
+        }
+        .assertMinPersons(n_persons = length(unique(cohort_person_ids)))
       } else {
         # Single concept-based spec: use existing cohortCreate
         cohort_table <- .cohortCreate(
