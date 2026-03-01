@@ -256,7 +256,7 @@
   # Build WHERE clauses
   where <- character(0)
 
-  if (!is.null(concept_filter) && has_concept_col) {
+  if (!is.null(concept_filter) && length(concept_filter) > 0 && has_concept_col) {
     ids <- paste(as.integer(concept_filter), collapse = ", ")
     where <- c(where, paste0(t_alias, ".", concept_col, " IN (", ids, ")"))
   }
