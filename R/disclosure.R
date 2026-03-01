@@ -234,7 +234,10 @@
   always_allowed <- c("sex", "age_group", "cohort", "concept_set", "value_bin")
 
   # Constrained: allowed with validation
-  constrained <- c("age_range", "has_concept", "date_range", "min_count")
+  constrained <- c("age_range", "has_concept", "date_range", "min_count",
+                    "not_has_concept", "concept_count", "prior_observation",
+                    "followup", "visit_count", "has_measurement",
+                    "missing_measurement")
 
   # Blocked: could fingerprint individuals
   blocked <- c("value_threshold", "custom")

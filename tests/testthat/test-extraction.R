@@ -267,3 +267,122 @@ test_that("applyDateHandling remove drops date columns", {
   expect_true("person_id" %in% names(result))
   expect_true("value" %in% names(result))
 })
+
+# === New feature types via .toFeatures() ===
+
+test_that("sd_value feature computes standard deviation per person", {
+  df <- data.frame(
+    person_id = c(1L, 1L, 1L, 2L, 2L, 2L),
+    measurement_concept_id = rep(100L, 6),
+    value_as_number = c(5.0, 7.0, 6.0, 10.0, 10.0, 10.0),
+    stringsAsFactors = FALSE
+  )
+  specs <- list(test_sd = list(type = "sd_value", name = "test_sd",
+                                concept_set = 100L,
+                                value_column = "value_as_number"))
+  result <- dsOMOP:::.toFeatures(df, "measurement", specs)
+  expect_true("test_sd" %in% names(result))
+  expect_equal(result$test_sd[result$person_id == 1], sd(c(5, 7, 6)))
+  expect_equal(result$test_sd[result$person_id == 2], 0)
+})
+
+test_that("cv_value feature computes coefficient of variation", {
+  df <- data.frame(
+    person_id = c(1L, 1L, 1L),
+    measurement_concept_id = rep(100L, 3),
+    value_as_number = c(5.0, 7.0, 6.0),
+    stringsAsFactors = FALSE
+  )
+  specs <- list(test_cv = list(type = "cv_value", name = "test_cv",
+                                concept_set = 100L,
+                                value_column = "value_as_number"))
+  result <- dsOMOP:::.toFeatures(df, "measurement", specs)
+  expect_true("test_cv" %in% names(result))
+  expected_cv <- sd(c(5, 7, 6)) / mean(c(5, 7, 6)) * 100
+  expect_equal(result$test_cv[1], expected_cv)
+})
+
+test_that("slope_value feature computes linear slope", {
+  df <- data.frame(
+    person_id = c(1L, 1L, 1L),
+    measurement_concept_id = rep(100L, 3),
+    value_as_number = c(5.0, 7.0, 9.0),
+    measurement_date = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01")),
+    stringsAsFactors = FALSE
+  )
+  specs <- list(test_slope = list(type = "slope_value", name = "test_slope",
+                                   concept_set = 100L,
+                                   value_column = "value_as_number"))
+  result <- dsOMOP:::.toFeatures(df, "measurement", specs)
+  expect_true("test_slope" %in% names(result))
+  expect_true(result$test_slope[1] > 0)
+})
+
+test_that("abnormal_high counts values above range_high", {
+  df <- data.frame(
+    person_id = c(1L, 1L, 1L, 2L, 2L),
+    measurement_concept_id = rep(100L, 5),
+    value_as_number = c(7.0, 5.5, 8.0, 5.0, 4.5),
+    range_high = rep(6.0, 5),
+    stringsAsFactors = FALSE
+  )
+  specs <- list(high_count = list(type = "abnormal_high", name = "high_count",
+                                   concept_set = 100L))
+  result <- dsOMOP:::.toFeatures(df, "measurement", specs)
+  expect_equal(result$high_count[result$person_id == 1], 2L)
+  expect_equal(result$high_count[result$person_id == 2], 0L)
+})
+
+test_that("abnormal_low counts values below range_low", {
+  df <- data.frame(
+    person_id = c(1L, 1L, 1L),
+    measurement_concept_id = rep(100L, 3),
+    value_as_number = c(3.5, 5.0, 3.8),
+    range_low = rep(4.0, 3),
+    stringsAsFactors = FALSE
+  )
+  specs <- list(low_count = list(type = "abnormal_low", name = "low_count",
+                                  concept_set = 100L))
+  result <- dsOMOP:::.toFeatures(df, "measurement", specs)
+  expect_equal(result$low_count[1], 2L)
+})
+
+test_that("gap_max_days computes max gap between events", {
+  df <- data.frame(
+    person_id = c(1L, 1L, 1L),
+    visit_concept_id = rep(9202L, 3),
+    visit_start_date = as.Date(c("2020-01-01", "2020-03-01", "2020-04-01")),
+    stringsAsFactors = FALSE
+  )
+  specs <- list(max_gap = list(type = "gap_max_days", name = "max_gap",
+                                concept_set = 9202L))
+  result <- dsOMOP:::.toFeatures(df, "visit_occurrence", specs)
+  expect_equal(result$max_gap[1], 60)
+})
+
+test_that("gap_mean_days computes mean gap between events", {
+  df <- data.frame(
+    person_id = c(1L, 1L, 1L),
+    visit_concept_id = rep(9202L, 3),
+    visit_start_date = as.Date(c("2020-01-01", "2020-03-01", "2020-04-01")),
+    stringsAsFactors = FALSE
+  )
+  specs <- list(mean_gap = list(type = "gap_mean_days", name = "mean_gap",
+                                 concept_set = 9202L))
+  result <- dsOMOP:::.toFeatures(df, "visit_occurrence", specs)
+  expect_equal(result$mean_gap[1], mean(c(60, 31)))
+})
+
+test_that("duration_sum sums start-to-end durations", {
+  df <- data.frame(
+    person_id = c(1L, 1L),
+    drug_concept_id = rep(1124300L, 2),
+    drug_exposure_start_date = as.Date(c("2020-01-01", "2020-06-01")),
+    drug_exposure_end_date = as.Date(c("2020-02-01", "2020-07-01")),
+    stringsAsFactors = FALSE
+  )
+  specs <- list(total_dur = list(type = "duration_sum", name = "total_dur",
+                                  concept_set = 1124300L))
+  result <- dsOMOP:::.toFeatures(df, "drug_exposure", specs)
+  expect_equal(result$total_dur[1], 31 + 30)
+})

@@ -803,6 +803,169 @@
       }
     }
 
+    # Standard deviation feature
+    if (identical(spec_type, "sd_value") && val_col %in% names(concept_data)) {
+      num_data <- concept_data[!is.na(concept_data[[val_col]]), , drop = FALSE]
+      if (nrow(num_data) > 0) {
+        stat_df <- stats::aggregate(
+          num_data[[val_col]],
+          by = list(person_id = num_data$person_id),
+          FUN = function(x) if (length(x) >= 2) stats::sd(x) else NA_real_)
+        names(stat_df)[2] <- label
+        features <- merge(features, stat_df, by = "person_id", all.x = TRUE)
+      }
+    }
+
+    # Coefficient of variation feature
+    if (identical(spec_type, "cv_value") && val_col %in% names(concept_data)) {
+      num_data <- concept_data[!is.na(concept_data[[val_col]]), , drop = FALSE]
+      if (nrow(num_data) > 0) {
+        stat_df <- stats::aggregate(
+          num_data[[val_col]],
+          by = list(person_id = num_data$person_id),
+          FUN = function(x) {
+            if (length(x) >= 2) {
+              m <- mean(x)
+              if (m != 0) stats::sd(x) / m * 100 else NA_real_
+            } else NA_real_
+          })
+        names(stat_df)[2] <- label
+        features <- merge(features, stat_df, by = "person_id", all.x = TRUE)
+      }
+    }
+
+    # Slope (linear trend) feature
+    if (identical(spec_type, "slope_value") && val_col %in% names(concept_data)) {
+      # Detect date column
+      date_cols <- intersect(
+        c("measurement_date", "condition_start_date", "drug_exposure_start_date",
+          "observation_date", "procedure_date", "visit_start_date",
+          "condition_era_start_date", "drug_era_start_date"),
+        names(concept_data))
+      if (length(date_cols) > 0) {
+        dcol <- date_cols[1]
+        num_data <- concept_data[
+          !is.na(concept_data[[val_col]]) & !is.na(concept_data[[dcol]]),
+          , drop = FALSE]
+        if (nrow(num_data) > 0) {
+          num_data$.date_num <- as.numeric(as.Date(num_data[[dcol]]))
+          slope_list <- lapply(split(num_data, num_data$person_id), function(x) {
+            if (nrow(x) >= 2 && length(unique(x$.date_num)) >= 2) {
+              coef(stats::lm(x[[val_col]] ~ x$.date_num))[2]
+            } else NA_real_
+          })
+          stat_df <- data.frame(
+            person_id = as.integer(names(slope_list)),
+            val = unlist(slope_list, use.names = FALSE),
+            stringsAsFactors = FALSE)
+          names(stat_df)[2] <- label
+          features <- merge(features, stat_df, by = "person_id", all.x = TRUE)
+        }
+      }
+    }
+
+    # Abnormal high count
+    if (identical(spec_type, "abnormal_high")) {
+      if ("value_as_number" %in% names(concept_data) &&
+          "range_high" %in% names(concept_data)) {
+        abn <- concept_data[
+          !is.na(concept_data$value_as_number) &
+          !is.na(concept_data$range_high) &
+          concept_data$value_as_number > concept_data$range_high,
+          , drop = FALSE]
+        if (nrow(abn) > 0) {
+          cnt_df <- stats::aggregate(
+            abn$value_as_number,
+            by = list(person_id = abn$person_id), FUN = length)
+          names(cnt_df)[2] <- label
+          features <- merge(features, cnt_df, by = "person_id", all.x = TRUE)
+        }
+        if (!label %in% names(features)) features[[label]] <- NA_integer_
+        features[[label]][is.na(features[[label]])] <- 0L
+      }
+    }
+
+    # Abnormal low count
+    if (identical(spec_type, "abnormal_low")) {
+      if ("value_as_number" %in% names(concept_data) &&
+          "range_low" %in% names(concept_data)) {
+        abn <- concept_data[
+          !is.na(concept_data$value_as_number) &
+          !is.na(concept_data$range_low) &
+          concept_data$value_as_number < concept_data$range_low,
+          , drop = FALSE]
+        if (nrow(abn) > 0) {
+          cnt_df <- stats::aggregate(
+            abn$value_as_number,
+            by = list(person_id = abn$person_id), FUN = length)
+          names(cnt_df)[2] <- label
+          features <- merge(features, cnt_df, by = "person_id", all.x = TRUE)
+        }
+        if (!label %in% names(features)) features[[label]] <- NA_integer_
+        features[[label]][is.na(features[[label]])] <- 0L
+      }
+    }
+
+    # Gap max days / gap mean days
+    if (identical(spec_type, "gap_max_days") ||
+        identical(spec_type, "gap_mean_days")) {
+      date_cols <- intersect(
+        c("visit_start_date", "measurement_date", "condition_start_date",
+          "drug_exposure_start_date", "observation_date", "procedure_date",
+          "condition_era_start_date", "drug_era_start_date"),
+        names(concept_data))
+      if (length(date_cols) > 0) {
+        dcol <- date_cols[1]
+        date_data <- concept_data[!is.na(concept_data[[dcol]]), , drop = FALSE]
+        if (nrow(date_data) > 0) {
+          gap_fn <- if (identical(spec_type, "gap_max_days")) max else mean
+          gap_list <- lapply(split(date_data, date_data$person_id), function(x) {
+            dates <- sort(as.Date(x[[dcol]]))
+            if (length(dates) >= 2) {
+              gaps <- as.integer(diff(dates))
+              gap_fn(gaps)
+            } else NA_real_
+          })
+          stat_df <- data.frame(
+            person_id = as.integer(names(gap_list)),
+            val = unlist(gap_list, use.names = FALSE),
+            stringsAsFactors = FALSE)
+          names(stat_df)[2] <- label
+          features <- merge(features, stat_df, by = "person_id", all.x = TRUE)
+        }
+      }
+    }
+
+    # Duration sum (sum of end_date - start_date for any table)
+    if (identical(spec_type, "duration_sum")) {
+      start_col <- intersect(
+        c("drug_exposure_start_date", "drug_era_start_date",
+          "condition_era_start_date", "condition_start_date",
+          "visit_start_date", "observation_period_start_date"),
+        names(concept_data))
+      end_col <- intersect(
+        c("drug_exposure_end_date", "drug_era_end_date",
+          "condition_era_end_date", "condition_end_date",
+          "visit_end_date", "observation_period_end_date"),
+        names(concept_data))
+      if (length(start_col) > 0 && length(end_col) > 0) {
+        dur <- as.integer(
+          as.Date(concept_data[[end_col[1]]]) -
+          as.Date(concept_data[[start_col[1]]]))
+        dur_data <- data.frame(
+          person_id = concept_data$person_id,
+          dur = dur, stringsAsFactors = FALSE)
+        dur_data <- dur_data[!is.na(dur_data$dur), , drop = FALSE]
+        if (nrow(dur_data) > 0) {
+          stat_df <- stats::aggregate(
+            dur_data$dur,
+            by = list(person_id = dur_data$person_id), FUN = sum)
+          names(stat_df)[2] <- label
+          features <- merge(features, stat_df, by = "person_id", all.x = TRUE)
+        }
+      }
+    }
+
     features
   }
 
@@ -1021,24 +1184,30 @@
   bp <- .buildBlueprint(handle)
   kinds <- vapply(derived_specs, function(s) s$kind, character(1))
 
-  needs_person <- any(kinds %in% c("age", "sex_mf"))
-  needs_obs <- any(kinds == "obs_duration") ||
+  needs_person <- any(kinds %in% c("age", "sex_mf", "demo_missingness"))
+  needs_obs <- any(kinds %in% c("obs_duration", "prior_obs", "followup")) ||
     any(kinds == "age" & vapply(derived_specs, function(s) {
       identical(s$reference, "index")
     }, logical(1)))
+  needs_comorbidity <- any(kinds %in% c("charlson", "chadsvasc"))
 
-  if (!needs_person && !needs_obs) return(NULL)
+  if (!needs_person && !needs_obs && !needs_comorbidity) return(NULL)
 
   # Build SQL to fetch required data
   person_schema <- .resolveTableSchema(handle, "person", "Clinical")
   person_table <- .qualifyTable(handle, "person", person_schema)
 
   select_parts <- "p.person_id"
-  if (any(kinds == "age")) {
+  if (any(kinds %in% c("age", "demo_missingness"))) {
     select_parts <- paste0(select_parts, ", p.year_of_birth")
   }
-  if (any(kinds == "sex_mf")) {
+  if (any(kinds %in% c("sex_mf", "demo_missingness"))) {
     select_parts <- paste0(select_parts, ", p.gender_concept_id")
+  }
+  if (any(kinds == "demo_missingness")) {
+    select_parts <- paste0(select_parts,
+      ", p.month_of_birth, p.day_of_birth",
+      ", p.race_concept_id, p.ethnicity_concept_id")
   }
 
   sql <- paste0("SELECT DISTINCT ", select_parts, " FROM ", person_table, " p")
@@ -1048,8 +1217,7 @@
     op_table <- .qualifyTable(handle, "observation_period", op_schema)
     sql <- paste0(sql,
       " LEFT JOIN ", op_table, " op ON op.person_id = p.person_id")
-    if (any(kinds == "obs_duration")) {
-      sql <- gsub("SELECT DISTINCT ", "SELECT DISTINCT ", sql)
+    if (any(kinds %in% c("obs_duration", "prior_obs", "followup"))) {
       # Add observation period columns
       sql <- sub("FROM", paste0(
         ", op.observation_period_start_date, op.observation_period_end_date FROM"
@@ -1131,10 +1299,206 @@
       } else {
         result[[col_name]] <- NA_integer_
       }
+
+    } else if (spec$kind == "prior_obs") {
+      if ("observation_period_start_date" %in% names(df)) {
+        ref_date <- if (!is.null(spec$reference_date)) {
+          as.Date(spec$reference_date)
+        } else {
+          Sys.Date()
+        }
+        start_d <- as.Date(df$observation_period_start_date)
+        result[[col_name]] <- as.integer(ref_date - start_d)
+      } else {
+        result[[col_name]] <- NA_integer_
+      }
+
+    } else if (spec$kind == "followup") {
+      if ("observation_period_end_date" %in% names(df)) {
+        ref_date <- if (!is.null(spec$reference_date)) {
+          as.Date(spec$reference_date)
+        } else {
+          Sys.Date()
+        }
+        end_d <- as.Date(df$observation_period_end_date)
+        result[[col_name]] <- as.integer(end_d - ref_date)
+      } else {
+        result[[col_name]] <- NA_integer_
+      }
+
+    } else if (spec$kind == "demo_missingness") {
+      demo_cols <- c("year_of_birth", "month_of_birth", "day_of_birth",
+                     "race_concept_id", "ethnicity_concept_id",
+                     "gender_concept_id")
+      present <- intersect(demo_cols, names(df))
+      if (length(present) > 0) {
+        miss_count <- rowSums(is.na(df[, present, drop = FALSE]))
+        # Also count 0-valued concept IDs as "missing"
+        concept_demo <- intersect(
+          c("race_concept_id", "ethnicity_concept_id", "gender_concept_id"),
+          present)
+        for (cc in concept_demo) {
+          miss_count <- miss_count +
+            as.integer(!is.na(df[[cc]]) & df[[cc]] == 0L)
+        }
+        result[[col_name]] <- as.integer(miss_count)
+      } else {
+        result[[col_name]] <- NA_integer_
+      }
+
+    } else if (spec$kind %in% c("charlson", "chadsvasc")) {
+      score_df <- .computeComorbidityScore(
+        handle, spec$kind, result$person_id)
+      if (!is.null(score_df) && nrow(score_df) > 0) {
+        names(score_df)[2] <- col_name
+        result <- merge(result, score_df, by = "person_id", all.x = TRUE)
+        result[[col_name]][is.na(result[[col_name]])] <- 0L
+      } else {
+        result[[col_name]] <- 0L
+      }
     }
   }
 
   result
+}
+
+#' Compute a comorbidity score (Charlson or CHA2DS2-VASc)
+#'
+#' Checks condition tables for the presence of category-defining concepts
+#' and computes a weighted sum per person.
+#'
+#' @param handle CDM handle
+#' @param score_type Character; "charlson" or "chadsvasc"
+#' @param person_ids Integer vector of person IDs
+#' @return Data frame with person_id and score columns
+#' @keywords internal
+.computeComorbidityScore <- function(handle, score_type, person_ids = NULL) {
+  if (is.null(person_ids) || length(person_ids) == 0) return(NULL)
+
+  # Score definitions: concept IDs from OHDSI FeatureExtraction CharlsonIndex.sql
+  # Each category uses ancestor concept IDs; matching is via condition tables.
+  # Source: https://github.com/OHDSI/FeatureExtraction/blob/main/inst/sql/sql_server/CharlsonIndex.sql
+  if (score_type == "charlson") {
+    categories <- list(
+      mi         = list(concepts = c(4329847L),                    weight = 1L),
+      chf        = list(concepts = c(316139L),                     weight = 1L),
+      pvd        = list(concepts = c(321052L),                     weight = 1L),
+      cvd        = list(concepts = c(381591L, 434056L),            weight = 1L),
+      dementia   = list(concepts = c(4182210L),                    weight = 1L),
+      copd       = list(concepts = c(4063381L),                    weight = 1L),
+      rheumatic  = list(concepts = c(257628L, 134442L, 80800L,
+                                      80809L, 256197L, 255348L),   weight = 1L),
+      pud        = list(concepts = c(4247120L),                    weight = 1L),
+      mild_liver = list(concepts = c(4212540L, 4064161L),          weight = 1L),
+      dm_uncomp  = list(concepts = c(201820L),                     weight = 1L),
+      dm_comp    = list(concepts = c(443767L, 442793L),            weight = 2L),
+      hemiplegia = list(concepts = c(192606L, 374022L),            weight = 2L),
+      renal      = list(concepts = c(4030518L),                    weight = 2L),
+      malignancy = list(concepts = c(443392L),                     weight = 2L),
+      mod_liver  = list(concepts = c(4245975L, 4029488L,
+                                      192680L, 24966L),            weight = 3L),
+      metastatic = list(concepts = c(432851L),                     weight = 6L),
+      aids       = list(concepts = c(439727L),                     weight = 6L)
+    )
+  } else if (score_type == "chadsvasc") {
+    categories <- list(
+      chf          = list(concepts = c(316139L),            weight = 1L),
+      hypertension = list(concepts = c(320128L),            weight = 1L),
+      diabetes     = list(concepts = c(201820L),            weight = 1L),
+      stroke       = list(concepts = c(381591L, 434056L),   weight = 2L),
+      vascular     = list(concepts = c(4329847L, 321052L),  weight = 1L)
+    )
+  } else {
+    return(NULL)
+  }
+
+  bp <- .buildBlueprint(handle)
+
+  # Find condition tables: condition_occurrence, condition_era
+  cond_tables <- c("condition_occurrence", "condition_era")
+  available_tables <- character(0)
+  for (ct in cond_tables) {
+    tbl_row <- bp$tables[bp$tables$table_name == ct &
+                           bp$tables$present_in_db, , drop = FALSE]
+    if (nrow(tbl_row) > 0) {
+      available_tables <- c(available_tables, ct)
+    }
+  }
+  if (length(available_tables) == 0) {
+    return(data.frame(person_id = person_ids, score = 0L,
+                      stringsAsFactors = FALSE))
+  }
+
+  ids_str <- paste(as.integer(person_ids), collapse = ", ")
+
+  # Build UNION ALL across available condition tables
+  union_parts <- character(0)
+  for (ct in available_tables) {
+    tbl_row <- bp$tables[bp$tables$table_name == ct &
+                           bp$tables$present_in_db, , drop = FALSE]
+    concept_col <- .getDomainConceptColumn(bp, ct)
+    qualified <- tbl_row$qualified_name[1]
+    union_parts <- c(union_parts, paste0(
+      "SELECT DISTINCT person_id, ", concept_col, " AS concept_id FROM ",
+      qualified, " WHERE person_id IN (", ids_str, ")"))
+  }
+  union_sql <- paste(union_parts, collapse = " UNION ALL ")
+
+  cond_df <- .executeQuery(handle, union_sql)
+
+  # Compute score per person
+  score_result <- data.frame(
+    person_id = person_ids,
+    score = 0L,
+    stringsAsFactors = FALSE)
+
+  if (nrow(cond_df) > 0) {
+    for (cat in categories) {
+      cat_concepts <- cat$concepts
+      cat_weight <- cat$weight
+      # Find persons with any matching concept
+      matched_pids <- unique(
+        cond_df$person_id[cond_df$concept_id %in% cat_concepts])
+      idx <- score_result$person_id %in% matched_pids
+      score_result$score[idx] <- score_result$score[idx] + cat_weight
+    }
+  }
+
+  # CHA2DS2-VASc: add age-based and sex-based points
+  if (score_type == "chadsvasc") {
+    # Need person data for age and sex
+    person_schema <- .resolveTableSchema(handle, "person", "Clinical")
+    person_table <- .qualifyTable(handle, "person", person_schema)
+    person_sql <- paste0(
+      "SELECT person_id, year_of_birth, gender_concept_id FROM ",
+      person_table, " WHERE person_id IN (", ids_str, ")")
+    person_df <- .executeQuery(handle, person_sql)
+    if (nrow(person_df) > 0) {
+      current_year <- as.integer(format(Sys.Date(), "%Y"))
+      person_df$age <- current_year - person_df$year_of_birth
+      # Age >= 75: +2, age 65-74: +1
+      for (i in seq_len(nrow(person_df))) {
+        pid <- person_df$person_id[i]
+        idx <- which(score_result$person_id == pid)
+        if (length(idx) > 0) {
+          if (!is.na(person_df$age[i])) {
+            if (person_df$age[i] >= 75) {
+              score_result$score[idx] <- score_result$score[idx] + 2L
+            } else if (person_df$age[i] >= 65) {
+              score_result$score[idx] <- score_result$score[idx] + 1L
+            }
+          }
+          # Female sex: +1
+          if (!is.na(person_df$gender_concept_id[i]) &&
+              person_df$gender_concept_id[i] == 8532L) {
+            score_result$score[idx] <- score_result$score[idx] + 1L
+          }
+        }
+      }
+    }
+  }
+
+  score_result
 }
 
 # --- Baseline Extraction ---
