@@ -287,6 +287,97 @@
 
 #' Execute a plan and produce server-side data frames
 #'
+#' Build a cohort person_id set from population-level filters
+#'
+#' @param handle CDM handle
+#' @param filters List of filter specs from cart_to_plan
+#' @return Integer vector of person_ids
+#' @keywords internal
+.buildCohortFromFilters <- function(handle, filters) {
+  bp <- .buildBlueprint(handle)
+
+  person_table <- bp$tables[bp$tables$table_name == "person" &
+                              bp$tables$present_in_db, , drop = FALSE]
+  if (nrow(person_table) == 0) return(integer(0))
+
+  qualified_person <- person_table$qualified_name[1]
+  person_cols <- bp$columns[["person"]]$column_name
+
+  where_parts <- character(0)
+
+  for (f in filters) {
+    ftype <- f$type
+    params <- f$params
+
+    if (ftype == "sex") {
+      gender_id <- switch(toupper(params$value),
+        "F" = 8532L, "FEMALE" = 8532L,
+        "M" = 8507L, "MALE" = 8507L,
+        NULL)
+      if (!is.null(gender_id) && "gender_concept_id" %in% person_cols) {
+        where_parts <- c(where_parts,
+          paste0("p.gender_concept_id = ", gender_id))
+      }
+
+    } else if (ftype == "age_range") {
+      current_year <- as.integer(format(Sys.Date(), "%Y"))
+      if (!is.null(params$min) && "year_of_birth" %in% person_cols) {
+        max_yob <- current_year - as.integer(params$min)
+        where_parts <- c(where_parts,
+          paste0("p.year_of_birth <= ", max_yob))
+      }
+      if (!is.null(params$max) && "year_of_birth" %in% person_cols) {
+        min_yob <- current_year - as.integer(params$max)
+        where_parts <- c(where_parts,
+          paste0("p.year_of_birth >= ", min_yob))
+      }
+
+    } else if (ftype == "age_group") {
+      current_year <- as.integer(format(Sys.Date(), "%Y"))
+      groups <- params$groups
+      if (length(groups) > 0 && "year_of_birth" %in% person_cols) {
+        band_parts <- character(0)
+        for (g in groups) {
+          parts <- strsplit(g, "-")[[1]]
+          if (length(parts) == 2) {
+            min_yob <- current_year - as.integer(parts[2])
+            max_yob <- current_year - as.integer(parts[1])
+            band_parts <- c(band_parts,
+              paste0("(p.year_of_birth BETWEEN ", min_yob,
+                     " AND ", max_yob, ")"))
+          }
+        }
+        if (length(band_parts) > 0) {
+          where_parts <- c(where_parts,
+            paste0("(", paste(band_parts, collapse = " OR "), ")"))
+        }
+      }
+
+    } else if (ftype == "has_concept") {
+      concept_id <- as.integer(params$concept_id)
+      table_name <- params$table
+      tbl_row <- bp$tables[bp$tables$table_name == table_name &
+                             bp$tables$present_in_db, , drop = FALSE]
+      if (nrow(tbl_row) > 0) {
+        concept_col <- .getDomainConceptColumn(bp, table_name)
+        qualified_tbl <- tbl_row$qualified_name[1]
+        where_parts <- c(where_parts,
+          paste0("EXISTS (SELECT 1 FROM ", qualified_tbl, " t",
+                 " WHERE t.person_id = p.person_id",
+                 " AND t.", concept_col, " = ", concept_id, ")"))
+      }
+    }
+  }
+
+  sql <- paste0("SELECT DISTINCT p.person_id FROM ", qualified_person, " p")
+  if (length(where_parts) > 0) {
+    sql <- paste0(sql, " WHERE ", paste(where_parts, collapse = " AND "))
+  }
+
+  result <- .executeQuery(handle, sql)
+  if (nrow(result) > 0) result$person_id else integer(0)
+}
+
 #' @param handle CDM handle
 #' @param plan List; the extraction plan
 #' @param out_symbols Named list; output name -> R symbol mapping
@@ -319,13 +410,27 @@
       .assertMinPersons(n_persons = length(unique(cohort_person_ids)))
 
     } else if (!is.null(plan$cohort$spec)) {
-      cohort_table <- .cohortCreate(
-        handle, plan$cohort$spec, mode = "temporary",
-        cohort_id = plan$cohort$cohort_definition_id)
+      spec <- plan$cohort$spec
 
-      pid_result <- .executeQuery(handle,
-        paste0("SELECT DISTINCT subject_id AS person_id FROM ", cohort_table))
-      cohort_person_ids <- pid_result$person_id
+      # Check if spec is a list of population filters (from cart_to_plan)
+      is_filter_list <- is.list(spec) && length(spec) > 0 &&
+        !is.null(spec[[1]]) && is.list(spec[[1]]) &&
+        !is.null(spec[[1]]$type) &&
+        spec[[1]]$type %in% c("sex", "age_range", "age_group",
+                               "has_concept", "date_range", "value_threshold")
+
+      if (is_filter_list) {
+        cohort_person_ids <- .buildCohortFromFilters(handle, spec)
+      } else {
+        # Single concept-based spec: use existing cohortCreate
+        cohort_table <- .cohortCreate(
+          handle, spec, mode = "temporary",
+          cohort_id = plan$cohort$cohort_definition_id)
+        pid_result <- .executeQuery(handle,
+          paste0("SELECT DISTINCT subject_id AS person_id FROM ",
+                 cohort_table))
+        cohort_person_ids <- pid_result$person_id
+      }
     }
   }
 
@@ -366,25 +471,44 @@
     tryCatch({
       if (out_type == "person_level") {
         result_df <- NULL
+        out_repr <- out$representation %||% "long"
 
         for (tbl_name in names(out$tables %||% list())) {
-          cols <- out$tables[[tbl_name]]
-          tbl_df <- .extractTable(
-            handle,
-            table = tbl_name,
-            columns = cols,
-            person_ids = cohort_person_ids,
-            translate_concepts = translate,
-            representation = "long",
-            block_sensitive = block_sensitive
-          )
+          entry <- out$tables[[tbl_name]]
+
+          # Check if entry has feature specs (list with $features)
+          if (is.list(entry) && !is.null(entry$features)) {
+            tbl_df <- .extractTable(
+              handle,
+              table = tbl_name,
+              columns = NULL,
+              concept_filter = entry$concept_set,
+              person_ids = cohort_person_ids,
+              translate_concepts = translate,
+              representation = "features",
+              feature_specs = entry$features,
+              block_sensitive = block_sensitive
+            )
+          } else {
+            # Original: entry is a character vector of column names
+            cols <- if (is.character(entry)) entry else NULL
+            tbl_df <- .extractTable(
+              handle,
+              table = tbl_name,
+              columns = cols,
+              person_ids = cohort_person_ids,
+              translate_concepts = translate,
+              representation = "long",
+              block_sensitive = block_sensitive
+            )
+          }
 
           if (is.null(result_df)) {
             result_df <- tbl_df
           } else if ("person_id" %in% names(tbl_df) &&
                      "person_id" %in% names(result_df)) {
             result_df <- merge(result_df, tbl_df,
-                               by = "person_id", all.x = TRUE)
+                               by = "person_id", all = TRUE)
           }
         }
 

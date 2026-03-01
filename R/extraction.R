@@ -657,49 +657,129 @@
   possible <- possible[!grepl("_type_concept_id$|_source_concept_id$", possible)]
   concept_col <- if (length(possible) > 0) possible[1] else NULL
 
+  # Build spec lookup: concept_id -> list of specs (supports multiple formats per concept)
+  specs_by_concept <- list()
+  if (!is.null(specs) && length(specs) > 0) {
+    for (s in specs) {
+      cs <- s$concept_set
+      if (is.list(cs) && !is.null(cs$concepts)) cs <- cs$concepts
+      cs <- as.integer(cs)
+      for (cid in cs) {
+        key <- as.character(cid)
+        if (is.null(specs_by_concept[[key]])) specs_by_concept[[key]] <- list()
+        specs_by_concept[[key]] <- c(specs_by_concept[[key]], list(s))
+      }
+    }
+  }
+
   persons <- unique(df$person_id)
   features <- data.frame(person_id = persons, stringsAsFactors = FALSE)
+
+  # Helper: generate one feature column
+  .add_feature <- function(features, spec, concept_data, concept_str, df) {
+    # Determine label
+    if (!is.null(spec) && !is.null(spec$name) && nchar(spec$name) > 0) {
+      label <- spec$name
+    } else {
+      label <- .standardizeName(concept_str)
+      if (is.na(label) || label == "") label <- paste0("concept_", concept_str)
+    }
+
+    spec_type <- if (!is.null(spec)) (spec$type %||% "boolean") else NULL
+
+    # Boolean feature
+    if (is.null(spec_type) || spec_type == "boolean") {
+      features[[label]] <-
+        as.integer(features$person_id %in% concept_data$person_id)
+    }
+
+    # Count feature
+    if (is.null(spec_type) || spec_type == "count") {
+      count_df <- stats::aggregate(
+        concept_data[[names(concept_data)[2]]],
+        by = list(person_id = concept_data$person_id),
+        FUN = length
+      )
+      col_name <- if (identical(spec_type, "count")) label
+                  else paste0(label, "_count")
+      names(count_df)[2] <- col_name
+      features <- merge(features, count_df, by = "person_id", all.x = TRUE)
+      features[[col_name]][is.na(features[[col_name]])] <- 0L
+    }
+
+    # Value-based features
+    val_col <- if (!is.null(spec)) (spec$value_column %||% "value_as_number")
+               else "value_as_number"
+    if (val_col %in% names(concept_data)) {
+      num_data <- concept_data[!is.na(concept_data[[val_col]]), , drop = FALSE]
+      if (nrow(num_data) > 0) {
+        if (is.null(spec_type) || spec_type == "mean_value") {
+          stat_df <- stats::aggregate(
+            num_data[[val_col]],
+            by = list(person_id = num_data$person_id), FUN = mean)
+          col_name <- if (identical(spec_type, "mean_value")) label
+                      else paste0(label, "_mean")
+          names(stat_df)[2] <- col_name
+          features <- merge(features, stat_df, by = "person_id", all.x = TRUE)
+        }
+        if (is.null(spec_type) || spec_type == "min_value") {
+          stat_df <- stats::aggregate(
+            num_data[[val_col]],
+            by = list(person_id = num_data$person_id), FUN = min)
+          col_name <- if (identical(spec_type, "min_value")) label
+                      else paste0(label, "_min")
+          names(stat_df)[2] <- col_name
+          features <- merge(features, stat_df, by = "person_id", all.x = TRUE)
+        }
+        if (is.null(spec_type) || spec_type == "max_value") {
+          stat_df <- stats::aggregate(
+            num_data[[val_col]],
+            by = list(person_id = num_data$person_id), FUN = max)
+          col_name <- if (identical(spec_type, "max_value")) label
+                      else paste0(label, "_max")
+          names(stat_df)[2] <- col_name
+          features <- merge(features, stat_df, by = "person_id", all.x = TRUE)
+        }
+        if (identical(spec_type, "first_value")) {
+          first_df <- do.call(rbind, lapply(
+            split(num_data, num_data$person_id),
+            function(x) x[which.min(seq_len(nrow(x))), , drop = FALSE]))
+          first_vals <- data.frame(
+            person_id = first_df$person_id,
+            val = first_df[[val_col]], stringsAsFactors = FALSE)
+          names(first_vals)[2] <- label
+          features <- merge(features, first_vals, by = "person_id", all.x = TRUE)
+        }
+        if (identical(spec_type, "latest_value")) {
+          last_df <- do.call(rbind, lapply(
+            split(num_data, num_data$person_id),
+            function(x) x[nrow(x), , drop = FALSE]))
+          last_vals <- data.frame(
+            person_id = last_df$person_id,
+            val = last_df[[val_col]], stringsAsFactors = FALSE)
+          names(last_vals)[2] <- label
+          features <- merge(features, last_vals, by = "person_id", all.x = TRUE)
+        }
+      }
+    }
+    features
+  }
 
   if (!is.null(concept_col) && concept_col %in% names(df)) {
     concepts <- unique(df[[concept_col]])
 
     for (concept in concepts) {
-      concept_label <- .standardizeName(as.character(concept))
-      if (is.na(concept_label) || concept_label == "") {
-        concept_label <- paste0("concept_", concept)
-      }
-
+      concept_str <- as.character(concept)
+      concept_specs <- specs_by_concept[[concept_str]]
       concept_data <- df[df[[concept_col]] == concept, , drop = FALSE]
 
-      # Count feature
-      count_df <- stats::aggregate(
-        concept_data[[concept_col]],
-        by = list(person_id = concept_data$person_id),
-        FUN = length
-      )
-      names(count_df)[2] <- paste0(concept_label, ".count")
-      features <- merge(features, count_df, by = "person_id", all.x = TRUE)
-      feat_col <- paste0(concept_label, ".count")
-      features[[feat_col]][is.na(features[[feat_col]])] <- 0L
-
-      # Boolean feature
-      features[[paste0(concept_label, ".ever")]] <-
-        as.integer(features$person_id %in% concept_data$person_id)
-
-      # Numeric features
-      if ("value_as_number" %in% names(concept_data)) {
-        num_data <- concept_data[!is.na(concept_data$value_as_number), ,
-                                 drop = FALSE]
-        if (nrow(num_data) > 0) {
-          for (stat in c("mean", "min", "max")) {
-            stat_df <- stats::aggregate(
-              num_data$value_as_number,
-              by = list(person_id = num_data$person_id),
-              FUN = stat
-            )
-            names(stat_df)[2] <- paste0(concept_label, ".value_", stat)
-            features <- merge(features, stat_df, by = "person_id", all.x = TRUE)
-          }
+      if (is.null(concept_specs) || length(concept_specs) == 0) {
+        # No spec: generate all features (backward compat)
+        features <- .add_feature(features, NULL, concept_data, concept_str, df)
+      } else {
+        # Generate one feature per spec (supports multiple formats per concept)
+        for (spec in concept_specs) {
+          features <- .add_feature(features, spec, concept_data, concept_str, df)
         }
       }
     }
