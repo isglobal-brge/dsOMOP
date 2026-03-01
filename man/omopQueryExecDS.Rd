@@ -21,14 +21,10 @@ For aggregate mode: disclosure-controlled data frame.
   For assign mode: invisible TRUE.
 }
 \description{
-Executes a query template against the database with DataSHIELD-
-aligned disclosure controls. Only queries classified as SAFE_AGGREGATE
-can be executed in aggregate mode.
-}
-\details{
-Schema placeholders (\code{@cdm}, \code{@vocab}, \code{@results}) are
-automatically resolved from the OMOP handle. User-provided input parameters
-are substituted into the SQL template.
+Executes a query template against the database with DataSHIELD-aligned
+disclosure controls. Only queries classified as SAFE_AGGREGATE can be
+executed in aggregate mode. Schema placeholders are automatically resolved
+from the OMOP handle.
 
 Disclosure controls applied:
 \itemize{
@@ -36,5 +32,10 @@ Disclosure controls applied:
   \item Output rows capped at 5000 to prevent long-tail disclosure
   \item BLOCKED queries cannot be executed
   \item SAFE_ASSIGN queries cannot be executed in aggregate mode
+}
+}
+\examples{
+\dontrun{
+result <- omopQueryExecDS("omop", "condition_prevalence", inputs = list())
 }
 }

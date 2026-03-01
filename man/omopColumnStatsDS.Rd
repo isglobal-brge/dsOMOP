@@ -17,5 +17,12 @@ omopColumnStatsDS(omop_symbol, table, column)
 Named list with column statistics
 }
 \description{
-Get column statistics (Aggregate)
+Returns disclosure-controlled summary statistics for a single column in an
+OMOP CDM table, including data type, completeness, distinct values, and
+numeric summary when applicable.
+}
+\examples{
+\dontrun{
+stats <- omopColumnStatsDS("omop", "person", "year_of_birth")
+}
 }

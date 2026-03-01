@@ -7,8 +7,15 @@
 omopPingDS()
 }
 \value{
-Named list with alive status
+Named list with alive status, package version, and timestamp.
 }
 \description{
-Ping / health check (Aggregate)
+Returns basic status information indicating the dsOMOP server package is
+loaded and responsive. Used by the client to verify connectivity before
+issuing further commands.
+}
+\examples{
+\dontrun{
+omopPingDS()
+}
 }

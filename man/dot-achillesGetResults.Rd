@@ -4,26 +4,20 @@
 \alias{.achillesGetResults}
 \title{Get Achilles results (count-based analyses)}
 \usage{
-.achillesGetResults(
-  handle,
-  analysis_ids,
-  stratum_filters = NULL,
-  min_cell_count = NULL
-)
+.achillesGetResults(handle, analysis_ids)
 }
 \arguments{
 \item{handle}{CDM handle}
 
 \item{analysis_ids}{Integer vector; which analysis IDs to retrieve}
-
-\item{stratum_filters}{Named list; e.g. list(stratum_1 = "201820")}
-
-\item{min_cell_count}{Integer; minimum count for disclosure (NULL = use default)}
 }
 \value{
 data.frame with analysis_id, stratum_1..5, count_value
 }
 \description{
-Get Achilles results (count-based analyses)
+Returns count-based Achilles results for the requested analysis IDs.
+Arbitrary stratum filtering is not supported to prevent targeted probing
+of rare strata (Fix C). Rows with count_value below nfilter.tab are
+dropped entirely ("no hints" policy).
 }
 \keyword{internal}

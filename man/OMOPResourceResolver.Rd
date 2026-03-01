@@ -8,6 +8,14 @@ OMOP CDM Resource Resolver
 
 OMOP CDM Resource Resolver
 }
+\details{
+A \code{resourcer::ResourceResolver} subclass that creates database
+connections from DataSHIELD resource descriptors pointing to OMOP CDM
+databases. Matches resources whose format is \code{"omop.hades.db"} or
+\code{"omop.cdm.db"} and delegates connection setup to
+\code{\link{OMOPResourceClient}}, which supports PostgreSQL, SQL Server,
+SQLite, and MySQL/MariaDB backends.
+}
 \keyword{internal}
 \section{Super class}{
 \code{\link[resourcer:ResourceResolver]{resourcer::ResourceResolver}} -> \code{OMOPResourceResolver}

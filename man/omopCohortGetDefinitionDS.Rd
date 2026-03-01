@@ -9,11 +9,17 @@ omopCohortGetDefinitionDS(omop_symbol, cohort_definition_id)
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
 
-\item{cohort_definition_id}{Integer}
+\item{cohort_definition_id}{Integer; the cohort definition ID to retrieve}
 }
 \value{
 Named list with definition details
 }
 \description{
-Get a cohort definition (Aggregate)
+Retrieves the full definition for a specific cohort, including the cohort
+specification DSL, name, description, and subject count.
+}
+\examples{
+\dontrun{
+defn <- omopCohortGetDefinitionDS("omop", cohort_definition_id = 1L)
+}
 }

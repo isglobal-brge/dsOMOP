@@ -4,20 +4,21 @@
 \alias{.achillesGetDistributions}
 \title{Get Achilles distribution results}
 \usage{
-.achillesGetDistributions(handle, analysis_ids, stratum_filters = NULL)
+.achillesGetDistributions(handle, analysis_ids)
 }
 \arguments{
 \item{handle}{CDM handle}
 
 \item{analysis_ids}{Integer vector}
-
-\item{stratum_filters}{Named list; optional stratum filters}
 }
 \value{
 data.frame with analysis_id, stratum_1..5, count_value,
-  min/max/avg/stdev/median/p10/p25/p75/p90
+  avg/stdev/median/p10/p25/p75/p90 (no min/max)
 }
 \description{
-Get Achilles distribution results
+Returns distribution statistics from achilles_results_dist. Extreme values
+(min_value, max_value) are never returned to prevent identification of
+outlier individuals. Rows with count_value below the disclosure threshold
+are dropped entirely (no NA skeleton rows / "no hints" policy).
 }
 \keyword{internal}

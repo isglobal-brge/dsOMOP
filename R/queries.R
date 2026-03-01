@@ -1,17 +1,5 @@
-# ==============================================================================
-# dsOMOP v2 - Query Library System
-# ==============================================================================
-# Provides a curated, disclosure-safe library of SQL query templates for
-# OMOP CDM exploration. Inspired by OHDSI QueryLibrary, with DataSHIELD-
-# aligned SDC enforcement at runtime.
-#
-# Architecture:
-#   - Queries stored as Markdown files in inst/queries/queries/
-#   - Static safety classification (SAFE_AGGREGATE / SAFE_ASSIGN / BLOCKED)
-#   - CI-generated allowlist in inst/queries/query_allowlist.json
-#   - Runtime SDC enforcement via DataSHIELD nfilter settings
-#   - Provider interface for extensibility (native, QueryLibrary, Achilles)
-# ==============================================================================
+# Module: Query Library
+# Curated SQL query templates with safety classification and disclosure control.
 
 # --- Query Markdown Parser ---------------------------------------------------
 
@@ -109,6 +97,14 @@
 }
 
 #' Parse a Markdown table into a data frame
+#'
+#' Extracts rows from a pipe-delimited Markdown table and returns them as
+#' a data.frame. Automatically strips separator lines and normalises column
+#' names to lowercase.
+#'
+#' @param text Character; the raw Markdown text containing a pipe-delimited table.
+#' @return A data.frame parsed from the Markdown table, or NULL if no valid
+#'   table is found.
 #' @keywords internal
 .ql_parse_table <- function(text) {
   if (is.null(text) || nchar(trimws(text)) == 0) return(NULL)
@@ -148,6 +144,14 @@
 }
 
 #' Derive a query ID from metadata
+#'
+#' Converts a query's metadata (group and name fields) into a dot-separated,
+#' snake_case identifier suitable for use as a unique query ID
+#' (e.g. \code{"person.total_persons"}).
+#'
+#' @param meta Named list; query metadata containing \code{group} and
+#'   \code{name} entries.
+#' @return Character; the derived query ID in \code{group.name} format.
 #' @keywords internal
 .ql_derive_id <- function(meta) {
   group <- gsub("[^a-z0-9]", "_", tolower(meta[["group"]] %||% "general"))
@@ -383,7 +387,15 @@
   })
 }
 
-#' Minimal JSON parser for allowlist (avoids jsonlite dependency)
+#' Parse a JSON string with graceful fallback
+#'
+#' Wrapper around \code{jsonlite::fromJSON} that preserves list structure
+#' (\code{simplifyVector = FALSE}). When jsonlite is not available, returns
+#' an empty list and emits a warning instead of raising an error.
+#'
+#' @param text Character; a JSON string to parse.
+#' @return The parsed R object (typically a list), or an empty list if
+#'   jsonlite is unavailable.
 #' @keywords internal
 .ql_parse_json <- function(text) {
   # Use R's built-in JSON parsing if available, otherwise basic parsing

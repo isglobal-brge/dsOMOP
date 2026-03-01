@@ -6,7 +6,14 @@
 \usage{
 .achillesAnalysisDomain(analysis_ids)
 }
+\arguments{
+\item{analysis_ids}{Integer vector of Achilles analysis IDs to classify.}
+}
+\value{
+Character vector of domain names, one per input ID.
+}
 \description{
-Classify analysis domain from analysis_id range
+Maps Achilles analysis IDs to their OMOP CDM domain based on the standard
+numbering convention (e.g., 0-99 = person, 100-199 = observation_period).
 }
 \keyword{internal}

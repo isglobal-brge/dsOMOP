@@ -13,5 +13,11 @@ omopListTablesDS(omop_symbol)
 Data frame with table metadata
 }
 \description{
-List tables (Aggregate)
+Returns metadata for all OMOP CDM tables present in the database, including
+schema category, person ID availability, and concept column prefix.
+}
+\examples{
+\dontrun{
+tables <- omopListTablesDS("omop")
+}
 }

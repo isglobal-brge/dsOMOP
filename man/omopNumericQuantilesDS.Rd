@@ -21,7 +21,7 @@ omopNumericQuantilesDS(
 
 \item{value_col}{Character; numeric column name}
 
-\item{probs}{Numeric vector; probabilities}
+\item{probs}{Numeric vector; probabilities (e.g., c(0.05, 0.25, 0.5, 0.75, 0.95))}
 
 \item{cohort_table}{Character; cohort temp table for filtering (NULL)}
 
@@ -33,5 +33,12 @@ omopNumericQuantilesDS(
 Data frame with probability and value
 }
 \description{
-Computes quantiles at specified probabilities using SQL approximation.
+Computes quantiles at specified probabilities using SQL-based approximation.
+Results are rounded to the specified number of decimal places to limit
+precision and reduce re-identification risk.
+}
+\examples{
+\dontrun{
+quantiles <- omopNumericQuantilesDS("omop", "measurement", "value_as_number")
+}
 }

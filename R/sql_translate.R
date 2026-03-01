@@ -1,10 +1,5 @@
-# ==============================================================================
-# dsOMOP v2 - Pure R SQL Rendering Engine
-# ==============================================================================
-# Replaces SqlRender dependency. Implements the subset of SqlRender features
-# actually used by dsOMOP: @param substitution, TOP/LIMIT translation,
-# DATEADD translation, and statement splitting.
-# ==============================================================================
+# Module: SQL Translation
+# DBMS-specific SQL translation and schema qualification utilities.
 
 # --- Parameter Substitution ---
 

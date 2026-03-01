@@ -9,11 +9,17 @@ omopAchillesAnalysesDS(omop_symbol, domain = NULL)
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
 
-\item{domain}{Character; optional domain filter}
+\item{domain}{Character; optional domain filter (e.g., "Person", "Condition")}
 }
 \value{
 Data frame with analysis catalog
 }
 \description{
-List Achilles analyses (Aggregate)
+Returns the catalog of available Achilles analyses, optionally filtered by
+clinical domain. Each entry includes analysis ID, name, and description.
+}
+\examples{
+\dontrun{
+analyses <- omopAchillesAnalysesDS("omop", domain = "Person")
+}
 }

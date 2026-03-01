@@ -1,11 +1,7 @@
-# ==============================================================================
-# dsOMOP v2 - Achilles Query Functions
-# ==============================================================================
+# Module: Achilles Query Functions
 # Internal functions for querying pre-computed Achilles aggregate statistics.
-# All results are disclosure-controlled via .suppressSmallCounts().
-# ==============================================================================
 
-# --- Analysis Catalog --------------------------------------------------------
+# Analysis Catalog
 
 #' Static catalog of known Achilles analysis IDs (fallback)
 #' @return data.frame with analysis_id, analysis_name, domain, stratum_1_name,
@@ -110,8 +106,14 @@
   )
 }
 
-# --- Domain-to-analysis mapping -----------------------------------------------
+# Domain-to-analysis mapping
 
+#' Mapping of OMOP CDM domains to their Achilles analysis IDs
+#'
+#' Named list where each element is an integer vector of analysis IDs
+#' associated with the domain.
+#'
+#' @keywords internal
 .achilles_domain_analyses <- list(
   person             = c(0L, 1L, 2L, 3L, 5L, 8L, 900L),
   observation_period = c(101L, 108L, 113L, 116L, 117L),
@@ -124,7 +126,7 @@
   device             = c(2100L)
 )
 
-# --- Core query functions -----------------------------------------------------
+# Core query functions
 
 #' Check Achilles availability
 #'
@@ -327,7 +329,7 @@
   tryCatch(.executeQuery(handle, sql), error = function(e) empty)
 }
 
-# --- Dynamic Catalog Discovery ------------------------------------------------
+# Dynamic Catalog Discovery
 
 #' Get Achilles analysis catalog from database
 #'
@@ -384,6 +386,12 @@
 }
 
 #' Query distinct analysis_ids from achilles_results
+#'
+#' Scans both achilles_results and achilles_results_dist tables to discover
+#' which analysis IDs have been populated.
+#'
+#' @param handle CDM handle object.
+#' @return Sorted integer vector of unique analysis IDs found in the database.
 #' @keywords internal
 .achillesDiscoverIds <- function(handle) {
   bp <- .buildBlueprint(handle)
@@ -401,6 +409,12 @@
 }
 
 #' Classify analysis domain from analysis_id range
+#'
+#' Maps Achilles analysis IDs to their OMOP CDM domain based on the standard
+#' numbering convention (e.g., 0-99 = person, 100-199 = observation_period).
+#'
+#' @param analysis_ids Integer vector of Achilles analysis IDs to classify.
+#' @return Character vector of domain names, one per input ID.
 #' @keywords internal
 .achillesAnalysisDomain <- function(analysis_ids) {
   vapply(analysis_ids, function(id) {
@@ -424,6 +438,13 @@
 }
 
 #' Determine result table from analysis_id
+#'
+#' Identifies whether each analysis ID stores results in achilles_results
+#' or achilles_results_dist based on the Achilles suffix convention.
+#'
+#' @param analysis_ids Integer vector of Achilles analysis IDs.
+#' @return Character vector of table names ("achilles_results" or
+#'   "achilles_results_dist").
 #' @keywords internal
 .achillesAnalysisResultTable <- function(analysis_ids) {
   # Distribution analyses (by Achilles convention): xx03, xx04, xx07, xx08

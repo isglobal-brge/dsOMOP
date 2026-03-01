@@ -13,5 +13,12 @@ omopGetCapabilitiesDS(omop_symbol)
 Named list with schema summary and hash
 }
 \description{
-Get capabilities snapshot (Aggregate)
+Returns a snapshot of the server-side OMOP CDM schema, including available
+tables, DBMS type, CDM version, and a hash for cache invalidation. Used by
+the client to adapt the UI to the server's data model.
+}
+\examples{
+\dontrun{
+caps <- omopGetCapabilitiesDS("omop")
+}
 }

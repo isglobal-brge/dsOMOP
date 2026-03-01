@@ -6,7 +6,16 @@
 \usage{
 .ql_derive_id(meta)
 }
+\arguments{
+\item{meta}{Named list; query metadata containing \code{group} and
+\code{name} entries.}
+}
+\value{
+Character; the derived query ID in \code{group.name} format.
+}
 \description{
-Derive a query ID from metadata
+Converts a query's metadata (group and name fields) into a dot-separated,
+snake_case identifier suitable for use as a unique query ID
+(e.g. \code{"person.total_persons"}).
 }
 \keyword{internal}

@@ -16,11 +16,11 @@ omopSearchConceptsDS(
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
 
-\item{pattern}{Character; search pattern}
+\item{pattern}{Character; search pattern (case-insensitive substring match)}
 
-\item{domain}{Character; domain filter}
+\item{domain}{Character; domain filter (e.g., "Condition", "Drug")}
 
-\item{vocabulary}{Character; vocabulary filter}
+\item{vocabulary}{Character; vocabulary filter (e.g., "SNOMED", "RxNorm")}
 
 \item{standard_only}{Logical; only standard concepts}
 
@@ -30,5 +30,12 @@ omopSearchConceptsDS(
 Data frame with concept results
 }
 \description{
-Search concepts (Aggregate)
+Searches the OMOP vocabulary tables for concepts matching a text pattern,
+optionally filtered by domain and vocabulary. Returns concept metadata
+including concept ID, name, domain, vocabulary, and standard status.
+}
+\examples{
+\dontrun{
+concepts <- omopSearchConceptsDS("omop", "diabetes", domain = "Condition")
+}
 }

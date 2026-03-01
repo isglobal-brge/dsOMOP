@@ -6,7 +6,14 @@
 \usage{
 .achillesDiscoverIds(handle)
 }
+\arguments{
+\item{handle}{CDM handle object.}
+}
+\value{
+Sorted integer vector of unique analysis IDs found in the database.
+}
 \description{
-Query distinct analysis_ids from achilles_results
+Scans both achilles_results and achilles_results_dist tables to discover
+which analysis IDs have been populated.
 }
 \keyword{internal}

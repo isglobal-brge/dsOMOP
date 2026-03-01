@@ -6,7 +6,16 @@
 \usage{
 .ql_parse_table(text)
 }
+\arguments{
+\item{text}{Character; the raw Markdown text containing a pipe-delimited table.}
+}
+\value{
+A data.frame parsed from the Markdown table, or NULL if no valid
+  table is found.
+}
 \description{
-Parse a Markdown table into a data frame
+Extracts rows from a pipe-delimited Markdown table and returns them as
+a data.frame. Automatically strips separator lines and normalises column
+names to lowercase.
 }
 \keyword{internal}

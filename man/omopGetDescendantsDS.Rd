@@ -9,13 +9,20 @@ omopGetDescendantsDS(omop_symbol, ancestor_ids, include_self = TRUE)
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
 
-\item{ancestor_ids}{Numeric vector}
+\item{ancestor_ids}{Numeric vector; ancestor concept IDs}
 
-\item{include_self}{Logical}
+\item{include_self}{Logical; whether to include the ancestor IDs in results}
 }
 \value{
 Data frame with descendant concepts
 }
 \description{
-Get descendant concepts (Aggregate)
+Traverses the OMOP concept_ancestor table to find all descendant concepts
+of one or more ancestor concept IDs. Optionally includes the ancestor
+concepts themselves in the result.
+}
+\examples{
+\dontrun{
+descendants <- omopGetDescendantsDS("omop", c(201826), include_self = TRUE)
+}
 }

@@ -13,5 +13,12 @@ omopRelationshipGraphDS(omop_symbol)
 Data frame with join relationships
 }
 \description{
-Get relationship graph (Aggregate)
+Returns the join graph describing foreign-key relationships between OMOP CDM
+tables. Used by the client to understand how tables can be linked for
+multi-table queries.
+}
+\examples{
+\dontrun{
+graph <- omopRelationshipGraphDS("omop")
+}
 }

@@ -9,11 +9,18 @@ omopExpandConceptSetDS(omop_symbol, concept_set)
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
 
-\item{concept_set}{List; concept set specification}
+\item{concept_set}{List; concept set specification with inclusion rules}
 }
 \value{
 Integer vector of expanded concept IDs
 }
 \description{
-Expand a concept set (Aggregate)
+Expands a concept set specification into a flat vector of concept IDs by
+applying inclusion/exclusion rules and descendant traversal. Mirrors the
+ATLAS concept set expression logic.
+}
+\examples{
+\dontrun{
+ids <- omopExpandConceptSetDS("omop", concept_set)
+}
 }

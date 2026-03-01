@@ -33,5 +33,12 @@ omopNumericHistogramDS(
 Data frame with bin_start, bin_end, count, suppressed
 }
 \description{
-Computes a safe histogram for a numeric column with suppressed low-count bins.
+Computes a disclosure-controlled histogram for a numeric column. Bins with
+counts below the server threshold are suppressed. Supports shared bin edges
+from two-pass pooling for consistent cross-site comparisons.
+}
+\examples{
+\dontrun{
+hist_data <- omopNumericHistogramDS("omop", "measurement", "value_as_number")
+}
 }

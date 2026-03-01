@@ -1,9 +1,5 @@
-# ==============================================================================
-# dsOMOP v2 - Resource Resolver + Client (R6 Classes)
-# ==============================================================================
-# Handles DataSHIELD resource resolution for OMOP CDM databases.
-# Parses resource URL to extract DBMS, host, port, database, schemas.
-# ==============================================================================
+# Module: Resource Resolver
+# ResourceR integration for OMOP CDM database connections.
 
 #' OMOP CDM Resource Client
 #'
@@ -176,6 +172,13 @@ OMOPResourceClient <- R6::R6Class(
 
 
 #' OMOP CDM Resource Resolver
+#'
+#' A \code{resourcer::ResourceResolver} subclass that creates database
+#' connections from DataSHIELD resource descriptors pointing to OMOP CDM
+#' databases. Matches resources whose format is \code{"omop.hades.db"} or
+#' \code{"omop.cdm.db"} and delegates connection setup to
+#' \code{\link{OMOPResourceClient}}, which supports PostgreSQL, SQL Server,
+#' SQLite, and MySQL/MariaDB backends.
 #'
 #' @importFrom R6 R6Class
 #' @keywords internal

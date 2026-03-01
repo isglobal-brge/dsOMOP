@@ -1,8 +1,5 @@
-# ==============================================================================
-# dsOMOP v2 - Plan Validation, Preview, Execution
-# ==============================================================================
-# Uses blueprint + vocabulary for plan processing.
-# ==============================================================================
+# Module: Extraction Plan
+# Plan construction, validation, preview, and execution for multi-table extractions.
 
 #' Materialize a concept set as a temp table (for large sets)
 #'
@@ -285,12 +282,13 @@
   preview
 }
 
-#' Execute a plan and produce server-side data frames
-#'
 #' Build a cohort person_id set from population-level filters
 #'
+#' Translates filter specs (sex, age_range, age_group, has_concept) into
+#' SQL WHERE clauses on the person table and returns matching person IDs.
+#'
 #' @param handle CDM handle
-#' @param filters List of filter specs from cart_to_plan
+#' @param filters List of filter specs from recipe_to_plan
 #' @return Integer vector of person_ids
 #' @keywords internal
 .buildCohortFromFilters <- function(handle, filters) {
@@ -378,6 +376,12 @@
   if (nrow(result) > 0) result$person_id else integer(0)
 }
 
+#' Execute a plan and produce server-side data frames
+#'
+#' Processes all outputs defined in the plan: builds a cohort (if specified),
+#' then iterates over each output entry to extract, transform, and return
+#' the requested data frames.
+#'
 #' @param handle CDM handle
 #' @param plan List; the extraction plan
 #' @param out_symbols Named list; output name -> R symbol mapping

@@ -38,6 +38,9 @@
 \item{block_sensitive}{Logical; block sensitive columns (default TRUE)}
 
 \item{temporal}{List; temporal filtering spec (index_window, calendar, etc.)}
+
+\item{add_cohort_date}{Logical; if TRUE, add cohort start/end date columns
+from the cohort table to the output.}
 }
 \value{
 Character; compiled SQL statement

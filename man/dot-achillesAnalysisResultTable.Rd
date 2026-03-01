@@ -6,7 +6,15 @@
 \usage{
 .achillesAnalysisResultTable(analysis_ids)
 }
+\arguments{
+\item{analysis_ids}{Integer vector of Achilles analysis IDs.}
+}
+\value{
+Character vector of table names ("achilles_results" or
+  "achilles_results_dist").
+}
 \description{
-Determine result table from analysis_id
+Identifies whether each analysis ID stores results in achilles_results
+or achilles_results_dist based on the Achilles suffix convention.
 }
 \keyword{internal}

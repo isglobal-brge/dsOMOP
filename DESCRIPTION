@@ -9,12 +9,14 @@ Authors@R: c(
 Description: Server-side DataSHIELD package providing safe, efficient, and
     version-agnostic access to OMOP Common Data Model databases. Built on OHDSI
     metadata for accurate schema introspection, concept role classification, and
-    vocabulary operations. Includes a built-in pure R SQL translation engine
-    supporting PostgreSQL, SQL Server, Oracle, Redshift, BigQuery, Snowflake,
-    Spark, and SQLite.
+    vocabulary operations. Features include a curated query library with 50+
+    disclosure-controlled SQL templates, Achilles pre-computed analytics support,
+    plan-based multi-table extraction with feature engineering, cohort management,
+    and statistical disclosure control compliant with DataSHIELD nfilter settings.
+    Includes a built-in pure R SQL translation engine supporting PostgreSQL,
+    SQL Server, Oracle, Redshift, BigQuery, Snowflake, Spark, and SQLite.
 License: MIT + file LICENSE
 Encoding: UTF-8
-LazyData: true
 Depends:
     R (>= 4.1.0)
 Imports:

@@ -1,8 +1,5 @@
-# ==============================================================================
-# dsOMOP v2 - SQL Compilation + Execution + Representations
-# ==============================================================================
-# Replaces v2's query.R + execution.R. Uses blueprint throughout.
-# ==============================================================================
+# Module: Extraction Engine
+# SQL generation, data extraction, and feature engineering for OMOP CDM tables.
 
 # --- Temporal Filtering ---
 
@@ -177,6 +174,8 @@
 #' @param limit Integer; max rows
 #' @param block_sensitive Logical; block sensitive columns (default TRUE)
 #' @param temporal List; temporal filtering spec (index_window, calendar, etc.)
+#' @param add_cohort_date Logical; if TRUE, add cohort start/end date columns
+#'   from the cohort table to the output.
 #' @return Character; compiled SQL statement
 #' @keywords internal
 .compileSelect <- function(handle, table, columns = NULL,
@@ -417,15 +416,15 @@
 
 # --- Query Execution ---
 
-#' Execute a SQL query and return a data frame
+#' Coerce integer64 columns to standard integer or numeric
 #'
-#' @param handle CDM handle
-#' @param sql Character; SQL to execute
-#' @return Data frame
+#' Converts bit64::integer64 columns in a data.frame to regular R integers
+#' (if values fit) or doubles. Required because DataSHIELD serialization
+#' does not support integer64.
+#'
+#' @param df A data.frame potentially containing integer64 columns.
+#' @return The data.frame with integer64 columns converted.
 #' @keywords internal
-# Convert integer64 columns (from PostgreSQL bigint) to regular R numerics.
-# integer64 uses raw double bits internally and breaks is.na(), comparisons,
-# if() conditions, and cat() — causing 'length = 2' errors in R 4.5.2.
 .coerce_integer64 <- function(df) {
   for (col in names(df)) {
     if (inherits(df[[col]], "integer64")) {
@@ -435,6 +434,12 @@
   df
 }
 
+#' Execute a SQL query and return a data frame
+#'
+#' @param handle CDM handle
+#' @param sql Character; SQL to execute
+#' @return Data frame
+#' @keywords internal
 .executeQuery <- function(handle, sql) {
   result <- DBI::dbGetQuery(handle$conn, sql)
   names(result) <- tolower(names(result))

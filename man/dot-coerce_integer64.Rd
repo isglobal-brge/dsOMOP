@@ -2,19 +2,19 @@
 % Please edit documentation in R/extraction.R
 \name{.coerce_integer64}
 \alias{.coerce_integer64}
-\title{Execute a SQL query and return a data frame}
+\title{Coerce integer64 columns to standard integer or numeric}
 \usage{
 .coerce_integer64(df)
 }
 \arguments{
-\item{handle}{CDM handle}
-
-\item{sql}{Character; SQL to execute}
+\item{df}{A data.frame potentially containing integer64 columns.}
 }
 \value{
-Data frame
+The data.frame with integer64 columns converted.
 }
 \description{
-Execute a SQL query and return a data frame
+Converts bit64::integer64 columns in a data.frame to regular R integers
+(if values fit) or doubles. Required because DataSHIELD serialization
+does not support integer64.
 }
 \keyword{internal}

@@ -1,12 +1,17 @@
-# ==============================================================================
-# dsOMOP v2 - DataSHIELD Exposed Methods
-# ==============================================================================
-# All DataSHIELD assign/aggregate methods. Thin wrappers around internal
-# functions. Session handle management.
-# ==============================================================================
+# Module: DataSHIELD Exposed Methods
+# All DataSHIELD assign/aggregate methods. Thin wrappers around internal functions.
 
 # --- Handle management ---
 
+#' Retrieve a stored OMOP CDM handle
+#'
+#' Looks up the server-side OMOP CDM handle object associated with a given
+#' resource symbol name. Throws an error if no handle has been initialized
+#' for the symbol.
+#'
+#' @param symbol Character; the resource symbol name identifying the handle.
+#' @return The OMOP CDM handle object.
+#' @keywords internal
 .getHandle <- function(symbol) {
   key <- paste0("handle_", symbol)
   if (!exists(key, envir = .dsomop_env)) {
@@ -16,11 +21,30 @@
   get(key, envir = .dsomop_env)
 }
 
+#' Store an OMOP CDM handle in the session environment
+#'
+#' Saves the given handle object into the dsOMOP session environment under a
+#' key derived from the resource symbol name. Overwrites any existing handle
+#' for the same symbol.
+#'
+#' @param symbol Character; the resource symbol name.
+#' @param handle The OMOP CDM handle object to store.
+#' @return Invisible NULL (called for side effect).
+#' @keywords internal
 .setHandle <- function(symbol, handle) {
   key <- paste0("handle_", symbol)
   assign(key, handle, envir = .dsomop_env)
 }
 
+#' Remove an OMOP CDM handle from the session environment
+#'
+#' Closes the database connection associated with the handle and removes it
+#' from the dsOMOP session environment. No-op if no handle exists for the
+#' given symbol.
+#'
+#' @param symbol Character; the resource symbol name.
+#' @return Invisible NULL (called for side effect).
+#' @keywords internal
 .removeHandle <- function(symbol) {
   key <- paste0("handle_", symbol)
   if (exists(key, envir = .dsomop_env)) {
@@ -30,11 +54,14 @@
   }
 }
 
-# ==============================================================================
-# ASSIGN METHODS (5)
-# ==============================================================================
+# --- Assign methods ---
 
 #' Initialize an OMOP CDM handle (Assign)
+#'
+#' @description
+#' Creates a server-side connection to an OMOP CDM database from a DataSHIELD
+#' resource. The handle is stored in the dsOMOP session environment and used
+#' by all subsequent OMOP operations.
 #'
 #' @param resource_symbol Character; the resource symbol name
 #' @param cdm_schema Character; override CDM schema
@@ -43,6 +70,10 @@
 #' @param temp_schema Character; temp schema name
 #' @param config Named list; additional configuration
 #' @return The handle symbol (assigned server-side)
+#' @examples
+#' \dontrun{
+#' omopInitDS("omop_resource")
+#' }
 #' @export
 omopInitDS <- function(resource_symbol,
                        cdm_schema = NULL,
@@ -78,14 +109,20 @@ omopInitDS <- function(resource_symbol,
 
 #' Execute an extraction plan (Assign)
 #'
+#' @description
 #' Runs the extraction plan and assigns each output directly into the
 #' DataSHIELD session as a named symbol. Sparse outputs are split into
 #' two symbols: \code{<name>.covariates} and \code{<name>.covariateRef}.
+#' Temporal covariates are split into three symbols.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param plan List; the extraction plan
 #' @param out Named character vector; output_name -> symbol_name mapping
 #' @return Invisible TRUE (outputs are assigned into caller's environment)
+#' @examples
+#' \dontrun{
+#' omopPlanExecuteDS("omop", plan, out = c(cohort = "my_cohort"))
+#' }
 #' @export
 omopPlanExecuteDS <- function(omop_symbol, plan, out) {
   handle <- .getHandle(omop_symbol)
@@ -131,6 +168,11 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out) {
 
 #' Create a cohort (Assign)
 #'
+#' @description
+#' Creates a cohort on the server side from a cohort specification DSL object.
+#' The cohort can be stored as a temporary table or persisted to the results
+#' schema depending on the mode parameter.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param cohort_spec List; cohort specification DSL
 #' @param mode Character; "temporary" or "persistent"
@@ -138,6 +180,10 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out) {
 #' @param name Character; cohort name
 #' @param overwrite Logical
 #' @return Character; temp table name or confirmation
+#' @examples
+#' \dontrun{
+#' result <- omopCohortCreateDS("omop", cohort_spec, mode = "temporary")
+#' }
 #' @export
 omopCohortCreateDS <- function(omop_symbol, cohort_spec,
                                mode = "temporary",
@@ -150,12 +196,20 @@ omopCohortCreateDS <- function(omop_symbol, cohort_spec,
 
 #' Combine cohorts (Assign)
 #'
+#' @description
+#' Combines two existing server-side cohorts using a set operation (intersect,
+#' union, or set difference) and stores the result as a new temporary table.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param op Character; "intersect", "union", or "setdiff"
 #' @param cohort_a Character; first cohort temp table
 #' @param cohort_b Character; second cohort temp table
 #' @param new_name Character; result temp table name
 #' @return Character; result temp table name
+#' @examples
+#' \dontrun{
+#' combined <- omopCohortCombineDS("omop", "union", "cohort_a", "cohort_b")
+#' }
 #' @export
 omopCohortCombineDS <- function(omop_symbol, op,
                                 cohort_a, cohort_b,
@@ -166,9 +220,17 @@ omopCohortCombineDS <- function(omop_symbol, op,
 
 #' Clean up temp artifacts (Assign)
 #'
+#' @description
+#' Drops all server-side temporary tables whose names match the given prefix.
+#' Called during session teardown or when resetting state between analyses.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param prefix Character; temp table prefix to clean
 #' @return Invisible TRUE
+#' @examples
+#' \dontrun{
+#' omopCleanupDS("omop", prefix = "dsomop_")
+#' }
 #' @export
 omopCleanupDS <- function(omop_symbol, prefix = "dsomop_") {
   handle <- .getHandle(omop_symbol)
@@ -180,13 +242,20 @@ omopCleanupDS <- function(omop_symbol, prefix = "dsomop_") {
   invisible(TRUE)
 }
 
-# ==============================================================================
-# AGGREGATE METHODS (17)
-# ==============================================================================
+# --- Aggregate methods ---
 
 #' Ping / health check (Aggregate)
 #'
-#' @return Named list with alive status
+#' @description
+#' Returns basic status information indicating the dsOMOP server package is
+#' loaded and responsive. Used by the client to verify connectivity before
+#' issuing further commands.
+#'
+#' @return Named list with alive status, package version, and timestamp.
+#' @examples
+#' \dontrun{
+#' omopPingDS()
+#' }
 #' @export
 omopPingDS <- function() {
   list(
@@ -198,8 +267,17 @@ omopPingDS <- function() {
 
 #' Get capabilities snapshot (Aggregate)
 #'
+#' @description
+#' Returns a snapshot of the server-side OMOP CDM schema, including available
+#' tables, DBMS type, CDM version, and a hash for cache invalidation. Used by
+#' the client to adapt the UI to the server's data model.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @return Named list with schema summary and hash
+#' @examples
+#' \dontrun{
+#' caps <- omopGetCapabilitiesDS("omop")
+#' }
 #' @export
 omopGetCapabilitiesDS <- function(omop_symbol) {
   handle <- .getHandle(omop_symbol)
@@ -208,8 +286,16 @@ omopGetCapabilitiesDS <- function(omop_symbol) {
 
 #' List tables (Aggregate)
 #'
+#' @description
+#' Returns metadata for all OMOP CDM tables present in the database, including
+#' schema category, person ID availability, and concept column prefix.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @return Data frame with table metadata
+#' @examples
+#' \dontrun{
+#' tables <- omopListTablesDS("omop")
+#' }
 #' @export
 omopListTablesDS <- function(omop_symbol) {
   handle <- .getHandle(omop_symbol)
@@ -221,9 +307,17 @@ omopListTablesDS <- function(omop_symbol) {
 
 #' List columns (Aggregate)
 #'
+#' @description
+#' Returns column-level metadata for a specific OMOP CDM table, including
+#' column names, data types, and whether each column is present in the database.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table Character; table name
 #' @return Data frame with column metadata
+#' @examples
+#' \dontrun{
+#' cols <- omopListColumnsDS("omop", "person")
+#' }
 #' @export
 omopListColumnsDS <- function(omop_symbol, table) {
   handle <- .getHandle(omop_symbol)
@@ -238,8 +332,17 @@ omopListColumnsDS <- function(omop_symbol, table) {
 
 #' Get relationship graph (Aggregate)
 #'
+#' @description
+#' Returns the join graph describing foreign-key relationships between OMOP CDM
+#' tables. Used by the client to understand how tables can be linked for
+#' multi-table queries.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @return Data frame with join relationships
+#' @examples
+#' \dontrun{
+#' graph <- omopRelationshipGraphDS("omop")
+#' }
 #' @export
 omopRelationshipGraphDS <- function(omop_symbol) {
   handle <- .getHandle(omop_symbol)
@@ -249,10 +352,19 @@ omopRelationshipGraphDS <- function(omop_symbol) {
 
 #' Get table statistics (Aggregate)
 #'
+#' @description
+#' Returns disclosure-controlled summary statistics for an OMOP CDM table,
+#' such as total row count and distinct person count. Values below the
+#' disclosure threshold are suppressed.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table Character; table name
 #' @param stats Character vector; which stats to return
 #' @return Named list with safe statistics
+#' @examples
+#' \dontrun{
+#' stats <- omopTableStatsDS("omop", "condition_occurrence")
+#' }
 #' @export
 omopTableStatsDS <- function(omop_symbol, table,
                              stats = c("rows", "persons")) {
@@ -262,10 +374,19 @@ omopTableStatsDS <- function(omop_symbol, table,
 
 #' Get column statistics (Aggregate)
 #'
+#' @description
+#' Returns disclosure-controlled summary statistics for a single column in an
+#' OMOP CDM table, including data type, completeness, distinct values, and
+#' numeric summary when applicable.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table Character; table name
 #' @param column Character; column name
 #' @return Named list with column statistics
+#' @examples
+#' \dontrun{
+#' stats <- omopColumnStatsDS("omop", "person", "year_of_birth")
+#' }
 #' @export
 omopColumnStatsDS <- function(omop_symbol, table, column) {
   handle <- .getHandle(omop_symbol)
@@ -274,8 +395,17 @@ omopColumnStatsDS <- function(omop_symbol, table, column) {
 
 #' Get cross-table domain coverage (Aggregate)
 #'
+#' @description
+#' Returns the number of distinct persons represented in each clinical domain
+#' table (e.g., condition_occurrence, drug_exposure). Provides a quick overview
+#' of data completeness across the CDM.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @return Data frame with per-table person counts
+#' @examples
+#' \dontrun{
+#' coverage <- omopDomainCoverageDS("omop")
+#' }
 #' @export
 omopDomainCoverageDS <- function(omop_symbol) {
   handle <- .getHandle(omop_symbol)
@@ -284,10 +414,19 @@ omopDomainCoverageDS <- function(omop_symbol) {
 
 #' Get missingness rates (Aggregate)
 #'
+#' @description
+#' Computes the proportion of NULL values for each specified column (or all
+#' columns) in an OMOP CDM table. Useful for data quality assessment before
+#' running analyses.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table Character; table name
 #' @param columns Character vector; columns to check
 #' @return Data frame with missingness rates
+#' @examples
+#' \dontrun{
+#' missing <- omopMissingnessDS("omop", "condition_occurrence")
+#' }
 #' @export
 omopMissingnessDS <- function(omop_symbol, table,
                               columns = NULL) {
@@ -297,12 +436,21 @@ omopMissingnessDS <- function(omop_symbol, table,
 
 #' Get value counts (Aggregate)
 #'
+#' @description
+#' Returns the frequency distribution of distinct values in a column, limited
+#' to the top N most frequent values. Small counts are suppressed according to
+#' the server's disclosure threshold.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table Character; table name
 #' @param column Character; column name
-#' @param top_n Integer
-#' @param suppress_small Logical
+#' @param top_n Integer; maximum number of distinct values to return
+#' @param suppress_small Logical; whether to suppress counts below threshold
 #' @return Data frame with value counts
+#' @examples
+#' \dontrun{
+#' counts <- omopValueCountsDS("omop", "person", "gender_concept_id")
+#' }
 #' @export
 omopValueCountsDS <- function(omop_symbol, table, column,
                               top_n = 20,
@@ -313,13 +461,22 @@ omopValueCountsDS <- function(omop_symbol, table, column,
 
 #' Search concepts (Aggregate)
 #'
+#' @description
+#' Searches the OMOP vocabulary tables for concepts matching a text pattern,
+#' optionally filtered by domain and vocabulary. Returns concept metadata
+#' including concept ID, name, domain, vocabulary, and standard status.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
-#' @param pattern Character; search pattern
-#' @param domain Character; domain filter
-#' @param vocabulary Character; vocabulary filter
+#' @param pattern Character; search pattern (case-insensitive substring match)
+#' @param domain Character; domain filter (e.g., "Condition", "Drug")
+#' @param vocabulary Character; vocabulary filter (e.g., "SNOMED", "RxNorm")
 #' @param standard_only Logical; only standard concepts
 #' @param limit Integer; max results
 #' @return Data frame with concept results
+#' @examples
+#' \dontrun{
+#' concepts <- omopSearchConceptsDS("omop", "diabetes", domain = "Condition")
+#' }
 #' @export
 omopSearchConceptsDS <- function(omop_symbol, pattern,
                                  domain = NULL,
@@ -333,9 +490,18 @@ omopSearchConceptsDS <- function(omop_symbol, pattern,
 
 #' Lookup concepts by ID (Aggregate)
 #'
+#' @description
+#' Retrieves full concept metadata for one or more concept IDs from the OMOP
+#' vocabulary tables. Returns concept name, domain, vocabulary, class, and
+#' standard concept flag.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
-#' @param concept_ids Numeric vector
+#' @param concept_ids Numeric vector; one or more concept IDs to look up
 #' @return Data frame with concept details
+#' @examples
+#' \dontrun{
+#' details <- omopLookupConceptsDS("omop", c(201826, 4329847))
+#' }
 #' @export
 omopLookupConceptsDS <- function(omop_symbol, concept_ids) {
   handle <- .getHandle(omop_symbol)
@@ -344,10 +510,19 @@ omopLookupConceptsDS <- function(omop_symbol, concept_ids) {
 
 #' Get descendant concepts (Aggregate)
 #'
+#' @description
+#' Traverses the OMOP concept_ancestor table to find all descendant concepts
+#' of one or more ancestor concept IDs. Optionally includes the ancestor
+#' concepts themselves in the result.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
-#' @param ancestor_ids Numeric vector
-#' @param include_self Logical
+#' @param ancestor_ids Numeric vector; ancestor concept IDs
+#' @param include_self Logical; whether to include the ancestor IDs in results
 #' @return Data frame with descendant concepts
+#' @examples
+#' \dontrun{
+#' descendants <- omopGetDescendantsDS("omop", c(201826), include_self = TRUE)
+#' }
 #' @export
 omopGetDescendantsDS <- function(omop_symbol, ancestor_ids,
                                  include_self = TRUE) {
@@ -357,9 +532,18 @@ omopGetDescendantsDS <- function(omop_symbol, ancestor_ids,
 
 #' Expand a concept set (Aggregate)
 #'
+#' @description
+#' Expands a concept set specification into a flat vector of concept IDs by
+#' applying inclusion/exclusion rules and descendant traversal. Mirrors the
+#' ATLAS concept set expression logic.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
-#' @param concept_set List; concept set specification
+#' @param concept_set List; concept set specification with inclusion rules
 #' @return Integer vector of expanded concept IDs
+#' @examples
+#' \dontrun{
+#' ids <- omopExpandConceptSetDS("omop", concept_set)
+#' }
 #' @export
 omopExpandConceptSetDS <- function(omop_symbol, concept_set) {
   handle <- .getHandle(omop_symbol)
@@ -368,9 +552,18 @@ omopExpandConceptSetDS <- function(omop_symbol, concept_set) {
 
 #' Preview a plan (Aggregate)
 #'
+#' @description
+#' Validates and previews an extraction plan without executing it. Returns
+#' expected output schemas, estimated row counts, and any validation warnings
+#' or errors.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
-#' @param plan List; the extraction plan
-#' @return List with preview information
+#' @param plan List; the extraction plan to preview
+#' @return List with preview information including output schemas and warnings
+#' @examples
+#' \dontrun{
+#' preview <- omopPlanPreviewDS("omop", plan)
+#' }
 #' @export
 omopPlanPreviewDS <- function(omop_symbol, plan) {
   handle <- .getHandle(omop_symbol)
@@ -379,8 +572,16 @@ omopPlanPreviewDS <- function(omop_symbol, plan) {
 
 #' List cohort definitions (Aggregate)
 #'
+#' @description
+#' Returns metadata for all cohort definitions available in the results schema,
+#' including cohort definition IDs, names, and subject counts.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @return Data frame with cohort definitions
+#' @examples
+#' \dontrun{
+#' cohorts <- omopCohortListDS("omop")
+#' }
 #' @export
 omopCohortListDS <- function(omop_symbol) {
   handle <- .getHandle(omop_symbol)
@@ -389,9 +590,17 @@ omopCohortListDS <- function(omop_symbol) {
 
 #' Get a cohort definition (Aggregate)
 #'
+#' @description
+#' Retrieves the full definition for a specific cohort, including the cohort
+#' specification DSL, name, description, and subject count.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
-#' @param cohort_definition_id Integer
+#' @param cohort_definition_id Integer; the cohort definition ID to retrieve
 #' @return Named list with definition details
+#' @examples
+#' \dontrun{
+#' defn <- omopCohortGetDefinitionDS("omop", cohort_definition_id = 1L)
+#' }
 #' @export
 omopCohortGetDefinitionDS <- function(omop_symbol,
                                       cohort_definition_id) {
@@ -399,14 +608,14 @@ omopCohortGetDefinitionDS <- function(omop_symbol,
   .cohortGetDefinition(handle, cohort_definition_id)
 }
 
-# ==============================================================================
-# EXPLORATION AGGREGATE METHODS (OMOP Studio)
-# ==============================================================================
+# --- Exploration aggregate methods ---
 
 #' Get concept prevalence (Aggregate)
 #'
+#' @description
 #' Returns the top concepts in a table ranked by person count or record count,
-#' with disclosure control applied.
+#' with disclosure control applied. Concepts with counts below the server
+#' threshold are suppressed.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table Character; table name
@@ -416,6 +625,10 @@ omopCohortGetDefinitionDS <- function(omop_symbol,
 #' @param cohort_table Character; cohort temp table for filtering (NULL)
 #' @param window List with start/end dates for filtering (NULL)
 #' @return Data frame with concept_id, concept_name, n_persons, n_records
+#' @examples
+#' \dontrun{
+#' prevalence <- omopConceptPrevalenceDS("omop", "condition_occurrence")
+#' }
 #' @export
 omopConceptPrevalenceDS <- function(omop_symbol, table, concept_col = NULL,
                                      metric = "persons", top_n = 50,
@@ -427,8 +640,10 @@ omopConceptPrevalenceDS <- function(omop_symbol, table, concept_col = NULL,
 
 #' Get numeric range (p05/p95) for two-pass histogram pooling (Aggregate)
 #'
-#' Returns the 5th and 95th percentile approximations and total count.
-#' Used as pass 1 of two-pass histogram pooling to compute shared bin edges.
+#' @description
+#' Returns the 5th and 95th percentile approximations and total count for a
+#' numeric column. Used as pass 1 of two-pass histogram pooling to compute
+#' shared bin edges across federated sites.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table Character; table name
@@ -436,6 +651,10 @@ omopConceptPrevalenceDS <- function(omop_symbol, table, concept_col = NULL,
 #' @param cohort_table Character; cohort temp table for filtering (NULL)
 #' @param window List with start/end dates for filtering (NULL)
 #' @return List with p05, p95, n_total
+#' @examples
+#' \dontrun{
+#' range_info <- omopNumericRangeDS("omop", "measurement", "value_as_number")
+#' }
 #' @export
 omopNumericRangeDS <- function(omop_symbol, table, value_col,
                                 cohort_table = NULL, window = NULL) {
@@ -445,7 +664,10 @@ omopNumericRangeDS <- function(omop_symbol, table, value_col,
 
 #' Get numeric histogram (Aggregate)
 #'
-#' Computes a safe histogram for a numeric column with suppressed low-count bins.
+#' @description
+#' Computes a disclosure-controlled histogram for a numeric column. Bins with
+#' counts below the server threshold are suppressed. Supports shared bin edges
+#' from two-pass pooling for consistent cross-site comparisons.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table Character; table name
@@ -455,6 +677,10 @@ omopNumericRangeDS <- function(omop_symbol, table, value_col,
 #' @param window List with start/end dates for filtering (NULL)
 #' @param breaks Numeric vector; shared bin edges from two-pass pooling (NULL)
 #' @return Data frame with bin_start, bin_end, count, suppressed
+#' @examples
+#' \dontrun{
+#' hist_data <- omopNumericHistogramDS("omop", "measurement", "value_as_number")
+#' }
 #' @export
 omopNumericHistogramDS <- function(omop_symbol, table, value_col,
                                     bins = 20L, cohort_table = NULL,
@@ -466,16 +692,23 @@ omopNumericHistogramDS <- function(omop_symbol, table, value_col,
 
 #' Get numeric quantiles (Aggregate)
 #'
-#' Computes quantiles at specified probabilities using SQL approximation.
+#' @description
+#' Computes quantiles at specified probabilities using SQL-based approximation.
+#' Results are rounded to the specified number of decimal places to limit
+#' precision and reduce re-identification risk.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table Character; table name
 #' @param value_col Character; numeric column name
-#' @param probs Numeric vector; probabilities
+#' @param probs Numeric vector; probabilities (e.g., c(0.05, 0.25, 0.5, 0.75, 0.95))
 #' @param cohort_table Character; cohort temp table for filtering (NULL)
 #' @param window List with start/end dates for filtering (NULL)
 #' @param rounding Integer; decimal places for rounding
 #' @return Data frame with probability and value
+#' @examples
+#' \dontrun{
+#' quantiles <- omopNumericQuantilesDS("omop", "measurement", "value_as_number")
+#' }
 #' @export
 omopNumericQuantilesDS <- function(omop_symbol, table, value_col,
                                     probs = c(0.05, 0.25, 0.5, 0.75, 0.95),
@@ -488,7 +721,10 @@ omopNumericQuantilesDS <- function(omop_symbol, table, value_col,
 
 #' Get date counts (Aggregate)
 #'
-#' Counts records by time bin (year, quarter, or month) with disclosure control.
+#' @description
+#' Counts records by time bin (year, quarter, or month) with disclosure control
+#' applied. Time periods with counts below the threshold are suppressed. Useful
+#' for visualizing temporal trends in clinical data.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table Character; table name
@@ -497,6 +733,10 @@ omopNumericQuantilesDS <- function(omop_symbol, table, value_col,
 #' @param cohort_table Character; cohort temp table for filtering (NULL)
 #' @param window List with start/end dates for filtering (NULL)
 #' @return Data frame with period, n_records, suppressed
+#' @examples
+#' \dontrun{
+#' trends <- omopDateCountsDS("omop", "condition_occurrence", granularity = "year")
+#' }
 #' @export
 omopDateCountsDS <- function(omop_symbol, table, date_col = NULL,
                               granularity = "year", cohort_table = NULL,
@@ -508,14 +748,22 @@ omopDateCountsDS <- function(omop_symbol, table, date_col = NULL,
 
 #' Get concept drilldown (Aggregate)
 #'
+#' @description
 #' Returns a full drilldown profile for a single concept within a table,
 #' including summary stats, numeric distribution, categorical values,
-#' date coverage, and missingness.
+#' date coverage, and missingness. All count-based outputs are subject to
+#' disclosure control.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table Character; table name
 #' @param concept_id Integer; concept ID to drill into
+#' @param concept_col Character; concept column name to drill into, or NULL
+#'   for automatic detection based on the table's primary concept column.
 #' @return Named list with drilldown results
+#' @examples
+#' \dontrun{
+#' drilldown <- omopConceptDrilldownDS("omop", "condition_occurrence", 201826L)
+#' }
 #' @export
 omopConceptDrilldownDS <- function(omop_symbol, table, concept_id,
                                    concept_col = NULL) {
@@ -526,13 +774,19 @@ omopConceptDrilldownDS <- function(omop_symbol, table, concept_id,
 
 #' Locate concept across tables (Aggregate)
 #'
-#' Searches all CDM tables with concept columns and returns a presence
-#' matrix showing where the given concept IDs appear.
+#' @description
+#' Searches all CDM tables with concept columns and returns a presence matrix
+#' showing where the given concept IDs appear. Useful for understanding which
+#' clinical domains contain data for a concept of interest.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param concept_ids Integer vector; concept IDs to locate
 #' @return Data frame with table_name, concept_column, concept_id, n_records,
 #'   n_persons
+#' @examples
+#' \dontrun{
+#' locations <- omopLocateConceptDS("omop", c(201826L, 4329847L))
+#' }
 #' @export
 omopLocateConceptDS <- function(omop_symbol, concept_ids) {
   handle <- .getHandle(omop_symbol)
@@ -541,8 +795,10 @@ omopLocateConceptDS <- function(omop_symbol, concept_ids) {
 
 #' Get safe numeric cutpoints (Aggregate)
 #'
-#' Returns bin edges that are safe to use as filter thresholds. Each bin
-#' is guaranteed to contain enough persons to pass disclosure.
+#' @description
+#' Returns bin edges that are safe to use as filter thresholds. Each bin is
+#' guaranteed to contain enough persons to pass the disclosure threshold,
+#' preventing indirect identification via precise numeric filtering.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table Character; table name
@@ -550,6 +806,10 @@ omopLocateConceptDS <- function(omop_symbol, concept_ids) {
 #' @param concept_id Integer or NULL; concept filter
 #' @param n_bins Integer; target number of bins (default 10)
 #' @return List with breaks (numeric vector) and counts (integer vector)
+#' @examples
+#' \dontrun{
+#' cuts <- omopSafeCutpointsDS("omop", "measurement", "value_as_number")
+#' }
 #' @export
 omopSafeCutpointsDS <- function(omop_symbol, table, column,
                                  concept_id = NULL, n_bins = 10L) {
@@ -557,14 +817,20 @@ omopSafeCutpointsDS <- function(omop_symbol, table, column,
   .profileSafeCutpoints(handle, table, column, concept_id, as.integer(n_bins))
 }
 
-# ==============================================================================
-# ACHILLES AGGREGATE METHODS (Data Sources)
-# ==============================================================================
+# --- Achilles aggregate methods ---
 
 #' Check Achilles availability (Aggregate)
 #'
+#' @description
+#' Checks whether pre-computed Achilles results are available in the results
+#' schema. Returns the availability status and the number of analyses found.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @return Named list with availability status
+#' @examples
+#' \dontrun{
+#' status <- omopAchillesStatusDS("omop")
+#' }
 #' @export
 omopAchillesStatusDS <- function(omop_symbol) {
   handle <- .getHandle(omop_symbol)
@@ -573,9 +839,17 @@ omopAchillesStatusDS <- function(omop_symbol) {
 
 #' List Achilles analyses (Aggregate)
 #'
+#' @description
+#' Returns the catalog of available Achilles analyses, optionally filtered by
+#' clinical domain. Each entry includes analysis ID, name, and description.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
-#' @param domain Character; optional domain filter
+#' @param domain Character; optional domain filter (e.g., "Person", "Condition")
 #' @return Data frame with analysis catalog
+#' @examples
+#' \dontrun{
+#' analyses <- omopAchillesAnalysesDS("omop", domain = "Person")
+#' }
 #' @export
 omopAchillesAnalysesDS <- function(omop_symbol, domain = NULL) {
   handle <- .getHandle(omop_symbol)
@@ -584,15 +858,19 @@ omopAchillesAnalysesDS <- function(omop_symbol, domain = NULL) {
 
 #' Get Achilles count results (Aggregate)
 #'
-#' Returns count-based Achilles results for the given analysis IDs.
-#' Arbitrary stratum filtering and client-supplied min_cell_count are
-#' intentionally not supported to prevent probing attacks and threshold
-#' weakening (Fixes C, D). Disclosure threshold is always server-controlled
-#' via nfilter.tab.
+#' @description
+#' Returns count-based Achilles results for the given analysis IDs with
+#' server-controlled disclosure thresholds. Arbitrary stratum filtering and
+#' client-supplied min_cell_count are intentionally not supported to prevent
+#' probing attacks and threshold weakening.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
-#' @param analysis_ids Integer vector; analysis IDs
+#' @param analysis_ids Integer vector; analysis IDs to retrieve
 #' @return Data frame with analysis results
+#' @examples
+#' \dontrun{
+#' results <- omopAchillesResultsDS("omop", c(1L, 2L, 3L))
+#' }
 #' @export
 omopAchillesResultsDS <- function(omop_symbol, analysis_ids) {
   handle <- .getHandle(omop_symbol)
@@ -601,14 +879,19 @@ omopAchillesResultsDS <- function(omop_symbol, analysis_ids) {
 
 #' Get Achilles distribution results (Aggregate)
 #'
-#' Returns distribution statistics (avg, stdev, median, percentiles) for the
-#' given analysis IDs. Extreme values (min/max) are never returned to prevent
-#' identification of outlier individuals. Arbitrary stratum filtering is not
-#' supported (Fix C).
+#' @description
+#' Returns distribution statistics (average, standard deviation, median,
+#' percentiles) for the given Achilles analysis IDs. Extreme values (min/max)
+#' are never returned to prevent identification of outlier individuals.
+#' Arbitrary stratum filtering is not supported.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
-#' @param analysis_ids Integer vector; analysis IDs
+#' @param analysis_ids Integer vector; analysis IDs to retrieve
 #' @return Data frame with distribution statistics (no min/max)
+#' @examples
+#' \dontrun{
+#' dists <- omopAchillesDistributionDS("omop", c(103L, 105L))
+#' }
 #' @export
 omopAchillesDistributionDS <- function(omop_symbol, analysis_ids) {
   handle <- .getHandle(omop_symbol)
@@ -617,23 +900,28 @@ omopAchillesDistributionDS <- function(omop_symbol, analysis_ids) {
 
 #' Get Achilles analysis catalog (Aggregate)
 #'
-#' Returns the full catalog of available Achilles analyses, either from
-#' the achilles_analysis table or dynamically discovered from results.
+#' @description
+#' Returns the full catalog of available Achilles analyses, either from the
+#' achilles_analysis table or dynamically discovered from the results tables.
+#' Includes analysis ID, name, description, and result type for each entry.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @return Data frame with analysis catalog
+#' @examples
+#' \dontrun{
+#' catalog <- omopAchillesCatalogDS("omop")
+#' }
 #' @export
 omopAchillesCatalogDS <- function(omop_symbol) {
   handle <- .getHandle(omop_symbol)
   .achillesDiscoverCatalog(handle)
 }
 
-# ==============================================================================
-# QUERY LIBRARY METHODS (Query Template Repository)
-# ==============================================================================
+# --- Query library methods ---
 
 #' List query library templates (Aggregate)
 #'
+#' @description
 #' Returns metadata for all available query templates that pass safety
 #' classification. Queries are sourced from the curated allowlist and
 #' Markdown templates in \code{inst/queries/queries/}.
@@ -643,6 +931,10 @@ omopAchillesCatalogDS <- function(omop_symbol) {
 #' @param provider Character; query provider ("native" or "all")
 #' @return Data frame with query ID, name, group, description, mode, class,
 #'   poolable flag, CDM version, and number of input parameters
+#' @examples
+#' \dontrun{
+#' queries <- omopQueryListDS("omop", domain = "Condition")
+#' }
 #' @export
 omopQueryListDS <- function(omop_symbol, domain = NULL,
                                provider = "native") {
@@ -652,13 +944,19 @@ omopQueryListDS <- function(omop_symbol, domain = NULL,
 
 #' Get query template details (Aggregate)
 #'
+#' @description
 #' Returns full metadata for a specific query template, including input
-#' parameters, output schema, and sensitive field annotations.
+#' parameters, output schema, and sensitive field annotations. Used by the
+#' client to render parameter forms and validate inputs before execution.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param query_id Character; the query ID from the query library
 #' @return Named list with query metadata (id, name, description, inputs,
 #'   outputs, sensitive_fields, class, poolable)
+#' @examples
+#' \dontrun{
+#' template <- omopQueryGetDS("omop", "condition_prevalence")
+#' }
 #' @export
 omopQueryGetDS <- function(omop_symbol, query_id) {
   handle <- .getHandle(omop_symbol)
@@ -668,13 +966,11 @@ omopQueryGetDS <- function(omop_symbol, query_id) {
 
 #' Execute a query template (Aggregate)
 #'
-#' Executes a query template against the database with DataSHIELD-
-#' aligned disclosure controls. Only queries classified as SAFE_AGGREGATE
-#' can be executed in aggregate mode.
-#'
-#' Schema placeholders (\code{@@cdm}, \code{@@vocab}, \code{@@results}) are
-#' automatically resolved from the OMOP handle. User-provided input parameters
-#' are substituted into the SQL template.
+#' @description
+#' Executes a query template against the database with DataSHIELD-aligned
+#' disclosure controls. Only queries classified as SAFE_AGGREGATE can be
+#' executed in aggregate mode. Schema placeholders are automatically resolved
+#' from the OMOP handle.
 #'
 #' Disclosure controls applied:
 #' \itemize{
@@ -691,6 +987,10 @@ omopQueryGetDS <- function(omop_symbol, query_id) {
 #'   "assign" (keeps data server-side)
 #' @return For aggregate mode: disclosure-controlled data frame.
 #'   For assign mode: invisible TRUE.
+#' @examples
+#' \dontrun{
+#' result <- omopQueryExecDS("omop", "condition_prevalence", inputs = list())
+#' }
 #' @export
 omopQueryExecDS <- function(omop_symbol, query_id,
                                inputs = list(),

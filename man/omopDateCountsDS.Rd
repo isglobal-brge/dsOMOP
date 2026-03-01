@@ -30,5 +30,12 @@ omopDateCountsDS(
 Data frame with period, n_records, suppressed
 }
 \description{
-Counts records by time bin (year, quarter, or month) with disclosure control.
+Counts records by time bin (year, quarter, or month) with disclosure control
+applied. Time periods with counts below the threshold are suppressed. Useful
+for visualizing temporal trends in clinical data.
+}
+\examples{
+\dontrun{
+trends <- omopDateCountsDS("omop", "condition_occurrence", granularity = "year")
+}
 }

@@ -19,13 +19,20 @@ omopValueCountsDS(
 
 \item{column}{Character; column name}
 
-\item{top_n}{Integer}
+\item{top_n}{Integer; maximum number of distinct values to return}
 
-\item{suppress_small}{Logical}
+\item{suppress_small}{Logical; whether to suppress counts below threshold}
 }
 \value{
 Data frame with value counts
 }
 \description{
-Get value counts (Aggregate)
+Returns the frequency distribution of distinct values in a column, limited
+to the top N most frequent values. Small counts are suppressed according to
+the server's disclosure threshold.
+}
+\examples{
+\dontrun{
+counts <- omopValueCountsDS("omop", "person", "gender_concept_id")
+}
 }

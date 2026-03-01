@@ -9,11 +9,18 @@ omopLookupConceptsDS(omop_symbol, concept_ids)
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
 
-\item{concept_ids}{Numeric vector}
+\item{concept_ids}{Numeric vector; one or more concept IDs to look up}
 }
 \value{
 Data frame with concept details
 }
 \description{
-Lookup concepts by ID (Aggregate)
+Retrieves full concept metadata for one or more concept IDs from the OMOP
+vocabulary tables. Returns concept name, domain, vocabulary, class, and
+standard concept flag.
+}
+\examples{
+\dontrun{
+details <- omopLookupConceptsDS("omop", c(201826, 4329847))
+}
 }

@@ -13,5 +13,11 @@ omopCohortListDS(omop_symbol)
 Data frame with cohort definitions
 }
 \description{
-List cohort definitions (Aggregate)
+Returns metadata for all cohort definitions available in the results schema,
+including cohort definition IDs, names, and subject counts.
+}
+\examples{
+\dontrun{
+cohorts <- omopCohortListDS("omop")
+}
 }

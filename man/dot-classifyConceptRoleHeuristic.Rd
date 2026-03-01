@@ -6,6 +6,14 @@
 \usage{
 .classifyConceptRoleHeuristic(table, column)
 }
+\arguments{
+\item{table}{Character; the table name.}
+
+\item{column_name}{Character; the column name to classify.}
+}
+\value{
+Character; one of "primary", "type", "source", "qualifier", or "other".
+}
 \description{
 Heuristic concept role classification (no spec)
 }

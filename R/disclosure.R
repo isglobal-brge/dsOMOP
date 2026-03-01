@@ -1,9 +1,5 @@
-# ==============================================================================
-# dsOMOP v2 - Disclosure Control Module
-# ==============================================================================
-# Reads DataSHIELD server options and enforces privacy thresholds.
-# Self-contained: does NOT rely on dsBase for checks.
-# ==============================================================================
+# Module: Disclosure Control
+# Statistical disclosure control for DataSHIELD compliance.
 
 #' Read all disclosure settings from DataSHIELD server options
 #'
@@ -137,9 +133,7 @@
   s
 }
 
-# ==============================================================================
-# Age Safety: Binned Age Groups
-# ==============================================================================
+# --- Age safety: binned age groups ---
 
 #' Compute safe age groups from year_of_birth
 #'
@@ -227,9 +221,7 @@
   result
 }
 
-# ==============================================================================
-# Filter Safety Policy
-# ==============================================================================
+# --- Filter safety policy ---
 
 #' Classify a filter operation by safety level
 #'

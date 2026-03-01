@@ -13,6 +13,12 @@ omopAchillesCatalogDS(omop_symbol)
 Data frame with analysis catalog
 }
 \description{
-Returns the full catalog of available Achilles analyses, either from
-the achilles_analysis table or dynamically discovered from results.
+Returns the full catalog of available Achilles analyses, either from the
+achilles_analysis table or dynamically discovered from the results tables.
+Includes analysis ID, name, description, and result type for each entry.
+}
+\examples{
+\dontrun{
+catalog <- omopAchillesCatalogDS("omop")
+}
 }

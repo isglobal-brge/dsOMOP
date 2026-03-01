@@ -17,5 +17,12 @@ omopMissingnessDS(omop_symbol, table, columns = NULL)
 Data frame with missingness rates
 }
 \description{
-Get missingness rates (Aggregate)
+Computes the proportion of NULL values for each specified column (or all
+columns) in an OMOP CDM table. Useful for data quality assessment before
+running analyses.
+}
+\examples{
+\dontrun{
+missing <- omopMissingnessDS("omop", "condition_occurrence")
+}
 }

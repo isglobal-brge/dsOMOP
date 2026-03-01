@@ -30,5 +30,12 @@ omopInitDS(
 The handle symbol (assigned server-side)
 }
 \description{
-Initialize an OMOP CDM handle (Assign)
+Creates a server-side connection to an OMOP CDM database from a DataSHIELD
+resource. The handle is stored in the dsOMOP session environment and used
+by all subsequent OMOP operations.
+}
+\examples{
+\dontrun{
+omopInitDS("omop_resource")
+}
 }

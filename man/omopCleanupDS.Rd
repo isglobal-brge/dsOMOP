@@ -15,5 +15,11 @@ omopCleanupDS(omop_symbol, prefix = "dsomop_")
 Invisible TRUE
 }
 \description{
-Clean up temp artifacts (Assign)
+Drops all server-side temporary tables whose names match the given prefix.
+Called during session teardown or when resetting state between analyses.
+}
+\examples{
+\dontrun{
+omopCleanupDS("omop", prefix = "dsomop_")
+}
 }

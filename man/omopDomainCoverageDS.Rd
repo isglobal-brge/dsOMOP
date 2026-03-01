@@ -13,5 +13,12 @@ omopDomainCoverageDS(omop_symbol)
 Data frame with per-table person counts
 }
 \description{
-Get cross-table domain coverage (Aggregate)
+Returns the number of distinct persons represented in each clinical domain
+table (e.g., condition_occurrence, drug_exposure). Provides a quick overview
+of data completeness across the CDM.
+}
+\examples{
+\dontrun{
+coverage <- omopDomainCoverageDS("omop")
+}
 }

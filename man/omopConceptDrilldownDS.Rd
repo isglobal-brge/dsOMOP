@@ -4,7 +4,7 @@
 \alias{omopConceptDrilldownDS}
 \title{Get concept drilldown (Aggregate)}
 \usage{
-omopConceptDrilldownDS(omop_symbol, table, concept_id)
+omopConceptDrilldownDS(omop_symbol, table, concept_id, concept_col = NULL)
 }
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
@@ -12,6 +12,9 @@ omopConceptDrilldownDS(omop_symbol, table, concept_id)
 \item{table}{Character; table name}
 
 \item{concept_id}{Integer; concept ID to drill into}
+
+\item{concept_col}{Character; concept column name to drill into, or NULL
+for automatic detection based on the table's primary concept column.}
 }
 \value{
 Named list with drilldown results
@@ -19,5 +22,11 @@ Named list with drilldown results
 \description{
 Returns a full drilldown profile for a single concept within a table,
 including summary stats, numeric distribution, categorical values,
-date coverage, and missingness.
+date coverage, and missingness. All count-based outputs are subject to
+disclosure control.
+}
+\examples{
+\dontrun{
+drilldown <- omopConceptDrilldownDS("omop", "condition_occurrence", 201826L)
+}
 }

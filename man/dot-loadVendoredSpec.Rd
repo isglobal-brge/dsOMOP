@@ -9,6 +9,9 @@
 \arguments{
 \item{version}{Character; CDM version to load (e.g. "5.3", "5.4"). Defaults to "5.4".}
 }
+\value{
+data.frame with the CDM specification.
+}
 \description{
 Load vendored OHDSI metadata as fallback
 }

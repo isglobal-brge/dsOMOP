@@ -17,5 +17,12 @@ omopTableStatsDS(omop_symbol, table, stats = c("rows", "persons"))
 Named list with safe statistics
 }
 \description{
-Get table statistics (Aggregate)
+Returns disclosure-controlled summary statistics for an OMOP CDM table,
+such as total row count and distinct person count. Values below the
+disclosure threshold are suppressed.
+}
+\examples{
+\dontrun{
+stats <- omopTableStatsDS("omop", "condition_occurrence")
+}
 }

@@ -15,5 +15,11 @@ omopListColumnsDS(omop_symbol, table)
 Data frame with column metadata
 }
 \description{
-List columns (Aggregate)
+Returns column-level metadata for a specific OMOP CDM table, including
+column names, data types, and whether each column is present in the database.
+}
+\examples{
+\dontrun{
+cols <- omopListColumnsDS("omop", "person")
+}
 }

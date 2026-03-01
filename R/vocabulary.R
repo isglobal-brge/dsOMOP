@@ -1,9 +1,5 @@
-# ==============================================================================
-# dsOMOP v2 - Vocabulary Operations
-# ==============================================================================
-# Dedicated module for VOCAB-schema operations. All safe (no patient data).
-# Concept search, lookup, descendants, ancestors, concept set expansion.
-# ==============================================================================
+# Module: Vocabulary Queries
+# OMOP CDM vocabulary search, concept lookup, and concept set expansion.
 
 #' Search concepts by name pattern
 #'

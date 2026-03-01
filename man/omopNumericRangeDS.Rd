@@ -27,6 +27,12 @@ omopNumericRangeDS(
 List with p05, p95, n_total
 }
 \description{
-Returns the 5th and 95th percentile approximations and total count.
-Used as pass 1 of two-pass histogram pooling to compute shared bin edges.
+Returns the 5th and 95th percentile approximations and total count for a
+numeric column. Used as pass 1 of two-pass histogram pooling to compute
+shared bin edges across federated sites.
+}
+\examples{
+\dontrun{
+range_info <- omopNumericRangeDS("omop", "measurement", "value_as_number")
+}
 }

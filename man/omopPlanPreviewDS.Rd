@@ -9,11 +9,18 @@ omopPlanPreviewDS(omop_symbol, plan)
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
 
-\item{plan}{List; the extraction plan}
+\item{plan}{List; the extraction plan to preview}
 }
 \value{
-List with preview information
+List with preview information including output schemas and warnings
 }
 \description{
-Preview a plan (Aggregate)
+Validates and previews an extraction plan without executing it. Returns
+expected output schemas, estimated row counts, and any validation warnings
+or errors.
+}
+\examples{
+\dontrun{
+preview <- omopPlanPreviewDS("omop", plan)
+}
 }

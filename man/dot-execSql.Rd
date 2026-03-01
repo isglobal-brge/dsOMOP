@@ -13,6 +13,9 @@
 
 \item{...}{Named parameters for substitution}
 }
+\value{
+Invisible \code{NULL}; called for side effects.
+}
 \description{
 Render, translate, and execute SQL (no result set)
 }

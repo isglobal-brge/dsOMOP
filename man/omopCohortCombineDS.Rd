@@ -21,5 +21,11 @@ omopCohortCombineDS(omop_symbol, op, cohort_a, cohort_b, new_name = NULL)
 Character; result temp table name
 }
 \description{
-Combine cohorts (Assign)
+Combines two existing server-side cohorts using a set operation (intersect,
+union, or set difference) and stores the result as a new temporary table.
+}
+\examples{
+\dontrun{
+combined <- omopCohortCombineDS("omop", "union", "cohort_a", "cohort_b")
+}
 }

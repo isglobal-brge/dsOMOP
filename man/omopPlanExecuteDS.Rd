@@ -20,4 +20,10 @@ Invisible TRUE (outputs are assigned into caller's environment)
 Runs the extraction plan and assigns each output directly into the
 DataSHIELD session as a named symbol. Sparse outputs are split into
 two symbols: \code{<name>.covariates} and \code{<name>.covariateRef}.
+Temporal covariates are split into three symbols.
+}
+\examples{
+\dontrun{
+omopPlanExecuteDS("omop", plan, out = c(cohort = "my_cohort"))
+}
 }

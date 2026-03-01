@@ -27,6 +27,12 @@ omopSafeCutpointsDS(
 List with breaks (numeric vector) and counts (integer vector)
 }
 \description{
-Returns bin edges that are safe to use as filter thresholds. Each bin
-is guaranteed to contain enough persons to pass disclosure.
+Returns bin edges that are safe to use as filter thresholds. Each bin is
+guaranteed to contain enough persons to pass the disclosure threshold,
+preventing indirect identification via precise numeric filtering.
+}
+\examples{
+\dontrun{
+cuts <- omopSafeCutpointsDS("omop", "measurement", "value_as_number")
+}
 }

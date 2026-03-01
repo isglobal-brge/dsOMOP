@@ -4,18 +4,24 @@
 \alias{omopAchillesDistributionDS}
 \title{Get Achilles distribution results (Aggregate)}
 \usage{
-omopAchillesDistributionDS(omop_symbol, analysis_ids, stratum_filters = NULL)
+omopAchillesDistributionDS(omop_symbol, analysis_ids)
 }
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
 
-\item{analysis_ids}{Integer vector; analysis IDs}
-
-\item{stratum_filters}{Named list; stratum filters}
+\item{analysis_ids}{Integer vector; analysis IDs to retrieve}
 }
 \value{
-Data frame with distribution statistics
+Data frame with distribution statistics (no min/max)
 }
 \description{
-Get Achilles distribution results (Aggregate)
+Returns distribution statistics (average, standard deviation, median,
+percentiles) for the given Achilles analysis IDs. Extreme values (min/max)
+are never returned to prevent identification of outlier individuals.
+Arbitrary stratum filtering is not supported.
+}
+\examples{
+\dontrun{
+dists <- omopAchillesDistributionDS("omop", c(103L, 105L))
+}
 }

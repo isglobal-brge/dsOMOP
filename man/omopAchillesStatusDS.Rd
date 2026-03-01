@@ -13,5 +13,11 @@ omopAchillesStatusDS(omop_symbol)
 Named list with availability status
 }
 \description{
-Check Achilles availability (Aggregate)
+Checks whether pre-computed Achilles results are available in the results
+schema. Returns the availability status and the number of analyses found.
+}
+\examples{
+\dontrun{
+status <- omopAchillesStatusDS("omop")
+}
 }

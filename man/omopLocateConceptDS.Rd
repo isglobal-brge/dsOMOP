@@ -16,6 +16,12 @@ Data frame with table_name, concept_column, concept_id, n_records,
   n_persons
 }
 \description{
-Searches all CDM tables with concept columns and returns a presence
-matrix showing where the given concept IDs appear.
+Searches all CDM tables with concept columns and returns a presence matrix
+showing where the given concept IDs appear. Useful for understanding which
+clinical domains contain data for a concept of interest.
+}
+\examples{
+\dontrun{
+locations <- omopLocateConceptDS("omop", c(201826L, 4329847L))
+}
 }

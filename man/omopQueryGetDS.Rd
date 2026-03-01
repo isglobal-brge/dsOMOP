@@ -17,5 +17,11 @@ Named list with query metadata (id, name, description, inputs,
 }
 \description{
 Returns full metadata for a specific query template, including input
-parameters, output schema, and sensitive field annotations.
+parameters, output schema, and sensitive field annotations. Used by the
+client to render parameter forms and validate inputs before execution.
+}
+\examples{
+\dontrun{
+template <- omopQueryGetDS("omop", "condition_prevalence")
+}
 }

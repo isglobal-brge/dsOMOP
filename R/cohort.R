@@ -1,8 +1,5 @@
-# ==============================================================================
-# dsOMOP v2 - Cohort Operations
-# ==============================================================================
-# Uses blueprint instead of heuristics for column discovery.
-# ==============================================================================
+# Module: Cohort Operations
+# Server-side cohort creation, combination, and management.
 
 #' List available cohort definitions
 #'

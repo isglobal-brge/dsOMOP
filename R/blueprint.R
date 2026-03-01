@@ -1,9 +1,5 @@
-# ==============================================================================
-# dsOMOP v2 - SchemaBlueprint
-# ==============================================================================
-# Fuses vendored OHDSI Table_Level + Field_Level CSVs with runtime DB
-# introspection. Replaces the legacy introspection.R + handle.R.
-# ==============================================================================
+# Module: Blueprint System
+# CDM schema introspection, handle creation, vendored spec management.
 
 # --- CDM Spec Loading ---
 
@@ -68,6 +64,7 @@
 #' Load vendored OHDSI metadata as fallback
 #'
 #' @param version Character; CDM version to load (e.g. "5.3", "5.4"). Defaults to "5.4".
+#' @return data.frame with the CDM specification.
 #' @keywords internal
 .loadVendoredSpec <- function(version = NULL) {
   pkg_dir <- system.file("ohdsi", package = "dsOMOP")
@@ -92,6 +89,10 @@
 }
 
 #' Heuristic concept role classification (no spec)
+#'
+#' @param table Character; the table name.
+#' @param column_name Character; the column name to classify.
+#' @return Character; one of "primary", "type", "source", "qualifier", or "other".
 #' @keywords internal
 .classifyConceptRoleHeuristic <- function(table, column) {
   if (grepl("_concept_id$", column)) {
@@ -148,6 +149,7 @@
 #' Close a CDM handle
 #'
 #' @param handle A CDM handle
+#' @return NULL, called for side effect of closing the database connection.
 #' @keywords internal
 .closeHandle <- function(handle) {
   if (is.null(handle)) return(invisible(NULL))
@@ -1027,6 +1029,7 @@
 #'
 #' @param handle CDM handle
 #' @param name Character; temp table name
+#' @return NULL, called for side effect.
 #' @keywords internal
 .dropTempTable <- function(handle, name) {
   tryCatch(

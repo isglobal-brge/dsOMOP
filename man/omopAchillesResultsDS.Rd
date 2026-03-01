@@ -4,25 +4,24 @@
 \alias{omopAchillesResultsDS}
 \title{Get Achilles count results (Aggregate)}
 \usage{
-omopAchillesResultsDS(
-  omop_symbol,
-  analysis_ids,
-  stratum_filters = NULL,
-  min_cell_count = NULL
-)
+omopAchillesResultsDS(omop_symbol, analysis_ids)
 }
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
 
-\item{analysis_ids}{Integer vector; analysis IDs}
-
-\item{stratum_filters}{Named list; stratum filters}
-
-\item{min_cell_count}{Integer; minimum cell count}
+\item{analysis_ids}{Integer vector; analysis IDs to retrieve}
 }
 \value{
 Data frame with analysis results
 }
 \description{
-Get Achilles count results (Aggregate)
+Returns count-based Achilles results for the given analysis IDs with
+server-controlled disclosure thresholds. Arbitrary stratum filtering and
+client-supplied min_cell_count are intentionally not supported to prevent
+probing attacks and threshold weakening.
+}
+\examples{
+\dontrun{
+results <- omopAchillesResultsDS("omop", c(1L, 2L, 3L))
+}
 }

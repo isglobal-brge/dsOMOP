@@ -22,3 +22,8 @@ Returns metadata for all available query templates that pass safety
 classification. Queries are sourced from the curated allowlist and
 Markdown templates in \code{inst/queries/queries/}.
 }
+\examples{
+\dontrun{
+queries <- omopQueryListDS("omop", domain = "Condition")
+}
+}

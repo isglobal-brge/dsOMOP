@@ -17,6 +17,8 @@
 Named list of data frames
 }
 \description{
-Execute a plan and produce server-side data frames
+Processes all outputs defined in the plan: builds a cohort (if specified),
+then iterates over each output entry to extract, transform, and return
+the requested data frames.
 }
 \keyword{internal}

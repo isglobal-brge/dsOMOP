@@ -11,6 +11,9 @@
 
 \item{name}{Character; temp table name}
 }
+\value{
+NULL, called for side effect.
+}
 \description{
 Drop a temporary table
 }

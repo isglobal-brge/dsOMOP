@@ -1,8 +1,5 @@
-# ==============================================================================
-# dsOMOP v2 - Safe Aggregate Profiling
-# ==============================================================================
-# Dedicated profiling module. All disclosure-controlled.
-# ==============================================================================
+# Module: Profiling Engine
+# Data profiling functions for table stats, column stats, distributions, and concept analysis.
 
 #' Get safe table-level statistics
 #'
@@ -303,9 +300,7 @@
   result
 }
 
-# ==============================================================================
-# Safe Numeric Cutpoints
-# ==============================================================================
+# --- Safe Numeric Cutpoints ---
 
 #' Compute safe histogram bin edges for a numeric column
 #'
@@ -431,9 +426,7 @@
   list(breaks = breaks, counts = counts)
 }
 
-# ==============================================================================
-# Exploration Profiling (OMOP Studio)
-# ==============================================================================
+# --- Exploration Profiling (OMOP Studio) ---
 
 #' Get top concepts in a table by person count or record count
 #'
@@ -1065,9 +1058,7 @@
   result
 }
 
-# ==============================================================================
-# Concept Drilldown & Locator
-# ==============================================================================
+# --- Concept Drilldown & Locator ---
 
 #' Full drilldown profile for a single concept within a table
 #'

@@ -34,5 +34,11 @@ Data frame with concept_id, concept_name, n_persons, n_records
 }
 \description{
 Returns the top concepts in a table ranked by person count or record count,
-with disclosure control applied.
+with disclosure control applied. Concepts with counts below the server
+threshold are suppressed.
+}
+\examples{
+\dontrun{
+prevalence <- omopConceptPrevalenceDS("omop", "condition_occurrence")
+}
 }

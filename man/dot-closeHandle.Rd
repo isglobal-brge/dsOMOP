@@ -9,6 +9,9 @@
 \arguments{
 \item{handle}{A CDM handle}
 }
+\value{
+NULL, called for side effect of closing the database connection.
+}
 \description{
 Close a CDM handle
 }

@@ -1,9 +1,5 @@
-# ==============================================================================
-# dsOMOP v2 - SQL Rendering and Execution
-# ==============================================================================
-# All SQL is authored in OHDSI SQL (SQL Server dialect) and translated at
-# execution time via the pure R engine in sql_translate.R.
-# ==============================================================================
+# Module: SQL Rendering
+# SQL rendering utilities for database query execution.
 
 # --- DBMS Dialect Mapping ---
 
@@ -44,6 +40,7 @@
 #' @param handle CDM handle
 #' @param sql Character; OHDSI SQL with \code{@param} placeholders
 #' @param ... Named parameters for substitution
+#' @return Invisible \code{NULL}; called for side effects.
 #' @keywords internal
 .execSql <- function(handle, sql, ...) {
   rendered <- .sql_render(sql, ...)

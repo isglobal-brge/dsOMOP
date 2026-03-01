@@ -2,11 +2,20 @@
 % Please edit documentation in R/queries.R
 \name{.ql_parse_json}
 \alias{.ql_parse_json}
-\title{Minimal JSON parser for allowlist (avoids jsonlite dependency)}
+\title{Parse a JSON string with graceful fallback}
 \usage{
 .ql_parse_json(text)
 }
+\arguments{
+\item{text}{Character; a JSON string to parse.}
+}
+\value{
+The parsed R object (typically a list), or an empty list if
+  jsonlite is unavailable.
+}
 \description{
-Minimal JSON parser for allowlist (avoids jsonlite dependency)
+Wrapper around \code{jsonlite::fromJSON} that preserves list structure
+(\code{simplifyVector = FALSE}). When jsonlite is not available, returns
+an empty list and emits a warning instead of raising an error.
 }
 \keyword{internal}

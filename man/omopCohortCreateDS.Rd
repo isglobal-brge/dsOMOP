@@ -30,5 +30,12 @@ omopCohortCreateDS(
 Character; temp table name or confirmation
 }
 \description{
-Create a cohort (Assign)
+Creates a cohort on the server side from a cohort specification DSL object.
+The cohort can be stored as a temporary table or persisted to the results
+schema depending on the mode parameter.
+}
+\examples{
+\dontrun{
+result <- omopCohortCreateDS("omop", cohort_spec, mode = "temporary")
+}
 }
