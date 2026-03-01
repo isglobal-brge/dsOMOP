@@ -535,6 +535,20 @@
           }
         }
 
+        # Compute derived columns (age, sex, obs_duration)
+        if (!is.null(out$derived_columns) &&
+            length(out$derived_columns) > 0) {
+          derived_df <- .computeDerivedColumns(
+            handle, out$derived_columns,
+            cohort_person_ids, cohort_table)
+          if (!is.null(derived_df) && !is.null(result_df)) {
+            result_df <- merge(result_df, derived_df,
+                               by = "person_id", all.x = TRUE)
+          } else if (!is.null(derived_df)) {
+            result_df <- derived_df
+          }
+        }
+
         results[[out_name]] <- result_df
 
       } else if (out_type == "event_level") {

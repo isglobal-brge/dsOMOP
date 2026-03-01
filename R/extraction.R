@@ -765,9 +765,64 @@
           names(last_vals)[2] <- label
           features <- merge(features, last_vals, by = "person_id", all.x = TRUE)
         }
+        if (identical(spec_type, "sum_value")) {
+          stat_df <- stats::aggregate(
+            num_data[[val_col]],
+            by = list(person_id = num_data$person_id), FUN = sum)
+          names(stat_df)[2] <- label
+          features <- merge(features, stat_df, by = "person_id", all.x = TRUE)
+        }
       }
     }
+
+    # Drug duration feature
+    if (identical(spec_type, "drug_duration")) {
+      start_col <- intersect(
+        c("drug_exposure_start_date", "drug_era_start_date"),
+        names(concept_data))
+      end_col <- intersect(
+        c("drug_exposure_end_date", "drug_era_end_date"),
+        names(concept_data))
+      if (length(start_col) > 0 && length(end_col) > 0) {
+        dur <- as.integer(
+          as.Date(concept_data[[end_col[1]]]) -
+          as.Date(concept_data[[start_col[1]]]))
+        dur_data <- data.frame(
+          person_id = concept_data$person_id,
+          dur = dur, stringsAsFactors = FALSE)
+        dur_data <- dur_data[!is.na(dur_data$dur), , drop = FALSE]
+        if (nrow(dur_data) > 0) {
+          agg_fn <- switch(spec$agg %||% "mean",
+            mean = mean, sum = sum, max = max, mean)
+          stat_df <- stats::aggregate(
+            dur_data$dur,
+            by = list(person_id = dur_data$person_id), FUN = agg_fn)
+          names(stat_df)[2] <- label
+          features <- merge(features, stat_df, by = "person_id", all.x = TRUE)
+        }
+      }
+    }
+
     features
+  }
+
+  # Handle n_distinct specs (cross-concept, computed before per-concept loop)
+  if (!is.null(specs) && length(specs) > 0 &&
+      !is.null(concept_col) && concept_col %in% names(df)) {
+    for (s in specs) {
+      if (identical(s$type, "n_distinct")) {
+        nd_label <- if (!is.null(s$name) && nchar(s$name) > 0) s$name
+                    else "n_distinct"
+        nd_df <- stats::aggregate(
+          df[[concept_col]],
+          by = list(person_id = df$person_id),
+          FUN = function(x) length(unique(x))
+        )
+        names(nd_df)[2] <- nd_label
+        features <- merge(features, nd_df, by = "person_id", all.x = TRUE)
+        features[[nd_label]][is.na(features[[nd_label]])] <- 0L
+      }
+    }
   }
 
   if (!is.null(concept_col) && concept_col %in% names(df)) {
@@ -933,6 +988,153 @@
   }
 
   list(covariates = covariates, covariateRef = covariateRef)
+}
+
+# --- Derived Columns ---
+
+#' Compute person-level derived columns (age, sex, observation duration)
+#'
+#' Fetches data from the \code{person} table (and \code{observation_period}
+#' if needed) and computes derived columns for each person. Supports three
+#' kinds of derived columns:
+#' \describe{
+#'   \item{age}{Numeric age computed as \code{reference_year - year_of_birth}.}
+#'   \item{sex_mf}{Character "M" or "F" mapped from \code{gender_concept_id}.}
+#'   \item{obs_duration}{Integer days between observation period start and end.}
+#' }
+#'
+#' @param handle CDM handle.
+#' @param derived_specs List of derived column specs, each with at least
+#'   \code{$kind} and \code{$name}.
+#' @param person_ids Integer vector of person IDs to restrict to, or
+#'   \code{NULL} for all persons.
+#' @param cohort_table Character; name of cohort temp table (used for
+#'   index-date age computation), or \code{NULL}.
+#' @return A \code{data.frame} with \code{person_id} and one column per
+#'   derived spec, or \code{NULL} if no specs or no data.
+#' @keywords internal
+.computeDerivedColumns <- function(handle, derived_specs,
+                                    person_ids = NULL,
+                                    cohort_table = NULL) {
+  if (is.null(derived_specs) || length(derived_specs) == 0) return(NULL)
+
+  bp <- .buildBlueprint(handle)
+  kinds <- vapply(derived_specs, function(s) s$kind, character(1))
+
+  needs_person <- any(kinds %in% c("age", "sex_mf"))
+  needs_obs <- any(kinds == "obs_duration") ||
+    any(kinds == "age" & vapply(derived_specs, function(s) {
+      identical(s$reference, "index")
+    }, logical(1)))
+
+  if (!needs_person && !needs_obs) return(NULL)
+
+  # Build SQL to fetch required data
+  person_schema <- .resolveTableSchema(handle, "person", "Clinical")
+  person_table <- .qualifyTable(handle, "person", person_schema)
+
+  select_parts <- "p.person_id"
+  if (any(kinds == "age")) {
+    select_parts <- paste0(select_parts, ", p.year_of_birth")
+  }
+  if (any(kinds == "sex_mf")) {
+    select_parts <- paste0(select_parts, ", p.gender_concept_id")
+  }
+
+  sql <- paste0("SELECT DISTINCT ", select_parts, " FROM ", person_table, " p")
+
+  if (needs_obs) {
+    op_schema <- .resolveTableSchema(handle, "observation_period", "Clinical")
+    op_table <- .qualifyTable(handle, "observation_period", op_schema)
+    sql <- paste0(sql,
+      " LEFT JOIN ", op_table, " op ON op.person_id = p.person_id")
+    if (any(kinds == "obs_duration")) {
+      sql <- gsub("SELECT DISTINCT ", "SELECT DISTINCT ", sql)
+      # Add observation period columns
+      sql <- sub("FROM", paste0(
+        ", op.observation_period_start_date, op.observation_period_end_date FROM"
+      ), sql)
+    }
+  }
+
+  # Filter to cohort person IDs
+  where <- character(0)
+  if (!is.null(person_ids) && length(person_ids) > 0) {
+    ids_str <- paste(as.integer(person_ids), collapse = ", ")
+    where <- c(where, paste0("p.person_id IN (", ids_str, ")"))
+  } else if (!is.null(cohort_table)) {
+    where <- c(where, paste0(
+      "EXISTS (SELECT 1 FROM ", cohort_table,
+      " c WHERE c.subject_id = p.person_id)"))
+  }
+  if (length(where) > 0) {
+    sql <- paste0(sql, " WHERE ", paste(where, collapse = " AND "))
+  }
+
+  # Disclosure check
+  count_sql <- paste0(
+    "SELECT COUNT(DISTINCT person_id) AS n_persons FROM (",
+    sql, ") AS sub"
+  )
+  .assertMinPersons(conn = handle$conn, sql = count_sql)
+
+  df <- .executeQuery(handle, sql)
+  if (nrow(df) == 0) return(NULL)
+
+  result <- data.frame(person_id = df$person_id, stringsAsFactors = FALSE)
+
+  for (spec in derived_specs) {
+    col_name <- spec$name
+
+    if (spec$kind == "age") {
+      if ("year_of_birth" %in% names(df)) {
+        ref <- spec$reference %||% "today"
+        if (ref == "today" || is.null(cohort_table)) {
+          ref_year <- as.integer(format(Sys.Date(), "%Y"))
+          if (!is.null(spec$reference_date)) {
+            ref_year <- as.integer(format(
+              as.Date(spec$reference_date), "%Y"))
+          }
+        } else {
+          # index: use cohort_start_date — fetch from cohort table
+          idx_sql <- paste0(
+            "SELECT subject_id AS person_id, cohort_start_date FROM ",
+            cohort_table)
+          idx_df <- .executeQuery(handle, idx_sql)
+          idx_df$index_year <- as.integer(
+            format(as.Date(idx_df$cohort_start_date), "%Y"))
+          df <- merge(df, idx_df[, c("person_id", "index_year")],
+                      by = "person_id", all.x = TRUE)
+          ref_year <- df$index_year
+        }
+        result[[col_name]] <- as.integer(ref_year - df$year_of_birth)
+      } else {
+        result[[col_name]] <- NA_integer_
+      }
+
+    } else if (spec$kind == "sex_mf") {
+      if ("gender_concept_id" %in% names(df)) {
+        result[[col_name]] <- ifelse(
+          df$gender_concept_id == 8507L, "M",
+          ifelse(df$gender_concept_id == 8532L, "F", NA_character_)
+        )
+      } else {
+        result[[col_name]] <- NA_character_
+      }
+
+    } else if (spec$kind == "obs_duration") {
+      if ("observation_period_start_date" %in% names(df) &&
+          "observation_period_end_date" %in% names(df)) {
+        start_d <- as.Date(df$observation_period_start_date)
+        end_d <- as.Date(df$observation_period_end_date)
+        result[[col_name]] <- as.integer(end_d - start_d)
+      } else {
+        result[[col_name]] <- NA_integer_
+      }
+    }
+  }
+
+  result
 }
 
 # --- Baseline Extraction ---
