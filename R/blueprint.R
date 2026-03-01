@@ -407,6 +407,53 @@
   }
   handle$has_achilles <- length(found_achilles) > 0
 
+  # Discover OHDSI result tables (DQD, CohortDiagnostics, etc.)
+  registry <- .ohdsi_tool_registry()
+  all_ohdsi_names <- unlist(lapply(registry, function(t) t$table_names),
+                             use.names = FALSE)
+  found_ohdsi <- intersect(tolower(db_tables_results), all_ohdsi_names)
+  if (length(found_ohdsi) == 0) {
+    found_ohdsi <- intersect(tolower(db_tables_cdm), all_ohdsi_names)
+  }
+  new_ohdsi <- setdiff(found_ohdsi, tables$table_name)
+  if (length(new_ohdsi) > 0) {
+    ohdsi_schema <- if (length(intersect(tolower(db_tables_results),
+                                          all_ohdsi_names)) > 0) {
+      handle$results_schema
+    } else {
+      handle$cdm_schema
+    }
+    ohdsi_rows <- data.frame(
+      table_name      = new_ohdsi,
+      schema_category = rep("Results", length(new_ohdsi)),
+      concept_prefix  = rep(NA_character_, length(new_ohdsi)),
+      has_person_id   = rep(FALSE, length(new_ohdsi)),
+      present_in_db   = rep(TRUE, length(new_ohdsi)),
+      qualified_name  = vapply(new_ohdsi, function(t) {
+        .qualifyTable(handle, t, ohdsi_schema)
+      }, character(1)),
+      stringsAsFactors = FALSE
+    )
+    tables <- rbind(tables, ohdsi_rows)
+  }
+  # Mark already-present OHDSI tables
+  existing_ohdsi <- intersect(found_ohdsi, tables$table_name)
+  if (length(existing_ohdsi) > 0) {
+    ohdsi_schema <- if (length(intersect(tolower(db_tables_results),
+                                          all_ohdsi_names)) > 0) {
+      handle$results_schema
+    } else {
+      handle$cdm_schema
+    }
+    mask <- tables$table_name %in% existing_ohdsi
+    tables$present_in_db[mask] <- TRUE
+    tables$schema_category[mask & tables$schema_category == "CDM"] <- "Results"
+    tables$qualified_name[mask] <- vapply(tables$table_name[mask], function(t) {
+      .qualifyTable(handle, t, ohdsi_schema)
+    }, character(1))
+  }
+  handle$has_ohdsi_results <- length(found_ohdsi) > 0
+
   # Build join graph from spec FK metadata (if available)
   if (has_spec) {
     join_graph <- .buildJoinGraph(fld_meta, tables$table_name[tables$present_in_db])

@@ -917,6 +917,92 @@ omopAchillesCatalogDS <- function(omop_symbol) {
   .achillesDiscoverCatalog(handle)
 }
 
+# --- OHDSI Results aggregate methods ---
+
+#' Check OHDSI result tool availability (Aggregate)
+#'
+#' @description
+#' Scans the database for pre-computed result tables from OHDSI tools
+#' (DQD, CohortDiagnostics, CohortIncidence, Characterization) and
+#' returns per-tool availability status.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @return Named list with per-tool availability
+#' @examples
+#' \dontrun{
+#' status <- omopOhdsiStatusDS("omop")
+#' }
+#' @export
+omopOhdsiStatusDS <- function(omop_symbol) {
+  handle <- .getHandle(omop_symbol)
+  .ohdsiStatus(handle)
+}
+
+#' List discovered OHDSI result tables (Aggregate)
+#'
+#' @description
+#' Returns a data frame of all OHDSI result tables found in the database,
+#' including tool identification, qualified names, and row counts.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @return Data frame with table_name, tool_id, tool_name, qualified_name, n_rows
+#' @examples
+#' \dontrun{
+#' tables <- omopOhdsiTablesDS("omop")
+#' }
+#' @export
+omopOhdsiTablesDS <- function(omop_symbol) {
+  handle <- .getHandle(omop_symbol)
+  .ohdsiFindResultTables(handle)
+}
+
+#' Query an OHDSI result table (Aggregate)
+#'
+#' @description
+#' Reads rows from a pre-computed OHDSI result table with server-controlled
+#' disclosure thresholds. Sensitive columns (SQL, JSON definitions) are
+#' automatically excluded. Count columns are subject to small-cell suppression.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param table_name Character; which result table to query
+#' @param columns Character vector; columns to select (NULL = all safe columns)
+#' @param filters Named list; WHERE conditions
+#' @param order_by Character; ORDER BY column
+#' @param limit Integer; max rows (capped at 5000)
+#' @param tool_id Character; optional tool identifier for registry lookup
+#' @return Data frame with disclosure control applied
+#' @examples
+#' \dontrun{
+#' results <- omopOhdsiResultsDS("omop", "dqdashboard_results")
+#' }
+#' @export
+omopOhdsiResultsDS <- function(omop_symbol, table_name, columns = NULL,
+                                filters = NULL, order_by = NULL,
+                                limit = 5000L, tool_id = NULL) {
+  handle <- .getHandle(omop_symbol)
+  .ohdsiGetResults(handle, table_name, columns, filters, order_by, limit,
+                    tool_id)
+}
+
+#' Get OHDSI tool summary (Aggregate)
+#'
+#' @description
+#' Returns a summary of results for a specific OHDSI tool, including
+#' which tables are present and their row counts.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param tool_id Character; which tool to summarize
+#' @return Named list with tool-specific summary
+#' @examples
+#' \dontrun{
+#' summary <- omopOhdsiSummaryDS("omop", "dqd")
+#' }
+#' @export
+omopOhdsiSummaryDS <- function(omop_symbol, tool_id) {
+  handle <- .getHandle(omop_symbol)
+  .ohdsiGetSummary(handle, tool_id)
+}
+
 # --- Query library methods ---
 
 #' List query library templates (Aggregate)

@@ -35,6 +35,10 @@ AggregateMethods:
   omopAchillesResultsDS,
   omopAchillesDistributionDS,
   omopAchillesCatalogDS,
+  omopOhdsiStatusDS,
+  omopOhdsiTablesDS,
+  omopOhdsiResultsDS,
+  omopOhdsiSummaryDS,
   omopQueryListDS,
   omopQueryGetDS,
   omopQueryExecDS
