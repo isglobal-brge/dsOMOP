@@ -537,10 +537,14 @@
 
   result <- .convertTypes(result)
 
-  # Apply date handling transforms
-  if (!is.null(date_handling)) {
-    result <- .applyDateHandling(result, date_handling)
+  # Apply date handling transforms.
+  # Default is "remove" (strip all date/datetime columns) for privacy.
+  # Users must explicitly opt in to "absolute" to retain raw dates.
+  if (is.null(date_handling)) {
+    default_mode <- getOption("dsomop.default_date_handling", "remove")
+    date_handling <- list(mode = default_mode)
   }
+  result <- .applyDateHandling(result, date_handling)
 
   result <- switch(representation,
     "long" = result,

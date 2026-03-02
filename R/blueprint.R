@@ -516,16 +516,45 @@
 
 #' Detect whether a column contains PII / sensitive data
 #'
+#' Checks column names against a comprehensive blocklist of potentially
+#' sensitive string fields per OMOP privacy guidance. Blocked columns include:
+#' \itemize{
+#'   \item All \code{*_source_value} columns (free text from source systems)
+#'   \item \code{value_as_string} (free-text observation/measurement values)
+#'   \item \code{sig} (drug prescription signature/instructions)
+#'   \item \code{stop_reason} (free-text reason for drug stop)
+#'   \item \code{lot_number} (manufacturer lot, potentially identifying)
+#'   \item \code{unique_device_id} (device UDI, globally unique)
+#'   \item NOTE / NOTE_NLP text fields (clinical narrative text)
+#'   \item \code{*_source_concept_id} (source-system identifiers)
+#' }
+#'
 #' @param column_name Character; column name
 #' @return Logical
 #' @keywords internal
 .detectSensitiveColumns <- function(column_name) {
   sensitive_patterns <- c(
+    # Source-system values (all tables): free text from EHR
     "_source_value$",
+    # Source concept IDs (may reveal source-system coding)
+    "_source_concept_id$",
+    # Free-text string values
     "^value_as_string$",
+    "^value_source_value$",
+    # Drug-specific free text
+    "^sig$",
+    "^stop_reason$",
+    "^lot_number$",
+    # Device identifiers
+    "^unique_device_id$",
+    # NOTE / NOTE_NLP text fields (clinical narrative)
     "^note_text$",
+    "^note_title$",
     "^note_source_value$",
-    "_source_concept_id$"
+    "^note_nlp_source_concept_id$",
+    "^snippet$",
+    "^lexical_variant$",
+    "^note_nlp_concept_id$"
   )
   any(vapply(sensitive_patterns, function(p) grepl(p, column_name), logical(1)))
 }
