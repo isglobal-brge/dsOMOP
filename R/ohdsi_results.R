@@ -55,6 +55,50 @@
       count_columns = c("num_persons", "sum_value", "count_value",
                          "num_events", "num_cases", "num_persons_exposed"),
       sensitive_columns = character(0)
+    ),
+
+    cohort_method = list(
+      tool_name = "CohortMethod",
+      table_names = c("cm_result", "cm_diagnostics_summary", "cm_attrition",
+                       "cm_covariate_balance", "cm_follow_up_dist",
+                       "cm_kaplan_meier_dist", "cm_interaction_result",
+                       "cm_shared_covariate_balance"),
+      prefix_patterns = c("^cm_"),
+      count_columns = c("target_subjects", "comparator_subjects",
+                         "target_outcomes", "comparator_outcomes",
+                         "target_days", "comparator_days"),
+      sensitive_columns = character(0)
+    ),
+
+    sccs = list(
+      tool_name = "Self-Controlled Case Series",
+      table_names = c("sccs_result", "sccs_diagnostics_summary",
+                       "sccs_attrition", "sccs_covariate_result"),
+      prefix_patterns = c("^sccs_"),
+      count_columns = c("outcome_subjects", "outcome_events",
+                         "outcome_observation_periods", "observed_days"),
+      sensitive_columns = character(0)
+    ),
+
+    plp = list(
+      tool_name = "Patient-Level Prediction",
+      table_names = c("plp_performances", "plp_covariate_summary",
+                       "plp_diagnostic_summary", "plp_calibration_summary",
+                       "plp_threshold_summary", "plp_model_design",
+                       "plp_attrition"),
+      prefix_patterns = c("^plp_"),
+      count_columns = c("population_size", "outcome_count", "test_size",
+                         "train_size", "n_total"),
+      sensitive_columns = character(0)
+    ),
+
+    evidence_synthesis = list(
+      tool_name = "Evidence Synthesis",
+      table_names = c("es_cm_result", "es_sccs_result",
+                       "es_cm_diagnostics_summary", "es_sccs_diagnostics_summary"),
+      prefix_patterns = c("^es_"),
+      count_columns = c("n_databases"),
+      sensitive_columns = character(0)
     )
   )
 }

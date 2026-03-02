@@ -8,7 +8,8 @@ test_that("ohdsi_tool_registry returns expected structure", {
   registry <- .ohdsi_tool_registry()
   expect_type(registry, "list")
   expect_true(all(c("dqd", "cohort_diagnostics", "cohort_incidence",
-                     "characterization") %in% names(registry)))
+                     "characterization", "cohort_method", "sccs",
+                     "plp", "evidence_synthesis") %in% names(registry)))
 
   for (tid in names(registry)) {
     tool <- registry[[tid]]
@@ -29,6 +30,57 @@ test_that("ohdsi_table_to_tool maps known tables correctly", {
   expect_equal(.ohdsi_table_to_tool("c_cohort_counts"), "characterization")
   expect_equal(.ohdsi_table_to_tool("c_covariates"), "characterization")
   expect_null(.ohdsi_table_to_tool("unknown_table"))
+})
+
+test_that("ohdsi_tool_registry includes CohortMethod with correct tables", {
+  registry <- .ohdsi_tool_registry()
+  cm <- registry$cohort_method
+  expect_equal(cm$tool_name, "CohortMethod")
+  expect_true("cm_result" %in% cm$table_names)
+  expect_true("cm_diagnostics_summary" %in% cm$table_names)
+  expect_equal(length(cm$table_names), 8)
+  expect_true("target_subjects" %in% cm$count_columns)
+})
+
+test_that("ohdsi_tool_registry includes SCCS with correct tables", {
+  registry <- .ohdsi_tool_registry()
+  sccs <- registry$sccs
+  expect_equal(sccs$tool_name, "Self-Controlled Case Series")
+  expect_true("sccs_result" %in% sccs$table_names)
+  expect_true("sccs_diagnostics_summary" %in% sccs$table_names)
+  expect_equal(length(sccs$table_names), 4)
+  expect_true("outcome_subjects" %in% sccs$count_columns)
+})
+
+test_that("ohdsi_tool_registry includes PLP with correct tables", {
+  registry <- .ohdsi_tool_registry()
+  plp <- registry$plp
+  expect_equal(plp$tool_name, "Patient-Level Prediction")
+  expect_true("plp_performances" %in% plp$table_names)
+  expect_true("plp_model_design" %in% plp$table_names)
+  expect_equal(length(plp$table_names), 7)
+  expect_true("population_size" %in% plp$count_columns)
+})
+
+test_that("ohdsi_tool_registry includes EvidenceSynthesis with correct tables", {
+  registry <- .ohdsi_tool_registry()
+  es <- registry$evidence_synthesis
+  expect_equal(es$tool_name, "Evidence Synthesis")
+  expect_true("es_cm_result" %in% es$table_names)
+  expect_true("es_sccs_result" %in% es$table_names)
+  expect_equal(length(es$table_names), 4)
+  expect_true("n_databases" %in% es$count_columns)
+})
+
+test_that("ohdsi_table_to_tool maps new tool tables correctly", {
+  expect_equal(.ohdsi_table_to_tool("cm_result"), "cohort_method")
+  expect_equal(.ohdsi_table_to_tool("cm_diagnostics_summary"), "cohort_method")
+  expect_equal(.ohdsi_table_to_tool("sccs_result"), "sccs")
+  expect_equal(.ohdsi_table_to_tool("sccs_diagnostics_summary"), "sccs")
+  expect_equal(.ohdsi_table_to_tool("plp_performances"), "plp")
+  expect_equal(.ohdsi_table_to_tool("plp_model_design"), "plp")
+  expect_equal(.ohdsi_table_to_tool("es_cm_result"), "evidence_synthesis")
+  expect_equal(.ohdsi_table_to_tool("es_sccs_result"), "evidence_synthesis")
 })
 
 # --- Discovery Tests ---
@@ -58,6 +110,20 @@ test_that("ohdsiFindResultTables discovers OHDSI tables in test DB", {
   # Should find Characterization tables
   expect_true("c_cohort_counts" %in% found$table_name)
   expect_true("c_covariates" %in% found$table_name)
+
+  # Should find CohortMethod tables
+  expect_true("cm_result" %in% found$table_name)
+  expect_true("cm_diagnostics_summary" %in% found$table_name)
+
+  # Should find SCCS tables
+  expect_true("sccs_result" %in% found$table_name)
+
+  # Should find PLP tables
+  expect_true("plp_performances" %in% found$table_name)
+
+  # Should find Evidence Synthesis tables
+  expect_true("es_cm_result" %in% found$table_name)
+  expect_true("es_sccs_result" %in% found$table_name)
 
   # Row counts should be positive
   dqd_rows <- found$n_rows[found$table_name == "dqdashboard_results"]
@@ -260,6 +326,10 @@ test_that("ohdsiStatus reports tool availability correctly", {
   expect_true("cohort_diagnostics" %in% names(status))
   expect_true("cohort_incidence" %in% names(status))
   expect_true("characterization" %in% names(status))
+  expect_true("cohort_method" %in% names(status))
+  expect_true("sccs" %in% names(status))
+  expect_true("plp" %in% names(status))
+  expect_true("evidence_synthesis" %in% names(status))
 
   # DQD should be available
   expect_true(status$dqd$available)
@@ -274,6 +344,18 @@ test_that("ohdsiStatus reports tool availability correctly", {
 
   # Characterization should be available
   expect_true(status$characterization$available)
+
+  # CohortMethod should be available
+  expect_true(status$cohort_method$available)
+
+  # SCCS should be available
+  expect_true(status$sccs$available)
+
+  # PLP should be available
+  expect_true(status$plp$available)
+
+  # Evidence Synthesis should be available
+  expect_true(status$evidence_synthesis$available)
 })
 
 # --- Summary ---
