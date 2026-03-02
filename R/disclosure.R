@@ -22,7 +22,9 @@
     nfilter_noise          = as.numeric(getOption("nfilter.noise",
                                 getOption("default.nfilter.noise", 0.25))),
     query_strict         = as.logical(getOption("dsomop.query_strict",
-                                getOption("default.dsomop.query_strict", TRUE)))
+                                getOption("default.dsomop.query_strict", TRUE))),
+    nfilter_dist         = as.numeric(getOption("dsomop.nfilter.dist",
+                                getOption("default.dsomop.nfilter.dist", 10)))
   )
 }
 

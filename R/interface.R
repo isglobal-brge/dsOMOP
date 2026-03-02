@@ -76,15 +76,30 @@
 #' @param x Data frame or list to sanitize
 #' @return Sanitized object with identifier columns removed
 #' @keywords internal
-.stripPersonId <- function(x) {
-  strip_cols <- c("person_id", "subject_id", "visit_occurrence_id")
+.stripIdentifiers <- function(x) {
+  # Full OMOP CDM identifier column list — these are row-level IDs or
+
+  # entity keys that enable re-identification via DataSHIELD analysis
+  # functions (ds.summary, ds.table, ds.quantile).
+  strip_cols <- c(
+    # Person / subject identifiers
+    "person_id", "subject_id",
+    # Clinical event row IDs
+    "visit_occurrence_id", "visit_detail_id",
+    "condition_occurrence_id", "drug_exposure_id",
+    "procedure_occurrence_id", "measurement_id",
+    "observation_id", "device_exposure_id",
+    "specimen_id", "note_id",
+    # Provider / location entity keys (indirect identifiers)
+    "provider_id", "care_site_id", "location_id"
+  )
   if (is.data.frame(x)) {
     drop <- intersect(strip_cols, names(x))
     if (length(drop) > 0) {
       x[drop] <- NULL
     }
   } else if (is.list(x)) {
-    x <- lapply(x, .stripPersonId)
+    x <- lapply(x, .stripIdentifiers)
   }
   x
 }
@@ -188,7 +203,7 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out) {
 
     # Strip person_id from assigned data.frames to prevent leakage via
     # DataSHIELD analysis functions (ds.summary, ds.table, etc.)
-    result <- .stripPersonId(result)
+    result <- .stripIdentifiers(result)
 
     # Temporal covariates: split into 3 symbols
     if (is.list(result) && !is.data.frame(result) &&

@@ -65,8 +65,8 @@ test_that("profileConceptDrilldown returns date_range", {
 
     expect_true(!is.null(result$date_range))
     expect_true("column" %in% names(result$date_range))
-    expect_true("min_date_safe" %in% names(result$date_range))
-    expect_true("max_date_safe" %in% names(result$date_range))
+    expect_true("min_month_safe" %in% names(result$date_range))
+    expect_true("max_month_safe" %in% names(result$date_range))
   })
 })
 

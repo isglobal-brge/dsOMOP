@@ -445,38 +445,78 @@ test_that(".query_suppress_sensitive: handles NA values", {
 
 # --- SQL Injection Prevention ------------------------------------------------
 
-test_that(".sanitizeQueryParam: accepts valid numeric values", {
+test_that(".sanitizeQueryParam: accepts valid numeric values (no template)", {
   expect_equal(dsOMOP:::.sanitizeQueryParam("201820", "concept_id"), "201820")
   expect_equal(dsOMOP:::.sanitizeQueryParam("50", "top_n"), "50")
   expect_equal(dsOMOP:::.sanitizeQueryParam("2026", "reference_year"), "2026")
   expect_equal(dsOMOP:::.sanitizeQueryParam("-1", "offset"), "-1")
-  expect_equal(dsOMOP:::.sanitizeQueryParam("3.14", "threshold"), "3.14")
 })
 
-test_that(".sanitizeQueryParam: SQL-escapes non-numeric values", {
-  # Non-numeric strings get quoted with single quotes
-  result <- dsOMOP:::.sanitizeQueryParam("diabetes", "name")
-  expect_equal(result, "'diabetes'")
-})
-
-test_that(".sanitizeQueryParam: escapes single quotes in strings", {
-  result <- dsOMOP:::.sanitizeQueryParam("O'Brien", "name")
-  expect_equal(result, "'O''Brien'")
-})
-
-test_that(".sanitizeQueryParam: blocks SQL injection attempts via quoting", {
-  # Injection attempt: "1 OR 1=1" is NOT numeric, so gets quoted
-  result <- dsOMOP:::.sanitizeQueryParam("1 OR 1=1", "concept_id")
-  expect_equal(result, "'1 OR 1=1'")  # Safely quoted — will fail SQL type check
-
-  # UNION injection also gets quoted
-  result2 <- dsOMOP:::.sanitizeQueryParam(
-    "1 UNION SELECT person_id FROM person", "concept_id"
+test_that(".sanitizeQueryParam: enforces declared integer type from template", {
+  # Template declares concept_id with numeric example
+  inputs_df <- data.frame(
+    parameter = c("concept_id", "top_n"),
+    example = c("201820", "50"),
+    mandatory = c("Yes", "No"),
+    notes = c("Concept ID", "Max rows"),
+    stringsAsFactors = FALSE
   )
-  expect_true(startsWith(result2, "'"))  # Wrapped in quotes — harmless
+  # Valid integer values accepted
+  expect_equal(dsOMOP:::.sanitizeQueryParam("201820", "concept_id", inputs_df), "201820")
+  expect_equal(dsOMOP:::.sanitizeQueryParam("50", "top_n", inputs_df), "50")
+
+  # SQL injection attempt with declared integer type: hard reject (not quoted)
+  expect_error(
+    dsOMOP:::.sanitizeQueryParam("1 OR 1=1", "concept_id", inputs_df),
+    "must be integer"
+  )
+  expect_error(
+    dsOMOP:::.sanitizeQueryParam("1 UNION SELECT person_id FROM person",
+                                  "concept_id", inputs_df),
+    "must be integer"
+  )
+  # Decimal rejected for integer param
+  expect_error(
+    dsOMOP:::.sanitizeQueryParam("3.14", "concept_id", inputs_df),
+    "must be an integer"
+  )
+  # Non-numeric string rejected
+  expect_error(
+    dsOMOP:::.sanitizeQueryParam("diabetes", "concept_id", inputs_df),
+    "must be integer"
+  )
+})
+
+test_that(".sanitizeQueryParam: fail-closed for unknown params (non-numeric rejected)", {
+  # Without template: non-numeric values rejected (all templates use numeric params)
+  expect_error(
+    dsOMOP:::.sanitizeQueryParam("1 OR 1=1", "concept_id"),
+    "non-numeric"
+  )
+  expect_error(
+    dsOMOP:::.sanitizeQueryParam("diabetes", "name"),
+    "non-numeric"
+  )
+  expect_error(
+    dsOMOP:::.sanitizeQueryParam("O'Brien", "name"),
+    "non-numeric"
+  )
 })
 
 test_that(".sanitizeQueryParam: rejects empty/NA values", {
   expect_error(dsOMOP:::.sanitizeQueryParam(NA, "param"), "empty or NA")
   expect_error(dsOMOP:::.sanitizeQueryParam("", "param"), "empty or NA")
+})
+
+test_that(".inferParamType: correctly infers types from template inputs", {
+  inputs_df <- data.frame(
+    parameter = c("concept_id", "top_n", "threshold"),
+    example = c("201820", "50", "3.14"),
+    stringsAsFactors = FALSE
+  )
+  expect_equal(dsOMOP:::.inferParamType("concept_id", inputs_df), "integer")
+  expect_equal(dsOMOP:::.inferParamType("top_n", inputs_df), "integer")
+  expect_equal(dsOMOP:::.inferParamType("threshold", inputs_df), "numeric")
+  expect_equal(dsOMOP:::.inferParamType("unknown_param", inputs_df), "unknown")
+  expect_equal(dsOMOP:::.inferParamType("concept_id", NULL), "unknown")
 })

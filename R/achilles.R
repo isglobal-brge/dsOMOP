@@ -297,6 +297,16 @@
   # (no NA skeleton rows — "no hints" policy)
   result <- .suppressSmallCounts(result, "count_value")
 
+  # Suppress percentile values where sample is too small for safe estimation
+  settings <- .omopDisclosureSettings()
+  nfilter_dist <- settings$nfilter_dist %||% 10L
+  pct_cols <- c("p10_value", "p25_value", "median_value", "p75_value", "p90_value")
+  pct_cols <- intersect(pct_cols, names(result))
+  if (length(pct_cols) > 0 && "count_value" %in% names(result)) {
+    small_rows <- !is.na(result$count_value) & result$count_value < nfilter_dist
+    result[small_rows, pct_cols] <- NA_real_
+  }
+
   result
 }
 

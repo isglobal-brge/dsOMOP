@@ -51,17 +51,26 @@
   if ("date_range" %in% stats) {
     date_col <- .getDateColumn(bp, table)
     if (!is.null(date_col)) {
+      # Bin to year-month to prevent exact date disclosure
+      dialect <- handle$target_dialect %||% "sql server"
+      if (dialect == "sqlite") {
+        min_expr <- paste0("strftime('%Y-%m', MIN(", date_col, "))")
+        max_expr <- paste0("strftime('%Y-%m', MAX(", date_col, "))")
+      } else {
+        min_expr <- paste0("TO_CHAR(MIN(", date_col, "), 'YYYY-MM')")
+        max_expr <- paste0("TO_CHAR(MAX(", date_col, "), 'YYYY-MM')")
+      }
       sql <- paste0(
-        "SELECT MIN(", date_col, ") AS min_date, ",
-        "MAX(", date_col, ") AS max_date ",
+        "SELECT ", min_expr, " AS min_month, ",
+        max_expr, " AS max_month ",
         "FROM ", qualified,
         " WHERE ", date_col, " IS NOT NULL"
       )
       date_result <- .executeQuery(handle, sql)
       result$date_range <- list(
-        column   = date_col,
-        min_date = date_result$min_date[1],
-        max_date = date_result$max_date[1]
+        column    = date_col,
+        min_month = date_result$min_month[1],
+        max_month = date_result$max_month[1]
       )
     }
   }
@@ -637,6 +646,13 @@
     return(list(p05 = NA_real_, p95 = NA_real_, n_total = 0L))
   }
 
+  # Block percentile output if sample too small for safe estimation
+  settings <- .omopDisclosureSettings()
+  nfilter_dist <- settings$nfilter_dist %||% 10L
+  if (n_total < nfilter_dist) {
+    return(list(p05 = NA_real_, p95 = NA_real_, n_total = as.integer(n_total)))
+  }
+
   offset_p05 <- max(0L, as.integer(floor(n_total * 0.05)) - 1L)
   offset_p95 <- max(0L, as.integer(floor(n_total * 0.95)) - 1L)
 
@@ -918,9 +934,16 @@
 
   # Block if total non-NULL values < nfilter_subset
   if (is.na(n_total) || n_total < settings$nfilter_subset) {
-    stop("Disclosive: non-NULL value count (", ifelse(is.na(n_total), "NA", n_total),
-         ") < nfilter.subset (", settings$nfilter_subset,
-         "). Operation blocked.", call. = FALSE)
+    stop("Disclosive: non-NULL value count below disclosure threshold. ",
+         "Operation blocked.", call. = FALSE)
+  }
+
+  # Block quantile output if sample too small for safe percentile estimation.
+  # With small n, even clamped probs can return values close to min/max.
+  nfilter_dist <- settings$nfilter_dist %||% 10L
+  if (n_total < nfilter_dist) {
+    stop("Disclosive: sample size too small for safe quantile estimation. ",
+         "Minimum ", nfilter_dist, " non-NULL values required.", call. = FALSE)
   }
 
   # Compute quantiles using SQL ORDER BY + OFFSET approximation
@@ -1331,25 +1354,34 @@
                         error = function(e) 0L)
 
     if (!is.na(n_dates) && n_dates >= settings$nfilter_subset) {
+      # Bin p05/p95 to year-month to prevent exact date disclosure
       off_p05 <- max(0L, as.integer(floor(n_dates * 0.05)) - 1L)
       off_p95 <- max(0L, as.integer(floor(n_dates * 0.95)) - 1L)
 
+      if (handle$target_dialect == "sqlite") {
+        ym_expr <- paste0("strftime('%Y-%m', ", date_col, ")")
+      } else if (handle$target_dialect == "mysql") {
+        ym_expr <- paste0("DATE_FORMAT(", date_col, ", '%Y-%m')")
+      } else {
+        ym_expr <- paste0("TO_CHAR(", date_col, ", 'YYYY-MM')")
+      }
+
       p05_sql <- paste0(
-        "SELECT ", date_col, " AS val FROM ", qualified,
+        "SELECT ", ym_expr, " AS val FROM ", qualified,
         " WHERE ", where_concept,
         " AND ", date_col, " IS NOT NULL",
         " ORDER BY ", date_col, " ASC LIMIT 1 OFFSET ", off_p05
       )
       p95_sql <- paste0(
-        "SELECT ", date_col, " AS val FROM ", qualified,
+        "SELECT ", ym_expr, " AS val FROM ", qualified,
         " WHERE ", where_concept,
         " AND ", date_col, " IS NOT NULL",
         " ORDER BY ", date_col, " ASC LIMIT 1 OFFSET ", off_p95
       )
 
-      min_date_safe <- tryCatch(.executeQuery(handle, p05_sql)$val[1],
+      min_month_safe <- tryCatch(.executeQuery(handle, p05_sql)$val[1],
                                 error = function(e) NA_character_)
-      max_date_safe <- tryCatch(.executeQuery(handle, p95_sql)$val[1],
+      max_month_safe <- tryCatch(.executeQuery(handle, p95_sql)$val[1],
                                 error = function(e) NA_character_)
 
       # Date counts by year for concept-filtered records
@@ -1378,8 +1410,8 @@
 
       date_range <- list(
         column = date_col,
-        min_date_safe = min_date_safe,
-        max_date_safe = max_date_safe,
+        min_month_safe = min_month_safe,
+        max_month_safe = max_month_safe,
         date_counts = dc_result
       )
     }

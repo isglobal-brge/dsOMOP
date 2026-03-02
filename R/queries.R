@@ -636,8 +636,8 @@
     param_val <- effective_inputs[[param_name]]
     # Validate input parameter
     .validateString(as.character(param_val))
-    # Sanitize: numeric values must be strictly numeric; strings get SQL-escaped
-    sanitized <- .sanitizeQueryParam(param_val, param_name)
+    # Sanitize: enforce declared type from template inputs
+    sanitized <- .sanitizeQueryParam(param_val, param_name, q$inputs)
     sql <- gsub(paste0("@", param_name),
                  sanitized,
                  sql, fixed = TRUE)
@@ -695,26 +695,82 @@
 
 # --- SDC Helpers -------------------------------------------------------------
 
+#' Infer declared parameter type from template inputs table
+#'
+#' Examines the \code{example} column in the template's inputs data.frame
+#' to determine whether a parameter is expected to be numeric (integer/decimal).
+#' All current OMOP query templates use integer parameters exclusively.
+#'
+#' @param param_name Character; parameter name to look up
+#' @param inputs_df Data frame; the parsed template inputs table (may be NULL)
+#' @return Character; \code{"integer"} or \code{"numeric"} if example is a number,
+#'   \code{"unknown"} otherwise
+#' @keywords internal
+.inferParamType <- function(param_name, inputs_df) {
+  if (is.null(inputs_df) || !is.data.frame(inputs_df) || nrow(inputs_df) == 0) {
+    return("unknown")
+  }
+  param_col <- intersect(c("parameter", "param", "name"), names(inputs_df))
+  example_col <- intersect(c("example", "default"), names(inputs_df))
+  if (length(param_col) == 0 || length(example_col) == 0) return("unknown")
+
+  idx <- which(inputs_df[[param_col[1]]] == param_name)
+  if (length(idx) == 0) return("unknown")
+
+  example_val <- trimws(as.character(inputs_df[[example_col[1]]][idx[1]]))
+  if (grepl("^-?[0-9]+(\\.[0-9]+)?$", example_val)) {
+    if (grepl("\\.", example_val)) return("numeric")
+    return("integer")
+  }
+  "unknown"
+}
+
 #' Sanitize a query parameter to prevent SQL injection
 #'
-#' Numeric values are validated to contain only digits/decimals/sign.
-#' Non-numeric values are SQL-escaped via \code{.quoteLiteral()}.
+#' Enforces the declared type from the template's inputs table. If the template
+#' declares a numeric example (e.g. \code{201820}, \code{50}), only strictly
+#' numeric values are accepted — non-numeric input is rejected outright rather
+#' than being SQL-quoted. This prevents attacks like \code{"1 OR 1=1"} from
+#' being smuggled as a quoted string into a numeric context.
 #'
 #' @param value The parameter value to sanitize
 #' @param param_name Character; parameter name (for error messages)
+#' @param inputs_df Data frame; the parsed template inputs table (may be NULL)
 #' @return Character; safe SQL literal
 #' @keywords internal
-.sanitizeQueryParam <- function(value, param_name) {
+.sanitizeQueryParam <- function(value, param_name, inputs_df = NULL) {
   val_str <- trimws(as.character(value))
   if (length(val_str) != 1 || is.na(val_str) || nchar(val_str) == 0) {
     stop("Query parameter '", param_name, "' is empty or NA.", call. = FALSE)
   }
-  # Numeric: strict pattern (integer or decimal, optional sign)
-  if (grepl("^-?[0-9]+(\\.[0-9]+)?$", val_str)) {
+
+  declared_type <- .inferParamType(param_name, inputs_df)
+  is_numeric_val <- grepl("^-?[0-9]+(\\.[0-9]+)?$", val_str)
+
+  # If template declares a numeric type, enforce it strictly
+  if (declared_type %in% c("integer", "numeric")) {
+    if (!is_numeric_val) {
+      stop("Query parameter '", param_name, "' must be ",
+           declared_type, " but received '", val_str, "'.", call. = FALSE)
+    }
+    if (declared_type == "integer" && grepl("\\.", val_str)) {
+      stop("Query parameter '", param_name, "' must be an integer but received '",
+           val_str, "'.", call. = FALSE)
+    }
     return(val_str)
   }
-  # Non-numeric: use SQL-safe quoting (escapes single quotes)
-  .quoteLiteral(val_str)
+
+  # For unknown type: still reject anything that isn't numeric.
+  # All current OMOP query templates use integer parameters only.
+  # This fail-closed approach prevents SQL injection in new templates
+  # that might forget to declare types.
+  if (!is_numeric_val) {
+    stop("Query parameter '", param_name,
+         "' contains non-numeric value '", val_str,
+         "'. Only numeric parameters are allowed in query templates.",
+         call. = FALSE)
+  }
+  val_str
 }
 
 #' Suppress counts below threshold by dropping rows
