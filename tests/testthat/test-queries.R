@@ -268,10 +268,19 @@ test_that(".ql_load_allowlist: loads from package inst", {
   expect_true("n_persons" %in% entry$sensitive_fields)
 })
 
-test_that(".ql_load_allowlist: returns empty list for missing package", {
-  result <- dsOMOP:::.ql_load_allowlist("nonexistent_package_xyz")
-  expect_true(is.list(result))
-  expect_equal(length(result), 0)
+test_that(".ql_load_allowlist: errors in strict mode for missing package", {
+  expect_error(
+    dsOMOP:::.ql_load_allowlist("nonexistent_package_xyz"),
+    "Allowlist file not found"
+  )
+})
+
+test_that(".ql_load_allowlist: returns empty list in non-strict mode for missing package", {
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    result <- dsOMOP:::.ql_load_allowlist("nonexistent_package_xyz")
+    expect_true(is.list(result))
+    expect_equal(length(result), 0)
+  })
 })
 
 # --- Query Template Loading ---------------------------------------------------
@@ -432,4 +441,42 @@ test_that(".query_suppress_sensitive: handles NA values", {
 
   expect_true(is.na(result$n_persons[1]))
   expect_equal(result$n_persons[2], 5)
+})
+
+# --- SQL Injection Prevention ------------------------------------------------
+
+test_that(".sanitizeQueryParam: accepts valid numeric values", {
+  expect_equal(dsOMOP:::.sanitizeQueryParam("201820", "concept_id"), "201820")
+  expect_equal(dsOMOP:::.sanitizeQueryParam("50", "top_n"), "50")
+  expect_equal(dsOMOP:::.sanitizeQueryParam("2026", "reference_year"), "2026")
+  expect_equal(dsOMOP:::.sanitizeQueryParam("-1", "offset"), "-1")
+  expect_equal(dsOMOP:::.sanitizeQueryParam("3.14", "threshold"), "3.14")
+})
+
+test_that(".sanitizeQueryParam: SQL-escapes non-numeric values", {
+  # Non-numeric strings get quoted with single quotes
+  result <- dsOMOP:::.sanitizeQueryParam("diabetes", "name")
+  expect_equal(result, "'diabetes'")
+})
+
+test_that(".sanitizeQueryParam: escapes single quotes in strings", {
+  result <- dsOMOP:::.sanitizeQueryParam("O'Brien", "name")
+  expect_equal(result, "'O''Brien'")
+})
+
+test_that(".sanitizeQueryParam: blocks SQL injection attempts via quoting", {
+  # Injection attempt: "1 OR 1=1" is NOT numeric, so gets quoted
+  result <- dsOMOP:::.sanitizeQueryParam("1 OR 1=1", "concept_id")
+  expect_equal(result, "'1 OR 1=1'")  # Safely quoted — will fail SQL type check
+
+  # UNION injection also gets quoted
+  result2 <- dsOMOP:::.sanitizeQueryParam(
+    "1 UNION SELECT person_id FROM person", "concept_id"
+  )
+  expect_true(startsWith(result2, "'"))  # Wrapped in quotes — harmless
+})
+
+test_that(".sanitizeQueryParam: rejects empty/NA values", {
+  expect_error(dsOMOP:::.sanitizeQueryParam(NA, "param"), "empty or NA")
+  expect_error(dsOMOP:::.sanitizeQueryParam("", "param"), "empty or NA")
 })

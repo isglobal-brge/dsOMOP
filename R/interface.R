@@ -67,6 +67,28 @@
   }
 }
 
+#' Strip person_id and other quasi-identifiers from data before assignment
+#'
+#' Removes columns that could enable re-identification via DataSHIELD
+#' analysis functions (ds.summary, ds.table). Operates recursively on
+#' lists containing data.frames.
+#'
+#' @param x Data frame or list to sanitize
+#' @return Sanitized object with identifier columns removed
+#' @keywords internal
+.stripPersonId <- function(x) {
+  strip_cols <- c("person_id", "subject_id", "visit_occurrence_id")
+  if (is.data.frame(x)) {
+    drop <- intersect(strip_cols, names(x))
+    if (length(drop) > 0) {
+      x[drop] <- NULL
+    }
+  } else if (is.list(x)) {
+    x <- lapply(x, .stripPersonId)
+  }
+  x
+}
+
 # --- Assign methods ---
 
 #' Initialize an OMOP CDM handle (Assign)
@@ -94,8 +116,9 @@ omopInitDS <- function(resource_symbol,
                        vocab_schema = NULL,
                        temp_schema = NULL,
                        config = list()) {
-  resolved <- eval(parse(text = resource_symbol),
-                   envir = parent.frame())
+  # Validate resource_symbol to prevent code injection (must be a valid R identifier)
+  .validateIdentifier(resource_symbol, "resource symbol")
+  resolved <- get(resource_symbol, envir = parent.frame(), inherits = FALSE)
 
   # DSLite resolves resources to ResourceClient objects during assign.resource;
   # Opal passes raw resource objects. Handle both cases.
@@ -162,6 +185,10 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out) {
     sym <- out[[nm]]
     result <- outputs[[nm]]
     if (is.null(result)) next
+
+    # Strip person_id from assigned data.frames to prevent leakage via
+    # DataSHIELD analysis functions (ds.summary, ds.table, etc.)
+    result <- .stripPersonId(result)
 
     # Temporal covariates: split into 3 symbols
     if (is.list(result) && !is.data.frame(result) &&

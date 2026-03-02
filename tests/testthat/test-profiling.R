@@ -44,8 +44,9 @@ test_that("profileColumnStats returns statistics", {
   expect_true(!is.null(result$n_total))
   expect_true(!is.null(result$n_missing))
   expect_true(!is.null(result$n_distinct))
-  expect_true(!is.null(result$min))
-  expect_true(!is.null(result$max))
+  # min/max are suppressed to prevent identification of outlier individuals
+  expect_null(result$min)
+  expect_null(result$max)
   expect_true(!is.null(result$mean))
 })
 

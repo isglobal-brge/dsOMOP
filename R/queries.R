@@ -363,8 +363,9 @@
   if (path == "" || !file.exists(path)) {
     settings <- .omopDisclosureSettings()
     if (isTRUE(settings$query_strict)) {
-      warning("Allowlist file not found and strict query library mode is enabled. ",
-              "All query templates will be blocked.", call. = FALSE)
+      stop("Allowlist file not found and strict query library mode is enabled. ",
+           "All query templates are blocked. Install the dsOMOP package correctly ",
+           "or set options(dsomop.query_strict = FALSE) to disable.", call. = FALSE)
     }
     return(list())
   }
@@ -456,11 +457,9 @@
   queries <- .ql_load_queries()
   allowlist <- .ql_load_allowlist()
 
-  # Check strict mode
+  # Check strict mode (server option only — cannot be overridden by client)
   settings <- .omopDisclosureSettings()
   strict <- isTRUE(settings$query_strict)
-  if (!is.null(handle$config$query_strict))
-    strict <- isTRUE(handle$config$query_strict)
 
   # Build metadata data frame
   entries <- list()
@@ -571,11 +570,9 @@
   allowlist <- .ql_load_allowlist()
   al <- allowlist[[query_id]]
 
-  # Enforce strict allowlist mode
+  # Enforce strict allowlist mode (server option only — cannot be overridden by client)
   settings <- .omopDisclosureSettings()
   strict <- isTRUE(settings$query_strict)
-  if (!is.null(handle$config$query_strict))
-    strict <- isTRUE(handle$config$query_strict)
   if (strict && is.null(al)) {
     stop("Query '", query_id, "' not on allowlist (strict mode).", call. = FALSE)
   }
@@ -639,8 +636,10 @@
     param_val <- effective_inputs[[param_name]]
     # Validate input parameter
     .validateString(as.character(param_val))
+    # Sanitize: numeric values must be strictly numeric; strings get SQL-escaped
+    sanitized <- .sanitizeQueryParam(param_val, param_name)
     sql <- gsub(paste0("@", param_name),
-                 as.character(param_val),
+                 sanitized,
                  sql, fixed = TRUE)
   }
 
@@ -695,6 +694,28 @@
 }
 
 # --- SDC Helpers -------------------------------------------------------------
+
+#' Sanitize a query parameter to prevent SQL injection
+#'
+#' Numeric values are validated to contain only digits/decimals/sign.
+#' Non-numeric values are SQL-escaped via \code{.quoteLiteral()}.
+#'
+#' @param value The parameter value to sanitize
+#' @param param_name Character; parameter name (for error messages)
+#' @return Character; safe SQL literal
+#' @keywords internal
+.sanitizeQueryParam <- function(value, param_name) {
+  val_str <- trimws(as.character(value))
+  if (length(val_str) != 1 || is.na(val_str) || nchar(val_str) == 0) {
+    stop("Query parameter '", param_name, "' is empty or NA.", call. = FALSE)
+  }
+  # Numeric: strict pattern (integer or decimal, optional sign)
+  if (grepl("^-?[0-9]+(\\.[0-9]+)?$", val_str)) {
+    return(val_str)
+  }
+  # Non-numeric: use SQL-safe quoting (escapes single quotes)
+  .quoteLiteral(val_str)
+}
 
 #' Suppress counts below threshold by dropping rows
 #'

@@ -116,17 +116,15 @@
   col_type <- col_df$db_datatype[col_df$column_name == column][1]
   if (grepl("int|float|real|numeric|double|decimal", col_type) ||
       grepl("_as_number$|^quantity$|^range_|^dose_value$", column)) {
+    # Only compute mean — min/max are suppressed to prevent identification
+    # of outlier individuals (if min==max, a single person is identified)
     num_sql <- paste0(
-      "SELECT MIN(CAST(", column, " AS REAL)) AS min_val, ",
-      "MAX(CAST(", column, " AS REAL)) AS max_val, ",
-      "AVG(CAST(", column, " AS REAL)) AS mean_val ",
+      "SELECT AVG(CAST(", column, " AS REAL)) AS mean_val ",
       "FROM ", qualified,
       " WHERE ", column, " IS NOT NULL"
     )
     num_stats <- tryCatch(.executeQuery(handle, num_sql), error = function(e) NULL)
     if (!is.null(num_stats) && nrow(num_stats) > 0) {
-      result$min <- num_stats$min_val[1]
-      result$max <- num_stats$max_val[1]
       result$mean <- round(num_stats$mean_val[1], 4)
     }
   }
@@ -867,6 +865,9 @@
                                       rounding = 2L) {
   table <- tolower(.validateIdentifier(table, "table"))
   value_col <- tolower(.validateIdentifier(value_col, "column"))
+
+  # Clamp probs to safe range to prevent min/max extraction via extreme quantiles
+  probs <- pmax(0.05, pmin(0.95, as.numeric(probs)))
   bp <- .buildBlueprint(handle)
   settings <- .omopDisclosureSettings()
 
