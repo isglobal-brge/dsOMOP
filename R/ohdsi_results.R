@@ -30,9 +30,10 @@
                        "included_source_concept", "orphan_concept",
                        "concept_sets", "resolved_concepts"),
       prefix_patterns = c("^cd_"),
-      count_columns = c("cohort_entries", "cohort_subjects", "person_count",
-                         "concept_count", "concept_subjects", "subject_count",
-                         "subjects", "records", "sum_value", "count_value"),
+      count_columns = c("cohort_entries", "cohort_subjects", "cohort_count",
+                         "person_count", "concept_count", "concept_subjects",
+                         "subject_count", "subjects", "records",
+                         "sum_value", "count_value"),
       sensitive_columns = c("json", "sql", "concept_set_sql")
     ),
 
@@ -68,7 +69,8 @@
       prefix_patterns = c("^cm_"),
       count_columns = c("target_subjects", "comparator_subjects",
                          "target_outcomes", "comparator_outcomes",
-                         "target_days", "comparator_days"),
+                         "target_days", "comparator_days",
+                         "subjects", "count_value", "exposure_subjects"),
       sensitive_columns = character(0)
     ),
 
@@ -78,7 +80,8 @@
                        "sccs_attrition", "sccs_covariate_result"),
       prefix_patterns = c("^sccs_"),
       count_columns = c("outcome_subjects", "outcome_events",
-                         "outcome_observation_periods", "observed_days"),
+                         "outcome_observation_periods", "observed_days",
+                         "subjects", "count_value"),
       sensitive_columns = character(0)
     ),
 
@@ -90,7 +93,7 @@
                        "plp_attrition"),
       prefix_patterns = c("^plp_"),
       count_columns = c("population_size", "outcome_count", "test_size",
-                         "train_size", "n_total"),
+                         "train_size", "n_total", "subjects", "count_value"),
       sensitive_columns = character(0)
     ),
 
@@ -256,7 +259,7 @@
     names(.executeQuery(handle, sql))
   }, error = function(e) character(0))
 
-  pattern <- "^n_|^num_|_count$|_subjects$|_persons$|_records$"
+  pattern <- "^n_|^num_|_count$|^count$|_subjects$|^subjects$|_persons$|_records$|_entries$|_outcomes$|^outcomes$|^persons_at_risk|^sum_value$|^count_value$"
   grep(pattern, actual_cols, value = TRUE, ignore.case = TRUE)
 }
 
@@ -280,6 +283,21 @@
   .validateIdentifier(table_name, "table")
   table_name_lower <- tolower(table_name)
 
+  # Allowlist: only tables declared in the tool registry may be queried.
+  # This prevents querying raw CDM tables (person, condition_occurrence, etc.)
+  # through the OHDSI results endpoint.
+  registry <- .ohdsi_tool_registry()
+  if (is.null(tool_id)) {
+    tool_id <- .ohdsi_table_to_tool(table_name)
+  }
+  if (is.null(tool_id)) {
+    all_allowed <- unlist(lapply(registry, function(t) t$table_names))
+    stop("Table '", table_name,
+         "' is not a registered OHDSI result table. ",
+         "Only allowlisted OHDSI result tables may be queried.",
+         call. = FALSE)
+  }
+
   # Verify table exists
   bp <- .buildBlueprint(handle)
   bp_match <- bp$tables[tolower(bp$tables$table_name) == table_name_lower &
@@ -288,12 +306,6 @@
     stop("Table '", table_name, "' not found in database.", call. = FALSE)
   }
   qualified <- bp_match$qualified_name[1]
-
-  # Detect tool
-  if (is.null(tool_id)) {
-    tool_id <- .ohdsi_table_to_tool(table_name)
-  }
-  registry <- .ohdsi_tool_registry()
 
   # Get sensitive columns to exclude
   sensitive <- character(0)

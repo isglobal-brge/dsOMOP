@@ -277,13 +277,24 @@ test_that("ohdsiGetResults selects specific columns", {
   expect_true(all(names(result) %in% c("check_name", "category")))
 })
 
-test_that("ohdsiGetResults errors on nonexistent table", {
+test_that("ohdsiGetResults errors on non-allowlisted table", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
+  # Tables not in the OHDSI tool registry are rejected (allowlist enforcement)
   expect_error(.ohdsiGetResults(handle, "nonexistent_table"),
-               "not found")
+               "not a registered OHDSI result table")
+})
+
+test_that("ohdsiGetResults rejects raw CDM tables via allowlist", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  # 'person' exists in the DB but is NOT an OHDSI result table
+  expect_error(.ohdsiGetResults(handle, "person"),
+               "not a registered OHDSI result table")
 })
 
 test_that("ohdsiGetResults errors on invalid table name", {
@@ -488,4 +499,214 @@ test_that("incidence_summary small person_outcomes suppressed", {
   result <- .ohdsiGetResults(handle, "incidence_summary")
   outcome20 <- result[result$outcome_id == 20, ]
   expect_equal(nrow(outcome20), 0)
+})
+
+# --- CohortDiagnostics New Table Queries ---
+
+test_that("ohdsiGetResults works for index_event_breakdown", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "index_event_breakdown")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+  expect_true("concept_id" %in% names(result))
+  expect_true("concept_name" %in% names(result))
+})
+
+test_that("ohdsiGetResults works for visit_context", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "visit_context")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+  expect_true("visit_concept_id" %in% names(result))
+  expect_true("subjects" %in% names(result))
+})
+
+test_that("ohdsiGetResults works for temporal_covariate_value", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "temporal_covariate_value")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+  expect_true("time_id" %in% names(result))
+  expect_true("mean" %in% names(result))
+})
+
+test_that("ohdsiGetResults works for time_series", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "time_series")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+  expect_true("calendar_year" %in% names(result))
+})
+
+test_that("ohdsiGetResults works for included_source_concept", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "included_source_concept")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+  expect_true("concept_id" %in% names(result))
+})
+
+test_that("ohdsiGetResults works for orphan_concept", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "orphan_concept")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+  expect_true("concept_id" %in% names(result))
+})
+
+# --- Characterization New Table Queries ---
+
+test_that("ohdsiGetResults works for c_covariates_continuous", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "c_covariates_continuous")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+  expect_true("median_value" %in% names(result))
+  expect_true("p25_value" %in% names(result))
+})
+
+test_that("ohdsiGetResults works for c_time_to_event", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "c_time_to_event")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+  expect_true("time_value" %in% names(result))
+  expect_true("value" %in% names(result))
+})
+
+test_that("ohdsiGetResults works for c_dechallenge_rechallenge", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "c_dechallenge_rechallenge")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+  expect_true("num_cases" %in% names(result))
+  expect_true("num_dechallenge_attempt" %in% names(result))
+})
+
+test_that("c_dechallenge_rechallenge count columns have disclosure control", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  cols <- .ohdsiDetectCountColumns(handle, "c_dechallenge_rechallenge",
+                                    "characterization")
+  expect_true("num_dechallenge_attempt" %in% cols)
+  expect_true("num_dechallenge_success" %in% cols)
+  expect_true("num_cases" %in% cols)
+})
+
+# --- CohortMethod Queries ---
+
+test_that("ohdsiGetResults works for cm_result", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "cm_result")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+  expect_true("rr" %in% names(result))
+  expect_true("ci_95_lb" %in% names(result))
+  expect_true("ci_95_ub" %in% names(result))
+})
+
+test_that("ohdsiGetResults works for cm_diagnostics_summary", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "cm_diagnostics_summary")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+  expect_true("analysis_id" %in% names(result))
+})
+
+# --- SCCS Queries ---
+
+test_that("ohdsiGetResults works for sccs_result", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "sccs_result")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+  expect_true("rr" %in% names(result))
+  expect_true("ci_95_lb" %in% names(result))
+})
+
+test_that("ohdsiGetResults works for sccs_diagnostics_summary", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "sccs_diagnostics_summary")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+})
+
+# --- PLP Queries ---
+
+test_that("ohdsiGetResults works for plp_performances", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "plp_performances")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+  expect_true("auc" %in% names(result))
+})
+
+# --- Evidence Synthesis Queries ---
+
+test_that("ohdsiGetResults works for es_cm_result", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "es_cm_result")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+  expect_true("rr" %in% names(result))
+  expect_true("n_databases" %in% names(result))
+})
+
+test_that("ohdsiGetResults works for es_sccs_result", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- .ohdsiGetResults(handle, "es_sccs_result")
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) > 0)
+  expect_true("rr" %in% names(result))
+  expect_true("n_databases" %in% names(result))
 })
