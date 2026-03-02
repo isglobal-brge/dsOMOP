@@ -6,13 +6,26 @@
 #' Retrieve a stored OMOP CDM handle
 #'
 #' Looks up the server-side OMOP CDM handle object associated with a given
-#' resource symbol name. Throws an error if no handle has been initialized
-#' for the symbol.
+#' resource symbol name. In DSLite (multi-server, single R process), each
+#' server's session environment holds its own handle, avoiding collisions.
+#' Falls back to the global \code{.dsomop_env} for real DataSHIELD (Opal)
+#' deployments where each server runs in its own R process.
 #'
 #' @param symbol Character; the resource symbol name identifying the handle.
 #' @return The OMOP CDM handle object.
 #' @keywords internal
 .getHandle <- function(symbol) {
+  local_key <- paste0(".dsomop_handle_", symbol)
+
+  # DSLite-safe: check the calling session environment (2 frames up:
+  # .getHandle <- DS_function <- DSLite session env)
+  session_env <- tryCatch(parent.frame(2), error = function(e) NULL)
+  if (!is.null(session_env) &&
+      exists(local_key, envir = session_env, inherits = FALSE)) {
+    return(get(local_key, envir = session_env, inherits = FALSE))
+  }
+
+  # Fallback: global package environment (works for Opal single-process)
   key <- paste0("handle_", symbol)
   if (!exists(key, envir = .dsomop_env)) {
     stop("No OMOP handle for symbol '", symbol,
@@ -103,6 +116,14 @@ omopInitDS <- function(resource_symbol,
 
   .buildBlueprint(handle)
   .setHandle(resource_symbol, handle)
+
+  # DSLite-safe: also store handle in the calling session environment so
+  # each DSLite server retains its own handle under a unique-per-session key
+  local_key <- paste0(".dsomop_handle_", resource_symbol)
+  tryCatch(
+    assign(local_key, handle, envir = parent.frame()),
+    error = function(e) NULL  # silently skip if env is locked
+  )
 
   invisible(TRUE)
 }
