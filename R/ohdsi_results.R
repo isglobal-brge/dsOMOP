@@ -53,7 +53,9 @@
                        "c_analysis_ref", "c_covariate_ref", "c_settings"),
       prefix_patterns = c("^c_"),
       count_columns = c("num_persons", "sum_value", "count_value",
-                         "num_events", "num_cases", "num_persons_exposed"),
+                         "num_events", "num_cases", "num_persons_exposed",
+                         "num_dechallenge_attempt", "num_dechallenge_success",
+                         "num_rechallenge_attempt", "num_rechallenge_success"),
       sensitive_columns = character(0)
     ),
 
