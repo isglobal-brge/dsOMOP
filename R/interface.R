@@ -1,6 +1,44 @@
 # Module: DataSHIELD Exposed Methods
 # All DataSHIELD assign/aggregate methods. Thin wrappers around internal functions.
 
+# --- JSON transport for Opal compatibility ---
+
+#' Deserialize a possibly-JSON argument
+#'
+#' When complex R objects (lists, named vectors) are passed through
+#' \code{datashield.assign.expr()} or \code{datashield.aggregate()}, Opal
+#' serializes them via \code{deparse()}, which generates \code{structure()} or
+#' \code{c()} calls. These base R functions are not in Opal's DataSHIELD method
+#' whitelist, causing \code{400 Bad Request} errors.
+#'
+#' The solution: the client wraps complex arguments in
+#' \code{jsonlite::toJSON(auto_unbox = TRUE)}, and the server calls this helper
+#' to transparently deserialize them. DSLite passes native R objects directly,
+#' so this function is a no-op when the argument is already a list.
+#'
+#' @param x An argument that may be a JSON string or an already-parsed R object.
+#' @return The deserialized R object.
+#' @keywords internal
+.ds_arg <- function(x) {
+  if (is.character(x) && length(x) == 1) {
+    if (startsWith(x, "B64:")) {
+      # URL-safe base64 → standard base64
+      b64 <- substring(x, 5)
+      b64 <- gsub("-", "+", b64)
+      b64 <- gsub("_", "/", b64)
+      # Restore padding
+      pad <- (4 - nchar(b64) %% 4) %% 4
+      if (pad > 0) b64 <- paste0(b64, strrep("=", pad))
+      json <- rawToChar(jsonlite::base64_dec(b64))
+      return(jsonlite::fromJSON(json, simplifyVector = FALSE))
+    }
+    if (nchar(x) > 0 && substr(x, 1, 1) %in% c("{", "[")) {
+      return(jsonlite::fromJSON(x, simplifyVector = FALSE))
+    }
+  }
+  x
+}
+
 # --- Handle management ---
 
 #' Retrieve a stored OMOP CDM handle
@@ -209,6 +247,8 @@ omopInitDS <- function(resource_symbol,
 #' @export
 omopPlanExecuteDS <- function(omop_symbol, plan, out) {
   handle <- .getHandle(omop_symbol)
+  plan <- .ds_arg(plan)
+  out <- .ds_arg(out)
   outputs <- .planExecute(handle, plan, out)
 
   # Validate that requested outputs were produced
@@ -281,6 +321,7 @@ omopCohortCreateDS <- function(omop_symbol, cohort_spec,
                                name = NULL,
                                overwrite = FALSE) {
   handle <- .getHandle(omop_symbol)
+  cohort_spec <- .ds_arg(cohort_spec)
   .cohortCreate(handle, cohort_spec, mode, cohort_id, name, overwrite)
 }
 
@@ -657,6 +698,7 @@ omopExpandConceptSetDS <- function(omop_symbol, concept_set) {
 #' @export
 omopPlanPreviewDS <- function(omop_symbol, plan) {
   handle <- .getHandle(omop_symbol)
+  plan <- .ds_arg(plan)
   .planPreview(handle, plan)
 }
 
@@ -1173,6 +1215,7 @@ omopQueryExecDS <- function(omop_symbol, query_id,
                                mode = "aggregate") {
   handle <- .getHandle(omop_symbol)
   .validateIdentifier(query_id, "query_id")
+  inputs <- .ds_arg(inputs)
   mode <- match.arg(mode, c("aggregate", "assign"))
   .query_exec(handle, query_id, inputs, mode)
 }
