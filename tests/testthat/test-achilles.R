@@ -66,7 +66,7 @@ test_that("achillesListAnalyses returns analysis catalog", {
   expect_true("analysis_id" %in% names(catalog))
   expect_true("analysis_name" %in% names(catalog))
   expect_true("domain" %in% names(catalog))
-  expect_true(0L %in% catalog$analysis_id)
+  expect_true(1L %in% catalog$analysis_id)
   expect_true(400L %in% catalog$analysis_id)
 })
 
@@ -82,7 +82,7 @@ test_that("achillesListAnalyses filters by domain", {
 
   person <- .achillesListAnalyses(handle, "person")
   expect_true(all(person$domain == "person"))
-  expect_true(0L %in% person$analysis_id)
+  expect_true(1L %in% person$analysis_id)
 })
 
 test_that("achillesGetResults retrieves correct analysis_ids", {
@@ -91,17 +91,17 @@ test_that("achillesGetResults retrieves correct analysis_ids", {
   .buildBlueprint(handle)
 
   withr::with_options(list(nfilter.tab = 1), {
-    result <- .achillesGetResults(handle, c(0L, 1L))
+    result <- .achillesGetResults(handle, c(1L, 2L))
     expect_true(is.data.frame(result))
     expect_true(nrow(result) > 0)
-    expect_true(all(result$analysis_id %in% c(0, 1)))
+    expect_true(all(result$analysis_id %in% c(1, 2)))
 
-    # Analysis 0 = total persons = 15
-    total <- result[result$analysis_id == 0, ]
+    # Analysis 1 = total persons = 15
+    total <- result[result$analysis_id == 1, ]
     expect_equal(total$count_value[1], 15)
 
-    # Analysis 1 = gender distribution
-    gender <- result[result$analysis_id == 1, ]
+    # Analysis 2 = gender distribution
+    gender <- result[result$analysis_id == 2, ]
     expect_true(nrow(gender) == 2)
     expect_equal(sum(gender$count_value), 15)
   })
@@ -132,7 +132,7 @@ test_that("achillesGetDistributions retrieves dist stats without min/max (Fix B)
   .buildBlueprint(handle)
 
   withr::with_options(list(nfilter.tab = 1), {
-    result <- .achillesGetDistributions(handle, c(3L, 113L))
+    result <- .achillesGetDistributions(handle, c(3L, 103L))
     expect_true(is.data.frame(result))
     expect_true(nrow(result) > 0)
     # Fix B: min_value and max_value must NOT be returned
@@ -140,7 +140,7 @@ test_that("achillesGetDistributions retrieves dist stats without min/max (Fix B)
     expect_false("max_value" %in% names(result))
     # Safe stats should be present
     expect_true(all(c("avg_value", "median_value") %in% names(result)))
-    age <- result[result$analysis_id == 113, ]
+    age <- result[result$analysis_id == 103, ]
     expect_true(nrow(age) > 0)
     expect_true(!is.na(age$avg_value[1]))
   })
@@ -226,9 +226,9 @@ test_that("achillesDiscoverIds returns analysis IDs from DB", {
 
   ids <- .achillesDiscoverIds(handle)
   expect_true(length(ids) > 0)
-  expect_true(0L %in% ids)
+  expect_true(1L %in% ids)
   expect_true(400L %in% ids)
-  expect_true(113L %in% ids)  # from achilles_results_dist
+  expect_true(103L %in% ids)  # from achilles_results_dist
 })
 
 test_that("achillesDiscoverCatalog returns catalog from achilles_analysis table", {
@@ -243,7 +243,7 @@ test_that("achillesDiscoverCatalog returns catalog from achilles_analysis table"
   expect_true("analysis_name" %in% names(catalog))
   expect_true("domain" %in% names(catalog))
   expect_true("result_table" %in% names(catalog))
-  expect_true(0L %in% catalog$analysis_id)
+  expect_true(1L %in% catalog$analysis_id)
   expect_true(400L %in% catalog$analysis_id)
 })
 

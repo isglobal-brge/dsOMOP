@@ -10,8 +10,8 @@
 .achilles_catalog_static <- function() {
   data.frame(
     analysis_id = c(
-      0L, 1L, 2L, 3L, 5L, 8L,
-      101L, 108L, 113L, 116L, 117L,
+      1L, 2L, 3L, 4L, 5L,
+      103L, 105L, 109L, 116L, 117L,
       200L, 201L,
       400L, 401L, 403L, 404L,
       700L, 701L,
@@ -24,12 +24,11 @@
     analysis_name = c(
       "Number of persons", "Number of persons by gender",
       "Number of persons by year of birth",
-      "Year of birth distribution",
-      "Number of persons by ethnicity",
       "Number of persons by race",
-      "Number of persons by year of observation",
-      "Observation period length distribution",
-      "Age at first observation distribution",
+      "Number of persons by ethnicity",
+      "Distribution of age at first observation period",
+      "Length of observation (days) of first observation period",
+      "Number of persons with continuous observation in each year",
       "Number of persons with observation period start by month",
       "Number of persons with observation period end by month",
       "Number of visits by visit concept",
@@ -49,7 +48,7 @@
       "Number of persons with device by concept"
     ),
     domain = c(
-      "person", "person", "person", "person", "person", "person",
+      "person", "person", "person", "person", "person",
       "observation_period", "observation_period", "observation_period",
       "observation_period", "observation_period",
       "visit", "visit",
@@ -62,9 +61,9 @@
       "device"
     ),
     stratum_1_name = c(
-      NA, "gender_concept_id", "year_of_birth", NA,
-      "ethnicity_concept_id", "race_concept_id",
-      "calendar_year", NA, NA, "calendar_month", "calendar_month",
+      NA, "gender_concept_id", "year_of_birth",
+      "race_concept_id", "ethnicity_concept_id",
+      NA, NA, "calendar_year", "calendar_month", "calendar_month",
       "visit_concept_id", "visit_concept_id",
       "concept_id", "concept_id", "concept_id", "concept_id",
       "concept_id", "concept_id",
@@ -75,7 +74,7 @@
       "concept_id"
     ),
     stratum_2_name = c(
-      NA, NA, NA, NA, NA, NA,
+      NA, NA, NA, NA, NA,
       NA, NA, NA, NA, NA,
       NA, "calendar_month",
       NA, "calendar_month", "gender_concept_id", NA,
@@ -88,10 +87,9 @@
     ),
     result_table = c(
       "achilles_results", "achilles_results", "achilles_results",
-      "achilles_results_dist",
       "achilles_results", "achilles_results",
-      "achilles_results", "achilles_results_dist", "achilles_results_dist",
-      "achilles_results", "achilles_results",
+      "achilles_results_dist", "achilles_results_dist",
+      "achilles_results", "achilles_results", "achilles_results",
       "achilles_results", "achilles_results",
       "achilles_results", "achilles_results", "achilles_results",
       "achilles_results_dist",
@@ -115,8 +113,8 @@
 #'
 #' @keywords internal
 .achilles_domain_analyses <- list(
-  person             = c(0L, 1L, 2L, 3L, 5L, 8L, 900L),
-  observation_period = c(101L, 108L, 113L, 116L, 117L),
+  person             = c(1L, 2L, 3L, 4L, 5L, 900L),
+  observation_period = c(103L, 105L, 109L, 116L, 117L),
   condition          = c(400L, 401L, 403L, 404L),
   drug               = c(700L, 701L),
   measurement        = c(1800L, 1801L),
