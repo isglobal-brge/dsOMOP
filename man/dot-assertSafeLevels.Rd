@@ -15,6 +15,14 @@
 TRUE invisibly, or stops with an error
 }
 \description{
-Check if returning distinct levels is safe
+Two checks prevent attribute-inference attacks on categorical variables:
+\enumerate{
+  \item \strong{Max levels}: if the number of distinct values exceeds
+    \code{nfilter_levels_max}, listing them all would constitute an
+    exhaustive enumeration (e.g., returning all 1000 profession codes).
+  \item \strong{Density}: if \code{n_levels / n_total} exceeds
+    \code{nfilter_levels_density}, each level maps to very few persons,
+    enabling cross-referencing with external data for re-identification.
+}
 }
 \keyword{internal}

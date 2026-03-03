@@ -16,9 +16,24 @@ data.frame with analysis_id, stratum_1..5, count_value,
   avg/stdev/median/p10/p25/p75/p90 (no min/max)
 }
 \description{
-Returns distribution statistics from achilles_results_dist. Extreme values
-(min_value, max_value) are never returned to prevent identification of
-outlier individuals. Rows with count_value below the disclosure threshold
-are dropped entirely (no NA skeleton rows / "no hints" policy).
+Returns distribution statistics from achilles_results_dist with three
+layers of disclosure control applied:
 }
+\section{Security Controls}{
+
+\enumerate{
+  \item \strong{Extreme value exclusion}: \code{min_value} and
+    \code{max_value} are never selected from the database. These values
+    identify outlier individuals (e.g., "maximum age = 115 years").
+  \item \strong{Row-dropping suppression}: Rows with
+    \code{count_value < nfilter.tab} are dropped entirely. The "no hints"
+    policy means suppressed rows are absent (not NA), preventing
+    subtraction attacks.
+  \item \strong{Small-sample percentile suppression}: When
+    \code{count_value < nfilter_dist}, all percentile columns are set to
+    NA. With very few observations, even p25/p75 approximate individual
+    values.
+}
+}
+
 \keyword{internal}

@@ -14,7 +14,9 @@ The OMOP CDM handle object.
 }
 \description{
 Looks up the server-side OMOP CDM handle object associated with a given
-resource symbol name. Throws an error if no handle has been initialized
-for the symbol.
+resource symbol name. In DSLite (multi-server, single R process), each
+server's session environment holds its own handle, avoiding collisions.
+Falls back to the global \code{.dsomop_env} for real DataSHIELD (Opal)
+deployments where each server runs in its own R process.
 }
 \keyword{internal}

@@ -1,12 +1,73 @@
 # Module: Disclosure Control
 # Statistical disclosure control for DataSHIELD compliance.
+#
+# All thresholds and permissions are read from server-side R options,
+# following the DataSHIELD convention of double-fallback:
+#   getOption("dsomop.X", getOption("default.dsomop.X", hardcoded_default))
+#
+# Server admins configure these via Opal admin panel, Armadillo config,
+# or Rprofile.site on the DataSHIELD server. Analysts cannot override them.
 
 #' Read all disclosure settings from DataSHIELD server options
 #'
-#' @return Named list of disclosure thresholds and privacy level
+#' Returns a named list of all disclosure thresholds and server-gated
+#' permissions. Every setting follows the standard DataSHIELD option chain:
+#' direct option -> \code{default.*} prefix -> hardcoded fallback.
+#'
+#' @section Standard DataSHIELD Thresholds:
+#' \describe{
+#'   \item{\code{nfilter_tab} (default 3)}{Minimum cell count for tabular
+#'     outputs. Rows with any count column below this are dropped entirely
+#'     (not replaced with NA) to prevent suppression-pattern inference.}
+#'   \item{\code{nfilter_subset} (default 3)}{Minimum number of distinct
+#'     persons required before any operation proceeds. Prevents cohort
+#'     fingerprinting by blocking queries on very small populations.}
+#'   \item{\code{nfilter_levels_max} (default 40)}{Maximum distinct levels
+#'     allowed in a categorical variable. Prevents exhaustive enumeration
+#'     of rare attribute values.}
+#'   \item{\code{nfilter_levels_density} (default 0.33)}{Maximum ratio of
+#'     distinct levels to total observations. Blocks high-cardinality
+#'     attributes that could enable attribute-inference attacks.}
+#'   \item{\code{nfilter_string} (default 80)}{Maximum string length for
+#'     user-supplied parameters. Limits SQL injection surface.}
+#'   \item{\code{nfilter_stringShort} (default 20)}{Short string limit for
+#'     identifiers and labels.}
+#'   \item{\code{nfilter_noise} (default 0.25)}{Noise fraction (reserved for
+#'     future differential privacy features).}
+#' }
+#'
+#' @section dsOMOP-Specific Settings:
+#' \describe{
+#'   \item{\code{query_strict} (default TRUE)}{When TRUE, only pre-approved
+#'     queries on the allowlist can execute. When FALSE, queries are
+#'     classified on-the-fly (less safe, for development only). Server
+#'     option only — cannot be overridden by client.}
+#'   \item{\code{nfilter_dist} (default 10)}{Minimum sample size for safe
+#'     percentile/quantile estimation. With fewer values, even clamped
+#'     percentiles (p05/p95) can approximate min/max, leaking extreme
+#'     individual values.}
+#' }
+#'
+#' @section Server-Gated Opt-Out Permissions:
+#' These default to FALSE (locked). Only the server admin / data controller
+#' can enable them. Analysts cannot request bypass directly.
+#' \describe{
+#'   \item{\code{allow_absolute_dates} (default FALSE)}{When FALSE, any
+#'     extraction request with \code{date_handling = "absolute"} is rejected.
+#'     Raw dates are quasi-identifiers per OMOP Privacy Guidance.
+#'     Set via: \code{options(dsomop.allow_absolute_dates = TRUE)}}
+#'   \item{\code{allow_sensitive_cols} (default FALSE)}{When FALSE, any
+#'     extraction request with \code{block_sensitive = FALSE} is rejected.
+#'     Sensitive columns include source_value fields, free text, provider
+#'     identifiers, and geographic data.
+#'     Set via: \code{options(dsomop.allow_sensitive_columns = TRUE)}}
+#' }
+#'
+#' @return Named list of disclosure thresholds and permissions
 #' @keywords internal
 .omopDisclosureSettings <- function() {
   list(
+    # --- Standard DataSHIELD thresholds ---
     nfilter_tab            = as.numeric(getOption("nfilter.tab",
                                 getOption("default.nfilter.tab", 3))),
     nfilter_subset         = as.numeric(getOption("nfilter.subset",
@@ -21,14 +82,28 @@
                                 getOption("default.nfilter.stringShort", 20))),
     nfilter_noise          = as.numeric(getOption("nfilter.noise",
                                 getOption("default.nfilter.noise", 0.25))),
+    # --- dsOMOP-specific settings ---
     query_strict         = as.logical(getOption("dsomop.query_strict",
                                 getOption("default.dsomop.query_strict", TRUE))),
     nfilter_dist         = as.numeric(getOption("dsomop.nfilter.dist",
-                                getOption("default.dsomop.nfilter.dist", 10)))
+                                getOption("default.dsomop.nfilter.dist", 10))),
+    # --- Server-gated opt-out permissions ---
+    # These default to FALSE (locked). Server admin must explicitly enable.
+    allow_absolute_dates = as.logical(getOption("dsomop.allow_absolute_dates",
+                                getOption("default.dsomop.allow_absolute_dates", FALSE))),
+    allow_sensitive_cols  = as.logical(getOption("dsomop.allow_sensitive_columns",
+                                getOption("default.dsomop.allow_sensitive_columns", FALSE)))
   )
 }
 
 #' Assert minimum unique persons in a dataset
+#'
+#' Prevents cohort-fingerprinting attacks by ensuring that any operation
+#' involves at least \code{nfilter_subset} distinct persons. Without this
+#' guard, an attacker could iteratively narrow filters until the result
+#' describes a single individual (e.g., "condition X + age 87 + female"
+#' might match exactly one person). The error message is deliberately
+#' generic to avoid leaking the actual count.
 #'
 #' @param conn DBI connection
 #' @param sql Character; SQL returning count of distinct person_id
@@ -74,6 +149,10 @@
   threshold <- settings$nfilter_tab
   count_cols <- intersect(count_cols, names(df))
   if (length(count_cols) == 0) return(df)
+  # "No hints" policy: rows below threshold are DROPPED entirely (not set to NA).
+  # Returning NA would reveal that a suppressed subgroup exists, enabling
+  # subtraction attacks (total - visible rows = hidden group size).
+  # NA values in count columns are treated as safe (fail-open for NULL data).
   safe <- rep(TRUE, nrow(df))
   for (col in count_cols) {
     vals <- df[[col]]
@@ -85,6 +164,16 @@
 }
 
 #' Check if returning distinct levels is safe
+#'
+#' Two checks prevent attribute-inference attacks on categorical variables:
+#' \enumerate{
+#'   \item \strong{Max levels}: if the number of distinct values exceeds
+#'     \code{nfilter_levels_max}, listing them all would constitute an
+#'     exhaustive enumeration (e.g., returning all 1000 profession codes).
+#'   \item \strong{Density}: if \code{n_levels / n_total} exceeds
+#'     \code{nfilter_levels_density}, each level maps to very few persons,
+#'     enabling cross-referencing with external data for re-identification.
+#' }
 #'
 #' @param n_levels Integer; number of distinct levels
 #' @param n_total Integer; total number of non-NA values
@@ -224,24 +313,37 @@
 }
 
 # --- Filter safety policy ---
+#
+# Filters narrow the population. An overly specific filter can isolate a
+# single individual (targeted probing). The classification below prevents
+# this by limiting filter granularity:
+#   - "allowed": broad categories (sex, age_group) — low fingerprinting risk
+#   - "constrained": narrower ranges validated for minimum width
+#     (age_range >= 5 years, date_range >= 30 days)
+#   - "blocked": arbitrary thresholds or custom SQL — too specific
 
 #' Classify a filter operation by safety level
 #'
+#' Filters are classified based on fingerprinting risk. Narrow filters
+#' (e.g., exact value thresholds) can isolate individuals; broad filters
+#' (e.g., sex, age group) cannot. Constrained filters are allowed only
+#' if their parameters meet minimum-width requirements.
+#'
 #' @param filter_type Character; filter type from the DSL
 #' @param filter_params List; filter parameters
-#' @return Character; "allowed", "constrained", or "blocked"
+#' @return Character; \code{"allowed"}, \code{"constrained"}, or \code{"blocked"}
 #' @keywords internal
 .classifyFilter <- function(filter_type, filter_params = list()) {
-  # Always allowed: categorical with known small domains
+  # Always allowed: categorical with known small domains (low fingerprint risk)
   always_allowed <- c("sex", "age_group", "cohort", "concept_set", "value_bin")
 
-  # Constrained: allowed with validation
+  # Constrained: allowed only after validating minimum range width
   constrained <- c("age_range", "has_concept", "date_range", "min_count",
                     "not_has_concept", "concept_count", "prior_observation",
                     "followup", "visit_count", "has_measurement",
                     "missing_measurement")
 
-  # Blocked: could fingerprint individuals
+  # Blocked: could fingerprint individuals via precise thresholds or arbitrary SQL
   blocked <- c("value_threshold", "custom")
 
   if (filter_type %in% always_allowed) return("allowed")
@@ -289,6 +391,12 @@
 }
 
 #' Assert that a filter doesn't reduce population below threshold
+#'
+#' Even a "safe" filter type (e.g., age_range) can be dangerous if it
+#' narrows the population to fewer than \code{nfilter_subset} persons.
+#' This check runs the filtered query's person count and blocks execution
+#' if the result is too small. The error message is deliberately vague
+#' to prevent the attacker from learning the exact population size.
 #'
 #' @param handle CDM handle
 #' @param post_sql Character; SQL returning COUNT(DISTINCT person_id) after filter

@@ -28,13 +28,28 @@ test_that("compileSelect blocks sensitive columns", {
   expect_false(grepl("value_as_string", sql))
 })
 
-test_that("compileSelect includes sensitive columns when unblocked", {
+test_that("compileSelect includes sensitive columns when unblocked (server-authorized)", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  sql <- .compileSelect(handle, "observation", block_sensitive = FALSE)
-  expect_true(grepl("value_as_string", sql))
+  withr::with_options(list(dsomop.allow_sensitive_columns = TRUE), {
+    sql <- .compileSelect(handle, "observation", block_sensitive = FALSE)
+    expect_true(grepl("value_as_string", sql))
+  })
+})
+
+test_that("compileSelect rejects block_sensitive=FALSE without server authorization", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  withr::with_options(list(dsomop.allow_sensitive_columns = FALSE), {
+    expect_error(
+      .compileSelect(handle, "observation", block_sensitive = FALSE),
+      "not permitted by the server"
+    )
+  })
 })
 
 test_that("compileSelect applies time window", {

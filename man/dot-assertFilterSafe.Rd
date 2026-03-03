@@ -15,6 +15,10 @@
 TRUE invisibly; stops otherwise
 }
 \description{
-Assert that a filter doesn't reduce population below threshold
+Even a "safe" filter type (e.g., age_range) can be dangerous if it
+narrows the population to fewer than \code{nfilter_subset} persons.
+This check runs the filtered query's person count and blocks execution
+if the result is too small. The error message is deliberately vague
+to prevent the attacker from learning the exact population size.
 }
 \keyword{internal}

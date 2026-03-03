@@ -23,4 +23,26 @@ For aggregate: disclosure-controlled data frame.
 Renders the SQL template with user inputs, translates to target dialect,
 executes against the database, and applies disclosure controls.
 }
+\section{Three-Layer Safety Model}{
+
+Queries pass through three independent safety checks before execution:
+\enumerate{
+  \item \strong{Allowlist} (\code{dsomop.query_strict}, server option):
+    When TRUE (default), only pre-approved queries on the allowlist can
+    execute. All unknown query IDs are rejected. This is the authoritative
+    gate for production deployments.
+  \item \strong{Static classification} (\code{.ql_classify()}):
+    Analyzes the rendered SQL for dangerous patterns: identifier columns
+    in SELECT (blocked for aggregate mode), unbinned dates in SELECT,
+    free-text fields, and SELECT * from person-level tables. This is
+    heuristic-based and may miss complex SQL (CTEs, subqueries).
+  \item \strong{Parameter type enforcement} (\code{.sanitizeQueryParam()}):
+    All user-supplied parameters are validated against their declared type
+    from the template metadata. Non-numeric values for numeric parameters
+    are rejected outright (not SQL-quoted).
+}
+After execution, aggregate results undergo row-level disclosure control
+via \code{.suppressSmallCounts()} on detected sensitive columns.
+}
+
 \keyword{internal}

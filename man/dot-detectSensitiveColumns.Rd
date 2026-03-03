@@ -13,6 +13,53 @@
 Logical
 }
 \description{
-Detect whether a column contains PII / sensitive data
+Checks column names against a comprehensive blocklist of potentially
+sensitive fields per OMOP CDM Privacy Guidance. This function is the
+single point of control for column-level sensitivity detection. It runs
+at blueprint-build time; results are stored in \code{is_blocked} and
+enforced by \code{.compileSelect()} in extraction and all profiling
+endpoints.
 }
+\section{Security Rationale}{
+
+Sensitive columns fall into three disclosure categories:
+\describe{
+  \item{Direct PII}{Free-text fields from source systems
+    (\code{*_source_value}, \code{value_as_string}, \code{sig},
+    \code{stop_reason}) and provider/location identifiers
+    (\code{npi}, \code{dea}, \code{provider_name}, \code{address_*},
+    \code{zip}). These may directly identify individuals.}
+  \item{Quasi-identifiers}{Source concept IDs
+    (\code{*_source_concept_id}) that reveal the originating EHR
+    coding system, enabling cross-referencing with institutional data.
+    Geographic fields (\code{latitude}, \code{longitude}, \code{city},
+    \code{state}, \code{county}) that narrow location.}
+  \item{Narrative text}{Clinical notes (\code{note_text},
+    \code{note_title}, \code{snippet}, \code{lexical_variant}) that
+    may contain embedded PHI per HIPAA/GDPR definitions.}
+}
+}
+
+\section{Bypass}{
+
+Bypass requires the server admin to set
+\code{options(dsomop.allow_sensitive_columns = TRUE)}. The analyst
+cannot override this from the client side.
+
+Blocked columns include:
+\itemize{
+  \item All \code{*_source_value} columns (free text from source systems)
+  \item \code{value_as_string} (free-text observation/measurement values)
+  \item \code{sig} (drug prescription signature/instructions)
+  \item \code{stop_reason} (free-text reason for drug stop)
+  \item \code{lot_number} (manufacturer lot, potentially identifying)
+  \item \code{unique_device_id} (device UDI, globally unique)
+  \item NOTE / NOTE_NLP text fields (clinical narrative text)
+  \item \code{*_source_concept_id} (source-system identifiers)
+  \item LOCATION fields: address, city, zip, county, latitude, longitude
+  \item PROVIDER fields: provider_name, npi, dea
+  \item CARE_SITE fields: care_site_name
+}
+}
+
 \keyword{internal}

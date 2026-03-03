@@ -203,9 +203,21 @@
 #' Get Achilles results (count-based analyses)
 #'
 #' Returns count-based Achilles results for the requested analysis IDs.
-#' Arbitrary stratum filtering is not supported to prevent targeted probing
-#' of rare strata (Fix C). Rows with count_value below nfilter.tab are
-#' dropped entirely ("no hints" policy).
+#'
+#' @section Probing Prevention:
+#' Achilles results are pre-computed aggregates (e.g., "n_persons by condition").
+#' A probing attack would repeatedly call this function with different analysis
+#' IDs and stratum values to reverse-engineer individual-level data. To prevent
+#' this:
+#' \itemize{
+#'   \item \strong{No stratum filtering}: the function accepts only analysis IDs,
+#'     not arbitrary stratum conditions. All strata for requested analyses are
+#'     returned at once.
+#'   \item \strong{Row-dropping suppression}: rows with
+#'     \code{count_value < nfilter.tab} are dropped entirely (not returned as
+#'     NA). This prevents the attacker from inferring that a rare subgroup
+#'     exists but was suppressed.
+#' }
 #'
 #' @param handle CDM handle
 #' @param analysis_ids Integer vector; which analysis IDs to retrieve
@@ -246,10 +258,23 @@
 
 #' Get Achilles distribution results
 #'
-#' Returns distribution statistics from achilles_results_dist. Extreme values
-#' (min_value, max_value) are never returned to prevent identification of
-#' outlier individuals. Rows with count_value below the disclosure threshold
-#' are dropped entirely (no NA skeleton rows / "no hints" policy).
+#' Returns distribution statistics from achilles_results_dist with three
+#' layers of disclosure control applied:
+#'
+#' @section Security Controls:
+#' \enumerate{
+#'   \item \strong{Extreme value exclusion}: \code{min_value} and
+#'     \code{max_value} are never selected from the database. These values
+#'     identify outlier individuals (e.g., "maximum age = 115 years").
+#'   \item \strong{Row-dropping suppression}: Rows with
+#'     \code{count_value < nfilter.tab} are dropped entirely. The "no hints"
+#'     policy means suppressed rows are absent (not NA), preventing
+#'     subtraction attacks.
+#'   \item \strong{Small-sample percentile suppression}: When
+#'     \code{count_value < nfilter_dist}, all percentile columns are set to
+#'     NA. With very few observations, even p25/p75 approximate individual
+#'     values.
+#' }
 #'
 #' @param handle CDM handle
 #' @param analysis_ids Integer vector
@@ -279,8 +304,12 @@
 
   id_list <- paste(analysis_ids, collapse = ", ")
 
-  # Fix B: min_value and max_value are never selected — extreme values can
-  # identify individuals (e.g. unique age, unique lab result).
+  # EXTREME VALUE SUPPRESSION: min_value and max_value are deliberately
+  # excluded from the SELECT. Extreme values (e.g., "oldest person is 115",
+  # "highest lab result is 2500") can identify individuals at the tails of
+  # a distribution when combined with external data. This exclusion is
+  # unconditional — even for large populations, extreme values are never
+  # returned to the client.
   sql <- paste0(
     "SELECT analysis_id, stratum_1, stratum_2, stratum_3, stratum_4, ",
     "stratum_5, count_value, avg_value, stdev_value, ",
@@ -293,11 +322,16 @@
   result <- tryCatch(.executeQuery(handle, sql), error = function(e) empty)
   if (nrow(result) == 0) return(result)
 
-  # Fix A: use the same row-dropping suppression as count-results
-  # (no NA skeleton rows — "no hints" policy)
+  # ROW-DROPPING SUPPRESSION: Rows with count_value < nfilter.tab are
+  # dropped entirely (not replaced with NA). The "no hints" policy ensures
+  # that the absence of a row cannot be distinguished from non-existence,
+  # preventing subtraction attacks (total - visible = hidden group size).
   result <- .suppressSmallCounts(result, "count_value")
 
-  # Suppress percentile values where sample is too small for safe estimation
+  # SMALL-SAMPLE PERCENTILE SUPPRESSION: When count_value < nfilter_dist,
+  # even median/p25/p75 can approximate individual values (e.g., with n=3,
+  # the median IS one person's value). Set all percentile columns to NA
+  # for these small-sample rows while keeping count_value visible.
   settings <- .omopDisclosureSettings()
   nfilter_dist <- settings$nfilter_dist %||% 10L
   pct_cols <- c("p10_value", "p25_value", "median_value", "p75_value", "p90_value")

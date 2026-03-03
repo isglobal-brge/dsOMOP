@@ -67,20 +67,37 @@
   }
 }
 
-#' Strip person_id and other quasi-identifiers from data before assignment
+#' Strip row-level identifiers from data before DataSHIELD assignment
 #'
-#' Removes columns that could enable re-identification via DataSHIELD
-#' analysis functions (ds.summary, ds.table). Operates recursively on
-#' lists containing data.frames.
+#' Removes all OMOP CDM row-level identifiers (primary keys and entity
+#' foreign keys) from data frames before they are assigned into the
+#' DataSHIELD session environment.
 #'
-#' @param x Data frame or list to sanitize
+#' @section Security Rationale:
+#' DataSHIELD analysis functions like \code{ds.summary()}, \code{ds.table()},
+#' and \code{ds.quantile()} operate on assigned server-side data frames.
+#' If \code{person_id} or other row-level identifiers are present, an
+#' attacker can perform group-by re-identification attacks:
+#' \itemize{
+#'   \item \code{ds.summary(data$value, data$person_id)} reveals per-person
+#'     statistics
+#'   \item \code{ds.table(data$condition, data$person_id)} produces a
+#'     person-level contingency table
+#'   \item Even event-level IDs (\code{visit_occurrence_id}) can be used to
+#'     count rows per person via frequency analysis
+#' }
+#' This stripping is \strong{mandatory} and cannot be disabled. It runs on
+#' every ASSIGN output before \code{base::assign()} stores the data in the
+#' DataSHIELD environment.
+#'
+#' @param x Data frame or list to sanitize. Operates recursively on lists.
 #' @return Sanitized object with identifier columns removed
 #' @keywords internal
 .stripIdentifiers <- function(x) {
-  # Full OMOP CDM identifier column list — these are row-level IDs or
-
-  # entity keys that enable re-identification via DataSHIELD analysis
-  # functions (ds.summary, ds.table, ds.quantile).
+  # Full OMOP CDM identifier column list: primary keys (person_id,
+  # *_occurrence_id) and entity foreign keys (provider_id, care_site_id,
+  # location_id). These uniquely or quasi-uniquely identify rows and
+  # could enable re-identification if exposed to DS analysis functions.
   strip_cols <- c(
     # Person / subject identifiers
     "person_id", "subject_id",
@@ -131,7 +148,11 @@ omopInitDS <- function(resource_symbol,
                        vocab_schema = NULL,
                        temp_schema = NULL,
                        config = list()) {
-  # Validate resource_symbol to prevent code injection (must be a valid R identifier)
+  # SECURITY: resource_symbol comes from the client and is used to look up
+  # a variable in the DataSHIELD session environment. Without validation,
+  # a malicious client could pass arbitrary strings (e.g., "system('rm -rf')")
+  # that, if passed to eval(parse()), would execute arbitrary code.
+  # We validate it as a strict R identifier, then use get() (not eval/parse).
   .validateIdentifier(resource_symbol, "resource symbol")
   resolved <- get(resource_symbol, envir = parent.frame(), inherits = FALSE)
 
@@ -155,8 +176,11 @@ omopInitDS <- function(resource_symbol,
   .buildBlueprint(handle)
   .setHandle(resource_symbol, handle)
 
-  # DSLite-safe: also store handle in the calling session environment so
-  # each DSLite server retains its own handle under a unique-per-session key
+  # DSLite session isolation: in DSLite (multi-server, single R process),
+  # each DataSHIELD session has its own environment. We store the handle
+  # in parent.frame() (the session env) under a unique key so that
+  # server_a's handle is not overwritten by server_b. Without this,
+  # .dsomop_env (global) would be shared, causing cross-server data leaks.
   local_key <- paste0(".dsomop_handle_", resource_symbol)
   tryCatch(
     assign(local_key, handle, envir = parent.frame()),
@@ -201,8 +225,11 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out) {
     result <- outputs[[nm]]
     if (is.null(result)) next
 
-    # Strip person_id from assigned data.frames to prevent leakage via
-    # DataSHIELD analysis functions (ds.summary, ds.table, etc.)
+    # MANDATORY: Strip all row-level identifiers before assignment.
+    # Without this, ds.summary(data$value, data$person_id) would reveal
+    # per-person statistics, enabling group-by re-identification attacks.
+    # This stripping cannot be disabled — it is the last line of defense
+    # before data enters the DataSHIELD analysis environment.
     result <- .stripIdentifiers(result)
 
     # Temporal covariates: split into 3 symbols

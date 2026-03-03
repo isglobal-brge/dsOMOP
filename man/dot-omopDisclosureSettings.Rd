@@ -7,9 +7,66 @@
 .omopDisclosureSettings()
 }
 \value{
-Named list of disclosure thresholds and privacy level
+Named list of disclosure thresholds and permissions
 }
 \description{
-Read all disclosure settings from DataSHIELD server options
+Returns a named list of all disclosure thresholds and server-gated
+permissions. Every setting follows the standard DataSHIELD option chain:
+direct option -> \code{default.*} prefix -> hardcoded fallback.
 }
+\section{Standard DataSHIELD Thresholds}{
+
+\describe{
+  \item{\code{nfilter_tab} (default 3)}{Minimum cell count for tabular
+    outputs. Rows with any count column below this are dropped entirely
+    (not replaced with NA) to prevent suppression-pattern inference.}
+  \item{\code{nfilter_subset} (default 3)}{Minimum number of distinct
+    persons required before any operation proceeds. Prevents cohort
+    fingerprinting by blocking queries on very small populations.}
+  \item{\code{nfilter_levels_max} (default 40)}{Maximum distinct levels
+    allowed in a categorical variable. Prevents exhaustive enumeration
+    of rare attribute values.}
+  \item{\code{nfilter_levels_density} (default 0.33)}{Maximum ratio of
+    distinct levels to total observations. Blocks high-cardinality
+    attributes that could enable attribute-inference attacks.}
+  \item{\code{nfilter_string} (default 80)}{Maximum string length for
+    user-supplied parameters. Limits SQL injection surface.}
+  \item{\code{nfilter_stringShort} (default 20)}{Short string limit for
+    identifiers and labels.}
+  \item{\code{nfilter_noise} (default 0.25)}{Noise fraction (reserved for
+    future differential privacy features).}
+}
+}
+
+\section{dsOMOP-Specific Settings}{
+
+\describe{
+  \item{\code{query_strict} (default TRUE)}{When TRUE, only pre-approved
+    queries on the allowlist can execute. When FALSE, queries are
+    classified on-the-fly (less safe, for development only). Server
+    option only — cannot be overridden by client.}
+  \item{\code{nfilter_dist} (default 10)}{Minimum sample size for safe
+    percentile/quantile estimation. With fewer values, even clamped
+    percentiles (p05/p95) can approximate min/max, leaking extreme
+    individual values.}
+}
+}
+
+\section{Server-Gated Opt-Out Permissions}{
+
+These default to FALSE (locked). Only the server admin / data controller
+can enable them. Analysts cannot request bypass directly.
+\describe{
+  \item{\code{allow_absolute_dates} (default FALSE)}{When FALSE, any
+    extraction request with \code{date_handling = "absolute"} is rejected.
+    Raw dates are quasi-identifiers per OMOP Privacy Guidance.
+    Set via: \code{options(dsomop.allow_absolute_dates = TRUE)}}
+  \item{\code{allow_sensitive_cols} (default FALSE)}{When FALSE, any
+    extraction request with \code{block_sensitive = FALSE} is rejected.
+    Sensitive columns include source_value fields, free text, provider
+    identifiers, and geographic data.
+    Set via: \code{options(dsomop.allow_sensitive_columns = TRUE)}}
+}
+}
+
 \keyword{internal}

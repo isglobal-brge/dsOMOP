@@ -80,7 +80,20 @@
 #' Apply date handling transforms to a result data frame
 #'
 #' @param df Data frame
-#' @param date_handling List; date handling specification
+#' @param date_handling List with at least \code{$mode}. Modes:
+#'   \describe{
+#'     \item{\code{"remove"}}{(Default, safest) Strips all date/datetime
+#'       columns entirely. No temporal information leaves the server.}
+#'     \item{\code{"relative"}}{Converts dates to integer days relative to
+#'       a reference date (\code{cohort_start_date} or custom). Safe if
+#'       the reference date itself is not leaked to the client.}
+#'     \item{\code{"binned"}}{Truncates dates to year/month/week. Reduces
+#'       temporal precision while preserving broad trends.}
+#'     \item{\code{"absolute"}}{Returns raw dates unchanged.
+#'       \strong{Requires server authorization}:
+#'       \code{dsomop.allow_absolute_dates = TRUE}. Raw dates are
+#'       quasi-identifiers per OMOP Privacy Guidance.}
+#'   }
 #' @param index_date_col Character; column with index dates (for relative mode)
 #' @return Transformed data frame
 #' @keywords internal
@@ -213,7 +226,19 @@
     select_cols <- unique(c(must_keep, intersect(columns, col_df$column_name)))
   }
 
-  # Block sensitive columns
+  # PRIVILEGE ESCALATION GATE: block_sensitive = FALSE exposes PII columns
+  # (source_value, free text, provider identifiers, geographic data).
+  # This is a deliberate server-admin decision, NOT a client preference.
+  # Per DataSHIELD model: disclosure controls are governed by server config.
+  if (!block_sensitive) {
+    allow <- getOption("dsomop.allow_sensitive_columns",
+               getOption("default.dsomop.allow_sensitive_columns", FALSE))
+    if (!isTRUE(allow)) {
+      stop("Accessing sensitive columns is not permitted by the server. ",
+           "Contact the data controller to enable dsomop.allow_sensitive_columns.",
+           call. = FALSE)
+    }
+  }
   if (block_sensitive) {
     blocked <- col_df$column_name[col_df$is_blocked]
     # Always block exact birth dates/times (quasi-identifiers)
@@ -537,12 +562,26 @@
 
   result <- .convertTypes(result)
 
-  # Apply date handling transforms.
-  # Default is "remove" (strip all date/datetime columns) for privacy.
-  # Users must explicitly opt in to "absolute" to retain raw dates.
+  # DATE PRIVACY: Default is "remove" (strip all date/datetime columns).
+  # Per OMOP Privacy Guidance, date elements across the CDM may require
+  # redaction or modification. The safe default removes them entirely.
+  # Analysts who need temporal data should use "relative" (days from index)
+  # or "binned" (year-month) modes, which preserve utility without leaking
+  # exact dates that could enable longitudinal re-identification.
   if (is.null(date_handling)) {
     default_mode <- getOption("dsomop.default_date_handling", "remove")
     date_handling <- list(mode = default_mode)
+  }
+  # SERVER GATE: "absolute" mode returns raw dates (quasi-identifiers).
+  # Only permitted if the server admin has explicitly authorized it.
+  if (identical(date_handling$mode, "absolute")) {
+    allow <- getOption("dsomop.allow_absolute_dates",
+               getOption("default.dsomop.allow_absolute_dates", FALSE))
+    if (!isTRUE(allow)) {
+      stop("Absolute date handling is not permitted by the server. ",
+           "Contact the data controller to enable dsomop.allow_absolute_dates.",
+           call. = FALSE)
+    }
   }
   result <- .applyDateHandling(result, date_handling)
 

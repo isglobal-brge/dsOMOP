@@ -557,6 +557,27 @@
 #' @param mode Character; "aggregate" or "assign"
 #' @return For aggregate: disclosure-controlled data frame.
 #'   For assign: invisible TRUE (data assigned server-side).
+#'
+#' @section Three-Layer Safety Model:
+#' Queries pass through three independent safety checks before execution:
+#' \enumerate{
+#'   \item \strong{Allowlist} (\code{dsomop.query_strict}, server option):
+#'     When TRUE (default), only pre-approved queries on the allowlist can
+#'     execute. All unknown query IDs are rejected. This is the authoritative
+#'     gate for production deployments.
+#'   \item \strong{Static classification} (\code{.ql_classify()}):
+#'     Analyzes the rendered SQL for dangerous patterns: identifier columns
+#'     in SELECT (blocked for aggregate mode), unbinned dates in SELECT,
+#'     free-text fields, and SELECT * from person-level tables. This is
+#'     heuristic-based and may miss complex SQL (CTEs, subqueries).
+#'   \item \strong{Parameter type enforcement} (\code{.sanitizeQueryParam()}):
+#'     All user-supplied parameters are validated against their declared type
+#'     from the template metadata. Non-numeric values for numeric parameters
+#'     are rejected outright (not SQL-quoted).
+#' }
+#' After execution, aggregate results undergo row-level disclosure control
+#' via \code{.suppressSmallCounts()} on detected sensitive columns.
+#'
 #' @keywords internal
 .query_exec <- function(handle, query_id, inputs = list(),
                           mode = "aggregate") {
@@ -566,7 +587,7 @@
     stop("Query '", query_id, "' not found in query library.", call. = FALSE)
   }
 
-  # Check allowlist
+  # Layer 1: Allowlist check (server-controlled gate)
   allowlist <- .ql_load_allowlist()
   al <- allowlist[[query_id]]
 
@@ -701,6 +722,11 @@
 #' to determine whether a parameter is expected to be numeric (integer/decimal).
 #' All current OMOP query templates use integer parameters exclusively.
 #'
+#' This function is part of the type-enforcement defense against SQL injection.
+#' By inferring parameter types from template metadata, we can reject
+#' non-numeric values for numeric parameters instead of attempting to
+#' SQL-quote them (which is less safe).
+#'
 #' @param param_name Character; parameter name to look up
 #' @param inputs_df Data frame; the parsed template inputs table (may be NULL)
 #' @return Character; \code{"integer"} or \code{"numeric"} if example is a number,
@@ -732,6 +758,19 @@
 #' numeric values are accepted — non-numeric input is rejected outright rather
 #' than being SQL-quoted. This prevents attacks like \code{"1 OR 1=1"} from
 #' being smuggled as a quoted string into a numeric context.
+#'
+#' @section Attack Prevention:
+#' Consider a template with \code{WHERE concept_id = @concept_id}. Without
+#' type enforcement, an attacker could pass \code{"1 OR 1=1"} and have it
+#' quoted as a string literal (\code{'1 OR 1=1'}), which in some SQL contexts
+#' could be type-coerced. With type enforcement, the value is rejected
+#' immediately because it's not a valid integer.
+#'
+#' @section Fail-Closed Policy:
+#' For parameters with unknown type (no template metadata), non-numeric
+#' values are \strong{always rejected}. All current OMOP query templates
+#' use integer parameters (concept_id, top_n, etc.), so this default is
+#' both safe and compatible.
 #'
 #' @param value The parameter value to sanitize
 #' @param param_name Character; parameter name (for error messages)

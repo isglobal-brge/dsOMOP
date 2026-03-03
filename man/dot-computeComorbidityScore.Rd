@@ -2,14 +2,14 @@
 % Please edit documentation in R/extraction.R
 \name{.computeComorbidityScore}
 \alias{.computeComorbidityScore}
-\title{Compute a comorbidity score (Charlson or CHA2DS2-VASc)}
+\title{Compute a comorbidity score}
 \usage{
 .computeComorbidityScore(handle, score_type, person_ids = NULL)
 }
 \arguments{
 \item{handle}{CDM handle}
 
-\item{score_type}{Character; "charlson" or "chadsvasc"}
+\item{score_type}{Character; "charlson", "chads2", "chadsvasc", "dcsi", "hfrs"}
 
 \item{person_ids}{Integer vector of person IDs}
 }
@@ -18,6 +18,7 @@ Data frame with person_id and score columns
 }
 \description{
 Checks condition tables for the presence of category-defining concepts
-and computes a weighted sum per person.
+and computes a weighted sum per person. Supports simple weighted (Charlson,
+CHADS2, CHA2DS2-VASc), tiered (DCSI), and weighted binary (HFRS) modes.
 }
 \keyword{internal}

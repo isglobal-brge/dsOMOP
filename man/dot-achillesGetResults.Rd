@@ -16,8 +16,22 @@ data.frame with analysis_id, stratum_1..5, count_value
 }
 \description{
 Returns count-based Achilles results for the requested analysis IDs.
-Arbitrary stratum filtering is not supported to prevent targeted probing
-of rare strata (Fix C). Rows with count_value below nfilter.tab are
-dropped entirely ("no hints" policy).
 }
+\section{Probing Prevention}{
+
+Achilles results are pre-computed aggregates (e.g., "n_persons by condition").
+A probing attack would repeatedly call this function with different analysis
+IDs and stratum values to reverse-engineer individual-level data. To prevent
+this:
+\itemize{
+  \item \strong{No stratum filtering}: the function accepts only analysis IDs,
+    not arbitrary stratum conditions. All strata for requested analyses are
+    returned at once.
+  \item \strong{Row-dropping suppression}: rows with
+    \code{count_value < nfilter.tab} are dropped entirely (not returned as
+    NA). This prevents the attacker from inferring that a rare subgroup
+    exists but was suppressed.
+}
+}
+
 \keyword{internal}

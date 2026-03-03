@@ -12,9 +12,12 @@
 \item{filter_params}{List; filter parameters}
 }
 \value{
-Character; "allowed", "constrained", or "blocked"
+Character; \code{"allowed"}, \code{"constrained"}, or \code{"blocked"}
 }
 \description{
-Classify a filter operation by safety level
+Filters are classified based on fingerprinting risk. Narrow filters
+(e.g., exact value thresholds) can isolate individuals; broad filters
+(e.g., sex, age group) cannot. Constrained filters are allowed only
+if their parameters meet minimum-width requirements.
 }
 \keyword{internal}

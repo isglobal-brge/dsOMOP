@@ -646,7 +646,10 @@
     return(list(p05 = NA_real_, p95 = NA_real_, n_total = 0L))
   }
 
-  # Block percentile output if sample too small for safe estimation
+  # PERCENTILE LEAKAGE GUARD: With small samples, even clamped percentiles
+  # (p05/p95) return values near min/max, identifying individuals at the
+  # extremes of the distribution. E.g., with n=5, p05 ≈ 1st of 5 ≈ min.
+  # nfilter_dist (default 10) ensures enough data points for safe estimation.
   settings <- .omopDisclosureSettings()
   nfilter_dist <- settings$nfilter_dist %||% 10L
   if (n_total < nfilter_dist) {
@@ -882,7 +885,10 @@
   table <- tolower(.validateIdentifier(table, "table"))
   value_col <- tolower(.validateIdentifier(value_col, "column"))
 
-  # Clamp probs to safe range to prevent min/max extraction via extreme quantiles
+  # EXTREME VALUE GUARD: Clamp probabilities to [0.05, 0.95] to prevent
+  # min/max extraction via extreme quantiles. Without this, a request for
+  # probs = c(0.001, 0.999) would return values nearly identical to MIN/MAX,
+  # potentially identifying individuals at the tails of the distribution.
   probs <- pmax(0.05, pmin(0.95, as.numeric(probs)))
   bp <- .buildBlueprint(handle)
   settings <- .omopDisclosureSettings()

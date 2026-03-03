@@ -9,7 +9,20 @@
 \arguments{
 \item{df}{Data frame}
 
-\item{date_handling}{List; date handling specification}
+\item{date_handling}{List with at least \code{$mode}. Modes:
+\describe{
+  \item{\code{"remove"}}{(Default, safest) Strips all date/datetime
+    columns entirely. No temporal information leaves the server.}
+  \item{\code{"relative"}}{Converts dates to integer days relative to
+    a reference date (\code{cohort_start_date} or custom). Safe if
+    the reference date itself is not leaked to the client.}
+  \item{\code{"binned"}}{Truncates dates to year/month/week. Reduces
+    temporal precision while preserving broad trends.}
+  \item{\code{"absolute"}}{Returns raw dates unchanged.
+    \strong{Requires server authorization}:
+    \code{dsomop.allow_absolute_dates = TRUE}. Raw dates are
+    quasi-identifiers per OMOP Privacy Guidance.}
+}}
 
 \item{index_date_col}{Character; column with index dates (for relative mode)}
 }

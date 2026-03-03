@@ -81,11 +81,45 @@ test_that("plan execute passes temporal and date_handling to extraction", {
   )
   class(plan) <- c("omop_plan", "list")
 
-  withr::with_options(list(nfilter.subset = 3), {
+  withr::with_options(list(nfilter.subset = 3,
+                           dsomop.allow_absolute_dates = TRUE), {
     result <- .planExecute(handle, plan, list(conditions = "cond_df"))
     expect_true(is.list(result))
     expect_true("conditions" %in% names(result))
     expect_true(is.data.frame(result$conditions))
+  })
+})
+
+test_that("plan execute blocks absolute dates without server authorization", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  plan <- list(
+    cohort = NULL,
+    anchor = list(table = "person", id_col = "person_id"),
+    outputs = list(
+      conditions = list(
+        type = "event_level",
+        table = "condition_occurrence",
+        columns = NULL,
+        concept_set = c(201820),
+        representation = list(format = "long"),
+        filters = list(concept_set = list(ids = c(201820))),
+        date_handling = list(mode = "absolute")
+      )
+    ),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  class(plan) <- c("omop_plan", "list")
+
+  withr::with_options(list(nfilter.subset = 3,
+                           dsomop.allow_absolute_dates = FALSE), {
+    # Error is caught by .planExecute's tryCatch and converted to warning
+    expect_warning(
+      .planExecute(handle, plan, list(conditions = "cond_df")),
+      "not permitted by the server"
+    )
   })
 })
 

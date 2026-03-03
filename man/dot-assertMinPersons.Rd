@@ -17,6 +17,11 @@
 TRUE invisibly, or stops with an error
 }
 \description{
-Assert minimum unique persons in a dataset
+Prevents cohort-fingerprinting attacks by ensuring that any operation
+involves at least \code{nfilter_subset} distinct persons. Without this
+guard, an attacker could iteratively narrow filters until the result
+describes a single individual (e.g., "condition X + age 87 + female"
+might match exactly one person). The error message is deliberately
+generic to avoid leaking the actual count.
 }
 \keyword{internal}
