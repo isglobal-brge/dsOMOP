@@ -500,6 +500,8 @@ omopRelationshipGraphDS <- function(omop_symbol) {
 omopTableStatsDS <- function(omop_symbol, table,
                              stats = c("rows", "persons")) {
   handle <- .getHandle(omop_symbol)
+  stats <- .ds_arg(stats)
+  if (is.list(stats)) stats <- unlist(stats)
   .profileTableStats(handle, table, stats)
 }
 
@@ -636,6 +638,8 @@ omopSearchConceptsDS <- function(omop_symbol, pattern,
 #' @export
 omopLookupConceptsDS <- function(omop_symbol, concept_ids) {
   handle <- .getHandle(omop_symbol)
+  concept_ids <- .ds_arg(concept_ids)
+  if (is.list(concept_ids)) concept_ids <- as.integer(unlist(concept_ids))
   .vocabLookupConcepts(handle, concept_ids)
 }
 
@@ -678,6 +682,7 @@ omopGetDescendantsDS <- function(omop_symbol, ancestor_ids,
 #' @export
 omopExpandConceptSetDS <- function(omop_symbol, concept_set) {
   handle <- .getHandle(omop_symbol)
+  concept_set <- .ds_arg(concept_set)
   .vocabExpandConceptSet(handle, concept_set)
 }
 
@@ -818,6 +823,7 @@ omopNumericHistogramDS <- function(omop_symbol, table, value_col,
                                     bins = 20L, cohort_table = NULL,
                                     window = NULL, breaks = NULL) {
   handle <- .getHandle(omop_symbol)
+  breaks <- .ds_arg(breaks)
   .profileNumericHistogram(handle, table, value_col, bins,
                            cohort_table, window, breaks)
 }
@@ -847,6 +853,7 @@ omopNumericQuantilesDS <- function(omop_symbol, table, value_col,
                                     cohort_table = NULL, window = NULL,
                                     rounding = 2L) {
   handle <- .getHandle(omop_symbol)
+  probs <- .ds_arg(probs)
   .profileNumericQuantiles(handle, table, value_col, probs,
                            cohort_table, window, rounding)
 }
@@ -1112,6 +1119,7 @@ omopOhdsiResultsDS <- function(omop_symbol, table_name, columns = NULL,
                                 filters = NULL, order_by = NULL,
                                 limit = 5000L, tool_id = NULL) {
   handle <- .getHandle(omop_symbol)
+  filters <- .ds_arg(filters)
   .ohdsiGetResults(handle, table_name, columns, filters, order_by, limit,
                     tool_id)
 }
