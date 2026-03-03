@@ -564,6 +564,8 @@ omopDomainCoverageDS <- function(omop_symbol) {
 omopMissingnessDS <- function(omop_symbol, table,
                               columns = NULL) {
   handle <- .getHandle(omop_symbol)
+  columns <- .ds_arg(columns)
+  if (is.list(columns)) columns <- as.character(unlist(columns))
   .profileMissingness(handle, table, columns)
 }
 
@@ -662,6 +664,8 @@ omopLookupConceptsDS <- function(omop_symbol, concept_ids) {
 omopGetDescendantsDS <- function(omop_symbol, ancestor_ids,
                                  include_self = TRUE) {
   handle <- .getHandle(omop_symbol)
+  ancestor_ids <- .ds_arg(ancestor_ids)
+  if (is.list(ancestor_ids)) ancestor_ids <- as.integer(unlist(ancestor_ids))
   .vocabGetDescendants(handle, ancestor_ids, include_self)
 }
 
@@ -929,6 +933,8 @@ omopConceptDrilldownDS <- function(omop_symbol, table, concept_id,
 #' @export
 omopLocateConceptDS <- function(omop_symbol, concept_ids) {
   handle <- .getHandle(omop_symbol)
+  concept_ids <- .ds_arg(concept_ids)
+  if (is.list(concept_ids)) concept_ids <- as.integer(unlist(concept_ids))
   .profileLocateConcept(handle, as.integer(concept_ids))
 }
 
@@ -1013,6 +1019,8 @@ omopAchillesAnalysesDS <- function(omop_symbol, domain = NULL) {
 #' @export
 omopAchillesResultsDS <- function(omop_symbol, analysis_ids) {
   handle <- .getHandle(omop_symbol)
+  analysis_ids <- .ds_arg(analysis_ids)
+  if (is.list(analysis_ids)) analysis_ids <- as.integer(unlist(analysis_ids))
   .achillesGetResults(handle, analysis_ids)
 }
 
@@ -1034,6 +1042,8 @@ omopAchillesResultsDS <- function(omop_symbol, analysis_ids) {
 #' @export
 omopAchillesDistributionDS <- function(omop_symbol, analysis_ids) {
   handle <- .getHandle(omop_symbol)
+  analysis_ids <- .ds_arg(analysis_ids)
+  if (is.list(analysis_ids)) analysis_ids <- as.integer(unlist(analysis_ids))
   .achillesGetDistributions(handle, analysis_ids)
 }
 
