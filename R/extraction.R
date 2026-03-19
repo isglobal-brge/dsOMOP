@@ -471,6 +471,124 @@
   .coerce_integer64(result)
 }
 
+#' Stream a SQL query result to a Parquet file in chunks
+#'
+#' Uses DBI::dbSendQuery + dbFetch(n=chunk_size) to avoid loading the full
+#' result set into R memory. Peak memory is approximately one chunk (~5MB
+#' for 50K rows). Falls back to CSV if arrow is not installed.
+#'
+#' Strategy: each chunk is written as a separate Parquet file in a temporary
+#' directory. After all chunks are written, arrow::open_dataset() scans them
+#' lazily and arrow::write_dataset() consolidates into a single Parquet file
+#' without loading the full dataset into R memory.
+#'
+#' @param conn DBI connection
+#' @param sql Character; SQL query to execute
+#' @param output_path Character; path for the output file (.parquet or .csv)
+#' @param chunk_size Integer; rows per chunk (default 50000)
+#' @param chunk_fn Optional function(chunk) applied to each chunk before
+#'   writing. Must return a data.frame with the same columns. Used for
+#'   per-chunk transforms like date handling or type conversion.
+#' @return Named list with file path, format, row count, and column names
+#' @keywords internal
+.executeQueryToParquet <- function(conn, sql, output_path, chunk_size = 50000L,
+                                   chunk_fn = NULL) {
+  use_parquet <- requireNamespace("arrow", quietly = TRUE)
+
+  if (!use_parquet) {
+    output_path <- sub("\\.parquet$", ".csv", output_path)
+  }
+
+  dir.create(dirname(output_path), recursive = TRUE, showWarnings = FALSE)
+  Sys.chmod(dirname(output_path), mode = "0700")
+
+  col_names <- NULL
+  n_rows <- 0L
+  chunk_idx <- 0L
+
+  # Temporary directory for per-chunk Parquet files
+  chunk_dir <- if (use_parquet) tempfile("pq_chunks_") else NULL
+  if (!is.null(chunk_dir)) dir.create(chunk_dir, recursive = TRUE)
+
+  rs <- DBI::dbSendQuery(conn, sql)
+  on.exit({
+    if (DBI::dbIsValid(rs)) DBI::dbClearResult(rs)
+    if (!is.null(chunk_dir) && dir.exists(chunk_dir)) {
+      unlink(chunk_dir, recursive = TRUE)
+    }
+    if (n_rows == 0L && file.exists(output_path)) unlink(output_path)
+  }, add = TRUE)
+
+  repeat {
+    chunk <- DBI::dbFetch(rs, n = chunk_size)
+    if (nrow(chunk) == 0L) break
+
+    names(chunk) <- tolower(names(chunk))
+    chunk <- .coerce_integer64(chunk)
+
+    if (!is.null(chunk_fn)) {
+      chunk <- chunk_fn(chunk)
+    }
+
+    if (is.null(col_names)) {
+      col_names <- names(chunk)
+    }
+
+    chunk_idx <- chunk_idx + 1L
+
+    if (use_parquet) {
+      chunk_path <- file.path(chunk_dir,
+                               sprintf("chunk_%06d.parquet", chunk_idx))
+      arrow::write_parquet(arrow::as_arrow_table(chunk), chunk_path)
+    } else {
+      write.table(chunk, output_path,
+                  sep = ",", row.names = FALSE,
+                  col.names = (n_rows == 0L),
+                  append = (n_rows > 0L))
+    }
+
+    n_rows <- n_rows + nrow(chunk)
+  }
+
+  DBI::dbClearResult(rs)
+
+  # Consolidate chunks into a single Parquet file via lazy dataset scan
+  if (use_parquet && chunk_idx > 0L) {
+    if (chunk_idx == 1L) {
+      # Single chunk: just move the file
+      file.rename(
+        file.path(chunk_dir, "chunk_000001.parquet"),
+        output_path
+      )
+    } else {
+      # Multiple chunks: consolidate without loading into R memory
+      ds <- arrow::open_dataset(chunk_dir)
+      out_dir <- tempfile("pq_consolidated_")
+      dir.create(out_dir)
+      arrow::write_dataset(ds, out_dir, format = "parquet",
+                            max_rows_per_file = .Machine$integer.max)
+      consolidated <- list.files(out_dir, full.names = TRUE,
+                                  pattern = "\\.parquet$")
+      file.rename(consolidated[1], output_path)
+      unlink(out_dir, recursive = TRUE)
+    }
+    unlink(chunk_dir, recursive = TRUE)
+    chunk_dir <- NULL  # prevent on.exit double-cleanup
+  }
+
+  if (n_rows > 0L) {
+    Sys.chmod(output_path, mode = "0600")
+  }
+
+  fmt <- if (use_parquet) "parquet" else "csv"
+  list(
+    file = output_path,
+    format = fmt,
+    n_rows = n_rows,
+    columns = col_names
+  )
+}
+
 #' Execute a SQL statement (DDL/DML, no result set)
 #'
 #' @param handle CDM handle

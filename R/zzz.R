@@ -11,10 +11,32 @@
 # Session-level handle storage
 .dsomop_env <- new.env(parent = emptyenv())
 
+#' Clean up stale staging directories older than 24 hours
+#'
+#' @keywords internal
+.cleanStaleStagingDirs <- function() {
+  base <- getOption("dsstaging.base_dir", file.path(tempdir(), "dsstaging"))
+  if (!dir.exists(base)) return(invisible(NULL))
+
+  dirs <- list.dirs(base, full.names = TRUE, recursive = FALSE)
+  # Only clean directories matching the staging token pattern
+  dirs <- dirs[grepl("^stg_", basename(dirs))]
+  if (length(dirs) == 0L) return(invisible(NULL))
+
+  cutoff <- Sys.time() - 24 * 3600  # 24 hours ago
+  for (d in dirs) {
+    info <- file.info(d)
+    if (!is.na(info$mtime) && info$mtime < cutoff) {
+      tryCatch(unlink(d, recursive = TRUE), error = function(e) NULL)
+    }
+  }
+  invisible(NULL)
+}
+
 #' Package attach hook
 #'
-#' Registers the OMOP CDM resource resolver and displays a startup message
-#' with the package version.
+#' Registers the OMOP CDM resource resolver, cleans stale staging
+#' directories, and displays a startup message with the package version.
 #'
 #' @param lib Library path.
 #' @param pkg Package name.
@@ -22,6 +44,9 @@
 .onAttach <- function(lib, pkg) {
   .pkg_state$resolver <- OMOPResourceResolver$new()
   resourcer::registerResourceResolver(.pkg_state$resolver)
+
+  # Clean up stale staging directories from previous sessions
+  tryCatch(.cleanStaleStagingDirs(), error = function(e) NULL)
 
   packageStartupMessage(
     "dsOMOP v", utils::packageVersion("dsOMOP"),

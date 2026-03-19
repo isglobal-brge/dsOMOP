@@ -236,20 +236,35 @@ omopInitDS <- function(resource_symbol,
 #' two symbols: \code{<name>.covariates} and \code{<name>.covariateRef}.
 #' Temporal covariates are split into three symbols.
 #'
+#' When \code{output_mode = "staged"}, outputs are written to Parquet files
+#' on disk and assigned as \code{FlowerDatasetDescriptor} objects instead of
+#' data.frames. This avoids loading large datasets into R memory.
+#'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param plan List; the extraction plan
 #' @param out Named character vector; output_name -> symbol_name mapping
+#' @param output_mode Character; "memory" (default) or "staged"
 #' @return Invisible TRUE (outputs are assigned into caller's environment)
 #' @examples
 #' \dontrun{
 #' omopPlanExecuteDS("omop", plan, out = c(cohort = "my_cohort"))
+#' omopPlanExecuteDS("omop", plan, out = c(features = "D"),
+#'                   output_mode = "staged")
 #' }
 #' @export
-omopPlanExecuteDS <- function(omop_symbol, plan, out) {
+omopPlanExecuteDS <- function(omop_symbol, plan, out,
+                               output_mode = "memory") {
   handle <- .getHandle(omop_symbol)
   plan <- .ds_arg(plan)
   out <- .ds_arg(out)
-  outputs <- .planExecute(handle, plan, out)
+  output_mode <- .ds_arg(output_mode)
+  if (!is.character(output_mode) || length(output_mode) != 1L) {
+    output_mode <- "memory"
+  }
+  if (!output_mode %in% c("memory", "staged")) {
+    output_mode <- "memory"
+  }
+  outputs <- .planExecute(handle, plan, out, output_mode = output_mode)
 
   # Validate that requested outputs were produced
   missing <- setdiff(names(out), names(outputs))
@@ -264,6 +279,12 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out) {
     sym <- out[[nm]]
     result <- outputs[[nm]]
     if (is.null(result)) next
+
+    # Staged descriptors: assign directly (no data to strip)
+    if (inherits(result, "FlowerDatasetDescriptor")) {
+      assign(sym, result, envir = assign_env)
+      next
+    }
 
     # MANDATORY: Strip all row-level identifiers before assignment.
     # Without this, ds.summary(data$value, data$person_id) would reveal

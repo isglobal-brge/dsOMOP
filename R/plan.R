@@ -484,6 +484,130 @@
   if (nrow(result) > 0) result$person_id else integer(0)
 }
 
+#' Generate a unique staging token
+#'
+#' @return Character; staging token
+#' @keywords internal
+.generateStagingToken <- function() {
+  paste0("stg_",
+         format(Sys.time(), "%Y%m%d_%H%M%S"),
+         "_", Sys.getpid(),
+         "_", paste0(sample(c(0:9, letters[1:6]), 4, TRUE), collapse = ""))
+}
+
+#' Get the staging base directory
+#'
+#' @return Character; path to staging base directory
+#' @keywords internal
+.stagingBaseDir <- function() {
+  base <- getOption("dsstaging.base_dir", file.path(tempdir(), "dsstaging"))
+  if (!dir.exists(base)) {
+    dir.create(base, recursive = TRUE, showWarnings = FALSE)
+    Sys.chmod(base, mode = "0700")
+  }
+  base
+}
+
+#' Create a staging directory for a token
+#'
+#' @param token Character; staging token
+#' @return Character; path to the staging directory
+#' @keywords internal
+.createStagingDir <- function(token) {
+  staging_dir <- file.path(.stagingBaseDir(), token)
+  dir.create(staging_dir, recursive = TRUE, showWarnings = FALSE)
+  Sys.chmod(staging_dir, mode = "0700")
+  staging_dir
+}
+
+#' Build a FlowerDatasetDescriptor for a staged output
+#'
+#' @param output_name Character; name of the output
+#' @param file_info Named list from .executeQueryToParquet
+#' @param token Character; staging token
+#' @param origin Character; origin package identifier
+#' @return Named list (FlowerDatasetDescriptor)
+#' @keywords internal
+.buildStagedDescriptor <- function(output_name, file_info, token,
+                                    origin = "dsOMOP") {
+  desc <- list(
+    dataset_id  = paste0("omop.plan.", output_name),
+    source_kind = "staged_parquet",
+    metadata    = list(
+      file    = file_info$file,
+      format  = file_info$format,
+      n_rows  = file_info$n_rows,
+      columns = file_info$columns
+    ),
+    staged_token = token,
+    origin       = origin
+  )
+  class(desc) <- "FlowerDatasetDescriptor"
+  desc
+}
+
+#' Write a staging manifest
+#'
+#' @param staging_dir Character; path to staging directory
+#' @param descriptors Named list of descriptors
+#' @keywords internal
+.writeStagingManifest <- function(staging_dir, descriptors) {
+  manifest <- list(
+    created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC"),
+    outputs = lapply(descriptors, function(d) {
+      list(
+        dataset_id = d$dataset_id,
+        file       = d$metadata$file,
+        format     = d$metadata$format,
+        n_rows     = d$metadata$n_rows
+      )
+    })
+  )
+  manifest_path <- file.path(staging_dir, "manifest.json")
+  writeLines(jsonlite::toJSON(manifest, auto_unbox = TRUE, pretty = TRUE),
+             manifest_path)
+  Sys.chmod(manifest_path, mode = "0600")
+  invisible(manifest_path)
+}
+
+#' Stage a data.frame result to Parquet and return a descriptor
+#'
+#' For output types where SQL cannot be streamed directly (e.g. baseline,
+#' survival), this writes an already-materialized data.frame to Parquet.
+#'
+#' @param df Data frame to stage
+#' @param output_name Character; output name
+#' @param staging_dir Character; path to staging directory
+#' @param token Character; staging token
+#' @return FlowerDatasetDescriptor or the original data.frame if arrow unavailable
+#' @keywords internal
+.stageDataFrame <- function(df, output_name, staging_dir, token) {
+  use_parquet <- requireNamespace("arrow", quietly = TRUE)
+  ext <- if (use_parquet) "parquet" else "csv"
+  output_path <- file.path(staging_dir, paste0(output_name, ".", ext))
+
+  # Ensure staging directory exists (may have been cleaned between calls)
+  if (!dir.exists(staging_dir)) {
+    dir.create(staging_dir, recursive = TRUE, showWarnings = FALSE)
+    Sys.chmod(staging_dir, mode = "0700")
+  }
+
+  if (use_parquet) {
+    arrow::write_parquet(df, output_path)
+  } else {
+    utils::write.csv(df, output_path, row.names = FALSE)
+  }
+  Sys.chmod(output_path, mode = "0600")
+
+  file_info <- list(
+    file    = output_path,
+    format  = ext,
+    n_rows  = nrow(df),
+    columns = names(df)
+  )
+  .buildStagedDescriptor(output_name, file_info, token)
+}
+
 #' Execute a plan and produce server-side data frames
 #'
 #' Processes all outputs defined in the plan: builds a cohort (if specified),
@@ -493,10 +617,28 @@
 #' @param handle CDM handle
 #' @param plan List; the extraction plan
 #' @param out_symbols Named list; output name -> R symbol mapping
-#' @return Named list of data frames
+#' @param output_mode Character; "memory" (default) or "staged"
+#' @return Named list of data frames or FlowerDatasetDescriptors
 #' @keywords internal
-.planExecute <- function(handle, plan, out_symbols) {
+.planExecute <- function(handle, plan, out_symbols, output_mode = "memory") {
   bp <- .buildBlueprint(handle)
+
+  staged <- identical(output_mode, "staged")
+  staging_dir <- NULL
+  staging_token <- NULL
+  staged_descriptors <- list()
+
+  if (staged) {
+    staging_token <- .generateStagingToken()
+    staging_dir <- .createStagingDir(staging_token)
+    on.exit({
+      # Clean up staging dir if no descriptors were produced (error path)
+      if (length(staged_descriptors) == 0L && !is.null(staging_dir) &&
+          dir.exists(staging_dir)) {
+        unlink(staging_dir, recursive = TRUE)
+      }
+    }, add = TRUE)
+  }
 
   cohort_table <- NULL
   cohort_person_ids <- NULL
@@ -701,24 +843,99 @@
         add_cohort_date <- !is.null(cohort_table) &&
           !is.null(out$temporal$index_window)
 
-        result_df <- .extractTable(
-          handle,
-          table = out$table,
-          columns = out$columns,
-          concept_filter = concept_set,
-          person_ids = cohort_person_ids,
-          time_window = time_window,
-          cohort_table = cohort_table,
-          translate_concepts = translate,
-          representation = repr,
-          feature_specs = out$representation$features,
-          block_sensitive = block_sensitive,
-          temporal = out$temporal,
-          date_handling = out$date_handling,
-          add_cohort_date = add_cohort_date
-        )
+        # Staged + long + no translate: stream directly to Parquet
+        # This is the zero-memory path for large event-level extractions.
+        # Features/wide/sparse need in-memory reshaping, so they fall through.
+        can_stream <- staged && repr == "long" && !translate
 
-        results[[out_name]] <- result_df
+        if (can_stream) {
+          sql <- .compileSelect(
+            handle, out$table,
+            columns = out$columns,
+            concept_filter = concept_set,
+            person_ids = cohort_person_ids,
+            time_window = time_window,
+            cohort_table = cohort_table,
+            block_sensitive = block_sensitive,
+            temporal = out$temporal,
+            add_cohort_date = add_cohort_date
+          )
+
+          if (!is.null(out$temporal$event_select)) {
+            ev_date_col <- .getDateColumn(bp, tolower(out$table))
+            sql <- .wrapEventSelect(handle, sql, out$temporal, ev_date_col)
+          }
+
+          # Disclosure check before streaming
+          col_df <- bp$columns[[tolower(out$table)]]
+          if ("person_id" %in% col_df$column_name) {
+            count_sql <- .compilePersonCount(handle, sql)
+            .assertMinPersons(conn = handle$conn, sql = count_sql)
+          }
+
+          # Build per-chunk transform for date handling + type conversion
+          dh <- out$date_handling
+          if (is.null(dh)) {
+            default_mode <- getOption("dsomop.default_date_handling", "remove")
+            dh <- list(mode = default_mode)
+          }
+          if (identical(dh$mode, "absolute")) {
+            allow <- getOption("dsomop.allow_absolute_dates",
+                       getOption("default.dsomop.allow_absolute_dates", FALSE))
+            if (!isTRUE(allow)) {
+              stop("Absolute date handling is not permitted by the server.",
+                   call. = FALSE)
+            }
+          }
+
+          # Capture date column for days_from_index computation
+          tbl_date_col <- .getDateColumn(bp, tolower(out$table))
+
+          chunk_fn <- function(chunk) {
+            # Compute days_from_index when cohort_start_date is present
+            if ("cohort_start_date" %in% names(chunk) &&
+                !is.null(tbl_date_col) &&
+                tbl_date_col %in% names(chunk)) {
+              chunk$days_from_index <- as.integer(
+                as.Date(chunk[[tbl_date_col]]) -
+                as.Date(chunk$cohort_start_date)
+              )
+              chunk$cohort_start_date <- NULL
+            }
+            chunk <- .convertTypes(chunk)
+            chunk <- .applyDateHandling(chunk, dh)
+            chunk
+          }
+
+          output_path <- file.path(staging_dir,
+                                    paste0(out_name, ".parquet"))
+          file_info <- .executeQueryToParquet(
+            handle$conn, sql, output_path, chunk_fn = chunk_fn
+          )
+          desc <- .buildStagedDescriptor(out_name, file_info, staging_token)
+          results[[out_name]] <- desc
+          staged_descriptors[[out_name]] <- desc
+
+        } else {
+          result_df <- .extractTable(
+            handle,
+            table = out$table,
+            columns = out$columns,
+            concept_filter = concept_set,
+            person_ids = cohort_person_ids,
+            time_window = time_window,
+            cohort_table = cohort_table,
+            translate_concepts = translate,
+            representation = repr,
+            feature_specs = out$representation$features,
+            block_sensitive = block_sensitive,
+            temporal = out$temporal,
+            date_handling = out$date_handling,
+            add_cohort_date = add_cohort_date
+          )
+
+          results[[out_name]] <- result_df
+        }
 
       } else if (out_type == "baseline") {
         if (is.null(cohort_table)) {
@@ -825,6 +1042,41 @@
   # Clean up materialized concept set temp tables
   for (cs_tbl in cs_temp_tables) {
     .dropTempTable(handle, cs_tbl)
+  }
+
+  # Staged mode: convert remaining data.frame results to descriptors
+  if (staged && !is.null(staging_dir)) {
+    for (out_name in names(results)) {
+      result <- results[[out_name]]
+      if (is.null(result)) next
+
+      # Already a descriptor (streamed directly to Parquet above)
+      if (inherits(result, "FlowerDatasetDescriptor")) next
+
+      # Stage data.frame results
+      if (is.data.frame(result)) {
+        desc <- .stageDataFrame(result, out_name, staging_dir, staging_token)
+        results[[out_name]] <- desc
+        staged_descriptors[[out_name]] <- desc
+      } else if (is.list(result) && !is.data.frame(result)) {
+        # For composite results (temporal covariates, sparse), stage each
+        # data.frame component
+        for (comp_name in names(result)) {
+          if (is.data.frame(result[[comp_name]])) {
+            full_name <- paste0(out_name, ".", comp_name)
+            desc <- .stageDataFrame(result[[comp_name]], full_name,
+                                     staging_dir, staging_token)
+            result[[comp_name]] <- desc
+            staged_descriptors[[full_name]] <- desc
+          }
+        }
+        results[[out_name]] <- result
+      }
+    }
+
+    if (length(staged_descriptors) > 0) {
+      .writeStagingManifest(staging_dir, staged_descriptors)
+    }
   }
 
   results

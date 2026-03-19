@@ -30,6 +30,7 @@ Suggests:
     RPostgres,
     RSQLite,
     RMariaDB,
+    arrow,
     testthat (>= 3.0.0),
     DSLite,
     CommonDataModel,
