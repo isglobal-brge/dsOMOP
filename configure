@@ -1,0 +1,276 @@
+#!/bin/sh
+# dsOMOP post-install configuration script
+# Runs automatically during R CMD INSTALL on Unix systems.
+#
+# Installs ODBC drivers for supported DBMS backends:
+#   - unixODBC (base driver manager)
+#   - Microsoft ODBC Driver 17 for SQL Server
+#   - Databricks ODBC Driver
+#   - Snowflake ODBC Driver
+#   - Oracle Instant Client + ODBC
+#   - Simba Spark ODBC Driver
+#
+# Skips gracefully if apt-get is not available (macOS dev, non-Debian).
+# Drivers already installed are detected and skipped.
+
+set -e
+
+LOG_PREFIX="[dsOMOP configure]"
+MARKER_DIR="${DSOMOP_MARKER_DIR:-/var/lib/dsomop}"
+MARKER_FILE="${MARKER_DIR}/.drivers_ready"
+
+log_info() { echo "${LOG_PREFIX} $*"; }
+log_warn() { echo "${LOG_PREFIX} WARNING: $*" >&2; }
+
+# --- Pre-checks ---
+
+if [ -f "${MARKER_FILE}" ]; then
+  log_info "ODBC drivers already provisioned (cached). Skipping."
+  exit 0
+fi
+
+if ! command -v apt-get >/dev/null 2>&1; then
+  log_warn "apt-get not found (not Debian/Ubuntu). Skipping ODBC driver install."
+  log_warn "Install ODBC drivers manually if needed for SQL Server, Snowflake, etc."
+  exit 0
+fi
+
+ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
+log_info "Architecture: ${ARCH}"
+log_info "Installing ODBC drivers for all supported DBMS backends..."
+echo ""
+
+# --- 1. Base: unixODBC ---
+
+install_unixodbc() {
+  if command -v odbcinst >/dev/null 2>&1; then
+    log_info "  unixODBC: already installed."
+    return 0
+  fi
+  log_info "  unixODBC: installing..."
+  apt-get update -qq 2>/dev/null
+  apt-get install -y -qq unixodbc unixodbc-dev 2>/dev/null || {
+    log_warn "  unixODBC: install failed."
+    return 1
+  }
+  log_info "  unixODBC: ready."
+}
+
+# --- 2. Microsoft ODBC Driver 17 for SQL Server ---
+
+install_mssql() {
+  if odbcinst -q -d 2>/dev/null | grep -qi "ODBC Driver 17 for SQL Server"; then
+    log_info "  SQL Server (ODBC 17): already installed."
+    return 0
+  fi
+  log_info "  SQL Server (ODBC 17): installing..."
+
+  apt-get install -y -qq curl gnupg2 apt-transport-https 2>/dev/null || true
+
+  # Add Microsoft apt repo
+  curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg 2>/dev/null || true
+
+  # Detect OS version
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS_VERSION="${VERSION_ID}"
+    OS_ID="${ID}"
+  else
+    OS_ID="debian"
+    OS_VERSION="11"
+  fi
+
+  case "${OS_ID}" in
+    ubuntu)
+      echo "deb [arch=${ARCH} signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/${OS_VERSION}/prod ${VERSION_CODENAME} main" \
+        > /etc/apt/sources.list.d/mssql-release.list 2>/dev/null || true
+      ;;
+    *)
+      echo "deb [arch=${ARCH} signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/${OS_VERSION}/prod ${VERSION_CODENAME:-bullseye} main" \
+        > /etc/apt/sources.list.d/mssql-release.list 2>/dev/null || true
+      ;;
+  esac
+
+  apt-get update -qq 2>/dev/null
+  ACCEPT_EULA=Y apt-get install -y -qq msodbcsql17 2>/dev/null || {
+    log_warn "  SQL Server (ODBC 17): install failed."
+    return 0
+  }
+  log_info "  SQL Server (ODBC 17): ready."
+}
+
+# --- 3. Snowflake ODBC Driver ---
+
+install_snowflake() {
+  if odbcinst -q -d 2>/dev/null | grep -qi "Snowflake"; then
+    log_info "  Snowflake ODBC: already installed."
+    return 0
+  fi
+  log_info "  Snowflake ODBC: installing..."
+
+  SNOW_VERSION="3.5.0"
+  SNOW_DEB="snowflake-odbc-${SNOW_VERSION}.${ARCH}.deb"
+  SNOW_URL="https://sfc-repo.snowflakecomputing.com/odbc/linux/${SNOW_VERSION}/${SNOW_DEB}"
+
+  cd /tmp
+  curl -fsSL -o "${SNOW_DEB}" "${SNOW_URL}" 2>/dev/null || {
+    log_warn "  Snowflake ODBC: download failed."
+    return 0
+  }
+  dpkg -i "${SNOW_DEB}" 2>/dev/null || apt-get install -f -y -qq 2>/dev/null || true
+  rm -f "${SNOW_DEB}"
+
+  if odbcinst -q -d 2>/dev/null | grep -qi "Snowflake"; then
+    log_info "  Snowflake ODBC: ready."
+  else
+    log_warn "  Snowflake ODBC: installed but driver not registered."
+  fi
+}
+
+# --- 4. Databricks ODBC Driver ---
+
+install_databricks() {
+  if odbcinst -q -d 2>/dev/null | grep -qi "Databricks"; then
+    log_info "  Databricks ODBC: already installed."
+    return 0
+  fi
+  log_info "  Databricks ODBC: installing..."
+
+  DB_VERSION="2.8.3.1003"
+  DB_DEB="simba-spark-odbc_${DB_VERSION}-1_${ARCH}.deb"
+  DB_URL="https://databricks-bi-artifacts.s3.us-east-2.amazonaws.com/simbaspark-drivers/odbc/${DB_VERSION}/${DB_DEB}"
+
+  cd /tmp
+  curl -fsSL -o "${DB_DEB}" "${DB_URL}" 2>/dev/null || {
+    log_warn "  Databricks ODBC: download failed (URL may have changed)."
+    return 0
+  }
+  dpkg -i "${DB_DEB}" 2>/dev/null || apt-get install -f -y -qq 2>/dev/null || true
+  rm -f "${DB_DEB}"
+
+  # Register driver if not auto-registered
+  if ! odbcinst -q -d 2>/dev/null | grep -qi "Databricks"; then
+    DRIVER_PATH="/opt/simba/spark/lib/64/libsparkodbc_sb64.so"
+    if [ -f "${DRIVER_PATH}" ]; then
+      cat > /tmp/databricks_odbc.ini <<TMPL
+[Databricks]
+Description=Databricks ODBC Driver
+Driver=${DRIVER_PATH}
+TMPL
+      odbcinst -i -d -f /tmp/databricks_odbc.ini 2>/dev/null || true
+      rm -f /tmp/databricks_odbc.ini
+    fi
+  fi
+
+  log_info "  Databricks ODBC: ready."
+}
+
+# --- 5. Simba Spark ODBC Driver ---
+
+install_spark() {
+  if odbcinst -q -d 2>/dev/null | grep -qi "Simba Spark"; then
+    log_info "  Simba Spark ODBC: already installed."
+    return 0
+  fi
+
+  # Databricks driver IS the Simba Spark driver (same binary)
+  if odbcinst -q -d 2>/dev/null | grep -qi "Databricks"; then
+    DRIVER_PATH="/opt/simba/spark/lib/64/libsparkodbc_sb64.so"
+    if [ -f "${DRIVER_PATH}" ]; then
+      cat > /tmp/spark_odbc.ini <<TMPL
+[Simba Spark ODBC Driver]
+Description=Simba Spark ODBC Driver
+Driver=${DRIVER_PATH}
+TMPL
+      odbcinst -i -d -f /tmp/spark_odbc.ini 2>/dev/null || true
+      rm -f /tmp/spark_odbc.ini
+      log_info "  Simba Spark ODBC: aliased from Databricks driver."
+      return 0
+    fi
+  fi
+
+  log_info "  Simba Spark ODBC: will be installed via Databricks driver."
+}
+
+# --- 6. Oracle Instant Client + ODBC ---
+
+install_oracle() {
+  if odbcinst -q -d 2>/dev/null | grep -qi "Oracle"; then
+    log_info "  Oracle ODBC: already installed."
+    return 0
+  fi
+  log_info "  Oracle ODBC: installing via Instant Client..."
+
+  ORA_VERSION="21.15"
+  ORA_BASIC="oracle-instantclient-basic-${ORA_VERSION}.0.0.0-1.el8.${ARCH}.rpm"
+  ORA_ODBC="oracle-instantclient-odbc-${ORA_VERSION}.0.0.0-1.el8.${ARCH}.rpm"
+
+  # Oracle distributes RPMs — we need alien to convert on Debian
+  apt-get install -y -qq alien libaio1 2>/dev/null || {
+    log_warn "  Oracle ODBC: alien/libaio not available."
+    return 0
+  }
+
+  cd /tmp
+  ORA_BASE_URL="https://download.oracle.com/otn_software/linux/instantclient/2115000"
+
+  curl -fsSL -o "${ORA_BASIC}" "${ORA_BASE_URL}/${ORA_BASIC}" 2>/dev/null && \
+  curl -fsSL -o "${ORA_ODBC}" "${ORA_BASE_URL}/${ORA_ODBC}" 2>/dev/null || {
+    log_warn "  Oracle ODBC: download failed (URL may have changed)."
+    rm -f "${ORA_BASIC}" "${ORA_ODBC}"
+    return 0
+  }
+
+  alien -i "${ORA_BASIC}" 2>/dev/null || true
+  alien -i "${ORA_ODBC}" 2>/dev/null || true
+  rm -f "${ORA_BASIC}" "${ORA_ODBC}"
+
+  # Set up LD path
+  echo "/usr/lib/oracle/${ORA_VERSION}/client64/lib" > /etc/ld.so.conf.d/oracle.conf 2>/dev/null || true
+  ldconfig 2>/dev/null || true
+
+  # Register driver
+  ORA_DRIVER="/usr/lib/oracle/${ORA_VERSION}/client64/lib/libsqora.so.${ORA_VERSION}"
+  if [ -f "${ORA_DRIVER}" ]; then
+    cat > /tmp/oracle_odbc.ini <<TMPL
+[Oracle]
+Description=Oracle ODBC Driver
+Driver=${ORA_DRIVER}
+TMPL
+    odbcinst -i -d -f /tmp/oracle_odbc.ini 2>/dev/null || true
+    rm -f /tmp/oracle_odbc.ini
+    log_info "  Oracle ODBC: ready."
+  else
+    log_warn "  Oracle ODBC: driver binary not found after install."
+  fi
+}
+
+# --- Run all installers ---
+
+install_unixodbc || { log_warn "unixODBC base failed. Cannot proceed."; exit 0; }
+
+install_mssql
+install_snowflake
+install_databricks
+install_spark
+install_oracle
+
+# --- Summary ---
+
+echo ""
+log_info "ODBC driver installation complete."
+log_info "Registered drivers:"
+odbcinst -q -d 2>/dev/null | while read -r line; do
+  log_info "  ${line}"
+done
+
+# Cache marker
+mkdir -p "${MARKER_DIR}" 2>/dev/null || true
+date > "${MARKER_FILE}" 2>/dev/null || true
+
+echo ""
+log_info "NOTE: R database driver packages (RPostgres, RSQLite, etc.) are"
+log_info "installed as R dependencies, not by this script."
+echo ""
+
+exit 0
