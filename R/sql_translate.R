@@ -167,7 +167,12 @@
     stmt_body <- trimws(substr(after, 1L, insert_pos))
     rest <- substr(after, insert_pos + 1L, nchar(after))
 
-    sql <- paste0(before, "SELECT ", stmt_body, " LIMIT ", n, rest)
+    suffix <- if (dialect == "oracle") {
+      paste0(" FETCH FIRST ", n, " ROWS ONLY")
+    } else {
+      paste0(" LIMIT ", n)
+    }
+    sql <- paste0(before, "SELECT ", stmt_body, suffix, rest)
   }
 
   sql

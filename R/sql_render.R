@@ -20,6 +20,7 @@
     bigquery   = "bigquery",
     snowflake  = "snowflake",
     spark      = "spark",
+    databricks = "spark",
     sqlite     = "sqlite",
     duckdb     = "sqlite",
     mysql      = "mysql",

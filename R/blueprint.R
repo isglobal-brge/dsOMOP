@@ -881,6 +881,24 @@
     result <- DBI::dbGetQuery(conn,
       "SELECT name AS table_name FROM sqlite_master WHERE type='table' ORDER BY name")
     tables <- result$table_name %||% result$name %||% character(0)
+  } else if (handle$target_dialect == "oracle") {
+    schema_to_use <- toupper(schema %||% handle$cdm_schema %||% "")
+    sql <- .renderSql(handle,
+      "SELECT TABLE_NAME FROM ALL_TABLES
+       WHERE OWNER = '@schema'
+       ORDER BY TABLE_NAME",
+      schema = schema_to_use)
+    result <- DBI::dbGetQuery(conn, sql)
+    tables <- result$TABLE_NAME %||% character(0)
+  } else if (handle$target_dialect == "bigquery") {
+    schema_to_use <- schema %||% handle$cdm_schema %||% ""
+    sql <- .renderSql(handle,
+      "SELECT table_name FROM `@schema.INFORMATION_SCHEMA.TABLES`
+       WHERE table_type = 'BASE TABLE'
+       ORDER BY table_name",
+      schema = schema_to_use)
+    result <- DBI::dbGetQuery(conn, sql)
+    tables <- result$table_name %||% character(0)
   } else {
     schema_to_use <- schema %||% handle$cdm_schema %||% "public"
     sql <- .renderSql(handle,
@@ -914,6 +932,25 @@
         column_name = tolower(result$name),
         data_type   = tolower(result$type),
         is_nullable = ifelse(result$notnull == 0, "YES", "NO"),
+        stringsAsFactors = FALSE
+      )
+    } else {
+      empty
+    }
+  } else if (handle$target_dialect == "oracle") {
+    schema_to_use <- toupper(schema %||% handle$cdm_schema %||% "")
+    sql <- .renderSql(handle,
+      "SELECT COLUMN_NAME, DATA_TYPE, NULLABLE AS IS_NULLABLE
+       FROM ALL_TAB_COLUMNS
+       WHERE OWNER = '@schema' AND TABLE_NAME = '@table'
+       ORDER BY COLUMN_ID",
+      schema = schema_to_use, table = toupper(table))
+    result <- DBI::dbGetQuery(conn, sql)
+    if (nrow(result) > 0) {
+      data.frame(
+        column_name = tolower(result$COLUMN_NAME),
+        data_type   = tolower(result$DATA_TYPE),
+        is_nullable = ifelse(result$IS_NULLABLE == "Y", "YES", "NO"),
         stringsAsFactors = FALSE
       )
     } else {

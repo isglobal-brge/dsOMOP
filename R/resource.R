@@ -85,6 +85,13 @@ OMOPResourceClient <- R6::R6Class(
         return(DBI::dbConnect(RSQLite::SQLite(), dbname = p$database))
       }
 
+      if (dbms == "duckdb") {
+        if (!requireNamespace("duckdb", quietly = TRUE))
+          stop("duckdb package required for DuckDB connections.", call. = FALSE)
+        dbpath <- if (nchar(p$database) > 0) p$database else ":memory:"
+        return(DBI::dbConnect(duckdb::duckdb(), dbdir = dbpath, read_only = FALSE))
+      }
+
       if (dbms %in% c("sql server", "sqlserver", "mssql")) {
         if (!requireNamespace("odbc", quietly = TRUE))
           stop("odbc package required for SQL Server connections.", call. = FALSE)
@@ -104,8 +111,72 @@ OMOPResourceClient <- R6::R6Class(
                               user = user, password = pass))
       }
 
-      stop("Unsupported DBMS: '", dbms, "'. ",
-           "Supported: postgresql, sqlite, sql server, mysql, mariadb.",
+      if (dbms == "oracle") {
+        # Prefer ROracle (requires Oracle Instant Client), fallback to odbc
+        if (requireNamespace("ROracle", quietly = TRUE)) {
+          drv <- DBI::dbDriver("Oracle")
+          connect_string <- paste0(
+            "(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=", p$host,
+            ")(PORT=", p$port, "))(CONNECT_DATA=(SID=", p$database, ")))"
+          )
+          return(DBI::dbConnect(drv, username = user, password = pass,
+                                dbname = connect_string))
+        }
+        if (requireNamespace("odbc", quietly = TRUE)) {
+          return(DBI::dbConnect(odbc::odbc(),
+                                driver = "Oracle",
+                                DBQ = paste0(p$host, ":", p$port, "/", p$database),
+                                UID = user, PWD = pass))
+        }
+        stop("Oracle requires ROracle (with Oracle Instant Client) or odbc package.",
+             call. = FALSE)
+      }
+
+      if (dbms == "redshift") {
+        # Redshift is PostgreSQL wire-compatible
+        if (!requireNamespace("RPostgres", quietly = TRUE))
+          stop("RPostgres package required for Redshift connections.", call. = FALSE)
+        return(DBI::dbConnect(RPostgres::Postgres(),
+                              host = p$host, port = p$port,
+                              dbname = p$database,
+                              user = user, password = pass))
+      }
+
+      if (dbms == "bigquery") {
+        if (!requireNamespace("bigrquery", quietly = TRUE))
+          stop("bigrquery package required for BigQuery connections.", call. = FALSE)
+        project <- p$host  # use host field for GCP project ID
+        return(DBI::dbConnect(bigrquery::bigquery(),
+                              project = project,
+                              dataset = p$database))
+      }
+
+      if (dbms == "snowflake") {
+        if (!requireNamespace("odbc", quietly = TRUE))
+          stop("odbc package required for Snowflake connections.", call. = FALSE)
+        return(DBI::dbConnect(odbc::odbc(),
+                              driver = "Snowflake",
+                              server = paste0(p$host, ".snowflakecomputing.com"),
+                              database = p$database,
+                              uid = user, pwd = pass,
+                              warehouse = p$warehouse %||% "COMPUTE_WH"))
+      }
+
+      if (dbms %in% c("spark", "databricks")) {
+        if (!requireNamespace("odbc", quietly = TRUE))
+          stop("odbc package required for Spark/Databricks connections.", call. = FALSE)
+        # Databricks uses its own ODBC driver; classic Spark uses Simba
+        driver <- if (dbms == "databricks") "Databricks" else "Simba Spark ODBC Driver"
+        return(DBI::dbConnect(odbc::odbc(),
+                              driver = driver,
+                              host = p$host, port = p$port,
+                              database = p$database,
+                              uid = user, pwd = pass))
+      }
+
+      stop("Unsupported DBMS: '", dbms, "'. Supported: postgresql, sqlite, duckdb, ",
+           "sql server, oracle, mysql, mariadb, redshift, bigquery, snowflake, ",
+           "spark, databricks.",
            call. = FALSE)
     }
   ),

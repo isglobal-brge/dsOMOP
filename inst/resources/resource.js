@@ -23,7 +23,7 @@ var dsOMOP = {
             dbms: {
               type: "string",
               title: "Database Engine",
-              enum: ["postgresql", "sql_server", "oracle", "redshift", "bigquery", "snowflake", "spark", "sqlite"]
+              enum: ["postgresql", "sql_server", "oracle", "redshift", "bigquery", "snowflake", "spark", "databricks", "duckdb", "sqlite"]
             },
             host: {
               type: "string",
