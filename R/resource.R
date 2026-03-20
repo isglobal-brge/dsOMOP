@@ -20,28 +20,31 @@ OMOPResourceClient <- R6::R6Class(
 
     parse_url = function() {
       url <- self$getResource()$url
-      # URL format: omop+hades:///dbms=X;server=host/db;port=N;key=value;...
-      body <- sub("^omop\\+hades:///", "", url)
-      pairs <- strsplit(body, ";", fixed = TRUE)[[1]]
-      params <- list()
-      for (pair in pairs) {
-        eq_pos <- regexpr("=", pair, fixed = TRUE)
-        if (eq_pos > 0) {
-          key <- substr(pair, 1, eq_pos - 1)
-          val <- substr(pair, eq_pos + 1, nchar(pair))
-          params[[key]] <- val
-        }
-      }
 
-      # Parse server into host + database
-      server_parts <- strsplit(params$server %||% "", "/", fixed = TRUE)[[1]]
+      # Strip scheme
+      body <- sub("^omop\\+dbi:///", "", url)
+
+      # B64-encoded JSON (safe for Opal R parser: no ?, &, = in URL body)
+      if (!startsWith(body, "B64:"))
+        stop("Unsupported OMOP resource URL format: ", url, call. = FALSE)
+
+      b64 <- substring(body, 5)
+      # base64url → standard base64
+      b64 <- gsub("-", "+", b64, fixed = TRUE)
+      b64 <- gsub("_", "/", b64, fixed = TRUE)
+      pad <- (4 - nchar(b64) %% 4) %% 4
+      if (pad > 0) b64 <- paste0(b64, strrep("=", pad))
+      params <- jsonlite::fromJSON(
+        rawToChar(jsonlite::base64_dec(b64)),
+        simplifyVector = FALSE
+      )
 
       parsed <- list(
         dbms              = params$dbms,
-        host              = server_parts[1],
+        host              = params$host,
         port              = as.integer(params$port),
-        database          = if (length(server_parts) > 1) server_parts[2] else "",
-        server            = params$server,
+        database          = params$database %||% "",
+        server            = paste0(params$host, "/", params$database %||% ""),
         cdm_schema        = params$cdm_schema,
         vocabulary_schema = params$vocabulary_schema,
         results_schema    = params$results_schema,
@@ -175,10 +178,9 @@ OMOPResourceClient <- R6::R6Class(
 #'
 #' A \code{resourcer::ResourceResolver} subclass that creates database
 #' connections from DataSHIELD resource descriptors pointing to OMOP CDM
-#' databases. Matches resources whose format is \code{"omop.hades.db"} or
-#' \code{"omop.cdm.db"} and delegates connection setup to
-#' \code{\link{OMOPResourceClient}}, which supports PostgreSQL, SQL Server,
-#' SQLite, and MySQL/MariaDB backends.
+#' databases. Matches resources whose format is \code{"omop.dbi.db"} and
+#' delegates connection setup to \code{\link{OMOPResourceClient}}, which
+#' supports PostgreSQL, SQL Server, SQLite, and MySQL/MariaDB backends.
 #'
 #' @importFrom R6 R6Class
 #' @keywords internal
@@ -194,7 +196,7 @@ OMOPResourceResolver <- R6::R6Class(
       if (!super$isFor(resource)) return(FALSE)
       fmt <- resource$format
       if (is.null(fmt)) return(FALSE)
-      tolower(fmt) %in% c("omop.hades.db", "omop.cdm.db")
+      tolower(fmt) == "omop.dbi.db"
     },
 
     #' @description Create a new client for the given resource

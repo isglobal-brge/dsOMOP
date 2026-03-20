@@ -1,7 +1,7 @@
 var dsOMOP = {
   settings: {
-    title: "OMOP CDM Database Resources (HADES)",
-    description: "Provides access to OMOP CDM databases. Supports PostgreSQL, SQL Server, Oracle, Redshift, BigQuery, Snowflake, Spark, and SQLite.",
+    title: "OMOP CDM Database Resources",
+    description: "Provides access to OMOP CDM databases via DBI. Supports PostgreSQL, SQL Server, Oracle, Redshift, BigQuery, Snowflake, Spark, and SQLite.",
     web: "https://github.com/isglobal-brge/dsOMOP",
     categories: [
       {
@@ -13,8 +13,8 @@ var dsOMOP = {
     types: [
       {
         name: "omop-cdm-db",
-        title: "OMOP CDM Database (HADES)",
-        description: "Connection to an OMOP CDM database via OHDSI HADES tooling.",
+        title: "OMOP CDM Database",
+        description: "Connection to an OMOP CDM database via DBI.",
         tags: ["omop-cdm"],
         parameters: {
           "$schema": "http://json-schema.org/draft-07/schema#",
@@ -25,10 +25,15 @@ var dsOMOP = {
               title: "Database Engine",
               enum: ["postgresql", "sql_server", "oracle", "redshift", "bigquery", "snowflake", "spark", "sqlite"]
             },
-            server: {
+            host: {
               type: "string",
-              title: "Server",
-              description: "host/database (DatabaseConnector format)"
+              title: "Host",
+              description: "Database server hostname or IP address"
+            },
+            database: {
+              type: "string",
+              title: "Database",
+              description: "Database name"
             },
             port: {
               type: "integer",
@@ -55,7 +60,7 @@ var dsOMOP = {
               description: "Schema for temporary tables. If not set, DB temp tables are used."
             }
           },
-          required: ["dbms", "server", "port"]
+          required: ["dbms", "host", "port"]
         },
         credentials: {
           "$schema": "http://json-schema.org/draft-07/schema#",
@@ -80,18 +85,29 @@ var dsOMOP = {
   asResource: function(type, name, params, credentials) {
     if (type !== "omop-cdm-db") return undefined;
 
-    var url = "omop+hades:///dbms=" + params.dbms
-            + ";server=" + params.server
-            + ";port=" + params.port;
-    if (params.cdm_schema) url += ";cdm_schema=" + params.cdm_schema;
-    if (params.vocabulary_schema) url += ";vocabulary_schema=" + params.vocabulary_schema;
-    if (params.results_schema) url += ";results_schema=" + params.results_schema;
-    if (params.temp_schema) url += ";temp_schema=" + params.temp_schema;
+    // Build params object (only non-empty values)
+    var config = {
+      dbms: params.dbms,
+      host: params.host,
+      port: params.port
+    };
+    if (params.database) config.database = params.database;
+    if (params.cdm_schema) config.cdm_schema = params.cdm_schema;
+    if (params.vocabulary_schema) config.vocabulary_schema = params.vocabulary_schema;
+    if (params.results_schema) config.results_schema = params.results_schema;
+    if (params.temp_schema) config.temp_schema = params.temp_schema;
+
+    // JSON -> base64url (safe for Opal R parser: no ?, &, =, +, / in URL body)
+    var json = JSON.stringify(config);
+    var b64 = btoa(json)
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
 
     return {
       name: name,
-      url: url,
-      format: "omop.hades.db",
+      url: "omop+dbi:///B64:" + b64,
+      format: "omop.dbi.db",
       identity: credentials.username,
       secret: credentials.password
     };
