@@ -2,16 +2,51 @@
 # dsOMOP post-install configuration script
 # Runs automatically during R CMD INSTALL on Unix systems.
 #
-# The Rock/DataSHIELD base image already includes all required R database
-# packages (RPostgreSQL, RSQLite, RMariaDB, odbc, arrow, DBI).
-# This script only creates the marker directory for caching state.
+# Ensures system libraries for R database driver compilation are present,
+# then pre-installs RMariaDB and odbc as binaries from Posit Package Manager
+# to avoid slow source compilation. These cover:
+#   - PostgreSQL (RPostgreSQL already in Rock base)
+#   - MySQL/MariaDB (RMariaDB)
+#   - SQL Server, Oracle, Redshift, Snowflake, Databricks, Spark (odbc)
 
 LOG_PREFIX="[dsOMOP configure]"
-MARKER_DIR="${DSOMOP_MARKER_DIR:-/var/lib/dsomop}"
 
 log_info() { echo "${LOG_PREFIX} $*"; }
+log_warn() { echo "${LOG_PREFIX} WARNING: $*" >&2; }
 
+# Marker directory
+MARKER_DIR="${DSOMOP_MARKER_DIR:-/var/lib/dsomop}"
 mkdir -p "${MARKER_DIR}" 2>/dev/null || true
-log_info "Ready."
 
+# Install system libs needed to compile R database packages
+if command -v apt-get >/dev/null 2>&1; then
+  log_info "Installing system build dependencies..."
+  apt-get update -qq 2>/dev/null
+  apt-get install -y -qq libpq-dev libmariadb-dev unixodbc-dev curl 2>/dev/null || true
+  log_info "System dependencies ready."
+fi
+
+# Pre-install RMariaDB and odbc as binaries (avoids source compilation)
+log_info "Pre-installing R database drivers..."
+if [ -f /etc/os-release ]; then
+  . /etc/os-release
+fi
+PPM_DISTRO="${VERSION_CODENAME:-noble}"
+PPM_REPO="https://packagemanager.posit.co/cran/__linux__/${PPM_DISTRO}/latest"
+
+R --no-save --no-restore -e "
+  repos <- c(PPM = '${PPM_REPO}', CRAN = 'https://cloud.r-project.org')
+  pkgs <- c('RMariaDB', 'odbc')
+  missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+  if (length(missing) > 0) {
+    cat('[dsOMOP configure] Installing:', paste(missing, collapse = ', '), '\n')
+    install.packages(missing, repos = repos, quiet = TRUE, type = 'both')
+  }
+  for (p in pkgs) {
+    v <- tryCatch(as.character(packageVersion(p)), error = function(e) 'FAILED')
+    cat(sprintf('[dsOMOP configure] %s: %s\n', p, v))
+  }
+" 2>&1 | grep "dsOMOP configure" || true
+
+log_info "Ready."
 exit 0

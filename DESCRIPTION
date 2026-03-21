@@ -26,12 +26,12 @@ Imports:
     methods,
     stats,
     utils,
-    arrow
+    arrow,
+    RMariaDB,
+    odbc
 Suggests:
     RPostgres,
     RSQLite,
-    RMariaDB,
-    odbc,
     bigrquery,
     testthat (>= 3.0.0),
     DSLite,

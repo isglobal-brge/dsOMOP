@@ -25,12 +25,13 @@ var dsOMOP = {
               title: "Database Engine",
               enum: [
                 "postgresql",
-                "sqlite"
-                // Requires additional packages (not pre-installed in Rock base):
-                // "mysql",       // needs: install.packages("RMariaDB")
-                // "mariadb",     // needs: install.packages("RMariaDB")
-                // "sql_server",  // needs: install.packages("odbc") + unixODBC + MS ODBC driver
-                // "oracle",      // needs: install.packages("odbc") + Oracle Instant Client
+                "sqlite",
+                "mysql",
+                "mariadb",
+                "sql_server",
+                "oracle",
+                "redshift"
+                // Requires additional packages (not installed by dsOMOP):
                 // "redshift",    // needs: install.packages("odbc")
                 // "bigquery",    // needs: install.packages("bigrquery")
                 // "snowflake",   // needs: install.packages("odbc") + Snowflake ODBC driver
