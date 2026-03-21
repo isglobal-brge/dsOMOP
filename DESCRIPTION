@@ -26,14 +26,13 @@ Imports:
     methods,
     stats,
     utils,
+    arrow
+Suggests:
     RPostgres,
     RSQLite,
     RMariaDB,
     odbc,
-    duckdb,
     bigrquery,
-    arrow
-Suggests:
     testthat (>= 3.0.0),
     DSLite,
     CommonDataModel,

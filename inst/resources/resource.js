@@ -23,7 +23,21 @@ var dsOMOP = {
             dbms: {
               type: "string",
               title: "Database Engine",
-              enum: ["postgresql", "sql_server", "oracle", "redshift", "bigquery", "snowflake", "spark", "databricks", "duckdb", "sqlite"]
+              enum: [
+                "postgresql",
+                "sqlite"
+                // Requires additional packages (not pre-installed in Rock base):
+                // "mysql",       // needs: install.packages("RMariaDB")
+                // "mariadb",     // needs: install.packages("RMariaDB")
+                // "sql_server",  // needs: install.packages("odbc") + unixODBC + MS ODBC driver
+                // "oracle",      // needs: install.packages("odbc") + Oracle Instant Client
+                // "redshift",    // needs: install.packages("odbc")
+                // "bigquery",    // needs: install.packages("bigrquery")
+                // "snowflake",   // needs: install.packages("odbc") + Snowflake ODBC driver
+                // "spark",       // needs: install.packages("odbc") + Simba Spark ODBC driver
+                // "databricks",  // needs: install.packages("odbc") + Databricks ODBC driver
+                // "duckdb",      // needs: install.packages("duckdb")
+              ]
             },
             host: {
               type: "string",

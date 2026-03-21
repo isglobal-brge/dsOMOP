@@ -50,30 +50,15 @@
              error = function(e) NULL)
   }
 
-  # Check critical R packages
-  critical <- c("RPostgres", "RSQLite", "RMariaDB", "odbc")
-  missing <- critical[!vapply(critical, requireNamespace, logical(1), quietly = TRUE)]
+  # Check for optional database drivers and warn if missing
+  optional_drivers <- c("RPostgres", "RSQLite", "RMariaDB", "odbc")
+  missing <- optional_drivers[!vapply(optional_drivers, requireNamespace, logical(1), quietly = TRUE)]
   if (length(missing) > 0) {
-    # Try to install (works as root, fails gracefully as rock)
-    tryCatch(
-      utils::install.packages(missing, repos = "https://cloud.r-project.org", quiet = TRUE),
-      error = function(e) NULL
-    )
-    # Re-check and warn
-    still_missing <- missing[!vapply(missing, requireNamespace, logical(1), quietly = TRUE)]
-    if (length(still_missing) > 0) {
-      packageStartupMessage(
-        "dsOMOP: database drivers not available: ", paste(still_missing, collapse = ", "),
-        ". Install them with: install.packages(c('", paste(still_missing, collapse = "', '"), "'))")
-    }
-  }
-
-  # Check for unixODBC system library
-  if (nchar(Sys.which("odbcinst")) == 0) {
     packageStartupMessage(
-      "dsOMOP: unixODBC not found on this system. ",
-      "The 'odbc' R package requires unixODBC. ",
-      "Install it with: apt-get install unixodbc unixodbc-dev")
+      "dsOMOP: optional database drivers not installed: ",
+      paste(missing, collapse = ", "),
+      ". Install with: install.packages(c('",
+      paste(missing, collapse = "', '"), "'))")
   }
 
   invisible(NULL)
