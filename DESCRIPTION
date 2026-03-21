@@ -25,17 +25,15 @@ Imports:
     resourcer,
     methods,
     stats,
-    utils
-Suggests:
+    utils,
     RPostgres,
-    RPostgreSQL,
     RSQLite,
     RMariaDB,
-    ROracle,
     odbc,
-    bigrquery,
     duckdb,
-    arrow,
+    bigrquery,
+    arrow
+Suggests:
     testthat (>= 3.0.0),
     DSLite,
     CommonDataModel,

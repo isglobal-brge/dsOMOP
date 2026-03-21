@@ -33,6 +33,52 @@
   invisible(NULL)
 }
 
+#' Package load hook
+#'
+#' Ensures the marker directory exists, checks that critical R database
+#' driver packages are loadable (attempting install if missing), and warns
+#' if unixODBC is not available on the system.
+#'
+#' @param libname Library path.
+#' @param pkgname Package name.
+#' @keywords internal
+.onLoad <- function(libname, pkgname) {
+  # Ensure marker directory
+  marker_dir <- Sys.getenv("DSOMOP_MARKER_DIR", unset = "/var/lib/dsomop")
+  if (!dir.exists(marker_dir)) {
+    tryCatch(dir.create(marker_dir, recursive = TRUE, showWarnings = FALSE),
+             error = function(e) NULL)
+  }
+
+  # Check critical R packages
+  critical <- c("RPostgres", "RSQLite", "RMariaDB", "odbc")
+  missing <- critical[!vapply(critical, requireNamespace, logical(1), quietly = TRUE)]
+  if (length(missing) > 0) {
+    # Try to install (works as root, fails gracefully as rock)
+    tryCatch(
+      utils::install.packages(missing, repos = "https://cloud.r-project.org", quiet = TRUE),
+      error = function(e) NULL
+    )
+    # Re-check and warn
+    still_missing <- missing[!vapply(missing, requireNamespace, logical(1), quietly = TRUE)]
+    if (length(still_missing) > 0) {
+      packageStartupMessage(
+        "dsOMOP: database drivers not available: ", paste(still_missing, collapse = ", "),
+        ". Install them with: install.packages(c('", paste(still_missing, collapse = "', '"), "'))")
+    }
+  }
+
+  # Check for unixODBC system library
+  if (nchar(Sys.which("odbcinst")) == 0) {
+    packageStartupMessage(
+      "dsOMOP: unixODBC not found on this system. ",
+      "The 'odbc' R package requires unixODBC. ",
+      "Install it with: apt-get install unixodbc unixodbc-dev")
+  }
+
+  invisible(NULL)
+}
+
 #' Package attach hook
 #'
 #' Registers the OMOP CDM resource resolver, cleans stale staging

@@ -13,8 +13,6 @@
 # Skips gracefully if apt-get is not available (macOS dev, non-Debian).
 # Drivers already installed are detected and skipped.
 
-set -e
-
 LOG_PREFIX="[dsOMOP configure]"
 MARKER_DIR="${DSOMOP_MARKER_DIR:-/var/lib/dsomop}"
 MARKER_FILE="${MARKER_DIR}/.drivers_ready"
@@ -40,6 +38,26 @@ log_info "Architecture: ${ARCH}"
 log_info "Installing ODBC drivers for all supported DBMS backends..."
 echo ""
 
+# --- 0. System libraries for R database packages ---
+# These -dev packages are required for R packages to COMPILE from source.
+# Without them, install.packages("RPostgres") etc. will fail.
+
+install_system_deps() {
+  log_info "  System build dependencies: installing..."
+  apt-get update -qq 2>/dev/null
+  apt-get install -y -qq \
+    libpq-dev \
+    libmariadb-dev \
+    unixodbc-dev \
+    libsqlite3-dev \
+    curl \
+    2>/dev/null || {
+    log_warn "  Some system dependencies failed to install."
+    return 0
+  }
+  log_info "  System build dependencies: ready."
+}
+
 # --- 1. Base: unixODBC ---
 
 install_unixodbc() {
@@ -48,7 +66,6 @@ install_unixodbc() {
     return 0
   fi
   log_info "  unixODBC: installing..."
-  apt-get update -qq 2>/dev/null
   apt-get install -y -qq unixodbc unixodbc-dev 2>/dev/null || {
     log_warn "  unixODBC: install failed."
     return 1
@@ -247,6 +264,7 @@ TMPL
 
 # --- Run all installers ---
 
+install_system_deps
 install_unixodbc || { log_warn "unixODBC base failed. Cannot proceed."; exit 0; }
 
 install_mssql
