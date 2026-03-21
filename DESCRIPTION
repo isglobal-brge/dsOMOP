@@ -82,6 +82,7 @@ AssignMethods:
     omopPlanExecuteDS,
     omopCohortCreateDS,
     omopCohortCombineDS,
-    omopCleanupDS
+    omopCleanupDS,
+    omopQueryExecDS
 Config/testthat/edition: 3
 RoxygenNote: 7.3.3
