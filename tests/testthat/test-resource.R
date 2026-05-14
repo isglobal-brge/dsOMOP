@@ -333,9 +333,11 @@ test_that(".sql_split preserves semicolons inside single quotes", {
 # ===========================================================================
 
 test_that("all DBMS in resource.js enum are mapped in dialect resolver", {
-  dbms_list <- c("postgresql", "sql_server", "oracle", "redshift",
+  dbms_list <- c("postgresql", "sqlite", "mysql", "mariadb",
+                 "sql_server", "synapse", "pdw",
+                 "oracle", "redshift",
                  "bigquery", "snowflake", "spark", "databricks",
-                 "duckdb", "sqlite")
+                 "duckdb")
   for (dbms in dbms_list) {
     expect_silent(.resolve_target_dialect(dbms))
   }
@@ -344,6 +346,8 @@ test_that("all DBMS in resource.js enum are mapped in dialect resolver", {
 test_that("dialect aliases resolve correctly", {
   expect_equal(.resolve_target_dialect("postgres"), "postgresql")
   expect_equal(.resolve_target_dialect("sqlserver"), "sql server")
+  expect_equal(.resolve_target_dialect("synapse"), "sql server")
+  expect_equal(.resolve_target_dialect("pdw"), "sql server")
   expect_equal(.resolve_target_dialect("duckdb"), "sqlite")
   expect_equal(.resolve_target_dialect("databricks"), "spark")
   expect_equal(.resolve_target_dialect("mysql"), "mysql")

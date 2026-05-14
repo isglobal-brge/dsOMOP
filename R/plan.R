@@ -288,6 +288,23 @@
     "visit_count", "has_measurement", "missing_measurement")
 }
 
+.currentDateSql <- function(handle) {
+  dialect <- handle$target_dialect %||% ""
+  switch(dialect,
+    "sql server" = "CAST(GETDATE() AS DATE)",
+    "sqlite" = "DATE('now')",
+    "bigquery" = "CURRENT_DATE()",
+    "spark" = "CURRENT_DATE()",
+    "CURRENT_DATE"
+  )
+}
+
+.dateAddSql <- function(handle, days, expr) {
+  .renderSql(handle, paste0(
+    "DATEADD(day, ", as.integer(days), ", ", expr, ")"
+  ))
+}
+
 .isCohortFilterLeaf <- function(x) {
   is.list(x) && !is.null(x$type) &&
     tolower(x$type) %in% .cohortFilterTypes()
@@ -487,10 +504,11 @@
                            bp$tables$present_in_db, , drop = FALSE]
     if (nrow(op_row) > 0) {
       op_qualified <- op_row$qualified_name[1]
+      cutoff <- .dateAddSql(handle, -min_days, .currentDateSql(handle))
       return(paste0("EXISTS (SELECT 1 FROM ", op_qualified, " op",
                     " WHERE op.person_id = p.person_id",
-                    " AND (CURRENT_DATE - op.observation_period_start_date) >= ",
-                    min_days, ")"))
+                    " AND op.observation_period_start_date <= ",
+                    cutoff, ")"))
     }
 
   } else if (ftype == "followup") {
@@ -499,10 +517,11 @@
                            bp$tables$present_in_db, , drop = FALSE]
     if (nrow(op_row) > 0) {
       op_qualified <- op_row$qualified_name[1]
+      cutoff <- .dateAddSql(handle, min_days, .currentDateSql(handle))
       return(paste0("EXISTS (SELECT 1 FROM ", op_qualified, " op",
                     " WHERE op.person_id = p.person_id",
-                    " AND (op.observation_period_end_date - CURRENT_DATE) >= ",
-                    min_days, ")"))
+                    " AND op.observation_period_end_date >= ",
+                    cutoff, ")"))
     }
 
   } else if (ftype == "visit_count") {

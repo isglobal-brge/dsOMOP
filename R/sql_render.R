@@ -15,6 +15,8 @@
     postgres   = "postgresql",
     sql_server = "sql server",
     sqlserver  = "sql server",
+    synapse    = "sql server",
+    pdw        = "sql server",
     oracle     = "oracle",
     redshift   = "redshift",
     bigquery   = "bigquery",

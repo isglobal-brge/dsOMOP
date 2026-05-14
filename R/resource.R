@@ -92,7 +92,8 @@ OMOPResourceClient <- R6::R6Class(
         return(DBI::dbConnect(duckdb::duckdb(), dbdir = dbpath, read_only = FALSE))
       }
 
-      if (dbms %in% c("sql server", "sqlserver", "mssql")) {
+      if (dbms %in% c("sql server", "sqlserver", "mssql",
+                      "synapse", "pdw")) {
         if (!requireNamespace("odbc", quietly = TRUE))
           stop("odbc package required for SQL Server connections.", call. = FALSE)
         return(DBI::dbConnect(odbc::odbc(),
@@ -175,8 +176,8 @@ OMOPResourceClient <- R6::R6Class(
       }
 
       stop("Unsupported DBMS: '", dbms, "'. Supported: postgresql, sqlite, duckdb, ",
-           "sql server, oracle, mysql, mariadb, redshift, bigquery, snowflake, ",
-           "spark, databricks.",
+           "sql server, synapse, pdw, oracle, mysql, mariadb, redshift, ",
+           "bigquery, snowflake, spark, databricks.",
            call. = FALSE)
     }
   ),

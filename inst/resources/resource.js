@@ -1,7 +1,7 @@
 var dsOMOP = {
   settings: {
     title: "OMOP CDM Database Resources",
-    description: "Provides access to OMOP CDM databases via DBI. Supports PostgreSQL, SQL Server, Oracle, Redshift, BigQuery, Snowflake, Spark, and SQLite.",
+    description: "Provides access to OMOP CDM databases via DBI. Supports PostgreSQL, SQLite, DuckDB, MySQL/MariaDB, SQL Server/Synapse/PDW, Oracle, Redshift, BigQuery, Snowflake, Spark, and Databricks.",
     web: "https://github.com/isglobal-brge/dsOMOP",
     categories: [
       {
@@ -29,6 +29,8 @@ var dsOMOP = {
                 "mysql",
                 "mariadb",
                 "sql_server",
+                "synapse",
+                "pdw",
                 "oracle",
                 "redshift"
                 // Requires additional packages (not installed by dsOMOP):

@@ -5,6 +5,8 @@ test_that(".resolve_target_dialect maps supported DBMS correctly", {
   expect_equal(.resolve_target_dialect("postgres"), "postgresql")
   expect_equal(.resolve_target_dialect("sql_server"), "sql server")
   expect_equal(.resolve_target_dialect("sqlserver"), "sql server")
+  expect_equal(.resolve_target_dialect("synapse"), "sql server")
+  expect_equal(.resolve_target_dialect("pdw"), "sql server")
   expect_equal(.resolve_target_dialect("oracle"), "oracle")
   expect_equal(.resolve_target_dialect("redshift"), "redshift")
   expect_equal(.resolve_target_dialect("bigquery"), "bigquery")

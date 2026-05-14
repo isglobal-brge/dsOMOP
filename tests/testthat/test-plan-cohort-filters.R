@@ -58,6 +58,17 @@ local_nested_cohort_filter_tree <- function() {
   ))
 }
 
+local_observation_period_blueprint <- function() {
+  list(
+    tables = data.frame(
+      table_name = "observation_period",
+      present_in_db = TRUE,
+      qualified_name = "observation_period",
+      stringsAsFactors = FALSE
+    )
+  )
+}
+
 test_that("nested population cohort filter trees preserve OR and AND semantics", {
   handle <- local_plan_filter_handle()
   on.exit(DBI::dbDisconnect(handle$conn), add = TRUE)
@@ -107,4 +118,39 @@ test_that("plan execute uses filter_tree before legacy flat cohort spec", {
   })
 
   expect_equal(sort(result$people$person_id), c(1L, 2L, 5L))
+})
+
+test_that("prior observation and followup cohort filters use translated dates", {
+  dialects <- c("sqlite", "postgresql", "mysql", "oracle", "bigquery",
+                "spark", "sql server", "redshift", "snowflake")
+  bp <- local_observation_period_blueprint()
+
+  for (dialect in dialects) {
+    handle <- new.env(parent = emptyenv())
+    handle$target_dialect <- dialect
+
+    prior_sql <- .compileCohortFilterLeaf(
+      handle,
+      list(type = "prior_observation", params = list(min_days = 365L)),
+      bp,
+      person_cols = character(0)
+    )
+    followup_sql <- .compileCohortFilterLeaf(
+      handle,
+      list(type = "followup", params = list(min_days = 90L)),
+      bp,
+      person_cols = character(0)
+    )
+
+    expect_match(prior_sql, "observation_period_start_date <=")
+    expect_match(followup_sql, "observation_period_end_date >=")
+    expect_false(grepl("CURRENT_DATE\\s*-|\\-\\s*CURRENT_DATE",
+                       prior_sql))
+    expect_false(grepl("CURRENT_DATE\\s*-|\\-\\s*CURRENT_DATE",
+                       followup_sql))
+    if (!dialect %in% c("sql server", "redshift", "snowflake")) {
+      expect_false(grepl("DATEADD", prior_sql, ignore.case = TRUE))
+      expect_false(grepl("DATEADD", followup_sql, ignore.case = TRUE))
+    }
+  }
 })
