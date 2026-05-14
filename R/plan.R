@@ -282,10 +282,37 @@
   preview
 }
 
+.cohortFilterTypes <- function() {
+  c("sex", "age_range", "age_group", "cohort", "has_concept",
+    "not_has_concept", "concept_count", "prior_observation", "followup",
+    "visit_count", "has_measurement", "missing_measurement")
+}
+
+.isCohortFilterLeaf <- function(x) {
+  is.list(x) && !is.null(x$type) &&
+    tolower(x$type) %in% .cohortFilterTypes()
+}
+
+.isCohortFilterSpec <- function(x) {
+  if (.isCohortFilterLeaf(x)) return(TRUE)
+  if (!is.list(x) || length(x) == 0) return(FALSE)
+  if ("and" %in% names(x)) {
+    return(is.list(x$and) && length(x$and) > 0 &&
+      all(vapply(x$and, .isCohortFilterSpec, logical(1))))
+  }
+  if ("or" %in% names(x)) {
+    return(is.list(x$or) && length(x$or) > 0 &&
+      all(vapply(x$or, .isCohortFilterSpec, logical(1))))
+  }
+
+  items <- unname(x)
+  all(vapply(items, .isCohortFilterSpec, logical(1)))
+}
+
 #' Build a cohort person_id set from population-level filters
 #'
-#' Translates filter specs (sex, age_range, age_group, has_concept) into
-#' SQL WHERE clauses on the person table and returns matching person IDs.
+#' Translates flat filter specs or nested AND/OR filter trees into SQL WHERE
+#' clauses on the person table and returns matching person IDs.
 #'
 #' @param handle CDM handle
 #' @param filters List of filter specs from recipe_to_plan
@@ -301,187 +328,234 @@
   qualified_person <- person_table$qualified_name[1]
   person_cols <- bp$columns[["person"]]$column_name
 
-  where_parts <- character(0)
-
-  for (f in filters) {
-    ftype <- f$type
-    params <- f$params
-
-    if (ftype == "sex") {
-      gender_id <- switch(toupper(params$value),
-        "F" = 8532L, "FEMALE" = 8532L,
-        "M" = 8507L, "MALE" = 8507L,
-        NULL)
-      if (!is.null(gender_id) && "gender_concept_id" %in% person_cols) {
-        where_parts <- c(where_parts,
-          paste0("p.gender_concept_id = ", gender_id))
-      }
-
-    } else if (ftype == "age_range") {
-      current_year <- as.integer(format(Sys.Date(), "%Y"))
-      if (!is.null(params$min) && "year_of_birth" %in% person_cols) {
-        max_yob <- current_year - as.integer(params$min)
-        where_parts <- c(where_parts,
-          paste0("p.year_of_birth <= ", max_yob))
-      }
-      if (!is.null(params$max) && "year_of_birth" %in% person_cols) {
-        min_yob <- current_year - as.integer(params$max)
-        where_parts <- c(where_parts,
-          paste0("p.year_of_birth >= ", min_yob))
-      }
-
-    } else if (ftype == "age_group") {
-      current_year <- as.integer(format(Sys.Date(), "%Y"))
-      groups <- params$groups
-      if (length(groups) > 0 && "year_of_birth" %in% person_cols) {
-        band_parts <- character(0)
-        for (g in groups) {
-          parts <- strsplit(g, "-")[[1]]
-          if (length(parts) == 2) {
-            min_yob <- current_year - as.integer(parts[2])
-            max_yob <- current_year - as.integer(parts[1])
-            band_parts <- c(band_parts,
-              paste0("(p.year_of_birth BETWEEN ", min_yob,
-                     " AND ", max_yob, ")"))
-          }
-        }
-        if (length(band_parts) > 0) {
-          where_parts <- c(where_parts,
-            paste0("(", paste(band_parts, collapse = " OR "), ")"))
-        }
-      }
-
-    } else if (ftype == "has_concept") {
-      concept_id <- as.integer(params$concept_id)
-      table_name <- params$table
-      tbl_row <- bp$tables[bp$tables$table_name == table_name &
-                             bp$tables$present_in_db, , drop = FALSE]
-      if (nrow(tbl_row) > 0) {
-        concept_col <- .getDomainConceptColumn(bp, table_name)
-        qualified_tbl <- tbl_row$qualified_name[1]
-        where_parts <- c(where_parts,
-          paste0("EXISTS (SELECT 1 FROM ", qualified_tbl, " t",
-                 " WHERE t.person_id = p.person_id",
-                 " AND t.", concept_col, " = ", concept_id, ")"))
-      }
-
-    } else if (ftype == "not_has_concept") {
-      concept_id <- as.integer(params$concept_id)
-      table_name <- params$table
-      tbl_row <- bp$tables[bp$tables$table_name == table_name &
-                             bp$tables$present_in_db, , drop = FALSE]
-      if (nrow(tbl_row) > 0) {
-        concept_col <- .getDomainConceptColumn(bp, table_name)
-        qualified_tbl <- tbl_row$qualified_name[1]
-        where_parts <- c(where_parts,
-          paste0("NOT EXISTS (SELECT 1 FROM ", qualified_tbl, " t",
-                 " WHERE t.person_id = p.person_id",
-                 " AND t.", concept_col, " = ", concept_id, ")"))
-      }
-
-    } else if (ftype == "concept_count") {
-      concept_id <- as.integer(params$concept_id)
-      min_count <- as.integer(params$min_count %||% 1L)
-      table_name <- params$table
-      tbl_row <- bp$tables[bp$tables$table_name == table_name &
-                             bp$tables$present_in_db, , drop = FALSE]
-      if (nrow(tbl_row) > 0) {
-        concept_col <- .getDomainConceptColumn(bp, table_name)
-        qualified_tbl <- tbl_row$qualified_name[1]
-        where_parts <- c(where_parts,
-          paste0("(SELECT COUNT(*) FROM ", qualified_tbl, " t",
-                 " WHERE t.person_id = p.person_id",
-                 " AND t.", concept_col, " = ", concept_id,
-                 ") >= ", min_count))
-      }
-
-    } else if (ftype == "prior_observation") {
-      min_days <- as.integer(params$min_days %||% 365L)
-      op_row <- bp$tables[bp$tables$table_name == "observation_period" &
-                             bp$tables$present_in_db, , drop = FALSE]
-      if (nrow(op_row) > 0) {
-        op_qualified <- op_row$qualified_name[1]
-        where_parts <- c(where_parts,
-          paste0("EXISTS (SELECT 1 FROM ", op_qualified, " op",
-                 " WHERE op.person_id = p.person_id",
-                 " AND (CURRENT_DATE - op.observation_period_start_date) >= ",
-                 min_days, ")"))
-      }
-
-    } else if (ftype == "followup") {
-      min_days <- as.integer(params$min_days %||% 30L)
-      op_row <- bp$tables[bp$tables$table_name == "observation_period" &
-                             bp$tables$present_in_db, , drop = FALSE]
-      if (nrow(op_row) > 0) {
-        op_qualified <- op_row$qualified_name[1]
-        where_parts <- c(where_parts,
-          paste0("EXISTS (SELECT 1 FROM ", op_qualified, " op",
-                 " WHERE op.person_id = p.person_id",
-                 " AND (op.observation_period_end_date - CURRENT_DATE) >= ",
-                 min_days, ")"))
-      }
-
-    } else if (ftype == "visit_count") {
-      min_count <- as.integer(params$min_count %||% 1L)
-      vo_row <- bp$tables[bp$tables$table_name == "visit_occurrence" &
-                             bp$tables$present_in_db, , drop = FALSE]
-      if (nrow(vo_row) > 0) {
-        vo_qualified <- vo_row$qualified_name[1]
-        sub_where <- paste0(" WHERE v.person_id = p.person_id")
-        if (!is.null(params$visit_concept_id)) {
-          sub_where <- paste0(sub_where,
-            " AND v.visit_concept_id = ",
-            as.integer(params$visit_concept_id))
-        }
-        where_parts <- c(where_parts,
-          paste0("(SELECT COUNT(*) FROM ", vo_qualified, " v",
-                 sub_where, ") >= ", min_count))
-      }
-
-    } else if (ftype == "has_measurement") {
-      concept_id <- as.integer(params$concept_id)
-      m_row <- bp$tables[bp$tables$table_name == "measurement" &
-                            bp$tables$present_in_db, , drop = FALSE]
-      if (nrow(m_row) > 0) {
-        m_qualified <- m_row$qualified_name[1]
-        sub_where <- paste0(
-          " WHERE m.person_id = p.person_id",
-          " AND m.measurement_concept_id = ", concept_id)
-        if (!is.null(params$min_value)) {
-          sub_where <- paste0(sub_where,
-            " AND m.value_as_number >= ", as.numeric(params$min_value))
-        }
-        if (!is.null(params$max_value)) {
-          sub_where <- paste0(sub_where,
-            " AND m.value_as_number <= ", as.numeric(params$max_value))
-        }
-        where_parts <- c(where_parts,
-          paste0("EXISTS (SELECT 1 FROM ", m_qualified, " m",
-                 sub_where, ")"))
-      }
-
-    } else if (ftype == "missing_measurement") {
-      concept_id <- as.integer(params$concept_id)
-      m_row <- bp$tables[bp$tables$table_name == "measurement" &
-                            bp$tables$present_in_db, , drop = FALSE]
-      if (nrow(m_row) > 0) {
-        m_qualified <- m_row$qualified_name[1]
-        where_parts <- c(where_parts,
-          paste0("NOT EXISTS (SELECT 1 FROM ", m_qualified, " m",
-                 " WHERE m.person_id = p.person_id",
-                 " AND m.measurement_concept_id = ", concept_id,
-                 " AND m.value_as_number IS NOT NULL)"))
-      }
-    }
-  }
+  where_sql <- .compileCohortFilterWhere(handle, filters, bp, person_cols)
 
   sql <- paste0("SELECT DISTINCT p.person_id FROM ", qualified_person, " p")
-  if (length(where_parts) > 0) {
-    sql <- paste0(sql, " WHERE ", paste(where_parts, collapse = " AND "))
+  if (nzchar(where_sql)) {
+    sql <- paste0(sql, " WHERE ", where_sql)
   }
 
   result <- .executeQuery(handle, sql)
   if (nrow(result) > 0) result$person_id else integer(0)
+}
+
+.compileCohortFilterWhere <- function(handle, node, bp, person_cols) {
+  if (is.null(node) || length(node) == 0) return("")
+
+  if (.isCohortFilterLeaf(node)) {
+    return(.compileCohortFilterLeaf(handle, node, bp, person_cols))
+  }
+
+  if ("and" %in% names(node)) {
+    parts <- vapply(node$and, .compileCohortFilterWhere, character(1),
+                    handle = handle, bp = bp, person_cols = person_cols)
+    parts <- parts[nzchar(parts)]
+    if (length(parts) == 0) return("")
+    return(paste0("(", paste(parts, collapse = " AND "), ")"))
+  }
+
+  if ("or" %in% names(node)) {
+    parts <- vapply(node$or, .compileCohortFilterWhere, character(1),
+                    handle = handle, bp = bp, person_cols = person_cols)
+    parts <- parts[nzchar(parts)]
+    if (length(parts) == 0) return("")
+    return(paste0("(", paste(parts, collapse = " OR "), ")"))
+  }
+
+  if (is.list(node)) {
+    items <- unname(node)
+    if (all(vapply(items, .isCohortFilterSpec, logical(1)))) {
+      parts <- vapply(items, .compileCohortFilterWhere, character(1),
+                      handle = handle, bp = bp, person_cols = person_cols)
+      parts <- parts[nzchar(parts)]
+      if (length(parts) == 0) return("")
+      return(paste0("(", paste(parts, collapse = " AND "), ")"))
+    }
+  }
+
+  ""
+}
+
+.compileCohortFilterLeaf <- function(handle, f, bp, person_cols) {
+  ftype <- tolower(f$type)
+  params <- f$params %||% list()
+
+  if (ftype == "sex") {
+    gender_id <- switch(toupper(params$value),
+      "F" = 8532L, "FEMALE" = 8532L,
+      "M" = 8507L, "MALE" = 8507L,
+      NULL)
+    if (!is.null(gender_id) && "gender_concept_id" %in% person_cols) {
+      return(paste0("p.gender_concept_id = ", gender_id))
+    }
+
+  } else if (ftype == "age_range") {
+    current_year <- as.integer(format(Sys.Date(), "%Y"))
+    parts <- character(0)
+    if (!is.null(params$min) && "year_of_birth" %in% person_cols) {
+      max_yob <- current_year - as.integer(params$min)
+      parts <- c(parts, paste0("p.year_of_birth <= ", max_yob))
+    }
+    if (!is.null(params$max) && "year_of_birth" %in% person_cols) {
+      min_yob <- current_year - as.integer(params$max)
+      parts <- c(parts, paste0("p.year_of_birth >= ", min_yob))
+    }
+    if (length(parts) > 0) return(paste0("(", paste(parts, collapse = " AND "), ")"))
+
+  } else if (ftype == "age_group") {
+    current_year <- as.integer(format(Sys.Date(), "%Y"))
+    groups <- params$groups
+    if (length(groups) > 0 && "year_of_birth" %in% person_cols) {
+      band_parts <- character(0)
+      for (g in groups) {
+        parts <- strsplit(g, "-")[[1]]
+        if (length(parts) == 2) {
+          min_yob <- current_year - as.integer(parts[2])
+          max_yob <- current_year - as.integer(parts[1])
+          band_parts <- c(band_parts,
+            paste0("(p.year_of_birth BETWEEN ", min_yob,
+                   " AND ", max_yob, ")"))
+        }
+      }
+      if (length(band_parts) > 0)
+        return(paste0("(", paste(band_parts, collapse = " OR "), ")"))
+    }
+
+  } else if (ftype == "cohort") {
+    cid <- params$cohort_definition_id
+    if (!is.null(cid)) {
+      results_schema <- handle$results_schema %||% handle$cdm_schema
+      qualified <- .qualifyTable(handle, "cohort", results_schema)
+      return(paste0(
+        "EXISTS (SELECT 1 FROM ", qualified, " c",
+        " WHERE c.subject_id = p.person_id",
+        " AND c.cohort_definition_id = ", as.integer(cid), ")"
+      ))
+    }
+
+  } else if (ftype == "has_concept") {
+    concept_id <- as.integer(params$concept_id)
+    min_count <- as.integer(params$min_count %||% 1L)
+    table_name <- tolower(params$table)
+    tbl_row <- bp$tables[bp$tables$table_name == table_name &
+                           bp$tables$present_in_db, , drop = FALSE]
+    if (nrow(tbl_row) > 0) {
+      concept_col <- .getDomainConceptColumn(bp, table_name)
+      qualified_tbl <- tbl_row$qualified_name[1]
+      if (min_count <= 1L) {
+        return(paste0("EXISTS (SELECT 1 FROM ", qualified_tbl, " t",
+                      " WHERE t.person_id = p.person_id",
+                      " AND t.", concept_col, " = ", concept_id, ")"))
+      }
+      return(paste0("(SELECT COUNT(*) FROM ", qualified_tbl, " t",
+                    " WHERE t.person_id = p.person_id",
+                    " AND t.", concept_col, " = ", concept_id,
+                    ") >= ", min_count))
+    }
+
+  } else if (ftype == "not_has_concept") {
+    concept_id <- as.integer(params$concept_id)
+    table_name <- tolower(params$table)
+    tbl_row <- bp$tables[bp$tables$table_name == table_name &
+                           bp$tables$present_in_db, , drop = FALSE]
+    if (nrow(tbl_row) > 0) {
+      concept_col <- .getDomainConceptColumn(bp, table_name)
+      qualified_tbl <- tbl_row$qualified_name[1]
+      return(paste0("NOT EXISTS (SELECT 1 FROM ", qualified_tbl, " t",
+                    " WHERE t.person_id = p.person_id",
+                    " AND t.", concept_col, " = ", concept_id, ")"))
+    }
+
+  } else if (ftype == "concept_count") {
+    concept_id <- as.integer(params$concept_id)
+    min_count <- as.integer(params$min_count %||% 1L)
+    table_name <- tolower(params$table)
+    tbl_row <- bp$tables[bp$tables$table_name == table_name &
+                           bp$tables$present_in_db, , drop = FALSE]
+    if (nrow(tbl_row) > 0) {
+      concept_col <- .getDomainConceptColumn(bp, table_name)
+      qualified_tbl <- tbl_row$qualified_name[1]
+      return(paste0("(SELECT COUNT(*) FROM ", qualified_tbl, " t",
+                    " WHERE t.person_id = p.person_id",
+                    " AND t.", concept_col, " = ", concept_id,
+                    ") >= ", min_count))
+    }
+
+  } else if (ftype == "prior_observation") {
+    min_days <- as.integer(params$min_days %||% 365L)
+    op_row <- bp$tables[bp$tables$table_name == "observation_period" &
+                           bp$tables$present_in_db, , drop = FALSE]
+    if (nrow(op_row) > 0) {
+      op_qualified <- op_row$qualified_name[1]
+      return(paste0("EXISTS (SELECT 1 FROM ", op_qualified, " op",
+                    " WHERE op.person_id = p.person_id",
+                    " AND (CURRENT_DATE - op.observation_period_start_date) >= ",
+                    min_days, ")"))
+    }
+
+  } else if (ftype == "followup") {
+    min_days <- as.integer(params$min_days %||% 30L)
+    op_row <- bp$tables[bp$tables$table_name == "observation_period" &
+                           bp$tables$present_in_db, , drop = FALSE]
+    if (nrow(op_row) > 0) {
+      op_qualified <- op_row$qualified_name[1]
+      return(paste0("EXISTS (SELECT 1 FROM ", op_qualified, " op",
+                    " WHERE op.person_id = p.person_id",
+                    " AND (op.observation_period_end_date - CURRENT_DATE) >= ",
+                    min_days, ")"))
+    }
+
+  } else if (ftype == "visit_count") {
+    min_count <- as.integer(params$min_count %||% 1L)
+    vo_row <- bp$tables[bp$tables$table_name == "visit_occurrence" &
+                           bp$tables$present_in_db, , drop = FALSE]
+    if (nrow(vo_row) > 0) {
+      vo_qualified <- vo_row$qualified_name[1]
+      sub_where <- paste0(" WHERE v.person_id = p.person_id")
+      if (!is.null(params$visit_concept_id)) {
+        sub_where <- paste0(sub_where,
+          " AND v.visit_concept_id = ",
+          as.integer(params$visit_concept_id))
+      }
+      return(paste0("(SELECT COUNT(*) FROM ", vo_qualified, " v",
+                    sub_where, ") >= ", min_count))
+    }
+
+  } else if (ftype == "has_measurement") {
+    concept_id <- as.integer(params$concept_id)
+    m_row <- bp$tables[bp$tables$table_name == "measurement" &
+                          bp$tables$present_in_db, , drop = FALSE]
+    if (nrow(m_row) > 0) {
+      m_qualified <- m_row$qualified_name[1]
+      sub_where <- paste0(
+        " WHERE m.person_id = p.person_id",
+        " AND m.measurement_concept_id = ", concept_id)
+      if (!is.null(params$min_value)) {
+        sub_where <- paste0(sub_where,
+          " AND m.value_as_number >= ", as.numeric(params$min_value))
+      }
+      if (!is.null(params$max_value)) {
+        sub_where <- paste0(sub_where,
+          " AND m.value_as_number <= ", as.numeric(params$max_value))
+      }
+      return(paste0("EXISTS (SELECT 1 FROM ", m_qualified, " m",
+                    sub_where, ")"))
+    }
+
+  } else if (ftype == "missing_measurement") {
+    concept_id <- as.integer(params$concept_id)
+    m_row <- bp$tables[bp$tables$table_name == "measurement" &
+                          bp$tables$present_in_db, , drop = FALSE]
+    if (nrow(m_row) > 0) {
+      m_qualified <- m_row$qualified_name[1]
+      return(paste0("NOT EXISTS (SELECT 1 FROM ", m_qualified, " m",
+                    " WHERE m.person_id = p.person_id",
+                    " AND m.measurement_concept_id = ", concept_id,
+                    " AND m.value_as_number IS NOT NULL)"))
+    }
+  }
+
+  ""
 }
 
 #' Generate a unique staging token
@@ -665,20 +739,11 @@
 
     } else if (!is.null(plan$cohort$spec)) {
       spec <- plan$cohort$spec
+      filter_spec <- plan$cohort$filter_tree %||% spec
 
-      # Check if spec is a list of population filters (from cart_to_plan)
-      is_filter_list <- is.list(spec) && length(spec) > 0 &&
-        !is.null(spec[[1]]) && is.list(spec[[1]]) &&
-        !is.null(spec[[1]]$type) &&
-        spec[[1]]$type %in% c("sex", "age_range", "age_group",
-                               "has_concept", "date_range", "value_threshold",
-                               "not_has_concept", "concept_count",
-                               "prior_observation", "followup",
-                               "visit_count", "has_measurement",
-                               "missing_measurement")
-
-      if (is_filter_list) {
-        cohort_person_ids <- .buildCohortFromFilters(handle, spec)
+      # Check if spec is a population filter list/tree (from recipe_to_plan)
+      if (.isCohortFilterSpec(filter_spec)) {
+        cohort_person_ids <- .buildCohortFromFilters(handle, filter_spec)
         # Materialize a cohort temp table so baseline/survival outputs work
         if (length(cohort_person_ids) > 0) {
           obs_table <- bp$tables[bp$tables$table_name == "observation_period" &
