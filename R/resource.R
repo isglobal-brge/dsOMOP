@@ -252,7 +252,8 @@ OMOPResourceClient <- R6::R6Class(
 #' connections from DataSHIELD resource descriptors pointing to OMOP CDM
 #' databases. Matches resources whose format is \code{"omop.dbi.db"} and
 #' delegates connection setup to \code{\link{OMOPResourceClient}}, which
-#' supports PostgreSQL, SQL Server, SQLite, and MySQL/MariaDB backends.
+#' supports PostgreSQL, SQLite/DuckDB, MySQL/MariaDB, SQL Server/Synapse/PDW,
+#' Oracle, Redshift, BigQuery, Snowflake, Spark, and Databricks backends.
 #'
 #' @importFrom R6 R6Class
 #' @keywords internal

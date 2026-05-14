@@ -13,8 +13,10 @@ Description: Server-side DataSHIELD package providing safe, efficient, and
     disclosure-controlled SQL templates, Achilles pre-computed analytics support,
     plan-based multi-table extraction with feature engineering, cohort management,
     and statistical disclosure control compliant with DataSHIELD nfilter settings.
-    Includes a built-in pure R SQL translation engine supporting PostgreSQL,
-    SQL Server, Oracle, Redshift, BigQuery, Snowflake, Spark, and SQLite.
+    Includes DBI/ODBC resource connectors and a built-in pure R SQL rendering
+    layer supporting PostgreSQL, SQLite/DuckDB, MySQL/MariaDB, SQL
+    Server/Synapse/PDW, Oracle, Redshift, BigQuery, Snowflake, Spark, and
+    Databricks.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Depends:
