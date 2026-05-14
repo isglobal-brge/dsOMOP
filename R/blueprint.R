@@ -217,10 +217,11 @@
     normalized <- sub("^[vV]", "", trimws(cdm_version))
     normalized <- sub("\\.0$", "", normalized)
     if (normalized != struct$version) {
-      message("Note: cdm_source reports version '", cdm_version,
+      warning("cdm_source reports version '", cdm_version,
               "' but table structure suggests '", struct$version,
               "' (evidence: v5.4=", struct$evidence_54,
-              ", v5.3=", struct$evidence_53, "). Using cdm_source version.")
+              ", v5.3=", struct$evidence_53, "). Using cdm_source version.",
+              call. = FALSE)
     }
   }
 
@@ -848,6 +849,7 @@
 
   list(
     hash = sig_hash,
+    dbms = handle$dbms,
     n_tables = nrow(present),
     total_persons = total_persons,
     tables = present$table_name,
