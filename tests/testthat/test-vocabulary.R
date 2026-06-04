@@ -114,6 +114,59 @@ test_that("concept set expansion excludes IDs", {
   expect_false(317009 %in% expanded)
 })
 
+test_that("concept set expansion includes mapped source concepts", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  # 4174977 (SNOMED 'Diabetic retinopathy') is the 'Maps to' target of
+  # 44826430 (ICD9CM '250.50'); include_mapped pulls in the source code so the
+  # set also matches records stored with the source vocabulary.
+  cs <- list(concepts = c(4174977), include_mapped = TRUE)
+  expanded <- .vocabExpandConceptSet(handle, cs)
+  expect_true(4174977 %in% expanded)
+  expect_true(44826430 %in% expanded)
+})
+
+test_that("concept set expansion omits mapped sources by default", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  cs <- list(concepts = c(4174977))  # include_mapped defaults to FALSE
+  expanded <- .vocabExpandConceptSet(handle, cs)
+  expect_true(4174977 %in% expanded)
+  expect_false(44826430 %in% expanded)
+})
+
+test_that("vocabGetMappedConcepts reverse-maps standard targets to sources", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  mapped <- .vocabGetMappedConcepts(handle, c(4174977))
+  expect_true(44826430 %in% mapped)
+  # No reverse map for an unmapped target -> empty integer vector
+  expect_equal(length(.vocabGetMappedConcepts(handle, c(999999))), 0)
+})
+
+test_that("resolveConceptSet handles flat vectors and spec objects", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  # Flat vector passes through, deduplicated and NA-free
+  expect_setequal(.resolveConceptSet(handle, c(201820, 201820, 3004410)),
+                  c(201820L, 3004410L))
+
+  # Spec object is expanded (mapped source pulled in)
+  spec <- list(concepts = c(4174977), include_mapped = TRUE)
+  expect_true(44826430 %in% .resolveConceptSet(handle, spec))
+
+  # NULL -> empty
+  expect_equal(length(.resolveConceptSet(handle, NULL)), 0)
+})
+
 test_that("translate columns replaces concept IDs with names", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))

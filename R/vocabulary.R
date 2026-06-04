@@ -164,15 +164,60 @@
   .executeQuery(handle, sql)
 }
 
-#' Expand a concept set specification to a full list of concept IDs
+#' Get non-standard source concepts that map to a set of concepts
+#'
+#' Reverse "Maps to" lookup: returns the source concepts (\code{concept_id_1})
+#' whose mapping target (\code{concept_id_2}) lies in \code{target_ids}. This
+#' lets a standard concept set also match records stored with source
+#' vocabularies (e.g. ICD9CM/ICD10CM), mirroring the ATLAS "source codes" view.
 #'
 #' @param handle CDM handle
-#' @param concept_set List with concepts, include_descendants, include_mapped, exclude
+#' @param target_ids Numeric vector of (typically standard) concept IDs
+#' @return Integer vector of source concept IDs; empty if none or no table
+#' @keywords internal
+.vocabGetMappedConcepts <- function(handle, target_ids) {
+  target_ids <- as.integer(target_ids)
+  if (length(target_ids) == 0) return(integer(0))
+
+  bp <- .buildBlueprint(handle)
+  if (!"concept_relationship" %in% bp$tables$table_name[bp$tables$present_in_db]) {
+    return(integer(0))
+  }
+
+  schema <- .resolveTableSchema(handle, "concept_relationship", "Vocabulary")
+  cr_table <- .qualifyTable(handle, "concept_relationship", schema)
+  ids <- paste(target_ids, collapse = ", ")
+
+  sql <- paste0(
+    "SELECT DISTINCT cr.concept_id_1 AS concept_id",
+    " FROM ", cr_table, " AS cr",
+    " WHERE cr.concept_id_2 IN (", ids, ")",
+    " AND cr.relationship_id = 'Maps to'",
+    " AND cr.invalid_reason IS NULL"
+  )
+
+  df <- .executeQuery(handle, sql)
+  if (nrow(df) == 0) return(integer(0))
+  as.integer(df$concept_id)
+}
+
+#' Expand a concept set specification to a full list of concept IDs
+#'
+#' Resolves a spec into a flat vector by, in order: starting from
+#' \code{concepts}; optionally adding hierarchical descendants
+#' (\code{include_descendants}); optionally adding mapped source concepts
+#' (\code{include_mapped}); then removing \code{exclude}. The broadening steps
+#' only grow the matched population; the resulting cohort is still size-checked.
+#'
+#' @param handle CDM handle
+#' @param concept_set List with \code{concepts}, \code{include_descendants},
+#'   \code{include_mapped}, \code{exclude}
 #' @return Integer vector of expanded concept IDs
 #' @keywords internal
 .vocabExpandConceptSet <- function(handle, concept_set) {
   base_ids <- as.integer(concept_set$concepts %||% integer(0))
   include_descendants <- concept_set$include_descendants %||% FALSE
+  include_mapped <- concept_set$include_mapped %||% FALSE
   exclude_ids <- as.integer(concept_set$exclude %||% integer(0))
 
   result_ids <- base_ids
@@ -189,11 +234,42 @@
     })
   }
 
+  if (include_mapped && length(result_ids) > 0) {
+    tryCatch({
+      mapped_ids <- .vocabGetMappedConcepts(handle, result_ids)
+      if (length(mapped_ids) > 0) {
+        result_ids <- unique(c(result_ids, mapped_ids))
+      }
+    }, error = function(e) {
+      warning("Mapped-concept expansion failed: ", e$message,
+              ". Using unmapped concept IDs.")
+    })
+  }
+
   if (length(exclude_ids) > 0) {
     result_ids <- setdiff(result_ids, exclude_ids)
   }
 
   as.integer(result_ids)
+}
+
+#' Resolve a concept_set field into a flat vector of concept IDs
+#'
+#' Accepts either a concept-set spec (a list carrying \code{concepts}, expanded
+#' via \code{\link{.vocabExpandConceptSet}}) or an already-flat vector/list of
+#' IDs. Lets cohort and plan code share one concept_set entry style.
+#'
+#' @param handle CDM handle
+#' @param x Concept-set spec list or flat vector/list of concept IDs
+#' @return Integer vector of concept IDs (deduplicated, NA-free)
+#' @keywords internal
+.resolveConceptSet <- function(handle, x) {
+  if (is.null(x)) return(integer(0))
+  if (is.list(x) && !is.null(x$concepts)) {
+    return(.vocabExpandConceptSet(handle, x))
+  }
+  v <- suppressWarnings(as.integer(unlist(x, use.names = FALSE)))
+  unique(v[!is.na(v)])
 }
 
 #' Translate concept_id columns in a data frame to concept names

@@ -337,14 +337,17 @@
   # Always allowed: categorical with known small domains (low fingerprint risk)
   always_allowed <- c("sex", "age_group", "cohort", "concept_set", "value_bin")
 
-  # Constrained: allowed only after validating minimum range width
+  # Constrained: allowed only after validating minimum range width.
+  # value_threshold is permitted as a population-defining range filter; its
+  # exact-value operators (==, !=) are blocked at the cohort-creation site
+  # (see .cohortCreate) and the resulting cohort is size-checked.
   constrained <- c("age_range", "has_concept", "date_range", "min_count",
                     "not_has_concept", "concept_count", "prior_observation",
                     "followup", "visit_count", "has_measurement",
-                    "missing_measurement")
+                    "missing_measurement", "value_threshold")
 
-  # Blocked: could fingerprint individuals via precise thresholds or arbitrary SQL
-  blocked <- c("value_threshold", "custom")
+  # Blocked: arbitrary SQL could fingerprint individuals
+  blocked <- c("custom")
 
   if (filter_type %in% always_allowed) return("allowed")
   if (filter_type %in% blocked) return("blocked")
@@ -414,6 +417,41 @@
          call. = FALSE)
   }
   invisible(TRUE)
+}
+
+#' Emit a governance audit record for a data-access operation
+#'
+#' Writes a single structured line to the server log via \code{message()}
+#' (stderr). The record is NEVER returned to the analyst — it is visible only
+#' to the data controller in the server logs. Its purpose is to let the
+#' controller review the \emph{sequence} of extraction and cohort operations
+#' and detect differencing / triangulation attempts that per-query disclosure
+#' checks cannot catch on their own. Gated by \code{dsomop.audit_log}
+#' (default TRUE).
+#'
+#' @param method Character; the assign-method name
+#' @param detail Optional operation parameters (filter / cohort spec), logged
+#'   as compact JSON and truncated to keep log size bounded
+#' @return invisible(NULL)
+#' @keywords internal
+.omopAuditLog <- function(method, detail = NULL) {
+  enabled <- isTRUE(getOption("dsomop.audit_log",
+                              getOption("default.dsomop.audit_log", TRUE)))
+  if (!enabled) return(invisible(NULL))
+
+  detail_str <- tryCatch(
+    as.character(jsonlite::toJSON(detail, auto_unbox = TRUE, null = "null")),
+    error = function(e) "<unserializable>"
+  )
+  if (length(detail_str) != 1L || is.na(detail_str)) detail_str <- "null"
+  if (nchar(detail_str) > 2000L) {
+    detail_str <- paste0(substr(detail_str, 1L, 2000L), "...<truncated>")
+  }
+
+  message(sprintf("[dsomop-audit] %s method=%s detail=%s",
+                  format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+                  method, detail_str))
+  invisible(NULL)
 }
 
 #' Validate a table or column identifier (whitelist-based)

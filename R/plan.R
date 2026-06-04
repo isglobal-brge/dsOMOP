@@ -393,9 +393,28 @@
   ""
 }
 
+#' Coerce a concept_id / concept_ids filter parameter to an integer vector
+#'
+#' Concept cohort filters accept either a single \code{concept_id} or a
+#' \code{concept_ids} set; both cross the JSON transport as scalars or lists.
+#' Returns a deduplicated, NA-free integer vector.
+#'
+#' @param x Scalar, vector, or list of concept IDs
+#' @return Integer vector
+#' @keywords internal
+.conceptIdList <- function(x) {
+  if (is.null(x)) return(integer(0))
+  v <- suppressWarnings(as.integer(unlist(x, use.names = FALSE)))
+  unique(v[!is.na(v)])
+}
+
 .compileCohortFilterLeaf <- function(handle, f, bp, person_cols) {
   ftype <- tolower(f$type)
   params <- f$params %||% list()
+
+  # Pre-execution granularity gate: blocks fingerprinting filters (e.g.
+  # age_range narrower than the disclosure minimum) before any SQL runs.
+  .validateFilter(ftype, params)
 
   if (ftype == "sex") {
     gender_id <- switch(toupper(params$value),
@@ -451,50 +470,53 @@
     }
 
   } else if (ftype == "has_concept") {
-    concept_id <- as.integer(params$concept_id)
+    concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
     min_count <- as.integer(params$min_count %||% 1L)
     table_name <- tolower(params$table)
     tbl_row <- bp$tables[bp$tables$table_name == table_name &
                            bp$tables$present_in_db, , drop = FALSE]
-    if (nrow(tbl_row) > 0) {
+    if (nrow(tbl_row) > 0 && length(concept_ids) > 0) {
       concept_col <- .getDomainConceptColumn(bp, table_name)
       qualified_tbl <- tbl_row$qualified_name[1]
+      id_list <- paste(concept_ids, collapse = ", ")
       if (min_count <= 1L) {
         return(paste0("EXISTS (SELECT 1 FROM ", qualified_tbl, " t",
                       " WHERE t.person_id = p.person_id",
-                      " AND t.", concept_col, " = ", concept_id, ")"))
+                      " AND t.", concept_col, " IN (", id_list, "))"))
       }
       return(paste0("(SELECT COUNT(*) FROM ", qualified_tbl, " t",
                     " WHERE t.person_id = p.person_id",
-                    " AND t.", concept_col, " = ", concept_id,
+                    " AND t.", concept_col, " IN (", id_list, ")",
                     ") >= ", min_count))
     }
 
   } else if (ftype == "not_has_concept") {
-    concept_id <- as.integer(params$concept_id)
+    concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
     table_name <- tolower(params$table)
     tbl_row <- bp$tables[bp$tables$table_name == table_name &
                            bp$tables$present_in_db, , drop = FALSE]
-    if (nrow(tbl_row) > 0) {
+    if (nrow(tbl_row) > 0 && length(concept_ids) > 0) {
       concept_col <- .getDomainConceptColumn(bp, table_name)
       qualified_tbl <- tbl_row$qualified_name[1]
+      id_list <- paste(concept_ids, collapse = ", ")
       return(paste0("NOT EXISTS (SELECT 1 FROM ", qualified_tbl, " t",
                     " WHERE t.person_id = p.person_id",
-                    " AND t.", concept_col, " = ", concept_id, ")"))
+                    " AND t.", concept_col, " IN (", id_list, "))"))
     }
 
   } else if (ftype == "concept_count") {
-    concept_id <- as.integer(params$concept_id)
+    concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
     min_count <- as.integer(params$min_count %||% 1L)
     table_name <- tolower(params$table)
     tbl_row <- bp$tables[bp$tables$table_name == table_name &
                            bp$tables$present_in_db, , drop = FALSE]
-    if (nrow(tbl_row) > 0) {
+    if (nrow(tbl_row) > 0 && length(concept_ids) > 0) {
       concept_col <- .getDomainConceptColumn(bp, table_name)
       qualified_tbl <- tbl_row$qualified_name[1]
+      id_list <- paste(concept_ids, collapse = ", ")
       return(paste0("(SELECT COUNT(*) FROM ", qualified_tbl, " t",
                     " WHERE t.person_id = p.person_id",
-                    " AND t.", concept_col, " = ", concept_id,
+                    " AND t.", concept_col, " IN (", id_list, ")",
                     ") >= ", min_count))
     }
 
@@ -531,24 +553,27 @@
     if (nrow(vo_row) > 0) {
       vo_qualified <- vo_row$qualified_name[1]
       sub_where <- paste0(" WHERE v.person_id = p.person_id")
-      if (!is.null(params$visit_concept_id)) {
+      visit_ids <- .conceptIdList(params$visit_concept_ids %||%
+                                    params$visit_concept_id)
+      if (length(visit_ids) > 0) {
         sub_where <- paste0(sub_where,
-          " AND v.visit_concept_id = ",
-          as.integer(params$visit_concept_id))
+          " AND v.visit_concept_id IN (",
+          paste(visit_ids, collapse = ", "), ")")
       }
       return(paste0("(SELECT COUNT(*) FROM ", vo_qualified, " v",
                     sub_where, ") >= ", min_count))
     }
 
   } else if (ftype == "has_measurement") {
-    concept_id <- as.integer(params$concept_id)
+    concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
     m_row <- bp$tables[bp$tables$table_name == "measurement" &
                           bp$tables$present_in_db, , drop = FALSE]
-    if (nrow(m_row) > 0) {
+    if (nrow(m_row) > 0 && length(concept_ids) > 0) {
       m_qualified <- m_row$qualified_name[1]
+      id_list <- paste(concept_ids, collapse = ", ")
       sub_where <- paste0(
         " WHERE m.person_id = p.person_id",
-        " AND m.measurement_concept_id = ", concept_id)
+        " AND m.measurement_concept_id IN (", id_list, ")")
       if (!is.null(params$min_value)) {
         sub_where <- paste0(sub_where,
           " AND m.value_as_number >= ", as.numeric(params$min_value))
@@ -562,14 +587,15 @@
     }
 
   } else if (ftype == "missing_measurement") {
-    concept_id <- as.integer(params$concept_id)
+    concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
     m_row <- bp$tables[bp$tables$table_name == "measurement" &
                           bp$tables$present_in_db, , drop = FALSE]
-    if (nrow(m_row) > 0) {
+    if (nrow(m_row) > 0 && length(concept_ids) > 0) {
       m_qualified <- m_row$qualified_name[1]
+      id_list <- paste(concept_ids, collapse = ", ")
       return(paste0("NOT EXISTS (SELECT 1 FROM ", m_qualified, " m",
                     " WHERE m.person_id = p.person_id",
-                    " AND m.measurement_concept_id = ", concept_id,
+                    " AND m.measurement_concept_id IN (", id_list, ")",
                     " AND m.value_as_number IS NOT NULL)"))
     }
   }
@@ -851,17 +877,22 @@
               block_sensitive = block_sensitive
             )
           } else {
-            # Original: entry is a character vector of column names
-            cols <- if (is.character(entry)) entry else NULL
+            # Raw column list. The plan crosses the transport as JSON, so
+            # `entry` arrives as a (possibly named) list; .colSpec recovers
+            # the source columns to SELECT and any aliases to expose. Named
+            # entries are aliases, e.g.
+            #   tables = list(person = c(sex = "gender_concept_id"))
+            spec <- .colSpec(entry)
             tbl_df <- .extractTable(
               handle,
               table = tbl_name,
-              columns = cols,
+              columns = spec$source,
               person_ids = cohort_person_ids,
               translate_concepts = translate,
               representation = "long",
               block_sensitive = block_sensitive
             )
+            tbl_df <- .applyColumnAliases(tbl_df, spec)
           }
 
           if (is.null(result_df)) {
@@ -1027,12 +1058,18 @@
                   "' requires a cohort; skipping.", call. = FALSE)
           results[[out_name]] <- NULL
         } else {
-          results[[out_name]] <- .extractBaseline(
-            handle,
-            cohort_table = cohort_table,
-            columns = out$columns,
-            derived = out$derived,
-            translate_concepts = translate
+          # Person columns accept aliases the same way as person_level:
+          # extract by source name, then rename to the requested alias.
+          base_spec <- .colSpec(out$columns)
+          results[[out_name]] <- .applyColumnAliases(
+            .extractBaseline(
+              handle,
+              cohort_table = cohort_table,
+              columns = base_spec$source,
+              derived = out$derived,
+              translate_concepts = translate
+            ),
+            base_spec
           )
         }
 

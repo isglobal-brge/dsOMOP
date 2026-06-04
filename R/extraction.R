@@ -753,6 +753,71 @@
   name
 }
 
+#' Resolve a requested raw-column spec into source columns and output aliases
+#'
+#' Plan column specs (\code{person_level} tables, \code{baseline}/event
+#' \code{columns}) cross the DataSHIELD transport as JSON and arrive decoded
+#' with \code{simplifyVector = FALSE}, i.e. as a (possibly named) list rather
+#' than a character vector. This normalises any of: a character vector, a
+#' list of scalars, a named list, or a named vector into two equal-length
+#' character vectors — \code{source} (the real OMOP column to SELECT) and
+#' \code{alias} (the name to expose in the output). Element names supply
+#' aliases; unnamed elements alias to themselves. Returns \code{NULL} for an
+#' empty/absent spec (meaning "server default columns").
+#'
+#' @param entry A column spec as received in a decoded plan.
+#' @return \code{NULL}, or a list with character vectors \code{source} and
+#'   \code{alias} of equal length.
+#' @keywords internal
+.colSpec <- function(entry) {
+  if (is.null(entry)) return(NULL)
+  src <- as.character(unlist(entry, use.names = FALSE))
+  if (length(src) == 0) return(NULL)
+  nm <- names(entry)
+  if (is.null(nm)) {
+    alias <- src
+  } else {
+    nm <- as.character(nm)
+    alias <- ifelse(nzchar(nm), nm, src)
+  }
+  list(source = src, alias = alias)
+}
+
+#' Rename extracted columns to their requested aliases
+#'
+#' Applies the \code{source -> alias} mapping from \code{\link{.colSpec}} to an
+#' extracted data frame, matching source columns case-insensitively (OMOP
+#' columns come back lower-cased from SQL).
+#'
+#' @section Security:
+#' Row-level identifiers are never renamed, and no column is ever renamed
+#' \emph{into} an identifier name. \code{.stripIdentifiers} matches a fixed
+#' set of identifier names (see \code{\link{.identifierColumns}}) and runs
+#' after extraction; allowing an identifier to be aliased away — or a benign
+#' column to masquerade as one — would defeat that last line of defense.
+#'
+#' @param df A data frame returned by an extraction function.
+#' @param spec A \code{.colSpec} result, or \code{NULL} (no-op).
+#' @return \code{df} with columns renamed where an alias differs from source.
+#' @keywords internal
+.applyColumnAliases <- function(df, spec) {
+  if (is.null(spec) || !is.data.frame(df) || length(names(df)) == 0) {
+    return(df)
+  }
+  ids <- .identifierColumns()
+  cur <- names(df)
+  for (i in seq_along(spec$source)) {
+    s <- spec$source[i]
+    a <- spec$alias[i]
+    if (identical(s, a)) next
+    if (tolower(s) %in% ids || tolower(a) %in% ids) next
+    hit <- which(tolower(cur) == tolower(s))
+    if (length(hit) == 1L) cur[hit] <- a
+  }
+  names(df) <- cur
+  df
+}
+
 # --- Representations ---
 
 #' Transform a long result to wide format

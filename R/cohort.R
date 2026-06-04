@@ -121,20 +121,33 @@
 
   where <- character(0)
 
-  # Concept set filter
+  # Concept set filter. Accepts a flat vector of IDs or a concept-set spec
+  # (list with $concepts plus optional include_descendants/include_mapped/
+  # exclude), resolved the same way as the plan path via .resolveConceptSet.
   if (!is.null(spec$concept_set) && !is.null(concept_col) && concept_col %in% src_cols) {
-    ids <- paste(as.integer(spec$concept_set), collapse = ", ")
-    where <- c(where, paste0(concept_col, " IN (", ids, ")"))
+    concept_ids <- .resolveConceptSet(handle, spec$concept_set)
+    if (length(concept_ids) > 0) {
+      ids <- paste(concept_ids, collapse = ", ")
+      where <- c(where, paste0(concept_col, " IN (", ids, ")"))
+    }
   }
 
-  # Value threshold (for measurements)
+  # Value threshold (for measurements). Disclosure policy: threshold operators
+  # define a population (low fingerprinting risk, still size-checked by
+  # .assertMinPersons below) and are allowed; exact-value operators (==, !=)
+  # only serve to single out individuals with a precise value and are blocked.
   if (!is.null(spec$value_threshold) && "value_as_number" %in% src_cols) {
     op <- spec$value_threshold$op %||% ">="
     val <- as.numeric(spec$value_threshold$value)
-    if (op %in% c(">=", "<=", ">", "<", "==", "!=")) {
-      if (op == "==") op <- "="
-      where <- c(where, paste0("value_as_number ", op, " ", val))
+    if (op %in% c("==", "=", "!=")) {
+      stop("Disclosive: exact-value cohort criteria ('", op, "') are not ",
+           "permitted; use a threshold operator (>=, <=, >, <).",
+           call. = FALSE)
     }
+    if (!op %in% c(">=", "<=", ">", "<")) {
+      stop("Unknown value_threshold operator: '", op, "'.", call. = FALSE)
+    }
+    where <- c(where, paste0("value_as_number ", op, " ", val))
   }
 
   if (length(where) > 0) {
@@ -262,10 +275,13 @@
     # Build subquery for this criterion
     sub_where <- character(0)
 
-    # Concept set filter
+    # Concept set filter (flat vector or concept-set spec; see .resolveConceptSet)
     if (!is.null(crit$concept_set) && !is.null(concept_col)) {
-      ids <- paste(as.integer(crit$concept_set), collapse = ", ")
-      sub_where <- c(sub_where, paste0("e.", concept_col, " IN (", ids, ")"))
+      concept_ids <- .resolveConceptSet(handle, crit$concept_set)
+      if (length(concept_ids) > 0) {
+        ids <- paste(concept_ids, collapse = ", ")
+        sub_where <- c(sub_where, paste0("e.", concept_col, " IN (", ids, ")"))
+      }
     }
 
     # Temporal constraints (index-relative window)

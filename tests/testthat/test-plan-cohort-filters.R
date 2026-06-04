@@ -120,6 +120,50 @@ test_that("plan execute uses filter_tree before legacy flat cohort spec", {
   expect_equal(sort(result$people$person_id), c(1L, 2L, 5L))
 })
 
+test_that("multi-concept has_concept / not_has_concept match any of the concepts", {
+  handle <- local_plan_filter_handle()
+  on.exit(DBI::dbDisconnect(handle$conn), add = TRUE)
+
+  # condition_occurrence: person 2 -> {201820, 201820}, 3 -> {201820}, 4 -> {999}
+  has <- sort(.buildCohortFromFilters(handle, list(
+    type = "has_concept",
+    params = list(concept_id = c(201820L, 999L),
+                  table = "condition_occurrence")
+  )))
+  expect_equal(has, c(2L, 3L, 4L))
+
+  # not_has excludes anyone with either concept -> only 1 and 5 remain
+  not_has <- sort(.buildCohortFromFilters(handle, list(
+    type = "not_has_concept",
+    params = list(concept_id = c(201820L, 999L),
+                  table = "condition_occurrence")
+  )))
+  expect_equal(not_has, c(1L, 5L))
+
+  # Single concept still works (regression): 201820 -> persons 2 and 3
+  single <- sort(.buildCohortFromFilters(handle, list(
+    type = "has_concept",
+    params = list(concept_id = 201820L, table = "condition_occurrence")
+  )))
+  expect_equal(single, c(2L, 3L))
+
+  # The concept_ids alias is honoured identically to concept_id
+  via_alias <- sort(.buildCohortFromFilters(handle, list(
+    type = "has_concept",
+    params = list(concept_ids = c(201820L, 999L),
+                  table = "condition_occurrence")
+  )))
+  expect_equal(via_alias, c(2L, 3L, 4L))
+
+  # Mimic the JSON-decoded shape: arrays arrive server-side as R lists
+  as_list <- sort(.buildCohortFromFilters(handle, list(
+    type = "has_concept",
+    params = list(concept_id = list(201820L, 999L),
+                  table = "condition_occurrence")
+  )))
+  expect_equal(as_list, c(2L, 3L, 4L))
+})
+
 test_that("prior observation and followup cohort filters use translated dates", {
   dialects <- c("sqlite", "postgresql", "mysql", "oracle", "bigquery",
                 "spark", "sql server", "redshift", "snowflake")

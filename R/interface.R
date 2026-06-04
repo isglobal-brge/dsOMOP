@@ -128,15 +128,17 @@
 #' every ASSIGN output before \code{base::assign()} stores the data in the
 #' DataSHIELD environment.
 #'
-#' @param x Data frame or list to sanitize. Operates recursively on lists.
-#' @return Sanitized object with identifier columns removed
+#' Row-level identifier columns that must never reach DS analysis functions
+#'
+#' Full OMOP CDM identifier column list: primary keys (person_id,
+#' *_occurrence_id) and entity foreign keys (provider_id, care_site_id,
+#' location_id). These uniquely or quasi-uniquely identify rows and could
+#' enable re-identification if exposed. Single source of truth shared by
+#' \code{.stripIdentifiers} (which drops them) and \code{.applyColumnAliases}
+#' (which refuses to rename them, so stripping stays effective).
 #' @keywords internal
-.stripIdentifiers <- function(x) {
-  # Full OMOP CDM identifier column list: primary keys (person_id,
-  # *_occurrence_id) and entity foreign keys (provider_id, care_site_id,
-  # location_id). These uniquely or quasi-uniquely identify rows and
-  # could enable re-identification if exposed to DS analysis functions.
-  strip_cols <- c(
+.identifierColumns <- function() {
+  c(
     # Person / subject identifiers
     "person_id", "subject_id",
     # Clinical event row IDs
@@ -148,6 +150,13 @@
     # Provider / location entity keys (indirect identifiers)
     "provider_id", "care_site_id", "location_id"
   )
+}
+
+#' @param x Data frame or list to sanitize. Operates recursively on lists.
+#' @return Sanitized object with identifier columns removed
+#' @keywords internal
+.stripIdentifiers <- function(x) {
+  strip_cols <- .identifierColumns()
   if (is.data.frame(x)) {
     drop <- intersect(strip_cols, names(x))
     if (length(drop) > 0) {
@@ -264,6 +273,7 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   if (!output_mode %in% c("memory", "staged")) {
     output_mode <- "memory"
   }
+  .omopAuditLog("omopPlanExecuteDS", list(outputs = names(out), plan = plan))
   outputs <- .planExecute(handle, plan, out, output_mode = output_mode)
 
   # Validate that requested outputs were produced
@@ -343,6 +353,7 @@ omopCohortCreateDS <- function(omop_symbol, cohort_spec,
                                overwrite = FALSE) {
   handle <- .getHandle(omop_symbol)
   cohort_spec <- .ds_arg(cohort_spec)
+  .omopAuditLog("omopCohortCreateDS", cohort_spec)
   .cohortCreate(handle, cohort_spec, mode, cohort_id, name, overwrite)
 }
 
@@ -367,6 +378,7 @@ omopCohortCombineDS <- function(omop_symbol, op,
                                 cohort_a, cohort_b,
                                 new_name = NULL) {
   handle <- .getHandle(omop_symbol)
+  .omopAuditLog("omopCohortCombineDS", list(op = op, a = cohort_a, b = cohort_b))
   .cohortCombine(handle, op, cohort_a, cohort_b, new_name)
 }
 
@@ -1256,5 +1268,6 @@ omopQueryExecDS <- function(omop_symbol, query_id,
   .validateIdentifier(query_id, "query_id")
   inputs <- .ds_arg(inputs)
   mode <- match.arg(mode, c("aggregate", "assign"))
+  .omopAuditLog("omopQueryExecDS", list(query_id = query_id, inputs = inputs))
   .query_exec(handle, query_id, inputs, mode)
 }

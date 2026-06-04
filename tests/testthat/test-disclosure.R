@@ -152,7 +152,9 @@ test_that("classifyFilter returns correct classification", {
   expect_equal(.classifyFilter("age_group"), "allowed")
   expect_equal(.classifyFilter("cohort"), "allowed")
   expect_equal(.classifyFilter("concept_set"), "allowed")
-  expect_equal(.classifyFilter("value_threshold"), "blocked")
+  # value_threshold is a population-defining range filter (allowed/size-checked);
+  # its disclosive exact-value operators (==, !=) are blocked at the cohort site.
+  expect_equal(.classifyFilter("value_threshold"), "constrained")
   expect_equal(.classifyFilter("custom"), "blocked")
   expect_equal(.classifyFilter("has_concept"), "constrained")
   expect_equal(.classifyFilter("date_range"), "constrained")
@@ -185,11 +187,11 @@ test_that("classifyFilter blocks unknown filter types", {
 
 test_that("validateFilter stops on blocked filters", {
   expect_error(
-    .validateFilter("value_threshold"),
+    .validateFilter("custom"),
     "not allowed"
   )
   expect_error(
-    .validateFilter("custom"),
+    .validateFilter("unknown_type"),
     "not allowed"
   )
 })
@@ -198,6 +200,7 @@ test_that("validateFilter passes allowed and constrained filters", {
   expect_invisible(.validateFilter("sex"))
   expect_invisible(.validateFilter("age_group"))
   expect_invisible(.validateFilter("has_concept"))
+  expect_invisible(.validateFilter("value_threshold"))
 })
 
 # ==============================================================================
