@@ -61,21 +61,27 @@
       paste(missing, collapse = "', '"), "'))")
   }
 
+  # Register the resource resolver on namespace LOAD, not attach: Opal invokes
+  # methods as `dsOMOP::fn`, which loads the namespace without attaching, so
+  # .onAttach never runs server-side — yet the resolver must already exist when
+  # a resource is assigned (which happens before any dsOMOP method is called).
+  .pkg_state$resolver <- OMOPResourceResolver$new()
+  resourcer::registerResourceResolver(.pkg_state$resolver)
+
   invisible(NULL)
 }
 
 #' Package attach hook
 #'
-#' Registers the OMOP CDM resource resolver, cleans stale staging
-#' directories, and displays a startup message with the package version.
+#' Cleans stale staging directories and displays a startup message with the
+#' package version. (The resource resolver is registered in \code{.onLoad} so
+#' it is available in server-side sessions that load the namespace without
+#' attaching the package.)
 #'
 #' @param lib Library path.
 #' @param pkg Package name.
 #' @keywords internal
 .onAttach <- function(lib, pkg) {
-  .pkg_state$resolver <- OMOPResourceResolver$new()
-  resourcer::registerResourceResolver(.pkg_state$resolver)
-
   # Clean up stale staging directories from previous sessions
   tryCatch(.cleanStaleStagingDirs(), error = function(e) NULL)
 
