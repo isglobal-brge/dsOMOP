@@ -783,6 +783,28 @@
   list(source = src, alias = alias)
 }
 
+#' Landed names of the concept-id columns in a column spec
+#'
+#' Given a \code{\link{.colSpec}} result, returns the output (\code{alias})
+#' names of the columns whose \emph{source} is an OMOP \code{_concept_id}
+#' column. Detection keys on the source name — the reliable signal, since an
+#' alias may have renamed the \code{_concept_id} suffix away — while the value
+#' returned is the name the column actually lands under. The factor
+#' harmonization layer uses this to recognise concept columns even after a
+#' user has renamed them, so renaming never silently opts a column out of
+#' federated factor coding.
+#'
+#' @param spec A \code{.colSpec} result (\code{list(source=, alias=)}), or
+#'   \code{NULL}.
+#' @return Character vector of landed concept-column names; empty if none.
+#' @keywords internal
+.conceptAliases <- function(spec) {
+  if (is.null(spec) || is.null(spec$source) || is.null(spec$alias)) {
+    return(character(0))
+  }
+  unique(spec$alias[grepl("_concept_id$", spec$source)])
+}
+
 #' Rename extracted columns to their requested aliases
 #'
 #' Applies the \code{source -> alias} mapping from \code{\link{.colSpec}} to an

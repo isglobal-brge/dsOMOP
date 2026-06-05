@@ -284,6 +284,7 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   }
 
   assign_env <- parent.frame()
+  concept_cols <- attr(outputs, "omop_concept_cols") %||% list()
 
   for (nm in names(out)) {
     sym <- out[[nm]]
@@ -320,6 +321,14 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
       assign(paste0(sym, ".covariateRef"),
              result$covariateRef, envir = assign_env)
     } else {
+      # Tag the concept-id columns by their landed (possibly renamed) names so
+      # the factor harmonization layer recognises them post-rename. Stamped
+      # here, after identifier stripping ([ drops frame attributes), as the
+      # last step before the symbol is created.
+      cc <- intersect(as.character(concept_cols[[nm]]), names(result))
+      if (length(cc) > 0L) {
+        attr(result, "omop_concept_cols") <- cc
+      }
       assign(sym, result, envir = assign_env)
     }
   }
@@ -1311,6 +1320,12 @@ omopFactorLevelsDS <- function(df) {
     return(empty)
   }
   cols <- grep("_concept_id$", names(df), value = TRUE)
+  # Columns whose _concept_id suffix was renamed away are tagged at extraction
+  # time (omopPlanExecuteDS) so harmonization still recognises them.
+  tagged <- attr(df, "omop_concept_cols")
+  if (length(tagged) > 0L) {
+    cols <- union(cols, intersect(as.character(tagged), names(df)))
+  }
   if (length(cols) == 0L) {
     return(empty)
   }

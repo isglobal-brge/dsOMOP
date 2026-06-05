@@ -78,6 +78,68 @@ test_that("factorLevels reports the server level cap", {
   })
 })
 
+# --- renamed concept columns: the omop_concept_cols tag -----------------------
+# A user may alias a concept column (c(sex = "gender_concept_id")), which lands
+# it under a name without the _concept_id suffix. The extractor tags such
+# columns by their landed name so harmonization still recognises them; renaming
+# never silently opts a column out of federated factor coding.
+
+test_that(".conceptAliases returns the landed name of an aliased concept col", {
+  spec <- .colSpec(c(sex = "gender_concept_id", "year_of_birth"))
+  expect_equal(.conceptAliases(spec), "sex")
+})
+
+test_that(".conceptAliases falls back to the source name when not aliased", {
+  spec <- .colSpec(c("gender_concept_id", "year_of_birth"))
+  expect_equal(.conceptAliases(spec), "gender_concept_id")
+})
+
+test_that(".conceptAliases collects several concept cols with mixed aliasing", {
+  spec <- .colSpec(c(sex = "gender_concept_id", "race_concept_id"))
+  expect_setequal(.conceptAliases(spec), c("sex", "race_concept_id"))
+})
+
+test_that(".conceptAliases ignores non-concept columns and NULL specs", {
+  expect_equal(.conceptAliases(.colSpec(c(birth = "year_of_birth"))),
+               character(0))
+  expect_equal(.conceptAliases(NULL), character(0))
+})
+
+test_that("factorLevels harmonizes a renamed concept column via the tag", {
+  withr::with_options(list(nfilter.levels.max = 40,
+                           nfilter.levels.density = 1), {
+    df <- data.frame(sex = c(8507L, 8532L, 8507L, 8532L))
+    # Without the tag the renamed column is invisible (no _concept_id suffix).
+    expect_equal(omopFactorLevelsDS(df)$levels, list())
+    # Tagged (as omopPlanExecuteDS does) it is recognised and reported.
+    attr(df, "omop_concept_cols") <- "sex"
+    res <- omopFactorLevelsDS(df)
+    expect_setequal(res$levels$sex, c("8507", "8532"))
+  })
+})
+
+test_that("factorLevels ignores a tag that names an absent column", {
+  withr::with_options(list(nfilter.levels.max = 40,
+                           nfilter.levels.density = 1), {
+    df <- data.frame(gender_concept_id = c(8507L, 8532L))
+    attr(df, "omop_concept_cols") <- "does_not_exist"
+    res <- omopFactorLevelsDS(df)
+    expect_false("does_not_exist" %in% names(res$levels))
+    expect_true("gender_concept_id" %in% names(res$levels))
+  })
+})
+
+test_that("factorLevels still gates a tagged renamed column for disclosure", {
+  withr::with_options(list(nfilter.levels.max = 5,
+                           nfilter.levels.density = 1), {
+    df <- data.frame(grp = 1:20)
+    attr(df, "omop_concept_cols") <- "grp"
+    res <- omopFactorLevelsDS(df)
+    expect_true("grp" %in% res$unsafe)
+    expect_false("grp" %in% names(res$levels))
+  })
+})
+
 # --- omopAsFactorColumnsDS ----------------------------------------------------
 
 test_that("asFactorColumns errors on a non-data.frame target", {

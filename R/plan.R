@@ -822,6 +822,10 @@
   }
 
   results <- list()
+  # Landed names of concept-id columns per output, so the factor harmonization
+  # layer recognises them even when a user has renamed the _concept_id suffix
+  # away. Carried out of here as an attribute on the returned list (see tail).
+  concept_cols_by_output <- list()
   outputs <- plan$outputs %||% list()
   options <- plan$options %||% list()
   translate <- options$translate_concepts %||% FALSE
@@ -893,6 +897,8 @@
               block_sensitive = block_sensitive
             )
             tbl_df <- .applyColumnAliases(tbl_df, spec)
+            concept_cols_by_output[[out_name]] <- c(
+              concept_cols_by_output[[out_name]], .conceptAliases(spec))
           }
 
           if (is.null(result_df)) {
@@ -1071,6 +1077,7 @@
             ),
             base_spec
           )
+          concept_cols_by_output[[out_name]] <- .conceptAliases(base_spec)
         }
 
       } else if (out_type == "survival") {
@@ -1200,6 +1207,7 @@
     }
   }
 
+  attr(results, "omop_concept_cols") <- concept_cols_by_output
   results
 }
 
