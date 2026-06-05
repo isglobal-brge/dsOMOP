@@ -125,7 +125,19 @@
   parsed <- resource_client$getParsed()
   dbms <- parsed$dbms
 
-  cdm_schema     <- cdm_schema     %||% parsed$cdm_schema
+  # Per-DBMS default namespace, used only when no CDM schema is supplied.
+  default_schema <- .dbmsDefaultSchema(
+    dbms,
+    database = parsed$database,
+    user     = tryCatch(resource_client$getResource()$identity,
+                        error = function(e) NULL)
+  )
+
+  # Schema resolution (explicit override > URL > DBMS default). The vocabulary
+  # schema falls back to the CDM schema, so: neither set -> both default; only
+  # CDM set -> both that; only vocab set -> CDM default + vocab apart; both set
+  # -> one each.
+  cdm_schema     <- cdm_schema     %||% parsed$cdm_schema %||% default_schema
   vocab_schema   <- vocab_schema   %||% parsed$vocabulary_schema %||% cdm_schema
   results_schema <- results_schema %||% parsed$results_schema
   temp_schema    <- temp_schema    %||% parsed$temp_schema

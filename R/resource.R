@@ -1,6 +1,214 @@
 # Module: Resource Resolver
 # ResourceR integration for OMOP CDM database connections.
 
+# --- URL Parsing Helpers ---
+
+#' Decode percent-encoded URL components safely
+#'
+#' @param x Character; a possibly percent-encoded string.
+#' @return The decoded string, or the input unchanged if decoding fails or is empty.
+#' @keywords internal
+.urlDecode <- function(x) {
+  if (is.null(x) || !nzchar(x)) return(x)
+  tryCatch(utils::URLdecode(x), error = function(e) x)
+}
+
+#' Normalize a DBMS name to a canonical token
+#'
+#' Maps the many spellings of each supported backend (underscores, spaces,
+#' vendor aliases) to a single canonical token accepted by BOTH
+#' \code{\link{.resolve_target_dialect}} and \code{connect_dbi}. Unknown values
+#' are returned cleaned (lower-cased, separators collapsed) so the downstream
+#' dialect resolver raises one consistent "Unsupported DBMS" error.
+#'
+#' @param x Character; a raw DBMS name.
+#' @return Character canonical token, or NULL if input is NULL.
+#' @keywords internal
+.normalizeDBMS <- function(x) {
+  if (is.null(x)) return(NULL)
+  s <- tolower(trimws(x))
+  if (!nzchar(s)) return(s)
+  s <- trimws(gsub("[_[:space:]]+", " ", s))   # "sql_server" / "sql  server" -> "sql server"
+  aliases <- c(
+    "postgresql"      = "postgresql",
+    "postgres"        = "postgresql",
+    "postgre"         = "postgresql",
+    "pg"              = "postgresql",
+    "mysql"           = "mysql",
+    "mariadb"         = "mariadb",
+    "maria"           = "mariadb",
+    "sql server"      = "sqlserver",
+    "sqlserver"       = "sqlserver",
+    "mssql"           = "sqlserver",
+    "ms sql"          = "sqlserver",
+    "ms sql server"   = "sqlserver",
+    "synapse"         = "synapse",
+    "azure synapse"   = "synapse",
+    "pdw"             = "pdw",
+    "oracle"          = "oracle",
+    "redshift"        = "redshift",
+    "amazon redshift" = "redshift",
+    "bigquery"        = "bigquery",
+    "big query"       = "bigquery",
+    "snowflake"       = "snowflake",
+    "spark"           = "spark",
+    "spark sql"       = "spark",
+    "sparksql"        = "spark",
+    "hive"            = "spark",
+    "databricks"      = "databricks",
+    "sqlite"          = "sqlite",
+    "sqlite3"         = "sqlite",
+    "duckdb"          = "duckdb"
+  )
+  out <- aliases[[s]]
+  if (is.null(out)) s else out
+}
+
+#' Default schema for a DBMS when none is supplied
+#'
+#' Engines expose their default namespace differently: PostgreSQL and Redshift
+#' use \code{public}; SQL Server / Synapse / PDW use \code{dbo}; MySQL/MariaDB
+#' and BigQuery treat the database/dataset itself as the schema; Oracle uses the
+#' connecting user's (upper-cased) schema; SQLite/DuckDB use \code{main};
+#' Snowflake uses \code{PUBLIC}; Spark/Databricks use \code{default}.
+#'
+#' @param dbms Character; DBMS name (any spelling; normalized internally).
+#' @param database Character; database/dataset name (where it doubles as schema).
+#' @param user Character; connecting user (used for Oracle).
+#' @return Character schema name, or NULL when no sensible default exists.
+#' @keywords internal
+.dbmsDefaultSchema <- function(dbms, database = NULL, user = NULL) {
+  d <- .normalizeDBMS(dbms)
+  if (is.null(d) || !nzchar(d)) return(NULL)
+  nz <- function(v) !is.null(v) && nzchar(v)
+  switch(d,
+    postgresql = "public",
+    redshift   = "public",
+    sqlserver  = "dbo",
+    synapse    = "dbo",
+    pdw        = "dbo",
+    mysql      = if (nz(database)) database else NULL,
+    mariadb    = if (nz(database)) database else NULL,
+    bigquery   = if (nz(database)) database else NULL,
+    oracle     = if (nz(user)) toupper(user) else NULL,
+    sqlite     = "main",
+    duckdb     = "main",
+    snowflake  = "PUBLIC",
+    spark      = "default",
+    databricks = "default",
+    NULL
+  )
+}
+
+#' Parse a readable OMOP CDM resource URL
+#'
+#' Parses URLs of the form
+#' \code{omop+dbi:<dbms>://<host>[:<port>]/<database>?cdm_schema=...&vocabulary_schema=...}.
+#' The \code{omop+dbi:} wrapper is optional (a bare \code{<dbms>://...} is
+#' accepted). File-backed engines use an empty authority and an absolute path,
+#' e.g. \code{omop+dbi:sqlite:///srv/data/omop.sqlite}. Recognized query keys:
+#' \code{cdm_schema}, \code{vocabulary_schema}, \code{results_schema},
+#' \code{temp_schema}, \code{warehouse}, \code{driver} (plus a few aliases).
+#'
+#' @param url Character; the resource URL.
+#' @return Named list with dbms, host, port, database, server and schema/extra fields.
+#' @keywords internal
+.parseOmopUrl <- function(url) {
+  if (is.null(url) || !nzchar(trimws(url)))
+    stop("OMOP resource URL is empty.", call. = FALSE)
+
+  raw <- trimws(url)
+
+  # The dsOMOP wrapper scheme "omop+dbi:" is optional.
+  body <- sub("^omop\\+dbi:", "", raw, ignore.case = TRUE)
+
+  # Refuse the retired base64 format with an actionable message.
+  if (grepl("^/*B64:", body))
+    stop("This OMOP resource uses the retired base64 URL format. Re-create it ",
+         "with a readable URL, e.g. ",
+         "'omop+dbi:postgresql://host:5432/db?cdm_schema=cdm'.", call. = FALSE)
+
+  # Split off the query string (everything after the first '?').
+  query <- ""
+  qpos <- regexpr("?", body, fixed = TRUE)
+  if (qpos > 0L) {
+    query <- substring(body, qpos + 1L)
+    body  <- substring(body, 1L, qpos - 1L)
+  }
+
+  # Scheme (the DBMS) precedes "://".
+  sep <- regexpr("://", body, fixed = TRUE)
+  if (sep < 1L)
+    stop("Malformed OMOP resource URL (expected '<dbms>://...'): ", url,
+         call. = FALSE)
+  dbms_raw <- substring(body, 1L, sep - 1L)
+  rest     <- substring(body, sep + 3L)
+
+  # Authority is up to the first '/'; the remainder is the database/file path.
+  slash <- regexpr("/", rest, fixed = TRUE)
+  if (slash < 1L) {
+    authority <- rest
+    path <- ""
+  } else {
+    authority <- substring(rest, 1L, slash - 1L)
+    path      <- substring(rest, slash + 1L)
+  }
+
+  # Host and optional port from the authority (split on the last ':').
+  host <- authority
+  port <- NULL
+  if (nzchar(authority)) {
+    cpos <- regexpr(":[^:]*$", authority)
+    if (cpos > 0L) {
+      host <- substring(authority, 1L, cpos - 1L)
+      port_str <- substring(authority, cpos + 1L)
+      if (nzchar(port_str)) port <- suppressWarnings(as.integer(port_str))
+    }
+  }
+  host <- .urlDecode(host)
+
+  # Database / file path. With an empty authority the path is absolute (file
+  # engines): omop+dbi:sqlite:///srv/x.db -> "/srv/x.db". Kept as "" when absent.
+  database <- if (!nzchar(authority) && nzchar(path)) paste0("/", path) else path
+  database <- .urlDecode(database)
+
+  # Parse the query string into a named list of decoded values.
+  q <- list()
+  if (nzchar(query)) {
+    for (kv in strsplit(query, "&", fixed = TRUE)[[1]]) {
+      if (!nzchar(kv)) next
+      eq <- regexpr("=", kv, fixed = TRUE)
+      if (eq > 0L) {
+        k <- substring(kv, 1L, eq - 1L); v <- substring(kv, eq + 1L)
+      } else {
+        k <- kv; v <- ""
+      }
+      q[[.urlDecode(k)]] <- .urlDecode(v)
+    }
+  }
+  pick <- function(...) {
+    for (nm in c(...)) {
+      val <- q[[nm]]
+      if (!is.null(val) && nzchar(val)) return(val)
+    }
+    NULL
+  }
+
+  list(
+    dbms              = .normalizeDBMS(dbms_raw),
+    host              = if (nzchar(host)) host else NULL,
+    port              = port,
+    database          = database,                  # "" when absent (connect_dbi compat)
+    server            = paste0(host, "/", database),
+    cdm_schema        = pick("cdm_schema", "schema"),
+    vocabulary_schema = pick("vocabulary_schema", "vocab_schema", "vocabulary"),
+    results_schema    = pick("results_schema", "results"),
+    temp_schema       = pick("temp_schema", "temp"),
+    warehouse         = pick("warehouse"),
+    driver            = pick("driver")
+  )
+}
+
 #' OMOP CDM Resource Client
 #'
 #' R6 class that wraps a DataSHIELD resource pointing to an OMOP CDM database.
@@ -19,38 +227,7 @@ OMOPResourceClient <- R6::R6Class(
     .parsed = NULL,
 
     parse_url = function() {
-      url <- self$getResource()$url
-
-      # Strip scheme
-      body <- sub("^omop\\+dbi:///", "", url)
-
-      # B64-encoded JSON (safe for Opal R parser: no ?, &, = in URL body)
-      if (!startsWith(body, "B64:"))
-        stop("Unsupported OMOP resource URL format: ", url, call. = FALSE)
-
-      b64 <- substring(body, 5)
-      # base64url → standard base64
-      b64 <- gsub("-", "+", b64, fixed = TRUE)
-      b64 <- gsub("_", "/", b64, fixed = TRUE)
-      pad <- (4 - nchar(b64) %% 4) %% 4
-      if (pad > 0) b64 <- paste0(b64, strrep("=", pad))
-      params <- jsonlite::fromJSON(
-        rawToChar(jsonlite::base64_dec(b64)),
-        simplifyVector = FALSE
-      )
-
-      parsed <- list(
-        dbms              = params$dbms,
-        host              = params$host,
-        port              = as.integer(params$port),
-        database          = params$database %||% "",
-        server            = paste0(params$host, "/", params$database %||% ""),
-        cdm_schema        = params$cdm_schema,
-        vocabulary_schema = params$vocabulary_schema,
-        results_schema    = params$results_schema,
-        temp_schema       = params$temp_schema
-      )
-      private$.parsed <- parsed
+      private$.parsed <- .parseOmopUrl(self$getResource()$url)
     },
 
     #' Create a DBI connection directly from parsed URL parameters
@@ -88,7 +265,7 @@ OMOPResourceClient <- R6::R6Class(
       if (dbms == "duckdb") {
         if (!requireNamespace("duckdb", quietly = TRUE))
           stop("duckdb package required for DuckDB connections.", call. = FALSE)
-        dbpath <- if (nchar(p$database) > 0) p$database else ":memory:"
+        dbpath <- if (!is.null(p$database) && nzchar(p$database)) p$database else ":memory:"
         return(DBI::dbConnect(duckdb::duckdb(), dbdir = dbpath, read_only = FALSE))
       }
 
@@ -97,7 +274,7 @@ OMOPResourceClient <- R6::R6Class(
         if (!requireNamespace("odbc", quietly = TRUE))
           stop("odbc package required for SQL Server connections.", call. = FALSE)
         return(DBI::dbConnect(odbc::odbc(),
-                              driver = "ODBC Driver 17 for SQL Server",
+                              driver = p$driver %||% "ODBC Driver 17 for SQL Server",
                               server = paste0(p$host, ",", p$port),
                               database = p$database,
                               uid = user, pwd = pass))
@@ -125,7 +302,7 @@ OMOPResourceClient <- R6::R6Class(
         }
         if (requireNamespace("odbc", quietly = TRUE)) {
           return(DBI::dbConnect(odbc::odbc(),
-                                driver = "Oracle",
+                                driver = p$driver %||% "Oracle",
                                 DBQ = paste0(p$host, ":", p$port, "/", p$database),
                                 UID = user, PWD = pass))
         }
@@ -156,7 +333,7 @@ OMOPResourceClient <- R6::R6Class(
         if (!requireNamespace("odbc", quietly = TRUE))
           stop("odbc package required for Snowflake connections.", call. = FALSE)
         return(DBI::dbConnect(odbc::odbc(),
-                              driver = "Snowflake",
+                              driver = p$driver %||% "Snowflake",
                               server = paste0(p$host, ".snowflakecomputing.com"),
                               database = p$database,
                               uid = user, pwd = pass,
@@ -167,7 +344,7 @@ OMOPResourceClient <- R6::R6Class(
         if (!requireNamespace("odbc", quietly = TRUE))
           stop("odbc package required for Spark/Databricks connections.", call. = FALSE)
         # Databricks uses its own ODBC driver; classic Spark uses Simba
-        driver <- if (dbms == "databricks") "Databricks" else "Simba Spark ODBC Driver"
+        driver <- p$driver %||% (if (dbms == "databricks") "Databricks" else "Simba Spark ODBC Driver")
         return(DBI::dbConnect(odbc::odbc(),
                               driver = driver,
                               host = p$host, port = p$port,

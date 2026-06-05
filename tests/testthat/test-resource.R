@@ -1,75 +1,131 @@
-# --- Resource URL B64 Parsing Tests ---
+# --- Readable Resource URL Parsing Tests (.parseOmopUrl) ---
 
-test_that("B64 resource URL round-trips correctly", {
-  # Simulate what resource.js produces
-  config <- list(
-    dbms = "postgresql", host = "db.hospital.org",
-    port = 5432L, database = "omop_cdm",
-    cdm_schema = "cdm", vocabulary_schema = "vocab"
+test_that(".parseOmopUrl parses a full server URL", {
+  p <- .parseOmopUrl(
+    "omop+dbi:postgresql://db.example.org:5432/omop?cdm_schema=cdm&vocabulary_schema=vocab")
+  expect_equal(p$dbms, "postgresql")
+  expect_equal(p$host, "db.example.org")
+  expect_equal(p$port, 5432L)
+  expect_equal(p$database, "omop")
+  expect_equal(p$cdm_schema, "cdm")
+  expect_equal(p$vocabulary_schema, "vocab")
+})
+
+test_that(".parseOmopUrl accepts a bare scheme (no omop+dbi wrapper)", {
+  p <- .parseOmopUrl("postgresql://omopdb:5432/omop?cdm_schema=cdm")
+  expect_equal(p$dbms, "postgresql")
+  expect_equal(p$host, "omopdb")
+  expect_equal(p$port, 5432L)
+  expect_equal(p$cdm_schema, "cdm")
+})
+
+test_that(".parseOmopUrl treats the port as optional", {
+  p <- .parseOmopUrl("omop+dbi:postgresql://localhost/omop")
+  expect_equal(p$host, "localhost")
+  expect_null(p$port)
+  expect_equal(p$database, "omop")
+})
+
+test_that(".parseOmopUrl normalizes SQL Server spellings to 'sqlserver'", {
+  expect_equal(.parseOmopUrl("omop+dbi:sql_server://h:1433/db")$dbms, "sqlserver")
+  expect_equal(.parseOmopUrl("omop+dbi:mssql://h:1433/db")$dbms, "sqlserver")
+  expect_equal(.normalizeDBMS("SQL Server"), "sqlserver")
+  expect_equal(.normalizeDBMS("PostgreSQL"), "postgresql")
+  expect_equal(.normalizeDBMS("MariaDB"), "mariadb")
+  expect_equal(.normalizeDBMS("postgres"), "postgresql")
+})
+
+test_that(".parseOmopUrl handles a file URL (empty authority, absolute path)", {
+  p <- .parseOmopUrl("omop+dbi:sqlite:///srv/data/omop.sqlite")
+  expect_equal(p$dbms, "sqlite")
+  expect_null(p$host)
+  expect_null(p$port)
+  expect_equal(p$database, "/srv/data/omop.sqlite")
+})
+
+test_that(".parseOmopUrl percent-decodes path and query values", {
+  p <- .parseOmopUrl("omop+dbi:postgresql://h:5432/my%20db?cdm_schema=odd%2Fschema")
+  expect_equal(p$database, "my db")
+  expect_equal(p$cdm_schema, "odd/schema")
+})
+
+test_that(".parseOmopUrl rejects the retired base64 format", {
+  expect_error(.parseOmopUrl("omop+dbi:///B64:eyJhIjoxfQ"), "base64")
+})
+
+test_that(".parseOmopUrl errors on a malformed URL", {
+  expect_error(.parseOmopUrl("not-a-url"), "Malformed")
+  expect_error(.parseOmopUrl(""), "empty")
+})
+
+# --- Per-DBMS Default Schema (.dbmsDefaultSchema) ---
+
+test_that(".dbmsDefaultSchema returns the correct default for every DBMS", {
+  expect_equal(.dbmsDefaultSchema("postgresql"), "public")
+  expect_equal(.dbmsDefaultSchema("redshift"),   "public")
+  expect_equal(.dbmsDefaultSchema("sql_server"), "dbo")
+  expect_equal(.dbmsDefaultSchema("synapse"),    "dbo")
+  expect_equal(.dbmsDefaultSchema("pdw"),        "dbo")
+  expect_equal(.dbmsDefaultSchema("mysql",   database = "mydb"), "mydb")
+  expect_equal(.dbmsDefaultSchema("mariadb", database = "mydb"), "mydb")
+  expect_equal(.dbmsDefaultSchema("bigquery", database = "ds"),  "ds")
+  expect_equal(.dbmsDefaultSchema("oracle",  user = "scott"),    "SCOTT")
+  expect_equal(.dbmsDefaultSchema("sqlite"),     "main")
+  expect_equal(.dbmsDefaultSchema("duckdb"),     "main")
+  expect_equal(.dbmsDefaultSchema("snowflake"),  "PUBLIC")
+  expect_equal(.dbmsDefaultSchema("spark"),      "default")
+  expect_equal(.dbmsDefaultSchema("databricks"), "default")
+})
+
+test_that(".dbmsDefaultSchema returns NULL when the schema cannot be inferred", {
+  expect_null(.dbmsDefaultSchema("mysql"))   # database doubles as schema, none given
+  expect_null(.dbmsDefaultSchema("oracle"))  # schema is the user, none given
+})
+
+# --- Four-case CDM/vocabulary schema resolution (.createHandle) ---
+
+# A minimal stand-in for OMOPResourceClient: .createHandle only reads the parsed
+# URL, the resource identity, and stores the (here unused) connection.
+fake_client <- function(parsed, identity = NULL) {
+  list(
+    getConnection = function() NULL,
+    getParsed     = function() parsed,
+    getResource   = function() list(identity = identity)
   )
-  json <- as.character(jsonlite::toJSON(config, auto_unbox = TRUE))
-  b64 <- gsub("[\r\n]", "", jsonlite::base64_enc(charToRaw(json)))
-  b64 <- gsub("+", "-", b64, fixed = TRUE)
-  b64 <- gsub("/", "_", b64, fixed = TRUE)
-  b64 <- gsub("=+$", "", b64)
-  url <- paste0("omop+dbi:///B64:", b64)
+}
 
-  # Parse using the same logic as resource.R
-  body <- sub("^omop[+]dbi:///", "", url)
-  expect_true(startsWith(body, "B64:"))
-  b64r <- substring(body, 5)
-  b64r <- gsub("-", "+", b64r, fixed = TRUE)
-  b64r <- gsub("_", "/", b64r, fixed = TRUE)
-  pad <- (4 - nchar(b64r) %% 4) %% 4
-  if (pad > 0) b64r <- paste0(b64r, strrep("=", pad))
-  params <- jsonlite::fromJSON(rawToChar(jsonlite::base64_dec(b64r)),
-                                simplifyVector = FALSE)
-
-  expect_equal(params$dbms, "postgresql")
-  expect_equal(params$host, "db.hospital.org")
-  expect_equal(params$port, 5432)
-  expect_equal(params$database, "omop_cdm")
-  expect_equal(params$cdm_schema, "cdm")
-  expect_equal(params$vocabulary_schema, "vocab")
+test_that("schema resolution case 1: neither set -> both the DBMS default", {
+  h <- .createHandle(fake_client(.parseOmopUrl("omop+dbi:postgresql://h:5432/omop")))
+  expect_equal(h$cdm_schema, "public")
+  expect_equal(h$vocab_schema, "public")
 })
 
-test_that("B64 URL contains only parser-safe characters", {
-  config <- list(dbms = "sql_server", host = "10.0.0.1",
-                 port = 1433L, database = "my_db",
-                 cdm_schema = "dbo", results_schema = "results")
-  json <- as.character(jsonlite::toJSON(config, auto_unbox = TRUE))
-  b64 <- gsub("[\r\n]", "", jsonlite::base64_enc(charToRaw(json)))
-  b64 <- gsub("+", "-", b64, fixed = TRUE)
-  b64 <- gsub("/", "_", b64, fixed = TRUE)
-  b64 <- gsub("=+$", "", b64)
-  url <- paste0("omop+dbi:///B64:", b64)
-
-  # Must not contain ?, &, +, or = (Opal parser-unsafe)
-  body <- sub("^omop[+]dbi:///B64:", "", url)
-  expect_false(grepl("[?&+=]", body))
-  # Only alphanumeric, -, _
-  expect_true(grepl("^[A-Za-z0-9_-]+$", body))
+test_that("schema resolution case 2: only CDM set -> both that schema", {
+  h <- .createHandle(fake_client(
+    .parseOmopUrl("omop+dbi:postgresql://h:5432/omop?cdm_schema=cdm")))
+  expect_equal(h$cdm_schema, "cdm")
+  expect_equal(h$vocab_schema, "cdm")
 })
 
-test_that("B64 URL handles special chars in schema names", {
-  config <- list(dbms = "postgresql", host = "db.example.com",
-                 port = 5432L, database = "prod",
-                 cdm_schema = "omop-v5.4_data")
-  json <- as.character(jsonlite::toJSON(config, auto_unbox = TRUE))
-  b64 <- gsub("[\r\n]", "", jsonlite::base64_enc(charToRaw(json)))
-  b64 <- gsub("+", "-", b64, fixed = TRUE)
-  b64 <- gsub("/", "_", b64, fixed = TRUE)
-  b64 <- gsub("=+$", "", b64)
+test_that("schema resolution case 3: only vocabulary set -> CDM default, vocab apart", {
+  h <- .createHandle(fake_client(
+    .parseOmopUrl("omop+dbi:postgresql://h:5432/omop?vocabulary_schema=vocab")))
+  expect_equal(h$cdm_schema, "public")
+  expect_equal(h$vocab_schema, "vocab")
+})
 
-  # Decode back
-  b64r <- gsub("-", "+", b64, fixed = TRUE)
-  b64r <- gsub("_", "/", b64r, fixed = TRUE)
-  pad <- (4 - nchar(b64r) %% 4) %% 4
-  if (pad > 0) b64r <- paste0(b64r, strrep("=", pad))
-  params <- jsonlite::fromJSON(rawToChar(jsonlite::base64_dec(b64r)),
-                                simplifyVector = FALSE)
+test_that("schema resolution case 4: both set -> one each", {
+  h <- .createHandle(fake_client(
+    .parseOmopUrl("omop+dbi:postgresql://h:5432/omop?cdm_schema=cdm&vocabulary_schema=vocab")))
+  expect_equal(h$cdm_schema, "cdm")
+  expect_equal(h$vocab_schema, "vocab")
+})
 
-  expect_equal(params$cdm_schema, "omop-v5.4_data")
+test_that("schema resolution uses the connecting user for Oracle's default", {
+  h <- .createHandle(fake_client(
+    .parseOmopUrl("omop+dbi:oracle://h:1521/ORCL"), identity = "scott"))
+  expect_equal(h$cdm_schema, "SCOTT")
+  expect_equal(h$vocab_schema, "SCOTT")
 })
 
 # ===========================================================================
