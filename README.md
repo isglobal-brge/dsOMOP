@@ -86,13 +86,16 @@ dsadmin.install_github_package(o, 'dsOMOP', username='isglobal-brge', ref='main'
 
 ## Creating OMOP CDM resources
 
-The resources used by dsOMOP are of the type `omop.cdm.db`, which include the connection details to OMOP CDM databases.
+The resources used by dsOMOP are of the type `omop.dbi.db`, which hold the connection details to OMOP CDM databases. Each database engine has its own resource factory: for example `postgresql`, `mysql`, `mariadb`, `sqlserver`, `oracle`, `redshift`, `bigquery`, `snowflake`, `spark`, `databricks`, `sqlite` or `duckdb`.
 
 These resources contain the following parameters:
-- `driver`: The database engine used.
 - `host`: The hostname or IP address of the database server.
 - `port`: The port number on which the database server is listening.
-- `db`: The name of the database.
+- `database`: The name of the database. For file-based engines (SQLite, DuckDB) this is the path to the database file, and `host`/`port` are omitted.
+- `cdm_schema` (optional): The schema holding the OMOP CDM tables. Defaults to the engine default (for PostgreSQL, `public`).
+- `vocabulary_schema` (optional): The schema holding the vocabulary tables. Defaults to the CDM schema.
+
+The database credentials (username and password) are not parameters: they are supplied separately as the resource identity and secret.
 
 To configure a resource for dsOMOP, ensure that you have the above details accurately filled out to establish a successful connection to your OMOP CDM database.
 
@@ -121,33 +124,25 @@ library(opalr)
 o <- opal.login(username = "administrator", password = "password", url = "https://opal-demo.obiba.org/")
 ```
 
-You can then use the following function to create an OMOP CDM resource:
+You can then use the following function to create an OMOP CDM resource. The `factory` argument selects the database engine (here `postgresql`):
 ```R
-driver <- "postgresql"
-host <- "localhost"
-port <- 5432
-db_name <- "my_database"
-username <- "my_username"
-password <- "my_password"
-
 opal.resource_extension_create(o,
   project = "my_project",
   name = "my_resource",
-  provider = 'dsOMOP', 
-  factory = 'omop-cdm-db',
+  provider = "dsOMOP",
+  factory = "postgresql",
   parameters = list(
-    driver = driver,
-    host = host,
-    port = port,
-    db = db_name
+    host = "localhost",
+    port = 5432,
+    database = "my_database",
+    cdm_schema = "cdm",
+    vocabulary_schema = "vocab"
   ),
   credentials = list(
-    username = username,
-    password = password
+    username = "my_username",
+    password = "my_password"
   )
 )
-
-
 ```
 
 ## Community development and extensions
