@@ -1271,3 +1271,131 @@ omopQueryExecDS <- function(omop_symbol, query_id,
   .omopAuditLog("omopQueryExecDS", list(query_id = query_id, inputs = inputs))
   .query_exec(handle, query_id, inputs, mode)
 }
+
+# --- Concept-factor harmonization (cross-server coordination) ---
+
+#' Report disclosure-safe levels of concept-id columns
+#'
+#' Aggregate-mode helper for the client-side concept-factor coordination layer.
+#' Scans a previously extracted data frame for columns whose name ends in
+#' \code{_concept_id} (both raw integer ids and translated character names keep
+#' this suffix) and, for each one, reports its distinct non-missing values as
+#' character levels — but only if that level set passes the server's disclosure
+#' gate (\code{\link{.assertSafeLevels}}: at most \code{nfilter.levels.max}
+#' distinct levels and density at or below \code{nfilter.levels.density}).
+#'
+#' The client collects each server's safe levels, computes their union in one
+#' deterministic order, and broadcasts that shared ordering back via
+#' \code{\link{omopAsFactorColumnsDS}} so the federated factor is harmonized
+#' across all sites. High-cardinality clinical columns that fail the gate are
+#' returned in \code{unsafe} so the client leaves them untouched (raw).
+#'
+#' Only the distinct category labels leave the server, never row-level data,
+#' and only after passing the same disclosure threshold that governs
+#' \code{ds.asFactor}/\code{ds.levels}. The result is returned natively
+#' (aggregate results are not JSON-encoded on the return path).
+#'
+#' @param df A data frame previously assigned server-side by
+#'   \code{\link{omopPlanExecuteDS}}.
+#' @return A named list with three elements: \code{levels} (named list mapping
+#'   each safe concept-id column to its character levels), \code{unsafe}
+#'   (character vector of concept-id columns that failed the disclosure gate),
+#'   and \code{nfilter_levels_max} (the server's level cap, so the client can
+#'   reconcile heterogeneous caps).
+#' @seealso \code{\link{omopAsFactorColumnsDS}}, \code{\link{.assertSafeLevels}}
+#' @export
+omopFactorLevelsDS <- function(df) {
+  cap <- .omopDisclosureSettings()$nfilter_levels_max
+  empty <- list(levels = list(), unsafe = character(0), nfilter_levels_max = cap)
+  if (!is.data.frame(df)) {
+    return(empty)
+  }
+  cols <- grep("_concept_id$", names(df), value = TRUE)
+  if (length(cols) == 0L) {
+    return(empty)
+  }
+  safe <- list()
+  unsafe <- character(0)
+  for (col in cols) {
+    vals <- df[[col]]
+    vals <- vals[!is.na(vals)]
+    levels_col <- unique(as.character(vals))
+    n_levels <- length(levels_col)
+    n_total <- length(vals)
+    if (n_levels == 0L) {
+      next
+    }
+    is_safe <- tryCatch(
+      {
+        .assertSafeLevels(n_levels, n_total)
+        TRUE
+      },
+      error = function(e) FALSE
+    )
+    if (is_safe) {
+      safe[[col]] <- levels_col
+    } else {
+      unsafe <- c(unsafe, col)
+    }
+  }
+  list(levels = safe, unsafe = unsafe, nfilter_levels_max = cap)
+}
+
+#' Recode concept-id columns to a harmonized factor
+#'
+#' Assign-mode counterpart to \code{\link{omopFactorLevelsDS}}. Given the union
+#' of disclosure-safe levels computed across the federation by the client, this
+#' rebuilds the named concept-id columns of a server-side data frame as factors
+#' that share one identical level ordering across every site. Identical level
+#' coding is what makes pooled \code{ds.glm} / \code{ds.glmSLMA} and
+#' \code{ds.table} behave correctly on the federated factor.
+#'
+#' A value present on only some sites becomes an empty level on the sites that
+#' lack it — valid base R, and the modelling functions handle it (pooled
+#' estimation uses the global data; study-level meta-analysis yields per-study
+#' \code{NA} without crashing). Columns absent from this server are silently
+#' skipped, so the same broadcast spec works for every site.
+#'
+#' The level cap is re-enforced here independently of the client: a column whose
+#' requested level count exceeds \code{nfilter.levels.max} is rejected, so a
+#' buggy or hostile client cannot coerce a disclosive factor onto the server.
+#' On error the original data frame keeps its prior value (the assignment is not
+#' applied), so the column safely remains raw.
+#'
+#' @param df A data frame previously assigned server-side by
+#'   \code{\link{omopPlanExecuteDS}}.
+#' @param spec A JSON-encoded named list mapping each concept-id column to the
+#'   shared character levels to impose (decoded via \code{\link{.ds_arg}}).
+#' @return The data frame with the specified concept-id columns recoded as
+#'   harmonized factors; the value is re-assigned to the original symbol.
+#' @seealso \code{\link{omopFactorLevelsDS}}
+#' @export
+omopAsFactorColumnsDS <- function(df, spec) {
+  if (!is.data.frame(df)) {
+    stop("omopAsFactorColumnsDS: target is not a data.frame.", call. = FALSE)
+  }
+  spec <- .ds_arg(spec)
+  if (!is.list(spec) || length(spec) == 0L) {
+    return(df)
+  }
+  cap <- .omopDisclosureSettings()$nfilter_levels_max
+  for (col in names(spec)) {
+    if (!col %in% names(df)) {
+      next
+    }
+    levels_col <- as.character(unlist(spec[[col]], use.names = FALSE))
+    levels_col <- levels_col[!is.na(levels_col) & nzchar(levels_col)]
+    if (length(levels_col) == 0L) {
+      next
+    }
+    if (length(levels_col) > cap) {
+      stop(
+        "omopAsFactorColumnsDS: requested levels for '", col,
+        "' exceed nfilter.levels.max (", cap, ").",
+        call. = FALSE
+      )
+    }
+    df[[col]] <- factor(as.character(df[[col]]), levels = levels_col)
+  }
+  df
+}
