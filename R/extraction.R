@@ -674,10 +674,6 @@
     result$cohort_start_date <- NULL
   }
 
-  if (translate_concepts) {
-    result <- .vocabTranslateColumns(handle, result)
-  }
-
   result <- .convertTypes(result)
 
   # DATE PRIVACY: Default is "remove" (strip all date/datetime columns).
@@ -702,6 +698,16 @@
     }
   }
   result <- .applyDateHandling(result, date_handling)
+
+  # Translate concept-id VALUES to human-readable names, but ONLY for the
+  # representations that surface *_concept_id as data: "long" keeps the columns
+  # and "wide" uses their values as column labels. The "features" and "sparse"
+  # builders instead match/encode the RAW numeric concept ids (e.g. matching a
+  # spec's numeric concept_set, or computing covariateId = conceptId*1000 + k),
+  # so they must see untranslated ids; readable labelling happens inside them.
+  if (translate_concepts && representation %in% c("long", "wide")) {
+    result <- .vocabTranslateColumns(handle, result)
+  }
 
   result <- switch(representation,
     "long" = result,
