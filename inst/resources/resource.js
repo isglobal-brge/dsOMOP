@@ -124,7 +124,7 @@ var dsOMOP = (function () {
 
     dbType("sqlite", "SQLite (file)",
       "Connection to a file-backed SQLite OMOP CDM database on the Rock server (needs the RSQLite package).",
-      [database("Database file path on the Rock server")], ["database"],
+      [database("Database file path on the Rock server")].concat(SCHEMAS), ["database"],
       credsNone("File-backed engine opened directly from the Rock server filesystem; no credentials required.")),
 
     dbType("duckdb", "DuckDB (file)",
