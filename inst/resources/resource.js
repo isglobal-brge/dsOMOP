@@ -136,6 +136,10 @@ var dsOMOP = {
             }
           },
           required: ["dbms", "database"]
+        },
+        credentials: {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          description: "No credentials required: file-backed engines (SQLite/DuckDB) are opened directly from the Rock server filesystem."
         }
       }
     ]
