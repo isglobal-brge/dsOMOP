@@ -910,23 +910,17 @@
   possible <- possible[!grepl("_type_concept_id$|_source_concept_id$", possible)]
   concept_col <- if (length(possible) > 0) possible[1] else NULL
 
-  # Build spec lookup: concept_id -> list of specs (supports multiple formats per concept)
-  specs_by_concept <- list()
-  if (!is.null(specs) && length(specs) > 0) {
-    for (s in specs) {
-      cs <- s$concept_set
-      if (is.list(cs) && !is.null(cs$concepts)) cs <- cs$concepts
-      cs <- as.integer(cs)
-      for (cid in cs) {
-        key <- as.character(cid)
-        if (is.null(specs_by_concept[[key]])) specs_by_concept[[key]] <- list()
-        specs_by_concept[[key]] <- c(specs_by_concept[[key]], list(s))
-      }
-    }
-  }
-
   persons <- unique(df$person_id)
   features <- data.frame(person_id = persons, stringsAsFactors = FALSE)
+
+  # Occurrence/count columns whose absence means 0 (not missing). When this
+  # frame is later left-joined onto a full person roster, the merge introduces
+  # NAs for persons with no matching events; the caller uses this attribute to
+  # restore them to 0. Value-based features are intentionally excluded — for
+  # them an absent measurement is a genuine NA.
+  zero_fill_cols <- character(0)
+  zero_fill_types <- c("boolean", "count", "n_distinct",
+                       "abnormal_high", "abnormal_low")
 
   # Helper: generate one feature column
   .add_feature <- function(features, spec, concept_data, concept_str, df) {
@@ -1232,27 +1226,57 @@
         names(nd_df)[2] <- nd_label
         features <- merge(features, nd_df, by = "person_id", all.x = TRUE)
         features[[nd_label]][is.na(features[[nd_label]])] <- 0L
+        zero_fill_cols <- c(zero_fill_cols, nd_label)
       }
     }
   }
 
-  if (!is.null(concept_col) && concept_col %in% names(df)) {
+  if (!is.null(specs) && length(specs) > 0) {
+    # Spec-driven path: one named column-group per spec, evaluated over the
+    # UNION of the spec's concept set ("any of set" semantics). A boolean spec
+    # over {a, b, c} yields a single column that is TRUE when the person has a
+    # record for ANY of a, b, c; a count spec yields the total across the set.
+    spec_names <- names(specs)
+    for (si in seq_along(specs)) {
+      spec <- specs[[si]]
+      if (is.null(spec)) next
+      if (identical(spec$type, "n_distinct")) next  # handled above
+
+      # Resolve the output column name: an explicit spec$name wins, else the
+      # list key the spec was declared under (features = list(nsaid = ...)).
+      if (is.null(spec$name) || !nzchar(spec$name)) {
+        key <- if (!is.null(spec_names)) spec_names[[si]] else ""
+        if (!is.na(key) && nzchar(key)) spec$name <- key
+      }
+
+      # Rows matching ANY concept in this spec's set. Without a concept column
+      # (table has no *_concept_id), the spec applies to every row.
+      cs <- spec$concept_set
+      if (is.list(cs) && !is.null(cs$concepts)) cs <- cs$concepts
+      cs <- suppressWarnings(as.integer(unlist(cs, use.names = FALSE)))
+      cs <- cs[!is.na(cs)]
+      if (!is.null(concept_col) && concept_col %in% names(df) &&
+          length(cs) > 0) {
+        spec_data <- df[df[[concept_col]] %in% cs, , drop = FALSE]
+      } else {
+        spec_data <- df
+      }
+
+      concept_tag <- if (length(cs) > 0) paste(cs, collapse = "_") else "all"
+      features <- .add_feature(features, spec, spec_data, concept_tag, df)
+      if (!is.null(spec$type) && spec$type %in% zero_fill_types &&
+          !is.null(spec$name) && nzchar(spec$name)) {
+        zero_fill_cols <- c(zero_fill_cols, spec$name)
+      }
+    }
+  } else if (!is.null(concept_col) && concept_col %in% names(df)) {
+    # No specs: emit one column per distinct concept (backward compatible).
     concepts <- unique(df[[concept_col]])
 
     for (concept in concepts) {
       concept_str <- as.character(concept)
-      concept_specs <- specs_by_concept[[concept_str]]
       concept_data <- df[df[[concept_col]] == concept, , drop = FALSE]
-
-      if (is.null(concept_specs) || length(concept_specs) == 0) {
-        # No spec: generate all features (backward compat)
-        features <- .add_feature(features, NULL, concept_data, concept_str, df)
-      } else {
-        # Generate one feature per spec (supports multiple formats per concept)
-        for (spec in concept_specs) {
-          features <- .add_feature(features, spec, concept_data, concept_str, df)
-        }
-      }
+      features <- .add_feature(features, NULL, concept_data, concept_str, df)
     }
   } else {
     count_df <- stats::aggregate(
@@ -1265,6 +1289,10 @@
     features$n_records[is.na(features$n_records)] <- 0L
   }
 
+  zero_fill_cols <- intersect(unique(zero_fill_cols), names(features))
+  if (length(zero_fill_cols) > 0) {
+    attr(features, "omop_zero_fill") <- zero_fill_cols
+  }
   features
 }
 

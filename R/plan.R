@@ -863,6 +863,10 @@
       if (out_type == "person_level") {
         result_df <- NULL
         out_repr <- out$representation %||% "long"
+        # Occurrence/count feature columns that must read 0 (not NA) for
+        # persons who have no events in that table — collected from each
+        # feature frame and applied after the cross-table join below.
+        zero_fill_cols <- character(0)
 
         for (tbl_name in names(out$tables %||% list())) {
           entry <- out$tables[[tbl_name]]
@@ -880,6 +884,8 @@
               feature_specs = entry$features,
               block_sensitive = block_sensitive
             )
+            zero_fill_cols <- c(zero_fill_cols,
+                                attr(tbl_df, "omop_zero_fill"))
           } else {
             # Raw column list. The plan crosses the transport as JSON, so
             # `entry` arrives as a (possibly named) list; .colSpec recovers
@@ -922,6 +928,13 @@
           } else if (!is.null(derived_df)) {
             result_df <- derived_df
           }
+        }
+
+        # Persons absent from a feature table joined with all = TRUE above
+        # arrive as NA; for occurrence/count features absence means 0.
+        zf <- intersect(unique(zero_fill_cols), names(result_df))
+        for (col in zf) {
+          result_df[[col]][is.na(result_df[[col]])] <- 0L
         }
 
         results[[out_name]] <- result_df

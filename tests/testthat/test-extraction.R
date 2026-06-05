@@ -402,6 +402,107 @@ test_that("duration_sum sums start-to-end durations", {
   expect_equal(result$total_dur[1], 31 + 30)
 })
 
+# === Multi-concept "any of set" + name-from-key + zero-fill ===
+
+test_that("boolean spec over a concept set is one any-of-set column", {
+  df <- data.frame(
+    person_id = c(1L, 1L, 2L, 3L, 4L),
+    drug_concept_id = c(19059056L, 1118084L, 19078461L, 1124300L, 999L),
+    drug_exposure_id = 1:5,
+    stringsAsFactors = FALSE
+  )
+  nsaid <- c(19059056L, 1118084L, 19078461L, 1115171L, 1124300L)
+  # Name carried by the list key; spec$name absent (as after JSON decode).
+  specs <- list(nsaid = list(type = "boolean", concept_set = as.list(nsaid)))
+  result <- dsOMOP:::.toFeatures(df, "drug_exposure", specs)
+  expect_equal(sort(names(result)), c("nsaid", "person_id"))
+  expect_false(any(grepl("^x[0-9]", names(result))))
+  expect_equal(result$nsaid[match(c(1, 2, 3, 4), result$person_id)],
+               c(1L, 1L, 1L, 0L))
+})
+
+test_that("count spec over a set totals records across the set", {
+  df <- data.frame(
+    person_id = c(1L, 1L, 2L, 3L, 3L, 3L),
+    drug_concept_id = c(19059056L, 1118084L, 19078461L,
+                        1124300L, 1124300L, 1115171L),
+    drug_exposure_id = 1:6,
+    stringsAsFactors = FALSE
+  )
+  nsaid <- c(19059056L, 1118084L, 19078461L, 1115171L, 1124300L)
+  specs <- list(nsaid_n = list(type = "count", concept_set = as.list(nsaid)))
+  result <- dsOMOP:::.toFeatures(df, "drug_exposure", specs)
+  expect_equal(result$nsaid_n[match(c(1, 2, 3), result$person_id)],
+               c(2L, 1L, 3L))
+})
+
+test_that("explicit spec$name overrides the list key", {
+  df <- data.frame(
+    person_id = c(1L, 2L),
+    condition_concept_id = c(192671L, 192671L),
+    condition_occurrence_id = 1:2,
+    stringsAsFactors = FALSE
+  )
+  specs <- list(ignored = list(type = "boolean", concept_set = list(192671L),
+                               name = "gi_bleed"))
+  result <- dsOMOP:::.toFeatures(df, "condition_occurrence", specs)
+  expect_true("gi_bleed" %in% names(result))
+  expect_false("ignored" %in% names(result))
+})
+
+test_that("disjoint specs within one extract isolate their own concepts", {
+  df <- data.frame(
+    person_id = c(1L, 2L, 2L, 3L),
+    condition_concept_id = c(192671L, 4027663L, 192671L, 4027663L),
+    condition_occurrence_id = 1:4,
+    stringsAsFactors = FALSE
+  )
+  specs <- list(
+    gi_bleed     = list(type = "boolean", concept_set = list(192671L)),
+    peptic_ulcer = list(type = "boolean", concept_set = list(4027663L))
+  )
+  result <- dsOMOP:::.toFeatures(df, "condition_occurrence", specs)
+  expect_equal(result$gi_bleed[match(c(1, 2, 3), result$person_id)],
+               c(1L, 1L, 0L))
+  expect_equal(result$peptic_ulcer[match(c(1, 2, 3), result$person_id)],
+               c(0L, 1L, 1L))
+})
+
+test_that("omop_zero_fill flags occurrence/count but not value columns", {
+  df <- data.frame(
+    person_id = c(1L, 1L, 2L),
+    measurement_concept_id = rep(100L, 3),
+    value_as_number = c(5, 7, 9),
+    stringsAsFactors = FALSE
+  )
+  specs <- list(
+    has_m  = list(type = "boolean",    concept_set = list(100L)),
+    n_m    = list(type = "count",      concept_set = list(100L)),
+    mean_m = list(type = "mean_value", concept_set = list(100L),
+                  value_column = "value_as_number")
+  )
+  result <- dsOMOP:::.toFeatures(df, "measurement", specs)
+  expect_setequal(attr(result, "omop_zero_fill"), c("has_m", "n_m"))
+})
+
+test_that("zero-fill restores 0 for persons absent from a feature table", {
+  df <- data.frame(
+    person_id = c(1L, 2L),
+    drug_concept_id = c(1124300L, 1124300L),
+    drug_exposure_id = 1:2,
+    stringsAsFactors = FALSE
+  )
+  specs <- list(on_drug = list(type = "boolean", concept_set = list(1124300L)))
+  feat <- dsOMOP:::.toFeatures(df, "drug_exposure", specs)
+  roster <- data.frame(person_id = 1:3, stringsAsFactors = FALSE)
+  merged <- merge(roster, feat, by = "person_id", all = TRUE)
+  for (col in attr(feat, "omop_zero_fill")) {
+    merged[[col]][is.na(merged[[col]])] <- 0L
+  }
+  expect_equal(merged$on_drug[merged$person_id == 3], 0L)
+  expect_false(anyNA(merged$on_drug))
+})
+
 # === DCSI / HFRS score definitions and scoring ===
 
 test_that("getScoreDefinitions returns DCSI with 12 entries and 7 categories", {
