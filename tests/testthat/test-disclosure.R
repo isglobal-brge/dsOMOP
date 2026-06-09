@@ -40,6 +40,29 @@ test_that("suppressSmallCounts drops rows with small counts", {
   })
 })
 
+# --- Regression guards: disclosure leaks closed 2026-06 (audit) --------------
+
+test_that("omopValueCountsDS does not let the client disable small-count suppression", {
+  # This aggregate endpoint must always suppress small cells; a caller must not
+  # be able to switch disclosure control off through an argument.
+  expect_false("suppress_small" %in% names(formals(omopValueCountsDS)))
+})
+
+test_that("no query template exposes raw MIN/MAX extreme values (disclosure)", {
+  # Extreme individual values (MIN/MAX) are quasi-identifiers and must never be
+  # returned, consistent with the Achilles distribution policy.
+  templates <- .ql_load_queries()
+  skip_if(length(templates) == 0, "query templates not found")
+  offenders <- vapply(templates, function(q) {
+    isTRUE(grepl("\\b(MIN|MAX)\\s*\\(", q$sql, perl = TRUE, ignore.case = TRUE))
+  }, logical(1))
+  expect_equal(
+    sum(offenders), 0L,
+    info = paste("Templates selecting MIN/MAX:",
+                 paste(names(templates)[offenders], collapse = ", "))
+  )
+})
+
 test_that("assertSafeLevels passes with valid levels", {
   withr::with_options(list(
     nfilter.levels.max = 40,
