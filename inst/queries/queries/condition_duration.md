@@ -29,8 +29,6 @@ condition_start_date. Only records with both dates non-null are included.
 | n_records | Number of records with non-null duration |
 | avg_days | Mean duration in days |
 | sd_days | Standard deviation of duration in days |
-| min_days | Minimum duration in days |
-| max_days | Maximum duration in days |
 
 ## Query
 
@@ -40,9 +38,7 @@ SELECT co.condition_concept_id,
        COUNT(DISTINCT co.person_id) AS n_persons,
        COUNT(*) AS n_records,
        AVG(CAST(co.condition_end_date - co.condition_start_date AS INTEGER)) AS avg_days,
-       STDDEV(CAST(co.condition_end_date - co.condition_start_date AS INTEGER)) AS sd_days,
-       MIN(CAST(co.condition_end_date - co.condition_start_date AS INTEGER)) AS min_days,
-       MAX(CAST(co.condition_end_date - co.condition_start_date AS INTEGER)) AS max_days
+       STDDEV(CAST(co.condition_end_date - co.condition_start_date AS INTEGER)) AS sd_days
 FROM @cdm.condition_occurrence co
 JOIN @vocab.concept c ON c.concept_id = co.condition_concept_id
 WHERE co.condition_concept_id = @concept_id

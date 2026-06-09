@@ -9,7 +9,7 @@ Author: dsOMOP
 
 ## Description
 
-Returns summary statistics (mean, sd, min, max, count) for the numeric values
+Returns summary statistics (mean, sd, count) for the numeric values
 of a specific measurement concept. Useful for understanding value distributions
 without revealing individual measurements.
 
@@ -29,8 +29,6 @@ without revealing individual measurements.
 | n_values | Number of non-null numeric values |
 | mean_value | Mean of value_as_number |
 | sd_value | Standard deviation |
-| min_value | Minimum value |
-| max_value | Maximum value |
 
 ## Query
 
@@ -40,9 +38,7 @@ SELECT m.measurement_concept_id,
        COUNT(DISTINCT m.person_id) AS n_persons,
        COUNT(m.value_as_number) AS n_values,
        AVG(m.value_as_number) AS mean_value,
-       STDDEV(m.value_as_number) AS sd_value,
-       MIN(m.value_as_number) AS min_value,
-       MAX(m.value_as_number) AS max_value
+       STDDEV(m.value_as_number) AS sd_value
 FROM @cdm.measurement m
 JOIN @vocab.concept c ON c.concept_id = m.measurement_concept_id
 WHERE m.measurement_concept_id = @concept_id

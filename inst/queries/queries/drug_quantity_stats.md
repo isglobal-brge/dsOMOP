@@ -28,8 +28,6 @@ drug concept ID. Only records with a non-null quantity are included.
 | n_records | Total number of drug exposure records |
 | avg_quantity | Mean quantity |
 | sd_quantity | Standard deviation of quantity |
-| min_quantity | Minimum quantity |
-| max_quantity | Maximum quantity |
 
 ## Query
 
@@ -39,9 +37,7 @@ SELECT de.drug_concept_id,
        COUNT(DISTINCT de.person_id) AS n_persons,
        COUNT(*) AS n_records,
        AVG(de.quantity) AS avg_quantity,
-       STDDEV(de.quantity) AS sd_quantity,
-       MIN(de.quantity) AS min_quantity,
-       MAX(de.quantity) AS max_quantity
+       STDDEV(de.quantity) AS sd_quantity
 FROM @cdm.drug_exposure de
 JOIN @vocab.concept c ON c.concept_id = de.drug_concept_id
 WHERE de.drug_concept_id = @concept_id

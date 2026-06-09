@@ -30,8 +30,6 @@ by visit type.
 | n_records | Total number of visit records |
 | avg_days | Mean visit duration in days |
 | sd_days | Standard deviation of visit duration |
-| min_days | Minimum visit duration in days |
-| max_days | Maximum visit duration in days |
 
 ## Query
 
@@ -41,9 +39,7 @@ SELECT vo.visit_concept_id,
        COUNT(DISTINCT vo.person_id) AS n_persons,
        COUNT(*) AS n_records,
        AVG(CAST(vo.visit_end_date - vo.visit_start_date AS FLOAT)) AS avg_days,
-       STDDEV(CAST(vo.visit_end_date - vo.visit_start_date AS FLOAT)) AS sd_days,
-       MIN(CAST(vo.visit_end_date - vo.visit_start_date AS FLOAT)) AS min_days,
-       MAX(CAST(vo.visit_end_date - vo.visit_start_date AS FLOAT)) AS max_days
+       STDDEV(CAST(vo.visit_end_date - vo.visit_start_date AS FLOAT)) AS sd_days
 FROM @cdm.visit_occurrence vo
 JOIN @vocab.concept c ON c.concept_id = vo.visit_concept_id
 WHERE vo.visit_end_date IS NOT NULL

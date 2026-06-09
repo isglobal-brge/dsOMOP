@@ -622,7 +622,6 @@ omopMissingnessDS <- function(omop_symbol, table,
 #' @param table Character; table name
 #' @param column Character; column name
 #' @param top_n Integer; maximum number of distinct values to return
-#' @param suppress_small Logical; whether to suppress counts below threshold
 #' @return Data frame with value counts
 #' @examples
 #' \dontrun{
@@ -630,10 +629,11 @@ omopMissingnessDS <- function(omop_symbol, table,
 #' }
 #' @export
 omopValueCountsDS <- function(omop_symbol, table, column,
-                              top_n = 20,
-                              suppress_small = TRUE) {
+                              top_n = 20) {
   handle <- .getHandle(omop_symbol)
-  .profileValueCounts(handle, table, column, top_n, suppress_small)
+  # Small-count suppression is mandatory for this aggregate endpoint and is not
+  # client-configurable: a caller must never be able to disable disclosure control.
+  .profileValueCounts(handle, table, column, top_n, suppress_small = TRUE)
 }
 
 #' Search concepts (Aggregate)

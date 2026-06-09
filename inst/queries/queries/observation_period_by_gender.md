@@ -21,8 +21,6 @@ categories.
 | gender_name | Gender concept name |
 | n_persons | Number of distinct persons |
 | avg_days | Mean observation period length in days |
-| min_days | Minimum observation period length in days |
-| max_days | Maximum observation period length in days |
 
 ## Query
 
@@ -30,9 +28,7 @@ categories.
 SELECT p.gender_concept_id,
        c.concept_name AS gender_name,
        COUNT(DISTINCT op.person_id) AS n_persons,
-       AVG(op.observation_period_end_date - op.observation_period_start_date) AS avg_days,
-       MIN(op.observation_period_end_date - op.observation_period_start_date) AS min_days,
-       MAX(op.observation_period_end_date - op.observation_period_start_date) AS max_days
+       AVG(op.observation_period_end_date - op.observation_period_start_date) AS avg_days
 FROM @cdm.observation_period op
 JOIN @cdm.person p ON p.person_id = op.person_id
 JOIN @vocab.concept c ON c.concept_id = p.gender_concept_id

@@ -28,8 +28,6 @@ given drug concept ID. Only records with a non-null days_supply are included.
 | n_records | Total number of drug exposure records |
 | avg_days_supply | Mean days supply |
 | sd_days_supply | Standard deviation of days supply |
-| min_days_supply | Minimum days supply |
-| max_days_supply | Maximum days supply |
 
 ## Query
 
@@ -39,9 +37,7 @@ SELECT de.drug_concept_id,
        COUNT(DISTINCT de.person_id) AS n_persons,
        COUNT(*) AS n_records,
        AVG(CAST(de.days_supply AS FLOAT)) AS avg_days_supply,
-       STDDEV(CAST(de.days_supply AS FLOAT)) AS sd_days_supply,
-       MIN(de.days_supply) AS min_days_supply,
-       MAX(de.days_supply) AS max_days_supply
+       STDDEV(CAST(de.days_supply AS FLOAT)) AS sd_days_supply
 FROM @cdm.drug_exposure de
 JOIN @vocab.concept c ON c.concept_id = de.drug_concept_id
 WHERE de.drug_concept_id = @concept_id

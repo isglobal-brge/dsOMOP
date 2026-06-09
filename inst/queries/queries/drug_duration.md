@@ -29,8 +29,6 @@ and drug_exposure_start_date.
 | n_records | Total number of drug exposure records |
 | avg_days | Mean exposure duration in days |
 | sd_days | Standard deviation of exposure duration |
-| min_days | Minimum exposure duration in days |
-| max_days | Maximum exposure duration in days |
 
 ## Query
 
@@ -40,9 +38,7 @@ SELECT de.drug_concept_id,
        COUNT(DISTINCT de.person_id) AS n_persons,
        COUNT(*) AS n_records,
        AVG(CAST(de.drug_exposure_end_date - de.drug_exposure_start_date AS FLOAT)) AS avg_days,
-       STDDEV(CAST(de.drug_exposure_end_date - de.drug_exposure_start_date AS FLOAT)) AS sd_days,
-       MIN(CAST(de.drug_exposure_end_date - de.drug_exposure_start_date AS FLOAT)) AS min_days,
-       MAX(CAST(de.drug_exposure_end_date - de.drug_exposure_start_date AS FLOAT)) AS max_days
+       STDDEV(CAST(de.drug_exposure_end_date - de.drug_exposure_start_date AS FLOAT)) AS sd_days
 FROM @cdm.drug_exposure de
 JOIN @vocab.concept c ON c.concept_id = de.drug_concept_id
 WHERE de.drug_concept_id = @concept_id
