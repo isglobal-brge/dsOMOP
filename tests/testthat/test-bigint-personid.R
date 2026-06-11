@@ -31,10 +31,10 @@ test_that(".coerce_integer64 preserves precision (never a lossy double)", {
   expect_equal(length(unique(dsOMOP:::.coerce_integer64(pair)$pid)), 2L)
 })
 
-test_that(".hashPersonKey is a 128-bit token and injective on exact ids", {
+test_that(".hashPersonKey is a full 256-bit token and injective on exact ids", {
   salt <- as.raw(1:16)
   toks <- dsOMOP:::.hashPersonKey(c("9007199254740992", "9007199254740993"), salt)
-  expect_true(all(nchar(toks) == 32L))            # 32 hex = 128 bits
+  expect_true(all(nchar(toks) == 64L))            # 64 hex = full 256-bit SHA-256
   expect_equal(length(unique(toks)), 2L)          # distinct ids -> distinct tokens
 })
 
