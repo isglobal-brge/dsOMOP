@@ -730,6 +730,15 @@
     result <- .applyDateHandling(result, date_handling)
   }
 
+  # "features" keeps raw pass-through concept columns (e.g. gender_concept_id);
+  # translate them so person-level frames and the factor-harmonization layer see
+  # readable names. Renamed aggregate columns no longer match *_concept_id, so
+  # .vocabTranslateColumns leaves them untouched.
+  if (translate_concepts && identical(representation, "features") &&
+      is.data.frame(result)) {
+    result <- .vocabTranslateColumns(handle, result)
+  }
+
   result
 }
 
