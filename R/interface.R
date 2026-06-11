@@ -156,13 +156,14 @@
 #' @return Character vector of pseudonymous tokens.
 #' @keywords internal
 .hashPersonKey <- function(ids, salt) {
-  toks <- openssl::sha256(as.character(ids), key = salt)
-  # 32 hex chars = 128 bits. The previous 64-bit (16 hex) token had a birthday
-  # bound of ~2^32, so distinct persons collided with non-trivial probability at
-  # population scale (~3% at 1e9 persons). 128 bits pushes the bound to ~2^64,
-  # negligible for any conceivable cohort. as.character(ids) is now exact (ids
-  # are integer/character, never a rounded double — see .coerce_integer64).
-  substr(as.character(toks), 1L, 32L)
+  # Full 256-bit HMAC-SHA-256 digest (64 hex), NOT truncated. Birthday-collision
+  # bound ~n^2/2^257 is ~10^-60 at 1e9 persons — below any physical failure rate,
+  # so distinct ids yield distinct tokens for any conceivable cohort. (The earlier
+  # 64- and 128-bit truncations had real birthday odds at population scale: ~3% at
+  # 1e9 for 64-bit.) as.character(ids) is exact — integer/character, never a
+  # rounded double (see .coerce_integer64). The cardinality assertion in
+  # .pseudonymizeIdentifiers is belt-and-suspenders on top of this.
+  as.character(openssl::sha256(as.character(ids), key = salt))
 }
 
 #' Pseudonymize/strip row-level identifiers before DataSHIELD assignment
