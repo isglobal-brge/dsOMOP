@@ -2,7 +2,7 @@
 % Please edit documentation in R/extraction.R
 \name{.coerce_integer64}
 \alias{.coerce_integer64}
-\title{Coerce integer64 columns to standard integer or numeric}
+\title{Coerce integer64 columns to a precision-safe type}
 \usage{
 .coerce_integer64(df)
 }
@@ -10,11 +10,16 @@
 \item{df}{A data.frame potentially containing integer64 columns.}
 }
 \value{
-The data.frame with integer64 columns converted.
+The data.frame with integer64 columns converted exactly.
 }
 \description{
-Converts bit64::integer64 columns in a data.frame to regular R integers
-(if values fit) or doubles. Required because DataSHIELD serialization
-does not support integer64.
+Converts bit64::integer64 columns to plain \code{integer} when every value
+fits int32, otherwise to \code{character}. DataSHIELD cannot serialize
+integer64, but it handles both integer and character. We deliberately do
+NOT fall back to \code{double}: \code{as.numeric()} rounds values above
+2^53, which silently collapsed distinct 64-bit person ids onto the same
+value — breaking cohort IN-list filters (\code{IN (NA, ...)} after a later
+\code{as.integer}) and merging distinct identities in joins and in the
+pseudonymous person key.
 }
 \keyword{internal}

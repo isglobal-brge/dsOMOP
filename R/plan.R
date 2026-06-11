@@ -795,7 +795,7 @@
                                    bp$tables$present_in_db, , drop = FALSE]
           if (nrow(obs_table) > 0) {
             obs_qualified <- obs_table$qualified_name[1]
-            ids_str <- paste(as.integer(cohort_person_ids), collapse = ", ")
+            ids_str <- .sqlIdList(cohort_person_ids)
             cohort_sql <- paste0(
               "SELECT DISTINCT o.person_id AS subject_id, ",
               "o.observation_period_start_date AS cohort_start_date, ",
