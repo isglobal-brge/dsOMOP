@@ -9,12 +9,17 @@
 \arguments{
 \item{handle}{CDM handle}
 
-\item{concept_set}{List with concepts, include_descendants, include_mapped, exclude}
+\item{concept_set}{List with \code{concepts}, \code{include_descendants},
+\code{include_mapped}, \code{exclude}}
 }
 \value{
 Integer vector of expanded concept IDs
 }
 \description{
-Expand a concept set specification to a full list of concept IDs
+Resolves a spec into a flat vector by, in order: starting from
+\code{concepts}; optionally adding hierarchical descendants
+(\code{include_descendants}); optionally adding mapped source concepts
+(\code{include_mapped}); then removing \code{exclude}. The broadening steps
+only grow the matched population; the resulting cohort is still size-checked.
 }
 \keyword{internal}

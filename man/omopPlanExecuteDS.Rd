@@ -4,7 +4,7 @@
 \alias{omopPlanExecuteDS}
 \title{Execute an extraction plan (Assign)}
 \usage{
-omopPlanExecuteDS(omop_symbol, plan, out)
+omopPlanExecuteDS(omop_symbol, plan, out, output_mode = "memory")
 }
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
@@ -12,6 +12,8 @@ omopPlanExecuteDS(omop_symbol, plan, out)
 \item{plan}{List; the extraction plan}
 
 \item{out}{Named character vector; output_name -> symbol_name mapping}
+
+\item{output_mode}{Character; "memory" (default) or "staged"}
 }
 \value{
 Invisible TRUE (outputs are assigned into caller's environment)
@@ -21,9 +23,15 @@ Runs the extraction plan and assigns each output directly into the
 DataSHIELD session as a named symbol. Sparse outputs are split into
 two symbols: \code{<name>.covariates} and \code{<name>.covariateRef}.
 Temporal covariates are split into three symbols.
+
+When \code{output_mode = "staged"}, outputs are written to Parquet files
+on disk and assigned as \code{FlowerDatasetDescriptor} objects instead of
+data.frames. This avoids loading large datasets into R memory.
 }
 \examples{
 \dontrun{
 omopPlanExecuteDS("omop", plan, out = c(cohort = "my_cohort"))
+omopPlanExecuteDS("omop", plan, out = c(features = "D"),
+                  output_mode = "staged")
 }
 }

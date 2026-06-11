@@ -11,7 +11,8 @@
   probs = c(0.05, 0.25, 0.5, 0.75, 0.95),
   cohort_table = NULL,
   window = NULL,
-  rounding = 2L
+  rounding = 2L,
+  concept_id = NULL
 )
 }
 \arguments{
@@ -28,6 +29,8 @@
 \item{window}{List with start/end dates (NULL)}
 
 \item{rounding}{Integer; decimal places for rounding}
+
+\item{concept_id}{Integer or NULL; restrict to rows of this concept}
 }
 \value{
 Data frame with probability and value

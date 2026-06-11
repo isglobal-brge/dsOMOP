@@ -4,7 +4,7 @@
 \alias{.profileColumnStats}
 \title{Get column-level statistics}
 \usage{
-.profileColumnStats(handle, table, column)
+.profileColumnStats(handle, table, column, concept_id = NULL)
 }
 \arguments{
 \item{handle}{CDM handle}
@@ -12,6 +12,8 @@
 \item{table}{Character; table name}
 
 \item{column}{Character; column name}
+
+\item{concept_id}{Integer or NULL; restrict to rows of this concept}
 }
 \value{
 Named list with column statistics

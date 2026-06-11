@@ -216,7 +216,11 @@
 
 #' Detect count columns needing disclosure control
 #'
-#' Primary: registry lookup. Fallback: heuristic pattern match on column names.
+#' Detection is the UNION of a registry lookup and a heuristic pattern match
+#' on column names. A registry match never short-circuits the heuristic, so a
+#' table with one registered count column is still scanned for other count-like
+#' columns (e.g. subject_tally, denom) that would otherwise leak raw small
+#' counts.
 #'
 #' @param handle CDM handle
 #' @param table_name Character; table name
@@ -230,25 +234,7 @@
 
   registry <- .ohdsi_tool_registry()
 
-  # Primary: registry lookup
-  if (!is.null(tool_id) && tool_id %in% names(registry)) {
-    registered <- registry[[tool_id]]$count_columns
-    # Get actual columns in the table
-    bp <- .buildBlueprint(handle)
-    actual_cols <- tryCatch({
-      qualified <- bp$tables$qualified_name[
-        tolower(bp$tables$table_name) == tolower(table_name)
-      ]
-      if (length(qualified) == 0) return(registered)
-      sql <- paste0("SELECT * FROM ", qualified[1], " LIMIT 0")
-      names(.executeQuery(handle, sql))
-    }, error = function(e) character(0))
-
-    matched <- intersect(tolower(registered), tolower(actual_cols))
-    if (length(matched) > 0) return(matched)
-  }
-
-  # Fallback: heuristic pattern matching
+  # Get actual columns in the table (shared by both detection paths)
   bp <- .buildBlueprint(handle)
   actual_cols <- tryCatch({
     qualified <- bp$tables$qualified_name[
@@ -259,8 +245,18 @@
     names(.executeQuery(handle, sql))
   }, error = function(e) character(0))
 
+  # Registry lookup
+  registry_matched <- character(0)
+  if (!is.null(tool_id) && tool_id %in% names(registry)) {
+    registered <- registry[[tool_id]]$count_columns
+    registry_matched <- intersect(tolower(registered), tolower(actual_cols))
+  }
+
+  # Heuristic pattern matching (always runs, never short-circuited)
   pattern <- "^n_|^num_|_count$|^count$|_subjects$|^subjects$|_persons$|_records$|_entries$|_outcomes$|^outcomes$|^persons_at_risk|^sum_value$|^count_value$"
-  grep(pattern, actual_cols, value = TRUE, ignore.case = TRUE)
+  heuristic_matched <- grep(pattern, actual_cols, value = TRUE, ignore.case = TRUE)
+
+  union(registry_matched, tolower(heuristic_matched))
 }
 
 # --- Generic Query ---

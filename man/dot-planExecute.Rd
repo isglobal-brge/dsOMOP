@@ -4,7 +4,7 @@
 \alias{.planExecute}
 \title{Execute a plan and produce server-side data frames}
 \usage{
-.planExecute(handle, plan, out_symbols)
+.planExecute(handle, plan, out_symbols, output_mode = "memory")
 }
 \arguments{
 \item{handle}{CDM handle}
@@ -12,9 +12,11 @@
 \item{plan}{List; the extraction plan}
 
 \item{out_symbols}{Named list; output name -> R symbol mapping}
+
+\item{output_mode}{Character; "memory" (default) or "staged"}
 }
 \value{
-Named list of data frames
+Named list of data frames or FlowerDatasetDescriptors
 }
 \description{
 Processes all outputs defined in the plan: builds a cohort (if specified),

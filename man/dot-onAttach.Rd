@@ -12,7 +12,9 @@
 \item{pkg}{Package name.}
 }
 \description{
-Registers the OMOP CDM resource resolver and displays a startup message
-with the package version.
+Cleans stale staging directories and displays a startup message with the
+package version. (The resource resolver is registered in \code{.onLoad} so
+it is available in server-side sessions that load the namespace without
+attaching the package.)
 }
 \keyword{internal}

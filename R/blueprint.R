@@ -154,6 +154,13 @@
   handle$config          <- config
   handle$blueprint       <- NULL
   handle$temp_tables     <- character(0)
+  # Per-session secret salt for pseudonymizing person/subject keys on output.
+  # Generated once per handle (i.e. once per ds.omop.connect / session) and
+  # never exported to the client. Stable within a session so independent
+  # extractions hash the same person to the same token (enabling client-side
+  # joins/set-ops); fresh per session and per server process, so the same
+  # person is NOT linkable across sessions or across sites.
+  handle$session_salt    <- openssl::rand_bytes(16L)
 
   handle
 }

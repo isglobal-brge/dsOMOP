@@ -17,6 +17,10 @@
 Character vector of column names containing counts
 }
 \description{
-Primary: registry lookup. Fallback: heuristic pattern match on column names.
+Detection is the UNION of a registry lookup and a heuristic pattern match
+on column names. A registry match never short-circuits the heuristic, so a
+table with one registered count column is still scanned for other count-like
+columns (e.g. subject_tally, denom) that would otherwise leak raw small
+counts.
 }
 \keyword{internal}

@@ -83,9 +83,10 @@
 #' @param handle CDM handle
 #' @param table Character; table name
 #' @param column Character; column name
+#' @param concept_id Integer or NULL; restrict to rows of this concept
 #' @return Named list with column statistics
 #' @keywords internal
-.profileColumnStats <- function(handle, table, column) {
+.profileColumnStats <- function(handle, table, column, concept_id = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   column <- tolower(.validateIdentifier(column, "column"))
   bp <- .buildBlueprint(handle)
@@ -105,13 +106,26 @@
   }
 
   qualified <- tbl_row$qualified_name[1]
+  settings <- .omopDisclosureSettings()
+
+  # Optional concept scope: restrict every query to one concept of this table.
+  concept_filter <- NULL
+  if (!is.null(concept_id)) {
+    ccol <- .getDomainConceptColumn(bp, table)
+    if (is.null(ccol)) {
+      stop("Table '", table, "' has no concept column to scope by.",
+           call. = FALSE)
+    }
+    concept_filter <- paste0(ccol, " = ", as.integer(concept_id))
+  }
 
   sql <- paste0(
     "SELECT ",
     "COUNT(*) AS n_total, ",
     "SUM(CASE WHEN ", column, " IS NULL THEN 1 ELSE 0 END) AS n_missing, ",
     "COUNT(DISTINCT ", column, ") AS n_distinct ",
-    "FROM ", qualified
+    "FROM ", qualified,
+    if (!is.null(concept_filter)) paste0(" WHERE ", concept_filter) else ""
   )
   stats_result <- .executeQuery(handle, sql)
 
@@ -120,6 +134,26 @@
     n_missing = stats_result$n_missing[1],
     n_distinct = stats_result$n_distinct[1]
   )
+
+  if (is.na(result$n_total) || result$n_total < settings$nfilter_subset) {
+    stop("Disclosive: insufficient rows.", call. = FALSE)
+  }
+
+  # Suppress a tiny number of NULL rows (pinpoints the few missing individuals)
+  if (!is.na(result$n_missing) &&
+      result$n_missing > 0 && result$n_missing < settings$nfilter_tab) {
+    result$n_missing <- NA_real_
+  }
+
+  # Suppress n_distinct when it fails the high-cardinality gate (quasi-unique
+  # columns enable re-identification). Reuse .assertSafeLevels non-fatally.
+  if (!is.na(result$n_distinct)) {
+    safe_distinct <- tryCatch({
+      .assertSafeLevels(result$n_distinct, result$n_total)
+      TRUE
+    }, error = function(e) FALSE)
+    if (!safe_distinct) result$n_distinct <- NA_real_
+  }
 
   # Numeric stats if applicable
   col_type <- col_df$db_datatype[col_df$column_name == column][1]
@@ -130,7 +164,8 @@
     num_sql <- paste0(
       "SELECT AVG(CAST(", column, " AS REAL)) AS mean_val ",
       "FROM ", qualified,
-      " WHERE ", column, " IS NOT NULL"
+      " WHERE ", column, " IS NOT NULL",
+      if (!is.null(concept_filter)) paste0(" AND ", concept_filter) else ""
     )
     num_stats <- tryCatch(.executeQuery(handle, num_sql), error = function(e) NULL)
     if (!is.null(num_stats) && nrow(num_stats) > 0) {
@@ -207,16 +242,13 @@
   }
 
   qualified <- tbl_row$qualified_name[1]
+  settings <- .omopDisclosureSettings()
 
   total_sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified)
   total <- .executeQuery(handle, total_sql)$n[1]
 
-  if (total == 0) {
-    return(data.frame(
-      column_name = columns,
-      missing_rate = rep(NA_real_, length(columns)),
-      stringsAsFactors = FALSE
-    ))
+  if (is.na(total) || total < settings$nfilter_subset) {
+    stop("Disclosive: insufficient rows.", call. = FALSE)
   }
 
   results <- data.frame(
@@ -231,9 +263,18 @@
       " WHERE ", col, " IS NULL"
     )
     n_missing <- .executeQuery(handle, sql)$n_missing[1]
+    # Suppress near-0/near-1 rates: a tiny number of NULL or non-NULL rows
+    # pinpoints the few individuals in that column.
+    if (!is.na(n_missing) &&
+        ((n_missing > 0 && n_missing < settings$nfilter_tab) ||
+         ((total - n_missing) > 0 && (total - n_missing) < settings$nfilter_tab))) {
+      rate <- NA_real_
+    } else {
+      rate <- round(n_missing / total, 2)
+    }
     results <- rbind(results, data.frame(
       column_name = col,
-      missing_rate = round(n_missing / total, 4),
+      missing_rate = rate,
       stringsAsFactors = FALSE
     ))
   }
@@ -248,10 +289,11 @@
 #' @param column Character; column name
 #' @param top_n Integer; number of top values to return
 #' @param suppress_small Logical; suppress counts below nfilter.tab
+#' @param concept_id Integer or NULL; restrict to rows of this concept
 #' @return Data frame with value and count columns
 #' @keywords internal
 .profileValueCounts <- function(handle, table, column, top_n = 20,
-                                 suppress_small = TRUE) {
+                                 suppress_small = TRUE, concept_id = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   column <- tolower(.validateIdentifier(column, "column"))
   bp <- .buildBlueprint(handle)
@@ -271,13 +313,25 @@
 
   qualified <- tbl_row$qualified_name[1]
 
+  # Optional concept scope: restrict every query to one concept of this table.
+  concept_filter <- NULL
+  if (!is.null(concept_id)) {
+    ccol <- .getDomainConceptColumn(bp, table)
+    if (is.null(ccol)) {
+      stop("Table '", table, "' has no concept column to scope by.",
+           call. = FALSE)
+    }
+    concept_filter <- paste0(" AND ", ccol, " = ", as.integer(concept_id))
+  }
+  concept_clause <- concept_filter %||% ""
+
   n_total_sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified,
-                        " WHERE ", column, " IS NOT NULL")
+                        " WHERE ", column, " IS NOT NULL", concept_clause)
   n_total <- .executeQuery(handle, n_total_sql)$n[1]
 
   n_levels_sql <- paste0(
     "SELECT COUNT(DISTINCT ", column, ") AS n FROM ", qualified,
-    " WHERE ", column, " IS NOT NULL"
+    " WHERE ", column, " IS NOT NULL", concept_clause
   )
   n_levels <- .executeQuery(handle, n_levels_sql)$n[1]
 
@@ -289,7 +343,7 @@
     " CAST(", column, " AS VARCHAR) AS value, ",
     "COUNT(*) AS n ",
     "FROM ", qualified, " ",
-    "WHERE ", column, " IS NOT NULL ",
+    "WHERE ", column, " IS NOT NULL", concept_clause, " ",
     "GROUP BY ", column, " ",
     "ORDER BY COUNT(*) DESC"
   )
@@ -876,12 +930,13 @@
 #' @param cohort_table Character; cohort temp table name (NULL)
 #' @param window List with start/end dates (NULL)
 #' @param rounding Integer; decimal places for rounding
+#' @param concept_id Integer or NULL; restrict to rows of this concept
 #' @return Data frame with probability and value
 #' @keywords internal
 .profileNumericQuantiles <- function(handle, table, value_col,
                                       probs = c(0.05, 0.25, 0.5, 0.75, 0.95),
                                       cohort_table = NULL, window = NULL,
-                                      rounding = 2L) {
+                                      rounding = 2L, concept_id = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   value_col <- tolower(.validateIdentifier(value_col, "column"))
 
@@ -930,6 +985,17 @@
                          paste0("t.", date_col, " <= ", .quoteLiteral(window$end)))
       }
     }
+  }
+
+  # Optional concept scope: restrict to one concept of this table.
+  if (!is.null(concept_id)) {
+    ccol <- .getDomainConceptColumn(bp, table)
+    if (is.null(ccol)) {
+      stop("Table '", table, "' has no concept column to scope by.",
+           call. = FALSE)
+    }
+    where_parts <- c(where_parts,
+                     paste0("t.", ccol, " = ", as.integer(concept_id)))
   }
 
   where_sql <- paste0(" WHERE ", paste(where_parts, collapse = " AND "))
@@ -1275,14 +1341,11 @@
             col_name <- paste0("bin_", j)
             cnt <- if (col_name %in% names(bin_result))
               as.integer(bin_result[[col_name]][1]) else 0L
-            if (!is.na(cnt) && cnt < settings$nfilter_tab) {
-              histogram$count[j] <- NA_integer_
-              histogram$suppressed[j] <- TRUE
-            } else {
-              histogram$count[j] <- cnt
-              histogram$suppressed[j] <- FALSE
-            }
+            histogram$count[j] <- cnt
+            histogram$suppressed[j] <- FALSE
           }
+          # Drop bins with small counts (no hints)
+          histogram <- .suppressSmallCounts(histogram, "count")
         }
       }
 
@@ -1409,9 +1472,9 @@
       dc_result <- tryCatch(.executeQuery(handle, dc_sql),
                             error = function(e) NULL)
       if (!is.null(dc_result) && nrow(dc_result) > 0) {
-        dc_result$suppressed <- !is.na(dc_result$n_records) &
-          dc_result$n_records < settings$nfilter_tab
-        dc_result$n_records[dc_result$suppressed] <- NA_integer_
+        # "No hints" policy: drop small periods entirely (keeping them with
+        # NA would reveal which years had 1-2 records via subtraction).
+        dc_result <- .suppressSmallCounts(dc_result, "n_records")
       }
 
       date_range <- list(
