@@ -306,9 +306,13 @@
     translated <- concept_map[original]
     translated[is.na(translated) & !is.na(original)] <-
       paste0("concept_", original[is.na(translated) & !is.na(original)])
-    translated <- vapply(translated, .standardizeName, character(1),
-                         USE.NAMES = FALSE)
-    df[[col]] <- translated
+    # Keep the human-readable concept_name verbatim, so the VALUE shown here
+    # matches the catalog (value.counts / concept.prevalence / concept.summary)
+    # exactly. Do NOT standardize the value: .standardizeName is for turning a
+    # concept into a syntactically-valid COLUMN NAME, which .toWide/.toFeatures
+    # apply independently at the naming step (and idempotently), so wide/feature
+    # headers stay clean regardless.
+    df[[col]] <- unname(translated)
   }
 
   df

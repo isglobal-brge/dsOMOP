@@ -111,8 +111,9 @@ test_that("baseline with concept translation works", {
     result <- .planExecute(handle, plan, list(demo = "demo_df"))
     df <- result$demo
     expect_true(is.data.frame(df))
-    # Gender concept IDs should be translated to names
-    expect_true(all(df$gender_concept_id %in% c("male", "female")))
+    # Gender concept IDs are translated to the readable concept_name verbatim,
+    # matching the catalog (value.counts etc.) — not a standardized form.
+    expect_true(all(df$gender_concept_id %in% c("MALE", "FEMALE")))
   })
 })
 
