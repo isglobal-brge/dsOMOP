@@ -157,7 +157,12 @@
 #' @keywords internal
 .hashPersonKey <- function(ids, salt) {
   toks <- openssl::sha256(as.character(ids), key = salt)
-  substr(as.character(toks), 1L, 16L)
+  # 32 hex chars = 128 bits. The previous 64-bit (16 hex) token had a birthday
+  # bound of ~2^32, so distinct persons collided with non-trivial probability at
+  # population scale (~3% at 1e9 persons). 128 bits pushes the bound to ~2^64,
+  # negligible for any conceivable cohort. as.character(ids) is now exact (ids
+  # are integer/character, never a rounded double — see .coerce_integer64).
+  substr(as.character(toks), 1L, 32L)
 }
 
 #' Pseudonymize/strip row-level identifiers before DataSHIELD assignment
@@ -193,7 +198,20 @@
     }
     keys <- intersect(.PERSON_KEY_COLS(), names(x))
     for (k in keys) {
-      x[[k]] <- .hashPersonKey(x[[k]], salt)
+      src <- x[[k]]
+      tok <- .hashPersonKey(src, salt)
+      # Fail closed: distinct source ids MUST map to distinct tokens. A drop in
+      # cardinality means a hash (or upstream precision) collision would merge
+      # two real identities into one pseudonym — a correctness and disclosure
+      # hazard. Abort rather than emit silently-merged rows.
+      nd_src <- length(unique(src[!is.na(src)]))
+      nd_tok <- length(unique(tok[!is.na(tok)]))
+      if (nd_tok < nd_src) {
+        stop("Person-key pseudonymization collision: ", nd_src,
+             " distinct ids mapped to ", nd_tok, " tokens for column '", k,
+             "'. Aborting to avoid merging identities.", call. = FALSE)
+      }
+      x[[k]] <- tok
     }
     if (length(keys) > 0) {
       attr(x, "dsomop_protected") <- union(attr(x, "dsomop_protected"), keys)

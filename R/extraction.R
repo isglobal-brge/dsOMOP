@@ -287,7 +287,7 @@
   }
 
   if (!is.null(person_ids) && has_person_id) {
-    ids <- paste(as.integer(person_ids), collapse = ", ")
+    ids <- .sqlIdList(person_ids)
     where <- c(where, paste0(t_alias, ".person_id IN (", ids, ")"))
   }
 
@@ -441,22 +441,53 @@
 
 # --- Query Execution ---
 
-#' Coerce integer64 columns to standard integer or numeric
+#' Coerce integer64 columns to a precision-safe type
 #'
-#' Converts bit64::integer64 columns in a data.frame to regular R integers
-#' (if values fit) or doubles. Required because DataSHIELD serialization
-#' does not support integer64.
+#' Converts bit64::integer64 columns to plain \code{integer} when every value
+#' fits int32, otherwise to \code{character}. DataSHIELD cannot serialize
+#' integer64, but it handles both integer and character. We deliberately do
+#' NOT fall back to \code{double}: \code{as.numeric()} rounds values above
+#' 2^53, which silently collapsed distinct 64-bit person ids onto the same
+#' value — breaking cohort IN-list filters (\code{IN (NA, ...)} after a later
+#' \code{as.integer}) and merging distinct identities in joins and in the
+#' pseudonymous person key.
 #'
 #' @param df A data.frame potentially containing integer64 columns.
-#' @return The data.frame with integer64 columns converted.
+#' @return The data.frame with integer64 columns converted exactly.
 #' @keywords internal
 .coerce_integer64 <- function(df) {
   for (col in names(df)) {
     if (inherits(df[[col]], "integer64")) {
-      df[[col]] <- as.numeric(df[[col]])
+      v <- df[[col]]
+      nona <- v[!is.na(v)]
+      fits_int <- length(nona) == 0 ||
+        (min(nona) >= -2147483647 && max(nona) <= 2147483647)
+      df[[col]] <- if (fits_int) as.integer(v) else as.character(v)
     }
   }
   df
+}
+
+#' Format identifier values as an exact SQL integer-literal list
+#'
+#' Replaces \code{paste(as.integer(ids), collapse = ", ")}, which returned
+#' \code{NA} for any id above 2^31 (yielding \code{person_id IN (NA, ...)} and
+#' empty results). Formats integer64/character/integer/double exactly, with no
+#' int32 overflow and no scientific notation, and drops NAs.
+#'
+#' @param ids A vector of identifier values.
+#' @return A single comma-separated string of literals (\code{""} if empty).
+#' @keywords internal
+.sqlIdList <- function(ids) {
+  if (is.null(ids) || length(ids) == 0) return("")
+  if (inherits(ids, "integer64") || is.character(ids)) {
+    out <- as.character(ids)
+  } else {
+    out <- format(ids, scientific = FALSE, trim = TRUE)
+    out <- sub("\\.0+$", "", out)
+  }
+  out <- out[!is.na(out) & nzchar(out) & out != "NA"]
+  paste(out, collapse = ", ")
 }
 
 #' Execute a SQL query and return a data frame
@@ -1534,7 +1565,7 @@
   # Filter to cohort person IDs
   where <- character(0)
   if (!is.null(person_ids) && length(person_ids) > 0) {
-    ids_str <- paste(as.integer(person_ids), collapse = ", ")
+    ids_str <- .sqlIdList(person_ids)
     where <- c(where, paste0("p.person_id IN (", ids_str, ")"))
   } else if (!is.null(cohort_table)) {
     where <- c(where, paste0(
@@ -2090,7 +2121,7 @@
                       stringsAsFactors = FALSE))
   }
 
-  ids_str <- paste(as.integer(person_ids), collapse = ", ")
+  ids_str <- .sqlIdList(person_ids)
 
   # Build UNION ALL across available condition tables
   union_parts <- character(0)
