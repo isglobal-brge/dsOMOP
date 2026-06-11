@@ -720,7 +720,7 @@
 
   result <- switch(representation,
     "long" = result,
-    "wide" = .toWide(result, table),
+    "wide" = .toWide(result, table, handle),
     "features" = .toFeatures(result, table, feature_specs),
     "sparse" = .toSparse(result, table),
     result
@@ -728,6 +728,15 @@
 
   if (agg_repr) {
     result <- .applyDateHandling(result, date_handling)
+  }
+
+  # "features" keeps raw pass-through concept columns (e.g. gender_concept_id);
+  # translate them so person-level frames and the factor-harmonization layer see
+  # readable names. Renamed aggregate columns no longer match *_concept_id, so
+  # .vocabTranslateColumns leaves them untouched.
+  if (translate_concepts && identical(representation, "features") &&
+      is.data.frame(result)) {
+    result <- .vocabTranslateColumns(handle, result)
   }
 
   result
@@ -870,8 +879,8 @@
 #' @param table Character; source table name
 #' @return Data frame in wide format
 #' @keywords internal
-.toWide <- function(df, table) {
-  bp <- .buildBlueprint(get(".current_handle", envir = environment()) %||% NULL)
+.toWide <- function(df, table, handle = NULL) {
+  bp <- .buildBlueprint(handle)
   concept_col <- NULL
 
   # Try to find concept column from column names

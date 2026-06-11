@@ -4,7 +4,7 @@
 \alias{.toWide}
 \title{Transform a long result to wide format}
 \usage{
-.toWide(df, table)
+.toWide(df, table, handle = NULL)
 }
 \arguments{
 \item{df}{Data frame in long format}
