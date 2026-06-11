@@ -697,7 +697,16 @@
            call. = FALSE)
     }
   }
-  result <- .applyDateHandling(result, date_handling)
+  # The "features" builder may need raw dates to compute disclosure-safe
+  # aggregates — e.g. drug_duration = end_date - start_date. Its output is a
+  # person-level data frame with no raw date columns, so we apply date handling
+  # AFTER the transform (a no-op on the aggregated output) instead of stripping
+  # the dates the builder depends on. All other representations (long/wide keep
+  # raw rows; sparse returns a list) handle dates before the transform as before.
+  agg_repr <- identical(representation, "features")
+  if (!agg_repr) {
+    result <- .applyDateHandling(result, date_handling)
+  }
 
   # Translate concept-id VALUES to human-readable names, but ONLY for the
   # representations that surface *_concept_id as data: "long" keeps the columns
@@ -716,6 +725,10 @@
     "sparse" = .toSparse(result, table),
     result
   )
+
+  if (agg_repr) {
+    result <- .applyDateHandling(result, date_handling)
+  }
 
   result
 }
@@ -819,10 +832,11 @@
 #'
 #' @section Security:
 #' Row-level identifiers are never renamed, and no column is ever renamed
-#' \emph{into} an identifier name. \code{.stripIdentifiers} matches a fixed
-#' set of identifier names (see \code{\link{.identifierColumns}}) and runs
-#' after extraction; allowing an identifier to be aliased away — or a benign
-#' column to masquerade as one — would defeat that last line of defense.
+#' \emph{into} an identifier name. \code{.pseudonymizeIdentifiers} matches a
+#' fixed set of identifier names (see \code{\link{.identifierColumns}}) and
+#' runs after extraction — pseudonymizing the person/subject keys and dropping
+#' the rest; allowing a key to be aliased away (or a benign column to
+#' masquerade as one) would let a raw identifier escape pseudonymization.
 #'
 #' @param df A data frame returned by an extraction function.
 #' @param spec A \code{.colSpec} result, or \code{NULL} (no-op).

@@ -4,7 +4,14 @@
 \alias{.profileValueCounts}
 \title{Get value counts for a column (with suppression)}
 \usage{
-.profileValueCounts(handle, table, column, top_n = 20, suppress_small = TRUE)
+.profileValueCounts(
+  handle,
+  table,
+  column,
+  top_n = 20,
+  suppress_small = TRUE,
+  concept_id = NULL
+)
 }
 \arguments{
 \item{handle}{CDM handle}
@@ -16,6 +23,8 @@
 \item{top_n}{Integer; number of top values to return}
 
 \item{suppress_small}{Logical; suppress counts below nfilter.tab}
+
+\item{concept_id}{Integer or NULL; restrict to rows of this concept}
 }
 \value{
 Data frame with value and count columns

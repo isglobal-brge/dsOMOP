@@ -105,65 +105,101 @@
   }
 }
 
-#' Strip row-level identifiers from data before DataSHIELD assignment
+#' Person/subject key columns: pseudonymized and retained (not dropped)
 #'
-#' Removes all OMOP CDM row-level identifiers (primary keys and entity
-#' foreign keys) from data frames before they are assigned into the
-#' DataSHIELD session environment.
+#' The only identifier columns kept in DataSHIELD outputs. On output their raw
+#' values are replaced by a per-session salted token (see
+#' \code{\link{.pseudonymizeIdentifiers}}), so they stay usable as join keys
+#' for client-side merges and cohort set-operations while never exposing a raw
+#' CDM identifier. Every other identifier column is dropped.
+#' @keywords internal
+.PERSON_KEY_COLS <- function() c("person_id", "subject_id")
+
+#' OMOP CDM row-level identifier columns
 #'
-#' @section Security Rationale:
-#' DataSHIELD analysis functions like \code{ds.summary()}, \code{ds.table()},
-#' and \code{ds.quantile()} operate on assigned server-side data frames.
-#' If \code{person_id} or other row-level identifiers are present, an
-#' attacker can perform group-by re-identification attacks:
-#' \itemize{
-#'   \item \code{ds.summary(data$value, data$person_id)} reveals per-person
-#'     statistics
-#'   \item \code{ds.table(data$condition, data$person_id)} produces a
-#'     person-level contingency table
-#'   \item Even event-level IDs (\code{visit_occurrence_id}) can be used to
-#'     count rows per person via frequency analysis
-#' }
-#' This stripping is \strong{mandatory} and cannot be disabled. It runs on
-#' every ASSIGN output before \code{base::assign()} stores the data in the
-#' DataSHIELD environment.
+#' Single source of truth shared by \code{\link{.pseudonymizeIdentifiers}}
+#' (which pseudonymizes the person/subject keys and drops the rest) and
+#' \code{\link{.applyColumnAliases}} (which refuses to rename them, so the
+#' pseudonymize/drop step cannot be bypassed by aliasing a key to an
+#' unrecognised name).
 #'
-#' Row-level identifier columns that must never reach DS analysis functions
-#'
-#' Full OMOP CDM identifier column list: primary keys (person_id,
-#' *_occurrence_id) and entity foreign keys (provider_id, care_site_id,
-#' location_id). These uniquely or quasi-uniquely identify rows and could
-#' enable re-identification if exposed. Single source of truth shared by
-#' \code{.stripIdentifiers} (which drops them) and \code{.applyColumnAliases}
-#' (which refuses to rename them, so stripping stays effective).
+#' Primary keys (person_id, *_occurrence_id) and entity foreign keys
+#' (provider_id, care_site_id, location_id) that uniquely or quasi-uniquely
+#' identify rows.
 #' @keywords internal
 .identifierColumns <- function() {
   c(
-    # Person / subject identifiers
+    # Person / subject identifiers (pseudonymized, retained)
     "person_id", "subject_id",
-    # Clinical event row IDs
+    # Clinical event row IDs (dropped)
     "visit_occurrence_id", "visit_detail_id",
     "condition_occurrence_id", "drug_exposure_id",
     "procedure_occurrence_id", "measurement_id",
     "observation_id", "device_exposure_id",
     "specimen_id", "note_id",
-    # Provider / location entity keys (indirect identifiers)
+    # Provider / location entity keys (dropped)
     "provider_id", "care_site_id", "location_id"
   )
 }
 
-#' @param x Data frame or list to sanitize. Operates recursively on lists.
-#' @return Sanitized object with identifier columns removed
+#' Pseudonymize a person/subject key vector with a per-session salt
+#'
+#' Returns HMAC-SHA256 tokens (truncated to 16 hex chars) computed element-wise
+#' under the session salt. The same value under the same salt always yields the
+#' same token, so independent extractions in one session stay joinable on the
+#' key; a different session (different salt) yields different tokens, so a
+#' person is not linkable across sessions or sites. One-way, and the salt never
+#' leaves the server, so a token cannot be reversed to the raw id.
+#'
+#' @param ids A vector of identifier values.
+#' @param salt Raw vector; the per-session secret salt (\code{handle$session_salt}).
+#' @return Character vector of pseudonymous tokens.
 #' @keywords internal
-.stripIdentifiers <- function(x) {
-  strip_cols <- .identifierColumns()
+.hashPersonKey <- function(ids, salt) {
+  toks <- openssl::sha256(as.character(ids), key = salt)
+  substr(as.character(toks), 1L, 16L)
+}
+
+#' Pseudonymize/strip row-level identifiers before DataSHIELD assignment
+#'
+#' Runs on every ASSIGN output before \code{base::assign()}. Person and subject
+#' keys (\code{\link{.PERSON_KEY_COLS}}) are REPLACED by a per-session salted
+#' token under their original column names (so existing analysis code and the
+#' output contract are unchanged) and tagged via the \code{dsomop_protected}
+#' attribute so the factor/level layer refuses to expose them. Every other
+#' identifier column is DROPPED.
+#'
+#' @section Disclosure model:
+#' This is defense-in-depth, not the sole protection. The authoritative barrier
+#' is OUTPUT gating: dsBase suppresses small aggregate cells and small subsets
+#' (it gates the values that leave the server, not which columns exist
+#' server-side), and dsOMOP enforces \code{nfilter} on its own aggregates. A
+#' pseudonymous key is therefore safe to retain — it is a high-cardinality
+#' token that cannot serve as a stat/group variable (dsBase nfilter.levels.max
+#' plus the \code{dsomop_protected} guard both block that) and cannot be
+#' reversed. Row-level data, including this key, already lives server-side
+#' exactly as it does for any \code{ds.glm} fit.
+#'
+#' @param x Data frame or list to sanitize. Operates recursively on lists.
+#' @param salt Raw vector; the per-session secret salt (\code{handle$session_salt}).
+#' @return Sanitized object: person/subject keys pseudonymized, other
+#'   identifier columns removed.
+#' @keywords internal
+.pseudonymizeIdentifiers <- function(x, salt) {
   if (is.data.frame(x)) {
-    drop <- intersect(strip_cols, names(x))
+    drop <- intersect(setdiff(.identifierColumns(), .PERSON_KEY_COLS()), names(x))
     if (length(drop) > 0) {
       x[drop] <- NULL
     }
+    keys <- intersect(.PERSON_KEY_COLS(), names(x))
+    for (k in keys) {
+      x[[k]] <- .hashPersonKey(x[[k]], salt)
+    }
+    if (length(keys) > 0) {
+      attr(x, "dsomop_protected") <- union(attr(x, "dsomop_protected"), keys)
+    }
   } else if (is.list(x)) {
-    x <- lapply(x, .stripIdentifiers)
+    x <- lapply(x, .pseudonymizeIdentifiers, salt = salt)
   }
   x
 }
@@ -297,12 +333,12 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
       next
     }
 
-    # MANDATORY: Strip all row-level identifiers before assignment.
-    # Without this, ds.summary(data$value, data$person_id) would reveal
-    # per-person statistics, enabling group-by re-identification attacks.
-    # This stripping cannot be disabled — it is the last line of defense
-    # before data enters the DataSHIELD analysis environment.
-    result <- .stripIdentifiers(result)
+    # Pseudonymize person/subject keys (per-session salted token, kept under
+    # their original names so joins/set-ops and the output contract still work)
+    # and drop every other row-level identifier, before data enters the
+    # DataSHIELD environment. Output gating (cell/subset suppression by dsBase
+    # and dsOMOP nfilter) remains the authoritative disclosure barrier.
+    result <- .pseudonymizeIdentifiers(result, handle$session_salt)
 
     # Temporal covariates: split into 3 symbols
     if (is.list(result) && !is.data.frame(result) &&
@@ -557,15 +593,19 @@ omopTableStatsDS <- function(omop_symbol, table,
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table Character; table name
 #' @param column Character; column name
+#' @param concept_id Integer; optional; restrict the summary to rows of this
+#'   concept, using the table's domain concept column
 #' @return Named list with column statistics
 #' @examples
 #' \dontrun{
 #' stats <- omopColumnStatsDS("omop", "person", "year_of_birth")
 #' }
 #' @export
-omopColumnStatsDS <- function(omop_symbol, table, column) {
+omopColumnStatsDS <- function(omop_symbol, table, column, concept_id = NULL) {
   handle <- .getHandle(omop_symbol)
-  .profileColumnStats(handle, table, column)
+  concept_id <- .ds_arg(concept_id)
+  if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+  .profileColumnStats(handle, table, column, concept_id = concept_id)
 }
 
 #' Get cross-table domain coverage (Aggregate)
@@ -622,6 +662,8 @@ omopMissingnessDS <- function(omop_symbol, table,
 #' @param table Character; table name
 #' @param column Character; column name
 #' @param top_n Integer; maximum number of distinct values to return
+#' @param concept_id Integer; optional; restrict the summary to rows of this
+#'   concept, using the table's domain concept column
 #' @return Data frame with value counts
 #' @examples
 #' \dontrun{
@@ -629,11 +671,14 @@ omopMissingnessDS <- function(omop_symbol, table,
 #' }
 #' @export
 omopValueCountsDS <- function(omop_symbol, table, column,
-                              top_n = 20) {
+                              top_n = 20, concept_id = NULL) {
   handle <- .getHandle(omop_symbol)
+  concept_id <- .ds_arg(concept_id)
+  if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
   # Small-count suppression is mandatory for this aggregate endpoint and is not
   # client-configurable: a caller must never be able to disable disclosure control.
-  .profileValueCounts(handle, table, column, top_n, suppress_small = TRUE)
+  .profileValueCounts(handle, table, column, top_n, suppress_small = TRUE,
+                      concept_id = concept_id)
 }
 
 #' Search concepts (Aggregate)
@@ -888,6 +933,8 @@ omopNumericHistogramDS <- function(omop_symbol, table, value_col,
 #' @param cohort_table Character; cohort temp table for filtering (NULL)
 #' @param window List with start/end dates for filtering (NULL)
 #' @param rounding Integer; decimal places for rounding
+#' @param concept_id Integer; optional; restrict the summary to rows of this
+#'   concept, using the table's domain concept column
 #' @return Data frame with probability and value
 #' @examples
 #' \dontrun{
@@ -897,11 +944,14 @@ omopNumericHistogramDS <- function(omop_symbol, table, value_col,
 omopNumericQuantilesDS <- function(omop_symbol, table, value_col,
                                     probs = c(0.05, 0.25, 0.5, 0.75, 0.95),
                                     cohort_table = NULL, window = NULL,
-                                    rounding = 2L) {
+                                    rounding = 2L, concept_id = NULL) {
   handle <- .getHandle(omop_symbol)
   probs <- .ds_arg(probs)
+  concept_id <- .ds_arg(concept_id)
+  if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
   .profileNumericQuantiles(handle, table, value_col, probs,
-                           cohort_table, window, rounding)
+                           cohort_table, window, rounding,
+                           concept_id = concept_id)
 }
 
 #' Get date counts (Aggregate)
@@ -1326,6 +1376,10 @@ omopFactorLevelsDS <- function(df) {
   if (length(tagged) > 0L) {
     cols <- union(cols, intersect(as.character(tagged), names(df)))
   }
+  # Never expose a protected person/subject key as a factor-level vector
+  # (defense in depth; a pseudonymous key has one level per person and would
+  # also exceed nfilter.levels.max).
+  cols <- setdiff(cols, .PERSON_KEY_COLS())
   if (length(cols) == 0L) {
     return(empty)
   }
@@ -1395,6 +1449,10 @@ omopAsFactorColumnsDS <- function(df, spec) {
   }
   cap <- .omopDisclosureSettings()$nfilter_levels_max
   for (col in names(spec)) {
+    # A hostile client cannot coerce a protected key into a factor.
+    if (col %in% .PERSON_KEY_COLS()) {
+      next
+    }
     if (!col %in% names(df)) {
       next
     }

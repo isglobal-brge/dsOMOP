@@ -4,7 +4,7 @@
 \alias{omopColumnStatsDS}
 \title{Get column statistics (Aggregate)}
 \usage{
-omopColumnStatsDS(omop_symbol, table, column)
+omopColumnStatsDS(omop_symbol, table, column, concept_id = NULL)
 }
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
@@ -12,6 +12,9 @@ omopColumnStatsDS(omop_symbol, table, column)
 \item{table}{Character; table name}
 
 \item{column}{Character; column name}
+
+\item{concept_id}{Integer; optional; restrict the summary to rows of this
+concept, using the table's domain concept column}
 }
 \value{
 Named list with column statistics

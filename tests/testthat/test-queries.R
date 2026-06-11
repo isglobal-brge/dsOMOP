@@ -428,7 +428,7 @@ test_that(".query_suppress_sensitive: handles missing columns gracefully", {
   expect_equal(result, df)
 })
 
-test_that(".query_suppress_sensitive: handles NA values", {
+test_that(".query_suppress_sensitive: drops NA count rows (fail-closed)", {
   df <- data.frame(
     concept = c("A", "B"),
     n_persons = c(NA_real_, 5),
@@ -439,8 +439,10 @@ test_that(".query_suppress_sensitive: handles NA values", {
     df, "n_persons", threshold = 3
   )
 
-  expect_true(is.na(result$n_persons[1]))
-  expect_equal(result$n_persons[2], 5)
+  # Fail-closed: an NA count is treated as disclosive (an empty group is
+  # 0-equivalent), so its row is dropped, leaving only the row >= threshold.
+  expect_equal(nrow(result), 1L)
+  expect_equal(result$n_persons[1], 5)
 })
 
 # --- SQL Injection Prevention ------------------------------------------------

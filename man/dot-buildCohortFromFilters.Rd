@@ -15,7 +15,7 @@
 Integer vector of person_ids
 }
 \description{
-Translates filter specs (sex, age_range, age_group, has_concept) into
-SQL WHERE clauses on the person table and returns matching person IDs.
+Translates flat filter specs or nested AND/OR filter trees into SQL WHERE
+clauses on the person table and returns matching person IDs.
 }
 \keyword{internal}

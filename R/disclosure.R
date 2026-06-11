@@ -152,11 +152,13 @@
   # "No hints" policy: rows below threshold are DROPPED entirely (not set to NA).
   # Returning NA would reveal that a suppressed subgroup exists, enabling
   # subtraction attacks (total - visible rows = hidden group size).
-  # NA values in count columns are treated as safe (fail-open for NULL data).
+  # NA counts are also DROPPED (fail-closed), consistent with .assertMinPersons:
+  # at every call site NA arises only from empty groups (0-equivalent), so a
+  # missing count must not be allowed to pass through as a visible row.
   safe <- rep(TRUE, nrow(df))
   for (col in count_cols) {
     vals <- df[[col]]
-    safe <- safe & (is.na(vals) | vals >= threshold)
+    safe <- safe & (!is.na(vals) & vals >= threshold)
   }
   result <- df[safe, , drop = FALSE]
   rownames(result) <- NULL

@@ -11,7 +11,8 @@ omopNumericQuantilesDS(
   probs = c(0.05, 0.25, 0.5, 0.75, 0.95),
   cohort_table = NULL,
   window = NULL,
-  rounding = 2L
+  rounding = 2L,
+  concept_id = NULL
 )
 }
 \arguments{
@@ -28,6 +29,9 @@ omopNumericQuantilesDS(
 \item{window}{List with start/end dates for filtering (NULL)}
 
 \item{rounding}{Integer; decimal places for rounding}
+
+\item{concept_id}{Integer; optional; restrict the summary to rows of this
+concept, using the table's domain concept column}
 }
 \value{
 Data frame with probability and value
