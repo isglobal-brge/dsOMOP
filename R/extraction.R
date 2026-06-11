@@ -720,7 +720,7 @@
 
   result <- switch(representation,
     "long" = result,
-    "wide" = .toWide(result, table),
+    "wide" = .toWide(result, table, handle),
     "features" = .toFeatures(result, table, feature_specs),
     "sparse" = .toSparse(result, table),
     result
@@ -870,8 +870,8 @@
 #' @param table Character; source table name
 #' @return Data frame in wide format
 #' @keywords internal
-.toWide <- function(df, table) {
-  bp <- .buildBlueprint(get(".current_handle", envir = environment()) %||% NULL)
+.toWide <- function(df, table, handle = NULL) {
+  bp <- .buildBlueprint(handle)
   concept_col <- NULL
 
   # Try to find concept column from column names

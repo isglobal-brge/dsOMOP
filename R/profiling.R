@@ -358,6 +358,23 @@
     result <- .suppressSmallCounts(result, "n")
   }
 
+  # Decorate categorical concept VALUES with human-readable names, so the row
+  # values themselves are translated (e.g. 8532 -> "Female"), not just labelled
+  # by column. Mirrors the prevalence path (.profileConceptPrevalence).
+  if (nrow(result) > 0 &&
+      (grepl("_concept_id$", column) || identical(column, "value_as_concept_id"))) {
+    ids <- suppressWarnings(as.integer(result$value))
+    concepts <- tryCatch(.vocabLookupConcepts(handle, ids[!is.na(ids)]),
+                         error = function(e) NULL)
+    if (!is.null(concepts) && nrow(concepts) > 0) {
+      cmap <- stats::setNames(concepts$concept_name,
+                              as.character(concepts$concept_id))
+      result$concept_name <- unname(cmap[as.character(result$value)])
+      miss <- is.na(result$concept_name)
+      result$concept_name[miss] <- paste0("concept_", result$value[miss])
+    }
+  }
+
   result
 }
 
