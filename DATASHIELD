@@ -35,6 +35,7 @@ AggregateMethods:
   omopAchillesResultsDS,
   omopAchillesDistributionDS,
   omopAchillesCatalogDS,
+  omopAchillesHeelDS,
   omopOhdsiStatusDS,
   omopOhdsiTablesDS,
   omopOhdsiResultsDS,

@@ -208,9 +208,15 @@
     db_tables_vocab <- .listTablesRaw(handle, handle$vocab_schema)
   }
 
+  # Resolve (and cache) the schema holding Achilles/results tables. Mirrors
+  # vocab_schema: honors an explicit pin, else auto-detects the OHDSI "results"
+  # daimon (probe results -> <cdm>_results -> cdm -> default). NULL on sqlite or
+  # when no dedicated results schema exists.
+  results_schema <- .resolveResultsSchema(handle)
+
   db_tables_results <- character(0)
-  if (!is.null(handle$results_schema) && handle$results_schema != handle$cdm_schema) {
-    db_tables_results <- .listTablesRaw(handle, handle$results_schema)
+  if (!is.null(results_schema) && results_schema != handle$cdm_schema) {
+    db_tables_results <- .listTablesRaw(handle, results_schema)
   }
 
   all_db_tables <- unique(c(db_tables_cdm, db_tables_vocab, db_tables_results))
@@ -392,7 +398,7 @@
   if (length(new_achilles) > 0) {
     achilles_schema <- if (length(intersect(tolower(db_tables_results),
                                              achilles_table_names)) > 0) {
-      handle$results_schema
+      results_schema
     } else {
       handle$cdm_schema
     }
@@ -414,7 +420,7 @@
   if (length(existing_achilles) > 0) {
     achilles_schema <- if (length(intersect(tolower(db_tables_results),
                                              achilles_table_names)) > 0) {
-      handle$results_schema
+      results_schema
     } else {
       handle$cdm_schema
     }
@@ -439,7 +445,7 @@
   if (length(new_ohdsi) > 0) {
     ohdsi_schema <- if (length(intersect(tolower(db_tables_results),
                                           all_ohdsi_names)) > 0) {
-      handle$results_schema
+      results_schema
     } else {
       handle$cdm_schema
     }
@@ -461,7 +467,7 @@
   if (length(existing_ohdsi) > 0) {
     ohdsi_schema <- if (length(intersect(tolower(db_tables_results),
                                           all_ohdsi_names)) > 0) {
-      handle$results_schema
+      results_schema
     } else {
       handle$cdm_schema
     }
@@ -640,10 +646,70 @@
   if (category %in% c("vocabulary", "vocab") && !is.null(handle$vocab_schema)) {
     return(handle$vocab_schema)
   }
-  if (category %in% c("results", "result") && !is.null(handle$results_schema)) {
-    return(handle$results_schema)
+  if (category %in% c("results", "result")) {
+    rs <- .resolveResultsSchema(handle)
+    if (!is.null(rs)) return(rs)
   }
   handle$cdm_schema
+}
+
+#' Resolve the schema that actually contains the Achilles / results tables
+#'
+#' Makes the OHDSI "results" daimon first-class, mirroring how the vocabulary
+#' schema is resolved. If the site pinned \code{handle$results_schema} (via
+#' \code{omopInitDS} or the resource URL), that value is honored verbatim with
+#' no probing. Otherwise the schema holding \code{achilles_results} (or
+#' \code{achilles_analysis}) is AUTO-DETECTED by probing candidate schemas in
+#' OHDSI-conventional order: a dedicated \code{results} schema, then
+#' \code{<cdm_schema>_results}, then the CDM schema (co-located case), then the
+#' DBMS default schema. The resolved value (which may legitimately be
+#' \code{NULL}: sqlite has no schemas, or Achilles is absent everywhere) is
+#' cached on the handle so the probe runs at most once per session.
+#'
+#' @param handle CDM handle
+#' @return Character schema name, or \code{NULL}
+#' @keywords internal
+.resolveResultsSchema <- function(handle) {
+  # A resolved value of NULL is meaningful (not "unset"), so guard with an
+  # explicit done-flag rather than `%||%`, which would re-probe on NULL.
+  if (isTRUE(handle$results_schema_resolved_done)) {
+    return(handle$results_schema_resolved)
+  }
+  resolved <- .detectResultsSchema(handle)
+  handle$results_schema_resolved      <- resolved
+  handle$results_schema_resolved_done <- TRUE
+  resolved
+}
+
+#' Probe candidate schemas for the Achilles / results tables (uncached)
+#'
+#' @param handle CDM handle
+#' @return Character schema name, or \code{NULL}
+#' @keywords internal
+.detectResultsSchema <- function(handle) {
+  # Explicit pin wins, no probing (no behavior change when set).
+  if (!is.null(handle$results_schema)) {
+    return(handle$results_schema)
+  }
+  # sqlite (and any dialect without schema namespaces) has no separate results
+  # schema: skip detection; co-located tables are found by bare name.
+  if (identical(handle$target_dialect, "sqlite")) {
+    return(NULL)
+  }
+  marker_tables <- c("achilles_results", "achilles_analysis")
+  cdm <- handle$cdm_schema
+  candidates <- unique(Filter(function(s) !is.null(s) && nzchar(s), list(
+    "results",
+    if (!is.null(cdm) && nzchar(cdm)) paste0(cdm, "_results") else NULL,
+    cdm,
+    .dbmsDefaultSchema(handle$dbms)
+  )))
+  for (schema in candidates) {
+    tbls <- tryCatch(tolower(.listTablesRaw(handle, schema)),
+                     error = function(e) character(0))
+    if (length(intersect(marker_tables, tbls)) > 0) return(schema)
+  }
+  NULL
 }
 
 #' Build a schema-qualified table reference

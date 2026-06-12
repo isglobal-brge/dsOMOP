@@ -3,371 +3,746 @@
     "id": "condition.prevalence_by_concept",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "condition.prevalence_by_gender",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "condition.prevalence_by_age",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "condition.prevalence_by_year",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "condition.comorbidity",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "condition.duration_stats",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "weighted_mean"
   },
   {
     "id": "condition.prevalence_by_visit_type",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "condition.prevalence_by_specialty",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "condition.drug_overlap",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "condition.mortality_rate",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_total", "n_deaths"],
+    "sensitive_fields": [
+      "n_total",
+      "n_deaths"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "drug.prevalence_by_concept",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "drug.prevalence_by_gender",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "drug.prevalence_by_age",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "drug.prevalence_by_year",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "drug.duration_stats",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "weighted_mean"
   },
   {
     "id": "drug.quantity_stats",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "weighted_mean"
   },
   {
     "id": "drug.days_supply_stats",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "weighted_mean"
   },
   {
     "id": "drug.concomitant_medications",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "drug.prevalence_by_route",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "measurement.prevalence_by_concept",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "measurement.prevalence_by_gender",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "measurement.prevalence_by_age",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "measurement.prevalence_by_year",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "measurement.value_stats",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_values"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_values"
+    ],
     "pool_strategy": "weighted_mean"
   },
   {
     "id": "measurement.prevalence_by_unit",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "procedure.prevalence_by_concept",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "procedure.prevalence_by_gender",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "procedure.prevalence_by_age",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "procedure.prevalence_by_year",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "observation.prevalence_by_concept",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "observation.prevalence_by_gender",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "observation.prevalence_by_year",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "person.demographic_summary",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "person.age_distribution_decade",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "person.race_distribution",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "person.ethnicity_distribution",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "person.year_of_birth_distribution",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "person.gender_by_age_decade",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "visit.type_summary",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "visit.type_by_gender",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "visit.type_by_year",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "visit.type_by_age",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "visit.duration_stats",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "weighted_mean"
   },
   {
     "id": "death.summary",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "death.by_gender",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "death.by_age",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "observation_period.length_stats",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "weighted_mean"
   },
   {
     "id": "observation_period.coverage_by_year",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_periods"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_periods"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "observation_period.length_by_gender",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons"],
+    "sensitive_fields": [
+      "n_persons"
+    ],
     "pool_strategy": "weighted_mean"
   },
   {
     "id": "device.prevalence_by_concept",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "care_site.place_of_service_summary",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_visits"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_visits"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "general.domain_coverage",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
   },
   {
     "id": "general.temporal_coverage",
     "class": "SAFE_AGGREGATE",
     "poolable": true,
-    "sensitive_fields": ["n_persons", "n_records"],
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
     "pool_strategy": "sum"
+  },
+  {
+    "id": "condition_era.prevalence_by_concept",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "condition_era.by_gender",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons"
+    ],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "condition_era.by_season",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "condition_era.eras_per_person_stats",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons"
+    ],
+    "pool_strategy": "none"
+  },
+  {
+    "id": "condition_era.length_stats",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
+    "pool_strategy": "none"
+  },
+  {
+    "id": "condition_occurrence.load",
+    "class": "SAFE_ASSIGN",
+    "poolable": false,
+    "sensitive_fields": [],
+    "pool_strategy": "none"
+  },
+  {
+    "id": "condition_occurrence.type_distribution",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "death.load",
+    "class": "SAFE_ASSIGN",
+    "poolable": false,
+    "sensitive_fields": [],
+    "pool_strategy": "none"
+  },
+  {
+    "id": "drug_cost.cost_per_unit_stats",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
+    "pool_strategy": "weighted_mean"
+  },
+  {
+    "id": "drug_cost.out_of_pocket_stats",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
+    "pool_strategy": "weighted_mean"
+  },
+  {
+    "id": "drug_era.by_month",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "drug_era.exposure_count_stats",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
+    "pool_strategy": "weighted_mean"
+  },
+  {
+    "id": "drug_era.length_stats",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
+    "pool_strategy": "weighted_mean"
+  },
+  {
+    "id": "drug_era.prevalence_by_concept",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "drug_exposure.load",
+    "class": "SAFE_ASSIGN",
+    "poolable": false,
+    "sensitive_fields": [],
+    "pool_strategy": "none"
+  },
+  {
+    "id": "drug_exposure.type_distribution",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "general.record_count_by_table",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons",
+      "n_records"
+    ],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "measurement.load",
+    "class": "SAFE_ASSIGN",
+    "poolable": false,
+    "sensitive_fields": [],
+    "pool_strategy": "none"
+  },
+  {
+    "id": "observation.load",
+    "class": "SAFE_ASSIGN",
+    "poolable": false,
+    "sensitive_fields": [],
+    "pool_strategy": "none"
+  },
+  {
+    "id": "observation_period.length_months_stats",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons"
+    ],
+    "pool_strategy": "weighted_mean"
+  },
+  {
+    "id": "observation_period.long_period_count",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons"
+    ],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "observation_period.persons_with_n_periods",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons"
+    ],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "payer_plan.by_plan_concept",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons"
+    ],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "payer_plan.length_distribution",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons"
+    ],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "person.birth_month_distribution",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n_persons"
+    ],
+    "pool_strategy": "sum"
+  },
+  {
+    "id": "person.load",
+    "class": "SAFE_ASSIGN",
+    "poolable": false,
+    "sensitive_fields": [],
+    "pool_strategy": "none"
+  },
+  {
+    "id": "procedure_occurrence.load",
+    "class": "SAFE_ASSIGN",
+    "poolable": false,
+    "sensitive_fields": [],
+    "pool_strategy": "none"
   }
 ]

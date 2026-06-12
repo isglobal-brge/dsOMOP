@@ -1,7 +1,7 @@
 Package: dsOMOP
 Type: Package
 Title: DataSHIELD Server-Side Integration for OMOP CDM Databases
-Version: 2.1.4
+Version: 2.2.1
 Authors@R: c(
     person("David", "Sarrat González", role = c("aut", "cre"), email = "david.sarrat@isglobal.org"),
     person("Xavier", "Escribà-Montagut", role = "aut"),
@@ -74,6 +74,7 @@ AggregateMethods:
     omopAchillesResultsDS,
     omopAchillesDistributionDS,
     omopAchillesCatalogDS,
+    omopAchillesHeelDS,
     omopOhdsiStatusDS,
     omopOhdsiTablesDS,
     omopOhdsiResultsDS,

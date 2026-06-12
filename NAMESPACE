@@ -3,6 +3,7 @@
 export(omopAchillesAnalysesDS)
 export(omopAchillesCatalogDS)
 export(omopAchillesDistributionDS)
+export(omopAchillesHeelDS)
 export(omopAchillesResultsDS)
 export(omopAchillesStatusDS)
 export(omopAsFactorColumnsDS)

@@ -17,7 +17,7 @@ all conditions are included.
 
 | Parameter | Example | Mandatory | Notes |
 |-----------|---------|-----------|-------|
-| concept_id | 201820 | No | Condition concept ID (0 = all conditions) |
+| concept_id | 0 | No | Condition concept ID (0 = all conditions) |
 | top_n     | 50      | No | Maximum rows returned (default 50) |
 
 ## Output
