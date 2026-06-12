@@ -744,5 +744,14 @@
     "poolable": false,
     "sensitive_fields": [],
     "pool_strategy": "none"
+  },
+  {
+    "id": "omopCrossTabDS",
+    "class": "SAFE_AGGREGATE",
+    "poolable": true,
+    "sensitive_fields": [
+      "n"
+    ],
+    "pool_strategy": "sum"
   }
 ]

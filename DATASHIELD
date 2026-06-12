@@ -24,6 +24,7 @@ AggregateMethods:
   omopCohortListDS,
   omopCohortGetDefinitionDS,
   omopConceptPrevalenceDS,
+  omopCrossTabDS,
   omopNumericHistogramDS,
   omopNumericQuantilesDS,
   omopDateCountsDS,

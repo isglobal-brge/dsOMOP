@@ -1628,3 +1628,374 @@
 
   results
 }
+
+# --- Disclosure-safe 2-way cross-tabulation ---------------------------------
+
+#' Iterative complementary (secondary) suppression to a fixpoint
+#'
+#' Operates on a dense integer matrix \code{M} and its logical suppression mask
+#' \code{S} (TRUE = cell hidden). Primary small-cell suppression alone is
+#' recoverable: if a row (or column) has exactly ONE hidden non-zero cell and
+#' every other cell in that line is visible, an attacker who also knows the line
+#' total (or can subtract the visible cells from any published margin) recovers
+#' the hidden value by arithmetic. Even WITHOUT published margins, a single
+#' hidden non-zero cell in an otherwise-visible line is a one-unknown linear
+#' equation the moment any external total is known, so we close it
+#' defensively. This routine repeatedly scans every row and column; whenever a
+#' line contains exactly one hidden NON-ZERO cell, it additionally suppresses
+#' the smallest visible NON-ZERO cell in that line (structural zeros are never
+#' suppressed — they carry no individual). Suppressing a second cell turns the
+#' line into a two-unknown equation, which is not uniquely solvable. The grid is
+#' finite and each pass only ever adds suppressions, so the process is monotone
+#' and converges.
+#'
+#' @param M Integer matrix of true counts (>= 0).
+#' @param S Logical matrix, same dims as \code{M}; TRUE where already suppressed.
+#' @return Updated logical matrix \code{S} at the suppression fixpoint.
+#' @keywords internal
+.complementarySuppress <- function(M, S) {
+  nz <- M > 0  # cells that carry at least one individual (non-structural-zero)
+
+  repeat {
+    changed <- FALSE
+
+    # Helper: for one line (row or column), if it has exactly one suppressed
+    # non-zero cell and at least one visible non-zero cell, suppress the
+    # smallest visible non-zero cell. Returns the (possibly mutated) mask line.
+    close_line <- function(m_line, s_line, nz_line) {
+      hidden_nz <- s_line & nz_line
+      if (sum(hidden_nz) == 1L) {
+        visible_nz <- nz_line & !s_line
+        if (any(visible_nz)) {
+          # smallest visible non-zero value
+          vals <- m_line
+          vals[!visible_nz] <- NA_integer_
+          j <- which.min(vals)
+          if (length(j) == 1L && !s_line[j]) {
+            s_line[j] <- TRUE
+            return(list(s = s_line, changed = TRUE))
+          }
+        }
+      }
+      list(s = s_line, changed = FALSE)
+    }
+
+    # Rows
+    for (i in seq_len(nrow(M))) {
+      res <- close_line(M[i, ], S[i, ], nz[i, ])
+      if (res$changed) { S[i, ] <- res$s; changed <- TRUE }
+    }
+    # Columns
+    for (j in seq_len(ncol(M))) {
+      res <- close_line(M[, j], S[, j], nz[, j])
+      if (res$changed) { S[, j] <- res$s; changed <- TRUE }
+    }
+
+    if (!changed) break
+  }
+  S
+}
+
+#' Apply primary + complementary suppression to a dense count matrix
+#'
+#' Implements the disclosure algorithm for a 2-way contingency table operating
+#' entirely on a dense matrix (never row-dropping, which would itself leak the
+#' table's structure). Steps:
+#' \enumerate{
+#'   \item Primary: cells with \code{0 < M < t} are suppressed.
+#'   \item Complementary: \code{\link{.complementarySuppress}} runs to a fixpoint.
+#'   \item Render: suppressed cells become \code{NA}; structural zeros stay
+#'     \code{0}; visible cells keep their value.
+#'   \item Margins: OMITTED by default. If \code{band_margins = TRUE}, row/col/
+#'     grand totals are returned banded down via \code{\link{.bandCount}} only —
+#'     exact margins are never returned.
+#' }
+#'
+#' @param M Integer matrix of true counts (rows = row_col levels, cols =
+#'   col_col levels), missing combos already filled with 0.
+#' @param t Numeric; \code{nfilter_tab} threshold.
+#' @param band_margins Logical; when TRUE, attach banded margins.
+#' @param band_width Integer; band granularity for margins (default 5).
+#' @return Named list with \code{matrix} (numeric, NA-masked), \code{suppressed}
+#'   (logical, TRUE if every non-zero cell ended up hidden), and optionally
+#'   \code{row_margins}/\code{col_margins}/\code{grand_total} (banded) when
+#'   \code{band_margins = TRUE}.
+#' @keywords internal
+.crossTabSuppress <- function(M, t, band_margins = FALSE, band_width = 5L) {
+  M <- matrix(as.integer(M), nrow = nrow(M), ncol = ncol(M),
+              dimnames = dimnames(M))
+
+  # Step A: primary small-cell suppression (only non-zero cells below threshold)
+  S <- (M > 0) & (M < t)
+
+  # Step B: iterative complementary suppression to a fixpoint
+  S <- .complementarySuppress(M, S)
+
+  # Step C: render NA-masked matrix (structural zeros preserved as 0)
+  out <- matrix(as.numeric(M), nrow = nrow(M), ncol = ncol(M),
+                dimnames = dimnames(M))
+  out[S] <- NA_real_
+
+  result <- list(
+    matrix     = out,
+    suppressed = all(S[M > 0]) && any(M > 0)
+  )
+
+  # Step D: margins omitted by default; banded only on explicit opt-in.
+  if (isTRUE(band_margins)) {
+    row_tot <- rowSums(M)
+    col_tot <- colSums(M)
+    result$row_margins <- stats::setNames(
+      vapply(row_tot, .bandCount, numeric(1), band_width = band_width),
+      rownames(M))
+    result$col_margins <- stats::setNames(
+      vapply(col_tot, .bandCount, numeric(1), band_width = band_width),
+      colnames(M))
+    result$grand_total <- .bandCount(sum(M), band_width = band_width)
+  }
+
+  result
+}
+
+#' Build a disclosure-safe 2-way (optionally stratified) cross-tabulation
+#'
+#' Server-side engine for \code{\link{omopCrossTabDS}}. Cross-tabulates two
+#' categorical columns of an OMOP table, counting either distinct persons
+#' (default) or records, then applies primary + iterative complementary
+#' small-cell suppression on the dense matrix (see \code{\link{.crossTabSuppress}}).
+#' Exact margins are never returned. When \code{stratify_by} is supplied, an
+#' INDEPENDENT protected 2-way table is produced for each stratum level (see
+#' section 7 of the disclosure spec); the unstratified total is never returned.
+#'
+#' @param handle CDM handle.
+#' @param table Character; table name.
+#' @param row_col Character; row categorical column.
+#' @param col_col Character; column categorical column.
+#' @param count_mode Character; "persons" (distinct person_id) or "records".
+#' @param row_concept_ids,col_concept_ids Optional integer vectors restricting
+#'   the levels of the row/column axes.
+#' @param cohort_table Character; cohort temp table to scope the population.
+#' @param stratify_by Character; optional 3rd categorical column for stratified
+#'   chained 2-way tables.
+#' @param band_margins Logical; attach banded (never exact) margins.
+#' @return For a plain call: a named list \code{{row_col, col_col, count_mode,
+#'   row_levels, col_levels, counts (NA-masked matrix), suppressed}}. For a
+#'   stratified call: \code{{stratified = TRUE, stratify_by, strata = <named
+#'   list of per-level protected tables>}}.
+#' @keywords internal
+.profileCrossTab <- function(handle, table, row_col, col_col,
+                             count_mode = "persons",
+                             row_concept_ids = NULL, col_concept_ids = NULL,
+                             cohort_table = NULL, stratify_by = NULL,
+                             band_margins = FALSE) {
+  table <- tolower(.validateIdentifier(table, "table"))
+  row_col <- tolower(.validateIdentifier(row_col, "row_col"))
+  col_col <- tolower(.validateIdentifier(col_col, "col_col"))
+  if (!is.null(stratify_by)) {
+    stratify_by <- tolower(.validateIdentifier(stratify_by, "stratify_by"))
+  }
+  if (!is.null(cohort_table)) {
+    cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
+  }
+
+  count_mode <- match.arg(count_mode, c("persons", "records"))
+
+  bp <- .buildBlueprint(handle)
+  settings <- .omopDisclosureSettings()
+  t <- settings$nfilter_tab
+
+  tbl_row <- bp$tables[bp$tables$table_name == table & bp$tables$present_in_db, ,
+                       drop = FALSE]
+  if (nrow(tbl_row) == 0) stop("Table '", table, "' not found.", call. = FALSE)
+  qualified <- tbl_row$qualified_name[1]
+  tbl_cols <- bp$columns[[table]]$column_name
+
+  for (cc in c(row_col, col_col, stratify_by)) {
+    if (!is.null(cc) && !cc %in% tbl_cols) {
+      stop("Column '", cc, "' not found in '", table, "'.", call. = FALSE)
+    }
+  }
+  if (count_mode == "persons" && !"person_id" %in% tbl_cols) {
+    stop("Table '", table, "' has no person_id; use count_mode='records'.",
+         call. = FALSE)
+  }
+
+  # FROM / cohort scoping (cohort INNER JOIN on subject_id, as in prevalence).
+  from_clause <- paste0(qualified, " AS t")
+  if (!is.null(cohort_table) && "person_id" %in% tbl_cols) {
+    from_clause <- paste0(from_clause,
+                          " INNER JOIN ", cohort_table, " AS coh",
+                          " ON t.person_id = coh.subject_id")
+  }
+
+  where_parts <- c(paste0("t.", row_col, " IS NOT NULL"),
+                   paste0("t.", col_col, " IS NOT NULL"))
+  if (!is.null(stratify_by)) {
+    where_parts <- c(where_parts, paste0("t.", stratify_by, " IS NOT NULL"))
+  }
+  if (!is.null(row_concept_ids) && length(row_concept_ids) > 0) {
+    where_parts <- c(where_parts,
+      paste0("t.", row_col, " IN (", .sqlIdList(as.integer(row_concept_ids)), ")"))
+  }
+  if (!is.null(col_concept_ids) && length(col_concept_ids) > 0) {
+    where_parts <- c(where_parts,
+      paste0("t.", col_col, " IN (", .sqlIdList(as.integer(col_concept_ids)), ")"))
+  }
+  where_sql <- paste0(" WHERE ", paste(where_parts, collapse = " AND "))
+
+  count_expr <- if (count_mode == "persons") {
+    "COUNT(DISTINCT t.person_id)"
+  } else {
+    "COUNT(*)"
+  }
+
+  # Gate A (persons): distinct persons over the scoped population. For records
+  # mode on a person-bearing table we still gate on distinct persons; on a
+  # person-less table we cannot, so the build itself must remain safe.
+  if ("person_id" %in% tbl_cols) {
+    n_sql <- paste0("SELECT COUNT(DISTINCT t.person_id) AS n FROM ",
+                    from_clause, where_sql)
+    n_persons <- .executeQuery(handle, .renderSql(handle, n_sql))$n[1]
+    .assertMinPersons(n_persons = n_persons)
+  }
+
+  if (is.null(stratify_by)) {
+    return(.crossTabOneSlice(handle, from_clause, where_sql, row_col, col_col,
+                             count_expr, count_mode, t, band_margins, bp, table))
+  }
+
+  # --- Stratified (section 7): independent protected 2-way per stratum ---
+  max_strata <- 6L
+  lv_sql <- paste0("SELECT DISTINCT t.", stratify_by, " AS s FROM ",
+                   from_clause, where_sql, " ORDER BY t.", stratify_by)
+  strata_levels <- .executeQuery(handle, .renderSql(handle, lv_sql))$s
+  strata_levels <- strata_levels[!is.na(strata_levels)]
+
+  # Cap strata: extra levels are not returned (slice suppressed by omission).
+  capped <- length(strata_levels) > max_strata
+  if (capped) strata_levels <- strata_levels[seq_len(max_strata)]
+
+  strata_out <- list()
+  for (lv in strata_levels) {
+    lv_where <- paste0(where_sql, " AND t.", stratify_by, " = ",
+                       if (is.numeric(lv)) as.integer(lv) else .quoteLiteral(lv))
+
+    # Per-stratum person gate: a stratum below nfilter_subset is fully
+    # suppressed (generic block -> all-NA slice), never partially exposed.
+    slice_ok <- TRUE
+    if ("person_id" %in% tbl_cols) {
+      sp_sql <- paste0("SELECT COUNT(DISTINCT t.person_id) AS n FROM ",
+                       from_clause, lv_where)
+      n_sp <- .executeQuery(handle, .renderSql(handle, sp_sql))$n[1]
+      slice_ok <- !is.na(n_sp) && n_sp >= settings$nfilter_subset
+    }
+
+    slice <- tryCatch(
+      .crossTabOneSlice(handle, from_clause, lv_where, row_col, col_col,
+                        count_expr, count_mode, t, band_margins, bp, table),
+      error = function(e) NULL
+    )
+    if (!slice_ok || is.null(slice)) {
+      slice <- list(row_col = row_col, col_col = col_col,
+                    count_mode = count_mode, suppressed = TRUE,
+                    counts = matrix(numeric(0), 0, 0))
+    }
+    strata_out[[as.character(lv)]] <- slice
+  }
+
+  list(stratified = TRUE, stratify_by = stratify_by,
+       strata = strata_out, capped = capped)
+}
+
+#' Build one protected 2-way slice (dense matrix + suppression + names)
+#'
+#' @keywords internal
+.crossTabOneSlice <- function(handle, from_clause, where_sql, row_col, col_col,
+                              count_expr, count_mode, t, band_margins,
+                              bp, table) {
+  settings <- .omopDisclosureSettings()
+
+  # Gate B (dimensions): distinct level counts on each axis, NULLs dropped.
+  rl_sql <- paste0("SELECT COUNT(DISTINCT t.", row_col, ") AS n FROM ",
+                   from_clause, where_sql)
+  cl_sql <- paste0("SELECT COUNT(DISTINCT t.", col_col, ") AS n FROM ",
+                   from_clause, where_sql)
+  nt_sql <- paste0("SELECT COUNT(*) AS n FROM ", from_clause, where_sql)
+  n_rows_lv <- .executeQuery(handle, .renderSql(handle, rl_sql))$n[1]
+  n_cols_lv <- .executeQuery(handle, .renderSql(handle, cl_sql))$n[1]
+  n_total   <- .executeQuery(handle, .renderSql(handle, nt_sql))$n[1]
+  .assertSafeLevels(n_rows_lv, n_total)
+  .assertSafeLevels(n_cols_lv, n_total)
+
+  # Gate F: reject degenerate (1xN / Nx1) axes — that is a 1-way distribution.
+  if (is.na(n_rows_lv) || is.na(n_cols_lv) || n_rows_lv < 2 || n_cols_lv < 2) {
+    stop("Disclosive: cross-tab requires at least 2 levels on each axis ",
+         "(a 1xN table is a one-way distribution).", call. = FALSE)
+  }
+
+  # Build the dense long-form counts.
+  agg_sql <- paste0(
+    "SELECT t.", row_col, " AS row_v, t.", col_col, " AS col_v, ",
+    count_expr, " AS n FROM ", from_clause, where_sql,
+    " GROUP BY t.", row_col, ", t.", col_col)
+  long <- .executeQuery(handle, .renderSql(handle, agg_sql))
+  names(long) <- tolower(names(long))
+
+  row_levels <- sort(unique(long$row_v))
+  col_levels <- sort(unique(long$col_v))
+
+  M <- matrix(0L, nrow = length(row_levels), ncol = length(col_levels),
+              dimnames = list(as.character(row_levels), as.character(col_levels)))
+  if (nrow(long) > 0) {
+    ri <- match(long$row_v, row_levels)
+    ci <- match(long$col_v, col_levels)
+    for (k in seq_len(nrow(long))) {
+      M[ri[k], ci[k]] <- as.integer(long$n[k])
+    }
+  }
+
+  sup <- .crossTabSuppress(M, t, band_margins = band_margins)
+
+  # Decorate axis labels with concept names when the axis is a concept-id column.
+  row_labels <- .crossTabLabels(handle, row_col, row_levels)
+  col_labels <- .crossTabLabels(handle, col_col, col_levels)
+  dimnames(sup$matrix) <- list(row_labels, col_labels)
+
+  out <- list(
+    row_col    = row_col,
+    col_col    = col_col,
+    count_mode = count_mode,
+    row_levels = row_labels,
+    col_levels = col_labels,
+    counts     = sup$matrix,
+    suppressed = sup$suppressed
+  )
+  if (isTRUE(band_margins)) {
+    out$row_margins <- stats::setNames(sup$row_margins, row_labels)
+    out$col_margins <- stats::setNames(sup$col_margins, col_labels)
+    out$grand_total <- sup$grand_total
+  }
+  out
+}
+
+#' Map axis levels to human-readable labels for concept-id columns
+#'
+#' @keywords internal
+.crossTabLabels <- function(handle, col, levels) {
+  labs <- as.character(levels)
+  if (length(levels) == 0) return(labs)
+  if (grepl("_concept_id$", col) || identical(col, "value_as_concept_id")) {
+    ids <- suppressWarnings(as.integer(levels))
+    concepts <- tryCatch(.vocabLookupConcepts(handle, ids[!is.na(ids)]),
+                         error = function(e) NULL)
+    if (!is.null(concepts) && nrow(concepts) > 0) {
+      cmap <- stats::setNames(concepts$concept_name,
+                              as.character(concepts$concept_id))
+      named <- unname(cmap[as.character(levels)])
+      miss <- is.na(named) | !nzchar(named)
+      named[miss] <- labs[miss]
+      labs <- named
+    }
+  }
+  labs
+}
