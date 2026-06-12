@@ -9,7 +9,8 @@ omopNumericRangeDS(
   table,
   value_col,
   cohort_table = NULL,
-  window = NULL
+  window = NULL,
+  concept_id = NULL
 )
 }
 \arguments{
@@ -22,6 +23,9 @@ omopNumericRangeDS(
 \item{cohort_table}{Character; cohort temp table for filtering (NULL)}
 
 \item{window}{List with start/end dates for filtering (NULL)}
+
+\item{concept_id}{Integer; optional; restrict the range to rows of this
+concept, using the table's domain concept column}
 }
 \value{
 List with p05, p95, n_total

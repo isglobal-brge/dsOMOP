@@ -11,7 +11,8 @@ omopNumericHistogramDS(
   bins = 20L,
   cohort_table = NULL,
   window = NULL,
-  breaks = NULL
+  breaks = NULL,
+  concept_id = NULL
 )
 }
 \arguments{
@@ -28,6 +29,9 @@ omopNumericHistogramDS(
 \item{window}{List with start/end dates for filtering (NULL)}
 
 \item{breaks}{Numeric vector; shared bin edges from two-pass pooling (NULL)}
+
+\item{concept_id}{Integer; optional; restrict the histogram to rows of this
+concept, using the table's domain concept column}
 }
 \value{
 Data frame with bin_start, bin_end, count, suppressed
