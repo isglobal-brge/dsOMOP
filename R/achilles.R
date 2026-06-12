@@ -208,7 +208,7 @@
 
   if ("achilles_results" %in% found) {
     qualified <- .qualifyTable(handle, "achilles_results",
-                                handle$results_schema)
+                                .resolveResultsSchema(handle))
     sql <- paste0("SELECT COUNT(DISTINCT analysis_id) AS n FROM ", qualified)
     n_analyses <- tryCatch(
       as.integer(.executeQuery(handle, sql)$n[1]),
@@ -218,7 +218,7 @@
 
   if ("achilles_heel_results" %in% found) {
     qualified <- .qualifyTable(handle, "achilles_heel_results",
-                                handle$results_schema)
+                                .resolveResultsSchema(handle))
     sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified)
     n_heel <- tryCatch(
       as.integer(.executeQuery(handle, sql)$n[1]),
@@ -284,7 +284,7 @@
   }
 
   qualified <- .qualifyTable(handle, "achilles_results",
-                              handle$results_schema)
+                              .resolveResultsSchema(handle))
   analysis_ids <- as.integer(analysis_ids)
 
   id_list <- paste(analysis_ids, collapse = ", ")
@@ -363,7 +363,7 @@
   }
 
   qualified <- .qualifyTable(handle, "achilles_results_dist",
-                              handle$results_schema)
+                              .resolveResultsSchema(handle))
   analysis_ids <- as.integer(analysis_ids)
 
   id_list <- paste(analysis_ids, collapse = ", ")
@@ -433,7 +433,7 @@
   }
 
   qualified <- .qualifyTable(handle, "achilles_heel_results",
-                              handle$results_schema)
+                              .resolveResultsSchema(handle))
   sql <- paste0("SELECT analysis_id, achilles_heel_warning, rule_id, ",
                 "record_count FROM ", qualified,
                 " ORDER BY rule_id")
@@ -480,7 +480,7 @@
   # Try achilles_analysis table first
   if ("achilles_analysis" %in% bp$tables$table_name[bp$tables$present_in_db]) {
     qualified <- .qualifyTable(handle, "achilles_analysis",
-                                handle$results_schema %||% handle$cdm_schema)
+                                .resolveResultsSchema(handle))
     sql <- paste0("SELECT analysis_id, analysis_name, stratum_1_name, ",
                   "stratum_2_name, stratum_3_name, stratum_4_name, stratum_5_name ",
                   "FROM ", qualified, " ORDER BY analysis_id")
@@ -533,7 +533,7 @@
   for (tbl in c("achilles_results", "achilles_results_dist")) {
     if (tbl %in% bp$tables$table_name[bp$tables$present_in_db]) {
       qualified <- .qualifyTable(handle, tbl,
-                                  handle$results_schema %||% handle$cdm_schema)
+                                  .resolveResultsSchema(handle))
       sql <- paste0("SELECT DISTINCT analysis_id FROM ", qualified)
       res <- tryCatch(.executeQuery(handle, sql), error = function(e) NULL)
       if (!is.null(res)) ids <- c(ids, as.integer(res$analysis_id))

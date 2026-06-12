@@ -197,7 +197,7 @@
                       stratum_2 = character(0), stratum_3 = character(0),
                       stratum_4 = character(0), stratum_5 = character(0),
                       count_value = numeric(0), stringsAsFactors = FALSE)
-  qualified <- .qualifyTable(handle, "achilles_results", handle$results_schema)
+  qualified <- .qualifyTable(handle, "achilles_results", .resolveResultsSchema(handle))
   id_list <- paste(as.integer(analysis_ids), collapse = ", ")
   sql <- paste0(
     "SELECT analysis_id, stratum_1, stratum_2, stratum_3, stratum_4, ",

@@ -429,3 +429,75 @@ test_that("achillesStatus reports has_analysis_table", {
   expect_true(status$has_analysis_table)
   expect_true("achilles_analysis" %in% status$tables)
 })
+
+# ==============================================================================
+# Tests for results_schema resolution / auto-detection
+# ==============================================================================
+
+.rs_handle <- function(cdm_schema = "cdm", results_schema = NULL,
+                       dialect = "postgresql") {
+  h <- new.env(parent = emptyenv())
+  h$dbms <- if (dialect == "sqlite") "sqlite" else "postgresql"
+  h$target_dialect <- dialect
+  h$cdm_schema <- cdm_schema
+  h$results_schema <- results_schema
+  h$results_schema_resolved <- NULL
+  h$results_schema_resolved_done <- FALSE
+  h
+}
+
+test_that("resolveResultsSchema honors an explicit pin without probing", {
+  h <- .rs_handle(results_schema = "my_results")
+  called <- 0L
+  testthat::local_mocked_bindings(
+    .listTablesRaw = function(handle, schema) { called <<- called + 1L; character(0) },
+    .package = "dsOMOP")
+  expect_equal(.resolveResultsSchema(h), "my_results")
+  expect_equal(called, 0L)  # explicit pin => no probing
+})
+
+test_that("resolveResultsSchema auto-detects a dedicated results schema", {
+  h <- .rs_handle()
+  testthat::local_mocked_bindings(
+    .listTablesRaw = function(handle, schema) {
+      if (schema == "results") c("achilles_results", "achilles_analysis") else character(0)
+    }, .package = "dsOMOP")
+  expect_equal(.resolveResultsSchema(h), "results")
+})
+
+test_that("resolveResultsSchema finds achilles co-located in the cdm schema", {
+  h <- .rs_handle()
+  testthat::local_mocked_bindings(
+    .listTablesRaw = function(handle, schema) {
+      if (schema == "cdm") c("person", "achilles_results") else character(0)
+    }, .package = "dsOMOP")
+  expect_equal(.resolveResultsSchema(h), "cdm")
+})
+
+test_that("resolveResultsSchema returns NULL when achilles absent everywhere", {
+  h <- .rs_handle()
+  testthat::local_mocked_bindings(
+    .listTablesRaw = function(handle, schema) character(0), .package = "dsOMOP")
+  expect_null(.resolveResultsSchema(h))
+})
+
+test_that("resolveResultsSchema skips detection on sqlite (no schemas)", {
+  h <- .rs_handle(dialect = "sqlite")
+  testthat::local_mocked_bindings(
+    .listTablesRaw = function(handle, schema) stop("should not probe on sqlite"),
+    .package = "dsOMOP")
+  expect_null(.resolveResultsSchema(h))
+})
+
+test_that("resolveResultsSchema caches (probes at most once)", {
+  h <- .rs_handle()
+  calls <- 0L
+  testthat::local_mocked_bindings(
+    .listTablesRaw = function(handle, schema) {
+      calls <<- calls + 1L
+      if (schema == "results") "achilles_results" else character(0)
+    }, .package = "dsOMOP")
+  .resolveResultsSchema(h); .resolveResultsSchema(h)
+  expect_equal(.resolveResultsSchema(h), "results")
+  expect_equal(calls, 1L)  # cached after first resolve
+})
