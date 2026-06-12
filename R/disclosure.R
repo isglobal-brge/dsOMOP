@@ -133,6 +133,29 @@
   invisible(TRUE)
 }
 
+#' Band a person count down to a multiple of \code{band_width}
+#'
+#' Differencing defence for aggregate counts that survive the small-cell
+#' suppression check. Suppressing counts below \code{nfilter_subset} does
+#' NOT stop an attacker who can read EXACT supra-threshold counts: by
+#' narrowing a filter and watching a funnel count change (e.g. 50 -> 47),
+#' they recover the size of the differenced subgroup (3 persons) even though
+#' no single count was ever below threshold. Rounding DOWN to a fixed band
+#' (default 5) destroys that 1-person resolution: both 50 and 47 report as
+#' 45, so the delta is no longer observable. Rounding down (floor) — never to
+#' nearest — guarantees the reported value never exceeds the true count, so
+#' the band can never imply more persons than actually exist.
+#'
+#' @param n Numeric; the exact count (may be NA)
+#' @param band_width Integer; band granularity (default 5, minimum 1)
+#' @return Banded count (multiple of \code{band_width}), or NA if \code{n} is NA
+#' @keywords internal
+.bandCount <- function(n, band_width = 5L) {
+  band_width <- max(as.integer(band_width), 1L)
+  if (is.null(n) || length(n) == 0 || is.na(n)) return(NA_real_)
+  floor(as.numeric(n) / band_width) * band_width
+}
+
 #' Suppress small cell counts by dropping rows
 #'
 #' Rows with any count column below the disclosure threshold are removed

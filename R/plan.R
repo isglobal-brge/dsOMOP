@@ -162,9 +162,25 @@
   validation <- .planValidate(handle, plan)
   settings <- .omopDisclosureSettings()
 
+  # Disclosure note (differencing defence):
+  # The per-output n_persons counts below are the most-repeated, lowest-cost
+  # query in the API and are therefore the primary differencing signal. The
+  # nfilter_subset suppression already replaces any count < threshold with NA,
+  # but suppression of small cells does NOT protect against exact-count
+  # differencing: an attacker who narrows a filter and reads two EXACT
+  # supra-threshold counts (e.g. a 50 -> 47 funnel delta) recovers the size of
+  # the differenced subgroup without ever tripping the small-cell guard. The
+  # defence is twofold: (1) BAND every surviving count down to a multiple of
+  # band_width via .bandCount() so the 1-person resolution that differencing
+  # exploits is destroyed, and (2) audit-log the preview call (see
+  # omopPlanPreviewDS) so the data controller can detect repeated/probing
+  # previews that banding alone cannot stop. min/max are never returned.
+  band_width <- 5L
+
   preview <- list(
     validation = validation,
-    outputs = list()
+    outputs = list(),
+    band_width = band_width
   )
 
   outputs <- plan$outputs %||% list()
@@ -195,10 +211,15 @@
           disclosive <- FALSE
         }
 
+        # Band surviving counts down to a multiple of band_width so an exact
+        # supra-threshold count (the differencing primitive) is never returned.
+        n_banded <- if (disclosive) NA_real_ else .bandCount(n, band_width)
         out_preview$tables[[tbl_name]] <- list(
           columns = avail_cols,
           missing_columns = setdiff(req_cols, col_df$column_name),
-          n_persons = if (disclosive) NA_real_ else n,
+          n_persons = n_banded,
+          n_persons_banded = !is.na(n_banded),
+          band_width = band_width,
           disclosive = disclosive
         )
       }
@@ -223,11 +244,16 @@
           disclosive <- FALSE
         }
 
+        # Band surviving counts down to a multiple of band_width so an exact
+        # supra-threshold count (the differencing primitive) is never returned.
+        n_banded <- if (disclosive) NA_real_ else .bandCount(n, band_width)
         out_preview[[out_name]] <- list(
           table = out$table,
           columns = avail_cols,
           representation = out$representation$format %||% "long",
-          n_persons = if (disclosive) NA_real_ else n,
+          n_persons = n_banded,
+          n_persons_banded = !is.na(n_banded),
+          band_width = band_width,
           disclosive = disclosive
         )
       }
