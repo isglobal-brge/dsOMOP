@@ -11,7 +11,8 @@
   bins = 20L,
   cohort_table = NULL,
   window = NULL,
-  breaks = NULL
+  breaks = NULL,
+  concept_id = NULL
 )
 }
 \arguments{

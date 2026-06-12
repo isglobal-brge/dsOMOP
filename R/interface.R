@@ -1004,6 +1004,8 @@ omopCrossTabDS <- function(omop_symbol, table, row_col, col_col,
 #' @param value_col Character; numeric column name
 #' @param cohort_table Character; cohort temp table for filtering (NULL)
 #' @param window List with start/end dates for filtering (NULL)
+#' @param concept_id Integer; optional; restrict the range to rows of this
+#'   concept, using the table's domain concept column
 #' @return List with p05, p95, n_total
 #' @examples
 #' \dontrun{
@@ -1011,9 +1013,13 @@ omopCrossTabDS <- function(omop_symbol, table, row_col, col_col,
 #' }
 #' @export
 omopNumericRangeDS <- function(omop_symbol, table, value_col,
-                                cohort_table = NULL, window = NULL) {
+                                cohort_table = NULL, window = NULL,
+                                concept_id = NULL) {
   handle <- .getHandle(omop_symbol)
-  .profileNumericRange(handle, table, value_col, cohort_table, window)
+  concept_id <- .ds_arg(concept_id)
+  if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+  .profileNumericRange(handle, table, value_col, cohort_table, window,
+                       concept_id = concept_id)
 }
 
 #' Get numeric histogram (Aggregate)
@@ -1030,6 +1036,8 @@ omopNumericRangeDS <- function(omop_symbol, table, value_col,
 #' @param cohort_table Character; cohort temp table for filtering (NULL)
 #' @param window List with start/end dates for filtering (NULL)
 #' @param breaks Numeric vector; shared bin edges from two-pass pooling (NULL)
+#' @param concept_id Integer; optional; restrict the histogram to rows of this
+#'   concept, using the table's domain concept column
 #' @return Data frame with bin_start, bin_end, count, suppressed
 #' @examples
 #' \dontrun{
@@ -1038,11 +1046,15 @@ omopNumericRangeDS <- function(omop_symbol, table, value_col,
 #' @export
 omopNumericHistogramDS <- function(omop_symbol, table, value_col,
                                     bins = 20L, cohort_table = NULL,
-                                    window = NULL, breaks = NULL) {
+                                    window = NULL, breaks = NULL,
+                                    concept_id = NULL) {
   handle <- .getHandle(omop_symbol)
   breaks <- .ds_arg(breaks)
+  concept_id <- .ds_arg(concept_id)
+  if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
   .profileNumericHistogram(handle, table, value_col, bins,
-                           cohort_table, window, breaks)
+                           cohort_table, window, breaks,
+                           concept_id = concept_id)
 }
 
 #' Get numeric quantiles (Aggregate)

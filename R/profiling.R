@@ -667,7 +667,8 @@
 #' @return List with p05, p95, n_total
 #' @keywords internal
 .profileNumericRange <- function(handle, table, value_col,
-                                  cohort_table = NULL, window = NULL) {
+                                  cohort_table = NULL, window = NULL,
+                                  concept_id = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   value_col <- tolower(.validateIdentifier(value_col, "column"))
   bp <- .buildBlueprint(handle)
@@ -706,6 +707,17 @@
                          paste0("t.", date_col, " <= ", .quoteLiteral(window$end)))
       }
     }
+  }
+
+  # Optional concept scope: restrict to one concept of this table.
+  if (!is.null(concept_id)) {
+    ccol <- .getDomainConceptColumn(bp, table)
+    if (is.null(ccol)) {
+      stop("Table '", table, "' has no concept column to scope by.",
+           call. = FALSE)
+    }
+    where_parts <- c(where_parts,
+                     paste0("t.", ccol, " = ", as.integer(concept_id)))
   }
 
   where_sql <- paste0(" WHERE ", paste(where_parts, collapse = " AND "))
@@ -773,7 +785,8 @@
 #' @keywords internal
 .profileNumericHistogram <- function(handle, table, value_col,
                                       bins = 20L, cohort_table = NULL,
-                                      window = NULL, breaks = NULL) {
+                                      window = NULL, breaks = NULL,
+                                      concept_id = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   value_col <- tolower(.validateIdentifier(value_col, "column"))
   bp <- .buildBlueprint(handle)
@@ -819,6 +832,17 @@
                          paste0("t.", date_col, " <= ", .quoteLiteral(window$end)))
       }
     }
+  }
+
+  # Optional concept scope: restrict to one concept of this table.
+  if (!is.null(concept_id)) {
+    ccol <- .getDomainConceptColumn(bp, table)
+    if (is.null(ccol)) {
+      stop("Table '", table, "' has no concept column to scope by.",
+           call. = FALSE)
+    }
+    where_parts <- c(where_parts,
+                     paste0("t.", ccol, " = ", as.integer(concept_id)))
   }
 
   where_sql <- paste0(" WHERE ", paste(where_parts, collapse = " AND "))
