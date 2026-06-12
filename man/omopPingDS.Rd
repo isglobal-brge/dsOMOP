@@ -4,18 +4,32 @@
 \alias{omopPingDS}
 \title{Ping / health check (Aggregate)}
 \usage{
-omopPingDS()
+omopPingDS(omop_symbol = NULL)
+}
+\arguments{
+\item{omop_symbol}{Character; optional handle symbol. When provided, the
+handle's DB connection is touched so it does not time out.}
 }
 \value{
-Named list with alive status, package version, and timestamp.
+Named list with alive status, db_alive (logical or NA when no symbol
+  was given), package version, and timestamp.
 }
 \description{
 Returns basic status information indicating the dsOMOP server package is
 loaded and responsive. Used by the client to verify connectivity before
 issuing further commands.
+
+Calling it with no \code{omop_symbol} keeps only the Opal R session warm
+(running any aggregate resets that session's inactivity timer). When an
+\code{omop_symbol} is supplied, it ALSO issues a trivial \code{SELECT 1}
+against that handle's database connection, keeping the server-side DB
+connection (Rock R session -> OMOP database) warm too. This is the keepalive
+the Studio uses on a timer to prevent BOTH connection layers from timing out
+while the app is open.
 }
 \examples{
 \dontrun{
 omopPingDS()
+omopPingDS("omop")
 }
 }

@@ -10,119 +10,173 @@
 .achilles_catalog_static <- function() {
   data.frame(
     analysis_id = c(
-      1L, 2L, 3L, 4L, 5L,
-      103L, 105L, 109L, 116L, 117L,
-      200L, 201L,
-      400L, 401L, 403L, 404L,
-      700L, 701L,
-      800L,
-      900L,
-      1800L, 1801L,
-      600L, 601L,
-      2100L
+      1L, 2L, 3L, 4L, 5L, 10L, 12L, 101L, 102L, 103L, 104L, 105L, 106L, 107L,
+      108L, 109L, 113L, 200L, 201L, 202L, 203L, 206L, 220L, 221L, 400L, 401L,
+      402L, 403L, 406L, 420L, 500L, 502L, 505L, 506L, 600L, 601L, 602L, 603L,
+      606L, 620L, 700L, 701L, 702L, 703L, 706L, 715L, 716L, 717L, 720L, 800L,
+      801L, 802L, 803L, 806L, 820L, 1800L, 1801L, 1802L, 1803L, 1806L, 1818L,
+      1820L, 2000L, 2001L, 2002L, 2003L, 2100L, 2101L, 2102L, 2106L
     ),
     analysis_name = c(
       "Number of persons", "Number of persons by gender",
-      "Number of persons by year of birth",
-      "Number of persons by race",
+      "Number of persons by year of birth", "Number of persons by race",
       "Number of persons by ethnicity",
+      "Number of persons by year of birth by gender",
+      "Number of persons by race and ethnicity",
+      "Number of persons by age at first observation period",
+      "Number of persons by gender by age at first observation period",
       "Distribution of age at first observation period",
+      "Distribution of age at first observation period by gender",
       "Length of observation (days) of first observation period",
+      "Length of observation (days) of first observation period by gender",
+      "Length of observation (days) of first observation period by age decile",
+      "Number of persons by observation period length, 30d increments",
       "Number of persons with continuous observation in each year",
-      "Number of persons with observation period start by month",
-      "Number of persons with observation period end by month",
-      "Number of visits by visit concept",
-      "Number of visits by visit concept and month",
-      "Number of persons with condition by concept",
-      "Number of condition records by concept and month",
-      "Number of persons with condition by concept and gender",
-      "Condition age at first diagnosis distribution",
-      "Number of persons with drug by concept",
-      "Number of drug records by concept and month",
-      "Number of persons with observation by concept",
-      "Number of persons by location",
-      "Number of persons with measurement by concept",
-      "Number of measurement records by concept and month",
-      "Number of persons with procedure by concept",
-      "Number of procedure records by concept and month",
-      "Number of persons with device by concept"
+      "Number of persons by number of observation periods",
+      "Number of persons with at least one visit, by visit_concept_id",
+      "Number of visit records, by visit_concept_id",
+      "Number of persons by visit start month, by visit_concept_id",
+      "Number of distinct visit concepts per person",
+      "Distribution of age by visit_concept_id",
+      "Number of visit records by visit start month",
+      "Number of persons by visit start year",
+      "Number of persons with at least one condition, by condition_concept_id",
+      "Number of condition records, by condition_concept_id",
+      "Number of persons by condition start month, by condition_concept_id",
+      "Number of distinct condition concepts per person",
+      "Distribution of age by condition_concept_id",
+      "Number of condition records by condition start month",
+      "Number of persons with death, by cause_concept_id",
+      "Number of persons by death month",
+      "Number of death records, by death_type_concept_id",
+      "Distribution of age at death by gender",
+      "Number of persons with at least one procedure, by procedure_concept_id",
+      "Number of procedure records, by procedure_concept_id",
+      "Number of persons by procedure start month, by procedure_concept_id",
+      "Number of distinct procedure concepts per person",
+      "Distribution of age by procedure_concept_id",
+      "Number of procedure records by procedure start month",
+      "Number of persons with at least one drug, by drug_concept_id",
+      "Number of drug records, by drug_concept_id",
+      "Number of persons by drug start month, by drug_concept_id",
+      "Number of distinct drug concepts per person",
+      "Distribution of age by drug_concept_id",
+      "Distribution of days_supply by drug_concept_id",
+      "Distribution of refills by drug_concept_id",
+      "Distribution of quantity by drug_concept_id",
+      "Number of drug records by drug start month",
+      "Number of persons with at least one observation, by observation_concept_id",
+      "Number of observation records, by observation_concept_id",
+      "Number of persons by observation start month, by observation_concept_id",
+      "Number of distinct observation concepts per person",
+      "Distribution of age by observation_concept_id",
+      "Number of observation records by observation start month",
+      "Number of persons with at least one measurement, by measurement_concept_id",
+      "Number of measurement records, by measurement_concept_id",
+      "Number of persons by measurement start month, by measurement_concept_id",
+      "Number of distinct measurement concepts per person",
+      "Distribution of age by measurement_concept_id",
+      "Number of measurement records below/within/above normal range, by measurement_concept_id and unit_concept_id",
+      "Number of measurement records by measurement start month",
+      "Number of patients with at least 1 Dx and 1 Rx",
+      "Number of patients with at least 1 Dx and 1 Proc",
+      "Number of patients with at least 1 Meas, 1 Dx and 1 Rx",
+      "Number of patients with at least 1 Visit",
+      "Number of persons with at least one device, by device_concept_id",
+      "Number of device records, by device_concept_id",
+      "Number of device records by device start month",
+      "Distribution of age by device_concept_id"
     ),
     domain = c(
-      "person", "person", "person", "person", "person",
+      "person", "person", "person", "person", "person", "person", "person",
       "observation_period", "observation_period", "observation_period",
-      "observation_period", "observation_period",
-      "visit", "visit",
-      "condition", "condition", "condition", "condition",
-      "drug", "drug",
-      "observation",
-      "person",
-      "measurement", "measurement",
-      "procedure", "procedure",
-      "device"
+      "observation_period", "observation_period", "observation_period",
+      "observation_period", "observation_period", "observation_period",
+      "observation_period", "visit", "visit", "visit", "visit", "visit",
+      "visit", "visit", "condition", "condition", "condition", "condition",
+      "condition", "condition", "death", "death", "death", "death",
+      "procedure", "procedure", "procedure", "procedure", "procedure",
+      "procedure", "drug", "drug", "drug", "drug", "drug", "drug", "drug",
+      "drug", "drug", "observation", "observation", "observation",
+      "observation", "observation", "observation", "measurement",
+      "measurement", "measurement", "measurement", "measurement",
+      "measurement", "measurement", "general", "general", "general",
+      "general", "device", "device", "device", "device"
     ),
     stratum_1_name = c(
-      NA, "gender_concept_id", "year_of_birth",
-      "race_concept_id", "ethnicity_concept_id",
-      NA, NA, "calendar_year", "calendar_month", "calendar_month",
-      "visit_concept_id", "visit_concept_id",
-      "concept_id", "concept_id", "concept_id", "concept_id",
-      "concept_id", "concept_id",
-      "concept_id",
-      "location_id",
-      "concept_id", "concept_id",
-      "concept_id", "concept_id",
-      "concept_id"
+      NA, "gender_concept_id", "year_of_birth", "race_concept_id",
+      "ethnicity_concept_id", "year_of_birth", "race_concept_id", "age",
+      "gender_concept_id", NA, "gender_concept_id", NA, "gender_concept_id",
+      "age decile", "obs period length 30d", "calendar year",
+      "number of observation periods", "visit_concept_id", "visit_concept_id",
+      "visit_concept_id", NA, "visit_concept_id", "calendar month",
+      "calendar year", "condition_concept_id", "condition_concept_id",
+      "condition_concept_id", NA, "condition_concept_id", "calendar month",
+      "cause_concept_id", "calendar month", "death_type_concept_id",
+      "gender_concept_id", "procedure_concept_id", "procedure_concept_id",
+      "procedure_concept_id", NA, "procedure_concept_id", "calendar month",
+      "drug_concept_id", "drug_concept_id", "drug_concept_id", NA,
+      "drug_concept_id", "drug_concept_id", "drug_concept_id",
+      "drug_concept_id", "calendar month", "observation_concept_id",
+      "observation_concept_id", "observation_concept_id", NA,
+      "observation_concept_id", "calendar month", "measurement_concept_id",
+      "measurement_concept_id", "measurement_concept_id", NA,
+      "measurement_concept_id", "measurement_concept_id", "calendar month",
+      NA, NA, NA, NA, "device_concept_id", "device_concept_id",
+      "calendar month", "device_concept_id"
     ),
     stratum_2_name = c(
-      NA, NA, NA, NA, NA,
-      NA, NA, NA, NA, NA,
-      NA, "calendar_month",
-      NA, "calendar_month", "gender_concept_id", NA,
-      NA, "calendar_month",
-      NA,
-      NA,
-      NA, "calendar_month",
-      NA, "calendar_month",
-      NA
+      NA, NA, NA, NA, NA, "gender_concept_id", "ethnicity_concept_id", NA,
+      "age", NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, "calendar month", NA,
+      "gender_concept_id", NA, NA, NA, NA, "calendar month", NA,
+      "gender_concept_id", NA, NA, NA, NA, NA, NA, NA, "calendar month", NA,
+      "gender_concept_id", NA, NA, NA, "calendar month", NA,
+      "gender_concept_id", NA, NA, NA, NA, NA, NA, "calendar month", NA,
+      "gender_concept_id", NA, NA, NA, "calendar month", NA,
+      "gender_concept_id", "unit_concept_id", NA, NA, NA, NA, NA, NA, NA, NA,
+      "gender_concept_id"
     ),
     result_table = c(
       "achilles_results", "achilles_results", "achilles_results",
-      "achilles_results", "achilles_results",
-      "achilles_results_dist", "achilles_results_dist",
       "achilles_results", "achilles_results", "achilles_results",
-      "achilles_results", "achilles_results",
       "achilles_results", "achilles_results", "achilles_results",
-      "achilles_results_dist",
-      "achilles_results", "achilles_results",
-      "achilles_results",
-      "achilles_results",
-      "achilles_results", "achilles_results",
-      "achilles_results", "achilles_results",
-      "achilles_results"
+      "achilles_results_dist", "achilles_results_dist", "achilles_results_dist",
+      "achilles_results_dist", "achilles_results_dist", "achilles_results",
+      "achilles_results", "achilles_results", "achilles_results",
+      "achilles_results", "achilles_results", "achilles_results_dist",
+      "achilles_results_dist", "achilles_results", "achilles_results",
+      "achilles_results", "achilles_results", "achilles_results",
+      "achilles_results_dist", "achilles_results_dist", "achilles_results",
+      "achilles_results", "achilles_results", "achilles_results",
+      "achilles_results_dist", "achilles_results", "achilles_results",
+      "achilles_results", "achilles_results_dist", "achilles_results_dist",
+      "achilles_results", "achilles_results", "achilles_results",
+      "achilles_results", "achilles_results_dist", "achilles_results_dist",
+      "achilles_results_dist", "achilles_results_dist", "achilles_results_dist",
+      "achilles_results", "achilles_results", "achilles_results",
+      "achilles_results", "achilles_results_dist", "achilles_results_dist",
+      "achilles_results", "achilles_results", "achilles_results",
+      "achilles_results", "achilles_results_dist", "achilles_results_dist",
+      "achilles_results", "achilles_results", "achilles_results",
+      "achilles_results", "achilles_results", "achilles_results",
+      "achilles_results", "achilles_results", "achilles_results",
+      "achilles_results_dist"
+    ),
+    unit = c(
+      "person", "person", "person", "person", "person", "person", "person",
+      "person", "person", "dist", "dist", "dist", "dist", "dist", "person",
+      "person", "person", "person", "record", "person", "dist", "dist",
+      "record", "person", "person", "record", "person", "dist", "dist",
+      "record", "person", "person", "record", "dist", "person", "record",
+      "person", "dist", "dist", "record", "person", "record", "person",
+      "dist", "dist", "dist", "dist", "dist", "record", "person", "record",
+      "person", "dist", "dist", "record", "person", "record", "person",
+      "dist", "dist", "record", "record", "person", "person", "person",
+      "person", "person", "record", "record", "dist"
     ),
     stringsAsFactors = FALSE
   )
 }
-
-# Domain-to-analysis mapping
-
-#' Mapping of OMOP CDM domains to their Achilles analysis IDs
-#'
-#' Named list where each element is an integer vector of analysis IDs
-#' associated with the domain.
-#'
-#' @keywords internal
-.achilles_domain_analyses <- list(
-  person             = c(1L, 2L, 3L, 4L, 5L, 900L),
-  observation_period = c(103L, 105L, 109L, 116L, 117L),
-  condition          = c(400L, 401L, 403L, 404L),
-  drug               = c(700L, 701L),
-  measurement        = c(1800L, 1801L),
-  procedure          = c(600L, 601L),
-  observation        = c(800L),
-  visit              = c(200L, 201L),
-  device             = c(2100L)
-)
 
 # Core query functions
 
@@ -188,10 +242,7 @@
 
   if (!is.null(domain)) {
     domain <- tolower(trimws(domain))
-    if (domain %in% names(.achilles_domain_analyses)) {
-      ids <- .achilles_domain_analyses[[domain]]
-      catalog <- catalog[catalog$analysis_id %in% ids, , drop = FALSE]
-    }
+    catalog <- catalog[tolower(catalog$domain) == domain, , drop = FALSE]
   }
 
   rownames(catalog) <- NULL
@@ -248,8 +299,22 @@
   result <- tryCatch(.executeQuery(handle, sql), error = function(e) empty)
   if (nrow(result) == 0) return(result)
 
-  # Disclosure control: suppress small counts (drop rows, no hints)
+  # Disclosure control, in two orthogonal passes:
+  # (1) Cell-value suppression: drop any row whose own count_value < nfilter.tab.
+  #     For person-unit analyses the count IS the person count, so this fully
+  #     gates them; it also removes record cells with trivially small counts.
   result <- .suppressSmallCounts(result, "count_value")
+
+  # (2) Person-gating: record-unit analyses (e.g. 401) count RECORDS, so a large
+  #     count_value can still hide a sub-threshold PERSON count. Drop record
+  #     cells whose underlying distinct-person count (a precomputed sibling x00
+  #     row, or a targeted companion CDM query) is < nfilter.tab. Person- and
+  #     distribution-unit rows are untouched. Runs after (1) so a record cell
+  #     survives only if BOTH its record count and its person count clear the
+  #     threshold. Guarded so the common path (no record analyses) is free.
+  if (nrow(result) > 0 && any(result$analysis_id %in% .achillesRecordGatedIds())) {
+    result <- .achillesPersonGate(handle, result)
+  }
 
   result
 }
@@ -268,10 +333,11 @@
 #'     \code{count_value < nfilter.tab} are dropped entirely. The "no hints"
 #'     policy means suppressed rows are absent (not NA), preventing
 #'     subtraction attacks.
-#'   \item \strong{Small-sample percentile suppression}: When
-#'     \code{count_value < nfilter_dist}, all percentile columns are set to
-#'     NA. With very few observations, even p25/p75 approximate individual
-#'     values.
+#'   \item \strong{Small-sample summary-stat suppression}: When
+#'     \code{count_value < nfilter_dist}, ALL summary-statistic columns
+#'     (\code{avg_value}, \code{stdev_value} and every percentile) are set to
+#'     NA. With very few observations, even p25/p75 — or a mean plus its SD —
+#'     approximate individual values.
 #' }
 #'
 #' @param handle CDM handle
@@ -326,17 +392,21 @@
   # preventing subtraction attacks (total - visible = hidden group size).
   result <- .suppressSmallCounts(result, "count_value")
 
-  # SMALL-SAMPLE PERCENTILE SUPPRESSION: When count_value < nfilter_dist,
+  # SMALL-SAMPLE SUMMARY-STAT SUPPRESSION: When count_value < nfilter_dist,
   # even median/p25/p75 can approximate individual values (e.g., with n=3,
-  # the median IS one person's value). Set all percentile columns to NA
-  # for these small-sample rows while keeping count_value visible.
+  # the median IS one person's value). The SAME applies to avg_value and
+  # stdev_value: a mean over n=2 plus its SD algebraically pins both
+  # individual values, and a mean over n=3 is near-determined. Set ALL
+  # summary-statistic columns (mean, SD, and every percentile) to NA for
+  # these small-sample rows while keeping count_value visible.
   settings <- .omopDisclosureSettings()
   nfilter_dist <- settings$nfilter_dist %||% 10L
-  pct_cols <- c("p10_value", "p25_value", "median_value", "p75_value", "p90_value")
-  pct_cols <- intersect(pct_cols, names(result))
-  if (length(pct_cols) > 0 && "count_value" %in% names(result)) {
+  mask_cols <- c("avg_value", "stdev_value", "p10_value", "p25_value",
+                 "median_value", "p75_value", "p90_value")
+  mask_cols <- intersect(mask_cols, names(result))
+  if (length(mask_cols) > 0 && "count_value" %in% names(result)) {
     small_rows <- !is.na(result$count_value) & result$count_value < nfilter_dist
-    result[small_rows, pct_cols] <- NA_real_
+    result[small_rows, mask_cols] <- NA_real_
   }
 
   result
@@ -368,7 +438,29 @@
                 "record_count FROM ", qualified,
                 " ORDER BY rule_id")
 
-  tryCatch(.executeQuery(handle, sql), error = function(e) empty)
+  result <- tryCatch(.executeQuery(handle, sql), error = function(e) empty)
+  if (nrow(result) == 0) return(result)
+
+  # DISCLOSURE CONTROL: Heel rows are data-quality rule indicators, not
+  # population cells. Keep the rows (the data controller needs to see WHICH
+  # rules fired) but strip the disclosive specifics:
+  # (1) NA-mask record_count below nfilter.tab — the rule-fired indicator stays
+  #     visible, but the exact (often tiny) failing-record count is removed.
+  # (2) Achilles Heel messages routinely interpolate raw counts/values into the
+  #     free text (e.g. "5 persons have a birth year after their death year"),
+  #     which bypasses the column-level filter. Scrub numeric runs, replacing
+  #     each with "N".
+  settings <- .omopDisclosureSettings()
+  threshold <- settings$nfilter_tab
+  if ("record_count" %in% names(result)) {
+    rc <- suppressWarnings(as.numeric(result$record_count))
+    result$record_count[!is.na(rc) & rc < threshold] <- NA
+  }
+  if ("achilles_heel_warning" %in% names(result)) {
+    result$achilles_heel_warning <- gsub(
+      "[0-9][0-9.,]*", "N", as.character(result$achilles_heel_warning))
+  }
+  result
 }
 
 # Dynamic Catalog Discovery

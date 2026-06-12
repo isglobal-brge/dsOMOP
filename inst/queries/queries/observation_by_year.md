@@ -17,7 +17,7 @@ all observations are included.
 
 | Parameter | Example | Mandatory | Notes |
 |-----------|---------|-----------|-------|
-| concept_id | 4214956 | No | Observation concept ID (0 = all observations) |
+| concept_id | 0 | No | Observation concept ID (0 = all observations) |
 | top_n     | 50      | No | Maximum rows returned (default 50) |
 
 ## Output

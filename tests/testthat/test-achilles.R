@@ -174,6 +174,178 @@ test_that("achillesGetHeelResults returns heel warnings", {
   expect_true("rule_id" %in% names(result))
 })
 
+test_that("achillesGetHeelResults masks small counts and scrubs text (Gap G1)", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  withr::with_options(list(nfilter.tab = 3), {
+    result <- .achillesGetHeelResults(handle)
+    # Rows are data-quality rule indicators: kept, not dropped.
+    expect_true(nrow(result) >= 3)
+    # record_count below nfilter.tab (the fixture's 0) is NA-masked, larger kept.
+    expect_true(any(is.na(result$record_count)))
+    expect_true(15 %in% result$record_count)
+    # Heel free-text has every numeric run scrubbed to "N".
+    expect_false(any(grepl("[0-9]", result$achilles_heel_warning)))
+  })
+})
+
+test_that("achillesGetDistributions masks avg/stdev for small samples (Gap G2)", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  # count_value = 5: survives the nfilter.tab=3 row-drop, but is below
+  # nfilter_dist=10 so ALL summary stats (incl. mean + SD) must be masked.
+  DBI::dbExecute(handle$conn, "INSERT INTO achilles_results_dist VALUES
+    (998, 'test', NULL, NULL, NULL, NULL, 5, 10, 20, 15, 3, 15, 11, 12, 18, 19)")
+
+  withr::with_options(list(nfilter.tab = 3, dsomop.nfilter.dist = 10), {
+    result <- .achillesGetDistributions(handle, 998L)
+    expect_equal(nrow(result), 1)
+    expect_equal(result$count_value[1], 5)        # count stays visible
+    expect_true(is.na(result$avg_value[1]))       # mean masked
+    expect_true(is.na(result$stdev_value[1]))     # SD masked
+    expect_true(is.na(result$median_value[1]))    # percentiles masked
+  })
+})
+
+# ==============================================================================
+# Tests for Achilles person-gating (record-unit analyses)
+# ==============================================================================
+
+# Sibling-gate fixture: condition records-by-concept (401) gated by the
+# precomputed person-by-concept sibling (400). Concept "888881" has 4 persons
+# (>= 3 -> kept); concept "888882" has 2 persons (< 3 -> dropped). Fresh concept
+# ids avoid colliding with create_test_handle()'s built-in 400 rows. Record
+# counts are deliberately LARGE to prove gating keys on PERSONS, not records.
+.seed_sibling_gate <- function(handle) {
+  ins <- function(sql) DBI::dbExecute(handle$conn, sql)
+  ins("INSERT INTO achilles_results VALUES (400, '888881', NULL, NULL, NULL, NULL, 4)")
+  ins("INSERT INTO achilles_results VALUES (400, '888882', NULL, NULL, NULL, NULL, 2)")
+  ins("INSERT INTO achilles_results VALUES (401, '888881', NULL, NULL, NULL, NULL, 50)")
+  ins("INSERT INTO achilles_results VALUES (401, '888882', NULL, NULL, NULL, NULL, 40)")
+}
+
+test_that("person-gate keeps record cells whose sibling person count >= nfilter.tab", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+  .seed_sibling_gate(handle)
+
+  withr::with_options(list(nfilter.tab = 3), {
+    result <- .achillesGetResults(handle, c(401L))
+    rec <- result[result$analysis_id == 401, ]
+    expect_true("888881" %in% rec$stratum_1)   # 4 sibling persons -> kept
+    expect_false("888882" %in% rec$stratum_1)  # 2 sibling persons -> dropped
+    expect_equal(rec$count_value[rec$stratum_1 == "888881"], 50)  # record count kept
+  })
+})
+
+test_that("person-gate self-fetches the sibling and never returns it", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+  .seed_sibling_gate(handle)
+
+  withr::with_options(list(nfilter.tab = 3), {
+    result <- .achillesGetResults(handle, c(401L))  # client asks only for 401
+    expect_false(any(result$analysis_id == 400))    # sibling consumed internally
+    expect_equal(sort(unique(result$analysis_id)), 401)
+    expect_false("888882" %in% result$stratum_1)
+  })
+})
+
+test_that("person-gate fail-closes record cells with no sibling person row", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+  DBI::dbExecute(handle$conn,
+    "INSERT INTO achilles_results VALUES (401, '999999', NULL, NULL, NULL, NULL, 99)")
+
+  withr::with_options(list(nfilter.tab = 3), {
+    result <- .achillesGetResults(handle, c(401L))
+    expect_false("999999" %in% result$stratum_1)  # no sibling -> 0 persons -> drop
+  })
+})
+
+test_that("person-gate leaves person-unit analyses untouched", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+  .seed_sibling_gate(handle)
+
+  withr::with_options(list(nfilter.tab = 3), {
+    # 400 is person-unit: gated only by its own count_value (888882 count 2 ->
+    # dropped by .suppressSmallCounts, NOT by person-gating; 888881 count 4 kept).
+    result <- .achillesGetResults(handle, c(400L))
+    s1 <- result$stratum_1[result$analysis_id == 400]
+    expect_true("888881" %in% s1)
+    expect_false("888882" %in% s1)
+  })
+})
+
+test_that("person-gate drops companion (monthly) cells below the person threshold", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+  DBI::dbExecute(handle$conn,
+    "INSERT INTO achilles_results VALUES (420, '201906', NULL, NULL, NULL, NULL, 30)")
+  DBI::dbExecute(handle$conn,
+    "INSERT INTO achilles_results VALUES (420, '201907', NULL, NULL, NULL, NULL, 25)")
+
+  testthat::local_mocked_bindings(
+    .achillesCompanionPersonCounts = function(handle, analysis_id) {
+      data.frame(stratum_1 = c("201906", "201907"), n_persons = c(4, 2),
+                 stringsAsFactors = FALSE)
+    },
+    .package = "dsOMOP"
+  )
+
+  withr::with_options(list(nfilter.tab = 3), {
+    result <- .achillesGetResults(handle, c(420L))
+    rec <- result[result$analysis_id == 420, ]
+    expect_true("201906" %in% rec$stratum_1)   # 4 persons -> kept
+    expect_false("201907" %in% rec$stratum_1)  # 2 persons -> dropped
+    expect_equal(rec$count_value[rec$stratum_1 == "201906"], 30)
+  })
+})
+
+test_that("companion person-counts are cached per analysis on the handle", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+  DBI::dbExecute(handle$conn,
+    "INSERT INTO achilles_results VALUES (420, '201906', NULL, NULL, NULL, NULL, 30)")
+
+  calls <- 0L
+  testthat::local_mocked_bindings(
+    .achillesCompanionPersonCounts = function(handle, analysis_id) {
+      calls <<- calls + 1L
+      data.frame(stratum_1 = "201906", n_persons = 4, stringsAsFactors = FALSE)
+    },
+    .package = "dsOMOP"
+  )
+
+  withr::with_options(list(nfilter.tab = 3), {
+    .achillesGetResults(handle, c(420L))
+    expect_equal(calls, 1L)
+    expect_true(!is.null(handle$achilles_gate_cache[["420"]]))
+  })
+})
+
+test_that("companion person-counts query the CDM with distinct persons (real SQL)", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+  # 505 = death records by death_type_concept_id; companion counts distinct
+  # persons from the death table grouped by death_type_concept_id.
+  counts <- .achillesCompanionPersonCounts(handle, 505L)
+  expect_true(is.data.frame(counts))
+  expect_true(all(c("stratum_1", "n_persons") %in% names(counts)))
+})
+
 test_that("achilles_catalog_static returns well-formed data.frame", {
   catalog <- .achilles_catalog_static()
   expect_true(is.data.frame(catalog))

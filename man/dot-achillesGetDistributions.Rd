@@ -29,10 +29,11 @@ layers of disclosure control applied:
     \code{count_value < nfilter.tab} are dropped entirely. The "no hints"
     policy means suppressed rows are absent (not NA), preventing
     subtraction attacks.
-  \item \strong{Small-sample percentile suppression}: When
-    \code{count_value < nfilter_dist}, all percentile columns are set to
-    NA. With very few observations, even p25/p75 approximate individual
-    values.
+  \item \strong{Small-sample summary-stat suppression}: When
+    \code{count_value < nfilter_dist}, ALL summary-statistic columns
+    (\code{avg_value}, \code{stdev_value} and every percentile) are set to
+    NA. With very few observations, even p25/p75 — or a mean plus its SD —
+    approximate individual values.
 }
 }
 
