@@ -918,6 +918,80 @@ omopConceptPrevalenceDS <- function(omop_symbol, table, concept_col = NULL,
                             cohort_table, window)
 }
 
+#' Get a disclosure-safe 2-way cross-tabulation (Aggregate)
+#'
+#' @description
+#' Cross-tabulates two categorical columns of an OMOP table, counting distinct
+#' persons (default) or records, and returns a contingency table protected by
+#' primary small-cell suppression PLUS iterative complementary suppression to a
+#' fixpoint. Exact margins are NEVER returned (omitted by default, or banded via
+#' \code{band_margins = TRUE}). Both axes must pass the dimension gate and the
+#' scoped population must pass the minimum-persons gate.
+#'
+#' Cross-tab is descriptive only. For true multivariable association (>= 3
+#' interacting variables or continuous adjustment), route to \code{ds.glm}
+#' rather than building a high-dimensional cell table. When \code{stratify_by}
+#' is supplied, a NAMED LIST of INDEPENDENT protected 2-way tables is returned
+#' (one per stratum level); the unstratified total is never returned and each
+#' slice is independently gated and suppressed.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param table Character; table name
+#' @param row_col Character; row categorical column
+#' @param col_col Character; column categorical column
+#' @param count_mode Character; "persons" (distinct person_id) or "records"
+#' @param row_concept_ids Integer vector; optional; restrict row axis levels
+#' @param col_concept_ids Integer vector; optional; restrict column axis levels
+#' @param cohort_table Character; cohort temp table to scope the population (NULL)
+#' @param stratify_by Character; optional 3rd categorical column for stratified
+#'   (chained 2-way) tables
+#' @param band_margins Logical; when TRUE, attach banded (never exact) margins
+#' @return For a plain call: a named list with the NA-masked \code{counts}
+#'   matrix, axis levels, and a \code{suppressed} flag. For a stratified call:
+#'   a named list of independent protected per-stratum tables.
+#' @examples
+#' \dontrun{
+#' ct <- omopCrossTabDS("omop", "person", "gender_concept_id", "race_concept_id")
+#' }
+#' @export
+omopCrossTabDS <- function(omop_symbol, table, row_col, col_col,
+                           count_mode = "persons",
+                           row_concept_ids = NULL, col_concept_ids = NULL,
+                           cohort_table = NULL, stratify_by = NULL,
+                           band_margins = FALSE) {
+  handle <- .getHandle(omop_symbol)
+  count_mode <- .ds_arg(count_mode)
+  if (!is.character(count_mode) || length(count_mode) != 1L) {
+    count_mode <- "persons"
+  }
+  row_concept_ids <- .ds_arg(row_concept_ids)
+  col_concept_ids <- .ds_arg(col_concept_ids)
+  if (!is.null(row_concept_ids)) {
+    row_concept_ids <- as.integer(unlist(row_concept_ids))
+  }
+  if (!is.null(col_concept_ids)) {
+    col_concept_ids <- as.integer(unlist(col_concept_ids))
+  }
+  stratify_by <- .ds_arg(stratify_by)
+  if (!is.null(stratify_by)) stratify_by <- as.character(unlist(stratify_by))[1]
+  band_margins <- isTRUE(.ds_arg(band_margins))
+
+  # Audit-log the call sequence (cross-query differencing defence). Never logs
+  # cell values — only the call shape, which the data controller reviews.
+  .omopAuditLog("omopCrossTabDS",
+                list(table = table, row_col = row_col, col_col = col_col,
+                     count_mode = count_mode, stratify_by = stratify_by,
+                     band_margins = band_margins))
+
+  .profileCrossTab(handle, table, row_col, col_col,
+                   count_mode = count_mode,
+                   row_concept_ids = row_concept_ids,
+                   col_concept_ids = col_concept_ids,
+                   cohort_table = cohort_table,
+                   stratify_by = stratify_by,
+                   band_margins = band_margins)
+}
+
 #' Get numeric range (p05/p95) for two-pass histogram pooling (Aggregate)
 #'
 #' @description
