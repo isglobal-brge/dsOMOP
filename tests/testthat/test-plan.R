@@ -194,3 +194,115 @@ test_that("materializeConceptSet creates temp table for large sets", {
 
   .dropTempTable(handle, result)
 })
+
+# --- Differencing-defence: preview count banding + audit logging ---
+
+test_that("preview n_persons is banded down to a multiple of 5", {
+  handle <- create_test_handle(n_persons = 12)
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  plan <- list(
+    cohort = NULL,
+    anchor = list(table = "person", id_col = "person_id"),
+    outputs = list(
+      baseline = list(type = "person_level",
+                      tables = list(person = c("person_id", "gender_concept_id")))
+    ),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  class(plan) <- c("omop_plan", "list")
+
+  withr::with_options(list(nfilter.subset = 3), {
+    res <- .planPreview(handle, plan)
+    info <- res$outputs$baseline$tables$person
+    # True count is 12; banded DOWN to nearest 5 => 10 (exact count never returned)
+    expect_equal(info$n_persons, 10)
+    expect_true(info$n_persons %% 5 == 0)
+    expect_true(info$n_persons_banded)
+    expect_equal(info$band_width, 5L)
+    expect_equal(res$band_width, 5L)
+    expect_false(info$disclosive)
+  })
+})
+
+test_that("preview n_persons is NA below nfilter_subset and not banded", {
+  handle <- create_test_handle(n_persons = 2)
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  plan <- list(
+    cohort = NULL,
+    anchor = list(table = "person", id_col = "person_id"),
+    outputs = list(
+      baseline = list(type = "person_level",
+                      tables = list(person = c("person_id")))
+    ),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  class(plan) <- c("omop_plan", "list")
+
+  withr::with_options(list(nfilter.subset = 3), {
+    res <- .planPreview(handle, plan)
+    info <- res$outputs$baseline$tables$person
+    expect_true(is.na(info$n_persons))
+    expect_true(info$disclosive)
+    expect_false(info$n_persons_banded)
+  })
+})
+
+test_that("preview never returns an exact supra-threshold count", {
+  # 13 persons: exact differencing primitive would be 13; banded must be 10.
+  handle <- create_test_handle(n_persons = 13)
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  plan <- list(
+    cohort = NULL,
+    anchor = list(table = "person", id_col = "person_id"),
+    outputs = list(
+      baseline = list(type = "person_level",
+                      tables = list(person = c("person_id")))
+    ),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  class(plan) <- c("omop_plan", "list")
+
+  withr::with_options(list(nfilter.subset = 3), {
+    res <- .planPreview(handle, plan)
+    expect_equal(res$outputs$baseline$tables$person$n_persons, 10)
+  })
+})
+
+test_that(".bandCount floors to band width and preserves NA", {
+  expect_equal(.bandCount(50), 50)
+  expect_equal(.bandCount(47), 45)
+  expect_equal(.bandCount(12), 10)
+  expect_true(is.na(.bandCount(NA_real_)))
+  expect_true(is.na(.bandCount(NULL)))
+})
+
+test_that("omopPlanPreviewDS fires an audit-log record", {
+  handle <- create_test_handle(n_persons = 12)
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+  .setHandle("audit_sym", handle)            # register so .getHandle resolves it
+
+  plan <- list(
+    cohort = NULL,
+    anchor = list(table = "person", id_col = "person_id"),
+    outputs = list(
+      baseline = list(type = "person_level",
+                      tables = list(person = c("person_id")))
+    ),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  class(plan) <- c("omop_plan", "list")
+
+  withr::with_options(list(nfilter.subset = 3, dsomop.audit_log = TRUE), {
+    expect_message(
+      omopPlanPreviewDS("audit_sym", plan),
+      "\\[dsomop-audit\\].*method=omopPlanPreviewDS"
+    )
+  })
+})

@@ -835,6 +835,18 @@ omopExpandConceptSetDS <- function(omop_symbol, concept_set) {
 omopPlanPreviewDS <- function(omop_symbol, plan) {
   handle <- .getHandle(omop_symbol)
   plan <- .ds_arg(plan)
+  # Preview is the cheapest, most-repeated data-touching op and is the primary
+  # differencing signal, so the data controller must be able to see the
+  # sequence of preview calls (banding alone cannot stop iterative probing).
+  outputs <- plan$outputs %||% list()
+  preview_tables <- unique(unlist(lapply(outputs, function(o) {
+    # event_level outputs carry a scalar $table; person_level outputs carry a
+    # named $tables list. Use [[ exact-match to avoid $ partial matching
+    # ($table matching $tables and leaking column names into the audit detail).
+    c(o[["table"]], names(o[["tables"]]))
+  }), use.names = FALSE))
+  .omopAuditLog("omopPlanPreviewDS",
+                list(n_outputs = length(outputs), tables = preview_tables))
   .planPreview(handle, plan)
 }
 
