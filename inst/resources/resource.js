@@ -31,6 +31,10 @@ var dsOMOP = (function () {
     key: "vocabulary_schema", type: "string", title: "Vocabulary schema (optional)",
     description: "Schema holding the vocabulary tables, when separate from the CDM schema. Defaults to the CDM schema."
   };
+  var resultsSchema = {
+    key: "results_schema", type: "string", title: "Results schema (optional)",
+    description: "Schema holding generated result tables (Achilles, Data Quality Dashboard, and other OHDSI/HADES outputs). Defaults to the CDM schema, or the engine default when no CDM schema is set."
+  };
   var warehouse = {
     key: "warehouse", type: "string", title: "Warehouse (optional)",
     description: "Snowflake virtual warehouse. Defaults to COMPUTE_WH."
@@ -39,7 +43,7 @@ var dsOMOP = (function () {
     key: "driver", type: "string", title: "ODBC driver (optional)",
     description: "ODBC driver name to override the engine default."
   };
-  var SCHEMAS = [cdmSchema, vocabularySchema];
+  var SCHEMAS = [cdmSchema, vocabularySchema, resultsSchema];
 
   // --- credentials blocks ---------------------------------------------------
   // Every type MUST carry a credentials block, even when none is needed: a type
@@ -170,6 +174,7 @@ var dsOMOP = (function () {
     }
     addQuery("cdm_schema", params.cdm_schema);
     addQuery("vocabulary_schema", params.vocabulary_schema);
+    addQuery("results_schema", params.results_schema);
     addQuery("warehouse", params.warehouse);
     addQuery("driver", params.driver);
     var qs = query.length > 0 ? ("?" + query.join("&")) : "";
