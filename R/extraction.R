@@ -652,7 +652,7 @@
 .extractTable <- function(handle, table, columns = NULL,
                           concept_filter = NULL, person_ids = NULL,
                           time_window = NULL, cohort_table = NULL,
-                          translate_concepts = FALSE,
+                          translate_concepts = TRUE,
                           representation = "long",
                           feature_specs = NULL,
                           block_sensitive = TRUE,
@@ -2280,7 +2280,7 @@
 #' @return Data frame with one row per cohort member
 #' @keywords internal
 .extractBaseline <- function(handle, cohort_table, columns = NULL,
-                              derived = NULL, translate_concepts = FALSE) {
+                              derived = NULL, translate_concepts = TRUE) {
   if (is.null(cohort_table)) {
     warning("Baseline output requires a cohort; returning NULL.", call. = FALSE)
     return(NULL)

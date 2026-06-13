@@ -106,7 +106,8 @@ test_that("extractTable filters by concept", {
 
   withr::with_options(list(nfilter.subset = 3), {
     result <- .extractTable(handle, "condition_occurrence",
-                            concept_filter = c(201820))
+                            concept_filter = c(201820),
+                            translate_concepts = FALSE)
     expect_true(all(result$condition_concept_id == 201820))
   })
 })
