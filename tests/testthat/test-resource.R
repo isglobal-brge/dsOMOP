@@ -11,6 +11,16 @@ test_that(".parseOmopUrl parses a full server URL", {
   expect_equal(p$vocabulary_schema, "vocab")
 })
 
+test_that(".parseOmopUrl parses results_schema (and its 'results' alias)", {
+  p <- .parseOmopUrl(
+    "omop+dbi:postgresql://db.example.org:5432/omop?cdm_schema=cdm&results_schema=res")
+  expect_equal(p$cdm_schema, "cdm")
+  expect_equal(p$results_schema, "res")
+  expect_equal(
+    .parseOmopUrl("omop+dbi:postgresql://h:5432/omop?results=res")$results_schema,
+    "res")
+})
+
 test_that(".parseOmopUrl accepts a bare scheme (no omop+dbi wrapper)", {
   p <- .parseOmopUrl("postgresql://omopdb:5432/omop?cdm_schema=cdm")
   expect_equal(p$dbms, "postgresql")
@@ -119,6 +129,16 @@ test_that("schema resolution case 4: both set -> one each", {
     .parseOmopUrl("omop+dbi:postgresql://h:5432/omop?cdm_schema=cdm&vocabulary_schema=vocab")))
   expect_equal(h$cdm_schema, "cdm")
   expect_equal(h$vocab_schema, "vocab")
+})
+
+test_that("results_schema from the URL is stored as an explicit pin on the handle", {
+  h <- .createHandle(fake_client(.parseOmopUrl(
+    "omop+dbi:postgresql://h:5432/omop?cdm_schema=cdm&results_schema=res")))
+  expect_equal(h$results_schema, "res")
+  # Not declared -> no pin (effective schema is resolved later, falling back to CDM).
+  h2 <- .createHandle(fake_client(.parseOmopUrl(
+    "omop+dbi:postgresql://h:5432/omop?cdm_schema=cdm")))
+  expect_null(h2$results_schema)
 })
 
 test_that("schema resolution uses the connecting user for Oracle's default", {
