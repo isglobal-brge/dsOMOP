@@ -854,7 +854,7 @@
   concept_cols_by_output <- list()
   outputs <- plan$outputs %||% list()
   options <- plan$options %||% list()
-  translate <- options$translate_concepts %||% FALSE
+  translate <- options$translate_concepts %||% TRUE
   block_sensitive <- options$block_sensitive %||% TRUE
 
   # Concept expansion cache: expand each unique concept set once
