@@ -14,6 +14,7 @@ AssignMethods:
 AggregateMethods:
   omopPingDS,
   omopGetCapabilitiesDS,
+  omopDisclosureSettingsDS,
   omopListTablesDS,
   omopListColumnsDS,
   omopRelationshipGraphDS,

@@ -30,6 +30,38 @@
   concept_col
 }
 
+#' Fail-closed distinct-person gate for a scoped numeric-distribution query
+#'
+#' The numeric-distribution profilers (range / quantiles / histogram / safe
+#' cutpoints) summarise the VALUE distribution of a (possibly concept- or
+#' cohort-scoped) relation. Gating those summaries on the RECORD count is not
+#' enough: one individual can contribute many records (e.g. a single patient
+#' with 20 lab measurements of the same concept), so a record count can clear
+#' \code{nfilter_subset}/\code{nfilter_dist} while only one or two PEOPLE are
+#' described — and p05/p95/quantiles/bin-edges then sit at that handful of
+#' individuals' values (min/max). This mirrors the distinct-person gate already
+#' enforced in \code{\link{.profileColumnStats}} / \code{\link{.profileValueCounts}}:
+#' for a person-bearing table it counts \code{DISTINCT person_id} over EXACTLY
+#' the same scoped relation (\code{from_clause} + \code{where_sql}) the statistic
+#' describes and calls \code{\link{.assertMinPersons}} (which stops below the
+#' threshold). Person-less tables (no \code{person_id}) have nothing to count, so
+#' they fall through unchanged.
+#'
+#' @param handle CDM handle.
+#' @param from_clause Character; the FROM clause (incl. any cohort INNER JOIN).
+#' @param where_sql Character; the leading-space WHERE clause (may be "").
+#' @param tbl_cols Character vector; the table's column names.
+#' @return TRUE invisibly; stops (fail-closed) when the scoped distinct-person
+#'   count is below \code{nfilter_subset}.
+#' @keywords internal
+.assertNumericDistPersons <- function(handle, from_clause, where_sql, tbl_cols) {
+  if (!"person_id" %in% tbl_cols) return(invisible(TRUE))
+  sql <- paste0("SELECT COUNT(DISTINCT t.person_id) AS n FROM ",
+                from_clause, where_sql)
+  n_persons <- .executeQuery(handle, .renderSql(handle, sql))$n[1]
+  .assertMinPersons(n_persons = n_persons)
+}
+
 #' Get safe table-level statistics
 #'
 #' @param handle CDM handle
@@ -562,6 +594,17 @@
   }
   where_sql <- paste0(" WHERE ", paste(where_parts, collapse = " AND "))
 
+  # Fail-closed distinct-person gate over the scoped relation: cutpoint edges
+  # (used as filter thresholds) are disclosive when they describe
+  # < nfilter_subset PEOPLE, no matter how many records they contribute. This
+  # query references columns un-aliased, so gate inline rather than via the
+  # t-aliased .assertNumericDistPersons helper.
+  if ("person_id" %in% tbl_cols) {
+    pc_sql <- paste0("SELECT COUNT(DISTINCT person_id) AS n FROM ",
+                     qualified, where_sql)
+    .assertMinPersons(n_persons = .executeQuery(handle, pc_sql)$n[1])
+  }
+
   # Get total count
   count_sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified, where_sql)
   n_total <- .executeQuery(handle, count_sql)$n[1]
@@ -996,6 +1039,11 @@
 
   where_sql <- paste0(" WHERE ", paste(where_parts, collapse = " AND "))
 
+  # Fail-closed distinct-person gate over the scoped relation: a value range is
+  # disclosive when it describes < nfilter_subset PEOPLE, regardless of how many
+  # records they contribute (one person with many measurements must not leak).
+  .assertNumericDistPersons(handle, from_clause, where_sql, tbl_cols)
+
   count_sql <- paste0("SELECT COUNT(*) AS n FROM ", from_clause, where_sql)
   n_total <- .executeQuery(handle, count_sql)$n[1]
 
@@ -1122,6 +1170,11 @@
   }
 
   where_sql <- paste0(" WHERE ", paste(where_parts, collapse = " AND "))
+
+  # Fail-closed distinct-person gate over the scoped relation: a histogram (its
+  # bin counts AND bin edges) is disclosive when it describes < nfilter_subset
+  # PEOPLE, no matter how many records they contribute.
+  .assertNumericDistPersons(handle, from_clause, where_sql, tbl_cols)
 
   # Get total non-NULL count first
   count_sql <- paste0("SELECT COUNT(*) AS n FROM ", from_clause, where_sql)
@@ -1319,6 +1372,12 @@
   }
 
   where_sql <- paste0(" WHERE ", paste(where_parts, collapse = " AND "))
+
+  # Fail-closed distinct-person gate over the scoped relation: quantiles are
+  # disclosive when they describe < nfilter_subset PEOPLE, no matter how many
+  # records they contribute (the record-count gate below is necessary but not
+  # sufficient — one person with many values would otherwise pass it).
+  .assertNumericDistPersons(handle, from_clause, where_sql, tbl_cols)
 
   # Get total non-NULL count
   count_sql <- paste0("SELECT COUNT(*) AS n FROM ", from_clause, where_sql)

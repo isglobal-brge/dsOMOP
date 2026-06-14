@@ -123,3 +123,107 @@ test_that("profileValueCounts blocks sensitive columns", {
     "blocked"
   )
 })
+
+# --- Regression: numeric-distribution profilers must gate on DISTINCT PERSONS,
+# not record counts. A concept with many records but < nfilter_subset distinct
+# persons (e.g. one patient with 20 lab values) previously leaked p05/p95,
+# quantiles, histogram bin counts/edges, and "safe" cutpoints — all sitting at
+# that handful of individuals' values. The gate must fail closed (stop), not
+# return a suppressed-but-inferable result.
+
+# Helper: a handle whose `measurement` table holds ONE concept with `n_persons`
+# distinct persons and `recs_per_person` records each (distinct values), so the
+# record count clears the thresholds while the person count does not.
+.few_person_many_record_handle <- function(n_persons = 2L,
+                                            recs_per_person = 12L,
+                                            concept_id = 9990001L) {
+  handle <- create_test_handle(n_persons = 15)
+  DBI::dbExecute(handle$conn, "DELETE FROM measurement")
+  ppl <- seq_len(n_persons)
+  total <- n_persons * recs_per_person
+  # Column set must match the fixture's `measurement` schema exactly so an
+  # append-write succeeds (the fixture carries visit_occurrence_id, not the
+  # *_source_* columns).
+  meas <- data.frame(
+    measurement_id = seq_len(total),
+    person_id = rep(ppl, each = recs_per_person),
+    measurement_concept_id = rep(as.integer(concept_id), total),
+    measurement_date = rep("2019-12-15", total),
+    measurement_type_concept_id = rep(44818702L, total),
+    value_as_number = seq(50, by = 1, length.out = total),
+    value_as_concept_id = rep(0L, total),
+    unit_concept_id = rep(8840L, total),
+    range_low = rep(4.0, total),
+    range_high = rep(6.0, total),
+    visit_occurrence_id = rep(NA_integer_, total),
+    stringsAsFactors = FALSE
+  )
+  fields <- DBI::dbListFields(handle$conn, "measurement")
+  meas <- meas[, intersect(fields, names(meas)), drop = FALSE]
+  DBI::dbWriteTable(handle$conn, "measurement", meas, append = TRUE)
+  handle$blueprint <- NULL
+  .buildBlueprint(handle)
+  handle
+}
+
+test_that("numeric-distribution profilers fail closed on < nfilter persons (many records)", {
+  handle <- .few_person_many_record_handle(n_persons = 2L, recs_per_person = 12L,
+                                           concept_id = 9990001L)
+  on.exit(cleanup_handle(handle))
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.dist = 10), {
+    # Sanity: the scenario really is 2 distinct persons with >= nfilter_dist records.
+    chk <- DBI::dbGetQuery(handle$conn, paste0(
+      "SELECT COUNT(DISTINCT person_id) np, COUNT(*) nr FROM measurement ",
+      "WHERE measurement_concept_id = 9990001"))
+    expect_equal(chk$np, 2)
+    expect_gte(chk$nr, 10)
+
+    # Concept-scoped: every numeric-distribution profiler must STOP, not return.
+    expect_error(
+      .profileNumericRange(handle, "measurement", "value_as_number",
+                           concept_id = 9990001L),
+      "disclosure threshold")
+    expect_error(
+      .profileNumericQuantiles(handle, "measurement", "value_as_number",
+                               concept_id = 9990001L),
+      "disclosure threshold")
+    expect_error(
+      .profileNumericHistogram(handle, "measurement", "value_as_number",
+                               concept_id = 9990001L),
+      "disclosure threshold")
+    expect_error(
+      .profileSafeCutpoints(handle, "measurement", "value_as_number",
+                            concept_id = 9990001L),
+      "disclosure threshold")
+
+    # Unscoped (the whole table is the same 2-person concept) must also fail closed.
+    expect_error(
+      .profileNumericRange(handle, "measurement", "value_as_number"),
+      "disclosure threshold")
+  })
+})
+
+test_that("numeric-distribution profilers still return for >= nfilter persons", {
+  # 6 distinct persons, plenty of records: the gate must NOT block legitimate use.
+  handle <- .few_person_many_record_handle(n_persons = 6L, recs_per_person = 4L,
+                                           concept_id = 9990002L)
+  on.exit(cleanup_handle(handle))
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.dist = 3), {
+    expect_type(
+      .profileNumericRange(handle, "measurement", "value_as_number",
+                           concept_id = 9990002L), "list")
+    expect_s3_class(
+      .profileNumericQuantiles(handle, "measurement", "value_as_number",
+                               concept_id = 9990002L), "data.frame")
+    expect_s3_class(
+      .profileNumericHistogram(handle, "measurement", "value_as_number",
+                               concept_id = 9990002L), "data.frame")
+    expect_type(
+      .profileSafeCutpoints(handle, "measurement", "value_as_number",
+                            concept_id = 9990002L), "list")
+  })
+})

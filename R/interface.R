@@ -658,6 +658,29 @@ omopGetCapabilitiesDS <- function(omop_symbol) {
   .getCapabilities(handle)
 }
 
+#' Report active disclosure thresholds (Aggregate)
+#'
+#' @description
+#' Returns the disclosure-control thresholds currently in effect on this
+#' server, resolved from the server's R options via the standard DataSHIELD
+#' option chain (see \code{\link{.omopDisclosureSettings}}). This is a
+#' \strong{read-only} introspection endpoint: it lets an analyst or admin see
+#' the effective floor (most importantly \code{nfilter_subset}, the minimum
+#' distinct-person count the per-patient gate enforces) without exposing any
+#' way to change it. The settings can only be configured server-side; this
+#' aggregate never mutates them.
+#'
+#' @return Named list of the active disclosure thresholds and server-gated
+#'   permissions (the same structure as \code{\link{.omopDisclosureSettings}}).
+#' @examples
+#' \dontrun{
+#' omopDisclosureSettingsDS()
+#' }
+#' @export
+omopDisclosureSettingsDS <- function() {
+  .omopDisclosureSettings()
+}
+
 #' List tables (Aggregate)
 #'
 #' @description

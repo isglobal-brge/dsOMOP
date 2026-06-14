@@ -243,3 +243,35 @@ test_that("assertMinPersons does not reveal count", {
     expect_false(grepl("nfilter\\.subset", err))
   })
 })
+
+# ==============================================================================
+# omopDisclosureSettingsDS: read-only introspection endpoint (Phase E)
+# ==============================================================================
+
+test_that("omopDisclosureSettingsDS returns the active settings", {
+  res <- omopDisclosureSettingsDS()
+  expect_identical(res, .omopDisclosureSettings())
+  # carries the standard floors the per-patient gate relies on
+  expect_true(all(c("nfilter_subset", "nfilter_tab", "nfilter_levels_max") %in%
+                    names(res)))
+})
+
+test_that("omopDisclosureSettingsDS reflects a server-side option override at runtime", {
+  withr::with_options(list(nfilter.subset = 9), {
+    expect_equal(omopDisclosureSettingsDS()$nfilter_subset, 9)
+  })
+  # and .assertMinPersons honours that same option (the gate is option-driven,
+  # so the reported floor is the floor actually enforced)
+  withr::with_options(list(nfilter.subset = 9), {
+    expect_error(.assertMinPersons(n_persons = 8), "blocked|insufficient")
+    expect_true(.assertMinPersons(n_persons = 9))
+  })
+})
+
+test_that("omopDisclosureSettingsDS is read-only (cannot lower a threshold)", {
+  before <- getOption("nfilter.subset")
+  invisible(omopDisclosureSettingsDS())
+  # the call mutates no option and exposes no setter (it takes no arguments)
+  expect_identical(getOption("nfilter.subset"), before)
+  expect_length(formals(omopDisclosureSettingsDS), 0L)
+})
