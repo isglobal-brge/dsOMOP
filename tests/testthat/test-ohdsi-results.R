@@ -7,9 +7,11 @@
 test_that("ohdsi_tool_registry returns expected structure", {
   registry <- .ohdsi_tool_registry()
   expect_type(registry, "list")
-  expect_true(all(c("dqd", "cohort_diagnostics", "cohort_incidence",
+  expect_true(all(c("cohort_diagnostics", "cohort_incidence",
                      "characterization", "cohort_method", "sccs",
                      "plp", "evidence_synthesis") %in% names(registry)))
+  # DQD was removed from the registry: no dqd tool, no dqdashboard_results table.
+  expect_false("dqd" %in% names(registry))
 
   for (tid in names(registry)) {
     tool <- registry[[tid]]
@@ -23,7 +25,8 @@ test_that("ohdsi_tool_registry returns expected structure", {
 })
 
 test_that("ohdsi_table_to_tool maps known tables correctly", {
-  expect_equal(.ohdsi_table_to_tool("dqdashboard_results"), "dqd")
+  # DQD removed: dqdashboard_results no longer maps to any registered tool.
+  expect_null(.ohdsi_table_to_tool("dqdashboard_results"))
   expect_equal(.ohdsi_table_to_tool("cohort_count"), "cohort_diagnostics")
   expect_equal(.ohdsi_table_to_tool("incidence_rate"), "cohort_diagnostics")
   expect_equal(.ohdsi_table_to_tool("incidence_summary"), "cohort_incidence")
@@ -96,9 +99,11 @@ test_that("ohdsiFindResultTables discovers OHDSI tables in test DB", {
   expect_true(all(c("table_name", "tool_id", "tool_name",
                      "qualified_name", "n_rows") %in% names(found)))
 
-  # Should find DQD table
-  expect_true("dqdashboard_results" %in% found$table_name)
-  expect_true("dqd" %in% found$tool_id)
+  # DQD was removed from the registry: although the fixture still has a
+  # dqdashboard_results table, discovery must IGNORE it (only registered OHDSI
+  # result tables are surfaced).
+  expect_false("dqdashboard_results" %in% found$table_name)
+  expect_false("dqd" %in% found$tool_id)
 
   # Should find CohortDiagnostics tables
   expect_true("cohort_count" %in% found$table_name)
@@ -126,8 +131,8 @@ test_that("ohdsiFindResultTables discovers OHDSI tables in test DB", {
   expect_true("es_sccs_result" %in% found$table_name)
 
   # Row counts should be positive
-  dqd_rows <- found$n_rows[found$table_name == "dqdashboard_results"]
-  expect_true(dqd_rows > 0)
+  cc_rows <- found$n_rows[found$table_name == "cohort_count"]
+  expect_true(cc_rows > 0)
 })
 
 test_that("ohdsiFindResultTables returns empty when no OHDSI tables", {
@@ -174,10 +179,10 @@ test_that("ohdsiDetectCountColumns finds registry-based columns", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  # DQD columns
-  cols <- .ohdsiDetectCountColumns(handle, "dqdashboard_results", "dqd")
-  expect_true("num_violated_rows" %in% cols)
-  expect_true("num_denominator_rows" %in% cols)
+  # Registry-declared count columns for a CohortDiagnostics table.
+  cols <- .ohdsiDetectCountColumns(handle, "cohort_count", "cohort_diagnostics")
+  expect_true("cohort_entries" %in% cols)
+  expect_true("cohort_subjects" %in% cols)
 })
 
 test_that("ohdsiDetectCountColumns uses heuristic fallback", {
@@ -192,66 +197,17 @@ test_that("ohdsiDetectCountColumns uses heuristic fallback", {
 
 # --- Generic Query ---
 
-test_that("ohdsiGetResults returns DQD data", {
-  handle <- create_test_handle()
-  on.exit(cleanup_handle(handle))
-  .buildBlueprint(handle)
-
-  # DQD results are row-level data-quality tallies with no per-person basis, so
-  # the fail-closed person gate empties them in strict mode (covered separately).
-  # Exercise the consumer mechanics with strict mode off so rows are returned.
-  withr::with_options(list(dsomop.query_strict = FALSE), {
-    result <- .ohdsiGetResults(handle, "dqdashboard_results")
-    expect_s3_class(result, "data.frame")
-    expect_true(nrow(result) > 0)
-    expect_true("check_name" %in% names(result))
-    expect_true("category" %in% names(result))
-  })
-})
-
-test_that("ohdsiGetResults excludes sensitive columns", {
-  handle <- create_test_handle()
-  on.exit(cleanup_handle(handle))
-  .buildBlueprint(handle)
-
-  withr::with_options(list(dsomop.query_strict = FALSE), {
-    result <- .ohdsiGetResults(handle, "dqdashboard_results")
-    # query_text is a sensitive column for DQD
-    expect_false("query_text" %in% names(result))
-  })
-})
-
-test_that("ohdsiGetResults applies disclosure control", {
-  handle <- create_test_handle()
-  on.exit(cleanup_handle(handle))
-  .buildBlueprint(handle)
-
-  # DQD fixture has num_violated_rows = 1 and 2 (below threshold 3)
-  # Those rows should be dropped. (Strict mode off: isolate cell suppression
-  # from the orthogonal person gate, which would otherwise empty person-less DQD.)
-  withr::with_options(list(dsomop.query_strict = FALSE), {
-    result <- .ohdsiGetResults(handle, "dqdashboard_results")
-    expect_true(nrow(result) > 0)
-    # All surviving rows should have count columns >= threshold
-    if ("num_violated_rows" %in% names(result)) {
-      expect_true(all(result$num_violated_rows >= 3))
-    }
-    # Rows with num_violated_rows = 1 or 2 should not be present
-    expect_true(nrow(result) < 8)  # 8 total, some suppressed
-  })
-})
-
 test_that("ohdsiGetResults respects filters", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  withr::with_options(list(dsomop.query_strict = FALSE), {
-    result <- .ohdsiGetResults(handle, "dqdashboard_results",
-                                filters = list(category = "Completeness"))
-    expect_true(nrow(result) > 0)
-    expect_true(all(result$category == "Completeness"))
-  })
+  # cohort_count has a filterable database_id column; cohort 1 (85 subjects)
+  # clears the count threshold so a row survives the filter + person gate.
+  result <- .ohdsiGetResults(handle, "cohort_count",
+                              filters = list(database_id = "test_db"))
+  expect_true(nrow(result) > 0)
+  expect_true(all(result$database_id == "test_db"))
 })
 
 test_that("ohdsiGetResults respects limit", {
@@ -259,8 +215,8 @@ test_that("ohdsiGetResults respects limit", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "dqdashboard_results", limit = 2L)
-  expect_true(nrow(result) <= 2)
+  result <- .ohdsiGetResults(handle, "cohort_count", limit = 1L)
+  expect_true(nrow(result) <= 1)
 })
 
 test_that("ohdsiGetResults respects order_by", {
@@ -284,9 +240,9 @@ test_that("ohdsiGetResults selects specific columns", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "dqdashboard_results",
-                              columns = c("check_name", "category"))
-  expect_true(all(names(result) %in% c("check_name", "category")))
+  result <- .ohdsiGetResults(handle, "cohort_count",
+                              columns = c("cohort_id", "database_id"))
+  expect_true(all(names(result) %in% c("cohort_id", "database_id")))
 })
 
 test_that("ohdsiGetResults errors on non-allowlisted table", {
@@ -345,7 +301,8 @@ test_that("ohdsiStatus reports tool availability correctly", {
 
   status <- .ohdsiStatus(handle)
   expect_type(status, "list")
-  expect_true("dqd" %in% names(status))
+  # DQD was removed from the registry: no dqd status entry.
+  expect_false("dqd" %in% names(status))
   expect_true("cohort_diagnostics" %in% names(status))
   expect_true("cohort_incidence" %in% names(status))
   expect_true("characterization" %in% names(status))
@@ -353,11 +310,6 @@ test_that("ohdsiStatus reports tool availability correctly", {
   expect_true("sccs" %in% names(status))
   expect_true("plp" %in% names(status))
   expect_true("evidence_synthesis" %in% names(status))
-
-  # DQD should be available
-  expect_true(status$dqd$available)
-  expect_true("dqdashboard_results" %in% status$dqd$tables)
-  expect_true(status$dqd$total_rows > 0)
 
   # CohortDiagnostics should be available
   expect_true(status$cohort_diagnostics$available)
@@ -388,8 +340,8 @@ test_that("ohdsiGetSummary returns tool-specific info", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  summary <- .ohdsiGetSummary(handle, "dqd")
-  expect_equal(summary$tool_id, "dqd")
+  summary <- .ohdsiGetSummary(handle, "cohort_diagnostics")
+  expect_equal(summary$tool_id, "cohort_diagnostics")
   expect_true(summary$available)
   expect_s3_class(summary$tables, "data.frame")
   expect_true(nrow(summary$tables) > 0)
@@ -410,7 +362,7 @@ test_that("blueprint discovers OHDSI result tables", {
   on.exit(cleanup_handle(handle))
 
   bp <- .buildBlueprint(handle)
-  ohdsi_tables <- c("dqdashboard_results", "cohort_count", "incidence_rate",
+  ohdsi_tables <- c("cohort_count", "incidence_rate",
                      "incidence_summary", "c_cohort_counts", "c_covariates")
   found_in_bp <- intersect(ohdsi_tables, bp$tables$table_name)
   expect_true(length(found_in_bp) > 0)

@@ -5,6 +5,7 @@ ID: condition.prevalence_by_concept
 CDM Version: 5.3+
 Mode: aggregate
 Author: dsOMOP
+Scope Column: co.person_id
 ---
 
 ## Description
@@ -37,7 +38,7 @@ SELECT co.condition_concept_id AS concept_id,
        COUNT(*) AS n_records
 FROM @cdm.condition_occurrence co
 JOIN @vocab.concept c ON c.concept_id = co.condition_concept_id
-WHERE co.condition_concept_id != 0
+WHERE co.condition_concept_id != 0 @cohort
 GROUP BY co.condition_concept_id, c.concept_name
 ORDER BY n_persons DESC
 LIMIT @top_n

@@ -1,7 +1,7 @@
 Package: dsOMOP
 Type: Package
 Title: DataSHIELD Server-Side Integration for OMOP CDM Databases
-Version: 2.2.15
+Version: 2.2.16
 Authors@R: c(
     person("David", "Sarrat González", role = c("aut", "cre"), email = "david.sarrat@isglobal.org"),
     person("Xavier", "Escribà-Montagut", role = "aut"),
@@ -93,6 +93,9 @@ AggregateMethods:
     omopQueryListDS,
     omopQueryGetDS,
     omopQueryExecDS,
+    omopAnalysisListDS,
+    omopAnalysisGetDS,
+    omopAnalysisRunDS,
     omopFactorLevelsDS,
     c=base::c,
     list=base::list
@@ -108,6 +111,7 @@ AssignMethods:
     omopMergeDS,
     omopFilterDS,
     omopSelectDS,
-    omopBindRowsDS
+    omopBindRowsDS,
+    omopAnalysisRunAssignDS
 Config/testthat/edition: 3
 RoxygenNote: 7.3.3

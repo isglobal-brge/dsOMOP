@@ -5,6 +5,7 @@ ID: drug_era.prevalence_by_concept
 CDM Version: 5.3+
 Mode: aggregate
 Author: dsOMOP
+Scope Column: dre.person_id
 ---
 
 ## Description
@@ -37,7 +38,7 @@ SELECT dre.drug_concept_id,
        COUNT(*) AS n_records
 FROM @cdm.drug_era dre
 JOIN @vocab.concept c ON c.concept_id = dre.drug_concept_id
-WHERE dre.drug_concept_id != 0
+WHERE dre.drug_concept_id != 0 @cohort
 GROUP BY dre.drug_concept_id, c.concept_name
 ORDER BY n_persons DESC
 LIMIT @top_n

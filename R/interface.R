@@ -1740,8 +1740,8 @@ omopAchillesCatalogDS <- function(omop_symbol) {
 #' Returns the Achilles Heel data-quality warnings, disclosure-controlled:
 #' \code{record_count} cells below \code{nfilter.tab} are NA-masked and any
 #' numeric run interpolated into the warning free-text is scrubbed. Rows (the
-#' fired data-quality rules) are kept so the Studio Data Quality page can show
-#' which checks fired without exposing small counts or embedded values.
+#' fired data-quality rules) are kept so a client can show which checks fired
+#' without exposing small counts or embedded values.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @return Data frame with analysis_id, achilles_heel_warning, rule_id,
@@ -1762,7 +1762,7 @@ omopAchillesHeelDS <- function(omop_symbol) {
 #'
 #' @description
 #' Scans the database for pre-computed result tables from OHDSI tools
-#' (DQD, CohortDiagnostics, CohortIncidence, Characterization) and
+#' (CohortDiagnostics, CohortIncidence, Characterization, and others) and
 #' returns per-tool availability status.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
@@ -1812,7 +1812,7 @@ omopOhdsiTablesDS <- function(omop_symbol) {
 #' @return Data frame with disclosure control applied
 #' @examples
 #' \dontrun{
-#' results <- omopOhdsiResultsDS("omop", "dqdashboard_results")
+#' results <- omopOhdsiResultsDS("omop", "cohort_count")
 #' }
 #' @export
 omopOhdsiResultsDS <- function(omop_symbol, table_name, columns = NULL,
@@ -1835,7 +1835,7 @@ omopOhdsiResultsDS <- function(omop_symbol, table_name, columns = NULL,
 #' @return Named list with tool-specific summary
 #' @examples
 #' \dontrun{
-#' summary <- omopOhdsiSummaryDS("omop", "dqd")
+#' summary <- omopOhdsiSummaryDS("omop", "cohort_diagnostics")
 #' }
 #' @export
 omopOhdsiSummaryDS <- function(omop_symbol, tool_id) {
@@ -1927,6 +1927,141 @@ omopQueryExecDS <- function(omop_symbol, query_id,
   mode <- match.arg(mode, c("aggregate", "assign"))
   .omopAuditLog("omopQueryExecDS", list(query_id = query_id, inputs = inputs))
   .query_exec(handle, query_id, inputs, mode)
+}
+
+# --- Unified analysis catalog methods ---
+
+#' List unified analysis catalog entries (Aggregate)
+#'
+#' @description
+#' Returns metadata for every entry in the unified analysis catalog — the single
+#' registry that folds the curated QueryLibrary SQL templates, the pre-computed
+#' Achilles analyses, and the generic OHDSI result tables behind one stable,
+#' pack-prefixed naming scheme (\code{"dsomop:<id>"}). Optionally filtered by
+#' clinical domain. No SQL, compute functions, or other server internals are
+#' returned.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param domain Character; optional domain filter (e.g., "condition", "person")
+#' @return Data frame with entry name, domain, adapter, mode, disclosure unit,
+#'   description, parameter summary, and scoping capability flags
+#' @examples
+#' \dontrun{
+#' catalog <- omopAnalysisListDS("omop", domain = "condition")
+#' }
+#' @export
+omopAnalysisListDS <- function(omop_symbol, domain = NULL) {
+  handle <- .getHandle(omop_symbol)
+  .omopAnalysisList(handle, domain)
+}
+
+#' Get unified analysis catalog entry metadata (Aggregate)
+#'
+#' @description
+#' Returns full metadata for a single catalog entry: its parameter specs,
+#' compute kind, disclosure spec, and scoping capabilities. Used by the client
+#' to render parameter forms and decide whether scoping is supported before
+#' running the analysis.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param name Character; the entry name (pack-prefixed stable id)
+#' @return Named list with entry metadata (no SQL / compute function)
+#' @examples
+#' \dontrun{
+#' meta <- omopAnalysisGetDS("omop", "dsomop:achilles.401")
+#' }
+#' @export
+omopAnalysisGetDS <- function(omop_symbol, name) {
+  handle <- .getHandle(omop_symbol)
+  name <- .ds_arg(name)
+  if (is.list(name)) name <- name[[1]]
+  .omopAnalysisGet(handle, name)
+}
+
+#' Run a unified analysis catalog entry (Aggregate)
+#'
+#' @description
+#' The single fail-closed run path for catalog analyses returning data to the
+#' client. Resolves the named entry, validates and sanitizes its parameters,
+#' applies optional cohort/table scoping, runs the entry's compute step (SQL
+#' template or wrapped Achilles/OHDSI accessor), and funnels the result through
+#' the ONE unified per-patient disclosure gate. This replaces the three
+#' previously divergent post-run disclosure passes with a single gate that
+#' enforces the same per-patient invariant for every adapter.
+#'
+#' Scoping: \code{scope} accepts a cohort reference (temp-table name or
+#' cohort_definition_id) and/or one or more workspace \code{omop.table} symbols.
+#' Multiple sources are folded with \code{combine} (union/intersect on
+#' subject_id) into one re-gated scoped cohort. SQL entries get a
+#' \code{person_id IN (SELECT subject_id FROM <scope>)} predicate; pre-computed
+#' Achilles/OHDSI entries reject \code{scope} (no per-row person key).
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param name Character; the entry name (pack-prefixed stable id)
+#' @param params Named list; parameter values for the entry
+#' @param scope Optional cohort reference and/or \code{omop.table} symbol(s) to
+#'   scope the population to (NULL = no scoping)
+#' @param combine Character; "union" (default) or "intersect" when scope has
+#'   multiple sources
+#' @return Disclosure-controlled data frame
+#' @examples
+#' \dontrun{
+#' df <- omopAnalysisRunDS("omop", "dsomop:condition.prevalence_by_concept",
+#'                         params = list(top_n = 25))
+#' }
+#' @export
+omopAnalysisRunDS <- function(omop_symbol, name, params = list(),
+                              scope = NULL, combine = "union") {
+  handle <- .getHandle(omop_symbol)
+  name <- .ds_arg(name)
+  if (is.list(name)) name <- name[[1]]
+  params <- .ds_arg(params)
+  scope <- .ds_arg(scope)
+  combine <- .ds_arg(combine)
+  if (is.list(combine)) combine <- combine[[1]]
+  .omopAuditLog("omopAnalysisRunDS",
+                list(name = name, params = params, scope = scope,
+                     combine = combine))
+  .omopAnalysisRun(handle, name, params, scope = scope, combine = combine,
+                   assign = FALSE)
+}
+
+#' Run a unified analysis catalog assign-mode loader (Assign)
+#'
+#' @description
+#' Assign-mode counterpart to \code{\link{omopAnalysisRunDS}} for QueryLibrary
+#' entries whose template \code{mode} is \code{"assign"} (server-side loaders
+#' whose result stays on the server, never returned to the client). Resolves and
+#' runs the entry through the same fail-closed run path; because the data is not
+#' returned, the aggregate disclosure gate does not apply, but parameter
+#' sanitization and scope re-gating still do.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param name Character; the entry name (pack-prefixed stable id)
+#' @param params Named list; parameter values for the entry
+#' @param scope Optional cohort reference and/or \code{omop.table} symbol(s)
+#' @param combine Character; "union" (default) or "intersect" when scope has
+#'   multiple sources
+#' @return The server-side assignment result (data stays on the server)
+#' @examples
+#' \dontrun{
+#' loaded <- omopAnalysisRunAssignDS("omop", "dsomop:condition.occurrence_load")
+#' }
+#' @export
+omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
+                                    scope = NULL, combine = "union") {
+  handle <- .getHandle(omop_symbol)
+  name <- .ds_arg(name)
+  if (is.list(name)) name <- name[[1]]
+  params <- .ds_arg(params)
+  scope <- .ds_arg(scope)
+  combine <- .ds_arg(combine)
+  if (is.list(combine)) combine <- combine[[1]]
+  .omopAuditLog("omopAnalysisRunAssignDS",
+                list(name = name, params = params, scope = scope,
+                     combine = combine))
+  .omopAnalysisRun(handle, name, params, scope = scope, combine = combine,
+                   assign = TRUE)
 }
 
 # --- Concept-factor harmonization (cross-server coordination) ---

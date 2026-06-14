@@ -14,7 +14,7 @@ Named list with per-tool availability
 }
 \description{
 Scans the database for pre-computed result tables from OHDSI tools
-(DQD, CohortDiagnostics, CohortIncidence, Characterization) and
+(CohortDiagnostics, CohortIncidence, Characterization, and others) and
 returns per-tool availability status.
 }
 \examples{

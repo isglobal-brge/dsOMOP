@@ -5,6 +5,7 @@ ID: device.prevalence_by_concept
 CDM Version: 5.3+
 Mode: aggregate
 Author: dsOMOP
+Scope Column: de.person_id
 ---
 
 ## Description
@@ -37,7 +38,7 @@ SELECT de.device_concept_id AS concept_id,
        COUNT(*) AS n_records
 FROM @cdm.device_exposure de
 JOIN @vocab.concept c ON c.concept_id = de.device_concept_id
-WHERE de.device_concept_id != 0
+WHERE de.device_concept_id != 0 @cohort
 GROUP BY de.device_concept_id, c.concept_name
 ORDER BY n_persons DESC
 LIMIT @top_n

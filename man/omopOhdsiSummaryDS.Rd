@@ -20,6 +20,6 @@ which tables are present and their row counts.
 }
 \examples{
 \dontrun{
-summary <- omopOhdsiSummaryDS("omop", "dqd")
+summary <- omopOhdsiSummaryDS("omop", "cohort_diagnostics")
 }
 }

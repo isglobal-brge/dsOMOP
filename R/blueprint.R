@@ -414,11 +414,21 @@
   # Fail closed when a query hits a missing object but dsOMOP is still tracking
   # session temp tables — i.e. a reconnect dropped the cohort/working tables.
   .stopIfTempTablesLost <- function(e) {
-    if (.isMissingObjectError(e) && length(handle$temp_tables) > 0) {
-      stop("Database connection was renewed, which dropped this session's ",
-           "temporary cohort/working table(s). The previous result cannot be ",
-           "reproduced safely. Re-run the cohort/session step (e.g. ",
-           "ds.omop.cohort.*) and then retry this operation.", call. = FALSE)
+    temps <- handle$temp_tables
+    if (.isMissingObjectError(e) && length(temps) > 0) {
+      # Only fail closed if the MISSING object is one of OUR tracked temp tables
+      # (a reconnect dropped the cohort/working table). A missing CDM/other table
+      # is a different, legitimate error and must propagate — not be masked as a
+      # dropped cohort, which would hide real bugs.
+      msg <- tolower(conditionMessage(e))
+      hit <- any(vapply(temps, function(t)
+        nzchar(t) && grepl(tolower(t), msg, fixed = TRUE), logical(1)))
+      if (hit) {
+        stop("Database connection was renewed, which dropped this session's ",
+             "temporary cohort/working table(s). The previous result cannot be ",
+             "reproduced safely. Re-run the cohort/session step (e.g. ",
+             "ds.omop.cohort.*) and then retry this operation.", call. = FALSE)
+      }
     }
     invisible(NULL)
   }
@@ -703,7 +713,7 @@
   }
   handle$has_achilles <- length(found_achilles) > 0
 
-  # Discover OHDSI result tables (DQD, CohortDiagnostics, etc.)
+  # Discover OHDSI result tables (CohortDiagnostics, etc.)
   registry <- .ohdsi_tool_registry()
   all_ohdsi_names <- unlist(lapply(registry, function(t) t$table_names),
                              use.names = FALSE)

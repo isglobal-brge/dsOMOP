@@ -17,8 +17,8 @@ Data frame with analysis_id, achilles_heel_warning, rule_id,
 Returns the Achilles Heel data-quality warnings, disclosure-controlled:
 \code{record_count} cells below \code{nfilter.tab} are NA-masked and any
 numeric run interpolated into the warning free-text is scrubbed. Rows (the
-fired data-quality rules) are kept so the Studio Data Quality page can show
-which checks fired without exposing small counts or embedded values.
+fired data-quality rules) are kept so a client can show which checks fired
+without exposing small counts or embedded values.
 }
 \examples{
 \dontrun{

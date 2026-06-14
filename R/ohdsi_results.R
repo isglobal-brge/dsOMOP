@@ -1,6 +1,6 @@
 # Module: OHDSI Results Consumer
 # Generic adapter for reading pre-computed results from OHDSI tools
-# (DQD, CohortDiagnostics, CohortIncidence, Characterization).
+# (CohortDiagnostics, CohortIncidence, Characterization, and others).
 # Same pattern as Achilles: we consume existing result tables, not run the tools.
 
 # --- Tool Registry ---
@@ -14,16 +14,6 @@
 #' @keywords internal
 .ohdsi_tool_registry <- function() {
   list(
-    dqd = list(
-      tool_name = "Data Quality Dashboard",
-      table_names = c("dqdashboard_results"),
-      prefix_patterns = character(0),
-      count_columns = c("num_violated_rows", "num_denominator_rows"),
-      # Row-level data-quality tallies, not a per-person basis.
-      person_columns = character(0),
-      sensitive_columns = c("query_text")
-    ),
-
     cohort_diagnostics = list(
       tool_name = "CohortDiagnostics",
       table_names = c("cohort_count", "incidence_rate", "index_event_breakdown",

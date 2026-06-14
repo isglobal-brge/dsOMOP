@@ -92,7 +92,14 @@
     sensitive_fields = sensitive_fields,
     cdm_version = meta[["cdm version"]] %||% "5.3+",
     mode        = tolower(meta[["mode"]] %||% "aggregate"),
-    author      = meta[["author"]] %||% "dsOMOP"
+    author      = meta[["author"]] %||% "dsOMOP",
+    # Person-level column expression the @cohort hook filters on (e.g.
+    # "co.person_id"). Declared ONLY by templates that place a person-level
+    # @cohort placeholder in their WHERE; absent for non-scopable templates.
+    scope_column = {
+      sc <- trimws(meta[["scope column"]] %||% "")
+      if (nchar(sc) == 0) NULL else sc
+    }
   )
 }
 
@@ -616,21 +623,25 @@
   # Render SQL with schema placeholders and user inputs
   sql <- q$sql
 
-  # Substitute standard schema placeholders
+  # Substitute standard schema placeholders. Mirror .qualifyTable: on SQLite or
+  # when no schema is configured, emit BARE table names (strip "@cdm." entirely)
+  # rather than a hardcoded "public." prefix that breaks schemaless backends.
+  bare <- identical(handle$target_dialect, "sqlite")
   schema_params <- list(
-    cdm = handle$cdm_schema %||% "public",
-    vocab = handle$vocab_schema %||% handle$cdm_schema %||% "public",
-    results = handle$results_schema %||% handle$cdm_schema %||% "public"
+    cdm = handle$cdm_schema,
+    vocab = handle$vocab_schema %||% handle$cdm_schema,
+    results = handle$results_schema %||% handle$cdm_schema
   )
 
-  # Add schema qualification patterns (@cdm.table -> schema.table)
+  # Add schema qualification patterns (@cdm.table -> schema.table, or -> table)
   for (schema_name in names(schema_params)) {
     schema_val <- schema_params[[schema_name]]
-    if (!is.null(schema_val) && nchar(schema_val) > 0) {
-      sql <- gsub(paste0("@", schema_name, "\\."),
-                   paste0(schema_val, "."),
-                   sql, fixed = FALSE)
+    prefix <- if (bare || is.null(schema_val) || !nzchar(schema_val)) {
+      ""
+    } else {
+      paste0(schema_val, ".")
     }
+    sql <- gsub(paste0("@", schema_name, "\\."), prefix, sql, fixed = FALSE)
   }
 
   # Build effective inputs: user-provided values + defaults from template

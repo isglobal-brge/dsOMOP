@@ -39,6 +39,6 @@ automatically excluded. Count columns are subject to small-cell suppression.
 }
 \examples{
 \dontrun{
-results <- omopOhdsiResultsDS("omop", "dqdashboard_results")
+results <- omopOhdsiResultsDS("omop", "cohort_count")
 }
 }
