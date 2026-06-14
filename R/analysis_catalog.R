@@ -524,6 +524,804 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   ))
 }
 
+# --- Adapter 5 (native): re-implemented OHDSI diagnostics --------------------
+#
+# Native re-implementations of OHDSI/HADES diagnostics (CohortIncidence,
+# CohortDiagnostics, Characterization, CohortMethod) as kind="r" catalog entries.
+# We do NOT depend on those packages: each entry computes its aggregate over OUR
+# connection with gated SQL, restricted to the SCOPED cohort (the cohort IS the
+# analysis population), and returns an aggregate-only frame that the ONE gate
+# (.omopAnalysisGate) small-cell-suppresses + bands. The cohort temp table the
+# run path hands the fn via ctx$scoped_cohort always carries subject_id +
+# cohort_start_date (see .cohortMaterialize / .cohortFromTokenFrame), so
+# index-date-relative computations (incidence, time-to-event, follow-up,
+# visit-context) are expressible against the scope. cohort_end_date is present on
+# the canonical OMOP cohort table and the observation-period-backed token-frame
+# cohorts, but a cohort materialised from a source table without an _end_date
+# column (measurement/observation) has only the index date; the TAR-based
+# diagnostics resolve the end column via .omopCohortEndDateCol and fall back to
+# cohort_start_date there (a single-day window) rather than emit broken SQL.
+
+#' Dialect-aware whole-day difference expression
+#'
+#' Day count between two date expressions (\code{end_expr - start_expr}). Mirrors
+#' the per-dialect branching the profiling module uses for date functions
+#' (\code{\link{.sql_translate}} translates only DATEADD/TOP, not date diffs).
+#' SQLite uses \code{julianday()}; everything else uses ANSI date subtraction
+#' (Postgres returns an integer day count) with an explicit DAY extraction for
+#' the engines that return an interval.
+#'
+#' @param handle CDM handle (selects the dialect).
+#' @param end_expr Character; SQL date expression for the later date.
+#' @param start_expr Character; SQL date expression for the earlier date.
+#' @return Character; a SQL scalar expression evaluating to an integer day count.
+#' @keywords internal
+.omopDateDiffDays <- function(handle, end_expr, start_expr) {
+  dialect <- handle$target_dialect %||% ""
+  if (identical(dialect, "sqlite")) {
+    paste0("CAST(julianday(", end_expr, ") - julianday(", start_expr,
+           ") AS INTEGER)")
+  } else if (dialect %in% c("sql server", "redshift")) {
+    paste0("DATEDIFF(day, ", start_expr, ", ", end_expr, ")")
+  } else if (identical(dialect, "bigquery")) {
+    paste0("DATE_DIFF(", end_expr, ", ", start_expr, ", DAY)")
+  } else {
+    # PostgreSQL/duckdb and friends: date - date yields an integer day count.
+    paste0("CAST(", end_expr, " - ", start_expr, " AS INTEGER)")
+  }
+}
+
+#' Dialect-aware year-of-event expression (for calendar-year strata)
+#' @keywords internal
+.omopYearExpr <- function(handle, date_expr) {
+  dialect <- handle$target_dialect %||% ""
+  if (identical(dialect, "sqlite")) {
+    paste0("CAST(strftime('%Y', ", date_expr, ") AS INTEGER)")
+  } else {
+    paste0("CAST(EXTRACT(YEAR FROM ", date_expr, ") AS INTEGER)")
+  }
+}
+
+#' Resolve the outcome population SQL for a re-implemented diagnostic
+#'
+#' The OHDSI diagnostics that need an OUTCOME (incidence rate, time-to-event)
+#' take it as a single \code{outcome_concept_id} (descendants expanded
+#' server-side via \code{\link{.resolveConceptSet}} so a phenotype concept like
+#' "Type 2 diabetes" pulls its whole sub-tree). The outcome is matched in an
+#' OMOP event table chosen by \code{domain_code} (default condition). Returns the
+#' qualified table, its person/date/concept columns, and the concept-id IN-list
+#' (or NULL when no valid concept id was supplied).
+#'
+#' @param handle CDM handle.
+#' @param outcome_concept_id Integer-ish scalar (sanitized literal) or NULL.
+#' @param domain_code Character/int code selecting the event domain
+#'   (0 condition, 1 drug, 2 procedure, 3 measurement, 4 observation).
+#' @return list(table, person_col, date_col, concept_col, id_list) or NULL.
+#' @keywords internal
+.omopOutcomeSource <- function(handle, outcome_concept_id, domain_code = "0") {
+  if (is.null(outcome_concept_id)) return(NULL)
+  ids <- .resolveConceptSet(handle,
+                            list(concepts = as.integer(outcome_concept_id),
+                                 include_descendants = TRUE))
+  if (length(ids) == 0) {
+    ids <- suppressWarnings(as.integer(outcome_concept_id))
+    ids <- ids[!is.na(ids)]
+  }
+  if (length(ids) == 0) return(NULL)
+
+  dom <- as.character(domain_code %||% "0")
+  spec <- switch(dom,
+    "1" = list("drug_exposure", "drug_concept_id", "drug_exposure_start_date"),
+    "2" = list("procedure_occurrence", "procedure_concept_id", "procedure_date"),
+    "3" = list("measurement", "measurement_concept_id", "measurement_date"),
+    "4" = list("observation", "observation_concept_id", "observation_date"),
+    list("condition_occurrence", "condition_concept_id", "condition_start_date"))
+
+  list(
+    table       = .qualifyTable(handle, spec[[1]]),
+    person_col  = "person_id",
+    date_col    = spec[[3]],
+    concept_col = spec[[2]],
+    id_list     = paste(ids, collapse = ", ")
+  )
+}
+
+#' INNER JOIN clause onto the scoped cohort (or "" when cohort-wide)
+#'
+#' Every native diagnostic restricts its population to \code{ctx$scoped_cohort}
+#' the same way: an INNER JOIN on \code{subject_id}. NULL scope -> "" (cohort-wide).
+#' The cohort identifier is re-validated here as defence-in-depth.
+#'
+#' @param ctx Run-path ctx.
+#' @param alias Character; the alias of the table being joined to the cohort.
+#' @param person_col Character; that table's person column (default person_id).
+#' @return list(join = "...", cohort = "<validated table or NULL>").
+#' @keywords internal
+.omopScopeJoin <- function(ctx, alias, person_col = "person_id") {
+  if (is.null(ctx$scoped_cohort)) return(list(join = "", cohort = NULL))
+  cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  list(
+    join = paste0(" INNER JOIN ", cohort, " coh ON coh.subject_id = ",
+                  alias, ".", person_col),
+    cohort = cohort
+  )
+}
+
+#' Pre-pull person-count self-gate over the scoped + filtered population
+#'
+#' The mandatory defence-in-depth every native diagnostic fn runs BEFORE pulling
+#' any rows into R: assert the scoped population (optionally further restricted by
+#' \code{where_sql}) rests on >= nfilter.subset distinct persons, so a fn can
+#' never "pull 2 people and summarise". Reuses \code{\link{.assertMinPersons}}.
+#'
+#' @param handle CDM handle.
+#' @param ctx Run-path ctx (for the scope join).
+#' @param base_table Character; qualified table to count persons over.
+#' @param alias Character; alias for base_table.
+#' @param person_col Character; person column on base_table.
+#' @param where_sql Character; optional extra WHERE predicate (no leading AND).
+#' @return invisible(TRUE) or stops fail-closed.
+#' @keywords internal
+.omopDiagAssertPersons <- function(handle, ctx, base_table, alias,
+                                   person_col = "person_id", where_sql = NULL) {
+  sj <- .omopScopeJoin(ctx, alias, person_col)
+  where <- if (!is.null(where_sql) && nzchar(where_sql)) {
+    paste0(" WHERE ", where_sql)
+  } else ""
+  sql <- .sql_translate(
+    paste0("SELECT COUNT(DISTINCT ", alias, ".", person_col, ") AS n FROM ",
+           base_table, " ", alias, sj$join, where),
+    handle$target_dialect)
+  .assertMinPersons(handle = handle, sql = sql)
+}
+
+#' Resolve the scoped cohort's end-date column (falling back to the index date)
+#'
+#' The TAR-based diagnostics (incidence, follow-up, time-in-cohort) anchor a
+#' window on the cohort end date. The canonical OMOP \code{cohort} table and the
+#' observation-period-backed token-frame cohorts always carry
+#' \code{cohort_end_date}, but a cohort materialised by \code{\link{.cohortCreate}}
+#' from a source table without an \code{_end_date} column (e.g. measurement or
+#' observation) carries only \code{subject_id} + \code{cohort_start_date}. Rather
+#' than emit broken SQL (\code{no such column: cohort_end_date}) for such a
+#' cohort, resolve the end-date column once here: return \code{"cohort_end_date"}
+#' when the scoped cohort actually has it, else fall back to
+#' \code{"cohort_start_date"} (a zero-length, single-day window — the standard
+#' OHDSI convention when no exit date is defined). The probe is a
+#' \code{WHERE 1=0} metadata-only SELECT (no rows read), so it is cheap and
+#' dialect-agnostic.
+#'
+#' @param handle CDM handle.
+#' @param cohort Character; the validated scoped cohort table name.
+#' @return Character; \code{"cohort_end_date"} or \code{"cohort_start_date"}.
+#' @keywords internal
+.omopCohortEndDateCol <- function(handle, cohort) {
+  has_end <- tryCatch({
+    .executeQuery(handle, paste0(
+      "SELECT cohort_end_date FROM ", cohort, " WHERE 1 = 0"))
+    TRUE
+  }, error = function(e) FALSE)
+  if (isTRUE(has_end)) "cohort_end_date" else "cohort_start_date"
+}
+
+# --- Native diagnostic 1: incidence rate -------------------------------------
+
+#' \code{dsomop:incidence.rate} entry (CohortIncidence, re-implemented)
+#' @keywords internal
+.omopDiagIncidenceRate <- function() {
+  name <- "dsomop:incidence.rate"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  ggplot2::ggplot(df, ggplot2::aes(x = stratum, y = rate)) +",
+    "    ggplot2::geom_col() +",
+    "    ggplot2::labs(x = 'Stratum', y = 'Incidence rate (per person-time)')",
+    "}", sep = "\n")
+
+  fn <- function(handle, ctx, params) {
+    person  <- .qualifyTable(handle, "person")
+    concept <- .qualifyTable(handle, "concept",
+                             handle$vocab_schema %||% handle$cdm_schema)
+
+    outcome_id   <- params$outcome_concept_id
+    domain_code  <- params$domain_code %||% "0"
+    tar_start    <- as.integer(params$tar_start_offset %||% "0")
+    tar_end      <- as.integer(params$tar_end_offset %||% "0")
+    anchor_start <- params$tar_anchor_start %||% "start"  # start|end of cohort
+    anchor_end   <- params$tar_anchor_end %||% "end"
+    by_age       <- identical(params$strat_by_age %||% "0", "1")
+    by_gender    <- identical(params$strat_by_gender %||% "0", "1")
+    by_year      <- identical(params$strat_by_year %||% "0", "1")
+    age_band     <- max(as.integer(params$age_band_years %||% "10"), 1L)
+
+    # The scoped cohort IS the at-risk population; an un-scoped run has no
+    # population to compute over, so return an empty (gate-safe) frame.
+    if (is.null(ctx$scoped_cohort)) return(data.frame())
+    cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+
+    # Self-gate the at-risk population before materialising.
+    .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+      "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
+      handle$target_dialect))
+
+    end_col <- .omopCohortEndDateCol(handle, cohort)
+    anchor <- function(a) if (identical(a, "end")) end_col else "cohort_start_date"
+    tar_lo <- paste0("DATEADD(day, ", tar_start, ", c.", anchor(anchor_start), ")")
+    tar_hi <- paste0("DATEADD(day, ", tar_end, ", c.", anchor(anchor_end), ")")
+    pdays  <- .omopDateDiffDays(handle, tar_hi, tar_lo)
+
+    # Strata expressions.
+    strata_sel <- c("'all' AS stratum")
+    grp <- character(0)
+    if (by_gender) {
+      strata_sel <- "gc.concept_name AS stratum"
+      grp <- "gc.concept_name"
+    }
+    if (by_age) {
+      age_at <- .omopDateDiffDays(handle, paste0("c.", anchor(anchor_start)),
+                                  "p.birth_dt")
+      ageband <- paste0("(CAST(", age_at, " / 365 AS INTEGER) / ", age_band,
+                        ") * ", age_band)
+      strata_sel <- if (by_gender) {
+        paste0("gc.concept_name || '|' || CAST(", ageband, " AS VARCHAR) AS stratum")
+      } else paste0("CAST(", ageband, " AS VARCHAR) AS stratum")
+      grp <- c(grp, ageband)
+    }
+    if (by_year) {
+      yr <- .omopYearExpr(handle, paste0("c.", anchor(anchor_start)))
+      strata_sel <- if (length(grp) > 0) {
+        paste0(sub(" AS stratum$", "", strata_sel), " || '|' || CAST(", yr,
+               " AS VARCHAR) AS stratum")
+      } else paste0("CAST(", yr, " AS VARCHAR) AS stratum")
+      grp <- c(grp, yr)
+    }
+    group_by <- if (length(grp) > 0) paste0(" GROUP BY ", paste(grp, collapse = ", ")) else ""
+
+    # person birth date (year-01-01) for age; gender concept name.
+    birth_dt <- if (identical(handle$target_dialect %||% "", "sqlite")) {
+      "(CAST(p.year_of_birth AS VARCHAR) || '-01-01')"
+    } else {
+      "CAST((CAST(p.year_of_birth AS VARCHAR) || '-01-01') AS DATE)"
+    }
+
+    out_src <- .omopOutcomeSource(handle, outcome_id, domain_code)
+    outcome_join <- ""
+    out_event_expr <- "0"
+    out_person_expr <- "NULL"
+    if (!is.null(out_src)) {
+      # outcomes (records) and person_outcomes (distinct persons) within TAR.
+      outcome_join <- paste0(
+        " LEFT JOIN ", out_src$table, " o ON o.", out_src$person_col,
+        " = c.subject_id AND o.", out_src$concept_col, " IN (", out_src$id_list,
+        ") AND o.", out_src$date_col, " >= ", tar_lo,
+        " AND o.", out_src$date_col, " <= ", tar_hi)
+      out_event_expr  <- paste0("COUNT(o.", out_src$concept_col, ")")
+      out_person_expr <- paste0("COUNT(DISTINCT o.", out_src$person_col, ")")
+    }
+
+    sql <- .sql_translate(paste0(
+      "SELECT ", strata_sel, ", ",
+      "COUNT(DISTINCT c.subject_id) AS persons_at_risk, ",
+      "SUM(", pdays, ") AS person_days, ",
+      out_event_expr, " AS outcomes, ",
+      out_person_expr, " AS person_outcomes ",
+      "FROM ", cohort, " c ",
+      "INNER JOIN ", person, " p ON p.person_id = c.subject_id ",
+      "LEFT JOIN ", concept, " gc ON gc.concept_id = p.gender_concept_id",
+      outcome_join,
+      group_by,
+      " ORDER BY persons_at_risk DESC"),
+      handle$target_dialect)
+    # Splice the dialect-specific birth-date expression in last (it is author SQL,
+    # not user input, and is kept out of @param substitution).
+    sql <- gsub("p.birth_dt", birth_dt, sql, fixed = TRUE)
+
+    df <- .executeQuery(handle, sql)
+    if (!is.data.frame(df) || nrow(df) == 0) return(df)
+
+    # Both derived ratios — proportion = person_outcomes / persons_at_risk
+    # (cumulative incidence) and rate = person_outcomes / person_days — must be
+    # recomputed from BANDED inputs (or NA'd when a side is suppressed) so a raw
+    # high-precision ratio over banded counts can never re-derive an un-banded
+    # numerator. The shared numerator (person_outcomes) is banded ONCE here and
+    # used for BOTH ratios; the gate's own band pass over the count columns is
+    # idempotent on these already-banded values.
+    settings <- .omopDisclosureSettings()
+    bw  <- settings$nfilter_band
+    thr <- settings$nfilter_tab
+    suppress <- function(raw) {
+      v <- vapply(as.numeric(raw), .bandCount, numeric(1), band_width = bw)
+      v[is.na(raw) | as.numeric(raw) < thr] <- NA_real_
+      v
+    }
+    b_outc <- suppress(df$person_outcomes)
+    b_risk <- suppress(df$persons_at_risk)
+    b_days <- suppress(df$person_days)
+    prop <- b_outc / b_risk
+    prop[is.na(b_outc) | is.na(b_risk) | b_risk == 0] <- NA_real_
+    rate <- b_outc / b_days
+    rate[is.na(b_outc) | is.na(b_days) | b_days == 0] <- NA_real_
+    df$person_outcomes <- b_outc
+    df$persons_at_risk <- b_risk
+    df$person_days     <- b_days
+    df$proportion      <- prop
+    df$rate            <- rate
+    df
+  }
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("Incidence rate over a scoped at-risk cohort: ",
+                         "persons-at-risk, person-days, outcomes, ",
+                         "person-outcomes, cumulative-incidence proportion and ",
+                         "rate, optionally by age/gender/calendar-year strata."),
+    domain      = "general",
+    params      = list(
+      list(name = "outcome_concept_id", type = "concept_id", required = FALSE,
+           default = NULL,
+           description = "Outcome concept id (descendants expanded)."),
+      list(name = "domain_code", type = "enum", required = FALSE, default = "0",
+           choices = c("0", "1", "2", "3", "4"),
+           description = "Outcome domain (0 condition,1 drug,2 procedure,3 measurement,4 observation)."),
+      list(name = "tar_start_offset", type = "int", required = FALSE, default = "0"),
+      list(name = "tar_end_offset", type = "int", required = FALSE, default = "0"),
+      list(name = "tar_anchor_start", type = "enum", required = FALSE,
+           default = "start", choices = c("start", "end")),
+      list(name = "tar_anchor_end", type = "enum", required = FALSE,
+           default = "end", choices = c("start", "end")),
+      list(name = "clean_window", type = "int", required = FALSE, default = "0"),
+      list(name = "strat_by_age", type = "bool", required = FALSE, default = "0"),
+      list(name = "strat_by_gender", type = "bool", required = FALSE, default = "0"),
+      list(name = "strat_by_year", type = "bool", required = FALSE, default = "0"),
+      list(name = "age_band_years", type = "int", required = FALSE, default = "10")
+    ),
+    compute = list(
+      kind = "r", sql = NULL, fn = fn,
+      plot = list(type = "bar", code = plot_code)
+    ),
+    dependencies = list(tables = c("person", "concept", "condition_occurrence"),
+                        packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "record",
+      count_cols = c("outcomes", "persons_at_risk", "person_outcomes",
+                     "person_days"),
+      person_id_col = "person_outcomes"),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 1L),
+    mode  = "aggregate",
+    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+  )
+}
+
+# --- Native diagnostic 2: index-event breakdown ------------------------------
+
+#' \code{dsomop:cohortdx.index_event_breakdown} entry (CohortDiagnostics)
+#' @keywords internal
+.omopDiagIndexEventBreakdown <- function() {
+  name <- "dsomop:cohortdx.index_event_breakdown"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  ggplot2::ggplot(df, ggplot2::aes(x = stats::reorder(concept_name, concept_count),",
+    "                                   y = concept_count)) +",
+    "    ggplot2::geom_col() + ggplot2::coord_flip() +",
+    "    ggplot2::labs(x = 'Index concept', y = 'Records at index')",
+    "}", sep = "\n")
+
+  fn <- function(handle, ctx, params) {
+    if (is.null(ctx$scoped_cohort)) return(data.frame())
+    cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+    concept <- .qualifyTable(handle, "concept",
+                             handle$vocab_schema %||% handle$cdm_schema)
+    top_n   <- max(as.integer(params$top_n %||% "25"), 1L)
+    dom <- as.character(params$domain_code %||% "0")
+    spec <- switch(dom,
+      "1" = list("drug_exposure", "drug_concept_id", "drug_exposure_start_date"),
+      "2" = list("procedure_occurrence", "procedure_concept_id", "procedure_date"),
+      "3" = list("measurement", "measurement_concept_id", "measurement_date"),
+      "4" = list("observation", "observation_concept_id", "observation_date"),
+      list("condition_occurrence", "condition_concept_id", "condition_start_date"))
+    tbl <- .qualifyTable(handle, spec[[1]])
+
+    # Events occurring ON the cohort index date, per concept.
+    on_index <- paste0("e.", spec[[3]], " = c.cohort_start_date")
+    .omopDiagAssertPersons(handle, ctx, tbl, "e", "person_id")
+
+    sql <- .sql_translate(paste0(
+      "SELECT e.", spec[[2]], " AS concept_id, cc.concept_name, ",
+      "COUNT(*) AS concept_count, ",
+      "COUNT(DISTINCT e.person_id) AS subject_count ",
+      "FROM ", tbl, " e ",
+      "INNER JOIN ", cohort, " c ON c.subject_id = e.person_id AND ", on_index,
+      " LEFT JOIN ", concept, " cc ON cc.concept_id = e.", spec[[2]],
+      " GROUP BY e.", spec[[2]], ", cc.concept_name",
+      " ORDER BY concept_count DESC"),
+      handle$target_dialect)
+
+    df <- .executeQuery(handle, sql)
+    if (is.data.frame(df) && nrow(df) > top_n) df <- df[seq_len(top_n), , drop = FALSE]
+    df
+  }
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("Per-concept record count and distinct-subject count of",
+                         " the events occurring on the cohort index date."),
+    domain      = "general",
+    params      = list(
+      list(name = "domain_code", type = "enum", required = FALSE, default = "0",
+           choices = c("0", "1", "2", "3", "4"),
+           description = "Index event domain (0 condition,1 drug,2 procedure,3 measurement,4 observation)."),
+      list(name = "top_n", type = "int", required = FALSE, default = "25")
+    ),
+    compute = list(
+      kind = "r", sql = NULL, fn = fn,
+      plot = list(type = "bar", code = plot_code)
+    ),
+    dependencies = list(tables = c("condition_occurrence", "concept"),
+                        packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "record",
+      count_cols = c("concept_count", "subject_count"),
+      person_id_col = "subject_count"),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 1L),
+    mode  = "aggregate",
+    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+  )
+}
+
+# --- Native diagnostic 3: time distribution ----------------------------------
+
+#' \code{dsomop:cohortdx.time_distribution} entry (CohortDiagnostics)
+#' @keywords internal
+.omopDiagTimeDistribution <- function() {
+  name <- "dsomop:cohortdx.time_distribution"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  ggplot2::ggplot(df, ggplot2::aes(x = metric, y = median_value)) +",
+    "    ggplot2::geom_boxplot(ggplot2::aes(lower = p25_value, upper = p75_value,",
+    "      middle = median_value, ymin = p10_value, ymax = p90_value),",
+    "      stat = 'identity') +",
+    "    ggplot2::labs(x = 'Metric', y = 'Days')",
+    "}", sep = "\n")
+
+  fn <- function(handle, ctx, params) {
+    if (is.null(ctx$scoped_cohort)) return(data.frame())
+    cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+    obs <- .qualifyTable(handle, "observation_period")
+    metric <- params$metric %||% "time_in_cohort"
+    end_col <- .omopCohortEndDateCol(handle, cohort)
+
+    # Per-person day value depending on the metric.
+    value_expr <- switch(metric,
+      "prior_observation" =
+        .omopDateDiffDays(handle, "c.cohort_start_date", "op.observation_period_start_date"),
+      "post_observation" =
+        .omopDateDiffDays(handle, "op.observation_period_end_date", "c.cohort_start_date"),
+      .omopDateDiffDays(handle, paste0("c.", end_col), "c.cohort_start_date"))
+
+    .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+      "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
+      handle$target_dialect))
+
+    # Per-person values, then summarise in R into a dist row (snake_case so the
+    # gate's dist branch strips min/max + masks stats below nfilter_dist).
+    join_obs <- if (metric %in% c("prior_observation", "post_observation")) {
+      paste0(" INNER JOIN ", obs, " op ON op.person_id = c.subject_id")
+    } else ""
+    vsql <- .sql_translate(paste0(
+      "SELECT ", value_expr, " AS v FROM ", cohort, " c", join_obs),
+      handle$target_dialect)
+    vals <- .executeQuery(handle, vsql)
+    v <- suppressWarnings(as.numeric(vals$v))
+    v <- v[!is.na(v)]
+    if (length(v) == 0) {
+      return(data.frame(metric = character(0), count_value = integer(0),
+                        stringsAsFactors = FALSE))
+    }
+    qs <- stats::quantile(v, c(.10, .25, .5, .75, .90), names = FALSE, type = 7)
+    data.frame(
+      metric       = metric,
+      count_value  = length(v),
+      min_value    = min(v),   # stripped by the gate
+      max_value    = max(v),   # stripped by the gate
+      avg_value    = mean(v),
+      stdev_value  = stats::sd(v),
+      p10_value    = qs[1], p25_value = qs[2], median_value = qs[3],
+      p75_value    = qs[4], p90_value = qs[5],
+      stringsAsFactors = FALSE
+    )
+  }
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("Distribution (days) of prior-observation, ",
+                         "post-observation, or time-in-cohort over the scoped ",
+                         "cohort."),
+    domain      = "general",
+    params      = list(
+      list(name = "metric", type = "enum", required = FALSE,
+           default = "time_in_cohort",
+           choices = c("prior_observation", "post_observation", "time_in_cohort"))
+    ),
+    compute = list(
+      kind = "r", sql = NULL, fn = fn,
+      plot = list(type = "box", code = plot_code)
+    ),
+    dependencies = list(tables = c("observation_period"),
+                        packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "dist", count_cols = "count_value", min_max = TRUE),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 1L),
+    mode  = "aggregate",
+    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+  )
+}
+
+# --- Native diagnostic 4: follow-up distribution -----------------------------
+
+#' \code{dsomop:cm.followup_distribution} entry (CohortMethod)
+#' @keywords internal
+.omopDiagFollowupDistribution <- function() {
+  name <- "dsomop:cm.followup_distribution"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  q <- data.frame(p = c(.10,.25,.5,.75,.90),",
+    "    v = c(df$p10_value, df$p25_value, df$median_value,",
+    "          df$p75_value, df$p90_value))",
+    "  ggplot2::ggplot(q, ggplot2::aes(x = v, y = p)) +",
+    "    ggplot2::geom_step() +",
+    "    ggplot2::labs(x = 'Time at risk (days)', y = 'Cumulative proportion')",
+    "}", sep = "\n")
+
+  fn <- function(handle, ctx, params) {
+    if (is.null(ctx$scoped_cohort)) return(data.frame())
+    cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+    tar_start    <- as.integer(params$tar_start_offset %||% "0")
+    tar_end      <- as.integer(params$tar_end_offset %||% "0")
+    anchor_start <- params$tar_anchor_start %||% "start"
+    anchor_end   <- params$tar_anchor_end %||% "end"
+    end_col <- .omopCohortEndDateCol(handle, cohort)
+    anchor <- function(a) if (identical(a, "end")) end_col else "cohort_start_date"
+
+    .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+      "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
+      handle$target_dialect))
+
+    tar_lo <- paste0("DATEADD(day, ", tar_start, ", c.", anchor(anchor_start), ")")
+    tar_hi <- paste0("DATEADD(day, ", tar_end, ", c.", anchor(anchor_end), ")")
+    tar    <- .omopDateDiffDays(handle, tar_hi, tar_lo)
+
+    vsql <- .sql_translate(paste0(
+      "SELECT ", tar, " AS v FROM ", cohort, " c"),
+      handle$target_dialect)
+    vals <- .executeQuery(handle, vsql)
+    v <- suppressWarnings(as.numeric(vals$v))
+    v <- v[!is.na(v)]
+    if (length(v) == 0) {
+      return(data.frame(metric = character(0), count_value = integer(0),
+                        stringsAsFactors = FALSE))
+    }
+    # p10..p90 ONLY — NEVER native 0%/100% (those ARE min/max).
+    qs <- stats::quantile(v, c(.10, .25, .5, .75, .90), names = FALSE, type = 7)
+    data.frame(
+      metric       = "time_at_risk",
+      count_value  = length(v),
+      avg_value    = mean(v),
+      stdev_value  = stats::sd(v),
+      p10_value    = qs[1], p25_value = qs[2], median_value = qs[3],
+      p75_value    = qs[4], p90_value = qs[5],
+      stringsAsFactors = FALSE
+    )
+  }
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("Quantiles (p10-p90) of time-at-risk (days) over the ",
+                         "scoped cohort. Min/max are never emitted."),
+    domain      = "general",
+    params      = list(
+      list(name = "tar_start_offset", type = "int", required = FALSE, default = "0"),
+      list(name = "tar_end_offset", type = "int", required = FALSE, default = "0"),
+      list(name = "tar_anchor_start", type = "enum", required = FALSE,
+           default = "start", choices = c("start", "end")),
+      list(name = "tar_anchor_end", type = "enum", required = FALSE,
+           default = "end", choices = c("start", "end"))
+    ),
+    compute = list(
+      kind = "r", sql = NULL, fn = fn,
+      plot = list(type = "step", code = plot_code)
+    ),
+    dependencies = list(tables = character(0), packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "dist", count_cols = "count_value", min_max = TRUE),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 1L),
+    mode  = "aggregate",
+    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+  )
+}
+
+# --- Native diagnostic 5: time to event --------------------------------------
+
+#' \code{dsomop:char.time_to_event} entry (Characterization)
+#' @keywords internal
+.omopDiagTimeToEvent <- function() {
+  name <- "dsomop:char.time_to_event"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  ggplot2::ggplot(df, ggplot2::aes(x = day_offset, y = num_events)) +",
+    "    ggplot2::geom_col() +",
+    "    ggplot2::labs(x = 'Days from index', y = 'Outcome events')",
+    "}", sep = "\n")
+
+  fn <- function(handle, ctx, params) {
+    if (is.null(ctx$scoped_cohort)) return(data.frame())
+    cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+    outcome_id  <- params$outcome_concept_id
+    domain_code <- params$domain_code %||% "0"
+    out_src <- .omopOutcomeSource(handle, outcome_id, domain_code)
+    # No outcome supplied -> nothing to histogram; return a gate-safe empty frame.
+    if (is.null(out_src)) return(data.frame())
+    scale <- as.integer(params$time_scale %||% "1")  # bin width in days
+    if (!scale %in% c(1L, 30L, 365L)) scale <- 1L
+    first_only <- identical(params$first_occurrence_only %||% "0", "1")
+
+    .omopDiagAssertPersons(handle, ctx, out_src$table, "o", out_src$person_col,
+                           where_sql = paste0("o.", out_src$concept_col,
+                                              " IN (", out_src$id_list, ")"))
+
+    # Day-offset from index, binned by `scale`. For first-occurrence-only, reduce
+    # each person to their earliest qualifying event via a correlated MIN.
+    offset_expr <- .omopDateDiffDays(handle, paste0("o.", out_src$date_col),
+                                     "c.cohort_start_date")
+    bin_expr <- paste0("(CAST(", offset_expr, " AS INTEGER) / ", scale, ") * ", scale)
+    first_clause <- if (first_only) {
+      paste0(" AND o.", out_src$date_col, " = (SELECT MIN(o2.", out_src$date_col,
+             ") FROM ", out_src$table, " o2 WHERE o2.", out_src$person_col,
+             " = o.", out_src$person_col, " AND o2.", out_src$concept_col,
+             " IN (", out_src$id_list, "))")
+    } else ""
+
+    sql <- .sql_translate(paste0(
+      "SELECT ", bin_expr, " AS day_offset, ",
+      "COUNT(*) AS num_events, ",
+      "COUNT(DISTINCT o.", out_src$person_col, ") AS persons ",
+      "FROM ", out_src$table, " o ",
+      "INNER JOIN ", cohort, " c ON c.subject_id = o.", out_src$person_col,
+      " AND o.", out_src$concept_col, " IN (", out_src$id_list, ")", first_clause,
+      " GROUP BY ", bin_expr,
+      " ORDER BY day_offset"),
+      handle$target_dialect)
+
+    .executeQuery(handle, sql)
+  }
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("Outcome-event histogram by day-offset from the cohort ",
+                         "index date (1/30/365-day bins) over the scoped cohort ",
+                         "and an outcome concept."),
+    domain      = "general",
+    params      = list(
+      list(name = "outcome_concept_id", type = "concept_id", required = FALSE,
+           default = NULL,
+           description = "Outcome concept id (descendants expanded)."),
+      list(name = "domain_code", type = "enum", required = FALSE, default = "0",
+           choices = c("0", "1", "2", "3", "4")),
+      list(name = "time_scale", type = "enum", required = FALSE, default = "1",
+           choices = c("1", "30", "365"),
+           description = "Bin width in days (1, 30, or 365)."),
+      list(name = "first_occurrence_only", type = "bool", required = FALSE,
+           default = "0")
+    ),
+    compute = list(
+      kind = "r", sql = NULL, fn = fn,
+      plot = list(type = "line", code = plot_code)
+    ),
+    dependencies = list(tables = c("condition_occurrence"),
+                        packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "record", count_cols = c("num_events", "persons"),
+      person_id_col = "persons"),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 1L),
+    mode  = "aggregate",
+    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+  )
+}
+
+# --- Native diagnostic 6: visit context --------------------------------------
+
+#' \code{dsomop:cohortdx.visit_context} entry (CohortDiagnostics)
+#' @keywords internal
+.omopDiagVisitContext <- function() {
+  name <- "dsomop:cohortdx.visit_context"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  ggplot2::ggplot(df, ggplot2::aes(x = concept_name, y = subjects,",
+    "                                   fill = position)) +",
+    "    ggplot2::geom_col() + ggplot2::coord_flip() +",
+    "    ggplot2::labs(x = 'Visit concept', y = 'Subjects', fill = 'Index')",
+    "}", sep = "\n")
+
+  fn <- function(handle, ctx, params) {
+    if (is.null(ctx$scoped_cohort)) return(data.frame())
+    cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+    visit <- .qualifyTable(handle, "visit_occurrence")
+    concept <- .qualifyTable(handle, "concept",
+                             handle$vocab_schema %||% handle$cdm_schema)
+    top_n <- max(as.integer(params$top_n %||% "25"), 1L)
+
+    .omopDiagAssertPersons(handle, ctx, visit, "v", "person_id")
+
+    # Position of the visit relative to the cohort index date.
+    pos <- paste0(
+      "CASE WHEN v.visit_end_date < c.cohort_start_date THEN 'before' ",
+      "WHEN v.visit_start_date > c.cohort_start_date THEN 'after' ",
+      "WHEN v.visit_start_date = c.cohort_start_date THEN 'on' ",
+      "ELSE 'during' END")
+
+    sql <- .sql_translate(paste0(
+      "SELECT v.visit_concept_id AS concept_id, vc.concept_name, ",
+      pos, " AS position, ",
+      "COUNT(DISTINCT v.person_id) AS subjects ",
+      "FROM ", visit, " v ",
+      "INNER JOIN ", cohort, " c ON c.subject_id = v.person_id",
+      " LEFT JOIN ", concept, " vc ON vc.concept_id = v.visit_concept_id",
+      " GROUP BY v.visit_concept_id, vc.concept_name, ", pos,
+      " ORDER BY subjects DESC"),
+      handle$target_dialect)
+
+    df <- .executeQuery(handle, sql)
+    if (is.data.frame(df) && nrow(df) > top_n) df <- df[seq_len(top_n), , drop = FALSE]
+    df
+  }
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("Distinct subjects per (visit concept x position ",
+                         "before/during/on/after the cohort index date)."),
+    domain      = "general",
+    params      = list(
+      list(name = "top_n", type = "int", required = FALSE, default = "25")
+    ),
+    compute = list(
+      kind = "r", sql = NULL, fn = fn,
+      plot = list(type = "bar", code = plot_code)
+    ),
+    dependencies = list(tables = c("visit_occurrence", "concept"),
+                        packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "person", count_cols = "subjects"),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 1L),
+    mode  = "aggregate",
+    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+  )
+}
+
+#' Emit the native re-implemented OHDSI diagnostic entries
+#'
+#' All six are kind="r", scope via \code{ctx$scoped_cohort} (the cohort IS the
+#' analysis population), and funnel through the ONE gate
+#' (\code{\link{.omopAnalysisGate}}). No entry registers its own gate.
+#'
+#' @param handle CDM handle (signature parity; not queried at build time).
+#' @return Named list of \code{omop_analysis_entry} objects keyed by name.
+#' @keywords internal
+.omopAnalysisDiagnosticEntries <- function(handle) {
+  entries <- list(
+    .omopDiagIncidenceRate(),
+    .omopDiagIndexEventBreakdown(),
+    .omopDiagTimeDistribution(),
+    .omopDiagFollowupDistribution(),
+    .omopDiagTimeToEvent(),
+    .omopDiagVisitContext()
+  )
+  stats::setNames(entries, vapply(entries, function(e) e$name, character(1)))
+}
+
 # --- Registry (build-once + cache) -------------------------------------------
 
 #' Warn (never fail) about missing entry dependencies
@@ -718,7 +1516,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     .omopAnalysisQueryEntries(handle),
     .omopAnalysisAchillesEntries(handle),
     .omopAnalysisOhdsiEntries(handle),
-    .omopAnalysisDemoEntries(handle)
+    .omopAnalysisDemoEntries(handle),
+    .omopAnalysisDiagnosticEntries(handle)
   )
 
   # Append pack-contributed entries, rejecting any id that collides with a
@@ -853,12 +1652,40 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   }
 
   inputs_df <- entry$meta$inputs_df  # NULL for non-query adapters
+  spec_by_name <- stats::setNames(specs, spec_names)
   sanitized <- list()
   for (pname in names(params)) {
     val <- params[[pname]]
     if (is.null(val)) next
     # Length guard, same as the query path.
     .validateString(as.character(val)[1])
+
+    # Native r-in-session entries declare richer scalar types than the numeric-
+    # only QueryLibrary path. An "enum"/"bool" param is validated by EXACT-MATCH
+    # against its declared, fixed allowlist of choices — a value that is not one
+    # of the known choices is rejected, so there is no SQL-injection surface (the
+    # accepted value is always one of a closed set the entry author wrote, never
+    # spliced from free user text). Every other type falls through to the
+    # fail-closed numeric sanitizer .query_exec trusts.
+    spec <- spec_by_name[[pname]]
+    ptype <- if (!is.null(spec)) spec$type %||% "" else ""
+    if (identical(ptype, "enum") || identical(ptype, "bool")) {
+      choices <- if (identical(ptype, "bool")) {
+        c("0", "1", "TRUE", "FALSE", "true", "false")
+      } else {
+        as.character(spec$choices %||% character(0))
+      }
+      cand <- trimws(as.character(val)[1])
+      if (length(choices) == 0 || !(cand %in% choices)) {
+        stop("Analysis '", entry$name, "': parameter '", pname,
+             "' must be one of {", paste(choices, collapse = ", "),
+             "} but received '", cand, "'.", call. = FALSE)
+      }
+      sanitized[[pname]] <- if (identical(ptype, "bool")) {
+        if (cand %in% c("1", "TRUE", "true")) "1" else "0"
+      } else cand
+      next
+    }
     sanitized[[pname]] <- .sanitizeQueryParam(val, pname, inputs_df)
   }
   sanitized

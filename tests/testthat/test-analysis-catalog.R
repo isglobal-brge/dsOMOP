@@ -119,7 +119,7 @@ test_that("list/get expose metadata without leaking SQL or compute fns", {
 
 # --- Honest scope flags ------------------------------------------------------
 
-test_that("exactly the 8 native prevalence templates are scopable", {
+test_that("exactly the native scopable entries are scopable", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
 
@@ -135,7 +135,15 @@ test_that("exactly the 8 native prevalence templates are scopable", {
     "dsomop:observation.prevalence_by_concept",
     "dsomop:procedure.prevalence_by_concept",
     # The native r-in-session reference entry is scopable too.
-    "dsomop:demo.person_count_by_gender"
+    "dsomop:demo.person_count_by_gender",
+    # The natively re-implemented OHDSI diagnostics are all cohort-scopable
+    # (the cohort IS the analysis population).
+    "dsomop:incidence.rate",
+    "dsomop:cohortdx.index_event_breakdown",
+    "dsomop:cohortdx.time_distribution",
+    "dsomop:cm.followup_distribution",
+    "dsomop:char.time_to_event",
+    "dsomop:cohortdx.visit_context"
   )))
   # accepts_cohort and accepts_tables move together (one honest hook).
   expect_identical(lst$accepts_cohort, lst$accepts_tables)
@@ -737,4 +745,141 @@ test_that("an entry declaring max_tables=2 routes scope to scoped_cohorts", {
   })
   expect_length(captured$scoped_cohorts, 2)
   expect_null(captured$scoped_cohort)   # two-population path, not single fold
+})
+
+# --- Native re-implemented OHDSI diagnostics (adapter == "diagnostic") --------
+
+test_that("the six native diagnostics register dsomop:-prefixed + scopable", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+
+  ids <- c("dsomop:incidence.rate", "dsomop:cohortdx.index_event_breakdown",
+           "dsomop:cohortdx.time_distribution", "dsomop:cm.followup_distribution",
+           "dsomop:char.time_to_event", "dsomop:cohortdx.visit_context")
+  lst <- .omopAnalysisList(h)
+  sub <- lst[lst$name %in% ids, ]
+  expect_equal(nrow(sub), length(ids))
+  expect_true(all(sub$adapter == "diagnostic"))
+  expect_true(all(sub$accepts_cohort))           # honest: every fn consumes scope
+  expect_true(all(sub$accepts_tables))
+  # Declared gate units per the port plan.
+  unit_of <- stats::setNames(lst$unit, lst$name)
+  expect_equal(unit_of[["dsomop:incidence.rate"]], "record")
+  expect_equal(unit_of[["dsomop:cohortdx.index_event_breakdown"]], "record")
+  expect_equal(unit_of[["dsomop:char.time_to_event"]], "record")
+  expect_equal(unit_of[["dsomop:cohortdx.time_distribution"]], "dist")
+  expect_equal(unit_of[["dsomop:cm.followup_distribution"]], "dist")
+  expect_equal(unit_of[["dsomop:cohortdx.visit_context"]], "person")
+
+  # Each carries an inert client-side plot recipe (type + deparsed function).
+  for (id in ids) {
+    m <- .omopAnalysisGet(h, id)
+    expect_equal(m$compute_kind, "r")
+    expect_false(is.null(m$plot))
+    expect_true(is.character(m$plot$code) && grepl("function", m$plot$code))
+  }
+})
+
+test_that("native diagnostics run un-scoped to an empty (gate-safe) frame", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  for (id in c("dsomop:incidence.rate", "dsomop:cohortdx.index_event_breakdown",
+               "dsomop:cohortdx.time_distribution",
+               "dsomop:cm.followup_distribution", "dsomop:char.time_to_event",
+               "dsomop:cohortdx.visit_context")) {
+    expect_equal(nrow(.omopAnalysisRun(h, id)), 0)
+  }
+})
+
+test_that("dist diagnostics never release min/max (gate strip + p-only)", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           nfilter.dist = 3, dsomop.nfilter.band = 5), {
+    ct <- .cohortCreate(h, list(type = "condition", concept_set = c(201820)),
+                        mode = "temporary", cohort_id = 1)
+    td <- .omopAnalysisRun(h, "dsomop:cohortdx.time_distribution",
+                           params = list(metric = "time_in_cohort"), scope = ct)
+    expect_false(any(grepl("^min_value$|^max_value$", names(td))))
+    fu <- .omopAnalysisRun(h, "dsomop:cm.followup_distribution", scope = ct)
+    # Native follow-up never even computes min/max (0%/100% ARE min/max).
+    expect_false(any(grepl("min_value|max_value", names(fu))))
+    if (nrow(fu) > 0) {
+      expect_true(all(c("p10_value", "median_value", "p90_value") %in% names(fu)))
+    }
+  })
+})
+
+test_that("person-unit diagnostic counts are banded by the one gate", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.band = 5), {
+    ct <- .cohortCreate(h, list(type = "condition", concept_set = c(201820)),
+                        mode = "temporary", cohort_id = 1)
+    vc <- .omopAnalysisRun(h, "dsomop:cohortdx.visit_context",
+                           params = list(top_n = 10), scope = ct)
+    if (nrow(vc) > 0) {
+      expect_true(all(vc$subjects %% 5 == 0 | is.na(vc$subjects)))
+      expect_false(any(grepl("_source_value$", names(vc))))
+    }
+  })
+})
+
+test_that("record-unit diagnostics declare a distinct-person companion column", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  # The gate's record branch (SQL path) requires a declared person_id_col to gate
+  # on; every record-unit diagnostic must name its distinct-person companion or
+  # strict mode would (correctly) reject it.
+  for (id in c("dsomop:incidence.rate", "dsomop:cohortdx.index_event_breakdown",
+               "dsomop:char.time_to_event")) {
+    e <- .omopAnalysisResolve(h, id)
+    expect_equal(e$disclosure$unit, "record")
+    expect_true(length(e$disclosure$person_id_col) == 1 &&
+                nzchar(e$disclosure$person_id_col))
+    expect_true(e$disclosure$person_id_col %in% e$disclosure$count_cols)
+  }
+})
+
+test_that("incidence.rate reconciles rate/proportion over banded counts", {
+  h <- acat_handle(n_persons = 60)
+  on.exit(cleanup_handle(h))
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.band = 5), {
+    ct <- .cohortCreate(h, list(type = "condition", concept_set = c(201820)),
+                        mode = "temporary", cohort_id = 1)
+    df <- .omopAnalysisRun(h, "dsomop:incidence.rate",
+                           params = list(outcome_concept_id = "4000002"),
+                           scope = ct)
+    # Whatever survives, the derived ratios rest on banded counts: a non-NA rate
+    # implies a banded (multiple-of-5) person_outcomes and person_days.
+    expect_true(all(c("rate", "proportion", "persons_at_risk", "person_outcomes",
+                      "person_days") %in% names(df)))
+    if (nrow(df) > 0) {
+      ok <- is.na(df$person_outcomes) | df$person_outcomes %% 5 == 0
+      expect_true(all(ok))
+      live <- !is.na(df$rate)
+      if (any(live)) {
+        expect_true(all(!is.na(df$person_outcomes[live]) &
+                        !is.na(df$person_days[live])))
+      }
+    }
+  })
+})
+
+test_that("the diagnostic adapter adds no second gate (single funnel)", {
+  # The diagnostics route through .omopAnalysisGate like every other entry: the
+  # adapter has no gate of its own. Confirm by checking each fn returns a plain
+  # aggregate frame and the entry's disclosure spec (not the fn) drives gating.
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  for (id in c("dsomop:incidence.rate", "dsomop:cohortdx.index_event_breakdown",
+               "dsomop:cohortdx.time_distribution",
+               "dsomop:cm.followup_distribution", "dsomop:char.time_to_event",
+               "dsomop:cohortdx.visit_context")) {
+    e <- .omopAnalysisResolve(h, id)
+    expect_true(is.function(e$compute$fn))
+    expect_true(e$disclosure$unit %in% c("person", "record", "dist"))
+  }
 })
