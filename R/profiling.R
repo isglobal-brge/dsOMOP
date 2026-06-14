@@ -115,6 +115,9 @@
   result <- list()
   settings <- .omopDisclosureSettings()
 
+  # Surviving counts are banded down (floor to nfilter_band) at the return
+  # boundary so an exact supra-threshold count is never released; the gate is
+  # still the exact count compared against nfilter_subset.
   if ("rows" %in% stats) {
     sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified)
     n_rows <- .executeQuery(handle, sql)$n[1]
@@ -122,7 +125,7 @@
       result$rows <- NA_real_
       result$rows_suppressed <- TRUE
     } else {
-      result$rows <- n_rows
+      result$rows <- .bandCount(n_rows, settings$nfilter_band)
       result$rows_suppressed <- FALSE
     }
   }
@@ -134,7 +137,7 @@
       result$persons <- NA_real_
       result$persons_suppressed <- TRUE
     } else {
-      result$persons <- n_persons
+      result$persons <- .bandCount(n_persons, settings$nfilter_band)
       result$persons_suppressed <- FALSE
     }
   }
@@ -271,6 +274,18 @@
     if (!safe_distinct) result$n_distinct <- NA_real_
   }
 
+  # Band the record/person counts at the return boundary (after the person gate
+  # and after the n_missing / n_distinct suppression, both of which depend on the
+  # EXACT totals). n_distinct is a distinct-value cardinality, not a person/record
+  # count, so it is not banded.
+  result$n_total <- .bandCount(result$n_total, settings$nfilter_band)
+  if (!is.na(result$n_missing)) {
+    result$n_missing <- .bandCount(result$n_missing, settings$nfilter_band)
+  }
+  if (has_person) {
+    result$n_persons <- .bandCount(result$n_persons, settings$nfilter_band)
+  }
+
   # Numeric stats if applicable
   col_type <- col_df$db_datatype[col_df$column_name == column][1]
   if (grepl("int|float|real|numeric|double|decimal", col_type) ||
@@ -345,7 +360,9 @@
     suppressed <- !is.na(n) && n < settings$nfilter_subset
     results <- rbind(results, data.frame(
       table_name = tbl_name,
-      n_persons = if (suppressed) NA_real_ else n,
+      # Band the surviving per-table person count at the return boundary; the
+      # gate above uses the exact count.
+      n_persons = if (suppressed) NA_real_ else .bandCount(n, settings$nfilter_band),
       suppressed = suppressed,
       stringsAsFactors = FALSE
     ))
@@ -554,6 +571,21 @@
     # no person_id to count.
     result <- .suppressSmallCounts(result,
                                    if (has_person) "n_persons" else "n")
+  }
+
+  # Band the surviving record/person counts at the return boundary so the exact
+  # per-value count (a differencing primitive) is never released. Suppression
+  # above (which drops rows on the EXACT count) and the level/person gates have
+  # already run on exact values.
+  band_width <- .omopDisclosureSettings()$nfilter_band
+  if (nrow(result) > 0) {
+    if ("n" %in% names(result)) {
+      result$n <- vapply(result$n, .bandCount, numeric(1), band_width = band_width)
+    }
+    if ("n_persons" %in% names(result)) {
+      result$n_persons <- vapply(result$n_persons, .bandCount, numeric(1),
+                                 band_width = band_width)
+    }
   }
 
   # Decorate categorical concept VALUES with human-readable names, so the row
@@ -996,6 +1028,15 @@
     names(result))
   out <- result[, out_cols, drop = FALSE]
   rownames(out) <- NULL
+
+  # Band the surviving per-concept counts at the return boundary (shared tail of
+  # both single-table and global prevalence). Small-cell suppression has already
+  # dropped rows on the EXACT counts; banding only the reported numbers destroys
+  # the 1-person resolution a differencing attack would read off the funnel.
+  band_width <- .omopDisclosureSettings()$nfilter_band
+  for (cc in intersect(c("n_persons", "n_records"), names(out))) {
+    out[[cc]] <- vapply(out[[cc]], .bandCount, numeric(1), band_width = band_width)
+  }
   out
 }
 
@@ -1667,6 +1708,13 @@
   if (!is.null(cinfo) && nrow(cinfo) > 0) {
     concept_name <- cinfo$concept_name[1]
   }
+
+  # Band the reported record/person counts at the return boundary. The person
+  # gate, the small-cell suppression, and the ratios above (records_per_person,
+  # pct_persons_multi) were all computed from the EXACT counts (summary_raw);
+  # only the two reported counts are banded.
+  n_records <- .bandCount(n_records, settings$nfilter_band)
+  if (has_person) n_persons <- .bandCount(n_persons, settings$nfilter_band)
 
   summary_out <- list(
     concept_id = concept_id,

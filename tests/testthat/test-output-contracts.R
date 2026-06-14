@@ -310,6 +310,76 @@ test_that("survival output produces correct event/censoring", {
   })
 })
 
+test_that("survival output applies output$filters$custom to outcome events", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  base_plan <- function(custom = NULL) {
+    out <- list(
+      type = "survival",
+      outcome = list(table = "condition_occurrence", concept_set = c(4000002)),
+      tar = list(start_offset = 0, end_offset = 730),
+      event_order = "first"
+    )
+    if (!is.null(custom)) out$filters <- list(custom = custom)
+    p <- list(
+      cohort = list(type = "cohort_table", cohort_definition_id = 1),
+      outputs = list(tte = out),
+      options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+    )
+    class(p) <- c("omop_plan", "list")
+    p
+  }
+
+  withr::with_options(list(nfilter.subset = 3), {
+    # Filter that MATCHES every MI row (all carry this type) -> events unchanged.
+    keep <- .planExecute(handle,
+      base_plan(list(var = "condition_type_concept_id", op = "in",
+                     value = list(44818518))),
+      list(tte = "tte_df"))$tte
+    expect_true(all(c(1, 5, 9) %in% keep$person_id[keep$event == 1]))
+
+    # Filter that matches NO row -> all members censored (filter narrowed events).
+    none <- .planExecute(handle,
+      base_plan(list(var = "condition_type_concept_id", op = "in",
+                     value = list(99999))),
+      list(tte = "tte_df"))$tte
+    expect_equal(nrow(none), 6)           # still one row per cohort member
+    expect_true(all(none$event == 0))     # but no qualifying outcome events
+  })
+})
+
+test_that("survival custom filter on an identifier column is rejected", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  plan <- list(
+    cohort = list(type = "cohort_table", cohort_definition_id = 1),
+    outputs = list(tte = list(
+      type = "survival",
+      outcome = list(table = "condition_occurrence", concept_set = c(4000002)),
+      tar = list(start_offset = 0, end_offset = 730),
+      # person_id is an identifier -> .assertCustomFilterSafe must fail-closed.
+      filters = list(custom = list(var = "person_id", op = "in",
+                                   value = list(1, 5)))
+    )),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  class(plan) <- c("omop_plan", "list")
+
+  withr::with_options(list(nfilter.subset = 3), {
+    # .planExecute wraps each output in tryCatch -> the disclosure error surfaces
+    # as a warning and the output is dropped (never returns filtered-by-id data).
+    expect_warning(
+      result <- .planExecute(handle, plan, list(tte = "tte_df")),
+      "not permitted"
+    )
+    expect_null(result$tte)
+  })
+})
+
 test_that("survival output requires cohort", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))

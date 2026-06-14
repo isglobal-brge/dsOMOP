@@ -9,7 +9,8 @@
   cohort_table,
   outcome,
   tar = NULL,
-  event_order = "first"
+  event_order = "first",
+  filters = NULL
 )
 }
 \arguments{
@@ -22,6 +23,12 @@
 \item{tar}{List with \code{start_offset} and \code{end_offset}}
 
 \item{event_order}{Character; "first" or "last"}
+
+\item{filters}{List; optional custom filter DSL tree narrowing which outcome
+events qualify (e.g. a value range). Validated fail-closed via
+\code{\link{.assertCustomFilterSafe}} and ANDed into the outcome-event
+SELECT. It only restricts events; the cohort (one row per member) and its
+distinct-person gate are unaffected, so this can never widen disclosure.}
 }
 \value{
 Data frame with row_id, person_id, event (0/1), time_to_event_days

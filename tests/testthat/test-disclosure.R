@@ -17,6 +17,27 @@ test_that("disclosure settings are read from options", {
   })
 })
 
+test_that("nfilter_band defaults to 5 and follows the option chain", {
+  # Default when no option is set.
+  withr::with_options(list(dsomop.nfilter.band = NULL,
+                           default.dsomop.nfilter.band = NULL), {
+    expect_equal(.omopDisclosureSettings()$nfilter_band, 5)
+  })
+  # Server-side override is honoured and is introspectable via the DS endpoint.
+  withr::with_options(list(dsomop.nfilter.band = 10), {
+    expect_equal(.omopDisclosureSettings()$nfilter_band, 10)
+    expect_equal(omopDisclosureSettingsDS()$nfilter_band, 10)
+  })
+})
+
+test_that(".bandCount honours a configurable band width and is idempotent", {
+  expect_equal(.bandCount(47, band_width = 10), 40)
+  expect_equal(.bandCount(47, band_width = 5), 45)
+  # Idempotent: re-banding an already-banded value to the same width is a no-op.
+  expect_equal(.bandCount(.bandCount(47, 5), 5), 45)
+  expect_equal(.bandCount(45, 5), 45)
+})
+
 test_that("assertMinPersons passes with enough persons", {
   withr::with_options(list(nfilter.subset = 3), {
     expect_invisible(.assertMinPersons(n_persons = 10))

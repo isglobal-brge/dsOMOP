@@ -49,6 +49,12 @@ direct option -> \code{default.*} prefix -> hardcoded fallback.
     percentile/quantile estimation. With fewer values, even clamped
     percentiles (p05/p95) can approximate min/max, leaking extreme
     individual values.}
+  \item{\code{nfilter_band} (default 5)}{Band width for count banding. Every
+    person/record count returned to the client is floored to a multiple of
+    this width (after the small-cell suppression gate) so that an exact
+    supra-threshold count is never released. This destroys the 1-person
+    resolution that differencing attacks exploit (e.g. a 50 -> 47 funnel
+    delta both report as 45). See \code{\link{.bandCount}}.}
 }
 }
 

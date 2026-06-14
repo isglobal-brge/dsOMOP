@@ -175,7 +175,7 @@
   # exploits is destroyed, and (2) audit-log the preview call (see
   # omopPlanPreviewDS) so the data controller can detect repeated/probing
   # previews that banding alone cannot stop. min/max are never returned.
-  band_width <- 5L
+  band_width <- settings$nfilter_band
 
   preview <- list(
     validation = validation,
@@ -1171,7 +1171,8 @@
             cohort_table = cohort_table,
             outcome = out$outcome,
             tar = out$tar,
-            event_order = out$event_order %||% "first"
+            event_order = out$event_order %||% "first",
+            filters = out$filters$custom
           )
         }
 

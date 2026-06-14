@@ -46,6 +46,12 @@
 #'     percentile/quantile estimation. With fewer values, even clamped
 #'     percentiles (p05/p95) can approximate min/max, leaking extreme
 #'     individual values.}
+#'   \item{\code{nfilter_band} (default 5)}{Band width for count banding. Every
+#'     person/record count returned to the client is floored to a multiple of
+#'     this width (after the small-cell suppression gate) so that an exact
+#'     supra-threshold count is never released. This destroys the 1-person
+#'     resolution that differencing attacks exploit (e.g. a 50 -> 47 funnel
+#'     delta both report as 45). See \code{\link{.bandCount}}.}
 #' }
 #'
 #' @section Server-Gated Opt-Out Permissions:
@@ -87,6 +93,8 @@
                                 getOption("default.dsomop.query_strict", TRUE))),
     nfilter_dist         = as.numeric(getOption("dsomop.nfilter.dist",
                                 getOption("default.dsomop.nfilter.dist", 10))),
+    nfilter_band         = as.numeric(getOption("dsomop.nfilter.band",
+                                getOption("default.dsomop.nfilter.band", 5))),
     # --- Server-gated opt-out permissions ---
     # These default to FALSE (locked). Server admin must explicitly enable.
     allow_absolute_dates = as.logical(getOption("dsomop.allow_absolute_dates",
@@ -160,8 +168,17 @@
 #' nearest — guarantees the reported value never exceeds the true count, so
 #' the band can never imply more persons than actually exist.
 #'
+#' The band width comes from the \code{nfilter_band} disclosure setting (default
+#' 5), so it is server-configurable and introspectable via
+#' \code{\link{.omopDisclosureSettings}} / \code{omopDisclosureSettingsDS()}.
+#' Banding is idempotent: flooring an already-banded value to the same width is a
+#' no-op (e.g. \code{.bandCount(45) == 45}), so a value may be passed through
+#' more than once without drift.
+#'
 #' @param n Numeric; the exact count (may be NA)
-#' @param band_width Integer; band granularity (default 5, minimum 1)
+#' @param band_width Integer; band granularity (default 5, minimum 1). Callers
+#'   normally pass \code{settings$nfilter_band} so a single server option governs
+#'   every banded count.
 #' @return Banded count (multiple of \code{band_width}), or NA if \code{n} is NA
 #' @keywords internal
 .bandCount <- function(n, band_width = 5L) {

@@ -9,7 +9,9 @@
 \arguments{
 \item{n}{Numeric; the exact count (may be NA)}
 
-\item{band_width}{Integer; band granularity (default 5, minimum 1)}
+\item{band_width}{Integer; band granularity (default 5, minimum 1). Callers
+normally pass \code{settings$nfilter_band} so a single server option governs
+every banded count.}
 }
 \value{
 Banded count (multiple of \code{band_width}), or NA if \code{n} is NA
@@ -25,5 +27,13 @@ no single count was ever below threshold. Rounding DOWN to a fixed band
 45, so the delta is no longer observable. Rounding down (floor) — never to
 nearest — guarantees the reported value never exceeds the true count, so
 the band can never imply more persons than actually exist.
+}
+\details{
+The band width comes from the \code{nfilter_band} disclosure setting (default
+5), so it is server-configurable and introspectable via
+\code{\link{.omopDisclosureSettings}} / \code{omopDisclosureSettingsDS()}.
+Banding is idempotent: flooring an already-banded value to the same width is a
+no-op (e.g. \code{.bandCount(45) == 45}), so a value may be passed through
+more than once without drift.
 }
 \keyword{internal}

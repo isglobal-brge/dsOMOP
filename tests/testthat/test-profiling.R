@@ -227,3 +227,86 @@ test_that("numeric-distribution profilers still return for >= nfilter persons", 
                             concept_id = 9990002L), "list")
   })
 })
+
+# --- Differencing defence: every returned person/record count is banded -------
+# Counts surviving the suppression gate are floored to a multiple of nfilter_band
+# (default 5) so an exact supra-threshold count is never returned. The gate must
+# still compare the TRUE distinct-person count to nfilter_subset, not the banded
+# value (banded reports, exact gates).
+
+test_that("profileTableStats bands surviving rows/persons to a multiple of 5", {
+  handle <- create_test_handle(n_persons = 13)  # 13 -> floors to 10
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3), {
+    res <- .profileTableStats(handle, "person", stats = c("rows", "persons"))
+    expect_equal(res$rows, 10)
+    expect_equal(res$persons, 10)
+    expect_equal(res$persons %% 5, 0)
+    expect_false(res$persons_suppressed)
+  })
+})
+
+test_that("profileColumnStats bands n_total / n_persons (not the mean)", {
+  handle <- create_test_handle(n_persons = 13)
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3), {
+    res <- .profileColumnStats(handle, "person", "gender_concept_id")
+    expect_equal(res$n_total %% 5, 0)
+    expect_equal(res$n_persons, 10)   # 13 distinct persons -> 10
+  })
+})
+
+test_that("count gate uses the EXACT count while the report is banded", {
+  handle <- create_test_handle(n_persons = 13)
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  # Exact 13 >= subset 12 must PASS even though banded(13) = 10 < 12 ...
+  withr::with_options(list(nfilter.subset = 12, nfilter.tab = 3), {
+    res <- .profileTableStats(handle, "person", stats = c("persons"))
+    expect_false(res$persons_suppressed)
+    expect_equal(res$persons, 10)     # reported value is banded, gate is exact
+  })
+  # ... and exact 13 < subset 14 must BLOCK (proves the gate is not the band).
+  withr::with_options(list(nfilter.subset = 14, nfilter.tab = 3), {
+    expect_error(
+      .profileColumnStats(handle, "person", "gender_concept_id"),
+      "insufficient|Disclosive")
+  })
+})
+
+test_that("profileConceptPrevalence bands n_persons / n_records", {
+  handle <- create_test_handle(n_persons = 13)
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3), {
+    res <- .profileConceptPrevalence(handle, "condition_occurrence",
+                                     metric = "persons")
+    skip_if(nrow(res) == 0, "no prevalence rows in fixture")
+    np <- res$n_persons[!is.na(res$n_persons)]
+    nr <- res$n_records[!is.na(res$n_records)]
+    expect_true(all(np %% 5 == 0))
+    expect_true(all(nr %% 5 == 0))
+  })
+})
+
+test_that("profileValueCounts bands the per-value n / n_persons", {
+  handle <- create_test_handle(n_persons = 13)
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  withr::with_options(list(nfilter.tab = 3, nfilter.levels.max = 40,
+                           nfilter.levels.density = 0.9), {
+    res <- .profileValueCounts(handle, "person", "gender_concept_id")
+    skip_if(nrow(res) == 0, "no value-count rows in fixture")
+    expect_true(all(res$n %% 5 == 0))
+    if ("n_persons" %in% names(res)) {
+      expect_true(all(res$n_persons %% 5 == 0))
+    }
+  })
+})

@@ -2565,10 +2565,15 @@
 #' @param outcome List with \code{table} and \code{concept_set}
 #' @param tar List with \code{start_offset} and \code{end_offset}
 #' @param event_order Character; "first" or "last"
+#' @param filters List; optional custom filter DSL tree narrowing which outcome
+#'   events qualify (e.g. a value range). Validated fail-closed via
+#'   \code{\link{.assertCustomFilterSafe}} and ANDed into the outcome-event
+#'   SELECT. It only restricts events; the cohort (one row per member) and its
+#'   distinct-person gate are unaffected, so this can never widen disclosure.
 #' @return Data frame with row_id, person_id, event (0/1), time_to_event_days
 #' @keywords internal
 .extractSurvival <- function(handle, cohort_table, outcome, tar = NULL,
-                              event_order = "first") {
+                              event_order = "first", filters = NULL) {
   if (is.null(cohort_table)) {
     warning("Survival output requires a cohort; returning NULL.", call. = FALSE)
     return(NULL)
@@ -2615,6 +2620,21 @@
     " INNER JOIN ", cohort_table, " AS c ON c.subject_id = t.person_id",
     " WHERE t.", concept_col, " IN (", concept_ids_str, ")"
   )
+
+  # Custom filter DSL on the outcome events. Validated fail-closed (identifier/
+  # blocked columns and narrow fingerprinting ops rejected) before any SQL is
+  # emitted, then ANDed onto the outcome WHERE (alias t). Only narrows the
+  # qualifying events; the cohort and its .assertMinPersons gate above are
+  # unaffected, so the suppression can never be bypassed.
+  if (!is.null(filters) && length(filters) > 0) {
+    valid_cols <- .filterableColumns(bp, outcome_table)
+    .assertCustomFilterSafe(filters, valid_cols)
+    filter_sql <- .compileFilter(handle, filters, "t", valid_cols)
+    if (!is.null(filter_sql) && nchar(filter_sql) > 0) {
+      outcome_sql <- paste0(outcome_sql, " AND ", filter_sql)
+    }
+  }
+
   outcome_df <- .executeQuery(handle, outcome_sql)
 
   # TAR boundaries

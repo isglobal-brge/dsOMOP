@@ -26,6 +26,20 @@ test_that("profileConceptDrilldown returns structured list", {
   })
 })
 
+test_that("profileConceptDrilldown bands n_records / n_persons", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  withr::with_options(list(nfilter.tab = 3, nfilter.subset = 3), {
+    # 6 persons have diabetes -> the reported person count is floored to 5; the
+    # disclosure gate still saw the exact 6. An exact count is never returned.
+    s <- .profileConceptDrilldown(handle, "condition_occurrence", 201820L)$summary
+    expect_equal(s$n_persons %% 5, 0)
+    expect_equal(s$n_records %% 5, 0)
+  })
+})
+
 test_that("profileConceptDrilldown returns numeric_summary for measurement", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
