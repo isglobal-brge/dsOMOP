@@ -844,21 +844,40 @@
   tbl_row <- blueprint$tables[blueprint$tables$table_name == table, , drop = FALSE]
   if (nrow(tbl_row) == 0) return(NULL)
 
-  prefix <- tbl_row$concept_prefix[1]
-  if (is.na(prefix) || nchar(prefix) == 0) return(NULL)
-
-  expected_col <- paste0(tolower(prefix), "_concept_id")
-
-  # Verify it exists
   cols <- blueprint$columns[[table]]
-  if (!is.null(cols) && expected_col %in% cols$column_name) {
-    return(expected_col)
+
+  prefix <- tbl_row$concept_prefix[1]
+  if (!is.na(prefix) && nchar(prefix) > 0) {
+    expected_col <- paste0(tolower(prefix), "_concept_id")
+    # Verify it exists
+    if (!is.null(cols) && expected_col %in% cols$column_name) {
+      return(expected_col)
+    }
   }
 
   # Fallback: look for the domain_concept role in columns
   if (!is.null(cols)) {
     domain_cols <- cols$column_name[cols$concept_role == "domain_concept"]
     if (length(domain_cols) > 0) return(domain_cols[1])
+  }
+
+  # Tables OHDSI gives no conceptPrefix for (person, death) have no single
+  # "domain" concept, so the prefix + role paths above both yield nothing and
+  # callers that auto-detect (prevalence/value-counts) would error. Provide a
+  # sensible DEFAULT concept column so those tables are explorable out of the
+  # box, while any other concept column on the table stays reachable via an
+  # explicit `concept_col`/`column` argument:
+  #   - person -> gender_concept_id (race/ethnicity selectable explicitly);
+  #   - death  -> cause_concept_id (CDM 5.4 has NO death_concept_id; the old
+  #     auto-detect looked for a non-existent column and failed).
+  default_concept <- switch(table,
+    person = "gender_concept_id",
+    death  = "cause_concept_id",
+    NULL
+  )
+  if (!is.null(default_concept) && !is.null(cols) &&
+      default_concept %in% cols$column_name) {
+    return(default_concept)
   }
 
   NULL

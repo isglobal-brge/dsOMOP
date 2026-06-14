@@ -113,10 +113,12 @@
 #' @param table Character; table name
 #' @param column Character; column name
 #' @param concept_id Integer or NULL; restrict to rows of this concept
+#' @param cohort_table Character; cohort temp table name to scope the
+#'   population (INNER JOIN on subject_id), or NULL.
 #' @return Named list with column statistics
 #' @keywords internal
 .profileColumnStats <- function(handle, table, column, concept_id = NULL,
-                                concept_col = NULL) {
+                                concept_col = NULL, cohort_table = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   column <- tolower(.validateIdentifier(column, "column"))
   bp <- .buildBlueprint(handle)
@@ -137,6 +139,18 @@
 
   qualified <- tbl_row$qualified_name[1]
   settings <- .omopDisclosureSettings()
+  has_person <- "person_id" %in% col_df$column_name
+
+  # FROM + optional cohort scope (INNER JOIN on subject_id, as in prevalence).
+  # Everything is computed over this scoped relation so the distinct-person gate
+  # below applies to exactly the population the statistics describe.
+  from_clause <- paste0(qualified, " AS t")
+  if (!is.null(cohort_table) && has_person) {
+    cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
+    from_clause <- paste0(from_clause,
+                          " INNER JOIN ", cohort_table, " AS coh",
+                          " ON t.person_id = coh.subject_id")
+  }
 
   # Optional concept scope: restrict every query to one concept of this table.
   # concept_col defaults to the domain concept but may override to scope by
@@ -148,23 +162,22 @@
       stop("Table '", table, "' has no concept column to scope by.",
            call. = FALSE)
     }
-    concept_filter <- paste0(ccol, " = ", as.integer(concept_id))
+    concept_filter <- paste0("t.", ccol, " = ", as.integer(concept_id))
   }
 
   # For person-bearing tables the disclosure gate must count DISTINCT persons,
   # not records: one person can contribute many rows, so a record count can sail
   # past the threshold while only a handful of individuals are involved.
-  has_person <- "person_id" %in% col_df$column_name
   sql <- paste0(
     "SELECT ",
     "COUNT(*) AS n_total, ",
-    if (has_person) "COUNT(DISTINCT person_id) AS n_persons, " else "",
-    "SUM(CASE WHEN ", column, " IS NULL THEN 1 ELSE 0 END) AS n_missing, ",
-    "COUNT(DISTINCT ", column, ") AS n_distinct ",
-    "FROM ", qualified,
+    if (has_person) "COUNT(DISTINCT t.person_id) AS n_persons, " else "",
+    "SUM(CASE WHEN t.", column, " IS NULL THEN 1 ELSE 0 END) AS n_missing, ",
+    "COUNT(DISTINCT t.", column, ") AS n_distinct ",
+    "FROM ", from_clause,
     if (!is.null(concept_filter)) paste0(" WHERE ", concept_filter) else ""
   )
-  stats_result <- .executeQuery(handle, sql)
+  stats_result <- .executeQuery(handle, .renderSql(handle, sql))
 
   result <- list(
     n_total = stats_result$n_total[1],
@@ -200,17 +213,40 @@
   col_type <- col_df$db_datatype[col_df$column_name == column][1]
   if (grepl("int|float|real|numeric|double|decimal", col_type) ||
       grepl("_as_number$|^quantity$|^range_|^dose_value$", column)) {
-    # Only compute mean — min/max are suppressed to prevent identification
-    # of outlier individuals (if min==max, a single person is identified)
+    # Disclosure-safe numeric summary: mean is always safe to release once the
+    # population gate above has passed; SD is added so the canonical summary is
+    # n, n_persons, %missing, mean, SD, clamped p05-p95 (still NO min/max, which
+    # would identify outlier individuals — if min==max a single person is
+    # identified). SD is computed over the same scoped, non-NULL relation as the
+    # mean and is only released when the non-NULL count clears nfilter_dist (the
+    # SAME small-sample floor that gates the quantiles): with a handful of values
+    # the spread is itself near-identifying, so it fails closed to NA.
     num_sql <- paste0(
-      "SELECT AVG(CAST(", column, " AS REAL)) AS mean_val ",
-      "FROM ", qualified,
-      " WHERE ", column, " IS NOT NULL",
+      "SELECT AVG(CAST(t.", column, " AS REAL)) AS mean_val, ",
+      "COUNT(t.", column, ") AS n_val, ",
+      "SUM(CAST(t.", column, " AS REAL) * CAST(t.", column, " AS REAL)) AS sumsq, ",
+      "SUM(CAST(t.", column, " AS REAL)) AS sumval ",
+      "FROM ", from_clause,
+      " WHERE t.", column, " IS NOT NULL",
       if (!is.null(concept_filter)) paste0(" AND ", concept_filter) else ""
     )
-    num_stats <- tryCatch(.executeQuery(handle, num_sql), error = function(e) NULL)
+    num_stats <- tryCatch(.executeQuery(handle, .renderSql(handle, num_sql)),
+                          error = function(e) NULL)
     if (!is.null(num_stats) && nrow(num_stats) > 0) {
       result$mean <- round(num_stats$mean_val[1], 4)
+      nfilter_dist <- settings$nfilter_dist %||% 10L
+      n_val <- num_stats$n_val[1]
+      # Sample SD from sums (sqrt((sumsq - n*mean^2)/(n-1))), gated by nfilter_dist.
+      if (!is.na(n_val) && n_val >= nfilter_dist && n_val > 1) {
+        mu <- num_stats$sumval[1] / n_val
+        var_num <- (num_stats$sumsq[1] - n_val * mu * mu) / (n_val - 1)
+        # Guard tiny negative variance from floating-point cancellation.
+        if (!is.na(var_num)) {
+          result$sd <- round(sqrt(max(var_num, 0)), 4)
+        }
+      } else {
+        result$sd <- NA_real_
+      }
     }
   }
 
@@ -261,9 +297,12 @@
 #' @param handle CDM handle
 #' @param table Character; table name
 #' @param columns Character vector; columns to check (NULL = all)
+#' @param cohort_table Character; cohort temp table name to scope the
+#'   population (INNER JOIN on subject_id), or NULL.
 #' @return Data frame with column_name and missing_rate
 #' @keywords internal
-.profileMissingness <- function(handle, table, columns = NULL) {
+.profileMissingness <- function(handle, table, columns = NULL,
+                                cohort_table = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   bp <- .buildBlueprint(handle)
 
@@ -284,18 +323,28 @@
 
   qualified <- tbl_row$qualified_name[1]
   settings <- .omopDisclosureSettings()
+  has_person <- "person_id" %in% col_df$column_name
 
-  total_sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified)
-  total <- .executeQuery(handle, total_sql)$n[1]
+  # FROM + optional cohort scope (INNER JOIN on subject_id, as in prevalence).
+  from_clause <- paste0(qualified, " AS t")
+  if (!is.null(cohort_table) && has_person) {
+    cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
+    from_clause <- paste0(from_clause,
+                          " INNER JOIN ", cohort_table, " AS coh",
+                          " ON t.person_id = coh.subject_id")
+  }
+
+  total_sql <- paste0("SELECT COUNT(*) AS n FROM ", from_clause)
+  total <- .executeQuery(handle, .renderSql(handle, total_sql))$n[1]
 
   # Disclosure gate on DISTINCT persons (fail-closed) for person-bearing tables:
   # a record count can clear the threshold while only a few individuals exist.
   # The per-record missing rate below is still record-based (that is what the
   # statistic means), but it is only released once the population is large enough.
-  has_person <- "person_id" %in% col_df$column_name
   if (has_person) {
-    persons_sql <- paste0("SELECT COUNT(DISTINCT person_id) AS n FROM ", qualified)
-    gate_n <- .executeQuery(handle, persons_sql)$n[1]
+    persons_sql <- paste0("SELECT COUNT(DISTINCT t.person_id) AS n FROM ",
+                          from_clause)
+    gate_n <- .executeQuery(handle, .renderSql(handle, persons_sql))$n[1]
   } else {
     gate_n <- total
   }
@@ -311,10 +360,10 @@
 
   for (col in columns) {
     sql <- paste0(
-      "SELECT COUNT(*) AS n_missing FROM ", qualified,
-      " WHERE ", col, " IS NULL"
+      "SELECT COUNT(*) AS n_missing FROM ", from_clause,
+      " WHERE t.", col, " IS NULL"
     )
-    n_missing <- .executeQuery(handle, sql)$n_missing[1]
+    n_missing <- .executeQuery(handle, .renderSql(handle, sql))$n_missing[1]
     # Suppress near-0/near-1 rates: a tiny number of NULL or non-NULL rows
     # pinpoints the few individuals in that column.
     if (!is.na(n_missing) &&
@@ -342,11 +391,13 @@
 #' @param top_n Integer; number of top values to return
 #' @param suppress_small Logical; suppress counts below nfilter.tab
 #' @param concept_id Integer or NULL; restrict to rows of this concept
+#' @param cohort_table Character; cohort temp table name to scope the
+#'   population (INNER JOIN on subject_id), or NULL.
 #' @return Data frame with value and count columns
 #' @keywords internal
 .profileValueCounts <- function(handle, table, column, top_n = 20,
                                  suppress_small = TRUE, concept_id = NULL,
-                                 concept_col = NULL) {
+                                 concept_col = NULL, cohort_table = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   column <- tolower(.validateIdentifier(column, "column"))
   bp <- .buildBlueprint(handle)
@@ -365,6 +416,16 @@
   }
 
   qualified <- tbl_row$qualified_name[1]
+  has_person <- "person_id" %in% col_df$column_name
+
+  # FROM + optional cohort scope (INNER JOIN on subject_id, as in prevalence).
+  from_clause <- paste0(qualified, " AS t")
+  if (!is.null(cohort_table) && has_person) {
+    cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
+    from_clause <- paste0(from_clause,
+                          " INNER JOIN ", cohort_table, " AS coh",
+                          " ON t.person_id = coh.subject_id")
+  }
 
   # Optional concept scope: restrict every query to one concept of this table.
   # concept_col defaults to the domain concept but may override to scope by
@@ -376,19 +437,30 @@
       stop("Table '", table, "' has no concept column to scope by.",
            call. = FALSE)
     }
-    concept_filter <- paste0(" AND ", ccol, " = ", as.integer(concept_id))
+    concept_filter <- paste0(" AND t.", ccol, " = ", as.integer(concept_id))
   }
   concept_clause <- concept_filter %||% ""
 
-  n_total_sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified,
-                        " WHERE ", column, " IS NOT NULL", concept_clause)
-  n_total <- .executeQuery(handle, n_total_sql)$n[1]
+  # Distinct-person gate over the SCOPED population (fail-closed) for
+  # person-bearing tables, so a too-small (e.g. tightly cohort-scoped) population
+  # cannot leak its value distribution at all.
+  if (has_person) {
+    persons_sql <- paste0(
+      "SELECT COUNT(DISTINCT t.person_id) AS n FROM ", from_clause,
+      " WHERE t.", column, " IS NOT NULL", concept_clause)
+    n_persons_scoped <- .executeQuery(handle, .renderSql(handle, persons_sql))$n[1]
+    .assertMinPersons(n_persons = n_persons_scoped)
+  }
+
+  n_total_sql <- paste0("SELECT COUNT(*) AS n FROM ", from_clause,
+                        " WHERE t.", column, " IS NOT NULL", concept_clause)
+  n_total <- .executeQuery(handle, .renderSql(handle, n_total_sql))$n[1]
 
   n_levels_sql <- paste0(
-    "SELECT COUNT(DISTINCT ", column, ") AS n FROM ", qualified,
-    " WHERE ", column, " IS NOT NULL", concept_clause
+    "SELECT COUNT(DISTINCT t.", column, ") AS n FROM ", from_clause,
+    " WHERE t.", column, " IS NOT NULL", concept_clause
   )
-  n_levels <- .executeQuery(handle, n_levels_sql)$n[1]
+  n_levels <- .executeQuery(handle, .renderSql(handle, n_levels_sql))$n[1]
 
   .assertSafeLevels(n_levels, n_total)
 
@@ -396,16 +468,15 @@
   # each value and suppress on THAT, not on the record count: a value backed by
   # many records but only one or two individuals is disclosive and must be
   # dropped. The record count (n) is retained as a separate column.
-  has_person <- "person_id" %in% col_df$column_name
   effective_limit <- min(as.integer(top_n), 500L)
   sql <- paste0(
     "SELECT TOP ", effective_limit,
-    " CAST(", column, " AS VARCHAR) AS value, ",
+    " CAST(t.", column, " AS VARCHAR) AS value, ",
     "COUNT(*) AS n",
-    if (has_person) ", COUNT(DISTINCT person_id) AS n_persons " else " ",
-    "FROM ", qualified, " ",
-    "WHERE ", column, " IS NOT NULL", concept_clause, " ",
-    "GROUP BY ", column, " ",
+    if (has_person) ", COUNT(DISTINCT t.person_id) AS n_persons " else " ",
+    "FROM ", from_clause, " ",
+    "WHERE t.", column, " IS NOT NULL", concept_clause, " ",
+    "GROUP BY t.", column, " ",
     "ORDER BY COUNT(*) DESC"
   )
 
@@ -572,70 +643,72 @@
 
 # --- Exploration Profiling (OMOP Studio) ---
 
-#' Get top concepts in a table by person count or record count
+#' Build a dialect-aware LIMIT ... OFFSET ... suffix for paginated reads
 #'
-#' @param handle CDM handle
-#' @param table Character; table name
-#' @param concept_col Character; concept column name (NULL = auto-detect)
-#' @param metric Character; "persons" or "records"
-#' @param top_n Integer; number of top concepts to return
-#' @param cohort_table Character; cohort temp table name for filtering (NULL)
-#' @param window List with start and end dates for filtering (NULL)
-#' @return Data frame with concept_id, concept_name, n_persons, n_records
+#' The package's bespoke \code{.translate_top} converts \code{SELECT TOP n} to a
+#' trailing \code{LIMIT n}, which cannot express an OFFSET (and would emit an
+#' invalid \code{OFFSET m LIMIT n} ordering if one were spliced in earlier). For
+#' the paginated prevalence path we therefore bypass \code{TOP} and append the
+#' page window ourselves AFTER rendering. Only \code{limit}/\code{offset} are
+#' interpolated and both are coerced to non-negative integers, so this never
+#' carries user text into SQL.
+#'
+#' @param dialect Character; \code{handle$target_dialect}.
+#' @param limit Integer; page size.
+#' @param offset Integer; rows to skip.
+#' @return Character SQL suffix (leading space included).
 #' @keywords internal
-.profileConceptPrevalence <- function(handle, table, concept_col = NULL,
-                                       metric = "persons", top_n = 50L,
-                                       cohort_table = NULL, window = NULL) {
-  table <- tolower(.validateIdentifier(table, "table"))
-  bp <- .buildBlueprint(handle)
-  settings <- .omopDisclosureSettings()
+.paginationClause <- function(dialect, limit, offset) {
+  limit <- max(as.integer(limit), 0L)
+  offset <- max(as.integer(offset), 0L)
+  if (identical(dialect, "sql server") || identical(dialect, "oracle")) {
+    # ANSI offset-fetch (SQL Server 2012+, Oracle 12c+). Requires an ORDER BY,
+    # which the prevalence query always supplies.
+    return(paste0(" OFFSET ", offset, " ROWS FETCH NEXT ", limit,
+                  " ROWS ONLY"))
+  }
+  # sqlite / postgresql / redshift / spark / mysql / bigquery: LIMIT n OFFSET m.
+  paste0(" LIMIT ", limit, " OFFSET ", offset)
+}
 
+#' Aggregate concept prevalence for ONE clinical table (engine)
+#'
+#' Shared core used by both single-table and GLOBAL prevalence. Returns the raw,
+#' un-decorated aggregate (concept_id, n_persons?, n_records) for one table with
+#' the page window applied, plus a \code{source_table} tag. Performs NO concept
+#' decoration and NO small-cell suppression — the caller owns those so a global
+#' run decorates/suppresses ONCE over the merged set. The per-table population
+#' gate (\code{.assertMinPersons} on the table's distinct persons) still runs
+#' here so a too-small table never contributes rows.
+#'
+#' @keywords internal
+.prevalenceOneTable <- function(handle, bp, table, concept_col, metric,
+                                 limit, offset, cohort_table, window,
+                                 gate = TRUE) {
   tbl_row <- bp$tables[bp$tables$table_name == table & bp$tables$present_in_db, ,
                        drop = FALSE]
-  if (nrow(tbl_row) == 0) stop("Table '", table, "' not found.", call. = FALSE)
-
+  if (nrow(tbl_row) == 0) return(NULL)
   qualified <- tbl_row$qualified_name[1]
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
 
-  # Auto-detect concept column if not provided
   if (is.null(concept_col)) {
     concept_col <- .getDomainConceptColumn(bp, table)
-    if (is.null(concept_col)) {
-      stop("No domain concept column found for table '", table,
-           "'. Provide concept_col explicitly.", call. = FALSE)
-    }
-  } else {
-    concept_col <- tolower(.validateIdentifier(concept_col, "column"))
+    if (is.null(concept_col)) return(NULL)
   }
+  if (!concept_col %in% tbl_cols) return(NULL)
 
-  if (!concept_col %in% tbl_cols) {
-    stop("Column '", concept_col, "' not found in '", table, "'.", call. = FALSE)
-  }
+  has_person <- "person_id" %in% tbl_cols
 
-  metric <- match.arg(metric, c("persons", "records"))
-  effective_top_n <- min(as.integer(top_n), 500L)
-
-  # Check minimum person count before returning any data
-  if ("person_id" %in% tbl_cols) {
-    person_count_sql <- paste0("SELECT COUNT(DISTINCT person_id) AS n FROM ", qualified)
-    n_total_persons <- .executeQuery(handle, person_count_sql)$n[1]
-    .assertMinPersons(n_persons = n_total_persons)
-  }
-
-  # Build FROM / JOIN clauses
+  # FROM / cohort join / window (same shape as the legacy single-table path).
   from_clause <- paste0(qualified, " AS t")
-  where_parts <- character(0)
-
-  # Cohort join
-  if (!is.null(cohort_table) && "person_id" %in% tbl_cols) {
+  if (!is.null(cohort_table) && has_person) {
     cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
     from_clause <- paste0(from_clause,
                           " INNER JOIN ", cohort_table, " AS coh",
                           " ON t.person_id = coh.subject_id")
   }
-
-  # Time window filter
+  where_parts <- character(0)
   if (!is.null(window)) {
     date_col <- .getDateColumn(bp, table)
     if (!is.null(date_col)) {
@@ -649,26 +722,29 @@
       }
     }
   }
+  where_sql <- if (length(where_parts) > 0) {
+    paste0(" WHERE ", paste(where_parts, collapse = " AND "))
+  } else ""
 
-  where_sql <- ""
-  if (length(where_parts) > 0) {
-    where_sql <- paste0(" WHERE ", paste(where_parts, collapse = " AND "))
+  # Per-table population gate on the SCOPED population (fail-closed).
+  if (gate && has_person) {
+    pc_sql <- paste0("SELECT COUNT(DISTINCT t.person_id) AS n FROM ",
+                     from_clause, where_sql)
+    n_total_persons <- .executeQuery(handle, .renderSql(handle, pc_sql))$n[1]
+    .assertMinPersons(n_persons = n_total_persons)
   }
 
-  # Build main aggregation query
   order_col <- if (metric == "persons") "n_persons" else "n_records"
-
-  if ("person_id" %in% tbl_cols) {
+  if (has_person) {
     select_expr <- paste0(
-      "SELECT TOP ", effective_top_n, " t.", concept_col, " AS concept_id, ",
+      "SELECT t.", concept_col, " AS concept_id, ",
       "COUNT(DISTINCT t.person_id) AS n_persons, ",
-      "COUNT(*) AS n_records"
-    )
+      "COUNT(*) AS n_records")
   } else {
+    order_col <- "n_records"
     select_expr <- paste0(
-      "SELECT TOP ", effective_top_n, " t.", concept_col, " AS concept_id, ",
-      "COUNT(*) AS n_records"
-    )
+      "SELECT t.", concept_col, " AS concept_id, ",
+      "COUNT(*) AS n_records")
   }
 
   sql <- paste0(
@@ -676,24 +752,151 @@
     " FROM ", from_clause,
     where_sql,
     " GROUP BY t.", concept_col,
-    " ORDER BY ", order_col, " DESC"
-  )
+    " ORDER BY ", order_col, " DESC")
 
-  translated <- .renderSql(handle, sql)
+  # Pagination is applied AFTER rendering (see .paginationClause): bypass TOP so
+  # offset is expressible. The window is bounded by effective_top_n upstream.
+  translated <- paste0(.renderSql(handle, sql),
+                       .paginationClause(handle$target_dialect, limit, offset))
   result <- DBI::dbGetQuery(handle$conn, translated)
   names(result) <- tolower(names(result))
   result <- .coerce_integer64(result)
+  if (nrow(result) == 0) return(NULL)
+  if (!"n_persons" %in% names(result)) result$n_persons <- NA_real_
+  result$source_table <- table
+  result
+}
 
-  if (nrow(result) == 0) {
+#' Get top concepts in a table by person count or record count
+#'
+#' @param handle CDM handle
+#' @param table Character; table name. Ignored when \code{global = TRUE}.
+#' @param concept_col Character; concept column name (NULL = auto-detect)
+#' @param metric Character; "persons" or "records"
+#' @param top_n Integer; page size (number of top concepts to return)
+#' @param cohort_table Character; cohort temp table name for filtering (NULL)
+#' @param window List with start and end dates for filtering (NULL)
+#' @param offset Integer; number of leading concepts to skip (pagination). The
+#'   page is \code{[offset+1 .. offset+top_n]} of the descending-prevalence
+#'   ranking; lift the legacy 500-row hard cap by walking pages.
+#' @param global Logical; when TRUE, rank concepts across ALL clinical tables
+#'   (every table with a domain concept column), person-gated per table and
+#'   suppressed over the merged set, rather than a single table.
+#' @return Data frame with concept_id, concept_name, n_persons, n_records (plus
+#'   source_table when \code{global = TRUE}).
+#' @keywords internal
+.profileConceptPrevalence <- function(handle, table, concept_col = NULL,
+                                       metric = "persons", top_n = 50L,
+                                       cohort_table = NULL, window = NULL,
+                                       offset = 0L, global = FALSE) {
+  bp <- .buildBlueprint(handle)
+  settings <- .omopDisclosureSettings()
+  metric <- match.arg(metric, c("persons", "records"))
+  effective_top_n <- min(as.integer(top_n), 500L)
+  offset <- max(as.integer(offset %||% 0L), 0L)
+
+  if (!is.null(concept_col)) {
+    concept_col <- tolower(.validateIdentifier(concept_col, "column"))
+  }
+  if (!is.null(cohort_table)) {
+    cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
+  }
+
+  # --- GLOBAL mode: rank across all clinical (person-bearing CDM) tables ------
+  # Each table is gated and paged independently, then the union is re-ranked and
+  # the requested page is taken. To make the global page correct we must pull
+  # enough rows per table to cover offset+top_n of the merged ranking, so we read
+  # the top (offset+top_n) of EACH table (still bounded), merge, re-rank, slice.
+  if (isTRUE(global)) {
+    clinical <- bp$tables[bp$tables$present_in_db & bp$tables$has_person_id &
+                            bp$tables$schema_category == "CDM", , drop = FALSE]
+    page_each <- min(offset + effective_top_n, 500L)
+    parts <- list()
+    for (tn in clinical$table_name) {
+      cc <- .getDomainConceptColumn(bp, tn)
+      if (is.null(cc)) next
+      one <- tryCatch(
+        .prevalenceOneTable(handle, bp, tn, cc, metric,
+                            limit = page_each, offset = 0L,
+                            cohort_table = cohort_table, window = window,
+                            gate = TRUE),
+        error = function(e) NULL)  # a too-small table is omitted, not fatal
+      if (!is.null(one)) parts[[tn]] <- one
+    }
+    if (length(parts) == 0) {
+      return(data.frame(concept_id = integer(0), concept_name = character(0),
+                        n_persons = numeric(0), n_records = numeric(0),
+                        source_table = character(0), stringsAsFactors = FALSE))
+    }
+    result <- do.call(rbind, parts)
+    # Suppress small cells over the MERGED set (drops rows), then re-rank + page.
+    result <- .suppressSmallCounts(result, c("n_persons", "n_records"))
+    if (nrow(result) == 0) {
+      return(data.frame(concept_id = integer(0), concept_name = character(0),
+                        n_persons = numeric(0), n_records = numeric(0),
+                        source_table = character(0), stringsAsFactors = FALSE))
+    }
+    ord_col <- if (metric == "persons") "n_persons" else "n_records"
+    result <- result[order(-result[[ord_col]]), , drop = FALSE]
+    take <- seq_len(min(nrow(result), effective_top_n)) + offset
+    take <- take[take <= nrow(result)]
+    result <- result[take, , drop = FALSE]
+    rownames(result) <- NULL
+    return(.decoratePrevalence(handle, result, include_source = TRUE))
+  }
+
+  # --- Single-table mode -----------------------------------------------------
+  table <- tolower(.validateIdentifier(table, "table"))
+  tbl_row <- bp$tables[bp$tables$table_name == table & bp$tables$present_in_db, ,
+                       drop = FALSE]
+  if (nrow(tbl_row) == 0) stop("Table '", table, "' not found.", call. = FALSE)
+  col_df <- bp$columns[[table]]
+  tbl_cols <- col_df$column_name
+
+  if (is.null(concept_col)) {
+    concept_col <- .getDomainConceptColumn(bp, table)
+    if (is.null(concept_col)) {
+      stop("No domain concept column found for table '", table,
+           "'. Provide concept_col explicitly.", call. = FALSE)
+    }
+  }
+  if (!concept_col %in% tbl_cols) {
+    stop("Column '", concept_col, "' not found in '", table, "'.", call. = FALSE)
+  }
+
+  result <- .prevalenceOneTable(handle, bp, table, concept_col, metric,
+                                limit = effective_top_n, offset = offset,
+                                cohort_table = cohort_table, window = window,
+                                gate = TRUE)
+  if (is.null(result) || nrow(result) == 0) {
     return(data.frame(concept_id = integer(0), concept_name = character(0),
                       n_persons = numeric(0), n_records = numeric(0),
                       stringsAsFactors = FALSE))
   }
+  result$source_table <- NULL
 
   # Suppress small counts (drops rows)
   result <- .suppressSmallCounts(result, c("n_persons", "n_records"))
 
-  # Decorate with concept names from vocabulary
+  .decoratePrevalence(handle, result, include_source = FALSE)
+}
+
+#' Decorate a prevalence aggregate with concept names + fix column order
+#'
+#' Shared tail of \code{\link{.profileConceptPrevalence}} for both single-table
+#' and global modes: looks up human-readable concept names from the vocabulary
+#' and returns the canonical column order. \code{include_source} keeps the
+#' \code{source_table} column for global runs.
+#'
+#' @keywords internal
+.decoratePrevalence <- function(handle, result, include_source = FALSE) {
+  if (is.null(result) || nrow(result) == 0) {
+    base <- data.frame(concept_id = integer(0), concept_name = character(0),
+                       n_persons = numeric(0), n_records = numeric(0),
+                       stringsAsFactors = FALSE)
+    if (include_source) base$source_table <- character(0)
+    return(base)
+  }
   concept_ids <- result$concept_id[!is.na(result$concept_id)]
   if (length(concept_ids) > 0) {
     concepts <- tryCatch(
@@ -714,10 +917,13 @@
     result$concept_name <- ""
   }
 
-  # Ensure consistent column order
-  out_cols <- intersect(c("concept_id", "concept_name", "n_persons", "n_records"),
-                        names(result))
-  result[, out_cols, drop = FALSE]
+  out_cols <- intersect(
+    c("concept_id", "concept_name", "n_persons", "n_records",
+      if (include_source) "source_table"),
+    names(result))
+  out <- result[, out_cols, drop = FALSE]
+  rownames(out) <- NULL
+  out
 }
 
 #' Get the numeric range (p05/p95) for a column

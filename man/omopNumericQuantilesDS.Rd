@@ -13,7 +13,8 @@ omopNumericQuantilesDS(
   window = NULL,
   rounding = 2L,
   concept_id = NULL,
-  concept_col = NULL
+  concept_col = NULL,
+  cohort = NULL
 )
 }
 \arguments{

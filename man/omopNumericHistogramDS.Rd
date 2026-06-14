@@ -13,7 +13,8 @@ omopNumericHistogramDS(
   window = NULL,
   breaks = NULL,
   concept_id = NULL,
-  concept_col = NULL
+  concept_col = NULL,
+  cohort = NULL
 )
 }
 \arguments{

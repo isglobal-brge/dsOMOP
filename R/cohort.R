@@ -369,3 +369,173 @@
 
   cohort_temp
 }
+
+#' Resolve a cohort reference to a server-side cohort temp table (population scope)
+#'
+#' Single entry point that turns the various ways a caller may name a cohort into
+#' a materialized temp table whose \code{subject_id} column can be INNER-JOINed by
+#' the exploration aggregates to scope a population. Accepts:
+#' \itemize{
+#'   \item \code{NULL} -> returns \code{NULL} (no scoping).
+#'   \item a character string already naming a server-side cohort temp table
+#'     (e.g. one returned by \code{\link{.cohortCreate}}, \code{.cohortCombine},
+#'     or \code{\link{omopCohortFromTableDS}}) -> validated and returned as-is.
+#'   \item a numeric \code{cohort_definition_id} -> the matching rows of the
+#'     \code{cohort} results table are materialized into a temp table (mirrors the
+#'     \code{cohort_table} branch of \code{\link{.planExecute}}).
+#' }
+#' Every path that materializes (or is handed) a cohort is gated on its DISTINCT
+#' subject count via \code{\link{.assertMinPersons}} (fail-closed): a cohort with
+#' fewer than \code{nfilter_subset} persons can never be used to scope a query.
+#'
+#' @param handle CDM handle.
+#' @param cohort A cohort temp-table name (character), a cohort_definition_id
+#'   (numeric), or \code{NULL}.
+#' @return Character cohort temp table name, or \code{NULL} when \code{cohort} is
+#'   \code{NULL}.
+#' @keywords internal
+.resolveCohortTable <- function(handle, cohort) {
+  if (is.null(cohort)) return(NULL)
+
+  # A bare cohort_definition_id: materialize from the cohort results table, then
+  # gate on distinct subjects (same shape as .planExecute's cohort_table branch).
+  if (is.numeric(cohort) ||
+      (is.character(cohort) && length(cohort) == 1L &&
+       grepl("^[0-9]+$", cohort))) {
+    cid <- as.integer(cohort)
+    results_schema <- handle$results_schema %||% handle$cdm_schema
+    qualified <- .qualifyTable(handle, "cohort", results_schema)
+
+    cohort_sql <- paste0(
+      "SELECT DISTINCT subject_id, cohort_start_date, cohort_end_date",
+      " FROM ", qualified,
+      " WHERE cohort_definition_id = ", cid
+    )
+    temp_name <- paste0("dsomop_cohort_def_", cid)
+    .dropTempTable(handle, temp_name)
+    cohort_table <- .createTempTable(handle, temp_name, cohort_sql)
+
+    count_sql <- paste0(
+      "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort_table)
+    .assertMinPersons(conn = handle$conn, sql = count_sql)
+    return(cohort_table)
+  }
+
+  # An explicit server-side cohort temp table name. Validate as an identifier
+  # (defends the INNER JOIN splice) and re-gate on its distinct subjects so a
+  # too-small cohort table can never scope a query, regardless of how it was
+  # produced.
+  cohort_table <- .validateIdentifier(as.character(cohort), "cohort")
+  count_sql <- paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort_table)
+  .assertMinPersons(conn = handle$conn, sql = count_sql)
+  cohort_table
+}
+
+#' Materialize a cohort from the DISTINCT person tokens of a workspace omop.table
+#'
+#' Server engine for \code{\link{omopCohortFromTableDS}}. Given a token-keyed
+#' \code{omop.table} data.frame already living in the DataSHIELD session (e.g. a
+#' plan output, or a merge/filter result), it derives a reusable cohort temp
+#' table WITHOUT the client ever sending any identifier:
+#' \enumerate{
+#'   \item read the frame's DISTINCT non-NA person/subject TOKENS;
+#'   \item reverse them to the ORIGINAL CDM ids with the per-resource key via
+#'     \code{\link{.unhashPersonKey}} (server-only; the client cannot invert a
+#'     token);
+#'   \item gate the distinct ORIGINAL-id count with \code{\link{.assertMinPersons}}
+#'     (fail-closed) BEFORE materializing anything;
+#'   \item materialize a temp table of \code{subject_id} (original ids) joined to
+#'     \code{observation_period} for cohort start/end dates, mirroring the
+#'     filter-cohort branch of \code{\link{.planExecute}};
+#'   \item re-gate the materialized table on its distinct subjects.
+#' }
+#'
+#' @param handle CDM handle (provides \code{handle$person_key} and the
+#'   connection).
+#' @param x A token-keyed \code{omop.table} data.frame (resolved from a session
+#'   symbol by DataSHIELD).
+#' @param new_name Character; the cohort temp table name to create. When NULL a
+#'   random name is generated. The client passes a deterministic name so the
+#'   returned handle points at a table it can name in later \code{cohort=} calls
+#'   (mirrors \code{.cohortCombine}).
+#' @return Character; the cohort temp table name.
+#' @keywords internal
+.cohortFromTokenFrame <- function(handle, x, new_name = NULL) {
+  if (!.is_omop.table(x)) {
+    stop("omopCohortFromTableDS: input must be a dsOMOP table (omop.table).",
+         call. = FALSE)
+  }
+  keys <- intersect(.PERSON_KEY_COLS(), names(x))
+  if (length(keys) == 0L) {
+    stop("omopCohortFromTableDS: object has no person key; cannot build a cohort.",
+         call. = FALSE)
+  }
+  key <- if ("person_id" %in% keys) "person_id" else keys[[1]]
+
+  tokens <- x[[key]]
+  tokens <- unique(tokens[!is.na(tokens)])
+  if (length(tokens) == 0L) {
+    stop("omopCohortFromTableDS: no person tokens to build a cohort from.",
+         call. = FALSE)
+  }
+
+  if (is.null(handle$person_key)) {
+    stop("omopCohortFromTableDS: no person key available on this handle; ",
+         "cannot reverse tokens.", call. = FALSE)
+  }
+  # Reverse tokens -> ORIGINAL ids (server-only). Distinct tokens map 1:1 to
+  # distinct ids (the encryption is injective), so the distinct count is the
+  # number of real persons; gate on it BEFORE writing any table (fail-closed).
+  original_ids <- unique(.unhashPersonKey(tokens, handle$person_key))
+  original_ids <- original_ids[!is.na(original_ids)]
+  .assertMinPersons(n_persons = length(original_ids))
+
+  bp <- .buildBlueprint(handle)
+  ids_str <- .sqlIdList(original_ids)
+  temp_name <- if (!is.null(new_name)) {
+    .validateIdentifier(as.character(new_name), "cohort name")
+  } else {
+    paste0("dsomop_cohort_fromtbl_", sample(100000:999999, 1))
+  }
+  .dropTempTable(handle, temp_name)
+
+  # Prefer observation_period for cohort start/end dates (as .planExecute does);
+  # fall back to a bare subject_id cohort when the table is absent.
+  obs_table <- bp$tables[bp$tables$table_name == "observation_period" &
+                           bp$tables$present_in_db, , drop = FALSE]
+  if (nrow(obs_table) > 0) {
+    obs_qualified <- obs_table$qualified_name[1]
+    cohort_sql <- paste0(
+      "SELECT DISTINCT o.person_id AS subject_id, ",
+      "o.observation_period_start_date AS cohort_start_date, ",
+      "o.observation_period_end_date AS cohort_end_date ",
+      "FROM ", obs_qualified, " o ",
+      "WHERE o.person_id IN (", ids_str, ")"
+    )
+  } else {
+    person_table <- bp$tables[bp$tables$table_name == "person" &
+                                bp$tables$present_in_db, , drop = FALSE]
+    if (nrow(person_table) == 0) {
+      stop("omopCohortFromTableDS: neither observation_period nor person ",
+           "table is available to anchor the cohort.", call. = FALSE)
+    }
+    person_qualified <- person_table$qualified_name[1]
+    cohort_sql <- paste0(
+      "SELECT DISTINCT p.person_id AS subject_id ",
+      "FROM ", person_qualified, " p ",
+      "WHERE p.person_id IN (", ids_str, ")"
+    )
+  }
+
+  cohort_table <- .createTempTable(handle, temp_name, cohort_sql)
+
+  # Re-gate the materialized cohort on distinct subjects: if a token did not map
+  # to any in-DB person (or the join dropped rows) the producible cohort must
+  # still clear the threshold, else it is unusable and unproducible.
+  count_sql <- paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort_table)
+  .assertMinPersons(conn = handle$conn, sql = count_sql)
+
+  cohort_table
+}

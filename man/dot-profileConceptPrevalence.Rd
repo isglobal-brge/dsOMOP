@@ -11,26 +11,37 @@
   metric = "persons",
   top_n = 50L,
   cohort_table = NULL,
-  window = NULL
+  window = NULL,
+  offset = 0L,
+  global = FALSE
 )
 }
 \arguments{
 \item{handle}{CDM handle}
 
-\item{table}{Character; table name}
+\item{table}{Character; table name. Ignored when \code{global = TRUE}.}
 
 \item{concept_col}{Character; concept column name (NULL = auto-detect)}
 
 \item{metric}{Character; "persons" or "records"}
 
-\item{top_n}{Integer; number of top concepts to return}
+\item{top_n}{Integer; page size (number of top concepts to return)}
 
 \item{cohort_table}{Character; cohort temp table name for filtering (NULL)}
 
 \item{window}{List with start and end dates for filtering (NULL)}
+
+\item{offset}{Integer; number of leading concepts to skip (pagination). The
+page is \code{[offset+1 .. offset+top_n]} of the descending-prevalence
+ranking; lift the legacy 500-row hard cap by walking pages.}
+
+\item{global}{Logical; when TRUE, rank concepts across ALL clinical tables
+(every table with a domain concept column), person-gated per table and
+suppressed over the merged set, rather than a single table.}
 }
 \value{
-Data frame with concept_id, concept_name, n_persons, n_records
+Data frame with concept_id, concept_name, n_persons, n_records (plus
+  source_table when \code{global = TRUE}).
 }
 \description{
 Get top concepts in a table by person count or record count

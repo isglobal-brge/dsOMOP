@@ -6,31 +6,45 @@
 \usage{
 omopConceptPrevalenceDS(
   omop_symbol,
-  table,
+  table = NULL,
   concept_col = NULL,
   metric = "persons",
   top_n = 50,
   cohort_table = NULL,
-  window = NULL
+  window = NULL,
+  offset = 0L,
+  global = FALSE,
+  cohort = NULL
 )
 }
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
 
-\item{table}{Character; table name}
+\item{table}{Character; table name (ignored when \code{global = TRUE})}
 
 \item{concept_col}{Character; concept column name (NULL = auto-detect)}
 
 \item{metric}{Character; "persons" or "records"}
 
-\item{top_n}{Integer; number of top concepts to return}
+\item{top_n}{Integer; page size (number of top concepts to return)}
 
 \item{cohort_table}{Character; cohort temp table for filtering (NULL)}
 
 \item{window}{List with start/end dates for filtering (NULL)}
+
+\item{offset}{Integer; concepts to skip (pagination) so prevalence is not
+hard-capped at the legacy top_n=500 — page through with offset = 0, 500, ...}
+
+\item{global}{Logical; rank concepts across ALL clinical tables, person-gated
+per table and suppressed over the merged set (NULL/FALSE = single table)}
+
+\item{cohort}{Cohort scope: a cohort temp table name, a cohort_definition_id,
+or NULL. Takes precedence over \code{cohort_table}; resolved + re-gated
+server-side via \code{.resolveCohortTable}.}
 }
 \value{
-Data frame with concept_id, concept_name, n_persons, n_records
+Data frame with concept_id, concept_name, n_persons, n_records (plus
+  source_table when \code{global = TRUE})
 }
 \description{
 Returns the top concepts in a table ranked by person count or record count,

@@ -14,7 +14,8 @@ omopCrossTabDS(
   col_concept_ids = NULL,
   cohort_table = NULL,
   stratify_by = NULL,
-  band_margins = FALSE
+  band_margins = FALSE,
+  cohort = NULL
 )
 }
 \arguments{

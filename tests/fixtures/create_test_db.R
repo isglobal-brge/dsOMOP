@@ -368,6 +368,22 @@ create_test_omop_db_v53 <- function(n_persons = 15) {
   }
   write("procedure_occurrence", procedure_cols)
 
+  # death: a subset of persons die. CDM 5.4 spells the domain concept
+  # cause_concept_id (there is NO death_concept_id); used to exercise the
+  # death auto-detect fix and death prevalence/value-counts/quantiles.
+  death_persons <- keep(c(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L, 11L, 12L))
+  if (length(death_persons) > 0) {
+    write("death", data.frame(
+      person_id = death_persons,
+      death_date = rep("2021-03-15", length(death_persons)),
+      death_type_concept_id = rep(32817L, length(death_persons)),
+      cause_concept_id = rep(4000002L, length(death_persons)),
+      cause_source_value = rep("I21", length(death_persons)),
+      cause_source_concept_id = rep(0L, length(death_persons)),
+      stringsAsFactors = FALSE
+    ))
+  }
+
   if (identical(version, "5.4")) {
     write("location", data.frame(
       location_id = persons,

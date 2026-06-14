@@ -9,7 +9,8 @@
   table,
   column,
   concept_id = NULL,
-  concept_col = NULL
+  concept_col = NULL,
+  cohort_table = NULL
 )
 }
 \arguments{
@@ -20,6 +21,9 @@
 \item{column}{Character; column name}
 
 \item{concept_id}{Integer or NULL; restrict to rows of this concept}
+
+\item{cohort_table}{Character; cohort temp table name to scope the
+population (INNER JOIN on subject_id), or NULL.}
 }
 \value{
 Named list with column statistics

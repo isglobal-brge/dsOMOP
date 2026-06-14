@@ -9,7 +9,9 @@ omopColumnStatsDS(
   table,
   column,
   concept_id = NULL,
-  concept_col = NULL
+  concept_col = NULL,
+  cohort = NULL,
+  cohort_table = NULL
 )
 }
 \arguments{

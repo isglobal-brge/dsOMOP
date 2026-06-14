@@ -4,7 +4,7 @@
 \alias{.profileMissingness}
 \title{Get missingness rates for columns}
 \usage{
-.profileMissingness(handle, table, columns = NULL)
+.profileMissingness(handle, table, columns = NULL, cohort_table = NULL)
 }
 \arguments{
 \item{handle}{CDM handle}
@@ -12,6 +12,9 @@
 \item{table}{Character; table name}
 
 \item{columns}{Character vector; columns to check (NULL = all)}
+
+\item{cohort_table}{Character; cohort temp table name to scope the
+population (INNER JOIN on subject_id), or NULL.}
 }
 \value{
 Data frame with column_name and missing_rate

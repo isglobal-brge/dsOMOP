@@ -39,6 +39,34 @@
   x
 }
 
+#' Resolve the unified cohort scope argument for an exploration aggregate
+#'
+#' The exploration aggregates expose a single \code{cohort} argument that accepts
+#' the forms a caller may name a population by — a cohort temp table name
+#' (character), a cohort_definition_id (numeric/integer-like string), or NULL —
+#' plus the legacy \code{cohort_table} argument (an explicit temp table name).
+#' This unwraps both (DataSHIELD-decoding each), gives \code{cohort} precedence,
+#' and resolves the result to a materialized, size-checked cohort temp table via
+#' \code{\link{.resolveCohortTable}} (which re-gates on distinct subjects, so a
+#' too-small cohort can never scope a query). Returns a temp table NAME or NULL.
+#'
+#' @param handle CDM handle.
+#' @param cohort The unified \code{cohort} argument (or NULL).
+#' @param cohort_table The legacy \code{cohort_table} argument (or NULL).
+#' @return Character cohort temp table name, or NULL.
+#' @keywords internal
+.resolveCohortArg <- function(handle, cohort = NULL, cohort_table = NULL) {
+  cohort <- .ds_arg(cohort)
+  cohort_table <- .ds_arg(cohort_table)
+  # A list-wrapped scalar (from JSON transport) collapses to its first element.
+  if (is.list(cohort)) cohort <- if (length(cohort)) cohort[[1]] else NULL
+  if (is.list(cohort_table)) {
+    cohort_table <- if (length(cohort_table)) cohort_table[[1]] else NULL
+  }
+  scope <- cohort %||% cohort_table
+  .resolveCohortTable(handle, scope)
+}
+
 # --- Handle management ---
 
 #' Retrieve a stored OMOP CDM handle
@@ -506,6 +534,43 @@ omopCohortCombineDS <- function(omop_symbol, op,
   .cohortCombine(handle, op, cohort_a, cohort_b, new_name)
 }
 
+#' Build a cohort from a workspace omop.table's person tokens (Assign)
+#'
+#' @description
+#' Turns an existing server-side, token-keyed \code{omop.table} symbol (e.g. a
+#' plan output, or a merge/filter/bind result) into a reusable cohort temp table
+#' that subsequent exploration aggregates and plan executions can scope by. The
+#' CLIENT sends only the symbol NAME; the function reads the frame's DISTINCT
+#' person tokens, reverses them to original CDM ids SERVER-SIDE with the
+#' per-resource key (\code{\link{.unhashPersonKey}}), gates the distinct count
+#' (fail-closed), and materializes a size-checked cohort temp table of original
+#' ids (anchored on \code{observation_period} dates, as the plan path does).
+#'
+#' @param x A server-side \code{omop.table} data.frame (resolved from a symbol by
+#'   DataSHIELD).
+#' @param omop_symbol Character; the OMOP handle symbol (supplies the per-resource
+#'   key and DB connection).
+#' @param new_name Character; deterministic name for the cohort temp table (the
+#'   client passes one so the returned handle can be reused as a \code{cohort=}
+#'   scope). NULL generates a random name.
+#' @return Character; the cohort temp table name (assigned to the caller's
+#'   symbol). Pass it as the \code{cohort} argument of the exploration aggregates
+#'   or as a plan \code{cohort_table} name.
+#' @examples
+#' \dontrun{
+#' omopCohortFromTableDS(my_plan_output, "omop")
+#' }
+#' @export
+omopCohortFromTableDS <- function(x, omop_symbol, new_name = NULL) {
+  handle <- .getHandle(omop_symbol)
+  new_name <- .ds_arg(new_name)
+  if (is.list(new_name)) new_name <- if (length(new_name)) new_name[[1]] else NULL
+  .omopAuditLog("omopCohortFromTableDS",
+                list(n_rows = if (is.data.frame(x)) nrow(x) else NA,
+                     new_name = new_name))
+  .cohortFromTokenFrame(handle, x, new_name = new_name)
+}
+
 #' Clean up temp artifacts (Assign)
 #'
 #' @description
@@ -706,13 +771,15 @@ omopTableStatsDS <- function(omop_symbol, table,
 #' }
 #' @export
 omopColumnStatsDS <- function(omop_symbol, table, column, concept_id = NULL,
-                              concept_col = NULL) {
+                              concept_col = NULL, cohort = NULL,
+                              cohort_table = NULL) {
   handle <- .getHandle(omop_symbol)
   concept_id <- .ds_arg(concept_id)
   concept_col <- .ds_arg(concept_col)
   if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
   .profileColumnStats(handle, table, column, concept_id = concept_id,
-                      concept_col = concept_col)
+                      concept_col = concept_col, cohort_table = cohort_table)
 }
 
 #' Get cross-table domain coverage (Aggregate)
@@ -751,11 +818,13 @@ omopDomainCoverageDS <- function(omop_symbol) {
 #' }
 #' @export
 omopMissingnessDS <- function(omop_symbol, table,
-                              columns = NULL) {
+                              columns = NULL, cohort = NULL,
+                              cohort_table = NULL) {
   handle <- .getHandle(omop_symbol)
   columns <- .ds_arg(columns)
   if (is.list(columns)) columns <- as.character(unlist(columns))
-  .profileMissingness(handle, table, columns)
+  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+  .profileMissingness(handle, table, columns, cohort_table = cohort_table)
 }
 
 #' Get value counts (Aggregate)
@@ -783,15 +852,18 @@ omopMissingnessDS <- function(omop_symbol, table,
 #' @export
 omopValueCountsDS <- function(omop_symbol, table, column,
                               top_n = 20, concept_id = NULL,
-                              concept_col = NULL) {
+                              concept_col = NULL, cohort = NULL,
+                              cohort_table = NULL) {
   handle <- .getHandle(omop_symbol)
   concept_id <- .ds_arg(concept_id)
   concept_col <- .ds_arg(concept_col)
   if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
   # Small-count suppression is mandatory for this aggregate endpoint and is not
   # client-configurable: a caller must never be able to disable disclosure control.
   .profileValueCounts(handle, table, column, top_n, suppress_small = TRUE,
-                      concept_id = concept_id, concept_col = concept_col)
+                      concept_id = concept_id, concept_col = concept_col,
+                      cohort_table = cohort_table)
 }
 
 #' Search concepts (Aggregate)
@@ -971,24 +1043,38 @@ omopCohortGetDefinitionDS <- function(omop_symbol,
 #' threshold are suppressed.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
-#' @param table Character; table name
+#' @param table Character; table name (ignored when \code{global = TRUE})
 #' @param concept_col Character; concept column name (NULL = auto-detect)
 #' @param metric Character; "persons" or "records"
-#' @param top_n Integer; number of top concepts to return
+#' @param top_n Integer; page size (number of top concepts to return)
 #' @param cohort_table Character; cohort temp table for filtering (NULL)
 #' @param window List with start/end dates for filtering (NULL)
-#' @return Data frame with concept_id, concept_name, n_persons, n_records
+#' @param offset Integer; concepts to skip (pagination) so prevalence is not
+#'   hard-capped at the legacy top_n=500 — page through with offset = 0, 500, ...
+#' @param global Logical; rank concepts across ALL clinical tables, person-gated
+#'   per table and suppressed over the merged set (NULL/FALSE = single table)
+#' @param cohort Cohort scope: a cohort temp table name, a cohort_definition_id,
+#'   or NULL. Takes precedence over \code{cohort_table}; resolved + re-gated
+#'   server-side via \code{.resolveCohortTable}.
+#' @return Data frame with concept_id, concept_name, n_persons, n_records (plus
+#'   source_table when \code{global = TRUE})
 #' @examples
 #' \dontrun{
 #' prevalence <- omopConceptPrevalenceDS("omop", "condition_occurrence")
 #' }
 #' @export
-omopConceptPrevalenceDS <- function(omop_symbol, table, concept_col = NULL,
+omopConceptPrevalenceDS <- function(omop_symbol, table = NULL, concept_col = NULL,
                                      metric = "persons", top_n = 50,
-                                     cohort_table = NULL, window = NULL) {
+                                     cohort_table = NULL, window = NULL,
+                                     offset = 0L, global = FALSE,
+                                     cohort = NULL) {
   handle <- .getHandle(omop_symbol)
+  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+  offset <- as.integer(.ds_arg(offset) %||% 0L)
+  global <- isTRUE(.ds_arg(global))
   .profileConceptPrevalence(handle, table, concept_col, metric, top_n,
-                            cohort_table, window)
+                            cohort_table, window, offset = offset,
+                            global = global)
 }
 
 #' Get a disclosure-safe 2-way cross-tabulation (Aggregate)
@@ -1031,8 +1117,9 @@ omopCrossTabDS <- function(omop_symbol, table, row_col, col_col,
                            count_mode = "persons",
                            row_concept_ids = NULL, col_concept_ids = NULL,
                            cohort_table = NULL, stratify_by = NULL,
-                           band_margins = FALSE) {
+                           band_margins = FALSE, cohort = NULL) {
   handle <- .getHandle(omop_symbol)
+  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
   count_mode <- .ds_arg(count_mode)
   if (!is.character(count_mode) || length(count_mode) != 1L) {
     count_mode <- "persons"
@@ -1091,11 +1178,13 @@ omopCrossTabDS <- function(omop_symbol, table, row_col, col_col,
 #' @export
 omopNumericRangeDS <- function(omop_symbol, table, value_col,
                                 cohort_table = NULL, window = NULL,
-                                concept_id = NULL, concept_col = NULL) {
+                                concept_id = NULL, concept_col = NULL,
+                                cohort = NULL) {
   handle <- .getHandle(omop_symbol)
   concept_id <- .ds_arg(concept_id)
   concept_col <- .ds_arg(concept_col)
   if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
   .profileNumericRange(handle, table, value_col, cohort_table, window,
                        concept_id = concept_id, concept_col = concept_col)
 }
@@ -1129,12 +1218,14 @@ omopNumericRangeDS <- function(omop_symbol, table, value_col,
 omopNumericHistogramDS <- function(omop_symbol, table, value_col,
                                     bins = 20L, cohort_table = NULL,
                                     window = NULL, breaks = NULL,
-                                    concept_id = NULL, concept_col = NULL) {
+                                    concept_id = NULL, concept_col = NULL,
+                                    cohort = NULL) {
   handle <- .getHandle(omop_symbol)
   breaks <- .ds_arg(breaks)
   concept_id <- .ds_arg(concept_id)
   concept_col <- .ds_arg(concept_col)
   if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
   .profileNumericHistogram(handle, table, value_col, bins,
                            cohort_table, window, breaks,
                            concept_id = concept_id, concept_col = concept_col)
@@ -1170,12 +1261,13 @@ omopNumericQuantilesDS <- function(omop_symbol, table, value_col,
                                     probs = c(0.05, 0.25, 0.5, 0.75, 0.95),
                                     cohort_table = NULL, window = NULL,
                                     rounding = 2L, concept_id = NULL,
-                                    concept_col = NULL) {
+                                    concept_col = NULL, cohort = NULL) {
   handle <- .getHandle(omop_symbol)
   probs <- .ds_arg(probs)
   concept_id <- .ds_arg(concept_id)
   concept_col <- .ds_arg(concept_col)
   if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
   .profileNumericQuantiles(handle, table, value_col, probs,
                            cohort_table, window, rounding,
                            concept_id = concept_id, concept_col = concept_col)

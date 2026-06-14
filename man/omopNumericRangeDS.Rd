@@ -11,7 +11,8 @@ omopNumericRangeDS(
   cohort_table = NULL,
   window = NULL,
   concept_id = NULL,
-  concept_col = NULL
+  concept_col = NULL,
+  cohort = NULL
 )
 }
 \arguments{

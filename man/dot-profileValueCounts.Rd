@@ -11,7 +11,8 @@
   top_n = 20,
   suppress_small = TRUE,
   concept_id = NULL,
-  concept_col = NULL
+  concept_col = NULL,
+  cohort_table = NULL
 )
 }
 \arguments{
@@ -26,6 +27,9 @@
 \item{suppress_small}{Logical; suppress counts below nfilter.tab}
 
 \item{concept_id}{Integer or NULL; restrict to rows of this concept}
+
+\item{cohort_table}{Character; cohort temp table name to scope the
+population (INNER JOIN on subject_id), or NULL.}
 }
 \value{
 Data frame with value and count columns

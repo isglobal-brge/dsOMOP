@@ -4,7 +4,13 @@
 \alias{omopMissingnessDS}
 \title{Get missingness rates (Aggregate)}
 \usage{
-omopMissingnessDS(omop_symbol, table, columns = NULL)
+omopMissingnessDS(
+  omop_symbol,
+  table,
+  columns = NULL,
+  cohort = NULL,
+  cohort_table = NULL
+)
 }
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
