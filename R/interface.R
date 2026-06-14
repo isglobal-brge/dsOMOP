@@ -396,6 +396,12 @@ omopInitDS <- function(resource_symbol,
 #' @param plan List; the extraction plan
 #' @param out Named character vector; output_name -> symbol_name mapping
 #' @param output_mode Character; "memory" (default) or "staged"
+#' @param scope Optional recipe-level scope: \code{omop.table} symbol(s) (which
+#'   cannot ride in the plan JSON, so they are spliced in by name here) and/or a
+#'   cohort reference. Folded by \code{combine} into ONE cohort that is
+#'   intersected into every population (NULL = no extra scoping).
+#' @param combine Character; "union" (default) or "intersect" when the scope has
+#'   multiple sources.
 #' @return Invisible TRUE (outputs are assigned into caller's environment)
 #' @examples
 #' \dontrun{
@@ -405,7 +411,8 @@ omopInitDS <- function(resource_symbol,
 #' }
 #' @export
 omopPlanExecuteDS <- function(omop_symbol, plan, out,
-                               output_mode = "memory") {
+                               output_mode = "memory",
+                               scope = NULL, combine = "union") {
   handle <- .getHandle(omop_symbol)
   plan <- .ds_arg(plan)
   out <- .ds_arg(out)
@@ -416,6 +423,22 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   if (!output_mode %in% c("memory", "staged")) {
     output_mode <- "memory"
   }
+
+  # Recipe-level scope. omop.table SYMBOL sources are spliced in by name (DSI
+  # resolves them to server-side frames) because they cannot cross in the plan
+  # JSON; a cohort reference may also be present. Carry the resolved frames and
+  # the cohort ref / fold operator on plan$scope, where .planResolveScopeCohort
+  # folds them into ONE re-gated cohort (via .omopAnalysisResolveScope) and
+  # intersects it into every population.
+  scope <- .ds_arg(scope)
+  combine <- .ds_arg(combine)
+  if (is.list(combine)) combine <- combine[[1]]
+  if (!is.null(scope)) {
+    if (is.null(plan$scope)) plan$scope <- list()
+    plan$scope$tables_frames <- scope
+    plan$scope$combine <- plan$scope$combine %||% combine
+  }
+
   .omopAuditLog("omopPlanExecuteDS", list(outputs = names(out), plan = plan))
   outputs <- .planExecute(handle, plan, out, output_mode = output_mode)
 

@@ -4,7 +4,14 @@
 \alias{omopPlanExecuteDS}
 \title{Execute an extraction plan (Assign)}
 \usage{
-omopPlanExecuteDS(omop_symbol, plan, out, output_mode = "memory")
+omopPlanExecuteDS(
+  omop_symbol,
+  plan,
+  out,
+  output_mode = "memory",
+  scope = NULL,
+  combine = "union"
+)
 }
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
@@ -14,6 +21,14 @@ omopPlanExecuteDS(omop_symbol, plan, out, output_mode = "memory")
 \item{out}{Named character vector; output_name -> symbol_name mapping}
 
 \item{output_mode}{Character; "memory" (default) or "staged"}
+
+\item{scope}{Optional recipe-level scope: \code{omop.table} symbol(s) (which
+cannot ride in the plan JSON, so they are spliced in by name here) and/or a
+cohort reference. Folded by \code{combine} into ONE cohort that is
+intersected into every population (NULL = no extra scoping).}
+
+\item{combine}{Character; "union" (default) or "intersect" when the scope has
+multiple sources.}
 }
 \value{
 Invisible TRUE (outputs are assigned into caller's environment)

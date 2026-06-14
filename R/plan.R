@@ -777,6 +777,319 @@
   .buildStagedDescriptor(output_name, file_info, token)
 }
 
+#' Does this plan declare more than the implicit unrestricted base population?
+#'
+#' The multi-population execution path is engaged only when there is real work
+#' beyond the single base cohort: a non-base population, or a base population that
+#' itself carries criteria filters or a set-op. A plan with just
+#' \code{populations = list(base = list(id = "base"))} (or none) stays on the
+#' unchanged single-cohort fast path.
+#'
+#' @param plan The extraction plan
+#' @return Logical
+#' @keywords internal
+.planHasMultiPopulation <- function(plan) {
+  pops <- plan$populations
+  if (is.null(pops) || length(pops) == 0) return(FALSE)
+  non_base <- setdiff(names(pops), "base")
+  if (length(non_base) > 0) return(TRUE)
+  base <- pops[["base"]]
+  (!is.null(base$filters) && length(base$filters) > 0) ||
+    !is.null(base$setop)
+}
+
+#' Resolve the recipe-level scope into ONE folded, re-gated cohort temp table
+#'
+#' The scope spec on the plan (\code{plan$scope = list(cohort, combine)}) names a
+#' cohort reference (cohort_definition_id / cohort temp-table name) and the fold
+#' operator. \code{omop.table} SYMBOL sources cannot ride in the plan JSON, so
+#' they are injected as resolved frames under \code{plan$scope$tables_frames} by
+#' \code{\link{omopPlanExecuteDS}} before execution. All sources are folded into a
+#' single re-gated cohort by \code{\link{.omopAnalysisResolveScope}} (the same
+#' resolver the analysis catalog uses). Returns NULL when there is no scope.
+#'
+#' @param handle CDM handle
+#' @param plan The extraction plan
+#' @return Character cohort temp table name, or NULL
+#' @keywords internal
+.planResolveScopeCohort <- function(handle, plan) {
+  scope <- plan$scope
+  if (is.null(scope)) return(NULL)
+  combine <- tolower(scope$combine %||% "union")
+
+  # Spliced live sources (cohort literal mixed with omop.table frames, as the
+  # client's .analysis_scope_expr builds them) are the primary scope. They may be
+  # a mixed list, a lone frame, or a lone cohort literal — all three are handled
+  # by .omopAnalysisResolveScope directly.
+  frames <- scope$tables_frames
+  if (!is.null(frames)) {
+    return(.omopAnalysisResolveScope(handle, frames, combine = combine))
+  }
+
+  # Fallback: a JSON-only cohort reference (cohort_definition_id / temp-table
+  # name) with no live table symbols — e.g. a saved/loaded recipe scoped only to
+  # a cohort. No spliced frames to resolve, so fold the bare cohort ref.
+  if (!is.null(scope$cohort)) {
+    return(.omopAnalysisResolveScope(handle, scope$cohort, combine = combine))
+  }
+  NULL
+}
+
+#' Materialize a population's person set as a cohort temp table
+#'
+#' Shared by the single-cohort path and the multi-population resolver: given a
+#' vector of person ids, anchor them to \code{observation_period} (for
+#' cohort_start/end_date, as baseline/survival outputs require) and create a temp
+#' table of \code{subject_id, cohort_start_date, cohort_end_date}. Mirrors the
+#' filter-cohort branch already used inline by \code{\link{.planExecute}}. Returns
+#' NULL when there are no ids or no observation_period table (the caller keeps a
+#' bare person-id vector for event/person_level outputs in that case).
+#'
+#' @param handle CDM handle
+#' @param bp Blueprint
+#' @param person_ids Integer vector of person ids
+#' @param name Character; temp table name
+#' @return Character temp table name, or NULL
+#' @keywords internal
+.materializeCohortFromIds <- function(handle, bp, person_ids, name) {
+  if (length(person_ids) == 0) return(NULL)
+  obs_table <- bp$tables[bp$tables$table_name == "observation_period" &
+                           bp$tables$present_in_db, , drop = FALSE]
+  if (nrow(obs_table) == 0) return(NULL)
+  obs_qualified <- obs_table$qualified_name[1]
+  ids_str <- .sqlIdList(person_ids)
+  cohort_sql <- paste0(
+    "SELECT DISTINCT o.person_id AS subject_id, ",
+    "o.observation_period_start_date AS cohort_start_date, ",
+    "o.observation_period_end_date AS cohort_end_date ",
+    "FROM ", obs_qualified, " o ",
+    "WHERE o.person_id IN (", ids_str, ")"
+  )
+  .dropTempTable(handle, name)
+  .createTempTable(handle, name, cohort_sql)
+}
+
+#' Materialize an "all persons" cohort temp table
+#'
+#' Used to give an unrestricted population (e.g. the implicit base with no
+#' cohort and no criteria) a concrete person set so a recipe-level scope can be
+#' INTERSECTED into it. Anchors every observation_period person as a cohort row.
+#' Returns NULL when there is no observation_period table.
+#'
+#' @param handle CDM handle
+#' @param bp Blueprint
+#' @param name Character; temp table name
+#' @return Character temp table name, or NULL
+#' @keywords internal
+.materializeAllPersonsCohort <- function(handle, bp, name) {
+  obs_table <- bp$tables[bp$tables$table_name == "observation_period" &
+                           bp$tables$present_in_db, , drop = FALSE]
+  if (nrow(obs_table) == 0) return(NULL)
+  obs_qualified <- obs_table$qualified_name[1]
+  cohort_sql <- paste0(
+    "SELECT DISTINCT o.person_id AS subject_id, ",
+    "o.observation_period_start_date AS cohort_start_date, ",
+    "o.observation_period_end_date AS cohort_end_date ",
+    "FROM ", obs_qualified, " o")
+  .dropTempTable(handle, name)
+  .createTempTable(handle, name, cohort_sql)
+}
+
+#' Read the DISTINCT person ids from a cohort temp table
+#'
+#' @param handle CDM handle
+#' @param cohort_table Character; cohort temp table name (subject_id column)
+#' @return Integer vector of person ids
+#' @keywords internal
+.cohortPersonIds <- function(handle, cohort_table) {
+  if (is.null(cohort_table)) return(integer(0))
+  res <- .executeQuery(handle,
+    paste0("SELECT DISTINCT subject_id AS person_id FROM ", cohort_table))
+  if (nrow(res) > 0) res$person_id else integer(0)
+}
+
+#' Resolve a plan's populations into per-population person sets (dependency order)
+#'
+#' Each population in \code{plan$populations} is EITHER criteria-defined
+#' (\code{filters}: a person-level cohort filter tree consumed by
+#' \code{\link{.compileCohortFilterWhere}} via \code{\link{.buildCohortFromFilters}})
+#' OR a set-operation over OTHER populations (\code{setop = list(op, members)},
+#' folded with \code{\link{.cohortCombine}}). Set-op populations are resolved AFTER
+#' their members, so a single pass over a parent-before-child ordering suffices;
+#' a member that has not yet been resolved is an error (fail-closed). Every
+#' produced person set is gated with \code{\link{.assertMinPersons}} — a tiny
+#' intersection therefore fails closed before any output is produced.
+#'
+#' @param handle CDM handle
+#' @param plan The extraction plan (uses \code{plan$populations} and, for the
+#'   base population, \code{plan$cohort} when present)
+#' @param bp Blueprint
+#' @param base_cohort_table Character or NULL; a cohort temp table already
+#'   materialized for the base population (e.g. from a cohort_definition_id)
+#' @param base_person_ids Integer vector or NULL; person ids for the base
+#'   population when no temp table was materialized
+#' @return Named list keyed by population id; each element is
+#'   \code{list(cohort_table = <name|NULL>, person_ids = <int vector>)}
+#' @keywords internal
+.planResolvePopulations <- function(handle, plan, bp,
+                                    base_cohort_table = NULL,
+                                    base_person_ids = NULL) {
+  pops <- plan$populations
+  resolved <- list()
+
+  for (pid in names(pops)) {
+    pop <- pops[[pid]]
+
+    # Population kind is declared by the client's .compile_population_spec:
+    # "setop" carries setop=list(op, members); "criteria" carries an optional
+    # nested AND/OR filter_tree and/or a cohort_definition_id. The base
+    # population inherits whatever the plan-level cohort produced (a
+    # cohort_definition_id table, a filter cohort, or unrestricted = NULL) and
+    # may additionally carry its own criteria.
+    is_base <- identical(pid, "base")
+    kind <- tolower(pop$kind %||% "criteria")
+    has_setop <- identical(kind, "setop") || !is.null(pop$setop)
+    has_filter_tree <- !is.null(pop$filter_tree)
+    has_own_cohort <- !is.null(pop$cohort_definition_id)
+
+    if (has_setop) {
+      op <- tolower(pop$setop$op %||% "union")
+      members <- unlist(pop$setop$members, use.names = FALSE)
+      if (length(members) < 1) {
+        stop("Population '", pid, "': set-op has no members.", call. = FALSE)
+      }
+      member_tables <- vapply(members, function(m) {
+        r <- resolved[[m]]
+        if (is.null(r)) {
+          stop("Population '", pid, "': set-op member '", m,
+               "' is not defined before it (declare members first).",
+               call. = FALSE)
+        }
+        # A member with no materialized cohort table (an unrestricted base, or no
+        # observation_period) cannot take part in a set operation on subject_id;
+        # fail closed rather than silently widen the result.
+        if (is.null(r$cohort_table)) {
+          stop("Population '", pid, "': set-op member '", m,
+               "' has no materialized person set.", call. = FALSE)
+        }
+        r$cohort_table
+      }, character(1))
+
+      combined <- member_tables[[1]]
+      if (length(member_tables) > 1) {
+        for (k in 2:length(member_tables)) {
+          # .cohortCombine gates the running result with .assertMinPersons, so a
+          # tiny intersection fails closed here, before any output is produced.
+          combined <- .cohortCombine(handle, op, combined, member_tables[[k]],
+            new_name = paste0("dsomop_plan_pop_", pid))
+        }
+      } else {
+        # Single member: re-gate so a lone-member set-op is still size-checked
+        # under this population's id.
+        .assertMinPersons(handle = handle, sql = paste0(
+          "SELECT COUNT(DISTINCT subject_id) AS n FROM ", combined))
+      }
+      resolved[[pid]] <- list(
+        cohort_table = combined,
+        person_ids = .cohortPersonIds(handle, combined))
+      next
+    }
+
+    if (is_base && !has_filter_tree && !has_own_cohort) {
+      # Base population with no extra criteria: reuse the plan-level cohort.
+      resolved[[pid]] <- list(
+        cohort_table = base_cohort_table,
+        person_ids = base_person_ids %||%
+          .cohortPersonIds(handle, base_cohort_table))
+      next
+    }
+
+    # Criteria population. Start from the widest applicable seed, then AND each
+    # narrowing source (own cohort_definition_id, filter_tree, and — for the
+    # base population — the inherited plan-level cohort). Each source only
+    # narrows; a population can never be wider than its seed.
+    seed_ids <- NULL
+    if (is_base) {
+      seed_ids <- base_person_ids %||%
+        .cohortPersonIds(handle, base_cohort_table)
+      if (length(seed_ids) == 0 && is.null(base_cohort_table) &&
+          is.null(base_person_ids)) {
+        seed_ids <- NULL  # unrestricted base: no seed restriction
+      }
+    }
+
+    if (has_own_cohort) {
+      own_ct <- .resolveCohortTable(handle, pop$cohort_definition_id)
+      own_ids <- .cohortPersonIds(handle, own_ct)
+      seed_ids <- if (is.null(seed_ids)) own_ids else intersect(seed_ids, own_ids)
+    }
+
+    if (has_filter_tree) {
+      filter_ids <- .buildCohortFromFilters(handle, pop$filter_tree)
+      seed_ids <- if (is.null(seed_ids)) filter_ids
+                  else intersect(seed_ids, filter_ids)
+    }
+
+    person_ids <- seed_ids %||% integer(0)
+    .assertMinPersons(n_persons = length(unique(person_ids)))
+    cohort_table <- .materializeCohortFromIds(handle, bp, person_ids,
+      name = paste0("dsomop_plan_pop_", pid))
+    resolved[[pid]] <- list(cohort_table = cohort_table,
+                            person_ids = person_ids)
+  }
+
+  resolved
+}
+
+#' Intersect a unified scope cohort into every resolved population
+#'
+#' The recipe-level scope (a cohort ref and/or one or more \code{omop.table}
+#' symbols, already folded into ONE re-gated cohort temp table by
+#' \code{\link{.omopAnalysisResolveScope}}) restricts EVERY population. Each
+#' population's person set is INTERSECTED with the scope on subject_id via
+#' \code{\link{.cohortCombine}} (which re-gates the result fail-closed); the
+#' person-id vector is then re-derived from the narrowed cohort. A NULL scope is
+#' a no-op.
+#'
+#' @param handle CDM handle
+#' @param resolved Named list from \code{\link{.planResolvePopulations}}
+#' @param scope_cohort Character or NULL; the folded scope cohort temp table
+#' @param bp Blueprint
+#' @return The \code{resolved} list with each population narrowed to the scope
+#' @keywords internal
+.planScopePopulations <- function(handle, resolved, scope_cohort, bp) {
+  if (is.null(scope_cohort)) return(resolved)
+
+  for (pid in names(resolved)) {
+    r <- resolved[[pid]]
+    ct <- r$cohort_table
+    # A population with no materialized cohort table must still be scoped:
+    # materialize its person set so it can be intersected. An unrestricted
+    # population (NULL table AND empty ids — e.g. the implicit base with no
+    # cohort or criteria) materializes ALL persons; otherwise materialize its
+    # known ids. If neither can be materialized, fail closed.
+    if (is.null(ct)) {
+      ct <- if (length(r$person_ids) == 0) {
+        .materializeAllPersonsCohort(handle, bp,
+          name = paste0("dsomop_plan_pop_", pid, "_all"))
+      } else {
+        .materializeCohortFromIds(handle, bp, r$person_ids,
+          name = paste0("dsomop_plan_pop_", pid, "_pre"))
+      }
+      if (is.null(ct)) {
+        stop("Scope cannot be applied to population '", pid,
+             "': no materializable person set.", call. = FALSE)
+      }
+    }
+    narrowed <- .cohortCombine(handle, "intersect", ct, scope_cohort,
+      new_name = paste0("dsomop_plan_pop_", pid, "_scoped"))
+    resolved[[pid]] <- list(
+      cohort_table = narrowed,
+      person_ids = .cohortPersonIds(handle, narrowed))
+  }
+  resolved
+}
+
 #' Execute a plan and produce server-side data frames
 #'
 #' Processes all outputs defined in the plan: builds a cohort (if specified),
@@ -871,6 +1184,62 @@
     }
   }
 
+  # Multi-population resolution. When the plan declares populations, resolve each
+  # (criteria -> person set via the cohort filter machinery; set-op -> fold with
+  # .cohortCombine) into its own gated person set, then INTERSECT the unified
+  # recipe-level scope into every one of them. Each output is later produced over
+  # ITS population_id's person set. When the plan declares NO populations (or only
+  # the implicit base with no extra criteria), every output runs against the
+  # single base cohort built above — the unchanged fast path.
+  pop_sets <- NULL
+  multi_pop <- !is.null(plan$populations) &&
+    .planHasMultiPopulation(plan)
+  if (multi_pop) {
+    pop_sets <- .planResolvePopulations(handle, plan, bp,
+      base_cohort_table = cohort_table,
+      base_person_ids = cohort_person_ids)
+    scope_cohort <- .planResolveScopeCohort(handle, plan)
+    pop_sets <- .planScopePopulations(handle, pop_sets, scope_cohort, bp)
+  } else {
+    # Single-population fast path: a recipe-level scope still applies. Fold it
+    # into the base cohort (intersect on subject_id) and re-derive ids. An
+    # unrestricted base (no cohort, no ids) materializes ALL persons first so the
+    # scope has something to narrow.
+    scope_cohort <- .planResolveScopeCohort(handle, plan)
+    if (!is.null(scope_cohort)) {
+      base_ct <- cohort_table
+      if (is.null(base_ct)) {
+        base_ct <- if (length(cohort_person_ids %||% integer(0)) == 0) {
+          .materializeAllPersonsCohort(handle, bp, name = "dsomop_plan_cohort")
+        } else {
+          .materializeCohortFromIds(handle, bp, cohort_person_ids,
+            name = "dsomop_plan_cohort")
+        }
+      }
+      if (is.null(base_ct)) {
+        stop("Scope cannot be applied: no materializable base person set.",
+             call. = FALSE)
+      }
+      cohort_table <- .cohortCombine(handle, "intersect", base_ct,
+        scope_cohort, new_name = "dsomop_plan_cohort_scoped")
+      cohort_person_ids <- .cohortPersonIds(handle, cohort_table)
+    }
+  }
+
+  # Temp tables created for populations/scope (cleaned up at the end alongside
+  # the base cohort and concept-set temp tables).
+  pop_temp_tables <- character(0)
+  if (!is.null(pop_sets)) {
+    pop_temp_tables <- unique(stats::na.omit(unname(vapply(pop_sets,
+      function(p) p$cohort_table %||% NA_character_, character(1)))))
+  }
+
+  # Snapshot the base cohort: the output loop reassigns cohort_table /
+  # cohort_person_ids per output (to its population) in the multi-pop path, so
+  # keep the single-population base values to fall back to.
+  base_cohort_table <- cohort_table
+  base_cohort_person_ids <- cohort_person_ids
+
   results <- list()
   # Landed names of concept-id columns per output, so the factor harmonization
   # layer recognises them even when a user has renamed the _concept_id suffix
@@ -908,6 +1277,24 @@
 
     # Skip concept_dictionary for second pass
     if (out_type == "concept_dictionary") next
+
+    # Multi-population: produce this output over ITS population's gated,
+    # scope-narrowed person set. Single-population leaves the base cohort vars
+    # untouched (pop_sets is NULL), preserving the fast path exactly.
+    cohort_table <- base_cohort_table
+    cohort_person_ids <- base_cohort_person_ids
+    if (!is.null(pop_sets)) {
+      pid <- out$population_id %||% "base"
+      pset <- pop_sets[[pid]]
+      if (is.null(pset)) {
+        results[[out_name]] <- NULL
+        warning("Plan output '", out_name, "' targets unknown population '",
+                pid, "'.", call. = FALSE)
+        next
+      }
+      cohort_table <- pset$cohort_table
+      cohort_person_ids <- pset$person_ids
+    }
 
     tryCatch({
       if (out_type == "person_level") {
@@ -1244,8 +1631,15 @@
     })
   }
 
-  if (!is.null(cohort_table)) {
-    .dropTempTable(handle, cohort_table)
+  # Drop the base cohort by its snapshot name (the loop reassigned cohort_table
+  # per output in the multi-pop path) plus every per-population temp table.
+  # Intermediate set-op / pre-scope tables are session TEMP tables and auto-drop
+  # with the connection (same convention as the analysis catalog's scope folds).
+  if (!is.null(base_cohort_table)) {
+    .dropTempTable(handle, base_cohort_table)
+  }
+  for (pt in pop_temp_tables) {
+    .dropTempTable(handle, pt)
   }
 
   # Clean up materialized concept set temp tables
