@@ -30,6 +30,7 @@
 A CDM handle (environment)
 }
 \description{
-Create a CDM handle from a resource client
+Resolves the connection, schemas and the per-resource pseudonymization key,
+and builds the handle environment used by all extraction/exploration ops.
 }
 \keyword{internal}

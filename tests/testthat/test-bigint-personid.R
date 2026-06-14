@@ -31,19 +31,37 @@ test_that(".coerce_integer64 preserves precision (never a lossy double)", {
   expect_equal(length(unique(dsOMOP:::.coerce_integer64(pair)$pid)), 2L)
 })
 
-test_that(".hashPersonKey is a full 256-bit token and injective on exact ids", {
-  salt <- as.raw(1:16)
-  toks <- dsOMOP:::.hashPersonKey(c("9007199254740992", "9007199254740993"), salt)
-  expect_true(all(nchar(toks) == 64L))            # 64 hex = full 256-bit SHA-256
+test_that(".hashPersonKey yields deterministic, non-numeric, injective tokens", {
+  key <- as.raw(1:16)
+  ids <- c("9007199254740992", "9007199254740993")
+  toks <- dsOMOP:::.hashPersonKey(ids, key)
+  expect_true(all(grepl("^p[0-9a-f]+$", toks)))   # "p" prefix => non-numeric token
+  # ds.asNumeric / as.numeric cannot recover or infer the id (forced to NA).
+  expect_true(all(is.na(suppressWarnings(as.numeric(toks)))))
   expect_equal(length(unique(toks)), 2L)          # distinct ids -> distinct tokens
+  # Deterministic: same id + same key -> same token (stable across reconnect).
+  expect_identical(toks, dsOMOP:::.hashPersonKey(ids, key))
+})
+
+test_that(".unhashPersonKey reverses .hashPersonKey server-side (NA preserved)", {
+  key <- as.raw(1:16)
+  ids <- c("10", "8805478484003283429", NA, "30")
+  toks <- dsOMOP:::.hashPersonKey(ids, key)
+  back <- dsOMOP:::.unhashPersonKey(toks, key)
+  expect_equal(back, as.character(ids))
+  # A different key cannot recover the id (no shared secret -> no inversion):
+  # decryption either errors (bad padding) or yields garbage, never "10".
+  wrong <- tryCatch(dsOMOP:::.unhashPersonKey(toks[1], as.raw(rev(1:16))),
+                    error = function(e) NA_character_)
+  expect_false(identical(wrong, "10"))
 })
 
 test_that(".pseudonymizeIdentifiers aborts on a cardinality collision", {
-  salt <- as.raw(1:16)
+  key <- as.raw(1:16)
   df <- data.frame(person_id = c("a", "b", "c"), v = 1:3, stringsAsFactors = FALSE)
-  expect_silent(dsOMOP:::.pseudonymizeIdentifiers(df, salt))
+  expect_silent(dsOMOP:::.pseudonymizeIdentifiers(df, key))
   # Force a collision by stubbing the hash to a constant -> must fail closed.
-  local_mocked_bindings(.hashPersonKey = function(ids, salt) rep("X", length(ids)),
+  local_mocked_bindings(.hashPersonKey = function(ids, key) rep("X", length(ids)),
                         .package = "dsOMOP")
-  expect_error(dsOMOP:::.pseudonymizeIdentifiers(df, salt), "collision")
+  expect_error(dsOMOP:::.pseudonymizeIdentifiers(df, key), "collision")
 })

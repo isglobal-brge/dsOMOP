@@ -2,24 +2,32 @@
 % Please edit documentation in R/interface.R
 \name{.hashPersonKey}
 \alias{.hashPersonKey}
-\title{Pseudonymize a person/subject key vector with a per-session salt}
+\title{Pseudonymize a person/subject key vector reversibly with a per-resource key}
 \usage{
-.hashPersonKey(ids, salt)
+.hashPersonKey(ids, key)
 }
 \arguments{
 \item{ids}{A vector of identifier values.}
 
-\item{salt}{Raw vector; the per-session secret salt (\code{handle$session_salt}).}
+\item{key}{Raw vector; the per-resource secret key (\code{handle$person_key}).}
 }
 \value{
-Character vector of pseudonymous tokens.
+Character vector of pseudonymous tokens (NA preserved).
 }
 \description{
-Returns HMAC-SHA256 tokens (truncated to 16 hex chars) computed element-wise
-under the session salt. The same value under the same salt always yields the
-same token, so independent extractions in one session stay joinable on the
-key; a different session (different salt) yields different tokens, so a
-person is not linkable across sessions or sites. One-way, and the salt never
-leaves the server, so a token cannot be reversed to the raw id.
+Returns DETERMINISTIC, NON-NUMERIC tokens computed element-wise by
+AES-256-CBC encrypting each id (as character) under a key + fixed IV derived
+from the per-resource secret. The same id under the same key always yields
+the same token, so tokens are stable across reconnects and DataSHIELD
+workspace save/load and joinable on the key; a different resource (different
+key) yields different tokens, so a person is not linkable across sites.
+}
+\details{
+Each token is \code{paste0("p", <hex ciphertext>)}. The leading \code{"p"}
+GUARANTEES the token is non-numeric: hex alone can be all digits, which
+\code{as.numeric}/\code{ds.asNumeric} would parse back into a number; the
+letter prefix forces \code{as.numeric} to \code{NA}, so the id cannot be
+recovered or inferred client-side. The transform is reversible SERVER-SIDE
+only (see \code{\link{.unhashPersonKey}}); the client never holds the key.
 }
 \keyword{internal}

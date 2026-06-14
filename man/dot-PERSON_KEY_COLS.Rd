@@ -8,7 +8,7 @@
 }
 \description{
 The only identifier columns kept in DataSHIELD outputs. On output their raw
-values are replaced by a per-session salted token (see
+values are replaced by a per-resource reversible token (see
 \code{\link{.pseudonymizeIdentifiers}}), so they stay usable as join keys
 for client-side merges and cohort set-operations while never exposing a raw
 CDM identifier. Every other identifier column is dropped.

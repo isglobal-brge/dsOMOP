@@ -105,8 +105,108 @@
 
 # --- Handle Creation ---
 
+#' Stable identifier for a resource (for per-resource key derivation)
+#'
+#' Returns a string that is stable for "the same store" across reconnects and
+#' DataSHIELD workspace save/load: the resource URL, else its name, else the
+#' parsed host/database. Used only to derive a per-resource key file name; it is
+#' never exposed and never used as a secret itself.
+#' @keywords internal
+.resourceIdentity <- function(resource_client) {
+  res <- tryCatch(resource_client$getResource(), error = function(e) NULL)
+  id <- tryCatch(res$url, error = function(e) NULL)
+  if (is.null(id) || !nzchar(id)) id <- tryCatch(res$name, error = function(e) NULL)
+  if (is.null(id) || !nzchar(id)) {
+    id <- tryCatch(resource_client$getParsed()$server, error = function(e) NULL)
+  }
+  if (is.null(id) || !nzchar(id)) id <- "dsomop-default-resource"
+  as.character(id)
+}
+
+#' Resolve a persistent per-resource pseudonymization key
+#'
+#' Returns a raw secret key that is STABLE for a given resource across
+#' reconnects and DataSHIELD workspace save/load, so a person hashes to the same
+#' token every time without storing any token->id map. Resolution order:
+#' \enumerate{
+#'   \item Env var \code{DSOMOP_PSEUDONYM_KEY_<rid>} then \code{DSOMOP_PSEUDONYM_KEY}
+#'         (hex- or UTF-8-encoded), where \code{<rid>} is a stable hash of the
+#'         resource identity.
+#'   \item R option \code{getOption("dsomop.pseudonym_key")}.
+#'   \item A \code{0600} file at \code{~/.dsomop/keys/<rid>.key} (32 raw bytes).
+#'   \item If none exist: GENERATE 32 random bytes once and PERSIST them to that
+#'         \code{0600} file, so the next handle re-derives the same key.
+#' }
+#' The key never leaves the server, so tokens cannot be reversed client-side.
+#' @param resource_client An OMOPResourceClient instance.
+#' @return Raw vector; the per-resource secret key.
+#' @keywords internal
+.resolvePersonKey <- function(resource_client) {
+  identity <- .resourceIdentity(resource_client)
+  # Stable, filesystem-safe per-resource id (also used to scope the env var).
+  rid <- substr(as.character(openssl::sha256(charToRaw(identity))), 1L, 32L)
+
+  # Coerce a user-supplied key (hex string, plain string, or raw) to raw bytes.
+  .asKeyRaw <- function(v) {
+    if (is.raw(v)) return(v)
+    v <- as.character(v)[1]
+    if (is.na(v) || !nzchar(v)) return(NULL)
+    # Even-length all-hex -> decode as hex; otherwise hash the string to 32 bytes.
+    if (nchar(v) %% 2L == 0L && grepl("^[0-9a-fA-F]+$", v)) {
+      return(as.raw(strtoi(substring(v, seq(1L, nchar(v), 2L),
+                                     seq(2L, nchar(v), 2L)), 16L)))
+    }
+    as.raw(openssl::sha256(charToRaw(v)))
+  }
+
+  # (a) Environment variables: per-resource first, then global.
+  for (nm in c(paste0("DSOMOP_PSEUDONYM_KEY_", rid), "DSOMOP_PSEUDONYM_KEY")) {
+    ev <- Sys.getenv(nm, unset = "")
+    if (nzchar(ev)) {
+      k <- .asKeyRaw(ev)
+      if (!is.null(k)) return(k)
+    }
+  }
+
+  # (b) R option.
+  opt <- getOption("dsomop.pseudonym_key", default = NULL)
+  if (!is.null(opt)) {
+    k <- .asKeyRaw(opt)
+    if (!is.null(k)) return(k)
+  }
+
+  # (c) / (d) Per-resource 0600 key file under ~/.dsomop/keys/.
+  key_dir <- file.path(Sys.getenv("HOME"), ".dsomop", "keys")
+  key_file <- file.path(key_dir, paste0(rid, ".key"))
+  if (file.exists(key_file)) {
+    k <- tryCatch(readBin(key_file, what = "raw", n = 64L),
+                  error = function(e) NULL)
+    if (!is.null(k) && length(k) >= 16L) return(k)
+  }
+
+  # (d) Generate once and persist (0600) so the next handle re-derives it.
+  key <- openssl::rand_bytes(32L)
+  persisted <- tryCatch({
+    if (!dir.exists(key_dir)) {
+      dir.create(key_dir, recursive = TRUE, mode = "0700")
+    }
+    writeBin(key, key_file)
+    Sys.chmod(key_file, mode = "0600")
+    TRUE
+  }, error = function(e) FALSE)
+  if (!persisted) {
+    warning("dsOMOP: could not persist pseudonymization key to '", key_file,
+            "'; person tokens may not be stable across reconnect. Set ",
+            "DSOMOP_PSEUDONYM_KEY or getOption('dsomop.pseudonym_key') for a ",
+            "stable key.", call. = FALSE)
+  }
+  key
+}
+
 #' Create a CDM handle from a resource client
 #'
+#' Resolves the connection, schemas and the per-resource pseudonymization key,
+#' and builds the handle environment used by all extraction/exploration ops.
 #' @param resource_client An OMOPResourceClient instance
 #' @param cdm_schema Character; override CDM schema
 #' @param vocab_schema Character; override vocabulary schema
@@ -154,13 +254,15 @@
   handle$config          <- config
   handle$blueprint       <- NULL
   handle$temp_tables     <- character(0)
-  # Per-session secret salt for pseudonymizing person/subject keys on output.
-  # Generated once per handle (i.e. once per ds.omop.connect / session) and
-  # never exported to the client. Stable within a session so independent
-  # extractions hash the same person to the same token (enabling client-side
-  # joins/set-ops); fresh per session and per server process, so the same
-  # person is NOT linkable across sessions or across sites.
-  handle$session_salt    <- openssl::rand_bytes(16L)
+  # Persistent PER-RESOURCE secret key for pseudonymizing person/subject keys on
+  # output (see .resolvePersonKey). Resolved from env var / R option / a 0600
+  # key file (generated once and persisted if absent), and never exported to the
+  # client. Because it is keyed to the resource (not the session/process), the
+  # same person hashes to the SAME token across reconnects and across DataSHIELD
+  # workspace save/load, with no token->id map stored anywhere. A different
+  # resource (different key) yields different tokens, so a person is not linkable
+  # across sites.
+  handle$person_key      <- .resolvePersonKey(resource_client)
 
   handle
 }

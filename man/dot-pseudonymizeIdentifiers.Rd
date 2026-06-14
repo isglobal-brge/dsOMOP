@@ -4,12 +4,12 @@
 \alias{.pseudonymizeIdentifiers}
 \title{Pseudonymize/strip row-level identifiers before DataSHIELD assignment}
 \usage{
-.pseudonymizeIdentifiers(x, salt)
+.pseudonymizeIdentifiers(x, key)
 }
 \arguments{
 \item{x}{Data frame or list to sanitize. Operates recursively on lists.}
 
-\item{salt}{Raw vector; the per-session secret salt (\code{handle$session_salt}).}
+\item{key}{Raw vector; the per-resource secret key (\code{handle$person_key}).}
 }
 \value{
 Sanitized object: person/subject keys pseudonymized, other
@@ -17,7 +17,7 @@ Sanitized object: person/subject keys pseudonymized, other
 }
 \description{
 Runs on every ASSIGN output before \code{base::assign()}. Person and subject
-keys (\code{\link{.PERSON_KEY_COLS}}) are REPLACED by a per-session salted
+keys (\code{\link{.PERSON_KEY_COLS}}) are REPLACED by a per-resource reversible
 token under their original column names (so existing analysis code and the
 output contract are unchanged) and tagged via the \code{dsomop_protected}
 attribute so the factor/level layer refuses to expose them. Every other

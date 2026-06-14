@@ -108,7 +108,7 @@
 #' Person/subject key columns: pseudonymized and retained (not dropped)
 #'
 #' The only identifier columns kept in DataSHIELD outputs. On output their raw
-#' values are replaced by a per-session salted token (see
+#' values are replaced by a per-resource reversible token (see
 #' \code{\link{.pseudonymizeIdentifiers}}), so they stay usable as join keys
 #' for client-side merges and cohort set-operations while never exposing a raw
 #' CDM identifier. Every other identifier column is dropped.
@@ -142,34 +142,88 @@
   )
 }
 
-#' Pseudonymize a person/subject key vector with a per-session salt
+#' Derive the AES key + IV for a resource from its secret key
 #'
-#' Returns HMAC-SHA256 tokens (truncated to 16 hex chars) computed element-wise
-#' under the session salt. The same value under the same salt always yields the
-#' same token, so independent extractions in one session stay joinable on the
-#' key; a different session (different salt) yields different tokens, so a
-#' person is not linkable across sessions or sites. One-way, and the salt never
-#' leaves the server, so a token cannot be reversed to the raw id.
+#' Splits two independent SHA-256 digests of the per-resource secret into a
+#' 32-byte AES-256 key and a 16-byte IV. The IV is FIXED per resource (derived
+#' deterministically from the same secret), which is what makes the token
+#' transform deterministic: the same id always encrypts to the same ciphertext.
+#' This is acceptable here because the plaintexts are opaque high-cardinality
+#' identifiers used only as join keys, never attacker-chosen messages.
+#' @param key Raw vector; the per-resource secret (\code{handle$person_key}).
+#' @return List with \code{aes} (32 raw bytes) and \code{iv} (16 raw bytes).
+#' @keywords internal
+.deriveAesParams <- function(key) {
+  if (is.character(key)) key <- charToRaw(paste(key, collapse = ""))
+  key <- as.raw(key)
+  list(
+    aes = as.raw(openssl::sha256(c(key, charToRaw("dsomop-aes-key")))),
+    iv  = as.raw(openssl::sha256(c(key, charToRaw("dsomop-aes-iv"))))[1:16]
+  )
+}
+
+#' Pseudonymize a person/subject key vector reversibly with a per-resource key
+#'
+#' Returns DETERMINISTIC, NON-NUMERIC tokens computed element-wise by
+#' AES-256-CBC encrypting each id (as character) under a key + fixed IV derived
+#' from the per-resource secret. The same id under the same key always yields
+#' the same token, so tokens are stable across reconnects and DataSHIELD
+#' workspace save/load and joinable on the key; a different resource (different
+#' key) yields different tokens, so a person is not linkable across sites.
+#'
+#' Each token is \code{paste0("p", <hex ciphertext>)}. The leading \code{"p"}
+#' GUARANTEES the token is non-numeric: hex alone can be all digits, which
+#' \code{as.numeric}/\code{ds.asNumeric} would parse back into a number; the
+#' letter prefix forces \code{as.numeric} to \code{NA}, so the id cannot be
+#' recovered or inferred client-side. The transform is reversible SERVER-SIDE
+#' only (see \code{\link{.unhashPersonKey}}); the client never holds the key.
 #'
 #' @param ids A vector of identifier values.
-#' @param salt Raw vector; the per-session secret salt (\code{handle$session_salt}).
-#' @return Character vector of pseudonymous tokens.
+#' @param key Raw vector; the per-resource secret key (\code{handle$person_key}).
+#' @return Character vector of pseudonymous tokens (NA preserved).
 #' @keywords internal
-.hashPersonKey <- function(ids, salt) {
-  # Full 256-bit HMAC-SHA-256 digest (64 hex), NOT truncated. Birthday-collision
-  # bound ~n^2/2^257 is ~10^-60 at 1e9 persons — below any physical failure rate,
-  # so distinct ids yield distinct tokens for any conceivable cohort. (The earlier
-  # 64- and 128-bit truncations had real birthday odds at population scale: ~3% at
-  # 1e9 for 64-bit.) as.character(ids) is exact — integer/character, never a
-  # rounded double (see .coerce_integer64). The cardinality assertion in
-  # .pseudonymizeIdentifiers is belt-and-suspenders on top of this.
-  as.character(openssl::sha256(as.character(ids), key = salt))
+.hashPersonKey <- function(ids, key) {
+  params <- .deriveAesParams(key)
+  ids <- as.character(ids)  # exact — integer/character, never a rounded double.
+  vapply(ids, function(id) {
+    if (is.na(id)) return(NA_character_)
+    ct <- openssl::aes_cbc_encrypt(charToRaw(id), key = params$aes, iv = params$iv)
+    # "p" prefix forces as.numeric()/ds.asNumeric() -> NA (non-numeric token).
+    paste0("p", paste(as.character(ct), collapse = ""))
+  }, character(1L), USE.NAMES = FALSE)
+}
+
+#' Reverse a person-key token back to the original id (SERVER-ONLY)
+#'
+#' Inverse of \code{\link{.hashPersonKey}}: strips the \code{"p"} prefix,
+#' hex-decodes the ciphertext, and AES-256-CBC decrypts it under the same
+#' key + IV derived from the per-resource secret. This is the server-side reverse
+#' map used for population-scoping joins (Phase B); the client never holds the
+#' key, so it cannot invert a token. Vectorised; NA preserved.
+#'
+#' @param token Character vector of tokens produced by \code{.hashPersonKey}.
+#' @param key Raw vector; the per-resource secret key (\code{handle$person_key}).
+#' @return Character vector of the original identifier values.
+#' @keywords internal
+.unhashPersonKey <- function(token, key) {
+  params <- .deriveAesParams(key)
+  token <- as.character(token)
+  vapply(token, function(tk) {
+    if (is.na(tk)) return(NA_character_)
+    hx <- sub("^p", "", tk)
+    if (!nzchar(hx) || nchar(hx) %% 2L != 0L || !grepl("^[0-9a-fA-F]+$", hx)) {
+      stop("Not a valid person-key token: '", tk, "'.", call. = FALSE)
+    }
+    raw <- as.raw(strtoi(substring(hx, seq(1L, nchar(hx), 2L),
+                                   seq(2L, nchar(hx), 2L)), 16L))
+    rawToChar(openssl::aes_cbc_decrypt(raw, key = params$aes, iv = params$iv))
+  }, character(1L), USE.NAMES = FALSE)
 }
 
 #' Pseudonymize/strip row-level identifiers before DataSHIELD assignment
 #'
 #' Runs on every ASSIGN output before \code{base::assign()}. Person and subject
-#' keys (\code{\link{.PERSON_KEY_COLS}}) are REPLACED by a per-session salted
+#' keys (\code{\link{.PERSON_KEY_COLS}}) are REPLACED by a per-resource reversible
 #' token under their original column names (so existing analysis code and the
 #' output contract are unchanged) and tagged via the \code{dsomop_protected}
 #' attribute so the factor/level layer refuses to expose them. Every other
@@ -187,11 +241,11 @@
 #' exactly as it does for any \code{ds.glm} fit.
 #'
 #' @param x Data frame or list to sanitize. Operates recursively on lists.
-#' @param salt Raw vector; the per-session secret salt (\code{handle$session_salt}).
+#' @param key Raw vector; the per-resource secret key (\code{handle$person_key}).
 #' @return Sanitized object: person/subject keys pseudonymized, other
 #'   identifier columns removed.
 #' @keywords internal
-.pseudonymizeIdentifiers <- function(x, salt) {
+.pseudonymizeIdentifiers <- function(x, key) {
   if (is.data.frame(x)) {
     drop <- intersect(setdiff(.identifierColumns(), .PERSON_KEY_COLS()), names(x))
     if (length(drop) > 0) {
@@ -200,7 +254,7 @@
     keys <- intersect(.PERSON_KEY_COLS(), names(x))
     for (k in keys) {
       src <- x[[k]]
-      tok <- .hashPersonKey(src, salt)
+      tok <- .hashPersonKey(src, key)
       # Fail closed: distinct source ids MUST map to distinct tokens. A drop in
       # cardinality means a hash (or upstream precision) collision would merge
       # two real identities into one pseudonym — a correctness and disclosure
@@ -224,7 +278,7 @@
       class(x) <- union("omop.table", class(x))
     }
   } else if (is.list(x)) {
-    x <- lapply(x, .pseudonymizeIdentifiers, salt = salt)
+    x <- lapply(x, .pseudonymizeIdentifiers, key = key)
   }
   x
 }
@@ -358,12 +412,12 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
       next
     }
 
-    # Pseudonymize person/subject keys (per-session salted token, kept under
+    # Pseudonymize person/subject keys (per-resource reversible token, kept under
     # their original names so joins/set-ops and the output contract still work)
     # and drop every other row-level identifier, before data enters the
     # DataSHIELD environment. Output gating (cell/subset suppression by dsBase
     # and dsOMOP nfilter) remains the authoritative disclosure barrier.
-    result <- .pseudonymizeIdentifiers(result, handle$session_salt)
+    result <- .pseudonymizeIdentifiers(result, handle$person_key)
 
     # Temporal covariates: split into 3 symbols
     if (is.list(result) && !is.data.frame(result) &&
