@@ -103,6 +103,86 @@
        gate          = gate)
 }
 
+# --- Pack-facing constructors (re-exported) ----------------------------------
+#
+# A third-party analysis pack (see .omopAnalysisPackEntries) cannot reach the
+# dotted internals, so these thin wrappers re-export the exact same constructors
+# the native adapters use. A pack's registrar builds its entries with
+# omopAnalysisEntry()/omopAnalysisScope()/omopAnalysisDisclosure() and returns
+# them as a named list; dsOMOP namespaces the ids and runs every entry through
+# the ONE gate. The wrappers add no behaviour — entries are identical to native
+# ones — so a pack can never construct an entry that bypasses the gate.
+
+#' Construct an analysis-catalog entry (for third-party analysis packs)
+#'
+#' Public re-export of the internal entry constructor for packages contributing
+#' analyses via \code{Config/dsOMOP/AnalysisCollection}. See
+#' \code{\link{.omopAnalysisEntry}} for the field contract. The returned entry's
+#' \code{compute$fn} output is always gated by dsOMOP's single disclosure gate;
+#' a pack cannot register its own gate.
+#'
+#' @inheritParams .omopAnalysisEntry
+#' @return A \code{omop_analysis_entry} object.
+#' @export
+omopAnalysisEntry <- function(name, description, domain, params, compute,
+                              dependencies, disclosure, scope,
+                              mode = "aggregate", meta = list()) {
+  .omopAnalysisEntry(name = name, description = description, domain = domain,
+                     params = params, compute = compute,
+                     dependencies = dependencies, disclosure = disclosure,
+                     scope = scope, mode = mode, meta = meta)
+}
+
+#' Build a scope spec for a pack analysis entry
+#'
+#' Public re-export of \code{\link{.omopAnalysisScope}}. Set
+#' \code{max_tables = 2L} for a two-population entry (overlap / SMD /
+#' covariate-balance) so the run path resolves \code{scope} into two
+#' independently re-gated cohorts.
+#'
+#' @inheritParams .omopAnalysisScope
+#' @return A scope spec list.
+#' @export
+omopAnalysisScope <- function(accepts_cohort = TRUE, accepts_tables = TRUE,
+                              max_tables = 2L) {
+  .omopAnalysisScope(accepts_cohort = accepts_cohort,
+                     accepts_tables = accepts_tables, max_tables = max_tables)
+}
+
+#' Build a disclosure spec for a pack analysis entry
+#'
+#' Public re-export of \code{\link{.omopAnalysisDisclosure}}. The \code{unit}
+#' (person/record/dist) selects which branch of the single gate applies to the
+#' entry's result.
+#'
+#' @inheritParams .omopAnalysisDisclosure
+#' @return A disclosure spec list.
+#' @export
+omopAnalysisDisclosure <- function(unit = "person", count_cols = character(0),
+                                   person_id_col = NULL, min_max = FALSE,
+                                   gate = "distinct_person") {
+  .omopAnalysisDisclosure(unit = unit, count_cols = count_cols,
+                          person_id_col = person_id_col, min_max = min_max,
+                          gate = gate)
+}
+
+#' Reconcile a derived ratio over banded counts (for pack analysis entries)
+#'
+#' Public re-export of \code{\link{.omopAnalysisReconcileRatio}} for record-unit
+#' pack \code{compute$fn}s that return a rate/percentage: recomputes it from the
+#' BANDED numerator+denominator (or NAs it when either is suppressed) so a raw
+#' ratio over banded counts is never released.
+#'
+#' @inheritParams .omopAnalysisReconcileRatio
+#' @return \code{df} with banded counts and a reconciled (or NA) ratio column.
+#' @export
+omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
+                                       ratio_col, scale = 1) {
+  .omopAnalysisReconcileRatio(df = df, numerator_col = numerator_col,
+                              denominator_col = denominator_col,
+                              ratio_col = ratio_col, scale = scale)
+}
+
 # --- Param typing ------------------------------------------------------------
 
 #' Map a QueryLibrary inferred parameter type to a catalog param type
@@ -369,6 +449,81 @@
   entries
 }
 
+# --- Adapter 4 (native reference): r-in-session aggregates -------------------
+
+#' Emit native r-in-session reference analyses
+#'
+#' A minimal, ALWAYS-present \code{kind="r"} entry that exercises the
+#' r-in-session scoped path end-to-end: it computes its aggregate over the
+#' SCOPED cohort using OUR connection and gated SQL, and returns it through the
+#' ONE gate — the template every natively re-implemented OHDSI aggregate
+#' (FeatureExtraction-style covariate counts, etc.) follows, with no dependency
+#' on those packages being installed.
+#'
+#' \code{"dsomop:demo.person_count_by_gender"}: distinct-person counts by gender
+#' over the scoped cohort (cohort-wide when no scope). It honours the
+#' \code{compute$fn} contract documented in \code{\link{.omopAnalysisRun}}:
+#' joins \code{ctx$scoped_cohort} on \code{subject_id} when non-NULL, calls
+#' \code{\link{.assertMinPersons}} on the scoped+filtered population BEFORE
+#' materialising, and returns an aggregate-only frame (no person key). Gender is
+#' translated to its concept name (translation default ON). \code{unit="person"}
+#' so the gate small-cell-suppresses and bands the returned counts.
+#'
+#' @param handle CDM handle (signature parity; not queried at build time).
+#' @return List with the single reference \code{omop_analysis_entry}.
+#' @keywords internal
+.omopAnalysisDemoEntries <- function(handle) {
+  name <- "dsomop:demo.person_count_by_gender"
+  fn <- function(handle, ctx, params) {
+    person <- .qualifyTable(handle, "person")
+    concept <- .qualifyTable(handle, "concept",
+                             handle$vocab_schema %||% handle$cdm_schema)
+
+    # Restrict to the scoped cohort with an INNER JOIN on subject_id (the cohort
+    # keys its person on subject_id); cohort-wide when no scope was supplied.
+    join_clause <- ""
+    if (!is.null(ctx$scoped_cohort)) {
+      cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+      join_clause <- paste0(" INNER JOIN ", cohort,
+                            " coh ON coh.subject_id = p.person_id")
+    }
+
+    # Gate the scoped+filtered population BEFORE pulling any rows into R.
+    count_sql <- .sql_translate(
+      paste0("SELECT COUNT(DISTINCT p.person_id) AS n FROM ", person, " p",
+             join_clause),
+      handle$target_dialect)
+    .assertMinPersons(handle = handle, sql = count_sql)
+
+    sql <- .sql_translate(
+      paste0("SELECT p.gender_concept_id, c.concept_name AS gender_name, ",
+             "COUNT(DISTINCT p.person_id) AS n_persons FROM ", person, " p",
+             join_clause,
+             " LEFT JOIN ", concept,
+             " c ON c.concept_id = p.gender_concept_id",
+             " GROUP BY p.gender_concept_id, c.concept_name",
+             " ORDER BY n_persons DESC"),
+      handle$target_dialect)
+    .executeQuery(handle, sql)
+  }
+
+  list(`dsomop:demo.person_count_by_gender` = .omopAnalysisEntry(
+    name        = name,
+    description = "Distinct-person counts by gender over the scoped cohort.",
+    domain      = "person",
+    params      = list(),
+    compute     = list(kind = "r", sql = NULL, fn = fn),
+    dependencies = list(tables = c("person", "concept"),
+                        packages = character(0)),
+    disclosure  = .omopAnalysisDisclosure(unit = "person",
+                                          count_cols = "n_persons"),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 1L),
+    mode  = "aggregate",
+    meta  = list(adapter = "demo", accepts_cohort = TRUE)
+  ))
+}
+
 # --- Registry (build-once + cache) -------------------------------------------
 
 #' Warn (never fail) about missing entry dependencies
@@ -409,13 +564,146 @@
   invisible(NULL)
 }
 
+# --- Adapter 4: pluggable third-party analysis packs -------------------------
+
+#' Scan installed packages for the analysis-pack DESCRIPTION fields (cached)
+#'
+#' The handle-INDEPENDENT half of pack discovery: a single
+#' \code{utils::installed.packages(fields=)} pass reads both opt-in fields for
+#' every installed package at once (far cheaper than one
+#' \code{packageDescription} per package). The result is cached on
+#' \code{.dsomop_env} because the installed package set does not change within an
+#' R session — so the disk scan runs once per process, not once per handle. Pass
+#' \code{force=TRUE} to rescan (used by tests).
+#'
+#' @param force Logical; rescan even if cached.
+#' @return Data frame with columns \code{pkg}, \code{prefix}, \code{spec} for
+#'   each package declaring \code{Config/dsOMOP/AnalysisCollection}.
+#' @keywords internal
+.omopAnalysisPackScan <- function(force = FALSE) {
+  if (!force && exists("analysis_pack_scan", envir = .dsomop_env,
+                       inherits = FALSE)) {
+    return(get("analysis_pack_scan", envir = .dsomop_env, inherits = FALSE))
+  }
+  empty <- data.frame(pkg = character(0), prefix = character(0),
+                      spec = character(0), stringsAsFactors = FALSE)
+  ip <- tryCatch(
+    utils::installed.packages(fields = c("Config/dsOMOP/AnalysisCollection",
+                                         "Config/dsOMOP/AnalysisPrefix")),
+    error = function(e) NULL)
+  if (is.null(ip) || nrow(ip) == 0 ||
+      !"Config/dsOMOP/AnalysisCollection" %in% colnames(ip)) {
+    assign("analysis_pack_scan", empty, envir = .dsomop_env)
+    return(empty)
+  }
+  collection <- ip[, "Config/dsOMOP/AnalysisCollection"]
+  prefix <- if ("Config/dsOMOP/AnalysisPrefix" %in% colnames(ip)) {
+    ip[, "Config/dsOMOP/AnalysisPrefix"]
+  } else rep(NA_character_, nrow(ip))
+  keep <- !is.na(collection) & nzchar(trimws(collection))
+  scan <- if (any(keep)) {
+    pkgs <- ip[keep, "Package"]
+    pfx  <- trimws(prefix[keep])
+    pfx[is.na(pfx) | !nzchar(pfx)] <- pkgs[is.na(pfx) | !nzchar(pfx)]
+    data.frame(pkg = unname(pkgs), prefix = unname(pfx),
+               spec = trimws(unname(collection[keep])),
+               stringsAsFactors = FALSE)
+  } else empty
+  assign("analysis_pack_scan", scan, envir = .dsomop_env)
+  scan
+}
+
+#' Discover and load analysis entries contributed by installed packages
+#'
+#' Lets a third-party package contribute catalog entries WITHOUT modifying
+#' dsOMOP, while keeping the disclosure invariant non-negotiable: a pack entry's
+#' \code{compute$fn} output is STILL funnelled through
+#' \code{\link{.omopAnalysisGate}} by the run path (a pack cannot register its
+#' own gate or bypass the one gate). A pack opts in via two DESCRIPTION fields:
+#' \describe{
+#'   \item{\code{Config/dsOMOP/AnalysisCollection}}{Required;
+#'     \code{"pkg::registrar"} — the function dsOMOP calls as
+#'     \code{registrar(handle)} to obtain a named list of entries (each built
+#'     with the re-exported \code{\link{.omopAnalysisEntry}}).}
+#'   \item{\code{Config/dsOMOP/AnalysisPrefix}}{Optional; the id namespace for
+#'     this pack (defaults to the package name). The final id of every entry is
+#'     \code{paste0(prefix, ":", id)}.}
+#' }
+#' Fail-closed rules (never silently overwrite a native or another pack's id):
+#' the \code{"dsomop:"} prefix is RESERVED for native entries and a pack
+#' claiming it is rejected; a pack producing an id that collides with an
+#' already-registered final id is rejected. Both raise a clear error. The
+#' (expensive) DESCRIPTION scan is delegated to \code{\link{.omopAnalysisPackScan}}
+#' (cached per session); this function only invokes the discovered registrars and
+#' enforces the namespacing + collision rules per handle.
+#'
+#' @param handle CDM handle (passed to each registrar).
+#' @param existing Named list of already-registered entries (the three native
+#'   adapters), used for cross-pack / native collision detection.
+#' @return Named list of \code{omop_analysis_entry} objects keyed by final id.
+#' @keywords internal
+.omopAnalysisPackEntries <- function(handle, existing = list()) {
+  scan <- .omopAnalysisPackScan()
+  if (nrow(scan) == 0) return(list())
+
+  taken <- names(existing)
+  out <- list()
+  for (i in seq_len(nrow(scan))) {
+    pkg    <- scan$pkg[i]
+    prefix <- scan$prefix[i]
+    spec   <- scan$spec[i]
+
+    # The "dsomop:" namespace is reserved for native entries.
+    if (identical(tolower(prefix), "dsomop")) {
+      stop("Analysis pack '", pkg, "' claims the reserved 'dsomop:' prefix; ",
+           "choose a different Config/dsOMOP/AnalysisPrefix.", call. = FALSE)
+    }
+
+    # Resolve + call the declared registrar ("pkg::registrar" or "registrar").
+    fn_name <- sub("^.*::", "", spec)
+    registrar <- tryCatch(
+      get(fn_name, envir = asNamespace(pkg), inherits = FALSE),
+      error = function(e) NULL)
+    if (!is.function(registrar)) {
+      warning("Analysis pack '", pkg, "': registrar '", spec,
+              "' not found or not a function; skipping.", call. = FALSE)
+      next
+    }
+    pack_entries <- tryCatch(registrar(handle), error = function(e) {
+      warning("Analysis pack '", pkg, "': registrar errored (", conditionMessage(e),
+              "); skipping.", call. = FALSE)
+      NULL
+    })
+    if (is.null(pack_entries) || length(pack_entries) == 0) next
+
+    for (id in names(pack_entries)) {
+      entry <- pack_entries[[id]]
+      final_id <- paste0(prefix, ":", id)
+      if (final_id %in% taken) {
+        stop("Analysis pack '", pkg, "' registers id '", final_id,
+             "' which already exists; duplicate analysis ids are not allowed.",
+             call. = FALSE)
+      }
+      # Keep the entry's authoritative name in sync with its final id so the
+      # gate/run path and listings agree regardless of what the pack set.
+      entry$name <- final_id
+      out[[final_id]] <- entry
+      taken <- c(taken, final_id)
+    }
+  }
+  out
+}
+
 #' Build (once) and cache the unified analysis catalog
 #'
-#' Assembles the catalog from all three adapters, keyed by stable entry name
-#' (\code{"dsomop:<id>"}). Built once per handle and cached on
-#' \code{handle$analysis_catalog} — exactly the build-once + cache pattern used
-#' by \code{handle$blueprint} (\code{\link{.buildBlueprint}}) and
-#' \code{handle$achilles_gate_cache}. Pass \code{force=TRUE} to rebuild.
+#' Assembles the catalog from the three native adapters (QueryLibrary, Achilles,
+#' OHDSI — all \code{"dsomop:"} namespaced) and then from any installed analysis
+#' PACKS (\code{\link{.omopAnalysisPackEntries}}), keyed by final id. Built once
+#' per handle and cached on \code{handle$analysis_catalog} — exactly the
+#' build-once + cache pattern used by \code{handle$blueprint}
+#' (\code{\link{.buildBlueprint}}) and \code{handle$achilles_gate_cache}. Pass
+#' \code{force=TRUE} to rebuild. Pack discovery is fail-closed on duplicate ids
+#' and on any pack claiming the reserved \code{"dsomop:"} prefix.
 #'
 #' @param handle CDM handle.
 #' @param force Logical; rebuild even if cached.
@@ -426,11 +714,17 @@
     return(handle$analysis_catalog)
   }
 
-  entries <- c(
+  native <- c(
     .omopAnalysisQueryEntries(handle),
     .omopAnalysisAchillesEntries(handle),
-    .omopAnalysisOhdsiEntries(handle)
+    .omopAnalysisOhdsiEntries(handle),
+    .omopAnalysisDemoEntries(handle)
   )
+
+  # Append pack-contributed entries, rejecting any id that collides with a
+  # native id or another pack's id (fail-closed; never silently overwrite).
+  pack <- .omopAnalysisPackEntries(handle, existing = native)
+  entries <- c(native, pack)
 
   .omopAnalysisWarnDeps(handle, entries)
 
@@ -523,7 +817,11 @@
     compute_kind = e$compute$kind,
     disclosure  = e$disclosure,
     scope       = e$scope,
-    adapter     = e$meta$adapter %||% "unknown"
+    adapter     = e$meta$adapter %||% "unknown",
+    # Inert client-side plot recipe (type + a deparsed function(df, params) string).
+    # The server NEVER evaluates this; the client renders it locally on the
+    # already-gated aggregate. NULL for analyses without a plot.
+    plot        = e$compute$plot
   )
 }
 
@@ -633,6 +931,56 @@
   count_sql <- paste0("SELECT COUNT(DISTINCT subject_id) AS n FROM ", scoped)
   .assertMinPersons(handle = handle, sql = count_sql)
   scoped
+}
+
+#' Resolve a two-population \code{scope=} into TWO re-gated cohort temp tables
+#'
+#' Two-population analyses (entries declaring \code{max_tables == 2}: cohort
+#' overlap, standardised mean differences, covariate balance) compare two
+#' INDEPENDENT arms, so the single-source fold of
+#' \code{\link{.omopAnalysisResolveScope}} (which unions/intersects everything
+#' into ONE cohort) is wrong for them. This resolver instead splits \code{scope}
+#' into exactly two elements and resolves EACH through
+#' \code{\link{.omopAnalysisResolveScope}} — so each arm is folded (if it is
+#' itself a list) and, critically, independently re-gated with
+#' \code{\link{.assertMinPersons}} before it is returned. Neither arm can leak
+#' into the other and a too-small arm fails closed here, before the fn runs.
+#'
+#' \code{scope} must be a length-2 list \code{list(a, b)} where each element is
+#' any single-source scope (a cohort ref, an \code{omop.table}, or a sub-list of
+#' those to be folded for that arm).
+#'
+#' @param handle CDM handle.
+#' @param scope A length-2 list of scope sources (one per population arm).
+#' @param combine Character; fold operator applied WITHIN an arm that is itself
+#'   a list of sources ("union" default or "intersect"). The two arms are never
+#'   combined with each other.
+#' @return Character vector of two cohort temp-table names.
+#' @keywords internal
+.omopAnalysisResolveScopePair <- function(handle, scope, combine = "union") {
+  arms <- if (is.list(scope) && !is.data.frame(scope) &&
+              !.is_omop.table(scope)) {
+    Filter(Negate(is.null), scope)
+  } else {
+    list(scope)
+  }
+  if (length(arms) != 2) {
+    stop("Two-population analysis requires exactly two scope elements ",
+         "(scope = list(a, b)); received ", length(arms), ".", call. = FALSE)
+  }
+
+  # Resolve EACH arm through the single-source resolver: each is folded (if a
+  # sub-list) and independently re-gated. A NULL arm (empty source) is rejected
+  # — a two-population analysis needs both populations present.
+  pair <- vapply(arms, function(arm) {
+    ct <- .omopAnalysisResolveScope(handle, arm, combine)
+    if (is.null(ct)) {
+      stop("Two-population analysis: a population arm resolved to no cohort.",
+           call. = FALSE)
+    }
+    ct
+  }, character(1))
+  unname(pair)
 }
 
 #' Substitute the person-level \code{@cohort} hook in a SQL-entry template
@@ -790,14 +1138,19 @@
 
   } else if (identical(unit, "dist")) {
     # Distribution rows: drop small-count rows, mask summary stats below
-    # nfilter_dist, and never release min/max.
+    # nfilter_dist, and never release min/max. Achilles produces snake_case
+    # (min_value/avg_value/...); natively re-implemented OHDSI aggregate
+    # analyses produce camelCase (minValue/averageValue/...). Both spellings
+    # are handled here so the ONE gate covers either origin.
     if (length(count_cols) > 0) {
       df <- .suppressSmallCounts(df, count_cols)
     }
     df <- df[, setdiff(names(df),
-                       grep("^min_value$|^max_value$", names(df),
-                            ignore.case = TRUE, value = TRUE)), drop = FALSE]
+                       grep("^min_value$|^max_value$|^minValue$|^maxValue$",
+                            names(df), ignore.case = TRUE, value = TRUE)),
+             drop = FALSE]
     nfilter_dist <- settings$nfilter_dist %||% 10L
+    # snake_case (Achilles) summary stats, keyed on count_value.
     mask_cols <- intersect(
       c("avg_value", "stdev_value", "p10_value", "p25_value", "median_value",
         "p75_value", "p90_value"),
@@ -805,6 +1158,15 @@
     if (length(mask_cols) > 0 && "count_value" %in% names(df) && nrow(df) > 0) {
       small <- !is.na(df$count_value) & df$count_value < nfilter_dist
       df[small, mask_cols] <- NA_real_
+    }
+    # camelCase (native OHDSI aggregate) summary stats, keyed on countValue.
+    mask_cols_cc <- intersect(
+      c("averageValue", "standardDeviation", "medianValue", "p10Value",
+        "p25Value", "p75Value", "p90Value"),
+      names(df))
+    if (length(mask_cols_cc) > 0 && "countValue" %in% names(df) && nrow(df) > 0) {
+      small_cc <- !is.na(df$countValue) & df$countValue < nfilter_dist
+      df[small_cc, mask_cols_cc] <- NA_real_
     }
   }
 
@@ -817,6 +1179,9 @@
   if (identical(unit, "dist") && "count_value" %in% names(df)) {
     band_cols <- union(band_cols, "count_value")
   }
+  if (identical(unit, "dist") && "countValue" %in% names(df)) {
+    band_cols <- union(band_cols, "countValue")
+  }
   band_cols <- intersect(band_cols, names(df))
   if (length(band_cols) > 0) {
     df <- .suppressSmallCounts(df, band_cols)
@@ -825,7 +1190,82 @@
                           band_width = settings$nfilter_band)
     }
   }
+
+  # BINARY-PREVALENCE COUPLING (person unit): a covariate-prevalence row pairs a
+  # person numerator (sumValue/sum_value) with its derived proportion
+  # (averageValue/average/proportion). If the numerator was suppressed (dropped,
+  # or banded to NA) the surviving proportion would still betray the
+  # sub-threshold count (numerator = proportion * denominator). Run AFTER the
+  # band pass and NA every paired proportion wherever the person count is NA, so
+  # a surviving prevalence can never reveal a suppressed numerator.
+  if (identical(unit, "person") && nrow(df) > 0) {
+    num_col   <- intersect(c("sumValue", "sum_value"), names(df))
+    prop_cols <- intersect(c("averageValue", "average", "proportion"),
+                           names(df))
+    if (length(num_col) > 0 && length(prop_cols) > 0) {
+      coupled <- is.na(df[[num_col[1]]])
+      if (any(coupled)) df[coupled, prop_cols] <- NA_real_
+    }
+  }
   rownames(df) <- NULL
+  df
+}
+
+#' Reconcile a derived rate/percentage against its BANDED numerator+denominator
+#'
+#' A record-unit aggregate that returns a derived ratio (a rate, percentage, or
+#' proportion = numerator / denominator) must NEVER release the raw ratio: a
+#' high-precision ratio over banded counts re-derives the un-banded numerator
+#' (raw_num = ratio * denominator), defeating the banding defence. This helper
+#' is the single place a record-unit \code{compute$fn} routes such a column
+#' through BEFORE returning its frame to \code{\link{.omopAnalysisGate}}:
+#' \itemize{
+#'   \item it bands BOTH the numerator and denominator with
+#'     \code{\link{.bandCount}} (the same \code{nfilter_band} the gate uses);
+#'   \item it RECOMPUTES the ratio from those banded counts (optionally scaled,
+#'     e.g. \code{scale = 100} for a percentage);
+#'   \item it NAs the ratio (and leaves the banded counts) whenever EITHER count
+#'     is suppressed (below \code{nfilter_tab}, or NA, or a zero denominator),
+#'     so a surviving ratio always rests on two released, banded counts.
+#' }
+#' The numerator/denominator columns are overwritten with their banded values so
+#' the frame the gate then sees is already internally consistent (the gate's
+#' own band pass is idempotent over them).
+#'
+#' @param df Data frame from a record-unit \code{compute$fn}.
+#' @param numerator_col Character; the numerator count column name.
+#' @param denominator_col Character; the denominator count column name.
+#' @param ratio_col Character; the derived rate/percentage column to recompute.
+#' @param scale Numeric; multiplier for the recomputed ratio (1 for a
+#'   proportion, 100 for a percentage). Default 1.
+#' @return \code{df} with banded counts and a reconciled (or NA) ratio column.
+#' @keywords internal
+.omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
+                                        ratio_col, scale = 1) {
+  if (!is.data.frame(df) || nrow(df) == 0) return(df)
+  needed <- c(numerator_col, denominator_col, ratio_col)
+  if (!all(needed %in% names(df))) return(df)
+
+  settings <- .omopDisclosureSettings()
+  band <- settings$nfilter_band
+  thr  <- settings$nfilter_tab
+
+  raw_num <- as.numeric(df[[numerator_col]])
+  raw_den <- as.numeric(df[[denominator_col]])
+  num <- vapply(raw_num, .bandCount, numeric(1), band_width = band)
+  den <- vapply(raw_den, .bandCount, numeric(1), band_width = band)
+
+  # Either count below threshold (or NA / zero denominator) => suppress both the
+  # count and the ratio it would otherwise reveal.
+  num[is.na(raw_num) | raw_num < thr] <- NA_real_
+  den[is.na(raw_den) | raw_den < thr] <- NA_real_
+
+  ratio <- (num / den) * scale
+  ratio[is.na(num) | is.na(den) | den == 0] <- NA_real_
+
+  df[[numerator_col]]   <- num
+  df[[denominator_col]] <- den
+  df[[ratio_col]]       <- ratio
   df
 }
 
@@ -931,10 +1371,24 @@
 
   sanitized <- .omopAnalysisSanitizeParams(entry, params)
 
+  kind <- entry$compute$kind %||% "sql"
+
   # Scope resolution + applicability. Reject BEFORE resolving/running anything
   # so a non-scopable entry never emits broken SQL — the failure is a clear,
   # specific message, not a downstream SQL error.
+  #
+  # Single-source entries (the common case) fold every scope source into ONE
+  # re-gated temp cohort (scoped). A TWO-POPULATION entry (overlap / SMD /
+  # covariate-balance) instead resolves scope PER ELEMENT into TWO independently
+  # re-gated temp cohorts (scoped_pair) so the two arms never bleed into one
+  # another. Two-population is a kind="r" capability: such an entry declares
+  # max_tables == 2 to mean "two distinct populations". SQL templates also carry
+  # max_tables == 2, but for them it means "fold up to two sources into one
+  # @cohort predicate" (a single population), so they always take the fold path.
+  two_population <- !identical(kind, "sql") && !identical(kind, "sql+r") &&
+    identical(as.integer(entry$scope$max_tables %||% 0L), 2L)
   scoped <- NULL
+  scoped_pair <- NULL
   if (!is.null(scope)) {
     if (!isTRUE(entry$scope$accepts_cohort) &&
         !isTRUE(entry$scope$accepts_tables)) {
@@ -948,10 +1402,12 @@
       stop("Analysis '", name, "' does not support cohort/population scoping (",
            reason, ").", call. = FALSE)
     }
-    scoped <- .omopAnalysisResolveScope(handle, scope, combine)
+    if (two_population) {
+      scoped_pair <- .omopAnalysisResolveScopePair(handle, scope, combine)
+    } else {
+      scoped <- .omopAnalysisResolveScope(handle, scope, combine)
+    }
   }
-
-  kind <- entry$compute$kind %||% "sql"
 
   if (identical(kind, "sql") || identical(kind, "sql+r")) {
     if (assign) {
@@ -974,12 +1430,36 @@
     }
     df <- .omopAnalysisRunSql(handle, entry, sanitized, scoped)
   } else {
-    # kind == "r": call the wrapped Achilles/OHDSI accessor. ctx carries the
-    # adapter-private identifiers the wrapper needs.
+    # kind == "r": call the entry's compute$fn. ctx carries the adapter-private
+    # identifiers the pre-computed wrappers need AND — the load-bearing addition
+    # for natively re-implemented aggregate analyses — the resolved scope.
+    #
+    # compute$fn contract: function(handle, ctx, params) -> an AGGREGATE-ONLY
+    # data.frame (counts/rates/summary stats), NEVER a person key. The fn MUST
+    # honour the scope it is handed:
+    #   * ctx$scoped_cohort  : a single re-gated cohort temp-table name, or NULL
+    #     for a cohort-wide run. When non-NULL, restrict the population by an
+    #     INNER JOIN on subject_id, e.g.
+    #       INNER JOIN <ctx$scoped_cohort> coh ON t.person_id = coh.subject_id
+    #     (the cohort keys its person on subject_id).
+    #   * ctx$person_set_sql : the same scope as a ready-to-splice membership
+    #     sub-select "(SELECT subject_id FROM <scoped>)", or NULL — for fns that
+    #     prefer "... WHERE t.person_id IN <ctx$person_set_sql>".
+    #   * ctx$scoped_cohorts : for two-population entries (max_tables == 2) a
+    #     length-2 character vector of two INDEPENDENTLY re-gated cohort temp
+    #     tables, or NULL. Each arm joins on subject_id exactly as above.
+    # If the fn must pull rows into R it MUST call .assertMinPersons on the
+    # scoped + filtered population BEFORE materialising. The returned frame is
+    # STILL funnelled through .omopAnalysisGate below — the fn never gates.
     ctx <- list(
-      analysis_id = entry$meta$analysis_id,
-      table_name  = entry$meta$table_name,
-      tool_id     = entry$meta$tool_id
+      analysis_id   = entry$meta$analysis_id,
+      table_name    = entry$meta$table_name,
+      tool_id       = entry$meta$tool_id,
+      scoped_cohort = scoped,
+      person_set_sql = if (!is.null(scoped)) {
+        paste0("(SELECT subject_id FROM ", scoped, ")")
+      } else NULL,
+      scoped_cohorts = scoped_pair
     )
     df <- entry$compute$fn(handle, ctx, sanitized)
   }

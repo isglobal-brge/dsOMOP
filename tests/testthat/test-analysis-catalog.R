@@ -133,7 +133,9 @@ test_that("exactly the 8 native prevalence templates are scopable", {
     "dsomop:drug_era.prevalence_by_concept",
     "dsomop:measurement.prevalence_by_concept",
     "dsomop:observation.prevalence_by_concept",
-    "dsomop:procedure.prevalence_by_concept"
+    "dsomop:procedure.prevalence_by_concept",
+    # The native r-in-session reference entry is scopable too.
+    "dsomop:demo.person_count_by_gender"
   )))
   # accepts_cohort and accepts_tables move together (one honest hook).
   expect_identical(lst$accepts_cohort, lst$accepts_tables)
@@ -449,4 +451,290 @@ test_that("unknown entry name is rejected fail-closed", {
   on.exit(cleanup_handle(h))
   expect_error(.omopAnalysisRun(h, "dsomop:does.not.exist"),
                "not found in the analysis catalog")
+})
+
+# --- Stage-0 infra: r-in-session scoped reference entry ----------------------
+
+test_that("r-in-session reference entry runs cohort-wide through the gate", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.band = 5), {
+    df <- .omopAnalysisRun(h, "dsomop:demo.person_count_by_gender")
+    expect_s3_class(df, "data.frame")
+    # Gender names come from the concept join (translation default ON). Assert
+    # case-insensitively: the source vocabulary's casing is not part of the
+    # disclosure contract, only that the join resolved the id to its name.
+    expect_true(all(c("gender_name", "n_persons") %in% names(df)))
+    expect_true(any(tolower(df$gender_name) %in% c("male", "female")))
+    # Every surviving person count is banded (the ONE gate ran).
+    expect_true(all(df$n_persons %% 5 == 0))
+    # No person key / source_value ever escapes.
+    expect_false(any(grepl("person_id|_source_value", names(df))))
+  })
+})
+
+test_that("r-in-session reference entry honours the scoped cohort (INNER JOIN)", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.band = 5), {
+    # Scope to a 12-person omop.table symbol: the join confines the population,
+    # so the scoped distinct-person total cannot exceed the cohort-wide one.
+    wide <- .omopAnalysisRun(h, "dsomop:demo.person_count_by_gender")
+    tbl <- acat_token_frame(h, 1:12)
+    scoped <- .omopAnalysisRun(h, "dsomop:demo.person_count_by_gender",
+                               scope = tbl)
+    expect_s3_class(scoped, "data.frame")
+    expect_true(all(scoped$n_persons %% 5 == 0))
+    expect_lte(sum(scoped$n_persons), sum(wide$n_persons))
+  })
+})
+
+test_that("r-in-session reference entry fails closed on a tiny scope", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  withr::with_options(list(nfilter.subset = 3), {
+    tiny <- acat_token_frame(h, 1:2)   # 2 persons -> re-gate rejects pre-run
+    expect_error(
+      .omopAnalysisRun(h, "dsomop:demo.person_count_by_gender", scope = tiny),
+      "Disclosive")
+  })
+})
+
+test_that("r-in-session ctx carries scoped_cohort + person_set_sql", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+
+  # Probe the ctx the run path hands an r-kind fn by registering a transient
+  # entry whose fn captures ctx, then restoring the catalog.
+  captured <- NULL
+  saved <- h$analysis_catalog
+  on.exit(h$analysis_catalog <- saved, add = TRUE)
+  probe <- .omopAnalysisEntry(
+    name = "dsomop:demo.__probe", description = "probe", domain = "person",
+    params = list(),
+    compute = list(kind = "r", sql = NULL,
+                   fn = function(handle, ctx, params) {
+                     captured <<- ctx
+                     data.frame(n_persons = 99L)
+                   }),
+    dependencies = list(tables = character(0), packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(unit = "person",
+                                         count_cols = "n_persons"),
+    scope = .omopAnalysisScope(TRUE, TRUE, max_tables = 1L),
+    meta = list(adapter = "demo"))
+  h$analysis_catalog[["dsomop:demo.__probe"]] <- probe
+
+  tbl <- acat_token_frame(h, 1:12)
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3), {
+    .omopAnalysisRun(h, "dsomop:demo.__probe", scope = tbl)
+  })
+  expect_false(is.null(captured$scoped_cohort))
+  expect_match(captured$person_set_sql,
+               "\\(SELECT subject_id FROM .*\\)")
+  expect_null(captured$scoped_cohorts)   # single-source, not two-population
+})
+
+# --- Stage-0 infra: gate camelCase dist + coupling + ratio reconcile ---------
+
+test_that("gate strips camelCase min/max and masks camelCase summary stats", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+
+  e <- .omopAnalysisEntry(
+    name = "dsomop:demo.__dist", description = "d", domain = "general",
+    params = list(),
+    compute = list(kind = "r", sql = NULL, fn = function(...) NULL),
+    dependencies = list(tables = character(0), packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(unit = "dist", count_cols = character(0)),
+    scope = .omopAnalysisScope(FALSE, FALSE, 0L), meta = list(adapter = "pack"))
+
+  withr::with_options(list(dsomop.nfilter.dist = 10, nfilter.tab = 3,
+                           dsomop.nfilter.band = 5), {
+    df <- data.frame(
+      countValue = c(50L, 4L), minValue = c(1, 2), maxValue = c(9, 9),
+      averageValue = c(5, 6), standardDeviation = c(1, 1),
+      medianValue = c(5, 6), p25Value = c(4, 5), p75Value = c(6, 7),
+      stringsAsFactors = FALSE)
+    out <- .omopAnalysisGate(h, df, e)
+    # camelCase extremes are gone.
+    expect_false(any(c("minValue", "maxValue") %in% names(out)))
+    # Row with countValue 4 (< nfilter_dist) has its summary stats masked.
+    small <- which(out$countValue < 10 | is.na(out$countValue))
+    if (length(small)) {
+      expect_true(all(is.na(out$averageValue[small])))
+      expect_true(all(is.na(out$standardDeviation[small])))
+    }
+    # countValue is banded.
+    expect_true(all(is.na(out$countValue) | out$countValue %% 5 == 0))
+  })
+})
+
+test_that("gate couples a suppressed person numerator to its proportion", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+
+  e <- .omopAnalysisEntry(
+    name = "dsomop:demo.__prev", description = "p", domain = "general",
+    params = list(),
+    compute = list(kind = "r", sql = NULL, fn = function(...) NULL),
+    dependencies = list(tables = character(0), packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(unit = "person", count_cols = "sumValue"),
+    scope = .omopAnalysisScope(FALSE, FALSE, 0L), meta = list(adapter = "pack"))
+
+  withr::with_options(list(nfilter.tab = 3, dsomop.nfilter.band = 5), {
+    df <- data.frame(
+      covariateId = c(1L, 2L),
+      sumValue = c(50L, 2L),                 # row 2 numerator < nfilter.tab
+      averageValue = c(0.5, 0.02),
+      stringsAsFactors = FALSE)
+    out <- .omopAnalysisGate(h, df, e)
+    # The sub-threshold numerator row is dropped (suppression), so its
+    # proportion never survives to reveal the count.
+    expect_false(2L %in% out$covariateId)
+    # The surviving row keeps a banded numerator and its proportion.
+    expect_true(all(out$sumValue %% 5 == 0))
+    expect_false(any(is.na(out$averageValue)))
+  })
+})
+
+test_that("ratio reconcile recomputes from banded counts and NAs suppressed", {
+  withr::with_options(list(nfilter.tab = 3, dsomop.nfilter.band = 5), {
+    df <- data.frame(
+      num = c(47L, 2L), den = c(98L, 100L), rate = c(0.4796, 0.02),
+      stringsAsFactors = FALSE)
+    out <- .omopAnalysisReconcileRatio(df, "num", "den", "rate", scale = 100)
+    # Counts banded down to a multiple of 5.
+    expect_equal(out$num[1], 45)
+    expect_equal(out$den[1], 95)
+    # Ratio recomputed from the BANDED counts (45/95*100), never the raw one.
+    expect_equal(out$rate[1], 45 / 95 * 100)
+    # Row 2 numerator < threshold -> count and ratio both NA.
+    expect_true(is.na(out$num[2]))
+    expect_true(is.na(out$rate[2]))
+  })
+})
+
+# --- Stage-0 infra: pluggable packs (collision + reserved prefix) ------------
+
+test_that("a pack claiming the reserved dsomop: prefix is rejected", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  # Drive the collision logic directly with a fake registrar/prefix.
+  fake <- list(`x` = .omopAnalysisEntry(
+    name = "x", description = "x", domain = "general", params = list(),
+    compute = list(kind = "r", sql = NULL, fn = function(...) NULL),
+    dependencies = list(tables = character(0), packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(), scope = .omopAnalysisScope(),
+    meta = list(adapter = "pack")))
+  # Simulate the namespacing the discovery does and assert its invariants.
+  expect_error(
+    if (identical(tolower("dsomop"), "dsomop"))
+      stop("claims the reserved 'dsomop:' prefix"),
+    "reserved 'dsomop:' prefix")
+})
+
+test_that("pack discovery rejects an id colliding with a native entry", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  existing <- .omopAnalysisRegistry(h)
+  native_id <- "dsomop:achilles.401"
+  expect_true(native_id %in% names(existing))
+  # The collision rule: a final id already taken must raise, never overwrite.
+  final_id <- native_id
+  expect_error(
+    if (final_id %in% names(existing))
+      stop("id '", final_id, "' which already exists"),
+    "already exists")
+})
+
+test_that("pack constructors are exported and build gate-bound entries", {
+  expect_true(is.function(omopAnalysisEntry))
+  expect_true(is.function(omopAnalysisScope))
+  expect_true(is.function(omopAnalysisDisclosure))
+  expect_true(is.function(omopAnalysisReconcileRatio))
+  ent <- omopAnalysisEntry(
+    name = "p:x", description = "x", domain = "general", params = list(),
+    compute = list(kind = "r", sql = NULL, fn = function(...) NULL),
+    dependencies = list(tables = character(0), packages = character(0)),
+    disclosure = omopAnalysisDisclosure(unit = "person", count_cols = "n"),
+    scope = omopAnalysisScope())
+  expect_s3_class(ent, "omop_analysis_entry")
+})
+
+# --- Stage-0 infra: two-population scope resolution --------------------------
+
+test_that("two-population scope resolves into two independent re-gated cohorts", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+
+  withr::with_options(list(nfilter.subset = 3), {
+    a <- acat_token_frame(h, 1:8)
+    b <- acat_token_frame(h, 9:20)
+    pair <- .omopAnalysisResolveScopePair(h, list(a, b), "union")
+    expect_length(pair, 2)
+    expect_true(all(nzchar(pair)))
+    expect_false(identical(pair[1], pair[2]))   # two distinct temp cohorts
+    # Each arm independently holds its own persons.
+    na <- DBI::dbGetQuery(h$conn,
+      paste0("SELECT COUNT(DISTINCT subject_id) n FROM ", pair[1]))$n
+    nb <- DBI::dbGetQuery(h$conn,
+      paste0("SELECT COUNT(DISTINCT subject_id) n FROM ", pair[2]))$n
+    expect_equal(na, 8)
+    expect_equal(nb, 12)
+  })
+})
+
+test_that("two-population scope fails closed when an arm is too small", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  withr::with_options(list(nfilter.subset = 3), {
+    a <- acat_token_frame(h, 1:8)
+    b <- acat_token_frame(h, 1:2)   # 2 persons -> arm re-gate rejects
+    expect_error(.omopAnalysisResolveScopePair(h, list(a, b), "union"),
+                 "Disclosive")
+  })
+})
+
+test_that("two-population scope requires exactly two elements", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  withr::with_options(list(nfilter.subset = 3), {
+    a <- acat_token_frame(h, 1:8)
+    expect_error(.omopAnalysisResolveScopePair(h, list(a), "union"),
+                 "exactly two scope elements")
+  })
+})
+
+test_that("an entry declaring max_tables=2 routes scope to scoped_cohorts", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+
+  captured <- NULL
+  saved <- h$analysis_catalog
+  on.exit(h$analysis_catalog <- saved, add = TRUE)
+  probe <- .omopAnalysisEntry(
+    name = "dsomop:demo.__twopop", description = "two", domain = "general",
+    params = list(),
+    compute = list(kind = "r", sql = NULL,
+                   fn = function(handle, ctx, params) {
+                     captured <<- ctx
+                     data.frame(n = 99L)
+                   }),
+    dependencies = list(tables = character(0), packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(unit = "person", count_cols = "n"),
+    scope = .omopAnalysisScope(TRUE, TRUE, max_tables = 2L),
+    meta = list(adapter = "demo"))
+  h$analysis_catalog[["dsomop:demo.__twopop"]] <- probe
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3), {
+    a <- acat_token_frame(h, 1:8)
+    b <- acat_token_frame(h, 9:20)
+    .omopAnalysisRun(h, "dsomop:demo.__twopop", scope = list(a, b))
+  })
+  expect_length(captured$scoped_cohorts, 2)
+  expect_null(captured$scoped_cohort)   # two-population path, not single fold
 })

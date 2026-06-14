@@ -15,10 +15,13 @@
 Named list of \code{omop_analysis_entry} objects keyed by name.
 }
 \description{
-Assembles the catalog from all three adapters, keyed by stable entry name
-(\code{"dsomop:<id>"}). Built once per handle and cached on
-\code{handle$analysis_catalog} — exactly the build-once + cache pattern used
-by \code{handle$blueprint} (\code{\link{.buildBlueprint}}) and
-\code{handle$achilles_gate_cache}. Pass \code{force=TRUE} to rebuild.
+Assembles the catalog from the three native adapters (QueryLibrary, Achilles,
+OHDSI — all \code{"dsomop:"} namespaced) and then from any installed analysis
+PACKS (\code{\link{.omopAnalysisPackEntries}}), keyed by final id. Built once
+per handle and cached on \code{handle$analysis_catalog} — exactly the
+build-once + cache pattern used by \code{handle$blueprint}
+(\code{\link{.buildBlueprint}}) and \code{handle$achilles_gate_cache}. Pass
+\code{force=TRUE} to rebuild. Pack discovery is fail-closed on duplicate ids
+and on any pack claiming the reserved \code{"dsomop:"} prefix.
 }
 \keyword{internal}
