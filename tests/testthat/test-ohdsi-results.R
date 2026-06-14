@@ -197,11 +197,16 @@ test_that("ohdsiGetResults returns DQD data", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "dqdashboard_results")
-  expect_s3_class(result, "data.frame")
-  expect_true(nrow(result) > 0)
-  expect_true("check_name" %in% names(result))
-  expect_true("category" %in% names(result))
+  # DQD results are row-level data-quality tallies with no per-person basis, so
+  # the fail-closed person gate empties them in strict mode (covered separately).
+  # Exercise the consumer mechanics with strict mode off so rows are returned.
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    result <- .ohdsiGetResults(handle, "dqdashboard_results")
+    expect_s3_class(result, "data.frame")
+    expect_true(nrow(result) > 0)
+    expect_true("check_name" %in% names(result))
+    expect_true("category" %in% names(result))
+  })
 })
 
 test_that("ohdsiGetResults excludes sensitive columns", {
@@ -209,9 +214,11 @@ test_that("ohdsiGetResults excludes sensitive columns", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "dqdashboard_results")
-  # query_text is a sensitive column for DQD
-  expect_false("query_text" %in% names(result))
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    result <- .ohdsiGetResults(handle, "dqdashboard_results")
+    # query_text is a sensitive column for DQD
+    expect_false("query_text" %in% names(result))
+  })
 })
 
 test_that("ohdsiGetResults applies disclosure control", {
@@ -220,15 +227,18 @@ test_that("ohdsiGetResults applies disclosure control", {
   .buildBlueprint(handle)
 
   # DQD fixture has num_violated_rows = 1 and 2 (below threshold 3)
-  # Those rows should be dropped
-  result <- .ohdsiGetResults(handle, "dqdashboard_results")
-  expect_true(nrow(result) > 0)
-  # All surviving rows should have count columns >= threshold
-  if ("num_violated_rows" %in% names(result)) {
-    expect_true(all(result$num_violated_rows >= 3))
-  }
-  # Rows with num_violated_rows = 1 or 2 should not be present
-  expect_true(nrow(result) < 8)  # 8 total, some suppressed
+  # Those rows should be dropped. (Strict mode off: isolate cell suppression
+  # from the orthogonal person gate, which would otherwise empty person-less DQD.)
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    result <- .ohdsiGetResults(handle, "dqdashboard_results")
+    expect_true(nrow(result) > 0)
+    # All surviving rows should have count columns >= threshold
+    if ("num_violated_rows" %in% names(result)) {
+      expect_true(all(result$num_violated_rows >= 3))
+    }
+    # Rows with num_violated_rows = 1 or 2 should not be present
+    expect_true(nrow(result) < 8)  # 8 total, some suppressed
+  })
 })
 
 test_that("ohdsiGetResults respects filters", {
@@ -236,10 +246,12 @@ test_that("ohdsiGetResults respects filters", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "dqdashboard_results",
-                              filters = list(category = "Completeness"))
-  expect_true(nrow(result) > 0)
-  expect_true(all(result$category == "Completeness"))
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    result <- .ohdsiGetResults(handle, "dqdashboard_results",
+                                filters = list(category = "Completeness"))
+    expect_true(nrow(result) > 0)
+    expect_true(all(result$category == "Completeness"))
+  })
 })
 
 test_that("ohdsiGetResults respects limit", {
@@ -423,9 +435,13 @@ test_that("ohdsiGetResults works for incidence_rate", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "incidence_rate")
-  expect_s3_class(result, "data.frame")
-  expect_true(nrow(result) > 0)
+  # incidence_rate carries cohort_count but no person column, so strict mode
+  # fail-closes it (covered separately); verify the consumer with strict off.
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    result <- .ohdsiGetResults(handle, "incidence_rate")
+    expect_s3_class(result, "data.frame")
+    expect_true(nrow(result) > 0)
+  })
 })
 
 # --- CohortIncidence Query ---
@@ -458,10 +474,14 @@ test_that("ohdsiGetResults works for c_covariates", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "c_covariates")
-  expect_s3_class(result, "data.frame")
-  expect_true(nrow(result) > 0)
-  expect_true("covariate_name" %in% names(result))
+  # This fixture's c_covariates carries sum_value but no person column, so the
+  # person gate fail-closes it in strict mode; verify the consumer with it off.
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    result <- .ohdsiGetResults(handle, "c_covariates")
+    expect_s3_class(result, "data.frame")
+    expect_true(nrow(result) > 0)
+    expect_true("covariate_name" %in% names(result))
+  })
 })
 
 # --- Disclosure Control Details ---
@@ -555,10 +575,14 @@ test_that("ohdsiGetResults works for included_source_concept", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "included_source_concept")
-  expect_s3_class(result, "data.frame")
-  expect_true(nrow(result) > 0)
-  expect_true("concept_id" %in% names(result))
+  # Concept-reference rows (concept_count, no person column) fail-close in strict
+  # mode; verify the consumer shapes the result with strict mode off.
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    result <- .ohdsiGetResults(handle, "included_source_concept")
+    expect_s3_class(result, "data.frame")
+    expect_true(nrow(result) > 0)
+    expect_true("concept_id" %in% names(result))
+  })
 })
 
 test_that("ohdsiGetResults works for orphan_concept", {
@@ -566,10 +590,14 @@ test_that("ohdsiGetResults works for orphan_concept", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "orphan_concept")
-  expect_s3_class(result, "data.frame")
-  expect_true(nrow(result) > 0)
-  expect_true("concept_id" %in% names(result))
+  # Orphan-concept rows (concept_count, no person column) fail-close in strict
+  # mode; verify the consumer shapes the result with strict mode off.
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    result <- .ohdsiGetResults(handle, "orphan_concept")
+    expect_s3_class(result, "data.frame")
+    expect_true(nrow(result) > 0)
+    expect_true("concept_id" %in% names(result))
+  })
 })
 
 # --- Characterization New Table Queries ---
@@ -579,11 +607,15 @@ test_that("ohdsiGetResults works for c_covariates_continuous", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "c_covariates_continuous")
-  expect_s3_class(result, "data.frame")
-  expect_true(nrow(result) > 0)
-  expect_true("median_value" %in% names(result))
-  expect_true("p25_value" %in% names(result))
+  # This fixture's c_covariates_continuous carries count_value but no person
+  # column, so strict mode fail-closes it; verify the consumer with it off.
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    result <- .ohdsiGetResults(handle, "c_covariates_continuous")
+    expect_s3_class(result, "data.frame")
+    expect_true(nrow(result) > 0)
+    expect_true("median_value" %in% names(result))
+    expect_true("p25_value" %in% names(result))
+  })
 })
 
 test_that("ohdsiGetResults works for c_time_to_event", {
@@ -692,11 +724,16 @@ test_that("ohdsiGetResults works for es_cm_result", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "es_cm_result")
-  expect_s3_class(result, "data.frame")
-  expect_true(nrow(result) > 0)
-  expect_true("rr" %in% names(result))
-  expect_true("n_databases" %in% names(result))
+  # Evidence-synthesis results are cross-database meta-analyses with no
+  # per-person basis (n_databases only), so strict mode fail-closes them
+  # (covered separately); verify the consumer with strict mode off.
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    result <- .ohdsiGetResults(handle, "es_cm_result")
+    expect_s3_class(result, "data.frame")
+    expect_true(nrow(result) > 0)
+    expect_true("rr" %in% names(result))
+    expect_true("n_databases" %in% names(result))
+  })
 })
 
 test_that("ohdsiGetResults works for es_sccs_result", {
@@ -704,9 +741,14 @@ test_that("ohdsiGetResults works for es_sccs_result", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "es_sccs_result")
-  expect_s3_class(result, "data.frame")
-  expect_true(nrow(result) > 0)
-  expect_true("rr" %in% names(result))
-  expect_true("n_databases" %in% names(result))
+  # Evidence-synthesis results are cross-database meta-analyses with no
+  # per-person basis (n_databases only), so strict mode fail-closes them
+  # (covered separately); verify the consumer with strict mode off.
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    result <- .ohdsiGetResults(handle, "es_sccs_result")
+    expect_s3_class(result, "data.frame")
+    expect_true(nrow(result) > 0)
+    expect_true("rr" %in% names(result))
+    expect_true("n_databases" %in% names(result))
+  })
 })

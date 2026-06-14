@@ -32,6 +32,7 @@ AggregateMethods:
   omopCohortGetDefinitionDS,
   omopConceptPrevalenceDS,
   omopCrossTabDS,
+  omopNumericRangeDS,
   omopNumericHistogramDS,
   omopNumericQuantilesDS,
   omopDateCountsDS,
@@ -50,7 +51,8 @@ AggregateMethods:
   omopOhdsiSummaryDS,
   omopQueryListDS,
   omopQueryGetDS,
-  omopQueryExecDS
+  omopQueryExecDS,
+  omopFactorLevelsDS
 Options:
   nfilter.subset=3,
   nfilter.tab=3,

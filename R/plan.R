@@ -331,6 +331,27 @@
   ))
 }
 
+# Build an " AND <alias>.<date_col> BETWEEN ..." predicate for a population
+# EXISTS/NOT EXISTS subquery, scoping events to a window of day offsets relative
+# to the current date (negative = past), e.g. window=list(start=-365, end=0) is
+# "in the prior year". Returns "" when no window, no start/end, or the table has
+# no usable date column (so the filter degrades to unwindowed rather than erroring).
+.windowPredicateSql <- function(handle, bp, table_name, alias, window) {
+  if (is.null(window)) return("")
+  ws <- window$start; we <- window$end
+  if (is.null(ws) && is.null(we)) return("")
+  date_col <- .getDateColumn(bp, table_name)
+  if (is.null(date_col)) return("")
+  parts <- character(0)
+  if (!is.null(ws)) parts <- c(parts, paste0(
+    " AND ", alias, ".", date_col, " >= ",
+    .dateAddSql(handle, as.integer(ws), .currentDateSql(handle))))
+  if (!is.null(we)) parts <- c(parts, paste0(
+    " AND ", alias, ".", date_col, " <= ",
+    .dateAddSql(handle, as.integer(we), .currentDateSql(handle))))
+  paste(parts, collapse = "")
+}
+
 .isCohortFilterLeaf <- function(x) {
   is.list(x) && !is.null(x$type) &&
     tolower(x$type) %in% .cohortFilterTypes()
@@ -505,14 +526,15 @@
       concept_col <- .getDomainConceptColumn(bp, table_name)
       qualified_tbl <- tbl_row$qualified_name[1]
       id_list <- paste(concept_ids, collapse = ", ")
+      win <- .windowPredicateSql(handle, bp, table_name, "t", params$window)
       if (min_count <= 1L) {
         return(paste0("EXISTS (SELECT 1 FROM ", qualified_tbl, " t",
                       " WHERE t.person_id = p.person_id",
-                      " AND t.", concept_col, " IN (", id_list, "))"))
+                      " AND t.", concept_col, " IN (", id_list, ")", win, ")"))
       }
       return(paste0("(SELECT COUNT(*) FROM ", qualified_tbl, " t",
                     " WHERE t.person_id = p.person_id",
-                    " AND t.", concept_col, " IN (", id_list, ")",
+                    " AND t.", concept_col, " IN (", id_list, ")", win,
                     ") >= ", min_count))
     }
 
@@ -525,9 +547,10 @@
       concept_col <- .getDomainConceptColumn(bp, table_name)
       qualified_tbl <- tbl_row$qualified_name[1]
       id_list <- paste(concept_ids, collapse = ", ")
+      win <- .windowPredicateSql(handle, bp, table_name, "t", params$window)
       return(paste0("NOT EXISTS (SELECT 1 FROM ", qualified_tbl, " t",
                     " WHERE t.person_id = p.person_id",
-                    " AND t.", concept_col, " IN (", id_list, "))"))
+                    " AND t.", concept_col, " IN (", id_list, ")", win, ")"))
     }
 
   } else if (ftype == "concept_count") {
@@ -619,10 +642,11 @@
     if (nrow(m_row) > 0 && length(concept_ids) > 0) {
       m_qualified <- m_row$qualified_name[1]
       id_list <- paste(concept_ids, collapse = ", ")
+      win <- .windowPredicateSql(handle, bp, "measurement", "m", params$window)
       return(paste0("NOT EXISTS (SELECT 1 FROM ", m_qualified, " m",
                     " WHERE m.person_id = p.person_id",
                     " AND m.measurement_concept_id IN (", id_list, ")",
-                    " AND m.value_as_number IS NOT NULL)"))
+                    " AND m.value_as_number IS NOT NULL", win, ")"))
     }
   }
 

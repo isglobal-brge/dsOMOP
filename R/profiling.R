@@ -8,9 +8,25 @@
 #' \code{concept_col} lets the caller scope by another concept column on the
 #' same table instead — \code{unit_concept_id}, a \code{*_type_concept_id}, or
 #' \code{value_as_concept_id} — which enables unit-aware value distributions and
-#' value-by-type profiling. The override is validated as an identifier and must
-#' exist on the table; only its existence (not its name) is required, so it
-#' cannot be used to reach another table. Returns NULL when no scope applies.
+#' value-by-type profiling. This is the single authoritative chokepoint for
+#' concept scoping: every profiler that turns \code{concept_col} into a WHERE
+#' filter resolves it here, so the override is gated fail-closed and CANNOT be
+#' used to filter on a forbidden column.
+#'
+#' An explicit override must be a genuine, releasable concept column:
+#' \itemize{
+#'   \item it must EXIST on this table (so it cannot reach another table);
+#'   \item it must NOT be blocked (\code{is_blocked}) — this rejects every
+#'     \code{*_source_value} / \code{*_source_concept_id} column (which must be
+#'     treated as if it does not exist) and all other PII, closing the
+#'     source-value filter leak;
+#'   \item it must be a concept column (name ends in \code{_concept_id}) that is
+#'     not a source concept — this additionally rejects identifier / person-key
+#'     columns (\code{person_id}, \code{*_occurrence_id}, foreign keys), which
+#'     are not concepts and must never be used as a scope filter.
+#' }
+#' Anything else stops with a generic error. Returns NULL only when NO override
+#' is given and the table has no default domain concept column.
 #'
 #' @param bp Blueprint
 #' @param table Character; lower-cased table name
@@ -25,6 +41,20 @@
   cols <- bp$columns[[table]]
   if (is.null(cols) || !concept_col %in% cols$column_name) {
     stop("Concept column '", concept_col, "' not found in '", table, "'.",
+         call. = FALSE)
+  }
+  crow <- cols[cols$column_name == concept_col, , drop = FALSE]
+  # Fail-closed: a blocked column (any *_source_value / *_source_concept_id or
+  # other PII) is never a valid scope filter — treat it as if it does not exist.
+  if (isTRUE(crow$is_blocked[1])) {
+    stop("Concept column '", concept_col, "' is not a valid scope column.",
+         call. = FALSE)
+  }
+  # Fail-closed: only true concept columns may scope, and never source concepts.
+  # This also rejects identifier / person-key columns (they are non_concept).
+  if (!grepl("_concept_id$", concept_col) ||
+      identical(crow$concept_role[1], "source_concept")) {
+    stop("Concept column '", concept_col, "' is not a valid scope column.",
          call. = FALSE)
   }
   concept_col
@@ -1563,19 +1593,14 @@
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
 
-  # Auto-detect concept column
+  # Resolve the concept column through the single authoritative chokepoint:
+  # auto-detect the domain concept when concept_col is NULL, otherwise validate
+  # the override fail-closed (rejects blocked / source-value / identifier
+  # columns) so it cannot be used as a forbidden WHERE filter below.
+  concept_col <- .resolveConceptScopeColumn(bp, table, concept_col)
   if (is.null(concept_col)) {
-    concept_col <- .getDomainConceptColumn(bp, table)
-    if (is.null(concept_col)) {
-      stop("No domain concept column found for table '", table,
-           "'. Provide concept_col explicitly.", call. = FALSE)
-    }
-  } else {
-    concept_col <- tolower(.validateIdentifier(concept_col, "column"))
-  }
-  if (!concept_col %in% tbl_cols) {
-    stop("Column '", concept_col, "' not found in '", table, "'.",
-         call. = FALSE)
+    stop("No domain concept column found for table '", table,
+         "'. Provide concept_col explicitly.", call. = FALSE)
   }
 
   where_concept <- paste0(concept_col, " = ", concept_id)
@@ -2170,11 +2195,19 @@
                        drop = FALSE]
   if (nrow(tbl_row) == 0) stop("Table '", table, "' not found.", call. = FALSE)
   qualified <- tbl_row$qualified_name[1]
-  tbl_cols <- bp$columns[[table]]$column_name
+  col_df <- bp$columns[[table]]
+  tbl_cols <- col_df$column_name
 
+  # Every axis / stratifier is both WHERE-filtered and emitted as raw GROUP BY
+  # level VALUES, so a blocked column here would leak (e.g. value_as_string or a
+  # *_source_value). Reject fail-closed, mirroring .resolveConceptScopeColumn —
+  # crosstab cannot route through that chokepoint (two axes, no domain default).
   for (cc in c(row_col, col_col, stratify_by)) {
     if (!is.null(cc) && !cc %in% tbl_cols) {
       stop("Column '", cc, "' not found in '", table, "'.", call. = FALSE)
+    }
+    if (!is.null(cc) && any(col_df$is_blocked[col_df$column_name == cc])) {
+      stop("Column '", cc, "' is blocked (sensitive).", call. = FALSE)
     }
   }
   if (count_mode == "persons" && !"person_id" %in% tbl_cols) {

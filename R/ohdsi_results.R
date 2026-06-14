@@ -19,6 +19,8 @@
       table_names = c("dqdashboard_results"),
       prefix_patterns = character(0),
       count_columns = c("num_violated_rows", "num_denominator_rows"),
+      # Row-level data-quality tallies, not a per-person basis.
+      person_columns = character(0),
       sensitive_columns = c("query_text")
     ),
 
@@ -34,6 +36,8 @@
                          "person_count", "concept_count", "concept_subjects",
                          "subject_count", "subjects", "records",
                          "sum_value", "count_value"),
+      person_columns = c("cohort_subjects", "person_count", "concept_subjects",
+                          "subject_count", "subjects"),
       sensitive_columns = c("json", "sql", "concept_set_sql")
     ),
 
@@ -44,6 +48,8 @@
       count_columns = c("persons_at_risk_pe", "persons_at_risk",
                          "person_outcomes_pe", "person_outcomes",
                          "outcomes_pe", "outcomes"),
+      person_columns = c("persons_at_risk_pe", "persons_at_risk",
+                          "person_outcomes_pe", "person_outcomes"),
       sensitive_columns = character(0)
     ),
 
@@ -57,6 +63,7 @@
                          "num_events", "num_cases", "num_persons_exposed",
                          "num_dechallenge_attempt", "num_dechallenge_success",
                          "num_rechallenge_attempt", "num_rechallenge_success"),
+      person_columns = c("num_persons", "num_cases", "num_persons_exposed"),
       sensitive_columns = character(0)
     ),
 
@@ -71,6 +78,8 @@
                          "target_outcomes", "comparator_outcomes",
                          "target_days", "comparator_days",
                          "subjects", "count_value", "exposure_subjects"),
+      person_columns = c("target_subjects", "comparator_subjects",
+                          "exposure_subjects", "subjects"),
       sensitive_columns = character(0)
     ),
 
@@ -82,6 +91,7 @@
       count_columns = c("outcome_subjects", "outcome_events",
                          "outcome_observation_periods", "observed_days",
                          "subjects", "count_value"),
+      person_columns = c("outcome_subjects", "subjects"),
       sensitive_columns = character(0)
     ),
 
@@ -94,6 +104,8 @@
       prefix_patterns = c("^plp_"),
       count_columns = c("population_size", "outcome_count", "test_size",
                          "train_size", "n_total", "subjects", "count_value"),
+      person_columns = c("population_size", "test_size", "train_size",
+                          "subjects"),
       sensitive_columns = character(0)
     ),
 
@@ -103,6 +115,8 @@
                        "es_cm_diagnostics_summary", "es_sccs_diagnostics_summary"),
       prefix_patterns = c("^es_"),
       count_columns = c("n_databases"),
+      # Cross-database meta-analysis counts; no per-person basis in the result.
+      person_columns = character(0),
       sensitive_columns = character(0)
     )
   )
@@ -259,6 +273,74 @@
   union(registry_matched, tolower(heuristic_matched))
 }
 
+# --- Person Gate ---
+
+#' Fail-closed distinct-person gate for a pre-computed OHDSI result
+#'
+#' Pre-computed OHDSI result tables hold no \code{person_id}, so the
+#' distinct-person gate that protects raw-CDM aggregates (\code{.assertMinPersons}
+#' / \code{.achillesPersonGate}) cannot count individuals directly. The per-row
+#' person basis is instead the tool's PERSON-count column(s) — \code{num_persons},
+#' \code{cohort_subjects}, \code{persons_at_risk}, \code{target_subjects}, etc.
+#' (declared as \code{person_columns} in the registry). A small such value means
+#' the row describes too few individuals, even when its record/event/outcome
+#' counts are large, exactly the gap \code{.suppressSmallCounts} (a small-CELL
+#' control) leaves open.
+#'
+#' Behaviour, mirroring the "no hints" fail-closed policy:
+#' \itemize{
+#'   \item rows whose person count is below \code{nfilter.subset} (or NA) are
+#'     DROPPED — the same threshold and row-drop semantics as the raw-CDM gate;
+#'   \item if the result carries count columns but NONE of the tool's person
+#'     columns (a person-less count basis, e.g. record/event/outcome counts with
+#'     no person denominator), it is rejected (emptied) when
+#'     \code{query_strict} is TRUE, and passed through (cell-suppressed only)
+#'     when strict mode is off;
+#'   \item a result with no count columns at all (pure definition/reference
+#'     metadata: \code{*_def}, \code{*_ref}, \code{*_settings}, concept sets) has
+#'     nothing to disclose and passes through unchanged.
+#' }
+#'
+#' @param result Data frame already returned + cell-suppressed by
+#'   \code{.ohdsiGetResults}.
+#' @param tool_id Character; resolved tool id (registry key).
+#' @param count_cols Character; the count columns detected on this result.
+#' @return \code{result} with disclosive rows removed (or emptied, fail-closed).
+#' @keywords internal
+.ohdsiPersonGate <- function(result, tool_id, count_cols) {
+  if (nrow(result) == 0) return(result)
+
+  registry <- .ohdsi_tool_registry()
+  person_cols <- character(0)
+  if (!is.null(tool_id) && tool_id %in% names(registry)) {
+    person_cols <- registry[[tool_id]]$person_columns %||% character(0)
+  }
+  present_person <- intersect(tolower(person_cols), names(result))
+
+  # No count columns at all -> definition/reference metadata, nothing to gate.
+  if (length(intersect(count_cols, names(result))) == 0) return(result)
+
+  # Count basis present but NO person basis: reject fail-closed in strict mode.
+  if (length(present_person) == 0) {
+    if (isTRUE(.omopDisclosureSettings()$query_strict)) {
+      return(result[0, , drop = FALSE])
+    }
+    return(result)
+  }
+
+  # Drop every row whose person basis is below nfilter.subset (NA -> dropped),
+  # the same threshold + row-drop the raw-CDM distinct-person gate enforces.
+  threshold <- .omopDisclosureSettings()$nfilter_subset
+  keep <- rep(TRUE, nrow(result))
+  for (col in present_person) {
+    vals <- suppressWarnings(as.numeric(result[[col]]))
+    keep <- keep & (!is.na(vals) & vals >= threshold)
+  }
+  gated <- result[keep, , drop = FALSE]
+  rownames(gated) <- NULL
+  gated
+}
+
 # --- Generic Query ---
 
 #' Query an OHDSI result table
@@ -371,12 +453,17 @@
   )
   if (nrow(result) == 0) return(result)
 
-  # Disclosure control on count columns
+  # Disclosure control on count columns (small-CELL suppression).
   count_cols <- .ohdsiDetectCountColumns(handle, table_name, tool_id)
   count_cols <- intersect(count_cols, names(result))
   if (length(count_cols) > 0) {
     result <- .suppressSmallCounts(result, count_cols)
   }
+
+  # Fail-closed distinct-person gate (orthogonal to cell suppression): drop rows
+  # backed by too few PERSONS, and reject a person-less count basis in strict
+  # mode. Mirrors .achillesPersonGate / .assertMinPersons for pre-computed tables.
+  result <- .ohdsiPersonGate(result, tool_id, count_cols)
 
   result
 }

@@ -22,8 +22,25 @@ DOMAIN concept column (e.g. \code{measurement_concept_id}). Supplying
 \code{concept_col} lets the caller scope by another concept column on the
 same table instead — \code{unit_concept_id}, a \code{*_type_concept_id}, or
 \code{value_as_concept_id} — which enables unit-aware value distributions and
-value-by-type profiling. The override is validated as an identifier and must
-exist on the table; only its existence (not its name) is required, so it
-cannot be used to reach another table. Returns NULL when no scope applies.
+value-by-type profiling. This is the single authoritative chokepoint for
+concept scoping: every profiler that turns \code{concept_col} into a WHERE
+filter resolves it here, so the override is gated fail-closed and CANNOT be
+used to filter on a forbidden column.
+}
+\details{
+An explicit override must be a genuine, releasable concept column:
+\itemize{
+  \item it must EXIST on this table (so it cannot reach another table);
+  \item it must NOT be blocked (\code{is_blocked}) — this rejects every
+    \code{*_source_value} / \code{*_source_concept_id} column (which must be
+    treated as if it does not exist) and all other PII, closing the
+    source-value filter leak;
+  \item it must be a concept column (name ends in \code{_concept_id}) that is
+    not a source concept — this additionally rejects identifier / person-key
+    columns (\code{person_id}, \code{*_occurrence_id}, foreign keys), which
+    are not concepts and must never be used as a scope filter.
+}
+Anything else stops with a generic error. Returns NULL only when NO override
+is given and the table has no default domain concept column.
 }
 \keyword{internal}
