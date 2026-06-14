@@ -1,7 +1,7 @@
 Package: dsOMOP
 Type: Package
 Title: DataSHIELD Server-Side Integration for OMOP CDM Databases
-Version: 2.2.14
+Version: 2.2.15
 Authors@R: c(
     person("David", "Sarrat González", role = c("aut", "cre"), email = "david.sarrat@isglobal.org"),
     person("Xavier", "Escribà-Montagut", role = "aut"),
@@ -59,6 +59,15 @@ AggregateMethods:
     omopLookupConceptsDS,
     omopGetDescendantsDS,
     omopExpandConceptSetDS,
+    omopConceptAncestorsDS,
+    omopConceptSynonymsDS,
+    omopConceptRelationshipsDS,
+    omopListConceptsDS,
+    omopVocabulariesDS,
+    omopDomainsDS,
+    omopConceptClassesDS,
+    omopCdmSourceDS,
+    omopCdmVersionDS,
     omopPlanPreviewDS,
     omopCohortListDS,
     omopCohortGetDefinitionDS,

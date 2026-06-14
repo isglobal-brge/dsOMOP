@@ -10,26 +10,42 @@
   domain = NULL,
   vocabulary = NULL,
   standard_only = TRUE,
-  limit = 50
+  limit = 50,
+  concept_id = NULL,
+  standard = NULL,
+  valid = NULL
 )
 }
 \arguments{
 \item{handle}{CDM handle}
 
-\item{pattern}{Character; search pattern}
+\item{pattern}{Character; search pattern (NULL to skip name matching)}
 
 \item{domain}{Character; filter by domain}
 
 \item{vocabulary}{Character; filter by vocabulary}
 
-\item{standard_only}{Logical; only standard concepts}
+\item{standard_only}{Logical; only standard concepts (legacy convenience)}
 
 \item{limit}{Integer; max results}
+
+\item{concept_id}{Numeric vector; restrict to these exact concept IDs}
+
+\item{standard}{Character; explicit \code{standard_concept} value to match
+(e.g. "S", "C"); overrides \code{standard_only} when supplied}
+
+\item{valid}{Logical; \code{TRUE} keeps only currently-valid concepts
+(\code{invalid_reason IS NULL}), \code{FALSE} keeps only invalidated ones}
 }
 \value{
 Data frame with concept results
 }
 \description{
-Search concepts by name pattern
+Reference-data reader over the \code{concept} table. Beyond the original
+free-text name match, this also accepts an exact \code{concept_id} list and
+the standard validity facets (\code{invalid_reason}, \code{valid}) so callers
+can reproduce the Athena/ATLAS concept search filters. All filters are
+optional and ANDed together; at least one of \code{pattern} or
+\code{concept_id} should be supplied to keep the result bounded.
 }
 \keyword{internal}

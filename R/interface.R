@@ -892,30 +892,46 @@ omopValueCountsDS <- function(omop_symbol, table, column,
 #' Search concepts (Aggregate)
 #'
 #' @description
-#' Searches the OMOP vocabulary tables for concepts matching a text pattern,
-#' optionally filtered by domain and vocabulary. Returns concept metadata
-#' including concept ID, name, domain, vocabulary, and standard status.
+#' Searches the OMOP vocabulary tables for concepts matching a text pattern
+#' and/or an exact concept-ID list, optionally filtered by domain, vocabulary,
+#' standard status, and validity. Returns concept metadata including concept ID,
+#' name, domain, vocabulary, code, validity dates, and standard status. This is
+#' a reference-data (vocabulary) reader and is not disclosure-gated.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
-#' @param pattern Character; search pattern (case-insensitive substring match)
+#' @param pattern Character; search pattern (case-insensitive substring match);
+#'   NULL or "" to search by \code{concept_id} only
 #' @param domain Character; domain filter (e.g., "Condition", "Drug")
 #' @param vocabulary Character; vocabulary filter (e.g., "SNOMED", "RxNorm")
-#' @param standard_only Logical; only standard concepts
+#' @param standard_only Logical; only standard concepts (ignored when
+#'   \code{standard} is supplied)
 #' @param limit Integer; max results
+#' @param concept_id Numeric vector; restrict to these exact concept IDs
+#' @param standard Character; explicit \code{standard_concept} value (e.g. "S")
+#' @param valid Logical; TRUE keeps only currently-valid concepts, FALSE only
+#'   invalidated ones
 #' @return Data frame with concept results
 #' @examples
 #' \dontrun{
 #' concepts <- omopSearchConceptsDS("omop", "diabetes", domain = "Condition")
 #' }
 #' @export
-omopSearchConceptsDS <- function(omop_symbol, pattern,
+omopSearchConceptsDS <- function(omop_symbol, pattern = NULL,
                                  domain = NULL,
                                  vocabulary = NULL,
                                  standard_only = TRUE,
-                                 limit = 50) {
+                                 limit = 50,
+                                 concept_id = NULL,
+                                 standard = NULL,
+                                 valid = NULL) {
   handle <- .getHandle(omop_symbol)
+  pattern <- .ds_arg(pattern)
+  concept_id <- .ds_arg(concept_id)
+  if (is.list(concept_id)) concept_id <- as.integer(unlist(concept_id))
   .vocabSearchConcepts(handle, pattern, domain,
-                       vocabulary, standard_only, limit)
+                       vocabulary, standard_only, limit,
+                       concept_id = concept_id, standard = standard,
+                       valid = valid)
 }
 
 #' Lookup concepts by ID (Aggregate)
@@ -983,6 +999,217 @@ omopExpandConceptSetDS <- function(omop_symbol, concept_set) {
   handle <- .getHandle(omop_symbol)
   concept_set <- .ds_arg(concept_set)
   .vocabExpandConceptSet(handle, concept_set)
+}
+
+#' Get concept ancestors and descendants (Aggregate)
+#'
+#' @description
+#' Returns both the ancestors and the descendants of one or more concept IDs
+#' from the \code{concept_ancestor} table, in a single frame tagged with a
+#' \code{direction} column. This is the hierarchy ("relationships" tree) view
+#' from Athena/ATLAS. Reference-data reader; not disclosure-gated.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param concept_ids Numeric vector; concept IDs to expand the hierarchy for
+#' @return Data frame with \code{direction}, concept columns, and levels of
+#'   separation
+#' @examples
+#' \dontrun{
+#' tree <- omopConceptAncestorsDS("omop", c(201826))
+#' }
+#' @export
+omopConceptAncestorsDS <- function(omop_symbol, concept_ids) {
+  handle <- .getHandle(omop_symbol)
+  concept_ids <- .ds_arg(concept_ids)
+  if (is.list(concept_ids)) concept_ids <- as.integer(unlist(concept_ids))
+  .vocabConceptAncestors(handle, concept_ids)
+}
+
+#' Get concept synonyms (Aggregate)
+#'
+#' @description
+#' Returns the synonyms (alternative names) for one or more concept IDs from the
+#' \code{concept_synonym} table, mirroring the Athena concept "synonyms" panel.
+#' Reference-data reader; not disclosure-gated.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param concept_ids Numeric vector; concept IDs to fetch synonyms for
+#' @return Data frame with \code{concept_id} and \code{concept_synonym_name}
+#' @examples
+#' \dontrun{
+#' syns <- omopConceptSynonymsDS("omop", c(201826))
+#' }
+#' @export
+omopConceptSynonymsDS <- function(omop_symbol, concept_ids) {
+  handle <- .getHandle(omop_symbol)
+  concept_ids <- .ds_arg(concept_ids)
+  if (is.list(concept_ids)) concept_ids <- as.integer(unlist(concept_ids))
+  .vocabGetSynonyms(handle, concept_ids)
+}
+
+#' Get concept relationships (Aggregate)
+#'
+#' @description
+#' Returns every \code{concept_relationship} edge touching the given concept IDs
+#' in \strong{both} directions (not just "Maps to"), with the related concept's
+#' name joined in and a \code{direction} column. An optional
+#' \code{relationship_id} narrows to a single relationship type. Reference-data
+#' reader; not disclosure-gated.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param concept_ids Numeric vector; concept IDs to fetch relationships for
+#' @param relationship_id Character; optional single relationship_id filter
+#'   (e.g. "Maps to", "Is a", "Subsumes")
+#' @return Data frame with the relationship rows and related concept names
+#' @examples
+#' \dontrun{
+#' rels <- omopConceptRelationshipsDS("omop", c(201826), "Maps to")
+#' }
+#' @export
+omopConceptRelationshipsDS <- function(omop_symbol, concept_ids,
+                                       relationship_id = NULL) {
+  handle <- .getHandle(omop_symbol)
+  concept_ids <- .ds_arg(concept_ids)
+  if (is.list(concept_ids)) concept_ids <- as.integer(unlist(concept_ids))
+  relationship_id <- .ds_arg(relationship_id)
+  .vocabGetRelationships(handle, concept_ids, relationship_id)
+}
+
+#' List concepts with pagination (Aggregate)
+#'
+#' @description
+#' Browses the \code{concept} catalog filtered by domain, vocabulary, concept
+#' class, standard status, and validity, paged with OFFSET/LIMIT. Lifts the
+#' 500-row cap of \code{\link{omopSearchConceptsDS}} for catalog browsing,
+#' mirroring Athena's paged concept list. Returns the current page plus the
+#' total matching count. Reference-data reader; not disclosure-gated.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param domain Character; filter by domain_id
+#' @param vocabulary Character; filter by vocabulary_id
+#' @param concept_class Character; filter by concept_class_id
+#' @param standard Character; filter by standard_concept value (e.g. "S")
+#' @param valid Logical; TRUE keeps only currently-valid concepts
+#' @param offset Integer; rows to skip (page start)
+#' @param limit Integer; page size (capped at 1000)
+#' @param order Character; column to order by (default "concept_id")
+#' @return List with \code{rows} (data frame), \code{total_count},
+#'   \code{offset}, and \code{limit}
+#' @examples
+#' \dontrun{
+#' page <- omopListConceptsDS("omop", vocabulary = "SNOMED", limit = 100)
+#' }
+#' @export
+omopListConceptsDS <- function(omop_symbol, domain = NULL, vocabulary = NULL,
+                               concept_class = NULL, standard = NULL,
+                               valid = NULL, offset = 0L, limit = 100L,
+                               order = "concept_id") {
+  handle <- .getHandle(omop_symbol)
+  domain <- .ds_arg(domain)
+  vocabulary <- .ds_arg(vocabulary)
+  concept_class <- .ds_arg(concept_class)
+  standard <- .ds_arg(standard)
+  order <- .ds_arg(order)
+  .vocabListConcepts(handle, domain = domain, vocabulary = vocabulary,
+                     concept_class = concept_class, standard = standard,
+                     valid = valid, offset = offset, limit = limit,
+                     order = order %||% "concept_id")
+}
+
+#' List vocabularies (Aggregate)
+#'
+#' @description
+#' Returns the distinct vocabularies from the \code{vocabulary} table (falling
+#' back to distinct \code{vocabulary_id} values on \code{concept} if that table
+#' is not loaded). Reference-data reader; not disclosure-gated.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @return Data frame of vocabularies
+#' @examples
+#' \dontrun{
+#' vocabs <- omopVocabulariesDS("omop")
+#' }
+#' @export
+omopVocabulariesDS <- function(omop_symbol) {
+  handle <- .getHandle(omop_symbol)
+  .vocabDistinctMeta(handle, "vocabulary", "vocabulary_id")
+}
+
+#' List domains (Aggregate)
+#'
+#' @description
+#' Returns the distinct domains from the \code{domain} table (falling back to
+#' distinct \code{domain_id} values on \code{concept} if that table is not
+#' loaded). Reference-data reader; not disclosure-gated.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @return Data frame of domains
+#' @examples
+#' \dontrun{
+#' domains <- omopDomainsDS("omop")
+#' }
+#' @export
+omopDomainsDS <- function(omop_symbol) {
+  handle <- .getHandle(omop_symbol)
+  .vocabDistinctMeta(handle, "domain", "domain_id")
+}
+
+#' List concept classes (Aggregate)
+#'
+#' @description
+#' Returns the distinct concept classes from the \code{concept_class} table
+#' (falling back to distinct \code{concept_class_id} values on \code{concept} if
+#' that table is not loaded). Reference-data reader; not disclosure-gated.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @return Data frame of concept classes
+#' @examples
+#' \dontrun{
+#' classes <- omopConceptClassesDS("omop")
+#' }
+#' @export
+omopConceptClassesDS <- function(omop_symbol) {
+  handle <- .getHandle(omop_symbol)
+  .vocabDistinctMeta(handle, "concept_class", "concept_class_id")
+}
+
+#' Get the cdm_source row(s) (Aggregate)
+#'
+#' @description
+#' Returns the full \code{cdm_source} table row(s), which describe the data
+#' source (name, abbreviation, holder, release/version dates, etc.). Metadata
+#' reader; not disclosure-gated.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @return Data frame of cdm_source rows (empty if the table is absent)
+#' @examples
+#' \dontrun{
+#' src <- omopCdmSourceDS("omop")
+#' }
+#' @export
+omopCdmSourceDS <- function(omop_symbol) {
+  handle <- .getHandle(omop_symbol)
+  .vocabCdmSource(handle)
+}
+
+#' Get the CDM version (Aggregate)
+#'
+#' @description
+#' Returns the CDM version, preferring \code{cdm_source.cdm_version} and falling
+#' back to the version inferred from the table structure. Metadata reader; not
+#' disclosure-gated.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @return List with \code{cdm_version}, \code{source}, and
+#'   \code{vocabulary_version}
+#' @examples
+#' \dontrun{
+#' ver <- omopCdmVersionDS("omop")
+#' }
+#' @export
+omopCdmVersionDS <- function(omop_symbol) {
+  handle <- .getHandle(omop_symbol)
+  .vocabCdmVersion(handle)
 }
 
 #' Preview a plan (Aggregate)

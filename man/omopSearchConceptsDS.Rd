@@ -6,33 +6,47 @@
 \usage{
 omopSearchConceptsDS(
   omop_symbol,
-  pattern,
+  pattern = NULL,
   domain = NULL,
   vocabulary = NULL,
   standard_only = TRUE,
-  limit = 50
+  limit = 50,
+  concept_id = NULL,
+  standard = NULL,
+  valid = NULL
 )
 }
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
 
-\item{pattern}{Character; search pattern (case-insensitive substring match)}
+\item{pattern}{Character; search pattern (case-insensitive substring match);
+NULL or "" to search by \code{concept_id} only}
 
 \item{domain}{Character; domain filter (e.g., "Condition", "Drug")}
 
 \item{vocabulary}{Character; vocabulary filter (e.g., "SNOMED", "RxNorm")}
 
-\item{standard_only}{Logical; only standard concepts}
+\item{standard_only}{Logical; only standard concepts (ignored when
+\code{standard} is supplied)}
 
 \item{limit}{Integer; max results}
+
+\item{concept_id}{Numeric vector; restrict to these exact concept IDs}
+
+\item{standard}{Character; explicit \code{standard_concept} value (e.g. "S")}
+
+\item{valid}{Logical; TRUE keeps only currently-valid concepts, FALSE only
+invalidated ones}
 }
 \value{
 Data frame with concept results
 }
 \description{
-Searches the OMOP vocabulary tables for concepts matching a text pattern,
-optionally filtered by domain and vocabulary. Returns concept metadata
-including concept ID, name, domain, vocabulary, and standard status.
+Searches the OMOP vocabulary tables for concepts matching a text pattern
+and/or an exact concept-ID list, optionally filtered by domain, vocabulary,
+standard status, and validity. Returns concept metadata including concept ID,
+name, domain, vocabulary, code, validity dates, and standard status. This is
+a reference-data (vocabulary) reader and is not disclosure-gated.
 }
 \examples{
 \dontrun{
