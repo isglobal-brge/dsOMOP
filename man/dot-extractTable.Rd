@@ -12,7 +12,7 @@
   person_ids = NULL,
   time_window = NULL,
   cohort_table = NULL,
-  translate_concepts = FALSE,
+  translate_concepts = TRUE,
   representation = "long",
   feature_specs = NULL,
   block_sensitive = TRUE,

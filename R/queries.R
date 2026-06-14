@@ -703,6 +703,25 @@
     result <- .suppressSmallCounts(result, sensitive_matched)
   }
 
+  # Unique-person gate for the curated query path. The per-field suppression
+  # above only fires for columns the query author happened to list as sensitive;
+  # a person-count column they forgot to declare (or a query with no person
+  # column at all) would otherwise leak ungated. Identify any person-count
+  # column by its conventional name and suppress every row whose distinct-person
+  # count is below threshold (fail-closed row-drop, person-based). If NO person
+  # column is identifiable we cannot prove the row is non-disclosive, so in
+  # strict mode we REJECT the query rather than return an ungated aggregate;
+  # non-strict (development) mode lets it through, consistent with the rest of
+  # the strict/non-strict split in this function.
+  person_cols <- grep("(^|_)(n_persons|num_persons|n_total|n_deaths|person_id)$",
+                      names(result), ignore.case = TRUE, value = TRUE)
+  if (length(person_cols) > 0) {
+    result <- .suppressSmallCounts(result, person_cols)
+  } else if (isTRUE(strict)) {
+    stop("Disclosive: query '", query_id, "' returns no identifiable ",
+         "person-count column to gate on (strict mode).", call. = FALSE)
+  }
+
   # Cap rows to prevent long-tail disclosure
   max_rows <- 5000L
   if (nrow(result) > max_rows) {

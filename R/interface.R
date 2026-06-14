@@ -216,6 +216,12 @@
     }
     if (length(keys) > 0) {
       attr(x, "dsomop_protected") <- union(attr(x, "dsomop_protected"), keys)
+      # Tag every person-bearing assign output as an omop.table (additively, so
+      # data.frame methods still dispatch). The client-side data-manipulation
+      # verbs (omopMergeDS/omopFilterDS/omopSelectDS/omopBindRowsDS) require this
+      # class so they can only ever operate on disclosure-controlled, token-keyed
+      # frames produced by dsOMOP — never on arbitrary client-built data.
+      class(x) <- union("omop.table", class(x))
     }
   } else if (is.list(x)) {
     x <- lapply(x, .pseudonymizeIdentifiers, salt = salt)
