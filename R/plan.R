@@ -908,7 +908,10 @@
               translate_concepts = translate,
               representation = "features",
               feature_specs = entry$features,
-              block_sensitive = block_sensitive
+              block_sensitive = block_sensitive,
+              filters = entry$filters,
+              concept_col = entry$concept_col,
+              visit_filter = entry$visit
             )
             zero_fill_cols <- c(zero_fill_cols,
                                 attr(tbl_df, "omop_zero_fill"))
@@ -980,6 +983,14 @@
 
         concept_set <- out$filters$concept_set$ids %||% out$concept_set
 
+        # Custom filter DSL, visit-linkage filter, and concept-scoping column
+        # override carried on the output. These are forwarded to .compileSelect
+        # (directly when streaming, via .extractTable otherwise); .compileSelect
+        # validates the custom filter fail-closed before emitting any SQL.
+        custom_filters <- out$filters$custom
+        visit_filter   <- out$filters$visit %||% out$visit_filter
+        concept_col    <- out$filters$concept_col %||% out$concept_col
+
         # Use concept cache if available, otherwise expand
         if (is.list(concept_set) && !is.null(concept_set$concepts)) {
           key <- paste(sort(concept_set$concepts), collapse = ",")
@@ -1018,7 +1029,10 @@
             cohort_table = cohort_table,
             block_sensitive = block_sensitive,
             temporal = out$temporal,
-            add_cohort_date = add_cohort_date
+            add_cohort_date = add_cohort_date,
+            filters = custom_filters,
+            concept_col = concept_col,
+            visit_filter = visit_filter
           )
 
           if (!is.null(out$temporal$event_select)) {
@@ -1091,7 +1105,10 @@
             block_sensitive = block_sensitive,
             temporal = out$temporal,
             date_handling = out$date_handling,
-            add_cohort_date = add_cohort_date
+            add_cohort_date = add_cohort_date,
+            filters = custom_filters,
+            concept_col = concept_col,
+            visit_filter = visit_filter
           )
 
           results[[out_name]] <- result_df

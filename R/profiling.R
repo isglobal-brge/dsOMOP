@@ -1,6 +1,35 @@
 # Module: Profiling Engine
 # Data profiling functions for table stats, column stats, distributions, and concept analysis.
 
+#' Resolve the concept column a profiler scopes its concept_id filter on
+#'
+#' By default a concept scope (\code{concept_id}) restricts to the table's
+#' DOMAIN concept column (e.g. \code{measurement_concept_id}). Supplying
+#' \code{concept_col} lets the caller scope by another concept column on the
+#' same table instead — \code{unit_concept_id}, a \code{*_type_concept_id}, or
+#' \code{value_as_concept_id} — which enables unit-aware value distributions and
+#' value-by-type profiling. The override is validated as an identifier and must
+#' exist on the table; only its existence (not its name) is required, so it
+#' cannot be used to reach another table. Returns NULL when no scope applies.
+#'
+#' @param bp Blueprint
+#' @param table Character; lower-cased table name
+#' @param concept_col Character or NULL; explicit concept column override
+#' @return Character column name, or NULL if neither default nor override resolves
+#' @keywords internal
+.resolveConceptScopeColumn <- function(bp, table, concept_col = NULL) {
+  if (is.null(concept_col)) {
+    return(.getDomainConceptColumn(bp, table))
+  }
+  concept_col <- tolower(.validateIdentifier(concept_col, "concept column"))
+  cols <- bp$columns[[table]]
+  if (is.null(cols) || !concept_col %in% cols$column_name) {
+    stop("Concept column '", concept_col, "' not found in '", table, "'.",
+         call. = FALSE)
+  }
+  concept_col
+}
+
 #' Get safe table-level statistics
 #'
 #' @param handle CDM handle
@@ -86,7 +115,8 @@
 #' @param concept_id Integer or NULL; restrict to rows of this concept
 #' @return Named list with column statistics
 #' @keywords internal
-.profileColumnStats <- function(handle, table, column, concept_id = NULL) {
+.profileColumnStats <- function(handle, table, column, concept_id = NULL,
+                                concept_col = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   column <- tolower(.validateIdentifier(column, "column"))
   bp <- .buildBlueprint(handle)
@@ -109,9 +139,11 @@
   settings <- .omopDisclosureSettings()
 
   # Optional concept scope: restrict every query to one concept of this table.
+  # concept_col defaults to the domain concept but may override to scope by
+  # unit_concept_id / *_type_concept_id / value_as_concept_id.
   concept_filter <- NULL
   if (!is.null(concept_id)) {
-    ccol <- .getDomainConceptColumn(bp, table)
+    ccol <- .resolveConceptScopeColumn(bp, table, concept_col)
     if (is.null(ccol)) {
       stop("Table '", table, "' has no concept column to scope by.",
            call. = FALSE)
@@ -313,7 +345,8 @@
 #' @return Data frame with value and count columns
 #' @keywords internal
 .profileValueCounts <- function(handle, table, column, top_n = 20,
-                                 suppress_small = TRUE, concept_id = NULL) {
+                                 suppress_small = TRUE, concept_id = NULL,
+                                 concept_col = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   column <- tolower(.validateIdentifier(column, "column"))
   bp <- .buildBlueprint(handle)
@@ -334,9 +367,11 @@
   qualified <- tbl_row$qualified_name[1]
 
   # Optional concept scope: restrict every query to one concept of this table.
+  # concept_col defaults to the domain concept but may override to scope by
+  # unit_concept_id / *_type_concept_id / value_as_concept_id.
   concept_filter <- NULL
   if (!is.null(concept_id)) {
-    ccol <- .getDomainConceptColumn(bp, table)
+    ccol <- .resolveConceptScopeColumn(bp, table, concept_col)
     if (is.null(ccol)) {
       stop("Table '", table, "' has no concept column to scope by.",
            call. = FALSE)
@@ -423,7 +458,7 @@
 #' @return List with breaks (numeric vector) and counts (integer vector)
 #' @keywords internal
 .profileSafeCutpoints <- function(handle, table, column, concept_id = NULL,
-                                   n_bins = 10L) {
+                                   n_bins = 10L, concept_col = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   column <- tolower(.validateIdentifier(column, "column"))
   bp <- .buildBlueprint(handle)
@@ -444,13 +479,14 @@
   n_bins <- max(as.integer(n_bins), 2L)
   n_bins <- min(n_bins, 100L)
 
-  # Build WHERE clauses
+  # Build WHERE clauses. concept_col defaults to the domain concept but may
+  # override to scope by unit_concept_id / *_type_concept_id / value_as_concept_id.
   where_parts <- paste0(column, " IS NOT NULL")
   if (!is.null(concept_id)) {
-    concept_col <- .getDomainConceptColumn(bp, table)
-    if (!is.null(concept_col) && concept_col %in% tbl_cols) {
+    scope_col <- .resolveConceptScopeColumn(bp, table, concept_col)
+    if (!is.null(scope_col) && scope_col %in% tbl_cols) {
       where_parts <- c(where_parts,
-                       paste0(concept_col, " = ", as.integer(concept_id)))
+                       paste0(scope_col, " = ", as.integer(concept_id)))
     }
   }
   where_sql <- paste0(" WHERE ", paste(where_parts, collapse = " AND "))
@@ -698,7 +734,7 @@
 #' @keywords internal
 .profileNumericRange <- function(handle, table, value_col,
                                   cohort_table = NULL, window = NULL,
-                                  concept_id = NULL) {
+                                  concept_id = NULL, concept_col = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   value_col <- tolower(.validateIdentifier(value_col, "column"))
   bp <- .buildBlueprint(handle)
@@ -739,9 +775,11 @@
     }
   }
 
-  # Optional concept scope: restrict to one concept of this table.
+  # Optional concept scope: restrict to one concept of this table. concept_col
+  # defaults to the domain concept but may override to scope by unit_concept_id /
+  # *_type_concept_id / value_as_concept_id.
   if (!is.null(concept_id)) {
-    ccol <- .getDomainConceptColumn(bp, table)
+    ccol <- .resolveConceptScopeColumn(bp, table, concept_col)
     if (is.null(ccol)) {
       stop("Table '", table, "' has no concept column to scope by.",
            call. = FALSE)
@@ -816,7 +854,7 @@
 .profileNumericHistogram <- function(handle, table, value_col,
                                       bins = 20L, cohort_table = NULL,
                                       window = NULL, breaks = NULL,
-                                      concept_id = NULL) {
+                                      concept_id = NULL, concept_col = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   value_col <- tolower(.validateIdentifier(value_col, "column"))
   bp <- .buildBlueprint(handle)
@@ -864,9 +902,11 @@
     }
   }
 
-  # Optional concept scope: restrict to one concept of this table.
+  # Optional concept scope: restrict to one concept of this table. concept_col
+  # defaults to the domain concept but may override to scope by unit_concept_id /
+  # *_type_concept_id / value_as_concept_id.
   if (!is.null(concept_id)) {
-    ccol <- .getDomainConceptColumn(bp, table)
+    ccol <- .resolveConceptScopeColumn(bp, table, concept_col)
     if (is.null(ccol)) {
       stop("Table '", table, "' has no concept column to scope by.",
            call. = FALSE)
@@ -1007,7 +1047,8 @@
 .profileNumericQuantiles <- function(handle, table, value_col,
                                       probs = c(0.05, 0.25, 0.5, 0.75, 0.95),
                                       cohort_table = NULL, window = NULL,
-                                      rounding = 2L, concept_id = NULL) {
+                                      rounding = 2L, concept_id = NULL,
+                                      concept_col = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   value_col <- tolower(.validateIdentifier(value_col, "column"))
 
@@ -1058,9 +1099,11 @@
     }
   }
 
-  # Optional concept scope: restrict to one concept of this table.
+  # Optional concept scope: restrict to one concept of this table. concept_col
+  # defaults to the domain concept but may override to scope by unit_concept_id /
+  # *_type_concept_id / value_as_concept_id.
   if (!is.null(concept_id)) {
-    ccol <- .getDomainConceptColumn(bp, table)
+    ccol <- .resolveConceptScopeColumn(bp, table, concept_col)
     if (is.null(ccol)) {
       stop("Table '", table, "' has no concept column to scope by.",
            call. = FALSE)

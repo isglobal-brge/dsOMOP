@@ -4,7 +4,14 @@
 \alias{omopValueCountsDS}
 \title{Get value counts (Aggregate)}
 \usage{
-omopValueCountsDS(omop_symbol, table, column, top_n = 20, concept_id = NULL)
+omopValueCountsDS(
+  omop_symbol,
+  table,
+  column,
+  top_n = 20,
+  concept_id = NULL,
+  concept_col = NULL
+)
 }
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
@@ -17,6 +24,11 @@ omopValueCountsDS(omop_symbol, table, column, top_n = 20, concept_id = NULL)
 
 \item{concept_id}{Integer; optional; restrict the summary to rows of this
 concept, using the table's domain concept column}
+
+\item{concept_col}{Character; optional; concept column to scope
+\code{concept_id} on instead of the domain concept (e.g.
+\code{unit_concept_id}, a \code{*_type_concept_id}, or
+\code{value_as_concept_id})}
 }
 \value{
 Data frame with value counts

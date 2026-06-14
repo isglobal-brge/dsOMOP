@@ -10,7 +10,8 @@
   column,
   top_n = 20,
   suppress_small = TRUE,
-  concept_id = NULL
+  concept_id = NULL,
+  concept_col = NULL
 )
 }
 \arguments{

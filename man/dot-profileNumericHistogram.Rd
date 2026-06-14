@@ -12,7 +12,8 @@
   cohort_table = NULL,
   window = NULL,
   breaks = NULL,
-  concept_id = NULL
+  concept_id = NULL,
+  concept_col = NULL
 )
 }
 \arguments{

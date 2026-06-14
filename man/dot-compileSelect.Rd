@@ -15,7 +15,10 @@
   limit = NULL,
   block_sensitive = TRUE,
   temporal = NULL,
-  add_cohort_date = FALSE
+  add_cohort_date = FALSE,
+  filters = NULL,
+  concept_col = NULL,
+  visit_filter = NULL
 )
 }
 \arguments{
@@ -41,6 +44,19 @@
 
 \item{add_cohort_date}{Logical; if TRUE, add cohort start/end date columns
 from the cohort table to the output.}
+
+\item{filters}{List; an optional custom filter DSL tree (AND/OR of leaves,
+see \code{\link{.compileFilter}}). Validated fail-closed by
+\code{\link{.assertCustomFilterSafe}} and ANDed with the other predicates.}
+
+\item{concept_col}{Character; optional override of the column the
+\code{concept_filter} IN-list scopes (default: the table's domain concept
+column). Lets a caller scope by \code{unit_concept_id},
+\code{*_type_concept_id}, or \code{value_as_concept_id}.}
+
+\item{visit_filter}{List; optional \code{list(concept_ids = ...)} restricting
+events to visits of those \code{visit_concept_id} values via a join on
+\code{visit_occurrence_id} to \code{visit_occurrence}.}
 }
 \value{
 Character; compiled SQL statement

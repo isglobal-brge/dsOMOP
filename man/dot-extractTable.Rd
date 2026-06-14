@@ -18,7 +18,10 @@
   block_sensitive = TRUE,
   temporal = NULL,
   date_handling = NULL,
-  add_cohort_date = FALSE
+  add_cohort_date = FALSE,
+  filters = NULL,
+  concept_col = NULL,
+  visit_filter = NULL
 )
 }
 \arguments{
@@ -47,6 +50,15 @@
 \item{temporal}{List; temporal filtering spec}
 
 \item{date_handling}{List; date handling spec}
+
+\item{filters}{List; optional custom filter DSL tree (see
+\code{\link{.compileSelect}}); validated fail-closed and ANDed in.}
+
+\item{concept_col}{Character; optional concept-scoping column override
+passed through to \code{\link{.compileSelect}}.}
+
+\item{visit_filter}{List; optional visit-linkage filter passed through to
+\code{\link{.compileSelect}}.}
 }
 \value{
 Data frame

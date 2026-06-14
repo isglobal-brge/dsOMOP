@@ -4,7 +4,14 @@
 \alias{.profileSafeCutpoints}
 \title{Compute safe histogram bin edges for a numeric column}
 \usage{
-.profileSafeCutpoints(handle, table, column, concept_id = NULL, n_bins = 10L)
+.profileSafeCutpoints(
+  handle,
+  table,
+  column,
+  concept_id = NULL,
+  n_bins = 10L,
+  concept_col = NULL
+)
 }
 \arguments{
 \item{handle}{CDM handle}

@@ -4,7 +4,13 @@
 \alias{.profileColumnStats}
 \title{Get column-level statistics}
 \usage{
-.profileColumnStats(handle, table, column, concept_id = NULL)
+.profileColumnStats(
+  handle,
+  table,
+  column,
+  concept_id = NULL,
+  concept_col = NULL
+)
 }
 \arguments{
 \item{handle}{CDM handle}

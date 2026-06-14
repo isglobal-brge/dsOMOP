@@ -641,17 +641,24 @@ omopTableStatsDS <- function(omop_symbol, table,
 #' @param column Character; column name
 #' @param concept_id Integer; optional; restrict the summary to rows of this
 #'   concept, using the table's domain concept column
+#' @param concept_col Character; optional; concept column to scope
+#'   \code{concept_id} on instead of the domain concept (e.g.
+#'   \code{unit_concept_id}, a \code{*_type_concept_id}, or
+#'   \code{value_as_concept_id})
 #' @return Named list with column statistics
 #' @examples
 #' \dontrun{
 #' stats <- omopColumnStatsDS("omop", "person", "year_of_birth")
 #' }
 #' @export
-omopColumnStatsDS <- function(omop_symbol, table, column, concept_id = NULL) {
+omopColumnStatsDS <- function(omop_symbol, table, column, concept_id = NULL,
+                              concept_col = NULL) {
   handle <- .getHandle(omop_symbol)
   concept_id <- .ds_arg(concept_id)
+  concept_col <- .ds_arg(concept_col)
   if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
-  .profileColumnStats(handle, table, column, concept_id = concept_id)
+  .profileColumnStats(handle, table, column, concept_id = concept_id,
+                      concept_col = concept_col)
 }
 
 #' Get cross-table domain coverage (Aggregate)
@@ -710,6 +717,10 @@ omopMissingnessDS <- function(omop_symbol, table,
 #' @param top_n Integer; maximum number of distinct values to return
 #' @param concept_id Integer; optional; restrict the summary to rows of this
 #'   concept, using the table's domain concept column
+#' @param concept_col Character; optional; concept column to scope
+#'   \code{concept_id} on instead of the domain concept (e.g.
+#'   \code{unit_concept_id}, a \code{*_type_concept_id}, or
+#'   \code{value_as_concept_id})
 #' @return Data frame with value counts
 #' @examples
 #' \dontrun{
@@ -717,14 +728,16 @@ omopMissingnessDS <- function(omop_symbol, table,
 #' }
 #' @export
 omopValueCountsDS <- function(omop_symbol, table, column,
-                              top_n = 20, concept_id = NULL) {
+                              top_n = 20, concept_id = NULL,
+                              concept_col = NULL) {
   handle <- .getHandle(omop_symbol)
   concept_id <- .ds_arg(concept_id)
+  concept_col <- .ds_arg(concept_col)
   if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
   # Small-count suppression is mandatory for this aggregate endpoint and is not
   # client-configurable: a caller must never be able to disable disclosure control.
   .profileValueCounts(handle, table, column, top_n, suppress_small = TRUE,
-                      concept_id = concept_id)
+                      concept_id = concept_id, concept_col = concept_col)
 }
 
 #' Search concepts (Aggregate)
@@ -1012,6 +1025,10 @@ omopCrossTabDS <- function(omop_symbol, table, row_col, col_col,
 #' @param window List with start/end dates for filtering (NULL)
 #' @param concept_id Integer; optional; restrict the range to rows of this
 #'   concept, using the table's domain concept column
+#' @param concept_col Character; optional; concept column to scope
+#'   \code{concept_id} on instead of the domain concept (e.g.
+#'   \code{unit_concept_id}, a \code{*_type_concept_id}, or
+#'   \code{value_as_concept_id})
 #' @return List with p05, p95, n_total
 #' @examples
 #' \dontrun{
@@ -1020,12 +1037,13 @@ omopCrossTabDS <- function(omop_symbol, table, row_col, col_col,
 #' @export
 omopNumericRangeDS <- function(omop_symbol, table, value_col,
                                 cohort_table = NULL, window = NULL,
-                                concept_id = NULL) {
+                                concept_id = NULL, concept_col = NULL) {
   handle <- .getHandle(omop_symbol)
   concept_id <- .ds_arg(concept_id)
+  concept_col <- .ds_arg(concept_col)
   if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
   .profileNumericRange(handle, table, value_col, cohort_table, window,
-                       concept_id = concept_id)
+                       concept_id = concept_id, concept_col = concept_col)
 }
 
 #' Get numeric histogram (Aggregate)
@@ -1044,6 +1062,10 @@ omopNumericRangeDS <- function(omop_symbol, table, value_col,
 #' @param breaks Numeric vector; shared bin edges from two-pass pooling (NULL)
 #' @param concept_id Integer; optional; restrict the histogram to rows of this
 #'   concept, using the table's domain concept column
+#' @param concept_col Character; optional; concept column to scope
+#'   \code{concept_id} on instead of the domain concept (e.g.
+#'   \code{unit_concept_id}, a \code{*_type_concept_id}, or
+#'   \code{value_as_concept_id})
 #' @return Data frame with bin_start, bin_end, count, suppressed
 #' @examples
 #' \dontrun{
@@ -1053,14 +1075,15 @@ omopNumericRangeDS <- function(omop_symbol, table, value_col,
 omopNumericHistogramDS <- function(omop_symbol, table, value_col,
                                     bins = 20L, cohort_table = NULL,
                                     window = NULL, breaks = NULL,
-                                    concept_id = NULL) {
+                                    concept_id = NULL, concept_col = NULL) {
   handle <- .getHandle(omop_symbol)
   breaks <- .ds_arg(breaks)
   concept_id <- .ds_arg(concept_id)
+  concept_col <- .ds_arg(concept_col)
   if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
   .profileNumericHistogram(handle, table, value_col, bins,
                            cohort_table, window, breaks,
-                           concept_id = concept_id)
+                           concept_id = concept_id, concept_col = concept_col)
 }
 
 #' Get numeric quantiles (Aggregate)
@@ -1079,6 +1102,10 @@ omopNumericHistogramDS <- function(omop_symbol, table, value_col,
 #' @param rounding Integer; decimal places for rounding
 #' @param concept_id Integer; optional; restrict the summary to rows of this
 #'   concept, using the table's domain concept column
+#' @param concept_col Character; optional; concept column to scope
+#'   \code{concept_id} on instead of the domain concept (e.g.
+#'   \code{unit_concept_id}, a \code{*_type_concept_id}, or
+#'   \code{value_as_concept_id})
 #' @return Data frame with probability and value
 #' @examples
 #' \dontrun{
@@ -1088,14 +1115,16 @@ omopNumericHistogramDS <- function(omop_symbol, table, value_col,
 omopNumericQuantilesDS <- function(omop_symbol, table, value_col,
                                     probs = c(0.05, 0.25, 0.5, 0.75, 0.95),
                                     cohort_table = NULL, window = NULL,
-                                    rounding = 2L, concept_id = NULL) {
+                                    rounding = 2L, concept_id = NULL,
+                                    concept_col = NULL) {
   handle <- .getHandle(omop_symbol)
   probs <- .ds_arg(probs)
   concept_id <- .ds_arg(concept_id)
+  concept_col <- .ds_arg(concept_col)
   if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
   .profileNumericQuantiles(handle, table, value_col, probs,
                            cohort_table, window, rounding,
-                           concept_id = concept_id)
+                           concept_id = concept_id, concept_col = concept_col)
 }
 
 #' Get date counts (Aggregate)
@@ -1186,6 +1215,10 @@ omopLocateConceptDS <- function(omop_symbol, concept_ids) {
 #' @param column Character; numeric column name
 #' @param concept_id Integer or NULL; concept filter
 #' @param n_bins Integer; target number of bins (default 10)
+#' @param concept_col Character; optional; concept column to scope
+#'   \code{concept_id} on instead of the domain concept (e.g.
+#'   \code{unit_concept_id}, a \code{*_type_concept_id}, or
+#'   \code{value_as_concept_id})
 #' @return List with breaks (numeric vector) and counts (integer vector)
 #' @examples
 #' \dontrun{
@@ -1193,9 +1226,12 @@ omopLocateConceptDS <- function(omop_symbol, concept_ids) {
 #' }
 #' @export
 omopSafeCutpointsDS <- function(omop_symbol, table, column,
-                                 concept_id = NULL, n_bins = 10L) {
+                                 concept_id = NULL, n_bins = 10L,
+                                 concept_col = NULL) {
   handle <- .getHandle(omop_symbol)
-  .profileSafeCutpoints(handle, table, column, concept_id, as.integer(n_bins))
+  concept_col <- .ds_arg(concept_col)
+  .profileSafeCutpoints(handle, table, column, concept_id, as.integer(n_bins),
+                        concept_col = concept_col)
 }
 
 # --- Achilles aggregate methods ---

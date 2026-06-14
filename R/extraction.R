@@ -189,13 +189,25 @@
 #' @param temporal List; temporal filtering spec (index_window, calendar, etc.)
 #' @param add_cohort_date Logical; if TRUE, add cohort start/end date columns
 #'   from the cohort table to the output.
+#' @param filters List; an optional custom filter DSL tree (AND/OR of leaves,
+#'   see \code{\link{.compileFilter}}). Validated fail-closed by
+#'   \code{\link{.assertCustomFilterSafe}} and ANDed with the other predicates.
+#' @param concept_col Character; optional override of the column the
+#'   \code{concept_filter} IN-list scopes (default: the table's domain concept
+#'   column). Lets a caller scope by \code{unit_concept_id},
+#'   \code{*_type_concept_id}, or \code{value_as_concept_id}.
+#' @param visit_filter List; optional \code{list(concept_ids = ...)} restricting
+#'   events to visits of those \code{visit_concept_id} values via a join on
+#'   \code{visit_occurrence_id} to \code{visit_occurrence}.
 #' @return Character; compiled SQL statement
 #' @keywords internal
 .compileSelect <- function(handle, table, columns = NULL,
                            concept_filter = NULL, person_ids = NULL,
                            time_window = NULL, cohort_table = NULL,
                            limit = NULL, block_sensitive = TRUE,
-                           temporal = NULL, add_cohort_date = FALSE) {
+                           temporal = NULL, add_cohort_date = FALSE,
+                           filters = NULL, concept_col = NULL,
+                           visit_filter = NULL) {
   bp <- .buildBlueprint(handle)
 
   table_lower <- tolower(table)
@@ -209,7 +221,15 @@
     stop("No columns found for table '", table, "'.", call. = FALSE)
   }
 
-  concept_col <- .getDomainConceptColumn(bp, table_lower)
+  # Concept scoping column: the domain concept by default, but a caller may
+  # override it to scope/filter by another concept column on the same table
+  # (e.g. unit_concept_id, *_type_concept_id, value_as_concept_id) for
+  # unit-harmonization extraction or value-by-unit/type distributions.
+  if (is.null(concept_col)) {
+    concept_col <- .getDomainConceptColumn(bp, table_lower)
+  } else {
+    concept_col <- tolower(.validateIdentifier(concept_col, "concept column"))
+  }
   has_concept_col <- !is.null(concept_col) && concept_col %in% col_df$column_name
   has_person_id <- "person_id" %in% col_df$column_name
 
@@ -301,6 +321,26 @@
     ))
   }
 
+  # Visit-linkage filter: restrict events to visits of given visit_concept_id
+  # values via the visit_occurrence_id FK (present in the join graph). Emitted as
+  # an EXISTS so it never multiplies rows or exposes visit identifiers.
+  if (!is.null(visit_filter) && "visit_occurrence_id" %in% col_df$column_name) {
+    vo_row <- bp$tables[bp$tables$table_name == "visit_occurrence" &
+                          bp$tables$present_in_db, , drop = FALSE]
+    visit_ids <- suppressWarnings(as.integer(unlist(
+      visit_filter$concept_ids %||% visit_filter$visit_concept_id,
+      use.names = FALSE)))
+    visit_ids <- unique(visit_ids[!is.na(visit_ids)])
+    if (nrow(vo_row) > 0 && length(visit_ids) > 0) {
+      where <- c(where, paste0(
+        "EXISTS (SELECT 1 FROM ", vo_row$qualified_name[1], " AS v",
+        " WHERE v.visit_occurrence_id = ", t_alias, ".visit_occurrence_id",
+        " AND v.visit_concept_id IN (",
+        paste(visit_ids, collapse = ", "), "))"
+      ))
+    }
+  }
+
   # Temporal WHERE clauses
   if (!is.null(temporal) && has_person_id) {
     date_col_temporal <- .getDateColumn(bp, table_lower)
@@ -323,6 +363,20 @@
           t_alias, ".", date_col, " <= ", .quoteLiteral(time_window$end_date)
         ))
       }
+    }
+  }
+
+  # Custom filter DSL. Validated fail-closed FIRST (identifier/blocked columns
+  # and narrow fingerprinting ops are rejected before any SQL is emitted), then
+  # compiled and ANDed with the predicates above. The distinct-person gate still
+  # runs on the resulting query in .extractTable / .planExecute, so a custom
+  # filter can only narrow — never bypass — the suppression.
+  if (!is.null(filters) && length(filters) > 0) {
+    valid_cols <- .filterableColumns(bp, table_lower)
+    .assertCustomFilterSafe(filters, valid_cols)
+    filter_sql <- .compileFilter(handle, filters, t_alias, valid_cols)
+    if (!is.null(filter_sql) && nchar(filter_sql) > 0) {
+      where <- c(where, filter_sql)
     }
   }
 
@@ -366,6 +420,102 @@
     " FROM ", concept_table,
     " WHERE concept_id IN (", ids, ")"
   )
+}
+
+#' Columns a custom extraction filter is allowed to reference
+#'
+#' The custom filter DSL (\code{\link{.compileFilter}}) can in principle target
+#' ANY column, which is exactly what makes it disclosive: a leaf referencing a
+#' raw identifier (\code{person_id}, \code{*_occurrence_id}, \code{provider_id})
+#' could be used to probe for or leak a specific id, and a leaf on a blocked
+#' source-value / free-text / quasi-identifier column reaches data the column
+#' allowlist otherwise hides. This returns the SAFE subset of a table's columns:
+#' every column MINUS the row-level identifiers (\code{\link{.identifierColumns}})
+#' and the blocked/sensitive columns flagged in the blueprint. Filtering is
+#' restricted to this set fail-closed.
+#'
+#' @param bp Blueprint
+#' @param table_lower Character; lower-cased table name
+#' @param extra Character vector; additional column names to permit (e.g.
+#'   visit-join columns that live on \code{visit_occurrence}, validated by the
+#'   caller against that table's own safe set).
+#' @return Character vector of filterable column names
+#' @keywords internal
+.filterableColumns <- function(bp, table_lower, extra = character(0)) {
+  col_df <- bp$columns[[table_lower]]
+  if (is.null(col_df) || nrow(col_df) == 0) return(unique(extra))
+  cols <- col_df$column_name
+  blocked <- col_df$column_name[col_df$is_blocked]
+  # Identifiers are NEVER filterable: the person/subject key is a protected
+  # pseudonym on output and the row ids are dropped, so allowing a filter to
+  # reference them would let a client target an individual by raw id.
+  cols <- setdiff(cols, union(blocked, .identifierColumns()))
+  unique(c(cols, extra))
+}
+
+#' Map a custom-filter operator to its disclosure classification family
+#'
+#' Bridges the \code{\link{.compileFilter}} operator vocabulary onto the filter
+#' families understood by \code{\link{.classifyFilter}} so that every custom
+#' filter leaf is subject to the SAME granularity policy as the cohort filters.
+#' Range/membership operators map to \code{value_threshold} (a constrained
+#' range family); exact-match operators (\code{==}/\code{!=}) on an arbitrary
+#' column map to \code{custom}, which \code{.classifyFilter} blocks, because a
+#' single arbitrary-column equality is the canonical fingerprinting primitive.
+#' \code{value_bin} is the pre-validated, server-sanctioned binning family and
+#' is always allowed.
+#'
+#' @param op Character; a \code{.compileFilter} operator (already lower-cased)
+#' @return Character; a filter-type understood by \code{.classifyFilter}
+#' @keywords internal
+.filterOpClass <- function(op) {
+  switch(op,
+    "value_bin" = "value_bin",
+    ">=" =, "gte" =, "<=" =, "lte" =, ">" =, "gt" =, "<" =, "lt" =,
+    "between" =, "in" =, "not_in" =, "is_null" =, "not_null" = "value_threshold",
+    # ==, !=, eq, ne and anything unrecognised: treat as arbitrary custom
+    # predicate -> blocked by .classifyFilter (fail-closed).
+    "custom"
+  )
+}
+
+#' Validate a custom filter tree against the disclosure policy (fail-closed)
+#'
+#' Walks the same AND/OR/leaf structure as \code{\link{.compileFilter}} and, for
+#' every leaf, (1) confirms the referenced column is in the table's filterable
+#' allowlist (\code{\link{.filterableColumns}}) so identifier/blocked columns can
+#' never be targeted, and (2) runs the leaf operator through
+#' \code{\link{.validateFilter}} (via \code{\link{.filterOpClass}}) so narrow
+#' fingerprinting predicates are rejected before any SQL is built. Stops on the
+#' first unsafe leaf; this is the gate that keeps the custom DSL from bypassing
+#' the per-patient suppression that still runs on the filtered result.
+#'
+#' @param filter List; the filter structure
+#' @param valid_columns Character vector; filterable column allowlist
+#' @return TRUE invisibly, or stops with a disclosure error
+#' @keywords internal
+.assertCustomFilterSafe <- function(filter, valid_columns) {
+  if (is.null(filter) || length(filter) == 0) return(invisible(TRUE))
+
+  if ("and" %in% names(filter)) {
+    for (f in filter$and) .assertCustomFilterSafe(f, valid_columns)
+    return(invisible(TRUE))
+  }
+  if ("or" %in% names(filter)) {
+    for (f in filter$or) .assertCustomFilterSafe(f, valid_columns)
+    return(invisible(TRUE))
+  }
+
+  var <- tolower(filter$var %||% "")
+  op <- tolower(filter$op %||% "")
+  .validateIdentifier(var, "filter column")
+  if (!var %in% valid_columns) {
+    stop("Disclosive: filter on column '", var,
+         "' is not permitted (identifier, blocked, or unknown column).",
+         call. = FALSE)
+  }
+  .validateFilter(.filterOpClass(op), list())
+  invisible(TRUE)
 }
 
 #' Compile a filter DSL structure into SQL WHERE fragments
@@ -647,6 +797,12 @@
 #' @param block_sensitive Logical; block sensitive columns
 #' @param temporal List; temporal filtering spec
 #' @param date_handling List; date handling spec
+#' @param filters List; optional custom filter DSL tree (see
+#'   \code{\link{.compileSelect}}); validated fail-closed and ANDed in.
+#' @param concept_col Character; optional concept-scoping column override
+#'   passed through to \code{\link{.compileSelect}}.
+#' @param visit_filter List; optional visit-linkage filter passed through to
+#'   \code{\link{.compileSelect}}.
 #' @return Data frame
 #' @keywords internal
 .extractTable <- function(handle, table, columns = NULL,
@@ -658,7 +814,9 @@
                           block_sensitive = TRUE,
                           temporal = NULL,
                           date_handling = NULL,
-                          add_cohort_date = FALSE) {
+                          add_cohort_date = FALSE,
+                          filters = NULL, concept_col = NULL,
+                          visit_filter = NULL) {
 
   sql <- .compileSelect(
     handle, table,
@@ -669,7 +827,10 @@
     cohort_table = cohort_table,
     block_sensitive = block_sensitive,
     temporal = temporal,
-    add_cohort_date = add_cohort_date
+    add_cohort_date = add_cohort_date,
+    filters = filters,
+    concept_col = concept_col,
+    visit_filter = visit_filter
   )
 
   # Wrap with event selection (ROW_NUMBER) if requested
@@ -683,6 +844,13 @@
   col_df <- bp$columns[[tolower(table)]]
   has_person_id <- "person_id" %in% col_df$column_name
 
+  # Coverage / disclosure note: the distinct-person gate only fires for
+  # person-bearing tables. Specimen and dose_era carry person_id and so are
+  # extractable here under the normal gate. The cost table has NO person_id
+  # (it links via cost_event_id), so this gate cannot protect raw cost rows;
+  # cost is therefore intentionally NOT a person-keyed plan/extraction target
+  # and must be reached only through the curated, aggregate-only query library
+  # (see R/queries.R). (payer_plan_period DOES have person_id and is gated.)
   if (has_person_id) {
     count_sql <- .compilePersonCount(handle, sql)
     .assertMinPersons(conn = handle$conn, sql = count_sql)

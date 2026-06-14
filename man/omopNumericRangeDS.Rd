@@ -10,7 +10,8 @@ omopNumericRangeDS(
   value_col,
   cohort_table = NULL,
   window = NULL,
-  concept_id = NULL
+  concept_id = NULL,
+  concept_col = NULL
 )
 }
 \arguments{
@@ -26,6 +27,11 @@ omopNumericRangeDS(
 
 \item{concept_id}{Integer; optional; restrict the range to rows of this
 concept, using the table's domain concept column}
+
+\item{concept_col}{Character; optional; concept column to scope
+\code{concept_id} on instead of the domain concept (e.g.
+\code{unit_concept_id}, a \code{*_type_concept_id}, or
+\code{value_as_concept_id})}
 }
 \value{
 List with p05, p95, n_total

@@ -10,7 +10,8 @@
   value_col,
   cohort_table = NULL,
   window = NULL,
-  concept_id = NULL
+  concept_id = NULL,
+  concept_col = NULL
 )
 }
 \arguments{

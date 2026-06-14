@@ -9,7 +9,8 @@ omopSafeCutpointsDS(
   table,
   column,
   concept_id = NULL,
-  n_bins = 10L
+  n_bins = 10L,
+  concept_col = NULL
 )
 }
 \arguments{
@@ -22,6 +23,11 @@ omopSafeCutpointsDS(
 \item{concept_id}{Integer or NULL; concept filter}
 
 \item{n_bins}{Integer; target number of bins (default 10)}
+
+\item{concept_col}{Character; optional; concept column to scope
+\code{concept_id} on instead of the domain concept (e.g.
+\code{unit_concept_id}, a \code{*_type_concept_id}, or
+\code{value_as_concept_id})}
 }
 \value{
 List with breaks (numeric vector) and counts (integer vector)
