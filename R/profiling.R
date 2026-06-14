@@ -561,7 +561,7 @@
 
   # Translate TOP to LIMIT for sqlite/postgresql
   translated <- .renderSql(handle, sql)
-  result <- DBI::dbGetQuery(handle$conn, translated)
+  result <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, translated))
   names(result) <- tolower(names(result))
   result <- .coerce_integer64(result)
 
@@ -863,7 +863,7 @@
   # offset is expressible. The window is bounded by effective_top_n upstream.
   translated <- paste0(.renderSql(handle, sql),
                        .paginationClause(handle$target_dialect, limit, offset))
-  result <- DBI::dbGetQuery(handle$conn, translated)
+  result <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, translated))
   names(result) <- tolower(names(result))
   result <- .coerce_integer64(result)
   if (nrow(result) == 0) return(NULL)

@@ -60,7 +60,7 @@
 
   # Translate to target dialect (TOP -> LIMIT for sqlite/postgresql)
   translated <- .renderSql(handle, sql)
-  result <- DBI::dbGetQuery(handle$conn, translated)
+  result <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, translated))
   names(result) <- tolower(names(result))
   .coerce_integer64(result)
 }

@@ -127,22 +127,26 @@
 #' might match exactly one person). The error message is deliberately
 #' generic to avoid leaking the actual count.
 #'
-#' @param conn DBI connection
+#' @param handle CDM handle (used with \code{sql} to run the count query through
+#'   the transparent-reconnect, fail-closed DB path)
 #' @param sql Character; SQL returning count of distinct person_id
 #' @param n_persons Numeric; pre-computed count
 #' @return TRUE invisibly, or stops with an error
 #' @keywords internal
-.assertMinPersons <- function(conn = NULL, sql = NULL, n_persons = NULL) {
+.assertMinPersons <- function(handle = NULL, sql = NULL, n_persons = NULL) {
   settings <- .omopDisclosureSettings()
   threshold <- settings$nfilter_subset
 
-  if (!is.null(sql) && !is.null(conn)) {
-    result <- DBI::dbGetQuery(conn, sql)
+  if (!is.null(sql) && !is.null(handle)) {
+    # Route the gate's COUNT(DISTINCT person_id) through the reconnect helper so
+    # a renewed connection that dropped the cohort temp table FAILS CLOSED here
+    # rather than counting against a vanished table and waving the result past.
+    result <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql))
     n <- as.numeric(result[[1]][1])
   } else if (!is.null(n_persons)) {
     n <- as.numeric(n_persons)
   } else {
-    stop("Either (conn + sql) or n_persons must be provided.", call. = FALSE)
+    stop("Either (handle + sql) or n_persons must be provided.", call. = FALSE)
   }
 
   if (is.na(n) || n < threshold) {
@@ -465,7 +469,8 @@
   settings <- .omopDisclosureSettings()
   threshold <- settings$nfilter_subset
 
-  post_result <- .coerce_integer64(DBI::dbGetQuery(handle$conn, post_sql))
+  post_result <- .coerce_integer64(
+    .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, post_sql)))
   post_n <- as.numeric(post_result[[1]][1])
 
   if (is.na(post_n) || post_n < threshold) {

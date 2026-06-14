@@ -4,10 +4,11 @@
 \alias{.assertMinPersons}
 \title{Assert minimum unique persons in a dataset}
 \usage{
-.assertMinPersons(conn = NULL, sql = NULL, n_persons = NULL)
+.assertMinPersons(handle = NULL, sql = NULL, n_persons = NULL)
 }
 \arguments{
-\item{conn}{DBI connection}
+\item{handle}{CDM handle (used with \code{sql} to run the count query through
+the transparent-reconnect, fail-closed DB path)}
 
 \item{sql}{Character; SQL returning count of distinct person_id}
 

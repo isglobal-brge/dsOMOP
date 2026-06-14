@@ -49,8 +49,9 @@
   rendered <- .sql_render(sql, ...)
   translated <- .sql_translate(rendered, handle$target_dialect)
   statements <- .sql_split(translated)
+  conn <- .conn(handle)
   for (stmt in statements) {
-    DBI::dbExecute(handle$conn, stmt)
+    DBI::dbExecute(conn, stmt)
   }
   invisible(NULL)
 }
@@ -65,7 +66,8 @@
 .querySql <- function(handle, sql, ...) {
   rendered <- .sql_render(sql, ...)
   translated <- .sql_translate(rendered, handle$target_dialect)
-  .coerce_integer64(DBI::dbGetQuery(handle$conn, translated))
+  .coerce_integer64(
+    .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, translated)))
 }
 
 #' Render and translate SQL (returns SQL string, no execution)

@@ -275,7 +275,7 @@
 .closeHandle <- function(handle) {
   if (is.null(handle)) return(invisible(NULL))
 
-  conn <- handle$conn
+  conn <- .conn(handle)
 
   if (length(handle$temp_tables) > 0 && DBI::dbIsValid(conn)) {
     for (tbl in handle$temp_tables) {
@@ -283,8 +283,176 @@
     }
   }
 
-  handle$resource_client$close()
+  if (!is.null(handle$resource_client)) handle$resource_client$close()
   invisible(NULL)
+}
+
+# --- Connection Resolution & Transparent Reconnect ---
+
+#' Resolve the LIVE database connection for a handle
+#'
+#' The handle caches a connection snapshot in \code{handle$conn} taken at
+#' creation time, but that snapshot can go stale when a pooled/expiring
+#' resource connection is closed underneath us. When the handle owns a
+#' \code{resource_client}, defer to \code{resource_client$getConnection()},
+#' which revalidates with \code{DBI::dbIsValid()} and transparently reconnects
+#' if needed. The freshly resolved connection is cached back into
+#' \code{handle$conn} so disclosure helpers that still read the field directly
+#' see the live handle. Falls back to \code{handle$conn} when there is no
+#' resource_client (e.g. test handles built by \code{create_test_handle()}).
+#'
+#' @param handle A CDM handle.
+#' @return A live DBI connection.
+#' @keywords internal
+.conn <- function(handle) {
+  rc <- handle$resource_client
+  if (!is.null(rc)) {
+    conn <- rc$getConnection()
+    handle$conn <- conn
+    return(conn)
+  }
+  handle$conn
+}
+
+#' Is an error a database CONNECTION-class failure (vs a SQL/logic error)?
+#'
+#' Matches the messages DBI/driver layers raise when the underlying connection
+#' is closed, lost, or expired — the cases a one-shot reconnect can recover.
+#' Deliberately conservative: it must NOT match genuine SQL/logic errors
+#' (syntax, missing column, constraint, permission), because retrying those is
+#' pointless and could mask a real problem. "no such table"/"does not exist"
+#' are handled separately by \code{.isMissingObjectError} and are NOT treated
+#' as connection errors here.
+#'
+#' @param e A condition/error object.
+#' @return \code{TRUE} if the error looks like a lost/closed/expired connection.
+#' @keywords internal
+.isConnectionError <- function(e) {
+  msg <- tolower(conditionMessage(e))
+  patterns <- c(
+    "connection.*(closed|lost|expired|reset|terminated|not open|is closed|was closed|already closed|do not exist|does not exist)",
+    "(lost|broken|closed|expired|stale|dead|invalid).*connection",
+    "no connection to the server",
+    "could not (connect|receive data|send data)",
+    "server closed the connection",
+    "terminating connection",
+    "ssl connection has been closed",
+    "ssl syscall error",
+    "eof detected",
+    "bad connection",
+    "connection timed out",
+    "failed to connect",
+    "server has gone away",         # MySQL/MariaDB
+    "mysql server has gone away",
+    "lost connection to mysql",
+    "ora-03114",                    # Oracle: not connected to ORACLE
+    "ora-03113",                    # Oracle: end-of-file on communication channel
+    "ora-03135",                    # Oracle: connection lost contact
+    "ora-12537",                    # Oracle: TNS connection closed
+    "08s01", "08003", "08006", "08001", "08004",  # SQLSTATE connection-exception class
+    "communication link failure"    # ODBC / SQL Server
+  )
+  any(vapply(patterns, function(p) grepl(p, msg), logical(1)))
+}
+
+#' Is an error a "missing database object" failure (e.g. vanished temp table)?
+#'
+#' A reconnect DROPS all session-scoped TEMP tables, so any dsOMOP cohort/plan
+#' temp table created before the reconnect disappears. A query that then runs
+#' against it fails with a "no such table" / "relation does not exist" error.
+#' This predicate detects that case so callers can FAIL CLOSED instead of
+#' silently running against a vanished table and returning an under-populated
+#' (gate-evading) result.
+#'
+#' @param e A condition/error object.
+#' @return \code{TRUE} if the error indicates a missing table/relation.
+#' @keywords internal
+.isMissingObjectError <- function(e) {
+  msg <- tolower(conditionMessage(e))
+  patterns <- c(
+    "no such table",                       # SQLite
+    "relation .* does not exist",          # PostgreSQL / Redshift
+    "table or view does not exist",        # Oracle (ORA-00942)
+    "ora-00942",
+    "doesn't exist",                       # MySQL/MariaDB
+    "invalid object name",                 # SQL Server
+    "object .* not found",                 # generic / Spark
+    "table .* not found",
+    "cannot find .* table",
+    "undefined table"
+  )
+  any(vapply(patterns, function(p) grepl(p, msg), logical(1)))
+}
+
+#' Run a DB operation with transparent one-shot reconnect
+#'
+#' Executes \code{fn(conn)} against the handle's live connection. On a
+#' CONNECTION-class failure (see \code{\link{.isConnectionError}}) it closes the
+#' stale connection, re-resolves a fresh one via \code{\link{.conn}} (which goes
+#' through \code{resource_client$getConnection()} and reconnects), and retries
+#' the operation EXACTLY ONCE. A second failure — or any non-connection error —
+#' propagates unchanged, so genuine SQL/logic errors are never silently retried.
+#'
+#' Disclosure-critical fail-closed behaviour: a reconnect drops session TEMP
+#' tables, so any dsOMOP cohort/working temp table created earlier in the
+#' session vanishes. If a query fails because such an object is now missing
+#' (see \code{\link{.isMissingObjectError}}) WHILE this handle still has
+#' registered temp tables, we STOP with a clear, actionable error telling the
+#' analyst to re-run the cohort/session step. This covers BOTH paths by which
+#' the loss surfaces: (a) the cached connection was already invalid, so
+#' \code{.conn()} silently handed us a fresh connection and the very first
+#' attempt hits a vanished table; and (b) the connection died mid-call and the
+#' post-reconnect retry hits a vanished table. We never let a query proceed
+#' against a vanished temp table, which would otherwise return an
+#' empty/under-populated result able to slip past the per-patient gate.
+#'
+#' @param handle A CDM handle.
+#' @param fn A function taking a single argument, the DBI connection.
+#' @return The value returned by \code{fn}.
+#' @keywords internal
+.withDbReconnect <- function(handle, fn) {
+  # Fail closed when a query hits a missing object but dsOMOP is still tracking
+  # session temp tables — i.e. a reconnect dropped the cohort/working tables.
+  .stopIfTempTablesLost <- function(e) {
+    if (.isMissingObjectError(e) && length(handle$temp_tables) > 0) {
+      stop("Database connection was renewed, which dropped this session's ",
+           "temporary cohort/working table(s). The previous result cannot be ",
+           "reproduced safely. Re-run the cohort/session step (e.g. ",
+           "ds.omop.cohort.*) and then retry this operation.", call. = FALSE)
+    }
+    invisible(NULL)
+  }
+
+  conn <- .conn(handle)
+  tryCatch(
+    fn(conn),
+    error = function(e) {
+      # A vanished temp table can surface on the FIRST attempt if .conn() had to
+      # hand back a freshly reconnected connection (old snapshot was invalid).
+      .stopIfTempTablesLost(e)
+      if (!.isConnectionError(e)) stop(e)
+
+      # Connection looks dead: drop the stale snapshot and force a fresh
+      # connection on the next .conn() call.
+      if (!is.null(handle$resource_client)) {
+        try(handle$resource_client$close(), silent = TRUE)
+      } else if (!is.null(handle$conn)) {
+        try(DBI::dbDisconnect(handle$conn), silent = TRUE)
+        handle$conn <- NULL
+      }
+
+      conn2 <- .conn(handle)
+      tryCatch(
+        fn(conn2),
+        error = function(e2) {
+          # The reconnect wiped session temp tables. Fail closed rather than
+          # run against a vanished cohort/session table and under-count.
+          .stopIfTempTablesLost(e2)
+          stop(e2)
+        }
+      )
+    }
+  )
 }
 
 # --- Blueprint Construction ---
@@ -1083,7 +1251,7 @@
 #' @return Character vector of table names (lowercase)
 #' @keywords internal
 .listTablesRaw <- function(handle, schema = NULL) {
-  conn <- handle$conn
+  conn <- .conn(handle)
 
   if (handle$target_dialect == "sqlite") {
     result <- DBI::dbGetQuery(conn,
@@ -1129,7 +1297,7 @@
 #' @return Data frame with column_name, data_type, is_nullable
 #' @keywords internal
 .listColumnsRaw <- function(handle, table, schema = NULL) {
-  conn <- handle$conn
+  conn <- .conn(handle)
   empty <- data.frame(column_name = character(0), data_type = character(0),
                       is_nullable = character(0), stringsAsFactors = FALSE)
 
@@ -1364,7 +1532,8 @@
     sql <- .renderSql(handle,
       "SELECT TOP 1 * FROM @qualified",
       qualified = qualified)
-    result <- .coerce_integer64(DBI::dbGetQuery(handle$conn, sql))
+    result <- .coerce_integer64(
+      .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql)))
     if (nrow(result) == 0) return(NULL)
 
     names(result) <- tolower(names(result))
@@ -1388,7 +1557,7 @@
 #' @keywords internal
 .createTempTable <- function(handle, name, select_sql) {
   sql <- paste0("CREATE TEMP TABLE ", name, " AS ", select_sql)
-  DBI::dbExecute(handle$conn, sql)
+  .withDbReconnect(handle, function(conn) DBI::dbExecute(conn, sql))
   handle$temp_tables <- c(handle$temp_tables, name)
   name
 }
@@ -1401,7 +1570,7 @@
 #' @keywords internal
 .dropTempTable <- function(handle, name) {
   tryCatch(
-    DBI::dbExecute(handle$conn, paste0("DROP TABLE IF EXISTS ", name)),
+    DBI::dbExecute(.conn(handle), paste0("DROP TABLE IF EXISTS ", name)),
     error = function(e) NULL
   )
   handle$temp_tables <- setdiff(handle$temp_tables, name)

@@ -647,7 +647,7 @@
 #' @return Data frame
 #' @keywords internal
 .executeQuery <- function(handle, sql) {
-  result <- DBI::dbGetQuery(handle$conn, sql)
+  result <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql))
   names(result) <- tolower(names(result))
   .coerce_integer64(result)
 }
@@ -777,7 +777,7 @@
 #' @return Number of affected rows (invisible)
 #' @keywords internal
 .executeStatement <- function(handle, sql) {
-  invisible(DBI::dbExecute(handle$conn, sql))
+  invisible(.withDbReconnect(handle, function(conn) DBI::dbExecute(conn, sql)))
 }
 
 # --- Main Extraction ---
@@ -853,7 +853,7 @@
   # (see R/queries.R). (payer_plan_period DOES have person_id and is gated.)
   if (has_person_id) {
     count_sql <- .compilePersonCount(handle, sql)
-    .assertMinPersons(conn = handle$conn, sql = count_sql)
+    .assertMinPersons(handle = handle, sql = count_sql)
   }
 
   result <- .executeQuery(handle, sql)
@@ -1749,7 +1749,7 @@
     "SELECT COUNT(DISTINCT person_id) AS n_persons FROM (",
     sql, ") AS sub"
   )
-  .assertMinPersons(conn = handle$conn, sql = count_sql)
+  .assertMinPersons(handle = handle, sql = count_sql)
 
   df <- .executeQuery(handle, sql)
   if (nrow(df) == 0) return(NULL)
@@ -2499,7 +2499,7 @@
     " ORDER BY c.subject_id, c.cohort_start_date"
   )
 
-  .assertMinPersons(conn = handle$conn,
+  .assertMinPersons(handle = handle,
     sql = paste0("SELECT COUNT(DISTINCT subject_id) AS n_persons FROM ",
                  cohort_table))
 
@@ -2588,7 +2588,7 @@
     " ORDER BY subject_id"
   )
 
-  .assertMinPersons(conn = handle$conn,
+  .assertMinPersons(handle = handle,
     sql = paste0("SELECT COUNT(DISTINCT subject_id) AS n_persons FROM ",
                  cohort_table))
 
@@ -2718,7 +2718,7 @@
   }
 
   .assertMinPersons(
-    conn = handle$conn,
+    handle = handle,
     sql = paste0("SELECT COUNT(DISTINCT subject_id) AS n_persons FROM ",
                  cohort_table)
   )
@@ -2763,7 +2763,7 @@
   }
 
   .assertMinPersons(
-    conn = handle$conn,
+    handle = handle,
     sql = paste0("SELECT COUNT(DISTINCT subject_id) AS n_persons FROM ",
                  cohort_table)
   )

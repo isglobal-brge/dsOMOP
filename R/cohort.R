@@ -159,7 +159,7 @@
     "SELECT COUNT(DISTINCT sub.subject_id) AS n ",
     "FROM (", sql, ") sub"
   )
-  .assertMinPersons(conn = handle$conn, sql = person_count_sql)
+  .assertMinPersons(handle = handle, sql = person_count_sql)
 
   if (mode == "temporary") {
     temp_name <- paste0("dsomop_cohort_", as.integer(cohort_id %||% 0))
@@ -239,7 +239,7 @@
   person_count_sql <- paste0(
     "SELECT COUNT(DISTINCT subject_id) AS n FROM (", sql, ") AS combined"
   )
-  .assertMinPersons(conn = handle$conn, sql = person_count_sql)
+  .assertMinPersons(handle = handle, sql = person_count_sql)
 
   result_name <- new_name %||% paste0("dsomop_cohort_combined_",
                                        sample(1000:9999, 1))
@@ -365,7 +365,7 @@
   final_count_sql <- paste0(
     "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort_temp
   )
-  .assertMinPersons(conn = handle$conn, sql = final_count_sql)
+  .assertMinPersons(handle = handle, sql = final_count_sql)
 
   cohort_temp
 }
@@ -417,7 +417,7 @@
 
     count_sql <- paste0(
       "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort_table)
-    .assertMinPersons(conn = handle$conn, sql = count_sql)
+    .assertMinPersons(handle = handle, sql = count_sql)
     return(cohort_table)
   }
 
@@ -428,7 +428,7 @@
   cohort_table <- .validateIdentifier(as.character(cohort), "cohort")
   count_sql <- paste0(
     "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort_table)
-  .assertMinPersons(conn = handle$conn, sql = count_sql)
+  .assertMinPersons(handle = handle, sql = count_sql)
   cohort_table
 }
 
@@ -535,7 +535,7 @@
   # still clear the threshold, else it is unusable and unproducible.
   count_sql <- paste0(
     "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort_table)
-  .assertMinPersons(conn = handle$conn, sql = count_sql)
+  .assertMinPersons(handle = handle, sql = count_sql)
 
   cohort_table
 }

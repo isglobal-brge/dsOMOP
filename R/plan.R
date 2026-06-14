@@ -1068,7 +1068,7 @@
           col_df <- bp$columns[[tolower(out$table)]]
           if ("person_id" %in% col_df$column_name) {
             count_sql <- .compilePersonCount(handle, sql)
-            .assertMinPersons(conn = handle$conn, sql = count_sql)
+            .assertMinPersons(handle = handle, sql = count_sql)
           }
 
           # Build per-chunk transform for date handling + type conversion
@@ -1108,7 +1108,7 @@
           output_path <- file.path(staging_dir,
                                     paste0(out_name, ".parquet"))
           file_info <- .executeQueryToParquet(
-            handle$conn, sql, output_path, chunk_fn = chunk_fn
+            .conn(handle), sql, output_path, chunk_fn = chunk_fn
           )
           desc <- .buildStagedDescriptor(out_name, file_info, staging_token)
           results[[out_name]] <- desc
