@@ -4,7 +4,11 @@ AssignMethods:
   omopCohortCreateDS,
   omopCohortCombineDS,
   omopCleanupDS,
-  omopQueryExecDS
+  omopQueryExecDS,
+  omopMergeDS,
+  omopFilterDS,
+  omopSelectDS,
+  omopBindRowsDS
 AggregateMethods:
   omopPingDS,
   omopGetCapabilitiesDS,

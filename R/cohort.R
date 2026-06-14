@@ -357,5 +357,15 @@
     cohort_temp <- new_temp
   }
 
+  # Re-gate the FINAL inclusion-filtered cohort on distinct persons (fail-closed).
+  # The pre-inclusion cohort was already gated in .cohortCreate, but inclusion
+  # criteria narrow the population further and could drop it below threshold;
+  # without this check a tightly-specified set of criteria could isolate a
+  # handful of individuals.
+  final_count_sql <- paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort_temp
+  )
+  .assertMinPersons(conn = handle$conn, sql = final_count_sql)
+
   cohort_temp
 }

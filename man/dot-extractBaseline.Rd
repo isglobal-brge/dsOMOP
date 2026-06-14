@@ -9,7 +9,7 @@
   cohort_table,
   columns = NULL,
   derived = NULL,
-  translate_concepts = FALSE
+  translate_concepts = TRUE
 )
 }
 \arguments{

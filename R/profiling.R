@@ -119,9 +119,14 @@
     concept_filter <- paste0(ccol, " = ", as.integer(concept_id))
   }
 
+  # For person-bearing tables the disclosure gate must count DISTINCT persons,
+  # not records: one person can contribute many rows, so a record count can sail
+  # past the threshold while only a handful of individuals are involved.
+  has_person <- "person_id" %in% col_df$column_name
   sql <- paste0(
     "SELECT ",
     "COUNT(*) AS n_total, ",
+    if (has_person) "COUNT(DISTINCT person_id) AS n_persons, " else "",
     "SUM(CASE WHEN ", column, " IS NULL THEN 1 ELSE 0 END) AS n_missing, ",
     "COUNT(DISTINCT ", column, ") AS n_distinct ",
     "FROM ", qualified,
@@ -134,9 +139,13 @@
     n_missing = stats_result$n_missing[1],
     n_distinct = stats_result$n_distinct[1]
   )
+  if (has_person) result$n_persons <- stats_result$n_persons[1]
 
-  if (is.na(result$n_total) || result$n_total < settings$nfilter_subset) {
-    stop("Disclosive: insufficient rows.", call. = FALSE)
+  # Gate on distinct persons for person-bearing tables (fail-closed), falling
+  # back to the record count only for tables with no person_id (e.g. vocabulary).
+  gate_n <- if (has_person) result$n_persons else result$n_total
+  if (is.na(gate_n) || gate_n < settings$nfilter_subset) {
+    stop("Disclosive: insufficient individuals.", call. = FALSE)
   }
 
   # Suppress a tiny number of NULL rows (pinpoints the few missing individuals)
@@ -247,8 +256,19 @@
   total_sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified)
   total <- .executeQuery(handle, total_sql)$n[1]
 
-  if (is.na(total) || total < settings$nfilter_subset) {
-    stop("Disclosive: insufficient rows.", call. = FALSE)
+  # Disclosure gate on DISTINCT persons (fail-closed) for person-bearing tables:
+  # a record count can clear the threshold while only a few individuals exist.
+  # The per-record missing rate below is still record-based (that is what the
+  # statistic means), but it is only released once the population is large enough.
+  has_person <- "person_id" %in% col_df$column_name
+  if (has_person) {
+    persons_sql <- paste0("SELECT COUNT(DISTINCT person_id) AS n FROM ", qualified)
+    gate_n <- .executeQuery(handle, persons_sql)$n[1]
+  } else {
+    gate_n <- total
+  }
+  if (is.na(gate_n) || gate_n < settings$nfilter_subset) {
+    stop("Disclosive: insufficient individuals.", call. = FALSE)
   }
 
   results <- data.frame(
@@ -337,11 +357,17 @@
 
   .assertSafeLevels(n_levels, n_total)
 
+  # For person-bearing tables, compute the number of DISTINCT persons behind
+  # each value and suppress on THAT, not on the record count: a value backed by
+  # many records but only one or two individuals is disclosive and must be
+  # dropped. The record count (n) is retained as a separate column.
+  has_person <- "person_id" %in% col_df$column_name
   effective_limit <- min(as.integer(top_n), 500L)
   sql <- paste0(
     "SELECT TOP ", effective_limit,
     " CAST(", column, " AS VARCHAR) AS value, ",
-    "COUNT(*) AS n ",
+    "COUNT(*) AS n",
+    if (has_person) ", COUNT(DISTINCT person_id) AS n_persons " else " ",
     "FROM ", qualified, " ",
     "WHERE ", column, " IS NOT NULL", concept_clause, " ",
     "GROUP BY ", column, " ",
@@ -355,7 +381,11 @@
   result <- .coerce_integer64(result)
 
   if (suppress_small) {
-    result <- .suppressSmallCounts(result, "n")
+    # Person-based suppression for person-bearing tables (fail-closed row-drop
+    # on distinct persons); record-count suppression only for tables that have
+    # no person_id to count.
+    result <- .suppressSmallCounts(result,
+                                   if (has_person) "n_persons" else "n")
   }
 
   # Decorate categorical concept VALUES with human-readable names, so the row

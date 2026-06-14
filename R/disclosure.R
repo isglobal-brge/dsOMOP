@@ -96,6 +96,20 @@
   )
 }
 
+#' Is this object a dsOMOP person-bearing table?
+#'
+#' Tests for the \code{omop.table} class stamped onto every person-bearing
+#' assign output by \code{\link{.pseudonymizeIdentifiers}}. The data-manipulation
+#' verbs use this as an admission gate: they refuse to operate on anything that
+#' is not a dsOMOP-produced, token-keyed, disclosure-controlled frame, so a
+#' client cannot smuggle an arbitrary data.frame into the gated merge/filter/
+#' bind path.
+#'
+#' @param x Any object.
+#' @return \code{TRUE} if \code{x} carries the \code{omop.table} class.
+#' @keywords internal
+.is_omop.table <- function(x) inherits(x, "omop.table")
+
 #' Assert minimum unique persons in a dataset
 #'
 #' Prevents cohort-fingerprinting attacks by ensuring that any operation
