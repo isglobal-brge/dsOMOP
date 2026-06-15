@@ -1215,42 +1215,42 @@
 
       .assertMinPersons(n_persons = length(unique(cohort_person_ids)))
 
-    } else if (!is.null(plan$cohort$spec)) {
-      spec <- plan$cohort$spec
-      filter_spec <- plan$cohort$filter_tree %||% spec
-
-      # Check if spec is a population filter list/tree (from recipe_to_plan)
-      if (.isCohortFilterSpec(filter_spec)) {
-        cohort_person_ids <- .buildCohortFromFilters(handle, filter_spec)
-        # Materialize a cohort temp table so baseline/survival outputs work
-        if (length(cohort_person_ids) > 0) {
-          obs_table <- bp$tables[bp$tables$table_name == "observation_period" &
-                                   bp$tables$present_in_db, , drop = FALSE]
-          if (nrow(obs_table) > 0) {
-            obs_qualified <- obs_table$qualified_name[1]
-            ids_str <- .sqlIdList(cohort_person_ids)
-            cohort_sql <- paste0(
-              "SELECT DISTINCT o.person_id AS subject_id, ",
-              "o.observation_period_start_date AS cohort_start_date, ",
-              "o.observation_period_end_date AS cohort_end_date ",
-              "FROM ", obs_qualified, " o ",
-              "WHERE o.person_id IN (", ids_str, ")"
-            )
-            cohort_table <- .createTempTable(
-              handle, "dsomop_plan_cohort", cohort_sql)
-          }
+    } else if (!is.null(plan$cohort$filter_tree)) {
+      # Recipe-authored population filters: a nested AND/OR cohort filter tree
+      # (the sole transport from recipe_to_plan).
+      filter_spec <- plan$cohort$filter_tree
+      cohort_person_ids <- .buildCohortFromFilters(handle, filter_spec)
+      # Materialize a cohort temp table so baseline/survival outputs work
+      if (length(cohort_person_ids) > 0) {
+        obs_table <- bp$tables[bp$tables$table_name == "observation_period" &
+                                 bp$tables$present_in_db, , drop = FALSE]
+        if (nrow(obs_table) > 0) {
+          obs_qualified <- obs_table$qualified_name[1]
+          ids_str <- .sqlIdList(cohort_person_ids)
+          cohort_sql <- paste0(
+            "SELECT DISTINCT o.person_id AS subject_id, ",
+            "o.observation_period_start_date AS cohort_start_date, ",
+            "o.observation_period_end_date AS cohort_end_date ",
+            "FROM ", obs_qualified, " o ",
+            "WHERE o.person_id IN (", ids_str, ")"
+          )
+          cohort_table <- .createTempTable(
+            handle, "dsomop_plan_cohort", cohort_sql)
         }
-        .assertMinPersons(n_persons = length(unique(cohort_person_ids)))
-      } else {
-        # Single concept-based spec: use existing cohortCreate
-        cohort_table <- .cohortCreate(
-          handle, spec, mode = "temporary",
-          cohort_id = plan$cohort$cohort_definition_id)
-        pid_result <- .executeQuery(handle,
-          paste0("SELECT DISTINCT subject_id AS person_id FROM ",
-                 cohort_table))
-        cohort_person_ids <- pid_result$person_id
       }
+      .assertMinPersons(n_persons = length(unique(cohort_person_ids)))
+
+    } else if (!is.null(plan$cohort$spec)) {
+      # Inline concept-based spec from ds.omop.plan.cohort(spec = ...): use
+      # existing cohortCreate.
+      spec <- plan$cohort$spec
+      cohort_table <- .cohortCreate(
+        handle, spec, mode = "temporary",
+        cohort_id = plan$cohort$cohort_definition_id)
+      pid_result <- .executeQuery(handle,
+        paste0("SELECT DISTINCT subject_id AS person_id FROM ",
+               cohort_table))
+      cohort_person_ids <- pid_result$person_id
     }
   }
 

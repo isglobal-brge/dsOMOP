@@ -7,10 +7,16 @@
 .omopAnalysisScope(
   accepts_cohort = TRUE,
   accepts_tables = TRUE,
-  max_tables = 2L
+  max_tables = 2L,
+  requires_cohort = FALSE
 )
 }
 \description{
-Default scope spec for an entry
+\code{requires_cohort} marks an entry whose result is only meaningful over a
+scoped population (the cohort IS the analysis population, e.g. the native
+diagnostics) so the run path raises a clear error when it is run un-scoped,
+rather than letting the entry's \code{compute$fn} silently return an empty
+(gate-safe) frame. Cohort-OPTIONAL entries (SQL templates, the demo entry)
+leave it \code{FALSE} and run cohort-wide when un-scoped.
 }
 \keyword{internal}

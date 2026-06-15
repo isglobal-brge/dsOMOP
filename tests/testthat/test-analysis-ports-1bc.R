@@ -549,14 +549,16 @@ test_that("(d) a two-population port rejects a single-arm scope", {
   })
 })
 
-test_that("(d) un-scoped, every port yields a gate-safe empty frame", {
+test_that("(d) un-scoped, every port fails closed with a requires-cohort error", {
   # The cohort IS the analysis population, so an un-scoped run has nothing to
-  # summarise and must return an empty (never disclosive) frame, not error.
+  # summarise; it fails closed with a clear requires-cohort error rather than
+  # returning a silently empty frame a caller could mistake for "no results".
   h <- p1bc_handle()
   on.exit(cleanup_handle(h))
   withr::with_options(p1bc_opts(), {
     for (id in P1BC_IDS) {
-      expect_equal(nrow(.omopAnalysisRun(h, id)), 0L, info = id)
+      expect_error(.omopAnalysisRun(h, id),
+                   "requires a cohort/population scope", info = id)
     }
   })
 })

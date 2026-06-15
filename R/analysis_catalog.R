@@ -83,12 +83,21 @@
 }
 
 #' Default scope spec for an entry
+#'
+#' \code{requires_cohort} marks an entry whose result is only meaningful over a
+#' scoped population (the cohort IS the analysis population, e.g. the native
+#' diagnostics) so the run path raises a clear error when it is run un-scoped,
+#' rather than letting the entry's \code{compute$fn} silently return an empty
+#' (gate-safe) frame. Cohort-OPTIONAL entries (SQL templates, the demo entry)
+#' leave it \code{FALSE} and run cohort-wide when un-scoped.
+#'
 #' @keywords internal
 .omopAnalysisScope <- function(accepts_cohort = TRUE, accepts_tables = TRUE,
-                               max_tables = 2L) {
-  list(accepts_cohort = isTRUE(accepts_cohort),
+                               max_tables = 2L, requires_cohort = FALSE) {
+  list(accepts_cohort  = isTRUE(accepts_cohort),
        accepts_tables  = isTRUE(accepts_tables),
-       max_tables      = as.integer(max_tables))
+       max_tables      = as.integer(max_tables),
+       requires_cohort = isTRUE(requires_cohort))
 }
 
 #' Default disclosure spec for an entry
@@ -138,15 +147,18 @@ omopAnalysisEntry <- function(name, description, domain, params, compute,
 #' Public re-export of \code{\link{.omopAnalysisScope}}. Set
 #' \code{max_tables = 2L} for a two-population entry (overlap / SMD /
 #' covariate-balance) so the run path resolves \code{scope} into two
-#' independently re-gated cohorts.
+#' independently re-gated cohorts. Set \code{requires_cohort = TRUE} for an entry
+#' that is only meaningful over a scoped population, so an un-scoped run fails
+#' with a clear error instead of returning an empty frame.
 #'
 #' @inheritParams .omopAnalysisScope
 #' @return A scope spec list.
 #' @export
 omopAnalysisScope <- function(accepts_cohort = TRUE, accepts_tables = TRUE,
-                              max_tables = 2L) {
+                              max_tables = 2L, requires_cohort = FALSE) {
   .omopAnalysisScope(accepts_cohort = accepts_cohort,
-                     accepts_tables = accepts_tables, max_tables = max_tables)
+                     accepts_tables = accepts_tables, max_tables = max_tables,
+                     requires_cohort = requires_cohort)
 }
 
 #' Build a disclosure spec for a pack analysis entry
@@ -2588,6 +2600,16 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     .omopCharRiskFactorSmd(),
     .omopCmCovariateBalance()
   )
+  # Every native diagnostic computes over the SCOPED cohort (the cohort IS the
+  # analysis population): its fn returns an empty frame when un-scoped. Mark them
+  # all requires_cohort so the run path turns an un-scoped run into a CLEAR error
+  # instead of a silently empty (gate-safe) frame (see .omopAnalysisRun). This is
+  # the single place that knows the whole diagnostic family, so the flag never
+  # drifts from the fn guard.
+  entries <- lapply(entries, function(e) {
+    e$scope$requires_cohort <- TRUE
+    e
+  })
   stats::setNames(entries, vapply(entries, function(e) e$name, character(1)))
 }
 
@@ -2800,21 +2822,53 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   entries
 }
 
-#' Resolve a catalog entry by name (fail-closed)
+#' Resolve a catalog entry by name (fail-closed, bare-name friendly)
+#'
+#' Accepts the full pack-prefixed id (\code{"dsomop:fe.prevalence"}) and the two
+#' shorthands an analyst naturally reaches for, resolving in this order so the
+#' exact id always wins and shorthand never silently picks a different entry:
+#' \enumerate{
+#'   \item exact id match;
+#'   \item the native id \code{"dsomop:<name>"} (the common case — drop the pack
+#'     prefix, e.g. \code{"fe.prevalence"});
+#'   \item a UNIQUE id suffix match on the part after the colon
+#'     (e.g. \code{"prevalence"} -> \code{"dsomop:fe.prevalence"}). An ambiguous
+#'     suffix lists the candidates and asks the caller to disambiguate.
+#' }
 #'
 #' @param handle CDM handle.
-#' @param name Character; the entry name (pack-prefixed stable id).
-#' @return The matching \code{omop_analysis_entry}; stops if not found.
+#' @param name Character; the entry id or a bare shorthand for it.
+#' @return The matching \code{omop_analysis_entry}; stops if not found/ambiguous.
 #' @keywords internal
 .omopAnalysisResolve <- function(handle, name) {
   name <- trimws(as.character(name)[[1]])
   registry <- .omopAnalysisRegistry(handle)
+
+  # 1. Exact id.
   entry <- registry[[name]]
-  if (is.null(entry)) {
-    stop("Analysis '", name, "' not found in the analysis catalog.",
-         call. = FALSE)
+  if (!is.null(entry)) return(entry)
+
+  # 2. Native id (drop the implied "dsomop:" prefix) when the caller passed a
+  #    bare, colon-less shorthand.
+  if (!grepl(":", name, fixed = TRUE)) {
+    entry <- registry[[paste0("dsomop:", name)]]
+    if (!is.null(entry)) return(entry)
+
+    # 3. Unique suffix match on the id's local part (after the colon), so
+    #    "prevalence" resolves "dsomop:fe.prevalence". Fail-closed on ambiguity.
+    ids <- names(registry)
+    locals <- sub("^[^:]*:", "", ids)
+    hits <- ids[locals == name | endsWith(locals, paste0(".", name))]
+    if (length(hits) == 1L) return(registry[[hits]])
+    if (length(hits) > 1L) {
+      stop("Analysis '", name, "' is ambiguous; it matches: ",
+           paste(hits, collapse = ", "),
+           ". Pass the full id to disambiguate.", call. = FALSE)
+    }
   }
-  entry
+
+  stop("Analysis '", name, "' not found in the analysis catalog.",
+       call. = FALSE)
 }
 
 # --- Listing / metadata ------------------------------------------------------
@@ -2842,7 +2896,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     name = character(0), domain = character(0), adapter = character(0),
     mode = character(0), unit = character(0), description = character(0),
     params = character(0), accepts_cohort = logical(0),
-    accepts_tables = logical(0), stringsAsFactors = FALSE
+    accepts_tables = logical(0), requires_cohort = logical(0),
+    has_plot = logical(0), stringsAsFactors = FALSE
   )
   if (length(registry) == 0) return(empty)
 
@@ -2859,6 +2914,10 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       params         = .omopAnalysisParamSummary(e$params),
       accepts_cohort = isTRUE(e$scope$accepts_cohort),
       accepts_tables = isTRUE(e$scope$accepts_tables),
+      # Discovery aids: whether an un-scoped run errors (the cohort IS the
+      # population) and whether the entry ships a client-side plot recipe.
+      requires_cohort = isTRUE(e$scope$requires_cohort),
+      has_plot        = !is.null(e$compute$plot),
       stringsAsFactors = FALSE
     )
   }
@@ -3490,6 +3549,15 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     identical(as.integer(entry$scope$max_tables %||% 0L), 2L)
   scoped <- NULL
   scoped_pair <- NULL
+  # Entries that require a cohort (the cohort IS the analysis population) fail
+  # closed with a clear, specific error when run un-scoped, rather than letting
+  # their compute$fn return a silently empty (gate-safe) frame a caller could
+  # mistake for "no results in this population".
+  if (is.null(scope) && isTRUE(entry$scope$requires_cohort)) {
+    stop("Analysis '", name, "' requires a cohort/population scope (the cohort ",
+         "is the analysis population); pass cohort= or tables= so it has a ",
+         "population to compute over.", call. = FALSE)
+  }
   if (!is.null(scope)) {
     if (!isTRUE(entry$scope$accepts_cohort) &&
         !isTRUE(entry$scope$accepts_tables)) {

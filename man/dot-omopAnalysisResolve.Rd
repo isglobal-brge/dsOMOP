@@ -2,19 +2,29 @@
 % Please edit documentation in R/analysis_catalog.R
 \name{.omopAnalysisResolve}
 \alias{.omopAnalysisResolve}
-\title{Resolve a catalog entry by name (fail-closed)}
+\title{Resolve a catalog entry by name (fail-closed, bare-name friendly)}
 \usage{
 .omopAnalysisResolve(handle, name)
 }
 \arguments{
 \item{handle}{CDM handle.}
 
-\item{name}{Character; the entry name (pack-prefixed stable id).}
+\item{name}{Character; the entry id or a bare shorthand for it.}
 }
 \value{
-The matching \code{omop_analysis_entry}; stops if not found.
+The matching \code{omop_analysis_entry}; stops if not found/ambiguous.
 }
 \description{
-Resolve a catalog entry by name (fail-closed)
+Accepts the full pack-prefixed id (\code{"dsomop:fe.prevalence"}) and the two
+shorthands an analyst naturally reaches for, resolving in this order so the
+exact id always wins and shorthand never silently picks a different entry:
+\enumerate{
+  \item exact id match;
+  \item the native id \code{"dsomop:<name>"} (the common case — drop the pack
+    prefix, e.g. \code{"fe.prevalence"});
+  \item a UNIQUE id suffix match on the part after the colon
+    (e.g. \code{"prevalence"} -> \code{"dsomop:fe.prevalence"}). An ambiguous
+    suffix lists the candidates and asks the caller to disambiguate.
+}
 }
 \keyword{internal}

@@ -485,15 +485,15 @@ test_that("the .omopCohortEndDateCol probe resolves present vs absent end date",
 test_that("each diagnostic returns a plain aggregate gated by the ONE gate", {
   # The fn never gates; .omopAnalysisRun funnels its frame through the single
   # .omopAnalysisGate. Confirm the fn returns a plain data.frame and the entry's
-  # disclosure spec (not the fn) drives gating, and that an un-scoped run yields
-  # an empty (gate-safe) frame.
+  # disclosure spec (not the fn) drives gating, and that an un-scoped run fails
+  # closed with a clear requires-cohort error (the cohort IS the population).
   h <- ports_handle()
   on.exit(cleanup_handle(h))
   for (id in DIAG_IDS) {
     e <- .omopAnalysisResolve(h, id)
     expect_true(is.function(e$compute$fn))
     expect_true(e$disclosure$unit %in% c("person", "record", "dist"))
-    # Un-scoped: the cohort IS the population, so no scope -> empty frame.
-    expect_equal(nrow(.omopAnalysisRun(h, id)), 0L)
+    # Un-scoped: the cohort IS the population, so no scope -> clear error.
+    expect_error(.omopAnalysisRun(h, id), "requires a cohort/population scope")
   }
 })

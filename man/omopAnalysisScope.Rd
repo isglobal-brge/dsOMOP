@@ -7,7 +7,8 @@
 omopAnalysisScope(
   accepts_cohort = TRUE,
   accepts_tables = TRUE,
-  max_tables = 2L
+  max_tables = 2L,
+  requires_cohort = FALSE
 )
 }
 \value{
@@ -17,5 +18,7 @@ A scope spec list.
 Public re-export of \code{\link{.omopAnalysisScope}}. Set
 \code{max_tables = 2L} for a two-population entry (overlap / SMD /
 covariate-balance) so the run path resolves \code{scope} into two
-independently re-gated cohorts.
+independently re-gated cohorts. Set \code{requires_cohort = TRUE} for an entry
+that is only meaningful over a scoped population, so an un-scoped run fails
+with a clear error instead of returning an empty frame.
 }

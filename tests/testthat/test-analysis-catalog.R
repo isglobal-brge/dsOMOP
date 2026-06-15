@@ -41,7 +41,9 @@ acat_token_frame <- function(handle, ids) {
 
 # Classify a single run outcome into one acceptable bucket (or "other" = bug).
 acat_classify_error <- function(msg) {
-  if (grepl("Disclosive|disclosure threshold|insufficient individuals|strict mode|does not support cohort",
+  if (grepl(paste0("Disclosive|disclosure threshold|insufficient individuals|",
+                   "strict mode|does not support cohort|",
+                   "requires a cohort/population scope"),
             msg, ignore.case = TRUE)) {
     "gated"
   } else if (grepl("not found in database|depends on resources", msg,
@@ -792,14 +794,14 @@ test_that("the six native diagnostics register dsomop:-prefixed + scopable", {
   }
 })
 
-test_that("native diagnostics run un-scoped to an empty (gate-safe) frame", {
+test_that("native diagnostics run un-scoped raise a clear requires-cohort error", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
   for (id in c("dsomop:incidence.rate", "dsomop:cohortdx.index_event_breakdown",
                "dsomop:cohortdx.time_distribution",
                "dsomop:cm.followup_distribution", "dsomop:char.time_to_event",
                "dsomop:cohortdx.visit_context")) {
-    expect_equal(nrow(.omopAnalysisRun(h, id)), 0)
+    expect_error(.omopAnalysisRun(h, id), "requires a cohort/population scope")
   }
 })
 
@@ -920,12 +922,12 @@ test_that("the three two-population ports register scopable + max_tables=2", {
   }
 })
 
-test_that("two-population ports run un-scoped to a gate-safe empty frame", {
+test_that("two-population ports run un-scoped raise a clear requires-cohort error", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
   for (id in c("dsomop:cohortdx.cohort_overlap", "dsomop:char.risk_factor_smd",
                "dsomop:cm.covariate_balance")) {
-    expect_equal(nrow(.omopAnalysisRun(h, id)), 0)
+    expect_error(.omopAnalysisRun(h, id), "requires a cohort/population scope")
   }
 })
 
