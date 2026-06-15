@@ -2078,7 +2078,8 @@
     } else if (spec$kind %in% c("charlson", "chads2", "chadsvasc",
                                   "dcsi", "hfrs")) {
       score_df <- .computeComorbidityScore(
-        handle, spec$kind, result$person_id)
+        handle, spec$kind, result$person_id,
+        reference_date = spec$reference_date)
       zero_val <- if (spec$kind %in% c("hfrs", "dcsi")) 0 else 0L
       if (!is.null(score_df) && nrow(score_df) > 0) {
         names(score_df)[2] <- col_name
@@ -2391,7 +2392,8 @@
 #' @param person_ids Integer vector of person IDs
 #' @return Data frame with person_id and score columns
 #' @keywords internal
-.computeComorbidityScore <- function(handle, score_type, person_ids = NULL) {
+.computeComorbidityScore <- function(handle, score_type, person_ids = NULL,
+                                     reference_date = NULL) {
   if (is.null(person_ids) || length(person_ids) == 0) return(NULL)
 
   # --- Score definitions ---
@@ -2604,8 +2606,15 @@
       person_table, " WHERE person_id IN (", ids_str, ")")
     person_df <- .executeQuery(handle, person_sql)
     if (nrow(person_df) > 0) {
-      current_year <- as.integer(format(Sys.Date(), "%Y"))
-      person_df$age <- current_year - person_df$year_of_birth
+      # Age for the CHADS2/CHA2DS2-VASc age bands is computed at the supplied
+      # reference (index) date when available, so the score is deterministic and
+      # reproducible; otherwise it falls back to the current year.
+      ref_year <- if (!is.null(reference_date)) {
+        as.integer(format(as.Date(reference_date), "%Y"))
+      } else {
+        as.integer(format(Sys.Date(), "%Y"))
+      }
+      person_df$age <- ref_year - person_df$year_of_birth
       for (i in seq_len(nrow(person_df))) {
         pid <- person_df$person_id[i]
         idx <- which(score_result$person_id == pid)

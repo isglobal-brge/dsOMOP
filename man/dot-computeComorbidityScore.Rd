@@ -4,7 +4,12 @@
 \alias{.computeComorbidityScore}
 \title{Compute a comorbidity score}
 \usage{
-.computeComorbidityScore(handle, score_type, person_ids = NULL)
+.computeComorbidityScore(
+  handle,
+  score_type,
+  person_ids = NULL,
+  reference_date = NULL
+)
 }
 \arguments{
 \item{handle}{CDM handle}

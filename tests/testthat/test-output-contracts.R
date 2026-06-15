@@ -739,6 +739,105 @@ test_that("temporal_covariates returns 3-element list", {
   })
 })
 
+test_that("temporal_covariates window is clock-independent (deterministic)", {
+  # Regression guard: the index-relative window (days_from_index =
+  # event_date - cohort_start_date) and the per-patient disclosure gate must NOT
+  # drift with the real calendar date. A previous failure mode under-counted
+  # qualifying persons as the wall-clock advanced, eventually tripping the
+  # nfilter.subset gate even though ~6 persons legitimately qualified. Here we
+  # run the SAME extraction under the real date and under a simulated far-future
+  # "today" and require byte-identical results (same persons, same bins).
+  extract_tc <- function() {
+    handle <- create_test_handle()
+    on.exit(cleanup_handle(handle))
+    .buildBlueprint(handle)
+
+    plan <- list(
+      cohort = list(type = "cohort_table", cohort_definition_id = 1),
+      outputs = list(
+        tc = list(
+          type = "temporal_covariates",
+          table = "condition_occurrence",
+          concept_set = c(201820, 255573),
+          bin_width = 90L,
+          window_start = -365L,
+          window_end = 0L,
+          analyses = c("binary", "count")
+        )
+      ),
+      options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+    )
+    class(plan) <- c("omop_plan", "list")
+
+    withr::with_options(list(nfilter.subset = 3), {
+      .planExecute(handle, plan, list(tc = "tc_df"))$tc
+    })
+  }
+
+  tc_now <- suppressWarnings(extract_tc())
+
+  # Six distinct cohort-1 persons have a qualifying condition in [-365, 0] days
+  # from index 2020-01-01, so the gate must pass and capture all six.
+  expect_true(is.list(tc_now))
+  expect_equal(length(unique(tc_now$temporalCovariates$rowId)), 6L)
+  expect_equal(sort(unique(tc_now$temporalCovariates$rowId)), 1:6)
+
+  # Simulate a "today" years in the future. If any part of the temporal /
+  # cohort-join / observation path leaked Sys.Date(), the captured population
+  # (and thus the gate outcome) would change.
+  tc_future <- suppressWarnings(
+    testthat::with_mocked_bindings(
+      extract_tc(),
+      Sys.Date = function() as.Date("2099-12-31"),
+      .package = "base"
+    )
+  )
+
+  expect_true(is.list(tc_future))
+  expect_equal(length(unique(tc_future$temporalCovariates$rowId)), 6L)
+
+  # The full result must be identical regardless of the wall-clock date.
+  expect_equal(tc_future$temporalCovariates, tc_now$temporalCovariates)
+  expect_equal(tc_future$covariateRef, tc_now$covariateRef)
+  expect_equal(tc_future$timeRef, tc_now$timeRef)
+})
+
+test_that("temporal_covariates still fail-closes below disclosure threshold", {
+  # The per-patient gate must remain intact: when fewer than nfilter.subset
+  # persons legitimately qualify, the output is suppressed (returned as NULL via
+  # the per-output handler) rather than disclosed.
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  # Concept 317009 occurs only on persons {2, 4}, neither of whom is in cohort 1
+  # ({1,3,5,7,9,11}); the qualifying population is therefore empty (< threshold).
+  plan <- list(
+    cohort = list(type = "cohort_table", cohort_definition_id = 1),
+    outputs = list(
+      tc = list(
+        type = "temporal_covariates",
+        table = "condition_occurrence",
+        concept_set = c(317009),
+        bin_width = 90L,
+        window_start = -365L,
+        window_end = 0L,
+        analyses = c("binary", "count")
+      )
+    ),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  class(plan) <- c("omop_plan", "list")
+
+  withr::with_options(list(nfilter.subset = 3), {
+    expect_warning(
+      result <- .planExecute(handle, plan, list(tc = "tc_df")),
+      "insufficient individuals"
+    )
+    expect_null(result$tc)
+  })
+})
+
 test_that("temporal_covariates without cohort returns NULL with warning", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))

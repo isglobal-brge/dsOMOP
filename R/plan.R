@@ -484,6 +484,27 @@
   unique(v[!is.na(v)])
 }
 
+#' Reference year for age-based person filters
+#'
+#' Returns the year that \code{year_of_birth} is differenced against to derive
+#' age. When the filter is anchored to a cohort index date, the reference is a
+#' dialect-aware SQL expression extracting the year from that per-person index
+#' date, so ages are computed AT INDEX and the result is deterministic. With no
+#' index anchor there is no index date to use, so it falls back to the current
+#' calendar year as an integer literal.
+#'
+#' @param handle CDM handle (for dialect resolution)
+#' @param index_anchor Character SQL expression for the per-person index date,
+#'   or \code{NULL}
+#' @return Character; either an integer-literal year or a SQL year expression
+#' @keywords internal
+.ageReferenceYear <- function(handle, index_anchor = NULL) {
+  if (is.null(index_anchor)) {
+    return(as.character(as.integer(format(Sys.Date(), "%Y"))))
+  }
+  .omopYearExpr(handle, index_anchor)
+}
+
 .compileCohortFilterLeaf <- function(handle, f, bp, person_cols,
                                      index_anchor = NULL) {
   ftype <- tolower(f$type)
@@ -503,31 +524,35 @@
     }
 
   } else if (ftype == "age_range") {
-    current_year <- as.integer(format(Sys.Date(), "%Y"))
+    # Age is computed at the cohort index date when this filter is anchored to an
+    # existing cohort (deterministic, and consistent with the rest of the system,
+    # which ages year_of_birth relative to the index date). With no index anchor
+    # (e.g. defining a cohort purely from person filters) there is no index date,
+    # so the reference falls back to the current year.
+    ref_year <- .ageReferenceYear(handle, index_anchor)
     parts <- character(0)
     if (!is.null(params$min) && "year_of_birth" %in% person_cols) {
-      max_yob <- current_year - as.integer(params$min)
-      parts <- c(parts, paste0("p.year_of_birth <= ", max_yob))
+      parts <- c(parts, paste0("p.year_of_birth <= (", ref_year, " - ",
+                               as.integer(params$min), ")"))
     }
     if (!is.null(params$max) && "year_of_birth" %in% person_cols) {
-      min_yob <- current_year - as.integer(params$max)
-      parts <- c(parts, paste0("p.year_of_birth >= ", min_yob))
+      parts <- c(parts, paste0("p.year_of_birth >= (", ref_year, " - ",
+                               as.integer(params$max), ")"))
     }
     if (length(parts) > 0) return(paste0("(", paste(parts, collapse = " AND "), ")"))
 
   } else if (ftype == "age_group") {
-    current_year <- as.integer(format(Sys.Date(), "%Y"))
+    ref_year <- .ageReferenceYear(handle, index_anchor)
     groups <- params$groups
     if (length(groups) > 0 && "year_of_birth" %in% person_cols) {
       band_parts <- character(0)
       for (g in groups) {
         parts <- strsplit(g, "-")[[1]]
         if (length(parts) == 2) {
-          min_yob <- current_year - as.integer(parts[2])
-          max_yob <- current_year - as.integer(parts[1])
           band_parts <- c(band_parts,
-            paste0("(p.year_of_birth BETWEEN ", min_yob,
-                   " AND ", max_yob, ")"))
+            paste0("(p.year_of_birth BETWEEN (", ref_year, " - ",
+                   as.integer(parts[2]), ") AND (", ref_year, " - ",
+                   as.integer(parts[1]), "))"))
         }
       }
       if (length(band_parts) > 0)
