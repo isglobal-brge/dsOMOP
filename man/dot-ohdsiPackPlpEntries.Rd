@@ -13,19 +13,26 @@
 Named list of \code{omop_analysis_entry} objects keyed by id.
 }
 \description{
-Group registrar for \code{ohdsi_pack_plp.R}. Returns the single feasible PLP
-result-table id \code{dsomop:ohdsi.plp.plp_attrition} as a THIN DELEGATE to the
-canonical native \code{dsomop:plp.attrition} diagnostic (mirroring
-\code{\link{.ohdsiAliasEntry}} from \code{ohdsi_pack_aliases.R}): it keeps the
-legacy id (reference compatibility), computes the attrition LIVE from the CDM
-via the canonical fn (NO precomputed plp_attrition table is read), inherits the
-canonical disclosure/params/dependencies/adapter verbatim (so the SINGLE
-.omopAnalysisGate processes it identically to the canonical id), and FLIPS the
-scope to live-computable (accepts_cohort=TRUE, accepts_tables=TRUE,
-max_tables=1L) versus the precomputed adapter's
-accepts_cohort=FALSE/max_tables=0L. The other PLP tables need a fitted-model
-predicted-risk column and stay on the legacy read-precomputed adapter
-(untouched here), so this group overlays ONLY plp_attrition.
+Group registrar for \code{ohdsi_pack_plp.R}. Returns the five live-computable
+PLP result-table ids as THIN DELEGATES to their canonical native twins:
+\describe{
+  \item{plp_attrition}{-> \code{dsomop:plp.attrition} (population-construction
+    attrition; no model).}
+  \item{plp_performances}{-> \code{dsomop:plp.performance} (AUROC/AUPRC of the
+    in-session fitted model).}
+  \item{plp_calibration_summary}{-> \code{dsomop:plp.calibration} (decile
+    calibration table).}
+  \item{plp_threshold_summary}{-> \code{dsomop:plp.threshold} (threshold-grid
+    confusion summary).}
+  \item{plp_diagnostic_summary}{-> \code{dsomop:plp.diagnostic} (population /
+    EVP design diagnostics).}
+}
+The four fitted-model tables are now ported LIVE (the R-in-session principle:
+the model is fit in the Rock session and only disclosure-safe aggregates are
+returned), so the read-precomputed path is dead for these ids.
+\code{plp_model_design} is config-only (reference-only) and stays on the legacy
+read-precomputed adapter (untouched here); \code{plp_covariate_summary} is a B1
+alias handled in ohdsi_pack_aliases.R.
 }
 \details{
 Takes \code{handle} for signature parity with the other adapters ONLY — it

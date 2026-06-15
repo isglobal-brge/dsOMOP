@@ -472,12 +472,14 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   # those registry ids alias.
   cohortdx_live <- .ohdsiPackCohortDxEntries(handle)
   entries[names(cohortdx_live)] <- cohortdx_live
-  # OHDSI-B2-cohortmethod (CohortMethod cm_attrition + cm_result substrate+MDRR)
-  # lives in ohdsi_pack_cohortmethod.R. It overlays the precomputed cohort_method
-  # registry ids with live-compute versions (the read-precomputed cm_result /
-  # cm_attrition path is now dead for these two ids); the new canonical short ids
-  # dsomop:cm.attrition / dsomop:cm.mdrr are registered in
-  # .omopAnalysisDiagnosticEntries (which owns the dsomop:cm.* family).
+  # OHDSI-B2-cohortmethod (CohortMethod cm_attrition + cm_result substrate+MDRR +
+  # cm_diagnostics_summary scalar study-quality metrics) lives in
+  # ohdsi_pack_cohortmethod.R. It overlays the precomputed cohort_method registry
+  # ids with live-compute versions (the read-precomputed cm_result / cm_attrition /
+  # cm_diagnostics_summary path is now dead for these three ids); the new canonical
+  # short ids dsomop:cm.attrition / dsomop:cm.mdrr / dsomop:cm.diagnostics_summary
+  # are registered in .omopAnalysisDiagnosticEntries (which owns the dsomop:cm.*
+  # family).
   cohortmethod_live <- .ohdsiPackCohortMethodEntries(handle)
   entries[names(cohortmethod_live)] <- cohortmethod_live
   # OHDSI-B2-characterization-new (Characterization c_dechallenge_rechallenge ->
@@ -510,6 +512,15 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   # natives (dsomop:sccs.*) those aliases delegate to.
   sccs_live <- .ohdsiPackSccsEntries(handle)
   entries[names(sccs_live)] <- sccs_live
+  # OHDSI-B2-evidence-synthesis (the cross-database meta-analysis result tables
+  # es_cm_result / es_sccs_result / es_cm_diagnostics_summary /
+  # es_sccs_diagnostics_summary) lives in ohdsi_pack_evidence_synthesis.R. A
+  # single site cannot compute a POOLED cross-site estimate, so each id is
+  # overlaid with a live delegate onto the per-site PLR port whose log-estimate +
+  # SE the CLIENT meta-analyzes (dsOMOPClient::ds.omop.meta.effect_estimate); the
+  # read-precomputed es_* path is now dead for these ids.
+  es_live <- .ohdsiPackEvidenceSynthesisEntries(handle)
+  entries[names(es_live)] <- es_live
   entries
 }
 
@@ -2650,15 +2661,28 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     # ohdsi_pack_characterization.R, which also exposes the legacy OHDSI-id alias).
     .omopCharDechallengeRechallenge(),
     .omopPlpCovariateSummary(),
-    # PLP target-population attrition (canonical native port; lives in
-    # ohdsi_pack_plp.R, which also exposes the legacy OHDSI-id delegate). Like the
-    # other PLP/diagnostic ports it is meaningless un-scoped (returns an empty
-    # frame), so it is marked requires_cohort by the forcing pass below.
+    # PLP target-population attrition + the four fitted-model PLP natives (all
+    # canonical; live in ohdsi_pack_plp.R, which also exposes the legacy OHDSI-id
+    # delegates). The fitted-model entries fit a logistic model IN-SESSION over the
+    # scoped target population and emit ONLY disclosure-safe aggregates (the
+    # R-in-session principle, same shape as .omopCmPropensityEntry below). Like the
+    # other PLP/diagnostic ports they are meaningless un-scoped (return an empty
+    # frame), so they are marked requires_cohort by the forcing pass below.
     .omopPlpAttrition(),
+    .omopPlpPerformance(),
+    .omopPlpCalibration(),
+    .omopPlpThreshold(),
+    .omopPlpDiagnostic(),
     # Two-population ports (max_tables = 2; resolved via ctx$scoped_cohorts).
     .omopDiagCohortOverlap(),
     .omopCharRiskFactorSmd(),
-    .omopCmCovariateBalance()
+    .omopCmCovariateBalance(),
+    # CohortMethod propensity-score distribution: a NEW canonical entry (no OHDSI
+    # twin) that FITS a propensity glm in-session over the scoped pair and emits
+    # only the gated PS histogram + equipoise + AUC. It is the disclosure-safe PS
+    # substrate cm_diagnostics_summary defers its equipoise / ps_auc to. Lives in
+    # ohdsi_pack_cohortmethod.R; gated empty un-scoped, so requires_cohort below.
+    .omopCmPropensityEntry()
   )
   # Every native diagnostic computes over the SCOPED cohort (the cohort IS the
   # analysis population): its fn returns an empty frame when un-scoped. Mark them
@@ -2679,7 +2703,27 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   # the scope their builders set, never diverging from the twin.
   cm_aliases <- list(
     .omopCmAttritionCanonicalEntry(),
-    .omopCmMdrrCanonicalEntry()
+    .omopCmMdrrCanonicalEntry(),
+    # PLR-4-cm-interaction (lives in ohdsi_pack_cm_interaction.R): the live
+    # R-in-session effect-MODIFICATION estimate (per-subgroup HR/RR + CI). Like
+    # cm.mdrr it returns a gate-safe empty frame un-scoped, so it is appended here
+    # (after the forcing pass) to keep its builder's requires_cohort = FALSE.
+    .omopCmInteractionCanonicalEntry(),
+    .omopCmDiagnosticsSummaryCanonicalEntry(),
+    # Live R-in-session Kaplan-Meier curve (cm_kaplan_meier_dist twin): a coarse
+    # fixed-grid per-arm survival curve fit by survival::survfit over the scoped
+    # pair, with banded at-risk/event counts and a survival_probability rebuilt
+    # from those banded counts. Like cm.mdrr it returns a gate-safe empty frame
+    # un-scoped, so it is appended here (after the forcing pass) to keep its
+    # builder's requires_cohort = FALSE.
+    .omopCmKaplanMeierCanonicalEntry(),
+    # The FITTED comparative effect (HR via survival::coxph / RR via Poisson glm)
+    # cm.mdrr declared out-of-scope: a NEW canonical native (no OHDSI twin) that
+    # fits the model IN-SESSION over the scoped pair and emits only the gated
+    # estimate + CI + log-estimate/SE alongside the per-arm count substrate. Like
+    # cm.mdrr it returns a gate-safe empty frame un-scoped, so it is appended here
+    # (after the forcing pass) to keep its builder's requires_cohort = FALSE.
+    .omopCmEffectEstimateCanonicalEntry()
   )
   entries <- c(entries, cm_aliases)
   stats::setNames(entries, vapply(entries, function(e) e$name, character(1)))

@@ -19,8 +19,20 @@ The scope spec on the plan (\code{plan$scope = list(cohort, combine)}) names a
 cohort reference (cohort_definition_id / cohort temp-table name) and the fold
 operator. \code{omop.table} SYMBOL sources cannot ride in the plan JSON, so
 they are injected as resolved frames under \code{plan$scope$tables_frames} by
-\code{\link{omopPlanExecuteDS}} before execution. All sources are folded into a
-single re-gated cohort by \code{\link{.omopAnalysisResolveScope}} (the same
-resolver the analysis catalog uses). Returns NULL when there is no scope.
+\code{\link{omopPlanExecuteDS}} before execution.
+}
+\details{
+A plan-level \code{plan$cohort} carrying a scalar \code{cohort_definition_id}
+(the \code{type == "cohort_table"} form produced by
+\code{\link[dsOMOPClient]{ds.omop.plan.cohort}} and by a base
+\code{omop_population(cohort_definition_id = ...)}) is treated UNIFORMLY as a
+scope source too: there is no "scalar id = base population" path. It is folded
+in alongside any \code{plan$scope} sources so it ends up INTERSECTED into every
+population exactly like any other scope.
+
+All sources are folded into a single re-gated cohort by
+\code{\link{.omopAnalysisResolveScope}} (the same resolver the analysis catalog
+uses; each ref is materialized + size-checked via \code{\link{.resolveCohortArg}}
+-> \code{\link{.resolveCohortTable}}). Returns NULL when there is no scope.
 }
 \keyword{internal}

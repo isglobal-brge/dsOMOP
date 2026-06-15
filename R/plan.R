@@ -866,9 +866,20 @@
 #' cohort reference (cohort_definition_id / cohort temp-table name) and the fold
 #' operator. \code{omop.table} SYMBOL sources cannot ride in the plan JSON, so
 #' they are injected as resolved frames under \code{plan$scope$tables_frames} by
-#' \code{\link{omopPlanExecuteDS}} before execution. All sources are folded into a
-#' single re-gated cohort by \code{\link{.omopAnalysisResolveScope}} (the same
-#' resolver the analysis catalog uses). Returns NULL when there is no scope.
+#' \code{\link{omopPlanExecuteDS}} before execution.
+#'
+#' A plan-level \code{plan$cohort} carrying a scalar \code{cohort_definition_id}
+#' (the \code{type == "cohort_table"} form produced by
+#' \code{\link[dsOMOPClient]{ds.omop.plan.cohort}} and by a base
+#' \code{omop_population(cohort_definition_id = ...)}) is treated UNIFORMLY as a
+#' scope source too: there is no "scalar id = base population" path. It is folded
+#' in alongside any \code{plan$scope} sources so it ends up INTERSECTED into every
+#' population exactly like any other scope.
+#'
+#' All sources are folded into a single re-gated cohort by
+#' \code{\link{.omopAnalysisResolveScope}} (the same resolver the analysis catalog
+#' uses; each ref is materialized + size-checked via \code{\link{.resolveCohortArg}}
+#' -> \code{\link{.resolveCohortTable}}). Returns NULL when there is no scope.
 #'
 #' @param handle CDM handle
 #' @param plan The extraction plan
@@ -876,25 +887,43 @@
 #' @keywords internal
 .planResolveScopeCohort <- function(handle, plan) {
   scope <- plan$scope
-  if (is.null(scope)) return(NULL)
-  combine <- tolower(scope$combine %||% "union")
+  combine <- tolower((scope$combine %||% "union"))
 
-  # Spliced live sources (cohort literal mixed with omop.table frames, as the
-  # client's .analysis_scope_expr builds them) are the primary scope. They may be
-  # a mixed list, a lone frame, or a lone cohort literal — all three are handled
-  # by .omopAnalysisResolveScope directly.
-  frames <- scope$tables_frames
-  if (!is.null(frames)) {
-    return(.omopAnalysisResolveScope(handle, frames, combine = combine))
+  # A plan-level scalar cohort_definition_id is a scope source, not a base
+  # population. Collect it so it folds in with any plan$scope sources below.
+  cohort_id_src <- NULL
+  if (!is.null(plan$cohort) &&
+      identical(plan$cohort$type, "cohort_table") &&
+      !is.null(plan$cohort$cohort_definition_id)) {
+    cohort_id_src <- as.integer(plan$cohort$cohort_definition_id)
   }
 
-  # Fallback: a JSON-only cohort reference (cohort_definition_id / temp-table
-  # name) with no live table symbols — e.g. a saved/loaded recipe scoped only to
-  # a cohort. No spliced frames to resolve, so fold the bare cohort ref.
-  if (!is.null(scope$cohort)) {
-    return(.omopAnalysisResolveScope(handle, scope$cohort, combine = combine))
+  # Assemble a FLAT list of scope sources so the plan-level cohort id folds in
+  # next to any plan$scope sources. The scope half may be spliced live sources
+  # (a cohort literal mixed with omop.table frames, as the client's
+  # .analysis_scope_expr builds them) or a JSON-only cohort ref (a saved/loaded
+  # recipe scoped only to a cohort). Either is normalised to its constituent
+  # sources with the SAME rule .omopAnalysisResolveScope uses: a data.frame /
+  # omop.table / non-list is one source; a plain list is already a source list.
+  scope_part <- if (!is.null(scope)) {
+    scope$tables_frames %||% scope$cohort
+  } else {
+    NULL
   }
-  NULL
+  sources <- list()
+  if (!is.null(scope_part)) {
+    if (is.list(scope_part) && !is.data.frame(scope_part) &&
+        !.is_omop.table(scope_part)) {
+      sources <- c(sources, scope_part)
+    } else {
+      sources <- c(sources, list(scope_part))
+    }
+  }
+  if (!is.null(cohort_id_src)) sources <- c(sources, list(cohort_id_src))
+
+  sources <- Filter(Negate(is.null), sources)
+  if (length(sources) == 0) return(NULL)
+  .omopAnalysisResolveScope(handle, sources, combine = combine)
 }
 
 #' Materialize a population's person set as a cohort temp table
@@ -1221,26 +1250,14 @@
   cohort_person_ids <- NULL
 
   if (!is.null(plan$cohort)) {
-    if (!is.null(plan$cohort$type) && plan$cohort$type == "cohort_table") {
-      cid <- as.integer(plan$cohort$cohort_definition_id)
-      results_schema <- handle$results_schema %||% handle$cdm_schema
-      qualified <- .qualifyTable(handle, "cohort", results_schema)
-
-      cohort_sql <- paste0(
-        "SELECT DISTINCT subject_id, cohort_start_date, cohort_end_date",
-        " FROM ", qualified,
-        " WHERE cohort_definition_id = ", cid
-      )
-      cohort_table <- .createTempTable(handle, "dsomop_plan_cohort", cohort_sql)
-
-      pid_result <- .executeQuery(handle,
-        paste0("SELECT DISTINCT subject_id AS person_id FROM ",
-               cohort_table))
-      cohort_person_ids <- pid_result$person_id
-
-      .assertMinPersons(n_persons = length(unique(cohort_person_ids)))
-
-    } else if (!is.null(plan$cohort$filter_tree)) {
+    # NOTE: a plan$cohort of type "cohort_table" (a scalar cohort_definition_id)
+    # is NOT a base population — it is resolved UNIFORMLY as a recipe-level SCOPE
+    # (gated person-set -> intersected into every population) by
+    # .planResolveScopeCohort below, which also supplies it as the per-person
+    # INDEX anchor (its real cohort_start/end_date) so windowed population filters
+    # and relative_to_index outputs keep anchoring to the cohort. Only a
+    # filter_tree or an inline concept spec defines the base population here.
+    if (!is.null(plan$cohort$filter_tree)) {
       # Recipe-authored population filters: a nested AND/OR cohort filter tree
       # (the sole transport from recipe_to_plan).
       filter_spec <- plan$cohort$filter_tree
@@ -1279,6 +1296,18 @@
     }
   }
 
+  # Resolve the recipe-level scope ONCE (a folded, re-gated cohort temp table, or
+  # NULL). It carries the scalar plan$cohort id too (see .planResolveScopeCohort),
+  # so its cohort_start/end_date is the per-person INDEX anchor a windowed/
+  # relative_to_index extraction needs. When no explicit base was built above
+  # (no filter_tree / spec), adopt the scope cohort as the index anchor so
+  # anchoring survives the move of the scalar cohort from "base" to "scope".
+  scope_cohort <- .planResolveScopeCohort(handle, plan)
+  if (is.null(cohort_table) && !is.null(scope_cohort)) {
+    cohort_table <- scope_cohort
+    cohort_person_ids <- .cohortPersonIds(handle, scope_cohort)
+  }
+
   # Multi-population resolution. When the plan declares populations, resolve each
   # (criteria -> person set via the cohort filter machinery; set-op -> fold with
   # .cohortCombine) into its own gated person set, then INTERSECT the unified
@@ -1293,32 +1322,19 @@
     pop_sets <- .planResolvePopulations(handle, plan, bp,
       base_cohort_table = cohort_table,
       base_person_ids = cohort_person_ids)
-    scope_cohort <- .planResolveScopeCohort(handle, plan)
     pop_sets <- .planScopePopulations(handle, pop_sets, scope_cohort, bp)
-  } else {
-    # Single-population fast path: a recipe-level scope still applies. Fold it
-    # into the base cohort (intersect on subject_id) and re-derive ids. An
-    # unrestricted base (no cohort, no ids) materializes ALL persons first so the
-    # scope has something to narrow.
-    scope_cohort <- .planResolveScopeCohort(handle, plan)
-    if (!is.null(scope_cohort)) {
-      base_ct <- cohort_table
-      if (is.null(base_ct)) {
-        base_ct <- if (length(cohort_person_ids %||% integer(0)) == 0) {
-          .materializeAllPersonsCohort(handle, bp, name = "dsomop_plan_cohort")
-        } else {
-          .materializeCohortFromIds(handle, bp, cohort_person_ids,
-            name = "dsomop_plan_cohort")
-        }
-      }
-      if (is.null(base_ct)) {
-        stop("Scope cannot be applied: no materializable base person set.",
-             call. = FALSE)
-      }
-      cohort_table <- .cohortCombine(handle, "intersect", base_ct,
-        scope_cohort, new_name = "dsomop_plan_cohort_scoped")
-      cohort_person_ids <- .cohortPersonIds(handle, cohort_table)
-    }
+  } else if (!is.null(scope_cohort)) {
+    # Single-population fast path: intersect the scope into the base cohort and
+    # re-derive ids. The scope cohort is the LEFT side of the intersect so its
+    # cohort_start/end_date (the cohort's real index date) survives into the
+    # result — relative_to_index outputs anchor to it. When there is no explicit
+    # base (filter_tree / spec), cohort_table already IS the scope cohort (set
+    # above), so the intersect is the cohort with itself: same persons, same
+    # dates, re-gated.
+    base_ct <- cohort_table %||% scope_cohort
+    cohort_table <- .cohortCombine(handle, "intersect", scope_cohort,
+      base_ct, new_name = "dsomop_plan_cohort_scoped")
+    cohort_person_ids <- .cohortPersonIds(handle, cohort_table)
   }
 
   # Temp tables created for populations/scope (cleaned up at the end alongside

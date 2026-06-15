@@ -13,13 +13,16 @@
 Named list of \code{omop_analysis_entry} objects keyed by id.
 }
 \description{
-Group registrar for \code{ohdsi_pack_sccs.R}. Returns BOTH the four NEW
-canonical \code{dsomop:sccs.*} entries AND the four legacy
-\code{dsomop:ohdsi.sccs.*} aliases that delegate to them, each keyed by id, so
-a single registrar addition wires the whole group. No precomputed SCCS results
-table is read by any entry. Takes \code{handle} for signature parity with the
-other adapters ONLY — it performs NO DB I/O at build time; all queries run
-later inside each entry's \code{compute$fn}.
+Group registrar for \code{ohdsi_pack_sccs.R}. Returns the FIVE canonical
+\code{dsomop:sccs.*} entries (the four descriptive-substrate natives PLUS the
+PLR-9 fitted IRR) AND the four legacy \code{dsomop:ohdsi.sccs.*} aliases that
+delegate to the four substrate canonicals, each keyed by id, so a single
+registrar addition wires the whole group. The fitted IRR
+(\code{dsomop:sccs.incidence_rate_ratio}) has NO precomputed OHDSI twin, so it
+is added WITHOUT an alias. No precomputed SCCS results table is read by any
+entry. Takes \code{handle} for signature parity with the other adapters ONLY —
+it performs NO DB I/O at build time; all queries run later inside each entry's
+\code{compute$fn}.
 }
 \details{
 Mappings (legacy OHDSI result table -> new canonical native entry):
@@ -28,6 +31,7 @@ Mappings (legacy OHDSI result table -> new canonical native entry):
   \item sccs.sccs_result -> dsomop:sccs.outcome_rate_per_month
   \item sccs.sccs_covariate_result -> dsomop:sccs.count_histograms
   \item sccs.sccs_diagnostics_summary -> dsomop:sccs.assumption_checks
+  \item (no twin) -> dsomop:sccs.incidence_rate_ratio (fitted IRR; PLR-9)
 }
 }
 \keyword{internal}

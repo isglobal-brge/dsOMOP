@@ -394,6 +394,82 @@ test_that("a too-small scope fails closed when intersected into a population", {
 })
 
 # ---------------------------------------------------------------------------
+# (c2) cohort=-as-scope: a SCALAR plan$cohort (type cohort_table) is resolved
+#      UNIFORMLY as a recipe-level SCOPE source (a gated person-set intersected
+#      into every population), NOT a base population. This is the contract the
+#      working-tree client's omop_recipe(cohort=)/recipe_execute(cohort=) emits.
+# ---------------------------------------------------------------------------
+
+test_that("a scalar plan cohort id resolves as SCOPE (by id, handle, table)", {
+  skip_if_not_installed("RSQLite")
+  # The fixture's cohort_definition_id = 1 has members {1,3,5,7,9,11}.
+  h <- create_test_handle(); on.exit(cleanup_handle(h))
+  h$person_key <- as.raw(1:16)
+  .buildBlueprint(h)
+
+  withr::with_options(list(nfilter.subset = 3), {
+    # (i) scope by scalar cohort_definition_id.
+    plan <- .so_plan(populations = NULL, outputs = list())
+    plan$cohort <- list(type = "cohort_table", cohort_definition_id = 1)
+    sc <- .planResolveScopeCohort(h, plan)
+    expect_equal(sort(dsOMOP:::.cohortPersonIds(h, sc)),
+                 c(1, 3, 5, 7, 9, 11))
+
+    # (ii) scope by cohort TABLE name (a server-side cohort temp table) folds in
+    # the same way through plan$scope$cohort.
+    bp <- .buildBlueprint(h)
+    tbl <- dsOMOP:::.materializeCohortFromIds(h, bp, c(3, 5, 7, 9),
+                                              name = "scope_by_table_src")
+    plan_t <- .so_plan(populations = NULL, outputs = list(),
+                       scope = list(cohort = tbl, combine = "union"))
+    sc_t <- .planResolveScopeCohort(h, plan_t)
+    expect_equal(sort(dsOMOP:::.cohortPersonIds(h, sc_t)), c(3, 5, 7, 9))
+
+    # (iii) a scalar plan cohort id and an omop.table FRAME scope are BOTH scope
+    # sources and INTERSECT: cohort1 {1,3,5,7,9,11} ∩ frame {1,3,5,99} = {1,3,5}.
+    fr <- .so_token_frame(h, c(1, 3, 5, 99))
+    plan_f <- .so_plan(populations = NULL, outputs = list(),
+                       scope = list(tables_frames = fr, combine = "intersect"))
+    plan_f$cohort <- list(type = "cohort_table", cohort_definition_id = 1)
+    sc_f <- .planResolveScopeCohort(h, plan_f)
+    expect_equal(sort(dsOMOP:::.cohortPersonIds(h, sc_f)), c(1, 3, 5))
+  })
+})
+
+test_that("a scalar plan cohort id NARROWS populations as scope, not as base", {
+  skip_if_not_installed("RSQLite")
+  # Build a criteria population over MALE persons (odd, to overlap cohort 1 =
+  # {1,3,5,7,9,11}); the scalar cohort id must INTERSECT it (scope), confining the
+  # output to the cohort members who also meet the criteria — never replacing it.
+  h <- .so_handle(keyed = TRUE); on.exit(cleanup_handle(h))
+  # Males with diabetes(201820): {1,3,5,7,9} (5 persons; person 11 omitted).
+  for (p in c(1, 3, 5, 7, 9)) .so_ins_cond(h$conn, p, 201820L)
+  bp <- .buildBlueprint(h)
+
+  sexM <- list(type = "sex", params = list(value = "M"))
+  plan <- .so_plan(
+    populations = list(
+      base = list(id = "base"),
+      M = list(id = "M", kind = "criteria",
+               filter_tree = list(and = list(
+                 sexM, .so_has_cond(201820L))))),
+    outputs = list())
+  # The scalar cohort id is the recipe-level scope.
+  plan$cohort <- list(type = "cohort_table", cohort_definition_id = 1)
+
+  withr::with_options(list(nfilter.subset = 3), {
+    resolved <- .planResolvePopulations(h, plan, bp)
+    scope_ct <- .planResolveScopeCohort(h, plan)
+    scoped <- .planScopePopulations(h, resolved, scope_ct, bp)
+    # M = {1,3,5,7,9}; cohort1 = {1,3,5,7,9,11}; M ∩ cohort1 = {1,3,5,7,9}.
+    expect_equal(.so_pids(scoped, "M"), c(1, 3, 5, 7, 9))
+    # The base population is ALSO narrowed to the scope cohort members (scope, not
+    # base): base ∩ cohort1 = {1,3,5,7,9,11}.
+    expect_equal(.so_pids(scoped, "base"), c(1, 3, 5, 7, 9, 11))
+  })
+})
+
+# ---------------------------------------------------------------------------
 # (d) single-population (base-only) recipes are UNCHANGED (regression): the
 #     multi-population path is not engaged and the base cohort drives the output
 #     exactly as before.

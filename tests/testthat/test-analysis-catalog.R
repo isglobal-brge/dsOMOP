@@ -308,21 +308,29 @@ test_that("(c) every surviving count is banded to a multiple of nfilter_band", {
   })
 })
 
-# --- SECURITY (d): no-person-basis entry rejected in strict mode -------------
+# --- SECURITY (d): evidence-synthesis ids emit a per-site live estimate -------
 
-test_that("(d) record entry with no person basis fail-closes in strict mode", {
+test_that("(d) evidence_synthesis es_cm_result is a live per-site delegate", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
 
-  # es_cm_result carries only n_databases (a cross-DB meta-analysis count) and no
-  # person column. Strict mode (the default) must return zero rows; relaxing it
-  # lets the shaped result through.
-  strict <- .omopAnalysisRun(h, "dsomop:ohdsi.evidence_synthesis.es_cm_result")
-  expect_equal(nrow(strict), 0)
+  # The cross-database es_cm_result no longer READS a precomputed table: a single
+  # site cannot compute a pooled estimate, so the id now delegates LIVE to the
+  # per-site cm.effect_estimate port (the client meta-analyzes the per-site
+  # log-estimate + SE). Un-scoped (no two-population scope) the live fn returns a
+  # gate-safe empty frame regardless of strict mode — never a shaped precomputed
+  # row.
+  e <- .omopAnalysisResolve(h, "dsomop:ohdsi.evidence_synthesis.es_cm_result")
+  expect_equal(e$meta$adapter, "ohdsi_live")
+  expect_equal(e$meta$alias_target, "dsomop:cm.effect_estimate")
+  expect_match(e$description, "PER-SITE estimate")
+  expect_null(e$meta$precomputed)
 
+  empty <- .omopAnalysisRun(h, "dsomop:ohdsi.evidence_synthesis.es_cm_result")
+  expect_equal(nrow(empty), 0)
   withr::with_options(list(dsomop.query_strict = FALSE), {
-    relaxed <- .omopAnalysisRun(h, "dsomop:ohdsi.evidence_synthesis.es_cm_result")
-    expect_true(nrow(relaxed) > 0)
+    empty2 <- .omopAnalysisRun(h, "dsomop:ohdsi.evidence_synthesis.es_cm_result")
+    expect_equal(nrow(empty2), 0)
   })
 
   # The legacy OHDSI incidence_rate id now resolves to the LIVE CohortIncidence
@@ -466,11 +474,14 @@ test_that("(g) still-precomputed OHDSI entries reject scope cleanly", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
 
-  # The OHDSI result tables with no single-site live definition (fitted-model
-  # PLP, cross-site evidence synthesis) remain precomputed and have no per-row
-  # person key, so scoping them is rejected with a clear, non-SQL error.
-  for (id in c("dsomop:ohdsi.plp.plp_performances",
-               "dsomop:ohdsi.evidence_synthesis.es_cm_result")) {
+  # The config-only OHDSI result tables with no single-site live definition (the
+  # PLP model_design) remain precomputed and have no per-row person key, so
+  # scoping them is rejected with a clear, non-SQL error. (The fitted-model PLP
+  # performance/calibration/threshold/diagnostic tables are now ported LIVE — see
+  # test-analysis-ports-plp-fitted.R — and the cross-site evidence-synthesis
+  # es_* ids now delegate LIVE to their per-site PLR ports, so neither is in this
+  # still-precomputed set any longer.)
+  for (id in c("dsomop:ohdsi.plp.plp_model_design")) {
     err <- tryCatch(
       .omopAnalysisRun(h, id, scope = "dsomop_cohort_1"),
       error = function(e) conditionMessage(e))

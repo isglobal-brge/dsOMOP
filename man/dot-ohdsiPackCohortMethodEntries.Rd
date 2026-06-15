@@ -13,13 +13,13 @@
 Named list of \code{omop_analysis_entry} objects keyed by entry id.
 }
 \description{
-The group registrar for \code{ohdsi_pack_cohortmethod.R}: the two CohortMethod
-analyses with an honest descriptive substrate (cm_attrition, cm_result), each
-COMPUTING its metric LIVE from the CDM (no precomputed OHDSI results read).
-Returned as a named list keyed by entry id, exactly as
-\code{\link{.omopAnalysisOhdsiEntries}} concatenates. \code{handle} is taken for
-signature parity ONLY and is never queried at build time (catalog build is
-cached on \code{handle$analysis_catalog}; all DB I/O happens later inside each
-entry's \code{compute$fn}).
+The group registrar for \code{ohdsi_pack_cohortmethod.R}: the three
+CohortMethod analyses with an honest descriptive substrate (cm_attrition,
+cm_result, cm_diagnostics_summary), each COMPUTING its metric LIVE from the CDM
+(no precomputed OHDSI results read). Returned as a named list keyed by entry id,
+exactly as \code{\link{.omopAnalysisOhdsiEntries}} concatenates. \code{handle}
+is taken for signature parity ONLY and is never queried at build time (catalog
+build is cached on \code{handle$analysis_catalog}; all DB I/O happens later
+inside each entry's \code{compute$fn}).
 }
 \keyword{internal}

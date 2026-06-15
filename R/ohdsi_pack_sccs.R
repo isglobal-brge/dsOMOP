@@ -26,6 +26,24 @@
 #     (here: exposure-window bin) exposed/unexposed event + person counts, the
 #     COUNT substrate, NOT the spline relative-risk curve (the fitted spline RR
 #     is OUT).
+#
+# THE R-IN-SESSION PRINCIPLE reclaims the fitted IRR. The header above declared
+# "the conditional Poisson IRR + CI" OUT as fitted-model-only, but a dsOMOP
+# analysis runs in the server-side R session: it is NOT limited to one descriptive
+# SQL query. It can LOAD the per-case exposed/unexposed (events, person-time)
+# substrate into R and FIT the SCCS conditional Poisson there, returning ONLY a
+# disclosure-safe aggregate. So group PLR-9 ADDS one canonical native that is now
+# IN:
+#   * dsomop:sccs.incidence_rate_ratio: the FITTED SCCS exposed-vs-unexposed
+#     incidence-rate ratio (conditional Poisson, stratified per case) with 95% CI
+#     and the log-IRR + SE meta-analysis sufficient statistics es_sccs synthesis
+#     consumes, alongside the gated exposed/unexposed event + case-person counts it
+#     rests on. It reuses the SAME per-case exposed/unexposed substrate
+#     dsomop:sccs.count_histograms summarises (.omopSccsCountHistograms), pulled at
+#     per-case granularity into the session and fit there; no per-case row, event
+#     date or per-subject coefficient ever leaves R.
+#   The fitted SPLINE relative-risk curve stays OUT: it genuinely needs the
+#   per-subject smooth that no banded aggregate reconstructs.
 #   * sccs_diagnostics_summary -> dsomop:sccs.assumption_checks: rare-outcome,
 #     time-stability and event-dependence TEST SCALARS recomputed over the
 #     underlying counts (pre-exposure rate-ratio + calendar time-trend are
@@ -39,6 +57,16 @@
 # rate/ratio is reconciled in-fn via .omopAnalysisReconcileRatio BEFORE return,
 # so a raw ratio over banded counts is never released. Concept ids are translated
 # to names by default; no *_source_value / free-text is ever selected.
+#
+# The fitted IRR (dsomop:sccs.incidence_rate_ratio) is NOT a count, so the gate
+# cannot suppress it on a count basis: it follows the PLR-1 (cm.effect_estimate)
+# non-frame contract — the fn applies an EXPLICIT in-fn guard BEFORE return,
+# banding the exposed/unexposed event + case-person counts and setting
+# irr/ci_lo/ci_hi/log_irr/se_log_irr to NA unless BOTH windows rest on a released
+# (>= nfilter.tab after banding) event count AND >= nfilter.subset cases
+# contribute to BOTH windows. The declared count_cols (n_cases / exposed_events /
+# unexposed_events) are gated by the SINGLE .omopAnalysisGate; the per-case frame
+# is materialised in-session and discarded.
 #
 # The registrar .ohdsiPackSccsEntries(handle) returns BOTH the four canonical
 # dsomop:sccs.* entries AND the four dsomop:ohdsi.sccs.* aliases keyed by id, so
@@ -733,6 +761,377 @@
   )
 }
 
+# --- Canonical 5: dsomop:sccs.incidence_rate_ratio (FITTED, R-in-session) -----
+
+#' Build the per-case exposed/unexposed (events, person-time) SCCS frame (in-session)
+#'
+#' The R-in-session DATA step for \code{\link{.omopSccsIrrFn}}. Over the scoped case
+#' population it materialises the SAME per-case exposed/unexposed substrate
+#' \code{\link{.omopSccsCountHistograms}} aggregates — but at PER-CASE granularity
+#' (two rows per case: one exposed period, one unexposed period) so the conditional
+#' Poisson can be fit with a per-case stratum. Each case is a person with >= 1
+#' outcome event observed inside an observation period; the SCCS exposure index is
+#' the person's FIRST exposure (\code{\link{.omopOutcomeSource}} on the exposure
+#' concept, MIN date) exactly as the count-histogram substrate anchors it. Per case:
+#' \itemize{
+#'   \item observed person-time = the observation-period days that cover the case
+#'     (clamped >= 1 so the Poisson offset stays defined);
+#'   \item exposed person-time = the days of that span falling in the risk window
+#'     \code{[exposure_date, exposure_date + window]} (intersected with the
+#'     observation period), clamped to \code{[0, observed]};
+#'   \item exposed events = outcome events whose date is in that window; unexposed
+#'     events = total in-period outcome events minus exposed events; unexposed
+#'     person-time = observed minus exposed.
+#' }
+#' The SQL aggregates GROUP BY case so it returns ONE row per case; the per-case
+#' rows are pulled into R and reshaped to the two-period long frame there — NO
+#' per-case row, event date or person id ever leaves the session. A case is kept
+#' only when it contributes strictly positive person-time to BOTH periods (the SCCS
+#' within-person contrast needs both an exposed and an unexposed window); a case
+#' wholly exposed or wholly unexposed contributes no within-person information and
+#' is dropped, exactly as the conditional likelihood eliminates it.
+#'
+#' @param handle CDM handle.
+#' @param ctx Run-path ctx (for the scope join over the case population).
+#' @param exp_src Resolved exposure \code{\link{.omopOutcomeSource}} (NULL: none).
+#' @param out_src Resolved outcome \code{\link{.omopOutcomeSource}} (NULL: none).
+#' @param window Integer exposed risk-window length in days after first exposure.
+#' @return list(data = <long frame: case_id, exposed, events, person_time>,
+#'   n_cases, exposed_events, unexposed_events).
+#' @keywords internal
+.omopSccsIrrCaseData <- function(handle, ctx, exp_src, out_src, window) {
+  empty <- list(
+    data = data.frame(case_id = integer(0), exposed = integer(0),
+                      events = numeric(0), person_time = numeric(0)),
+    n_cases = 0, exposed_events = 0, unexposed_events = 0)
+  if (is.null(exp_src) || is.null(out_src)) return(empty)
+
+  obs <- .qualifyTable(handle, "observation_period")
+  sj  <- .omopScopeJoin(ctx, "o", out_src$person_col)
+
+  # First exposure date per person (the SCCS exposure index), as a sub-select —
+  # the SAME anchor .omopSccsCountHistograms uses.
+  first_exp <- paste0(
+    "(SELECT x.", exp_src$person_col, " AS person_id, ",
+    "MIN(x.", exp_src$date_col, ") AS exposure_date ",
+    "FROM ", exp_src$table, " x ",
+    "WHERE ", .omopSccsOutcomeWhere(exp_src, "x"),
+    " GROUP BY x.", exp_src$person_col, ")")
+
+  # The exposed risk window end = exposure_date + window days.
+  win_end <- paste0("DATEADD(day, ", window, ", fe.exposure_date)")
+  # Observed span (days) of the observation period covering the case, clamped >= 1.
+  observed_days <- .omopDateDiffDays(
+    handle, "op.observation_period_end_date", "op.observation_period_start_date")
+  # Exposed person-time = the overlap of [exposure_date, win_end] with the
+  # observation period [op_start, op_end], in days: the lesser end minus the
+  # greater start, floored at 0. Built dialect-safely from CASE bounds so the
+  # interval arithmetic is the same on every backend.
+  ov_lo <- paste0(
+    "CASE WHEN fe.exposure_date > op.observation_period_start_date ",
+    "THEN fe.exposure_date ELSE op.observation_period_start_date END")
+  ov_hi <- paste0(
+    "CASE WHEN (", win_end, ") < op.observation_period_end_date ",
+    "THEN (", win_end, ") ELSE op.observation_period_end_date END")
+  ov_days <- .omopDateDiffDays(handle, ov_hi, ov_lo)
+  exposed_days_expr <- paste0("CASE WHEN (", ov_days, ") > 0 THEN (", ov_days,
+                              ") ELSE 0 END")
+  # Exposed-event flag per outcome row: date within [exposure_date, win_end].
+  exposed_event_expr <- paste0(
+    "CASE WHEN o.", out_src$date_col, " >= fe.exposure_date ",
+    "AND o.", out_src$date_col, " <= (", win_end, ") THEN 1 ELSE 0 END")
+
+  # One row per case: total in-period outcome events, exposed events, observed
+  # span and exposed span. The outcome rows are joined to the covering observation
+  # period (the SCCS person-time requirement) and to the person's first exposure.
+  sql <- .sql_translate(paste0(
+    "SELECT o.", out_src$person_col, " AS case_id, ",
+    "COUNT(*) AS total_events, ",
+    "SUM(", exposed_event_expr, ") AS exposed_events, ",
+    "MAX(", observed_days, ") AS observed_days, ",
+    "MAX(", exposed_days_expr, ") AS exposed_days ",
+    "FROM ", out_src$table, " o",
+    " INNER JOIN ", first_exp, " fe ON fe.person_id = o.",
+    out_src$person_col,
+    " INNER JOIN ", obs, " op ON op.person_id = o.", out_src$person_col,
+    " AND o.", out_src$date_col, " >= op.observation_period_start_date",
+    " AND o.", out_src$date_col, " <= op.observation_period_end_date",
+    sj$join,
+    " WHERE ", .omopSccsOutcomeWhere(out_src, "o"),
+    " GROUP BY o.", out_src$person_col),
+    handle$target_dialect)
+
+  raw <- .executeQuery(handle, sql)
+  if (!is.data.frame(raw) || nrow(raw) == 0) return(empty)
+
+  total_ev <- as.numeric(raw$total_events)
+  exp_ev   <- as.numeric(raw$exposed_events)
+  observed <- pmax(as.numeric(raw$observed_days), 1)
+  exp_pt   <- pmin(pmax(as.numeric(raw$exposed_days), 0), observed)
+  unexp_pt <- observed - exp_pt
+  unexp_ev <- pmax(total_ev - exp_ev, 0)
+
+  # Keep only cases with STRICTLY positive person-time in BOTH periods: a case
+  # wholly exposed (or wholly unexposed) carries no within-person contrast and is
+  # eliminated by the conditional likelihood — dropping it here is the same step.
+  keep <- is.finite(exp_pt) & is.finite(unexp_pt) & exp_pt > 0 & unexp_pt > 0
+  case_id <- as.integer(raw$case_id)[keep]
+  exp_ev <- exp_ev[keep]; unexp_ev <- unexp_ev[keep]
+  exp_pt <- exp_pt[keep]; unexp_pt <- unexp_pt[keep]
+  if (length(case_id) == 0) return(empty)
+
+  # Long two-period frame: per case, an exposed row and an unexposed row.
+  long <- data.frame(
+    case_id     = rep(case_id, 2L),
+    exposed     = c(rep(1L, length(case_id)), rep(0L, length(case_id))),
+    events      = c(exp_ev, unexp_ev),
+    person_time = c(exp_pt, unexp_pt),
+    stringsAsFactors = FALSE)
+
+  list(
+    data             = long,
+    n_cases          = length(case_id),
+    exposed_events   = sum(exp_ev, na.rm = TRUE),
+    unexposed_events = sum(unexp_ev, na.rm = TRUE))
+}
+
+#' Fit the SCCS conditional Poisson in the R session and extract log-IRR + SE
+#'
+#' The R-in-session MODEL step: given the per-case two-period
+#' \code{(case_id, exposed, events, person_time)} frame from
+#' \code{\link{.omopSccsIrrCaseData}}, fit the SCCS conditional Poisson and return
+#' the exposed-vs-unexposed log incidence-rate ratio and its standard error (the
+#' es_sccs meta-analysis sufficient statistics). Two equivalent specifications,
+#' both giving a log-IRR-scale coefficient + SE on \code{exposed}:
+#' \itemize{
+#'   \item \code{gnm}: \code{gnm::gnm(events ~ exposed + offset(log(person_time)),
+#'     family = poisson, eliminate = factor(case_id))} — the canonical SCCS
+#'     conditional-Poisson fit (the per-case stratum is eliminated, not estimated).
+#'     Used when \pkg{gnm} is installed (declared in Suggests).
+#'   \item \code{poisson}: \code{stats::glm(events ~ exposed + factor(case_id) +
+#'     offset(log(person_time)), family = poisson)} — the stats-only fallback: a
+#'     fixed-effect-per-case Poisson whose \code{exposed} coefficient equals the
+#'     conditional log-IRR. Always available (\pkg{stats} is a hard dependency).
+#' }
+#' The fit happens entirely in the session over the in-R frame; only the scalar
+#' \code{log_irr} + \code{se_log_irr} leave it (never per-case coefficients, never
+#' the frame). Returns \code{NA}s when the model cannot be fit (one period absent,
+#' no events, fewer than two cases, non-finite SE, or fit error) — fail-closed.
+#'
+#' @param df Per-case two-period frame (case_id, exposed, events, person_time).
+#' @return list(log_irr, se_log_irr, model_type) (NA on failure).
+#' @keywords internal
+.omopSccsIrrFit <- function(df) {
+  na_out <- function(mt) list(log_irr = NA_real_, se_log_irr = NA_real_,
+                              model_type = mt)
+  use_gnm <- requireNamespace("gnm", quietly = TRUE)
+  mt <- if (use_gnm) "gnm_conditional_poisson" else "stratified_poisson"
+  if (!is.data.frame(df) || nrow(df) == 0) return(na_out(mt))
+  # Both periods present, at least one event, and >= 2 distinct cases (a single
+  # case cannot identify the within-person contrast after stratifying).
+  df <- df[is.finite(df$person_time) & df$person_time > 0, , drop = FALSE]
+  if (nrow(df) == 0) return(na_out(mt))
+  if (length(unique(df$exposed)) < 2L) return(na_out(mt))
+  if (sum(df$events, na.rm = TRUE) <= 0) return(na_out(mt))
+  if (length(unique(df$case_id)) < 2L) return(na_out(mt))
+  df$case_id <- factor(df$case_id)
+
+  fit <- tryCatch({
+    if (use_gnm) {
+      m <- gnm::gnm(events ~ exposed, family = stats::poisson(),
+                    offset = log(df$person_time), eliminate = df$case_id,
+                    data = df, verbose = FALSE)
+      s <- summary(m)$coefficients
+      list(coef = unname(s["exposed", "Estimate"]),
+           se = unname(s["exposed", "Std. Error"]))
+    } else {
+      m <- stats::glm(events ~ exposed + case_id, family = stats::poisson(),
+                      offset = log(df$person_time), data = df)
+      s <- summary(m)$coefficients
+      list(coef = unname(s["exposed", "Estimate"]),
+           se = unname(s["exposed", "Std. Error"]))
+    }
+  }, error = function(e) NULL)
+
+  if (is.null(fit) || !is.finite(fit$coef) || !is.finite(fit$se) ||
+      fit$se <= 0) {
+    return(na_out(mt))
+  }
+  list(log_irr = as.numeric(fit$coef), se_log_irr = as.numeric(fit$se),
+       model_type = mt)
+}
+
+#' Build the sccs.incidence_rate_ratio live compute fn (fitted IRR, R-in-session)
+#'
+#' Over the scoped case population (cohort-wide when un-scoped; self-gated
+#' >= nfilter.subset persons by \code{\link{.omopDiagAssertPersons}} before any
+#' pull): build the per-case two-period \code{(case_id, exposed, events,
+#' person_time)} frame (\code{\link{.omopSccsIrrCaseData}}), FIT the SCCS
+#' conditional Poisson in the session (\code{\link{.omopSccsIrrFit}}), and emit ONE
+#' aggregate row — the fitted IRR (\code{exp(coef)}), its 95\% CI
+#' (\code{exp(coef +/- 1.96 SE)}), the \code{log_irr} + \code{se_log_irr}
+#' meta-analysis sufficient statistics, and the gated counts the estimate rests on
+#' (\code{n_cases}, \code{exposed_events}, \code{unexposed_events}).
+#'
+#' DISCLOSURE — sanctioned non-frame guard (mirrors PLR-1 cm.effect_estimate). The
+#' fitted IRR + CI are NOT counts, so the gate cannot suppress them on a count
+#' basis. This fn applies the explicit in-fn guard BEFORE return: it bands each
+#' window's event count and the case count (\code{\link{.bandCount}} at
+#' nfilter_band) and sets irr / ci_lo / ci_hi / log_irr / se_log_irr to NA unless
+#' BOTH windows' banded event counts are releasable (>= nfilter_tab) AND
+#' >= nfilter.subset cases contribute to BOTH periods — exactly the effect-estimate
+#' rule the disclosure plan mandates. The declared count_cols (n_cases /
+#' exposed_events / unexposed_events) are additionally suppressed + banded by the
+#' SINGLE \code{\link{.omopAnalysisGate}} (which drops the whole row if any falls
+#' below threshold). No per-case row leaves R; no \code{*_source_value} is selected;
+#' the exposure/outcome concept sets are descendant-expanded and name-translated.
+#'
+#' @return A \code{function(handle, ctx, params)} returning a one-row aggregate.
+#' @keywords internal
+.omopSccsIrrFn <- function() {
+  function(handle, ctx, params) {
+    exp_src <- .omopOutcomeSource(handle, params$exposure_concept_id,
+                                  params$exposure_domain_code %||% "1")
+    out_src <- .omopOutcomeSource(handle, params$outcome_concept_id,
+                                  params$outcome_domain_code %||% "0")
+    # The fitted IRR needs BOTH an exposure and an outcome anchor (like the count
+    # histograms). Either absent -> no contrast -> gate-safe empty frame.
+    if (is.null(exp_src) || is.null(out_src)) return(data.frame())
+    window <- max(as.integer(params$window %||% "30"), 0L)
+
+    # Self-gate the scoped outcome-event (case) population before materialising.
+    .omopDiagAssertPersons(handle, ctx, out_src$table, "o", out_src$person_col,
+                           where_sql = .omopSccsOutcomeWhere(out_src, "o"))
+
+    # Per-case in-session data + count substrate, then FIT the conditional Poisson.
+    cd <- .omopSccsIrrCaseData(handle, ctx, exp_src, out_src, window)
+    if (nrow(cd$data) == 0) return(data.frame())
+    fit <- .omopSccsIrrFit(cd$data)
+
+    log_irr <- fit$log_irr
+    se_log  <- fit$se_log_irr
+    irr   <- if (is.finite(log_irr)) exp(log_irr) else NA_real_
+    ci_lo <- if (is.finite(log_irr) && is.finite(se_log)) {
+      exp(log_irr - 1.96 * se_log)
+    } else NA_real_
+    ci_hi <- if (is.finite(log_irr) && is.finite(se_log)) {
+      exp(log_irr + 1.96 * se_log)
+    } else NA_real_
+
+    # --- Sanctioned non-frame guard (band the counts, NA the estimate) ---------
+    # Effect-estimate rule: require BOTH windows to rest on a released (banded
+    # >= nfilter_tab) event count AND >= nfilter.subset cases in BOTH periods.
+    settings <- .omopDisclosureSettings()
+    bw  <- settings$nfilter_band
+    thr <- settings$nfilter_tab
+    sub <- settings$nfilter_subset
+    band_or_na <- function(x) {
+      x <- as.numeric(x)
+      v <- .bandCount(x, band_width = bw)
+      if (is.na(x) || x < thr) NA_real_ else v
+    }
+    # A banded count is a RELEASE only when it is itself >= nfilter_tab (a raw
+    # count in [nfilter_tab, nfilter_band) FLOORS to 0, which is NOT a release).
+    releasable_count <- function(x) is.finite(x) && x >= thr
+    exp_b   <- band_or_na(cd$exposed_events)
+    unexp_b <- band_or_na(cd$unexposed_events)
+    # Every kept case contributes to BOTH periods by construction, so n_cases is
+    # the case basis for BOTH windows; require it >= nfilter.subset.
+    estimate_releasable <- releasable_count(exp_b) && releasable_count(unexp_b) &&
+      is.finite(cd$n_cases) && cd$n_cases >= sub
+    if (!estimate_releasable) {
+      irr <- NA_real_; ci_lo <- NA_real_; ci_hi <- NA_real_
+      log_irr <- NA_real_; se_log <- NA_real_
+    }
+
+    # ONE aggregate row: the fitted IRR + CI + sufficient statistics, alongside
+    # the gated counts the gate suppresses + bands (dropping the row if any falls
+    # below threshold). n_cases is the distinct-case person companion.
+    out <- data.frame(
+      model_type       = fit$model_type,
+      n_cases          = as.numeric(cd$n_cases),
+      exposed_events   = as.numeric(cd$exposed_events),
+      unexposed_events = as.numeric(cd$unexposed_events),
+      irr              = as.numeric(irr),
+      ci_lo            = as.numeric(ci_lo),
+      ci_hi            = as.numeric(ci_hi),
+      log_irr          = as.numeric(log_irr),
+      se_log_irr       = as.numeric(se_log),
+      stringsAsFactors = FALSE)
+    rownames(out) <- NULL
+    out
+  }
+}
+
+#' \code{dsomop:sccs.incidence_rate_ratio} entry (SCCS fitted conditional-Poisson IRR)
+#'
+#' The FITTED SCCS exposed-vs-unexposed incidence-rate ratio, live and computed in
+#' the server-side R session (the IRR the SCCS pack header originally declared OUT
+#' as fitted-model-only; the R-in-session principle reclaims it). NO precomputed
+#' OHDSI twin: this IS the canonical id (the read-precomputed sccs_result path that
+#' once returned the fitted IRR is dead). The fitted spline relative-risk curve
+#' stays out of scope (it needs the per-subject smooth). unit=record; n_cases is
+#' the gated distinct-case companion; the fitted IRR is NA unless BOTH windows are
+#' releasable and >= nfilter.subset cases contribute to both.
+#' @keywords internal
+.omopSccsIncidenceRateRatio <- function() {
+  name <- "dsomop:sccs.incidence_rate_ratio"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  ggplot2::ggplot(df, ggplot2::aes(x = factor(model_type), y = irr)) +",
+    "    ggplot2::geom_point() +",
+    "    ggplot2::geom_errorbar(ggplot2::aes(ymin = ci_lo, ymax = ci_hi),",
+    "                           width = 0.1) +",
+    "    ggplot2::geom_hline(yintercept = 1, linetype = 'dashed') +",
+    "    ggplot2::labs(x = NULL, y = 'SCCS incidence-rate ratio (95% CI)')",
+    "}", sep = "\n")
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("SCCS fitted conditional-Poisson incidence-rate ratio ",
+                         "(live, R-in-session): the exposed-vs-unexposed IRR over ",
+                         "the scoped case population, with 95% CI and the log-IRR ",
+                         "+ SE meta-analysis sufficient statistics, alongside the ",
+                         "exposed/unexposed event + case counts it rests on. ",
+                         "unit=record; n_cases is the gated distinct-case ",
+                         "companion; the IRR is NA unless both windows are ",
+                         "releasable. The fitted spline RR remains out of scope."),
+    domain      = "general",
+    params      = list(
+      list(name = "exposure_concept_id", type = "concept_id", required = FALSE,
+           default = NULL,
+           description = "Exposure concept id (descendants expanded) anchoring the risk window."),
+      list(name = "exposure_domain_code", type = "enum", required = FALSE,
+           default = "1", choices = c("0", "1", "2", "3", "4"),
+           description = "Exposure domain (default 1 drug)."),
+      list(name = "outcome_concept_id", type = "concept_id", required = FALSE,
+           default = NULL,
+           description = "Outcome concept id (descendants expanded) defining cases/events."),
+      list(name = "outcome_domain_code", type = "enum", required = FALSE,
+           default = "0", choices = c("0", "1", "2", "3", "4"),
+           description = "Outcome domain (0 condition,1 drug,2 procedure,3 measurement,4 observation)."),
+      list(name = "window", type = "int", required = FALSE, default = "30",
+           description = "Exposed risk-window length in days after first exposure.")
+    ),
+    compute = list(
+      kind = "r", sql = NULL, fn = .omopSccsIrrFn(),
+      plot = list(type = "point", code = plot_code)
+    ),
+    dependencies = list(
+      tables = c("observation_period", "drug_exposure", "condition_occurrence"),
+      packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(
+      unit          = "record",
+      count_cols    = c("n_cases", "exposed_events", "unexposed_events"),
+      person_id_col = "n_cases"),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 1L, requires_cohort = FALSE),
+    mode  = "aggregate",
+    meta  = list(adapter = "ohdsi_live", tool_id = "sccs",
+                 table_name = "sccs_result")
+  )
+}
+
 # --- OHDSI-id aliases onto the canonical SCCS entries ------------------------
 
 #' Build one dsomop:ohdsi.sccs.<table> alias onto a canonical SCCS entry
@@ -777,13 +1176,16 @@
 
 #' Emit the SCCS (OHDSI-B2) catalog entries (native live compute)
 #'
-#' Group registrar for \code{ohdsi_pack_sccs.R}. Returns BOTH the four NEW
-#' canonical \code{dsomop:sccs.*} entries AND the four legacy
-#' \code{dsomop:ohdsi.sccs.*} aliases that delegate to them, each keyed by id, so
-#' a single registrar addition wires the whole group. No precomputed SCCS results
-#' table is read by any entry. Takes \code{handle} for signature parity with the
-#' other adapters ONLY — it performs NO DB I/O at build time; all queries run
-#' later inside each entry's \code{compute$fn}.
+#' Group registrar for \code{ohdsi_pack_sccs.R}. Returns the FIVE canonical
+#' \code{dsomop:sccs.*} entries (the four descriptive-substrate natives PLUS the
+#' PLR-9 fitted IRR) AND the four legacy \code{dsomop:ohdsi.sccs.*} aliases that
+#' delegate to the four substrate canonicals, each keyed by id, so a single
+#' registrar addition wires the whole group. The fitted IRR
+#' (\code{dsomop:sccs.incidence_rate_ratio}) has NO precomputed OHDSI twin, so it
+#' is added WITHOUT an alias. No precomputed SCCS results table is read by any
+#' entry. Takes \code{handle} for signature parity with the other adapters ONLY —
+#' it performs NO DB I/O at build time; all queries run later inside each entry's
+#' \code{compute$fn}.
 #'
 #' Mappings (legacy OHDSI result table -> new canonical native entry):
 #' \itemize{
@@ -791,6 +1193,7 @@
 #'   \item sccs.sccs_result -> dsomop:sccs.outcome_rate_per_month
 #'   \item sccs.sccs_covariate_result -> dsomop:sccs.count_histograms
 #'   \item sccs.sccs_diagnostics_summary -> dsomop:sccs.assumption_checks
+#'   \item (no twin) -> dsomop:sccs.incidence_rate_ratio (fitted IRR; PLR-9)
 #' }
 #'
 #' @param handle CDM handle (signature parity; not queried at build time).
@@ -803,6 +1206,9 @@
     .omopSccsOutcomeRatePerMonth(),
     .omopSccsCountHistograms(),
     .omopSccsAssumptionChecks(),
+    # PLR-9: the FITTED conditional-Poisson IRR reclaimed by the R-in-session
+    # principle (no precomputed OHDSI twin; this IS its canonical id).
+    .omopSccsIncidenceRateRatio(),
     # Legacy OHDSI ids kept as thin aliases onto the canonicals above.
     .ohdsiSccsAliasEntry("sccs_attrition", .omopSccsAttrition),
     .ohdsiSccsAliasEntry("sccs_result", .omopSccsOutcomeRatePerMonth),
