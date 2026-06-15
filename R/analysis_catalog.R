@@ -1301,9 +1301,1267 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   )
 }
 
+# --- Native FeatureExtraction / Characterization helpers ---------------------
+#
+# The six FeatureExtraction-/Characterization-/PatientLevelPrediction-style ports
+# below all summarise covariates over the SCOPED cohort. They share two compute
+# kernels so the per-covariate prevalence (binary) and per-covariate continuous
+# statistics are produced identically wherever they appear (Table 1 reuses both).
+# Both kernels self-gate the scoped population BEFORE materialising and return an
+# aggregate-only frame the ONE gate (.omopAnalysisGate) then suppresses + bands.
+
+#' Map a covariate domain code to its OMOP event table + concept/date columns
+#'
+#' The binary/continuous covariate kernels select their event source by the same
+#' \code{domain_code} vocabulary the diagnostics use (0 condition, 1 drug,
+#' 2 procedure, 3 measurement, 4 observation), so a caller scopes a covariate
+#' family with one parameter. Returns the qualified table and its person/concept/
+#' date columns (and, for measurement, the numeric value column).
+#'
+#' @param handle CDM handle.
+#' @param domain_code Character/int domain selector.
+#' @return list(table, person_col, concept_col, date_col, value_col).
+#' @keywords internal
+.omopCovariateSource <- function(handle, domain_code = "0") {
+  dom <- as.character(domain_code %||% "0")
+  spec <- switch(dom,
+    "1" = list("drug_exposure", "drug_concept_id", "drug_exposure_start_date", NA),
+    "2" = list("procedure_occurrence", "procedure_concept_id", "procedure_date", NA),
+    "3" = list("measurement", "measurement_concept_id", "measurement_date",
+               "value_as_number"),
+    "4" = list("observation", "observation_concept_id", "observation_date",
+               "value_as_number"),
+    list("condition_occurrence", "condition_concept_id", "condition_start_date",
+         NA))
+  list(
+    table       = .qualifyTable(handle, spec[[1]]),
+    person_col  = "person_id",
+    concept_col = spec[[2]],
+    date_col    = spec[[3]],
+    value_col   = spec[[4]]
+  )
+}
+
+#' Per-covariate distinct-person prevalence over the scoped cohort (binary kernel)
+#'
+#' One row per concept in the chosen domain: \code{sum_value} = distinct persons
+#' in the scoped cohort with >= 1 record of that concept, \code{average} =
+#' \code{sum_value / cohort_size} (the cohort denominator is a single distinct-
+#' person count, so the gate's binary-prevalence coupling NAs \code{average}
+#' wherever \code{sum_value} is suppressed). Concepts are translated to their
+#' names (translation default ON). \code{unit="person"}: the returned count IS a
+#' distinct-person count, so small-cell suppression + banding fully gate it.
+#'
+#' @param handle CDM handle.
+#' @param ctx Run-path ctx (carries \code{scoped_cohort}).
+#' @param domain_code Character/int domain selector.
+#' @param top_n Integer; keep the top-N concepts by prevalence.
+#' @return Data frame (covariate_id, covariate_name, domain, sum_value, average).
+#' @keywords internal
+.omopCovariatePrevalence <- function(handle, ctx, domain_code = "0", top_n = 50L) {
+  if (is.null(ctx$scoped_cohort)) return(data.frame())
+  cohort  <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  concept <- .qualifyTable(handle, "concept",
+                           handle$vocab_schema %||% handle$cdm_schema)
+  src     <- .omopCovariateSource(handle, domain_code)
+  top_n   <- max(as.integer(top_n %||% 50L), 1L)
+
+  .omopDiagAssertPersons(handle, ctx, src$table, "e", src$person_col)
+
+  # Cohort denominator (distinct persons) as a scalar sub-select reused per row.
+  denom_sql <- paste0("(SELECT COUNT(DISTINCT subject_id) FROM ", cohort, ")")
+  sql <- .sql_translate(paste0(
+    "SELECT e.", src$concept_col, " AS covariate_id, cc.concept_name AS ",
+    "covariate_name, COUNT(DISTINCT e.", src$person_col, ") AS sum_value, ",
+    "CAST(COUNT(DISTINCT e.", src$person_col, ") AS FLOAT) / ", denom_sql,
+    " AS average ",
+    "FROM ", src$table, " e ",
+    "INNER JOIN ", cohort, " c ON c.subject_id = e.", src$person_col,
+    " LEFT JOIN ", concept, " cc ON cc.concept_id = e.", src$concept_col,
+    " GROUP BY e.", src$concept_col, ", cc.concept_name",
+    " ORDER BY sum_value DESC"),
+    handle$target_dialect)
+
+  df <- .executeQuery(handle, sql)
+  if (!is.data.frame(df) || nrow(df) == 0) return(df)
+  if (nrow(df) > top_n) df <- df[seq_len(top_n), , drop = FALSE]
+  df$domain <- as.character(domain_code %||% "0")
+  df
+}
+
+#' Per-covariate continuous statistics over the scoped cohort (continuous kernel)
+#'
+#' Pulls one numeric value per (covariate, person) into R and summarises each
+#' covariate into a dist row: \code{count_value} (persons contributing),
+#' min/max (stripped by the gate), avg/sd, and p10/p25/median/p75/p90 (masked by
+#' the gate below nfilter_dist). snake_case column names so the gate's dist
+#' branch handles them. \code{value_kind} selects the value: \code{"value"}
+#' (measurement \code{value_as_number}, requires a measurement/observation
+#' domain) or \code{"count"} (per-person record count of the concept).
+#'
+#' @param handle CDM handle.
+#' @param ctx Run-path ctx (carries \code{scoped_cohort}).
+#' @param domain_code Character/int domain selector.
+#' @param value_kind Character; "value" or "count".
+#' @param top_n Integer; keep the top-N covariates by person count.
+#' @return Data frame of dist rows (one per covariate).
+#' @keywords internal
+.omopCovariateContinuous <- function(handle, ctx, domain_code = "3",
+                                     value_kind = "value", top_n = 50L) {
+  if (is.null(ctx$scoped_cohort)) return(data.frame())
+  cohort  <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  concept <- .qualifyTable(handle, "concept",
+                           handle$vocab_schema %||% handle$cdm_schema)
+  src     <- .omopCovariateSource(handle, domain_code)
+  top_n   <- max(as.integer(top_n %||% 50L), 1L)
+
+  .omopDiagAssertPersons(handle, ctx, src$table, "e", src$person_col)
+
+  if (identical(value_kind, "value") && !is.na(src$value_col)) {
+    # One numeric value per (covariate, person): the per-person mean of the
+    # concept's measurements, so each person contributes one value to the
+    # per-covariate distribution (a distinct-person basis for count_value).
+    per_person <- paste0(
+      "SELECT e.", src$concept_col, " AS covariate_id, e.", src$person_col,
+      " AS person_id, AVG(CAST(e.", src$value_col, " AS FLOAT)) AS v ",
+      "FROM ", src$table, " e ",
+      "INNER JOIN ", cohort, " c ON c.subject_id = e.", src$person_col,
+      " WHERE e.", src$value_col, " IS NOT NULL",
+      " GROUP BY e.", src$concept_col, ", e.", src$person_col)
+  } else {
+    # Per-person record count of each concept (a count distribution).
+    per_person <- paste0(
+      "SELECT e.", src$concept_col, " AS covariate_id, e.", src$person_col,
+      " AS person_id, COUNT(*) AS v ",
+      "FROM ", src$table, " e ",
+      "INNER JOIN ", cohort, " c ON c.subject_id = e.", src$person_col,
+      " GROUP BY e.", src$concept_col, ", e.", src$person_col)
+  }
+  vsql <- .sql_translate(paste0(
+    "SELECT pp.covariate_id, cc.concept_name AS covariate_name, pp.v ",
+    "FROM (", per_person, ") pp",
+    " LEFT JOIN ", concept, " cc ON cc.concept_id = pp.covariate_id"),
+    handle$target_dialect)
+  raw <- .executeQuery(handle, vsql)
+  if (!is.data.frame(raw) || nrow(raw) == 0) return(data.frame())
+
+  raw$v <- suppressWarnings(as.numeric(raw$v))
+  raw <- raw[!is.na(raw$v), , drop = FALSE]
+  if (nrow(raw) == 0) return(data.frame())
+
+  parts <- split(raw, raw$covariate_id)
+  rows <- lapply(parts, function(p) {
+    v  <- p$v
+    qs <- stats::quantile(v, c(.10, .25, .5, .75, .90), names = FALSE, type = 7)
+    data.frame(
+      covariate_id   = p$covariate_id[1],
+      covariate_name = p$covariate_name[1],
+      count_value    = length(v),
+      min_value      = min(v),   # stripped by the gate
+      max_value      = max(v),   # stripped by the gate
+      avg_value      = mean(v),
+      stdev_value    = stats::sd(v),
+      p10_value      = qs[1], p25_value = qs[2], median_value = qs[3],
+      p75_value      = qs[4], p90_value = qs[5],
+      stringsAsFactors = FALSE)
+  })
+  out <- do.call(rbind, rows)
+  out <- out[order(-out$count_value), , drop = FALSE]
+  if (nrow(out) > top_n) out <- out[seq_len(top_n), , drop = FALSE]
+  rownames(out) <- NULL
+  out
+}
+
+#' Demographic prevalence rows (gender / age-group / race / ethnicity)
+#'
+#' The binary demographic block shared by Table 1 / prevalence: one row per
+#' demographic level, \code{sum_value} = distinct persons in the scoped cohort at
+#' that level, \code{average} = proportion of the cohort. Age-group is banded into
+#' decades from \code{year_of_birth} relative to the cohort index date. Gender /
+#' race / ethnicity are translated to concept names. \code{unit="person"}.
+#'
+#' @param handle CDM handle.
+#' @param ctx Run-path ctx (carries \code{scoped_cohort}).
+#' @return Data frame (characteristic, level, sum_value, average).
+#' @keywords internal
+.omopDemographicPrevalence <- function(handle, ctx) {
+  if (is.null(ctx$scoped_cohort)) return(data.frame())
+  cohort  <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  person  <- .qualifyTable(handle, "person")
+  concept <- .qualifyTable(handle, "concept",
+                           handle$vocab_schema %||% handle$cdm_schema)
+
+  .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
+    handle$target_dialect))
+
+  denom_sql <- paste0("(SELECT COUNT(DISTINCT subject_id) FROM ", cohort, ")")
+  age_at <- .omopDateDiffDays(handle, "c.cohort_start_date", "p.birth_dt")
+  age_grp <- paste0("(CAST(", age_at, " / 365 AS INTEGER) / 10) * 10")
+
+  # Three concept-named demographics + one derived age band, unioned into one
+  # (characteristic, level, person-count, proportion) frame.
+  blocks <- list(
+    list("gender", "gc.concept_name", "p.gender_concept_id"),
+    list("race", "rc.concept_name", "p.race_concept_id"),
+    list("ethnicity", "ec.concept_name", "p.ethnicity_concept_id"))
+
+  parts <- lapply(blocks, function(b) {
+    label_join <- switch(b[[1]],
+      gender    = paste0(" LEFT JOIN ", concept, " gc ON gc.concept_id = p.gender_concept_id"),
+      race      = paste0(" LEFT JOIN ", concept, " rc ON rc.concept_id = p.race_concept_id"),
+      ethnicity = paste0(" LEFT JOIN ", concept, " ec ON ec.concept_id = p.ethnicity_concept_id"))
+    sql <- .sql_translate(paste0(
+      "SELECT '", b[[1]], "' AS characteristic, ", b[[2]], " AS level, ",
+      "COUNT(DISTINCT p.person_id) AS sum_value, ",
+      "CAST(COUNT(DISTINCT p.person_id) AS FLOAT) / ", denom_sql, " AS average ",
+      "FROM ", person, " p ",
+      "INNER JOIN ", cohort, " c ON c.subject_id = p.person_id", label_join,
+      " GROUP BY ", b[[2]]),
+      handle$target_dialect)
+    .executeQuery(handle, sql)
+  })
+
+  birth_dt <- if (identical(handle$target_dialect %||% "", "sqlite")) {
+    "(CAST(p.year_of_birth AS VARCHAR) || '-01-01')"
+  } else {
+    "CAST((CAST(p.year_of_birth AS VARCHAR) || '-01-01') AS DATE)"
+  }
+  age_sql <- .sql_translate(paste0(
+    "SELECT 'age_group' AS characteristic, CAST(", age_grp,
+    " AS VARCHAR) AS level, COUNT(DISTINCT p.person_id) AS sum_value, ",
+    "CAST(COUNT(DISTINCT p.person_id) AS FLOAT) / ", denom_sql, " AS average ",
+    "FROM ", person, " p ",
+    "INNER JOIN ", cohort, " c ON c.subject_id = p.person_id",
+    " GROUP BY ", age_grp),
+    handle$target_dialect)
+  age_sql <- gsub("p.birth_dt", birth_dt, age_sql, fixed = TRUE)
+  parts[[length(parts) + 1L]] <- .executeQuery(handle, age_sql)
+
+  out <- do.call(rbind, parts)
+  if (!is.data.frame(out) || nrow(out) == 0) return(data.frame())
+  rownames(out) <- NULL
+  out
+}
+
+# --- Native FE 1: standardized Table 1 ---------------------------------------
+
+#' \code{dsomop:fe.table1} entry (FeatureExtraction createDefaultTable1)
+#' @keywords internal
+.omopFeTable1 <- function() {
+  name <- "dsomop:fe.table1"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  bin <- df[df$unit == 'person', , drop = FALSE]",
+    "  ggplot2::ggplot(bin, ggplot2::aes(x = stats::reorder(level, average),",
+    "                                    y = average)) +",
+    "    ggplot2::geom_col() + ggplot2::coord_flip() +",
+    "    ggplot2::facet_wrap(~ characteristic, scales = 'free_y') +",
+    "    ggplot2::labs(x = NULL, y = 'Prevalence')",
+    "}", sep = "\n")
+
+  fn <- function(handle, ctx, params) {
+    if (is.null(ctx$scoped_cohort)) return(data.frame())
+    top_cond <- max(as.integer(params$top_n_condition %||% "20"), 1L)
+    top_drug <- max(as.integer(params$top_n_drug %||% "20"), 1L)
+
+    # Block 1 — demographic prevalence (gender/age-group/race/ethnicity).
+    demo <- .omopDemographicPrevalence(handle, ctx)
+
+    # Block 2/3 — condition-group + drug-group prevalence (top-N each).
+    cond <- .omopCovariatePrevalence(handle, ctx, domain_code = "0", top_n = top_cond)
+    drug <- .omopCovariatePrevalence(handle, ctx, domain_code = "1", top_n = top_drug)
+
+    bin_parts <- list()
+    if (is.data.frame(demo) && nrow(demo) > 0) {
+      demo$unit <- "person"
+      bin_parts[[length(bin_parts) + 1L]] <- demo[, c(
+        "characteristic", "level", "sum_value", "average", "unit")]
+    }
+    cov_to_bin <- function(df, characteristic) {
+      if (!is.data.frame(df) || nrow(df) == 0) return(NULL)
+      data.frame(characteristic = characteristic,
+                 level = as.character(df$covariate_name),
+                 sum_value = df$sum_value, average = df$average,
+                 unit = "person", stringsAsFactors = FALSE)
+    }
+    bin_parts[[length(bin_parts) + 1L]] <- cov_to_bin(cond, "condition")
+    bin_parts[[length(bin_parts) + 1L]] <- cov_to_bin(drug, "drug")
+    bin_parts <- Filter(Negate(is.null), bin_parts)
+    binary <- if (length(bin_parts) > 0) do.call(rbind, bin_parts) else NULL
+
+    # Block 4 — comorbidity (Charlson) + age distributions (dist rows, clamped).
+    como <- .omopComorbidityDistribution(handle, ctx, index_type = "charlson")
+    aged <- .omopAgeDistribution(handle, ctx)
+    dist_parts <- Filter(function(d) is.data.frame(d) && nrow(d) > 0,
+                         list(como, aged))
+    dist <- if (length(dist_parts) > 0) do.call(rbind, dist_parts) else NULL
+
+    # Mixed-unit frame: person-unit prevalence rows + dist-unit rows in ONE
+    # returned frame. The single gate keys its person branch on ONE count column
+    # (sum_value) and DROPS any row whose declared count is NA, so the two
+    # populations cannot each declare a different count column. We therefore make
+    # sum_value the UNIFIED person-basis column across both populations (binary =
+    # prevalence numerator; dist = contributing-person count_value) and pre-apply
+    # the dist disclosure controls here so the dist rows are already gate-
+    # consistent under the person branch: strip min/max, mask sub-nfilter_dist
+    # stats, and band count_value in-fn (the gate then suppresses+bands sum_value
+    # uniformly). No row is left with an NA in the single gated column.
+    if (!is.null(dist)) {
+      settings <- .omopDisclosureSettings()
+      nfd <- settings$nfilter_dist %||% 10L
+      bw  <- settings$nfilter_band
+      thr <- settings$nfilter_tab
+      dist$min_value <- NULL
+      dist$max_value <- NULL
+      stat_cols <- intersect(c("avg_value", "stdev_value", "p10_value",
+                               "p25_value", "median_value", "p75_value",
+                               "p90_value"), names(dist))
+      small <- !is.na(dist$count_value) & dist$count_value < nfd
+      if (any(small)) dist[small, stat_cols] <- NA_real_
+      # Unified person basis + in-fn band of the dist count.
+      dist$sum_value <- vapply(as.numeric(dist$count_value), .bandCount,
+                               numeric(1), band_width = bw)
+      dist$sum_value[is.na(dist$count_value) | dist$count_value < thr] <- NA_real_
+      dist$count_value <- dist$sum_value
+      dist$average <- NA_real_
+      dist$characteristic <- dist$metric
+      dist$level <- dist$metric
+      dist$unit <- "dist"
+    }
+
+    # Bind into one long frame; columns present per unit, NA elsewhere.
+    all_cols <- c("characteristic", "level", "unit", "sum_value", "average",
+                  "count_value", "avg_value", "stdev_value", "p10_value",
+                  "p25_value", "median_value", "p75_value", "p90_value")
+    pad <- function(df) {
+      if (is.null(df) || nrow(df) == 0) return(NULL)
+      for (cc in setdiff(all_cols, names(df))) df[[cc]] <- NA
+      df[, all_cols, drop = FALSE]
+    }
+    out <- do.call(rbind, Filter(Negate(is.null), list(pad(binary), pad(dist))))
+    if (is.null(out) || nrow(out) == 0) return(data.frame())
+    rownames(out) <- NULL
+    out
+  }
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("Standardized Table 1 over the scoped cohort: ",
+                         "gender / age-group / race / ethnicity prevalence, ",
+                         "top condition- and drug-group prevalence (unit=person), ",
+                         "and Charlson-comorbidity / age distributions ",
+                         "(unit=dist, clamped). Mixed-unit rows."),
+    domain      = "person",
+    params      = list(
+      list(name = "top_n_condition", type = "int", required = FALSE,
+           default = "20"),
+      list(name = "top_n_drug", type = "int", required = FALSE, default = "20")
+    ),
+    compute = list(
+      kind = "r", sql = NULL, fn = fn,
+      plot = list(type = "forest", code = plot_code)
+    ),
+    dependencies = list(
+      tables = c("person", "concept", "condition_occurrence", "drug_exposure"),
+      packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "person", count_cols = "sum_value"),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 1L),
+    mode  = "aggregate",
+    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+  )
+}
+
+# --- Native FE 2: covariate prevalence ---------------------------------------
+
+#' \code{dsomop:fe.prevalence} entry (FeatureExtraction binary covariates)
+#' @keywords internal
+.omopFePrevalence <- function() {
+  name <- "dsomop:fe.prevalence"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  ggplot2::ggplot(df, ggplot2::aes(x = stats::reorder(covariate_name,",
+    "                                                       average),",
+    "                                   y = average)) +",
+    "    ggplot2::geom_col() + ggplot2::coord_flip() +",
+    "    ggplot2::labs(x = 'Covariate', y = 'Prevalence')",
+    "}", sep = "\n")
+
+  fn <- function(handle, ctx, params) {
+    .omopCovariatePrevalence(handle, ctx,
+                             domain_code = params$domain_code %||% "0",
+                             top_n = as.integer(params$top_n %||% "50"))
+  }
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("Per-covariate distinct-person count and proportion ",
+                         "over the scoped cohort, for a selectable domain ",
+                         "(condition/drug/procedure/measurement/observation). ",
+                         "Proportion is coupled to the suppressed numerator."),
+    domain      = "general",
+    params      = list(
+      list(name = "domain_code", type = "enum", required = FALSE, default = "0",
+           choices = c("0", "1", "2", "3", "4"),
+           description = "Covariate domain (0 condition,1 drug,2 procedure,3 measurement,4 observation)."),
+      list(name = "time_windows", type = "int", required = FALSE, default = "0",
+           description = "Reserved window selector (0 = anytime in cohort)."),
+      list(name = "top_n", type = "int", required = FALSE, default = "50")
+    ),
+    compute = list(
+      kind = "r", sql = NULL, fn = fn,
+      plot = list(type = "bar", code = plot_code)
+    ),
+    dependencies = list(tables = c("condition_occurrence", "concept"),
+                        packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "person", count_cols = "sum_value"),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 1L),
+    mode  = "aggregate",
+    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+  )
+}
+
+# --- Native FE 3: continuous covariates --------------------------------------
+
+#' \code{dsomop:fe.continuous} entry (FeatureExtraction continuous covariates)
+#' @keywords internal
+.omopFeContinuous <- function() {
+  name <- "dsomop:fe.continuous"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  ggplot2::ggplot(df, ggplot2::aes(x = covariate_name)) +",
+    "    ggplot2::geom_boxplot(ggplot2::aes(lower = p25_value, upper = p75_value,",
+    "      middle = median_value, ymin = p10_value, ymax = p90_value),",
+    "      stat = 'identity') + ggplot2::coord_flip() +",
+    "    ggplot2::labs(x = 'Covariate', y = 'Value')",
+    "}", sep = "\n")
+
+  fn <- function(handle, ctx, params) {
+    metric <- params$metric %||% "measurement_value"
+    if (identical(metric, "age")) return(.omopAgeDistribution(handle, ctx))
+    if (identical(metric, "time_in_cohort")) {
+      # Reuse the time-in-cohort dist (single covariate row).
+      return(.omopTimeInCohortDistribution(handle, ctx))
+    }
+    # Default: per-measurement-concept value distributions.
+    .omopCovariateContinuous(handle, ctx,
+                             domain_code = params$domain_code %||% "3",
+                             value_kind = "value",
+                             top_n = as.integer(params$top_n %||% "50"))
+  }
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("Per-covariate count and avg/sd/median/p10-p90 over the ",
+                         "scoped cohort: measurement value distributions, age, ",
+                         "or time-in-cohort. Min/max stripped; stats below ",
+                         "nfilter_dist masked."),
+    domain      = "general",
+    params      = list(
+      list(name = "metric", type = "enum", required = FALSE,
+           default = "measurement_value",
+           choices = c("measurement_value", "age", "time_in_cohort")),
+      list(name = "domain_code", type = "enum", required = FALSE, default = "3",
+           choices = c("3", "4"),
+           description = "Value domain for measurement_value (3 measurement,4 observation)."),
+      list(name = "top_n", type = "int", required = FALSE, default = "50")
+    ),
+    compute = list(
+      kind = "r", sql = NULL, fn = fn,
+      plot = list(type = "box", code = plot_code)
+    ),
+    dependencies = list(tables = c("measurement", "person", "concept"),
+                        packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "dist", count_cols = "count_value", min_max = TRUE),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 1L),
+    mode  = "aggregate",
+    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+  )
+}
+
+# --- Native FE 4: comorbidity index ------------------------------------------
+
+#' Per-person comorbidity / risk score distribution over the scoped cohort
+#'
+#' Computes a per-person score by counting how many of the index's component
+#' condition-concept GROUPS each cohort member has >= 1 record of (a weight-1
+#' approximation of the named score; the disclosure-relevant property — a
+#' per-person integer distribution — is identical to the weighted form). The
+#' component groups are resolved as concept sets (descendants expanded) so a
+#' single seed concept per component pulls its whole sub-tree. Returns a single
+#' dist row (snake_case) the gate clamps + masks.
+#'
+#' @param handle CDM handle.
+#' @param ctx Run-path ctx (carries \code{scoped_cohort}).
+#' @param index_type Character; charlson|dcsi|chads2|cha2ds2vasc|hfrs.
+#' @return Data frame with one dist row (metric = the index name).
+#' @keywords internal
+.omopComorbidityDistribution <- function(handle, ctx, index_type = "charlson") {
+  if (is.null(ctx$scoped_cohort)) return(data.frame())
+  cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  cond   <- .qualifyTable(handle, "condition_occurrence")
+  index_type <- tolower(index_type %||% "charlson")
+
+  # Component seed concepts per index. Descendants are expanded server-side, so
+  # each integer below stands for its whole condition sub-tree (one component).
+  # These are standard SNOMED roots for the named score's components; an
+  # unresolvable seed simply contributes no component (the score is robust to a
+  # missing vocabulary branch).
+  seeds <- switch(index_type,
+    "dcsi"        = c(443767L, 4209145L, 4271003L, 321822L, 4030518L),
+    "chads2"      = c(316139L, 320128L, 201820L, 381591L, 313217L),
+    "cha2ds2vasc" = c(316139L, 320128L, 201820L, 381591L, 313217L, 321822L),
+    "hfrs"        = c(316139L, 4182210L, 201820L, 192671L, 198199L),
+    # charlson (default) — 17 component roots (myocardial infarction, CHF,
+    # cerebrovascular, dementia, COPD, diabetes, renal, malignancy, etc.).
+    c(4329847L, 316139L, 381591L, 4182210L, 4063381L, 255573L, 201820L,
+      192671L, 4030518L, 443392L, 4178338L, 432851L, 4212540L, 439727L))
+
+  .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
+    handle$target_dialect))
+
+  # One component-membership sub-select per seed, summed per person into a score;
+  # cohort members with no component get a 0 (LEFT JOIN / COALESCE).
+  comp_exprs <- character(0)
+  for (s in seeds) {
+    ids <- .resolveConceptSet(handle, list(concepts = s,
+                                           include_descendants = TRUE))
+    if (length(ids) == 0) ids <- s
+    idlist <- paste(ids, collapse = ", ")
+    comp_exprs <- c(comp_exprs, paste0(
+      "(CASE WHEN EXISTS (SELECT 1 FROM ", cond, " co WHERE co.person_id = ",
+      "c.subject_id AND co.condition_concept_id IN (", idlist,
+      ")) THEN 1 ELSE 0 END)"))
+  }
+  score_expr <- paste(comp_exprs, collapse = " + ")
+
+  vsql <- .sql_translate(paste0(
+    "SELECT ", score_expr, " AS v FROM ", cohort, " c"),
+    handle$target_dialect)
+  vals <- .executeQuery(handle, vsql)
+  v <- suppressWarnings(as.numeric(vals$v))
+  v <- v[!is.na(v)]
+  if (length(v) == 0) {
+    return(data.frame(metric = character(0), count_value = integer(0),
+                      stringsAsFactors = FALSE))
+  }
+  qs <- stats::quantile(v, c(.10, .25, .5, .75, .90), names = FALSE, type = 7)
+  data.frame(
+    metric       = paste0(index_type, "_index"),
+    count_value  = length(v),
+    min_value    = min(v),   # stripped by the gate
+    max_value    = max(v),   # stripped by the gate
+    avg_value    = mean(v),
+    stdev_value  = stats::sd(v),
+    p10_value    = qs[1], p25_value = qs[2], median_value = qs[3],
+    p75_value    = qs[4], p90_value = qs[5],
+    stringsAsFactors = FALSE)
+}
+
+#' Per-person age distribution over the scoped cohort (dist row helper)
+#' @keywords internal
+.omopAgeDistribution <- function(handle, ctx) {
+  if (is.null(ctx$scoped_cohort)) return(data.frame())
+  cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  person <- .qualifyTable(handle, "person")
+
+  .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
+    handle$target_dialect))
+
+  age_at <- .omopDateDiffDays(handle, "c.cohort_start_date", "p.birth_dt")
+  birth_dt <- if (identical(handle$target_dialect %||% "", "sqlite")) {
+    "(CAST(p.year_of_birth AS VARCHAR) || '-01-01')"
+  } else {
+    "CAST((CAST(p.year_of_birth AS VARCHAR) || '-01-01') AS DATE)"
+  }
+  vsql <- .sql_translate(paste0(
+    "SELECT CAST(", age_at, " / 365 AS INTEGER) AS v FROM ", cohort, " c ",
+    "INNER JOIN ", person, " p ON p.person_id = c.subject_id"),
+    handle$target_dialect)
+  vsql <- gsub("p.birth_dt", birth_dt, vsql, fixed = TRUE)
+  vals <- .executeQuery(handle, vsql)
+  v <- suppressWarnings(as.numeric(vals$v))
+  v <- v[!is.na(v)]
+  if (length(v) == 0) {
+    return(data.frame(metric = character(0), count_value = integer(0),
+                      stringsAsFactors = FALSE))
+  }
+  qs <- stats::quantile(v, c(.10, .25, .5, .75, .90), names = FALSE, type = 7)
+  data.frame(
+    metric = "age", count_value = length(v),
+    min_value = min(v), max_value = max(v),
+    avg_value = mean(v), stdev_value = stats::sd(v),
+    p10_value = qs[1], p25_value = qs[2], median_value = qs[3],
+    p75_value = qs[4], p90_value = qs[5],
+    stringsAsFactors = FALSE)
+}
+
+#' Per-person time-in-cohort distribution over the scoped cohort (dist helper)
+#' @keywords internal
+.omopTimeInCohortDistribution <- function(handle, ctx) {
+  if (is.null(ctx$scoped_cohort)) return(data.frame())
+  cohort  <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  end_col <- .omopCohortEndDateCol(handle, cohort)
+
+  .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
+    handle$target_dialect))
+
+  diff <- .omopDateDiffDays(handle, paste0("c.", end_col), "c.cohort_start_date")
+  vsql <- .sql_translate(paste0(
+    "SELECT ", diff, " AS v FROM ", cohort, " c"), handle$target_dialect)
+  vals <- .executeQuery(handle, vsql)
+  v <- suppressWarnings(as.numeric(vals$v))
+  v <- v[!is.na(v)]
+  if (length(v) == 0) {
+    return(data.frame(metric = character(0), count_value = integer(0),
+                      stringsAsFactors = FALSE))
+  }
+  qs <- stats::quantile(v, c(.10, .25, .5, .75, .90), names = FALSE, type = 7)
+  data.frame(
+    metric = "time_in_cohort", count_value = length(v),
+    min_value = min(v), max_value = max(v),
+    avg_value = mean(v), stdev_value = stats::sd(v),
+    p10_value = qs[1], p25_value = qs[2], median_value = qs[3],
+    p75_value = qs[4], p90_value = qs[5],
+    stringsAsFactors = FALSE)
+}
+
+#' \code{dsomop:fe.comorbidity_index} entry (FeatureExtraction comorbidity scores)
+#' @keywords internal
+.omopFeComorbidityIndex <- function() {
+  name <- "dsomop:fe.comorbidity_index"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  q <- data.frame(p = c(.10,.25,.5,.75,.90),",
+    "    v = c(df$p10_value, df$p25_value, df$median_value,",
+    "          df$p75_value, df$p90_value))",
+    "  ggplot2::ggplot(q, ggplot2::aes(x = factor(p), y = v)) +",
+    "    ggplot2::geom_col() +",
+    "    ggplot2::labs(x = 'Quantile', y = 'Comorbidity score')",
+    "}", sep = "\n")
+
+  fn <- function(handle, ctx, params) {
+    .omopComorbidityDistribution(handle, ctx,
+                                 index_type = params$index_type %||% "charlson")
+  }
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("Distribution of a comorbidity / risk score ",
+                         "(Charlson / DCSI / CHADS2 / CHA2DS2-VASc / HFRS) over ",
+                         "the scoped cohort. Min/max clamped; stats below ",
+                         "nfilter_dist masked."),
+    domain      = "condition",
+    params      = list(
+      list(name = "index_type", type = "enum", required = FALSE,
+           default = "charlson",
+           choices = c("charlson", "dcsi", "chads2", "cha2ds2vasc", "hfrs"))
+    ),
+    compute = list(
+      kind = "r", sql = NULL, fn = fn,
+      plot = list(type = "histogram", code = plot_code)
+    ),
+    dependencies = list(tables = c("condition_occurrence"),
+                        packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "dist", count_cols = "count_value", min_max = TRUE),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 1L),
+    mode  = "aggregate",
+    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+  )
+}
+
+# --- Native Characterization 5: target covariates ----------------------------
+
+#' \code{dsomop:char.target_covariates} entry (Characterization aggregate covariates)
+#' @keywords internal
+.omopCharTargetCovariates <- function() {
+  name <- "dsomop:char.target_covariates"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  bin <- df[df$kind == 'binary', , drop = FALSE]",
+    "  ggplot2::ggplot(bin, ggplot2::aes(x = stats::reorder(covariate_name,",
+    "                                                        average),",
+    "                                   y = average)) +",
+    "    ggplot2::geom_col() + ggplot2::coord_flip() +",
+    "    ggplot2::labs(x = 'Covariate', y = 'Prevalence')",
+    "}", sep = "\n")
+
+  fn <- function(handle, ctx, params) {
+    if (is.null(ctx$scoped_cohort)) return(data.frame())
+    domain   <- params$domain_code %||% "0"
+    top_n    <- as.integer(params$top_n %||% "50")
+    min_mean <- suppressWarnings(as.numeric(params$min_mean %||% "0"))
+    min_count <- suppressWarnings(as.integer(params$min_count %||% "0"))
+
+    # Binary (prevalence) covariates of the target.
+    bin <- .omopCovariatePrevalence(handle, ctx, domain_code = domain,
+                                    top_n = top_n)
+    bin_out <- NULL
+    if (is.data.frame(bin) && nrow(bin) > 0) {
+      keep <- !is.na(bin$average) & bin$average >= (min_mean %||% 0)
+      bin <- bin[keep, , drop = FALSE]
+      if (nrow(bin) > 0) {
+        bin_out <- data.frame(
+          kind = "binary", covariate_id = bin$covariate_id,
+          covariate_name = as.character(bin$covariate_name),
+          sum_value = bin$sum_value, average = bin$average,
+          count_value = NA_real_, avg_value = NA_real_, stdev_value = NA_real_,
+          p10_value = NA_real_, p25_value = NA_real_, median_value = NA_real_,
+          p75_value = NA_real_, p90_value = NA_real_,
+          stringsAsFactors = FALSE)
+      }
+    }
+
+    # Continuous covariates of the target (measurement value distributions).
+    cont <- .omopCovariateContinuous(handle, ctx, domain_code = "3",
+                                     value_kind = "value", top_n = top_n)
+    cont_out <- NULL
+    if (is.data.frame(cont) && nrow(cont) > 0) {
+      keep <- !is.na(cont$count_value) & cont$count_value >= (min_count %||% 0)
+      cont <- cont[keep, , drop = FALSE]
+      if (nrow(cont) > 0) {
+        cont_out <- data.frame(
+          kind = "continuous", covariate_id = cont$covariate_id,
+          covariate_name = as.character(cont$covariate_name),
+          # sum_value is the UNIFIED person-basis column the single gate keys on
+          # (see fe.table1): for a continuous covariate it IS the contributing-
+          # person count_value, so a binary and a continuous row both carry a
+          # non-NA sum_value and neither population is dropped for an NA count.
+          sum_value = cont$count_value, average = NA_real_,
+          count_value = cont$count_value, avg_value = cont$avg_value,
+          stdev_value = cont$stdev_value, p10_value = cont$p10_value,
+          p25_value = cont$p25_value, median_value = cont$median_value,
+          p75_value = cont$p75_value, p90_value = cont$p90_value,
+          stringsAsFactors = FALSE)
+        # Pre-strip the continuous block so the person-unit gate (which does NOT
+        # run the dist mask) still releases gate-consistent stats: mask sub-
+        # nfilter_dist rows' stats (min/max already absent here) and band the
+        # count in-fn (the gate bands sum_value; keep count_value consistent).
+        settings <- .omopDisclosureSettings()
+        nfd <- settings$nfilter_dist %||% 10L
+        bw  <- settings$nfilter_band
+        thr <- settings$nfilter_tab
+        sc <- c("avg_value", "stdev_value", "p10_value", "p25_value",
+                "median_value", "p75_value", "p90_value")
+        small <- !is.na(cont_out$count_value) & cont_out$count_value < nfd
+        if (any(small)) cont_out[small, sc] <- NA_real_
+        banded <- vapply(as.numeric(cont_out$count_value), .bandCount,
+                         numeric(1), band_width = bw)
+        banded[is.na(cont_out$count_value) | cont_out$count_value < thr] <- NA_real_
+        cont_out$count_value <- banded
+      }
+    }
+
+    out <- do.call(rbind, Filter(Negate(is.null), list(bin_out, cont_out)))
+    if (is.null(out) || nrow(out) == 0) return(data.frame())
+    rownames(out) <- NULL
+    out
+  }
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("Binary (prevalence) and continuous ",
+                         "(count/avg/sd/median/p10-p90) covariates of the scoped ",
+                         "cohort, honoring min_mean / min_count thresholds."),
+    domain      = "general",
+    params      = list(
+      list(name = "domain_code", type = "enum", required = FALSE, default = "0",
+           choices = c("0", "1", "2", "3", "4"),
+           description = "Binary covariate domain (0 condition,1 drug,2 procedure,3 measurement,4 observation)."),
+      list(name = "min_mean", type = "number", required = FALSE, default = "0",
+           description = "Minimum prevalence for a binary covariate to be returned."),
+      list(name = "min_count", type = "int", required = FALSE, default = "0",
+           description = "Minimum contributing persons for a continuous covariate."),
+      list(name = "top_n", type = "int", required = FALSE, default = "50")
+    ),
+    compute = list(
+      kind = "r", sql = NULL, fn = fn,
+      plot = list(type = "bar", code = plot_code)
+    ),
+    dependencies = list(
+      tables = c("condition_occurrence", "measurement", "concept"),
+      packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "person", count_cols = "sum_value"),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 1L),
+    mode  = "aggregate",
+    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+  )
+}
+
+# --- Native PLP 6: covariate summary (prevalence by outcome status) ----------
+
+#' \code{dsomop:plp.covariate_summary} entry (PatientLevelPrediction CovariateSummary)
+#' @keywords internal
+.omopPlpCovariateSummary <- function() {
+  name <- "dsomop:plp.covariate_summary"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  w <- stats::reshape(df[, c('covariate_name','outcome','average')],",
+    "    idvar = 'covariate_name', timevar = 'outcome', direction = 'wide')",
+    "  names(w) <- make.names(names(w))",
+    "  ggplot2::ggplot(w, ggplot2::aes(x = average.0, y = average.1)) +",
+    "    ggplot2::geom_point() +",
+    "    ggplot2::geom_abline(slope = 1, intercept = 0, linetype = 2) +",
+    "    ggplot2::labs(x = 'Prevalence (outcome = 0)',",
+    "                  y = 'Prevalence (outcome = 1)')",
+    "}", sep = "\n")
+
+  fn <- function(handle, ctx, params) {
+    if (is.null(ctx$scoped_cohort)) return(data.frame())
+    cohort  <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+    concept <- .qualifyTable(handle, "concept",
+                             handle$vocab_schema %||% handle$cdm_schema)
+    domain  <- params$domain_code %||% "0"
+    top_n   <- max(as.integer(params$top_n %||% "50"), 1L)
+    out_src <- .omopOutcomeSource(handle, params$outcome_concept_id,
+                                  params$outcome_domain_code %||% "0")
+    # No outcome -> no split to summarise; return a gate-safe empty frame.
+    if (is.null(out_src)) return(data.frame())
+    cov_src <- .omopCovariateSource(handle, domain)
+
+    # Per-person outcome status (1 if >= 1 outcome record at/after index, else 0),
+    # then per-(covariate, outcome-status) distinct-person prevalence. Both group
+    # sizes are distinct-person counts (unit="person"), so the gate suppresses +
+    # bands them and couples the proportion to the suppressed numerator.
+    status <- paste0(
+      "(SELECT c.subject_id, (CASE WHEN EXISTS (SELECT 1 FROM ", out_src$table,
+      " o WHERE o.", out_src$person_col, " = c.subject_id AND o.",
+      out_src$concept_col, " IN (", out_src$id_list, ") AND o.",
+      out_src$date_col, " >= c.cohort_start_date) THEN 1 ELSE 0 END) AS outcome ",
+      "FROM ", cohort, " c)")
+
+    .omopDiagAssertPersons(handle, ctx, cov_src$table, "e", cov_src$person_col)
+
+    # Per-outcome-arm denominators (distinct persons) for the proportion.
+    sql <- .sql_translate(paste0(
+      "SELECT e.", cov_src$concept_col, " AS covariate_id, ",
+      "cc.concept_name AS covariate_name, s.outcome AS outcome, ",
+      "COUNT(DISTINCT e.", cov_src$person_col, ") AS sum_value, ",
+      "CAST(COUNT(DISTINCT e.", cov_src$person_col, ") AS FLOAT) / ",
+      "(SELECT COUNT(*) FROM ", status, " s2 WHERE s2.outcome = s.outcome) ",
+      "AS average ",
+      "FROM ", cov_src$table, " e ",
+      "INNER JOIN ", status, " s ON s.subject_id = e.", cov_src$person_col,
+      " LEFT JOIN ", concept, " cc ON cc.concept_id = e.", cov_src$concept_col,
+      " GROUP BY e.", cov_src$concept_col, ", cc.concept_name, s.outcome",
+      " ORDER BY sum_value DESC"),
+      handle$target_dialect)
+
+    df <- .executeQuery(handle, sql)
+    if (!is.data.frame(df) || nrow(df) == 0) return(df)
+    # Keep the top-N covariates (by max prevalence across arms) — both arms of a
+    # kept covariate are retained so the scatter pairs are complete.
+    if (length(unique(df$covariate_id)) > top_n) {
+      ord <- stats::aggregate(sum_value ~ covariate_id, data = df, FUN = max)
+      ord <- ord[order(-ord$sum_value), , drop = FALSE]
+      keep_ids <- ord$covariate_id[seq_len(top_n)]
+      df <- df[df$covariate_id %in% keep_ids, , drop = FALSE]
+    }
+    rownames(df) <- NULL
+    df
+  }
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("Per-covariate distinct-person prevalence split by ",
+                         "outcome status (cohort split by an outcome concept ",
+                         "set; NO model needed) over the scoped cohort."),
+    domain      = "general",
+    params      = list(
+      list(name = "outcome_concept_id", type = "concept_id", required = FALSE,
+           default = NULL,
+           description = "Outcome concept id (descendants expanded) splitting the cohort."),
+      list(name = "outcome_domain_code", type = "enum", required = FALSE,
+           default = "0", choices = c("0", "1", "2", "3", "4")),
+      list(name = "domain_code", type = "enum", required = FALSE, default = "0",
+           choices = c("0", "1", "2", "3", "4"),
+           description = "Covariate domain (0 condition,1 drug,2 procedure,3 measurement,4 observation)."),
+      list(name = "top_n", type = "int", required = FALSE, default = "50")
+    ),
+    compute = list(
+      kind = "r", sql = NULL, fn = fn,
+      plot = list(type = "scatter", code = plot_code)
+    ),
+    dependencies = list(tables = c("condition_occurrence", "concept"),
+                        packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "person", count_cols = "sum_value"),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 1L),
+    mode  = "aggregate",
+    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+  )
+}
+
+# --- Native two-population helpers --------------------------------------------
+#
+# The three TWO-POPULATION ports below (cohort overlap, risk-factor SMD,
+# covariate balance) compare two INDEPENDENT arms. The run path resolves their
+# scope PER ELEMENT into ctx$scoped_cohorts (a length-2 vector of two
+# independently re-gated cohort temp tables; see .omopAnalysisResolveScopePair)
+# rather than folding into one cohort. Each fn reads that pair, self-gates BOTH
+# arms BEFORE materialising, and returns an aggregate-only frame the ONE gate
+# (.omopAnalysisGate) then suppresses + bands. No entry registers its own gate.
+
+#' Resolve + self-gate the two arms of a two-population analysis
+#'
+#' Reads \code{ctx$scoped_cohorts} (the length-2 vector the run path resolves for
+#' a \code{max_tables == 2} kind="r" entry), validates each identifier, and
+#' self-gates BOTH arms with \code{\link{.assertMinPersons}} BEFORE the fn pulls
+#' any rows (defence-in-depth on top of the per-arm re-gate already done by
+#' \code{\link{.omopAnalysisResolveScopePair}}). Returns NULL when scope was not
+#' two-population (so the fn returns a gate-safe empty frame, exactly like the
+#' single-cohort ports do for a NULL \code{ctx$scoped_cohort}).
+#'
+#' @param handle CDM handle.
+#' @param ctx Run-path ctx (carries \code{scoped_cohorts}).
+#' @return list(a = "<validated arm A>", b = "<validated arm B>") or NULL.
+#' @keywords internal
+.omopTwoPopCohorts <- function(handle, ctx) {
+  pair <- ctx$scoped_cohorts
+  if (is.null(pair) || length(pair) != 2) return(NULL)
+  a <- .validateIdentifier(pair[[1]], "cohort")
+  b <- .validateIdentifier(pair[[2]], "cohort")
+  for (ct in c(a, b)) {
+    .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+      "SELECT COUNT(DISTINCT subject_id) AS n FROM ", ct),
+      handle$target_dialect))
+  }
+  list(a = a, b = b)
+}
+
+#' Standardized mean difference between two binary prevalences
+#'
+#' For a binary covariate the standardized mean difference is
+#' \code{(p1 - p2) / sqrt((p1 (1 - p1) + p2 (1 - p2)) / 2)} (the classic
+#' Cohen-style SMD on the pooled binomial SD). Computed elementwise; returns
+#' \code{NA} where either prevalence is \code{NA} (a suppressed arm) or the
+#' pooled SD is zero. Both prevalences MUST already be derived from BANDED
+#' counts so the SMD never rests on un-banded inputs.
+#'
+#' @param p1 Numeric vector; prevalence in arm 1 (from banded counts).
+#' @param p2 Numeric vector; prevalence in arm 2 (from banded counts).
+#' @return Numeric vector of SMDs (NA where either side is suppressed).
+#' @keywords internal
+.omopBinarySmd <- function(p1, p2) {
+  p1 <- as.numeric(p1); p2 <- as.numeric(p2)
+  pooled_sd <- sqrt((p1 * (1 - p1) + p2 * (1 - p2)) / 2)
+  smd <- (p1 - p2) / pooled_sd
+  smd[is.na(p1) | is.na(p2) | is.na(pooled_sd) | pooled_sd == 0] <- NA_real_
+  smd
+}
+
+#' Per-covariate two-arm prevalence + SMD over banded counts (shared kernel)
+#'
+#' The compute kernel shared by \code{char.risk_factor_smd} and
+#' \code{cm.covariate_balance}: for each concept in the chosen domain it counts
+#' distinct persons in arm A and arm B of the scoped cohort pair, BANDS each arm
+#' count + each arm size, recomputes each arm's prevalence from the banded
+#' numerator / banded arm size, and computes the SMD from those banded
+#' prevalences. Both arm counts are returned (and declared as the entry's
+#' \code{count_cols}) so the ONE gate drops any covariate where EITHER arm is
+#' below threshold (require both group N >= nfilter) and its idempotent band pass
+#' is consistent with the in-fn banding; the SMD is already NA wherever an arm is
+#' suppressed. Concepts are translated to names (translation default ON).
+#'
+#' @param handle CDM handle.
+#' @param cohort_a,cohort_b Validated arm cohort temp tables.
+#' @param domain_code Character/int domain selector.
+#' @param top_n Integer; keep the top-N covariates by max arm count.
+#' @param a_label,b_label Character; column-name stems for the two arms
+#'   (e.g. "case"/"non_case" or "target"/"comparator").
+#' @param smd_col Character; name of the SMD output column.
+#' @return Data frame (covariate_id, covariate_name, <a>_sum_value,
+#'   <b>_sum_value, <a>_average, <b>_average, <smd_col>).
+#' @keywords internal
+.omopTwoArmCovariateSmd <- function(handle, cohort_a, cohort_b,
+                                    domain_code = "0", top_n = 50L,
+                                    a_label = "a", b_label = "b",
+                                    smd_col = "smd") {
+  concept <- .qualifyTable(handle, "concept",
+                           handle$vocab_schema %||% handle$cdm_schema)
+  src   <- .omopCovariateSource(handle, domain_code)
+  top_n <- max(as.integer(top_n %||% 50L), 1L)
+
+  # Distinct-person count per concept per arm, plus each arm size, in one frame.
+  arm_sql <- function(cohort, arm) .sql_translate(paste0(
+    "SELECT e.", src$concept_col, " AS covariate_id, cc.concept_name AS ",
+    "covariate_name, '", arm, "' AS arm, ",
+    "COUNT(DISTINCT e.", src$person_col, ") AS sum_value, ",
+    "(SELECT COUNT(DISTINCT subject_id) FROM ", cohort, ") AS arm_n ",
+    "FROM ", src$table, " e ",
+    "INNER JOIN ", cohort, " c ON c.subject_id = e.", src$person_col,
+    " LEFT JOIN ", concept, " cc ON cc.concept_id = e.", src$concept_col,
+    " GROUP BY e.", src$concept_col, ", cc.concept_name"),
+    handle$target_dialect)
+  da <- .executeQuery(handle, arm_sql(cohort_a, "a"))
+  db <- .executeQuery(handle, arm_sql(cohort_b, "b"))
+  if ((!is.data.frame(da) || nrow(da) == 0) &&
+      (!is.data.frame(db) || nrow(db) == 0)) {
+    return(data.frame())
+  }
+
+  settings <- .omopDisclosureSettings()
+  bw  <- settings$nfilter_band
+  thr <- settings$nfilter_tab
+  band <- function(x) {
+    v <- vapply(as.numeric(x), .bandCount, numeric(1), band_width = bw)
+    v[is.na(as.numeric(x)) | as.numeric(x) < thr] <- NA_real_
+    v
+  }
+
+  # Union the concept universe; an arm with no record of a concept => 0 persons.
+  ids <- union(da$covariate_id, db$covariate_id)
+  names_map <- stats::setNames(
+    c(as.character(da$covariate_name), as.character(db$covariate_name)),
+    c(da$covariate_id, db$covariate_id))
+  a_cnt <- stats::setNames(da$sum_value, da$covariate_id)
+  b_cnt <- stats::setNames(db$sum_value, db$covariate_id)
+  a_n <- band(if (nrow(da) > 0) da$arm_n[1] else 0L)
+  b_n <- band(if (nrow(db) > 0) db$arm_n[1] else 0L)
+
+  a_raw <- as.numeric(a_cnt[as.character(ids)]); a_raw[is.na(a_raw)] <- 0
+  b_raw <- as.numeric(b_cnt[as.character(ids)]); b_raw[is.na(b_raw)] <- 0
+  a_b <- band(a_raw)
+  b_b <- band(b_raw)
+  pa <- a_b / a_n; pa[is.na(a_b) | is.na(a_n) | a_n == 0] <- NA_real_
+  pb <- b_b / b_n; pb[is.na(b_b) | is.na(b_n) | b_n == 0] <- NA_real_
+
+  out <- data.frame(
+    covariate_id   = ids,
+    covariate_name = as.character(names_map[as.character(ids)]),
+    a_sum_value    = a_b,
+    b_sum_value    = b_b,
+    a_average      = pa,
+    b_average      = pb,
+    smd            = .omopBinarySmd(pa, pb),
+    stringsAsFactors = FALSE)
+  # Keep top-N by the larger of the two (raw) arm counts before the gate prunes.
+  ord <- order(-pmax(a_raw, b_raw))
+  out <- out[ord, , drop = FALSE]
+  if (nrow(out) > top_n) out <- out[seq_len(top_n), , drop = FALSE]
+  names(out)[names(out) == "a_sum_value"] <- paste0(a_label, "_sum_value")
+  names(out)[names(out) == "b_sum_value"] <- paste0(b_label, "_sum_value")
+  names(out)[names(out) == "a_average"]   <- paste0(a_label, "_average")
+  names(out)[names(out) == "b_average"]   <- paste0(b_label, "_average")
+  names(out)[names(out) == "smd"]         <- smd_col
+  rownames(out) <- NULL
+  out
+}
+
+# --- Native two-population 1: cohort overlap ---------------------------------
+
+#' \code{dsomop:cohortdx.cohort_overlap} entry (CohortDiagnostics)
+#' @keywords internal
+.omopDiagCohortOverlap <- function() {
+  name <- "dsomop:cohortdx.cohort_overlap"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  d <- df[df$category %in% c('a_only','both','b_only'), , drop = FALSE]",
+    "  d$category <- factor(d$category, levels = c('a_only','both','b_only'))",
+    "  ggplot2::ggplot(d, ggplot2::aes(x = '', y = n, fill = category)) +",
+    "    ggplot2::geom_col() +",
+    "    ggplot2::labs(x = NULL, y = 'Distinct persons', fill = 'Region')",
+    "}", sep = "\n")
+
+  fn <- function(handle, ctx, params) {
+    cohorts <- .omopTwoPopCohorts(handle, ctx)
+    if (is.null(cohorts)) return(data.frame())
+    a <- cohorts$a; b <- cohorts$b
+
+    # Distinct-person counts of the four overlap regions, each a COUNT(DISTINCT
+    # subject_id) over a set predicate. Returned LONG (one count per row) so the
+    # ONE gate suppresses + bands EACH region independently (the differencing
+    # defence): a sub-threshold region's row is dropped and every surviving count
+    # is floored to a multiple of nfilter_band, so no arithmetic over the
+    # released regions can recover a suppressed one.
+    in_a <- paste0("subject_id IN (SELECT subject_id FROM ", a, ")")
+    in_b <- paste0("subject_id IN (SELECT subject_id FROM ", b, ")")
+    union_sql <- paste0(
+      "SELECT subject_id FROM ", a, " UNION SELECT subject_id FROM ", b)
+
+    count_of <- function(where_sql) {
+      v <- .executeQuery(handle, .sql_translate(paste0(
+        "SELECT COUNT(DISTINCT subject_id) AS n FROM (", union_sql,
+        ") u WHERE ", where_sql), handle$target_dialect))
+      as.numeric(v$n[1])
+    }
+    both   <- count_of(paste0(in_a, " AND ", in_b))
+    a_only <- count_of(paste0(in_a, " AND NOT ", in_b))
+    b_only <- count_of(paste0(in_b, " AND NOT ", in_a))
+    either <- count_of(paste0(in_a, " OR ", in_b))
+
+    data.frame(
+      category = c("both", "a_only", "b_only", "either"),
+      n        = c(both, a_only, b_only, either),
+      stringsAsFactors = FALSE)
+  }
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("Distinct-person overlap of two scoped populations: ",
+                         "both / A-only / B-only / either. unit=person; every ",
+                         "region is suppressed + banded independently ",
+                         "(differencing defence)."),
+    domain      = "general",
+    params      = list(),
+    compute = list(
+      kind = "r", sql = NULL, fn = fn,
+      plot = list(type = "bar", code = plot_code)
+    ),
+    dependencies = list(tables = character(0), packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(unit = "person", count_cols = "n"),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 2L),
+    mode  = "aggregate",
+    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+  )
+}
+
+# --- Native two-population 2: risk-factor SMD --------------------------------
+
+#' \code{dsomop:char.risk_factor_smd} entry (Characterization RiskFactor)
+#' @keywords internal
+.omopCharRiskFactorSmd <- function() {
+  name <- "dsomop:char.risk_factor_smd"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  ggplot2::ggplot(df, ggplot2::aes(x = case_average, y = non_case_average)) +",
+    "    ggplot2::geom_point() +",
+    "    ggplot2::geom_abline(slope = 1, intercept = 0, linetype = 2) +",
+    "    ggplot2::labs(x = 'Prevalence (cases)',",
+    "                  y = 'Prevalence (non-cases)')",
+    "}", sep = "\n")
+
+  fn <- function(handle, ctx, params) {
+    cohorts <- .omopTwoPopCohorts(handle, ctx)
+    if (is.null(cohorts)) return(data.frame())
+    domain <- params$domain_code %||% "0"
+    top_n  <- as.integer(params$top_n %||% "50")
+    # Arm A = cases (the target/outcome population); arm B = non-cases (the
+    # comparison population). Both arm counts are banded, both prevalences are
+    # recomputed from banded inputs, and the SMD is NA wherever either arm is
+    # suppressed (computed inside the shared kernel).
+    out <- .omopTwoArmCovariateSmd(handle, cohorts$a, cohorts$b,
+                                   domain_code = domain, top_n = top_n,
+                                   a_label = "case", b_label = "non_case",
+                                   smd_col = "smd")
+    if (!is.data.frame(out) || nrow(out) == 0) return(out)
+    min_smd <- suppressWarnings(as.numeric(params$min_smd %||% "0"))
+    if (!is.na(min_smd) && min_smd > 0) {
+      keep <- is.na(out$smd) | abs(out$smd) >= min_smd
+      out <- out[keep, , drop = FALSE]
+    }
+    rownames(out) <- NULL
+    out
+  }
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("Per-covariate case-vs-non-case distinct-person ",
+                         "prevalence and standardized mean difference over two ",
+                         "scoped populations (target + outcome). unit=person; ",
+                         "both arms gated; SMD suppressed if either side is."),
+    domain      = "general",
+    params      = list(
+      list(name = "domain_code", type = "enum", required = FALSE, default = "0",
+           choices = c("0", "1", "2", "3", "4"),
+           description = "Covariate domain (0 condition,1 drug,2 procedure,3 measurement,4 observation)."),
+      list(name = "min_smd", type = "number", required = FALSE, default = "0",
+           description = "Keep only covariates with |SMD| >= this (0 = all)."),
+      list(name = "top_n", type = "int", required = FALSE, default = "50")
+    ),
+    compute = list(
+      kind = "r", sql = NULL, fn = fn,
+      plot = list(type = "scatter", code = plot_code)
+    ),
+    dependencies = list(tables = c("condition_occurrence", "concept"),
+                        packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "person", count_cols = c("case_sum_value", "non_case_sum_value")),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 2L),
+    mode  = "aggregate",
+    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+  )
+}
+
+# --- Native two-population 3: covariate balance (before matching) ------------
+
+#' \code{dsomop:cm.covariate_balance} entry (CohortMethod, before matching)
+#' @keywords internal
+.omopCmCovariateBalance <- function() {
+  name <- "dsomop:cm.covariate_balance"
+  plot_code <- paste(
+    "function(df, params) {",
+    "  ggplot2::ggplot(df, ggplot2::aes(x = target_average,",
+    "                                   y = comparator_average)) +",
+    "    ggplot2::geom_point() +",
+    "    ggplot2::geom_abline(slope = 1, intercept = 0, linetype = 2) +",
+    "    ggplot2::labs(x = 'Prevalence (target)',",
+    "                  y = 'Prevalence (comparator)')",
+    "}", sep = "\n")
+
+  fn <- function(handle, ctx, params) {
+    cohorts <- .omopTwoPopCohorts(handle, ctx)
+    if (is.null(cohorts)) return(data.frame())
+    domain <- params$domain_code %||% "0"
+    top_n  <- as.integer(params$top_n %||% "50")
+    # Arm A = target, arm B = comparator. BEFORE-matching balance only (the
+    # federation runs no PS model / matching, so there is no honest "after"
+    # column). Std-mean-diff is recomputed from banded inputs in the shared
+    # kernel; both arm counts are gated.
+    .omopTwoArmCovariateSmd(handle, cohorts$a, cohorts$b,
+                            domain_code = domain, top_n = top_n,
+                            a_label = "target", b_label = "comparator",
+                            smd_col = "std_mean_diff")
+  }
+
+  .omopAnalysisEntry(
+    name        = name,
+    description = paste0("Per-covariate distinct-person prevalence per group and ",
+                         "standardized mean difference (BEFORE matching) over a ",
+                         "target + comparator scoped pair. unit=person; both ",
+                         "groups gated; SMD recomputed from banded inputs."),
+    domain      = "general",
+    params      = list(
+      list(name = "domain_code", type = "enum", required = FALSE, default = "0",
+           choices = c("0", "1", "2", "3", "4"),
+           description = "Covariate domain (0 condition,1 drug,2 procedure,3 measurement,4 observation)."),
+      list(name = "top_n", type = "int", required = FALSE, default = "50")
+    ),
+    compute = list(
+      kind = "r", sql = NULL, fn = fn,
+      plot = list(type = "scatter", code = plot_code)
+    ),
+    dependencies = list(tables = c("condition_occurrence", "concept"),
+                        packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "person",
+      count_cols = c("target_sum_value", "comparator_sum_value")),
+    scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
+                               max_tables = 2L),
+    mode  = "aggregate",
+    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+  )
+}
+
 #' Emit the native re-implemented OHDSI diagnostic entries
 #'
-#' All six are kind="r", scope via \code{ctx$scoped_cohort} (the cohort IS the
+#' All kind="r", scope via \code{ctx$scoped_cohort} (the cohort IS the
 #' analysis population), and funnel through the ONE gate
 #' (\code{\link{.omopAnalysisGate}}). No entry registers its own gate.
 #'
@@ -1317,7 +2575,18 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     .omopDiagTimeDistribution(),
     .omopDiagFollowupDistribution(),
     .omopDiagTimeToEvent(),
-    .omopDiagVisitContext()
+    .omopDiagVisitContext(),
+    # FeatureExtraction / Characterization / PLP single-cohort ports.
+    .omopFeTable1(),
+    .omopFePrevalence(),
+    .omopFeContinuous(),
+    .omopFeComorbidityIndex(),
+    .omopCharTargetCovariates(),
+    .omopPlpCovariateSummary(),
+    # Two-population ports (max_tables = 2; resolved via ctx$scoped_cohorts).
+    .omopDiagCohortOverlap(),
+    .omopCharRiskFactorSmd(),
+    .omopCmCovariateBalance()
   )
   stats::setNames(entries, vapply(entries, function(e) e$name, character(1)))
 }
@@ -2021,16 +3290,21 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   # BINARY-PREVALENCE COUPLING (person unit): a covariate-prevalence row pairs a
   # person numerator (sumValue/sum_value) with its derived proportion
   # (averageValue/average/proportion). If the numerator was suppressed (dropped,
-  # or banded to NA) the surviving proportion would still betray the
-  # sub-threshold count (numerator = proportion * denominator). Run AFTER the
-  # band pass and NA every paired proportion wherever the person count is NA, so
-  # a surviving prevalence can never reveal a suppressed numerator.
+  # or banded) the surviving proportion would still betray the sub-threshold
+  # count (numerator = proportion * denominator). Run AFTER the band pass and NA
+  # every paired proportion wherever the person count is NA, so a surviving
+  # prevalence can never reveal a suppressed numerator. NB .bandCount FLOORS a
+  # sub-band count (a raw numerator in [nfilter_tab, nfilter_band)) to 0, not to
+  # NA, so a numerator of exactly 0 with a non-zero proportion is the
+  # banded-away small count — its proportion must be coupled away too (a true
+  # zero numerator has proportion 0, so NA-ing it loses nothing).
   if (identical(unit, "person") && nrow(df) > 0) {
     num_col   <- intersect(c("sumValue", "sum_value"), names(df))
     prop_cols <- intersect(c("averageValue", "average", "proportion"),
                            names(df))
     if (length(num_col) > 0 && length(prop_cols) > 0) {
-      coupled <- is.na(df[[num_col[1]]])
+      num <- df[[num_col[1]]]
+      coupled <- is.na(num) | num == 0
       if (any(coupled)) df[coupled, prop_cols] <- NA_real_
     }
   }

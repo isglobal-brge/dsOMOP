@@ -13,7 +13,7 @@
 Named list of \code{omop_analysis_entry} objects keyed by name.
 }
 \description{
-All six are kind="r", scope via \code{ctx$scoped_cohort} (the cohort IS the
+All kind="r", scope via \code{ctx$scoped_cohort} (the cohort IS the
 analysis population), and funnel through the ONE gate
 (\code{\link{.omopAnalysisGate}}). No entry registers its own gate.
 }

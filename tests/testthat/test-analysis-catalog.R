@@ -143,7 +143,19 @@ test_that("exactly the native scopable entries are scopable", {
     "dsomop:cohortdx.time_distribution",
     "dsomop:cm.followup_distribution",
     "dsomop:char.time_to_event",
-    "dsomop:cohortdx.visit_context"
+    "dsomop:cohortdx.visit_context",
+    # The FeatureExtraction / Characterization / PLP single-cohort ports are all
+    # cohort-scopable (the cohort IS the analysis population).
+    "dsomop:fe.table1",
+    "dsomop:fe.prevalence",
+    "dsomop:fe.continuous",
+    "dsomop:fe.comorbidity_index",
+    "dsomop:char.target_covariates",
+    "dsomop:plp.covariate_summary",
+    # The two-population ports are cohort-scopable (each arm IS a population).
+    "dsomop:cohortdx.cohort_overlap",
+    "dsomop:char.risk_factor_smd",
+    "dsomop:cm.covariate_balance"
   )))
   # accepts_cohort and accepts_tables move together (one honest hook).
   expect_identical(lst$accepts_cohort, lst$accepts_tables)
@@ -882,4 +894,141 @@ test_that("the diagnostic adapter adds no second gate (single funnel)", {
     expect_true(is.function(e$compute$fn))
     expect_true(e$disclosure$unit %in% c("person", "record", "dist"))
   }
+})
+
+# --- Native two-population ports (max_tables == 2) ---------------------------
+
+test_that("the three two-population ports register scopable + max_tables=2", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  ids <- c("dsomop:cohortdx.cohort_overlap", "dsomop:char.risk_factor_smd",
+           "dsomop:cm.covariate_balance")
+  lst <- .omopAnalysisList(h)
+  sub <- lst[lst$name %in% ids, ]
+  expect_equal(nrow(sub), length(ids))
+  expect_true(all(sub$adapter == "diagnostic"))
+  expect_true(all(sub$accepts_cohort) && all(sub$accepts_tables))
+  unit_of <- stats::setNames(lst$unit, lst$name)
+  for (id in ids) expect_equal(unit_of[[id]], "person")
+  # Each declares two populations and carries an inert client-side plot recipe.
+  for (id in ids) {
+    e <- .omopAnalysisResolve(h, id)
+    expect_equal(as.integer(e$scope$max_tables), 2L)
+    m <- .omopAnalysisGet(h, id)
+    expect_false(is.null(m$plot))
+    expect_true(is.character(m$plot$code) && grepl("function", m$plot$code))
+  }
+})
+
+test_that("two-population ports run un-scoped to a gate-safe empty frame", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  for (id in c("dsomop:cohortdx.cohort_overlap", "dsomop:char.risk_factor_smd",
+               "dsomop:cm.covariate_balance")) {
+    expect_equal(nrow(.omopAnalysisRun(h, id)), 0)
+  }
+})
+
+test_that("cohort_overlap counts both/A-only/B-only/either, each banded", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.band = 5), {
+    # Arm A = diabetes (persons 1,3,5,7,9,11); arm B = COPD (persons 5,7,9,13).
+    # both = {5,7,9} = 3; A-only = {1,3,11} = 3; B-only = {13} = 1; either = 7.
+    a <- .cohortCreate(h, list(type = "condition", concept_set = c(201820)),
+                       mode = "temporary", cohort_id = 1)
+    b <- .cohortCreate(h, list(type = "condition", concept_set = c(255573)),
+                       mode = "temporary", cohort_id = 2)
+    df <- .omopAnalysisRun(h, "dsomop:cohortdx.cohort_overlap",
+                           scope = list(a, b))
+    expect_true(all(c("category", "n") %in% names(df)))
+    # Long format: one (suppressed + banded) count per surviving region — each
+    # region independently gated (differencing defence).
+    expect_true(all(df$n %% 5 == 0 | is.na(df$n)))
+    got <- stats::setNames(df$n, df$category)
+    # 'either' (7 persons) clears threshold and bands DOWN to 5.
+    expect_equal(unname(got[["either"]]), 5)
+    # 'b_only' (1 person) is below nfilter and is dropped entirely (no NA row).
+    expect_false("b_only" %in% df$category)
+  })
+})
+
+test_that("risk_factor_smd gates both arms; SMD rests on banded inputs", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.band = 5), {
+    # Cases = diabetes (6 persons); non-cases = COPD (4 persons). Both arms clear
+    # nfilter, so the pair resolves; the gate then drops any covariate whose
+    # either arm is below threshold and the SMD rests on banded counts.
+    cases    <- .cohortCreate(h, list(type = "condition", concept_set = c(201820)),
+                              mode = "temporary", cohort_id = 1)
+    noncases <- .cohortCreate(h, list(type = "condition", concept_set = c(255573)),
+                              mode = "temporary", cohort_id = 2)
+    df <- .omopAnalysisRun(h, "dsomop:char.risk_factor_smd",
+                           scope = list(cases, noncases))
+    expect_true(all(c("covariate_id", "case_sum_value", "non_case_sum_value",
+                      "case_average", "non_case_average", "smd") %in% names(df)))
+    if (nrow(df) > 0) {
+      # Every surviving covariate carries BOTH banded arm counts (the gate
+      # dropped rows whose either arm was below threshold).
+      expect_true(all(df$case_sum_value %% 5 == 0 | is.na(df$case_sum_value)))
+      expect_true(all(df$non_case_sum_value %% 5 == 0 |
+                      is.na(df$non_case_sum_value)))
+      live <- !is.na(df$smd)
+      if (any(live)) {
+        expect_true(all(!is.na(df$case_sum_value[live]) &
+                        !is.na(df$non_case_sum_value[live])))
+      }
+      expect_false(any(grepl("_source_value$", names(df))))
+    }
+  })
+})
+
+test_that("the SMD is suppressed whenever one arm is suppressed (kernel)", {
+  # Independent of which fixture covariates survive: the binary-SMD kernel must
+  # NA the SMD when either arm prevalence is NA (a suppressed arm) or the pooled
+  # SD is zero, so a one-armed comparison is never released.
+  expect_true(is.na(.omopBinarySmd(0.5, NA_real_)))
+  expect_true(is.na(.omopBinarySmd(NA_real_, 0.3)))
+  expect_true(is.na(.omopBinarySmd(1, 1)))      # zero pooled SD -> NA
+  expect_false(is.na(.omopBinarySmd(0.6, 0.2))) # both arms present -> defined
+})
+
+test_that("covariate_balance recomputes SMD from banded target/comparator", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.band = 5), {
+    target     <- .cohortCreate(h, list(type = "condition", concept_set = c(201820)),
+                                mode = "temporary", cohort_id = 1)
+    comparator <- .cohortCreate(h, list(type = "condition", concept_set = c(255573)),
+                                mode = "temporary", cohort_id = 2)
+    df <- .omopAnalysisRun(h, "dsomop:cm.covariate_balance",
+                           scope = list(target, comparator))
+    expect_true(all(c("covariate_id", "target_sum_value", "comparator_sum_value",
+                      "target_average", "comparator_average",
+                      "std_mean_diff") %in% names(df)))
+    if (nrow(df) > 0) {
+      expect_true(all(df$target_sum_value %% 5 == 0 |
+                      is.na(df$target_sum_value)))
+      expect_true(all(df$comparator_sum_value %% 5 == 0 |
+                      is.na(df$comparator_sum_value)))
+      expect_false(any(grepl("_source_value$", names(df))))
+    }
+  })
+})
+
+test_that("two-population ports require exactly two populations", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3), {
+    a <- .cohortCreate(h, list(type = "condition", concept_set = c(201820)),
+                       mode = "temporary", cohort_id = 1)
+    # A single-source scope to a two-population entry is rejected by the pair
+    # resolver (needs exactly two arms).
+    expect_error(.omopAnalysisRun(h, "dsomop:cohortdx.cohort_overlap", scope = a),
+                 "exactly two scope elements")
+  })
 })
