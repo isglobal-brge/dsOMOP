@@ -333,22 +333,30 @@
 
 # Build an " AND <alias>.<date_col> BETWEEN ..." predicate for a population
 # EXISTS/NOT EXISTS subquery, scoping events to a window of day offsets relative
-# to the current date (negative = past), e.g. window=list(start=-365, end=0) is
-# "in the prior year". Returns "" when no window, no start/end, or the table has
-# no usable date column (so the filter degrades to unwindowed rather than erroring).
-.windowPredicateSql <- function(handle, bp, table_name, alias, window) {
+# to an ANCHOR date (negative = past), e.g. window=list(start=-365, end=0) is
+# "in the prior year". The anchor is \code{anchor_sql} when supplied (a per-person
+# SQL expression for the cohort index date, e.g. a correlated subquery against the
+# cohort table) and the current date otherwise. Anchoring to the cohort index is
+# what makes peri-index windows (washout / on-treatment / post-index) select the
+# right events; falling back to the wall-clock date only happens when the
+# population has no cohort to anchor to. Returns "" when no window, no start/end,
+# or the table has no usable date column (so the filter degrades to unwindowed
+# rather than erroring).
+.windowPredicateSql <- function(handle, bp, table_name, alias, window,
+                                anchor_sql = NULL) {
   if (is.null(window)) return("")
   ws <- window$start; we <- window$end
   if (is.null(ws) && is.null(we)) return("")
   date_col <- .getDateColumn(bp, table_name)
   if (is.null(date_col)) return("")
+  anchor <- anchor_sql %||% .currentDateSql(handle)
   parts <- character(0)
   if (!is.null(ws)) parts <- c(parts, paste0(
     " AND ", alias, ".", date_col, " >= ",
-    .dateAddSql(handle, as.integer(ws), .currentDateSql(handle))))
+    .dateAddSql(handle, as.integer(ws), anchor)))
   if (!is.null(we)) parts <- c(parts, paste0(
     " AND ", alias, ".", date_col, " <= ",
-    .dateAddSql(handle, as.integer(we), .currentDateSql(handle))))
+    .dateAddSql(handle, as.integer(we), anchor)))
   paste(parts, collapse = "")
 }
 
@@ -380,9 +388,14 @@
 #'
 #' @param handle CDM handle
 #' @param filters List of filter specs from recipe_to_plan
+#' @param index_cohort_table Character or NULL; a cohort temp table
+#'   (subject_id, cohort_start_date) used to anchor windowed concept filters to
+#'   each person's cohort index date. When NULL, windowed filters fall back to
+#'   the wall-clock current date.
 #' @return Integer vector of person_ids
 #' @keywords internal
-.buildCohortFromFilters <- function(handle, filters) {
+.buildCohortFromFilters <- function(handle, filters,
+                                    index_cohort_table = NULL) {
   bp <- .buildBlueprint(handle)
 
   person_table <- bp$tables[bp$tables$table_name == "person" &
@@ -392,7 +405,18 @@
   qualified_person <- person_table$qualified_name[1]
   person_cols <- bp$columns[["person"]]$column_name
 
-  where_sql <- .compileCohortFilterWhere(handle, filters, bp, person_cols)
+  # Per-person cohort index date as a correlated subquery the windowed concept
+  # filters anchor their day-offset windows to. MIN(cohort_start_date) collapses
+  # multi-row cohort entries to one anchor per person.
+  index_anchor <- NULL
+  if (!is.null(index_cohort_table)) {
+    index_anchor <- paste0(
+      "(SELECT MIN(idx.cohort_start_date) FROM ", index_cohort_table, " idx",
+      " WHERE idx.subject_id = p.person_id)")
+  }
+
+  where_sql <- .compileCohortFilterWhere(handle, filters, bp, person_cols,
+                                         index_anchor = index_anchor)
 
   sql <- paste0("SELECT DISTINCT p.person_id FROM ", qualified_person, " p")
   if (nzchar(where_sql)) {
@@ -403,16 +427,19 @@
   if (nrow(result) > 0) result$person_id else integer(0)
 }
 
-.compileCohortFilterWhere <- function(handle, node, bp, person_cols) {
+.compileCohortFilterWhere <- function(handle, node, bp, person_cols,
+                                      index_anchor = NULL) {
   if (is.null(node) || length(node) == 0) return("")
 
   if (.isCohortFilterLeaf(node)) {
-    return(.compileCohortFilterLeaf(handle, node, bp, person_cols))
+    return(.compileCohortFilterLeaf(handle, node, bp, person_cols,
+                                    index_anchor = index_anchor))
   }
 
   if ("and" %in% names(node)) {
     parts <- vapply(node$and, .compileCohortFilterWhere, character(1),
-                    handle = handle, bp = bp, person_cols = person_cols)
+                    handle = handle, bp = bp, person_cols = person_cols,
+                    index_anchor = index_anchor)
     parts <- parts[nzchar(parts)]
     if (length(parts) == 0) return("")
     return(paste0("(", paste(parts, collapse = " AND "), ")"))
@@ -420,7 +447,8 @@
 
   if ("or" %in% names(node)) {
     parts <- vapply(node$or, .compileCohortFilterWhere, character(1),
-                    handle = handle, bp = bp, person_cols = person_cols)
+                    handle = handle, bp = bp, person_cols = person_cols,
+                    index_anchor = index_anchor)
     parts <- parts[nzchar(parts)]
     if (length(parts) == 0) return("")
     return(paste0("(", paste(parts, collapse = " OR "), ")"))
@@ -430,7 +458,8 @@
     items <- unname(node)
     if (all(vapply(items, .isCohortFilterSpec, logical(1)))) {
       parts <- vapply(items, .compileCohortFilterWhere, character(1),
-                      handle = handle, bp = bp, person_cols = person_cols)
+                      handle = handle, bp = bp, person_cols = person_cols,
+                      index_anchor = index_anchor)
       parts <- parts[nzchar(parts)]
       if (length(parts) == 0) return("")
       return(paste0("(", paste(parts, collapse = " AND "), ")"))
@@ -455,7 +484,8 @@
   unique(v[!is.na(v)])
 }
 
-.compileCohortFilterLeaf <- function(handle, f, bp, person_cols) {
+.compileCohortFilterLeaf <- function(handle, f, bp, person_cols,
+                                     index_anchor = NULL) {
   ftype <- tolower(f$type)
   params <- f$params %||% list()
 
@@ -526,7 +556,8 @@
       concept_col <- .getDomainConceptColumn(bp, table_name)
       qualified_tbl <- tbl_row$qualified_name[1]
       id_list <- paste(concept_ids, collapse = ", ")
-      win <- .windowPredicateSql(handle, bp, table_name, "t", params$window)
+      win <- .windowPredicateSql(handle, bp, table_name, "t", params$window,
+                                 anchor_sql = index_anchor)
       if (min_count <= 1L) {
         return(paste0("EXISTS (SELECT 1 FROM ", qualified_tbl, " t",
                       " WHERE t.person_id = p.person_id",
@@ -547,7 +578,8 @@
       concept_col <- .getDomainConceptColumn(bp, table_name)
       qualified_tbl <- tbl_row$qualified_name[1]
       id_list <- paste(concept_ids, collapse = ", ")
-      win <- .windowPredicateSql(handle, bp, table_name, "t", params$window)
+      win <- .windowPredicateSql(handle, bp, table_name, "t", params$window,
+                                 anchor_sql = index_anchor)
       return(paste0("NOT EXISTS (SELECT 1 FROM ", qualified_tbl, " t",
                     " WHERE t.person_id = p.person_id",
                     " AND t.", concept_col, " IN (", id_list, ")", win, ")"))
@@ -563,9 +595,11 @@
       concept_col <- .getDomainConceptColumn(bp, table_name)
       qualified_tbl <- tbl_row$qualified_name[1]
       id_list <- paste(concept_ids, collapse = ", ")
+      win <- .windowPredicateSql(handle, bp, table_name, "t", params$window,
+                                 anchor_sql = index_anchor)
       return(paste0("(SELECT COUNT(*) FROM ", qualified_tbl, " t",
                     " WHERE t.person_id = p.person_id",
-                    " AND t.", concept_col, " IN (", id_list, ")",
+                    " AND t.", concept_col, " IN (", id_list, ")", win,
                     ") >= ", min_count))
     }
 
@@ -609,8 +643,10 @@
           " AND v.visit_concept_id IN (",
           paste(visit_ids, collapse = ", "), ")")
       }
+      win <- .windowPredicateSql(handle, bp, "visit_occurrence", "v",
+                                 params$window, anchor_sql = index_anchor)
       return(paste0("(SELECT COUNT(*) FROM ", vo_qualified, " v",
-                    sub_where, ") >= ", min_count))
+                    sub_where, win, ") >= ", min_count))
     }
 
   } else if (ftype == "has_measurement") {
@@ -642,7 +678,8 @@
     if (nrow(m_row) > 0 && length(concept_ids) > 0) {
       m_qualified <- m_row$qualified_name[1]
       id_list <- paste(concept_ids, collapse = ", ")
-      win <- .windowPredicateSql(handle, bp, "measurement", "m", params$window)
+      win <- .windowPredicateSql(handle, bp, "measurement", "m", params$window,
+                                 anchor_sql = index_anchor)
       return(paste0("NOT EXISTS (SELECT 1 FROM ", m_qualified, " m",
                     " WHERE m.person_id = p.person_id",
                     " AND m.measurement_concept_id IN (", id_list, ")",
@@ -841,29 +878,42 @@
 #' vector of person ids, anchor them to \code{observation_period} (for
 #' cohort_start/end_date, as baseline/survival outputs require) and create a temp
 #' table of \code{subject_id, cohort_start_date, cohort_end_date}. Mirrors the
-#' filter-cohort branch already used inline by \code{\link{.planExecute}}. Returns
-#' NULL when there are no ids or no observation_period table (the caller keeps a
-#' bare person-id vector for event/person_level outputs in that case).
+#' filter-cohort branch already used inline by \code{\link{.planExecute}}.
+#'
+#' An EMPTY id vector still materializes a valid, zero-row cohort table (via a
+#' \code{WHERE 1=0} guard) when \code{allow_empty=TRUE}, so a criteria population
+#' that legitimately resolves to nobody can still take part in a set operation
+#' (intersect/union/setdiff) instead of crashing the fold. With the default
+#' \code{allow_empty=FALSE} it preserves the historical contract: NULL for an
+#' empty id vector (the caller keeps a bare person-id vector for event/
+#' person_level outputs). Returns NULL when there is no observation_period table.
 #'
 #' @param handle CDM handle
 #' @param bp Blueprint
 #' @param person_ids Integer vector of person ids
 #' @param name Character; temp table name
+#' @param allow_empty Logical; when TRUE, materialize a zero-row table for an
+#'   empty id vector instead of returning NULL
 #' @return Character temp table name, or NULL
 #' @keywords internal
-.materializeCohortFromIds <- function(handle, bp, person_ids, name) {
-  if (length(person_ids) == 0) return(NULL)
+.materializeCohortFromIds <- function(handle, bp, person_ids, name,
+                                      allow_empty = FALSE) {
+  if (length(person_ids) == 0 && !allow_empty) return(NULL)
   obs_table <- bp$tables[bp$tables$table_name == "observation_period" &
                            bp$tables$present_in_db, , drop = FALSE]
   if (nrow(obs_table) == 0) return(NULL)
   obs_qualified <- obs_table$qualified_name[1]
-  ids_str <- .sqlIdList(person_ids)
+  where_clause <- if (length(person_ids) == 0) {
+    "WHERE 1 = 0"
+  } else {
+    paste0("WHERE o.person_id IN (", .sqlIdList(person_ids), ")")
+  }
   cohort_sql <- paste0(
     "SELECT DISTINCT o.person_id AS subject_id, ",
     "o.observation_period_start_date AS cohort_start_date, ",
     "o.observation_period_end_date AS cohort_end_date ",
     "FROM ", obs_qualified, " o ",
-    "WHERE o.person_id IN (", ids_str, ")"
+    where_clause
   )
   .dropTempTable(handle, name)
   .createTempTable(handle, name, cohort_sql)
@@ -980,8 +1030,18 @@
         for (k in 2:length(member_tables)) {
           # .cohortCombine gates the running result with .assertMinPersons, so a
           # tiny intersection fails closed here, before any output is produced.
+          # Each fold step needs its own temp-table name: reusing one name across
+          # a >=3-member fold makes the 2nd .createTempTable collide ("table
+          # already exists"). The LAST step lands at the canonical population name
+          # so the cleanup loop (pop_temp_tables) drops it; intermediate steps get
+          # a unique per-step name (auto-dropped with the session connection).
+          step_name <- if (k == length(member_tables)) {
+            paste0("dsomop_plan_pop_", pid)
+          } else {
+            paste0("dsomop_plan_pop_", pid, "_fold", k)
+          }
           combined <- .cohortCombine(handle, op, combined, member_tables[[k]],
-            new_name = paste0("dsomop_plan_pop_", pid))
+            new_name = step_name)
         }
       } else {
         # Single member: re-gate so a lone-member set-op is still size-checked
@@ -1025,15 +1085,25 @@
     }
 
     if (has_filter_tree) {
-      filter_ids <- .buildCohortFromFilters(handle, pop$filter_tree)
+      # Anchor windowed concept filters in this population to the plan-level
+      # cohort's index date (e.g. cohort=313217L). Without a plan cohort there is
+      # nothing to anchor to, so windows fall back to the wall-clock date inside
+      # .windowPredicateSql.
+      filter_ids <- .buildCohortFromFilters(handle, pop$filter_tree,
+        index_cohort_table = base_cohort_table)
       seed_ids <- if (is.null(seed_ids)) filter_ids
                   else intersect(seed_ids, filter_ids)
     }
 
     person_ids <- seed_ids %||% integer(0)
     .assertMinPersons(n_persons = length(unique(person_ids)))
+    # Materialize a cohort table even when this population resolved to nobody
+    # (allow_empty), so a later set-op over it operates on a real zero-row table
+    # instead of failing with "no materialized person set". An empty member makes
+    # intersect -> empty, union -> the other side, setdiff -> the other side, all
+    # of which are the correct algebra.
     cohort_table <- .materializeCohortFromIds(handle, bp, person_ids,
-      name = paste0("dsomop_plan_pop_", pid))
+      name = paste0("dsomop_plan_pop_", pid), allow_empty = TRUE)
     resolved[[pid]] <- list(cohort_table = cohort_table,
                             person_ids = person_ids)
   }
@@ -1363,8 +1433,13 @@
             handle, out$derived_columns,
             cohort_person_ids, cohort_table)
           if (!is.null(derived_df) && !is.null(result_df)) {
+            # Full outer join: derived columns are computed over the whole
+            # cohort, so persons missing from an empty/sparse feature sub-table
+            # (e.g. an unseeded BMI concept) must NOT be dropped — they keep
+            # their demographics with NA features rather than collapsing the
+            # whole person_level frame to zero rows.
             result_df <- merge(result_df, derived_df,
-                               by = "person_id", all.x = TRUE)
+                               by = "person_id", all = TRUE)
           } else if (!is.null(derived_df)) {
             result_df <- derived_df
           }
@@ -1458,8 +1533,10 @@
             .assertMinPersons(handle = handle, sql = count_sql)
           }
 
-          # Build per-chunk transform for date handling + type conversion
-          dh <- out$date_handling
+          # Build per-chunk transform for date handling + type conversion.
+          # Accept a bare string (e.g. "relative_to_index") as well as the list
+          # form, mapping the public synonym onto the internal "relative" mode.
+          dh <- .normalizeDateHandling(out$date_handling)
           if (is.null(dh)) {
             default_mode <- getOption("dsomop.default_date_handling", "remove")
             dh <- list(mode = default_mode)

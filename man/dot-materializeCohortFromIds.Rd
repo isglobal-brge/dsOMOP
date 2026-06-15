@@ -4,7 +4,7 @@
 \alias{.materializeCohortFromIds}
 \title{Materialize a population's person set as a cohort temp table}
 \usage{
-.materializeCohortFromIds(handle, bp, person_ids, name)
+.materializeCohortFromIds(handle, bp, person_ids, name, allow_empty = FALSE)
 }
 \arguments{
 \item{handle}{CDM handle}
@@ -14,6 +14,9 @@
 \item{person_ids}{Integer vector of person ids}
 
 \item{name}{Character; temp table name}
+
+\item{allow_empty}{Logical; when TRUE, materialize a zero-row table for an
+empty id vector instead of returning NULL}
 }
 \value{
 Character temp table name, or NULL
@@ -23,8 +26,15 @@ Shared by the single-cohort path and the multi-population resolver: given a
 vector of person ids, anchor them to \code{observation_period} (for
 cohort_start/end_date, as baseline/survival outputs require) and create a temp
 table of \code{subject_id, cohort_start_date, cohort_end_date}. Mirrors the
-filter-cohort branch already used inline by \code{\link{.planExecute}}. Returns
-NULL when there are no ids or no observation_period table (the caller keeps a
-bare person-id vector for event/person_level outputs in that case).
+filter-cohort branch already used inline by \code{\link{.planExecute}}.
+}
+\details{
+An EMPTY id vector still materializes a valid, zero-row cohort table (via a
+\code{WHERE 1=0} guard) when \code{allow_empty=TRUE}, so a criteria population
+that legitimately resolves to nobody can still take part in a set operation
+(intersect/union/setdiff) instead of crashing the fold. With the default
+\code{allow_empty=FALSE} it preserves the historical contract: NULL for an
+empty id vector (the caller keeps a bare person-id vector for event/
+person_level outputs). Returns NULL when there is no observation_period table.
 }
 \keyword{internal}

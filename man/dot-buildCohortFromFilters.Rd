@@ -4,12 +4,17 @@
 \alias{.buildCohortFromFilters}
 \title{Build a cohort person_id set from population-level filters}
 \usage{
-.buildCohortFromFilters(handle, filters)
+.buildCohortFromFilters(handle, filters, index_cohort_table = NULL)
 }
 \arguments{
 \item{handle}{CDM handle}
 
 \item{filters}{List of filter specs from recipe_to_plan}
+
+\item{index_cohort_table}{Character or NULL; a cohort temp table
+(subject_id, cohort_start_date) used to anchor windowed concept filters to
+each person's cohort index date. When NULL, windowed filters fall back to
+the wall-clock current date.}
 }
 \value{
 Integer vector of person_ids

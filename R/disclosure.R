@@ -412,12 +412,18 @@
   if (filter_type %in% always_allowed) return("allowed")
   if (filter_type %in% blocked) return("blocked")
   if (filter_type %in% constrained) {
-    # Additional validation for constrained filters
-    if (filter_type == "age_range") {
+    # The minimum range-width gates (age, date) are anti-fingerprinting defenses.
+    # They scale with the disclosure threshold: when the per-person gate is fully
+    # disabled (nfilter_subset == 0, e.g. a trusted/reach context the data
+    # controller has opted into) the width minimums relax to 0, so degenerate or
+    # deliberately-empty ranges can run. Under any positive threshold the
+    # historical minimums (age 5y, date 30d) apply unchanged.
+    gate_on <- .omopDisclosureSettings()$nfilter_subset > 0
+    if (filter_type == "age_range" && gate_on) {
       range_width <- (filter_params$max %||% 150) - (filter_params$min %||% 0)
       if (range_width < 5) return("blocked")
     }
-    if (filter_type == "date_range") {
+    if (filter_type == "date_range" && gate_on) {
       if (!is.null(filter_params$start) && !is.null(filter_params$end)) {
         diff_days <- as.numeric(
           as.Date(filter_params$end) - as.Date(filter_params$start)

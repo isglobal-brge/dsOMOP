@@ -77,6 +77,31 @@
   )
 }
 
+#' Normalize a date_handling argument to a \code{list(mode = ...)} spec
+#'
+#' The recipe/options layer may carry \code{date_handling} as a bare string
+#' (e.g. \code{"relative_to_index"}) rather than the internal
+#' \code{list(mode = ...)} form. Coerce a scalar string into that list, and map
+#' the public synonym \code{"relative_to_index"} onto the internal
+#' \code{"relative"} mode (days-from-index). A list is passed through unchanged
+#' (with the same synonym mapping applied to its \code{mode}). NULL stays NULL so
+#' callers can apply their own default.
+#'
+#' @param date_handling NULL, a character scalar, or a list with \code{$mode}
+#' @return NULL or a normalized \code{list(mode = ...)} (extra fields preserved)
+#' @keywords internal
+.normalizeDateHandling <- function(date_handling) {
+  if (is.null(date_handling)) return(NULL)
+  if (is.character(date_handling) && length(date_handling) == 1) {
+    date_handling <- list(mode = date_handling)
+  }
+  if (is.list(date_handling) &&
+      identical(date_handling$mode, "relative_to_index")) {
+    date_handling$mode <- "relative"
+  }
+  date_handling
+}
+
 #' Apply date handling transforms to a result data frame
 #'
 #' @param df Data frame
@@ -98,6 +123,7 @@
 #' @return Transformed data frame
 #' @keywords internal
 .applyDateHandling <- function(df, date_handling, index_date_col = NULL) {
+  date_handling <- .normalizeDateHandling(date_handling)
   if (is.null(date_handling) || nrow(df) == 0) return(df)
 
   mode <- date_handling$mode %||% "absolute"
@@ -222,16 +248,36 @@
   }
 
   # Concept scoping column: the domain concept by default, but a caller may
-  # override it to scope/filter by another concept column on the same table
+  # override it to surface/aggregate by another concept column on the same table
   # (e.g. unit_concept_id, *_type_concept_id, value_as_concept_id) for
   # unit-harmonization extraction or value-by-unit/type distributions.
+  domain_concept_col <- .getDomainConceptColumn(bp, table_lower)
   if (is.null(concept_col)) {
-    concept_col <- .getDomainConceptColumn(bp, table_lower)
+    concept_col <- domain_concept_col
   } else {
     concept_col <- tolower(.validateIdentifier(concept_col, "concept column"))
   }
   has_concept_col <- !is.null(concept_col) && concept_col %in% col_df$column_name
   has_person_id <- "person_id" %in% col_df$column_name
+
+  # Which column does the concept_set (concept_id list) match on? Normally the
+  # concept_col, so a caller can scope the set against an alternate concept column
+  # (e.g. concept_filter = 9529 with concept_col = unit_concept_id selects rows in
+  # that unit). BUT when the override column is a SURFACING choice — it is also a
+  # requested output column OR a custom filter independently scopes it — the
+  # concept_set values are DOMAIN concepts (e.g. glucose 3004501 surfaced by
+  # unit/route, with a unit/route filter): matching a domain concept on, say,
+  # route_concept_id would select nothing, so the set matches on the domain
+  # concept column instead. The override column is still selected/filtered. With
+  # no surfacing signal (concept_col is the genuine scoping column) this is a
+  # no-op, preserving the concept_col-as-scope contract.
+  surfacing_override <- !is.null(domain_concept_col) &&
+    !identical(concept_col, domain_concept_col) &&
+    ((!is.null(columns) && tolower(concept_col) %in% tolower(columns)) ||
+     (!is.null(filters) && .filterTreeReferencesColumn(filters, concept_col)))
+  concept_filter_col <- if (surfacing_override) domain_concept_col else concept_col
+  has_concept_filter_col <- !is.null(concept_filter_col) &&
+    concept_filter_col %in% col_df$column_name
 
   # Determine columns to select
   if (is.null(columns)) {
@@ -240,8 +286,12 @@
     columns <- tolower(columns)
     must_keep <- character(0)
     if (has_person_id) must_keep <- c(must_keep, "person_id")
-    if (has_concept_col && !is.null(concept_filter)) {
-      must_keep <- c(must_keep, concept_col)
+    if (!is.null(concept_filter)) {
+      # Keep the column the concept_set is matched on (domain concept column)
+      # AND the override surfacing column, so both the WHERE and any per-spec /
+      # aggregation step downstream find their columns.
+      if (has_concept_filter_col) must_keep <- c(must_keep, concept_filter_col)
+      if (has_concept_col) must_keep <- c(must_keep, concept_col)
     }
     select_cols <- unique(c(must_keep, intersect(columns, col_df$column_name)))
   }
@@ -264,6 +314,20 @@
     # Always block exact birth dates/times (quasi-identifiers)
     always_block <- c("day_of_birth", "birth_datetime")
     blocked <- union(blocked, intersect(always_block, col_df$column_name))
+    # Fail closed when a blocked column was EXPLICITLY requested (e.g. a feature
+    # value_source of value_as_string / *_source_value / sig). Silently dropping
+    # it would return a person-id-only frame with no signal that the requested
+    # value can never be released; an explicit request must error. Implicit
+    # "select all" (columns = NULL) still strips silently, as before.
+    if (!is.null(columns)) {
+      requested_blocked <- intersect(tolower(columns), blocked)
+      if (length(requested_blocked) > 0) {
+        stop("Disclosive: column(s) '",
+             paste(requested_blocked, collapse = "', '"),
+             "' are blocked (free-text / source values) and cannot be ",
+             "extracted from table '", table, "'.", call. = FALSE)
+      }
+    }
     select_cols <- setdiff(select_cols, blocked)
   }
 
@@ -301,9 +365,10 @@
   # Build WHERE clauses
   where <- character(0)
 
-  if (!is.null(concept_filter) && length(concept_filter) > 0 && has_concept_col) {
+  if (!is.null(concept_filter) && length(concept_filter) > 0 &&
+      has_concept_filter_col) {
     ids <- paste(as.integer(concept_filter), collapse = ", ")
-    where <- c(where, paste0(t_alias, ".", concept_col, " IN (", ids, ")"))
+    where <- c(where, paste0(t_alias, ".", concept_filter_col, " IN (", ids, ")"))
   }
 
   if (!is.null(person_ids) && has_person_id) {
@@ -373,6 +438,11 @@
   # filter can only narrow — never bypass — the suppression.
   if (!is.null(filters) && length(filters) > 0) {
     valid_cols <- .filterableColumns(bp, table_lower)
+    # A date_range row filter is authored against the generic sentinels
+    # "start_date"/"end_date" (the client cannot know each table's real date
+    # column). Resolve them to this table's actual date column BEFORE validation,
+    # otherwise the allowlist check rejects the sentinel as an unknown column.
+    filters <- .resolveFilterDateColumns(filters, bp, table_lower)
     .assertCustomFilterSafe(filters, valid_cols)
     filter_sql <- .compileFilter(handle, filters, t_alias, valid_cols)
     if (!is.null(filter_sql) && nchar(filter_sql) > 0) {
@@ -477,6 +547,71 @@
     # predicate -> blocked by .classifyFilter (fail-closed).
     "custom"
   )
+}
+
+#' Does a custom filter tree reference a given column in any leaf?
+#'
+#' Walks the AND/OR/leaf grammar and returns TRUE if any leaf's \code{var}
+#' equals \code{col} (case-insensitive). Used to detect when a concept_col
+#' override is actually a surfacing choice (its column is independently scoped by
+#' an explicit filter) rather than the concept-set's scoping column.
+#'
+#' @param filter List; the filter structure
+#' @param col Character; column name to look for
+#' @return Logical scalar
+#' @keywords internal
+.filterTreeReferencesColumn <- function(filter, col) {
+  if (is.null(filter) || length(filter) == 0 || is.null(col)) return(FALSE)
+  col <- tolower(col)
+  if ("and" %in% names(filter)) {
+    return(any(vapply(filter$and, .filterTreeReferencesColumn, logical(1),
+                      col = col)))
+  }
+  if ("or" %in% names(filter)) {
+    return(any(vapply(filter$or, .filterTreeReferencesColumn, logical(1),
+                      col = col)))
+  }
+  identical(tolower(filter$var %||% ""), col)
+}
+
+#' Resolve generic date sentinels in a custom filter tree to a table's real
+#' date column
+#'
+#' The client's \code{date_range} row filter targets the table-agnostic sentinels
+#' \code{"start_date"} / \code{"end_date"} because it cannot know each OMOP
+#' table's concrete date column (e.g. \code{condition_start_date},
+#' \code{measurement_date}). This walks the AND/OR/leaf tree and rewrites any leaf
+#' whose \code{var} is one of those sentinels to the table's actual date column
+#' (from \code{\link{.getDateColumn}}). Leaves referencing real columns are left
+#' untouched, so it is a no-op for every other filter type. When the table has no
+#' resolvable date column the sentinel is left as-is and the downstream allowlist
+#' check rejects it fail-closed.
+#'
+#' @param filter List; the filter structure
+#' @param bp Blueprint
+#' @param table_lower Character; lowercased table name
+#' @return The filter structure with date sentinels resolved
+#' @keywords internal
+.resolveFilterDateColumns <- function(filter, bp, table_lower) {
+  if (is.null(filter) || length(filter) == 0) return(filter)
+
+  if ("and" %in% names(filter)) {
+    filter$and <- lapply(filter$and, .resolveFilterDateColumns, bp = bp,
+                         table_lower = table_lower)
+    return(filter)
+  }
+  if ("or" %in% names(filter)) {
+    filter$or <- lapply(filter$or, .resolveFilterDateColumns, bp = bp,
+                        table_lower = table_lower)
+    return(filter)
+  }
+
+  var <- tolower(filter$var %||% "")
+  if (var %in% c("start_date", "end_date")) {
+    date_col <- .getDateColumn(bp, table_lower)
+    if (!is.null(date_col)) filter$var <- date_col
+  }
+  filter
 }
 
 #' Validate a custom filter tree against the disclosure policy (fail-closed)
@@ -858,7 +993,22 @@
 
   result <- .executeQuery(handle, sql)
 
-  if (nrow(result) == 0) return(result)
+  # An empty extraction still needs the representation transform applied so the
+  # caller receives a correctly-SHAPED frame. For "features" this means a
+  # person-level frame carrying the feature columns (e.g. an unseeded BMI concept
+  # yields a bmi_mean column of NAs), so a person_level join does not collapse to
+  # zero rows when one feature sub-table happens to be empty. Long/wide/sparse
+  # keep their historical empty-passthrough behavior.
+  if (nrow(result) == 0) {
+    if (identical(representation, "features")) {
+      empty_feat <- .toFeatures(result, table, feature_specs)
+      if (translate_concepts && is.data.frame(empty_feat)) {
+        empty_feat <- .vocabTranslateColumns(handle, empty_feat)
+      }
+      return(empty_feat)
+    }
+    return(result)
+  }
 
   # Compute days_from_index when cohort_start_date is present
   if ("cohort_start_date" %in% names(result)) {
@@ -881,6 +1031,9 @@
   # Analysts who need temporal data should use "relative" (days from index)
   # or "binned" (year-month) modes, which preserve utility without leaking
   # exact dates that could enable longitudinal re-identification.
+  # Accept a bare string (e.g. "relative_to_index") or the list form, and map
+  # the public synonym onto the internal "relative" mode.
+  date_handling <- .normalizeDateHandling(date_handling)
   if (is.null(date_handling)) {
     default_mode <- getOption("dsomop.default_date_handling", "remove")
     date_handling <- list(mode = default_mode)
@@ -1121,6 +1274,60 @@
   }
 
   wide
+}
+
+#' Evaluate a custom filter tree as a row mask over an in-memory data frame
+#'
+#' Mirrors \code{\link{.compileFilter}}'s AND/OR/leaf grammar but evaluates it
+#' against an already-extracted (disclosure-filtered) data frame in R, returning
+#' a logical keep-mask. Used to scope a single feature spec's rows by its own
+#' row filter (e.g. a unit/type slice) without re-querying the database. A leaf
+#' that references a column not present in the frame matches NOTHING (fail-closed
+#' for that leaf), and an unknown operator likewise drops the row, so a filter
+#' can only ever narrow the rows feeding the aggregation.
+#'
+#' @param filter List; the filter structure (and/or/leaf)
+#' @param df Data frame to evaluate against
+#' @return Logical vector of length \code{nrow(df)}
+#' @keywords internal
+.evalFilterMask <- function(filter, df) {
+  n <- nrow(df)
+  if (is.null(filter) || length(filter) == 0) return(rep(TRUE, n))
+
+  if ("and" %in% names(filter)) {
+    mask <- rep(TRUE, n)
+    for (f in filter$and) mask <- mask & .evalFilterMask(f, df)
+    return(mask)
+  }
+  if ("or" %in% names(filter)) {
+    mask <- rep(FALSE, n)
+    for (f in filter$or) mask <- mask | .evalFilterMask(f, df)
+    return(mask)
+  }
+
+  var <- tolower(filter$var %||% "")
+  op <- tolower(filter$op %||% "")
+  value <- filter$value
+  if (!nzchar(var) || !var %in% names(df)) return(rep(FALSE, n))
+  col <- df[[var]]
+
+  mask <- switch(op,
+    "==" =, "eq" = col == value,
+    "!=" =, "ne" = col != value,
+    ">=" =, "gte" = col >= as.numeric(value),
+    "<=" =, "lte" = col <= as.numeric(value),
+    ">"  =, "gt"  = col > as.numeric(value),
+    "<"  =, "lt"  = col < as.numeric(value),
+    "in" = col %in% unlist(value, use.names = FALSE),
+    "not_in" = !(col %in% unlist(value, use.names = FALSE)),
+    "between" = col >= as.numeric(value[[1]]) & col <= as.numeric(value[[2]]),
+    "is_null" = is.na(col),
+    "not_null" = !is.na(col),
+    "value_bin" = col >= as.numeric(value$lower) & col < as.numeric(value$upper),
+    rep(FALSE, n)
+  )
+  mask[is.na(mask)] <- FALSE
+  mask
 }
 
 #' Compute person-level features from event data
@@ -1477,17 +1684,30 @@
         if (!is.na(key) && nzchar(key)) spec$name <- key
       }
 
-      # Rows matching ANY concept in this spec's set. Without a concept column
-      # (table has no *_concept_id), the spec applies to every row.
+      # Rows matching ANY concept in this spec's set. A per-spec concept_col
+      # override (e.g. scoping by unit_concept_id) wins over the table's domain
+      # concept column for THIS spec only. Without a concept column (table has no
+      # *_concept_id), the spec applies to every row.
       cs <- spec$concept_set
       if (is.list(cs) && !is.null(cs$concepts)) cs <- cs$concepts
       cs <- suppressWarnings(as.integer(unlist(cs, use.names = FALSE)))
       cs <- cs[!is.na(cs)]
-      if (!is.null(concept_col) && concept_col %in% names(df) &&
+      spec_concept_col <- if (!is.null(spec$concept_col))
+        tolower(spec$concept_col) else concept_col
+      if (!is.null(spec_concept_col) && spec_concept_col %in% names(df) &&
           length(cs) > 0) {
-        spec_data <- df[df[[concept_col]] %in% cs, , drop = FALSE]
+        spec_data <- df[df[[spec_concept_col]] %in% cs, , drop = FALSE]
       } else {
         spec_data <- df
+      }
+
+      # Per-spec row filter (e.g. unit/type slice) scopes THIS feature's rows
+      # only, so mutually-exclusive slices on one table become independent
+      # columns instead of one contradictory AND. Evaluated in-memory against the
+      # already-extracted (disclosure-filtered) frame.
+      if (!is.null(spec$filter)) {
+        keep <- .evalFilterMask(spec$filter, spec_data)
+        spec_data <- spec_data[keep, , drop = FALSE]
       }
 
       concept_tag <- if (length(cs) > 0) paste(cs, collapse = "_") else "all"
@@ -1752,7 +1972,11 @@
   .assertMinPersons(handle = handle, sql = count_sql)
 
   df <- .executeQuery(handle, sql)
-  if (nrow(df) == 0) return(NULL)
+  # A zero-row df (e.g. an empty population from an annihilating set-op) builds a
+  # zero-ROW result with the full derived-column SCHEMA rather than NULL, so the
+  # output surfaces as an empty data.frame instead of being dropped. The
+  # column-building loop below is vectorized and produces 0-length columns
+  # cleanly; comorbidity merges on an empty person set likewise return 0 rows.
 
   result <- data.frame(person_id = df$person_id, stringsAsFactors = FALSE)
 
