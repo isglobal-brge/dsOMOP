@@ -213,12 +213,18 @@
 .hashPersonKey <- function(ids, key) {
   params <- .deriveAesParams(key)
   ids <- as.character(ids)  # exact — integer/character, never a rounded double.
-  vapply(ids, function(id) {
+  # Encrypt each DISTINCT id once, then map back onto the rows. Person/subject
+  # ids repeat heavily in long-format outputs (one row per event), so a per-row
+  # AES-CBC call would redo identical work; distinct + match() yields byte-for-
+  # byte the same tokens with far less compute (≈ Nrows/Ndistinct speedup).
+  u <- unique(ids)
+  tok_u <- vapply(u, function(id) {
     if (is.na(id)) return(NA_character_)
     ct <- openssl::aes_cbc_encrypt(charToRaw(id), key = params$aes, iv = params$iv)
     # "p" prefix forces as.numeric()/ds.asNumeric() -> NA (non-numeric token).
     paste0("p", paste(as.character(ct), collapse = ""))
   }, character(1L), USE.NAMES = FALSE)
+  tok_u[match(ids, u)]
 }
 
 #' Reverse a person-key token back to the original id (SERVER-ONLY)
