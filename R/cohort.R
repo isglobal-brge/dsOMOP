@@ -7,24 +7,25 @@
 #' @return Data frame with cohort definitions
 #' @keywords internal
 .cohortList <- function(handle) {
-  bp <- .buildBlueprint(handle)
+  settings <- .omopDisclosureSettings()
+  threshold <- settings$nfilter_subset
+  band <- settings$nfilter_band %||% 5
 
   empty_df <- data.frame(
     cohort_definition_id = integer(0),
     cohort_definition_name = character(0),
+    size = numeric(0),
     stringsAsFactors = FALSE
   )
 
-  # Check results schema first, then CDM
+  # Resolve the schema holding cohort_definition (results first, then CDM).
+  bp <- .buildBlueprint(handle)
   results_schema <- handle$results_schema
   tables_to_check <- character(0)
-
   if (!is.null(results_schema)) {
     tables_to_check <- .listTablesRaw(handle, results_schema)
   }
-
   if (!"cohort_definition" %in% tables_to_check) {
-    # Try CDM schema
     if ("cohort_definition" %in% bp$tables$table_name[bp$tables$present_in_db]) {
       results_schema <- handle$cdm_schema
     } else {
@@ -32,11 +33,34 @@
     }
   }
 
-  qualified <- .qualifyTable(handle, "cohort_definition", results_schema)
-  tryCatch(
-    .executeQuery(handle, paste0("SELECT * FROM ", qualified)),
-    error = function(e) empty_df
-  )
+  def_tbl    <- .qualifyTable(handle, "cohort_definition", results_schema)
+  cohort_tbl <- .qualifyTable(handle, "cohort", results_schema)
+
+  # DISCLOSURE: a cohort with < nfilter_subset DISTINCT subjects is INVISIBLE —
+  # omitted entirely (a sub-threshold cohort is treated as if it does not exist).
+  # Cohorts with no rows in the cohort table (0 subjects) never reach the count
+  # frame, so they are omitted too. Survivors carry a BANDED size (a multiple of
+  # nfilter_band, never below one band), NEVER the exact subject count.
+  counts <- tryCatch(
+    .executeQuery(handle, paste0(
+      "SELECT cohort_definition_id, COUNT(DISTINCT subject_id) AS n FROM ",
+      cohort_tbl, " GROUP BY cohort_definition_id")),
+    error = function(e) NULL)
+  if (is.null(counts) || nrow(counts) == 0) return(empty_df)
+  counts <- counts[!is.na(counts$n) & counts$n >= threshold, , drop = FALSE]
+  if (nrow(counts) == 0) return(empty_df)
+
+  defs <- tryCatch(.executeQuery(handle, paste0("SELECT * FROM ", def_tbl)),
+                   error = function(e) NULL)
+  if (is.null(defs) || nrow(defs) == 0) return(empty_df)
+
+  merged <- merge(defs, counts, by = "cohort_definition_id")
+  if (nrow(merged) == 0) return(empty_df)
+  merged$size <- vapply(merged$n,
+    function(x) max(band, .bandCount(x, band_width = band)), numeric(1))
+  merged$n <- NULL
+  rownames(merged) <- NULL
+  merged
 }
 
 #' Get a specific cohort definition
@@ -46,18 +70,31 @@
 #' @return Named list with definition details
 #' @keywords internal
 .cohortGetDefinition <- function(handle, cohort_definition_id) {
+  settings <- .omopDisclosureSettings()
+  threshold <- settings$nfilter_subset
   results_schema <- handle$results_schema %||% handle$cdm_schema
+  cid <- as.integer(cohort_definition_id)
 
-  qualified <- .qualifyTable(handle, "cohort_definition", results_schema)
-  sql <- paste0(
-    "SELECT * FROM ", qualified,
-    " WHERE cohort_definition_id = ", as.integer(cohort_definition_id)
-  )
+  # DISCLOSURE: a cohort with < nfilter_subset distinct subjects is treated as
+  # NONEXISTENT. An absent id and a sub-threshold id return the IDENTICAL
+  # "not found" — a caller can never confirm a small cohort exists, nor read its
+  # name/description/syntax. Only at/above-threshold cohorts are readable.
+  cohort_tbl <- .qualifyTable(handle, "cohort", results_schema)
+  n <- tryCatch(
+    .executeQuery(handle, paste0(
+      "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort_tbl,
+      " WHERE cohort_definition_id = ", cid))$n[1],
+    error = function(e) 0)
+  n <- if (length(n) == 0L || is.na(n)) 0 else n
+  not_found <- function()
+    stop("Cohort definition ", cid, " not found.", call. = FALSE)
+  if (n < threshold) not_found()
 
-  result <- .executeQuery(handle, sql)
-  if (nrow(result) == 0) {
-    stop("Cohort definition ", cohort_definition_id, " not found.", call. = FALSE)
-  }
+  def_tbl <- .qualifyTable(handle, "cohort_definition", results_schema)
+  result <- tryCatch(.executeQuery(handle, paste0(
+    "SELECT * FROM ", def_tbl, " WHERE cohort_definition_id = ", cid)),
+    error = function(e) NULL)
+  if (is.null(result) || nrow(result) == 0) not_found()
   as.list(result[1, ])
 }
 
