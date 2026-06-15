@@ -20,6 +20,14 @@
 # paths. This module funnels all three through .omopAnalysisGate(), so the
 # invariant lives in exactly one place.
 #
+# Live-compute ports: the Achilles catalog family no longer READS precomputed
+# achilles_results rows — every "dsomop:achilles.<id>" entry now computes its
+# metric live from the CDM (assembled from the pack_achilles_*.R registrars), and
+# the OHDSI families compute live wherever a single-site CDM metric is definable
+# (ohdsi_pack_*.R). The only catalog entries that still read a precomputed table
+# are OHDSI results with no single-site live definition (fitted-model PLP, cross-
+# site evidence-synthesis, and pure definition/settings reference tables).
+#
 # The catalog entry contract (see .omopAnalysisEntry) is deliberately uniform so
 # a future plotting layer (6b) and additional compute kinds can be added without
 # touching the run path or the gate.
@@ -344,66 +352,52 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   entries
 }
 
-# --- Adapter 2: Achilles -----------------------------------------------------
+# --- Adapter 2: Achilles (live-computing native ports) -----------------------
 
-#' Emit catalog entries for the pre-computed Achilles analyses
+#' Emit catalog entries for the Achilles analyses (all live-computing)
 #'
-#' One entry per analysis_id in \code{\link{.achilles_catalog_static}}, named
-#' \code{"dsomop:achilles.<id>"}. The \code{unit} comes from the catalog's
-#' \code{unit} column (person/record/dist). Record-unit entries carry their
-#' \code{.achilles_record_gate_spec} (sibling/companion) in \code{meta} so the
-#' unified gate can apply the SAME person-gate \code{\link{.achillesPersonGate}}
-#' enforces. Compute is \code{kind="r"}, wrapping
-#' \code{\link{.achillesGetResults}} (count/person units) or
-#' \code{\link{.achillesGetDistributions}} (dist unit) for the single id.
+#' One entry per legacy Achilles analysis id, named \code{"dsomop:achilles.<id>"},
+#' but every entry now COMPUTES its metric LIVE from the CDM rather than reading a
+#' precomputed \code{achilles_results}/\code{achilles_results_dist} row. The
+#' read-precomputed catalog compute path (the old wrappers around
+#' \code{.achillesGetResults}/\code{.achillesGetDistributions}) has been removed:
+#' the entire family is now assembled by aggregating the per-group live registrars
+#' in the \code{pack_achilles_*.R} files. Each registrar returns its entries keyed
+#' by the SAME stable id, so existing references keep resolving — only the compute
+#' changed (read-results -> live-compute, scopable, disclosure-safe through the
+#' single \code{\link{.omopAnalysisGate}}).
 #'
-#' These are PRE-COMPUTED aggregates with no per-row person key, so the entry's
-#' scope rejects \code{accepts_tables}/cohort scoping (handled in the run path).
+#' The standalone Achilles results API (\code{omopAchillesResultsDS} /
+#' \code{omopAchillesDistributionDS} and their \code{.achilles*} backends) is a
+#' SEPARATE feature for reading a site's own precomputed Achilles tables and is
+#' untouched by this catalog change.
 #'
-#' @param handle CDM handle (signature parity; not queried at build time).
+#' The five groups cover disjoint id sets whose union is exactly the legacy
+#' Achilles catalog, so concatenation needs no overlay/dedup:
+#' \itemize{
+#'   \item ACH-A person-domain counts (1/2/3/4/5/10/12 + 2000..2003) —
+#'     \code{pack_achilles_person.R};
+#'   \item ACH-B/ACH-C observation-period counts (101/102/108/109/113) +
+#'     distributions (103..107) — \code{pack_achilles_obsperiod.R};
+#'   \item ACH-D persons-with->=1 / by-month / by-year + death (person-unit) —
+#'     \code{pack_achilles_counts.R};
+#'   \item ACH-E record counts (x01/xx20/505/1818, record-unit) —
+#'     \code{pack_achilles_records.R};
+#'   \item ACH-F/ACH-G/ACH-H distinct-concepts-per-person + age + drug-field
+#'     distributions (dist-unit) — \code{pack_achilles_dist.R}.
+#' }
+#'
+#' @param handle CDM handle (passed to each registrar; no DB I/O at build time).
 #' @return List of \code{omop_analysis_entry} objects keyed by entry name.
 #' @keywords internal
 .omopAnalysisAchillesEntries <- function(handle) {
-  catalog <- .achilles_catalog_static()
-  gate_spec_all <- .achilles_record_gate_spec()
-
-  entries <- list()
-  for (i in seq_len(nrow(catalog))) {
-    aid  <- as.integer(catalog$analysis_id[i])
-    unit <- catalog$unit[i]
-    name <- paste0("dsomop:achilles.", aid)
-    is_dist <- identical(unit, "dist")
-    gate_spec <- gate_spec_all[[as.character(aid)]]
-
-    compute_fn <- if (is_dist) {
-      function(handle, ctx, params) .achillesGetDistributions(handle, ctx$analysis_id)
-    } else {
-      function(handle, ctx, params) .achillesGetResults(handle, ctx$analysis_id)
-    }
-
-    entries[[name]] <- .omopAnalysisEntry(
-      name        = name,
-      description = catalog$analysis_name[i],
-      domain      = tolower(catalog$domain[i] %||% "general"),
-      params      = list(),
-      compute     = list(kind = "r", sql = NULL, fn = compute_fn),
-      dependencies = list(
-        tables   = catalog$result_table[i],
-        packages = character(0)
-      ),
-      disclosure = .omopAnalysisDisclosure(
-        unit = unit,
-        count_cols = "count_value",
-        min_max = FALSE
-      ),
-      scope = .omopAnalysisScope(accepts_cohort = FALSE, accepts_tables = FALSE,
-                                 max_tables = 0L),
-      mode  = "aggregate",
-      meta  = list(adapter = "achilles", analysis_id = aid,
-                   gate_spec = gate_spec, precomputed = TRUE)
-    )
-  }
-  entries
+  c(
+    .omopAchillesPersonEntries(handle),
+    .omopAchillesObsPeriodEntries(handle),
+    .omopAchillesConceptCountEntries(handle),
+    .omopAchillesRecordCountEntries(handle),
+    .omopAchillesDistEntries(handle)
+  )
 }
 
 # --- Adapter 3: OHDSI result tables ------------------------------------------
@@ -458,6 +452,64 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       )
     }
   }
+
+  # Native live-compute ports OVERLAY the precomputed entries by id: each ported
+  # group returns entries keyed by the SAME "dsomop:ohdsi.<tool>.<table>" so it
+  # replaces the read-results version above with one that COMPUTES the metric live
+  # from the CDM (this is the single aggregation point; the L2834 c(...) list
+  # stays as-is). Per-group registrars live in their own ohdsi_pack_*.R files
+  # (groups port in parallel with no shared-file contention); further groups
+  # overlay here as they are ported (id sets are disjoint, so overlay order is
+  # immaterial).
+  # OHDSI-B1 (result tables whose metric a canonical native diagnostic already
+  # computes live -> thin delegates) lives in ohdsi_pack_aliases.R.
+  alias_live <- .ohdsiPackAliasEntries(handle)
+  entries[names(alias_live)] <- alias_live
+  # OHDSI-B2 (CohortDiagnostics cohort_count / temporal prevalence + dist /
+  # time_series / included_source_concepts + Characterization c_cohort_counts)
+  # lives in ohdsi_pack_cohortdx.R. It overlays the precomputed registry ids with
+  # live-compute versions AND adds the new canonical natives (dsomop:cohortdx.*)
+  # those registry ids alias.
+  cohortdx_live <- .ohdsiPackCohortDxEntries(handle)
+  entries[names(cohortdx_live)] <- cohortdx_live
+  # OHDSI-B2-cohortmethod (CohortMethod cm_attrition + cm_result substrate+MDRR)
+  # lives in ohdsi_pack_cohortmethod.R. It overlays the precomputed cohort_method
+  # registry ids with live-compute versions (the read-precomputed cm_result /
+  # cm_attrition path is now dead for these two ids); the new canonical short ids
+  # dsomop:cm.attrition / dsomop:cm.mdrr are registered in
+  # .omopAnalysisDiagnosticEntries (which owns the dsomop:cm.* family).
+  cohortmethod_live <- .ohdsiPackCohortMethodEntries(handle)
+  entries[names(cohortmethod_live)] <- cohortmethod_live
+  # OHDSI-B2-characterization-new (Characterization c_dechallenge_rechallenge ->
+  # live attempt/success person counts + reconciled percentages) lives in
+  # ohdsi_pack_characterization.R. It overlays the precomputed registry id with a
+  # live-compute alias of the new canonical dsomop:char.dechallenge_rechallenge
+  # (registered in .omopAnalysisDiagnosticEntries, which owns the dsomop:char.*
+  # family); the read-precomputed c_dechallenge_rechallenge path is now dead.
+  characterization_live <- .ohdsiPackCharacterizationEntries(handle)
+  entries[names(characterization_live)] <- characterization_live
+  # OHDSI-B2-plp (plp_attrition -> live population-construction attrition; a thin
+  # delegate to the new canonical dsomop:plp.attrition registered in
+  # .omopAnalysisDiagnosticEntries). The other plp_* tables need a fitted-model
+  # predicted-risk column the federation cannot produce and stay on the legacy
+  # read-precomputed adapter (untouched), so this overlays ONLY plp_attrition.
+  plp_live <- .ohdsiPackPlpEntries(handle)
+  entries[names(plp_live)] <- plp_live
+  # OHDSI-B2-treatmentpatterns-new (the TreatmentPatterns treatment-sequence
+  # pathways / percentage-treated / era-duration analyses) lives in
+  # ohdsi_pack_treatmentpatterns.R. TreatmentPatterns has no precomputed registry
+  # result table, so these are NEW canonical natives (dsomop:txpath.*) the overlay
+  # simply ADDS (their ids are disjoint from the precomputed registry ids).
+  txpath_live <- .ohdsiPackTreatmentPatternsEntries(handle)
+  entries[names(txpath_live)] <- txpath_live
+  # OHDSI-B2-sccs-new (SelfControlledCaseSeries sccs_attrition / sccs_result /
+  # sccs_covariate_result / sccs_diagnostics_summary -> live descriptive substrate)
+  # lives in ohdsi_pack_sccs.R. It overlays the precomputed sccs registry ids with
+  # live-compute aliases (the read-precomputed sccs_* path -- which returned the
+  # FITTED Poisson IRR + CI -- is now dead for these ids) AND adds the new canonical
+  # natives (dsomop:sccs.*) those aliases delegate to.
+  sccs_live <- .ohdsiPackSccsEntries(handle)
+  entries[names(sccs_live)] <- sccs_live
   entries
 }
 
@@ -2594,7 +2646,15 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     .omopFeContinuous(),
     .omopFeComorbidityIndex(),
     .omopCharTargetCovariates(),
+    # Characterization dechallenge/rechallenge (canonical native port; lives in
+    # ohdsi_pack_characterization.R, which also exposes the legacy OHDSI-id alias).
+    .omopCharDechallengeRechallenge(),
     .omopPlpCovariateSummary(),
+    # PLP target-population attrition (canonical native port; lives in
+    # ohdsi_pack_plp.R, which also exposes the legacy OHDSI-id delegate). Like the
+    # other PLP/diagnostic ports it is meaningless un-scoped (returns an empty
+    # frame), so it is marked requires_cohort by the forcing pass below.
+    .omopPlpAttrition(),
     # Two-population ports (max_tables = 2; resolved via ctx$scoped_cohorts).
     .omopDiagCohortOverlap(),
     .omopCharRiskFactorSmd(),
@@ -2610,6 +2670,18 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     e$scope$requires_cohort <- TRUE
     e
   })
+  # Canonical short-id aliases of the live OHDSI CohortMethod ports
+  # (ohdsi_pack_cohortmethod.R). They are FAITHFUL re-labels of their
+  # "dsomop:ohdsi.cohort_method.*" twins — same compute$fn / disclosure / scope —
+  # so they MUST preserve their twin's requires_cohort (cm_attrition keeps the
+  # whole-DB requires_cohort=FALSE semantics, cm_result returns a gate-safe empty
+  # frame un-scoped). Appended AFTER the forcing pass above so they retain exactly
+  # the scope their builders set, never diverging from the twin.
+  cm_aliases <- list(
+    .omopCmAttritionCanonicalEntry(),
+    .omopCmMdrrCanonicalEntry()
+  )
+  entries <- c(entries, cm_aliases)
   stats::setNames(entries, vapply(entries, function(e) e$name, character(1)))
 }
 

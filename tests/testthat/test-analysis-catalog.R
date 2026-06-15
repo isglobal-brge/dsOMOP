@@ -71,10 +71,15 @@ test_that("registry folds all three surfaces under the dsomop: namespace", {
   expect_true(all(grepl("^dsomop:", names(reg))))
 
   adapters <- vapply(reg, function(e) e$meta$adapter %||% "?", character(1))
-  expect_true(all(c("query", "achilles", "ohdsi") %in% adapters))
-  # Each surface contributes a healthy number of entries.
-  expect_true(sum(adapters == "achilles") > 50)
-  expect_true(sum(adapters == "ohdsi") > 20)
+  expect_true(all(c("query", "ohdsi") %in% adapters))
+  # The Achilles family now COMPUTES live: its entries carry either the
+  # "achilles" label (person-unit counts) or "achilles_live" (record/dist), and
+  # NONE read a precomputed results table. Count both as the Achilles surface.
+  achilles_n <- sum(adapters %in% c("achilles", "achilles_live"))
+  expect_true(achilles_n > 50)
+  # OHDSI is a mix of live-compute ("ohdsi_live") and the still-precomputed
+  # result tables ("ohdsi") that have no single-site live definition.
+  expect_true(sum(adapters %in% c("ohdsi", "ohdsi_live")) > 20)
   expect_true(sum(adapters == "query") > 50)
 })
 
@@ -121,57 +126,66 @@ test_that("list/get expose metadata without leaking SQL or compute fns", {
 
 # --- Honest scope flags ------------------------------------------------------
 
-test_that("exactly the native scopable entries are scopable", {
+test_that("scopability follows the honest hook contract per adapter", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
 
+  reg <- .omopAnalysisRegistry(h)
   lst <- .omopAnalysisList(h)
-  scopable <- lst$name[lst$accepts_cohort]
-  expect_equal(sort(scopable), sort(c(
-    "dsomop:condition.prevalence_by_concept",
-    "dsomop:condition_era.prevalence_by_concept",
-    "dsomop:device.prevalence_by_concept",
-    "dsomop:drug.prevalence_by_concept",
-    "dsomop:drug_era.prevalence_by_concept",
-    "dsomop:measurement.prevalence_by_concept",
-    "dsomop:observation.prevalence_by_concept",
-    "dsomop:procedure.prevalence_by_concept",
-    # The native r-in-session reference entry is scopable too.
-    "dsomop:demo.person_count_by_gender",
-    # The natively re-implemented OHDSI diagnostics are all cohort-scopable
-    # (the cohort IS the analysis population).
-    "dsomop:incidence.rate",
-    "dsomop:cohortdx.index_event_breakdown",
-    "dsomop:cohortdx.time_distribution",
-    "dsomop:cm.followup_distribution",
-    "dsomop:char.time_to_event",
-    "dsomop:cohortdx.visit_context",
-    # The FeatureExtraction / Characterization / PLP single-cohort ports are all
-    # cohort-scopable (the cohort IS the analysis population).
-    "dsomop:fe.table1",
-    "dsomop:fe.prevalence",
-    "dsomop:fe.continuous",
-    "dsomop:fe.comorbidity_index",
-    "dsomop:char.target_covariates",
-    "dsomop:plp.covariate_summary",
-    # The two-population ports are cohort-scopable (each arm IS a population).
-    "dsomop:cohortdx.cohort_overlap",
-    "dsomop:char.risk_factor_smd",
-    "dsomop:cm.covariate_balance"
-  )))
+  adapter_of <- stats::setNames(lst$adapter, lst$name)
+
+  # Live-compute surfaces compute over OUR connection restricted to the scoped
+  # population (the cohort IS the analysis population), so every Achilles,
+  # native-diagnostic, live-OHDSI and the demo reference entry is scopable.
+  live_adapters <- c("achilles", "achilles_live", "ohdsi_live", "diagnostic",
+                     "demo")
+  live <- lst[lst$adapter %in% live_adapters, ]
+  expect_true(nrow(live) > 0)
+  expect_true(all(live$accepts_cohort),
+              info = paste("non-scopable live entries:",
+                           paste(live$name[!live$accepts_cohort],
+                                 collapse = ", ")))
+
+  # The still-precomputed OHDSI result tables have no per-row person key, so they
+  # are NEVER scopable.
+  precomp <- lst[lst$adapter == "ohdsi", ]
+  expect_true(nrow(precomp) > 0)
+  expect_false(any(precomp$accepts_cohort))
+
+  # A QueryLibrary template is scopable IFF its author placed a person-level
+  # @cohort hook in the SQL AND declared the scope column it filters on. Verify
+  # the flag matches that structural property exactly (no template claims a
+  # capability it cannot honour, and none that can is silently non-scopable).
+  qry <- lst[lst$adapter == "query", ]
+  for (nm in qry$name) {
+    e <- reg[[nm]]
+    has_hook <- !is.null(e$meta$scope_column) && nzchar(e$meta$scope_column) &&
+      grepl("@cohort\\b", e$compute$sql)
+    expect_equal(qry$accepts_cohort[qry$name == nm], has_hook,
+                 info = paste("scope-hook mismatch for", nm))
+  }
+
   # accepts_cohort and accepts_tables move together (one honest hook).
   expect_identical(lst$accepts_cohort, lst$accepts_tables)
 })
 
-test_that("Achilles and OHDSI entries are never scopable", {
+test_that("live Achilles/OHDSI entries are scopable; precomputed OHDSI are not", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
 
   lst <- .omopAnalysisList(h)
-  ach <- lst[grepl("achilles", lst$adapter), ]
-  ohd <- lst[grepl("ohdsi", lst$adapter), ]
-  expect_true(nrow(ach) > 0 && !any(ach$accepts_cohort))
-  expect_true(nrow(ohd) > 0 && !any(ohd$accepts_cohort))
+  # Every Achilles entry now computes live (label "achilles" for person-unit,
+  # "achilles_live" for record/dist) and is cohort-scopable.
+  ach <- lst[lst$adapter %in% c("achilles", "achilles_live"), ]
+  expect_true(nrow(ach) > 0)
+  expect_true(all(ach$accepts_cohort))
+
+  # Live OHDSI ports are scopable; the still-precomputed OHDSI result tables
+  # (no per-row person key) are not.
+  ohd_live <- lst[lst$adapter == "ohdsi_live", ]
+  expect_true(nrow(ohd_live) > 0 && all(ohd_live$accepts_cohort))
+  ohd_precomp <- lst[lst$adapter == "ohdsi", ]
+  expect_true(nrow(ohd_precomp) > 0 && !any(ohd_precomp$accepts_cohort))
 })
 
 # --- SMOKE: every entry runs or lands in an acceptable class -----------------
@@ -201,14 +215,18 @@ test_that("every catalog entry runs or gates cleanly (ZERO other-errors)", {
   expect_equal(length(other_detail), 0,
                info = paste("other-errors:", paste(other_detail, collapse = ", ")))
 
-  # Per-surface guarantees: Achilles entries all RUN (their tables exist in the
-  # fixture); OHDSI entries are only OK or dependency-missing (never dialect or
-  # other); the dialect-incompatible class is exclusive to the QueryLibrary
-  # (upstream Postgres SQL).
-  ach_classes <- classes[adapters == "achilles"]
-  ohd_classes <- classes[adapters == "ohdsi"]
+  # Per-surface guarantees: the live-compute Achilles family RUNS or gates on the
+  # fixture and NEVER hits a dialect/other error — a missing CDM table/column
+  # fails closed to an empty (ok) frame, never a raw "no such table" leak. The
+  # OHDSI surface (live + still-precomputed) is only OK / gated / dependency-
+  # missing (never dialect or other). The dialect-incompatible class is exclusive
+  # to the QueryLibrary (upstream Postgres SQL).
+  ach_classes <- classes[adapters %in% c("achilles", "achilles_live")]
+  ohd_classes <- classes[adapters %in% c("ohdsi", "ohdsi_live")]
   qry_classes <- classes[adapters == "query"]
-  expect_true(all(ach_classes %in% c("ok", "gated")))
+  expect_true(all(ach_classes %in% c("ok", "gated")),
+              info = paste("unexpected Achilles classes:",
+                           paste(unique(ach_classes), collapse = ", ")))
   expect_true(all(ohd_classes %in% c("ok", "gated", "dep_missing")))
   expect_false(any(ohd_classes == "dialect"))
   # QueryLibrary may carry dialect-incompatible Postgres templates; that is the
@@ -222,13 +240,25 @@ test_that("(a) record-unit row resting on too few persons is dropped", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
 
-  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3), {
-    # cohort_count is record-unit; the fixture's cohort_id=2 rests on only 2
-    # subjects, so its row must not survive the person gate.
-    res <- .omopAnalysisRun(h, "dsomop:ohdsi.cohort_diagnostics.cohort_count")
-    expect_false(2 %in% res$cohort_id)
-    # cohort_id=1 (85 subjects) survives.
-    expect_true(1 %in% res$cohort_id)
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.band = 5), {
+    # cohort_count now COMPUTES live over the scoped cohort (record-unit:
+    # cohort_subjects is its distinct-person companion). A cohort of only 2
+    # diabetes-or-fewer persons must fail closed (the fn self-gates before
+    # materialising), so no row resting on too few persons is ever returned.
+    tiny <- acat_token_frame(h, 1:2)
+    expect_error(
+      .omopAnalysisRun(h, "dsomop:ohdsi.cohort_diagnostics.cohort_count",
+                       scope = tiny),
+      "Disclosive")
+
+    # A sufficiently large cohort yields a surviving, banded row.
+    big <- .cohortCreate(h, list(type = "condition", concept_set = c(201820)),
+                         mode = "temporary", cohort_id = 1)
+    res <- .omopAnalysisRun(h, "dsomop:ohdsi.cohort_diagnostics.cohort_count",
+                            scope = big)
+    expect_true(nrow(res) >= 1)
+    expect_true(all(res$cohort_subjects %% 5 == 0 | is.na(res$cohort_subjects)))
   })
 })
 
@@ -295,10 +325,12 @@ test_that("(d) record entry with no person basis fail-closes in strict mode", {
     expect_true(nrow(relaxed) > 0)
   })
 
-  # incidence_rate (cohort_count, no person column) behaves the same way.
-  expect_equal(
-    nrow(.omopAnalysisRun(h, "dsomop:ohdsi.cohort_diagnostics.incidence_rate")),
-    0)
+  # The legacy OHDSI incidence_rate id now resolves to the LIVE CohortIncidence
+  # diagnostic (the cohort IS the at-risk population), so an un-scoped run fails
+  # closed with a clear requires-cohort error rather than the old empty frame.
+  expect_error(
+    .omopAnalysisRun(h, "dsomop:ohdsi.cohort_diagnostics.incidence_rate"),
+    "requires a cohort/population scope")
 })
 
 # --- SECURITY (e): scoping restricts the population & re-gates ----------------
@@ -428,25 +460,41 @@ test_that("(f) scoping a non-scopable native template gives a clear error", {
   expect_false(grepl("no such|syntax error", err, ignore.case = TRUE))
 })
 
-# --- SECURITY (g): precomputed Achilles/OHDSI reject scope -------------------
+# --- SECURITY (g): still-precomputed OHDSI reject scope; live Achilles accepts -
 
-test_that("(g) precomputed Achilles/OHDSI entries reject scope cleanly", {
+test_that("(g) still-precomputed OHDSI entries reject scope cleanly", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
 
-  ach_err <- tryCatch(
-    .omopAnalysisRun(h, "dsomop:achilles.401", scope = "dsomop_cohort_1"),
-    error = function(e) conditionMessage(e))
-  expect_match(ach_err, "does not support cohort/population scoping")
-  expect_match(ach_err, "pre-computed result with no per-row person key")
-  expect_false(grepl("no such|syntax error", ach_err, ignore.case = TRUE))
+  # The OHDSI result tables with no single-site live definition (fitted-model
+  # PLP, cross-site evidence synthesis) remain precomputed and have no per-row
+  # person key, so scoping them is rejected with a clear, non-SQL error.
+  for (id in c("dsomop:ohdsi.plp.plp_performances",
+               "dsomop:ohdsi.evidence_synthesis.es_cm_result")) {
+    err <- tryCatch(
+      .omopAnalysisRun(h, id, scope = "dsomop_cohort_1"),
+      error = function(e) conditionMessage(e))
+    expect_match(err, "does not support cohort/population scoping")
+    expect_match(err, "pre-computed result with no per-row person key")
+    expect_false(grepl("no such|syntax error", err, ignore.case = TRUE))
+  }
+})
 
-  ohd_err <- tryCatch(
-    .omopAnalysisRun(h, "dsomop:ohdsi.cohort_diagnostics.cohort_count",
-                     scope = "dsomop_cohort_1"),
-    error = function(e) conditionMessage(e))
-  expect_match(ohd_err, "does not support cohort/population scoping")
-  expect_match(ohd_err, "pre-computed result with no per-row person key")
+test_that("(g) live-compute Achilles entries now ACCEPT cohort scope", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.band = 5), {
+    # achilles.401 (persons with >=1 condition record, by concept) now computes
+    # live and is cohort-scopable — the exact behaviour the precomputed adapter
+    # used to reject. Scoping to a diabetes cohort restricts and re-gates it.
+    ct <- .cohortCreate(h, list(type = "condition", concept_set = c(201820)),
+                        mode = "temporary", cohort_id = 1)
+    res <- .omopAnalysisRun(h, "dsomop:achilles.401", scope = ct)
+    expect_s3_class(res, "data.frame")
+    expect_true(all(res$count_value %% 5 == 0 | is.na(res$count_value)))
+  })
 })
 
 # --- Run-path mode admission -------------------------------------------------

@@ -2,28 +2,47 @@
 % Please edit documentation in R/analysis_catalog.R
 \name{.omopAnalysisAchillesEntries}
 \alias{.omopAnalysisAchillesEntries}
-\title{Emit catalog entries for the pre-computed Achilles analyses}
+\title{Emit catalog entries for the Achilles analyses (all live-computing)}
 \usage{
 .omopAnalysisAchillesEntries(handle)
 }
 \arguments{
-\item{handle}{CDM handle (signature parity; not queried at build time).}
+\item{handle}{CDM handle (passed to each registrar; no DB I/O at build time).}
 }
 \value{
 List of \code{omop_analysis_entry} objects keyed by entry name.
 }
 \description{
-One entry per analysis_id in \code{\link{.achilles_catalog_static}}, named
-\code{"dsomop:achilles.<id>"}. The \code{unit} comes from the catalog's
-\code{unit} column (person/record/dist). Record-unit entries carry their
-\code{.achilles_record_gate_spec} (sibling/companion) in \code{meta} so the
-unified gate can apply the SAME person-gate \code{\link{.achillesPersonGate}}
-enforces. Compute is \code{kind="r"}, wrapping
-\code{\link{.achillesGetResults}} (count/person units) or
-\code{\link{.achillesGetDistributions}} (dist unit) for the single id.
+One entry per legacy Achilles analysis id, named \code{"dsomop:achilles.<id>"},
+but every entry now COMPUTES its metric LIVE from the CDM rather than reading a
+precomputed \code{achilles_results}/\code{achilles_results_dist} row. The
+read-precomputed catalog compute path (the old wrappers around
+\code{.achillesGetResults}/\code{.achillesGetDistributions}) has been removed:
+the entire family is now assembled by aggregating the per-group live registrars
+in the \code{pack_achilles_*.R} files. Each registrar returns its entries keyed
+by the SAME stable id, so existing references keep resolving — only the compute
+changed (read-results -> live-compute, scopable, disclosure-safe through the
+single \code{\link{.omopAnalysisGate}}).
 }
 \details{
-These are PRE-COMPUTED aggregates with no per-row person key, so the entry's
-scope rejects \code{accepts_tables}/cohort scoping (handled in the run path).
+The standalone Achilles results API (\code{omopAchillesResultsDS} /
+\code{omopAchillesDistributionDS} and their \code{.achilles*} backends) is a
+SEPARATE feature for reading a site's own precomputed Achilles tables and is
+untouched by this catalog change.
+
+The five groups cover disjoint id sets whose union is exactly the legacy
+Achilles catalog, so concatenation needs no overlay/dedup:
+\itemize{
+  \item ACH-A person-domain counts (1/2/3/4/5/10/12 + 2000..2003) —
+    \code{pack_achilles_person.R};
+  \item ACH-B/ACH-C observation-period counts (101/102/108/109/113) +
+    distributions (103..107) — \code{pack_achilles_obsperiod.R};
+  \item ACH-D persons-with->=1 / by-month / by-year + death (person-unit) —
+    \code{pack_achilles_counts.R};
+  \item ACH-E record counts (x01/xx20/505/1818, record-unit) —
+    \code{pack_achilles_records.R};
+  \item ACH-F/ACH-G/ACH-H distinct-concepts-per-person + age + drug-field
+    distributions (dist-unit) — \code{pack_achilles_dist.R}.
+}
 }
 \keyword{internal}
