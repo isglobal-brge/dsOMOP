@@ -631,9 +631,9 @@ omopCleanupDS <- function(omop_symbol, prefix = "dsomop_") {
 #' (running any aggregate resets that session's inactivity timer). When an
 #' \code{omop_symbol} is supplied, it ALSO issues a trivial \code{SELECT 1}
 #' against that handle's database connection, keeping the server-side DB
-#' connection (Rock R session -> OMOP database) warm too. This is the keepalive
-#' the Studio uses on a timer to prevent BOTH connection layers from timing out
-#' while the app is open.
+#' connection (Rock R session -> OMOP database) warm too. This is a keepalive
+#' for long-running interactive sessions, preventing BOTH connection layers from
+#' timing out between commands.
 #'
 #' @param omop_symbol Character; optional handle symbol. When provided, the
 #'   handle's DB connection is touched so it does not time out.

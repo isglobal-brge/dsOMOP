@@ -746,7 +746,7 @@
   list(breaks = breaks, counts = counts)
 }
 
-# --- Exploration Profiling (OMOP Studio) ---
+# --- Exploration Profiling ---
 
 #' Build a dialect-aware LIMIT ... OFFSET ... suffix for paginated reads
 #'
