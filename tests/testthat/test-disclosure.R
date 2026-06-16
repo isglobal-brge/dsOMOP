@@ -193,7 +193,9 @@ test_that("computeAgeGroups merges small bins at extremes", {
 
 test_that("classifyFilter returns correct classification", {
   expect_equal(.classifyFilter("sex"), "allowed")
-  expect_equal(.classifyFilter("age_group"), "allowed")
+  # age_group is now constrained (5-year minimum band width enforced).
+  expect_equal(.classifyFilter("age_group", list(groups = c("0-4", "5-9"))),
+               "constrained")
   expect_equal(.classifyFilter("cohort"), "allowed")
   expect_equal(.classifyFilter("concept_set"), "allowed")
   # value_threshold is a population-defining range filter (allowed/size-checked);
@@ -242,9 +244,47 @@ test_that("validateFilter stops on blocked filters", {
 
 test_that("validateFilter passes allowed and constrained filters", {
   expect_invisible(.validateFilter("sex"))
-  expect_invisible(.validateFilter("age_group"))
+  expect_invisible(.validateFilter("age_group", list(groups = c("0-4", "5-9"))))
   expect_invisible(.validateFilter("has_concept"))
   expect_invisible(.validateFilter("value_threshold"))
+})
+
+test_that("age_group filter enforces the 5-year minimum band width", {
+  # Wide / standard 5-year bands are allowed.
+  expect_equal(.classifyFilter("age_group", list(groups = c("0-4", "5-9"))),
+               "constrained")
+  expect_equal(.classifyFilter("age_group", list(groups = c("18-24"))),
+               "constrained")
+  # Open-ended upper band ("85+") is wide -> allowed.
+  expect_equal(.classifyFilter("age_group", list(groups = c("85+"))),
+               "constrained")
+  # A single-birth-year band must be blocked (would evade the age_range gate).
+  expect_equal(.classifyFilter("age_group", list(groups = c("87-87"))),
+               "blocked")
+  expect_equal(.classifyFilter("age_group", list(groups = c("0-4", "60-62"))),
+               "blocked")
+  # Empty / unparseable groups fail closed.
+  expect_equal(.classifyFilter("age_group", list(groups = character(0))),
+               "blocked")
+})
+
+test_that("suppressSmallCounts secondary mode hides a lone sub-threshold level", {
+  # Binary breakdown with one sub-threshold level (M=2, F=98). Primary alone
+  # would leave F visible -> M recoverable from the total. Secondary suppression
+  # drops the smallest survivor too, so the whole binary becomes unavailable.
+  binary <- data.frame(value = c("F", "M"), n_persons = c(98, 2),
+                       stringsAsFactors = FALSE)
+  expect_equal(nrow(.suppressSmallCounts(binary, "n_persons", secondary = TRUE)), 0L)
+  # Without secondary, F survives (the leak the fix closes).
+  expect_equal(nrow(.suppressSmallCounts(binary, "n_persons", secondary = FALSE)), 1L)
+  # When >= 2 levels are already suppressed, secondary adds nothing.
+  three <- data.frame(value = c("A", "B", "C"), n_persons = c(50, 2, 1),
+                      stringsAsFactors = FALSE)
+  expect_equal(nrow(.suppressSmallCounts(three, "n_persons", secondary = TRUE)), 1L)
+  # When nothing is suppressed, secondary is a no-op.
+  safe <- data.frame(value = c("A", "B"), n_persons = c(50, 40),
+                     stringsAsFactors = FALSE)
+  expect_equal(nrow(.suppressSmallCounts(safe, "n_persons", secondary = TRUE)), 2L)
 })
 
 # ==============================================================================

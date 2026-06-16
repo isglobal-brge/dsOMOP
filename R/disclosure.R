@@ -199,9 +199,14 @@
 #'
 #' @param df Data frame with one or more count columns
 #' @param count_cols Character vector; names of count columns to check
+#' @param secondary Logical; when TRUE apply complementary (secondary)
+#'   suppression for an EXHAUSTIVE 1-D breakdown (e.g. a binary/low-cardinality
+#'   categorical such as sex). Only set this when \code{df} contains every level
+#'   of the variable, so that a hidden level is recoverable by subtraction from
+#'   a known/derivable total.
 #' @return Data frame with disclosive rows removed
 #' @keywords internal
-.suppressSmallCounts <- function(df, count_cols = "n") {
+.suppressSmallCounts <- function(df, count_cols = "n", secondary = FALSE) {
   if (nrow(df) == 0) return(df)
   settings <- .omopDisclosureSettings()
   threshold <- settings$nfilter_tab
@@ -217,6 +222,17 @@
   for (col in count_cols) {
     vals <- df[[col]]
     safe <- safe & (!is.na(vals) & vals >= threshold)
+  }
+  # Complementary suppression: on an exhaustive breakdown, primary suppression
+  # that hides EXACTLY ONE level leaves that level as a single unknown =
+  # total - sum(visible), so it can be recovered by subtraction (the classic
+  # binary-sex case: hide M=2, but F + the column total reveal it). Drop the
+  # smallest surviving level too, so at least two levels are always hidden
+  # together and no single suppressed value is recoverable.
+  if (isTRUE(secondary) && sum(!safe) == 1L && sum(safe) >= 1L) {
+    primary <- suppressWarnings(as.numeric(df[[count_cols[1]]]))
+    surv <- which(safe)
+    safe[surv[which.min(primary[surv])]] <- FALSE
   }
   result <- df[safe, , drop = FALSE]
   rownames(result) <- NULL
@@ -416,13 +432,17 @@
 #' @keywords internal
 .classifyFilter <- function(filter_type, filter_params = list()) {
   # Always allowed: categorical with known small domains (low fingerprint risk)
-  always_allowed <- c("sex", "age_group", "cohort", "concept_set", "value_bin")
+  always_allowed <- c("sex", "cohort", "concept_set", "value_bin")
 
   # Constrained: allowed only after validating minimum range width.
   # value_threshold is permitted as a population-defining range filter; its
   # exact-value operators (==, !=) are blocked at the cohort-creation site
-  # (see .cohortCreate) and the resulting cohort is size-checked.
-  constrained <- c("age_range", "has_concept", "date_range", "min_count",
+  # (see .cohortCreate) and the resulting cohort is size-checked. age_group is
+  # constrained (not always-allowed) so its bands get the same 5-year minimum as
+  # age_range -- otherwise groups like c("87-87") would target a single birth
+  # year and evade the age_range anti-fingerprinting width gate.
+  constrained <- c("age_range", "age_group", "has_concept", "date_range",
+                    "min_count",
                     "not_has_concept", "concept_count", "prior_observation",
                     "followup", "visit_count", "has_measurement",
                     "missing_measurement", "value_threshold")
@@ -443,6 +463,21 @@
     if (filter_type == "age_range" && gate_on) {
       range_width <- (filter_params$max %||% 150) - (filter_params$min %||% 0)
       if (range_width < 5) return("blocked")
+    }
+    if (filter_type == "age_group" && gate_on) {
+      groups <- filter_params$groups
+      if (length(groups) == 0) return("blocked")
+      for (g in groups) {
+        g <- trimws(as.character(g))
+        if (grepl("^[0-9]+\\+$", g)) next   # open-ended upper band (e.g. "85+"): wide
+        parts <- suppressWarnings(as.integer(strsplit(g, "-", fixed = TRUE)[[1]]))
+        # Bands are inclusive "lo-hi" (e.g. "0-4" spans 5 years). Anything
+        # narrower than 5 years, or unparseable, fails closed.
+        if (length(parts) != 2 || any(is.na(parts)) ||
+            (parts[2] - parts[1] + 1) < 5) {
+          return("blocked")
+        }
+      }
     }
     if (filter_type == "date_range" && gate_on) {
       if (!is.null(filter_params$start) && !is.null(filter_params$end)) {

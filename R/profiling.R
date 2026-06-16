@@ -568,9 +568,20 @@
   if (suppress_small) {
     # Person-based suppression for person-bearing tables (fail-closed row-drop
     # on distinct persons); record-count suppression only for tables that have
-    # no person_id to count.
+    # no person_id to count. Complementary suppression applies ONLY to an
+    # EXHAUSTIVE PARTITION: a single-valued-per-person column (person-table
+    # demographics -- gender, race, ethnicity), where the levels partition the
+    # cohort so a lone sub-threshold level is recoverable from the total (e.g.
+    # binary sex: hide M, but F + total reveal it). It then drops the smallest
+    # survivor too, hiding the whole variable. Event-table columns are
+    # multi-valued per person (one patient can hold many concept values), so the
+    # levels do NOT partition persons and complement inference does not apply --
+    # secondary suppression would only over-suppress there.
+    partition <- identical(table, "person") &&
+      !is.na(n_levels) && as.numeric(n_levels) <= effective_limit
     result <- .suppressSmallCounts(result,
-                                   if (has_person) "n_persons" else "n")
+                                   if (has_person) "n_persons" else "n",
+                                   secondary = partition)
   }
 
   # Band the surviving record/person counts at the return boundary so the exact
@@ -1294,11 +1305,15 @@
     p95_val <- tryCatch(.executeQuery(handle, p95_sql)$val[1], error = function(e) NA_real_)
 
     if (is.na(p05_val) || is.na(p95_val) || p05_val == p95_val) {
+      # Degenerate spread (>~90% identical values, or too few rows): a single
+      # bin would have bin_start == bin_end == the exact value -- an exact-value
+      # disclosure. Return an EMPTY histogram instead (matching the concept
+      # drilldown path), so no zero-width bin carrying a real measurement leaks.
       return(.dropSuppressed(data.frame(
-        bin_start = p05_val %||% 0,
-        bin_end = p95_val %||% 0,
-        count = n_total,
-        suppressed = n_total < settings$nfilter_tab,
+        bin_start = numeric(0),
+        bin_end = numeric(0),
+        count = integer(0),
+        suppressed = logical(0),
         stringsAsFactors = FALSE
       )))
     }
@@ -1735,11 +1750,20 @@
                           " AND t.", val_col, " IS NOT NULL")
     where_sql <- paste0(" WHERE ", where_parts)
 
-    count_sql <- paste0("SELECT COUNT(*) AS n FROM ", from_clause, where_sql)
-    n_vals <- tryCatch(.executeQuery(handle, count_sql)$n[1],
-                       error = function(e) 0L)
+    count_sql <- paste0("SELECT COUNT(*) AS n",
+                        if ("person_id" %in% tbl_cols)
+                          ", COUNT(DISTINCT t.person_id) AS n_persons" else "",
+                        " FROM ", from_clause, where_sql)
+    cnt_row <- tryCatch(.executeQuery(handle, count_sql), error = function(e) NULL)
+    n_vals <- if (!is.null(cnt_row)) cnt_row$n[1] else 0L
+    # Gate on distinct PERSONS, not records: one patient contributing many
+    # measurements must not by itself enable a value distribution (the standalone
+    # histogram path already has this person gate).
+    n_pers <- if (!is.null(cnt_row) && "n_persons" %in% names(cnt_row))
+      cnt_row$n_persons[1] else n_vals
 
-    if (!is.na(n_vals) && n_vals >= settings$nfilter_subset) {
+    if (!is.na(n_vals) && n_vals >= settings$nfilter_subset &&
+        !is.na(n_pers) && n_pers >= settings$nfilter_subset) {
       # Quantiles
       probs <- c(0.05, 0.25, 0.5, 0.75, 0.95)
       quantiles <- data.frame(probability = probs, value = numeric(length(probs)),
@@ -1809,8 +1833,10 @@
   # --- 3. Categorical values (only if value_as_concept_id exists) ---
   categorical_values <- NULL
   if ("value_as_concept_id" %in% tbl_cols) {
+    has_person_col <- "person_id" %in% tbl_cols
     cat_sql <- paste0(
-      "SELECT value_as_concept_id, COUNT(*) AS n ",
+      "SELECT value_as_concept_id, COUNT(*) AS n",
+      if (has_person_col) ", COUNT(DISTINCT person_id) AS n_persons " else " ",
       "FROM ", qualified,
       " WHERE ", where_concept,
       " AND value_as_concept_id IS NOT NULL ",
@@ -1833,7 +1859,23 @@
       }, error = function(e) FALSE)
 
       if (safe) {
-        cat_result <- .suppressSmallCounts(cat_result, "n")
+        # Suppress on distinct PERSONS for this person-bearing table (a value
+        # backed by many records but few people is disclosive), then band the
+        # surviving counts so exact category sizes aren't released. No secondary
+        # suppression: value_as_concept_id is multi-valued per person (one
+        # patient can have several values over time), so the levels do not
+        # partition persons and a hidden level is not recoverable from a total.
+        cat_result <- .suppressSmallCounts(
+          cat_result, if (has_person_col) "n_persons" else "n")
+        if (nrow(cat_result) > 0) {
+          band_width <- settings$nfilter_band
+          cat_result$n <- vapply(cat_result$n, .bandCount, numeric(1),
+                                 band_width = band_width)
+          if ("n_persons" %in% names(cat_result)) {
+            cat_result$n_persons <- vapply(cat_result$n_persons, .bandCount,
+                                           numeric(1), band_width = band_width)
+          }
+        }
 
         # Decorate with concept names
         cat_ids <- cat_result$value_as_concept_id[!is.na(cat_result$value_as_concept_id)]
