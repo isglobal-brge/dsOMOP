@@ -126,7 +126,17 @@
     " WHERE concept_id IN (", ids, ")"
   )
 
-  .executeQuery(handle, sql)
+  res <- .executeQuery(handle, sql)
+  # OMOP reserves concept_id 0 for "No matching concept"; some CDM concept
+  # tables omit that row, so backfill it instead of falling back to "concept_0".
+  if (0 %in% as.integer(concept_ids) &&
+      !(0 %in% suppressWarnings(as.integer(res$concept_id)))) {
+    res <- rbind(res, data.frame(
+      concept_id = 0L, concept_name = "No matching concept",
+      domain_id = "Metadata", vocabulary_id = "None",
+      standard_concept = NA_character_, stringsAsFactors = FALSE))
+  }
+  res
 }
 
 #' Get descendant concepts via concept_ancestor table
