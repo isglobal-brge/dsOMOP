@@ -4,12 +4,14 @@
 library(dsOMOP)
 
 # Source the test fixture
+# Resolve the package's OWN tracked fixture (dsOMOP/tests/fixtures/), package-
+# rooted via test_path so it works under devtools::test / R CMD check / a fresh
+# clone. Self-contained: never climbs out of the package to a shared parent.
 tp <- tryCatch(testthat::test_path(), error = function(e) NULL)
 fixture_candidates <- c(
-  if (!is.null(tp)) file.path(tp, "..", "..", "..", "tests", "fixtures", "create_test_db.R"),
+  if (!is.null(tp)) file.path(tp, "..", "fixtures", "create_test_db.R"),
   file.path("tests", "fixtures", "create_test_db.R"),
-  file.path("..", "tests", "fixtures", "create_test_db.R"),
-  file.path("..", "..", "tests", "fixtures", "create_test_db.R")
+  file.path("..", "fixtures", "create_test_db.R")
 )
 fixture_path <- NULL
 for (fp in fixture_candidates) {
