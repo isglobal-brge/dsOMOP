@@ -223,6 +223,27 @@
   result
 }
 
+#' Drop rows already flagged suppressed, and remove the flag column
+#'
+#' "No hints" at the source: a result table must never be RETURNED carrying a
+#' \code{suppressed} marker. A suppressed row reveals that a rare
+#' concept/value/bin EXISTS (with too few persons), which is itself disclosive.
+#' This removes such rows entirely and drops the now-redundant flag column, so
+#' the suppressed marker never leaves the server.
+#'
+#' @param df Data frame possibly containing a logical \code{suppressed} column
+#' @param col Character; the flag column name (default \code{"suppressed"})
+#' @return \code{df} with suppressed rows and the flag column removed
+#' @keywords internal
+.dropSuppressed <- function(df, col = "suppressed") {
+  if (is.data.frame(df) && col %in% names(df)) {
+    df <- df[!(df[[col]] %in% TRUE), , drop = FALSE]
+    df[[col]] <- NULL
+    rownames(df) <- NULL
+  }
+  df
+}
+
 #' Check if returning distinct levels is safe
 #'
 #' Two checks prevent attribute-inference attacks on categorical variables:

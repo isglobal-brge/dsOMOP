@@ -198,3 +198,29 @@ test_that("prior observation and followup cohort filters use translated dates", 
     }
   }
 })
+
+test_that("age_range filter honors an explicit reference_date", {
+  handle <- new.env(parent = emptyenv())
+  handle$target_dialect <- "sqlite"
+  bp <- local_observation_period_blueprint()
+
+  anchored <- .compileCohortFilterLeaf(
+    handle,
+    list(type = "age_range",
+         params = list(min = 65L, max = 150L, reference_date = "2024-07-01")),
+    bp,
+    person_cols = "year_of_birth"
+  )
+  expect_match(anchored, "year_of_birth <= (2024 - 65)", fixed = TRUE)
+
+  current_year <- as.integer(format(Sys.Date(), "%Y"))
+  default <- .compileCohortFilterLeaf(
+    handle,
+    list(type = "age_range", params = list(min = 65L, max = 150L)),
+    bp,
+    person_cols = "year_of_birth"
+  )
+  expect_match(default,
+               paste0("year_of_birth <= (", current_year, " - 65)"),
+               fixed = TRUE)
+})

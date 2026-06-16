@@ -368,7 +368,7 @@
     ))
   }
 
-  results
+  .dropSuppressed(results)
 }
 
 #' Get missingness rates for columns
@@ -1252,9 +1252,9 @@
   n_total <- .executeQuery(handle, count_sql)$n[1]
 
   if (is.na(n_total) || n_total == 0) {
-    return(data.frame(bin_start = numeric(0), bin_end = numeric(0),
+    return(.dropSuppressed(data.frame(bin_start = numeric(0), bin_end = numeric(0),
                       count = integer(0), suppressed = logical(0),
-                      stringsAsFactors = FALSE))
+                      stringsAsFactors = FALSE)))
   }
 
   # Use provided breaks (from two-pass pooling) or compute locally
@@ -1294,13 +1294,13 @@
     p95_val <- tryCatch(.executeQuery(handle, p95_sql)$val[1], error = function(e) NA_real_)
 
     if (is.na(p05_val) || is.na(p95_val) || p05_val == p95_val) {
-      return(data.frame(
+      return(.dropSuppressed(data.frame(
         bin_start = p05_val %||% 0,
         bin_end = p95_val %||% 0,
         count = n_total,
         suppressed = n_total < settings$nfilter_tab,
         stringsAsFactors = FALSE
-      ))
+      )))
     }
 
     bin_width <- (p95_val - p05_val) / bins
@@ -1356,10 +1356,11 @@
     result$suppressed[i] <- FALSE
   }
 
-  # Drop bins with small counts (no hints)
+  # Drop bins with small counts (no hints), then drop the now-redundant flag
+  # column so no `suppressed` marker is ever returned.
   result <- .suppressSmallCounts(result, "count")
 
-  result
+  .dropSuppressed(result)
 }
 
 #' Compute quantiles at specified probabilities
@@ -1593,15 +1594,15 @@
   result <- .executeQuery(handle, sql)
 
   if (nrow(result) == 0) {
-    return(data.frame(period = character(0), n_records = integer(0),
-                      suppressed = logical(0), stringsAsFactors = FALSE))
+    return(.dropSuppressed(data.frame(period = character(0), n_records = integer(0),
+                      suppressed = logical(0), stringsAsFactors = FALSE)))
   }
 
-  # Drop bins with small counts (no hints)
+  # Drop bins with small counts (no hints), then the redundant flag column.
   result$suppressed <- FALSE
   result <- .suppressSmallCounts(result, "n_records")
 
-  result
+  .dropSuppressed(result)
 }
 
 # --- Concept Drilldown & Locator ---
@@ -1796,8 +1797,8 @@
             histogram$count[j] <- cnt
             histogram$suppressed[j] <- FALSE
           }
-          # Drop bins with small counts (no hints)
-          histogram <- .suppressSmallCounts(histogram, "count")
+          # Drop bins with small counts (no hints), then the redundant flag column.
+          histogram <- .dropSuppressed(.suppressSmallCounts(histogram, "count"))
         }
       }
 

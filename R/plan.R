@@ -526,10 +526,15 @@
   } else if (ftype == "age_range") {
     # Age is computed at the cohort index date when this filter is anchored to an
     # existing cohort (deterministic, and consistent with the rest of the system,
-    # which ages year_of_birth relative to the index date). With no index anchor
-    # (e.g. defining a cohort purely from person filters) there is no index date,
-    # so the reference falls back to the current year.
-    ref_year <- .ageReferenceYear(handle, index_anchor)
+    # which ages year_of_birth relative to the index date). An explicit
+    # reference_date (from omop_filter_age(year=)/reference_date=) overrides both,
+    # keeping the filter consistent with a year-anchored age variable. With
+    # neither, the reference falls back to the current year.
+    ref_year <- if (!is.null(params$reference_date)) {
+      as.integer(format(as.Date(params$reference_date), "%Y"))
+    } else {
+      .ageReferenceYear(handle, index_anchor)
+    }
     parts <- character(0)
     if (!is.null(params$min) && "year_of_birth" %in% person_cols) {
       parts <- c(parts, paste0("p.year_of_birth <= (", ref_year, " - ",
