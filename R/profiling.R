@@ -568,20 +568,9 @@
   if (suppress_small) {
     # Person-based suppression for person-bearing tables (fail-closed row-drop
     # on distinct persons); record-count suppression only for tables that have
-    # no person_id to count. Complementary suppression applies ONLY to an
-    # EXHAUSTIVE PARTITION: a single-valued-per-person column (person-table
-    # demographics -- gender, race, ethnicity), where the levels partition the
-    # cohort so a lone sub-threshold level is recoverable from the total (e.g.
-    # binary sex: hide M, but F + total reveal it). It then drops the smallest
-    # survivor too, hiding the whole variable. Event-table columns are
-    # multi-valued per person (one patient can hold many concept values), so the
-    # levels do NOT partition persons and complement inference does not apply --
-    # secondary suppression would only over-suppress there.
-    partition <- identical(table, "person") &&
-      !is.na(n_levels) && as.numeric(n_levels) <= effective_limit
+    # no person_id to count.
     result <- .suppressSmallCounts(result,
-                                   if (has_person) "n_persons" else "n",
-                                   secondary = partition)
+                                   if (has_person) "n_persons" else "n")
   }
 
   # Band the surviving record/person counts at the return boundary so the exact

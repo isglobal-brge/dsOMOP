@@ -199,14 +199,9 @@
 #'
 #' @param df Data frame with one or more count columns
 #' @param count_cols Character vector; names of count columns to check
-#' @param secondary Logical; when TRUE apply complementary (secondary)
-#'   suppression for an EXHAUSTIVE 1-D breakdown (e.g. a binary/low-cardinality
-#'   categorical such as sex). Only set this when \code{df} contains every level
-#'   of the variable, so that a hidden level is recoverable by subtraction from
-#'   a known/derivable total.
 #' @return Data frame with disclosive rows removed
 #' @keywords internal
-.suppressSmallCounts <- function(df, count_cols = "n", secondary = FALSE) {
+.suppressSmallCounts <- function(df, count_cols = "n") {
   if (nrow(df) == 0) return(df)
   settings <- .omopDisclosureSettings()
   threshold <- settings$nfilter_tab
@@ -222,17 +217,6 @@
   for (col in count_cols) {
     vals <- df[[col]]
     safe <- safe & (!is.na(vals) & vals >= threshold)
-  }
-  # Complementary suppression: on an exhaustive breakdown, primary suppression
-  # that hides EXACTLY ONE level leaves that level as a single unknown =
-  # total - sum(visible), so it can be recovered by subtraction (the classic
-  # binary-sex case: hide M=2, but F + the column total reveal it). Drop the
-  # smallest surviving level too, so at least two levels are always hidden
-  # together and no single suppressed value is recoverable.
-  if (isTRUE(secondary) && sum(!safe) == 1L && sum(safe) >= 1L) {
-    primary <- suppressWarnings(as.numeric(df[[count_cols[1]]]))
-    surv <- which(safe)
-    safe[surv[which.min(primary[surv])]] <- FALSE
   }
   result <- df[safe, , drop = FALSE]
   rownames(result) <- NULL

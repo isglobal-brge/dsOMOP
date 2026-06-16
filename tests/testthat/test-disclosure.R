@@ -268,25 +268,6 @@ test_that("age_group filter enforces the 5-year minimum band width", {
                "blocked")
 })
 
-test_that("suppressSmallCounts secondary mode hides a lone sub-threshold level", {
-  # Binary breakdown with one sub-threshold level (M=2, F=98). Primary alone
-  # would leave F visible -> M recoverable from the total. Secondary suppression
-  # drops the smallest survivor too, so the whole binary becomes unavailable.
-  binary <- data.frame(value = c("F", "M"), n_persons = c(98, 2),
-                       stringsAsFactors = FALSE)
-  expect_equal(nrow(.suppressSmallCounts(binary, "n_persons", secondary = TRUE)), 0L)
-  # Without secondary, F survives (the leak the fix closes).
-  expect_equal(nrow(.suppressSmallCounts(binary, "n_persons", secondary = FALSE)), 1L)
-  # When >= 2 levels are already suppressed, secondary adds nothing.
-  three <- data.frame(value = c("A", "B", "C"), n_persons = c(50, 2, 1),
-                      stringsAsFactors = FALSE)
-  expect_equal(nrow(.suppressSmallCounts(three, "n_persons", secondary = TRUE)), 1L)
-  # When nothing is suppressed, secondary is a no-op.
-  safe <- data.frame(value = c("A", "B"), n_persons = c(50, 40),
-                     stringsAsFactors = FALSE)
-  expect_equal(nrow(.suppressSmallCounts(safe, "n_persons", secondary = TRUE)), 2L)
-})
-
 # ==============================================================================
 # No-Hint Error Message Test
 # ==============================================================================
