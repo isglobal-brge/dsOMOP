@@ -7,7 +7,7 @@
 .cohortFromTokenFrame(handle, x, new_name = NULL)
 }
 \arguments{
-\item{handle}{CDM handle (provides \code{handle$person_key} and the
+\item{handle}{CDM handle (provides the server-side person-key provider and the
 connection).}
 
 \item{x}{A token-keyed \code{omop.table} data.frame (resolved from a session

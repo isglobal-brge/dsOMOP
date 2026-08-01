@@ -17,6 +17,58 @@
 # rbind-doubling bypass: duplicating rows cannot raise the distinct-person
 # count, so a 1-person frame stays a 1-person frame and is blocked.
 
+#' Canonical pseudonymization contract carried by an omop.table
+#'
+#' Old or manually constructed workspaces can carry the class without the key
+#' identity needed to prove that person tokens are compatible. Such objects are
+#' rejected rather than guessed or migrated; recreate them through dsOMOP.
+#'
+#' @param x An omop.table.
+#' @param caller Operation name used in the error message.
+#' @return Canonical public pseudonymization contract.
+#' @keywords internal
+.omopTablePseudonymization <- function(x, caller = "dsOMOP") {
+  contract <- attr(x, "dsomop_pseudonymization", exact = TRUE)
+  if (is.null(contract)) {
+    stop(caller, ": input lacks its public pseudonymization contract; ",
+         "recreate the omop.table under the current dsOMOP version.",
+         call. = FALSE)
+  }
+  tryCatch(
+    .validateStagedPseudonymization(contract),
+    error = function(e) stop(
+      caller, ": input has an invalid public pseudonymization contract; ",
+      "recreate the omop.table under the current dsOMOP version.",
+      call. = FALSE
+    )
+  )
+}
+
+#' Require exact person-token compatibility across omop.table inputs
+#'
+#' Equality covers protocol, key-contract version, key id, epoch and resource
+#' scoping. Matching token strings are not accepted as evidence on their own.
+#'
+#' @param ... omop.table inputs.
+#' @param caller Operation name used in the error message.
+#' @return The shared canonical contract.
+#' @keywords internal
+.assertOmopTablePseudonymization <- function(..., caller = "dsOMOP") {
+  sources <- list(...)
+  if (length(sources) < 1L) {
+    stop(caller, ": no omop.table inputs were supplied.", call. = FALSE)
+  }
+  contracts <- lapply(
+    sources, .omopTablePseudonymization, caller = caller
+  )
+  if (length(contracts) > 1L &&
+      any(!vapply(contracts[-1L], identical, logical(1L), contracts[[1L]]))) {
+    stop(caller, ": inputs use incompatible pseudonymization contracts ",
+         "(key, epoch, protocol, or scope differs).", call. = FALSE)
+  }
+  contracts[[1L]]
+}
+
 #' The person/subject token column(s) present in a frame
 #'
 #' @param x A data.frame.
@@ -62,6 +114,10 @@
 #' @keywords internal
 .retagOmopTable <- function(result, ...) {
   sources <- list(...)
+  pseudonymization <- do.call(
+    .assertOmopTablePseudonymization,
+    c(sources, list(caller = ".retagOmopTable"))
+  )
   protected <- character(0)
   concept_cols <- character(0)
   for (s in sources) {
@@ -79,6 +135,7 @@
   if (length(concept_cols) > 0L) {
     attr(result, "omop_concept_cols") <- concept_cols
   }
+  attr(result, "dsomop_pseudonymization") <- pseudonymization
   class(result) <- union("omop.table", class(result))
   result
 }
@@ -105,6 +162,7 @@ omopMergeDS <- function(x, y, by = "person_id", type = "inner") {
     stop("omopMergeDS: both inputs must be dsOMOP tables (omop.table).",
          call. = FALSE)
   }
+  .assertOmopTablePseudonymization(x, y, caller = "omopMergeDS")
   by <- .ds_arg(by)
   type <- .ds_arg(type)
   type <- match.arg(as.character(type), c("inner", "left"))
@@ -119,13 +177,39 @@ omopMergeDS <- function(x, y, by = "person_id", type = "inner") {
     stop("omopMergeDS: every 'by' column must exist in both inputs.",
          call. = FALSE)
   }
-  # The only legal join key is the person/subject token. Any other column that
-  # is protected OR a known identifier would let a client correlate on a
-  # quasi-identifier, so restrict `by` to the person key.
+  # Join grain is explicit: a person key is mandatory; the only optional extra
+  # is the synthetic cohort-episode key used by longitudinal outputs.
   person_keys <- .PERSON_KEY_COLS()
-  if (!all(by %in% person_keys)) {
-    stop("omopMergeDS: 'by' may only be the person key, not another ",
-         "protected/identifier column.", call. = FALSE)
+  if (length(intersect(by, person_keys)) != 1L ||
+      !all(by %in% c(person_keys, .EPISODE_KEY_COLS()))) {
+    stop("omopMergeDS: 'by' must contain one person key and may additionally ",
+         "contain only a cohort episode key.", call. = FALSE)
+  }
+  person_by <- intersect(by, person_keys)[[1]]
+  if (length(by) == 1L && anyDuplicated(x[[person_by]]) &&
+      anyDuplicated(y[[person_by]])) {
+    stop("omopMergeDS: both inputs have repeated rows per person; join by ",
+         "person_id plus cohort_row_id (episode grain), or reduce one side ",
+         "before merging.", call. = FALSE)
+  }
+
+  key_string <- function(df) {
+    do.call(paste, c(lapply(df[by], as.character), sep = "\r"))
+  }
+  nx <- table(key_string(x))
+  ny <- table(key_string(y))
+  common <- intersect(names(nx), names(ny))
+  projected <- sum(as.numeric(nx[common]) * as.numeric(ny[common]))
+  if (identical(type, "left")) {
+    projected <- projected + sum(nx[setdiff(names(nx), common)])
+  }
+  cap <- suppressWarnings(as.numeric(
+    getOption("dsomop.max_memory_rows", 1000000L)
+  ))
+  if (length(cap) != 1L || is.na(cap) || !is.finite(cap) || cap < 1L ||
+      projected > cap) {
+    stop("omopMergeDS: projected join exceeds the server row cap.",
+         call. = FALSE)
   }
 
   result <- merge(x, y, by = by, all.x = (type == "left"), all.y = FALSE)
@@ -138,19 +222,18 @@ omopMergeDS <- function(x, y, by = "person_id", type = "inner") {
 #' Filter the rows of an omop.table (Assign)
 #'
 #' @description
-#' Applies a single comparison filter to a server-side omop.table and re-gates
-#' the filtered result on its distinct-person token count (fail-closed): a
-#' filter that narrows the population below the disclosure threshold errors and
-#' never returns. Filtering on a protected/identifier column (the person token,
-#' \code{subject_id}, or any \code{dsomop_protected} column) is rejected, so a
-#' client cannot probe individual identities.
+#' Applies a categorical membership/equality filter to a server-side omop.table
+#' and re-gates both sides of the split on distinct persons. Numeric/date
+#' thresholds are rejected here because arbitrary repeated cut points form a
+#' disclosure oracle; express those filters in a recipe using controller-sized
+#' age/date ranges or protected numeric bins. Protected identifiers are always
+#' rejected.
 #'
 #' @param x A server-side omop.table data.frame.
 #' @param var Character; an existing, non-protected column to filter on.
-#' @param op Character; one of \code{"=="}, \code{"!="}, \code{">"},
-#'   \code{">="}, \code{"<"}, \code{"<="}, \code{"in"}, \code{"not_in"}.
-#' @param value Comparison value(s). Scalar for the relational operators; a
-#'   vector for \code{"in"} / \code{"not_in"}.
+#' @param op Character; one of \code{"=="}, \code{"!="}, \code{"in"}, or
+#'   \code{"not_in"}, on a low-cardinality categorical column.
+#' @param value Category value(s).
 #' @return The filtered omop.table (re-assigned to the caller's symbol).
 #' @export
 omopFilterDS <- function(x, var, op, value) {
@@ -158,23 +241,47 @@ omopFilterDS <- function(x, var, op, value) {
     stop("omopFilterDS: input must be a dsOMOP table (omop.table).",
          call. = FALSE)
   }
+  .omopTablePseudonymization(x, caller = "omopFilterDS")
   var <- .validateIdentifier(.ds_arg(var), "filter column")
   op <- .ds_arg(op)
-  op <- match.arg(as.character(op),
-                  c("==", "!=", ">", ">=", "<", "<=", "in", "not_in"))
+  op <- match.arg(as.character(op), c("==", "!=", "in", "not_in"))
   value <- .ds_arg(value)
   .omopAuditLog("omopFilterDS", list(var = var, op = op))
 
   if (!var %in% names(x)) {
     stop("omopFilterDS: column '", var, "' not found.", call. = FALSE)
   }
-  protected <- union(attr(x, "dsomop_protected"), .PERSON_KEY_COLS())
+  protected <- union(attr(x, "dsomop_protected"),
+                     c(.PERSON_KEY_COLS(), .EPISODE_KEY_COLS()))
   if (var %in% protected) {
     stop("omopFilterDS: cannot filter on a protected/identifier column ('",
          var, "').", call. = FALSE)
   }
 
+  if (op %in% c("==", "!=") &&
+      length(unlist(value, use.names = FALSE)) != 1L) {
+    stop("omopFilterDS: equality operators require one scalar value.",
+         call. = FALSE)
+  }
+  if (op %in% c("in", "not_in") &&
+      length(unlist(value, use.names = FALSE)) < 1L) {
+    stop("omopFilterDS: in/not_in require at least one value.", call. = FALSE)
+  }
+
   col <- x[[var]]
+  if (!is.factor(col) && !is.character(col) && !is.logical(col)) {
+    stop("omopFilterDS: arbitrary numeric/date thresholds are not allowed; ",
+         "use a recipe filter with disclosure-safe bins or ranges.",
+         call. = FALSE)
+  }
+  settings <- .omopDisclosureSettings()
+  n_levels <- length(unique(col[!is.na(col)]))
+  n_persons <- .omopDistinctPersons(x)
+  if (n_levels > settings$nfilter_levels_max || n_persons < 1L ||
+      n_levels / n_persons > settings$nfilter_levels_density) {
+    stop("Disclosive: categorical filter column has unsafe cardinality.",
+         call. = FALSE)
+  }
   # Coerce the comparison value to the column's type so a string-typed value
   # cannot silently coerce a numeric column to character (which would change
   # comparison semantics). Character/factor columns validate value length.
@@ -183,10 +290,6 @@ omopFilterDS <- function(x, var, op, value) {
   keep <- switch(op,
     "=="     = col == value,
     "!="     = col != value,
-    ">"      = col >  value,
-    ">="     = col >= value,
-    "<"      = col <  value,
-    "<="     = col <= value,
     "in"     = col %in% value,
     "not_in" = !(col %in% value)
   )
@@ -196,8 +299,13 @@ omopFilterDS <- function(x, var, op, value) {
   result <- x[keep, , drop = FALSE]
   rownames(result) <- NULL
 
-  # Fail-closed re-gate: a filter that isolates < nfilter.subset persons errors.
+  # Gate both observable outcomes of the split. The excluded side is skipped
+  # only when it is empty (the operation selected the complete population).
   .assertMinPersons(n_persons = .omopDistinctPersons(result))
+  excluded <- x[!keep, , drop = FALSE]
+  if (nrow(excluded) > 0L) {
+    .assertMinPersons(n_persons = .omopDistinctPersons(excluded))
+  }
   .retagOmopTable(result, x)
 }
 
@@ -242,6 +350,7 @@ omopSelectDS <- function(x, cols) {
     stop("omopSelectDS: input must be a dsOMOP table (omop.table).",
          call. = FALSE)
   }
+  .omopTablePseudonymization(x, caller = "omopSelectDS")
   cols <- as.character(.ds_arg(cols))
   for (c in cols) .validateIdentifier(c, "column")
   .omopAuditLog("omopSelectDS", list(cols = cols))
@@ -277,6 +386,7 @@ omopBindRowsDS <- function(x, y) {
     stop("omopBindRowsDS: both inputs must be dsOMOP tables (omop.table).",
          call. = FALSE)
   }
+  .assertOmopTablePseudonymization(x, y, caller = "omopBindRowsDS")
   .omopAuditLog("omopBindRowsDS", list(nx = nrow(x), ny = nrow(y)))
 
   # Safe simple option: require identical column NAMES (set-equal). Aligning
@@ -293,6 +403,7 @@ omopBindRowsDS <- function(x, y) {
          call. = FALSE)
   }
   # Align y's column order to x before binding.
+  source_y <- y
   y <- y[, names(x), drop = FALSE]
   result <- rbind(x, y)
   rownames(result) <- NULL
@@ -300,5 +411,5 @@ omopBindRowsDS <- function(x, y) {
   # Fail-closed re-gate on DISTINCT person tokens: this is the check that blocks
   # the doubling bypass (duplicates collapse to the same distinct count).
   .assertMinPersons(n_persons = .omopDistinctPersons(result))
-  .retagOmopTable(result, x, y)
+  .retagOmopTable(result, x, source_y)
 }

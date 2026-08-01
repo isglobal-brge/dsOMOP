@@ -180,6 +180,74 @@
 
 # Core query functions
 
+#' Validate the release contract for Achilles count analyses
+#'
+#' Unknown/custom analyses fail closed. Standard record-count analyses are
+#' accepted only when a distinct-person sibling/companion gate exists. Exact
+#' birth-year and exact-age strata are excluded in favour of dsOMOP's protected
+#' age bands.
+#'
+#' @keywords internal
+.achillesCountContract <- function(analysis_ids) {
+  ids <- .conceptIdList(analysis_ids)
+  if (length(ids) == 0L) {
+    stop("At least one reviewed Achilles count analysis is required.",
+         call. = FALSE)
+  }
+  catalog <- .achilles_catalog_static()
+  rows <- catalog[catalog$analysis_id %in% ids &
+                    catalog$result_table == "achilles_results", , drop = FALSE]
+  if (!setequal(ids, rows$analysis_id)) {
+    stop("Achilles count analysis is unknown or has no reviewed release ",
+         "contract.", call. = FALSE)
+  }
+  exact_quasi <- vapply(seq_len(nrow(rows)), function(i) {
+    strata <- tolower(trimws(as.character(unlist(
+      rows[i, grep("^stratum_[0-9]+_name$", names(rows)), drop = TRUE]
+    ))))
+    any(strata %in% c("age", "year_of_birth"), na.rm = TRUE)
+  }, logical(1))
+  if (any(exact_quasi)) {
+    stop("Achilles exact age/birth-year strata are not releasable; use ",
+         "protected age bands with an explicit reference date.",
+         call. = FALSE)
+  }
+  record_ids <- rows$analysis_id[rows$unit == "record"]
+  if (!all(record_ids %in% .achillesRecordGatedIds())) {
+    stop("Achilles record analysis lacks a reviewed distinct-person gate.",
+         call. = FALSE)
+  }
+  ids
+}
+
+#' Validate the release contract for Achilles distributions
+#'
+#' Only analyses known to reduce to one value per person (within each published
+#' stratum) are exposed. Record-value distributions such as days supply,
+#' refills and quantity are excluded until contribution bounds are available.
+#'
+#' @keywords internal
+.achillesDistributionContract <- function(analysis_ids) {
+  ids <- .conceptIdList(analysis_ids)
+  if (length(ids) == 0L) {
+    stop("At least one reviewed Achilles distribution is required.",
+         call. = FALSE)
+  }
+  one_per_person <- c(
+    103L, 104L, 105L, 106L, 107L,
+    203L, 206L, 403L, 406L, 603L, 606L,
+    703L, 706L, 803L, 806L, 1803L, 1806L, 2106L
+  )
+  catalog <- .achilles_catalog_static()
+  known_dist <- catalog$analysis_id[catalog$result_table ==
+                                      "achilles_results_dist"]
+  if (!all(ids %in% intersect(one_per_person, known_dist))) {
+    stop("Achilles distribution is unknown or lacks a reviewed one-person ",
+         "contribution contract.", call. = FALSE)
+  }
+  ids
+}
+
 #' Check Achilles availability
 #'
 #' @param handle CDM handle
@@ -204,23 +272,15 @@
   }
 
   n_analyses <- 0L
-  n_heel <- 0L
+  # Fired Heel rules are data-derived record metadata without a person-level
+  # contribution contract, so their exact number is not part of this status.
+  n_heel <- NA_integer_
 
   if ("achilles_results" %in% found) {
     qualified <- .qualifyTable(handle, "achilles_results",
                                 .resolveResultsSchema(handle))
     sql <- paste0("SELECT COUNT(DISTINCT analysis_id) AS n FROM ", qualified)
     n_analyses <- tryCatch(
-      as.integer(.executeQuery(handle, sql)$n[1]),
-      error = function(e) 0L
-    )
-  }
-
-  if ("achilles_heel_results" %in% found) {
-    qualified <- .qualifyTable(handle, "achilles_heel_results",
-                                .resolveResultsSchema(handle))
-    sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified)
-    n_heel <- tryCatch(
       as.integer(.executeQuery(handle, sql)$n[1]),
       error = function(e) 0L
     )
@@ -285,7 +345,7 @@
 
   qualified <- .qualifyTable(handle, "achilles_results",
                               .resolveResultsSchema(handle))
-  analysis_ids <- as.integer(analysis_ids)
+  analysis_ids <- .achillesCountContract(analysis_ids)
 
   id_list <- paste(analysis_ids, collapse = ", ")
 
@@ -305,6 +365,19 @@
   #     gates them; it also removes record cells with trivially small counts.
   result <- .suppressSmallCounts(result, "count_value")
 
+  # Person-unit rows must also clear the DataSHIELD subset threshold. This
+  # matters when nfilter.subset is configured above nfilter.tab.
+  if (nrow(result) > 0L) {
+    settings <- .omopDisclosureSettings()
+    release_floor <- max(settings$nfilter_tab, settings$nfilter_subset)
+    catalog <- .achilles_catalog_static()
+    person_ids <- catalog$analysis_id[catalog$unit == "person"]
+    person_row <- result$analysis_id %in% person_ids
+    count <- suppressWarnings(as.numeric(result$count_value))
+    result <- result[!person_row | (!is.na(count) & count >= release_floor),
+                     , drop = FALSE]
+  }
+
   # (2) Person-gating: record-unit analyses (e.g. 401) count RECORDS, so a large
   #     count_value can still hide a sub-threshold PERSON count. Drop record
   #     cells whose underlying distinct-person count (a precomputed sibling x00
@@ -314,6 +387,12 @@
   #     threshold. Guarded so the common path (no record analyses) is free.
   if (nrow(result) > 0 && any(result$analysis_id %in% .achillesRecordGatedIds())) {
     result <- .achillesPersonGate(handle, result)
+  }
+
+  if (nrow(result) > 0L) {
+    band <- .omopDisclosureSettings()$nfilter_band
+    result$count_value <- vapply(result$count_value, .bandCount, numeric(1),
+                                 band_width = band)
   }
 
   result
@@ -364,7 +443,7 @@
 
   qualified <- .qualifyTable(handle, "achilles_results_dist",
                               .resolveResultsSchema(handle))
-  analysis_ids <- as.integer(analysis_ids)
+  analysis_ids <- .achillesDistributionContract(analysis_ids)
 
   id_list <- paste(analysis_ids, collapse = ", ")
 
@@ -392,6 +471,13 @@
   # preventing subtraction attacks (total - visible = hidden group size).
   result <- .suppressSmallCounts(result, "count_value")
 
+  # Exposed distributions have one reviewed contribution per person, so the
+  # row count must clear both the tabular and subset thresholds.
+  settings <- .omopDisclosureSettings()
+  release_floor <- max(settings$nfilter_tab, settings$nfilter_subset)
+  count <- suppressWarnings(as.numeric(result$count_value))
+  result <- result[!is.na(count) & count >= release_floor, , drop = FALSE]
+
   # SMALL-SAMPLE SUMMARY-STAT SUPPRESSION: When count_value < nfilter_dist,
   # even median/p25/p75 can approximate individual values (e.g., with n=3,
   # the median IS one person's value). The SAME applies to avg_value and
@@ -399,7 +485,6 @@
   # individual values, and a mean over n=3 is near-determined. Set ALL
   # summary-statistic columns (mean, SD, and every percentile) to NA for
   # these small-sample rows while keeping count_value visible.
-  settings <- .omopDisclosureSettings()
   nfilter_dist <- settings$nfilter_dist %||% 10L
   mask_cols <- c("avg_value", "stdev_value", "p10_value", "p25_value",
                  "median_value", "p75_value", "p90_value")
@@ -407,6 +492,11 @@
   if (length(mask_cols) > 0 && "count_value" %in% names(result)) {
     small_rows <- !is.na(result$count_value) & result$count_value < nfilter_dist
     result[small_rows, mask_cols] <- NA_real_
+  }
+  if (nrow(result) > 0L) {
+    result$count_value <- vapply(
+      result$count_value, .bandCount, numeric(1),
+      band_width = settings$nfilter_band)
   }
 
   result
@@ -444,8 +534,7 @@
   # DISCLOSURE CONTROL: Heel rows are data-quality rule indicators, not
   # population cells. Keep the rows (the data controller needs to see WHICH
   # rules fired) but strip the disclosive specifics:
-  # (1) NA-mask record_count below nfilter.tab — the rule-fired indicator stays
-  #     visible, but the exact (often tiny) failing-record count is removed.
+  # (1) Omit rows below nfilter.tab, so rule presence is not a small-cell hint.
   # (2) Achilles Heel messages routinely interpolate raw counts/values into the
   #     free text (e.g. "5 persons have a birth year after their death year"),
   #     which bypasses the column-level filter. Scrub numeric runs, replacing
@@ -454,7 +543,10 @@
   threshold <- settings$nfilter_tab
   if ("record_count" %in% names(result)) {
     rc <- suppressWarnings(as.numeric(result$record_count))
-    result$record_count[!is.na(rc) & rc < threshold] <- NA
+    result <- result[!is.na(rc) & rc >= threshold, , drop = FALSE]
+    if (nrow(result) > 0L) result$record_count <- vapply(
+      result$record_count, .bandCount, numeric(1),
+      band_width = settings$nfilter_band)
   }
   if ("achilles_heel_warning" %in% names(result)) {
     result$achilles_heel_warning <- gsub(
@@ -465,57 +557,19 @@
 
 # Dynamic Catalog Discovery
 
-#' Get Achilles analysis catalog from database
+#' Get the reviewed Achilles analysis catalog for populated results
 #'
-#' Queries the achilles_analysis table if available. Falls back to
-#' querying DISTINCT analysis_id from achilles_results with the
-#' hardcoded catalog as metadata enrichment.
+#' Database-supplied names and stratum descriptions are free text, and custom
+#' analysis IDs have no dsOMOP release review. This helper therefore intersects
+#' populated IDs with the static OHDSI metadata shipped by dsOMOP.
 #'
 #' @param handle CDM handle
 #' @return data.frame with analysis_id, analysis_name, domain, stratum_*_name, result_table
 #' @keywords internal
 .achillesDiscoverCatalog <- function(handle) {
-  bp <- .buildBlueprint(handle)
-
-  # Try achilles_analysis table first
-  if ("achilles_analysis" %in% bp$tables$table_name[bp$tables$present_in_db]) {
-    qualified <- .qualifyTable(handle, "achilles_analysis",
-                                .resolveResultsSchema(handle))
-    sql <- paste0("SELECT analysis_id, analysis_name, stratum_1_name, ",
-                  "stratum_2_name, stratum_3_name, stratum_4_name, stratum_5_name ",
-                  "FROM ", qualified, " ORDER BY analysis_id")
-    catalog <- tryCatch(.executeQuery(handle, sql), error = function(e) NULL)
-    if (!is.null(catalog) && nrow(catalog) > 0) {
-      names(catalog) <- tolower(names(catalog))
-      # Add domain classification + result_table from analysis_id ranges
-      catalog$domain <- .achillesAnalysisDomain(catalog$analysis_id)
-      catalog$result_table <- .achillesAnalysisResultTable(catalog$analysis_id)
-      return(catalog)
-    }
-  }
-
-  # Fallback: query distinct analysis_ids from achilles_results
   avail_ids <- .achillesDiscoverIds(handle)
-  if (length(avail_ids) == 0) return(.achilles_catalog_static())  # ultimate fallback
-
-  # Filter static catalog to only available IDs
   static <- .achilles_catalog_static()
   found <- static[static$analysis_id %in% avail_ids, , drop = FALSE]
-
-  # Add any unknown IDs with minimal metadata
-  unknown_ids <- setdiff(avail_ids, static$analysis_id)
-  if (length(unknown_ids) > 0) {
-    unknown_rows <- data.frame(
-      analysis_id = unknown_ids,
-      analysis_name = paste("Analysis", unknown_ids),
-      domain = .achillesAnalysisDomain(unknown_ids),
-      stratum_1_name = NA_character_,
-      stratum_2_name = NA_character_,
-      result_table = .achillesAnalysisResultTable(unknown_ids),
-      stringsAsFactors = FALSE
-    )
-    found <- rbind(found, unknown_rows)
-  }
   found[order(found$analysis_id), , drop = FALSE]
 }
 

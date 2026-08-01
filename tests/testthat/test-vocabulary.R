@@ -180,3 +180,30 @@ test_that("translate columns replaces concept IDs with names", {
   result <- .vocabTranslateColumns(handle, df)
   expect_false(any(result$condition_concept_id %in% c("201820", "255573")))
 })
+
+test_that("explicit concept expansion and translation fail closed", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  testthat::local_mocked_bindings(
+    .vocabGetDescendants = function(...) stop("hierarchy unavailable"),
+    .package = "dsOMOP"
+  )
+  expect_error(
+    .vocabExpandConceptSet(handle, list(
+      concepts = 201820L, include_descendants = TRUE
+    )),
+    "Descendant expansion failed"
+  )
+
+  testthat::local_mocked_bindings(
+    .vocabLookupConcepts = function(...) stop("lookup unavailable"),
+    .package = "dsOMOP"
+  )
+  expect_error(
+    .vocabTranslateColumns(
+      handle, data.frame(condition_concept_id = 201820L)
+    ),
+    "Concept translation failed"
+  )
+})

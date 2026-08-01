@@ -4,7 +4,16 @@
 \alias{.stageDataFrame}
 \title{Stage a data.frame result to Parquet and return a descriptor}
 \usage{
-.stageDataFrame(df, output_name, staging_dir, token)
+.stageDataFrame(
+  df,
+  output_name,
+  staging_dir,
+  token,
+  key,
+  pseudonymization = NULL,
+  semantic_contract = NULL,
+  bundle_contract = NULL
+)
 }
 \arguments{
 \item{df}{Data frame to stage}
@@ -14,9 +23,18 @@
 \item{staging_dir}{Character; path to staging directory}
 
 \item{token}{Character; staging token}
+
+\item{key}{Raw vector; per-resource secret used to pseudonymize person keys}
+
+\item{pseudonymization}{Public, non-secret person-key contract. Required for
+every person-bearing staged output.}
+
+\item{semantic_contract}{Canonical staged output semantic contract.}
+
+\item{bundle_contract}{Canonical output-level staged bundle contract.}
 }
 \value{
-FlowerDatasetDescriptor or the original data.frame if arrow unavailable
+Staged dataset descriptor (Parquet, or CSV when Arrow is unavailable)
 }
 \description{
 For output types where SQL cannot be streamed directly (e.g. baseline,

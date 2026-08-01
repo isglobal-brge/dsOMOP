@@ -481,8 +481,7 @@
     # Day-offset of each outcome event from that person's first exposure, binned.
     offset_expr <- .omopDateDiffDays(handle, paste0("o.", out_src$date_col),
                                      "fe.exposure_date")
-    bin_expr <- paste0("(CAST(", offset_expr, " AS INTEGER) / ", bin_width,
-                       ") * ", bin_width)
+    bin_expr <- .omopFloorBinSql(offset_expr, bin_width)
     # Exposed risk window: 0 <= offset <= window (post-exposure); else unexposed.
     window_expr <- paste0(
       "CASE WHEN (", offset_expr, ") >= 0 AND (", offset_expr, ") <= ", window,

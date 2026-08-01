@@ -4,7 +4,7 @@
 \alias{.wrapEventSelect}
 \title{Wrap SQL in ROW_NUMBER CTE for event selection}
 \usage{
-.wrapEventSelect(handle, sql, temporal, date_col = NULL)
+.wrapEventSelect(handle, sql, temporal, date_col = NULL, tie_col = NULL)
 }
 \arguments{
 \item{handle}{CDM handle}
@@ -14,6 +14,8 @@
 \item{temporal}{List; temporal spec with event_select}
 
 \item{date_col}{Character; date column for ordering}
+
+\item{tie_col}{Character; optional stable tie-break column}
 }
 \value{
 Character; possibly wrapped SQL

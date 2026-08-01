@@ -13,7 +13,7 @@ test_that("achillesStatus returns available=TRUE when tables exist", {
   expect_true("achilles_results_dist" %in% result$tables)
   expect_true("achilles_heel_results" %in% result$tables)
   expect_true(result$n_analyses > 0)
-  expect_true(result$n_heel_warnings > 0)
+  expect_true(is.na(result$n_heel_warnings))
 })
 
 test_that("achillesStatus returns available=FALSE when tables missing", {
@@ -103,7 +103,8 @@ test_that("achillesGetResults retrieves correct analysis_ids", {
     # Analysis 2 = gender distribution
     gender <- result[result$analysis_id == 2, ]
     expect_true(nrow(gender) == 2)
-    expect_equal(sum(gender$count_value), 15)
+    expect_true(all(gender$count_value %% 5 == 0))
+    expect_lte(sum(gender$count_value), 15)
   })
 })
 
@@ -132,7 +133,7 @@ test_that("achillesGetDistributions retrieves dist stats without min/max (Fix B)
   .buildBlueprint(handle)
 
   withr::with_options(list(nfilter.tab = 1), {
-    result <- .achillesGetDistributions(handle, c(3L, 103L))
+    result <- .achillesGetDistributions(handle, 103L)
     expect_true(is.data.frame(result))
     expect_true(nrow(result) > 0)
     # Fix B: min_value and max_value must NOT be returned
@@ -146,7 +147,7 @@ test_that("achillesGetDistributions retrieves dist stats without min/max (Fix B)
   })
 })
 
-test_that("achillesGetDistributions drops rows with small counts (Fix A)", {
+test_that("unknown Achilles distributions fail closed", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
@@ -156,9 +157,8 @@ test_that("achillesGetDistributions drops rows with small counts (Fix A)", {
     (999, 'test', NULL, NULL, NULL, NULL, 2, 10, 20, 15, 3, 15, 11, 12, 18, 19)")
 
   withr::with_options(list(nfilter.tab = 3), {
-    result <- .achillesGetDistributions(handle, 999L)
-    # Fix A: rows below threshold are DROPPED entirely (no NA skeletons)
-    expect_equal(nrow(result), 0)
+    expect_error(.achillesGetDistributions(handle, 999L),
+                 "one-person contribution contract")
   })
 })
 
@@ -169,22 +169,21 @@ test_that("achillesGetHeelResults returns heel warnings", {
 
   result <- .achillesGetHeelResults(handle)
   expect_true(is.data.frame(result))
-  expect_true(nrow(result) >= 3)
+  expect_true(nrow(result) >= 1)
   expect_true("achilles_heel_warning" %in% names(result))
   expect_true("rule_id" %in% names(result))
 })
 
-test_that("achillesGetHeelResults masks small counts and scrubs text (Gap G1)", {
+test_that("achillesGetHeelResults omits small counts and scrubs text", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
   withr::with_options(list(nfilter.tab = 3), {
     result <- .achillesGetHeelResults(handle)
-    # Rows are data-quality rule indicators: kept, not dropped.
-    expect_true(nrow(result) >= 3)
-    # record_count below nfilter.tab (the fixture's 0) is NA-masked, larger kept.
-    expect_true(any(is.na(result$record_count)))
+    expect_true(nrow(result) >= 1)
+    expect_false(any(is.na(result$record_count)))
+    expect_true(all(result$record_count >= 3))
     expect_true(15 %in% result$record_count)
     # Heel free-text has every numeric run scrubbed to "N".
     expect_false(any(grepl("[0-9]", result$achilles_heel_warning)))
@@ -199,16 +198,29 @@ test_that("achillesGetDistributions masks avg/stdev for small samples (Gap G2)",
   # count_value = 5: survives the nfilter.tab=3 row-drop, but is below
   # nfilter_dist=10 so ALL summary stats (incl. mean + SD) must be masked.
   DBI::dbExecute(handle$conn, "INSERT INTO achilles_results_dist VALUES
-    (998, 'test', NULL, NULL, NULL, NULL, 5, 10, 20, 15, 3, 15, 11, 12, 18, 19)")
+    (103, 'small_test', NULL, NULL, NULL, NULL, 5, 10, 20, 15, 3, 15, 11, 12, 18, 19)")
 
   withr::with_options(list(nfilter.tab = 3, dsomop.nfilter.dist = 10), {
-    result <- .achillesGetDistributions(handle, 998L)
-    expect_equal(nrow(result), 1)
-    expect_equal(result$count_value[1], 5)        # count stays visible
-    expect_true(is.na(result$avg_value[1]))       # mean masked
-    expect_true(is.na(result$stdev_value[1]))     # SD masked
-    expect_true(is.na(result$median_value[1]))    # percentiles masked
+    result <- .achillesGetDistributions(handle, 103L)
+    small <- result[!is.na(result$stratum_1) &
+                      result$stratum_1 == "small_test", , drop = FALSE]
+    expect_equal(nrow(small), 1)
+    expect_equal(small$count_value[1], 5)
+    expect_true(is.na(small$avg_value[1]))
+    expect_true(is.na(small$stdev_value[1]))
+    expect_true(is.na(small$median_value[1]))
   })
+})
+
+test_that("Achilles contracts block exact ages and record-value distributions", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  expect_error(.achillesGetResults(handle, 3L), "exact age/birth-year")
+  expect_error(.achillesGetResults(handle, 999L), "reviewed release contract")
+  expect_error(.achillesGetDistributions(handle, 715L),
+               "one-person contribution contract")
 })
 
 # ==============================================================================
@@ -462,7 +474,9 @@ test_that("resolveResultsSchema auto-detects a dedicated results schema", {
     .listTablesRaw = function(handle, schema) {
       if (schema == "results") c("achilles_results", "achilles_analysis") else character(0)
     }, .package = "dsOMOP")
-  expect_equal(.resolveResultsSchema(h), "results")
+  withr::with_options(list(dsomop.allowed_results_schemas = "results"), {
+    expect_equal(.resolveResultsSchema(h), "results")
+  })
 })
 
 test_that("resolveResultsSchema finds achilles co-located in the cdm schema", {
@@ -497,7 +511,9 @@ test_that("resolveResultsSchema caches (probes at most once)", {
       calls <<- calls + 1L
       if (schema == "results") "achilles_results" else character(0)
     }, .package = "dsOMOP")
-  .resolveResultsSchema(h); .resolveResultsSchema(h)
-  expect_equal(.resolveResultsSchema(h), "results")
-  expect_equal(calls, 1L)  # cached after first resolve
+  withr::with_options(list(dsomop.allowed_results_schemas = "results"), {
+    .resolveResultsSchema(h); .resolveResultsSchema(h)
+    expect_equal(.resolveResultsSchema(h), "results")
+  })
+  expect_equal(calls, 2L)  # CDM + one allowlisted schema, only on first resolve
 })

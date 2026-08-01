@@ -9,10 +9,15 @@
 #' @return Character; target dialect string
 #' @keywords internal
 .resolve_target_dialect <- function(dbms) {
-  dbms <- tolower(dbms)
+  if (!is.character(dbms) || length(dbms) != 1L || is.na(dbms) ||
+      !nzchar(trimws(dbms))) {
+    stop("dbms must be one non-empty character value.", call. = FALSE)
+  }
+  dbms <- tolower(trimws(dbms))
   mapping <- list(
     postgresql = "postgresql",
     postgres   = "postgresql",
+    `sql server` = "sql server",
     sql_server = "sql server",
     sqlserver  = "sql server",
     synapse    = "sql server",
@@ -24,7 +29,7 @@
     spark      = "spark",
     databricks = "spark",
     sqlite     = "sqlite",
-    duckdb     = "sqlite",
+    duckdb     = "duckdb",
     mysql      = "mysql",
     mariadb    = "mysql"
   )

@@ -15,7 +15,8 @@
   t,
   band_margins,
   bp,
-  table
+  table,
+  person_cell_support = FALSE
 )
 }
 \description{

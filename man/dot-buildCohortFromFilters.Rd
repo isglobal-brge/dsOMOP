@@ -4,7 +4,12 @@
 \alias{.buildCohortFromFilters}
 \title{Build a cohort person_id set from population-level filters}
 \usage{
-.buildCohortFromFilters(handle, filters, index_cohort_table = NULL)
+.buildCohortFromFilters(
+  handle,
+  filters,
+  index_cohort_table = NULL,
+  episode_policy = NULL
+)
 }
 \arguments{
 \item{handle}{CDM handle}
@@ -13,8 +18,13 @@
 
 \item{index_cohort_table}{Character or NULL; a cohort temp table
 (subject_id, cohort_start_date) used to anchor windowed concept filters to
-each person's cohort index date. When NULL, windowed filters fall back to
-the wall-clock current date.}
+each person's cohort index date. Without a cohort, windowed filters require
+an explicit fixed reference date.}
+
+\item{episode_policy}{Character or NULL; how an index-dependent filter is
+evaluated when a person has recurrent cohort episodes. Supported values are
+\code{"any_episode"}, \code{"all_episodes"}, \code{"first_episode"}, and
+\code{"last_episode"}. Recurrent cohorts fail closed when this is NULL.}
 }
 \value{
 Integer vector of person_ids

@@ -18,7 +18,8 @@
 
 cmeff_handle <- function(n_persons = 40) {
   h <- create_test_handle(n_persons = n_persons)
-  h$person_key <- as.raw(1:16)
+  .setLegacyTestPersonKey(h, "cm-effect",
+                          .local_envir = parent.frame())
   .buildBlueprint(h)
   suppressWarnings(.omopAnalysisRegistry(h))
   h
@@ -41,6 +42,7 @@ cmeff_setup_arms <- function(h, target_events = 1:12, comparator_events = 21:25)
     "CREATE TEMP TABLE cme_comparator AS SELECT person_id AS subject_id, ",
     "'2020-01-01' AS cohort_start_date, '2023-12-31' AS cohort_end_date ",
     "FROM person WHERE person_id BETWEEN 21 AND 40"))
+  register_test_temp(h, c("cme_target", "cme_comparator"))
   DBI::dbExecute(h$conn,
     "DELETE FROM condition_occurrence WHERE condition_concept_id = 4000002")
   cid <- 8200L
@@ -160,6 +162,7 @@ test_that("(d) a sub-threshold arm fails closed before any fit", {
       "CREATE TEMP TABLE cme_tiny AS SELECT person_id AS subject_id, ",
       "'2020-01-01' AS cohort_start_date, '2023-12-31' AS cohort_end_date ",
       "FROM person WHERE person_id IN (1, 2)"))
+    register_test_temp(h, "cme_tiny")
     expect_error(
       .omopAnalysisRun(h, "dsomop:cm.effect_estimate", params = EFF_PARAMS,
                        scope = list("cme_tiny", "cme_comparator")),

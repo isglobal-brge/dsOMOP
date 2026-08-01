@@ -9,7 +9,8 @@
   cohort_table,
   columns = NULL,
   derived = NULL,
-  translate_concepts = TRUE
+  translate_concepts = TRUE,
+  age_breaks = NULL
 )
 }
 \arguments{
@@ -22,6 +23,9 @@
 \item{derived}{Character vector; derived fields to compute}
 
 \item{translate_concepts}{Logical; translate concept IDs to names}
+
+\item{age_breaks}{Optional public age-grid coarsening negotiated by a
+federation.}
 }
 \value{
 Data frame with one row per cohort member

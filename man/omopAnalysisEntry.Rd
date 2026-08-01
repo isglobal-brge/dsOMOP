@@ -58,6 +58,12 @@ A \code{omop_analysis_entry} object.
 Public re-export of the internal entry constructor for packages contributing
 analyses via \code{Config/dsOMOP/AnalysisCollection}. See
 \code{\link{.omopAnalysisEntry}} for the field contract. The returned entry's
-\code{compute$fn} output is always gated by dsOMOP's single disclosure gate;
-a pack cannot register its own gate.
+\code{meta$output_contract} must contain \code{version = 1}, a positive
+\code{max_rows}, and a named \code{columns} list. Each column declares one
+semantic role (count, metric, ratio, concept_id, closed category/date_band,
+logical, relative_day/duration, or assign-only person_key/measure). Aggregate
+metrics declare count \code{basis}; ratios declare count
+\code{numerator}/\code{denominator}; categories declare closed
+\code{levels}. Raw and final outputs are checked against this contract and
+the package cannot select a privileged native gate adapter.
 }

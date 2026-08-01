@@ -2,11 +2,11 @@
 % Please edit documentation in R/analysis_catalog.R
 \name{.omopFeComorbidityIndex}
 \alias{.omopFeComorbidityIndex}
-\title{\code{dsomop:fe.comorbidity_index} entry (FeatureExtraction comorbidity scores)}
+\title{\code{dsomop:fe.comorbidity_index} dsOMOP component-burden entry}
 \usage{
 .omopFeComorbidityIndex()
 }
 \description{
-\code{dsomop:fe.comorbidity_index} entry (FeatureExtraction comorbidity scores)
+\code{dsomop:fe.comorbidity_index} dsOMOP component-burden entry
 }
 \keyword{internal}

@@ -18,7 +18,8 @@
   add_cohort_date = FALSE,
   filters = NULL,
   concept_col = NULL,
-  visit_filter = NULL
+  visit_filter = NULL,
+  add_event_order_id = FALSE
 )
 }
 \arguments{
@@ -57,6 +58,10 @@ column). Lets a caller scope by \code{unit_concept_id},
 \item{visit_filter}{List; optional \code{list(concept_ids = ...)} restricting
 events to visits of those \code{visit_concept_id} values via a join on
 \code{visit_occurrence_id} to \code{visit_occurrence}.}
+
+\item{add_event_order_id}{Logical; include the source table's OMOP primary
+key under an internal alias for deterministic in-memory ordering. The alias
+is removed before any result is returned.}
 }
 \value{
 Character; compiled SQL statement

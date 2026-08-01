@@ -9,7 +9,8 @@
   plan,
   bp,
   base_cohort_table = NULL,
-  base_person_ids = NULL
+  base_person_ids = NULL,
+  index_cohort_table = base_cohort_table
 )
 }
 \arguments{
@@ -25,6 +26,9 @@ materialized for the base population (e.g. from a cohort_definition_id)}
 
 \item{base_person_ids}{Integer vector or NULL; person ids for the base
 population when no temp table was materialized}
+
+\item{index_cohort_table}{Character or NULL; cohort table whose episode start
+dates anchor index-dependent criteria. Defaults to \code{base_cohort_table}.}
 }
 \value{
 Named list keyed by population id; each element is

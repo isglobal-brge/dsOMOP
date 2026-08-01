@@ -14,7 +14,8 @@
 )
 }
 \arguments{
-\item{resource_client}{An OMOPResourceClient instance}
+\item{resource_client}{An OMOPResourceClient instance. Ownership transfers to
+the returned handle; the client is closed if construction fails.}
 
 \item{cdm_schema}{Character; override CDM schema}
 

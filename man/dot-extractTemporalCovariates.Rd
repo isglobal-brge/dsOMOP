@@ -12,7 +12,8 @@
   bin_width = 30L,
   window_start = -365L,
   window_end = 0L,
-  analyses = c("binary")
+  analyses = c("binary"),
+  filters = NULL
 )
 }
 \arguments{
@@ -33,7 +34,8 @@
 \item{analyses}{Character vector; analyses to compute}
 }
 \value{
-Named list with temporalCovariates, covariateRef, timeRef
+Named list with temporalCovariates, covariateRef, timeRef, and
+  personRef (the cohort-episode to person mapping)
 }
 \description{
 R-side binning approach matching the existing \code{.toSparse()} pattern.

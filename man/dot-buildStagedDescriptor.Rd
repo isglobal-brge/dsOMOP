@@ -2,9 +2,17 @@
 % Please edit documentation in R/plan.R
 \name{.buildStagedDescriptor}
 \alias{.buildStagedDescriptor}
-\title{Build a FlowerDatasetDescriptor for a staged output}
+\title{Build a server-local staged dataset descriptor}
 \usage{
-.buildStagedDescriptor(output_name, file_info, token, origin = "dsOMOP")
+.buildStagedDescriptor(
+  output_name,
+  file_info,
+  token,
+  origin = "dsOMOP",
+  pseudonymization = NULL,
+  semantic_contract = NULL,
+  bundle_contract = NULL
+)
 }
 \arguments{
 \item{output_name}{Character; name of the output}
@@ -14,11 +22,18 @@
 \item{token}{Character; staging token}
 
 \item{origin}{Character; origin package identifier}
+
+\item{pseudonymization}{Public, non-secret person-key contract.}
+
+\item{semantic_contract}{Canonical staged output semantic contract.}
+
+\item{bundle_contract}{Canonical output-level staged bundle contract.}
 }
 \value{
-Named list (FlowerDatasetDescriptor)
+Named list inheriting from \code{FlowerDatasetDescriptor} and
+  \code{OMOPStagedDatasetDescriptor}.
 }
 \description{
-Build a FlowerDatasetDescriptor for a staged output
+Build a server-local staged dataset descriptor
 }
 \keyword{internal}

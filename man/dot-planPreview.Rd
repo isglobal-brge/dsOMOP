@@ -2,7 +2,7 @@
 % Please edit documentation in R/plan.R
 \name{.planPreview}
 \alias{.planPreview}
-\title{Preview a plan (safe aggregate)}
+\title{Preview resolvable plan projections (safe aggregate)}
 \usage{
 .planPreview(handle, plan)
 }
@@ -12,9 +12,12 @@
 \item{plan}{List; the extraction plan}
 }
 \value{
-List with per-output preview info
+Validation plus per-output source/projection metadata. Column names
+  are final only when \code{columns_complete} is true. Person counts, when
+  available, are disclosure-banded source-table counts, never row-count
+  estimates for the executed output.
 }
 \description{
-Preview a plan (safe aggregate)
+Preview resolvable plan projections (safe aggregate)
 }
 \keyword{internal}

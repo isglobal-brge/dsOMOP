@@ -23,7 +23,9 @@ workspace save/load and joinable on the key; a different resource (different
 key) yields different tokens, so a person is not linkable across sites.
 }
 \details{
-Each token is \code{paste0("p", <hex ciphertext>)}. The leading \code{"p"}
+Each version-2 token is
+\code{paste0("p2", <hex ciphertext>, ".", <hex HMAC>)}. The leading
+\code{"p"}
 GUARANTEES the token is non-numeric: hex alone can be all digits, which
 \code{as.numeric}/\code{ds.asNumeric} would parse back into a number; the
 letter prefix forces \code{as.numeric} to \code{NA}, so the id cannot be

@@ -17,6 +17,28 @@ test_that("disclosure settings are read from options", {
   })
 })
 
+test_that("reported DataSHIELD noise is not advertised as formal DP", {
+  settings <- .omopDisclosureSettings()
+  expect_false(settings$formal_dp_enabled)
+  expect_false(settings$sticky_noise_enabled)
+  expect_false(settings$privacy_ledger_enabled)
+})
+
+test_that("invalid disclosure settings fail closed instead of weakening gates", {
+  withr::with_options(list(nfilter.subset = -1), {
+    expect_error(.omopDisclosureSettings(), "nfilter_subset")
+  })
+  withr::with_options(list(nfilter.levels.density = 1.5), {
+    expect_error(.omopDisclosureSettings(), "nfilter_levels_density")
+  })
+  withr::with_options(list(dsomop.query_strict = NA), {
+    expect_error(.omopDisclosureSettings(), "query_strict")
+  })
+  withr::with_options(list(dsomop.nfilter.date_range = Inf), {
+    expect_error(.omopDisclosureSettings(), "nfilter_date_range")
+  })
+})
+
 test_that("nfilter_band defaults to 5 and follows the option chain", {
   # Default when no option is set.
   withr::with_options(list(dsomop.nfilter.band = NULL,
@@ -27,6 +49,26 @@ test_that("nfilter_band defaults to 5 and follows the option chain", {
   withr::with_options(list(dsomop.nfilter.band = 10), {
     expect_equal(.omopDisclosureSettings()$nfilter_band, 10)
     expect_equal(omopDisclosureSettingsDS()$nfilter_band, 10)
+  })
+})
+
+test_that("age and date filter widths follow server-side options", {
+  withr::with_options(list(
+    nfilter.subset = 3,
+    dsomop.nfilter.age_range = 10,
+    dsomop.nfilter.date_range = 60
+  ), {
+    settings <- .omopDisclosureSettings()
+    expect_equal(settings$nfilter_age_range, 10)
+    expect_equal(settings$nfilter_date_range, 60)
+    expect_equal(.classifyFilter("age_range", list(min = 20, max = 24)),
+                 "blocked")
+    expect_equal(.classifyFilter("age_range", list(min = 20, max = 29)),
+                 "constrained")
+    expect_equal(.classifyFilter("date_range", list(
+      start = "2024-01-01", end = "2024-02-28")), "blocked")
+    expect_equal(.classifyFilter("date_range", list(
+      start = "2024-01-01", end = "2024-02-29")), "constrained")
   })
 })
 
@@ -173,18 +215,48 @@ test_that("computeAgeGroups handles NA ages", {
   })
 })
 
-test_that("computeAgeGroups merges small bins at extremes", {
+test_that("age contract honestly uses reference year minus year_of_birth", {
+  expect_identical(.omopDisclosureSettings()$age_semantics,
+                   "reference_year_minus_year_of_birth")
+  # Month/day are intentionally unavailable: both ends of calendar 2024 use
+  # the same annual-resolution age derived from year_of_birth.
+  expect_equal(.computeAgeGroups(2000L, 2024L, min_cell = 1L), "20-24")
+})
+
+test_that("date harmonization declares deterministic day conversion", {
+  settings <- .omopDisclosureSettings()
+  expect_identical(settings$harmonization_contract_version,
+                   "dsomop-harmonization-v3")
+  expect_identical(settings$date_granularity, "calendar_day")
+  expect_identical(settings$datetime_timezone, "UTC")
+  expect_identical(settings$week_start, "Monday")
+  withr::with_options(list(dsomop.datetime_timezone = "not/a-zone"), {
+    expect_error(.omopDisclosureSettings(), "datetime_timezone")
+  })
+})
+
+test_that("computeAgeGroups suppresses small bins without changing the grid", {
   withr::with_options(list(nfilter.tab = 3), {
     # Ages: 94 (1 person), 20-24 (10 persons)
     yob <- c(rep(2000, 10), 1930)
     index <- rep(2024, 11)
     groups <- .computeAgeGroups(yob, index, bin_width = 5L, min_cell = 3L)
-    # The single 94-year-old should be merged into a larger group
-    expect_true(!is.na(groups[11]))
-    # Should end with "+" (merged top bin)
-    top_group <- groups[11]
-    expect_true(grepl("\\+", top_group))
+    # The unsupported top bin is suppressed, never merged into a
+    # data-dependent label that would differ between servers.
+    expect_true(is.na(groups[11]))
+    expect_true(all(groups[seq_len(10)] == "20-24"))
   })
+})
+
+test_that("computeAgeGroups counts distinct persons, not recurrent episodes", {
+  # Person 1 has ten episodes in an otherwise unsupported old-age bin. Those
+  # episodes must count as one person, forcing the bin to be suppressed.
+  yob <- c(rep(1930, 10), rep(2000, 5))
+  index <- rep(2024, length(yob))
+  ids <- c(rep(1L, 10), 2:6)
+  groups <- .computeAgeGroups(yob, index, bin_width = 5L, min_cell = 3L,
+                              person_id = ids)
+  expect_true(all(is.na(groups[seq_len(10)])))
 })
 
 # ==============================================================================
@@ -210,6 +282,11 @@ test_that("classifyFilter returns correct classification", {
 test_that("classifyFilter blocks narrow age ranges", {
   # 0-year range (single age) -> blocked
   expect_equal(.classifyFilter("age_range", list(min = 18, max = 18)), "blocked")
+  # Inclusive five-year epidemiological bands are accepted; four are not.
+  expect_equal(.classifyFilter("age_range", list(min = 20, max = 24)),
+               "constrained")
+  expect_equal(.classifyFilter("age_range", list(min = 20, max = 23)),
+               "blocked")
   # Wide range -> constrained
   expect_equal(.classifyFilter("age_range", list(min = 18, max = 65)), "constrained")
 })
@@ -253,8 +330,9 @@ test_that("age_group filter enforces the 5-year minimum band width", {
   # Wide / standard 5-year bands are allowed.
   expect_equal(.classifyFilter("age_group", list(groups = c("0-4", "5-9"))),
                "constrained")
+  # Shifted client bins are not unions of the public server grid.
   expect_equal(.classifyFilter("age_group", list(groups = c("18-24"))),
-               "constrained")
+               "blocked")
   # Open-ended upper band ("85+") is wide -> allowed.
   expect_equal(.classifyFilter("age_group", list(groups = c("85+"))),
                "constrained")
@@ -266,6 +344,87 @@ test_that("age_group filter enforces the 5-year minimum band width", {
   # Empty / unparseable groups fail closed.
   expect_equal(.classifyFilter("age_group", list(groups = character(0))),
                "blocked")
+})
+
+test_that("age grid is public, configurable, and only permits coarsening", {
+  settings <- .omopDisclosureSettings()
+  expect_identical(settings$harmonization_contract_version,
+                   "dsomop-harmonization-v3")
+  expect_identical(settings$max_feature_specs, 1000)
+  expect_identical(settings$max_pivot_concepts, 1000)
+  expect_identical(settings$max_output_columns, 5000)
+  expect_identical(settings$max_temporal_bins, 10000)
+  expect_identical(settings$max_filter_depth, 32)
+  expect_identical(settings$max_filter_nodes, 1024)
+  expect_identical(settings$max_filter_values, 10000)
+  expect_identical(settings$max_plan_outputs, 100)
+  expect_identical(settings$max_analysis_scope_tables, 8)
+  expect_identical(settings$max_temp_tables_per_handle, 256)
+  expect_true(.ageGroupsOnGrid(c("0-9", "10-19", "80+"),
+                               settings$age_breaks))
+  expect_false(.ageGroupsOnGrid("18-24", settings$age_breaks))
+
+  withr::with_options(list(dsomop.age_breaks = c(0, 10, 20, 30, 40, 50,
+                                                 60, 70, 80, 90)), {
+    expect_error(.computeAgeGroups(2000, 2024, bin_width = 5L,
+                                   min_cell = 1L),
+                 "not aligned")
+    expect_equal(.computeAgeGroups(2000, 2024, bin_width = 10L,
+                                   min_cell = 1L), "20-29")
+  })
+
+  expect_equal(
+    .computeAgeGroups(
+      2000, 2024, age_breaks = seq(0, 80, 10), min_cell = 1L
+    ),
+    "20-29"
+  )
+  expect_error(
+    .computeAgeGroups(
+      2000, 2024, age_breaks = c(0, 18, 40), min_cell = 1L
+    ),
+    "coarsening"
+  )
+  expect_error(
+    .computeAgeGroups(
+      2000, 2024, bin_width = 10L,
+      age_breaks = seq(0, 80, 10), min_cell = 1L
+    ),
+    "not both"
+  )
+})
+
+test_that("operational expansion caps use controller options and fail closed", {
+  withr::with_options(list(
+    dsomop.max_feature_specs = 17,
+    dsomop.max_pivot_concepts = 23,
+    dsomop.max_output_columns = 101,
+    dsomop.max_temporal_bins = 211,
+    dsomop.max_filter_depth = 7,
+    dsomop.max_filter_nodes = 19,
+    dsomop.max_filter_values = 31,
+    dsomop.max_plan_outputs = 5,
+    dsomop.max_analysis_scope_tables = 7,
+    dsomop.max_temp_tables_per_handle = 29
+  ), {
+    settings <- .omopDisclosureSettings()
+    expect_identical(settings$max_feature_specs, 17)
+    expect_identical(settings$max_pivot_concepts, 23)
+    expect_identical(settings$max_output_columns, 101)
+    expect_identical(settings$max_temporal_bins, 211)
+    expect_identical(settings$max_filter_depth, 7)
+    expect_identical(settings$max_filter_nodes, 19)
+    expect_identical(settings$max_filter_values, 31)
+    expect_identical(settings$max_plan_outputs, 5)
+    expect_identical(settings$max_analysis_scope_tables, 7)
+    expect_identical(settings$max_temp_tables_per_handle, 29)
+  })
+  withr::with_options(list(dsomop.max_output_columns = 1.5), {
+    expect_error(.omopDisclosureSettings(), "max_output_columns")
+  })
+  withr::with_options(list(dsomop.max_analysis_scope_tables = 0), {
+    expect_error(.omopDisclosureSettings(), "max_analysis_scope_tables")
+  })
 })
 
 # ==============================================================================

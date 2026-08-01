@@ -74,8 +74,9 @@
 #' Looks up the server-side OMOP CDM handle object associated with a given
 #' resource symbol name. In DSLite (multi-server, single R process), each
 #' server's session environment holds its own handle, avoiding collisions.
-#' Falls back to the global \code{.dsomop_env} for real DataSHIELD (Opal)
-#' deployments where each server runs in its own R process.
+#' A package-global fallback exists only for internal/test handles registered
+#' explicitly with \code{.setHandle}; public initialization stores exclusively
+#' in the session environment.
 #'
 #' @param symbol Character; the resource symbol name identifying the handle.
 #' @return The OMOP CDM handle object.
@@ -83,12 +84,13 @@
 .getHandle <- function(symbol) {
   local_key <- paste0(".dsomop_handle_", symbol)
 
-  # DSLite-safe: check the calling session environment (2 frames up:
-  # .getHandle <- DS_function <- DSLite session env)
-  session_env <- tryCatch(parent.frame(2), error = function(e) NULL)
-  if (!is.null(session_env) &&
-      exists(local_key, envir = session_env, inherits = FALSE)) {
-    return(get(local_key, envir = session_env, inherits = FALSE))
+  # Search active call frames because Opal/DSLite wrappers can add different
+  # depths. Public handles are never placed in package-global state.
+  frames <- sys.frames()
+  for (i in rev(seq_along(frames))) {
+    if (exists(local_key, envir = frames[[i]], inherits = FALSE)) {
+      return(get(local_key, envir = frames[[i]], inherits = FALSE))
+    }
   }
 
   # Fallback: global package environment (works for Opal single-process)
@@ -118,19 +120,33 @@
 #' Remove an OMOP CDM handle from the session environment
 #'
 #' Closes the database connection associated with the handle and removes it
-#' from the dsOMOP session environment. No-op if no handle exists for the
-#' given symbol.
+#' from the calling DataSHIELD session environment. The package-global fallback
+#' is retained for internal/test handles. No-op if no handle exists for the
+#' given symbol, making disconnect retries safe.
 #'
 #' @param symbol Character; the resource symbol name.
 #' @return Invisible NULL (called for side effect).
 #' @keywords internal
 .removeHandle <- function(symbol) {
+  local_key <- paste0(".dsomop_handle_", symbol)
+  frames <- sys.frames()
+  for (i in rev(seq_along(frames))) {
+    if (exists(local_key, envir = frames[[i]], inherits = FALSE)) {
+      handle <- get(local_key, envir = frames[[i]], inherits = FALSE)
+      .closeHandle(handle)
+      rm(list = local_key, envir = frames[[i]])
+      return(invisible(TRUE))
+    }
+  }
+
   key <- paste0("handle_", symbol)
   if (exists(key, envir = .dsomop_env)) {
     handle <- get(key, envir = .dsomop_env)
     .closeHandle(handle)
     rm(list = key, envir = .dsomop_env)
+    return(invisible(TRUE))
   }
+  invisible(FALSE)
 }
 
 #' Person/subject key columns: pseudonymized and retained (not dropped)
@@ -142,6 +158,12 @@
 #' CDM identifier. Every other identifier column is dropped.
 #' @keywords internal
 .PERSON_KEY_COLS <- function() c("person_id", "subject_id")
+
+#' Cohort-episode keys retained for longitudinal joins but never filterable
+#' @keywords internal
+.EPISODE_KEY_COLS <- function() {
+  c("cohort_row_id", "row_id", "rowid", "rowId")
+}
 
 #' OMOP CDM row-level identifier columns
 #'
@@ -159,34 +181,46 @@
   c(
     # Person / subject identifiers (pseudonymized, retained)
     "person_id", "subject_id",
-    # Clinical event row IDs (dropped)
+    # Clinical event / era / observation row IDs (dropped). Keep this list in
+    # sync with the non-CONCEPT primary/entity keys in the vendored OHDSI CDM
+    # 5.3/5.4 field specifications. Several polymorphic event links are not
+    # declared as formal FKs by OHDSI, but are still row identifiers and must
+    # not survive into a DataSHIELD object.
     "visit_occurrence_id", "visit_detail_id",
     "condition_occurrence_id", "drug_exposure_id",
     "procedure_occurrence_id", "measurement_id",
     "observation_id", "device_exposure_id",
-    "specimen_id", "note_id",
+    "specimen_id", "note_id", "note_nlp_id",
+    "observation_period_id", "payer_plan_period_id",
+    "condition_era_id", "drug_era_id", "dose_era_id",
+    "episode_id", "metadata_id", "cost_id",
+    # Polymorphic / parent event identifiers (not consistently marked as FKs)
+    "measurement_event_id", "observation_event_id", "note_event_id",
+    "cost_event_id", "event_id", "episode_parent_id",
+    "fact_id_1", "fact_id_2", "specimen_source_id", "production_id",
+    "preceding_visit_occurrence_id", "preceding_visit_detail_id",
+    "parent_visit_detail_id", "visit_detail_parent_id",
     # Provider / location entity keys (dropped)
     "provider_id", "care_site_id", "location_id"
   )
 }
 
-#' Derive the AES key + IV for a resource from its secret key
+#' Derive encryption and authentication keys for a resource
 #'
-#' Splits two independent SHA-256 digests of the per-resource secret into a
-#' 32-byte AES-256 key and a 16-byte IV. The IV is FIXED per resource (derived
-#' deterministically from the same secret), which is what makes the token
-#' transform deterministic: the same id always encrypts to the same ciphertext.
-#' This is acceptable here because the plaintexts are opaque high-cardinality
-#' identifiers used only as join keys, never attacker-chosen messages.
+#' Derives independent SHA-256 subkeys for AES-256 encryption, its deterministic
+#' IV, and HMAC authentication. The fixed IV intentionally preserves equality
+#' for server-side joins; encrypt-then-MAC prevents a client from modifying a
+#' token and turning the decryptor into a padding/oracle surface.
 #' @param key Raw vector; the per-resource secret (\code{handle$person_key}).
-#' @return List with \code{aes} (32 raw bytes) and \code{iv} (16 raw bytes).
+#' @return List with \code{aes}, \code{iv}, and \code{mac} raw keys.
 #' @keywords internal
 .deriveAesParams <- function(key) {
   if (is.character(key)) key <- charToRaw(paste(key, collapse = ""))
   key <- as.raw(key)
   list(
     aes = as.raw(openssl::sha256(c(key, charToRaw("dsomop-aes-key")))),
-    iv  = as.raw(openssl::sha256(c(key, charToRaw("dsomop-aes-iv"))))[1:16]
+    iv  = as.raw(openssl::sha256(c(key, charToRaw("dsomop-aes-iv"))))[1:16],
+    mac = as.raw(openssl::sha256(c(key, charToRaw("dsomop-mac-key"))))
   )
 }
 
@@ -199,7 +233,9 @@
 #' workspace save/load and joinable on the key; a different resource (different
 #' key) yields different tokens, so a person is not linkable across sites.
 #'
-#' Each token is \code{paste0("p", <hex ciphertext>)}. The leading \code{"p"}
+#' Each version-2 token is
+#' \code{paste0("p2", <hex ciphertext>, ".", <hex HMAC>)}. The leading
+#' \code{"p"}
 #' GUARANTEES the token is non-numeric: hex alone can be all digits, which
 #' \code{as.numeric}/\code{ds.asNumeric} would parse back into a number; the
 #' letter prefix forces \code{as.numeric} to \code{NA}, so the id cannot be
@@ -221,19 +257,24 @@
   tok_u <- vapply(u, function(id) {
     if (is.na(id)) return(NA_character_)
     ct <- openssl::aes_cbc_encrypt(charToRaw(id), key = params$aes, iv = params$iv)
+    tag <- openssl::sha256(
+      c(charToRaw("dsomop-person-token-v2"), ct), key = params$mac
+    )
     # "p" prefix forces as.numeric()/ds.asNumeric() -> NA (non-numeric token).
-    paste0("p", paste(as.character(ct), collapse = ""))
+    paste0(
+      "p2", paste(as.character(ct), collapse = ""), ".",
+      paste(as.character(tag), collapse = "")
+    )
   }, character(1L), USE.NAMES = FALSE)
   tok_u[match(ids, u)]
 }
 
 #' Reverse a person-key token back to the original id (SERVER-ONLY)
 #'
-#' Inverse of \code{\link{.hashPersonKey}}: strips the \code{"p"} prefix,
-#' hex-decodes the ciphertext, and AES-256-CBC decrypts it under the same
-#' key + IV derived from the per-resource secret. This is the server-side reverse
-#' map used for population-scoping joins (Phase B); the client never holds the
-#' key, so it cannot invert a token. Vectorised; NA preserved.
+#' Inverse of \code{\link{.hashPersonKey}}. It verifies the version-2 HMAC before
+#' AES-256-CBC decryption, and rejects malformed, modified, legacy, or wrong-key
+#' tokens with one generic error. This is the server-side reverse map used for
+#' population-scoping joins; the client never holds either derived key.
 #'
 #' @param token Character vector of tokens produced by \code{.hashPersonKey}.
 #' @param key Raw vector; the per-resource secret key (\code{handle$person_key}).
@@ -242,15 +283,46 @@
 .unhashPersonKey <- function(token, key) {
   params <- .deriveAesParams(key)
   token <- as.character(token)
+  invalid <- function() {
+    stop("Invalid or unauthenticated person-key token.", call. = FALSE)
+  }
+  hex_to_raw <- function(value) {
+    if (!nzchar(value) || nchar(value) %% 2L != 0L ||
+        !grepl("^[0-9a-fA-F]+$", value)) {
+      invalid()
+    }
+    as.raw(strtoi(
+      substring(value, seq(1L, nchar(value), 2L),
+                seq(2L, nchar(value), 2L)), 16L
+    ))
+  }
   vapply(token, function(tk) {
     if (is.na(tk)) return(NA_character_)
-    hx <- sub("^p", "", tk)
-    if (!nzchar(hx) || nchar(hx) %% 2L != 0L || !grepl("^[0-9a-fA-F]+$", hx)) {
-      stop("Not a valid person-key token: '", tk, "'.", call. = FALSE)
+    if (!grepl("^p2[0-9a-fA-F]+\\.[0-9a-fA-F]{64}$", tk)) {
+      invalid()
     }
-    raw <- as.raw(strtoi(substring(hx, seq(1L, nchar(hx), 2L),
-                                   seq(2L, nchar(hx), 2L)), 16L))
-    rawToChar(openssl::aes_cbc_decrypt(raw, key = params$aes, iv = params$iv))
+    pieces <- strsplit(sub("^p2", "", tk), ".", fixed = TRUE)[[1]]
+    ct <- hex_to_raw(pieces[1])
+    supplied_tag <- hex_to_raw(pieces[2])
+    expected_tag <- as.raw(openssl::sha256(
+      c(charToRaw("dsomop-person-token-v2"), ct), key = params$mac
+    ))
+    # Compare every byte. A short-circuit equality check would turn this
+    # server-only verifier into a (weak but avoidable) remote timing oracle.
+    tag_mismatch <- length(supplied_tag) != length(expected_tag)
+    if (!tag_mismatch) {
+      tag_mismatch <- sum(bitwXor(
+        as.integer(supplied_tag), as.integer(expected_tag))) != 0L
+    }
+    if (tag_mismatch) {
+      invalid()
+    }
+    tryCatch(
+      rawToChar(openssl::aes_cbc_decrypt(
+        ct, key = params$aes, iv = params$iv
+      )),
+      error = function(e) invalid()
+    )
   }, character(1L), USE.NAMES = FALSE)
 }
 
@@ -276,16 +348,42 @@
 #'
 #' @param x Data frame or list to sanitize. Operates recursively on lists.
 #' @param key Raw vector; the per-resource secret key (\code{handle$person_key}).
+#' @param pseudonymization Public, non-secret key contract returned by
+#'   \code{\link{.personKeyPublicContract}}. It is required for person-bearing
+#'   frames and is persisted as the \code{dsomop_pseudonymization} attribute.
 #' @return Sanitized object: person/subject keys pseudonymized, other
 #'   identifier columns removed.
 #' @keywords internal
-.pseudonymizeIdentifiers <- function(x, key) {
+.pseudonymizeIdentifiers <- function(x, key, pseudonymization = NULL) {
+  # Staged descriptors point to files that were sanitized before writing.
+  # Preserve their S3 class and metadata when walking a composite sparse/
+  # temporal result; recursively lapply()-ing the descriptor would turn it
+  # into an unrecognised plain list.
+  if (inherits(x, "FlowerDatasetDescriptor")) return(x)
+
   if (is.data.frame(x)) {
     drop <- intersect(setdiff(.identifierColumns(), .PERSON_KEY_COLS()), names(x))
     if (length(drop) > 0) {
       x[drop] <- NULL
     }
     keys <- intersect(.PERSON_KEY_COLS(), names(x))
+    public_contract <- NULL
+    if (length(keys) > 0L) {
+      if (!is.raw(key) || length(key) != 32L) {
+        stop("Person-bearing outputs require exactly 32 raw bytes of ",
+             "pseudonymization key material.", call. = FALSE)
+      }
+      if (is.null(pseudonymization)) {
+        stop("Person-bearing outputs require an explicit public ",
+             "pseudonymization contract.", call. = FALSE)
+      }
+      public_contract <- .canonicalPseudonymizationContract(pseudonymization)
+      if (!identical(public_contract$key_id, .personKeyId(key))) {
+        stop("The public pseudonymization contract does not identify the ",
+             "supplied key; refusing to publish incompatible person tokens.",
+             call. = FALSE)
+      }
+    }
     for (k in keys) {
       src <- x[[k]]
       tok <- .hashPersonKey(src, key)
@@ -302,17 +400,26 @@
       }
       x[[k]] <- tok
     }
-    if (length(keys) > 0) {
-      attr(x, "dsomop_protected") <- union(attr(x, "dsomop_protected"), keys)
+    episode_keys <- intersect(.EPISODE_KEY_COLS(), names(x))
+    if (length(keys) > 0L || length(episode_keys) > 0L) {
+      protected <- union(keys, episode_keys)
+      attr(x, "dsomop_protected") <- union(attr(x, "dsomop_protected"),
+                                            protected)
       # Tag every person-bearing assign output as an omop.table (additively, so
       # data.frame methods still dispatch). The client-side data-manipulation
       # verbs (omopMergeDS/omopFilterDS/omopSelectDS/omopBindRowsDS) require this
       # class so they can only ever operate on disclosure-controlled, token-keyed
       # frames produced by dsOMOP — never on arbitrary client-built data.
-      class(x) <- union("omop.table", class(x))
+      if (length(keys) > 0L) {
+        attr(x, "dsomop_pseudonymization") <- public_contract
+        class(x) <- union("omop.table", class(x))
+      }
     }
   } else if (is.list(x)) {
-    x <- lapply(x, .pseudonymizeIdentifiers, key = key)
+    x <- lapply(
+      x, .pseudonymizeIdentifiers, key = key,
+      pseudonymization = pseudonymization
+    )
   }
   x
 }
@@ -350,7 +457,23 @@ omopInitDS <- function(resource_symbol,
   # that, if passed to eval(parse()), would execute arbitrary code.
   # We validate it as a strict R identifier, then use get() (not eval/parse).
   .validateIdentifier(resource_symbol, "resource symbol")
-  resolved <- get(resource_symbol, envir = parent.frame(), inherits = FALSE)
+  .assertAllowedSchemaOverrides(list(
+    cdm_schema = cdm_schema,
+    vocab_schema = vocab_schema,
+    results_schema = results_schema,
+    temp_schema = temp_schema
+  ))
+  session_env <- parent.frame()
+  local_key <- paste0(".dsomop_handle_", resource_symbol)
+  global_key <- paste0("handle_", resource_symbol)
+  if (exists(local_key, envir = session_env, inherits = FALSE) ||
+      exists(global_key, envir = .dsomop_env, inherits = FALSE)) {
+    stop("An OMOP handle is already active for resource symbol '",
+         resource_symbol, "'. Close it with omopCleanupDS(close = TRUE) before ",
+         "initializing that resource symbol again.", call. = FALSE)
+  }
+
+  resolved <- get(resource_symbol, envir = session_env, inherits = FALSE)
 
   # DSLite resolves resources to ResourceClient objects during assign.resource;
   # Opal passes raw resource objects. Handle both cases.
@@ -369,20 +492,56 @@ omopInitDS <- function(resource_symbol,
     config = config
   )
 
-  .buildBlueprint(handle)
-  .setHandle(resource_symbol, handle)
+  committed <- FALSE
+  cleanup_attempted <- FALSE
+  on.exit({
+    if (!committed && !cleanup_attempted) try(.closeHandle(handle), silent = TRUE)
+  }, add = TRUE)
+
+  abort_initialization <- function(e) {
+    cleanup_attempted <<- TRUE
+    cleanup_error <- tryCatch({
+      .closeHandle(handle)
+      NULL
+    }, error = identity)
+    if (!is.null(cleanup_error)) {
+      retained <- tryCatch({
+        assign(local_key, handle, envir = session_env)
+        TRUE
+      }, error = function(store_error) FALSE)
+      stop(
+        "OMOP handle initialization failed and cleanup could not be proven",
+        if (retained) {
+          paste0(". The failed handle was retained; call omopCleanupDS('",
+                 resource_symbol, "', close = TRUE) before retrying.")
+        } else {
+          "; the failed handle could not be retained for a cleanup retry."
+        },
+        " Initialization error: ", conditionMessage(e),
+        "; cleanup error: ", conditionMessage(cleanup_error),
+        call. = FALSE
+      )
+    }
+    stop(e)
+  }
+
+  tryCatch(.buildBlueprint(handle), error = abort_initialization)
 
   # DSLite session isolation: in DSLite (multi-server, single R process),
   # each DataSHIELD session has its own environment. We store the handle
   # in parent.frame() (the session env) under a unique key so that
   # server_a's handle is not overwritten by server_b. Without this,
   # .dsomop_env (global) would be shared, causing cross-server data leaks.
-  local_key <- paste0(".dsomop_handle_", resource_symbol)
   tryCatch(
-    assign(local_key, handle, envir = parent.frame()),
-    error = function(e) NULL  # silently skip if env is locked
+    assign(local_key, handle, envir = session_env),
+    error = function(e) {
+      abort_initialization(simpleError(
+        "Could not store the OMOP handle in the DataSHIELD session."
+      ))
+    }
   )
 
+  committed <- TRUE
   invisible(TRUE)
 }
 
@@ -391,12 +550,21 @@ omopInitDS <- function(resource_symbol,
 #' @description
 #' Runs the extraction plan and assigns each output directly into the
 #' DataSHIELD session as a named symbol. Sparse outputs are split into
-#' two symbols: \code{<name>.covariates} and \code{<name>.covariateRef}.
-#' Temporal covariates are split into three symbols.
+#' three symbols: \code{<name>.covariates}, \code{<name>.covariateRef}, and
+#' the row-to-pseudonymous-person map \code{<name>.personRef}.
+#' Temporal covariates are split into four symbols, including the episode-to-
+#' person map \code{<name>.personRef}.
 #'
-#' When \code{output_mode = "staged"}, outputs are written to Parquet files
-#' on disk and assigned as \code{FlowerDatasetDescriptor} objects instead of
-#' data.frames. This avoids loading large datasets into R memory.
+#' When \code{output_mode = "staged"}, outputs are written to protected,
+#' server-local files and assigned as descriptors inheriting from
+#' \code{FlowerDatasetDescriptor} and \code{OMOPStagedDatasetDescriptor}.
+#' Long untranslated event outputs stream in chunks; formats requiring R-side
+#' transforms are materialized before staging. Each plan-produced descriptor
+#' carries a public \code{metadata$semantic_contract} snapshot of its resolved
+#' output shape and the server's age/date harmonization policy. The descriptors
+#' are not download URLs. Same-account readers should resolve them with
+#' \code{\link{omopStagedDatasetPath}}; other services require a separately
+#' reviewed server-side broker.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param plan List; the extraction plan
@@ -408,6 +576,11 @@ omopInitDS <- function(resource_symbol,
 #'   intersected into every population (NULL = no extra scoping).
 #' @param combine Character; "union" (default) or "intersect" when the scope has
 #'   multiple sources.
+#' @param ... Additional scalar cohort references and resolved workspace tables,
+#'   independently and contiguously named \code{scope_cohort_1}, ... and
+#'   \code{scope_table_1}, ... without gaps. They are combined internally with
+#'   a literal \code{scope}; no generic aggregate \code{c()} or \code{list()}
+#'   method is required.
 #' @return Invisible TRUE (outputs are assigned into caller's environment)
 #' @examples
 #' \dontrun{
@@ -418,17 +591,44 @@ omopInitDS <- function(resource_symbol,
 #' @export
 omopPlanExecuteDS <- function(omop_symbol, plan, out,
                                output_mode = "memory",
-                               scope = NULL, combine = "union") {
+                               scope = NULL, combine = "union", ...) {
   handle <- .getHandle(omop_symbol)
   plan <- .ds_arg(plan)
   out <- .ds_arg(out)
   output_mode <- .ds_arg(output_mode)
-  if (!is.character(output_mode) || length(output_mode) != 1L) {
-    output_mode <- "memory"
+  if (!is.character(output_mode) || length(output_mode) != 1L ||
+      is.na(output_mode) || !output_mode %in% c("memory", "staged")) {
+    stop("output_mode must be 'memory' or 'staged'.", call. = FALSE)
   }
-  if (!output_mode %in% c("memory", "staged")) {
-    output_mode <- "memory"
+  if (!is.list(out) && !is.character(out)) {
+    stop("out must be a named output-to-symbol mapping.", call. = FALSE)
   }
+  if (length(out) == 0L || is.null(names(out)) || any(!nzchar(names(out))) ||
+      anyDuplicated(names(out))) {
+    stop("out must have unique, non-empty output names.", call. = FALSE)
+  }
+  symbols <- vapply(out, function(sym) {
+    if (!is.character(sym) || length(sym) != 1L || is.na(sym) ||
+        !grepl("^[A-Za-z][A-Za-z0-9._]*$", sym)) {
+      stop("Every output symbol must be one simple non-reserved R name.",
+           call. = FALSE)
+    }
+    sym
+  }, character(1))
+  if (anyDuplicated(symbols) || any(symbols == omop_symbol) ||
+      any(grepl("^(\\.dsomop_|handle_)", symbols))) {
+    stop("Output symbols must be unique and cannot target OMOP resources or ",
+         "reserved handle names.", call. = FALSE)
+  }
+  expanded <- unlist(lapply(symbols, function(sym) paste0(
+    sym, c("", ".covariates", ".covariateRef", ".temporalCovariates",
+           ".timeRef", ".personRef", ".personPeriods")
+  )), use.names = FALSE)
+  if (anyDuplicated(expanded)) {
+    stop("Output symbols collide after sparse/temporal suffix expansion.",
+         call. = FALSE)
+  }
+  out <- stats::setNames(as.list(symbols), names(out))
 
   # Recipe-level scope. omop.table SYMBOL sources are spliced in by name (DSI
   # resolves them to server-side frames) because they cannot cross in the plan
@@ -437,6 +637,7 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   # folds them into ONE re-gated cohort (via .omopAnalysisResolveScope) and
   # intersects it into every population.
   scope <- .ds_arg(scope)
+  scope <- .omopAnalysisScopeFromDots(scope, list(...))
   combine <- .ds_arg(combine)
   if (is.list(combine)) combine <- combine[[1]]
   if (!is.null(scope)) {
@@ -445,7 +646,19 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
     plan$scope$combine <- plan$scope$combine %||% combine
   }
 
-  .omopAuditLog("omopPlanExecuteDS", list(outputs = names(out), plan = plan))
+  # Never serialize resolved workspace frames into an audit record. Preserve
+  # the JSON-safe recipe definition, but replace the injected frame payload by
+  # non-sensitive structural metadata.
+  audit_plan <- plan
+  if (is.list(audit_plan$scope) && !is.data.frame(audit_plan$scope)) {
+    audit_plan$scope$tables_frames <- NULL
+  }
+  .omopAuditLog(
+    "omopPlanExecuteDS",
+    list(outputs = names(out), plan = audit_plan,
+         scope_present = !is.null(scope),
+         scope_table_count = .omopAnalysisScopeTableCount(scope))
+  )
   outputs <- .planExecute(handle, plan, out, output_mode = output_mode)
 
   # Validate that requested outputs were produced
@@ -457,6 +670,8 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
 
   assign_env <- parent.frame()
   concept_cols <- attr(outputs, "omop_concept_cols") %||% list()
+  person_key <- .personKey(handle)
+  pseudonymization <- .personKeyPublicContract(handle)
 
   for (nm in names(out)) {
     sym <- out[[nm]]
@@ -474,24 +689,40 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
     # and drop every other row-level identifier, before data enters the
     # DataSHIELD environment. Output gating (cell/subset suppression by dsBase
     # and dsOMOP nfilter) remains the authoritative disclosure barrier.
-    result <- .pseudonymizeIdentifiers(result, handle$person_key)
+    result <- .pseudonymizeIdentifiers(
+      result, person_key, pseudonymization = pseudonymization
+    )
 
-    # Temporal covariates: split into 3 symbols
+    # Temporal covariates: split into four symbols, preserving the explicit
+    # cohort-episode -> pseudonymous-person map needed by longitudinal models.
     if (is.list(result) && !is.data.frame(result) &&
         "temporalCovariates" %in% names(result)) {
+      if (!is.null(result$personPeriods)) {
+        assign(paste0(sym, ".personPeriods"),
+               result$personPeriods, envir = assign_env)
+      }
       assign(paste0(sym, ".temporalCovariates"),
              result$temporalCovariates, envir = assign_env)
       assign(paste0(sym, ".covariateRef"),
              result$covariateRef, envir = assign_env)
       assign(paste0(sym, ".timeRef"),
              result$timeRef, envir = assign_env)
-    # Sparse outputs: split list into two data.frame symbols
+      if (!is.null(result$personRef)) {
+        assign(paste0(sym, ".personRef"),
+               result$personRef, envir = assign_env)
+      }
+    # Sparse outputs: split list into data-frame symbols, including the
+    # complete row-to-pseudonymous-person map.
     } else if (is.list(result) && !is.data.frame(result) &&
         all(c("covariates", "covariateRef") %in% names(result))) {
       assign(paste0(sym, ".covariates"),
              result$covariates, envir = assign_env)
       assign(paste0(sym, ".covariateRef"),
              result$covariateRef, envir = assign_env)
+      if (!is.null(result$personRef)) {
+        assign(paste0(sym, ".personRef"),
+               result$personRef, envir = assign_env)
+      }
     } else {
       # Tag the concept-id columns by their landed (possibly renamed) names so
       # the factor harmonization layer recognises them post-rename. Stamped
@@ -519,7 +750,8 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
 #' @param cohort_spec List; cohort specification DSL
 #' @param mode Character; "temporary" or "persistent"
 #' @param cohort_id Integer; cohort definition ID
-#' @param name Character; cohort name
+#' @param name Reserved for future \code{cohort_definition} metadata support.
+#'   Persistent mode currently writes cohort rows only.
 #' @param overwrite Logical
 #' @return Character; temp table name or confirmation
 #' @examples
@@ -533,9 +765,41 @@ omopCohortCreateDS <- function(omop_symbol, cohort_spec,
                                name = NULL,
                                overwrite = FALSE) {
   handle <- .getHandle(omop_symbol)
+  temp_tables_before <- unique(handle$temp_tables %||% character(0))
+  final_temp_table <- character(0)
+  on.exit(
+    .dropTempTablesCreatedSince(
+      handle, unique(c(temp_tables_before, final_temp_table))
+    ),
+    add = TRUE
+  )
   cohort_spec <- .ds_arg(cohort_spec)
+  mode <- .ds_arg(mode)
+  if (is.list(mode)) mode <- mode[[1]]
+  if (identical(tolower(as.character(mode)), "persistent")) {
+    allowed <- getOption("dsomop.allow_persistent_cohorts",
+      getOption("default.dsomop.allow_persistent_cohorts", FALSE))
+    if (!isTRUE(allowed)) {
+      stop("Persistent cohort writes are disabled by the data controller; ",
+           "use mode='temporary'.", call. = FALSE)
+    }
+  }
   .omopAuditLog("omopCohortCreateDS", cohort_spec)
-  .cohortCreate(handle, cohort_spec, mode, cohort_id, name, overwrite)
+  result <- .cohortCreate(
+    handle, cohort_spec, mode, cohort_id, name, overwrite
+  )
+  if (identical(tolower(as.character(mode)), "temporary")) {
+    if (!is.character(result) || length(result) != 1L || is.na(result) ||
+        !result %in% (handle$temp_tables %||% character(0))) {
+      stop("Temporary cohort creation did not produce one owned final table.",
+           call. = FALSE)
+    }
+    # The returned value is the authoritative final table name (including the
+    # `_icN` suffix produced by inclusion criteria).  Preserve only that object;
+    # every base/intermediate created by this call is operation-owned cleanup.
+    final_temp_table <- result
+  }
+  result
 }
 
 #' Combine cohorts (Assign)
@@ -559,8 +823,23 @@ omopCohortCombineDS <- function(omop_symbol, op,
                                 cohort_a, cohort_b,
                                 new_name = NULL) {
   handle <- .getHandle(omop_symbol)
+  temp_tables_before <- unique(handle$temp_tables %||% character(0))
+  final_temp_table <- character(0)
+  on.exit(
+    .dropTempTablesCreatedSince(
+      handle, unique(c(temp_tables_before, final_temp_table))
+    ),
+    add = TRUE
+  )
   .omopAuditLog("omopCohortCombineDS", list(op = op, a = cohort_a, b = cohort_b))
-  .cohortCombine(handle, op, cohort_a, cohort_b, new_name)
+  result <- .cohortCombine(handle, op, cohort_a, cohort_b, new_name)
+  if (!is.character(result) || length(result) != 1L || is.na(result) ||
+      !result %in% (handle$temp_tables %||% character(0))) {
+    stop("Cohort combination did not produce one owned final table.",
+         call. = FALSE)
+  }
+  final_temp_table <- result
+  result
 }
 
 #' Build a cohort from a workspace omop.table's person tokens (Assign)
@@ -592,35 +871,78 @@ omopCohortCombineDS <- function(omop_symbol, op,
 #' @export
 omopCohortFromTableDS <- function(x, omop_symbol, new_name = NULL) {
   handle <- .getHandle(omop_symbol)
+  temp_tables_before <- unique(handle$temp_tables %||% character(0))
+  final_temp_table <- character(0)
+  on.exit(
+    .dropTempTablesCreatedSince(
+      handle, unique(c(temp_tables_before, final_temp_table))
+    ),
+    add = TRUE
+  )
   new_name <- .ds_arg(new_name)
   if (is.list(new_name)) new_name <- if (length(new_name)) new_name[[1]] else NULL
   .omopAuditLog("omopCohortFromTableDS",
                 list(n_rows = if (is.data.frame(x)) nrow(x) else NA,
                      new_name = new_name))
-  .cohortFromTokenFrame(handle, x, new_name = new_name)
+  result <- .cohortFromTokenFrame(handle, x, new_name = new_name)
+  if (!is.character(result) || length(result) != 1L || is.na(result) ||
+      !result %in% (handle$temp_tables %||% character(0))) {
+    stop("Cohort materialization did not produce one owned final table.",
+         call. = FALSE)
+  }
+  final_temp_table <- result
+  result
 }
 
 #' Clean up temp artifacts (Assign)
 #'
 #' @description
-#' Drops all server-side temporary tables whose names match the given prefix.
-#' Called during session teardown or when resetting state between analyses.
+#' With \code{exact = FALSE}, drops all owned server-side temporary tables whose
+#' names match the given prefix and cleans staged artifacts. With
+#' \code{exact = TRUE}, drops only the named owned table and leaves staging
+#' untouched. Called during teardown or when resetting analysis state.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param prefix Character; temp table prefix to clean
+#' @param close Logical; when true, close and remove the resource handle after
+#'   cleaning. This idempotent mode is used by client disconnect.
+#' @param exact Logical; when true, \code{prefix} is treated as one exact,
+#'   validated temporary-table name and only that owned object is dropped.
+#'   Staged directories are not cleaned in exact mode.
 #' @return Invisible TRUE
 #' @examples
 #' \dontrun{
 #' omopCleanupDS("omop", prefix = "dsomop_")
 #' }
 #' @export
-omopCleanupDS <- function(omop_symbol, prefix = "dsomop_") {
+omopCleanupDS <- function(omop_symbol, prefix = "dsomop_", close = FALSE,
+                          exact = FALSE) {
+  close <- .ds_arg(close)
+  if (is.list(close)) close <- if (length(close)) close[[1L]] else FALSE
+  if (!is.logical(close) || length(close) != 1L || is.na(close)) {
+    stop("close must be TRUE or FALSE.", call. = FALSE)
+  }
+  exact <- .ds_arg(exact)
+  if (is.list(exact)) exact <- if (length(exact)) exact[[1L]] else FALSE
+  if (!is.logical(exact) || length(exact) != 1L || is.na(exact)) {
+    stop("exact must be TRUE or FALSE.", call. = FALSE)
+  }
+  if (isTRUE(close)) {
+    .removeHandle(omop_symbol)
+    return(invisible(TRUE))
+  }
   handle <- .getHandle(omop_symbol)
-  to_drop <- grep(paste0("^", prefix), handle$temp_tables,
-                  value = TRUE)
+  if (isTRUE(exact)) {
+    prefix <- .validateIdentifier(prefix, "temporary table")
+    to_drop <- intersect(prefix, handle$temp_tables %||% character(0))
+  } else {
+    to_drop <- grep(paste0("^", prefix), handle$temp_tables,
+                    value = TRUE)
+  }
   for (tbl in to_drop) {
     .dropTempTable(handle, tbl)
   }
+  if (!isTRUE(exact)) .cleanupHandleStaging(handle)
   invisible(TRUE)
 }
 
@@ -672,8 +994,9 @@ omopPingDS <- function(omop_symbol = NULL) {
 #'
 #' @description
 #' Returns a snapshot of the server-side OMOP CDM schema, including available
-#' tables, DBMS type, CDM version, and a hash for cache invalidation. Used by
-#' the client to adapt the UI to the server's data model.
+#' tables, DBMS type, CDM version, a disclosure-banded population size (when
+#' releasable), and a hash for cache invalidation. Used by the client to adapt
+#' the UI to the server's data model.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @return Named list with schema summary and hash
@@ -816,6 +1139,9 @@ omopTableStatsDS <- function(omop_symbol, table,
 #'   \code{concept_id} on instead of the domain concept (e.g.
 #'   \code{unit_concept_id}, a \code{*_type_concept_id}, or
 #'   \code{value_as_concept_id})
+#' @param cohort Cohort scope: a cohort temp table name, a cohort_definition_id,
+#'   or NULL. Takes precedence over \code{cohort_table}.
+#' @param cohort_table Character; legacy cohort temp table for filtering (NULL)
 #' @return Named list with column statistics
 #' @examples
 #' \dontrun{
@@ -863,6 +1189,9 @@ omopDomainCoverageDS <- function(omop_symbol) {
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table Character; table name
 #' @param columns Character vector; columns to check
+#' @param cohort Cohort scope: a cohort temp table name, a cohort_definition_id,
+#'   or NULL. Takes precedence over \code{cohort_table}.
+#' @param cohort_table Character; legacy cohort temp table for filtering (NULL)
 #' @return Data frame with missingness rates
 #' @examples
 #' \dontrun{
@@ -896,6 +1225,9 @@ omopMissingnessDS <- function(omop_symbol, table,
 #'   \code{concept_id} on instead of the domain concept (e.g.
 #'   \code{unit_concept_id}, a \code{*_type_concept_id}, or
 #'   \code{value_as_concept_id})
+#' @param cohort Cohort scope: a cohort temp table name, a cohort_definition_id,
+#'   or NULL. Takes precedence over \code{cohort_table}.
+#' @param cohort_table Character; legacy cohort temp table for filtering (NULL)
 #' @return Data frame with value counts
 #' @examples
 #' \dontrun{
@@ -1244,13 +1576,17 @@ omopCdmVersionDS <- function(omop_symbol) {
 #' Preview a plan (Aggregate)
 #'
 #' @description
-#' Validates and previews an extraction plan without executing it. Returns
-#' expected output schemas, estimated row counts, and any validation warnings
-#' or errors.
+#' Validates and projects the resolvable parts of an extraction plan without
+#' materializing cohorts or executing filters. Reported columns are source or
+#' feature projections and are final only when \code{columns_complete} is true.
+#' Any reported person count is a disclosure-banded source-table count for an
+#' unrestricted output, not an estimated row count for the executed result.
+#' Cohort-dependent outputs with no executable cohort declaration are rejected.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param plan List; the extraction plan to preview
-#' @return List with preview information including output schemas and warnings
+#' @return List with validation and per-output projection metadata, including
+#'   completeness/unavailability fields for columns and person counts.
 #' @examples
 #' \dontrun{
 #' preview <- omopPlanPreviewDS("omop", plan)
@@ -1384,6 +1720,8 @@ omopConceptPrevalenceDS <- function(omop_symbol, table = NULL, concept_col = NUL
 #' @param stratify_by Character; optional 3rd categorical column for stratified
 #'   (chained 2-way) tables
 #' @param band_margins Logical; when TRUE, attach banded (never exact) margins
+#' @param cohort Cohort scope: a cohort temp table name, a cohort_definition_id,
+#'   or NULL. Takes precedence over \code{cohort_table}.
 #' @return For a plain call: a named list with the NA-masked \code{counts}
 #'   matrix, axis levels, and a \code{suppressed} flag. For a stratified call:
 #'   a named list of independent protected per-stratum tables.
@@ -1449,6 +1787,8 @@ omopCrossTabDS <- function(omop_symbol, table, row_col, col_col,
 #'   \code{concept_id} on instead of the domain concept (e.g.
 #'   \code{unit_concept_id}, a \code{*_type_concept_id}, or
 #'   \code{value_as_concept_id})
+#' @param cohort Cohort scope: a cohort temp table name, a cohort_definition_id,
+#'   or NULL. Takes precedence over \code{cohort_table}.
 #' @return List with p05, p95, n_total
 #' @examples
 #' \dontrun{
@@ -1488,6 +1828,8 @@ omopNumericRangeDS <- function(omop_symbol, table, value_col,
 #'   \code{concept_id} on instead of the domain concept (e.g.
 #'   \code{unit_concept_id}, a \code{*_type_concept_id}, or
 #'   \code{value_as_concept_id})
+#' @param cohort Cohort scope: a cohort temp table name, a cohort_definition_id,
+#'   or NULL. Takes precedence over \code{cohort_table}.
 #' @return Data frame with bin_start, bin_end, count, suppressed
 #' @examples
 #' \dontrun{
@@ -1530,6 +1872,8 @@ omopNumericHistogramDS <- function(omop_symbol, table, value_col,
 #'   \code{concept_id} on instead of the domain concept (e.g.
 #'   \code{unit_concept_id}, a \code{*_type_concept_id}, or
 #'   \code{value_as_concept_id})
+#' @param cohort Cohort scope: a cohort temp table name, a cohort_definition_id,
+#'   or NULL. Takes precedence over \code{cohort_table}.
 #' @return Data frame with probability and value
 #' @examples
 #' \dontrun{
@@ -1565,6 +1909,8 @@ omopNumericQuantilesDS <- function(omop_symbol, table, value_col,
 #' @param granularity Character; "year", "quarter", or "month"
 #' @param cohort_table Character; cohort temp table for filtering (NULL)
 #' @param window List with start/end dates for filtering (NULL)
+#' @param cohort Cohort scope: a cohort temp table name, a cohort_definition_id,
+#'   or NULL. Takes precedence over \code{cohort_table}.
 #' @return Data frame with period, n_records, suppressed
 #' @examples
 #' \dontrun{
@@ -1573,8 +1919,9 @@ omopNumericQuantilesDS <- function(omop_symbol, table, value_col,
 #' @export
 omopDateCountsDS <- function(omop_symbol, table, date_col = NULL,
                               granularity = "year", cohort_table = NULL,
-                              window = NULL) {
+                              window = NULL, cohort = NULL) {
   handle <- .getHandle(omop_symbol)
+  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
   .profileDateCounts(handle, table, date_col, granularity,
                      cohort_table, window)
 }
@@ -1631,20 +1978,23 @@ omopLocateConceptDS <- function(omop_symbol, concept_ids) {
 #' Get safe numeric cutpoints (Aggregate)
 #'
 #' @description
-#' Returns bin edges that are safe to use as filter thresholds. Each bin is
-#' guaranteed to contain enough persons to pass the disclosure threshold,
-#' preventing indirect identification via precise numeric filtering.
+#' Returns a data-independent public grid configured by the data controller.
+#' The complete grid is released only when every bin contains enough distinct
+#' persons after a one-value-per-person reduction. Values outside the declared
+#' range are winsorized only for that internal support check. Counts are banded;
+#' this mechanism does not claim differential privacy.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table Character; table name
 #' @param column Character; numeric column name
 #' @param concept_id Integer or NULL; concept filter
-#' @param n_bins Integer; target number of bins (default 10)
+#' @param n_bins Integer; exact number of bins in the configured public grid
 #' @param concept_col Character; optional; concept column to scope
 #'   \code{concept_id} on instead of the domain concept (e.g.
 #'   \code{unit_concept_id}, a \code{*_type_concept_id}, or
 #'   \code{value_as_concept_id})
-#' @return List with breaks (numeric vector) and counts (integer vector)
+#' @return List with public breaks, banded counts, a resource-session contract,
+#'   and public clipping/grid metadata
 #' @examples
 #' \dontrun{
 #' cuts <- omopSafeCutpointsDS("omop", "measurement", "value_as_number")
@@ -1763,14 +2113,13 @@ omopAchillesCatalogDS <- function(omop_symbol) {
   .achillesDiscoverCatalog(handle)
 }
 
-#' Get Achilles Heel data-quality warnings (Aggregate)
+#' Get Achilles Heel data-quality warnings (controller-only helper)
 #'
 #' @description
-#' Returns the Achilles Heel data-quality warnings, disclosure-controlled:
-#' \code{record_count} cells below \code{nfilter.tab} are NA-masked and any
-#' numeric run interpolated into the warning free-text is scrubbed. Rows (the
-#' fired data-quality rules) are kept so a client can show which checks fired
-#' without exposing small counts or embedded values.
+#' Achilles Heel counts records rather than distinct people and does not provide
+#' enough information to enforce a person-level contribution contract. This
+#' helper remains available to a data controller inside the server process, but
+#' it is deliberately not exported or registered as a DataSHIELD aggregate.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @return Data frame with analysis_id, achilles_heel_warning, rule_id,
@@ -1779,7 +2128,7 @@ omopAchillesCatalogDS <- function(omop_symbol) {
 #' \dontrun{
 #' heel <- omopAchillesHeelDS("omop")
 #' }
-#' @export
+#' @keywords internal
 omopAchillesHeelDS <- function(omop_symbol) {
   handle <- .getHandle(omop_symbol)
   .achillesGetHeelResults(handle)
@@ -1821,15 +2170,24 @@ omopOhdsiStatusDS <- function(omop_symbol) {
 #' @export
 omopOhdsiTablesDS <- function(omop_symbol) {
   handle <- .getHandle(omop_symbol)
-  .ohdsiFindResultTables(handle)
+  result <- .ohdsiFilterPublicInventory(.ohdsiFindResultTables(handle))
+  if (nrow(result) > 0L) {
+    result$n_rows <- .ohdsiBandInventoryCounts(result$n_rows)
+    # Physical schema names are server internals and are unnecessary for
+    # discovering the public analysis surface.
+    result$qualified_name <- NULL
+  }
+  result
 }
 
 #' Query an OHDSI result table (Aggregate)
 #'
 #' @description
-#' Reads rows from a pre-computed OHDSI result table with server-controlled
-#' disclosure thresholds. Sensitive columns (SQL, JSON definitions) are
-#' automatically excluded. Count columns are subject to small-cell suppression.
+#' Reads only columns covered by a reviewed per-table release contract and
+#' applies server-controlled person and small-cell thresholds. Sensitive or
+#' uncontracted columns fail closed in strict mode. If an administrator disables
+#' strict mode, the compatibility result is explicitly marked as a development
+#' output and must not be treated as disclosure-safe.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param table_name Character; which result table to query
@@ -1849,8 +2207,12 @@ omopOhdsiResultsDS <- function(omop_symbol, table_name, columns = NULL,
                                 limit = 5000L, tool_id = NULL) {
   handle <- .getHandle(omop_symbol)
   filters <- .ds_arg(filters)
-  .ohdsiGetResults(handle, table_name, columns, filters, order_by, limit,
-                    tool_id)
+  # The internal consumer adds contracted disclosure-basis columns to the SQL
+  # projection and removes them only after gating, so caller projection cannot
+  # bypass the person gate.
+  result <- .ohdsiGetResults(handle, table_name, columns = columns, filters,
+                             order_by, limit, tool_id)
+  result
 }
 
 #' Get OHDSI tool summary (Aggregate)
@@ -1938,10 +2300,10 @@ omopQueryGetDS <- function(omop_symbol, query_id) {
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param query_id Character; the query ID from the query library
 #' @param inputs Named list; parameter values for the query template
-#' @param mode Character; "aggregate" (default, returns data to client) or
-#'   "assign" (keeps data server-side)
-#' @return For aggregate mode: disclosure-controlled data frame.
-#'   For assign mode: invisible TRUE.
+#' @param mode Character; retained for backwards compatibility. Only
+#'   \code{"aggregate"} is accepted by this aggregate DataSHIELD method. Use the
+#'   unified analysis assign path for server-side loaders.
+#' @return Disclosure-controlled data frame.
 #' @examples
 #' \dontrun{
 #' result <- omopQueryExecDS("omop", "condition_prevalence", inputs = list())
@@ -1954,8 +2316,17 @@ omopQueryExecDS <- function(omop_symbol, query_id,
   .validateIdentifier(query_id, "query_id")
   inputs <- .ds_arg(inputs)
   mode <- match.arg(mode, c("aggregate", "assign"))
+  if (!identical(mode, "aggregate")) {
+    stop("omopQueryExecDS is an aggregate-only method. Assign-mode query ",
+         "loaders must use omopAnalysisRunAssignDS through a DataSHIELD ",
+         "assign call.", call. = FALSE)
+  }
   .omopAuditLog("omopQueryExecDS", list(query_id = query_id, inputs = inputs))
-  .query_exec(handle, query_id, inputs, mode)
+  # The legacy query endpoint now delegates to the same single disclosure gate
+  # as the unified analysis catalog. In particular this bands counts and couples
+  # derived ratios, rather than relying on the legacy small-cell-only pass.
+  .omopAnalysisRun(handle, paste0("dsomop:", query_id), inputs,
+                   scope = NULL, combine = "union", assign = FALSE)
 }
 
 # --- Unified analysis catalog methods ---
@@ -2007,6 +2378,141 @@ omopAnalysisGetDS <- function(omop_symbol, name) {
   .omopAnalysisGet(handle, name)
 }
 
+#' Validate one public cohort-scope reference
+#'
+#' @param ref Candidate cohort definition id or temporary cohort name.
+#' @return A normalized scalar reference.
+#' @keywords internal
+.omopAnalysisCohortScopeScalar <- function(ref) {
+  if (is.numeric(ref) && length(ref) == 1L && !is.na(ref) &&
+      is.finite(ref) && ref == floor(ref) && ref > 0 &&
+      ref <= .Machine$integer.max) {
+    return(ref)
+  }
+  if (!is.character(ref) || length(ref) != 1L || is.na(ref)) {
+    stop("Each scope_cohort_N argument must be one positive integer cohort ",
+         "definition id or one temporary cohort name.", call. = FALSE)
+  }
+  ref <- .validateString(ref)
+  if (!nzchar(ref)) {
+    stop("Each scope_cohort_N argument must be one positive integer cohort ",
+         "definition id or one temporary cohort name.", call. = FALSE)
+  }
+  if (grepl("^[0-9]+$", ref)) {
+    value <- suppressWarnings(as.numeric(ref))
+    if (!is.finite(value) || value != floor(value) || value <= 0 ||
+        value > .Machine$integer.max) {
+      stop("Each scope_cohort_N definition id must be a positive server ",
+           "integer.", call. = FALSE)
+    }
+    return(ref)
+  }
+  .validateIdentifier(ref, "cohort scope")
+}
+
+#' Normalize the literal public analysis scope
+#'
+#' @param scope Literal scope supplied through the formal \code{scope} argument.
+#' @return Scope containing only cohort-reference scalars and \code{omop.table}
+#'   frames, preserving supported nested-list structure.
+#' @keywords internal
+.omopAnalysisNormalizePublicScope <- function(scope) {
+  if (is.null(scope) || .is_omop.table(scope)) return(scope)
+  if (is.list(scope) && !is.data.frame(scope)) {
+    return(lapply(scope, .omopAnalysisNormalizePublicScope))
+  }
+  .omopAnalysisCohortScopeScalar(scope)
+}
+
+#' Assemble resolved cohort and workspace-table scope arguments
+#'
+#' DataSHIELD must never expose generic aggregate constructors such as
+#' \code{base::list}: they can return arbitrary server objects. Multi-table
+#' analysis scope is therefore transported through the analysis endpoint's
+#' \code{...} arguments instead. Cohort references use contiguous
+#' \code{scope_cohort_1}, \code{scope_cohort_2}, ... scalar arguments; resolved
+#' frames use contiguous \code{scope_table_1}, \code{scope_table_2}, ...
+#' arguments. The endpoint combines cohort references first and frames second,
+#' together with the legacy literal \code{scope} form, and enforces both total
+#' source and workspace-table caps before any scope is materialised.
+#'
+#' @param scope Existing scope argument.
+#' @param dots Evaluated \code{...} arguments as a list.
+#' @return A supported analysis scope value.
+#' @keywords internal
+.omopAnalysisScopeFromDots <- function(scope, dots) {
+  if (!is.list(dots)) {
+    stop("Internal error: analysis scope dots must be a list.", call. = FALSE)
+  }
+  server_max <- as.integer(
+    .omopDisclosureSettings()$max_analysis_scope_tables
+  )
+  total_max <- server_max + 1L
+  .omopAnalysisScopeSourceCount(scope, max_sources = total_max)
+  scope <- .omopAnalysisNormalizePublicScope(scope)
+  if (length(dots) == 0L) return(scope)
+
+  if (length(dots) > total_max) {
+    stop("Analysis scope exceeds the server total source cap of ", total_max,
+         ".", call. = FALSE)
+  }
+
+  dot_names <- names(dots)
+  if (is.null(dot_names) || anyNA(dot_names) || any(!nzchar(dot_names))) {
+    stop("Additional analysis scope sources must be strictly named ",
+         "scope_cohort_1, ... or scope_table_1, ...", call. = FALSE)
+  }
+  if (anyDuplicated(dot_names)) {
+    stop("Additional analysis scope source names must be unique.", call. = FALSE)
+  }
+  if (any(!grepl("^scope_(cohort|table)_[1-9][0-9]*$", dot_names))) {
+    stop("Unexpected analysis argument name; additional scope sources must be ",
+         "named scope_cohort_N or scope_table_N.", call. = FALSE)
+  }
+
+  ordered_family <- function(family) {
+    prefix <- paste0("scope_", family, "_")
+    selected <- startsWith(dot_names, prefix)
+    values <- dots[selected]
+    if (length(values) == 0L) return(list())
+    indices <- suppressWarnings(as.integer(sub(prefix, "", names(values),
+                                               fixed = TRUE)))
+    if (anyNA(indices) ||
+        !identical(sort(indices), seq_len(length(indices)))) {
+      stop("Additional analysis scope ", family,
+           " names must be contiguous from ", prefix,
+           "1 with no gaps.", call. = FALSE)
+    }
+    unname(values[order(indices)])
+  }
+
+  cohort_dots <- ordered_family("cohort")
+  table_dots <- ordered_family("table")
+  if (any(!vapply(table_dots, .is_omop.table, logical(1)))) {
+    stop("Each scope_table_N argument must resolve to an omop.table workspace ",
+         "object.", call. = FALSE)
+  }
+  cohort_dots <- lapply(cohort_dots, .omopAnalysisCohortScopeScalar)
+
+  scope_sources <- if (is.null(scope)) {
+    list()
+  } else if (is.list(scope) && !is.data.frame(scope) &&
+             !.is_omop.table(scope)) {
+    unname(scope)
+  } else {
+    list(scope)
+  }
+  scope_is_table <- vapply(scope_sources, .is_omop.table, logical(1))
+  combined <- c(scope_sources[!scope_is_table], cohort_dots,
+                scope_sources[scope_is_table], table_dots)
+  .omopAnalysisScopeSourceCount(combined, max_sources = total_max)
+  if (.omopAnalysisScopeTableCount(combined) > server_max) {
+    stop("Analysis scope exceeds the server max_analysis_scope_tables cap of ",
+         server_max, ".", call. = FALSE)
+  }
+  if (length(combined) == 1L) combined[[1L]] else unname(combined)
+}
+
 #' Run a unified analysis catalog entry (Aggregate)
 #'
 #' @description
@@ -2032,6 +2538,11 @@ omopAnalysisGetDS <- function(omop_symbol, name) {
 #'   scope the population to (NULL = no scoping)
 #' @param combine Character; "union" (default) or "intersect" when scope has
 #'   multiple sources
+#' @param ... Additional scalar cohort references and resolved workspace tables,
+#'   independently and contiguously named \code{scope_cohort_1}, ... and
+#'   \code{scope_table_1}, ... without gaps. This provides safe multi-source
+#'   transport without registering generic aggregate \code{c()} or \code{list()}
+#'   methods.
 #' @return Disclosure-controlled data frame
 #' @examples
 #' \dontrun{
@@ -2040,16 +2551,19 @@ omopAnalysisGetDS <- function(omop_symbol, name) {
 #' }
 #' @export
 omopAnalysisRunDS <- function(omop_symbol, name, params = list(),
-                              scope = NULL, combine = "union") {
+                              scope = NULL, combine = "union", ...) {
   handle <- .getHandle(omop_symbol)
   name <- .ds_arg(name)
   if (is.list(name)) name <- name[[1]]
   params <- .ds_arg(params)
   scope <- .ds_arg(scope)
+  scope <- .omopAnalysisScopeFromDots(scope, list(...))
   combine <- .ds_arg(combine)
   if (is.list(combine)) combine <- combine[[1]]
   .omopAuditLog("omopAnalysisRunDS",
-                list(name = name, params = params, scope = scope,
+                list(name = name, params = params,
+                     scope_present = !is.null(scope),
+                     scope_table_count = .omopAnalysisScopeTableCount(scope),
                      combine = combine))
   .omopAnalysisRun(handle, name, params, scope = scope, combine = combine,
                    assign = FALSE)
@@ -2071,6 +2585,11 @@ omopAnalysisRunDS <- function(omop_symbol, name, params = list(),
 #' @param scope Optional cohort reference and/or \code{omop.table} symbol(s)
 #' @param combine Character; "union" (default) or "intersect" when scope has
 #'   multiple sources
+#' @param date_handling Date policy for the assigned clinical rows: remove
+#'   (default), relative, binned, or server-authorized absolute.
+#' @param ... Additional scalar cohort references and resolved workspace tables,
+#'   independently and contiguously named \code{scope_cohort_1}, ... and
+#'   \code{scope_table_1}, ... without gaps.
 #' @return The server-side assignment result (data stays on the server)
 #' @examples
 #' \dontrun{
@@ -2078,19 +2597,24 @@ omopAnalysisRunDS <- function(omop_symbol, name, params = list(),
 #' }
 #' @export
 omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
-                                    scope = NULL, combine = "union") {
+                                    scope = NULL, combine = "union",
+                                    date_handling = NULL, ...) {
   handle <- .getHandle(omop_symbol)
   name <- .ds_arg(name)
   if (is.list(name)) name <- name[[1]]
   params <- .ds_arg(params)
   scope <- .ds_arg(scope)
+  scope <- .omopAnalysisScopeFromDots(scope, list(...))
   combine <- .ds_arg(combine)
   if (is.list(combine)) combine <- combine[[1]]
+  date_handling <- .ds_arg(date_handling)
   .omopAuditLog("omopAnalysisRunAssignDS",
-                list(name = name, params = params, scope = scope,
+                list(name = name, params = params,
+                     scope_present = !is.null(scope),
+                     scope_table_count = .omopAnalysisScopeTableCount(scope),
                      combine = combine))
   .omopAnalysisRun(handle, name, params, scope = scope, combine = combine,
-                   assign = TRUE)
+                   assign = TRUE, assign_date_handling = date_handling)
 }
 
 # --- Concept-factor harmonization (cross-server coordination) ---
@@ -2128,7 +2652,7 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 omopFactorLevelsDS <- function(df) {
   cap <- .omopDisclosureSettings()$nfilter_levels_max
   empty <- list(levels = list(), unsafe = character(0), nfilter_levels_max = cap)
-  if (!is.data.frame(df)) {
+  if (!is.data.frame(df) || !.is_omop.table(df)) {
     return(empty)
   }
   cols <- grep("_concept_id$", names(df), value = TRUE)
@@ -2142,21 +2666,31 @@ omopFactorLevelsDS <- function(df) {
   # (defense in depth; a pseudonymous key has one level per person and would
   # also exceed nfilter.levels.max).
   cols <- setdiff(cols, .PERSON_KEY_COLS())
+  keys <- intersect(.PERSON_KEY_COLS(), names(df))
+  if (length(keys) == 0L) {
+    return(list(levels = list(), unsafe = cols,
+                nfilter_levels_max = cap))
+  }
+  person_col <- if ("person_id" %in% keys) "person_id" else keys[[1]]
   if (length(cols) == 0L) {
     return(empty)
   }
   safe <- list()
   unsafe <- character(0)
   for (col in cols) {
-    vals <- df[[col]]
-    vals <- vals[!is.na(vals)]
-    levels_col <- unique(as.character(vals))
+    keep <- !is.na(df[[col]]) & !is.na(df[[person_col]])
+    vals <- as.character(df[[col]][keep])
+    persons <- df[[person_col]][keep]
+    levels_col <- unique(vals)
     n_levels <- length(levels_col)
-    n_total <- length(vals)
+    n_total <- length(unique(persons))
     if (n_levels == 0L) {
       next
     }
-    is_safe <- tryCatch(
+    support <- vapply(levels_col, function(level) {
+      length(unique(persons[vals == level]))
+    }, integer(1))
+    is_safe <- all(support >= .omopDisclosureSettings()$nfilter_tab) && tryCatch(
       {
         .assertSafeLevels(n_levels, n_total)
         TRUE
@@ -2202,14 +2736,24 @@ omopFactorLevelsDS <- function(df) {
 #' @seealso \code{\link{omopFactorLevelsDS}}
 #' @export
 omopAsFactorColumnsDS <- function(df, spec) {
-  if (!is.data.frame(df)) {
-    stop("omopAsFactorColumnsDS: target is not a data.frame.", call. = FALSE)
+  if (!is.data.frame(df) || !.is_omop.table(df)) {
+    stop("omopAsFactorColumnsDS: target must be a dsOMOP omop.table.",
+         call. = FALSE)
   }
   spec <- .ds_arg(spec)
   if (!is.list(spec) || length(spec) == 0L) {
     return(df)
   }
   cap <- .omopDisclosureSettings()$nfilter_levels_max
+  allowed_cols <- grep("_concept_id$", names(df), value = TRUE)
+  allowed_cols <- union(
+    allowed_cols,
+    intersect(as.character(attr(df, "omop_concept_cols") %||% character(0)),
+              names(df))
+  )
+  allowed_cols <- setdiff(allowed_cols,
+                          union(.PERSON_KEY_COLS(),
+                                attr(df, "dsomop_protected") %||% character(0)))
   for (col in names(spec)) {
     # A hostile client cannot coerce a protected key into a factor.
     if (col %in% .PERSON_KEY_COLS()) {
@@ -2217,6 +2761,10 @@ omopAsFactorColumnsDS <- function(df, spec) {
     }
     if (!col %in% names(df)) {
       next
+    }
+    if (!col %in% allowed_cols) {
+      stop("omopAsFactorColumnsDS: column '", col,
+           "' is not a tagged concept column.", call. = FALSE)
     }
     levels_col <- as.character(unlist(spec[[col]], use.names = FALSE))
     levels_col <- levels_col[!is.na(levels_col) & nzchar(levels_col)]
@@ -2229,6 +2777,14 @@ omopAsFactorColumnsDS <- function(df, spec) {
         "' exceed nfilter.levels.max (", cap, ").",
         call. = FALSE
       )
+    }
+    if (anyDuplicated(levels_col)) {
+      stop("omopAsFactorColumnsDS: levels must be unique.", call. = FALSE)
+    }
+    observed <- unique(as.character(df[[col]][!is.na(df[[col]])]))
+    if (length(setdiff(observed, levels_col)) > 0L) {
+      stop("omopAsFactorColumnsDS: shared levels do not cover all observed ",
+           "values for '", col, "'.", call. = FALSE)
     }
     df[[col]] <- factor(as.character(df[[col]]), levels = levels_col)
   }

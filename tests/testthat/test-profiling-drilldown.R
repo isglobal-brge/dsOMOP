@@ -45,9 +45,10 @@ test_that("profileConceptDrilldown returns numeric_summary for measurement", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  withr::with_options(list(nfilter.tab = 3, nfilter.subset = 3), {
-    # HbA1c (3004410) in measurement — has value_as_number
-    result <- .profileConceptDrilldown(handle, "measurement", 3004410L)
+  withr::with_options(list(nfilter.tab = 3, nfilter.subset = 3,
+                           dsomop.nfilter.dist = 10), {
+    # Body weight has enough distinct people for protected distribution tails.
+    result <- .profileConceptDrilldown(handle, "measurement", 3025315L)
 
     expect_true(!is.null(result$numeric_summary))
     expect_true("quantiles" %in% names(result$numeric_summary))
@@ -119,12 +120,13 @@ test_that("profileLocateConcept returns data frame with expected columns", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  withr::with_options(list(nfilter.tab = 3), {
+  withr::with_options(list(nfilter.tab = 3, dsomop.nfilter.band = 5), {
     result <- .profileLocateConcept(handle, c(201820L, 3004410L))
 
     expect_true(is.data.frame(result))
     expect_true(all(c("table_name", "concept_column", "concept_id",
                        "n_records", "n_persons") %in% names(result)))
+    expect_false(any(grepl("_source_concept_id$", result$concept_column)))
   })
 })
 
@@ -133,13 +135,15 @@ test_that("profileLocateConcept finds known concept in expected table", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  withr::with_options(list(nfilter.tab = 3), {
+  withr::with_options(list(nfilter.tab = 3, dsomop.nfilter.band = 5), {
     result <- .profileLocateConcept(handle, 201820L)
 
     # Diabetes should be found in condition_occurrence
     co_rows <- result[result$table_name == "condition_occurrence", ]
     expect_true(nrow(co_rows) > 0)
     expect_true(201820L %in% co_rows$concept_id)
+    expect_true(all(co_rows$n_records %% 5 == 0))
+    expect_true(all(co_rows$n_persons %% 5 == 0))
   })
 })
 
@@ -152,10 +156,11 @@ test_that("profileLocateConcept suppresses small counts", {
     # With a high threshold, counts should be suppressed (NA)
     result <- .profileLocateConcept(handle, 201820L)
 
-    if (nrow(result) > 0) {
-      # All counts should be NA since they're below threshold of 10
-      expect_true(all(is.na(result$n_records) | result$n_records >= 10))
-    }
+    expect_true(is.data.frame(result))
+    # Every returned cell is either suppressed or above the threshold. An
+    # empty frame is also a valid fail-closed result.
+    expect_true(nrow(result) == 0L ||
+                all(is.na(result$n_records) | result$n_records >= 10))
   })
 })
 

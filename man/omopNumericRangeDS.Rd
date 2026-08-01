@@ -33,6 +33,9 @@ concept, using the table's domain concept column}
 \code{concept_id} on instead of the domain concept (e.g.
 \code{unit_concept_id}, a \code{*_type_concept_id}, or
 \code{value_as_concept_id})}
+
+\item{cohort}{Cohort scope: a cohort temp table name, a cohort_definition_id,
+or NULL. Takes precedence over \code{cohort_table}.}
 }
 \value{
 List with p05, p95, n_total

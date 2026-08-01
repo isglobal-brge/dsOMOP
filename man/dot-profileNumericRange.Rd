@@ -11,7 +11,8 @@
   cohort_table = NULL,
   window = NULL,
   concept_id = NULL,
-  concept_col = NULL
+  concept_col = NULL,
+  unit = "person"
 )
 }
 \arguments{
@@ -24,6 +25,13 @@
 \item{cohort_table}{Character; cohort temp table name (NULL)}
 
 \item{window}{List with start/end dates (NULL)}
+
+\item{concept_id}{Integer or NULL; optional concept scope.}
+
+\item{concept_col}{Character or NULL; concept column for that scope.}
+
+\item{unit}{Distribution unit. \code{"person"} (default) contributes one
+within-person mean; \code{"record"} is allowed only for a 1:1 relation.}
 }
 \value{
 List with p05, p95, n_total

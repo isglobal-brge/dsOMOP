@@ -18,7 +18,8 @@
 
 al_handle <- function(n_persons = 40) {
   h <- create_test_handle(n_persons = n_persons)
-  h$person_key <- as.raw(1:16)
+  .setLegacyTestPersonKey(h, "achilles-live",
+                          .local_envir = parent.frame())
   .buildBlueprint(h)
   suppressWarnings(.omopAnalysisRegistry(h))
   h
@@ -244,6 +245,8 @@ test_that("a tiny scoped cohort fails closed for a live Achilles entry", {
     toks <- .hashPersonKey(as.character(1:2), h$person_key)
     df <- data.frame(person_id = toks, v = 1:2, stringsAsFactors = FALSE)
     attr(df, "dsomop_protected") <- "person_id"
+    attr(df, "dsomop_pseudonymization") <-
+      .canonicalPseudonymizationContract(.personKeyPublicContract(h))
     class(df) <- union("omop.table", class(df))
     expect_error(.omopAnalysisRun(h, "dsomop:achilles.400", scope = df),
                  "Disclosive")

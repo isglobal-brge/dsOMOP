@@ -32,10 +32,10 @@ test_that(".coerce_integer64 preserves precision (never a lossy double)", {
 })
 
 test_that(".hashPersonKey yields deterministic, non-numeric, injective tokens", {
-  key <- as.raw(1:16)
+  key <- .testPseudonymKey("bigint-collision")
   ids <- c("9007199254740992", "9007199254740993")
   toks <- dsOMOP:::.hashPersonKey(ids, key)
-  expect_true(all(grepl("^p[0-9a-f]+$", toks)))   # "p" prefix => non-numeric token
+  expect_true(all(grepl("^p2[0-9a-f]+\\.[0-9a-f]{64}$", toks)))
   # ds.asNumeric / as.numeric cannot recover or infer the id (forced to NA).
   expect_true(all(is.na(suppressWarnings(as.numeric(toks)))))
   expect_equal(length(unique(toks)), 2L)          # distinct ids -> distinct tokens
@@ -57,11 +57,13 @@ test_that(".unhashPersonKey reverses .hashPersonKey server-side (NA preserved)",
 })
 
 test_that(".pseudonymizeIdentifiers aborts on a cardinality collision", {
-  key <- as.raw(1:16)
+  key <- .testPseudonymKey("bigint-collision-guard")
+  contract <- .testPublicPseudonymization(key)
   df <- data.frame(person_id = c("a", "b", "c"), v = 1:3, stringsAsFactors = FALSE)
-  expect_silent(dsOMOP:::.pseudonymizeIdentifiers(df, key))
+  expect_silent(dsOMOP:::.pseudonymizeIdentifiers(df, key, contract))
   # Force a collision by stubbing the hash to a constant -> must fail closed.
   local_mocked_bindings(.hashPersonKey = function(ids, key) rep("X", length(ids)),
                         .package = "dsOMOP")
-  expect_error(dsOMOP:::.pseudonymizeIdentifiers(df, key), "collision")
+  expect_error(dsOMOP:::.pseudonymizeIdentifiers(df, key, contract),
+               "collision")
 })

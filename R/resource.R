@@ -26,6 +26,9 @@
 #' @keywords internal
 .normalizeDBMS <- function(x) {
   if (is.null(x)) return(NULL)
+  if (!is.character(x) || length(x) != 1L || is.na(x)) {
+    stop("dbms must be one character value.", call. = FALSE)
+  }
   s <- tolower(trimws(x))
   if (!nzchar(s)) return(s)
   s <- trimws(gsub("[_[:space:]]+", " ", s))   # "sql_server" / "sql  server" -> "sql server"
@@ -100,6 +103,91 @@
   )
 }
 
+#' Describe the database adapter surface honestly
+#'
+#' This is a static implementation profile, not a claim that a live server or
+#' vendor driver was exercised. Embedded backends have executable package
+#' tests; every network backend still requires site-specific integration
+#' testing (driver, permissions, catalog layout and server version).
+#'
+#' @param dbms Character DBMS name.
+#' @return Named list describing translation, metadata and temporary-object
+#'   support.
+#' @keywords internal
+.databaseSupportProfile <- function(dbms) {
+  canonical <- .normalizeDBMS(dbms)
+  dialect <- .resolve_target_dialect(canonical)
+
+  temp_mode <- switch(canonical,
+    postgresql =, sqlite =, duckdb =, mysql =, mariadb =,
+    redshift =, snowflake = "session_table",
+    spark =, databricks = "session_view",
+    sqlserver =, synapse =, pdw =, oracle =, bigquery =
+      "unavailable_cross_statement",
+    "unavailable"
+  )
+  metadata_mode <- switch(canonical,
+    sqlite = "sqlite_catalog",
+    oracle = "oracle_catalog",
+    bigquery = "dataset_information_schema",
+    spark =, databricks = "show_describe",
+    "information_schema"
+  )
+  verification <- switch(canonical,
+    sqlite = "embedded_integration_tests",
+    duckdb = "optional_embedded_integration_tests",
+    "sql_contract_tests_only"
+  )
+
+  list(
+    dbms = canonical,
+    target_dialect = dialect,
+    sql_translation = "builtin_top_dateadd_subset",
+    sql_translation_patterns = c("select_top_integer", "dateadd_day_integer"),
+    sqlrender_runtime = FALSE,
+    metadata_discovery = metadata_mode,
+    temporary_materialization = temp_mode,
+    support_tier = verification,
+    verification = verification,
+    live_vendor_ci = FALSE
+  )
+}
+
+#' Remove NULL DBI connection arguments
+#'
+#' Passing an explicit NULL is not equivalent to omitting an argument for all
+#' DBI drivers (notably their port and credential validators).
+#' @param args Named list of DBI connection arguments.
+#' @return Named list without NULL entries.
+#' @keywords internal
+.compactConnectionArgs <- function(args) {
+  args[!vapply(args, is.null, logical(1))]
+}
+
+#' Format a host and optional port for driver connection strings
+#' @param host Host name.
+#' @param port Optional integer port.
+#' @param separator Separator used by the driver.
+#' @return Formatted endpoint.
+#' @keywords internal
+.hostWithOptionalPort <- function(host, port = NULL, separator = ":") {
+  if (is.null(host) || !nzchar(host)) return(host)
+  if (is.null(port)) return(host)
+  endpoint_host <- if (grepl(":", host, fixed = TRUE) &&
+                       !startsWith(host, "[")) paste0("[", host, "]") else host
+  paste0(endpoint_host, separator, port)
+}
+
+#' Normalize a Snowflake server name
+#' @param host Account identifier or complete Snowflake host name.
+#' @return Complete Snowflake host name.
+#' @keywords internal
+.snowflakeServer <- function(host) {
+  if (is.null(host) || !nzchar(host)) return(host)
+  if (grepl("\\.snowflakecomputing\\.com$", host, ignore.case = TRUE)) host else
+    paste0(host, ".snowflakecomputing.com")
+}
+
 #' Parse a readable OMOP CDM resource URL
 #'
 #' Parses URLs of the form
@@ -154,15 +242,54 @@
     path      <- substring(rest, slash + 1L)
   }
 
-  # Host and optional port from the authority (split on the last ':').
+  # Host and optional port. Bracketed IPv6 is unambiguous; an unbracketed
+  # multi-colon authority is rejected rather than silently treating part of the
+  # address as a port.
   host <- authority
   port <- NULL
   if (nzchar(authority)) {
-    cpos <- regexpr(":[^:]*$", authority)
-    if (cpos > 0L) {
-      host <- substring(authority, 1L, cpos - 1L)
-      port_str <- substring(authority, cpos + 1L)
-      if (nzchar(port_str)) port <- suppressWarnings(as.integer(port_str))
+    port_str <- NULL
+    if (startsWith(authority, "[")) {
+      close <- regexpr("]", authority, fixed = TRUE)
+      if (close < 2L) {
+        stop("Malformed bracketed IPv6 host in OMOP resource URL.",
+             call. = FALSE)
+      }
+      host <- substring(authority, 2L, close - 1L)
+      tail <- substring(authority, close + 1L)
+      if (nzchar(tail)) {
+        if (!startsWith(tail, ":")) {
+          stop("Malformed authority after bracketed IPv6 host.", call. = FALSE)
+        }
+        port_str <- substring(tail, 2L)
+      }
+    } else {
+      colons <- gregexpr(":", authority, fixed = TRUE)[[1]]
+      n_colons <- if (length(colons) == 1L && colons[[1]] == -1L) {
+        0L
+      } else {
+        length(colons)
+      }
+      if (n_colons > 1L) {
+        stop("IPv6 hosts in OMOP resource URLs must use brackets.",
+             call. = FALSE)
+      }
+      if (n_colons == 1L) {
+        cpos <- colons[[1]]
+        host <- substring(authority, 1L, cpos - 1L)
+        port_str <- substring(authority, cpos + 1L)
+      }
+    }
+    if (!is.null(port_str)) {
+      if (!grepl("^[0-9]+$", port_str)) {
+        stop("OMOP resource URL port must be an integer between 1 and 65535.",
+             call. = FALSE)
+      }
+      port <- suppressWarnings(as.integer(port_str))
+      if (is.na(port) || port < 1L || port > 65535L) {
+        stop("OMOP resource URL port must be an integer between 1 and 65535.",
+             call. = FALSE)
+      }
     }
   }
   host <- .urlDecode(host)
@@ -241,16 +368,18 @@ OMOPResourceClient <- R6::R6Class(
 
       if (dbms == "postgresql") {
         if (requireNamespace("RPostgres", quietly = TRUE)) {
-          return(DBI::dbConnect(RPostgres::Postgres(),
-                                host = p$host, port = p$port,
-                                dbname = p$database,
-                                user = user, password = pass))
+          args <- .compactConnectionArgs(list(
+            host = p$host, port = p$port, dbname = p$database,
+            user = user, password = pass))
+          return(do.call(DBI::dbConnect,
+                         c(list(RPostgres::Postgres()), args)))
         }
         if (requireNamespace("RPostgreSQL", quietly = TRUE)) {
-          return(DBI::dbConnect(RPostgreSQL::PostgreSQL(),
-                                host = p$host, port = p$port,
-                                dbname = p$database,
-                                user = user, password = pass))
+          args <- .compactConnectionArgs(list(
+            host = p$host, port = p$port, dbname = p$database,
+            user = user, password = pass))
+          return(do.call(DBI::dbConnect,
+                         c(list(RPostgreSQL::PostgreSQL()), args)))
         }
         stop("No PostgreSQL driver found. Install RPostgres or RPostgreSQL.",
              call. = FALSE)
@@ -273,20 +402,20 @@ OMOPResourceClient <- R6::R6Class(
                       "synapse", "pdw")) {
         if (!requireNamespace("odbc", quietly = TRUE))
           stop("odbc package required for SQL Server connections.", call. = FALSE)
-        return(DBI::dbConnect(odbc::odbc(),
-                              driver = p$driver %||% "ODBC Driver 17 for SQL Server",
-                              server = paste0(p$host, ",", p$port),
-                              database = p$database,
-                              uid = user, pwd = pass))
+        args <- .compactConnectionArgs(list(
+          driver = p$driver %||% "ODBC Driver 17 for SQL Server",
+          server = .hostWithOptionalPort(p$host, p$port, ","),
+          database = p$database, uid = user, pwd = pass))
+        return(do.call(DBI::dbConnect, c(list(odbc::odbc()), args)))
       }
 
       if (dbms %in% c("mysql", "mariadb")) {
         if (!requireNamespace("RMariaDB", quietly = TRUE))
           stop("RMariaDB package required for MySQL/MariaDB.", call. = FALSE)
-        return(DBI::dbConnect(RMariaDB::MariaDB(),
-                              host = p$host, port = p$port,
-                              dbname = p$database,
-                              user = user, password = pass))
+        args <- .compactConnectionArgs(list(
+          host = p$host, port = p$port, dbname = p$database,
+          user = user, password = pass))
+        return(do.call(DBI::dbConnect, c(list(RMariaDB::MariaDB()), args)))
       }
 
       if (dbms == "oracle") {
@@ -295,16 +424,20 @@ OMOPResourceClient <- R6::R6Class(
           drv <- DBI::dbDriver("Oracle")
           connect_string <- paste0(
             "(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=", p$host,
-            ")(PORT=", p$port, "))(CONNECT_DATA=(SID=", p$database, ")))"
+            ")(PORT=", p$port %||% 1521L,
+            "))(CONNECT_DATA=(SID=", p$database, ")))"
           )
-          return(DBI::dbConnect(drv, username = user, password = pass,
-                                dbname = connect_string))
+          args <- .compactConnectionArgs(list(
+            username = user, password = pass, dbname = connect_string))
+          return(do.call(DBI::dbConnect, c(list(drv), args)))
         }
         if (requireNamespace("odbc", quietly = TRUE)) {
-          return(DBI::dbConnect(odbc::odbc(),
-                                driver = p$driver %||% "Oracle",
-                                DBQ = paste0(p$host, ":", p$port, "/", p$database),
-                                UID = user, PWD = pass))
+          args <- .compactConnectionArgs(list(
+            driver = p$driver %||% "Oracle",
+            DBQ = paste0(.hostWithOptionalPort(p$host, p$port),
+                         "/", p$database),
+            UID = user, PWD = pass))
+          return(do.call(DBI::dbConnect, c(list(odbc::odbc()), args)))
         }
         stop("Oracle requires ROracle (with Oracle Instant Client) or odbc package.",
              call. = FALSE)
@@ -314,30 +447,30 @@ OMOPResourceClient <- R6::R6Class(
         # Redshift is PostgreSQL wire-compatible
         if (!requireNamespace("RPostgres", quietly = TRUE))
           stop("RPostgres package required for Redshift connections.", call. = FALSE)
-        return(DBI::dbConnect(RPostgres::Postgres(),
-                              host = p$host, port = p$port,
-                              dbname = p$database,
-                              user = user, password = pass))
+        args <- .compactConnectionArgs(list(
+          host = p$host, port = p$port, dbname = p$database,
+          user = user, password = pass))
+        return(do.call(DBI::dbConnect, c(list(RPostgres::Postgres()), args)))
       }
 
       if (dbms == "bigquery") {
         if (!requireNamespace("bigrquery", quietly = TRUE))
           stop("bigrquery package required for BigQuery connections.", call. = FALSE)
         project <- p$host  # use host field for GCP project ID
-        return(DBI::dbConnect(bigrquery::bigquery(),
-                              project = project,
-                              dataset = p$database))
+        args <- .compactConnectionArgs(list(
+          project = project, dataset = p$database))
+        return(do.call(DBI::dbConnect, c(list(bigrquery::bigquery()), args)))
       }
 
       if (dbms == "snowflake") {
         if (!requireNamespace("odbc", quietly = TRUE))
           stop("odbc package required for Snowflake connections.", call. = FALSE)
-        return(DBI::dbConnect(odbc::odbc(),
-                              driver = p$driver %||% "Snowflake",
-                              server = paste0(p$host, ".snowflakecomputing.com"),
-                              database = p$database,
-                              uid = user, pwd = pass,
-                              warehouse = p$warehouse %||% "COMPUTE_WH"))
+        args <- .compactConnectionArgs(list(
+          driver = p$driver %||% "Snowflake",
+          server = .snowflakeServer(p$host), database = p$database,
+          uid = user, pwd = pass,
+          warehouse = p$warehouse %||% "COMPUTE_WH"))
+        return(do.call(DBI::dbConnect, c(list(odbc::odbc()), args)))
       }
 
       if (dbms %in% c("spark", "databricks")) {
@@ -345,11 +478,10 @@ OMOPResourceClient <- R6::R6Class(
           stop("odbc package required for Spark/Databricks connections.", call. = FALSE)
         # Databricks uses its own ODBC driver; classic Spark uses Simba
         driver <- p$driver %||% (if (dbms == "databricks") "Databricks" else "Simba Spark ODBC Driver")
-        return(DBI::dbConnect(odbc::odbc(),
-                              driver = driver,
-                              host = p$host, port = p$port,
-                              database = p$database,
-                              uid = user, pwd = pass))
+        args <- .compactConnectionArgs(list(
+          driver = driver, host = p$host, port = p$port,
+          database = p$database, uid = user, pwd = pass))
+        return(do.call(DBI::dbConnect, c(list(odbc::odbc()), args)))
       }
 
       stop("Unsupported DBMS: '", dbms, "'. Supported: postgresql, sqlite, duckdb, ",
@@ -362,6 +494,7 @@ OMOPResourceClient <- R6::R6Class(
   public = list(
     #' @description Create a new OMOP resource client
     #' @param resource A resourcer resource object
+    #' @param ... Reserved for compatibility with the parent resource client.
     initialize = function(resource, ...) {
       super$initialize(resource)
       private$parse_url()

@@ -4,22 +4,42 @@
 \alias{.computeAgeGroups}
 \title{Compute safe age groups from year_of_birth}
 \usage{
-.computeAgeGroups(year_of_birth, index_year, bin_width = 5L, min_cell = NULL)
+.computeAgeGroups(
+  year_of_birth,
+  index_year,
+  bin_width = NULL,
+  age_breaks = NULL,
+  min_cell = NULL,
+  person_id = NULL
+)
 }
 \arguments{
 \item{year_of_birth}{Integer vector; birth years}
 
 \item{index_year}{Integer vector; reference years (same length or scalar)}
 
-\item{bin_width}{Integer; minimum bin width in years (default 5, minimum 5)}
+\item{bin_width}{Optional integer coarsening width in years. \code{NULL} uses
+the server grid; non-\code{NULL} boundaries must be a subset of it.}
 
-\item{min_cell}{Integer; merge bins with fewer than this many persons (nfilter.tab)}
+\item{age_breaks}{Optional explicit public lower bounds. They must be a
+coarsening (subset) of the controller-owned server grid.}
+
+\item{min_cell}{Integer; suppress bins with fewer than this many persons
+(defaults to \code{nfilter.tab}).}
+
+\item{person_id}{Optional person key parallel to the age vectors. When rows
+represent recurrent cohort episodes, each person contributes at most once
+to a bin's disclosure support.}
 }
 \value{
 Character vector of age group labels (e.g. "40-44", "85+")
 }
 \description{
-Bins ages into groups with minimum bin width (default 5 years).
-Merges small-count bins at extremes to prevent identification.
+Bins annual-resolution ages (reference year minus \code{year_of_birth}) on
+the controller-owned public age grid. A caller
+may request a coarser regular grid only when every requested boundary belongs
+to that server grid. Locally unsupported bins are replaced by \code{NA};
+their boundaries are never merged or changed from data, so labels remain
+harmonizable across servers.
 }
 \keyword{internal}

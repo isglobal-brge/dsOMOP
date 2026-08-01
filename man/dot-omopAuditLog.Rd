@@ -17,7 +17,7 @@ invisible(NULL)
 }
 \description{
 Writes a single structured line to the server log via \code{message()}
-(stderr). The record is NEVER returned to the analyst — it is visible only
+(stderr). The record is NEVER returned to the analyst - it is visible only
 to the data controller in the server logs. Its purpose is to let the
 controller review the \emph{sequence} of extraction and cohort operations
 and detect differencing / triangulation attempts that per-query disclosure

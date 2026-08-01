@@ -34,7 +34,8 @@
 # A keyed handle with the catalog pre-built (mirrors test-analysis-ports.R).
 p1bc_handle <- function(n_persons = 40) {
   h <- create_test_handle(n_persons = n_persons)
-  h$person_key <- as.raw(1:16)
+  .setLegacyTestPersonKey(h, "analysis-ports-1bc",
+                          .local_envir = parent.frame())
   .buildBlueprint(h)
   suppressWarnings(.omopAnalysisRegistry(h))
   h
@@ -80,6 +81,7 @@ p1bc_allpersons <- function(h, name = "p1bc_allp") {
     "CREATE TEMP TABLE ", name, " AS SELECT person_id AS subject_id, ",
     "'2020-01-01' AS cohort_start_date, '2024-12-31' AS cohort_end_date ",
     "FROM person"))
+  register_test_temp(h, name)
   name
 }
 
@@ -226,6 +228,12 @@ test_that("(b) fe.continuous returns un-masked stats for a >= nfilter_dist cohor
 test_that("(b) fe.comorbidity_index returns a clamped score distribution", {
   h <- p1bc_handle()
   on.exit(cleanup_handle(h))
+  entry <- .omopAnalysisResolve(h, "dsomop:fe.comorbidity_index")
+  expect_identical(entry$meta$method, "component_burden_approximation")
+  expect_false(entry$meta$upstream_equivalent)
+  expect_identical(entry$meta$upstream_commit,
+                   "53266f0233c2ee7cae127e8669ad35b0d60406ae")
+  expect_match(entry$description, "component-burden approximation")
   withr::with_options(p1bc_opts(dist = 10), {
     allp <- p1bc_allpersons(h)
     df <- .omopAnalysisRun(h, "dsomop:fe.comorbidity_index",
@@ -408,6 +416,7 @@ test_that("(c) risk_factor_smd: live SMD rests on banded counts, both arms gated
       "CREATE TEMP TABLE p1bc_smdB AS SELECT person_id AS subject_id, ",
       "'2020-01-01' AS cohort_start_date, '2024-12-31' AS cohort_end_date ",
       "FROM person WHERE person_id BETWEEN 21 AND 40"))
+    register_test_temp(h, c("p1bc_smdA", "p1bc_smdB"))
     cid <- 6000L
     for (pid in c(1:8, 21:27)) {       # diabetes in both arms (>= 5 each)
       cid <- cid + 1L
@@ -458,6 +467,7 @@ test_that("(c) cm.covariate_balance recomputes SMD from banded target/comparator
       "CREATE TEMP TABLE p1bc_balC AS SELECT person_id AS subject_id, ",
       "'2020-01-01' AS cohort_start_date, '2024-12-31' AS cohort_end_date ",
       "FROM person WHERE person_id BETWEEN 21 AND 40"))
+    register_test_temp(h, c("p1bc_balT", "p1bc_balC"))
     cid <- 7000L
     for (pid in c(1:8, 21:27)) {
       cid <- cid + 1L
@@ -505,6 +515,7 @@ test_that("(d) a sub-threshold single-cohort scope fails closed for every 1b por
     "CREATE TEMP TABLE p1bc_tiny AS SELECT person_id AS subject_id, ",
     "'2020-01-01' AS cohort_start_date, '2024-12-31' AS cohort_end_date ",
     "FROM person WHERE person_id IN (1, 2)"))
+  register_test_temp(h, "p1bc_tiny")
   withr::with_options(p1bc_opts(), {
     for (id in P1B_IDS) {
       params <- if (identical(id, "dsomop:plp.covariate_summary")) {
@@ -527,6 +538,7 @@ test_that("(d) a two-population port fails closed when either arm < nfilter", {
       "CREATE TEMP TABLE p1bc_tinyarm AS SELECT person_id AS subject_id, ",
       "'2020-01-01' AS cohort_start_date, '2024-12-31' AS cohort_end_date ",
       "FROM person WHERE person_id IN (1, 2)"))     # 2 persons (sub-threshold)
+    register_test_temp(h, "p1bc_tinyarm")
     for (id in P1C_IDS) {
       # The pair resolver re-gates EACH arm; the tiny arm is refused fail-closed.
       expect_error(

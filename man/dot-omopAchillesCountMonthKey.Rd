@@ -15,6 +15,9 @@
 Character; an integer YYYYMM SQL expression.
 }
 \description{
-
+Same month-key form \code{.achillesCompanionPersonCounts} (achilles_gating.R:134)
+uses, so the by-month stratum is identical to what Achilles stores
+(PostgreSQL/duckdb: \code{YEAR*100 + MONTH}; SQLite: a year-month
+\code{strftime} expression).
 }
 \keyword{internal}

@@ -15,10 +15,9 @@
 Character vector of the original identifier values.
 }
 \description{
-Inverse of \code{\link{.hashPersonKey}}: strips the \code{"p"} prefix,
-hex-decodes the ciphertext, and AES-256-CBC decrypts it under the same
-key + IV derived from the per-resource secret. This is the server-side reverse
-map used for population-scoping joins (Phase B); the client never holds the
-key, so it cannot invert a token. Vectorised; NA preserved.
+Inverse of \code{\link{.hashPersonKey}}. It verifies the version-2 HMAC before
+AES-256-CBC decryption, and rejects malformed, modified, legacy, or wrong-key
+tokens with one generic error. This is the server-side reverse map used for
+population-scoping joins; the client never holds either derived key.
 }
 \keyword{internal}

@@ -4,7 +4,12 @@
 \alias{.extractCohortMembership}
 \title{Extract standard OHDSI cohort membership table}
 \usage{
-.extractCohortMembership(handle, cohort_table, cohort_definition_id)
+.extractCohortMembership(
+  handle,
+  cohort_table,
+  cohort_definition_id,
+  date_handling = NULL
+)
 }
 \arguments{
 \item{handle}{CDM handle}

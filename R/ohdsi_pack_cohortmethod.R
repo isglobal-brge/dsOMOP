@@ -147,7 +147,7 @@
   max_age <- suppressWarnings(as.integer(params$max_age %||% NA))
   if (!is.na(min_age) || !is.na(max_age)) {
     age_at <- .omopDateDiffDays(handle, "coh.cohort_start_date", "p.birth_dt")
-    age_yrs <- paste0("(CAST(", age_at, " / 365 AS INTEGER))")
+    age_yrs <- .omopFloorDivideSql(age_at, 365L)
     bounds <- character(0)
     if (!is.na(min_age)) bounds <- c(bounds, paste0(age_yrs, " >= ", min_age))
     if (!is.na(max_age)) bounds <- c(bounds, paste0(age_yrs, " <= ", max_age))

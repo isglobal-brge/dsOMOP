@@ -21,7 +21,7 @@
 Shared core used by both single-table and GLOBAL prevalence. Returns the raw,
 un-decorated aggregate (concept_id, n_persons?, n_records) for one table with
 the page window applied, plus a \code{source_table} tag. Performs NO concept
-decoration and NO small-cell suppression — the caller owns those so a global
+decoration and NO small-cell suppression - the caller owns those so a global
 run decorates/suppresses ONCE over the merged set. The per-table population
 gate (\code{.assertMinPersons} on the table's distinct persons) still runs
 here so a too-small table never contributes rows.

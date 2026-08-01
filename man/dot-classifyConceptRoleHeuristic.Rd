@@ -9,7 +9,7 @@
 \arguments{
 \item{table}{Character; the table name.}
 
-\item{column_name}{Character; the column name to classify.}
+\item{column}{Character; the column name to classify.}
 }
 \value{
 Character; one of "primary", "type", "source", "qualifier", or "other".

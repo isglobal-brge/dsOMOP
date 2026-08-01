@@ -51,7 +51,10 @@
 # person_key so omop.table-token scope sources can be reversed server-side.
 .so_handle <- function(n_persons = 15, keyed = FALSE) {
   h <- create_test_handle(n_persons = n_persons)
-  if (keyed) h$person_key <- as.raw(1:16)
+  if (keyed) {
+    .setLegacyTestPersonKey(h, "recipe-setops",
+                            .local_envir = parent.frame())
+  }
   DBI::dbExecute(h$conn, "DELETE FROM condition_occurrence")
   DBI::dbExecute(h$conn, "DELETE FROM measurement")
   h
@@ -63,6 +66,10 @@
   toks <- dsOMOP:::.hashPersonKey(as.character(ids), handle$person_key)
   df <- data.frame(person_id = toks, v = seq_along(ids), stringsAsFactors = FALSE)
   attr(df, "dsomop_protected") <- "person_id"
+  attr(df, "dsomop_pseudonymization") <-
+    dsOMOP:::.canonicalPseudonymizationContract(
+      dsOMOP:::.personKeyPublicContract(handle)
+    )
   class(df) <- union("omop.table", class(df))
   df
 }
@@ -136,6 +143,10 @@ test_that("maintainer headline query: declarative recipe compiles AND executes",
   # hasMeasZ = women with measurementZ (creatinine 3025315) present: {2,4,6,8,10,14}
   for (p in c(2, 4, 6, 8, 10, 14)) .so_ins_meas(h$conn, p, 3025315L, 1.2)
   .buildBlueprint(h)
+  hba1c_breaks <- c(0, 5, 7, 10)
+  hba1c_scope <- .test_issue_safe_bins(
+    h, hba1c_breaks, concept_id = 3004410L)
+  hba1c_bins <- list(breaks = hba1c_breaks, contract = hba1c_scope)
 
   recipe <- dsOMOPClient::omop_recipe(
     populations = list(
@@ -144,13 +155,17 @@ test_that("maintainer headline query: declarative recipe compiles AND executes",
         filters = list(
           dsOMOPClient::omop_filter_sex("F"),
           dsOMOPClient::omop_filter_has_concept(201820, "condition_occurrence"),
-          dsOMOPClient::omop_filter_has_measurement(3004410, min_value = 7.0))),
+          dsOMOPClient::omop_filter_has_measurement(
+            3004410, min_value = 7.0, max_value = 10,
+            safe_bins = hba1c_bins))),
       dsOMOPClient::omop_population(
         "B", "women cond255573 + HbA1c low",
         filters = list(
           dsOMOPClient::omop_filter_sex("F"),
           dsOMOPClient::omop_filter_has_concept(255573, "condition_occurrence"),
-          dsOMOPClient::omop_filter_has_measurement(3004410, max_value = 5.0))),
+          dsOMOPClient::omop_filter_has_measurement(
+            3004410, min_value = 0, max_value = 5.0,
+            safe_bins = hba1c_bins))),
       dsOMOPClient::omop_population("union_AB", "A or B",
                                     union = c("A", "B")),
       dsOMOPClient::omop_population(
@@ -326,6 +341,29 @@ test_that("scope via omop.table frame narrows every population (end-to-end)", {
   expect_setequal(names(df), c("person_id", "gender_concept_id"))
   expect_false(any(grepl("source_value|provider_id|_source_concept_id",
                          names(df))))
+
+  # The production client transport sends each frame as a separate, named
+  # argument. Splitting the same scope across two tables must be equivalent to
+  # the backwards-compatible literal scope and must not require list()/c().
+  frame_a <- .so_token_frame(h, c(2, 4, 6, 8))
+  frame_b <- .so_token_frame(h, c(8, 10, 12))
+  env_dots <- new.env()
+  withr::with_options(list(nfilter.subset = 3), suppressMessages(
+    eval(quote(omopPlanExecuteDS(
+      "omop", plan, c(study = "study_sym_dots"), combine = "union",
+      scope_table_2 = frame_b, scope_table_1 = frame_a
+    )), envir = env_dots)))
+  df_dots <- get("study_sym_dots", envir = env_dots)
+  expect_equal(length(unique(df_dots$person_id)), 6L)
+  expect_setequal(df_dots$person_id, df$person_id)
+
+  expect_error(
+    omopPlanExecuteDS(
+      "omop", plan, c(study = "unused_scope_gap"),
+      scope_table_2 = frame_a
+    ),
+    "contiguous"
+  )
 })
 
 test_that("scope folds a cohort ref AND a table frame (combine=intersect)", {
@@ -367,6 +405,41 @@ test_that("scope folds a cohort ref AND a table frame (combine=intersect)", {
   })
 })
 
+test_that("population scoping preserves the scope cohort episode dates", {
+  skip_if_not_installed("RSQLite")
+  h <- .so_handle()
+  on.exit(cleanup_handle(h))
+  bp <- .buildBlueprint(h)
+
+  population_ct <- .materializeCohortFromIds(
+    h, bp, 1:3, name = "population_observation_periods"
+  )
+  scope_episodes <- data.frame(
+    subject_id = rep(1:3, each = 2L),
+    cohort_start_date = rep(c("2030-01-01", "2031-01-01"), 3L),
+    cohort_end_date = rep(c("2030-01-31", "2031-01-31"), 3L),
+    stringsAsFactors = FALSE
+  )
+  DBI::dbWriteTable(h$conn, "recurrent_scope", scope_episodes,
+                    temporary = TRUE)
+  register_test_temp(h, "recurrent_scope")
+
+  resolved <- list(eligible = list(
+    cohort_table = population_ct,
+    person_ids = 1:3
+  ))
+  withr::with_options(list(nfilter.subset = 3), {
+    scoped <- .planScopePopulations(h, resolved, "recurrent_scope", bp)
+  })
+  actual <- .executeQuery(h, paste0(
+    "SELECT subject_id, cohort_start_date, cohort_end_date FROM ",
+    scoped$eligible$cohort_table,
+    " ORDER BY subject_id, cohort_start_date"
+  ))
+
+  expect_equal(actual, scope_episodes)
+})
+
 test_that("a too-small scope fails closed when intersected into a population", {
   skip_if_not_installed("RSQLite")
   # union_AB = {2,4,6,8,10,12}; scope cohort = {2,8} (2 persons). The scope is
@@ -404,7 +477,8 @@ test_that("a scalar plan cohort id resolves as SCOPE (by id, handle, table)", {
   skip_if_not_installed("RSQLite")
   # The fixture's cohort_definition_id = 1 has members {1,3,5,7,9,11}.
   h <- create_test_handle(); on.exit(cleanup_handle(h))
-  h$person_key <- as.raw(1:16)
+  .setLegacyTestPersonKey(h, "recipe-scalar-cohort",
+                          .local_envir = parent.frame())
   .buildBlueprint(h)
 
   withr::with_options(list(nfilter.subset = 3), {
@@ -531,6 +605,62 @@ test_that("base-only populations=list(base=...) matches no-populations result", 
     })
   }
   expect_identical(run(TRUE), run(FALSE))
+})
+
+test_that("plan execution releases every intermediate temp and is repeatable", {
+  skip_if_not_installed("RSQLite")
+  h <- .so_handle(n_persons = 30)
+  on.exit(cleanup_handle(h))
+  for (p in c(2, 4, 6, 8, 10, 12)) .so_ins_cond(h$conn, p, 201820L)
+  for (p in c(8, 10, 12, 14, 16, 18)) .so_ins_cond(h$conn, p, 255573L)
+  for (p in c(14, 16, 18, 20, 22, 24)) .so_ins_cond(h$conn, p, 443392L)
+  .buildBlueprint(h)
+  plan <- .so_plan(
+    populations = list(
+      base = list(id = "base"),
+      A = .so_crit("A", .so_sexF, .so_has_cond(201820L)),
+      B = .so_crit("B", .so_sexF, .so_has_cond(255573L)),
+      C = .so_crit("C", .so_sexF, .so_has_cond(443392L)),
+      all_three = .so_setop("all_three", "union", c("A", "B", "C"))
+    ),
+    outputs = list()
+  )
+  baseline <- h$temp_tables
+
+  withr::with_options(list(
+    nfilter.subset = 3,
+    dsomop.max_temp_tables_per_handle = 5L
+  ), {
+    for (i in seq_len(3L)) {
+      expect_length(.planExecute(h, plan, list()), 0L)
+      expect_identical(h$temp_tables, baseline)
+    }
+  })
+})
+
+test_that("failed plan population folds release all newly owned temps", {
+  skip_if_not_installed("RSQLite")
+  h <- .so_handle(n_persons = 30)
+  on.exit(cleanup_handle(h))
+  for (p in c(2, 4, 6, 8, 10, 12)) .so_ins_cond(h$conn, p, 201820L)
+  for (p in c(12, 14, 16, 18, 20, 22)) .so_ins_cond(h$conn, p, 255573L)
+  .buildBlueprint(h)
+  plan <- .so_plan(
+    populations = list(
+      base = list(id = "base"),
+      A = .so_crit("A", .so_sexF, .so_has_cond(201820L)),
+      B = .so_crit("B", .so_sexF, .so_has_cond(255573L)),
+      tiny = .so_setop("tiny", "intersect", c("A", "B"))
+    ),
+    outputs = list()
+  )
+  baseline <- h$temp_tables
+
+  withr::with_options(list(nfilter.subset = 3), {
+    expect_error(.planExecute(h, plan, list()),
+                 "Disclosive|disclosure threshold|insufficient")
+  })
+  expect_identical(h$temp_tables, baseline)
 })
 
 # ---------------------------------------------------------------------------

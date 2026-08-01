@@ -2,14 +2,14 @@
 # Phase 1: population-filter window= wiring (server)
 #
 # has_concept / not_has_concept / missing_measurement now apply a `window=`
-# (list(start, end) day offsets relative to the current date, negative = past)
+# (list(start, end) day offsets relative to an index or fixed declared date)
 # as a date predicate inside their EXISTS / NOT EXISTS subquery. Without a
 # window the subquery must carry NO date predicate (back-compat); with one it
 # must constrain the table's event date column. This proves the client-carried
 # window is no longer a silent no-op server-side.
 # ==============================================================================
 
-test_that("population filter window= adds a current-date-relative event-date predicate", {
+test_that("population filter window= adds a fixed-date-relative predicate", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   bp <- .buildBlueprint(handle)
@@ -23,7 +23,8 @@ test_that("population filter window= adds a current-date-relative event-date pre
   hc0 <- .compileCohortFilterLeaf(handle,
     mk("has_concept", list(concept_ids = 3001L, table = "measurement")), bp, pc)
   hc1 <- .compileCohortFilterLeaf(handle,
-    mk("has_concept", list(concept_ids = 3001L, table = "measurement", window = win)), bp, pc)
+    mk("has_concept", list(concept_ids = 3001L, table = "measurement",
+                           window = win, reference_date = "2024-07-01")), bp, pc)
   expect_true(grepl("EXISTS", hc0))
   expect_false(grepl(date_col, hc0, fixed = TRUE))
   expect_true(grepl(date_col, hc1, fixed = TRUE))
@@ -32,7 +33,9 @@ test_that("population filter window= adds a current-date-relative event-date pre
   nhc0 <- .compileCohortFilterLeaf(handle,
     mk("not_has_concept", list(concept_ids = 3001L, table = "measurement")), bp, pc)
   nhc1 <- .compileCohortFilterLeaf(handle,
-    mk("not_has_concept", list(concept_ids = 3001L, table = "measurement", window = win)), bp, pc)
+    mk("not_has_concept", list(concept_ids = 3001L, table = "measurement",
+                               window = win,
+                               reference_date = "2024-07-01")), bp, pc)
   expect_true(grepl("NOT EXISTS", nhc1))
   expect_false(grepl(date_col, nhc0, fixed = TRUE))
   expect_true(grepl(date_col, nhc1, fixed = TRUE))
@@ -41,14 +44,16 @@ test_that("population filter window= adds a current-date-relative event-date pre
   mm0 <- .compileCohortFilterLeaf(handle,
     mk("missing_measurement", list(concept_ids = 3001L)), bp, pc)
   mm1 <- .compileCohortFilterLeaf(handle,
-    mk("missing_measurement", list(concept_ids = 3001L, window = win)), bp, pc)
+    mk("missing_measurement", list(concept_ids = 3001L, window = win,
+                                   reference_date = "2024-07-01")), bp, pc)
   expect_false(grepl(date_col, mm0, fixed = TRUE))
   expect_true(grepl(date_col, mm1, fixed = TRUE))
 
   # one-sided window: only start -> only a >= predicate
   hc_start <- .compileCohortFilterLeaf(handle,
     mk("has_concept", list(concept_ids = 3001L, table = "measurement",
-                           window = list(start = -30L))), bp, pc)
+                           window = list(start = -30L),
+                           reference_date = "2024-07-01")), bp, pc)
   expect_true(grepl(paste0(date_col, " >="), hc_start, fixed = TRUE))
   expect_false(grepl(paste0(date_col, " <="), hc_start, fixed = TRUE))
 })

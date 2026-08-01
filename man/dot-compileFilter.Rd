@@ -4,7 +4,14 @@
 \alias{.compileFilter}
 \title{Compile a filter DSL structure into SQL WHERE fragments}
 \usage{
-.compileFilter(handle, filter, table_alias = "t", valid_columns = NULL)
+.compileFilter(
+  handle,
+  filter,
+  table_alias = "t",
+  valid_columns = NULL,
+  .depth = 1L,
+  .state = NULL
+)
 }
 \arguments{
 \item{handle}{CDM handle}
@@ -14,6 +21,10 @@
 \item{table_alias}{Character; table alias}
 
 \item{valid_columns}{Character vector; whitelist}
+
+\item{.depth}{Internal recursion depth.}
+
+\item{.state}{Internal shared complexity counter.}
 }
 \value{
 Character; SQL WHERE fragment

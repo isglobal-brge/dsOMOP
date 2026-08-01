@@ -344,21 +344,21 @@
   },
   {
     "id": "person.year_of_birth_distribution",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons"
     ],
-    "pool_strategy": "sum"
+    "pool_strategy": "none"
   },
   {
     "id": "person.gender_by_age_decade",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons"
     ],
-    "pool_strategy": "sum"
+    "pool_strategy": "none"
   },
   {
     "id": "visit.type_summary",
@@ -724,16 +724,16 @@
   },
   {
     "id": "person.birth_month_distribution",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons"
     ],
-    "pool_strategy": "sum"
+    "pool_strategy": "none"
   },
   {
     "id": "person.load",
-    "class": "SAFE_ASSIGN",
+    "class": "BLOCKED",
     "poolable": false,
     "sensitive_fields": [],
     "pool_strategy": "none"

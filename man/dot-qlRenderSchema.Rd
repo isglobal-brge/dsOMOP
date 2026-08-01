@@ -2,27 +2,21 @@
 % Please edit documentation in R/analysis_catalog.R
 \name{.qlRenderSchema}
 \alias{.qlRenderSchema}
-\title{Render + execute a SQL-entry, with optional person-scope injection}
+\title{Render QueryLibrary schema placeholders}
 \usage{
 .qlRenderSchema(handle, sql)
 }
 \arguments{
 \item{handle}{CDM handle.}
 
-\item{entry}{SQL catalog entry.}
-
-\item{sanitized}{Named list of sanitized param literals.}
-
-\item{scoped}{Character; scoped cohort temp table name, or NULL.}
+\item{sql}{Character; SQL template containing schema placeholders.}
 }
 \value{
-Data frame (un-gated).
+Character; SQL with schema placeholders rendered.
 }
 \description{
-Mirrors \code{\link{.query_exec}}'s render path: substitute the standard
-schema placeholders, then substitute every \code{@param} with its sanitized
-literal, inject the scope predicate (if any), translate to the target
-dialect, and execute. Returns the RAW frame (the gate is applied by the
-caller).
+Replaces the standard \code{@cdm.}, \code{@vocab.}, and \code{@results.}
+prefixes with the configured schemas, or with bare table names for SQLite
+and schemaless connections.
 }
 \keyword{internal}

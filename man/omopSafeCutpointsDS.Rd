@@ -22,7 +22,7 @@ omopSafeCutpointsDS(
 
 \item{concept_id}{Integer or NULL; concept filter}
 
-\item{n_bins}{Integer; target number of bins (default 10)}
+\item{n_bins}{Integer; exact number of bins in the configured public grid}
 
 \item{concept_col}{Character; optional; concept column to scope
 \code{concept_id} on instead of the domain concept (e.g.
@@ -30,12 +30,15 @@ omopSafeCutpointsDS(
 \code{value_as_concept_id})}
 }
 \value{
-List with breaks (numeric vector) and counts (integer vector)
+List with public breaks, banded counts, a resource-session contract,
+  and public clipping/grid metadata
 }
 \description{
-Returns bin edges that are safe to use as filter thresholds. Each bin is
-guaranteed to contain enough persons to pass the disclosure threshold,
-preventing indirect identification via precise numeric filtering.
+Returns a data-independent public grid configured by the data controller.
+The complete grid is released only when every bin contains enough distinct
+persons after a one-value-per-person reduction. Values outside the declared
+range are winsorized only for that internal support check. Counts are banded;
+this mechanism does not claim differential privacy.
 }
 \examples{
 \dontrun{

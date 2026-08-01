@@ -15,6 +15,7 @@
   translate_concepts = TRUE,
   representation = "long",
   feature_specs = NULL,
+  representation_grain = "person",
   block_sensitive = TRUE,
   temporal = NULL,
   date_handling = NULL,
@@ -41,9 +42,13 @@
 
 \item{translate_concepts}{Logical; replace concept IDs with names}
 
-\item{representation}{Character; "long", "wide", or "features"}
+\item{representation}{Character; "long", "wide", "features", or "sparse".}
 
 \item{feature_specs}{Named list; for features mode}
+
+\item{representation_grain}{Character; aggregation unit for wide/features,
+either "person" or "episode". Episode grain requires a cohort-anchored
+index window and preserves one row per cohort_row_id.}
 
 \item{block_sensitive}{Logical; block sensitive columns}
 
@@ -65,5 +70,11 @@ Data frame
 }
 \description{
 Extract a table as a data frame with all filters applied
+}
+\details{
+In wide mode, an explicit \code{concept_filter} is also the output
+  column contract: every requested concept is materialized even when no
+  qualifying row is observed. This keeps a closed concept set structurally
+  identical across federated sites.
 }
 \keyword{internal}

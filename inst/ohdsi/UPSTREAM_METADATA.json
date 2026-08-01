@@ -1,0 +1,26 @@
+{
+  "contract_version": 1,
+  "source": "OHDSI/CommonDataModel",
+  "files": {
+    "OMOP_CDMv5.3_Field_Level.csv": {
+      "release": "v5.3.2",
+      "commit": "dd85c0d30bb3dd4bd16c5dbef7dbf9dd93075fa2",
+      "sha256": "04dc596bb963d1c9827d07da885e347fb77acf7ecce298cc8fb26229e2246c0c"
+    },
+    "OMOP_CDMv5.3_Table_Level.csv": {
+      "release": "v5.3.2",
+      "commit": "dd85c0d30bb3dd4bd16c5dbef7dbf9dd93075fa2",
+      "sha256": "41a3141745b00ca6d2e4d159429d4245179c4887ee1ec096a203312cff33483f"
+    },
+    "OMOP_CDMv5.4_Field_Level.csv": {
+      "release": "v5.4.2",
+      "commit": "aa047a3c620b5c842b4370a0c965e2aa72203b1d",
+      "sha256": "94006d0fac2a3911b5665ce421468fa99af23fb51a633148e5fe6045916ad950"
+    },
+    "OMOP_CDMv5.4_Table_Level.csv": {
+      "release": "v5.4.2",
+      "commit": "aa047a3c620b5c842b4370a0c965e2aa72203b1d",
+      "sha256": "b2cc6b68dd229dec2f73fee5091e8b4bd44cdb1bdb7f6b410f05feaea31269d6"
+    }
+  }
+}

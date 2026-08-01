@@ -1,0 +1,4 @@
+inst/ohdsi/OMOP_CDMv5.3_Field_Level.csv -text
+inst/ohdsi/OMOP_CDMv5.3_Table_Level.csv -text
+inst/ohdsi/OMOP_CDMv5.4_Field_Level.csv -text
+inst/ohdsi/OMOP_CDMv5.4_Table_Level.csv -text

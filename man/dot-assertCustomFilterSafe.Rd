@@ -4,12 +4,28 @@
 \alias{.assertCustomFilterSafe}
 \title{Validate a custom filter tree against the disclosure policy (fail-closed)}
 \usage{
-.assertCustomFilterSafe(filter, valid_columns)
+.assertCustomFilterSafe(
+  filter,
+  valid_columns,
+  handle = NULL,
+  table = NULL,
+  .depth = 1L,
+  .state = NULL
+)
 }
 \arguments{
 \item{filter}{List; the filter structure}
 
 \item{valid_columns}{Character vector; filterable column allowlist}
+
+\item{handle}{Optional CDM handle. Required to authenticate `value_bin`
+contracts at a public query boundary.}
+
+\item{table}{Optional source table paired with `handle`.}
+
+\item{.depth}{Internal recursion depth.}
+
+\item{.state}{Internal shared complexity counter.}
 }
 \value{
 TRUE invisibly, or stops with a disclosure error

@@ -17,7 +17,8 @@
 
 es_handle <- function(n_persons = 40) {
   h <- create_test_handle(n_persons = n_persons)
-  h$person_key <- as.raw(1:16)
+  .setLegacyTestPersonKey(h, "evidence-synthesis",
+                          .local_envir = parent.frame())
   .buildBlueprint(h)
   suppressWarnings(.omopAnalysisRegistry(h))
   h
@@ -38,6 +39,7 @@ es_setup_cm_arms <- function(h) {
     "CREATE TEMP TABLE es_comparator AS SELECT person_id AS subject_id, ",
     "'2020-01-01' AS cohort_start_date, '2023-12-31' AS cohort_end_date ",
     "FROM person WHERE person_id BETWEEN 21 AND 40"))
+  register_test_temp(h, c("es_target", "es_comparator"))
   DBI::dbExecute(h$conn,
     "DELETE FROM condition_occurrence WHERE condition_concept_id = 4000002")
   cid <- 8400L

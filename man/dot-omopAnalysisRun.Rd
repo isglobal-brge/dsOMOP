@@ -10,7 +10,8 @@
   params = list(),
   scope = NULL,
   combine = "union",
-  assign = FALSE
+  assign = FALSE,
+  assign_date_handling = NULL
 )
 }
 \arguments{
@@ -25,8 +26,10 @@
 \item{combine}{Character; fold operator when scope has multiple sources.}
 
 \item{assign}{Logical; TRUE for the assign run path (QueryLibrary mode=="assign"
-loaders) — returns the server-side assignment result un-gated (data stays on
-the server), FALSE (default) for the gated aggregate path.}
+loaders), FALSE (default) for the gated aggregate path.}
+
+\item{assign_date_handling}{Date-handling policy for assign loaders. Defaults
+to the server's safe policy (normally \code{"remove"}).}
 }
 \value{
 For aggregate: a disclosure-controlled data frame. For assign: the

@@ -19,8 +19,10 @@ come from the registry entry verbatim (so they stay in sync with the registry
 the rest of the OHDSI path uses), and the entry carries the tool id in
 \code{meta} so the unified gate can delegate to \code{\link{.ohdsiPersonGate}}.
 Compute is \code{kind="r"} wrapping \code{\link{.ohdsiGetResults}} for the one
-table. \code{unit="record"} (OHDSI tables count records/events; the person
-gate is the per-patient basis).
+table. Its disclosure unit and exact output/count columns come from the
+reviewed per-table contract. Registered tables without a public contract are
+omitted in strict mode; non-strict mode labels them \code{unit="admin"} and
+is an administrator/development surface, not a disclosure-safe release.
 }
 \details{
 Pre-computed result tables have no per-row person key, so the entry's scope

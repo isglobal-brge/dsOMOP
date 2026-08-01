@@ -218,7 +218,7 @@ test_that("reach B: date_range row filter resolves to the table date column", {
   k <- C()
   recipe <- k$r(
     variables = k$v(name = "resp_dx", table = "condition_occurrence",
-                    concept_id = 320136, format = "count"),
+                    concept_id = 320136, format = "raw"),
     filters = k$f_dr(start = "2020-03-01", end = "2021-06-30"),
     cohort = 9L,
     outputs = k$out("covid_era_dx", type = "long"))

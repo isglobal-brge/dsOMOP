@@ -12,8 +12,7 @@
 \item{pkgname}{Package name.}
 }
 \description{
-Ensures the marker directory exists, checks that critical R database
-driver packages are loadable (attempting install if missing), and warns
-if unixODBC is not available on the system.
+Validates public pseudonym lifecycle configuration in real service runtimes
+and registers the resource resolver.
 }
 \keyword{internal}

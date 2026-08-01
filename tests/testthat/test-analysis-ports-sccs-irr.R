@@ -19,7 +19,8 @@
 
 sccs_irr_handle <- function(n_persons = 40) {
   h <- create_test_handle(n_persons = n_persons)
-  h$person_key <- as.raw(1:16)
+  .setLegacyTestPersonKey(h, "sccs-irr",
+                          .local_envir = parent.frame())
   .buildBlueprint(h)
   suppressWarnings(.omopAnalysisRegistry(h))
   h
@@ -180,6 +181,7 @@ test_that("(d) a sub-threshold case population fails closed before any fit", {
       "CREATE TEMP TABLE sccs_tiny AS SELECT person_id AS subject_id, ",
       "cast(person_id AS text) AS person_token FROM person ",
       "WHERE person_id IN (1, 2)"))
+    register_test_temp(h, "sccs_tiny")
     expect_error(
       .omopAnalysisRun(h, "dsomop:sccs.incidence_rate_ratio",
                        params = IRR_PARAMS, scope = "sccs_tiny"),

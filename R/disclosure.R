@@ -32,8 +32,16 @@
 #'     user-supplied parameters. Limits SQL injection surface.}
 #'   \item{\code{nfilter_stringShort} (default 20)}{Short string limit for
 #'     identifiers and labels.}
-#'   \item{\code{nfilter_noise} (default 0.25)}{Noise fraction (reserved for
-#'     future differential privacy features).}
+#'   \item{\code{nfilter_noise} (default 0.25)}{DataSHIELD minimum Gaussian
+#'     plot-noise variance fraction used by selected plotting methods. dsOMOP
+#'     reports this server-owned value, but does not reinterpret it as
+#'     epsilon/delta, a generic DP budget, replay-stable noise, or permission to
+#'     add noise to arbitrary query results.}
+#'   \item{\code{formal_dp_enabled}, \code{sticky_noise_enabled},
+#'     \code{privacy_ledger_enabled}}{Explicit capability flags. They are
+#'     currently all \code{FALSE}: suppression/banding and the
+#'     \code{nfilter.noise} plot-noise variance floor are not a formal DP
+#'     accountant.}
 #' }
 #'
 #' @section dsOMOP-Specific Settings:
@@ -41,7 +49,7 @@
 #'   \item{\code{query_strict} (default TRUE)}{When TRUE, only pre-approved
 #'     queries on the allowlist can execute. When FALSE, queries are
 #'     classified on-the-fly (less safe, for development only). Server
-#'     option only — cannot be overridden by client.}
+#'     option only - cannot be overridden by client.}
 #'   \item{\code{nfilter_dist} (default 10)}{Minimum sample size for safe
 #'     percentile/quantile estimation. With fewer values, even clamped
 #'     percentiles (p05/p95) can approximate min/max, leaking extreme
@@ -49,9 +57,50 @@
 #'   \item{\code{nfilter_band} (default 5)}{Band width for count banding. Every
 #'     person/record count returned to the client is floored to a multiple of
 #'     this width (after the small-cell suppression gate) so that an exact
-#'     supra-threshold count is never released. This destroys the 1-person
-#'     resolution that differencing attacks exploit (e.g. a 50 -> 47 funnel
-#'     delta both report as 45). See \code{\link{.bandCount}}.}
+#'     supra-threshold count is never released. This reduces one-person
+#'     differencing resolution (e.g. a 49 -> 47 funnel delta reports 45 for
+#'     both), but crossing a band boundary can still change the release;
+#'     banding is not a formal privacy accountant. See
+#'     \code{\link{.bandCount}}.}
+#'   \item{\code{nfilter_age_range} (default 5)}{Minimum inclusive width, in
+#'     years, accepted for age-range and closed age-group filters while
+#'     disclosure filtering is enabled. Controlled by
+#'     \code{dsomop.nfilter.age_range}.}
+#'   \item{\code{nfilter_date_range} (default 30)}{Minimum inclusive width, in
+#'     calendar days, accepted for bounded date filters while disclosure
+#'     filtering is enabled. Controlled by
+#'     \code{dsomop.nfilter.date_range}.}
+#'   \item{\code{max_feature_specs} (default 1000),
+#'     \code{max_pivot_concepts} (default 1000),
+#'     \code{max_output_columns} (default 5000),
+#'     \code{max_temporal_bins} (default 10000),
+#'     \code{max_filter_depth} (default 32),
+#'     \code{max_filter_nodes} (default 1024),
+#'     \code{max_filter_values} (default 10000), and
+#'     \code{max_plan_outputs} (default 100)}{Controller-owned operational
+#'     limits for in-memory longitudinal reshaping. They prevent a row-bounded
+#'     request from causing an unbounded feature, wide, sparse, temporal, filter
+#'     tree, or multi-output expansion. In a federation the client negotiates
+#'     the smallest limit advertised by every server.}
+#'   \item{\code{max_analysis_scope_tables} (default 8)}{Maximum number of
+#'     server-resolved workspace \code{omop.table} objects accepted by one
+#'     unified analysis request. Each catalog entry may declare a smaller
+#'     \code{scope$max_tables} limit. The total mix of cohort references and
+#'     tables is additionally capped at this value plus one.}
+#'   \item{\code{max_temp_tables_per_handle} (default 256)}{Maximum number of
+#'     session-scoped database objects one OMOP handle may own concurrently.}
+#'   \item{\code{age_breaks}}{Public, data-independent lower bounds for age
+#'     groups. The final bound starts the open-ended top group. Defaults to a
+#'     regular grid at least as wide as \code{nfilter_age_range}; controllers
+#'     can set \code{dsomop.age_breaks}. Client age groups must be exact unions
+#'     of this grid.}
+#'   \item{\code{harmonization_contract_version}, \code{age_semantics},
+#'     \code{date_semantics}, \code{date_granularity},
+#'     \code{datetime_timezone}, \code{week_start}}{Versioned metadata used by
+#'     dsOMOPClient to negotiate one federated policy and reject incompatible
+#'     nodes. Datetime-to-date conversion uses the controller-owned
+#'     \code{dsomop.datetime_timezone} option (default \code{"UTC"}); calendar
+#'     weeks start on Monday.}
 #' }
 #'
 #' @section Server-Gated Opt-Out Permissions:
@@ -72,7 +121,23 @@
 #' @return Named list of disclosure thresholds and permissions
 #' @keywords internal
 .omopDisclosureSettings <- function() {
-  list(
+  age_range_min <- as.numeric(
+    getOption("dsomop.nfilter.age_range",
+      getOption("default.dsomop.nfilter.age_range", 5)))
+  # Public, data-independent lower bounds for annual-resolution age groups. The
+  # final value is the lower bound of the open-ended top group.  Deriving the
+  # default from the age-range floor keeps the two server policies coherent
+  # (e.g. a 10-year floor yields 0,10,...,90+).
+  default_age_width <- if (length(age_range_min) == 1L &&
+      is.finite(age_range_min) && age_range_min >= 1) {
+    max(5L, as.integer(age_range_min))
+  } else {
+    5L
+  }
+  default_age_top <- ceiling(85 / default_age_width) * default_age_width
+  default_age_breaks <- seq(0, default_age_top, by = default_age_width)
+
+  settings <- list(
     # --- Standard DataSHIELD thresholds ---
     nfilter_tab            = as.numeric(getOption("nfilter.tab",
                                 getOption("default.nfilter.tab", 3))),
@@ -88,6 +153,9 @@
                                 getOption("default.nfilter.stringShort", 20))),
     nfilter_noise          = as.numeric(getOption("nfilter.noise",
                                 getOption("default.nfilter.noise", 0.25))),
+    formal_dp_enabled      = FALSE,
+    sticky_noise_enabled   = FALSE,
+    privacy_ledger_enabled = FALSE,
     # --- dsOMOP-specific settings ---
     query_strict         = as.logical(getOption("dsomop.query_strict",
                                 getOption("default.dsomop.query_strict", TRUE))),
@@ -95,6 +163,57 @@
                                 getOption("default.dsomop.nfilter.dist", 10))),
     nfilter_band         = as.numeric(getOption("dsomop.nfilter.band",
                                 getOption("default.dsomop.nfilter.band", 5))),
+    nfilter_age_range    = age_range_min,
+    nfilter_date_range   = as.numeric(
+                                getOption("dsomop.nfilter.date_range",
+                                  getOption("default.dsomop.nfilter.date_range", 30))),
+    max_feature_specs    = as.numeric(getOption(
+                                "dsomop.max_feature_specs",
+                                getOption("default.dsomop.max_feature_specs", 1000L))),
+    max_pivot_concepts   = as.numeric(getOption(
+                                "dsomop.max_pivot_concepts",
+                                getOption("default.dsomop.max_pivot_concepts", 1000L))),
+    max_output_columns   = as.numeric(getOption(
+                                "dsomop.max_output_columns",
+                                getOption("default.dsomop.max_output_columns", 5000L))),
+    max_temporal_bins    = as.numeric(getOption(
+                                "dsomop.max_temporal_bins",
+                                getOption("default.dsomop.max_temporal_bins", 10000L))),
+    max_filter_depth     = as.numeric(getOption(
+                                "dsomop.max_filter_depth",
+                                getOption("default.dsomop.max_filter_depth", 32L))),
+    max_filter_nodes     = as.numeric(getOption(
+                                "dsomop.max_filter_nodes",
+                                getOption("default.dsomop.max_filter_nodes", 1024L))),
+    max_filter_values    = as.numeric(getOption(
+                                "dsomop.max_filter_values",
+                                getOption("default.dsomop.max_filter_values", 10000L))),
+    max_plan_outputs     = as.numeric(getOption(
+                                "dsomop.max_plan_outputs",
+                                getOption("default.dsomop.max_plan_outputs", 100L))),
+    max_analysis_scope_tables = as.numeric(getOption(
+                                "dsomop.max_analysis_scope_tables",
+                                getOption("default.dsomop.max_analysis_scope_tables",
+                                          8L))),
+    max_temp_tables_per_handle = as.numeric(getOption(
+                                "dsomop.max_temp_tables_per_handle",
+                                getOption("default.dsomop.max_temp_tables_per_handle",
+                                          256L))),
+    # --- Federated harmonisation contract ---
+    harmonization_contract_version = "dsomop-harmonization-v3",
+    age_breaks = as.numeric(getOption("dsomop.age_breaks",
+                              getOption("default.dsomop.age_breaks",
+                                        default_age_breaks))),
+    # Match OHDSI Circe cohort criteria: YEAR(index/event date) minus
+    # person.year_of_birth. OMOP month/day are nullable, so this remains an
+    # annual-resolution difference rather than a birthday-aware completed age.
+    age_semantics = "reference_year_minus_year_of_birth",
+    date_semantics = "ISO8601_Gregorian_closed_interval",
+    date_granularity = "calendar_day",
+    datetime_timezone = as.character(
+      getOption("dsomop.datetime_timezone",
+        getOption("default.dsomop.datetime_timezone", "UTC"))),
+    week_start = "Monday",
     # --- Server-gated opt-out permissions ---
     # These default to FALSE (locked). Server admin must explicitly enable.
     allow_absolute_dates = as.logical(getOption("dsomop.allow_absolute_dates",
@@ -102,6 +221,98 @@
     allow_sensitive_cols  = as.logical(getOption("dsomop.allow_sensitive_columns",
                                 getOption("default.dsomop.allow_sensitive_columns", FALSE)))
   )
+
+  numeric_scalar <- function(name, lower, upper = Inf, integer = FALSE) {
+    value <- settings[[name]]
+    if (!is.numeric(value) || length(value) != 1L || is.na(value) ||
+        !is.finite(value) || value < lower || value > upper ||
+        (integer && value != floor(value))) {
+      stop("Invalid server disclosure option '", name, "': expected ",
+           if (integer) "an integer " else "a finite number ", "in [",
+           lower, ", ", upper, "].", call. = FALSE)
+    }
+  }
+  logical_scalar <- function(name) {
+    value <- settings[[name]]
+    if (!is.logical(value) || length(value) != 1L || is.na(value)) {
+      stop("Invalid server disclosure option '", name,
+           "': expected TRUE or FALSE.", call. = FALSE)
+    }
+  }
+
+  numeric_scalar("nfilter_tab", 0, integer = TRUE)
+  numeric_scalar("nfilter_subset", 0, integer = TRUE)
+  numeric_scalar("nfilter_levels_max", 1, integer = TRUE)
+  numeric_scalar("nfilter_levels_density", .Machine$double.eps, 1)
+  numeric_scalar("nfilter_string", 1, integer = TRUE)
+  numeric_scalar("nfilter_stringShort", 1, integer = TRUE)
+  numeric_scalar("nfilter_noise", 0)
+  numeric_scalar("nfilter_dist", 0, integer = TRUE)
+  numeric_scalar("nfilter_band", 1, integer = TRUE)
+  numeric_scalar("nfilter_age_range", 1, integer = TRUE)
+  numeric_scalar("nfilter_date_range", 1, integer = TRUE)
+  numeric_scalar("max_feature_specs", 1, integer = TRUE)
+  numeric_scalar("max_pivot_concepts", 1, integer = TRUE)
+  numeric_scalar("max_output_columns", 1, integer = TRUE)
+  numeric_scalar("max_temporal_bins", 1, integer = TRUE)
+  numeric_scalar("max_filter_depth", 1, integer = TRUE)
+  numeric_scalar("max_filter_nodes", 1, integer = TRUE)
+  numeric_scalar("max_filter_values", 1, integer = TRUE)
+  numeric_scalar("max_plan_outputs", 1, integer = TRUE)
+  numeric_scalar("max_analysis_scope_tables", 1, integer = TRUE)
+  numeric_scalar("max_temp_tables_per_handle", 1, integer = TRUE)
+  age_breaks <- settings$age_breaks
+  if (!is.numeric(age_breaks) || length(age_breaks) < 2L || anyNA(age_breaks) ||
+      any(!is.finite(age_breaks)) || any(age_breaks != floor(age_breaks)) ||
+      age_breaks[1L] != 0 || any(diff(age_breaks) <= 0) ||
+      any(diff(age_breaks) < settings$nfilter_age_range)) {
+    stop("Invalid server disclosure option 'age_breaks': expected strictly ",
+         "increasing integer lower bounds starting at 0, with every interval ",
+         "at least nfilter_age_range years wide.", call. = FALSE)
+  }
+  for (name in c("formal_dp_enabled", "sticky_noise_enabled",
+                 "privacy_ledger_enabled", "query_strict",
+                 "allow_absolute_dates", "allow_sensitive_cols")) {
+    logical_scalar(name)
+  }
+  tz <- settings$datetime_timezone
+  if (length(tz) != 1L || is.na(tz) || !nzchar(tz) ||
+      !tz %in% unique(c("UTC", "GMT", OlsonNames()))) {
+    stop("Invalid server disclosure option 'datetime_timezone': expected one ",
+         "IANA timezone name.", call. = FALSE)
+  }
+
+  settings
+}
+
+#' Validate canonical age-group labels against a server age grid
+#'
+#' A closed label (for example, `20-29`) is valid only when both its lower
+#' bound and the following boundary (`30`) occur in the public grid.  An
+#' open-ended label (`80+`) is valid when its lower bound occurs in the grid.
+#' This admits coarsenings (unions of adjacent bins) but never a finer or
+#' shifted client-authored band.
+#'
+#' @param groups Character vector of age-group labels.
+#' @param age_breaks Integer lower bounds; the final bound starts the top group.
+#' @return Logical scalar.
+#' @keywords internal
+.ageGroupsOnGrid <- function(groups, age_breaks) {
+  groups <- unlist(groups, use.names = FALSE)
+  if (length(groups) == 0L || anyNA(groups)) return(FALSE)
+  age_breaks <- as.integer(age_breaks)
+  all(vapply(groups, function(group) {
+    group <- trimws(as.character(group))
+    if (grepl("^[0-9]+\\+$", group)) {
+      lower <- suppressWarnings(as.integer(sub("\\+$", "", group)))
+      return(length(lower) == 1L && !is.na(lower) && lower %in% age_breaks)
+    }
+    if (!grepl("^[0-9]+-[0-9]+$", group)) return(FALSE)
+    bounds <- suppressWarnings(
+      as.integer(strsplit(group, "-", fixed = TRUE)[[1L]]))
+    length(bounds) == 2L && !anyNA(bounds) && bounds[1L] <= bounds[2L] &&
+      bounds[1L] %in% age_breaks && (bounds[2L] + 1L) %in% age_breaks
+  }, logical(1)))
 }
 
 #' Is this object a dsOMOP person-bearing table?
@@ -151,7 +362,7 @@
 
   if (is.na(n) || n < threshold) {
     stop(
-      "Disclosive: operation blocked — insufficient individuals to meet ",
+      "Disclosive: operation blocked - insufficient individuals to meet ",
       "disclosure threshold. No further details available.",
       call. = FALSE
     )
@@ -168,8 +379,8 @@
 #' they recover the size of the differenced subgroup (3 persons) even though
 #' no single count was ever below threshold. Rounding DOWN to a fixed band
 #' (default 5) destroys that 1-person resolution: both 50 and 47 report as
-#' 45, so the delta is no longer observable. Rounding down (floor) — never to
-#' nearest — guarantees the reported value never exceeds the true count, so
+#' 45, so the delta is no longer observable. Rounding down (floor) - never to
+#' nearest - guarantees the reported value never exceeds the true count, so
 #' the band can never imply more persons than actually exist.
 #'
 #' The band width comes from the \code{nfilter_band} disclosure setting (default
@@ -309,20 +520,65 @@
 
 #' Compute safe age groups from year_of_birth
 #'
-#' Bins ages into groups with minimum bin width (default 5 years).
-#' Merges small-count bins at extremes to prevent identification.
+#' Bins annual-resolution ages (reference year minus \code{year_of_birth}) on
+#' the controller-owned public age grid. A caller
+#' may request a coarser regular grid only when every requested boundary belongs
+#' to that server grid. Locally unsupported bins are replaced by \code{NA};
+#' their boundaries are never merged or changed from data, so labels remain
+#' harmonizable across servers.
 #'
 #' @param year_of_birth Integer vector; birth years
 #' @param index_year Integer vector; reference years (same length or scalar)
-#' @param bin_width Integer; minimum bin width in years (default 5, minimum 5)
-#' @param min_cell Integer; merge bins with fewer than this many persons (nfilter.tab)
+#' @param bin_width Optional integer coarsening width in years. \code{NULL} uses
+#'   the server grid; non-\code{NULL} boundaries must be a subset of it.
+#' @param age_breaks Optional explicit public lower bounds. They must be a
+#'   coarsening (subset) of the controller-owned server grid.
+#' @param min_cell Integer; suppress bins with fewer than this many persons
+#'   (defaults to \code{nfilter.tab}).
+#' @param person_id Optional person key parallel to the age vectors. When rows
+#'   represent recurrent cohort episodes, each person contributes at most once
+#'   to a bin's disclosure support.
 #' @return Character vector of age group labels (e.g. "40-44", "85+")
 #' @keywords internal
-.computeAgeGroups <- function(year_of_birth, index_year, bin_width = 5L,
-                               min_cell = NULL) {
-  bin_width <- max(as.integer(bin_width), 5L)  # Floor at 5
-  if (is.null(min_cell)) {
-    min_cell <- .omopDisclosureSettings()$nfilter_tab
+.computeAgeGroups <- function(year_of_birth, index_year, bin_width = NULL,
+                              age_breaks = NULL, min_cell = NULL,
+                              person_id = NULL) {
+  settings <- .omopDisclosureSettings()
+  if (is.null(min_cell)) min_cell <- settings$nfilter_tab
+  server_breaks <- as.integer(settings$age_breaks)
+
+  # A caller may ask for a coarser regular grid (Achilles uses deciles), but
+  # every requested boundary must belong to the controller-owned grid.  The
+  # default uses the grid verbatim.  No data-dependent boundary is ever made.
+  breaks <- server_breaks
+  if (!is.null(age_breaks) && !is.null(bin_width)) {
+    stop("Specify age_breaks or bin_width, not both.", call. = FALSE)
+  }
+  if (!is.null(age_breaks)) {
+    numeric_breaks <- suppressWarnings(as.numeric(
+      unlist(age_breaks, use.names = FALSE)
+    ))
+    integer_breaks <- suppressWarnings(as.integer(numeric_breaks))
+    if (length(integer_breaks) < 2L || anyNA(integer_breaks) ||
+        any(!is.finite(numeric_breaks)) ||
+        any(numeric_breaks != integer_breaks) || integer_breaks[1L] != 0L ||
+        any(diff(integer_breaks) <= 0L) ||
+        !all(integer_breaks %in% server_breaks)) {
+      stop("Requested age_breaks must be a strictly increasing coarsening ",
+           "of the server age grid starting at 0.", call. = FALSE)
+    }
+    breaks <- integer_breaks
+  }
+  if (!is.null(bin_width)) {
+    bin_width <- max(as.integer(bin_width), 5L)
+    if (length(bin_width) != 1L || is.na(bin_width)) {
+      stop("bin_width must be one integer.", call. = FALSE)
+    }
+    breaks <- seq(0L, max(server_breaks), by = bin_width)
+    if (!all(breaks %in% server_breaks)) {
+      stop("Requested age bins are finer than, or not aligned to, the ",
+           "server age grid.", call. = FALSE)
+    }
   }
 
   ages <- as.integer(index_year) - as.integer(year_of_birth)
@@ -331,56 +587,33 @@
   # Handle all-NA case
   if (all(is.na(ages))) return(rep(NA_character_, length(ages)))
 
-  max_age <- max(ages, na.rm = TRUE)
-
-  # Create initial breaks
-
-  breaks <- seq(0, max_age + bin_width, by = bin_width)
-  if (breaks[length(breaks)] <= max_age) {
-    breaks <- c(breaks, breaks[length(breaks)] + bin_width)
-  }
-
-  # Assign each age to a bin index
-  bin_idx <- findInterval(ages, breaks, rightmost.closed = FALSE)
+  # The final public break starts the open-ended top group.
+  bin_idx <- findInterval(ages, c(breaks, Inf), rightmost.closed = FALSE)
   bin_idx[is.na(ages)] <- NA_integer_
+  if (is.null(person_id)) person_id <- seq_along(ages)
+  if (length(person_id) != length(ages)) {
+    stop("person_id must have the same length as the age vectors.", call. = FALSE)
+  }
 
   # Create initial labels
-  n_bins <- length(breaks) - 1L
-  bin_labels <- character(n_bins)
-  for (i in seq_len(n_bins)) {
-    bin_labels[i] <- paste0(breaks[i], "-", breaks[i + 1L] - 1L)
+  n_bins <- length(breaks)
+  bin_labels <- c(
+    paste0(breaks[-n_bins], "-", breaks[-1L] - 1L),
+    paste0(breaks[n_bins], "+")
+  )
+
+  count_persons <- function() {
+    vapply(seq_len(n_bins), function(i) {
+      length(unique(person_id[!is.na(bin_idx) & bin_idx == i &
+                                !is.na(person_id)]))
+    }, integer(1))
   }
-
-  # Count persons per bin
-  bin_counts <- tabulate(bin_idx, nbins = n_bins)
-
-  # Merge small-count bins from the top end
-  while (n_bins > 1 && bin_counts[n_bins] < min_cell) {
-    # Merge last two bins
-    bin_counts[n_bins - 1L] <- bin_counts[n_bins - 1L] + bin_counts[n_bins]
-    bin_counts <- bin_counts[-n_bins]
-    bin_labels[n_bins - 1L] <- paste0(breaks[n_bins - 1L], "+")
-    bin_labels <- bin_labels[-n_bins]
-    bin_idx[!is.na(bin_idx) & bin_idx == n_bins] <- n_bins - 1L
-    n_bins <- n_bins - 1L
-  }
-
-  # Merge small-count bins from the bottom end
-  while (n_bins > 1 && bin_counts[1] < min_cell) {
-    bin_counts[2] <- bin_counts[1] + bin_counts[2]
-    bin_counts <- bin_counts[-1]
-    lo <- breaks[1]
-    # Update label for merged bin
-    if (grepl("\\+$", bin_labels[2])) {
-      bin_labels[2] <- paste0(lo, "+")
-    } else {
-      hi_part <- sub("^[0-9]+-", "", bin_labels[2])
-      bin_labels[2] <- paste0(lo, "-", hi_part)
-    }
-    bin_labels <- bin_labels[-1]
-    bin_idx[!is.na(bin_idx) & bin_idx == 1L] <- 2L
-    bin_idx[!is.na(bin_idx)] <- bin_idx[!is.na(bin_idx)] - 1L
-    n_bins <- n_bins - 1L
+  bin_counts <- count_persons()
+  # Local support may suppress values, but it must never alter the public
+  # boundaries: data-dependent tail merging made federated labels incompatible.
+  unsafe_bins <- which(bin_counts < min_cell)
+  if (length(unsafe_bins) > 0L) {
+    bin_idx[!is.na(bin_idx) & bin_idx %in% unsafe_bins] <- NA_integer_
   }
 
   # Map bin indices to labels
@@ -398,10 +631,10 @@
 # Filters narrow the population. An overly specific filter can isolate a
 # single individual (targeted probing). The classification below prevents
 # this by limiting filter granularity:
-#   - "allowed": broad categories (sex, age_group) — low fingerprinting risk
+#   - "allowed": broad categories (sex, age_group) - low fingerprinting risk
 #   - "constrained": narrower ranges validated for minimum width
-#     (age_range >= 5 years, date_range >= 30 days)
-#   - "blocked": arbitrary thresholds or custom SQL — too specific
+#     (server-configured inclusive age/date widths)
+#   - "blocked": arbitrary thresholds or custom SQL - too specific
 
 #' Classify a filter operation by safety level
 #'
@@ -419,10 +652,10 @@
   always_allowed <- c("sex", "cohort", "concept_set", "value_bin")
 
   # Constrained: allowed only after validating minimum range width.
-  # value_threshold is permitted as a population-defining range filter; its
-  # exact-value operators (==, !=) are blocked at the cohort-creation site
-  # (see .cohortCreate) and the resulting cohort is size-checked. age_group is
-  # constrained (not always-allowed) so its bands get the same 5-year minimum as
+  # `value_threshold` is the legacy classification name retained for reviewed
+  # membership/null predicates; public client-authored numeric thresholds are
+  # blocked and numeric ranges use authenticated value_bin contracts. age_group is
+  # constrained (not always-allowed) so its bands get the same minimum as
   # age_range -- otherwise groups like c("87-87") would target a single birth
   # year and evade the age_range anti-fingerprinting width gate.
   constrained <- c("age_range", "age_group", "has_concept", "date_range",
@@ -442,33 +675,41 @@
     # disabled (nfilter_subset == 0, e.g. a trusted/reach context the data
     # controller has opted into) the width minimums relax to 0, so degenerate or
     # deliberately-empty ranges can run. Under any positive threshold the
-    # historical minimums (age 5y, date 30d) apply unchanged.
-    gate_on <- .omopDisclosureSettings()$nfilter_subset > 0
+    # configured minimums (defaults: age 5y, date 30d) apply.
+    settings <- .omopDisclosureSettings()
+    gate_on <- settings$nfilter_subset > 0
     if (filter_type == "age_range" && gate_on) {
-      range_width <- (filter_params$max %||% 150) - (filter_params$min %||% 0)
-      if (range_width < 5) return("blocked")
+      # Ages are integer years and both bounds are inclusive: 20--24 is the
+      # standard five-year epidemiological band (five possible ages).
+      range_width <- (filter_params$max %||% 150) -
+        (filter_params$min %||% 0) + 1
+      if (range_width < settings$nfilter_age_range) return("blocked")
     }
     if (filter_type == "age_group" && gate_on) {
       groups <- filter_params$groups
-      if (length(groups) == 0) return("blocked")
-      for (g in groups) {
-        g <- trimws(as.character(g))
-        if (grepl("^[0-9]+\\+$", g)) next   # open-ended upper band (e.g. "85+"): wide
-        parts <- suppressWarnings(as.integer(strsplit(g, "-", fixed = TRUE)[[1]]))
-        # Bands are inclusive "lo-hi" (e.g. "0-4" spans 5 years). Anything
-        # narrower than 5 years, or unparseable, fails closed.
-        if (length(parts) != 2 || any(is.na(parts)) ||
-            (parts[2] - parts[1] + 1) < 5) {
-          return("blocked")
-        }
-      }
+      if (!.ageGroupsOnGrid(groups, settings$age_breaks)) return("blocked")
     }
     if (filter_type == "date_range" && gate_on) {
       if (!is.null(filter_params$start) && !is.null(filter_params$end)) {
-        diff_days <- as.numeric(
+        inclusive_days <- as.numeric(
           as.Date(filter_params$end) - as.Date(filter_params$start)
-        )
-        if (diff_days < 30) return("blocked")
+        ) + 1
+        if (!is.finite(inclusive_days) ||
+            inclusive_days < settings$nfilter_date_range) return("blocked")
+      }
+    }
+    if (gate_on && !is.null(filter_params$window)) {
+      window <- filter_params$window
+      if (!is.list(window)) return("blocked")
+      start <- suppressWarnings(as.numeric(window$start))
+      end <- suppressWarnings(as.numeric(window$end))
+      if (!is.null(window$start) && !is.null(window$end)) {
+        if (length(start) != 1L || length(end) != 1L ||
+            !is.finite(start) || !is.finite(end) ||
+            start != floor(start) || end != floor(end) || start > end ||
+            (end - start + 1) < settings$nfilter_date_range) {
+          return("blocked")
+        }
       }
     }
     return("constrained")
@@ -529,7 +770,7 @@
 #' Emit a governance audit record for a data-access operation
 #'
 #' Writes a single structured line to the server log via \code{message()}
-#' (stderr). The record is NEVER returned to the analyst — it is visible only
+#' (stderr). The record is NEVER returned to the analyst - it is visible only
 #' to the data controller in the server logs. Its purpose is to let the
 #' controller review the \emph{sequence} of extraction and cohort operations
 #' and detect differencing / triangulation attempts that per-query disclosure

@@ -12,6 +12,17 @@
   gate = "distinct_person"
 )
 }
+\arguments{
+\item{unit}{Character; disclosure unit (person, record, or distribution).}
+
+\item{count_cols}{Character vector of count-valued result columns.}
+
+\item{person_id_col}{Character; person identifier column, or NULL.}
+
+\item{min_max}{Logical; whether minimum/maximum outputs require protection.}
+
+\item{gate}{Character; disclosure-gate strategy.}
+}
 \description{
 Default disclosure spec for an entry
 }

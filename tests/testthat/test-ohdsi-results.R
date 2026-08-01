@@ -19,8 +19,29 @@ test_that("ohdsi_tool_registry returns expected structure", {
     expect_true("table_names" %in% names(tool))
     expect_true("count_columns" %in% names(tool))
     expect_true("sensitive_columns" %in% names(tool))
+    expect_true("metadata_tables" %in% names(tool))
+    expect_true("contracts" %in% names(tool))
     expect_type(tool$table_names, "character")
+    expect_type(tool$metadata_tables, "character")
     expect_true(length(tool$table_names) > 0)
+    expect_true(all(tool$metadata_tables %in% tool$table_names))
+    expect_setequal(names(tool$contracts), tool$table_names)
+  }
+})
+
+test_that("strict OHDSI contracts require an explicit same-row person basis", {
+  registry <- .ohdsi_tool_registry()
+  contracts <- unlist(lapply(registry, function(x) x[["contracts"]]),
+                      recursive = FALSE)
+  public <- Filter(function(x) identical(x$release, "public"), contracts)
+
+  expect_gt(length(public), 0L)
+  for (contract in public) {
+    expect_true(contract$unit %in% c("person", "record", "dist"))
+    expect_gt(length(contract$public_columns), 0L)
+    expect_gt(length(contract$count_columns), 0L)
+    expect_gt(length(contract$person_columns), 0L)
+    expect_true(all(contract$person_columns %in% contract$count_columns))
   }
 })
 
@@ -135,6 +156,26 @@ test_that("ohdsiFindResultTables discovers OHDSI tables in test DB", {
   expect_true(cc_rows > 0)
 })
 
+test_that("public OHDSI inventories never return exact row counts or schemas", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  symbol <- paste0("ohdsi_inventory_", Sys.getpid())
+  .setHandle(symbol, handle)
+  on.exit(.removeHandle(symbol), add = TRUE)
+
+  result <- withr::with_options(
+    list(nfilter.tab = 3, dsomop.nfilter.band = 5),
+    omopOhdsiTablesDS(symbol)
+  )
+
+  expect_false("qualified_name" %in% names(result))
+  expect_false(any(result$table_name %in%
+                     c("incidence_rate", "c_covariates_continuous",
+                       "target_def", "es_cm_result")))
+  released <- result$n_rows[!is.na(result$n_rows)]
+  expect_true(all(released %% 5 == 0))
+})
+
 test_that("ohdsiFindResultTables returns empty when no OHDSI tables", {
   conn <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   on.exit(DBI::dbDisconnect(conn))
@@ -210,6 +251,24 @@ test_that("ohdsiGetResults respects filters", {
   expect_true(all(result$database_id == "test_db"))
 })
 
+test_that("OHDSI result counts honor a non-default server band", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  result <- withr::with_options(
+    list(nfilter.subset = 3, nfilter.tab = 3,
+         dsomop.nfilter.band = 7),
+    .ohdsiGetResults(handle, "cohort_count",
+                     filters = list(database_id = "test_db"))
+  )
+  count_cols <- intersect(c("cohort_entries", "cohort_subjects"), names(result))
+  expect_gt(length(count_cols), 0L)
+  expect_true(all(vapply(
+    result[count_cols], function(x) all(x %% 7 == 0), logical(1)
+  )))
+})
+
 test_that("ohdsiGetResults respects limit", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
@@ -224,14 +283,11 @@ test_that("ohdsiGetResults respects order_by", {
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "incidence_rate",
-                              order_by = "cohort_count")
+  result <- .ohdsiGetResults(handle, "cohort_count",
+                              order_by = "cohort_id")
+  expect_s3_class(result, "data.frame")
   if (nrow(result) > 1) {
-    # Should be ordered by cohort_count ascending
-    counts <- result$cohort_count[!is.na(result$cohort_count)]
-    if (length(counts) > 1) {
-      expect_true(all(diff(counts) >= 0))
-    }
+    expect_true(all(diff(result$cohort_id) >= 0))
   }
 })
 
@@ -243,6 +299,105 @@ test_that("ohdsiGetResults selects specific columns", {
   result <- .ohdsiGetResults(handle, "cohort_count",
                               columns = c("cohort_id", "database_id"))
   expect_true(all(names(result) %in% c("cohort_id", "database_id")))
+  # cohort_id=2 has only two subjects. Projecting away the count columns must
+  # not bypass the hidden disclosure gate.
+  expect_false(2L %in% result$cohort_id)
+})
+
+test_that("strict OHDSI projection ignores extras and rejects requested extras", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  DBI::dbExecute(handle$conn,
+                 "ALTER TABLE cohort_count ADD COLUMN secret_metric REAL")
+  DBI::dbExecute(handle$conn,
+                 "UPDATE cohort_count SET secret_metric = 0.123456")
+  handle$blueprint <- NULL
+
+  result <- .ohdsiGetResults(handle, "cohort_count")
+  expect_false("secret_metric" %in% names(result))
+  expect_error(
+    .ohdsiGetResults(handle, "cohort_count", columns = "secret_metric"),
+    "no public disclosure contract"
+  )
+})
+
+test_that("strict OHDSI release requires the complete contracted basis", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  DBI::dbExecute(handle$conn, "DROP TABLE cohort_count")
+  DBI::dbExecute(handle$conn, paste(
+    "CREATE TABLE cohort_count (cohort_id INTEGER,",
+    "cohort_entries INTEGER, database_id TEXT)"
+  ))
+  handle$blueprint <- NULL
+
+  expect_error(
+    .ohdsiGetResults(handle, "cohort_count"),
+    "complete contracted person/count basis: cohort_subjects"
+  )
+})
+
+test_that("strict OHDSI filters and ordering use reviewed dimensions only", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  expect_error(
+    .ohdsiGetResults(handle, "cohort_count",
+                     filters = list(cohort_subjects = 85L)),
+    "Filter column.*no public disclosure contract"
+  )
+  expect_error(
+    .ohdsiGetResults(handle, "cm_result", filters = list(rr = 0.85)),
+    "Filter column.*no public disclosure contract"
+  )
+  expect_error(
+    .ohdsiGetResults(handle, "cm_result", order_by = "rr DESC"),
+    "Order column.*no public disclosure contract"
+  )
+})
+
+test_that("strict OHDSI rejects ratios, distributions and metadata without persons", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  for (table_name in c("incidence_rate", "c_covariates_continuous",
+                       "target_def", "es_cm_result")) {
+    expect_error(
+      .ohdsiGetResults(handle, table_name),
+      "no reviewed public disclosure contract",
+      info = table_name
+    )
+  }
+})
+
+test_that("non-strict OHDSI compatibility output is marked unsafe", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    result <- .ohdsiGetResults(handle, "incidence_rate")
+    expect_gt(nrow(result), 0L)
+    expect_false(isTRUE(attr(result, "dsomop.disclosure_safe")))
+    expect_identical(attr(result, "dsomop.release_mode"),
+                     "admin_development")
+  })
+})
+
+test_that("generic OHDSI consumer never introspects or returns SELECT star", {
+  bodies <- paste(
+    c(deparse(body(.ohdsiGetResults)),
+      deparse(body(.ohdsiDetectCountColumns))),
+    collapse = "\n"
+  )
+  expect_false(grepl("SELECT \\*", bodies, ignore.case = TRUE))
+})
+
+test_that("OHDSI result limits translate across supported SQL families", {
+  sql <- "SELECT TOP 7 cohort_id FROM cohort_count ORDER BY cohort_id"
+  expect_match(.sql_translate(sql, "sqlite"), "LIMIT 7$")
+  expect_match(.sql_translate(sql, "postgresql"), "LIMIT 7$")
+  expect_match(.sql_translate(sql, "oracle"), "FETCH FIRST 7 ROWS ONLY$")
+  expect_match(.sql_translate(sql, "sql server"), "^SELECT TOP 7")
 })
 
 test_that("ohdsiGetResults errors on non-allowlisted table", {
@@ -265,6 +420,70 @@ test_that("ohdsiGetResults rejects raw CDM tables via allowlist", {
                "not a registered OHDSI result table")
 })
 
+test_that("public OHDSI endpoint rejects raw CDM table despite valid tool_id", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  symbol <- paste0("ohdsi_adversarial_", Sys.getpid())
+  .setHandle(symbol, handle)
+  on.exit(.removeHandle(symbol), add = TRUE)
+
+  # Regression for the client-controlled tool_id bypass: this public call used
+  # to return raw person_id and exact birth components from the CDM table.
+  expect_error(
+    omopOhdsiResultsDS(
+      symbol,
+      "person",
+      columns = c("person_id", "year_of_birth", "day_of_birth"),
+      tool_id = "cohort_diagnostics"
+    ),
+    "not registered for OHDSI tool"
+  )
+})
+
+test_that("public OHDSI endpoint bands every returned count", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  symbol <- paste0("ohdsi_banding_", Sys.getpid())
+  .setHandle(symbol, handle)
+  on.exit(.removeHandle(symbol), add = TRUE)
+
+  result <- withr::with_options(
+    list(nfilter.tab = 3, nfilter.subset = 3, dsomop.nfilter.band = 5),
+    omopOhdsiResultsDS(symbol, "cohort_count")
+  )
+
+  count_cols <- intersect(c("cohort_subjects", "person_count", "subjects"),
+                          names(result))
+  expect_gt(length(count_cols), 0L)
+  for (col in count_cols) {
+    expect_true(all(result[[col]] %% 5 == 0))
+  }
+})
+
+test_that("ohdsiGetResults requires table membership in the selected tool", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  expect_error(
+    .ohdsiGetResults(handle, "cohort_count", tool_id = "plp"),
+    "not registered for OHDSI tool"
+  )
+})
+
+test_that("ohdsiGetResults requires an authorized results schema", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  bp <- .buildBlueprint(handle)
+  mask <- bp$tables$table_name == "cohort_count"
+  bp$tables$schema_category[mask] <- "CDM"
+
+  expect_error(
+    .ohdsiGetResults(handle, "cohort_count"),
+    "authorized OHDSI results schema"
+  )
+})
+
 test_that("ohdsiGetResults errors on invalid table name", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
@@ -274,7 +493,7 @@ test_that("ohdsiGetResults errors on invalid table name", {
                "Invalid")
 })
 
-test_that("ohdsiGetResults returns empty data.frame for empty table", {
+test_that("strict OHDSI query rejects even empty unreviewed metadata tables", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
 
@@ -287,9 +506,18 @@ test_that("ohdsiGetResults returns empty data.frame for empty table", {
   handle$blueprint <- NULL  # force rebuild
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "target_def")
-  expect_s3_class(result, "data.frame")
-  expect_equal(nrow(result), 0)
+  expect_error(
+    .ohdsiGetResults(handle, "target_def"),
+    "no reviewed public disclosure contract"
+  )
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    result <- .ohdsiGetResults(handle, "target_def")
+    expect_s3_class(result, "data.frame")
+    expect_equal(nrow(result), 0)
+    expect_false(isTRUE(attr(result, "dsomop.disclosure_safe")))
+    expect_identical(attr(result, "dsomop.release_mode"),
+                     "admin_development")
+  })
 })
 
 # --- Status ---
@@ -329,8 +557,15 @@ test_that("ohdsiStatus reports tool availability correctly", {
   # PLP should be available
   expect_true(status$plp$available)
 
-  # Evidence Synthesis should be available
-  expect_true(status$evidence_synthesis$available)
+  # Evidence-synthesis precomputed results have no same-row person basis and
+  # are therefore not advertised by the strict public inventory.
+  expect_false(status$evidence_synthesis$available)
+  expect_length(status$evidence_synthesis$tables, 0L)
+
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    admin_status <- .ohdsiStatus(handle)
+    expect_true(admin_status$evidence_synthesis$available)
+  })
 })
 
 # --- Summary ---
@@ -407,6 +642,8 @@ test_that("ohdsiGetResults works for incidence_summary", {
   expect_s3_class(result, "data.frame")
   expect_true(nrow(result) > 0)
   expect_true("persons_at_risk" %in% names(result))
+  # Exact accumulated person-time is not part of the reviewed release contract.
+  expect_false("person_days" %in% names(result))
 })
 
 # --- Characterization Query ---
@@ -499,16 +736,15 @@ test_that("ohdsiGetResults works for visit_context", {
   expect_true("subjects" %in% names(result))
 })
 
-test_that("ohdsiGetResults works for temporal_covariate_value", {
+test_that("ohdsiGetResults rejects count-less temporal population results", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "temporal_covariate_value")
-  expect_s3_class(result, "data.frame")
-  expect_true(nrow(result) > 0)
-  expect_true("time_id" %in% names(result))
-  expect_true("mean" %in% names(result))
+  expect_error(
+    .ohdsiGetResults(handle, "temporal_covariate_value"),
+    "no reviewed public disclosure contract"
+  )
 })
 
 test_that("ohdsiGetResults works for time_series", {
@@ -570,16 +806,15 @@ test_that("ohdsiGetResults works for c_covariates_continuous", {
   })
 })
 
-test_that("ohdsiGetResults works for c_time_to_event", {
+test_that("ohdsiGetResults rejects count-less time-to-event results", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "c_time_to_event")
-  expect_s3_class(result, "data.frame")
-  expect_true(nrow(result) > 0)
-  expect_true("time_value" %in% names(result))
-  expect_true("value" %in% names(result))
+  expect_error(
+    .ohdsiGetResults(handle, "c_time_to_event"),
+    "no reviewed public disclosure contract"
+  )
 })
 
 test_that("ohdsiGetResults works for c_dechallenge_rechallenge", {
@@ -621,15 +856,15 @@ test_that("ohdsiGetResults works for cm_result", {
   expect_true("ci_95_ub" %in% names(result))
 })
 
-test_that("ohdsiGetResults works for cm_diagnostics_summary", {
+test_that("ohdsiGetResults rejects count-less CohortMethod diagnostics", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "cm_diagnostics_summary")
-  expect_s3_class(result, "data.frame")
-  expect_true(nrow(result) > 0)
-  expect_true("analysis_id" %in% names(result))
+  expect_error(
+    .ohdsiGetResults(handle, "cm_diagnostics_summary"),
+    "no reviewed public disclosure contract"
+  )
 })
 
 # --- SCCS Queries ---
@@ -646,14 +881,15 @@ test_that("ohdsiGetResults works for sccs_result", {
   expect_true("ci_95_lb" %in% names(result))
 })
 
-test_that("ohdsiGetResults works for sccs_diagnostics_summary", {
+test_that("ohdsiGetResults rejects count-less SCCS diagnostics", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  result <- .ohdsiGetResults(handle, "sccs_diagnostics_summary")
-  expect_s3_class(result, "data.frame")
-  expect_true(nrow(result) > 0)
+  expect_error(
+    .ohdsiGetResults(handle, "sccs_diagnostics_summary"),
+    "no reviewed public disclosure contract"
+  )
 })
 
 # --- PLP Queries ---

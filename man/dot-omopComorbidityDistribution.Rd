@@ -17,12 +17,12 @@
 Data frame with one dist row (metric = the index name).
 }
 \description{
-Computes a per-person score by counting how many of the index's component
-condition-concept GROUPS each cohort member has >= 1 record of (a weight-1
-approximation of the named score; the disclosure-relevant property — a
-per-person integer distribution — is identical to the weighted form). The
-component groups are resolved as concept sets (descendants expanded) so a
-single seed concept per component pulls its whole sub-tree. Returns a single
-dist row (snake_case) the gate clamps + masks.
+Computes a dsOMOP component-burden approximation: one point for each local
+condition-concept group with at least one record. It does not reproduce the
+published weights, tiers, exclusions, event source or cohort-relative
+windows of the named FeatureExtraction analyses and is therefore not
+upstream-equivalent. Component groups are resolved as local concept sets
+with descendants expanded. Returns one dist row that the gate clamps and
+masks.
 }
 \keyword{internal}

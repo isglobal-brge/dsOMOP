@@ -99,6 +99,10 @@
 #' (gate-safe) frame. Cohort-OPTIONAL entries (SQL templates, the demo entry)
 #' leave it \code{FALSE} and run cohort-wide when un-scoped.
 #'
+#' @param accepts_cohort Logical; whether cohort-reference scoping is supported.
+#' @param accepts_tables Logical; whether workspace-table scoping is supported.
+#' @param max_tables Integer; maximum number of workspace tables in the scope.
+#' @param requires_cohort Logical; whether an explicit cohort scope is required.
 #' @keywords internal
 .omopAnalysisScope <- function(accepts_cohort = TRUE, accepts_tables = TRUE,
                                max_tables = 2L, requires_cohort = FALSE) {
@@ -109,6 +113,12 @@
 }
 
 #' Default disclosure spec for an entry
+#'
+#' @param unit Character; disclosure unit (person, record, or distribution).
+#' @param count_cols Character vector of count-valued result columns.
+#' @param person_id_col Character; person identifier column, or NULL.
+#' @param min_max Logical; whether minimum/maximum outputs require protection.
+#' @param gate Character; disclosure-gate strategy.
 #' @keywords internal
 .omopAnalysisDisclosure <- function(unit = "person", count_cols = character(0),
                                     person_id_col = NULL, min_max = FALSE,
@@ -123,20 +133,26 @@
 # --- Pack-facing constructors (re-exported) ----------------------------------
 #
 # A third-party analysis pack (see .omopAnalysisPackEntries) cannot reach the
-# dotted internals, so these thin wrappers re-export the exact same constructors
-# the native adapters use. A pack's registrar builds its entries with
+# dotted internals, so these thin wrappers re-export the constructors the native
+# adapters use. A pack's registrar builds entries with
 # omopAnalysisEntry()/omopAnalysisScope()/omopAnalysisDisclosure() and returns
-# them as a named list; dsOMOP namespaces the ids and runs every entry through
-# the ONE gate. The wrappers add no behaviour — entries are identical to native
-# ones — so a pack can never construct an entry that bypasses the gate.
+# them as a named list. Discovery then requires meta$output_contract, replaces
+# privileged adapter metadata, and sends raw and final outputs through the
+# external-pack firewall in addition to the ONE statistical gate.
 
 #' Construct an analysis-catalog entry (for third-party analysis packs)
 #'
 #' Public re-export of the internal entry constructor for packages contributing
 #' analyses via \code{Config/dsOMOP/AnalysisCollection}. See
 #' \code{\link{.omopAnalysisEntry}} for the field contract. The returned entry's
-#' \code{compute$fn} output is always gated by dsOMOP's single disclosure gate;
-#' a pack cannot register its own gate.
+#' \code{meta$output_contract} must contain \code{version = 1}, a positive
+#' \code{max_rows}, and a named \code{columns} list. Each column declares one
+#' semantic role (count, metric, ratio, concept_id, closed category/date_band,
+#' logical, relative_day/duration, or assign-only person_key/measure). Aggregate
+#' metrics declare count \code{basis}; ratios declare count
+#' \code{numerator}/\code{denominator}; categories declare closed
+#' \code{levels}. Raw and final outputs are checked against this contract and
+#' the package cannot select a privileged native gate adapter.
 #'
 #' @inheritParams .omopAnalysisEntry
 #' @return A \code{omop_analysis_entry} object.
@@ -268,6 +284,139 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
 # --- Adapter 1: QueryLibrary -------------------------------------------------
 
+#' Infer table dependencies from QueryLibrary schema placeholders
+#'
+#' @param sql Character SQL template.
+#' @return Lower-case table names in first-occurrence order.
+#' @keywords internal
+.omopQueryTableDependencies <- function(sql) {
+  if (is.null(sql) || length(sql) != 1L || is.na(sql)) return(character(0))
+  matches <- regmatches(
+    sql,
+    gregexpr("@(cdm|vocab|results)\\.[A-Za-z_][A-Za-z0-9_]*", sql,
+             ignore.case = TRUE, perl = TRUE)
+  )[[1]]
+  if (length(matches) == 0L) return(character(0))
+  unique(tolower(sub("^@(cdm|vocab|results)\\.", "", matches,
+                     ignore.case = TRUE, perl = TRUE)))
+}
+
+#' Infer the disclosure contract for a QueryLibrary distribution query
+#'
+#' Curated SQL that returns AVG/SD/quantiles/min/max is a distribution even when
+#' it also returns n_persons. Longitudinal OMOP rows are not independent people,
+#' so the disclosure basis includes both the number of contributing values or
+#' records and the distinct-person count whenever both are declared. A large
+#' number of repeated records from a few people must never satisfy
+#' \code{nfilter_dist} by itself.
+#'
+#' @param query Parsed QueryLibrary entry.
+#' @param count_cols Declared sensitive count columns.
+#' @return List with is_dist, count_col, summary_cols, and extreme_cols.
+#' @keywords internal
+.omopQueryDistributionSpec <- function(query, count_cols) {
+  sql <- query$sql %||% ""
+  is_dist <- grepl(
+    paste0("\\b(avg|average|mean|stddev(_pop|_samp)?|stdev|sd|variance|",
+           "var_pop|var_samp|median|percentile(_cont|_disc)?|min|max)\\s*\\("),
+    sql, ignore.case = TRUE, perl = TRUE
+  )
+  if (!is_dist) {
+    return(list(is_dist = FALSE, count_col = NULL,
+                summary_cols = character(0), extreme_cols = character(0)))
+  }
+
+  outputs <- query$outputs
+  fields <- descriptions <- character(0)
+  if (is.data.frame(outputs) && nrow(outputs) > 0L) {
+    field_col <- intersect(c("field", "column", "name"), names(outputs))
+    desc_col <- intersect(c("description", "notes"), names(outputs))
+    if (length(field_col) > 0L) {
+      fields <- as.character(outputs[[field_col[1]]])
+      descriptions <- if (length(desc_col) > 0L) {
+        as.character(outputs[[desc_col[1]]])
+      } else {
+        rep("", length(fields))
+      }
+    }
+  }
+
+  stat_name <- grepl(
+    "(^|_)(avg|average|mean|sd|std|stdev|stddev|median|p[0-9]{1,3})(_|$)",
+    fields, ignore.case = TRUE, perl = TRUE
+  ) | grepl("^(avg|average|mean|sd|std|stdev|stddev|median|p[0-9]{1,3})[A-Z]",
+            fields, perl = TRUE)
+  stat_desc <- grepl(
+    "mean|average|standard deviation|median|percentile|quantile|variance",
+    descriptions, ignore.case = TRUE
+  )
+  extreme_name <- grepl("(^|_)(min|max)(_|$)", fields,
+                        ignore.case = TRUE, perl = TRUE) |
+    grepl("^(min|max)[A-Z]|[a-z0-9](Min|Max)$", fields, perl = TRUE)
+  extreme_desc <- grepl("\\b(minimum|maximum)\\b", descriptions,
+                        ignore.case = TRUE, perl = TRUE)
+
+  count_lookup <- stats::setNames(count_cols, tolower(count_cols))
+  value_order <- c("n_values", "n_records", "count_value", "countvalue")
+  person_order <- c("n_persons", "num_persons", "n_total", "n")
+  value_key <- intersect(value_order, names(count_lookup))
+  person_key <- intersect(person_order, names(count_lookup))
+  count_col <- unique(c(
+    if (length(value_key) > 0L) unname(count_lookup[[value_key[1]]]),
+    if (length(person_key) > 0L) unname(count_lookup[[person_key[1]]])
+  ))
+  if (length(count_col) == 0L) count_col <- NULL
+
+  list(
+    is_dist = TRUE,
+    count_col = count_col,
+    summary_cols = fields[(stat_name | stat_desc) & !(extreme_name | extreme_desc)],
+    extreme_cols = fields[extreme_name | extreme_desc]
+  )
+}
+
+#' Return the SQL dialects a curated query can execute on
+#'
+#' QueryLibrary templates predate a single canonical SqlRender source and use a
+#' small mixture of ANSI/PostgreSQL constructs.  Until every template is moved
+#' to an OHDSI SqlRender contract, advertise only dialects whose semantics are
+#' known for the constructs present.  This is deliberately conservative: an
+#' omitted query is preferable to listing an analysis that fails or, worse,
+#' computes a date duration with backend-specific coercion semantics.
+#'
+#' @param sql Curated query SQL.
+#' @return Character vector of target dialect names.
+#' @keywords internal
+.omopQuerySupportedDialects <- function(sql) {
+  dialects <- c("postgresql", "sql server", "oracle", "redshift",
+                "bigquery", "snowflake", "spark", "sqlite", "duckdb",
+                "mysql")
+  if (!is.character(sql) || length(sql) != 1L || is.na(sql)) {
+    return(character(0))
+  }
+  if (grepl("\\bEXTRACT\\s*\\(", sql, ignore.case = TRUE, perl = TRUE)) {
+    dialects <- setdiff(dialects, c("sqlite", "sql server"))
+  }
+  if (grepl("\\bSTDDEV\\s*\\(", sql, ignore.case = TRUE, perl = TRUE)) {
+    dialects <- setdiff(dialects, c("sqlite", "sql server"))
+  }
+  if (grepl("\\bLIMIT\\s+(?:@[A-Za-z_][A-Za-z0-9_]*|[0-9]+)\\b",
+            sql, ignore.case = TRUE, perl = TRUE)) {
+    dialects <- setdiff(dialects, c("sql server", "oracle"))
+  }
+  date_column <- paste0(
+    "(?:[A-Za-z_][A-Za-z0-9_]*\\.)?",
+    "[A-Za-z_][A-Za-z0-9_]*(?:_date|_datetime)"
+  )
+  if (grepl(paste0(date_column, "\\s*-\\s*", date_column), sql,
+            ignore.case = TRUE, perl = TRUE)) {
+    # These engines require a dedicated date-difference function. Plain
+    # subtraction is either rejected or coerces ISO strings/numbers wrongly.
+    dialects <- setdiff(dialects, c("sqlite", "bigquery", "spark", "mysql"))
+  }
+  dialects
+}
+
 #' Emit catalog entries for the curated QueryLibrary templates
 #'
 #' One \code{kind="sql"} entry per allowlist-eligible template. Reuses the
@@ -284,13 +433,14 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #' name when present, so the record-unit branch of the gate has a declared
 #' sibling count to gate on.
 #'
-#' @param handle CDM handle (unused; signature parity with the other adapters).
+#' @param handle CDM handle. Its target dialect filters incompatible templates.
 #' @return List of \code{omop_analysis_entry} objects keyed by entry name.
 #' @keywords internal
 .omopAnalysisQueryEntries <- function(handle) {
   queries <- .ql_load_queries()
   allowlist <- .ql_load_allowlist()
   strict <- isTRUE(.omopDisclosureSettings()$query_strict)
+  dialect <- tolower(handle$target_dialect %||% "")
 
   entries <- list()
   for (qid in names(queries)) {
@@ -301,6 +451,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     safety <- if (!is.null(al)) al else .ql_classify(q$sql, q$mode)
     safety_class <- safety$class %||% safety[["class"]]
     if (identical(safety_class, "BLOCKED")) next
+    supported_dialects <- .omopQuerySupportedDialects(q$sql)
+    if (!dialect %in% supported_dialects) next
 
     # Sensitive count columns: declared by the template (preferred), else
     # auto-detected by the static classifier — the same fields .query_exec
@@ -314,7 +466,14 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     person_pat <- "(^|_)(n_persons|num_persons|n_total|n_deaths|person_id)$"
     person_col <- grep(person_pat, count_cols, ignore.case = TRUE, value = TRUE)
     person_col <- if (length(person_col) > 0) person_col[[1]] else NULL
-    unit <- if (!is.null(person_col)) "person" else "record"
+    dist_spec <- .omopQueryDistributionSpec(q, count_cols)
+    unit <- if (isTRUE(dist_spec$is_dist)) {
+      "dist"
+    } else if (!is.null(person_col)) {
+      "person"
+    } else {
+      "record"
+    }
 
     mode <- tolower(q$mode %||% "aggregate")
 
@@ -328,25 +487,36 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       grepl("@cohort\\b", q$sql)
 
     name <- paste0("dsomop:", qid)
+    query_disclosure <- .omopAnalysisDisclosure(
+      unit = if (identical(mode, "assign")) "person" else unit,
+      count_cols = count_cols,
+      person_id_col = person_col,
+      min_max = isTRUE(dist_spec$is_dist)
+    )
+    query_disclosure$dist_count_col <- dist_spec$count_col
+    query_disclosure$summary_cols <- dist_spec$summary_cols
+    query_disclosure$extreme_cols <- dist_spec$extreme_cols
     entries[[name]] <- .omopAnalysisEntry(
       name        = name,
       description = q$description,
       domain      = tolower(q$group %||% "general"),
       params      = .omopAnalysisParamsFromInputs(q$inputs),
       compute     = list(kind = "sql", sql = q$sql, fn = NULL),
-      dependencies = list(tables = character(0), packages = character(0)),
-      disclosure  = .omopAnalysisDisclosure(
-        unit = if (identical(mode, "assign")) "person" else unit,
-        count_cols = count_cols,
-        person_id_col = person_col
+      dependencies = list(
+        tables = .omopQueryTableDependencies(q$sql),
+        packages = character(0)
       ),
+      disclosure  = query_disclosure,
       scope = .omopAnalysisScope(accepts_cohort = scopable,
                                  accepts_tables = scopable,
                                  max_tables = if (scopable) 2L else 0L),
       mode  = if (identical(mode, "assign")) "assign" else "aggregate",
       meta  = list(adapter = "query", query_id = qid,
                    inputs_df = q$inputs, strict = strict,
-                   scope_column = scope_col)
+                   scope_column = scope_col,
+                   cdm_version = q$cdm_version,
+                   supported_dialects = supported_dialects,
+                   target_dialect = dialect)
     )
   }
   entries
@@ -410,8 +580,10 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #' the rest of the OHDSI path uses), and the entry carries the tool id in
 #' \code{meta} so the unified gate can delegate to \code{\link{.ohdsiPersonGate}}.
 #' Compute is \code{kind="r"} wrapping \code{\link{.ohdsiGetResults}} for the one
-#' table. \code{unit="record"} (OHDSI tables count records/events; the person
-#' gate is the per-patient basis).
+#' table. Its disclosure unit and exact output/count columns come from the
+#' reviewed per-table contract. Registered tables without a public contract are
+#' omitted in strict mode; non-strict mode labels them \code{unit="admin"} and
+#' is an administrator/development surface, not a disclosure-safe release.
 #'
 #' Pre-computed result tables have no per-row person key, so the entry's scope
 #' rejects cohort/table scoping (enforced in the run path).
@@ -421,11 +593,14 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #' @keywords internal
 .omopAnalysisOhdsiEntries <- function(handle) {
   registry <- .ohdsi_tool_registry()
+  strict <- isTRUE(.omopDisclosureSettings()$query_strict)
 
   entries <- list()
   for (tid in names(registry)) {
     tool <- registry[[tid]]
     for (tbl in tool$table_names) {
+      contract <- tool$contracts[[tbl]]
+      if (strict && !identical(contract$release, "public")) next
       name <- paste0("dsomop:ohdsi.", tid, ".", tbl)
       entries[[name]] <- .omopAnalysisEntry(
         name        = name,
@@ -440,15 +615,19 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
         ),
         dependencies = list(tables = tbl, packages = character(0)),
         disclosure = .omopAnalysisDisclosure(
-          unit = "record",
-          count_cols = tool$count_columns %||% character(0)
+          unit = contract$unit,
+          count_cols = if (identical(contract$release, "public")) {
+            contract$count_columns
+          } else {
+            tool$count_columns %||% character(0)
+          }
         ),
         scope = .omopAnalysisScope(accepts_cohort = FALSE,
                                    accepts_tables = FALSE, max_tables = 0L),
         mode  = "aggregate",
         meta  = list(adapter = "ohdsi", tool_id = tid, table_name = tbl,
-                     person_columns = tool$person_columns %||% character(0),
-                     precomputed = TRUE)
+                     person_columns = contract$person_columns %||% character(0),
+                     release = contract$release, precomputed = TRUE)
       )
     }
   }
@@ -834,8 +1013,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     if (by_age) {
       age_at <- .omopDateDiffDays(handle, paste0("c.", anchor(anchor_start)),
                                   "p.birth_dt")
-      ageband <- paste0("(CAST(", age_at, " / 365 AS INTEGER) / ", age_band,
-                        ") * ", age_band)
+      age_years <- .omopFloorDivideSql(age_at, 365L)
+      ageband <- .omopFloorBinSql(age_years, age_band)
       strata_sel <- if (by_gender) {
         paste0("gc.concept_name || '|' || CAST(", ageband, " AS VARCHAR) AS stratum")
       } else paste0("CAST(", ageband, " AS VARCHAR) AS stratum")
@@ -1250,7 +1429,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     # each person to their earliest qualifying event via a correlated MIN.
     offset_expr <- .omopDateDiffDays(handle, paste0("o.", out_src$date_col),
                                      "c.cohort_start_date")
-    bin_expr <- paste0("(CAST(", offset_expr, " AS INTEGER) / ", scale, ") * ", scale)
+    bin_expr <- .omopFloorBinSql(offset_expr, scale)
     first_clause <- if (first_only) {
       paste0(" AND o.", out_src$date_col, " = (SELECT MIN(o2.", out_src$date_col,
              ") FROM ", out_src$table, " o2 WHERE o2.", out_src$person_col,
@@ -1572,7 +1751,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
   denom_sql <- paste0("(SELECT COUNT(DISTINCT subject_id) FROM ", cohort, ")")
   age_at <- .omopDateDiffDays(handle, "c.cohort_start_date", "p.birth_dt")
-  age_grp <- paste0("(CAST(", age_at, " / 365 AS INTEGER) / 10) * 10")
+  age_years <- .omopFloorDivideSql(age_at, 365L)
+  age_grp <- .omopFloorBinSql(age_years, 10L)
 
   # Three concept-named demographics + one derived age band, unioned into one
   # (characteristic, level, person-count, proportion) frame.
@@ -1864,13 +2044,13 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
 #' Per-person comorbidity / risk score distribution over the scoped cohort
 #'
-#' Computes a per-person score by counting how many of the index's component
-#' condition-concept GROUPS each cohort member has >= 1 record of (a weight-1
-#' approximation of the named score; the disclosure-relevant property — a
-#' per-person integer distribution — is identical to the weighted form). The
-#' component groups are resolved as concept sets (descendants expanded) so a
-#' single seed concept per component pulls its whole sub-tree. Returns a single
-#' dist row (snake_case) the gate clamps + masks.
+#' Computes a dsOMOP component-burden approximation: one point for each local
+#' condition-concept group with at least one record. It does not reproduce the
+#' published weights, tiers, exclusions, event source or cohort-relative
+#' windows of the named FeatureExtraction analyses and is therefore not
+#' upstream-equivalent. Component groups are resolved as local concept sets
+#' with descendants expanded. Returns one dist row that the gate clamps and
+#' masks.
 #'
 #' @param handle CDM handle.
 #' @param ctx Run-path ctx (carries \code{scoped_cohort}).
@@ -1883,11 +2063,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   cond   <- .qualifyTable(handle, "condition_occurrence")
   index_type <- tolower(index_type %||% "charlson")
 
-  # Component seed concepts per index. Descendants are expanded server-side, so
-  # each integer below stands for its whole condition sub-tree (one component).
-  # These are standard SNOMED roots for the named score's components; an
-  # unresolvable seed simply contributes no component (the score is robust to a
-  # missing vocabulary branch).
+  # Locally selected component seeds per named index. Descendants are expanded
+  # server-side, so each seed stands for one condition sub-tree and contributes
+  # one point. An unresolvable seed contributes no component.
   seeds <- switch(index_type,
     "dcsi"        = c(443767L, 4209145L, 4271003L, 321822L, 4030518L),
     "chads2"      = c(316139L, 320128L, 201820L, 381591L, 313217L),
@@ -1958,7 +2136,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     "CAST((CAST(p.year_of_birth AS VARCHAR) || '-01-01') AS DATE)"
   }
   vsql <- .sql_translate(paste0(
-    "SELECT CAST(", age_at, " / 365 AS INTEGER) AS v FROM ", cohort, " c ",
+    "SELECT ", .omopFloorDivideSql(age_at, 365L), " AS v FROM ", cohort, " c ",
     "INNER JOIN ", person, " p ON p.person_id = c.subject_id"),
     handle$target_dialect)
   vsql <- gsub("p.birth_dt", birth_dt, vsql, fixed = TRUE)
@@ -2010,7 +2188,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     stringsAsFactors = FALSE)
 }
 
-#' \code{dsomop:fe.comorbidity_index} entry (FeatureExtraction comorbidity scores)
+#' \code{dsomop:fe.comorbidity_index} dsOMOP component-burden entry
 #' @keywords internal
 .omopFeComorbidityIndex <- function() {
   name <- "dsomop:fe.comorbidity_index"
@@ -2031,9 +2209,10 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
   .omopAnalysisEntry(
     name        = name,
-    description = paste0("Distribution of a comorbidity / risk score ",
-                         "(Charlson / DCSI / CHADS2 / CHA2DS2-VASc / HFRS) over ",
-                         "the scoped cohort. Min/max clamped; stats below ",
+    description = paste0("Distribution of a dsOMOP component-burden ",
+                         "approximation labelled by Charlson / DCSI / CHADS2 / ",
+                         "CHA2DS2-VASc / HFRS. It is not equivalent to OHDSI ",
+                         "FeatureExtraction. Min/max clamped; stats below ",
                          "nfilter_dist masked."),
     domain      = "condition",
     params      = list(
@@ -2052,7 +2231,15 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
                                max_tables = 1L),
     mode  = "aggregate",
-    meta  = list(adapter = "diagnostic", accepts_cohort = TRUE)
+    meta  = list(
+      adapter = "diagnostic",
+      accepts_cohort = TRUE,
+      method = "component_burden_approximation",
+      upstream = "OHDSI/FeatureExtraction",
+      upstream_release = "v3.14.0",
+      upstream_commit = "53266f0233c2ee7cae127e8669ad35b0d60406ae",
+      upstream_equivalent = FALSE
+    )
   )
 }
 
@@ -2778,20 +2965,42 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #' every installed package at once (far cheaper than one
 #' \code{packageDescription} per package). The result is cached on
 #' \code{.dsomop_env} because the installed package set does not change within an
-#' R session — so the disk scan runs once per process, not once per handle. Pass
-#' \code{force=TRUE} to rescan (used by tests).
+#' R session — so the disk scan runs once per process, not once per handle.
+#' Discovery is disabled by default. Controllers must set
+#' \code{options(dsomop.analysis_pack_allowlist =
+#' c(package = "exact.version"))}; only exact package/version matches are
+#' executable. Pass \code{force=TRUE} to rescan (used by tests).
 #'
 #' @param force Logical; rescan even if cached.
-#' @return Data frame with columns \code{pkg}, \code{prefix}, \code{spec} for
-#'   each package declaring \code{Config/dsOMOP/AnalysisCollection}.
+#' @return Data frame with columns \code{pkg}, \code{version}, \code{prefix},
+#'   and \code{spec} for each allowlisted package declaring
+#'   \code{Config/dsOMOP/AnalysisCollection}.
 #' @keywords internal
 .omopAnalysisPackScan <- function(force = FALSE) {
+  allowlist <- getOption("dsomop.analysis_pack_allowlist", character(0))
+  if (is.null(allowlist)) allowlist <- character(0)
+  if (!is.character(allowlist) || anyNA(allowlist) ||
+      (length(allowlist) > 0L &&
+       (is.null(names(allowlist)) || anyNA(names(allowlist)) ||
+        any(!nzchar(names(allowlist))) || any(!nzchar(allowlist)) ||
+        anyDuplicated(names(allowlist))))) {
+    stop("dsomop.analysis_pack_allowlist must be a named character vector of ",
+         "package = exact.version entries.", call. = FALSE)
+  }
+  cache_key <- paste(names(allowlist), allowlist, sep = "=", collapse = "|")
   if (!force && exists("analysis_pack_scan", envir = .dsomop_env,
                        inherits = FALSE)) {
-    return(get("analysis_pack_scan", envir = .dsomop_env, inherits = FALSE))
+    cached <- get("analysis_pack_scan", envir = .dsomop_env, inherits = FALSE)
+    if (identical(attr(cached, "allowlist_key"), cache_key)) return(cached)
   }
-  empty <- data.frame(pkg = character(0), prefix = character(0),
+  empty <- data.frame(pkg = character(0), version = character(0),
+                      prefix = character(0),
                       spec = character(0), stringsAsFactors = FALSE)
+  attr(empty, "allowlist_key") <- cache_key
+  if (length(allowlist) == 0L) {
+    assign("analysis_pack_scan", empty, envir = .dsomop_env)
+    return(empty)
+  }
   ip <- tryCatch(
     utils::installed.packages(fields = c("Config/dsOMOP/AnalysisCollection",
                                          "Config/dsOMOP/AnalysisPrefix")),
@@ -2805,17 +3014,493 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   prefix <- if ("Config/dsOMOP/AnalysisPrefix" %in% colnames(ip)) {
     ip[, "Config/dsOMOP/AnalysisPrefix"]
   } else rep(NA_character_, nrow(ip))
-  keep <- !is.na(collection) & nzchar(trimws(collection))
+  package_names <- ip[, "Package"]
+  package_versions <- ip[, "Version"]
+  permitted <- package_names %in% names(allowlist) &
+    package_versions == unname(allowlist[package_names])
+  keep <- !is.na(collection) & nzchar(trimws(collection)) & permitted
   scan <- if (any(keep)) {
     pkgs <- ip[keep, "Package"]
+    versions <- ip[keep, "Version"]
     pfx  <- trimws(prefix[keep])
     pfx[is.na(pfx) | !nzchar(pfx)] <- pkgs[is.na(pfx) | !nzchar(pfx)]
-    data.frame(pkg = unname(pkgs), prefix = unname(pfx),
+    data.frame(pkg = unname(pkgs), version = unname(versions),
+               prefix = unname(pfx),
                spec = trimws(unname(collection[keep])),
                stringsAsFactors = FALSE)
   } else empty
+  unavailable <- setdiff(names(allowlist), package_names[permitted])
+  if (length(unavailable) > 0L) {
+    warning("Allowlisted dsOMOP analysis pack(s) are absent or have a ",
+            "different version: ", paste(unavailable, collapse = ", "), ".",
+            call. = FALSE)
+  }
+  attr(scan, "allowlist_key") <- cache_key
   assign("analysis_pack_scan", scan, envir = .dsomop_env)
   scan
+}
+
+#' Validate and normalize an external pack output contract
+#'
+#' External analysis code is installed by a server administrator, but its
+#' result still crosses the DataSHIELD release boundary. The contract is closed:
+#' every output column has one semantic role and no runtime column may appear
+#' outside this list.
+#'
+#' @param entry An analysis entry.
+#' @param package Contributing package name.
+#' @param final_id Namespaced analysis id.
+#' @return Normalized output contract.
+#' @keywords internal
+.omopAnalysisNormalizeOutputContract <- function(entry, package, final_id) {
+  label <- paste0("Analysis pack '", package, "' entry '", final_id,
+                  "' output_contract")
+  fail <- function(...) stop(label, ": ", ..., call. = FALSE)
+  contract <- entry$meta$output_contract
+  if (!is.list(contract) || is.null(names(contract)) ||
+      any(!nzchar(names(contract))) || anyDuplicated(names(contract))) {
+    fail("must be a uniquely named list.")
+  }
+  unknown <- setdiff(names(contract), c("version", "columns", "max_rows"))
+  if (length(unknown) > 0L) {
+    fail("unknown field(s): ", paste(unknown, collapse = ", "), ".")
+  }
+  version <- suppressWarnings(as.numeric(contract$version))
+  if (length(version) != 1L || is.na(version) || !is.finite(version) ||
+      version != 1) {
+    fail("version must be exactly 1.")
+  }
+  max_rows <- suppressWarnings(as.numeric(contract$max_rows))
+  if (length(max_rows) != 1L || is.na(max_rows) || !is.finite(max_rows) ||
+      max_rows != floor(max_rows) || max_rows < 1L ||
+      max_rows > .Machine$integer.max) {
+    fail("max_rows must be one positive integer.")
+  }
+
+  columns <- contract$columns
+  if (!is.list(columns) || length(columns) == 0L || is.null(names(columns)) ||
+      any(!nzchar(names(columns))) || anyDuplicated(names(columns))) {
+    fail("columns must be a non-empty uniquely named list.")
+  }
+  if (any(!grepl("^[A-Za-z][A-Za-z0-9_]*$", names(columns)))) {
+    fail("column names must be bare identifiers.")
+  }
+  settings <- .omopDisclosureSettings()
+  mode <- entry$mode %||% "aggregate"
+  if (!is.character(mode) || length(mode) != 1L || is.na(mode) ||
+      !mode %in% c("aggregate", "assign")) {
+    fail("entry mode must be aggregate or assign.")
+  }
+  if (length(columns) > settings$max_output_columns) {
+    fail("declares more columns than the server output-column cap.")
+  }
+  aggregate_semantics <- c(
+    "count", "metric", "ratio", "concept_id", "category", "date_band",
+    "logical", "relative_day", "duration"
+  )
+  assign_semantics <- c(
+    "person_key", "count", "measure", "concept_id", "category",
+    "date_band", "logical", "relative_day", "duration"
+  )
+  allowed_semantics <- if (identical(mode, "assign")) {
+    assign_semantics
+  } else {
+    aggregate_semantics
+  }
+  normalized <- vector("list", length(columns))
+  names(normalized) <- names(columns)
+
+  for (column in names(columns)) {
+    spec <- columns[[column]]
+    if (!is.list(spec) || is.null(names(spec)) ||
+        any(!nzchar(names(spec))) || anyDuplicated(names(spec))) {
+      fail("column '", column, "' must have a uniquely named specification.")
+    }
+    semantic <- tolower(trimws(as.character(spec$semantic %||% "")))
+    if (length(semantic) != 1L || is.na(semantic) ||
+        !semantic %in% allowed_semantics) {
+      fail("column '", column, "' has unsupported semantic '", semantic,
+           "' for mode '", mode, "'.")
+    }
+    allowed_fields <- switch(semantic,
+      category = c("semantic", "levels"),
+      date_band = c("semantic", "levels"),
+      metric = c("semantic", "basis", "min", "max"),
+      measure = c("semantic", "min", "max"),
+      relative_day = c("semantic", "basis", "min", "max"),
+      duration = c("semantic", "basis", "min", "max"),
+      ratio = c("semantic", "numerator", "denominator", "scale"),
+      "semantic"
+    )
+    unknown_fields <- setdiff(names(spec), allowed_fields)
+    if (length(unknown_fields) > 0L) {
+      fail("column '", column, "' has unknown field(s): ",
+           paste(unknown_fields, collapse = ", "), ".")
+    }
+
+    lower_name <- tolower(column)
+    is_person_key <- lower_name %in% tolower(.PERSON_KEY_COLS())
+    known_identifier <- lower_name %in% tolower(c(
+      .identifierColumns(), .EPISODE_KEY_COLS()
+    ))
+    if (is_person_key &&
+        !(identical(mode, "assign") && identical(semantic, "person_key") &&
+          identical(lower_name, "person_id"))) {
+      fail("person/subject identifiers are forbidden except person_id with ",
+           "semantic person_key in assign mode.")
+    }
+    if (known_identifier && !is_person_key) {
+      fail("column '", column, "' is a raw row/entity identifier.")
+    }
+    if (grepl("_id$", lower_name) && !known_identifier &&
+        !identical(semantic, "concept_id") &&
+        !identical(semantic, "category")) {
+      fail("identifier-like column '", column,
+           "' must be a concept_id or closed category.")
+    }
+    if (identical(semantic, "concept_id") &&
+        !grepl("(^|_)concept_id$", lower_name)) {
+      fail("column '", column,
+           "' declares concept_id semantics but is not a concept-id field.")
+    }
+    if (.detectSensitiveColumns(column)) {
+      fail("column '", column, "' is sensitive/free-text by policy.")
+    }
+    exact_date_name <- grepl(
+      "(^|_)(date|datetime|timestamp)($|_)", lower_name, perl = TRUE
+    )
+    if (exact_date_name && !identical(semantic, "date_band")) {
+      fail("column '", column,
+           "' is an exact date/datetime field; use a contracted date_band or ",
+           "relative_day instead.")
+    }
+
+    normalized_spec <- list(semantic = semantic)
+    if (semantic %in% c("category", "date_band")) {
+      levels <- as.character(spec$levels %||% character(0))
+      if (length(levels) == 0L || anyNA(levels) || any(!nzchar(levels)) ||
+          anyDuplicated(levels) ||
+          length(levels) > settings$nfilter_levels_max ||
+          any(nchar(levels) > settings$nfilter_stringShort)) {
+        fail("column '", column, "' requires unique short levels within the ",
+             "server level cap.")
+      }
+      if (any(grepl(
+        paste0("^([0-9]{4}[-/][0-9]{1,2}[-/][0-9]{1,2}|",
+               "[0-9]{1,2}[-/.][0-9]{1,2}[-/.][0-9]{4})([ T].*)?$"),
+        levels, perl = TRUE
+      ))) {
+        fail("column '", column, "' levels contain exact date/datetime values.")
+      }
+      normalized_spec$levels <- levels
+    }
+    if (semantic %in% c("metric", "measure", "relative_day", "duration")) {
+      lower <- suppressWarnings(as.numeric(spec$min))
+      upper <- suppressWarnings(as.numeric(spec$max))
+      if (length(lower) != 1L || length(upper) != 1L || is.na(lower) ||
+          is.na(upper) || !is.finite(lower) || !is.finite(upper) ||
+          lower > upper) {
+        fail("column '", column,
+             "' requires finite min and max bounds.")
+      }
+      normalized_spec$min <- lower
+      normalized_spec$max <- upper
+      if (!identical(mode, "assign")) {
+        basis <- unique(as.character(spec$basis %||% character(0)))
+        if (length(basis) == 0L || anyNA(basis) || any(!nzchar(basis))) {
+          fail("aggregate column '", column,
+               "' requires one or more count-basis columns.")
+        }
+        normalized_spec$basis <- basis
+      }
+    }
+    if (identical(semantic, "ratio")) {
+      numerator <- as.character(spec$numerator %||% "")
+      denominator <- as.character(spec$denominator %||% "")
+      scale <- suppressWarnings(as.numeric(spec$scale %||% 1))
+      if (length(numerator) != 1L || !nzchar(numerator) ||
+          length(denominator) != 1L || !nzchar(denominator) ||
+          length(scale) != 1L || is.na(scale) || !is.finite(scale) ||
+          scale <= 0) {
+        fail("ratio column '", column,
+             "' requires numerator, denominator and a positive finite scale.")
+      }
+      normalized_spec$numerator <- numerator
+      normalized_spec$denominator <- denominator
+      normalized_spec$scale <- scale
+    }
+    normalized[[column]] <- normalized_spec
+  }
+
+  semantics <- vapply(normalized, `[[`, character(1L), "semantic")
+  if (identical(mode, "assign")) {
+    person_columns <- names(semantics)[semantics == "person_key"]
+    if (!identical(person_columns, "person_id")) {
+      fail("assign mode requires exactly one person_id/person_key column.")
+    }
+  } else {
+    disc <- entry$disclosure
+    unit <- if (is.list(disc)) disc$unit %||% "" else ""
+    if (!is.list(disc) || !is.character(unit) || length(unit) != 1L ||
+        is.na(unit) || !unit %in% c("person", "record", "dist") ||
+        !identical(disc$gate %||% "", "distinct_person")) {
+      fail("aggregate disclosure must use unit person/record/dist and ",
+           "gate distinct_person.")
+    }
+    count_columns <- names(semantics)[semantics == "count"]
+    declared_counts <- disc$count_cols %||% character(0)
+    if (!is.character(declared_counts) || anyNA(declared_counts) ||
+        any(!nzchar(declared_counts)) || anyDuplicated(declared_counts) ||
+        length(count_columns) == 0L ||
+        !setequal(count_columns, declared_counts)) {
+      fail("count semantic columns must exactly match disclosure$count_cols.")
+    }
+    if (identical(unit, "record")) {
+      person_basis <- as.character(disc$person_id_col %||% character(0))
+      if (length(person_basis) != 1L || !person_basis %in% count_columns) {
+        fail("record outputs require one contracted person-count basis in ",
+             "disclosure$person_id_col.")
+      }
+    }
+    for (column in names(normalized)) {
+      spec <- normalized[[column]]
+      if (!is.null(spec$basis) && !all(spec$basis %in% count_columns)) {
+        fail("column '", column, "' references a non-count basis.")
+      }
+      if (identical(spec$semantic, "ratio") &&
+          (!spec$numerator %in% count_columns ||
+           !spec$denominator %in% count_columns)) {
+        fail("ratio column '", column,
+             "' must reference contracted count columns.")
+      }
+    }
+  }
+
+  list(version = 1L, columns = normalized, max_rows = as.integer(max_rows))
+}
+
+#' Validate and mark one third-party analysis entry
+#'
+#' @param entry Candidate entry returned by a pack registrar.
+#' @param package Contributing package name.
+#' @param final_id Namespaced catalog id.
+#' @param package_version Exact allowlisted package version, when discovered.
+#' @return Validated entry marked as external.
+#' @keywords internal
+.omopAnalysisValidateExternalEntry <- function(entry, package, final_id,
+                                               package_version = NULL) {
+  if (!is.list(entry) || !inherits(entry, "omop_analysis_entry")) {
+    stop("Analysis pack '", package, "' entry '", final_id,
+         "' must be built with omopAnalysisEntry().", call. = FALSE)
+  }
+  if (!is.list(entry$meta) || !is.list(entry$compute) ||
+      !is.list(entry$disclosure) || !is.list(entry$scope)) {
+    stop("Analysis pack '", package, "' entry '", final_id,
+         "' has a malformed entry contract.", call. = FALSE)
+  }
+  mode <- entry$mode %||% ""
+  if (!is.character(mode) || length(mode) != 1L || is.na(mode) ||
+      !mode %in% c("aggregate", "assign")) {
+    stop("Analysis pack '", package, "' entry '", final_id,
+         "' has an unsupported mode.", call. = FALSE)
+  }
+  kind <- entry$compute$kind %||% ""
+  if (!is.character(kind) || length(kind) != 1L || is.na(kind) ||
+      !kind %in% c("sql", "r")) {
+    stop("Analysis pack '", package, "' entry '", final_id,
+         "' must use exactly one compute kind: sql or r.", call. = FALSE)
+  }
+  if (identical(kind, "r") && !is.function(entry$compute$fn)) {
+    stop("Analysis pack '", package, "' entry '", final_id,
+         "' has no compute function.", call. = FALSE)
+  }
+  if (identical(kind, "sql") &&
+      (!is.character(entry$compute$sql) || length(entry$compute$sql) != 1L ||
+       is.na(entry$compute$sql) || !nzchar(entry$compute$sql))) {
+    stop("Analysis pack '", package, "' entry '", final_id,
+         "' has no SQL template.", call. = FALSE)
+  }
+  entry$name <- final_id
+  entry$meta$output_contract <- .omopAnalysisNormalizeOutputContract(
+    entry, package, final_id
+  )
+  entry$meta$adapter <- "external_pack"
+  entry$meta$external_pack <- TRUE
+  entry$meta$pack_package <- package
+  entry$meta$pack_version <- package_version
+  entry$meta$pack_contract_version <- 1L
+  # No external entry may opt itself into privileged native gate branches.
+  entry$meta$public_vocabulary_metadata <- NULL
+  entry$meta$tool_id <- NULL
+  entry$meta$table_name <- NULL
+  entry$meta$analysis_id <- NULL
+  if (identical(mode, "aggregate") &&
+      identical(entry$disclosure$unit, "dist")) {
+    semantics <- vapply(entry$meta$output_contract$columns, `[[`,
+                        character(1L), "semantic")
+    entry$disclosure$dist_count_col <- names(semantics)[semantics == "count"]
+    entry$disclosure$summary_cols <- names(semantics)[
+      semantics %in% c("metric", "relative_day", "duration")
+    ]
+  }
+  entry
+}
+
+#' Enforce the closed output contract of an external analysis pack
+#'
+#' @param df Candidate result.
+#' @param entry Validated external entry.
+#' @param assign Whether this is an assign-mode result.
+#' @param phase Raw result or final post-gate/pseudonymization result.
+#' @return Validated result, with contracted metrics masked and ratios rebuilt
+#'   during the final aggregate phase.
+#' @keywords internal
+.omopAnalysisExternalOutputFirewall <- function(df, entry, assign = FALSE,
+                                                phase = c("raw", "final")) {
+  if (!isTRUE(entry$meta$external_pack)) return(df)
+  phase <- match.arg(phase)
+  package <- entry$meta$pack_package %||% "unknown"
+  contract <- .omopAnalysisNormalizeOutputContract(entry, package, entry$name)
+  fail <- function(...) {
+    stop("Analysis pack '", package, "' entry '", entry$name,
+         "' output rejected: ", ..., call. = FALSE)
+  }
+  if (!is.data.frame(df)) {
+    fail("result must be a data.frame.")
+  }
+  if (is.null(names(df)) || any(!nzchar(names(df))) || anyDuplicated(names(df))) {
+    fail("result columns must be uniquely named.")
+  }
+
+  settings <- .omopDisclosureSettings()
+  server_row_cap <- suppressWarnings(as.numeric(getOption(
+    if (assign) "dsomop.max_memory_rows" else "dsomop.max_analysis_rows",
+    if (assign) 1000000L else 5000L
+  )))
+  if (length(server_row_cap) != 1L || is.na(server_row_cap) ||
+      !is.finite(server_row_cap) || server_row_cap != floor(server_row_cap) ||
+      server_row_cap < 1L) {
+    fail("server row-limit option is invalid.")
+  }
+  row_cap <- min(contract$max_rows, server_row_cap)
+  if (nrow(df) > row_cap) {
+    fail("result exceeds the row limit of ", row_cap, ".")
+  }
+  if (ncol(df) > settings$max_output_columns) {
+    fail("result exceeds the server column limit of ",
+         settings$max_output_columns, ".")
+  }
+
+  declared <- names(contract$columns)
+  for (column in names(df)) {
+    lower <- tolower(column)
+    spec <- contract$columns[[column]]
+    semantic <- spec$semantic %||% ""
+    is_person_key <- lower %in% tolower(.PERSON_KEY_COLS())
+    if (is_person_key &&
+        !(assign && identical(column, "person_id") &&
+          identical(semantic, "person_key"))) {
+      fail("person/subject identifier column '", column, "' is forbidden.")
+    }
+    if (lower %in% tolower(c(.identifierColumns(), .EPISODE_KEY_COLS())) &&
+        !is_person_key) {
+      fail("raw identifier column '", column, "' is forbidden.")
+    }
+    if (.detectSensitiveColumns(column)) {
+      fail("sensitive/free-text column '", column, "' is forbidden.")
+    }
+    values <- df[[column]]
+    exact_date_name <- grepl(
+      "(^|_)(date|datetime|timestamp)($|_)", lower, perl = TRUE
+    ) && !identical(semantic, "date_band")
+    exact_date_class <- inherits(values, "Date") || inherits(values, "POSIXt")
+    exact_date_value <- (is.character(values) || is.factor(values)) &&
+      any(grepl(
+        paste0("^([0-9]{4}[-/][0-9]{1,2}[-/][0-9]{1,2}|",
+               "[0-9]{1,2}[-/.][0-9]{1,2}[-/.][0-9]{4})([ T].*)?$"),
+        as.character(values), perl = TRUE
+      ), na.rm = TRUE)
+    if (exact_date_name || exact_date_class || exact_date_value) {
+      fail("exact date/datetime column or value '", column, "' is forbidden.")
+    }
+  }
+  extra <- setdiff(names(df), declared)
+  missing <- setdiff(declared, names(df))
+  if (length(extra) > 0L) {
+    fail("undeclared column(s): ", paste(extra, collapse = ", "), ".")
+  }
+  if (length(missing) > 0L) {
+    fail("declared column(s) missing: ", paste(missing, collapse = ", "), ".")
+  }
+  if (!identical(names(df), declared)) {
+    fail("result column order does not match the declared contract.")
+  }
+
+  for (column in declared) {
+    spec <- contract$columns[[column]]
+    semantic <- spec$semantic
+    values <- df[[column]]
+    numeric_values <- suppressWarnings(as.numeric(values))
+    if (semantic %in% c("count", "concept_id")) {
+      valid <- is.numeric(values) || is.integer(values) ||
+        inherits(values, "integer64")
+      if (!valid || any(!is.na(numeric_values) &
+          (!is.finite(numeric_values) | numeric_values < 0 |
+           numeric_values != floor(numeric_values)))) {
+        fail("column '", column, "' violates ", semantic, " semantics.")
+      }
+    } else if (semantic %in% c("metric", "measure", "ratio", "relative_day",
+                               "duration")) {
+      valid <- is.numeric(values) || is.integer(values) ||
+        inherits(values, "integer64")
+      if (!valid || any(!is.na(numeric_values) & !is.finite(numeric_values))) {
+        fail("column '", column, "' must contain finite numeric values.")
+      }
+      if (!identical(semantic, "ratio") &&
+          any(!is.na(numeric_values) &
+              (numeric_values < spec$min | numeric_values > spec$max))) {
+        fail("column '", column, "' is outside its contracted range.")
+      }
+    } else if (semantic %in% c("category", "date_band")) {
+      if (!is.atomic(values) ||
+          any(!is.na(values) & !as.character(values) %in% spec$levels)) {
+        fail("column '", column, "' contains a value outside its closed levels.")
+      }
+    } else if (identical(semantic, "logical")) {
+      if (!is.logical(values)) fail("column '", column, "' must be logical.")
+    } else if (identical(semantic, "person_key")) {
+      if (anyNA(values)) fail("person_id cannot contain missing values.")
+      if (identical(phase, "final") &&
+          (!is.character(values) || !inherits(df, "omop.table") ||
+           !"person_id" %in% (attr(df, "dsomop_protected") %||% character(0)))) {
+        fail("final person_id is not a protected pseudonymous key.")
+      }
+    }
+  }
+
+  if (identical(phase, "final") && !assign && nrow(df) > 0L) {
+    for (column in declared) {
+      spec <- contract$columns[[column]]
+      if (!is.null(spec$basis)) {
+        unsafe <- rep(FALSE, nrow(df))
+        for (basis in spec$basis) {
+          support <- suppressWarnings(as.numeric(df[[basis]]))
+          unsafe <- unsafe | is.na(support) | support <= 0
+        }
+        if (any(unsafe)) df[[column]][unsafe] <- NA_real_
+      }
+      if (identical(spec$semantic, "ratio")) {
+        numerator <- suppressWarnings(as.numeric(df[[spec$numerator]]))
+        denominator <- suppressWarnings(as.numeric(df[[spec$denominator]]))
+        value <- (numerator / denominator) * spec$scale
+        value[is.na(numerator) | is.na(denominator) | numerator <= 0 |
+                denominator <= 0 | !is.finite(value)] <- NA_real_
+        df[[column]] <- value
+      }
+    }
+  }
+  rownames(df) <- NULL
+  df
 }
 
 #' Discover and load analysis entries contributed by installed packages
@@ -2837,7 +3522,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #' Fail-closed rules (never silently overwrite a native or another pack's id):
 #' the \code{"dsomop:"} prefix is RESERVED for native entries and a pack
 #' claiming it is rejected; a pack producing an id that collides with an
-#' already-registered final id is rejected. Both raise a clear error. The
+#' already-registered final id is rejected. Entries must be constructed through
+#' \code{omopAnalysisEntry()}, use compute kind \code{sql} or \code{r}, and
+#' carry the closed semantic output contract documented there. The
 #' (expensive) DESCRIPTION scan is delegated to \code{\link{.omopAnalysisPackScan}}
 #' (cached per session); this function only invokes the discovered registrars and
 #' enforces the namespacing + collision rules per handle.
@@ -2880,18 +3567,33 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       NULL
     })
     if (is.null(pack_entries) || length(pack_entries) == 0) next
+    if (!is.list(pack_entries) || is.null(names(pack_entries)) ||
+        any(!nzchar(names(pack_entries))) || anyDuplicated(names(pack_entries))) {
+      stop("Analysis pack '", pkg,
+           "' registrar must return a uniquely named list of entries.",
+           call. = FALSE)
+    }
 
     for (id in names(pack_entries)) {
       entry <- pack_entries[[id]]
+      if (!grepl("^[A-Za-z][A-Za-z0-9._-]*$", prefix) ||
+          !grepl("^[A-Za-z][A-Za-z0-9._-]*$", id)) {
+        stop("Analysis pack '", pkg,
+             "' prefix and entry ids must be closed identifiers.",
+             call. = FALSE)
+      }
       final_id <- paste0(prefix, ":", id)
       if (final_id %in% taken) {
         stop("Analysis pack '", pkg, "' registers id '", final_id,
              "' which already exists; duplicate analysis ids are not allowed.",
              call. = FALSE)
       }
-      # Keep the entry's authoritative name in sync with its final id so the
-      # gate/run path and listings agree regardless of what the pack set.
-      entry$name <- final_id
+      package_version <- if ("version" %in% names(scan)) {
+        scan$version[[i]]
+      } else NULL
+      entry <- .omopAnalysisValidateExternalEntry(
+        entry, pkg, final_id, package_version = package_version
+      )
       out[[final_id]] <- entry
       taken <- c(taken, final_id)
     }
@@ -3011,7 +3713,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   empty <- data.frame(
     name = character(0), domain = character(0), adapter = character(0),
     mode = character(0), unit = character(0), description = character(0),
-    params = character(0), accepts_cohort = logical(0),
+    params = character(0), cdm_version = character(0),
+    accepts_cohort = logical(0),
     accepts_tables = logical(0), requires_cohort = logical(0),
     has_plot = logical(0), stringsAsFactors = FALSE
   )
@@ -3028,6 +3731,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       unit           = e$disclosure$unit,
       description    = substr(e$description, 1, 200),
       params         = .omopAnalysisParamSummary(e$params),
+      cdm_version    = e$meta$cdm_version %||% NA_character_,
       accepts_cohort = isTRUE(e$scope$accepts_cohort),
       accepts_tables = isTRUE(e$scope$accepts_tables),
       # Discovery aids: whether an un-scoped run errors (the cohort IS the
@@ -3061,6 +3765,11 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     disclosure  = e$disclosure,
     scope       = e$scope,
     adapter     = e$meta$adapter %||% "unknown",
+    cdm_version = e$meta$cdm_version,
+    pack_package = e$meta$pack_package,
+    pack_version = e$meta$pack_version,
+    pack_contract_version = e$meta$pack_contract_version,
+    output_contract = e$meta$output_contract,
     # Inert client-side plot recipe (type + a deparsed function(df, params) string).
     # The server NEVER evaluates this; the client renders it locally on the
     # already-gated aggregate. NULL for analyses without a plot.
@@ -3084,14 +3793,27 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #' @keywords internal
 .omopAnalysisSanitizeParams <- function(entry, params) {
   params <- params %||% list()
+  if (!is.list(params) || (length(params) > 0L &&
+      (is.null(names(params)) || any(!nzchar(names(params))) ||
+       anyDuplicated(names(params))))) {
+    stop("Analysis parameters must be a uniquely named list.", call. = FALSE)
+  }
   specs <- entry$params %||% list()
   spec_names <- vapply(specs, function(p) p$name, character(1))
+  unknown <- setdiff(names(params), spec_names)
+  if (length(unknown) > 0L) {
+    stop("Analysis '", entry$name, "': unknown parameter(s): ",
+         paste(unknown, collapse = ", "), ".", call. = FALSE)
+  }
 
   # Required-param presence (defaults satisfy requirement).
   for (p in specs) {
     if (isTRUE(p$required) && is.null(params[[p$name]]) && is.null(p$default)) {
       stop("Analysis '", entry$name, "': required parameter '", p$name,
            "' is missing.", call. = FALSE)
+    }
+    if (is.null(params[[p$name]]) && !is.null(p$default)) {
+      params[[p$name]] <- p$default
     }
   }
 
@@ -3101,8 +3823,11 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   for (pname in names(params)) {
     val <- params[[pname]]
     if (is.null(val)) next
-    # Length guard, same as the query path.
-    .validateString(as.character(val)[1])
+    if (length(val) != 1L || is.na(val)) {
+      stop("Analysis '", entry$name, "': parameter '", pname,
+           "' must be one non-missing scalar.", call. = FALSE)
+    }
+    .validateString(as.character(val))
 
     # Native r-in-session entries declare richer scalar types than the numeric-
     # only QueryLibrary path. An "enum"/"bool" param is validated by EXACT-MATCH
@@ -3130,12 +3855,132 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       } else cand
       next
     }
-    sanitized[[pname]] <- .sanitizeQueryParam(val, pname, inputs_df)
+    if (identical(ptype, "string")) {
+      # Free-form strings are never interpolated into SQL. The sole current
+      # string contract is an age-break list consumed by local R code.
+      cand <- trimws(as.character(val))
+      if (!identical(pname, "age_breaks") ||
+          !grepl("^[0-9]{1,3}(,[0-9]{1,3})*$", cand)) {
+        stop("Analysis '", entry$name, "': parameter '", pname,
+             "' is not an allowlisted string format.", call. = FALSE)
+      }
+      breaks <- as.integer(strsplit(cand, ",", fixed = TRUE)[[1]])
+      if (any(breaks < 5L | breaks > 120L) || any(diff(breaks) <= 0L) ||
+          length(breaks) + 1L > .omopDisclosureSettings()$nfilter_levels_max) {
+        stop("Analysis '", entry$name,
+             "': age_breaks must be strictly increasing values from 5 to 120 ",
+             "within the server level cap.", call. = FALSE)
+      }
+      sanitized[[pname]] <- paste(breaks, collapse = ",")
+      next
+    }
+
+    numeric <- suppressWarnings(as.numeric(val))
+    if (length(numeric) != 1L || is.na(numeric) || !is.finite(numeric)) {
+      stop("Analysis '", entry$name, "': parameter '", pname,
+           "' must be a finite number.", call. = FALSE)
+    }
+    if (ptype %in% c("int", "concept_id") && numeric != floor(numeric)) {
+      stop("Analysis '", entry$name, "': parameter '", pname,
+           "' must be an integer.", call. = FALSE)
+    }
+    if (identical(ptype, "concept_id") && numeric < 0) {
+      stop("Analysis '", entry$name, "': parameter '", pname,
+           "' must be a non-negative concept id.", call. = FALSE)
+    }
+    lower <- suppressWarnings(as.numeric(spec$min %||% -Inf))
+    upper <- suppressWarnings(as.numeric(spec$max %||% Inf))
+    if (grepl("(^|_)top_n($|_)", pname)) {
+      upper <- min(upper, as.numeric(getOption("dsomop.max_top_n", 500L)))
+      lower <- max(lower, 1)
+    }
+    if (grepl("(^|_)n_bins($|_)", pname)) {
+      upper <- min(upper, 200)
+      lower <- max(lower, 2)
+    }
+    if (numeric < lower || numeric > upper) {
+      stop("Analysis '", entry$name, "': parameter '", pname,
+           "' is outside its allowed range [", lower, ", ", upper, "].",
+           call. = FALSE)
+    }
+    sanitized[[pname]] <- if (ptype %in% c("int", "concept_id")) {
+      as.character(as.integer(numeric))
+    } else {
+      format(numeric, scientific = FALSE, trim = TRUE)
+    }
   }
   sanitized
 }
 
 # --- Scoping -----------------------------------------------------------------
+
+#' Count and bound all sources in an analysis scope
+#'
+#' Walks a possibly nested scope with an early-exit budget. This bounds cohort
+#' references as well as workspace tables, so a serialized list of thousands of
+#' cohort references cannot turn a small endpoint call into unbounded resolver
+#' work. The total-source budget is one greater than the controller's workspace-
+#' table ceiling; any mix of cohort references and tables must fit that budget,
+#' while tables also retain their separate tighter ceiling. Nesting is bounded
+#' by the same controller-owned depth limit used for filter trees.
+#'
+#' @param scope Analysis scope in any supported form.
+#' @param max_sources Maximum total leaf sources.
+#' @return Non-negative integer source count.
+#' @keywords internal
+.omopAnalysisScopeSourceCount <- function(
+    scope,
+    max_sources = .omopDisclosureSettings()$max_analysis_scope_tables + 1L) {
+  max_sources <- as.integer(max_sources)
+  max_depth <- as.integer(.omopDisclosureSettings()$max_filter_depth)
+  total <- 0L
+  walk <- function(node, depth) {
+    if (depth > max_depth) {
+      stop("Analysis scope nesting exceeds the server max_filter_depth cap of ",
+           max_depth, ".", call. = FALSE)
+    }
+    if (is.null(node)) return(invisible(NULL))
+    if (.is_omop.table(node) || is.data.frame(node) || !is.list(node)) {
+      total <<- total + 1L
+      if (total > max_sources) {
+        stop("Analysis scope exceeds the server total source cap of ",
+             max_sources, ".", call. = FALSE)
+      }
+      return(invisible(NULL))
+    }
+
+    # Reject an over-wide container before traversing it. Counting even NULL
+    # slots conservatively here prevents a huge serialized list from evading
+    # the work budget merely because its elements normalize away later.
+    if (length(node) > max_sources - total) {
+      stop("Analysis scope exceeds the server total source cap of ",
+           max_sources, ".", call. = FALSE)
+    }
+    for (source in node) walk(source, depth + 1L)
+    invisible(NULL)
+  }
+  walk(scope, 0L)
+  as.integer(total)
+}
+
+#' Count workspace tables in an analysis scope
+#'
+#' Counts only resolved \code{omop.table} frames, including frames nested in a
+#' plain list used for multi-source or two-population scoping. Cohort references
+#' are deliberately not counted because \code{scope$max_tables} is the catalog
+#' contract for workspace tables, not for server-side cohort references.
+#'
+#' @param scope Analysis scope in any supported form.
+#' @return Non-negative integer count of \code{omop.table} frames.
+#' @keywords internal
+.omopAnalysisScopeTableCount <- function(scope) {
+  if (is.null(scope)) return(0L)
+  if (.is_omop.table(scope)) return(1L)
+  if (is.list(scope) && !is.data.frame(scope)) {
+    return(sum(vapply(scope, .omopAnalysisScopeTableCount, integer(1))))
+  }
+  0L
+}
 
 #' Resolve the scope= argument to a single server-side cohort temp table
 #'
@@ -3192,9 +4037,12 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   scoped <- cohorts[[1]]
   if (length(cohorts) > 1) {
     for (k in 2:length(cohorts)) {
+      scope_name <- .reserveTempTableName(
+        handle,
+        paste0("dsomop_analysis_scope_", sample(100000:999999, 1))
+      )
       scoped <- .cohortCombine(handle, combine, scoped, cohorts[[k]],
-                               new_name = paste0("dsomop_analysis_scope_",
-                                                 sample(100000:999999, 1)))
+                               new_name = scope_name)
     }
   }
 
@@ -3387,10 +4235,28 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       # Cell-suppress the record count itself too (orthogonal small-cell control).
       df <- .suppressSmallCounts(df, count_cols)
     } else if (identical(adapter, "ohdsi")) {
-      # Reuse the OHDSI person gate verbatim (registry person columns; strict
-      # mode rejects a person-less count basis).
-      df <- .suppressSmallCounts(df, count_cols)
-      df <- .ohdsiPersonGate(df, entry$meta$tool_id, count_cols)
+      # A live vocabulary expansion is the one reviewed count-less OHDSI
+      # metadata contract. Keep the exception explicit and closed: no generic
+      # result-table metadata inherits it, the schema must match exactly, and
+      # the enumeration cap is re-asserted at the release gate.
+      if (isTRUE(entry$meta$public_vocabulary_metadata)) {
+        allowed <- c("concept_id", "concept_name", "domain_id",
+                     "vocabulary_id", "standard_concept", "is_excluded")
+        if (!setequal(names(df), allowed)) {
+          stop("Disclosive: reviewed vocabulary metadata schema mismatch.",
+               call. = FALSE)
+        }
+        if (nrow(df) > settings$nfilter_levels_max) {
+          stop("Disclosive: reviewed vocabulary metadata exceeds ",
+               "nfilter.levels.max.", call. = FALSE)
+        }
+      } else {
+        # Reuse the OHDSI person gate verbatim (registry person columns; strict
+        # mode rejects a person-less count basis).
+        df <- .suppressSmallCounts(df, count_cols)
+        df <- .ohdsiPersonGate(df, entry$meta$tool_id, count_cols,
+                               table_name = entry$meta$table_name)
+      }
     } else {
       # SQL record entry: gate on the declared sibling person-count column.
       person_col <- intersect(disc$person_id_col %||% character(0), names(df))
@@ -3409,35 +4275,74 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
   } else if (identical(unit, "dist")) {
     # Distribution rows: drop small-count rows, mask summary stats below
-    # nfilter_dist, and never release min/max. Achilles produces snake_case
-    # (min_value/avg_value/...); natively re-implemented OHDSI aggregate
-    # analyses produce camelCase (minValue/averageValue/...). Both spellings
-    # are handled here so the ONE gate covers either origin.
+    # nfilter_dist, and never release min/max. In addition to the explicit
+    # adapter contract, recognize conventional snake_case and camelCase names
+    # so external packs fail closed rather than leaking an undeclared statistic.
     if (length(count_cols) > 0) {
       df <- .suppressSmallCounts(df, count_cols)
     }
-    df <- df[, setdiff(names(df),
-                       grep("^min_value$|^max_value$|^minValue$|^maxValue$",
-                            names(df), ignore.case = TRUE, value = TRUE)),
-             drop = FALSE]
-    nfilter_dist <- settings$nfilter_dist %||% 10L
-    # snake_case (Achilles) summary stats, keyed on count_value.
-    mask_cols <- intersect(
-      c("avg_value", "stdev_value", "p10_value", "p25_value", "median_value",
-        "p75_value", "p90_value"),
-      names(df))
-    if (length(mask_cols) > 0 && "count_value" %in% names(df) && nrow(df) > 0) {
-      small <- !is.na(df$count_value) & df$count_value < nfilter_dist
-      df[small, mask_cols] <- NA_real_
-    }
-    # camelCase (native OHDSI aggregate) summary stats, keyed on countValue.
-    mask_cols_cc <- intersect(
-      c("averageValue", "standardDeviation", "medianValue", "p10Value",
-        "p25Value", "p75Value", "p90Value"),
-      names(df))
-    if (length(mask_cols_cc) > 0 && "countValue" %in% names(df) && nrow(df) > 0) {
-      small_cc <- !is.na(df$countValue) & df$countValue < nfilter_dist
-      df[small_cc, mask_cols_cc] <- NA_real_
+    if (nrow(df) > 0L) {
+      nms <- names(df)
+      conventional_extremes <- nms[
+        grepl("(^|_)(min|max)(_|$)", nms, ignore.case = TRUE, perl = TRUE) |
+          grepl("^(min|max)[A-Z]|[a-z0-9](Min|Max)$", nms, perl = TRUE)
+      ]
+      extreme_cols <- union(
+        intersect(disc$extreme_cols %||% character(0), nms),
+        conventional_extremes
+      )
+      if (length(extreme_cols) > 0L) {
+        df <- df[, setdiff(names(df), extreme_cols), drop = FALSE]
+      }
+
+      nms <- names(df)
+      conventional_stats <- nms[
+        grepl(paste0("(^|_)(avg|average|mean|sd|std|stdev|stddev|standard|",
+                     "standarddeviation|median|",
+                     "p[0-9]{1,3})(_|$)"), nms,
+              ignore.case = TRUE, perl = TRUE) |
+          grepl(paste0("^(avg|average|mean|sd|std|stdev|stddev|standard|",
+                       "standardDeviation|median|",
+                       "p[0-9]{1,3})[A-Z]"), nms, perl = TRUE)
+      ]
+      mask_cols <- union(
+        intersect(disc$summary_cols %||% character(0), nms),
+        conventional_stats
+      )
+      mask_cols <- setdiff(mask_cols, count_cols)
+
+      # Match every explicitly declared distribution basis. QueryLibrary
+      # statistics generally declare a record/value count AND n_persons: both
+      # must clear nfilter_dist because repeated longitudinal rows from a few
+      # people are not independent disclosure units. Third-party entries that
+      # do not declare a basis retain the conventional single-column fallback.
+      declared_basis <- disc$dist_count_col %||% character(0)
+      if (length(declared_basis) > 0L) {
+        basis_idx <- match(tolower(declared_basis), tolower(nms), nomatch = 0L)
+        basis_cols <- nms[basis_idx[basis_idx > 0L]]
+        basis_complete <- length(basis_cols) == length(unique(declared_basis))
+      } else {
+        fallback <- c("count_value", "countValue", "n_values", "n_records",
+                      "n_persons", count_cols)
+        basis_idx <- match(tolower(fallback), tolower(nms), nomatch = 0L)
+        basis_idx <- basis_idx[basis_idx > 0L]
+        basis_cols <- if (length(basis_idx) > 0L) nms[basis_idx[1]] else NULL
+        basis_complete <- length(basis_cols) > 0L
+      }
+
+      if (length(mask_cols) > 0L) {
+        if (!basis_complete || length(basis_cols) == 0L) {
+          df[, mask_cols] <- NA_real_
+        } else {
+          threshold <- settings$nfilter_dist %||% 10L
+          small <- rep(FALSE, nrow(df))
+          for (basis_col in basis_cols) {
+            basis <- suppressWarnings(as.numeric(df[[basis_col]]))
+            small <- small | is.na(basis) | basis < threshold
+          }
+          if (any(small)) df[small, mask_cols] <- NA_real_
+        }
+      }
     }
   }
 
@@ -3547,19 +4452,15 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
 # --- The single fail-closed run path -----------------------------------------
 
-#' Render + execute a SQL-entry, with optional person-scope injection
+#' Render QueryLibrary schema placeholders
 #'
-#' Mirrors \code{\link{.query_exec}}'s render path: substitute the standard
-#' schema placeholders, then substitute every \code{@param} with its sanitized
-#' literal, inject the scope predicate (if any), translate to the target
-#' dialect, and execute. Returns the RAW frame (the gate is applied by the
-#' caller).
+#' Replaces the standard \code{@cdm.}, \code{@vocab.}, and \code{@results.}
+#' prefixes with the configured schemas, or with bare table names for SQLite
+#' and schemaless connections.
 #'
 #' @param handle CDM handle.
-#' @param entry SQL catalog entry.
-#' @param sanitized Named list of sanitized param literals.
-#' @param scoped Character; scoped cohort temp table name, or NULL.
-#' @return Data frame (un-gated).
+#' @param sql Character; SQL template containing schema placeholders.
+#' @return Character; SQL with schema placeholders rendered.
 #' @keywords internal
 # Render @cdm./@vocab./@results. schema placeholders to qualified or (on SQLite /
 # no configured schema) BARE table names, mirroring .qualifyTable. Avoids the old
@@ -3594,7 +4495,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
                                                  entry$meta$inputs_df)
     }
   }
-  for (param_name in names(effective)) {
+  param_names <- names(effective)
+  param_names <- param_names[order(nchar(param_names), decreasing = TRUE)]
+  for (param_name in param_names) {
     sql <- gsub(paste0("@", param_name), effective[[param_name]], sql,
                 fixed = TRUE)
   }
@@ -3606,6 +4509,87 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
   sql <- .sql_translate(sql, handle$target_dialect)
   .executeQuery(handle, sql)
+}
+
+#' Finalize one analysis-catalog assign result
+#'
+#' Applies the existing minimum-person, sensitive-column, date-handling and
+#' pseudonymization controls to both SQL and R compute kinds. External packs are
+#' additionally checked against their closed output contract before and after
+#' sanitization.
+#'
+#' @param handle CDM handle.
+#' @param assigned Candidate assigned data frame.
+#' @param entry Catalog entry.
+#' @param assign_date_handling Date-handling policy.
+#' @return Sanitized server-side assignment result.
+#' @keywords internal
+.omopAnalysisFinalizeAssign <- function(handle, assigned, entry,
+                                        assign_date_handling = NULL) {
+  assigned <- .omopAnalysisExternalOutputFirewall(
+    assigned, entry, assign = TRUE, phase = "raw"
+  )
+  if (!is.data.frame(assigned) || !"person_id" %in% names(assigned)) {
+    stop("Assign loaders must return a data.frame with person_id for ",
+         "disclosure control.", call. = FALSE)
+  }
+  .assertMinPersons(n_persons = length(unique(
+    assigned$person_id[!is.na(assigned$person_id)]
+  )))
+
+  # Strip sensitive source/narrative fields even if a legacy native template
+  # lists one, and never retain exact birth components in a generic loader.
+  sensitive <- names(assigned)[vapply(names(assigned),
+                                      .detectSensitiveColumns, logical(1))]
+  assigned[intersect(names(assigned), c(
+    sensitive, "year_of_birth", "month_of_birth", "day_of_birth",
+    "birth_datetime"
+  ))] <- NULL
+
+  dh <- .normalizeDateHandling(assign_date_handling)
+  if (is.null(dh)) {
+    dh <- .normalizeDateHandling(
+      getOption("dsomop.default_date_handling", "remove")
+    )
+  }
+  if (identical(dh$mode, "absolute")) {
+    allow <- getOption("dsomop.allow_absolute_dates",
+      getOption("default.dsomop.allow_absolute_dates", FALSE))
+    if (!isTRUE(allow)) {
+      stop("Absolute date handling is not permitted by the server.",
+           call. = FALSE)
+    }
+  }
+  if (identical(dh$mode, "relative")) {
+    date_cols <- grep("_date$|_datetime$", names(assigned), value = TRUE)
+    if (length(date_cols) > 0L) {
+      parsed <- lapply(date_cols, function(col) as.Date(assigned[[col]]))
+      numeric_dates <- do.call(cbind, lapply(parsed, as.numeric))
+      row_first <- apply(numeric_dates, 1L, function(x) {
+        if (all(is.na(x))) NA_real_ else min(x, na.rm = TRUE)
+      })
+      person_first <- stats::ave(row_first, assigned$person_id, FUN = function(x) {
+        if (all(is.na(x))) rep(NA_real_, length(x)) else
+          rep(min(x, na.rm = TRUE), length(x))
+      })
+      assigned$dsomop_reference_date <- as.Date(person_first,
+                                                 origin = "1970-01-01")
+      assigned <- .applyDateHandling(
+        assigned, dh, index_date_col = "dsomop_reference_date"
+      )
+      assigned$dsomop_reference_date <- NULL
+    }
+  } else {
+    assigned <- .applyDateHandling(assigned, dh)
+  }
+  assigned <- .pseudonymizeIdentifiers(
+    assigned,
+    .personKey(handle),
+    pseudonymization = .personKeyPublicContract(handle)
+  )
+  .omopAnalysisExternalOutputFirewall(
+    assigned, entry, assign = TRUE, phase = "final"
+  )
 }
 
 #' THE single fail-closed run path for catalog analyses
@@ -3627,13 +4611,20 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #' @param scope Scope argument (see \code{\link{.omopAnalysisResolveScope}}).
 #' @param combine Character; fold operator when scope has multiple sources.
 #' @param assign Logical; TRUE for the assign run path (QueryLibrary mode=="assign"
-#'   loaders) — returns the server-side assignment result un-gated (data stays on
-#'   the server), FALSE (default) for the gated aggregate path.
+#'   loaders), FALSE (default) for the gated aggregate path.
+#' @param assign_date_handling Date-handling policy for assign loaders. Defaults
+#'   to the server's safe policy (normally \code{"remove"}).
 #' @return For aggregate: a disclosure-controlled data frame. For assign: the
 #'   server-side assignment result.
 #' @keywords internal
 .omopAnalysisRun <- function(handle, name, params = list(), scope = NULL,
-                             combine = "union", assign = FALSE) {
+                             combine = "union", assign = FALSE,
+                             assign_date_handling = NULL) {
+  temp_tables_before <- unique(handle$temp_tables %||% character(0))
+  on.exit(
+    .dropTempTablesCreatedSince(handle, temp_tables_before),
+    add = TRUE
+  )
   entry <- .omopAnalysisResolve(handle, name)
 
   # Mode admission: the aggregate path refuses assign-only entries and vice versa.
@@ -3648,6 +4639,31 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   sanitized <- .omopAnalysisSanitizeParams(entry, params)
 
   kind <- entry$compute$kind %||% "sql"
+
+  # Workspace frames are an explicit, bounded catalog capability. Enforce the
+  # controller-wide ceiling as well as the entry's tighter max_tables contract
+  # before materialising any temporary cohort. This is also a defence-in-depth
+  # check for direct/internal calls that bypass the DataSHIELD wrapper.
+  global_scope_table_max <- as.integer(
+    .omopDisclosureSettings()$max_analysis_scope_tables
+  )
+  .omopAnalysisScopeSourceCount(
+    scope, max_sources = global_scope_table_max + 1L
+  )
+  scope_table_count <- .omopAnalysisScopeTableCount(scope)
+  if (scope_table_count > global_scope_table_max) {
+    stop("Analysis scope exceeds the server max_analysis_scope_tables cap of ",
+         global_scope_table_max, ".", call. = FALSE)
+  }
+  if (scope_table_count > 0L && !isTRUE(entry$scope$accepts_tables)) {
+    stop("Analysis '", name,
+         "' does not accept workspace table scope(s).", call. = FALSE)
+  }
+  entry_scope_table_max <- as.integer(entry$scope$max_tables %||% 0L)
+  if (scope_table_count > entry_scope_table_max) {
+    stop("Analysis '", name, "' permits at most ", entry_scope_table_max,
+         " workspace table scope(s).", call. = FALSE)
+  }
 
   # Scope resolution + applicability. Reject BEFORE resolving/running anything
   # so a non-scopable entry never emits broken SQL — the failure is a clear,
@@ -3705,13 +4721,18 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
                                                      entry$meta$inputs_df)
         }
       }
-      for (param_name in names(effective)) {
+      param_names <- names(effective)
+      param_names <- param_names[order(nchar(param_names), decreasing = TRUE)]
+      for (param_name in param_names) {
         sql <- gsub(paste0("@", param_name), effective[[param_name]], sql,
                     fixed = TRUE)
       }
       sql <- .omopAnalysisInjectCohort(sql, scoped, entry$meta$scope_column)
       sql <- .sql_translate(sql, handle$target_dialect)
-      return(.executeQuery(handle, sql))
+      assigned <- .executeQuery(handle, sql)
+      return(.omopAnalysisFinalizeAssign(
+        handle, assigned, entry, assign_date_handling
+      ))
     }
     df <- .omopAnalysisRunSql(handle, entry, sanitized, scoped)
   } else {
@@ -3719,8 +4740,10 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     # identifiers the pre-computed wrappers need AND — the load-bearing addition
     # for natively re-implemented aggregate analyses — the resolved scope.
     #
-    # compute$fn contract: function(handle, ctx, params) -> an AGGREGATE-ONLY
-    # data.frame (counts/rates/summary stats), NEVER a person key. The fn MUST
+    # Aggregate compute$fn contract: function(handle, ctx, params) -> an
+    # aggregate-only data.frame (counts/rates/summary stats), never a person
+    # key. External assign-mode R functions are permitted only under their
+    # closed row-level output contract and common assign finalizer. The fn MUST
     # honour the scope it is handed:
     #   * ctx$scoped_cohort  : a single re-gated cohort temp-table name, or NULL
     #     for a cohort-wide run. When non-NULL, restrict the population by an
@@ -3750,8 +4773,15 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   }
 
   if (assign) {
-    # An R-kind assign entry is not a thing today; return as-is for safety.
-    return(df)
+    return(.omopAnalysisFinalizeAssign(
+      handle, df, entry, assign_date_handling
+    ))
   }
-  .omopAnalysisGate(handle, df, entry)
+  df <- .omopAnalysisExternalOutputFirewall(
+    df, entry, assign = FALSE, phase = "raw"
+  )
+  df <- .omopAnalysisGate(handle, df, entry)
+  .omopAnalysisExternalOutputFirewall(
+    df, entry, assign = FALSE, phase = "final"
+  )
 }

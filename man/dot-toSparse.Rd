@@ -2,21 +2,33 @@
 % Please edit documentation in R/extraction.R
 \name{.toSparse}
 \alias{.toSparse}
-\title{Transform event data to FeatureExtraction-compatible sparse format}
+\title{Transform event data to FeatureExtraction-style sparse format}
 \usage{
-.toSparse(df, table)
+.toSparse(df, table, person_ids = NULL, roster = NULL, grain = "person")
 }
 \arguments{
 \item{df}{Data frame in long format}
 
 \item{table}{Character; source table name}
+
+\item{person_ids}{Optional complete person roster for person grain. People
+without qualifying events remain in \code{personRef} and have implicit
+zero covariates.}
+
+\item{roster}{Optional episode roster with \code{cohort_row_id} and
+\code{person_id}.}
+
+\item{grain}{Aggregation unit, \code{"person"} or \code{"episode"}.}
 }
 \value{
-Named list with \code{covariates} and \code{covariateRef}
+Named list with \code{covariates}, \code{covariateRef}, and
+  \code{personRef}
 }
 \description{
-Produces a named list with \code{covariates} (sparse triplet) and
-\code{covariateRef} (reference table). CovariateId scheme:
+Produces a named list with \code{covariates} (sparse triplet),
+\code{covariateRef} (reference table), and \code{personRef} (the complete
+row-to-person roster). This is a dsOMOP output shape, not an OHDSI
+FeatureExtraction CovariateData object. CovariateId scheme:
 \code{conceptId * 1000 + analysisId} where analysisId 1=binary,
 2=count, 3=mean, 4=min, 5=max.
 }

@@ -19,7 +19,8 @@
 
 \item{table_name}{Character; table to query (validated via .validateIdentifier)}
 
-\item{columns}{Character vector; columns to SELECT (NULL = all except sensitive)}
+\item{columns}{Character vector; reviewed columns to SELECT (NULL = every
+public column in the table contract).}
 
 \item{filters}{Named list; WHERE conditions (name = column, value = filter value)}
 
@@ -30,7 +31,9 @@
 \item{tool_id}{Character; optional tool_id for registry lookup}
 }
 \value{
-data.frame with disclosure control applied
+A disclosure-controlled data frame in strict mode. In non-strict
+  administrator/development mode the frame is marked with
+  \code{dsomop.disclosure_safe = FALSE}.
 }
 \description{
 Query an OHDSI result table

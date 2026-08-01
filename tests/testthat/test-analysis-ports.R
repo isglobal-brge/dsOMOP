@@ -28,7 +28,8 @@
 # A keyed handle with the catalog pre-built (mirrors test-analysis-catalog.R).
 ports_handle <- function(n_persons = 40) {
   h <- create_test_handle(n_persons = n_persons)
-  h$person_key <- as.raw(1:16)
+  .setLegacyTestPersonKey(h, "analysis-ports",
+                          .local_envir = parent.frame())
   .buildBlueprint(h)
   suppressWarnings(.omopAnalysisRegistry(h))
   h
@@ -133,6 +134,7 @@ test_that("(b) dist diagnostics return a single summarised row (>= nfilter_dist)
     "CREATE TEMP TABLE dsomop_ports_dist AS ",
     "SELECT person_id AS subject_id, '2020-01-01' AS cohort_start_date, ",
     "'2024-12-31' AS cohort_end_date FROM person"))
+  register_test_temp(h, "dsomop_ports_dist")
   withr::with_options(ports_opts(dist = 10), {
     td <- .omopAnalysisRun(h, "dsomop:cohortdx.time_distribution",
                            params = list(metric = "time_in_cohort"),
@@ -186,6 +188,7 @@ test_that("(c) incidence.rate recomputes rate/proportion from BANDED counts", {
     "CREATE TEMP TABLE dsomop_ports_inc AS ",
     "SELECT person_id AS subject_id, '2020-01-01' AS cohort_start_date, ",
     "'2024-12-31' AS cohort_end_date FROM person"))
+  register_test_temp(h, "dsomop_ports_inc")
   for (pid in 1:25) {
     DBI::dbExecute(h$conn, sprintf(paste0(
       "INSERT INTO condition_occurrence (condition_occurrence_id, person_id, ",
@@ -216,6 +219,7 @@ test_that("(c) incidence.rate suppresses a sub-band stratum but keeps a big one"
     "CREATE TEMP TABLE dsomop_ports_inc2 AS ",
     "SELECT person_id AS subject_id, '2020-01-01' AS cohort_start_date, ",
     "'2024-12-31' AS cohort_end_date FROM person"))
+  register_test_temp(h, "dsomop_ports_inc2")
   # Persons 1..30 are MALE (8507), 31..40 FEMALE (8532) per the fixture parity
   # rule? No -- fixture alternates gender. Instead drive the split via outcomes:
   # give MALE-heavy outcomes by selecting persons whose gender we read back.
@@ -284,6 +288,7 @@ test_that("(c) visit_context drops a sub-threshold visit-concept stratum", {
     "CREATE TEMP TABLE dsomop_ports_vc AS ",
     "SELECT person_id AS subject_id, '2020-01-01' AS cohort_start_date, ",
     "'2024-12-31' AS cohort_end_date FROM person"))
+  register_test_temp(h, "dsomop_ports_vc")
   DBI::dbExecute(h$conn, paste0(
     "INSERT INTO concept (concept_id, concept_name, domain_id, vocabulary_id, ",
     "concept_class_id, concept_code, valid_start_date, valid_end_date) VALUES ",
@@ -325,6 +330,7 @@ test_that("(c) time_to_event bins survive only with >= nfilter persons", {
     "CREATE TEMP TABLE dsomop_ports_tte AS ",
     "SELECT person_id AS subject_id, '2020-01-01' AS cohort_start_date, ",
     "'2024-12-31' AS cohort_end_date FROM person"))
+  register_test_temp(h, "dsomop_ports_tte")
   # 12 persons get the MI outcome ~30 days after index (one 30-day bin -> 12
   # persons survive); 2 persons get it ~400 days out (that bin -> dropped).
   cid <- 4000L
@@ -384,6 +390,7 @@ test_that("(d) a fn-level person self-gate blocks a tiny hand-built cohort", {
     "CREATE TEMP TABLE dsomop_ports_tiny AS ",
     "SELECT person_id AS subject_id, '2020-01-01' AS cohort_start_date, ",
     "'2024-12-31' AS cohort_end_date FROM person WHERE person_id IN (1, 2)"))
+  register_test_temp(h, "dsomop_ports_tiny")
   withr::with_options(ports_opts(), {
     for (id in DIAG_IDS) {
       params <- if (id %in% c("dsomop:incidence.rate",
@@ -436,19 +443,23 @@ test_that("(e) an unknown enum value is rejected by the sanitizer", {
   })
 })
 
-# --- Robustness: cohort without cohort_end_date (TAR fallback) ---------------
+# --- Robustness: synthesized cohort ends and legacy TAR fallback -------------
 
-test_that("TAR diagnostics tolerate a cohort lacking cohort_end_date", {
-  # A cohort materialised from a source table with no _end_date column (here:
-  # measurement) carries only subject_id + cohort_start_date. The TAR-based
-  # diagnostics must resolve the end column (.omopCohortEndDateCol) and fall back
-  # to cohort_start_date rather than emit 'no such column: cohort_end_date'.
+test_that("TAR diagnostics use synthesized cohort ends for point events", {
+  # Cohorts materialised from point-event tables now synthesize end == start.
+  # This gives every internal cohort the canonical OHDSI four-column shape and
+  # keeps downstream episode handling uniform.
   h <- ports_handle()
   on.exit(cleanup_handle(h))
   withr::with_options(ports_opts(dist = 10), {
     ctm <- .cohortCreate(h, list(type = "measurement", concept_set = c(3025315)),
                          mode = "temporary", cohort_id = 5)
-    expect_false("cohort_end_date" %in% DBI::dbListFields(h$conn, ctm))
+    expect_true("cohort_end_date" %in% DBI::dbListFields(h$conn, ctm))
+    point_eras <- DBI::dbGetQuery(
+      h$conn,
+      paste0("SELECT cohort_start_date, cohort_end_date FROM ", ctm)
+    )
+    expect_equal(point_eras$cohort_end_date, point_eras$cohort_start_date)
 
     # None of these should raise a SQL 'no such column' error.
     expect_error(
@@ -473,8 +484,13 @@ test_that("the .omopCohortEndDateCol probe resolves present vs absent end date",
   on.exit(cleanup_handle(h))
   withr::with_options(ports_opts(), {
     ctc <- ports_diabetes_cohort(h)                       # has end date
-    ctm <- .cohortCreate(h, list(type = "measurement", concept_set = c(3025315)),
-                         mode = "temporary", cohort_id = 6)  # no end date
+    ctm <- "tmp_legacy_cohort_no_end"
+    DBI::dbExecute(h$conn, paste0(
+      "CREATE TEMP TABLE ", ctm, " AS ",
+      "SELECT person_id AS subject_id, measurement_date AS cohort_start_date ",
+      "FROM measurement"
+    ))
+    register_test_temp(h, ctm)
     expect_equal(.omopCohortEndDateCol(h, ctc), "cohort_end_date")
     expect_equal(.omopCohortEndDateCol(h, ctm), "cohort_start_date")
   })

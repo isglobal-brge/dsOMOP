@@ -19,14 +19,18 @@
 # Build an omop.table exactly as the assign path does: run a plain data.frame
 # through .pseudonymizeIdentifiers so it carries the omop.table class +
 # dsomop_protected attribute and a per-session token-keyed person_id.
-.mk_omop.table <- function(df, salt = as.raw(1:16)) {
-  dsOMOP:::.pseudonymizeIdentifiers(df, salt)
+.mk_omop.table <- function(df, salt = .testPseudonymKey(), epoch = 1L) {
+  dsOMOP:::.pseudonymizeIdentifiers(
+    df, salt,
+    pseudonymization = .testPublicPseudonymization(salt, epoch = epoch)
+  )
 }
 
-.mk_persons <- function(n, extra = NULL, salt = as.raw(1:16)) {
+.mk_persons <- function(n, extra = NULL, salt = .testPseudonymKey(),
+                        epoch = 1L) {
   df <- data.frame(person_id = seq_len(n), stringsAsFactors = FALSE)
   if (!is.null(extra)) df <- cbind(df, extra)
-  .mk_omop.table(df, salt = salt)
+  .mk_omop.table(df, salt = salt, epoch = epoch)
 }
 
 # ------------------------------------------------------------------------------
@@ -90,24 +94,26 @@ test_that("omopMergeDS rejects a non-person-key join column", {
 })
 
 test_that("omopFilterDS filters rows and stays an omop.table", {
-  x <- .mk_persons(10, extra = data.frame(age = c(20:28, 80)))
+  x <- .mk_persons(10, extra = data.frame(
+    sex = rep(c("M", "F"), each = 5), stringsAsFactors = FALSE
+  ))
 
   withr::with_options(list(nfilter.subset = 3), {
-    res <- omopFilterDS(x, var = "age", op = ">=", value = 22)
+    res <- omopFilterDS(x, var = "sex", op = "==", value = "F")
   })
   expect_s3_class(res, "omop.table")
   expect_s3_class(res, "data.frame")
-  expect_equal(nrow(res), 8L)             # ages 22..28 and 80
-  expect_true(all(res$age >= 22))
+  expect_equal(nrow(res), 5L)
+  expect_true(all(res$sex == "F"))
   expect_true("person_id" %in% attr(res, "dsomop_protected"))
 })
 
 test_that("omopFilterDS supports 'in' on a vector value", {
-  x <- .mk_persons(6, extra = data.frame(sex = c("M","F","M","F","M","F")))
+  x <- .mk_persons(10, extra = data.frame(sex = rep(c("M", "F"), 5)))
   withr::with_options(list(nfilter.subset = 3), {
     res <- omopFilterDS(x, var = "sex", op = "in", value = c("M", "F"))
   })
-  expect_equal(nrow(res), 6L)
+  expect_equal(nrow(res), 10L)
 })
 
 test_that("omopFilterDS rejects filtering on a protected/identifier column", {
@@ -149,16 +155,61 @@ test_that("omopBindRowsDS rejects mismatched column names", {
   })
 })
 
+test_that("omop.table verbs preserve and enforce pseudonym contracts", {
+  key <- .testPseudonymKey("contract-a")
+  x <- .mk_persons(
+    10L, extra = data.frame(group = rep(c("a", "b"), each = 5L)),
+    salt = key, epoch = 4L
+  )
+  y <- .mk_persons(10L, extra = data.frame(value = seq_len(10L)),
+                   salt = key, epoch = 4L)
+  expected <- attr(x, "dsomop_pseudonymization", exact = TRUE)
+
+  withr::with_options(list(nfilter.subset = 3), {
+    selected <- omopSelectDS(x, "group")
+    filtered <- omopFilterDS(x, "group", "==", "a")
+    merged <- omopMergeDS(x, y)
+    bound <- omopBindRowsDS(x, x)
+  })
+  for (result in list(selected, filtered, merged, bound)) {
+    expect_identical(
+      attr(result, "dsomop_pseudonymization", exact = TRUE), expected
+    )
+  }
+
+  missing <- x
+  attr(missing, "dsomop_pseudonymization") <- NULL
+  expect_error(omopSelectDS(missing, "group"), "recreate the omop.table")
+
+  other_key <- .mk_persons(10L, salt = .testPseudonymKey("contract-b"))
+  expect_error(omopMergeDS(x, other_key), "incompatible pseudonymization")
+  expect_error(omopBindRowsDS(x, other_key), "incompatible pseudonymization")
+
+  other_epoch <- .mk_persons(10L, salt = key, epoch = 5L)
+  expect_error(omopMergeDS(x, other_epoch), "incompatible pseudonymization")
+  expect_error(omopBindRowsDS(x, other_epoch),
+               "incompatible pseudonymization")
+})
+
 # ------------------------------------------------------------------------------
 # (c) fail-closed: result below nfilter.subset distinct persons -> error
 # ------------------------------------------------------------------------------
 
 test_that("omopFilterDS fails closed when the filter isolates too few persons", {
-  x <- .mk_persons(10, extra = data.frame(age = c(20:28, 80)))
+  x <- .mk_persons(10, extra = data.frame(
+    grp = c(rep("common", 9), "rare"), stringsAsFactors = FALSE
+  ))
   withr::with_options(list(nfilter.subset = 3), {
-    # age >= 80 matches exactly one person -> blocked, never returns
-    expect_error(omopFilterDS(x, var = "age", op = ">=", value = 80),
+    expect_error(omopFilterDS(x, var = "grp", op = "==", value = "rare"),
                  "Disclosive")
+  })
+})
+
+test_that("omopFilterDS rejects arbitrary numeric thresholds", {
+  x <- .mk_persons(10, extra = data.frame(age = 20:29))
+  withr::with_options(list(nfilter.subset = 3), {
+    expect_error(omopFilterDS(x, var = "age", op = "in", value = 22),
+                 "numeric/date thresholds")
   })
 })
 

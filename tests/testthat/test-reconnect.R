@@ -82,7 +82,9 @@ make_reconnect_handle <- function(n_persons = 15) {
   handle$config          <- list()
   handle$blueprint       <- NULL
   handle$temp_tables     <- character(0)
-  handle$person_key      <- as.raw(1:16)
+  handle$temp_connection <- NULL
+  .setLegacyTestPersonKey(handle, "reconnect",
+                          .local_envir = parent.frame())
   # Close the connection + delete the temp DB when the calling test finishes.
   withr::defer({
     fk$rc$close()
@@ -246,6 +248,56 @@ test_that("(d) .isMissingObjectError detects vanished objects, not connection lo
   expect_false(mo(simpleError("server closed the connection unexpectedly")))
 })
 
+test_that("(d) reconnect cleanup never drops a persistent homonym", {
+  h <- make_reconnect_handle(15)
+  old_conn <- h$state$conn
+  h$handle$temp_tables <- "person"
+  h$handle$temp_connection <- old_conn
+
+  DBI::dbDisconnect(old_conn)
+  dsOMOP:::.dropTempTable(h$handle, "person")
+
+  conn <- dsOMOP:::.conn(h$handle)
+  expect_true(DBI::dbExistsTable(conn, "person"))
+  expect_equal(DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM person")$n,
+               15)
+  expect_length(h$handle$temp_tables, 0L)
+})
+
+test_that("(d) reconnect during CREATE retains only new-session temp ownership", {
+  h <- make_reconnect_handle(15)
+  old_conn <- h$state$conn
+  DBI::dbExecute(old_conn, "CREATE TABLE tracked_old (value INTEGER)")
+  h$handle$temp_tables <- "tracked_old"
+  h$handle$temp_connection <- old_conn
+
+  local_mocked_bindings(
+    .withDbReconnect = function(handle, fn) {
+      DBI::dbDisconnect(old_conn)
+      new_conn <- DBI::dbConnect(RSQLite::SQLite(), h$state$path)
+      h$state$conn <- new_conn
+      handle$conn <- new_conn
+      fn(new_conn)
+    },
+    .package = "dsOMOP"
+  )
+
+  expect_identical(
+    .createTempTable(h$handle, "created_after_reconnect", "SELECT 1 AS value"),
+    "created_after_reconnect"
+  )
+  expect_identical(h$handle$temp_tables, "created_after_reconnect")
+  expect_identical(h$handle$temp_connection, h$state$conn)
+
+  # A name registered on the dead session can no longer authorize a DROP of the
+  # persistent homonym visible on the replacement connection.
+  .dropTempTable(h$handle, "tracked_old")
+  expect_true(DBI::dbExistsTable(h$state$conn, "tracked_old"))
+  expect_equal(DBI::dbGetQuery(
+    h$state$conn, "SELECT COUNT(*) AS n FROM tracked_old"
+  )$n, 0L)
+})
+
 # --- (e) STABLE KEY: tokens identical before and after a reconnect -------------
 
 test_that("(e) person tokens are identical before and after a reconnect", {
@@ -274,8 +326,13 @@ test_that("(e) person tokens are identical before and after a reconnect", {
 test_that("(e) a fresh handle for the same resource re-derives the same key", {
   # A brand-new handle (e.g. after a full reconnect) re-resolves the key from a
   # stable source (R option) and reproduces identical tokens for the same ids.
-  withr::local_options(list(dsomop.pseudonym_key = "00112233445566778899aabbccddeeff"))
-  withr::local_envvar(c(DSOMOP_PSEUDONYM_KEY = ""))
+  withr::local_options(list(dsomop.pseudonym_key = paste0(
+    "00112233445566778899aabbccddeeff", "00112233445566778899aabbccddeeff"),
+    dsomop.allow_legacy_global_pseudonyms = TRUE))
+  withr::local_envvar(c(
+    DSOMOP_PSEUDONYM_ROOT = "",
+    DSOMOP_PSEUDONYM_KEY = ""
+  ))
   rc <- list(
     getResource = function() list(url = "datashield://siteX/omop", name = NULL),
     getParsed   = function() list(server = "siteX")

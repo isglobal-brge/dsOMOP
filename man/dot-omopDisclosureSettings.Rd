@@ -33,8 +33,16 @@ direct option -> \code{default.*} prefix -> hardcoded fallback.
     user-supplied parameters. Limits SQL injection surface.}
   \item{\code{nfilter_stringShort} (default 20)}{Short string limit for
     identifiers and labels.}
-  \item{\code{nfilter_noise} (default 0.25)}{Noise fraction (reserved for
-    future differential privacy features).}
+  \item{\code{nfilter_noise} (default 0.25)}{DataSHIELD minimum Gaussian
+    plot-noise variance fraction used by selected plotting methods. dsOMOP
+    reports this server-owned value, but does not reinterpret it as
+    epsilon/delta, a generic DP budget, replay-stable noise, or permission to
+    add noise to arbitrary query results.}
+  \item{\code{formal_dp_enabled}, \code{sticky_noise_enabled},
+    \code{privacy_ledger_enabled}}{Explicit capability flags. They are
+    currently all \code{FALSE}: suppression/banding and the
+    \code{nfilter.noise} plot-noise variance floor are not a formal DP
+    accountant.}
 }
 }
 
@@ -44,7 +52,7 @@ direct option -> \code{default.*} prefix -> hardcoded fallback.
   \item{\code{query_strict} (default TRUE)}{When TRUE, only pre-approved
     queries on the allowlist can execute. When FALSE, queries are
     classified on-the-fly (less safe, for development only). Server
-    option only — cannot be overridden by client.}
+    option only - cannot be overridden by client.}
   \item{\code{nfilter_dist} (default 10)}{Minimum sample size for safe
     percentile/quantile estimation. With fewer values, even clamped
     percentiles (p05/p95) can approximate min/max, leaking extreme
@@ -52,9 +60,50 @@ direct option -> \code{default.*} prefix -> hardcoded fallback.
   \item{\code{nfilter_band} (default 5)}{Band width for count banding. Every
     person/record count returned to the client is floored to a multiple of
     this width (after the small-cell suppression gate) so that an exact
-    supra-threshold count is never released. This destroys the 1-person
-    resolution that differencing attacks exploit (e.g. a 50 -> 47 funnel
-    delta both report as 45). See \code{\link{.bandCount}}.}
+    supra-threshold count is never released. This reduces one-person
+    differencing resolution (e.g. a 49 -> 47 funnel delta reports 45 for
+    both), but crossing a band boundary can still change the release;
+    banding is not a formal privacy accountant. See
+    \code{\link{.bandCount}}.}
+  \item{\code{nfilter_age_range} (default 5)}{Minimum inclusive width, in
+    years, accepted for age-range and closed age-group filters while
+    disclosure filtering is enabled. Controlled by
+    \code{dsomop.nfilter.age_range}.}
+  \item{\code{nfilter_date_range} (default 30)}{Minimum inclusive width, in
+    calendar days, accepted for bounded date filters while disclosure
+    filtering is enabled. Controlled by
+    \code{dsomop.nfilter.date_range}.}
+  \item{\code{max_feature_specs} (default 1000),
+    \code{max_pivot_concepts} (default 1000),
+    \code{max_output_columns} (default 5000),
+    \code{max_temporal_bins} (default 10000),
+    \code{max_filter_depth} (default 32),
+    \code{max_filter_nodes} (default 1024),
+    \code{max_filter_values} (default 10000), and
+    \code{max_plan_outputs} (default 100)}{Controller-owned operational
+    limits for in-memory longitudinal reshaping. They prevent a row-bounded
+    request from causing an unbounded feature, wide, sparse, temporal, filter
+    tree, or multi-output expansion. In a federation the client negotiates
+    the smallest limit advertised by every server.}
+  \item{\code{max_analysis_scope_tables} (default 8)}{Maximum number of
+    server-resolved workspace \code{omop.table} objects accepted by one
+    unified analysis request. Each catalog entry may declare a smaller
+    \code{scope$max_tables} limit. The total mix of cohort references and
+    tables is additionally capped at this value plus one.}
+  \item{\code{max_temp_tables_per_handle} (default 256)}{Maximum number of
+    session-scoped database objects one OMOP handle may own concurrently.}
+  \item{\code{age_breaks}}{Public, data-independent lower bounds for age
+    groups. The final bound starts the open-ended top group. Defaults to a
+    regular grid at least as wide as \code{nfilter_age_range}; controllers
+    can set \code{dsomop.age_breaks}. Client age groups must be exact unions
+    of this grid.}
+  \item{\code{harmonization_contract_version}, \code{age_semantics},
+    \code{date_semantics}, \code{date_granularity},
+    \code{datetime_timezone}, \code{week_start}}{Versioned metadata used by
+    dsOMOPClient to negotiate one federated policy and reject incompatible
+    nodes. Datetime-to-date conversion uses the controller-owned
+    \code{dsomop.datetime_timezone} option (default \code{"UTC"}); calendar
+    weeks start on Monday.}
 }
 }
 

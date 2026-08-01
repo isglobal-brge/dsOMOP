@@ -23,12 +23,30 @@
 \item{concept_id}{Integer or NULL; concept filter}
 
 \item{n_bins}{Integer; target number of bins (default 10)}
+
+\item{concept_col}{Character or NULL; reviewed concept column used to scope
+`concept_id`. The table's domain concept column is used by default.}
 }
 \value{
-List with breaks (numeric vector) and counts (integer vector)
+List with public breaks, banded person counts, the session scope
+  contract, and public grid/clipping metadata.
 }
 \description{
-Returns quantile-based bin edges that can be safely used as filter
-thresholds. Each bin is guaranteed to contain >= nfilter.tab persons.
+Returns a public, server-configured grid over one mean value per person.
+Contributions outside its declared range are winsorized to the nearest
+endpoint. No edge is estimated from protected values. The complete grid is
+released only when every bin contains at least \code{nfilter.tab} persons;
+counts are banded only after that exact internal gate.
 }
+\section{Server configuration}{
+
+`dsomop.safe_numeric_grids` must contain an exact entry for the requested
+table, column, concept scope and number of bins. Its range and breaks must be
+fixed from public clinical knowledge or governance policy before inspecting
+the protected data. Configuring observed minima, maxima or quantiles as a
+supposedly public grid would defeat this contract. Winsorization bounds each
+person's contribution for bin support; it does not modify the source table.
+Count banding and `nfilter.noise` are not claimed as differential privacy.
+}
+
 \keyword{internal}

@@ -117,7 +117,8 @@
 #' Same month key \code{.achillesCompanionPersonCounts} (achilles_gating.R:134)
 #' built for its precomputed-companion counts, so a live monthly record cell is
 #' keyed identically to the historical stratum_1 storage. PostgreSQL/duckdb use
-#' \code{EXTRACT(YEAR)*100 + EXTRACT(MONTH)}; SQLite uses \code{strftime('%Y%m')}.
+#' \code{EXTRACT(YEAR)*100 + EXTRACT(MONTH)}; SQLite uses a year-month
+#' \code{strftime} expression.
 #'
 #' @param handle CDM handle (selects the dialect).
 #' @param date_expr Character; SQL date expression for the event date.

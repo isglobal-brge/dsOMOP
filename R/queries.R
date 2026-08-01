@@ -233,6 +233,22 @@
     }
   }
 
+  # Exact birth components are never admitted by the heuristic fallback. A
+  # reviewed allowlist contract may still authorize a redesigned aggregate,
+  # but unreviewed SQL that touches these quasi-identifiers fails closed.
+  birth_detail_cols <- c("year_of_birth", "month_of_birth", "day_of_birth",
+                         "birth_datetime")
+  for (birth_col in birth_detail_cols) {
+    if (grepl(paste0("\\b", birth_col, "\\b"), sql_lower)) {
+      return(list(
+        class = "BLOCKED",
+        reason = paste0("uses exact birth component: ", birth_col),
+        sensitive_fields_detected = birth_col,
+        poolable = FALSE
+      ))
+    }
+  }
+
   # Free-text fields
   freetext_cols <- c("note_text", "note_source_value", "value_source_value",
                      "stop_reason", "sig", "route_source_value")
@@ -330,8 +346,8 @@
   # --- SAFE_ASSIGN ---
   if (declared_mode == "assign") {
     return(list(
-      class = "SAFE_ASSIGN",
-      reason = "assign mode (data stays server-side)",
+      class = "BLOCKED",
+      reason = "assign loaders require an explicit reviewed allowlist contract",
       sensitive_fields_detected = sensitive_detected,
       poolable = FALSE
     ))
@@ -348,8 +364,8 @@
   }
 
   list(
-    class = "SAFE_ASSIGN",
-    reason = "default classification for non-aggregate mode",
+    class = "BLOCKED",
+    reason = "query has no reviewed aggregate or assign contract",
     sensitive_fields_detected = sensitive_detected,
     poolable = FALSE
   )

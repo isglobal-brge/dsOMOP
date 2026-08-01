@@ -14,7 +14,8 @@ Invisible NULL (called for side effect).
 }
 \description{
 Closes the database connection associated with the handle and removes it
-from the dsOMOP session environment. No-op if no handle exists for the
-given symbol.
+from the calling DataSHIELD session environment. The package-global fallback
+is retained for internal/test handles. No-op if no handle exists for the
+given symbol, making disconnect retries safe.
 }
 \keyword{internal}

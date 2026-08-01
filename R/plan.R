@@ -1,22 +1,91 @@
 # Module: Extraction Plan
 # Plan construction, validation, preview, and execution for multi-table extractions.
 
-#' Materialize a concept set as a temp table (for large sets)
+#' Output types that require a resolved cohort table
 #'
-#' @param handle CDM handle
-#' @param concept_ids Integer vector; concept IDs
-#' @return Character; temp table name, or NULL if inline is fine
+#' @return Character vector of cohort-dependent output types.
 #' @keywords internal
-.materializeConceptSet <- function(handle, concept_ids) {
-  if (is.null(concept_ids) || length(concept_ids) <= 50) return(NULL)
+.planCohortOutputTypes <- function() {
+  c(
+    "baseline", "survival", "cohort_membership", "intervals_long",
+    "temporal_covariates", "person_period"
+  )
+}
 
-  temp_name <- paste0("dsomop_cs_",
-                       paste0(sample(c(0:9, letters[1:6]), 8, TRUE),
-                              collapse = ""))
-  ids_str <- paste(as.integer(concept_ids), collapse = " UNION ALL SELECT ")
-  sql <- paste0("SELECT ", ids_str, " AS concept_id")
-  .createTempTable(handle, temp_name, sql)
-  temp_name
+#' Detect cohort-dependent outputs with no declared cohort-producing source
+#'
+#' This is a structural preflight only. Execution performs a second check after
+#' scopes and populations have been resolved, because preview/validation must
+#' not materialize cohorts merely to prove that a declaration produces rows.
+#'
+#' @param plan Extraction plan.
+#' @return Character vector of output-specific validation errors.
+#' @keywords internal
+.planRequiredCohortErrors <- function(plan) {
+  outputs <- plan$outputs %||% list()
+  if (!is.list(outputs) || length(outputs) == 0L || is.null(names(outputs))) {
+    return(character(0))
+  }
+
+  scope <- plan$scope
+  scope_source <- if (is.list(scope) && !is.data.frame(scope)) {
+    scope$tables_frames %||% scope$cohort
+  } else {
+    scope
+  }
+  has_scope <- !is.null(scope_source) && length(scope_source) > 0L
+  cohort <- plan$cohort
+  has_plan_cohort <- is.list(cohort) && (
+    (!is.null(cohort$cohort_definition_id) &&
+       identical(cohort$type, "cohort_table")) ||
+      !is.null(cohort$filter_tree) || !is.null(cohort$spec)
+  )
+  base_declared <- has_scope || has_plan_cohort
+  populations <- plan$populations %||% list()
+  multi_population <- .planHasMultiPopulation(plan)
+
+  has_population_cohort <- function(population) {
+    is.list(population) && any(vapply(
+      c("cohort_definition_id", "filter_tree", "index_event", "setop"),
+      function(field) !is.null(population[[field]]), logical(1)
+    ))
+  }
+
+  errors <- character(0)
+  for (out_name in names(outputs)) {
+    out <- outputs[[out_name]]
+    out_type <- if (is.list(out)) out$type %||% "event_level" else ""
+    if (!is.character(out_type) || length(out_type) != 1L || is.na(out_type) ||
+        !tolower(out_type) %in% .planCohortOutputTypes()) {
+      next
+    }
+    population_id <- out$population_id %||% "base"
+    population_label <- if (is.character(population_id) &&
+                            length(population_id) == 1L &&
+                            !is.na(population_id) && nzchar(population_id)) {
+      population_id
+    } else {
+      "<invalid>"
+    }
+    declared <- if (!multi_population) {
+      base_declared
+    } else if (!is.character(population_id) || length(population_id) != 1L ||
+               is.na(population_id) || !population_id %in% names(populations)) {
+      FALSE
+    } else if (identical(population_id, "base")) {
+      base_declared || has_population_cohort(populations[[population_id]])
+    } else {
+      has_population_cohort(populations[[population_id]])
+    }
+    if (!declared) {
+      errors <- c(errors, paste0(
+        "Output '", out_name, "' (type '", tolower(out_type),
+        "') requires a cohort; no executable cohort source is declared for ",
+        "population '", population_label, "'."
+      ))
+    }
+  }
+  errors
 }
 
 #' Validate a plan against the handle's schema
@@ -40,13 +109,46 @@
         present_tables
       }
       if (!"cohort" %in% results_tables) {
-        warnings <- c(warnings,
-          "Cohort table not found; cohort filter will be skipped.")
+        errors <- c(errors,
+          "Plan cohort cannot execute: results cohort table not found.")
       }
     }
   }
 
+  validate_filter_tree <- function(tree, context) {
+    tree_error <- tryCatch({
+      .validateCohortFilterTree(tree)
+      NULL
+    }, error = function(e) conditionMessage(e))
+    if (!is.null(tree_error)) {
+      errors <<- c(errors, paste0(context, ": ", tree_error))
+    }
+  }
+  if (!is.null(plan$cohort$filter_tree)) {
+    validate_filter_tree(plan$cohort$filter_tree, "Plan cohort filter_tree")
+  }
+  populations <- plan$populations %||% list()
+  if (is.list(populations)) {
+    population_names <- names(populations)
+    for (i in seq_along(populations)) {
+      population <- populations[[i]]
+      if (!is.list(population) || is.null(population$filter_tree)) next
+      population_name <- if (!is.null(population_names) &&
+                             !is.na(population_names[[i]]) &&
+                             nzchar(population_names[[i]])) {
+        population_names[[i]]
+      } else {
+        as.character(i)
+      }
+      validate_filter_tree(
+        population$filter_tree,
+        paste0("Population '", population_name, "' filter_tree")
+      )
+    }
+  }
+
   outputs <- plan$outputs %||% list()
+  errors <- c(errors, .planRequiredCohortErrors(plan))
   for (out_name in names(outputs)) {
     out <- outputs[[out_name]]
     out_type <- out$type %||% "event_level"
@@ -59,7 +161,9 @@
             paste0("Output '", out_name, "': table '", tbl_name, "' not found."))
           next
         }
-        req_cols <- tolower(out$tables[[tbl_name]])
+        entry <- out$tables[[tbl_name]]
+        if (is.list(entry) && !is.null(entry$features)) next
+        req_cols <- tolower(.colSpec(entry)$source %||% character(0))
         avail_cols <- bp$columns[[tbl_lower]]$column_name
         missing <- setdiff(req_cols, avail_cols)
         if (length(missing) > 0) {
@@ -99,6 +203,19 @@
           paste0("Output '", out_name,
                  "': observation_period not found; derived fields unavailable."))
       }
+      if (!is.null(out$age_breaks)) {
+        age_error <- tryCatch({
+          .computeAgeGroups(
+            2000L, 2020L, age_breaks = out$age_breaks, min_cell = 0L
+          )
+          NULL
+        }, error = function(e) conditionMessage(e))
+        if (!is.null(age_error)) {
+          errors <- c(errors, paste0(
+            "Output '", out_name, "': invalid age_breaks: ", age_error
+          ))
+        }
+      }
     }
 
     if (out_type == "survival") {
@@ -133,12 +250,23 @@
       }
     }
 
-    if (out_type == "temporal_covariates") {
+    if (out_type %in% c("temporal_covariates", "person_period")) {
       tc_table <- tolower(out$table %||% "")
       if (tc_table != "" && !tc_table %in% present_tables) {
         errors <- c(errors,
           paste0("Output '", out_name,
                  "': table '", tc_table, "' not found."))
+      }
+      if (identical(out_type, "person_period") &&
+          (!is.character(out$grain) || length(out$grain) != 1L ||
+           is.na(out$grain) || !identical(tolower(out$grain), "episode") ||
+           !is.character(out$time_origin) ||
+           length(out$time_origin) != 1L || is.na(out$time_origin) ||
+           !identical(tolower(out$time_origin), "index"))) {
+        errors <- c(errors, paste0(
+          "Output '", out_name,
+          "': person_period requires grain='episode' and time_origin='index'."
+        ))
       }
     }
   }
@@ -151,15 +279,26 @@
   )
 }
 
-#' Preview a plan (safe aggregate)
+#' Preview resolvable plan projections (safe aggregate)
 #'
 #' @param handle CDM handle
 #' @param plan List; the extraction plan
-#' @return List with per-output preview info
+#' @return Validation plus per-output source/projection metadata. Column names
+#'   are final only when \code{columns_complete} is true. Person counts, when
+#'   available, are disclosure-banded source-table counts, never row-count
+#'   estimates for the executed output.
 #' @keywords internal
 .planPreview <- function(handle, plan) {
   bp <- .buildBlueprint(handle)
   validation <- .planValidate(handle, plan)
+  cohort_errors <- validation$errors[grepl(
+    "no executable cohort source|Plan cohort cannot execute",
+    validation$errors
+  )]
+  if (length(cohort_errors) > 0L) {
+    stop("Plan preview rejected: ", paste(cohort_errors, collapse = " "),
+         call. = FALSE)
+  }
   settings <- .omopDisclosureSettings()
 
   # Disclosure note (differencing defence):
@@ -176,6 +315,67 @@
   # omopPlanPreviewDS) so the data controller can detect repeated/probing
   # previews that banding alone cannot stop. min/max are never returned.
   band_width <- settings$nfilter_band
+
+  # Preview deliberately does not materialize cohorts or execute filter trees.
+  # A table-wide count is therefore meaningful only for a demonstrably
+  # unrestricted output.  Scoped/filtered counts are reported as unavailable
+  # instead of presenting the source-table population as if it described the
+  # requested output.
+  plan_is_scoped <- !is.null(plan$cohort) || !is.null(plan$scope) ||
+    .planHasMultiPopulation(plan)
+  preview_person_count <- function(tbl_row, col_df, restricted,
+                                   unavailable_reason) {
+    if (!"person_id" %in% col_df$column_name) {
+      return(list(
+        n_persons = NA_real_, n_persons_available = FALSE,
+        n_persons_unavailable_reason = "source table is not person-keyed",
+        n_persons_banded = FALSE, band_width = band_width,
+        disclosive = NA
+      ))
+    }
+    if (isTRUE(restricted)) {
+      return(list(
+        n_persons = NA_real_, n_persons_available = FALSE,
+        n_persons_unavailable_reason = unavailable_reason,
+        n_persons_banded = FALSE, band_width = band_width,
+        disclosive = NA
+      ))
+    }
+
+    sql <- paste0("SELECT COUNT(DISTINCT person_id) AS n FROM ",
+                  tbl_row$qualified_name[1])
+    n <- .executeQuery(handle, sql)$n[1]
+    disclosive <- !is.na(n) && n < settings$nfilter_subset
+    n_banded <- if (disclosive) NA_real_ else .bandCount(n, band_width)
+    list(
+      n_persons = n_banded, n_persons_available = TRUE,
+      n_persons_unavailable_reason = NULL,
+      n_persons_banded = !is.na(n_banded), band_width = band_width,
+      disclosive = disclosive
+    )
+  }
+  preview_feature_schema <- function(specs, table, grain = "person") {
+    specs <- specs %||% list()
+    keys <- c(if (identical(tolower(grain), "episode")) {
+      "cohort_row_id"
+    }, "person_id")
+    if (length(specs) == 0L) {
+      return(list(
+        columns = keys,
+        columns_complete = FALSE,
+        columns_unavailable_reason =
+          "automatic feature columns depend on concepts observed at execution"
+      ))
+    }
+    resolved <- .resolveFeatureSpecs(handle, specs, table = table)
+    list(
+      columns = unique(c(keys, vapply(
+        resolved, function(spec) spec$name, character(1)
+      ))),
+      columns_complete = TRUE,
+      columns_unavailable_reason = NULL
+    )
+  }
 
   preview <- list(
     validation = validation,
@@ -197,31 +397,43 @@
                              drop = FALSE]
         if (nrow(tbl_row) == 0) next
 
+        entry <- out$tables[[tbl_name]]
         col_df <- bp$columns[[tbl_lower]]
-        req_cols <- tolower(out$tables[[tbl_name]])
-        avail_cols <- intersect(req_cols, col_df$column_name)
-
-        if ("person_id" %in% col_df$column_name) {
-          sql <- paste0("SELECT COUNT(DISTINCT person_id) AS n FROM ",
-                        tbl_row$qualified_name[1])
-          n <- .executeQuery(handle, sql)$n[1]
-          disclosive <- !is.na(n) && n < settings$nfilter_subset
+        entry_has_features <- is.list(entry) && !is.null(entry$features)
+        if (entry_has_features) {
+          source_columns <- col_df$column_name
+          missing_source_columns <- character(0)
+          schema_info <- preview_feature_schema(
+            entry$features, table = tbl_lower, grain = "person"
+          )
         } else {
-          n <- NA_real_
-          disclosive <- FALSE
+          column_spec <- .colSpec(entry)
+          req_cols <- tolower(column_spec$source %||% col_df$column_name)
+          source_columns <- intersect(req_cols, col_df$column_name)
+          missing_source_columns <- setdiff(req_cols, col_df$column_name)
+          schema_info <- list(
+            columns = source_columns,
+            columns_complete = TRUE,
+            columns_unavailable_reason = NULL
+          )
         }
-
-        # Band surviving counts down to a multiple of band_width so an exact
-        # supra-threshold count (the differencing primitive) is never returned.
-        n_banded <- if (disclosive) NA_real_ else .bandCount(n, band_width)
-        out_preview$tables[[tbl_name]] <- list(
-          columns = avail_cols,
-          missing_columns = setdiff(req_cols, col_df$column_name),
-          n_persons = n_banded,
-          n_persons_banded = !is.na(n_banded),
-          band_width = band_width,
-          disclosive = disclosive
+        entry_is_restricted <- is.list(entry) && any(c(
+          "features", "filters", "concept_set", "visit", "temporal"
+        ) %in% names(entry))
+        output_is_restricted <- plan_is_scoped ||
+          !identical(out$population_id %||% "base", "base") ||
+          length(out$filters %||% list()) > 0L || entry_is_restricted
+        count_info <- preview_person_count(
+          tbl_row, col_df, output_is_restricted,
+          "plan cohort, population, or output filters are not executed by preview"
         )
+        out_preview$tables[[tbl_name]] <- c(list(
+          columns = schema_info$columns,
+          columns_complete = schema_info$columns_complete,
+          columns_unavailable_reason = schema_info$columns_unavailable_reason,
+          source_columns = source_columns,
+          missing_columns = missing_source_columns
+        ), count_info)
       }
     }
 
@@ -232,36 +444,47 @@
       if (nrow(tbl_row) > 0) {
         col_df <- bp$columns[[tbl_lower]]
         req_cols <- tolower(out$columns %||% col_df$column_name)
-        avail_cols <- intersect(req_cols, col_df$column_name)
-
-        if ("person_id" %in% col_df$column_name) {
-          sql <- paste0("SELECT COUNT(DISTINCT person_id) AS n FROM ",
-                        tbl_row$qualified_name[1])
-          n <- .executeQuery(handle, sql)$n[1]
-          disclosive <- !is.na(n) && n < settings$nfilter_subset
+        source_columns <- intersect(req_cols, col_df$column_name)
+        missing_source_columns <- setdiff(req_cols, col_df$column_name)
+        representation <- out$representation$format %||% "long"
+        if (identical(tolower(representation), "features")) {
+          schema_info <- preview_feature_schema(
+            out$representation$features, table = tbl_lower,
+            grain = out$representation$grain %||% "person"
+          )
         } else {
-          n <- NA_real_
-          disclosive <- FALSE
+          schema_info <- list(
+            columns = source_columns,
+            columns_complete = TRUE,
+            columns_unavailable_reason = NULL
+          )
         }
 
-        # Band surviving counts down to a multiple of band_width so an exact
-        # supra-threshold count (the differencing primitive) is never returned.
-        n_banded <- if (disclosive) NA_real_ else .bandCount(n, band_width)
-        out_preview[[out_name]] <- list(
-          table = out$table,
-          columns = avail_cols,
-          representation = out$representation$format %||% "long",
-          n_persons = n_banded,
-          n_persons_banded = !is.na(n_banded),
-          band_width = band_width,
-          disclosive = disclosive
+        output_is_restricted <- plan_is_scoped ||
+          !identical(out$population_id %||% "base", "base") ||
+          length(out$filters %||% list()) > 0L ||
+          !is.null(out$concept_set) || !is.null(out$temporal) ||
+          !is.null(out$visit_filter) ||
+          length(out$representation$features %||% list()) > 0L
+        count_info <- preview_person_count(
+          tbl_row, col_df, output_is_restricted,
+          "plan cohort, population, filters, or reductions are not executed by preview"
         )
+        out_preview <- c(out_preview, list(
+          table = out$table,
+          columns = schema_info$columns,
+          columns_complete = schema_info$columns_complete,
+          columns_unavailable_reason = schema_info$columns_unavailable_reason,
+          source_columns = source_columns,
+          missing_columns = missing_source_columns,
+          representation = representation
+        ), count_info)
       }
     }
 
     if (out_type == "baseline") {
       out_preview$columns <- out$columns %||%
-        c("gender_concept_id", "year_of_birth", "race_concept_id")
+        c("gender_concept_id", "race_concept_id")
       out_preview$derived <- out$derived %||% character(0)
       out_preview$description <- "One row per cohort member with demographics"
     }
@@ -290,15 +513,23 @@
       )
     }
 
-    if (out_type == "temporal_covariates") {
+    if (out_type %in% c("temporal_covariates", "person_period")) {
       out_preview$table <- out$table
       out_preview$bin_width <- out$bin_width %||% 30L
       out_preview$window <- list(
         start = out$window_start %||% -365L,
         end = out$window_end %||% 0L
       )
+      out_preview$grain <- out$grain %||%
+        if (identical(out_type, "person_period")) NA_character_ else NULL
+      out_preview$time_origin <- out$time_origin %||%
+        if (identical(out_type, "person_period")) NA_character_ else NULL
       out_preview$description <- paste0(
-        "Time-binned covariates from ", out$table
+        if (identical(out_type, "person_period")) {
+          "Complete episode-period panel from "
+        } else {
+          "Time-binned covariates from "
+        }, out$table
       )
     }
 
@@ -314,14 +545,27 @@
     "visit_count", "has_measurement", "missing_measurement")
 }
 
-.currentDateSql <- function(handle) {
-  dialect <- handle$target_dialect %||% ""
-  switch(dialect,
-    "sql server" = "CAST(GETDATE() AS DATE)",
-    "sqlite" = "DATE('now')",
-    "bigquery" = "CURRENT_DATE()",
-    "spark" = "CURRENT_DATE()",
-    "CURRENT_DATE"
+.cohortFilterParamNames <- function(filter_type) {
+  switch(tolower(filter_type),
+    sex = "value",
+    age_range = c("min", "max", "reference_date"),
+    age_group = c("groups", "reference_date"),
+    cohort = "cohort_definition_id",
+    has_concept = c("concept_id", "concept_ids", "table", "concept_name",
+                    "window", "min_count", "reference_date"),
+    not_has_concept = c("concept_id", "concept_ids", "table", "concept_name",
+                        "window", "reference_date"),
+    concept_count = c("concept_id", "concept_ids", "table", "concept_name",
+                      "window", "min_count", "reference_date"),
+    prior_observation = c("min_days", "reference_date"),
+    followup = c("min_days", "reference_date"),
+    visit_count = c("min_count", "visit_concept_id", "visit_concept_ids",
+                    "window", "reference_date"),
+    has_measurement = c("concept_id", "concept_ids", "min_value", "max_value",
+                        "safe_scope", "window", "reference_date"),
+    missing_measurement = c("concept_id", "concept_ids", "window",
+                            "reference_date"),
+    character(0)
   )
 }
 
@@ -336,49 +580,207 @@
 # to an ANCHOR date (negative = past), e.g. window=list(start=-365, end=0) is
 # "in the prior year". The anchor is \code{anchor_sql} when supplied (a per-person
 # SQL expression for the cohort index date, e.g. a correlated subquery against the
-# cohort table) and the current date otherwise. Anchoring to the cohort index is
-# what makes peri-index windows (washout / on-treatment / post-index) select the
-# right events; falling back to the wall-clock date only happens when the
-# population has no cohort to anchor to. Returns "" when no window, no start/end,
-# or the table has no usable date column (so the filter degrades to unwindowed
-# rather than erroring).
+# cohort table), or a declared fixed reference date. Anchoring to the cohort
+# index is what makes peri-index windows (washout / on-treatment / post-index)
+# select the right events. A window without either anchor fails closed rather
+# than changing meaning with the server wall clock. Returns "" when no window.
 .windowPredicateSql <- function(handle, bp, table_name, alias, window,
-                                anchor_sql = NULL) {
+                                anchor_sql = NULL, reference_date = NULL) {
   if (is.null(window)) return("")
+  if (!is.list(window)) {
+    stop("Population filter window must be a list with start and/or end.",
+         call. = FALSE)
+  }
   ws <- window$start; we <- window$end
-  if (is.null(ws) && is.null(we)) return("")
+  if (is.null(ws) && is.null(we)) {
+    stop("Population filter window must contain start and/or end.",
+         call. = FALSE)
+  }
   date_col <- .getDateColumn(bp, table_name)
-  if (is.null(date_col)) return("")
-  anchor <- anchor_sql %||% .currentDateSql(handle)
+  if (is.null(date_col)) {
+    stop("Population filter window cannot be applied to table '", table_name,
+         "' because it has no usable date column.", call. = FALSE)
+  }
+  coerce_offset <- function(x, field) {
+    int <- suppressWarnings(as.integer(x))
+    num <- suppressWarnings(as.numeric(x))
+    if (length(x) != 1L || length(int) != 1L || is.na(int) ||
+        length(num) != 1L || is.na(num) || num != int) {
+      stop("Population filter window ", field,
+           " must be one integer day offset.", call. = FALSE)
+    }
+    int
+  }
+  ws <- if (!is.null(ws)) coerce_offset(ws, "start")
+  we <- if (!is.null(we)) coerce_offset(we, "end")
+  if (!is.null(ws) && !is.null(we) && ws > we) {
+    stop("Population filter window start must not be after end.",
+         call. = FALSE)
+  }
+  anchor <- if (!is.null(reference_date)) {
+    fixed_date <- .isoDate(reference_date,
+                           "population filter reference_date")
+    .quoteLiteral(format(fixed_date, "%Y-%m-%d"))
+  } else if (!is.null(anchor_sql)) {
+    anchor_sql
+  } else {
+    stop("Population filter windows require a cohort index or an explicit ",
+         "reference_date.", call. = FALSE)
+  }
   parts <- character(0)
   if (!is.null(ws)) parts <- c(parts, paste0(
     " AND ", alias, ".", date_col, " >= ",
-    .dateAddSql(handle, as.integer(ws), anchor)))
+    .dateAddSql(handle, ws, anchor)))
   if (!is.null(we)) parts <- c(parts, paste0(
     " AND ", alias, ".", date_col, " <= ",
-    .dateAddSql(handle, as.integer(we), anchor)))
+    .dateAddSql(handle, we, anchor)))
   paste(parts, collapse = "")
 }
 
+.validateCohortFilterTree <- function(node, .depth = 1L, .state = NULL) {
+  if (!is.list(node) || length(node) == 0L) {
+    stop("Population filter nodes must be non-empty lists.", call. = FALSE)
+  }
+
+  leaf_values <- if (!is.null(names(node)) && "type" %in% names(node)) {
+    length(unlist(node$params, use.names = FALSE))
+  } else 0L
+  .state <- .filterComplexityVisit(.state, .depth, leaf_values)
+
+  node_names <- names(node)
+  if (!is.null(node_names) &&
+      (anyNA(node_names) || any(!nzchar(node_names)) ||
+       anyDuplicated(node_names))) {
+    stop("Population filter nodes cannot have blank or duplicate fields.",
+         call. = FALSE)
+  }
+
+  if (!is.null(node_names) && "type" %in% node_names) {
+    if (!setequal(node_names, c("type", "params")) ||
+        length(node_names) != 2L) {
+      stop("Population filter leaves may contain only type and params and ",
+           "cannot mix group fields.", call. = FALSE)
+    }
+    filter_type <- node$type
+    if (!is.character(filter_type) || length(filter_type) != 1L ||
+        is.na(filter_type) ||
+        !tolower(filter_type) %in% .cohortFilterTypes()) {
+      stop("Unknown population filter type.", call. = FALSE)
+    }
+    if (!is.list(node$params)) {
+      stop("Population filter params must be a named list.", call. = FALSE)
+    }
+    param_names <- names(node$params)
+    if (length(node$params) > 0L &&
+        (is.null(param_names) || anyNA(param_names) ||
+         any(!nzchar(param_names)) ||
+         anyDuplicated(param_names))) {
+      stop("Population filter params must be a uniquely named list.",
+           call. = FALSE)
+    }
+    unknown <- setdiff(param_names %||% character(0),
+                       .cohortFilterParamNames(filter_type))
+    if (length(unknown) > 0L) {
+      stop("Population filter '", tolower(filter_type),
+           "' has unknown parameter(s): ", paste(unknown, collapse = ", "),
+           ".", call. = FALSE)
+    }
+    .validateFilter(tolower(filter_type), node$params)
+    return(invisible(TRUE))
+  }
+
+  group_keys <- intersect(node_names %||% character(0), c("and", "or"))
+  if (length(group_keys) > 0L) {
+    if (length(group_keys) != 1L || length(node_names) != 1L) {
+      stop("Population filter nodes cannot mix AND/OR groups with each other ",
+           "or with leaf fields.", call. = FALSE)
+    }
+    children <- node[[group_keys]]
+    if (!is.list(children) || length(children) == 0L) {
+      stop("Population filter ", toupper(group_keys),
+           " group must contain at least one filter.", call. = FALSE)
+    }
+    for (child in children) {
+      .validateCohortFilterTree(
+        child, .depth = .depth + 1L, .state = .state
+      )
+    }
+    return(invisible(TRUE))
+  }
+
+  # Preserve the legacy flat-array syntax as an implicit AND, but only for a
+  # genuinely unnamed list. Named unknown fields are rejected fail-closed.
+  if (is.null(node_names)) {
+    for (child in node) {
+      .validateCohortFilterTree(
+        child, .depth = .depth + 1L, .state = .state
+      )
+    }
+    return(invisible(TRUE))
+  }
+
+  stop("Unknown or malformed population filter specification.", call. = FALSE)
+}
+
 .isCohortFilterLeaf <- function(x) {
-  is.list(x) && !is.null(x$type) &&
-    tolower(x$type) %in% .cohortFilterTypes()
+  if (!is.list(x) || is.null(names(x)) || !"type" %in% names(x)) return(FALSE)
+  isTRUE(tryCatch({
+    .validateCohortFilterTree(x)
+    TRUE
+  }, error = function(e) FALSE))
 }
 
 .isCohortFilterSpec <- function(x) {
-  if (.isCohortFilterLeaf(x)) return(TRUE)
-  if (!is.list(x) || length(x) == 0) return(FALSE)
-  if ("and" %in% names(x)) {
-    return(is.list(x$and) && length(x$and) > 0 &&
-      all(vapply(x$and, .isCohortFilterSpec, logical(1))))
-  }
-  if ("or" %in% names(x)) {
-    return(is.list(x$or) && length(x$or) > 0 &&
-      all(vapply(x$or, .isCohortFilterSpec, logical(1))))
+  isTRUE(tryCatch({
+    .validateCohortFilterTree(x)
+    TRUE
+  }, error = function(e) FALSE))
+}
+
+# Does a population filter need the cohort index date for its meaning?
+# Recurrent cohorts require an explicit episode policy for these filters; using
+# MIN(cohort_start_date) would silently turn a per-episode question into a
+# first-episode question.
+.cohortFilterUsesIndex <- function(node) {
+  if (is.null(node) || length(node) == 0L) return(FALSE)
+  if (!is.list(node)) return(TRUE)
+
+  if (!is.null(node$type)) {
+    type <- tolower(as.character(node$type)[1])
+    params <- node$params %||% list()
+    if (type == "age_range") return(is.null(params$reference_date))
+    if (type == "age_group") return(is.null(params$reference_date))
+    if (type %in% c("prior_observation", "followup")) {
+      return(is.null(params$reference_date))
+    }
+    if (type %in% c("has_concept", "not_has_concept", "concept_count",
+                    "visit_count", "has_measurement",
+                    "missing_measurement")) {
+      return(!is.null(params$window) && is.null(params$reference_date))
+    }
+    return(FALSE)
   }
 
-  items <- unname(x)
-  all(vapply(items, .isCohortFilterSpec, logical(1)))
+  children <- if ("and" %in% names(node)) {
+    node$and
+  } else if ("or" %in% names(node)) {
+    node$or
+  } else {
+    unname(node)
+  }
+  any(vapply(children, .cohortFilterUsesIndex, logical(1)))
+}
+
+.cohortHasMultipleEpisodes <- function(handle, cohort_table) {
+  cohort_table <- .validateIdentifier(cohort_table, "index cohort table")
+  sql <- paste0(
+    "SELECT COUNT(*) AS n_multi FROM (",
+    "SELECT d.subject_id FROM (SELECT DISTINCT subject_id, ",
+    "cohort_start_date, cohort_end_date FROM ", cohort_table, ") AS d ",
+    "GROUP BY d.subject_id HAVING COUNT(*) > 1) AS recurrent"
+  )
+  result <- .executeQuery(handle, sql)
+  nrow(result) > 0L && !is.na(result$n_multi[1]) && result$n_multi[1] > 0
 }
 
 #' Build a cohort person_id set from population-level filters
@@ -390,12 +792,17 @@
 #' @param filters List of filter specs from recipe_to_plan
 #' @param index_cohort_table Character or NULL; a cohort temp table
 #'   (subject_id, cohort_start_date) used to anchor windowed concept filters to
-#'   each person's cohort index date. When NULL, windowed filters fall back to
-#'   the wall-clock current date.
+#'   each person's cohort index date. Without a cohort, windowed filters require
+#'   an explicit fixed reference date.
+#' @param episode_policy Character or NULL; how an index-dependent filter is
+#'   evaluated when a person has recurrent cohort episodes. Supported values are
+#'   \code{"any_episode"}, \code{"all_episodes"}, \code{"first_episode"}, and
+#'   \code{"last_episode"}. Recurrent cohorts fail closed when this is NULL.
 #' @return Integer vector of person_ids
 #' @keywords internal
 .buildCohortFromFilters <- function(handle, filters,
-                                    index_cohort_table = NULL) {
+                                    index_cohort_table = NULL,
+                                    episode_policy = NULL) {
   bp <- .buildBlueprint(handle)
 
   person_table <- bp$tables[bp$tables$table_name == "person" &
@@ -405,14 +812,84 @@
   qualified_person <- person_table$qualified_name[1]
   person_cols <- bp$columns[["person"]]$column_name
 
-  # Per-person cohort index date as a correlated subquery the windowed concept
-  # filters anchor their day-offset windows to. MIN(cohort_start_date) collapses
-  # multi-row cohort entries to one anchor per person.
+  allowed_episode_policies <- c(
+    "any_episode", "all_episodes", "first_episode", "last_episode"
+  )
+  if (!is.null(episode_policy)) {
+    if (!is.character(episode_policy) || length(episode_policy) != 1L ||
+        is.na(episode_policy) ||
+        !tolower(episode_policy) %in% allowed_episode_policies) {
+      stop("episode_policy must be one of: ",
+           paste(allowed_episode_policies, collapse = ", "), ".",
+           call. = FALSE)
+    }
+    episode_policy <- tolower(episode_policy)
+  }
+
+  # Per-person cohort index date used by windowed filters. Recurrent cohorts are
+  # rejected unless their episode semantics are explicit: choosing the earliest
+  # date implicitly would change the requested longitudinal estimand.
   index_anchor <- NULL
+  uses_index <- .cohortFilterUsesIndex(filters)
   if (!is.null(index_cohort_table)) {
+    index_cohort_table <- .validateIdentifier(
+      index_cohort_table, "index cohort table"
+    )
+    recurrent <- uses_index &&
+      .cohortHasMultipleEpisodes(handle, index_cohort_table)
+    if (recurrent && is.null(episode_policy)) {
+      stop("Population filters that depend on the cohort index cannot be ",
+           "applied to a recurrent cohort without an explicit episode policy. ",
+           "Declare any_episode, all_episodes, first_episode, or last_episode; ",
+           "dsOMOP will not choose the earliest episode ",
+           "silently.", call. = FALSE)
+    }
+
+    if (uses_index && !is.null(episode_policy) &&
+        episode_policy %in% c("any_episode", "all_episodes")) {
+      episode_where <- .compileCohortFilterWhere(
+        handle, filters, bp, person_cols,
+        index_anchor = "idx.cohort_start_date"
+      )
+      membership <- paste0(
+        "EXISTS (SELECT 1 FROM ", index_cohort_table, " idx",
+        " WHERE idx.subject_id = p.person_id)"
+      )
+      episode_match <- paste0(
+        "SELECT 1 FROM ", index_cohort_table, " idx",
+        " WHERE idx.subject_id = p.person_id AND (", episode_where, ")"
+      )
+      policy_where <- if (identical(episode_policy, "any_episode")) {
+        paste0("EXISTS (", episode_match, ")")
+      } else {
+        # CASE treats FALSE and UNKNOWN alike, so an episode with missing data
+        # cannot make an all-episodes criterion pass by SQL three-valued logic.
+        paste0(
+          membership,
+          " AND NOT EXISTS (SELECT 1 FROM ", index_cohort_table, " idx",
+          " WHERE idx.subject_id = p.person_id",
+          " AND CASE WHEN (", episode_where,
+          ") THEN 0 ELSE 1 END = 1)"
+        )
+      }
+      sql <- paste0(
+        "SELECT DISTINCT p.person_id FROM ", qualified_person, " p WHERE ",
+        policy_where
+      )
+      result <- .executeQuery(handle, sql)
+      return(if (nrow(result) > 0) result$person_id else integer(0))
+    }
+
+    anchor_aggregate <- if (identical(episode_policy, "last_episode")) {
+      "MAX"
+    } else {
+      # With one episode this is the sole start date. For a recurrent cohort,
+      # MIN is used only under the explicitly requested first_episode policy.
+      "MIN"
+    }
     index_anchor <- paste0(
-      "(SELECT MIN(idx.cohort_start_date) FROM ", index_cohort_table, " idx",
-      " WHERE idx.subject_id = p.person_id)")
+      "(SELECT ", anchor_aggregate, "(idx.cohort_start_date) FROM ",
+      index_cohort_table, " idx WHERE idx.subject_id = p.person_id)")
   }
 
   where_sql <- .compileCohortFilterWhere(handle, filters, bp, person_cols,
@@ -421,52 +898,124 @@
   sql <- paste0("SELECT DISTINCT p.person_id FROM ", qualified_person, " p")
   if (nzchar(where_sql)) {
     sql <- paste0(sql, " WHERE ", where_sql)
+    if (uses_index && !is.null(index_cohort_table) &&
+        !is.null(episode_policy) &&
+        episode_policy %in% c("first_episode", "last_episode")) {
+      sql <- paste0(
+        "SELECT DISTINCT p.person_id FROM ", qualified_person, " p WHERE ",
+        "EXISTS (SELECT 1 FROM ", index_cohort_table, " idx",
+        " WHERE idx.subject_id = p.person_id) AND (", where_sql, ")"
+      )
+    }
   }
 
   result <- .executeQuery(handle, sql)
   if (nrow(result) > 0) result$person_id else integer(0)
 }
 
+#' Compile a cohort-filter tree to a SQL predicate
+#'
+#' @param handle CDM handle.
+#' @param node Cohort-filter node or logical group.
+#' @param bp OMOP blueprint.
+#' @param person_cols Character vector of columns from the person table.
+#' @param index_anchor Optional index-event anchor specification.
+#' @param .depth Internal recursion depth.
+#' @param .state Internal shared complexity counter.
+#' @return Character SQL predicate.
+#' @keywords internal
 .compileCohortFilterWhere <- function(handle, node, bp, person_cols,
-                                      index_anchor = NULL) {
+                                      index_anchor = NULL, .depth = 1L,
+                                      .state = NULL) {
   if (is.null(node) || length(node) == 0) return("")
 
-  if (.isCohortFilterLeaf(node)) {
+  leaf_values <- if (is.list(node) && !is.null(names(node)) &&
+      "type" %in% names(node)) {
+    length(unlist(node$params, use.names = FALSE))
+  } else 0L
+  .state <- .filterComplexityVisit(.state, .depth, leaf_values)
+
+  if (!is.list(node)) {
+    stop("Population filter nodes must be lists.", call. = FALSE)
+  }
+  node_names <- names(node)
+  if (!is.null(node_names) &&
+      (any(!nzchar(node_names)) || anyDuplicated(node_names))) {
+    stop("Population filter nodes cannot have blank or duplicate fields.",
+         call. = FALSE)
+  }
+
+  if (!is.null(node_names) && "type" %in% node_names) {
+    if (!setequal(node_names, c("type", "params")) ||
+        length(node_names) != 2L) {
+      stop("Population filter leaves may contain only type and params and ",
+           "cannot mix group fields.", call. = FALSE)
+    }
+    if (!is.character(node$type) || length(node$type) != 1L ||
+        is.na(node$type) || !tolower(node$type) %in% .cohortFilterTypes()) {
+      stop("Unknown population filter type.", call. = FALSE)
+    }
+    if (!is.list(node$params)) {
+      stop("Population filter params must be a named list.", call. = FALSE)
+    }
     return(.compileCohortFilterLeaf(handle, node, bp, person_cols,
                                     index_anchor = index_anchor))
   }
 
-  if ("and" %in% names(node)) {
-    parts <- vapply(node$and, .compileCohortFilterWhere, character(1),
-                    handle = handle, bp = bp, person_cols = person_cols,
-                    index_anchor = index_anchor)
-    parts <- parts[nzchar(parts)]
-    if (length(parts) == 0) return("")
-    return(paste0("(", paste(parts, collapse = " AND "), ")"))
-  }
-
-  if ("or" %in% names(node)) {
-    parts <- vapply(node$or, .compileCohortFilterWhere, character(1),
-                    handle = handle, bp = bp, person_cols = person_cols,
-                    index_anchor = index_anchor)
-    parts <- parts[nzchar(parts)]
-    if (length(parts) == 0) return("")
-    return(paste0("(", paste(parts, collapse = " OR "), ")"))
-  }
-
-  if (is.list(node)) {
-    items <- unname(node)
-    if (all(vapply(items, .isCohortFilterSpec, logical(1)))) {
-      parts <- vapply(items, .compileCohortFilterWhere, character(1),
-                      handle = handle, bp = bp, person_cols = person_cols,
-                      index_anchor = index_anchor)
-      parts <- parts[nzchar(parts)]
-      if (length(parts) == 0) return("")
-      return(paste0("(", paste(parts, collapse = " AND "), ")"))
+  group_keys <- intersect(node_names %||% character(0), c("and", "or"))
+  if (length(group_keys) > 0L) {
+    if (length(group_keys) != 1L || length(node_names) != 1L) {
+      stop("Population filter nodes cannot mix AND/OR groups with each other ",
+           "or with leaf fields.", call. = FALSE)
     }
   }
 
-  ""
+  if (identical(group_keys, "and")) {
+    if (!is.list(node$and) || length(node$and) == 0) {
+      stop("Population filter AND group must contain at least one filter.",
+           call. = FALSE)
+    }
+    parts <- vapply(node$and, .compileCohortFilterWhere, character(1),
+                    handle = handle, bp = bp, person_cols = person_cols,
+                    index_anchor = index_anchor, .depth = .depth + 1L,
+                    .state = .state)
+    if (any(!nzchar(parts))) {
+      stop("A population filter in the AND group compiled to no predicate.",
+           call. = FALSE)
+    }
+    return(paste0("(", paste(parts, collapse = " AND "), ")"))
+  }
+
+  if (identical(group_keys, "or")) {
+    if (!is.list(node$or) || length(node$or) == 0) {
+      stop("Population filter OR group must contain at least one filter.",
+           call. = FALSE)
+    }
+    parts <- vapply(node$or, .compileCohortFilterWhere, character(1),
+                    handle = handle, bp = bp, person_cols = person_cols,
+                    index_anchor = index_anchor, .depth = .depth + 1L,
+                    .state = .state)
+    if (any(!nzchar(parts))) {
+      stop("A population filter in the OR group compiled to no predicate.",
+           call. = FALSE)
+    }
+    return(paste0("(", paste(parts, collapse = " OR "), ")"))
+  }
+
+  # Legacy flat arrays are an implicit AND, but must be genuinely unnamed;
+  # named unknown fields are never treated as filters and ignored.
+  if (is.null(node_names)) {
+    parts <- vapply(node, .compileCohortFilterWhere, character(1),
+                    handle = handle, bp = bp, person_cols = person_cols,
+                    index_anchor = index_anchor, .depth = .depth + 1L,
+                    .state = .state)
+    if (any(!nzchar(parts))) {
+      stop("A population filter compiled to no predicate.", call. = FALSE)
+    }
+    return(paste0("(", paste(parts, collapse = " AND "), ")"))
+  }
+
+  stop("Unknown or malformed population filter specification.", call. = FALSE)
 }
 
 #' Coerce a concept_id / concept_ids filter parameter to an integer vector
@@ -480,8 +1029,21 @@
 #' @keywords internal
 .conceptIdList <- function(x) {
   if (is.null(x)) return(integer(0))
-  v <- suppressWarnings(as.integer(unlist(x, use.names = FALSE)))
-  unique(v[!is.na(v)])
+  raw <- unlist(x, use.names = FALSE)
+  if (length(raw) == 0L) return(integer(0))
+  max_values <- .extractionCap("dsomop.max_filter_values", 10000L)
+  if (length(raw) > max_values) {
+    stop("Concept ID list exceeds the server max_filter_values cap of ",
+         max_values, ".", call. = FALSE)
+  }
+  numeric_ids <- suppressWarnings(as.numeric(raw))
+  integer_ids <- suppressWarnings(as.integer(raw))
+  if (anyNA(numeric_ids) || any(!is.finite(numeric_ids)) || anyNA(integer_ids) ||
+      any(numeric_ids != integer_ids) || any(integer_ids < 0L)) {
+    stop("Concept ID lists must contain only finite non-negative integers.",
+         call. = FALSE)
+  }
+  unique(integer_ids)
 }
 
 #' Reference year for age-based person filters
@@ -490,8 +1052,8 @@
 #' age. When the filter is anchored to a cohort index date, the reference is a
 #' dialect-aware SQL expression extracting the year from that per-person index
 #' date, so ages are computed AT INDEX and the result is deterministic. With no
-#' index anchor there is no index date to use, so it falls back to the current
-#' calendar year as an integer literal.
+#' index anchor there is no reproducible date to use, so the caller must supply
+#' an explicit reference date instead of depending on the server wall clock.
 #'
 #' @param handle CDM handle (for dialect resolution)
 #' @param index_anchor Character SQL expression for the per-person index date,
@@ -500,7 +1062,8 @@
 #' @keywords internal
 .ageReferenceYear <- function(handle, index_anchor = NULL) {
   if (is.null(index_anchor)) {
-    return(as.character(as.integer(format(Sys.Date(), "%Y"))))
+    stop("Age filters without a cohort index require an explicit ",
+         "reference_date/year for reproducibility.", call. = FALSE)
   }
   .omopYearExpr(handle, index_anchor)
 }
@@ -509,19 +1072,77 @@
                                      index_anchor = NULL) {
   ftype <- tolower(f$type)
   params <- f$params %||% list()
+  fail <- function(message) {
+    stop("Population filter '", ftype, "' cannot be compiled: ", message,
+         call. = FALSE)
+  }
+  table_row <- function(table_name, required_columns = character(0)) {
+    row <- bp$tables[bp$tables$table_name == table_name &
+                       bp$tables$present_in_db, , drop = FALSE]
+    if (nrow(row) == 0) fail(paste0("table '", table_name, "' is unavailable."))
+    if (!is.null(bp$columns) && !is.null(bp$columns[[table_name]])) {
+      available <- bp$columns[[table_name]]$column_name
+      missing <- setdiff(required_columns, available)
+      if (length(missing) > 0) {
+        fail(paste0("table '", table_name, "' is missing column(s): ",
+                    paste(missing, collapse = ", "), "."))
+      }
+    }
+    row
+  }
+  integer_param <- function(value, name, default = NULL, minimum = NULL) {
+    if (is.null(value)) value <- default
+    numeric_value <- suppressWarnings(as.numeric(value))
+    integer_value <- suppressWarnings(as.integer(value))
+    if (length(value) != 1L || length(numeric_value) != 1L ||
+        !is.finite(numeric_value) || length(integer_value) != 1L ||
+        is.na(integer_value) || numeric_value != integer_value ||
+        (!is.null(minimum) && integer_value < minimum)) {
+      fail(paste0(name, " must be one finite integer",
+                  if (!is.null(minimum)) paste0(" >= ", minimum) else "",
+                  "."))
+    }
+    integer_value
+  }
+  numeric_param <- function(value, name) {
+    numeric_value <- suppressWarnings(as.numeric(value))
+    if (length(value) != 1L || length(numeric_value) != 1L ||
+        !is.finite(numeric_value)) {
+      fail(paste0(name, " must be one finite number."))
+    }
+    numeric_value
+  }
+
+  supported_params <- .cohortFilterParamNames(ftype)
+  if (is.null(names(params)) && length(params) > 0L) {
+    fail("params must be named.")
+  }
+  unknown_params <- setdiff(names(params) %||% character(0), supported_params)
+  if (length(unknown_params) > 0L) {
+    fail(paste0("unknown parameter(s): ",
+                paste(unknown_params, collapse = ", "), "."))
+  }
+  if (anyDuplicated(names(params) %||% character(0))) {
+    fail("params cannot contain duplicate names.")
+  }
 
   # Pre-execution granularity gate: blocks fingerprinting filters (e.g.
   # age_range narrower than the disclosure minimum) before any SQL runs.
   .validateFilter(ftype, params)
 
   if (ftype == "sex") {
+    if (is.null(params$value) || length(params$value) != 1L) {
+      fail("value must be M/MALE or F/FEMALE.")
+    }
     gender_id <- switch(toupper(params$value),
       "F" = 8532L, "FEMALE" = 8532L,
       "M" = 8507L, "MALE" = 8507L,
       NULL)
-    if (!is.null(gender_id) && "gender_concept_id" %in% person_cols) {
-      return(paste0("p.gender_concept_id = ", gender_id))
+    if (is.null(gender_id)) fail("value must be M/MALE or F/FEMALE.")
+    if (!"gender_concept_id" %in% person_cols) {
+      fail("person.gender_concept_id is unavailable.")
     }
+    return(paste0("p.gender_concept_id = ", gender_id))
 
   } else if (ftype == "age_range") {
     # Age is computed at the cohort index date when this filter is anchored to an
@@ -529,195 +1150,302 @@
     # which ages year_of_birth relative to the index date). An explicit
     # reference_date (from omop_filter_age(year=)/reference_date=) overrides both,
     # keeping the filter consistent with a year-anchored age variable. With
-    # neither, the reference falls back to the current year.
+    # neither, fail rather than silently depending on the server wall clock.
+    if (!"year_of_birth" %in% person_cols) {
+      fail("person.year_of_birth is unavailable.")
+    }
+    if (is.null(params$min) && is.null(params$max)) {
+      fail("min and/or max is required.")
+    }
     ref_year <- if (!is.null(params$reference_date)) {
-      as.integer(format(as.Date(params$reference_date), "%Y"))
+      ref_date <- tryCatch(
+        .isoDate(params$reference_date, "age_range reference_date"),
+        error = function(e) fail(conditionMessage(e))
+      )
+      as.integer(format(ref_date, "%Y"))
     } else {
       .ageReferenceYear(handle, index_anchor)
     }
     parts <- character(0)
-    if (!is.null(params$min) && "year_of_birth" %in% person_cols) {
+    if (!is.null(params$min)) {
+      min_age <- integer_param(params$min, "min", minimum = 0L)
       parts <- c(parts, paste0("p.year_of_birth <= (", ref_year, " - ",
-                               as.integer(params$min), ")"))
+                               min_age, ")"))
     }
-    if (!is.null(params$max) && "year_of_birth" %in% person_cols) {
+    if (!is.null(params$max)) {
+      max_age <- integer_param(params$max, "max", minimum = 0L)
       parts <- c(parts, paste0("p.year_of_birth >= (", ref_year, " - ",
-                               as.integer(params$max), ")"))
+                               max_age, ")"))
+      if (is.null(params$min)) {
+        # A max-only filter must not admit future birth years (negative ages).
+        parts <- c(parts, paste0("p.year_of_birth <= (", ref_year, ")"))
+      }
     }
-    if (length(parts) > 0) return(paste0("(", paste(parts, collapse = " AND "), ")"))
+    if (!is.null(params$min) && !is.null(params$max) && min_age > max_age) {
+      fail("min must not be greater than max.")
+    }
+    return(paste0("(", paste(parts, collapse = " AND "), ")"))
 
   } else if (ftype == "age_group") {
-    ref_year <- .ageReferenceYear(handle, index_anchor)
-    groups <- params$groups
-    if (length(groups) > 0 && "year_of_birth" %in% person_cols) {
-      band_parts <- character(0)
-      for (g in groups) {
-        parts <- strsplit(g, "-")[[1]]
-        if (length(parts) == 2) {
-          band_parts <- c(band_parts,
-            paste0("(p.year_of_birth BETWEEN (", ref_year, " - ",
-                   as.integer(parts[2]), ") AND (", ref_year, " - ",
-                   as.integer(parts[1]), "))"))
-        }
-      }
-      if (length(band_parts) > 0)
-        return(paste0("(", paste(band_parts, collapse = " OR "), ")"))
+    if (!"year_of_birth" %in% person_cols) {
+      fail("person.year_of_birth is unavailable.")
     }
+    ref_year <- if (!is.null(params$reference_date)) {
+      ref_date <- tryCatch(
+        .isoDate(params$reference_date, "age_group reference_date"),
+        error = function(e) fail(conditionMessage(e))
+      )
+      as.integer(format(ref_date, "%Y"))
+    } else {
+      tryCatch(.ageReferenceYear(handle, index_anchor),
+               error = function(e) fail(conditionMessage(e)))
+    }
+    groups <- unlist(params$groups, use.names = FALSE)
+    if (length(groups) == 0 || anyNA(groups)) {
+      fail("at least one non-missing age band is required.")
+    }
+    band_parts <- character(0)
+    for (g in groups) {
+      g <- trimws(as.character(g))
+      if (grepl("^[0-9]+\\+$", g)) {
+        lower <- as.integer(sub("\\+$", "", g))
+        band_parts <- c(band_parts, paste0(
+          "(p.year_of_birth <= (", ref_year, " - ", lower, "))"))
+      } else if (grepl("^[0-9]+-[0-9]+$", g)) {
+        bounds <- as.integer(strsplit(g, "-", fixed = TRUE)[[1]])
+        if (bounds[1] > bounds[2]) fail(paste0("invalid age band '", g, "'."))
+        band_parts <- c(band_parts,
+          paste0("(p.year_of_birth BETWEEN (", ref_year, " - ",
+                 bounds[2], ") AND (", ref_year, " - ", bounds[1], "))"))
+      } else {
+        fail(paste0("invalid age band '", g, "'."))
+      }
+    }
+    return(paste0("(", paste(band_parts, collapse = " OR "), ")"))
 
   } else if (ftype == "cohort") {
-    cid <- params$cohort_definition_id
-    if (!is.null(cid)) {
-      results_schema <- handle$results_schema %||% handle$cdm_schema
-      qualified <- .qualifyTable(handle, "cohort", results_schema)
-      return(paste0(
-        "EXISTS (SELECT 1 FROM ", qualified, " c",
-        " WHERE c.subject_id = p.person_id",
-        " AND c.cohort_definition_id = ", as.integer(cid), ")"
-      ))
-    }
+    cid <- integer_param(params$cohort_definition_id,
+                         "cohort_definition_id", minimum = 0L)
+    results_schema <- handle$results_schema %||% handle$cdm_schema
+    qualified <- .qualifyTable(handle, "cohort", results_schema)
+    return(paste0(
+      "EXISTS (SELECT 1 FROM ", qualified, " c",
+      " WHERE c.subject_id = p.person_id",
+      " AND c.cohort_definition_id = ", cid, ")"
+    ))
 
   } else if (ftype == "has_concept") {
     concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
-    min_count <- as.integer(params$min_count %||% 1L)
-    table_name <- tolower(params$table)
-    tbl_row <- bp$tables[bp$tables$table_name == table_name &
-                           bp$tables$present_in_db, , drop = FALSE]
-    if (nrow(tbl_row) > 0 && length(concept_ids) > 0) {
-      concept_col <- .getDomainConceptColumn(bp, table_name)
-      qualified_tbl <- tbl_row$qualified_name[1]
-      id_list <- paste(concept_ids, collapse = ", ")
-      win <- .windowPredicateSql(handle, bp, table_name, "t", params$window,
-                                 anchor_sql = index_anchor)
-      if (min_count <= 1L) {
-        return(paste0("EXISTS (SELECT 1 FROM ", qualified_tbl, " t",
-                      " WHERE t.person_id = p.person_id",
-                      " AND t.", concept_col, " IN (", id_list, ")", win, ")"))
-      }
-      return(paste0("(SELECT COUNT(*) FROM ", qualified_tbl, " t",
-                    " WHERE t.person_id = p.person_id",
-                    " AND t.", concept_col, " IN (", id_list, ")", win,
-                    ") >= ", min_count))
+    min_count <- integer_param(params$min_count, "min_count", default = 1L,
+                               minimum = 1L)
+    table_name <- tolower(params$table %||% "")
+    if (!nzchar(table_name)) fail("table is required.")
+    if (length(concept_ids) == 0) fail("concept_id(s) are required.")
+    concept_col <- .getDomainConceptColumn(bp, table_name)
+    if (is.null(concept_col)) fail(paste0("table '", table_name,
+                                          "' has no domain concept column."))
+    tbl_row <- table_row(table_name, c("person_id", concept_col))
+    qualified_tbl <- tbl_row$qualified_name[1]
+    concept_predicate <- .sqlIdInPredicate(
+      paste0("t.", concept_col), concept_ids
+    )
+    win <- .windowPredicateSql(handle, bp, table_name, "t", params$window,
+                               anchor_sql = index_anchor,
+                               reference_date = params$reference_date)
+    if (min_count <= 1L) {
+      return(paste0("EXISTS (SELECT 1 FROM ", qualified_tbl, " t",
+                    " WHERE t.person_id = p.person_id AND ",
+                    concept_predicate, win, ")"))
     }
+    return(paste0("(SELECT COUNT(*) FROM ", qualified_tbl, " t",
+                  " WHERE t.person_id = p.person_id AND ",
+                  concept_predicate, win,
+                  ") >= ", min_count))
 
   } else if (ftype == "not_has_concept") {
     concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
-    table_name <- tolower(params$table)
-    tbl_row <- bp$tables[bp$tables$table_name == table_name &
-                           bp$tables$present_in_db, , drop = FALSE]
-    if (nrow(tbl_row) > 0 && length(concept_ids) > 0) {
-      concept_col <- .getDomainConceptColumn(bp, table_name)
-      qualified_tbl <- tbl_row$qualified_name[1]
-      id_list <- paste(concept_ids, collapse = ", ")
-      win <- .windowPredicateSql(handle, bp, table_name, "t", params$window,
-                                 anchor_sql = index_anchor)
-      return(paste0("NOT EXISTS (SELECT 1 FROM ", qualified_tbl, " t",
-                    " WHERE t.person_id = p.person_id",
-                    " AND t.", concept_col, " IN (", id_list, ")", win, ")"))
-    }
+    table_name <- tolower(params$table %||% "")
+    if (!nzchar(table_name)) fail("table is required.")
+    if (length(concept_ids) == 0) fail("concept_id(s) are required.")
+    concept_col <- .getDomainConceptColumn(bp, table_name)
+    if (is.null(concept_col)) fail(paste0("table '", table_name,
+                                          "' has no domain concept column."))
+    tbl_row <- table_row(table_name, c("person_id", concept_col))
+    qualified_tbl <- tbl_row$qualified_name[1]
+    concept_predicate <- .sqlIdInPredicate(
+      paste0("t.", concept_col), concept_ids
+    )
+    win <- .windowPredicateSql(handle, bp, table_name, "t", params$window,
+                               anchor_sql = index_anchor,
+                               reference_date = params$reference_date)
+    return(paste0("NOT EXISTS (SELECT 1 FROM ", qualified_tbl, " t",
+                  " WHERE t.person_id = p.person_id AND ",
+                  concept_predicate, win, ")"))
 
   } else if (ftype == "concept_count") {
     concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
-    min_count <- as.integer(params$min_count %||% 1L)
-    table_name <- tolower(params$table)
-    tbl_row <- bp$tables[bp$tables$table_name == table_name &
-                           bp$tables$present_in_db, , drop = FALSE]
-    if (nrow(tbl_row) > 0 && length(concept_ids) > 0) {
-      concept_col <- .getDomainConceptColumn(bp, table_name)
-      qualified_tbl <- tbl_row$qualified_name[1]
-      id_list <- paste(concept_ids, collapse = ", ")
-      win <- .windowPredicateSql(handle, bp, table_name, "t", params$window,
-                                 anchor_sql = index_anchor)
-      return(paste0("(SELECT COUNT(*) FROM ", qualified_tbl, " t",
-                    " WHERE t.person_id = p.person_id",
-                    " AND t.", concept_col, " IN (", id_list, ")", win,
-                    ") >= ", min_count))
-    }
+    min_count <- integer_param(params$min_count, "min_count", default = 1L,
+                               minimum = 1L)
+    table_name <- tolower(params$table %||% "")
+    if (!nzchar(table_name)) fail("table is required.")
+    if (length(concept_ids) == 0) fail("concept_id(s) are required.")
+    concept_col <- .getDomainConceptColumn(bp, table_name)
+    if (is.null(concept_col)) fail(paste0("table '", table_name,
+                                          "' has no domain concept column."))
+    tbl_row <- table_row(table_name, c("person_id", concept_col))
+    qualified_tbl <- tbl_row$qualified_name[1]
+    concept_predicate <- .sqlIdInPredicate(
+      paste0("t.", concept_col), concept_ids
+    )
+    win <- .windowPredicateSql(handle, bp, table_name, "t", params$window,
+                               anchor_sql = index_anchor,
+                               reference_date = params$reference_date)
+    return(paste0("(SELECT COUNT(*) FROM ", qualified_tbl, " t",
+                  " WHERE t.person_id = p.person_id AND ",
+                  concept_predicate, win,
+                  ") >= ", min_count))
 
   } else if (ftype == "prior_observation") {
-    min_days <- as.integer(params$min_days %||% 365L)
-    op_row <- bp$tables[bp$tables$table_name == "observation_period" &
-                           bp$tables$present_in_db, , drop = FALSE]
-    if (nrow(op_row) > 0) {
-      op_qualified <- op_row$qualified_name[1]
-      cutoff <- .dateAddSql(handle, -min_days, .currentDateSql(handle))
-      return(paste0("EXISTS (SELECT 1 FROM ", op_qualified, " op",
-                    " WHERE op.person_id = p.person_id",
-                    " AND op.observation_period_start_date <= ",
-                    cutoff, ")"))
+    min_days <- integer_param(params$min_days, "min_days", default = 365L,
+                              minimum = 0L)
+    op_row <- table_row("observation_period",
+      c("person_id", "observation_period_start_date"))
+    op_qualified <- op_row$qualified_name[1]
+    anchor <- if (!is.null(params$reference_date)) {
+      fixed_date <- .isoDate(params$reference_date,
+                             "prior_observation reference_date")
+      .quoteLiteral(format(fixed_date, "%Y-%m-%d"))
+    } else if (!is.null(index_anchor)) {
+      index_anchor
+    } else {
+      fail("requires a cohort index or an explicit reference_date.")
     }
+    cutoff <- .dateAddSql(handle, -min_days, anchor)
+    return(paste0("EXISTS (SELECT 1 FROM ", op_qualified, " op",
+                  " WHERE op.person_id = p.person_id",
+                  " AND op.observation_period_start_date <= ", cutoff,
+                  " AND op.observation_period_end_date >= ", anchor, ")"))
 
   } else if (ftype == "followup") {
-    min_days <- as.integer(params$min_days %||% 30L)
-    op_row <- bp$tables[bp$tables$table_name == "observation_period" &
-                           bp$tables$present_in_db, , drop = FALSE]
-    if (nrow(op_row) > 0) {
-      op_qualified <- op_row$qualified_name[1]
-      cutoff <- .dateAddSql(handle, min_days, .currentDateSql(handle))
-      return(paste0("EXISTS (SELECT 1 FROM ", op_qualified, " op",
-                    " WHERE op.person_id = p.person_id",
-                    " AND op.observation_period_end_date >= ",
-                    cutoff, ")"))
+    min_days <- integer_param(params$min_days, "min_days", default = 30L,
+                              minimum = 0L)
+    op_row <- table_row("observation_period",
+      c("person_id", "observation_period_end_date"))
+    op_qualified <- op_row$qualified_name[1]
+    anchor <- if (!is.null(params$reference_date)) {
+      fixed_date <- .isoDate(params$reference_date,
+                             "followup reference_date")
+      .quoteLiteral(format(fixed_date, "%Y-%m-%d"))
+    } else if (!is.null(index_anchor)) {
+      index_anchor
+    } else {
+      fail("requires a cohort index or an explicit reference_date.")
     }
+    cutoff <- .dateAddSql(handle, min_days, anchor)
+    return(paste0("EXISTS (SELECT 1 FROM ", op_qualified, " op",
+                  " WHERE op.person_id = p.person_id",
+                  " AND op.observation_period_start_date <= ", anchor,
+                  " AND op.observation_period_end_date >= ", cutoff, ")"))
 
   } else if (ftype == "visit_count") {
-    min_count <- as.integer(params$min_count %||% 1L)
-    vo_row <- bp$tables[bp$tables$table_name == "visit_occurrence" &
-                           bp$tables$present_in_db, , drop = FALSE]
-    if (nrow(vo_row) > 0) {
-      vo_qualified <- vo_row$qualified_name[1]
-      sub_where <- paste0(" WHERE v.person_id = p.person_id")
-      visit_ids <- .conceptIdList(params$visit_concept_ids %||%
-                                    params$visit_concept_id)
-      if (length(visit_ids) > 0) {
-        sub_where <- paste0(sub_where,
-          " AND v.visit_concept_id IN (",
-          paste(visit_ids, collapse = ", "), ")")
-      }
-      win <- .windowPredicateSql(handle, bp, "visit_occurrence", "v",
-                                 params$window, anchor_sql = index_anchor)
-      return(paste0("(SELECT COUNT(*) FROM ", vo_qualified, " v",
-                    sub_where, win, ") >= ", min_count))
+    min_count <- integer_param(params$min_count, "min_count", default = 1L,
+                               minimum = 1L)
+    visit_ids <- .conceptIdList(params$visit_concept_ids %||%
+                                  params$visit_concept_id)
+    required <- c("person_id", if (length(visit_ids) > 0) "visit_concept_id")
+    vo_row <- table_row("visit_occurrence", required)
+    vo_qualified <- vo_row$qualified_name[1]
+    sub_where <- paste0(" WHERE v.person_id = p.person_id")
+    if (length(visit_ids) > 0) {
+      sub_where <- paste0(sub_where, " AND ", .sqlIdInPredicate(
+        "v.visit_concept_id", visit_ids
+      ))
     }
+    win <- .windowPredicateSql(handle, bp, "visit_occurrence", "v",
+                               params$window, anchor_sql = index_anchor,
+                               reference_date = params$reference_date)
+    return(paste0("(SELECT COUNT(*) FROM ", vo_qualified, " v",
+                  sub_where, win, ") >= ", min_count))
 
   } else if (ftype == "has_measurement") {
     concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
-    m_row <- bp$tables[bp$tables$table_name == "measurement" &
-                          bp$tables$present_in_db, , drop = FALSE]
-    if (nrow(m_row) > 0 && length(concept_ids) > 0) {
-      m_qualified <- m_row$qualified_name[1]
-      id_list <- paste(concept_ids, collapse = ", ")
+    if (length(concept_ids) == 0) fail("concept_id(s) are required.")
+    required <- c("person_id", "measurement_concept_id",
+      if (!is.null(params$min_value) || !is.null(params$max_value))
+        "value_as_number")
+    m_row <- table_row("measurement", required)
+    m_qualified <- m_row$qualified_name[1]
+    sub_where <- paste0(
+      " WHERE m.person_id = p.person_id",
+      " AND ", .sqlIdInPredicate(
+        "m.measurement_concept_id", concept_ids
+      ))
+    has_numeric_range <- !is.null(params$min_value) ||
+      !is.null(params$max_value)
+    if (has_numeric_range) {
+      if (is.null(params$min_value) || is.null(params$max_value)) {
+        fail(paste0(
+          "numeric measurement filters require both min_value and max_value ",
+          "from one server-issued safe bin."
+        ))
+      }
+      if (length(concept_ids) != 1L) {
+        fail(paste0(
+          "numeric measurement filters require exactly one concept_id so ",
+          "the safe-bin scope is unambiguous."
+        ))
+      }
+      min_value <- numeric_param(params$min_value, "min_value")
+      max_value <- numeric_param(params$max_value, "max_value")
+      if (min_value >= max_value) {
+        fail("min_value must be strictly less than max_value.")
+      }
+      .assertSafeNumericBinContract(
+        handle, table = "measurement", column = "value_as_number",
+        value = list(lower = min_value, upper = max_value),
+        scope = params$safe_scope
+      )
+      scope_concept <- suppressWarnings(as.integer(
+        params$safe_scope$concept_id %||% integer(0)
+      ))
+      scope_concept_col <- tolower(
+        params$safe_scope$concept_col %||% "measurement_concept_id"
+      )
+      if (length(scope_concept) != 1L || is.na(scope_concept) ||
+          scope_concept != concept_ids[[1]] ||
+          !identical(scope_concept_col, "measurement_concept_id")) {
+        fail("safe-bin scope must match the measurement concept_id.")
+      }
       sub_where <- paste0(
-        " WHERE m.person_id = p.person_id",
-        " AND m.measurement_concept_id IN (", id_list, ")")
-      if (!is.null(params$min_value)) {
-        sub_where <- paste0(sub_where,
-          " AND m.value_as_number >= ", as.numeric(params$min_value))
-      }
-      if (!is.null(params$max_value)) {
-        sub_where <- paste0(sub_where,
-          " AND m.value_as_number <= ", as.numeric(params$max_value))
-      }
-      return(paste0("EXISTS (SELECT 1 FROM ", m_qualified, " m",
-                    sub_where, ")"))
+        sub_where,
+        " AND m.value_as_number >= ", min_value,
+        " AND m.value_as_number < ", max_value
+      )
     }
+    win <- .windowPredicateSql(handle, bp, "measurement", "m", params$window,
+                               anchor_sql = index_anchor,
+                               reference_date = params$reference_date)
+    return(paste0("EXISTS (SELECT 1 FROM ", m_qualified, " m",
+                  sub_where, win, ")"))
 
   } else if (ftype == "missing_measurement") {
     concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
-    m_row <- bp$tables[bp$tables$table_name == "measurement" &
-                          bp$tables$present_in_db, , drop = FALSE]
-    if (nrow(m_row) > 0 && length(concept_ids) > 0) {
-      m_qualified <- m_row$qualified_name[1]
-      id_list <- paste(concept_ids, collapse = ", ")
-      win <- .windowPredicateSql(handle, bp, "measurement", "m", params$window,
-                                 anchor_sql = index_anchor)
-      return(paste0("NOT EXISTS (SELECT 1 FROM ", m_qualified, " m",
-                    " WHERE m.person_id = p.person_id",
-                    " AND m.measurement_concept_id IN (", id_list, ")",
-                    " AND m.value_as_number IS NOT NULL", win, ")"))
-    }
+    if (length(concept_ids) == 0) fail("concept_id(s) are required.")
+    m_row <- table_row("measurement",
+      c("person_id", "measurement_concept_id", "value_as_number"))
+    m_qualified <- m_row$qualified_name[1]
+    win <- .windowPredicateSql(handle, bp, "measurement", "m", params$window,
+                               anchor_sql = index_anchor,
+                               reference_date = params$reference_date)
+    return(paste0("NOT EXISTS (SELECT 1 FROM ", m_qualified, " m",
+                  " WHERE m.person_id = p.person_id AND ",
+                  .sqlIdInPredicate(
+                    "m.measurement_concept_id", concept_ids
+                  ),
+                  " AND m.value_as_number IS NOT NULL", win, ")"))
   }
 
-  ""
+  fail("unsupported filter type.")
 }
 
 #' Generate a unique staging token
@@ -725,10 +1453,20 @@
 #' @return Character; staging token
 #' @keywords internal
 .generateStagingToken <- function() {
-  paste0("stg_",
-         format(Sys.time(), "%Y%m%d_%H%M%S"),
-         "_", Sys.getpid(),
-         "_", paste0(sample(c(0:9, letters[1:6]), 4, TRUE), collapse = ""))
+  paste0("stg_", paste0(format(openssl::rand_bytes(16L)), collapse = ""))
+}
+
+#' Test whether a path is a symbolic link
+#'
+#' `Sys.readlink()` returns `NA` for a non-existent path on some platforms;
+#' `nzchar(NA)` is `TRUE`, so callers must handle that case explicitly.
+#'
+#' @param path Character path.
+#' @return Logical scalar.
+#' @keywords internal
+.isSymbolicLink <- function(path) {
+  target <- Sys.readlink(path)
+  length(target) == 1L && !is.na(target) && nzchar(target)
 }
 
 #' Get the staging base directory
@@ -737,11 +1475,40 @@
 #' @keywords internal
 .stagingBaseDir <- function() {
   base <- getOption("dsstaging.base_dir", file.path(tempdir(), "dsstaging"))
+  if (!is.character(base) || length(base) != 1L || is.na(base) ||
+      !nzchar(base)) {
+    stop("dsstaging.base_dir must be one non-empty server path.",
+         call. = FALSE)
+  }
+  if (dir.exists(base) && .isSymbolicLink(base)) {
+    stop("dsstaging.base_dir must not be a symbolic link.", call. = FALSE)
+  }
+  created <- FALSE
   if (!dir.exists(base)) {
-    dir.create(base, recursive = TRUE, showWarnings = FALSE)
+    old_umask <- Sys.umask("0077")
+    on.exit(Sys.umask(old_umask), add = TRUE)
+    if (!dir.create(base, recursive = TRUE, showWarnings = FALSE,
+                    mode = "0700")) {
+      stop("Could not create the staging base directory.", call. = FALSE)
+    }
+    created <- TRUE
+  }
+  if (.Platform$OS.type != "windows") {
+    info <- file.info(base)
+    expected_mode <- as.integer(strtoi("700", base = 8L))
+    if (nrow(info) != 1L || is.na(info$isdir[[1L]]) ||
+        !isTRUE(info$isdir[[1L]]) || is.na(info$uid[[1L]]) ||
+        is.na(info$mode[[1L]]) ||
+        !identical(as.integer(info$uid[[1L]]), .dsomopEffectiveUid()) ||
+        !identical(as.integer(info$mode[[1L]]), expected_mode)) {
+      stop("dsstaging.base_dir must be an owner-only directory (0700) owned ",
+           "by the server R user.",
+           call. = FALSE)
+    }
+  } else if (created) {
     Sys.chmod(base, mode = "0700")
   }
-  base
+  normalizePath(base, winslash = "/", mustWork = TRUE)
 }
 
 #' Create a staging directory for a token
@@ -750,35 +1517,212 @@
 #' @return Character; path to the staging directory
 #' @keywords internal
 .createStagingDir <- function(token) {
+  if (!is.character(token) || length(token) != 1L || is.na(token) ||
+      !grepl("^stg_[0-9a-f]{32}$", token)) {
+    stop("Invalid staging token.", call. = FALSE)
+  }
   staging_dir <- file.path(.stagingBaseDir(), token)
-  dir.create(staging_dir, recursive = TRUE, showWarnings = FALSE)
+  old_umask <- Sys.umask("0077")
+  on.exit(Sys.umask(old_umask), add = TRUE)
+  if (file.exists(staging_dir) || dir.exists(staging_dir) ||
+      !dir.create(staging_dir, recursive = FALSE, showWarnings = FALSE,
+                  mode = "0700")) {
+    stop("Could not create an exclusive staging directory.", call. = FALSE)
+  }
   Sys.chmod(staging_dir, mode = "0700")
   staging_dir
 }
 
-#' Build a FlowerDatasetDescriptor for a staged output
+.stagingDirectoryBytes <- function(staging_dir) {
+  if (!dir.exists(staging_dir) || .isSymbolicLink(staging_dir)) return(0)
+  paths <- list.files(staging_dir, full.names = TRUE, recursive = TRUE,
+                      all.files = TRUE, no.. = TRUE)
+  if (length(paths) == 0L) return(0)
+  info <- file.info(paths)
+  keep <- !is.na(info$size) & (is.na(info$isdir) | !info$isdir)
+  sum(info$size[keep], na.rm = TRUE)
+}
+
+# Isolate the filesystem mutation so cleanup failure semantics can be exercised
+# without weakening staging path/ownership validation.
+.unlinkStagingDirectory <- function(path) {
+  unlink(path, recursive = TRUE)
+}
+
+# Classify one tracked staging path without following or deleting it. Only a
+# canonical token directory directly below the configured owner-only base can be
+# live or idempotently missing; every other state is unsafe and remains tracked.
+.inspectOwnedStagingPath <- function(path, base) {
+  token <- if (is.character(path) && length(path) == 1L && !is.na(path)) {
+    basename(path)
+  } else {
+    ""
+  }
+  canonical_path <- if (nzchar(token)) gsub("\\\\", "/", path) else ""
+  expected <- if (nzchar(token)) {
+    gsub("\\\\", "/", file.path(base, token))
+  } else {
+    ""
+  }
+  valid_location <- nzchar(expected) && identical(canonical_path, expected) &&
+    grepl("^stg_[0-9a-f]{32}$", token)
+  if (!valid_location || .isSymbolicLink(canonical_path)) {
+    return(list(state = "unsafe", path = canonical_path))
+  }
+  if (!file.exists(canonical_path) && !dir.exists(canonical_path)) {
+    return(list(state = "missing", path = canonical_path))
+  }
+  if (!dir.exists(canonical_path)) {
+    return(list(state = "unsafe", path = canonical_path))
+  }
+  if (.Platform$OS.type != "windows") {
+    info <- file.info(canonical_path)
+    expected_mode <- as.integer(strtoi("700", base = 8L))
+    valid_directory <- nrow(info) == 1L && isTRUE(info$isdir[[1L]]) &&
+      !is.na(info$uid[[1L]]) && !is.na(info$mode[[1L]]) &&
+      identical(as.integer(info$uid[[1L]]), .dsomopEffectiveUid()) &&
+      identical(as.integer(info$mode[[1L]]), expected_mode)
+    if (!valid_directory) {
+      return(list(state = "unsafe", path = canonical_path))
+    }
+  }
+  list(state = "directory", path = canonical_path)
+}
+
+#' Remove staging directories owned by a handle
+#'
+#' @param handle CDM handle.
+#' @param paths Optional tracked paths to remove. \code{NULL} removes every path
+#'   owned by the handle.
+#' @return NULL, invisibly.
+#' @keywords internal
+.cleanupHandleStaging <- function(handle, paths = NULL) {
+  tracked <- unique(handle$staging_dirs %||% character(0))
+  if (length(tracked) == 0L) return(invisible(NULL))
+  dirs <- if (is.null(paths)) {
+    tracked
+  } else {
+    if (!is.character(paths) || anyNA(paths)) {
+      stop("Tracked staging cleanup paths must be character values.",
+           call. = FALSE)
+    }
+    intersect(unique(paths), tracked)
+  }
+  if (length(dirs) == 0L) return(invisible(NULL))
+
+  base <- normalizePath(.stagingBaseDir(), winslash = "/", mustWork = TRUE)
+  remaining <- tracked
+  failures <- character(0)
+  for (path in dirs) {
+    inspection <- .inspectOwnedStagingPath(path, base)
+    canonical_path <- inspection$path
+
+    # A previously removed, valid owned path is an idempotent success.
+    if (identical(inspection$state, "missing")) {
+      remaining <- setdiff(remaining, path)
+      next
+    }
+    if (!identical(inspection$state, "directory")) {
+      failures <- c(failures, paste0(path, ": unsafe or invalid owned path"))
+      next
+    }
+
+    status <- suppressWarnings(.unlinkStagingDirectory(canonical_path))
+    removed <- identical(as.integer(status), 0L) &&
+      !file.exists(canonical_path) && !dir.exists(canonical_path) &&
+      !.isSymbolicLink(canonical_path)
+    if (removed) {
+      remaining <- setdiff(remaining, path)
+    } else {
+      failures <- c(failures, paste0(path, ": deletion was not confirmed"))
+    }
+  }
+  handle$staging_dirs <- remaining
+  if (length(failures) > 0L) {
+    stop("Could not clean every owned staging directory: ",
+         paste(unique(failures), collapse = "; "), call. = FALSE)
+  }
+  invisible(NULL)
+}
+
+#' Build a server-local staged dataset descriptor
 #'
 #' @param output_name Character; name of the output
 #' @param file_info Named list from .executeQueryToParquet
 #' @param token Character; staging token
 #' @param origin Character; origin package identifier
-#' @return Named list (FlowerDatasetDescriptor)
+#' @param pseudonymization Public, non-secret person-key contract.
+#' @param semantic_contract Canonical staged output semantic contract.
+#' @param bundle_contract Canonical output-level staged bundle contract.
+#' @return Named list inheriting from \code{FlowerDatasetDescriptor} and
+#'   \code{OMOPStagedDatasetDescriptor}.
 #' @keywords internal
 .buildStagedDescriptor <- function(output_name, file_info, token,
-                                    origin = "dsOMOP") {
+                                    origin = "dsOMOP",
+                                    pseudonymization = NULL,
+                                    semantic_contract = NULL,
+                                    bundle_contract = NULL) {
+  ttl_hours <- suppressWarnings(as.numeric(getOption("dsstaging.ttl_hours", 24)))
+  if (length(ttl_hours) != 1L || is.na(ttl_hours) || !is.finite(ttl_hours) ||
+      ttl_hours <= 0) {
+    stop("dsstaging.ttl_hours must be one positive finite number.",
+         call. = FALSE)
+  }
+  person_bearing <- any(
+    tolower(file_info$columns %||% character(0)) %in% .PERSON_KEY_COLS()
+  )
+  if (person_bearing && is.null(pseudonymization)) {
+    stop("Person-bearing staged outputs require a pseudonymization contract.",
+         call. = FALSE)
+  }
+  if (!is.null(pseudonymization)) {
+    pseudonymization <- .canonicalPseudonymizationContract(pseudonymization)
+  }
+  if (person_bearing && !isTRUE(pseudonymization$resource_scoped)) {
+    stop("Person-bearing staged outputs require a resource-scoped ",
+         "pseudonymization provider; legacy global keys are not permitted.",
+         call. = FALSE)
+  }
+  if (is.null(semantic_contract)) {
+    stop("Staged descriptor v2 requires a semantic contract.", call. = FALSE)
+  }
+  semantic_contract <- .validateStagedSemanticContract(semantic_contract)
+  if (is.null(bundle_contract)) {
+    stop("Staged descriptor v2 requires a bundle contract.", call. = FALSE)
+  }
+  dataset_id <- paste0("omop.plan.", output_name)
+  bundle_contract <- .validateStagedBundleContract(
+    bundle_contract,
+    dataset_id = dataset_id,
+    staged_token = token,
+    semantic_contract = semantic_contract
+  )
   desc <- list(
-    dataset_id  = paste0("omop.plan.", output_name),
-    source_kind = "staged_parquet",
+    dataset_id  = dataset_id,
+    source_kind = paste0("staged_", file_info$format),
+    contract_version = 2L,
     metadata    = list(
       file    = file_info$file,
       format  = file_info$format,
-      n_rows  = file_info$n_rows,
-      columns = file_info$columns
+      n_rows  = .bandCount(
+        file_info$n_rows,
+        band_width = .omopDisclosureSettings()$nfilter_band
+      ),
+      row_count_policy = "banded_lower_bound",
+      columns = file_info$columns,
+      column_types = file_info$column_types %||% NULL,
+      pseudonymization = pseudonymization,
+      semantic_contract = semantic_contract,
+      bundle_contract = bundle_contract
     ),
     staged_token = token,
+    expires_at = format(Sys.time() + ttl_hours * 3600,
+                        "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC"),
     origin       = origin
   )
-  class(desc) <- "FlowerDatasetDescriptor"
+  # Keep dsFlower's established class first for compatibility while publishing
+  # a package-neutral class for any reviewed server-side consumer.
+  class(desc) <- c("FlowerDatasetDescriptor", "OMOPStagedDatasetDescriptor")
   desc
 }
 
@@ -788,22 +1732,136 @@
 #' @param descriptors Named list of descriptors
 #' @keywords internal
 .writeStagingManifest <- function(staging_dir, descriptors) {
+  if (!is.list(descriptors) || length(descriptors) < 1L ||
+      is.null(names(descriptors)) || any(!nzchar(names(descriptors))) ||
+      anyDuplicated(names(descriptors))) {
+    stop("A staging manifest requires uniquely named descriptors.",
+         call. = FALSE)
+  }
+  descriptors <- lapply(descriptors, function(d) {
+    invisible(omopStagedDatasetPath(d))
+    list(
+      dataset_id = d$dataset_id,
+      source_kind = d$source_kind,
+      contract_version = d$contract_version,
+      metadata = within(d$metadata, {
+        if (!is.null(column_types)) column_types <- as.list(column_types)
+      }),
+      staged_token = d$staged_token,
+      expires_at = d$expires_at,
+      origin = d$origin
+    )
+  })
   manifest <- list(
+    contract_version = 2L,
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC"),
-    outputs = lapply(descriptors, function(d) {
-      list(
-        dataset_id = d$dataset_id,
-        file       = d$metadata$file,
-        format     = d$metadata$format,
-        n_rows     = d$metadata$n_rows
-      )
-    })
+    outputs = descriptors
   )
   manifest_path <- file.path(staging_dir, "manifest.json")
-  writeLines(jsonlite::toJSON(manifest, auto_unbox = TRUE, pretty = TRUE),
+  old_umask <- Sys.umask("0077")
+  on.exit(Sys.umask(old_umask), add = TRUE)
+  writeLines(jsonlite::toJSON(
+    manifest, auto_unbox = TRUE, pretty = TRUE, null = "null"
+  ),
              manifest_path)
   Sys.chmod(manifest_path, mode = "0600")
+  max_bytes <- suppressWarnings(as.numeric(
+    getOption("dsomop.max_staged_bytes", 10 * 1024^3)
+  ))
+  if (length(max_bytes) != 1L || is.na(max_bytes) || !is.finite(max_bytes) ||
+      max_bytes < 1 || .stagingDirectoryBytes(staging_dir) > max_bytes) {
+    unlink(manifest_path)
+    stop("Staged outputs exceed or have an invalid server disk quota.",
+         call. = FALSE)
+  }
   invisible(manifest_path)
+}
+
+#' Read and validate a v2 staging manifest
+#'
+#' Reconstructs descriptor classes and canonical vector fields after JSON
+#' parsing, then runs the same fail-closed resolver used by downstream server
+#' packages. This is the supported manifest round-trip; consumers must not
+#' reconstruct descriptors from a partial JSON projection.
+#'
+#' @param manifest_path Absolute path returned by \code{.writeStagingManifest}.
+#' @return A manifest list whose \code{outputs} are validated staged descriptors.
+#' @keywords internal
+.readStagingManifest <- function(manifest_path) {
+  manifest_path <- .stagedScalarString(manifest_path, "manifest path")
+  if (!.stagedIsAbsolutePath(manifest_path) ||
+      !file.exists(manifest_path) || .isSymbolicLink(manifest_path) ||
+      !utils::file_test("-f", manifest_path)) {
+    stop("The staging manifest is unavailable or unsafe.", call. = FALSE)
+  }
+  info <- file.info(manifest_path)
+  if (nrow(info) != 1L || is.na(info$size[[1L]]) || info$size[[1L]] < 1L ||
+      info$size[[1L]] > 10 * 1024^2) {
+    stop("The staging manifest has an invalid size.", call. = FALSE)
+  }
+  if (.Platform$OS.type == "unix") {
+    expected_mode <- as.integer(strtoi("600", base = 8L))
+    if (is.na(info$mode[[1L]]) || is.na(info$uid[[1L]]) ||
+        !identical(as.integer(info$mode[[1L]]), expected_mode) ||
+        !identical(as.integer(info$uid[[1L]]), .dsomopEffectiveUid()) ||
+        !identical(.dsomopLinkCount(manifest_path), 1)) {
+      stop("The staging manifest must be an owner-only file without hard links.",
+           call. = FALSE)
+    }
+  }
+  manifest <- tryCatch(
+    jsonlite::fromJSON(manifest_path, simplifyVector = TRUE),
+    error = function(e) NULL
+  )
+  if (!is.list(manifest) || !identical(manifest$contract_version, 2L) ||
+      !is.character(manifest$created_at) || length(manifest$created_at) != 1L ||
+      is.na(manifest$created_at) || !is.list(manifest$outputs) ||
+      length(manifest$outputs) < 1L || is.null(names(manifest$outputs)) ||
+      any(!nzchar(names(manifest$outputs))) ||
+      anyDuplicated(names(manifest$outputs))) {
+    stop("Invalid staging manifest v2.", call. = FALSE)
+  }
+  created <- suppressWarnings(as.POSIXct(
+    manifest$created_at, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC"
+  ))
+  if (length(created) != 1L || is.na(created)) {
+    stop("Invalid staging manifest creation timestamp.", call. = FALSE)
+  }
+
+  outputs <- lapply(manifest$outputs, function(entry) {
+    if (!is.list(entry) || !is.list(entry$metadata)) {
+      stop("Invalid staged descriptor in manifest.", call. = FALSE)
+    }
+    entry$metadata$columns <- unname(as.character(
+      unlist(entry$metadata$columns, use.names = FALSE)
+    ))
+    if (!is.null(entry$metadata$column_types)) {
+      entry$metadata$column_types <- unlist(
+        entry$metadata$column_types, use.names = TRUE
+      )
+    }
+    if (!is.null(entry$metadata$semantic_contract$age_breaks)) {
+      entry$metadata$semantic_contract$age_breaks <- unname(as.integer(
+        unlist(entry$metadata$semantic_contract$age_breaks, use.names = FALSE)
+      ))
+    }
+    if (!is.null(entry$metadata$bundle_contract$semantic_contract$age_breaks)) {
+      entry$metadata$bundle_contract$semantic_contract$age_breaks <-
+        unname(as.integer(unlist(
+          entry$metadata$bundle_contract$semantic_contract$age_breaks,
+          use.names = FALSE
+        )))
+    }
+    class(entry) <- c("FlowerDatasetDescriptor",
+                      "OMOPStagedDatasetDescriptor")
+    invisible(omopStagedDatasetPath(entry))
+    entry
+  })
+  list(
+    contract_version = 2L,
+    created_at = manifest$created_at,
+    outputs = outputs
+  )
 }
 
 #' Stage a data.frame result to Parquet and return a descriptor
@@ -815,23 +1873,92 @@
 #' @param output_name Character; output name
 #' @param staging_dir Character; path to staging directory
 #' @param token Character; staging token
-#' @return FlowerDatasetDescriptor or the original data.frame if arrow unavailable
+#' @param key Raw vector; per-resource secret used to pseudonymize person keys
+#' @param pseudonymization Public, non-secret person-key contract. Required for
+#'   every person-bearing staged output.
+#' @param semantic_contract Canonical staged output semantic contract.
+#' @param bundle_contract Canonical output-level staged bundle contract.
+#' @return Staged dataset descriptor (Parquet, or CSV when Arrow is unavailable)
 #' @keywords internal
-.stageDataFrame <- function(df, output_name, staging_dir, token) {
-  use_parquet <- requireNamespace("arrow", quietly = TRUE)
+.stageDataFrame <- function(df, output_name, staging_dir, token, key,
+                            pseudonymization = NULL,
+                            semantic_contract = NULL,
+                            bundle_contract = NULL) {
+  output_name <- .validateIdentifier(output_name, "staged output")
+  if (is.null(semantic_contract)) {
+    stop("Staged descriptor v2 requires a semantic contract.", call. = FALSE)
+  }
+  semantic_contract <- .validateStagedSemanticContract(semantic_contract)
+  if (is.null(bundle_contract)) {
+    stop("Staged descriptor v2 requires a bundle contract.", call. = FALSE)
+  }
+  bundle_contract <- .validateStagedBundleContract(
+    bundle_contract,
+    dataset_id = paste0("omop.plan.", output_name),
+    staged_token = token,
+    semantic_contract = semantic_contract
+  )
+  if (!is.character(token) || length(token) != 1L || is.na(token) ||
+      !grepl("^stg_[0-9a-f]{32}$", token)) {
+    stop("Invalid staging token.", call. = FALSE)
+  }
+  expected_dir <- normalizePath(file.path(.stagingBaseDir(), token),
+                                winslash = "/", mustWork = FALSE)
+  actual_dir <- normalizePath(staging_dir, winslash = "/", mustWork = FALSE)
+  if (.isSymbolicLink(staging_dir) ||
+      !identical(actual_dir, expected_dir) || !dir.exists(actual_dir)) {
+    stop("Staging directory is unavailable or does not match its token.",
+         call. = FALSE)
+  }
+  if (is.null(key) || length(key) == 0L) {
+    stop("Staged outputs require a per-resource person key.", call. = FALSE)
+  }
+  if (any(tolower(names(df)) %in% .PERSON_KEY_COLS()) &&
+      is.null(pseudonymization)) {
+    stop("Person-bearing staged outputs require an explicit resource-scoped ",
+         "pseudonymization contract.", call. = FALSE)
+  }
+  # The file itself is a server-side DataSHIELD object. Sanitize before the
+  # first byte is written: person/subject keys become authenticated resource-
+  # scoped tokens and every other OMOP row/entity identifier is removed.
+  df <- .pseudonymizeIdentifiers(df, key, pseudonymization)
+  max_rows <- suppressWarnings(as.numeric(
+    getOption("dsomop.max_staged_rows", 50000000L)
+  ))
+  max_bytes <- suppressWarnings(as.numeric(
+    getOption("dsomop.max_staged_bytes", 10 * 1024^3)
+  ))
+  if (length(max_rows) != 1L || is.na(max_rows) || !is.finite(max_rows) ||
+      max_rows != floor(max_rows) || max_rows < 1L || nrow(df) > max_rows ||
+      length(max_bytes) != 1L || is.na(max_bytes) || !is.finite(max_bytes) ||
+      max_bytes < 1) {
+    stop("Staged output exceeds or has invalid server row/byte quotas.",
+         call. = FALSE)
+  }
+  existing_bytes <- .stagingDirectoryBytes(staging_dir)
+  if (existing_bytes >= max_bytes) {
+    stop("Staged output exceeds the server disk quota.", call. = FALSE)
+  }
+
+  use_parquet <- .arrowAvailable()
   ext <- if (use_parquet) "parquet" else "csv"
   output_path <- file.path(staging_dir, paste0(output_name, ".", ext))
-
-  # Ensure staging directory exists (may have been cleaned between calls)
-  if (!dir.exists(staging_dir)) {
-    dir.create(staging_dir, recursive = TRUE, showWarnings = FALSE)
-    Sys.chmod(staging_dir, mode = "0700")
+  if (file.exists(output_path) || .isSymbolicLink(output_path)) {
+    stop("Staged output path already exists.", call. = FALSE)
   }
 
   if (use_parquet) {
+    old_umask <- Sys.umask("0077")
+    on.exit(Sys.umask(old_umask), add = TRUE)
     arrow::write_parquet(df, output_path)
   } else {
+    old_umask <- Sys.umask("0077")
+    on.exit(Sys.umask(old_umask), add = TRUE)
     utils::write.csv(df, output_path, row.names = FALSE)
+  }
+  if (existing_bytes + file.info(output_path)$size > max_bytes) {
+    unlink(output_path)
+    stop("Staged output exceeds the server disk quota.", call. = FALSE)
   }
   Sys.chmod(output_path, mode = "0600")
 
@@ -839,9 +1966,15 @@
     file    = output_path,
     format  = ext,
     n_rows  = nrow(df),
-    columns = names(df)
+    columns = names(df),
+    column_types = vapply(df, function(col) {
+      paste(typeof(col), paste(class(col), collapse = "/"), sep = "|")
+    }, character(1))
   )
-  .buildStagedDescriptor(output_name, file_info, token)
+  .buildStagedDescriptor(output_name, file_info, token,
+                         pseudonymization = pseudonymization,
+                         semantic_contract = semantic_contract,
+                         bundle_contract = bundle_contract)
 }
 
 #' Does this plan declare more than the implicit unrestricted base population?
@@ -862,6 +1995,7 @@
   if (length(non_base) > 0) return(TRUE)
   base <- pops[["base"]]
   (!is.null(base$filters) && length(base$filters) > 0) ||
+    !is.null(base$filter_tree) || !is.null(base$index_event) ||
     !is.null(base$setop)
 }
 
@@ -928,6 +2062,17 @@
 
   sources <- Filter(Negate(is.null), sources)
   if (length(sources) == 0) return(NULL)
+  server_max <- as.integer(
+    .omopDisclosureSettings()$max_analysis_scope_tables
+  )
+  .omopAnalysisScopeSourceCount(
+    sources, max_sources = server_max + 1L
+  )
+  scope_table_count <- .omopAnalysisScopeTableCount(sources)
+  if (scope_table_count > server_max) {
+    stop("Plan scope exceeds the server max_analysis_scope_tables cap of ",
+         server_max, ".", call. = FALSE)
+  }
   .omopAnalysisResolveScope(handle, sources, combine = combine)
 }
 
@@ -965,7 +2110,7 @@
   where_clause <- if (length(person_ids) == 0) {
     "WHERE 1 = 0"
   } else {
-    paste0("WHERE o.person_id IN (", .sqlIdList(person_ids), ")")
+    paste0("WHERE ", .sqlIdInPredicate("o.person_id", person_ids))
   }
   cohort_sql <- paste0(
     "SELECT DISTINCT o.person_id AS subject_id, ",
@@ -974,8 +2119,190 @@
     "FROM ", obs_qualified, " o ",
     where_clause
   )
-  .dropTempTable(handle, name)
+  name <- .reserveTempTableName(handle, name)
   .createTempTable(handle, name, cohort_sql)
+}
+
+#' Materialize real OMOP rows as longitudinal index-event episodes
+#'
+#' Primary First/Last/All is applied to source events before any inclusion
+#' filter, matching OHDSI Circe. The source primary key is retained internally so
+#' same-date source events remain distinct while eligibility is evaluated.
+#'
+#' @param handle CDM handle
+#' @param bp Blueprint
+#' @param index_event Transport-safe index-event specification
+#' @param name Temporary table name
+#' @return Character temporary cohort table name
+#' @keywords internal
+.materializeIndexEventCohort <- function(handle, bp, index_event, name) {
+  if (!is.list(index_event) || is.null(names(index_event)) ||
+      any(!nzchar(names(index_event))) || anyDuplicated(names(index_event))) {
+    stop("index_event must be a uniquely named list.", call. = FALSE)
+  }
+  unknown <- setdiff(names(index_event),
+                     c("table", "concept_set", "primary_limit"))
+  if (length(unknown) > 0L) {
+    stop("Unknown index_event field(s): ", paste(unknown, collapse = ", "),
+         ".", call. = FALSE)
+  }
+  allowed_tables <- c(
+    "condition_occurrence", "drug_exposure", "measurement", "observation",
+    "procedure_occurrence", "device_exposure", "visit_occurrence"
+  )
+  table <- index_event$table
+  if (!is.character(table) || length(table) != 1L || is.na(table) ||
+      !tolower(table) %in% allowed_tables) {
+    stop("index_event table is outside the executable Circe table allowlist.",
+         call. = FALSE)
+  }
+  table <- tolower(table)
+  primary_limit <- index_event$primary_limit %||% "first"
+  if (!is.character(primary_limit) || length(primary_limit) != 1L ||
+      is.na(primary_limit) ||
+      !tolower(primary_limit) %in% c("first", "last", "all")) {
+    stop("index_event primary_limit must be first, last, or all.",
+         call. = FALSE)
+  }
+  primary_limit <- tolower(primary_limit)
+
+  row <- bp$tables[bp$tables$table_name == table & bp$tables$present_in_db,
+                   , drop = FALSE]
+  if (nrow(row) != 1L) {
+    stop("index_event table '", table,
+         "' is unavailable or ambiguous in the authorized blueprint.",
+         call. = FALSE)
+  }
+  cols <- bp$columns[[table]]$column_name %||% character(0)
+  start_col <- .getDateColumn(bp, table)
+  pair <- .getDatePair(bp, table)
+  end_col <- pair$end %||% start_col
+  event_id_col <- .eventPrimaryKeyColumn(bp, table)
+  required <- c("person_id", start_col, end_col, event_id_col)
+  if (any(vapply(list(start_col, end_col, event_id_col), is.null,
+                 logical(1))) || any(!required %in% cols)) {
+    stop("index_event table '", table,
+         "' lacks person, date, interval-end, or stable event-key columns.",
+         call. = FALSE)
+  }
+
+  concept_predicate <- ""
+  if (!is.null(index_event$concept_set)) {
+    cs <- index_event$concept_set
+    if (is.list(cs) && !is.null(cs$concepts)) {
+      unknown_cs <- setdiff(names(cs),
+                            c("concepts", "include_descendants",
+                              "include_mapped"))
+      if (length(unknown_cs) > 0L) {
+        stop("Unknown index-event concept-set field(s): ",
+             paste(unknown_cs, collapse = ", "), ".", call. = FALSE)
+      }
+      .conceptIdList(cs$concepts)
+      for (flag in c("include_descendants", "include_mapped")) {
+        if (!is.null(cs[[flag]]) &&
+            (!is.logical(cs[[flag]]) || length(cs[[flag]]) != 1L ||
+             is.na(cs[[flag]]))) {
+          stop("index-event concept-set expansion flags must be TRUE/FALSE.",
+               call. = FALSE)
+        }
+      }
+    } else {
+      .conceptIdList(cs)
+    }
+    concept_ids <- withCallingHandlers(
+      .resolveConceptSet(handle, cs),
+      warning = function(w) {
+        stop("index-event concept expansion failed: ", conditionMessage(w),
+             call. = FALSE)
+      }
+    )
+    if (length(concept_ids) == 0L) {
+      stop("index_event concept_set resolved to no concepts.", call. = FALSE)
+    }
+    concept_col <- .getDomainConceptColumn(bp, table)
+    if (is.null(concept_col) || !concept_col %in% cols) {
+      stop("index_event table '", table,
+           "' has no authorized domain concept column.", call. = FALSE)
+    }
+    concept_predicate <- paste0(
+      " AND ", .sqlIdInPredicate(paste0("t.", concept_col), concept_ids)
+    )
+  }
+
+  qualified <- row$qualified_name[[1]]
+  event_select <- paste0(
+    "t.person_id AS subject_id, t.", start_col,
+    " AS cohort_start_date, COALESCE(t.", end_col, ", t.", start_col,
+    ") AS cohort_end_date, t.", event_id_col, " AS index_event_id"
+  )
+  where <- paste0(" WHERE t.", start_col, " IS NOT NULL", concept_predicate)
+  if (identical(primary_limit, "all")) {
+    sql <- paste0("SELECT ", event_select, " FROM ", qualified, " t", where)
+  } else {
+    direction <- if (identical(primary_limit, "last")) "DESC" else "ASC"
+    ranked <- paste0(
+      "SELECT ", event_select, ", ROW_NUMBER() OVER (PARTITION BY t.person_id ",
+      "ORDER BY t.", start_col, " ", direction, ", t.", event_id_col, " ",
+      direction, ") AS dsomop_event_ordinal FROM ", qualified, " t", where
+    )
+    sql <- paste0(
+      "SELECT subject_id, cohort_start_date, cohort_end_date, index_event_id ",
+      "FROM (", ranked, ") dsomop_ranked_event ",
+      "WHERE dsomop_event_ordinal = 1"
+    )
+  }
+  name <- .reserveTempTableName(handle, name)
+  out <- .createTempTable(handle, name, sql)
+  .assertMinPersons(handle = handle, sql = paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", out))
+  out
+}
+
+#' Apply population eligibility predicates to each concrete index episode
+#' @keywords internal
+.filterIndexEventEpisodes <- function(handle, bp, cohort_table, filter_tree,
+                                      name) {
+  if (is.null(filter_tree)) return(cohort_table)
+  person <- bp$tables[bp$tables$table_name == "person" &
+                        bp$tables$present_in_db, , drop = FALSE]
+  if (nrow(person) != 1L) {
+    stop("Index-event filtering requires the authorized person table.",
+         call. = FALSE)
+  }
+  person_cols <- bp$columns[["person"]]$column_name %||% character(0)
+  where <- .compileCohortFilterWhere(
+    handle, filter_tree, bp, person_cols,
+    index_anchor = "idx.cohort_start_date"
+  )
+  if (!nzchar(where)) {
+    stop("Index-event eligibility compiled to no predicate.", call. = FALSE)
+  }
+  sql <- paste0(
+    "SELECT idx.subject_id, idx.cohort_start_date, idx.cohort_end_date, ",
+    "idx.index_event_id FROM ", cohort_table, " idx JOIN ",
+    person$qualified_name[[1]], " p ON p.person_id = idx.subject_id WHERE ",
+    where
+  )
+  name <- .reserveTempTableName(handle, name)
+  out <- .createTempTable(handle, name, sql)
+  .assertMinPersons(handle = handle, sql = paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", out))
+  out
+}
+
+#' Intersect a person scope while preserving every retained index episode
+#' @keywords internal
+.scopeIndexEventEpisodes <- function(handle, cohort_table, scope_cohort, name) {
+  sql <- paste0(
+    "SELECT idx.subject_id, idx.cohort_start_date, idx.cohort_end_date, ",
+    "idx.index_event_id FROM ", cohort_table, " idx WHERE EXISTS (SELECT 1 FROM ",
+    scope_cohort, " sc WHERE sc.subject_id = idx.subject_id)"
+  )
+  name <- .reserveTempTableName(handle, name)
+  out <- .createTempTable(handle, name, sql)
+  .assertMinPersons(handle = handle, sql = paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", out))
+  out
 }
 
 #' Materialize an "all persons" cohort temp table
@@ -1000,7 +2327,7 @@
     "o.observation_period_start_date AS cohort_start_date, ",
     "o.observation_period_end_date AS cohort_end_date ",
     "FROM ", obs_qualified, " o")
-  .dropTempTable(handle, name)
+  name <- .reserveTempTableName(handle, name)
   .createTempTable(handle, name, cohort_sql)
 }
 
@@ -1037,12 +2364,15 @@
 #'   materialized for the base population (e.g. from a cohort_definition_id)
 #' @param base_person_ids Integer vector or NULL; person ids for the base
 #'   population when no temp table was materialized
+#' @param index_cohort_table Character or NULL; cohort table whose episode start
+#'   dates anchor index-dependent criteria. Defaults to \code{base_cohort_table}.
 #' @return Named list keyed by population id; each element is
 #'   \code{list(cohort_table = <name|NULL>, person_ids = <int vector>)}
 #' @keywords internal
 .planResolvePopulations <- function(handle, plan, bp,
                                     base_cohort_table = NULL,
-                                    base_person_ids = NULL) {
+                                    base_person_ids = NULL,
+                                    index_cohort_table = base_cohort_table) {
   pops <- plan$populations
   resolved <- list()
 
@@ -1060,8 +2390,26 @@
     has_setop <- identical(kind, "setop") || !is.null(pop$setop)
     has_filter_tree <- !is.null(pop$filter_tree)
     has_own_cohort <- !is.null(pop$cohort_definition_id)
+    has_index_event <- !is.null(pop$index_event)
+    if (!is.null(pop$episode_policy) &&
+        (!is.character(pop$episode_policy) ||
+         length(pop$episode_policy) != 1L || is.na(pop$episode_policy) ||
+         !tolower(pop$episode_policy) %in%
+           c("any_episode", "all_episodes",
+             "first_episode", "last_episode"))) {
+      stop("Population '", pid, "' has an invalid episode_policy.",
+           call. = FALSE)
+    }
 
     if (has_setop) {
+      if (has_index_event) {
+        stop("Set-operation populations cannot declare index_event.",
+             call. = FALSE)
+      }
+      if (!is.null(pop$episode_policy)) {
+        stop("Set-operation populations cannot declare episode_policy.",
+             call. = FALSE)
+      }
       op <- tolower(pop$setop$op %||% "union")
       members <- unlist(pop$setop$members, use.names = FALSE)
       if (length(members) < 1) {
@@ -1093,12 +2441,13 @@
           # a >=3-member fold makes the 2nd .createTempTable collide ("table
           # already exists"). The LAST step lands at the canonical population name
           # so the cleanup loop (pop_temp_tables) drops it; intermediate steps get
-          # a unique per-step name (auto-dropped with the session connection).
+          # a unique per-step name and the plan's ownership guard releases them.
           step_name <- if (k == length(member_tables)) {
             paste0("dsomop_plan_pop_", pid)
           } else {
             paste0("dsomop_plan_pop_", pid, "_fold", k)
           }
+          step_name <- .reserveTempTableName(handle, step_name)
           combined <- .cohortCombine(handle, op, combined, member_tables[[k]],
             new_name = step_name)
         }
@@ -1111,6 +2460,42 @@
       resolved[[pid]] <- list(
         cohort_table = combined,
         person_ids = .cohortPersonIds(handle, combined))
+      next
+    }
+
+    if (has_index_event) {
+      if (!is.null(pop$episode_policy)) {
+        stop("Population '", pid, "': episode_policy cannot be combined with ",
+             "index_event; primary_limit defines candidate-event selection.",
+             call. = FALSE)
+      }
+      event_name <- paste0("dsomop_plan_pop_", pid, "_index")
+      event_ct <- .materializeIndexEventCohort(
+        handle, bp, pop$index_event, event_name
+      )
+
+      # A population-local cohort reference is a person scope. Keep the event
+      # table on the left so its episode dates and recurrence survive.
+      if (has_own_cohort) {
+        own_ct <- .resolveCohortTable(handle, pop$cohort_definition_id)
+        event_ct <- .scopeIndexEventEpisodes(
+          handle, event_ct, own_ct,
+          name = paste0("dsomop_plan_pop_", pid, "_own_scope")
+        )
+      }
+      if (has_filter_tree) {
+        event_ct <- .filterIndexEventEpisodes(
+          handle, bp, event_ct, pop$filter_tree,
+          name = paste0("dsomop_plan_pop_", pid)
+        )
+      }
+      person_ids <- .cohortPersonIds(handle, event_ct)
+      .assertMinPersons(n_persons = length(unique(person_ids)))
+      resolved[[pid]] <- list(
+        cohort_table = event_ct,
+        person_ids = person_ids,
+        preserve_index_episodes = TRUE
+      )
       next
     }
 
@@ -1149,7 +2534,8 @@
       # nothing to anchor to, so windows fall back to the wall-clock date inside
       # .windowPredicateSql.
       filter_ids <- .buildCohortFromFilters(handle, pop$filter_tree,
-        index_cohort_table = base_cohort_table)
+        index_cohort_table = index_cohort_table,
+        episode_policy = pop$episode_policy)
       seed_ids <- if (is.null(seed_ids)) filter_ids
                   else intersect(seed_ids, filter_ids)
     }
@@ -1210,11 +2596,24 @@
              "': no materializable person set.", call. = FALSE)
       }
     }
-    narrowed <- .cohortCombine(handle, "intersect", ct, scope_cohort,
-      new_name = paste0("dsomop_plan_pop_", pid, "_scoped"))
+    # Explicit index-event populations keep THEIR concrete event episodes; all
+    # legacy populations keep the scope cohort's episode bounds as before.
+    narrowed <- if (isTRUE(r$preserve_index_episodes)) {
+      .scopeIndexEventEpisodes(
+        handle, ct, scope_cohort,
+        name = paste0("dsomop_plan_pop_", pid, "_scoped")
+      )
+    } else {
+      scoped_name <- .reserveTempTableName(
+        handle, paste0("dsomop_plan_pop_", pid, "_scoped")
+      )
+      .cohortCombine(handle, "intersect", scope_cohort, ct,
+        new_name = scoped_name)
+    }
     resolved[[pid]] <- list(
       cohort_table = narrowed,
-      person_ids = .cohortPersonIds(handle, narrowed))
+      person_ids = .cohortPersonIds(handle, narrowed),
+      preserve_index_episodes = isTRUE(r$preserve_index_episodes))
   }
   resolved
 }
@@ -1229,30 +2628,100 @@
 #' @param plan List; the extraction plan
 #' @param out_symbols Named list; output name -> R symbol mapping
 #' @param output_mode Character; "memory" (default) or "staged"
-#' @return Named list of data frames or FlowerDatasetDescriptors
+#' @return Named list of data frames or staged dataset descriptors.
 #' @keywords internal
 .planExecute <- function(handle, plan, out_symbols, output_mode = "memory") {
+  temp_tables_before <- unique(handle$temp_tables %||% character(0))
+  on.exit(
+    .dropTempTablesCreatedSince(handle, temp_tables_before),
+    add = TRUE
+  )
+  outputs <- plan$outputs %||% list()
+  max_plan_outputs <- .extractionCap("dsomop.max_plan_outputs", 100L)
+  if (length(outputs) > max_plan_outputs) {
+    stop("Plan exceeds the server max_plan_outputs cap of ",
+         max_plan_outputs, ".", call. = FALSE)
+  }
   bp <- .buildBlueprint(handle)
 
   staged <- identical(output_mode, "staged")
+  person_key <- if (staged) .personKey(handle) else NULL
+  pseudonymization <- if (staged) .personKeyPublicContract(handle) else NULL
   staging_dir <- NULL
   staging_token <- NULL
   staged_descriptors <- list()
+  staging_committed <- FALSE
+
+  if (!is.list(outputs) ||
+      (length(outputs) > 0L &&
+       (is.null(names(outputs)) || any(!nzchar(names(outputs))) ||
+        anyDuplicated(names(outputs))))) {
+    stop("Plan outputs must be a uniquely named list.", call. = FALSE)
+  }
+  for (output_name in names(outputs)) {
+    .validateIdentifier(output_name, "output")
+  }
+  cohort_declaration_errors <- .planRequiredCohortErrors(plan)
+  if (length(cohort_declaration_errors) > 0L) {
+    stop(paste(cohort_declaration_errors, collapse = " "), call. = FALSE)
+  }
 
   if (staged) {
+    max_outputs <- suppressWarnings(as.numeric(
+      getOption("dsomop.max_staged_outputs", 100L)
+    ))
+    max_dirs <- suppressWarnings(as.numeric(
+      getOption("dsomop.max_staging_dirs_per_handle", 8L)
+    ))
+    if (length(max_outputs) != 1L || is.na(max_outputs) ||
+        !is.finite(max_outputs) || max_outputs != floor(max_outputs) ||
+        max_outputs < 1L || length(outputs) > max_outputs ||
+        length(max_dirs) != 1L || is.na(max_dirs) || !is.finite(max_dirs) ||
+        max_dirs != floor(max_dirs) || max_dirs < 1L) {
+      stop("Staged output/directory caps must be positive server integers and ",
+           "the plan must stay within them.", call. = FALSE)
+    }
+    live_dirs <- unique(handle$staging_dirs %||% character(0))
+    if (length(live_dirs) > 0L) {
+      base <- .stagingBaseDir()
+      states <- vapply(
+        live_dirs,
+        function(path) .inspectOwnedStagingPath(path, base)$state,
+        character(1)
+      )
+      not_live <- live_dirs[states != "directory"]
+      if (length(not_live) > 0L) {
+        # Valid paths already absent are removed idempotently. Invalid paths and
+        # symlinks remain owned and abort preflight so they cannot be forgotten.
+        .cleanupHandleStaging(handle, paths = not_live)
+      }
+      live_dirs <- unique(handle$staging_dirs %||% character(0))
+    }
+    if (length(live_dirs) >= max_dirs) {
+      stop("This OMOP handle has reached its staged-directory cap; clean up ",
+           "expired/consumed staged outputs before creating more.",
+           call. = FALSE)
+    }
     staging_token <- .generateStagingToken()
     staging_dir <- .createStagingDir(staging_token)
+    handle$staging_dirs <- union(handle$staging_dirs %||% character(0),
+                                 staging_dir)
     on.exit({
-      # Clean up staging dir if no descriptors were produced (error path)
-      if (length(staged_descriptors) == 0L && !is.null(staging_dir) &&
-          dir.exists(staging_dir)) {
-        unlink(staging_dir, recursive = TRUE)
+      # An error must not strand a partially written directory. A successful
+      # plan commits only after every output and its manifest are complete.
+      if (!staging_committed && !is.null(staging_dir)) {
+        .cleanupHandleStaging(handle, paths = staging_dir)
       }
     }, add = TRUE)
   }
 
   cohort_table <- NULL
   cohort_person_ids <- NULL
+
+  # Resolve scope before compiling population filters: when the scope is an
+  # existing cohort, its actual cohort_start_date is the index anchor used by
+  # the explicit episode policy.
+  scope_cohort <- .planResolveScopeCohort(handle, plan)
 
   if (!is.null(plan$cohort)) {
     # NOTE: a plan$cohort of type "cohort_table" (a scalar cohort_definition_id)
@@ -1266,23 +2735,26 @@
       # Recipe-authored population filters: a nested AND/OR cohort filter tree
       # (the sole transport from recipe_to_plan).
       filter_spec <- plan$cohort$filter_tree
-      cohort_person_ids <- .buildCohortFromFilters(handle, filter_spec)
+      cohort_person_ids <- .buildCohortFromFilters(
+        handle, filter_spec,
+        index_cohort_table = scope_cohort,
+        episode_policy = plan$cohort$episode_policy
+      )
       # Materialize a cohort temp table so baseline/survival outputs work
       if (length(cohort_person_ids) > 0) {
         obs_table <- bp$tables[bp$tables$table_name == "observation_period" &
                                  bp$tables$present_in_db, , drop = FALSE]
         if (nrow(obs_table) > 0) {
           obs_qualified <- obs_table$qualified_name[1]
-          ids_str <- .sqlIdList(cohort_person_ids)
           cohort_sql <- paste0(
             "SELECT DISTINCT o.person_id AS subject_id, ",
             "o.observation_period_start_date AS cohort_start_date, ",
             "o.observation_period_end_date AS cohort_end_date ",
-            "FROM ", obs_qualified, " o ",
-            "WHERE o.person_id IN (", ids_str, ")"
+            "FROM ", obs_qualified, " o WHERE ",
+            .sqlIdInPredicate("o.person_id", cohort_person_ids)
           )
-          cohort_table <- .createTempTable(
-            handle, "dsomop_plan_cohort", cohort_sql)
+          cohort_name <- .reserveTempTableName(handle, "dsomop_plan_cohort")
+          cohort_table <- .createTempTable(handle, cohort_name, cohort_sql)
         }
       }
       .assertMinPersons(n_persons = length(unique(cohort_person_ids)))
@@ -1307,7 +2779,6 @@
   # relative_to_index extraction needs. When no explicit base was built above
   # (no filter_tree / spec), adopt the scope cohort as the index anchor so
   # anchoring survives the move of the scalar cohort from "base" to "scope".
-  scope_cohort <- .planResolveScopeCohort(handle, plan)
   if (is.null(cohort_table) && !is.null(scope_cohort)) {
     cohort_table <- scope_cohort
     cohort_person_ids <- .cohortPersonIds(handle, scope_cohort)
@@ -1326,7 +2797,8 @@
   if (multi_pop) {
     pop_sets <- .planResolvePopulations(handle, plan, bp,
       base_cohort_table = cohort_table,
-      base_person_ids = cohort_person_ids)
+      base_person_ids = cohort_person_ids,
+      index_cohort_table = scope_cohort %||% cohort_table)
     pop_sets <- .planScopePopulations(handle, pop_sets, scope_cohort, bp)
   } else if (!is.null(scope_cohort)) {
     # Single-population fast path: intersect the scope into the base cohort and
@@ -1337,13 +2809,15 @@
     # above), so the intersect is the cohort with itself: same persons, same
     # dates, re-gated.
     base_ct <- cohort_table %||% scope_cohort
+    scoped_name <- .reserveTempTableName(
+      handle, "dsomop_plan_cohort_scoped"
+    )
     cohort_table <- .cohortCombine(handle, "intersect", scope_cohort,
-      base_ct, new_name = "dsomop_plan_cohort_scoped")
+      base_ct, new_name = scoped_name)
     cohort_person_ids <- .cohortPersonIds(handle, cohort_table)
   }
 
-  # Temp tables created for populations/scope (cleaned up at the end alongside
-  # the base cohort and concept-set temp tables).
+  # Temp tables created for populations/scope (cleaned up with the base cohort).
   pop_temp_tables <- character(0)
   if (!is.null(pop_sets)) {
     pop_temp_tables <- unique(stats::na.omit(unname(vapply(pop_sets,
@@ -1361,7 +2835,6 @@
   # layer recognises them even when a user has renamed the _concept_id suffix
   # away. Carried out of here as an attribute on the returned list (see tail).
   concept_cols_by_output <- list()
-  outputs <- plan$outputs %||% list()
   options <- plan$options %||% list()
   translate <- options$translate_concepts %||% TRUE
   block_sensitive <- options$block_sensitive %||% TRUE
@@ -1372,19 +2845,61 @@
     out_pre <- outputs[[out_name_pre]]
     cs <- out_pre$filters$concept_set$ids %||% out_pre$concept_set
     if (is.list(cs) && !is.null(cs$concepts)) {
-      key <- paste(sort(cs$concepts), collapse = ",")
+      # Expansion flags and exclusions are semantic input, not cache metadata.
+      # Sets with equal roots but different expansion policies must not collide.
+      key <- as.character(jsonlite::toJSON(
+        cs, auto_unbox = TRUE, null = "null", digits = NA
+      ))
       if (!exists(key, envir = concept_cache)) {
-        expanded <- tryCatch(
-          .vocabExpandConceptSet(handle, cs),
-          error = function(e) cs$concepts
-        )
+        expanded <- .vocabExpandConceptSet(handle, cs)
         assign(key, expanded, envir = concept_cache)
       }
     }
   }
 
   # Track materialized concept set temp tables for cleanup
-  cs_temp_tables <- character(0)
+  cleanup_plan_temps <- function(remove_staging = FALSE) {
+    temp_names <- unique(c(base_cohort_table, pop_temp_tables))
+    temp_names <- temp_names[!is.na(temp_names) & nzchar(temp_names)]
+    # A caller-owned cohort can become the plan's base/scope.  It existed at
+    # entry and must never be released by this operation.
+    temp_names <- setdiff(temp_names, temp_tables_before)
+    for (temp_name in temp_names) {
+      try(.dropTempTable(handle, temp_name), silent = TRUE)
+    }
+    if (remove_staging && !is.null(staging_dir)) {
+      .cleanupHandleStaging(handle, paths = staging_dir)
+    }
+    invisible(NULL)
+  }
+
+  # Structural validation above proves only that a cohort-producing source was
+  # declared. Resolve it once, then reject the whole plan before extracting any
+  # output if a cohort-dependent output's selected population did not actually
+  # produce a cohort table. This check stays outside the per-output permissive
+  # tryCatch so query_strict=FALSE can never turn it into warning + NULL and
+  # leave a pre-existing assigned symbol looking current.
+  for (out_name in names(outputs)) {
+    out <- outputs[[out_name]]
+    out_type <- tolower(out$type %||% "event_level")
+    if (!out_type %in% .planCohortOutputTypes()) next
+    population_id <- out$population_id %||% "base"
+    resolved_cohort <- if (is.null(pop_sets)) {
+      base_cohort_table
+    } else {
+      population <- pop_sets[[population_id]]
+      if (is.null(population)) NULL else population$cohort_table
+    }
+    if (is.null(resolved_cohort)) {
+      cleanup_plan_temps(remove_staging = TRUE)
+      stop(
+        "Output '", out_name, "' (type '", out_type,
+        "') requires a cohort; population '", population_id,
+        "' did not resolve to an executable cohort table.",
+        call. = FALSE
+      )
+    }
+  }
 
   # First pass: process all non-dictionary outputs
   for (out_name in names(outputs)) {
@@ -1411,8 +2926,19 @@
       cohort_table <- pset$cohort_table
       cohort_person_ids <- pset$person_ids
     }
+    # Prefer the database-resident cohort relation whenever it exists. Sending
+    # the same population again as an inline IN list is redundant, can generate
+    # very large SQL, and hits backend expression limits. Keep IDs only for the
+    # rare population form that has no materialized cohort table.
+    sql_scope_person_ids <- if (is.null(cohort_table)) {
+      cohort_person_ids
+    } else {
+      NULL
+    }
 
     tryCatch({
+      custom_filters <- out$filters$custom
+
       if (out_type == "person_level") {
         result_df <- NULL
         out_repr <- out$representation %||% "long"
@@ -1420,9 +2946,36 @@
         # persons who have no events in that table — collected from each
         # feature frame and applied after the cross-table join below.
         zero_fill_cols <- character(0)
+        if (!is.null(custom_filters) && length(custom_filters) > 0 &&
+            length(out$tables %||% list()) == 0) {
+          stop("person_level custom filters require at least one source table.",
+               call. = FALSE)
+        }
+        table_specs <- out$tables %||% list()
+        raw_tables <- names(table_specs)[vapply(table_specs, function(entry) {
+          !(is.list(entry) && !is.null(entry$features))
+        }, logical(1))]
+        # Only PERSON and DEATH are 0/1-row-per-person CDM tables. Any raw
+        # repeatable table violates the person_level cardinality contract even
+        # when it is the sole table in the output.
+        repeatable_raw <- setdiff(raw_tables, c("person", "death"))
+        if (length(repeatable_raw) > 0L) {
+          stop("person_level raw table(s) do not guarantee one row per person: ",
+               paste(repeatable_raw, collapse = ", "), ". Aggregate them as ",
+               "features or request an event_level output.", call. = FALSE)
+        }
 
         for (tbl_name in names(out$tables %||% list())) {
           entry <- out$tables[[tbl_name]]
+          entry_filters <- if (is.list(entry)) entry$filters else NULL
+          table_filters <- if (is.null(custom_filters) ||
+                               length(custom_filters) == 0) {
+            entry_filters
+          } else if (is.null(entry_filters) || length(entry_filters) == 0) {
+            custom_filters
+          } else {
+            list(and = list(entry_filters, custom_filters))
+          }
 
           # Check if entry has feature specs (list with $features)
           if (is.list(entry) && !is.null(entry$features)) {
@@ -1431,12 +2984,13 @@
               table = tbl_name,
               columns = NULL,
               concept_filter = entry$concept_set,
-              person_ids = cohort_person_ids,
+              person_ids = sql_scope_person_ids,
+              cohort_table = cohort_table,
               translate_concepts = translate,
               representation = "features",
               feature_specs = entry$features,
               block_sensitive = block_sensitive,
-              filters = entry$filters,
+              filters = table_filters,
               concept_col = entry$concept_col,
               visit_filter = entry$visit
             )
@@ -1453,10 +3007,12 @@
               handle,
               table = tbl_name,
               columns = spec$source,
-              person_ids = cohort_person_ids,
+              person_ids = sql_scope_person_ids,
+              cohort_table = cohort_table,
               translate_concepts = translate,
               representation = "long",
-              block_sensitive = block_sensitive
+              block_sensitive = block_sensitive,
+              filters = table_filters
             )
             tbl_df <- .applyColumnAliases(tbl_df, spec)
             concept_cols_by_output[[out_name]] <- c(
@@ -1519,27 +3075,19 @@
         # override carried on the output. These are forwarded to .compileSelect
         # (directly when streaming, via .extractTable otherwise); .compileSelect
         # validates the custom filter fail-closed before emitting any SQL.
-        custom_filters <- out$filters$custom
         visit_filter   <- out$filters$visit %||% out$visit_filter
         concept_col    <- out$filters$concept_col %||% out$concept_col
 
         # Use concept cache if available, otherwise expand
         if (is.list(concept_set) && !is.null(concept_set$concepts)) {
-          key <- paste(sort(concept_set$concepts), collapse = ",")
+          key <- as.character(jsonlite::toJSON(
+            concept_set, auto_unbox = TRUE, null = "null", digits = NA
+          ))
           if (exists(key, envir = concept_cache)) {
             concept_set <- get(key, envir = concept_cache)
           } else {
-            concept_set <- tryCatch(
-              .vocabExpandConceptSet(handle, concept_set),
-              error = function(e) concept_set$concepts
-            )
+            concept_set <- .vocabExpandConceptSet(handle, concept_set)
           }
-        }
-
-        # Materialize large concept sets as temp tables
-        cs_temp <- .materializeConceptSet(handle, concept_set)
-        if (!is.null(cs_temp)) {
-          cs_temp_tables <- c(cs_temp_tables, cs_temp)
         }
 
         # Add cohort date when index_window is active (for days_from_index)
@@ -1556,7 +3104,7 @@
             handle, out$table,
             columns = out$columns,
             concept_filter = concept_set,
-            person_ids = cohort_person_ids,
+            person_ids = sql_scope_person_ids,
             time_window = time_window,
             cohort_table = cohort_table,
             block_sensitive = block_sensitive,
@@ -1567,9 +3115,27 @@
             visit_filter = visit_filter
           )
 
+          if (!is.null(out$temporal$min_gap)) {
+            tie_col <- if (!is.null(
+              .eventPrimaryKeyColumn(bp, tolower(out$table)))) {
+              "dsomop_event_order_id"
+            } else {
+              NULL
+            }
+            sql <- .wrapMinGap(handle, sql, out$temporal,
+                               "dsomop_event_order_date", tie_col = tie_col)
+          }
+
           if (!is.null(out$temporal$event_select)) {
-            ev_date_col <- .getDateColumn(bp, tolower(out$table))
-            sql <- .wrapEventSelect(handle, sql, out$temporal, ev_date_col)
+            tie_col <- if (!is.null(
+              .eventPrimaryKeyColumn(bp, tolower(out$table)))) {
+              "dsomop_event_order_id"
+            } else {
+              NULL
+            }
+            sql <- .wrapEventSelect(handle, sql, out$temporal,
+                                    "dsomop_event_order_date",
+                                    tie_col = tie_col)
           }
 
           # Disclosure check before streaming
@@ -1585,7 +3151,7 @@
           dh <- .normalizeDateHandling(out$date_handling)
           if (is.null(dh)) {
             default_mode <- getOption("dsomop.default_date_handling", "remove")
-            dh <- list(mode = default_mode)
+            dh <- .normalizeDateHandling(default_mode)
           }
           if (identical(dh$mode, "absolute")) {
             allow <- getOption("dsomop.allow_absolute_dates",
@@ -1601,18 +3167,33 @@
 
           chunk_fn <- function(chunk) {
             # Compute days_from_index when cohort_start_date is present
+            date_source <- if (!is.null(tbl_date_col) &&
+                               tbl_date_col %in% names(chunk)) {
+              tbl_date_col
+            } else if ("dsomop_event_order_date" %in% names(chunk)) {
+              "dsomop_event_order_date"
+            } else {
+              NULL
+            }
             if ("cohort_start_date" %in% names(chunk) &&
-                !is.null(tbl_date_col) &&
-                tbl_date_col %in% names(chunk)) {
+                !is.null(date_source)) {
               chunk$days_from_index <- as.integer(
-                as.Date(chunk[[tbl_date_col]]) -
+                as.Date(chunk[[date_source]]) -
                 as.Date(chunk$cohort_start_date)
               )
-              chunk$cohort_start_date <- NULL
             }
+            chunk$dsomop_event_order_date <- NULL
             chunk <- .convertTypes(chunk)
             chunk <- .applyDateHandling(chunk, dh)
-            chunk
+            chunk$cohort_start_date <- NULL
+            chunk$cohort_end_date <- NULL
+            chunk$rn <- NULL
+            chunk$dsomop_event_order_id <- NULL
+            chunk$dsomop_event_partition_concept <- NULL
+            chunk[grep("^dsomop_gap_", names(chunk), value = TRUE)] <- NULL
+            .pseudonymizeIdentifiers(
+              chunk, person_key, pseudonymization = pseudonymization
+            )
           }
 
           output_path <- file.path(staging_dir,
@@ -1620,7 +3201,14 @@
           file_info <- .executeQueryToParquet(
             .conn(handle), sql, output_path, chunk_fn = chunk_fn
           )
-          desc <- .buildStagedDescriptor(out_name, file_info, staging_token)
+          desc <- .buildStagedDescriptor(
+            out_name, file_info, staging_token,
+            pseudonymization = pseudonymization,
+            semantic_contract = .stagedSemanticContract(out),
+            bundle_contract = .stagedBundleContract(
+              out_name, staging_token, out
+            )
+          )
           results[[out_name]] <- desc
           staged_descriptors[[out_name]] <- desc
 
@@ -1630,12 +3218,13 @@
             table = out$table,
             columns = out$columns,
             concept_filter = concept_set,
-            person_ids = cohort_person_ids,
+            person_ids = sql_scope_person_ids,
             time_window = time_window,
             cohort_table = cohort_table,
             translate_concepts = translate,
             representation = repr,
             feature_specs = out$representation$features,
+            representation_grain = out$representation$grain %||% "person",
             block_sensitive = block_sensitive,
             temporal = out$temporal,
             date_handling = out$date_handling,
@@ -1649,89 +3238,93 @@
         }
 
       } else if (out_type == "baseline") {
-        if (is.null(cohort_table)) {
-          warning("Baseline output '", out_name,
-                  "' requires a cohort; skipping.", call. = FALSE)
-          results[[out_name]] <- NULL
-        } else {
-          # Person columns accept aliases the same way as person_level:
-          # extract by source name, then rename to the requested alias.
-          base_spec <- .colSpec(out$columns)
-          results[[out_name]] <- .applyColumnAliases(
-            .extractBaseline(
-              handle,
-              cohort_table = cohort_table,
-              columns = base_spec$source,
-              derived = out$derived,
-              translate_concepts = translate
-            ),
-            base_spec
-          )
-          concept_cols_by_output[[out_name]] <- .conceptAliases(base_spec)
+        if (!is.null(custom_filters) && length(custom_filters) > 0) {
+          stop("baseline does not have one unambiguous event table for ",
+               "filters$custom; use a filtered population or event output.",
+               call. = FALSE)
         }
+        # Person columns accept aliases the same way as person_level:
+        # extract by source name, then rename to the requested alias.
+        base_spec <- .colSpec(out$columns)
+        results[[out_name]] <- .applyColumnAliases(
+          .extractBaseline(
+            handle,
+            cohort_table = cohort_table,
+            columns = base_spec$source,
+            derived = out$derived,
+            translate_concepts = translate,
+            age_breaks = out$age_breaks
+          ),
+          base_spec
+        )
+        concept_cols_by_output[[out_name]] <- .conceptAliases(base_spec)
 
       } else if (out_type == "survival") {
-        if (is.null(cohort_table)) {
-          warning("Survival output '", out_name,
-                  "' requires a cohort; skipping.", call. = FALSE)
-          results[[out_name]] <- NULL
-        } else {
-          results[[out_name]] <- .extractSurvival(
-            handle,
-            cohort_table = cohort_table,
-            outcome = out$outcome,
-            tar = out$tar,
-            event_order = out$event_order %||% "first",
-            filters = out$filters$custom
-          )
-        }
+        results[[out_name]] <- .extractSurvival(
+          handle,
+          cohort_table = cohort_table,
+          outcome = out$outcome,
+          tar = out$tar,
+          event_order = out$event_order %||% "first",
+          filters = custom_filters
+        )
 
       } else if (out_type == "cohort_membership") {
-        if (is.null(cohort_table)) {
-          warning("Cohort membership output '", out_name,
-                  "' requires a cohort; skipping.", call. = FALSE)
-          results[[out_name]] <- NULL
-        } else {
-          results[[out_name]] <- .extractCohortMembership(
-            handle,
-            cohort_table = cohort_table,
-            cohort_definition_id = plan$cohort$cohort_definition_id
-          )
+        if (!is.null(custom_filters) && length(custom_filters) > 0) {
+          stop("cohort_membership cannot apply event-row filters$custom; ",
+               "filter the population before materializing membership.",
+               call. = FALSE)
         }
+        results[[out_name]] <- .extractCohortMembership(
+          handle,
+          cohort_table = cohort_table,
+          cohort_definition_id = plan$cohort$cohort_definition_id,
+          date_handling = out$date_handling
+        )
 
       } else if (out_type == "intervals_long") {
-        if (is.null(cohort_table)) {
-          warning("Intervals output '", out_name,
-                  "' requires a cohort; skipping.", call. = FALSE)
-          results[[out_name]] <- NULL
-        } else {
-          results[[out_name]] <- .extractIntervalsLong(
-            handle,
-            cohort_table = cohort_table,
-            tables = out$tables,
-            concept_filter = out$concept_filter
-          )
-        }
+        results[[out_name]] <- .extractIntervalsLong(
+          handle,
+          cohort_table = cohort_table,
+          tables = out$tables,
+          concept_filter = out$concept_filter,
+          filters = custom_filters
+        )
 
       } else if (out_type == "temporal_covariates") {
-        if (is.null(cohort_table)) {
-          warning("Temporal covariates output '", out_name,
-                  "' requires a cohort; skipping.", call. = FALSE)
-          results[[out_name]] <- NULL
-        } else {
-          results[[out_name]] <- .extractTemporalCovariates(
-            handle,
-            cohort_table = cohort_table,
-            table = out$table,
-            concept_filter = out$concept_set,
-            bin_width = out$bin_width %||% 30L,
-            window_start = out$window_start %||% -365L,
-            window_end = out$window_end %||% 0L,
-            analyses = out$analyses %||% c("binary")
-          )
-        }
+        results[[out_name]] <- .extractTemporalCovariates(
+          handle,
+          cohort_table = cohort_table,
+          table = out$table,
+          concept_filter = out$concept_set,
+          bin_width = out$bin_width %||% 30L,
+          window_start = out$window_start %||% -365L,
+          window_end = out$window_end %||% 0L,
+          analyses = out$analyses %||% c("binary"),
+          filters = custom_filters
+        )
+      } else if (out_type == "person_period") {
+        results[[out_name]] <- .extractPersonPeriod(
+          handle,
+          cohort_table = cohort_table,
+          table = out$table,
+          concept_filter = out$concept_set,
+          bin_width = out$bin_width %||% 30L,
+          window_start = out$window_start %||% -365L,
+          window_end = out$window_end %||% 0L,
+          analyses = out$analyses %||% c("binary"),
+          grain = out$grain,
+          time_origin = out$time_origin,
+          filters = custom_filters
+        )
+      } else {
+        stop("Unsupported output type '", out_type, "'.", call. = FALSE)
       }
     }, error = function(e) {
+      if (isTRUE(.omopDisclosureSettings()$query_strict)) {
+        cleanup_plan_temps(remove_staging = TRUE)
+        stop(e)
+      }
       results[[out_name]] <<- NULL
       warning("Plan output '", out_name, "' failed: ", e$message)
     })
@@ -1743,32 +3336,30 @@
     if ((out$type %||% "event_level") != "concept_dictionary") next
 
     tryCatch({
+      custom_filters <- out$filters$custom
+      if (!is.null(custom_filters) && length(custom_filters) > 0) {
+        stop("concept_dictionary is derived from other outputs and cannot ",
+             "apply filters$custom directly.", call. = FALSE)
+      }
       results[[out_name]] <- .buildConceptDictionary(
         handle,
         results = results,
         source_outputs = out$source_outputs
       )
     }, error = function(e) {
+      if (isTRUE(.omopDisclosureSettings()$query_strict)) {
+        cleanup_plan_temps(remove_staging = TRUE)
+        stop(e)
+      }
       results[[out_name]] <<- NULL
       warning("Plan output '", out_name, "' failed: ", e$message)
     })
   }
 
-  # Drop the base cohort by its snapshot name (the loop reassigned cohort_table
-  # per output in the multi-pop path) plus every per-population temp table.
-  # Intermediate set-op / pre-scope tables are session TEMP tables and auto-drop
-  # with the connection (same convention as the analysis catalog's scope folds).
-  if (!is.null(base_cohort_table)) {
-    .dropTempTable(handle, base_cohort_table)
-  }
-  for (pt in pop_temp_tables) {
-    .dropTempTable(handle, pt)
-  }
-
-  # Clean up materialized concept set temp tables
-  for (cs_tbl in cs_temp_tables) {
-    .dropTempTable(handle, cs_tbl)
-  }
+  # Drop the explicitly tracked working tables now.  The operation-level
+  # on.exit additionally releases every intermediate fold/index/scope object,
+  # including those created before cleanup_plan_temps was installed.
+  cleanup_plan_temps()
 
   # Staged mode: convert remaining data.frame results to descriptors
   if (staged && !is.null(staging_dir)) {
@@ -1781,7 +3372,14 @@
 
       # Stage data.frame results
       if (is.data.frame(result)) {
-        desc <- .stageDataFrame(result, out_name, staging_dir, staging_token)
+        desc <- .stageDataFrame(
+          result, out_name, staging_dir, staging_token, person_key,
+          pseudonymization = pseudonymization,
+          semantic_contract = .stagedSemanticContract(outputs[[out_name]]),
+          bundle_contract = .stagedBundleContract(
+            out_name, staging_token, outputs[[out_name]]
+          )
+        )
         results[[out_name]] <- desc
         staged_descriptors[[out_name]] <- desc
       } else if (is.list(result) && !is.data.frame(result)) {
@@ -1790,8 +3388,16 @@
         for (comp_name in names(result)) {
           if (is.data.frame(result[[comp_name]])) {
             full_name <- paste0(out_name, ".", comp_name)
-            desc <- .stageDataFrame(result[[comp_name]], full_name,
-                                     staging_dir, staging_token)
+            desc <- .stageDataFrame(
+              result[[comp_name]], full_name, staging_dir, staging_token,
+              person_key, pseudonymization = pseudonymization,
+              semantic_contract = .stagedSemanticContract(
+                outputs[[out_name]], component = comp_name
+              ),
+              bundle_contract = .stagedBundleContract(
+                out_name, staging_token, outputs[[out_name]]
+              )
+            )
             result[[comp_name]] <- desc
             staged_descriptors[[full_name]] <- desc
           }
@@ -1802,6 +3408,7 @@
 
     if (length(staged_descriptors) > 0) {
       .writeStagingManifest(staging_dir, staged_descriptors)
+      staging_committed <- TRUE
     }
   }
 

@@ -101,7 +101,7 @@
 
   value_expr <- if (identical(value_kind, "age")) {
     age_days <- .omopDateDiffDays(handle, "fop.op_start", "p.birth_dt")
-    paste0("CAST(", age_days, " / 365 AS INTEGER)")
+    .omopFloorDivideSql(age_days, 365L)
   } else {
     .omopDateDiffDays(handle, "fop.op_end", "fop.op_start")
   }
@@ -234,7 +234,8 @@
   # derived in R from year_of_birth and the first-obs-period start year so the
   # decile label matches Achilles 107's "age decile" stratum.
   raw$age_decile <- .computeAgeGroups(raw$year_of_birth, raw$op_start_year,
-                                      bin_width = 10L)
+                                      bin_width = 10L,
+                                      person_id = raw$person_id)
   raw <- raw[!is.na(raw$age_decile), , drop = FALSE]
   if (nrow(raw) == 0) return(data.frame())
   parts <- split(raw, raw$age_decile)
@@ -410,7 +411,7 @@
 
   age_expr  <- paste0(.omopYearExpr(handle, "fop.op_start"),
                       " - p.year_of_birth")
-  band_expr <- paste0("(CAST(", age_expr, " AS INTEGER) / 5) * 5")
+  band_expr <- .omopFloorBinSql(age_expr, 5L)
 
   if (isTRUE(by_gender)) {
     select_sql <- paste0(band_expr, " AS age_band, gc.concept_name AS gender_name")
@@ -453,7 +454,7 @@
                          "op", "person_id")
 
   len_expr <- .omopDateDiffDays(handle, "fop.op_end", "fop.op_start")
-  bucket   <- paste0("(CAST(", len_expr, " AS INTEGER) / 30) * 30")
+  bucket   <- .omopFloorBinSql(len_expr, 30L)
 
   sql <- .sql_translate(paste0(
     "SELECT ", bucket, " AS length_bucket, ",

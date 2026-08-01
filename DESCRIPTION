@@ -1,22 +1,25 @@
 Package: dsOMOP
 Type: Package
 Title: DataSHIELD Server-Side Integration for OMOP CDM Databases
-Version: 2.2.33
+Version: 2.2.34
 Authors@R: c(
     person("David", "Sarrat González", role = c("aut", "cre"), email = "david.sarrat@isglobal.org"),
     person("Xavier", "Escribà-Montagut", role = "aut"),
     person("Juan R", "González", role = "aut"))
-Description: Server-side DataSHIELD package providing safe, efficient, and
-    version-agnostic access to OMOP Common Data Model databases. Built on OHDSI
-    metadata for accurate schema introspection, concept role classification, and
-    vocabulary operations. Features include a curated query library with 50+
-    disclosure-controlled SQL templates, Achilles pre-computed analytics support,
-    plan-based multi-table extraction with feature engineering, cohort management,
-    and statistical disclosure control compliant with DataSHIELD nfilter settings.
-    Includes DBI/ODBC resource connectors and a built-in pure R SQL rendering
-    layer supporting PostgreSQL, SQLite/DuckDB, MySQL/MariaDB, SQL
-    Server/Synapse/PDW, Oracle, Redshift, BigQuery, Snowflake, Spark, and
-    Databricks.
+Description: Server-side DataSHIELD package providing typed, reviewed access to
+    OMOP Common Data Model databases. It uses vendored OHDSI CDM metadata, with
+    optional CommonDataModel metadata, for schema and concept-role
+    classification. Features include a curated query library with 80 locally
+    controlled SQL templates, selected pre-computed and live-computed Achilles
+    analysis contracts, plan-based extraction with feature engineering, cohort
+    management, and endpoint-specific controls informed by DataSHIELD nfilter
+    settings. Disclosure safety still depends on the deployed method allowlist,
+    server policy, database privileges, and the contract of each operation.
+    Includes DBI/ODBC resource connectors for PostgreSQL, SQLite, DuckDB,
+    MySQL/MariaDB, SQL Server/Synapse/PDW, Oracle, Redshift, BigQuery,
+    Snowflake, Spark, and Databricks, plus a small built-in SQL helper for
+    parameter rendering and common DATEADD/TOP translations. Query feature
+    parity depends on the target DBMS and installed driver.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Depends:
@@ -24,16 +27,17 @@ Depends:
 Imports:
     DBI,
     R6,
-    RPostgres,
     resourcer,
     jsonlite,
-    methods,
+    filelock,
     openssl,
     stats,
-    utils,
-    arrow
+    utils
 Suggests:
+    arrow,
+    RPostgres,
     RMariaDB,
+    ROracle,
     RPostgreSQL,
     RSQLite,
     duckdb,
@@ -41,7 +45,10 @@ Suggests:
     bit64,
     bigrquery,
     testthat (>= 3.0.0),
+    withr,
+    pkgload,
     DSLite,
+    dsOMOPClient,
     CommonDataModel,
     survival,
     gnm
@@ -87,7 +94,6 @@ AggregateMethods:
     omopAchillesResultsDS,
     omopAchillesDistributionDS,
     omopAchillesCatalogDS,
-    omopAchillesHeelDS,
     omopOhdsiStatusDS,
     omopOhdsiTablesDS,
     omopOhdsiResultsDS,
@@ -98,9 +104,7 @@ AggregateMethods:
     omopAnalysisListDS,
     omopAnalysisGetDS,
     omopAnalysisRunDS,
-    omopFactorLevelsDS,
-    c=base::c,
-    list=base::list
+    omopFactorLevelsDS
 AssignMethods:
     omopInitDS,
     omopPlanExecuteDS,
@@ -108,12 +112,37 @@ AssignMethods:
     omopCohortCombineDS,
     omopCohortFromTableDS,
     omopCleanupDS,
-    omopQueryExecDS,
     omopAsFactorColumnsDS,
     omopMergeDS,
     omopFilterDS,
     omopSelectDS,
     omopBindRowsDS,
     omopAnalysisRunAssignDS
+Options:
+    nfilter.subset=3,
+    nfilter.tab=3,
+    nfilter.levels.max=40,
+    nfilter.levels.density=0.33,
+    nfilter.string=80,
+    nfilter.stringShort=20,
+    nfilter.noise=0.25,
+    dsomop.nfilter.dist=10,
+    dsomop.nfilter.band=5,
+    dsomop.nfilter.age_range=5,
+    dsomop.nfilter.date_range=30,
+    dsomop.max_feature_specs=1000,
+    dsomop.max_pivot_concepts=1000,
+    dsomop.max_output_columns=5000,
+    dsomop.max_temporal_bins=10000,
+    dsomop.max_filter_depth=32,
+    dsomop.max_filter_nodes=1024,
+    dsomop.max_filter_values=10000,
+    dsomop.max_plan_outputs=100,
+    dsomop.max_analysis_scope_tables=8,
+    dsomop.max_temp_tables_per_handle=256,
+    dsomop.datetime_timezone="UTC",
+    dsomop.query_strict=TRUE,
+    dsomop.allow_absolute_dates=FALSE,
+    dsomop.allow_sensitive_columns=FALSE
 Config/testthat/edition: 3
 RoxygenNote: 7.3.3

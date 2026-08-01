@@ -22,7 +22,9 @@
 
 \item{cohort_id}{Integer; cohort_definition_id}
 
-\item{name}{Character; cohort name}
+\item{name}{Reserved for a future \code{cohort_definition} metadata writer.
+This function currently writes cohort rows only and does not create or
+update a \code{cohort_definition} record.}
 
 \item{overwrite}{Logical; overwrite existing cohort}
 }

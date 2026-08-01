@@ -24,8 +24,8 @@ narrowing a filter and watching a funnel count change (e.g. 50 -> 47),
 they recover the size of the differenced subgroup (3 persons) even though
 no single count was ever below threshold. Rounding DOWN to a fixed band
 (default 5) destroys that 1-person resolution: both 50 and 47 report as
-45, so the delta is no longer observable. Rounding down (floor) — never to
-nearest — guarantees the reported value never exceeds the true count, so
+45, so the delta is no longer observable. Rounding down (floor) - never to
+nearest - guarantees the reported value never exceeds the true count, so
 the band can never imply more persons than actually exist.
 }
 \details{

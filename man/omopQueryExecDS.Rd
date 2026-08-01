@@ -13,12 +13,12 @@ omopQueryExecDS(omop_symbol, query_id, inputs = list(), mode = "aggregate")
 
 \item{inputs}{Named list; parameter values for the query template}
 
-\item{mode}{Character; "aggregate" (default, returns data to client) or
-"assign" (keeps data server-side)}
+\item{mode}{Character; retained for backwards compatibility. Only
+\code{"aggregate"} is accepted by this aggregate DataSHIELD method. Use the
+unified analysis assign path for server-side loaders.}
 }
 \value{
-For aggregate mode: disclosure-controlled data frame.
-  For assign mode: invisible TRUE.
+Disclosure-controlled data frame.
 }
 \description{
 Executes a query template against the database with DataSHIELD-aligned

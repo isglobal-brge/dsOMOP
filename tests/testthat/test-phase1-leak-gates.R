@@ -235,16 +235,19 @@ test_that("OHDSI strict mode rejects a count-bearing result with no person basis
   # NONE of the tool's person columns -> a person-less count basis.
   withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
                            dsomop.query_strict = TRUE), {
-    strict <- .ohdsiGetResults(handle, "incidence_rate")
-    expect_s3_class(strict, "data.frame")
-    expect_equal(nrow(strict), 0)  # fail-closed: emptied
+    expect_error(
+      .ohdsiGetResults(handle, "incidence_rate"),
+      "no reviewed public disclosure contract"
+    )
   })
 
-  # With strict mode off the same result passes through (cell-suppressed only).
+  # With strict mode off the same result is available only as an explicitly
+  # unsafe administrator/development compatibility frame.
   withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
                            dsomop.query_strict = FALSE), {
     lax <- .ohdsiGetResults(handle, "incidence_rate")
     expect_true(nrow(lax) > 0)
+    expect_false(isTRUE(attr(lax, "dsomop.disclosure_safe")))
   })
 })
 
@@ -289,6 +292,9 @@ test_that("OHDSI person gate returns rows when person basis >= nfilter", {
     name
   )
   for (p in cands) if (file.exists(p)) return(p)
+  if (identical(name, "DATASHIELD")) {
+    testthat::skip("source-only DATASHIELD manifest is excluded from tarballs")
+  }
   stop(name, " not found")
 }
 
@@ -310,8 +316,64 @@ test_that("DATASHIELD manifest method set matches NAMESPACE DS exports", {
   ds_exports <- sub("^export\\((.*)\\)$", "\\1",
                     grep("^export\\(omop.*DS\\)$", ns, value = TRUE))
 
-  # No exported *DS method is missing from the manifest, and the manifest lists
-  # no method that is not exported.
+  # Only reviewed dsOMOP endpoints belong in the effective package manifest.
+  # Multi-table scope travels through named endpoint arguments, never through
+  # a generic aggregate constructor capable of returning arbitrary objects.
   expect_equal(sort(setdiff(ds_exports, manifest)), character(0))
   expect_equal(sort(setdiff(manifest, ds_exports)), character(0))
+})
+
+test_that("aggregate manifests exclude generic c/list exfiltration aliases", {
+  datashield <- .parse_datashield_section(
+    readLines(.phase1_pkg_file("DATASHIELD")), "AggregateMethods"
+  )
+  description <- read.dcf(.phase1_pkg_file("DESCRIPTION"))
+  described <- unlist(strsplit(
+    description[1, "AggregateMethods"], "[,[:space:]]+"
+  ))
+  described <- described[nzchar(described)]
+
+  forbidden <- c("c", "list", "base::c", "base::list",
+                 "c=base::c", "list=base::list")
+  for (methods in list(datashield, described)) {
+    expect_false(any(methods %in% forbidden))
+    lhs <- sub("=.*$", "", methods)
+    rhs <- ifelse(grepl("=", methods, fixed = TRUE),
+                  sub("^[^=]*=", "", methods), methods)
+    expect_false(any(lhs %in% c("c", "list")))
+    expect_false(any(rhs %in% c("base::c", "base::list")))
+  }
+  expect_length(datashield, 52L)
+  expect_setequal(datashield, described)
+})
+
+test_that("controller-only Achilles Heel is not remotely registered", {
+  lines <- readLines(.phase1_pkg_file("DATASHIELD"))
+  manifest <- unique(c(
+    .parse_datashield_section(lines, "AggregateMethods"),
+    .parse_datashield_section(lines, "AssignMethods")
+  ))
+  description <- read.dcf(.phase1_pkg_file("DESCRIPTION"))
+  description_methods <- unlist(strsplit(
+    paste(description[1, c("AggregateMethods", "AssignMethods")],
+          collapse = ","),
+    "[,[:space:]]+"
+  ))
+
+  expect_false("omopAchillesHeelDS" %in% manifest)
+  expect_false("omopAchillesHeelDS" %in% description_methods)
+})
+
+test_that("DATASHIELD and DESCRIPTION publish the same server options", {
+  manifest <- read.dcf(.phase1_pkg_file("DATASHIELD"))
+  description <- read.dcf(.phase1_pkg_file("DESCRIPTION"))
+  split_options <- function(value) {
+    values <- unlist(strsplit(value, "[,[:space:]]+"))
+    sort(values[nzchar(values)])
+  }
+
+  expect_identical(
+    split_options(manifest[1, "Options"]),
+    split_options(description[1, "Options"])
+  )
 })

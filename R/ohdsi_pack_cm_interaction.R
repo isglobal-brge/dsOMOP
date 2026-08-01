@@ -119,7 +119,7 @@
     person <- .qualifyTable(handle, "person")
     # age at the cohort index date, year_of_birth-based (p.birth_dt spliced later).
     age_at  <- .omopDateDiffDays(handle, "coh.cohort_start_date", "p.birth_dt")
-    age_yrs <- paste0("(CAST(", age_at, " / 365 AS INTEGER))")
+    age_yrs <- .omopFloorDivideSql(age_at, 365L)
     band_exists <- function(bounds) paste0(
       "EXISTS (SELECT 1 FROM ", person, " p WHERE p.person_id = coh.subject_id ",
       "AND ", paste(bounds, collapse = " AND "), ")")

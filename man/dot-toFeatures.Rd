@@ -4,7 +4,14 @@
 \alias{.toFeatures}
 \title{Compute person-level features from event data}
 \usage{
-.toFeatures(df, table, specs = NULL)
+.toFeatures(
+  df,
+  table,
+  specs = NULL,
+  person_ids = NULL,
+  date_col = NULL,
+  default_concept_col = NULL
+)
 }
 \arguments{
 \item{df}{Data frame in long format}
@@ -12,6 +19,14 @@
 \item{table}{Character; source table name}
 
 \item{specs}{Named list of feature specifications}
+
+\item{person_ids}{Optional complete person roster. Persons with no matching
+records receive zero for occurrence features and NA for value features.}
+
+\item{date_col}{Optional OMOP event date column resolved from the blueprint.}
+
+\item{default_concept_col}{Optional domain concept column resolved from the
+blueprint; individual specs may override it with \code{concept_col}.}
 }
 \value{
 Data frame with one row per person

@@ -24,7 +24,8 @@
 # A keyed handle with the catalog pre-built (mirrors test-analysis-ports-1bc.R).
 cmix_handle <- function(n_persons = 40) {
   h <- create_test_handle(n_persons = n_persons)
-  h$person_key <- as.raw(1:16)
+  .setLegacyTestPersonKey(h, "cm-interaction",
+                          .local_envir = parent.frame())
   .buildBlueprint(h)
   suppressWarnings(.omopAnalysisRegistry(h))
   h
@@ -43,6 +44,7 @@ cmix_allpersons <- function(h, name) {
     "CREATE TEMP TABLE ", name, " AS SELECT person_id AS subject_id, ",
     "'2018-01-01' AS cohort_start_date, '2030-12-31' AS cohort_end_date ",
     "FROM person"))
+  register_test_temp(h, name)
   name
 }
 

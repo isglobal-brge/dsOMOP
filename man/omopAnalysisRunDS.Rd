@@ -9,7 +9,8 @@ omopAnalysisRunDS(
   name,
   params = list(),
   scope = NULL,
-  combine = "union"
+  combine = "union",
+  ...
 )
 }
 \arguments{
@@ -24,6 +25,12 @@ scope the population to (NULL = no scoping)}
 
 \item{combine}{Character; "union" (default) or "intersect" when scope has
 multiple sources}
+
+\item{...}{Additional scalar cohort references and resolved workspace tables,
+independently and contiguously named \code{scope_cohort_1}, ... and
+\code{scope_table_1}, ... without gaps. This provides safe multi-source
+transport without registering generic aggregate \code{c()} or \code{list()}
+methods.}
 }
 \value{
 Disclosure-controlled data frame

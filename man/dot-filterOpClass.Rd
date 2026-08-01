@@ -16,10 +16,10 @@ Character; a filter-type understood by \code{.classifyFilter}
 Bridges the \code{\link{.compileFilter}} operator vocabulary onto the filter
 families understood by \code{\link{.classifyFilter}} so that every custom
 filter leaf is subject to the SAME granularity policy as the cohort filters.
-Range/membership operators map to \code{value_threshold} (a constrained
-range family); exact-match operators (\code{==}/\code{!=}) on an arbitrary
-column map to \code{custom}, which \code{.classifyFilter} blocks, because a
-single arbitrary-column equality is the canonical fingerprinting primitive.
+Membership/null operators map to \code{value_threshold}; exact-match and
+client-authored ordered comparisons map to \code{custom}, which
+\code{.classifyFilter} blocks. Dates are handled separately as validated
+bounded ranges and numerics require a server-issued \code{value_bin}.
 \code{value_bin} is the pre-validated, server-sanctioned binning family and
 is always allowed.
 }

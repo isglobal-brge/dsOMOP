@@ -16,7 +16,7 @@
 \item{output_mode}{Character; "memory" (default) or "staged"}
 }
 \value{
-Named list of data frames or FlowerDatasetDescriptors
+Named list of data frames or staged dataset descriptors.
 }
 \description{
 Processes all outputs defined in the plan: builds a cohort (if specified),

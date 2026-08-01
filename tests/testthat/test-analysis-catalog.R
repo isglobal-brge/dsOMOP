@@ -19,7 +19,8 @@
 # omop.table scope path needs it), mirroring test-phase-b.R's keyed_handle.
 acat_handle <- function(n_persons = 40) {
   h <- create_test_handle(n_persons = n_persons)
-  h$person_key <- as.raw(1:16)
+  .setLegacyTestPersonKey(h, "analysis-catalog",
+                          .local_envir = parent.frame())
   .buildBlueprint(h)
   # Pre-build the catalog once, swallowing the expected build-time dependency
   # warning (the minimal fixture omits some registry OHDSI tables on purpose;
@@ -35,6 +36,8 @@ acat_token_frame <- function(handle, ids) {
   toks <- .hashPersonKey(as.character(ids), handle$person_key)
   df <- data.frame(person_id = toks, v = seq_along(ids), stringsAsFactors = FALSE)
   attr(df, "dsomop_protected") <- "person_id"
+  attr(df, "dsomop_pseudonymization") <-
+    .canonicalPseudonymizationContract(.personKeyPublicContract(handle))
   class(df) <- union("omop.table", class(df))
   df
 }
@@ -80,7 +83,9 @@ test_that("registry folds all three surfaces under the dsomop: namespace", {
   # OHDSI is a mix of live-compute ("ohdsi_live") and the still-precomputed
   # result tables ("ohdsi") that have no single-site live definition.
   expect_true(sum(adapters %in% c("ohdsi", "ohdsi_live")) > 20)
-  expect_true(sum(adapters == "query") > 50)
+  # SQLite advertises only the dialect-compatible subset; templates requiring
+  # EXTRACT/STDDEV/plain date subtraction are intentionally absent.
+  expect_true(sum(adapters == "query") > 40)
 })
 
 test_that("DQD is gone from the catalog (no ohdsi.dqd.* entry)", {
@@ -97,7 +102,8 @@ test_that("registry WARNS (never fails) about missing dependency tables", {
   # minimal fixture omits several OHDSI registry tables, so a single grouped
   # warning must fire — and the registry must still build (warn, never fail).
   h <- create_test_handle(n_persons = 40)
-  h$person_key <- as.raw(1:16)
+  .setLegacyTestPersonKey(h, "analysis-catalog-registry",
+                          .local_envir = parent.frame())
   .buildBlueprint(h)
   on.exit(cleanup_handle(h))
 
@@ -122,6 +128,38 @@ test_that("list/get expose metadata without leaking SQL or compute fns", {
   expect_true("compute_kind" %in% names(meta))
   expect_false(any(c("sql", "compute", "fn") %in% names(meta)))
   expect_true(is.list(meta$scope))
+})
+
+test_that("QueryLibrary dependency inference covers all schema placeholders", {
+  sql <- paste(
+    "SELECT * FROM @CDM.Measurement m",
+    "JOIN @vocab.concept c ON c.concept_id = m.measurement_concept_id",
+    "JOIN @results.Cohort r ON r.subject_id = m.person_id",
+    "JOIN @cdm.measurement m2 ON m2.person_id = m.person_id"
+  )
+  expect_identical(
+    .omopQueryTableDependencies(sql),
+    c("measurement", "concept", "cohort")
+  )
+  expect_identical(.omopQueryTableDependencies("SELECT 1"), character(0))
+})
+
+test_that("QueryLibrary entries carry inferred dependencies and CDM metadata", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  id <- "dsomop:condition.prevalence_by_gender"
+
+  entry <- .omopAnalysisResolve(h, id)
+  expect_setequal(
+    entry$dependencies$tables,
+    c("condition_occurrence", "person", "concept")
+  )
+  expect_equal(entry$meta$cdm_version, "5.3+")
+
+  meta <- .omopAnalysisGet(h, id)
+  expect_equal(meta$cdm_version, "5.3+")
+  listed <- .omopAnalysisList(h)
+  expect_equal(listed$cdm_version[listed$name == id], "5.3+")
 })
 
 # --- Honest scope flags ------------------------------------------------------
@@ -362,6 +400,8 @@ test_that("(e) scoping a native analysis to a cohort restricts the population", 
     # still appears, and the persons-per-concept can only narrow vs unscoped.
     expect_true(201820 %in% scoped$concept_id)
     expect_true(all(scoped$n_persons %% 5 == 0))
+    expect_true(ct %in% h$temp_tables)
+    expect_true(DBI::dbExistsTable(h$conn, ct))
   })
 })
 
@@ -415,6 +455,27 @@ test_that("(e) scoping to an omop.table SYMBOL works", {
   })
 })
 
+test_that("analysis token scopes release operation-owned temps on repetition", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  tbl <- acat_token_frame(h, 1:12)
+  baseline <- h$temp_tables
+
+  withr::with_options(list(
+    nfilter.subset = 3, nfilter.tab = 3,
+    dsomop.nfilter.band = 5,
+    dsomop.max_temp_tables_per_handle = 1L
+  ), {
+    for (i in seq_len(3L)) {
+      result <- .omopAnalysisRun(
+        h, "dsomop:condition.prevalence_by_concept", scope = tbl
+      )
+      expect_s3_class(result, "data.frame")
+      expect_identical(h$temp_tables, baseline)
+    }
+  })
+})
+
 test_that("(e) union vs intersect of two scopes re-gates differently", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
@@ -444,10 +505,12 @@ test_that("(e) intersect down to < nfilter persons fails closed", {
   withr::with_options(list(nfilter.subset = 3), {
     a <- acat_token_frame(h, 1:6)
     b <- acat_token_frame(h, 6:9)   # overlap = {6} only -> 1 person
+    baseline <- h$temp_tables
     expect_error(
       .omopAnalysisRun(h, "dsomop:condition.prevalence_by_concept",
                        scope = list(a, b), combine = "intersect"),
       "Disclosive")
+    expect_identical(h$temp_tables, baseline)
   })
 })
 
@@ -470,25 +533,31 @@ test_that("(f) scoping a non-scopable native template gives a clear error", {
 
 # --- SECURITY (g): still-precomputed OHDSI reject scope; live Achilles accepts -
 
-test_that("(g) still-precomputed OHDSI entries reject scope cleanly", {
+test_that("(g) unreviewed precomputed OHDSI entries are admin-only", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
 
-  # The config-only OHDSI result tables with no single-site live definition (the
-  # PLP model_design) remain precomputed and have no per-row person key, so
-  # scoping them is rejected with a clear, non-SQL error. (The fitted-model PLP
-  # performance/calibration/threshold/diagnostic tables are now ported LIVE — see
-  # test-analysis-ports-plp-fitted.R — and the cross-site evidence-synthesis
-  # es_* ids now delegate LIVE to their per-site PLR ports, so neither is in this
-  # still-precomputed set any longer.)
-  for (id in c("dsomop:ohdsi.plp.plp_model_design")) {
+  # PLP model-design metadata has arbitrary configuration content and no
+  # same-row person basis. Strict discovery omits it completely.
+  id <- "dsomop:ohdsi.plp.plp_model_design"
+  strict_registry <- suppressWarnings(.omopAnalysisRegistry(h, force = TRUE))
+  expect_false(id %in% names(strict_registry))
+
+  # Administrators can inspect the legacy entry only after explicitly disabling
+  # strict mode. It is labelled admin (never record/person/dist) and remains
+  # non-scopable.
+  withr::with_options(list(dsomop.query_strict = FALSE), {
+    registry <- suppressWarnings(.omopAnalysisRegistry(h, force = TRUE))
+    expect_true(id %in% names(registry))
+    expect_identical(registry[[id]]$disclosure$unit, "admin")
+    expect_identical(registry[[id]]$meta$release, "admin_only")
     err <- tryCatch(
       .omopAnalysisRun(h, id, scope = "dsomop_cohort_1"),
       error = function(e) conditionMessage(e))
     expect_match(err, "does not support cohort/population scoping")
     expect_match(err, "pre-computed result with no per-row person key")
     expect_false(grepl("no such|syntax error", err, ignore.case = TRUE))
-  }
+  })
 })
 
 test_that("(g) live-compute Achilles entries now ACCEPT cohort scope", {
@@ -527,11 +596,58 @@ test_that("aggregate path refuses assign-only entries and vice versa", {
                "not an assign-mode loader")
 })
 
+test_that("assign loaders gate and sanitize person rows before workspace use", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  reg <- .omopAnalysisRegistry(h)
+  candidates <- names(reg)[vapply(reg, function(e) {
+    identical(e$mode, "assign") && grepl("condition_occurrence", e$name)
+  }, logical(1))]
+  skip_if(length(candidates) == 0L, "condition assign loader unavailable")
+
+  withr::with_options(list(nfilter.subset = 3,
+                           dsomop.default_date_handling = "remove"), {
+    out <- .omopAnalysisRun(h, candidates[[1]], assign = TRUE)
+  })
+  expect_s3_class(out, "omop.table")
+  expect_true(all(grepl("^p2[0-9a-f]+\\.[0-9a-f]{64}$", out$person_id)))
+  expect_false(any(grepl("_date$|_datetime$", names(out))))
+  expect_false(any(c("condition_occurrence_id", "visit_occurrence_id",
+                     "visit_detail_id", "provider_id") %in% names(out)))
+})
+
 test_that("unknown entry name is rejected fail-closed", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
   expect_error(.omopAnalysisRun(h, "dsomop:does.not.exist"),
                "not found in the analysis catalog")
+})
+
+test_that("analysis parameters reject unknowns, invalid scalars and unsafe bounds", {
+  entry <- list(
+    name = "dsomop:test.params",
+    params = list(
+      list(name = "top_n", type = "int", required = FALSE, default = "25"),
+      list(name = "path_length", type = "int", required = FALSE,
+           default = "3", min = 1L, max = 5L),
+      list(name = "age_breaks", type = "string", required = FALSE,
+           default = NULL)
+    ),
+    meta = list(inputs_df = NULL)
+  )
+  expect_error(.omopAnalysisSanitizeParams(entry, list(typo = 1)),
+               "unknown parameter")
+  expect_error(.omopAnalysisSanitizeParams(entry, list(top_n = -1)),
+               "outside its allowed range")
+  expect_error(.omopAnalysisSanitizeParams(entry, list(top_n = c(1, 2))),
+               "one non-missing scalar")
+  expect_error(.omopAnalysisSanitizeParams(entry, list(path_length = 6)),
+               "outside its allowed range")
+  expect_equal(.omopAnalysisSanitizeParams(
+    entry, list(age_breaks = "50,65,80"))$age_breaks, "50,65,80")
+  expect_error(.omopAnalysisSanitizeParams(
+    entry, list(age_breaks = "50,65); DROP TABLE person;--")),
+    "allowlisted string format")
 })
 
 # --- Stage-0 infra: r-in-session scoped reference entry ----------------------
@@ -621,6 +737,68 @@ test_that("r-in-session ctx carries scoped_cohort + person_set_sql", {
 
 # --- Stage-0 infra: gate camelCase dist + coupling + ratio reconcile ---------
 
+test_that("QueryLibrary statistic entries declare the right dist denominator", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+
+  # These STDDEV templates are intentionally absent from SQLite discovery.
+  # Inspect their metadata under a dialect that supports the SQL contract.
+  h$target_dialect <- "duckdb"
+  entries <- .omopAnalysisQueryEntries(h)
+  value_stats <- entries[["dsomop:measurement.value_stats"]]
+  duration <- entries[["dsomop:condition.duration_stats"]]
+  per_person <- entries[["dsomop:condition_era.eras_per_person_stats"]]
+
+  expect_equal(value_stats$disclosure$unit, "dist")
+  expect_equal(value_stats$disclosure$dist_count_col,
+               c("n_values", "n_persons"))
+  expect_setequal(value_stats$disclosure$summary_cols,
+                  c("mean_value", "sd_value"))
+  expect_equal(duration$disclosure$unit, "dist")
+  expect_equal(duration$disclosure$dist_count_col,
+               c("n_records", "n_persons"))
+  expect_equal(per_person$disclosure$unit, "dist")
+  expect_equal(per_person$disclosure$dist_count_col, "n_persons")
+})
+
+test_that("QueryLibrary stats keep counts but obey nfilter_dist and no extrema", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  h$target_dialect <- "duckdb"
+  e <- .omopAnalysisQueryEntries(h)[["dsomop:measurement.value_stats"]]
+
+  raw <- data.frame(
+    measurement_concept_id = c(1L, 2L, 3L),
+    n_persons = c(6L, 12L, 6L),
+    n_values = c(9L, 12L, 100L),
+    mean_value = c(4.5, 8.5, 99),
+    sd_value = c(1.2, 2.4, 0.1),
+    min_value = c(1, 2, 98),
+    max_value = c(9, 15, 100),
+    stringsAsFactors = FALSE
+  )
+
+  withr::with_options(list(nfilter.tab = 3, dsomop.nfilter.dist = 10,
+                           dsomop.nfilter.band = 5), {
+    out <- .omopAnalysisGate(h, raw, e)
+    expect_equal(nrow(out), 3L)
+    expect_true(all(c("n_persons", "n_values") %in% names(out)))
+    expect_true(all(out$n_persons %% 5 == 0))
+    expect_true(all(out$n_values %% 5 == 0))
+
+    small <- out$measurement_concept_id == 1L  # 9 values: below dist=10
+    large <- out$measurement_concept_id == 2L  # 12 values: releasable
+    repeated <- out$measurement_concept_id == 3L # 100 rows, only 6 persons
+    expect_true(all(is.na(out$mean_value[small])))
+    expect_true(all(is.na(out$sd_value[small])))
+    expect_false(anyNA(out$mean_value[large]))
+    expect_false(anyNA(out$sd_value[large]))
+    expect_true(all(is.na(out$mean_value[repeated])))
+    expect_true(all(is.na(out$sd_value[repeated])))
+    expect_false(any(c("min_value", "max_value") %in% names(out)))
+  })
+})
+
 test_that("gate strips camelCase min/max and masks camelCase summary stats", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
@@ -701,6 +879,44 @@ test_that("ratio reconcile recomputes from banded counts and NAs suppressed", {
 
 # --- Stage-0 infra: pluggable packs (collision + reserved prefix) ------------
 
+test_that("external analysis packs require an exact administrative allowlist", {
+  withr::local_options(list(
+    dsomop.analysis_pack_allowlist = c(fakePack = "1.2.3")
+  ))
+  installed <- matrix(
+    c("fakePack", "1.2.3", "fakePack::register", "fake"),
+    nrow = 1L,
+    dimnames = list("fakePack", c(
+      "Package", "Version", "Config/dsOMOP/AnalysisCollection",
+      "Config/dsOMOP/AnalysisPrefix"
+    ))
+  )
+  local_mocked_bindings(
+    installed.packages = function(...) installed,
+    .package = "utils"
+  )
+  scan <- .omopAnalysisPackScan(force = TRUE)
+  expect_identical(scan$pkg, "fakePack")
+  expect_identical(scan$version, "1.2.3")
+
+  withr::local_options(list(
+    dsomop.analysis_pack_allowlist = c(fakePack = "9.9.9")
+  ))
+  expect_warning(
+    blocked <- .omopAnalysisPackScan(force = TRUE),
+    "absent or have a different version"
+  )
+  expect_equal(nrow(blocked), 0L)
+})
+
+test_that("analysis-pack discovery is disabled by default and rejects loose pins", {
+  withr::local_options(list(dsomop.analysis_pack_allowlist = character(0)))
+  expect_equal(nrow(.omopAnalysisPackScan(force = TRUE)), 0L)
+  withr::local_options(list(dsomop.analysis_pack_allowlist = "fakePack"))
+  expect_error(.omopAnalysisPackScan(force = TRUE),
+               "named character vector")
+})
+
 test_that("a pack claiming the reserved dsomop: prefix is rejected", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
@@ -744,6 +960,179 @@ test_that("pack constructors are exported and build gate-bound entries", {
     disclosure = omopAnalysisDisclosure(unit = "person", count_cols = "n"),
     scope = omopAnalysisScope())
   expect_s3_class(ent, "omop_analysis_entry")
+})
+
+acat_external_contract <- function(columns, max_rows = 20L) {
+  list(version = 1L, columns = columns, max_rows = max_rows)
+}
+
+acat_external_entry <- function(id, fn, columns, disclosure,
+                                mode = "aggregate", max_rows = 20L) {
+  entry <- .omopAnalysisEntry(
+    name = id, description = "test external pack", domain = "general",
+    params = list(),
+    compute = list(kind = "r", sql = NULL, fn = fn),
+    dependencies = list(tables = character(0), packages = character(0)),
+    disclosure = disclosure,
+    scope = .omopAnalysisScope(FALSE, FALSE, 0L),
+    mode = mode,
+    meta = list(output_contract = acat_external_contract(columns, max_rows))
+  )
+  .omopAnalysisValidateExternalEntry(
+    entry, package = "testPack", final_id = paste0("testpack:", id)
+  )
+}
+
+test_that("external packs require a versioned semantic output contract", {
+  entry <- .omopAnalysisEntry(
+    name = "x", description = "x", domain = "general", params = list(),
+    compute = list(kind = "r", sql = NULL,
+                   fn = function(...) data.frame(n_persons = 20L)),
+    dependencies = list(tables = character(0), packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(unit = "person",
+                                         count_cols = "n_persons"),
+    scope = .omopAnalysisScope(FALSE, FALSE, 0L),
+    meta = list(adapter = "achilles")
+  )
+  expect_error(
+    .omopAnalysisValidateExternalEntry(entry, "testPack", "testpack:x"),
+    "output_contract"
+  )
+})
+
+test_that("external aggregate firewall rejects IDs dates text and extra data", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  payload <- data.frame(group = "A", n_persons = 20L)
+  entry <- acat_external_entry(
+    "hostile",
+    fn = function(...) payload,
+    columns = list(
+      group = list(semantic = "category", levels = c("A", "B")),
+      n_persons = list(semantic = "count")
+    ),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "person", count_cols = "n_persons"
+    )
+  )
+  h$analysis_catalog[[entry$name]] <- entry
+  expect_identical(entry$meta$adapter, "external_pack")
+  meta <- .omopAnalysisGet(h, entry$name)
+  expect_identical(meta$pack_package, "testPack")
+  expect_identical(meta$pack_contract_version, 1L)
+  expect_identical(meta$output_contract, entry$meta$output_contract)
+
+  payload <- list(group = "A", n_persons = 20L)
+  expect_error(.omopAnalysisRun(h, entry$name), "must be a data.frame")
+
+  payload <- data.frame(group = "A", n_persons = 20L, person_id = 7L)
+  expect_error(.omopAnalysisRun(h, entry$name), "person/subject identifier")
+
+  payload <- data.frame(group = "A", n_persons = 20L,
+                        event_date = as.Date("2020-01-01"))
+  expect_error(.omopAnalysisRun(h, entry$name), "exact date/datetime")
+
+  payload <- data.frame(group = "A", n_persons = 20L,
+                        note_text = "patient narrative")
+  expect_error(.omopAnalysisRun(h, entry$name), "sensitive/free-text")
+
+  payload <- data.frame(group = "A", n_persons = 20L,
+                        arbitrary_metric = 123)
+  expect_error(.omopAnalysisRun(h, entry$name), "undeclared column")
+
+  payload <- data.frame(group = c("A", "B"), n_persons = c(20L, 20L))
+  capped <- acat_external_entry(
+    "capped", fn = function(...) payload,
+    columns = list(
+      group = list(semantic = "category", levels = c("A", "B")),
+      n_persons = list(semantic = "count")
+    ),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "person", count_cols = "n_persons"
+    ),
+    max_rows = 1L
+  )
+  h$analysis_catalog[[capped$name]] <- capped
+  expect_error(.omopAnalysisRun(h, capped$name), "row limit")
+})
+
+test_that("valid external aggregate is gated and contracted ratios are rebuilt", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  entry <- acat_external_entry(
+    "valid_aggregate",
+    fn = function(...) data.frame(
+      stratum = "A", events = 47L, n_persons = 98L,
+      estimate = 3.5, rate = 999
+    ),
+    columns = list(
+      stratum = list(semantic = "category", levels = "A"),
+      events = list(semantic = "count"),
+      n_persons = list(semantic = "count"),
+      estimate = list(semantic = "metric", basis = "n_persons",
+                      min = 0, max = 10),
+      rate = list(semantic = "ratio", numerator = "events",
+                  denominator = "n_persons", scale = 100)
+    ),
+    disclosure = .omopAnalysisDisclosure(
+      unit = "record", count_cols = c("events", "n_persons"),
+      person_id_col = "n_persons"
+    )
+  )
+  h$analysis_catalog[[entry$name]] <- entry
+
+  withr::with_options(list(nfilter.tab = 3, dsomop.nfilter.band = 5), {
+    out <- .omopAnalysisRun(h, entry$name)
+    expect_identical(names(out), names(entry$meta$output_contract$columns))
+    expect_equal(out$events, 45)
+    expect_equal(out$n_persons, 95)
+    expect_equal(out$rate, 45 / 95 * 100)
+    expect_equal(out$estimate, 3.5)
+  })
+})
+
+test_that("valid external R assign is firewalled and pseudonymized", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  payload <- data.frame(
+    person_id = 1:5,
+    condition_concept_id = rep(201820L, 5),
+    value_group = c("low", "low", "high", "low", "high"),
+    days_from_index = c(-2L, -1L, 0L, 1L, 2L),
+    stringsAsFactors = FALSE
+  )
+  entry <- acat_external_entry(
+    "valid_assign",
+    fn = function(...) payload,
+    columns = list(
+      person_id = list(semantic = "person_key"),
+      condition_concept_id = list(semantic = "concept_id"),
+      value_group = list(semantic = "category", levels = c("low", "high")),
+      days_from_index = list(semantic = "relative_day", min = -365, max = 365)
+    ),
+    disclosure = .omopAnalysisDisclosure(),
+    mode = "assign"
+  )
+  h$analysis_catalog[[entry$name]] <- entry
+
+  valid_payload <- payload
+  payload$condition_occurrence_id <- seq_len(nrow(payload))
+  expect_error(
+    .omopAnalysisRun(h, entry$name, assign = TRUE,
+                     assign_date_handling = "remove"),
+    "raw identifier"
+  )
+  payload <- valid_payload
+
+  withr::with_options(list(nfilter.subset = 3), {
+    out <- .omopAnalysisRun(h, entry$name, assign = TRUE,
+                            assign_date_handling = "remove")
+    expect_s3_class(out, "omop.table")
+    expect_type(out$person_id, "character")
+    expect_false(any(out$person_id %in% as.character(1:5)))
+    expect_identical(attr(out, "dsomop_protected"), "person_id")
+    expect_identical(names(out), names(entry$meta$output_contract$columns))
+  })
 })
 
 # --- Stage-0 infra: two-population scope resolution --------------------------
@@ -818,6 +1207,190 @@ test_that("an entry declaring max_tables=2 routes scope to scoped_cohorts", {
   })
   expect_length(captured$scoped_cohorts, 2)
   expect_null(captured$scoped_cohort)   # two-population path, not single fold
+})
+
+test_that("analysis endpoints transport multiple tables without generic list", {
+  h <- acat_handle()
+  symbol <- paste0("analysis_scope_dots_", Sys.getpid())
+  .setHandle(symbol, h)
+  on.exit(.removeHandle(symbol), add = TRUE)
+
+  aggregate_ctx <- NULL
+  assign_ctx <- NULL
+  aggregate_entry <- .omopAnalysisEntry(
+    name = "dsomop:demo.__scope_dots_aggregate",
+    description = "aggregate scope transport probe", domain = "general",
+    params = list(),
+    compute = list(kind = "r", sql = NULL,
+                   fn = function(handle, ctx, params) {
+                     aggregate_ctx <<- ctx
+                     data.frame(n = 99L)
+                   }),
+    dependencies = list(tables = character(0), packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(unit = "person", count_cols = "n"),
+    scope = .omopAnalysisScope(TRUE, TRUE, max_tables = 2L),
+    meta = list(adapter = "demo")
+  )
+  assign_entry <- .omopAnalysisEntry(
+    name = "dsomop:demo.__scope_dots_assign",
+    description = "assign scope transport probe", domain = "general",
+    params = list(),
+    compute = list(kind = "r", sql = NULL,
+                   fn = function(handle, ctx, params) {
+                     assign_ctx <<- ctx
+                     data.frame(person_id = 1:5, value = seq_len(5L))
+                   }),
+    dependencies = list(tables = character(0), packages = character(0)),
+    disclosure = .omopAnalysisDisclosure(),
+    scope = .omopAnalysisScope(TRUE, TRUE, max_tables = 2L),
+    mode = "assign", meta = list(adapter = "demo")
+  )
+  h$analysis_catalog[[aggregate_entry$name]] <- aggregate_entry
+  h$analysis_catalog[[assign_entry$name]] <- assign_entry
+
+  a <- acat_token_frame(h, 1:8)
+  b <- acat_token_frame(h, 9:20)
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.band = 5), {
+    # Deliberately supply them out of order: the suffix, not call order,
+    # defines the two population arms.
+    out <- omopAnalysisRunDS(
+      symbol, aggregate_entry$name,
+      scope_table_2 = b, scope_table_1 = a
+    )
+    assigned <- omopAnalysisRunAssignDS(
+      symbol, assign_entry$name, date_handling = "remove",
+      scope_table_2 = b, scope_table_1 = a
+    )
+    expect_s3_class(out, "data.frame")
+    expect_s3_class(assigned, "omop.table")
+
+    # Two cohort references also travel as separate top-level scalars. This is
+    # the safe transport for target/comparator analyses: no remote c(1, 2).
+    bp <- .buildBlueprint(h)
+    cohort_a <- .materializeCohortFromIds(
+      h, bp, 1:8, name = "scope_dots_cohort_a"
+    )
+    cohort_b <- .materializeCohortFromIds(
+      h, bp, 9:20, name = "scope_dots_cohort_b"
+    )
+    out <- omopAnalysisRunDS(
+      symbol, aggregate_entry$name,
+      scope_cohort_2 = cohort_b, scope_cohort_1 = cohort_a
+    )
+    assigned <- omopAnalysisRunAssignDS(
+      symbol, assign_entry$name, date_handling = "remove",
+      scope_cohort_2 = cohort_b, scope_cohort_1 = cohort_a
+    )
+    expect_s3_class(out, "data.frame")
+    expect_s3_class(assigned, "omop.table")
+    expect_identical(aggregate_ctx$scoped_cohorts,
+                     c(cohort_a, cohort_b))
+    expect_identical(assign_ctx$scoped_cohorts,
+                     c(cohort_a, cohort_b))
+  })
+
+  expect_length(aggregate_ctx$scoped_cohorts, 2L)
+  expect_length(assign_ctx$scoped_cohorts, 2L)
+  expect_null(aggregate_ctx$scoped_cohort)
+  expect_null(assign_ctx$scoped_cohort)
+})
+
+test_that("named analysis scope transport is strict, typed, and bounded", {
+  table_a <- structure(
+    data.frame(person_id = "p1", stringsAsFactors = FALSE),
+    class = c("omop.table", "data.frame")
+  )
+  table_b <- table_a
+
+  expect_error(
+    .omopAnalysisScopeFromDots(NULL, list(table_a)),
+    "strictly named"
+  )
+  expect_error(
+    .omopAnalysisScopeFromDots(NULL, list(scope_table_2 = table_a)),
+    "contiguous"
+  )
+  expect_error(
+    .omopAnalysisScopeFromDots(NULL, list(other = table_a)),
+    "Unexpected analysis argument name"
+  )
+  duplicate <- list(table_a, table_b)
+  names(duplicate) <- c("scope_table_1", "scope_table_1")
+  expect_error(.omopAnalysisScopeFromDots(NULL, duplicate), "unique")
+  expect_error(
+    .omopAnalysisScopeFromDots(
+      NULL, list(scope_table_1 = data.frame(person_id = "raw"))
+    ),
+    "must resolve to an omop.table"
+  )
+  expect_error(
+    .omopAnalysisScopeFromDots(NULL, list(scope_cohort_2 = 1L)),
+    "contiguous"
+  )
+  expect_error(
+    .omopAnalysisScopeFromDots(NULL, list(scope_cohort_1 = c(1L, 2L))),
+    "one positive integer"
+  )
+  expect_error(
+    .omopAnalysisScopeFromDots(NULL, list(scope_cohort_1 = 0L)),
+    "one positive integer"
+  )
+  mixed <- .omopAnalysisScopeFromDots(
+    table_a,
+    list(scope_table_1 = table_b, scope_cohort_1 = 1L)
+  )
+  expect_identical(mixed[[1L]], 1L)
+  expect_s3_class(mixed[[2L]], "omop.table")
+  expect_s3_class(mixed[[3L]], "omop.table")
+
+  encoded_many <- jsonlite::toJSON(as.list(seq_len(10L)), auto_unbox = TRUE)
+  expect_error(
+    .omopAnalysisScopeFromDots(.ds_arg(encoded_many), list()),
+    "total source cap"
+  )
+  withr::local_options(list(dsomop.max_analysis_scope_tables = 1L))
+  expect_error(
+    .omopAnalysisScopeFromDots(
+      NULL, list(scope_table_1 = table_a, scope_table_2 = table_b)
+    ),
+    "max_analysis_scope_tables"
+  )
+})
+
+test_that("analysis entries enforce their declared workspace-table capability", {
+  h <- acat_handle()
+  on.exit(cleanup_handle(h))
+  make_probe <- function(name, accepts_tables, max_tables) {
+    .omopAnalysisEntry(
+      name = name, description = "scope contract probe", domain = "general",
+      params = list(),
+      compute = list(kind = "r", sql = NULL,
+                     fn = function(...) data.frame(n = 99L)),
+      dependencies = list(tables = character(0), packages = character(0)),
+      disclosure = .omopAnalysisDisclosure(unit = "person", count_cols = "n"),
+      scope = .omopAnalysisScope(
+        accepts_cohort = TRUE, accepts_tables = accepts_tables,
+        max_tables = max_tables
+      ),
+      meta = list(adapter = "demo")
+    )
+  }
+  one <- make_probe("dsomop:demo.__one_table", TRUE, 1L)
+  none <- make_probe("dsomop:demo.__no_tables", FALSE, 0L)
+  h$analysis_catalog[[one$name]] <- one
+  h$analysis_catalog[[none$name]] <- none
+  a <- acat_token_frame(h, 1:8)
+  b <- acat_token_frame(h, 9:20)
+
+  expect_error(
+    .omopAnalysisRun(h, one$name, scope = list(a, b)),
+    "permits at most 1 workspace table"
+  )
+  expect_error(
+    .omopAnalysisRun(h, none$name, scope = a),
+    "does not accept workspace table"
+  )
 })
 
 # --- Native re-implemented OHDSI diagnostics (adapter == "diagnostic") --------

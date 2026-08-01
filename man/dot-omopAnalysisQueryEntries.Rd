@@ -7,7 +7,7 @@
 .omopAnalysisQueryEntries(handle)
 }
 \arguments{
-\item{handle}{CDM handle (unused; signature parity with the other adapters).}
+\item{handle}{CDM handle. Its target dialect filters incompatible templates.}
 }
 \value{
 List of \code{omop_analysis_entry} objects keyed by entry name.

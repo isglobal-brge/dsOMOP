@@ -4,12 +4,35 @@
 \alias{.toWide}
 \title{Transform a long result to wide format}
 \usage{
-.toWide(df, table, handle = NULL)
+.toWide(
+  df,
+  table,
+  handle = NULL,
+  grain = "person",
+  translate_concepts = FALSE,
+  roster = NULL,
+  expected_concepts = NULL
+)
 }
 \arguments{
 \item{df}{Data frame in long format}
 
 \item{table}{Character; source table name}
+
+\item{handle}{CDM handle.}
+
+\item{grain}{Aggregation unit, "person" or "episode".}
+
+\item{translate_concepts}{Logical; include vocabulary names in stable labels
+while retaining the numeric concept ID to prevent name collisions.}
+
+\item{roster}{Optional complete data frame of person or cohort-episode keys.
+Rows without qualifying events remain in the wide output with missing
+values rather than disappearing.}
+
+\item{expected_concepts}{Optional closed vector of concept IDs. Requested
+concepts are emitted as columns even when absent from \code{df}; observed
+concepts outside this vector are rejected.}
 }
 \value{
 Data frame in wide format

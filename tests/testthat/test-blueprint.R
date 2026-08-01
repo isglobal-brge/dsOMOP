@@ -13,13 +13,9 @@ test_that("loadCdmSpec returns spec for version 5.4", {
   expect_true(spec$source %in% c("CommonDataModel", "vendored"))
 })
 
-test_that("loadCdmSpec falls back for unsupported version", {
+test_that("loadCdmSpec fails closed for an explicitly unsupported version", {
   spec <- .loadCdmSpec("99.9")
-  # Should fall back to vendored
-  expect_true(is.list(spec) || is.null(spec))
-  if (is.list(spec)) {
-    expect_equal(spec$source, "vendored")
-  }
+  expect_null(spec)
 })
 
 test_that("loadCdmSpec normalizes version strings", {
@@ -42,6 +38,41 @@ test_that("loadVendoredSpec returns vendored spec", {
   expect_true(is.list(spec))
   expect_equal(spec$version, "5.4")
   expect_equal(spec$source, "vendored")
+  expect_equal(spec$upstream_source, "OHDSI/CommonDataModel")
+  expect_equal(spec$upstream_release, "v5.4.2")
+  expect_equal(spec$upstream_commit,
+               "aa047a3c620b5c842b4370a0c965e2aa72203b1d")
+})
+
+test_that("official OHDSI table metadata preserves the blueprint API", {
+  spec <- .loadVendoredSpec("5.4")
+  tables <- spec$table_level
+
+  expect_setequal(unique(tables$schema), c("CDM", "Vocabulary", "Results"))
+  expect_equal(
+    tables$conceptPrefix[tables$cdmTableName == "condition_occurrence"],
+    "condition"
+  )
+  expect_equal(tables$schema[tables$cdmTableName == "concept"], "Vocabulary")
+  expect_equal(tables$schema[tables$cdmTableName == "cohort"], "Results")
+})
+
+test_that("vendored CDM metadata matches pinned OHDSI release bytes", {
+  root <- system.file("ohdsi", package = "dsOMOP")
+  if (!nzchar(root)) {
+    root <- testthat::test_path("..", "..", "inst", "ohdsi")
+  }
+  manifest <- jsonlite::fromJSON(
+    file.path(root, "UPSTREAM_METADATA.json"), simplifyVector = FALSE
+  )
+  expect_identical(manifest$source, "OHDSI/CommonDataModel")
+  for (name in names(manifest$files)) {
+    path <- file.path(root, name)
+    expect_true(file.exists(path), info = name)
+    bytes <- readBin(path, what = "raw", n = file.info(path)$size)
+    actual <- unclass(as.character(openssl::sha256(bytes)))
+    expect_identical(actual, manifest$files[[name]]$sha256, info = name)
+  }
 })
 
 test_that("listSupportedVersions is accessible", {
@@ -118,6 +149,11 @@ test_that("concept role classification works correctly", {
                           "condition", "", is_fk = TRUE, fk_table = "CONCEPT"),
     "domain_concept"
   )
+  expect_equal(
+    .classifyConceptRole("condition_occurrence", "condition_concept_id",
+                          "CONDITION_", "", is_fk = TRUE, fk_table = "CONCEPT"),
+    "domain_concept"
+  )
 
   # Type concept: fk_domain is "Type Concept"
   expect_equal(
@@ -159,6 +195,181 @@ test_that("sensitive column detection works", {
   expect_false(.detectSensitiveColumns("condition_concept_id"))
   expect_false(.detectSensitiveColumns("value_as_number"))
   expect_false(.detectSensitiveColumns("measurement_date"))
+})
+
+test_that("local identifiers and narrative extension fields fail closed", {
+  sensitive <- c(
+    "patient_id", "enterprise_patient_identifier", "patient_id_raw", "mrn",
+    "medical_record_number", "EMAIL", "patient_email_address",
+    "phone", "contact_phone_number", "ssn", "date_of_birth", "dob",
+    "clinical_comments", "result_free_text", "term_modifiers",
+    "note_nlp_term_modifiers"
+  )
+  expect_true(all(vapply(sensitive, .detectSensitiveColumns, logical(1))))
+  expect_true(.detectSensitiveColumns(NA_character_))
+
+  expect_false(.detectSensitiveColumns("person_id"))
+  expect_false(.detectSensitiveColumns("measurement_concept_id"))
+  expect_false(.detectSensitiveColumns("value_as_number"))
+})
+
+test_that("extension contract requires explicit bare table and column names", {
+  withr::local_options(list(dsomop.allowed_cdm_extensions = list()))
+  expect_equal(.allowedCdmExtensionContract(), list())
+
+  withr::local_options(list(dsomop.allowed_cdm_extensions = list("person_id")))
+  expect_error(.allowedCdmExtensionContract(), "named list")
+
+  withr::local_options(list(
+    dsomop.allowed_cdm_extensions = list(site_event = "*")
+  ))
+  expect_error(.allowedCdmExtensionContract(), "wildcards|invalid column")
+
+  withr::local_options(list(
+    dsomop.allowed_cdm_extensions = list("site.event" = "person_id")
+  ))
+  expect_error(.allowedCdmExtensionContract(), "invalid table")
+})
+
+test_that("unknown tables and standard-table columns are invisible by default", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  DBI::dbExecute(handle$conn,
+    paste(
+      "CREATE TABLE site_event (person_id INTEGER,",
+      "event_concept_id INTEGER, event_date DATE, research_score REAL)"
+    ))
+  DBI::dbExecute(handle$conn,
+    "ALTER TABLE measurement ADD COLUMN site_quality_score REAL")
+
+  bp <- .buildBlueprint(handle, force = TRUE)
+  expect_false("site_event" %in% bp$tables$table_name)
+  expect_false("site_quality_score" %in%
+                 bp$columns[["measurement"]]$column_name)
+  expect_error(
+    .compileSelect(handle, "site_event"),
+    "not found in CDM schema"
+  )
+  expect_error(
+    .compileSelect(handle, "measurement", columns = "site_quality_score"),
+    "Column.*not found"
+  )
+})
+
+test_that("server contract exposes only named extension columns", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  DBI::dbExecute(handle$conn,
+    paste(
+      "CREATE TABLE site_event (person_id INTEGER,",
+      "event_concept_id INTEGER, event_date DATE, research_score REAL,",
+      "comments TEXT, hidden_local_code TEXT)"
+    ))
+  DBI::dbExecute(handle$conn,
+    "ALTER TABLE measurement ADD COLUMN site_quality_score REAL")
+  withr::local_options(list(dsomop.allowed_cdm_extensions = list(
+    site_event = c("person_id", "event_concept_id", "event_date",
+                   "research_score", "comments"),
+    measurement = "site_quality_score"
+  )))
+
+  bp <- .buildBlueprint(handle, force = TRUE)
+  expect_true("site_event" %in%
+                bp$tables$table_name[bp$tables$present_in_db])
+  expect_setequal(
+    bp$columns[["site_event"]]$column_name,
+    c("person_id", "event_concept_id", "event_date", "research_score",
+      "comments")
+  )
+  expect_false("hidden_local_code" %in%
+                 bp$columns[["site_event"]]$column_name)
+  expect_true(bp$columns[["site_event"]]$is_blocked[
+    bp$columns[["site_event"]]$column_name == "comments"
+  ])
+  expect_true("site_quality_score" %in%
+                bp$columns[["measurement"]]$column_name)
+
+  sql <- .compileSelect(handle, "site_event")
+  expect_true(grepl("research_score", sql, fixed = TRUE))
+  expect_false(grepl("comments", sql, fixed = TRUE))
+  expect_error(
+    .compileSelect(handle, "site_event", columns = "comments"),
+    "blocked"
+  )
+})
+
+test_that("blueprint refuses unclassified introspection without an OHDSI spec", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  local_mocked_bindings(
+    .loadCdmSpec = function(...) NULL,
+    .package = "dsOMOP"
+  )
+  expect_error(
+    .buildBlueprint(handle, force = TRUE),
+    "Refusing schema introspection"
+  )
+})
+
+test_that("temporary-table creation enforces the server-owned per-handle cap", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  withr::local_options(list(dsomop.max_temp_tables_per_handle = 1L))
+
+  expect_equal(
+    .createTempTable(handle, "dsomop_cap_one", "SELECT 1 AS value"),
+    "dsomop_cap_one"
+  )
+  expect_error(
+    .createTempTable(handle, "dsomop_cap_two", "SELECT 2 AS value"),
+    "temporary-table cap"
+  )
+  expect_identical(handle$temp_tables, "dsomop_cap_one")
+  expect_true(DBI::dbExistsTable(handle$conn, "dsomop_cap_one"))
+  expect_false(DBI::dbExistsTable(handle$conn, "dsomop_cap_two"))
+
+  .dropTempTable(handle, "dsomop_cap_one")
+  expect_equal(
+    .createTempTable(handle, "dsomop_cap_two", "SELECT 2 AS value"),
+    "dsomop_cap_two"
+  )
+  .dropTempTable(handle, "dsomop_cap_two")
+})
+
+test_that("temporary-table creation fails closed on an invalid server cap", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  withr::local_options(list(dsomop.max_temp_tables_per_handle = 0L))
+
+  expect_error(
+    .createTempTable(handle, "dsomop_bad_cap", "SELECT 1 AS value"),
+    "max_temp_tables_per_handle"
+  )
+  expect_false(DBI::dbExistsTable(handle$conn, "dsomop_bad_cap"))
+  expect_length(handle$temp_tables, 0L)
+})
+
+test_that("failed temporary-table drops retain ownership for a safe retry", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  name <- .createTempTable(
+    handle, "dsomop_drop_retry", "SELECT 1 AS value"
+  )
+
+  local_mocked_bindings(
+    .tempDropSql = function(...) "DROP TABLE malformed syntax",
+    .package = "dsOMOP"
+  )
+  expect_error(.dropTempTable(handle, name), "syntax|near")
+  expect_true(name %in% handle$temp_tables)
+  expect_true(DBI::dbExistsTable(handle$conn, name))
+
+  # Leave the fixture consistent even while the drop-SQL binding is mocked.
+  DBI::dbExecute(handle$conn, paste0("DROP TABLE ", name))
+  handle$temp_tables <- setdiff(handle$temp_tables, name)
+  handle$temp_connection <- NULL
 })
 
 test_that("getDomainConceptColumn returns correct columns", {
@@ -261,6 +472,23 @@ test_that("getCapabilities returns valid structure", {
   expect_true("person" %in% caps$tables)
   expect_equal(caps$dbms, "sqlite")
   expect_true(is.list(caps$cdm_info))
+  expect_true(is.list(caps$pseudonymization))
+  expect_false(caps$pseudonymization$available)
+  expect_false(caps$pseudonymization$legacy_global_opt_in)
+})
+
+test_that("getCapabilities never releases an exact unbanded population", {
+  handle <- create_test_handle(n_persons = 17)
+  on.exit(cleanup_handle(handle))
+
+  withr::with_options(list(nfilter.subset = 3,
+                           dsomop.nfilter.band = 5), {
+    expect_equal(.getCapabilities(handle)$total_persons, 15)
+  })
+  withr::with_options(list(nfilter.subset = 20,
+                           dsomop.nfilter.band = 5), {
+    expect_null(.getCapabilities(handle)$total_persons)
+  })
 })
 
 test_that("CDM info is detected from cdm_source table", {

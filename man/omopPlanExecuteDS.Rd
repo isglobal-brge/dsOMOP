@@ -10,7 +10,8 @@ omopPlanExecuteDS(
   out,
   output_mode = "memory",
   scope = NULL,
-  combine = "union"
+  combine = "union",
+  ...
 )
 }
 \arguments{
@@ -29,6 +30,12 @@ intersected into every population (NULL = no extra scoping).}
 
 \item{combine}{Character; "union" (default) or "intersect" when the scope has
 multiple sources.}
+
+\item{...}{Additional scalar cohort references and resolved workspace tables,
+independently and contiguously named \code{scope_cohort_1}, ... and
+\code{scope_table_1}, ... without gaps. They are combined internally with
+a literal \code{scope}; no generic aggregate \code{c()} or \code{list()}
+method is required.}
 }
 \value{
 Invisible TRUE (outputs are assigned into caller's environment)
@@ -36,12 +43,21 @@ Invisible TRUE (outputs are assigned into caller's environment)
 \description{
 Runs the extraction plan and assigns each output directly into the
 DataSHIELD session as a named symbol. Sparse outputs are split into
-two symbols: \code{<name>.covariates} and \code{<name>.covariateRef}.
-Temporal covariates are split into three symbols.
+three symbols: \code{<name>.covariates}, \code{<name>.covariateRef}, and
+the row-to-pseudonymous-person map \code{<name>.personRef}.
+Temporal covariates are split into four symbols, including the episode-to-
+person map \code{<name>.personRef}.
 
-When \code{output_mode = "staged"}, outputs are written to Parquet files
-on disk and assigned as \code{FlowerDatasetDescriptor} objects instead of
-data.frames. This avoids loading large datasets into R memory.
+When \code{output_mode = "staged"}, outputs are written to protected,
+server-local files and assigned as descriptors inheriting from
+\code{FlowerDatasetDescriptor} and \code{OMOPStagedDatasetDescriptor}.
+Long untranslated event outputs stream in chunks; formats requiring R-side
+transforms are materialized before staging. Each plan-produced descriptor
+carries a public \code{metadata$semantic_contract} snapshot of its resolved
+output shape and the server's age/date harmonization policy. The descriptors
+are not download URLs. Same-account readers should resolve them with
+\code{\link{omopStagedDatasetPath}}; other services require a separately
+reviewed server-side broker.
 }
 \examples{
 \dontrun{

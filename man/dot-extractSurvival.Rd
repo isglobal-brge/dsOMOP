@@ -31,7 +31,8 @@ SELECT. It only restricts events; the cohort (one row per member) and its
 distinct-person gate are unaffected, so this can never widen disclosure.}
 }
 \value{
-Data frame with row_id, person_id, event (0/1), time_to_event_days
+Data frame with row_id/cohort_row_id, person_id, event (0/1),
+  time_to_event_days
 }
 \description{
 Two-query approach: gets cohort members and outcome events separately,

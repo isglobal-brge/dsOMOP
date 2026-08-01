@@ -4,6 +4,115 @@
 
 # --- Markdown Parser ----------------------------------------------------------
 
+test_that("pinned OHDSI QueryLibrary audit manifest is internally consistent", {
+  path <- system.file("queries", "upstream_querylibrary_audit.json",
+                      package = "dsOMOP")
+  expect_true(nzchar(path))
+
+  audit <- jsonlite::fromJSON(path, simplifyVector = FALSE)
+  expect_identical(audit$schema_version, 2L)
+  expect_identical(
+    audit$commit,
+    "df8a21074b08519e581ca1afb7510468538117a4"
+  )
+  expect_identical(audit$query_count, 201L)
+  expect_identical(audit$domain_count, 15L)
+  expect_length(audit$queries, 201L)
+
+  required <- c(
+    "upstream_id", "path_id", "path", "sha256", "title", "dependencies", "tables",
+    "output_fields", "output_type", "risk_signals", "portability_signals",
+    "triage_class", "triage_reason", "dp_candidate", "dp_justification"
+  )
+  expect_true(all(vapply(audit$queries, function(query) {
+    all(required %in% names(query))
+  }, logical(1L))))
+
+  ids <- vapply(audit$queries, `[[`, character(1L), "upstream_id")
+  path_ids <- vapply(audit$queries, `[[`, character(1L), "path_id")
+  paths <- vapply(audit$queries, `[[`, character(1L), "path")
+  hashes <- vapply(audit$queries, `[[`, character(1L), "sha256")
+  classes <- vapply(audit$queries, `[[`, character(1L), "triage_class")
+  output_types <- vapply(audit$queries, `[[`, character(1L), "output_type")
+
+  expect_identical(anyDuplicated(tolower(ids)), 0L)
+  expect_identical(anyDuplicated(paths), 0L)
+  expect_identical(paths, sort(paths, method = "radix"))
+  expect_identical(path_ids, sub("\\.md$", "", basename(paths)))
+  expect_identical(which(ids != path_ids), 201L)
+  expect_identical(ids[[201L]], "P02")
+  expect_identical(paths[[201L]], "procedure/PO2.md")
+  expect_true(all(grepl("^[0-9a-f]{64}$", hashes)))
+  expect_true(all(vapply(audit$queries, function(query) {
+    is.list(query$dependencies) && length(query$dependencies) > 0L &&
+      is.list(query$tables) && length(query$tables) > 0L &&
+      is.list(query$output_fields) && length(query$output_fields) > 0L &&
+      nzchar(query$title) && nzchar(query$triage_reason)
+  }, logical(1L))))
+  expect_true(all(vapply(audit$queries, function(query) {
+    dependencies <- unlist(query$dependencies, use.names = FALSE)
+    tables <- unlist(query$tables, use.names = FALSE)
+    all(grepl("^@(cdm|vocab)\\.[a-z0-9_]+$", dependencies)) &&
+      identical(
+        tables,
+        sort(unique(sub("^@(cdm|vocab)\\.", "", dependencies)),
+             method = "radix")
+      )
+  }, logical(1L))))
+
+  expected_classes <- c(
+    vocabulary_reference_metadata = 54L,
+    rewritable_patient_aggregate = 56L,
+    statistical_needs_redesign = 73L,
+    patient_rows_assignment_only = 13L,
+    unsafe_as_written = 5L
+  )
+  recorded_classes <- unlist(audit$triage, use.names = TRUE)
+  observed_classes <- table(factor(classes, levels = names(expected_classes)))
+  expect_identical(recorded_classes, expected_classes)
+  expect_identical(as.integer(observed_classes), unname(expected_classes))
+  expect_identical(sum(recorded_classes), 201L)
+
+  recorded_domains <- unlist(audit$domains, use.names = TRUE)
+  observed_domains <- table(factor(dirname(paths), levels = names(recorded_domains)))
+  expect_identical(sum(recorded_domains), 201L)
+  expect_identical(as.integer(observed_domains), unname(recorded_domains))
+  expect_identical(sum(unlist(audit$output_types, use.names = FALSE)), 201L)
+  expect_setequal(names(table(output_types)), names(audit$output_types))
+
+  manifest <- paste0(hashes, "  ", paths, "\n", collapse = "")
+  observed_manifest_sha256 <- paste0(
+    openssl::sha256(charToRaw(manifest))
+  )
+  expect_identical(
+    audit$manifest_sha256,
+    "07b718badf25c485a7ac12f035e6f158b28d034ea6fa176598d6f52229c9ac5f"
+  )
+  expect_identical(observed_manifest_sha256, audit$manifest_sha256)
+
+  dp_candidates <- vapply(
+    audit$queries, `[[`, logical(1L), "dp_candidate"
+  )
+  expect_identical(sum(dp_candidates), 130L)
+  expect_identical(audit$dp_candidates$candidate, 130L)
+  expect_identical(audit$dp_candidates$not_candidate, 71L)
+  expect_true(all(vapply(audit$queries[dp_candidates], function(query) {
+    is.character(query$dp_justification) &&
+      length(query$dp_justification) == 1L &&
+      nzchar(query$dp_justification)
+  }, logical(1L))))
+  expect_true(all(vapply(audit$queries[!dp_candidates], function(query) {
+    is.null(query$dp_justification)
+  }, logical(1L))))
+
+  expect_false(audit$runtime_status$authorizes_execution)
+  expect_identical(audit$runtime_status$queries_enabled_by_this_inventory, 0L)
+  expect_match(
+    audit$dp_semantics$candidate_does_not_mean,
+    "currently executable"
+  )
+})
+
 test_that(".ql_parse_markdown: parses complete query template", {
   md <- '---
 Group: Condition
@@ -172,6 +281,17 @@ test_that(".ql_classify: BLOCKED for free-text columns", {
   expect_true(grepl("free-text", result$reason))
 })
 
+test_that(".ql_classify: BLOCKED for exact birth components", {
+  sql <- paste(
+    "SELECT year_of_birth, COUNT(DISTINCT person_id) AS n_persons",
+    "FROM person GROUP BY year_of_birth"
+  )
+  result <- dsOMOP:::.ql_classify(sql, "aggregate")
+
+  expect_equal(result$class, "BLOCKED")
+  expect_match(result$reason, "exact birth component")
+})
+
 test_that(".ql_classify: BLOCKED for SELECT * in aggregate", {
   sql <- "SELECT * FROM condition_occurrence"
 
@@ -190,13 +310,13 @@ test_that(".ql_classify: BLOCKED for aggregate without aggregates", {
   expect_equal(result$class, "BLOCKED")
 })
 
-test_that(".ql_classify: SAFE_ASSIGN for row-level in assign mode", {
+test_that(".ql_classify: unreviewed row-level assign SQL fails closed", {
   sql <- "SELECT person_id, condition_concept_id
           FROM condition_occurrence"
 
   result <- dsOMOP:::.ql_classify(sql, "assign")
 
-  expect_equal(result$class, "SAFE_ASSIGN")
+  expect_equal(result$class, "BLOCKED")
   expect_false(result$poolable)
 })
 
@@ -370,7 +490,7 @@ test_that(".query_list: excludes BLOCKED queries from listing", {
 
 # --- Classifier Consistency with Allowlist ------------------------------------
 
-test_that("all allowlisted queries pass classifier validation", {
+test_that("allowlist classes are explicit and blocked entries stay blocked", {
   queries <- dsOMOP:::.ql_load_queries("dsOMOP")
   allowlist <- dsOMOP:::.ql_load_allowlist("dsOMOP")
 
@@ -381,18 +501,24 @@ test_that("all allowlisted queries pass classifier validation", {
 
     cl <- dsOMOP:::.ql_classify(q$sql, q$mode)
 
-    # Allowlist class should match or be more permissive than classifier
     expect_true(
-      al$class %in% c("SAFE_AGGREGATE", "SAFE_ASSIGN"),
-      info = paste("Allowlisted query", qid, "should be safe")
+      al$class %in% c("SAFE_AGGREGATE", "SAFE_ASSIGN", "BLOCKED"),
+      info = paste("Allowlist query", qid, "has an invalid class")
     )
-
-    # If classifier says BLOCKED, the allowlist entry is suspicious
-    if (cl$class == "BLOCKED") {
-      # This is OK for now — allowlist overrides classifier
-      # But log a warning
+    if (identical(al$class, "BLOCKED")) {
+      expect_equal(cl$class, "BLOCKED",
+                   info = paste("Blocked query", qid,
+                                "must also fail the static classifier"))
     }
   }
+
+  blocked_birth_detail <- c(
+    "person.year_of_birth_distribution", "person.birth_month_distribution",
+    "person.gender_by_age_decade", "person.load"
+  )
+  expect_true(all(vapply(blocked_birth_detail, function(id) {
+    identical(allowlist[[id]]$class, "BLOCKED")
+  }, logical(1))))
 })
 
 # --- SDC Suppression ---------------------------------------------------------
@@ -521,4 +647,33 @@ test_that(".inferParamType: correctly infers types from template inputs", {
   expect_equal(dsOMOP:::.inferParamType("threshold", inputs_df), "numeric")
   expect_equal(dsOMOP:::.inferParamType("unknown_param", inputs_df), "unknown")
   expect_equal(dsOMOP:::.inferParamType("concept_id", NULL), "unknown")
+})
+
+test_that("legacy aggregate query endpoint rejects client-selected assign mode", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .setHandle("query_mode_gate", handle)
+  on.exit(.removeHandle("query_mode_gate"), add = TRUE)
+
+  expect_error(
+    omopQueryExecDS("query_mode_gate", "person.load", mode = "assign"),
+    "aggregate-only"
+  )
+})
+
+test_that("legacy aggregate query endpoint uses the unified banding gate", {
+  handle <- create_test_handle(n_persons = 17)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .setHandle("query_band_gate", handle)
+  on.exit(.removeHandle("query_band_gate"), add = TRUE)
+
+  result <- suppressWarnings(
+    withr::with_options(
+      list(nfilter.tab = 3, nfilter.subset = 3, dsomop.nfilter.band = 5),
+      omopQueryExecDS("query_band_gate", "person.demographic_summary")
+    )
+  )
+
+  expect_true(is.data.frame(result))
+  expect_true(all(result$n_persons %% 5 == 0))
 })

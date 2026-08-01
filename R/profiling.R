@@ -6,8 +6,8 @@
 #' By default a concept scope (\code{concept_id}) restricts to the table's
 #' DOMAIN concept column (e.g. \code{measurement_concept_id}). Supplying
 #' \code{concept_col} lets the caller scope by another concept column on the
-#' same table instead — \code{unit_concept_id}, a \code{*_type_concept_id}, or
-#' \code{value_as_concept_id} — which enables unit-aware value distributions and
+#' same table instead - \code{unit_concept_id}, a \code{*_type_concept_id}, or
+#' \code{value_as_concept_id} - which enables unit-aware value distributions and
 #' value-by-type profiling. This is the single authoritative chokepoint for
 #' concept scoping: every profiler that turns \code{concept_col} into a WHERE
 #' filter resolves it here, so the override is gated fail-closed and CANNOT be
@@ -16,12 +16,12 @@
 #' An explicit override must be a genuine, releasable concept column:
 #' \itemize{
 #'   \item it must EXIST on this table (so it cannot reach another table);
-#'   \item it must NOT be blocked (\code{is_blocked}) — this rejects every
+#'   \item it must NOT be blocked (\code{is_blocked}) - this rejects every
 #'     \code{*_source_value} / \code{*_source_concept_id} column (which must be
 #'     treated as if it does not exist) and all other PII, closing the
 #'     source-value filter leak;
 #'   \item it must be a concept column (name ends in \code{_concept_id}) that is
-#'     not a source concept — this additionally rejects identifier / person-key
+#'     not a source concept - this additionally rejects identifier / person-key
 #'     columns (\code{person_id}, \code{*_occurrence_id}, foreign keys), which
 #'     are not concepts and must never be used as a scope filter.
 #' }
@@ -45,7 +45,7 @@
   }
   crow <- cols[cols$column_name == concept_col, , drop = FALSE]
   # Fail-closed: a blocked column (any *_source_value / *_source_concept_id or
-  # other PII) is never a valid scope filter — treat it as if it does not exist.
+  # other PII) is never a valid scope filter - treat it as if it does not exist.
   if (isTRUE(crow$is_blocked[1])) {
     stop("Concept column '", concept_col, "' is not a valid scope column.",
          call. = FALSE)
@@ -60,6 +60,100 @@
   concept_col
 }
 
+#' Validate a column before a profiler can emit information about its values
+#'
+#' This is the common release-policy gate for column statistics, value counts,
+#' numeric distributions and cross-tab axes.  Blueprint `is_blocked` alone is
+#' not sufficient: OMOP primary/foreign keys such as `person_id` and
+#' `visit_occurrence_id` are intentionally usable inside server-side joins
+#' and therefore are not marked blocked, but their raw values must never become
+#' profiler output.  Standard concept foreign keys remain valid categorical
+#' dimensions; numeric profilers reject them because their integer storage does
+#' not make concept codes continuous measures.
+#'
+#' @param bp Schema blueprint.
+#' @param table Character; lower-case table name.
+#' @param column Character; lower-case column name.
+#' @param require_numeric Logical; require a genuine numeric measure.
+#' @param allow_identifiers Logical; allow identifiers for operations that never
+#'   emit their values (currently missingness rates only).
+#' @return List with the blueprint row and `is_numeric_measure`.
+#' @keywords internal
+.profilerColumnInfo <- function(bp, table, column, require_numeric = FALSE,
+                                allow_identifiers = FALSE) {
+  col_df <- bp$columns[[table]]
+  if (is.null(col_df) || !column %in% col_df$column_name) {
+    stop("Column '", column, "' not found in '", table, "'.", call. = FALSE)
+  }
+  crow <- col_df[col_df$column_name == column, , drop = FALSE][1, , drop = FALSE]
+
+  blocked <- isTRUE(crow$is_blocked[1]) || isTRUE(crow$is_sensitive[1]) ||
+    .detectSensitiveColumns(column)
+  if (blocked) {
+    stop("Column '", column,
+         "' is blocked (sensitive) and cannot be profiled.", call. = FALSE)
+  }
+
+  # Prefer the vendored OHDSI field metadata.  It precisely distinguishes a
+  # clinical concept FK (safe as a categorical code) from row/entity keys.  For
+  # introspection-only extension tables, fall back to conservative name rules.
+  spec_row <- NULL
+  if (!is.null(bp$spec_version)) {
+    spec <- tryCatch(.loadCdmSpec(bp$spec_version), error = function(e) NULL)
+    if (!is.null(spec) && !is.null(spec$field_level)) {
+      fields <- spec$field_level
+      spec_row <- fields[
+        tolower(fields$cdmTableName) == table &
+          tolower(fields$cdmFieldName) == column,
+        , drop = FALSE
+      ]
+    }
+  }
+
+  yes <- function(x) {
+    length(x) > 0L && !is.na(x[1]) &&
+      tolower(trimws(as.character(x[1]))) %in% c("yes", "y", "true", "1")
+  }
+  is_identifier <- column %in% .identifierColumns()
+  if (!is.null(spec_row) && nrow(spec_row) > 0L) {
+    is_pk <- yes(spec_row$isPrimaryKey)
+    is_fk <- yes(spec_row$isForeignKey)
+    fk_table <- toupper(trimws(as.character(spec_row$fkTableName[1] %||% "")))
+    # CONCEPT foreign keys are clinical categorical codes, not entity keys.
+    is_identifier <- is_identifier || is_pk ||
+      (is_fk && !identical(fk_table, "CONCEPT"))
+  } else {
+    is_identifier <- is_identifier ||
+      (grepl("(^id$|_(id|key|identifier)$)", column) &&
+         !grepl("_concept_id$", column))
+  }
+  if (is_identifier && !isTRUE(allow_identifiers)) {
+    stop("Identifier column '", column,
+         "' is not permitted for profiling.", call. = FALSE)
+  }
+
+  types <- tolower(trimws(as.character(c(
+    crow$cdm_datatype[1] %||% "", crow$db_datatype[1] %||% ""
+  ))))
+  types <- types[!is.na(types) & nzchar(types)]
+  numeric_type <- any(grepl(
+    "(^|\\b)(tinyint|smallint|mediumint|integer|int[0-9]*|bigint|hugeint|utinyint|usmallint|uinteger|ubigint|uhugeint|decimal|numeric|bignumeric|number|real|float[0-9]*|double|double precision|binary_float|binary_double|money|smallmoney)(\\b|\\s*\\()",
+    types
+  ))
+  is_concept <- grepl("_concept_id$", column) ||
+    (!is.na(crow$concept_role[1]) &&
+       !identical(crow$concept_role[1], "non_concept"))
+  is_numeric_measure <- numeric_type && !is_concept
+
+  if (isTRUE(require_numeric) && !is_numeric_measure) {
+    stop("Column '", column,
+         "' is not a numeric measure and cannot be used by numeric profilers.",
+         call. = FALSE)
+  }
+
+  list(row = crow, is_numeric_measure = is_numeric_measure)
+}
+
 #' Fail-closed distinct-person gate for a scoped numeric-distribution query
 #'
 #' The numeric-distribution profilers (range / quantiles / histogram / safe
@@ -68,7 +162,7 @@
 #' enough: one individual can contribute many records (e.g. a single patient
 #' with 20 lab measurements of the same concept), so a record count can clear
 #' \code{nfilter_subset}/\code{nfilter_dist} while only one or two PEOPLE are
-#' described — and p05/p95/quantiles/bin-edges then sit at that handful of
+#' described - and p05/p95/quantiles/bin-edges then sit at that handful of
 #' individuals' values (min/max). This mirrors the distinct-person gate already
 #' enforced in \code{\link{.profileColumnStats}} / \code{\link{.profileValueCounts}}:
 #' for a person-bearing table it counts \code{DISTINCT person_id} over EXACTLY
@@ -90,6 +184,60 @@
                 from_clause, where_sql)
   n_persons <- .executeQuery(handle, .renderSql(handle, sql))$n[1]
   .assertMinPersons(n_persons = n_persons)
+}
+
+#' Build a disclosure-safe numeric distribution relation
+#'
+#' Person-bearing longitudinal tables default to one mean value per person.
+#' Record-level mode is accepted only when the scoped relation is already 1:1
+#' by person; otherwise it would let repeated records from a few people dominate
+#' quantiles and histogram cells. Person-less reference tables remain
+#' record-based because there is no individual contribution to protect.
+#'
+#' @keywords internal
+.numericDistributionSql <- function(handle, from_clause, where_sql, value_col,
+                                    tbl_cols, unit = "person") {
+  unit <- match.arg(unit, c("person", "record"))
+  has_person <- "person_id" %in% tbl_cols
+  if (!has_person) {
+    return(paste0("SELECT CAST(t.", value_col, " AS REAL) AS value FROM ",
+                  from_clause, where_sql))
+  }
+
+  if (identical(unit, "record")) {
+    multiplicity_sql <- paste0(
+      "SELECT MAX(per_person.n) AS max_records FROM (",
+      "SELECT t.person_id, COUNT(*) AS n FROM ", from_clause, where_sql,
+      " GROUP BY t.person_id) AS per_person"
+    )
+    max_records <- .executeQuery(
+      handle, .renderSql(handle, multiplicity_sql))$max_records[1]
+    if (is.na(max_records) || max_records > 1L) {
+      stop("unit='record' is not disclosure-safe when a person has multiple ",
+           "scoped records; use unit='person'.", call. = FALSE)
+    }
+    return(paste0("SELECT CAST(t.", value_col, " AS REAL) AS value FROM ",
+                  from_clause, where_sql))
+  }
+
+  paste0(
+    "SELECT AVG(CAST(t.", value_col, " AS REAL)) AS value FROM ",
+    from_clause, where_sql, " GROUP BY t.person_id"
+  )
+}
+
+#' Select a quantile row while protecting both distribution tails
+#'
+#' @keywords internal
+.protectedQuantileOffset <- function(n, probability, settings) {
+  tail_min <- max(as.integer(settings$nfilter_tab),
+                  as.integer(settings$nfilter_subset), 1L)
+  if (is.na(n) || n < 2L * tail_min) {
+    stop("Disclosive: insufficient contributions for protected distribution ",
+         "tails.", call. = FALSE)
+  }
+  raw <- as.integer(floor(n * probability)) - 1L
+  max(tail_min - 1L, min(raw, as.integer(n) - tail_min))
 }
 
 #' Get safe table-level statistics
@@ -114,6 +262,21 @@
   tbl_cols <- col_df$column_name
   result <- list()
   settings <- .omopDisclosureSettings()
+  has_person <- "person_id" %in% tbl_cols
+
+  # Every statistic from a person-bearing table describes a population, even
+  # when the requested output is only a row count or a date range. Gate that
+  # population once on exact distinct persons so repeated longitudinal records
+  # from one or two people cannot make any branch releasable.
+  n_persons <- NULL
+  person_gate_ok <- TRUE
+  if (has_person) {
+    person_sql <- paste0("SELECT COUNT(DISTINCT person_id) AS n FROM ",
+                         qualified)
+    n_persons <- .executeQuery(handle, person_sql)$n[1]
+    person_gate_ok <- !is.na(n_persons) &&
+      n_persons >= settings$nfilter_subset
+  }
 
   # Surviving counts are banded down (floor to nfilter_band) at the return
   # boundary so an exact supra-threshold count is never released; the gate is
@@ -121,51 +284,39 @@
   if ("rows" %in% stats) {
     sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified)
     n_rows <- .executeQuery(handle, sql)$n[1]
-    if (!is.na(n_rows) && n_rows < settings$nfilter_subset) {
-      result$rows <- NA_real_
-      result$rows_suppressed <- TRUE
-    } else {
+    row_gate_ok <- !is.na(n_rows) && n_rows >= settings$nfilter_subset &&
+      (!has_person || person_gate_ok)
+    if (row_gate_ok) {
       result$rows <- .bandCount(n_rows, settings$nfilter_band)
-      result$rows_suppressed <- FALSE
     }
   }
 
-  if ("persons" %in% stats && "person_id" %in% tbl_cols) {
-    sql <- paste0("SELECT COUNT(DISTINCT person_id) AS n FROM ", qualified)
-    n_persons <- .executeQuery(handle, sql)$n[1]
-    if (!is.na(n_persons) && n_persons < settings$nfilter_subset) {
-      result$persons <- NA_real_
-      result$persons_suppressed <- TRUE
-    } else {
+  if ("persons" %in% stats && has_person) {
+    if (person_gate_ok) {
       result$persons <- .bandCount(n_persons, settings$nfilter_band)
-      result$persons_suppressed <- FALSE
     }
   }
 
-  if ("date_range" %in% stats) {
+  if ("date_range" %in% stats && (!has_person || person_gate_ok)) {
     date_col <- .getDateColumn(bp, table)
     if (!is.null(date_col)) {
-      # Bin to year-month to prevent exact date disclosure
-      dialect <- handle$target_dialect %||% "sql server"
-      if (dialect == "sqlite") {
-        min_expr <- paste0("strftime('%Y-%m', MIN(", date_col, "))")
-        max_expr <- paste0("strftime('%Y-%m', MAX(", date_col, "))")
-      } else {
-        min_expr <- paste0("TO_CHAR(MIN(", date_col, "), 'YYYY-MM')")
-        max_expr <- paste0("TO_CHAR(MAX(", date_col, "), 'YYYY-MM')")
+      # Never publish MIN/MAX(month) directly: either endpoint may be supported
+      # by one person. Reuse the period profiler, which drops months below the
+      # exact distinct-person threshold, and derive the range only from the
+      # surviving supported periods. If none survive, omit the range entirely.
+      supported <- tryCatch(
+        .profileDateCounts(handle, table, date_col = date_col,
+                           granularity = "month"),
+        error = function(e) NULL
+      )
+      if (!is.null(supported) && nrow(supported) > 0L) {
+        periods <- sort(as.character(supported$period))
+        result$date_range <- list(
+          column = date_col,
+          min_month = periods[1],
+          max_month = periods[length(periods)]
+        )
       }
-      sql <- paste0(
-        "SELECT ", min_expr, " AS min_month, ",
-        max_expr, " AS max_month ",
-        "FROM ", qualified,
-        " WHERE ", date_col, " IS NOT NULL"
-      )
-      date_result <- .executeQuery(handle, sql)
-      result$date_range <- list(
-        column    = date_col,
-        min_month = date_result$min_month[1],
-        max_month = date_result$max_month[1]
-      )
     }
   }
 
@@ -193,14 +344,7 @@
   if (nrow(tbl_row) == 0) stop("Table '", table, "' not found.", call. = FALSE)
 
   col_df <- bp$columns[[table]]
-  if (!column %in% col_df$column_name) {
-    stop("Column '", column, "' not found in '", table, "'.", call. = FALSE)
-  }
-
-  # Check if sensitive
-  if (any(col_df$is_blocked[col_df$column_name == column])) {
-    stop("Column '", column, "' is blocked (sensitive).", call. = FALSE)
-  }
+  column_info <- .profilerColumnInfo(bp, table, column)
 
   qualified <- tbl_row$qualified_name[1]
   settings <- .omopDisclosureSettings()
@@ -213,7 +357,8 @@
   if (!is.null(cohort_table) && has_person) {
     cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
     from_clause <- paste0(from_clause,
-                          " INNER JOIN ", cohort_table, " AS coh",
+                          " INNER JOIN (SELECT DISTINCT subject_id FROM ",
+                          cohort_table, ") AS coh",
                           " ON t.person_id = coh.subject_id")
   }
 
@@ -244,9 +389,26 @@
   )
   stats_result <- .executeQuery(handle, .renderSql(handle, sql))
 
+  if (has_person) {
+    person_support_sql <- paste0(
+      "SELECT COUNT(*) AS n_persons, ",
+      "SUM(CASE WHEN per_person.has_value = 0 THEN 1 ELSE 0 END) ",
+      "AS n_missing_persons, ",
+      "SUM(CASE WHEN per_person.has_value = 1 THEN 1 ELSE 0 END) ",
+      "AS n_value_persons FROM (",
+      "SELECT t.person_id, MAX(CASE WHEN t.", column,
+      " IS NOT NULL THEN 1 ELSE 0 END) AS has_value FROM ", from_clause,
+      if (!is.null(concept_filter)) paste0(" WHERE ", concept_filter) else "",
+      " GROUP BY t.person_id) AS per_person"
+    )
+    person_support <- .executeQuery(
+      handle, .renderSql(handle, person_support_sql))
+  }
+
   result <- list(
     n_total = stats_result$n_total[1],
-    n_missing = stats_result$n_missing[1],
+    n_missing = if (has_person) person_support$n_missing_persons[1]
+                else stats_result$n_missing[1],
     n_distinct = stats_result$n_distinct[1]
   )
   if (has_person) result$n_persons <- stats_result$n_persons[1]
@@ -258,9 +420,21 @@
     stop("Disclosive: insufficient individuals.", call. = FALSE)
   }
 
-  # Suppress a tiny number of NULL rows (pinpoints the few missing individuals)
-  if (!is.na(result$n_missing) &&
-      result$n_missing > 0 && result$n_missing < settings$nfilter_tab) {
+  # Missingness can be differenced into rows with and without values. On
+  # longitudinal tables, gate BOTH sides on distinct contributing persons;
+  # record counts alone are not population support.
+  if (has_person) {
+    n_missing_persons <- person_support$n_missing_persons[1]
+    n_value_persons <- person_support$n_value_persons[1]
+    n_value_unit <- result$n_persons - result$n_missing
+    missing_safe <- isTRUE(result$n_missing == 0) ||
+      (!is.na(n_missing_persons) &&
+         n_missing_persons >= settings$nfilter_tab)
+    value_safe <- isTRUE(n_value_unit == 0) ||
+      (!is.na(n_value_persons) && n_value_persons >= settings$nfilter_tab)
+    if (!missing_safe || !value_safe) result$n_missing <- NA_real_
+  } else if (!is.na(result$n_missing) && result$n_missing > 0 &&
+             result$n_missing < settings$nfilter_tab) {
     result$n_missing <- NA_real_
   }
 
@@ -287,42 +461,46 @@
   }
 
   # Numeric stats if applicable
-  col_type <- col_df$db_datatype[col_df$column_name == column][1]
-  if (grepl("int|float|real|numeric|double|decimal", col_type) ||
-      grepl("_as_number$|^quantity$|^range_|^dose_value$", column)) {
-    # Disclosure-safe numeric summary: mean is always safe to release once the
-    # population gate above has passed; SD is added so the canonical summary is
-    # n, n_persons, %missing, mean, SD, clamped p05-p95 (still NO min/max, which
-    # would identify outlier individuals — if min==max a single person is
-    # identified). SD is computed over the same scoped, non-NULL relation as the
-    # mean and is only released when the non-NULL count clears nfilter_dist (the
-    # SAME small-sample floor that gates the quantiles): with a handful of values
-    # the spread is itself near-identifying, so it fails closed to NA.
+  if (isTRUE(column_info$is_numeric_measure)) {
+    # Disclosure-safe numeric summary: mean requires nfilter_subset DISTINCT
+    # contributors with a value, while SD requires nfilter_dist contributors.
+    # Both summarise one within-person mean per contributor, so repeated values
+    # cannot dominate the result. Min/max remain forbidden because they identify
+    # tail individuals.
+    value_where <- paste0(" WHERE t.", column, " IS NOT NULL",
+      if (!is.null(concept_filter)) paste0(" AND ", concept_filter) else "")
+    value_distribution <- .numericDistributionSql(
+      handle, from_clause, value_where, column, col_df$column_name,
+      unit = "person"
+    )
     num_sql <- paste0(
-      "SELECT AVG(CAST(t.", column, " AS REAL)) AS mean_val, ",
-      "COUNT(t.", column, ") AS n_val, ",
-      "SUM(CAST(t.", column, " AS REAL) * CAST(t.", column, " AS REAL)) AS sumsq, ",
-      "SUM(CAST(t.", column, " AS REAL)) AS sumval ",
-      "FROM ", from_clause,
-      " WHERE t.", column, " IS NOT NULL",
-      if (!is.null(concept_filter)) paste0(" AND ", concept_filter) else ""
+      "SELECT AVG(distribution_values.value) AS mean_val, ",
+      "COUNT(*) AS n_val, ",
+      "SUM(distribution_values.value * distribution_values.value) AS sumsq, ",
+      "SUM(distribution_values.value) AS sumval FROM (", value_distribution,
+      ") AS distribution_values"
     )
     num_stats <- tryCatch(.executeQuery(handle, .renderSql(handle, num_sql)),
                           error = function(e) NULL)
+    result$mean <- NA_real_
+    result$sd <- NA_real_
     if (!is.null(num_stats) && nrow(num_stats) > 0) {
-      result$mean <- round(num_stats$mean_val[1], 4)
       nfilter_dist <- settings$nfilter_dist %||% 10L
       n_val <- num_stats$n_val[1]
-      # Sample SD from sums (sqrt((sumsq - n*mean^2)/(n-1))), gated by nfilter_dist.
-      if (!is.na(n_val) && n_val >= nfilter_dist && n_val > 1) {
+      n_value_people <- n_val
+      if (!is.na(n_value_people) &&
+          n_value_people >= settings$nfilter_subset) {
+        result$mean <- round(num_stats$mean_val[1], 4)
+      }
+      # Sample SD over the one-value-per-person relation.
+      if (!is.na(n_value_people) && n_value_people >= nfilter_dist &&
+          !is.na(n_val) && n_val > 1) {
         mu <- num_stats$sumval[1] / n_val
         var_num <- (num_stats$sumsq[1] - n_val * mu * mu) / (n_val - 1)
         # Guard tiny negative variance from floating-point cancellation.
         if (!is.na(var_num)) {
           result$sd <- round(sqrt(max(var_num, 0)), 4)
         }
-      } else {
-        result$sd <- NA_real_
       }
     }
   }
@@ -395,9 +573,15 @@
   if (!is.null(columns)) {
     columns <- tolower(columns)
     columns <- intersect(columns, tbl_cols)
+    for (column in columns) {
+      .profilerColumnInfo(bp, table, column, allow_identifiers = TRUE)
+    }
   } else {
-    # Exclude blocked columns
-    columns <- col_df$column_name[!col_df$is_blocked]
+    # Exclude blocked/free-text columns. Identifier missingness is safe because
+    # this endpoint emits only a population-gated rate, never identifier values.
+    safe <- !col_df$is_blocked & !col_df$is_sensitive &
+      !vapply(col_df$column_name, .detectSensitiveColumns, logical(1))
+    columns <- col_df$column_name[safe]
   }
 
   qualified <- tbl_row$qualified_name[1]
@@ -409,22 +593,18 @@
   if (!is.null(cohort_table) && has_person) {
     cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
     from_clause <- paste0(from_clause,
-                          " INNER JOIN ", cohort_table, " AS coh",
+                          " INNER JOIN (SELECT DISTINCT subject_id FROM ",
+                          cohort_table, ") AS coh",
                           " ON t.person_id = coh.subject_id")
   }
 
-  total_sql <- paste0("SELECT COUNT(*) AS n FROM ", from_clause)
-  total <- .executeQuery(handle, .renderSql(handle, total_sql))$n[1]
-
-  # Disclosure gate on DISTINCT persons (fail-closed) for person-bearing tables:
-  # a record count can clear the threshold while only a few individuals exist.
-  # The per-record missing rate below is still record-based (that is what the
-  # statistic means), but it is only released once the population is large enough.
   if (has_person) {
     persons_sql <- paste0("SELECT COUNT(DISTINCT t.person_id) AS n FROM ",
                           from_clause)
     gate_n <- .executeQuery(handle, .renderSql(handle, persons_sql))$n[1]
   } else {
+    total_sql <- paste0("SELECT COUNT(*) AS n FROM ", from_clause)
+    total <- .executeQuery(handle, .renderSql(handle, total_sql))$n[1]
     gate_n <- total
   }
   if (is.na(gate_n) || gate_n < settings$nfilter_subset) {
@@ -438,19 +618,37 @@
   )
 
   for (col in columns) {
-    sql <- paste0(
-      "SELECT COUNT(*) AS n_missing FROM ", from_clause,
-      " WHERE t.", col, " IS NULL"
-    )
-    n_missing <- .executeQuery(handle, .renderSql(handle, sql))$n_missing[1]
-    # Suppress near-0/near-1 rates: a tiny number of NULL or non-NULL rows
-    # pinpoints the few individuals in that column.
-    if (!is.na(n_missing) &&
-        ((n_missing > 0 && n_missing < settings$nfilter_tab) ||
-         ((total - n_missing) > 0 && (total - n_missing) < settings$nfilter_tab))) {
-      rate <- NA_real_
+    if (has_person) {
+      # One contribution per person: a person is missing only when NONE of
+      # their scoped longitudinal records carries a value for this column.
+      sql <- paste0(
+        "SELECT COUNT(*) AS n_total, ",
+        "SUM(CASE WHEN per_person.has_value = 0 THEN 1 ELSE 0 END) AS n_missing ",
+        "FROM (SELECT t.person_id, MAX(CASE WHEN t.", col,
+        " IS NOT NULL THEN 1 ELSE 0 END) AS has_value FROM ", from_clause,
+        " GROUP BY t.person_id) AS per_person"
+      )
+      counts <- .executeQuery(handle, .renderSql(handle, sql))
+      total_unit <- counts$n_total[1]
+      n_missing <- counts$n_missing[1]
     } else {
-      rate <- round(n_missing / total, 2)
+      sql <- paste0(
+        "SELECT COUNT(*) AS n_total, ",
+        "SUM(CASE WHEN t.", col,
+        " IS NULL THEN 1 ELSE 0 END) AS n_missing FROM ", from_clause)
+      counts <- .executeQuery(handle, .renderSql(handle, sql))
+      total_unit <- counts$n_total[1]
+      n_missing <- counts$n_missing[1]
+    }
+    n_value <- total_unit - n_missing
+    groups_safe <- (n_missing == 0 || n_missing >= settings$nfilter_tab) &&
+      (n_value == 0 || n_value >= settings$nfilter_tab)
+    total_banded <- .bandCount(total_unit, settings$nfilter_band)
+    missing_banded <- .bandCount(n_missing, settings$nfilter_band)
+    rate <- NA_real_
+    if (groups_safe && total_banded > 0 &&
+        (n_missing == 0 || missing_banded > 0)) {
+      rate <- round(missing_banded / total_banded, 2)
     }
     results <- rbind(results, data.frame(
       column_name = col,
@@ -486,12 +684,11 @@
   if (nrow(tbl_row) == 0) stop("Table '", table, "' not found.", call. = FALSE)
 
   col_df <- bp$columns[[table]]
-  if (!column %in% col_df$column_name) {
-    stop("Column '", column, "' not found in '", table, "'.", call. = FALSE)
-  }
-
-  if (any(col_df$is_blocked[col_df$column_name == column])) {
-    stop("Column '", column, "' is blocked (sensitive).", call. = FALSE)
+  column_info <- .profilerColumnInfo(bp, table, column)
+  if (isTRUE(column_info$is_numeric_measure)) {
+    stop("Column '", column, "' is continuous; use a protected numeric range, ",
+         "histogram, quantile, or cutpoint profiler instead of value counts.",
+         call. = FALSE)
   }
 
   qualified <- tbl_row$qualified_name[1]
@@ -502,7 +699,8 @@
   if (!is.null(cohort_table) && has_person) {
     cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
     from_clause <- paste0(from_clause,
-                          " INNER JOIN ", cohort_table, " AS coh",
+                          " INNER JOIN (SELECT DISTINCT subject_id FROM ",
+                          cohort_table, ") AS coh",
                           " ON t.person_id = coh.subject_id")
   }
 
@@ -610,17 +808,204 @@
 
 # --- Safe Numeric Cutpoints ---
 
+#' Resolve a public, server-configured numeric grid
+#'
+#' Numeric boundaries must not be estimated from the protected data. Server
+#' administrators configure public grids through `dsomop.safe_numeric_grids`
+#' (or its `default.*` fallback). Each entry is a list with `table`, `column`,
+#' optional `concept_id`/`concept_col`, finite `lower`/`upper`, strictly
+#' increasing `breaks` spanning that range, and `clipping = "winsorize"`.
+#' Multiple entries for one scope are allowed when they have different numbers
+#' of bins. The requested `n_bins` must match one entry exactly.
+#'
+#' @param domain_concept_col The table's resolved domain concept column. A
+#'   configured `concept_col = NULL` means this column, never a wildcard.
+#' @keywords internal
+.configuredSafeNumericGrid <- function(table, column, concept_id, concept_col,
+                                       n_bins, domain_concept_col = NULL) {
+  configs <- getOption(
+    "dsomop.safe_numeric_grids",
+    getOption("default.dsomop.safe_numeric_grids", list())
+  )
+  if (!is.list(configs) || length(configs) == 0L) {
+    stop("Safe cutpoints are disabled for this scope: the server administrator ",
+         "must configure a public numeric grid.", call. = FALSE)
+  }
+  if (all(c("table", "column", "breaks") %in% names(configs))) {
+    configs <- list(configs)
+  }
+
+  normalize <- function(entry) {
+    fail <- function() {
+      stop("Invalid server option 'dsomop.safe_numeric_grids': each entry must ",
+           "define one finite public grid and explicit winsorizing range.",
+           call. = FALSE)
+    }
+    if (!is.list(entry) || is.null(names(entry)) || anyNA(names(entry)) ||
+        any(!nzchar(names(entry))) || anyDuplicated(names(entry))) fail()
+    allowed <- c("table", "column", "concept_id", "concept_col", "lower",
+                 "upper", "breaks", "clipping")
+    required <- c("table", "column", "lower", "upper", "breaks", "clipping")
+    if (length(setdiff(names(entry), allowed)) > 0L ||
+        !all(required %in% names(entry))) fail()
+
+    entry_table <- tryCatch(
+      tolower(.validateIdentifier(entry$table, "safe-grid table")),
+      error = function(e) fail()
+    )
+    entry_column <- tryCatch(
+      tolower(.validateIdentifier(entry$column, "safe-grid column")),
+      error = function(e) fail()
+    )
+    entry_concept_col <- entry$concept_col %||% NULL
+    if (!is.null(entry_concept_col)) {
+      entry_concept_col <- tryCatch(
+        tolower(.validateIdentifier(entry_concept_col,
+                                    "safe-grid concept column")),
+        error = function(e) fail()
+      )
+    }
+    entry_concept_id <- entry$concept_id %||% NULL
+    if (!is.null(entry_concept_id)) {
+      concept_num <- suppressWarnings(as.numeric(entry_concept_id))
+      concept_int <- suppressWarnings(as.integer(entry_concept_id))
+      if (length(entry_concept_id) != 1L || length(concept_num) != 1L ||
+          !is.finite(concept_num) || length(concept_int) != 1L ||
+          is.na(concept_int) || concept_num != concept_int) fail()
+      entry_concept_id <- concept_int
+    }
+
+    lower <- suppressWarnings(as.numeric(entry$lower))
+    upper <- suppressWarnings(as.numeric(entry$upper))
+    if (!is.numeric(entry$breaks) || length(lower) != 1L ||
+        length(upper) != 1L || !is.finite(lower) || !is.finite(upper) ||
+        lower >= upper) fail()
+    breaks <- as.numeric(entry$breaks)
+    if (length(breaks) < 3L || any(!is.finite(breaks)) ||
+        any(diff(breaks) <= 0)) fail()
+    near <- function(x, y) {
+      abs(x - y) <= 1e-12 * max(1, abs(x), abs(y))
+    }
+    if (!near(breaks[1], lower) ||
+        !near(breaks[length(breaks)], upper)) fail()
+    if (!is.character(entry$clipping) || length(entry$clipping) != 1L ||
+        !identical(tolower(entry$clipping), "winsorize")) fail()
+
+    list(
+      table = entry_table, column = entry_column,
+      concept_id = entry_concept_id, concept_col = entry_concept_col,
+      lower = lower, upper = upper, breaks = breaks,
+      clipping = "winsorize", n_bins = length(breaks) - 1L
+    )
+  }
+
+  normalized <- lapply(configs, normalize)
+  same_nullable <- function(x, y) {
+    if (is.null(x) && is.null(y)) return(TRUE)
+    if (is.null(x) || is.null(y)) return(FALSE)
+    identical(x, y)
+  }
+  matches <- vapply(normalized, function(entry) {
+    entry_concept_col <- entry$concept_col
+    if (!is.null(entry$concept_id) && is.null(entry_concept_col)) {
+      entry_concept_col <- domain_concept_col
+    }
+    identical(entry$table, table) && identical(entry$column, column) &&
+      identical(entry$n_bins, n_bins) &&
+      same_nullable(entry$concept_id, concept_id) &&
+      same_nullable(entry_concept_col, concept_col)
+  }, logical(1))
+  if (sum(matches) != 1L) {
+    stop(if (any(matches)) {
+      "Invalid server option 'dsomop.safe_numeric_grids': the requested scope is ambiguous."
+    } else {
+      "Safe cutpoints are disabled for this scope and n_bins: the server administrator must configure an exact public numeric grid."
+    }, call. = FALSE)
+  }
+  normalized[[which(matches)]]
+}
+
+#' Remember a server-issued numeric-bin contract for this resource session
+#'
+#' Client-provided numeric edges are not self-authenticating. Keeping the
+#' reviewed edges in the handle lets extraction validate that a later
+#' `value_bin` really came from this server, for the same table/column/scope,
+#' rather than trusting a forgeable client list.
+#'
+#' @param grid Public grid metadata retained for auditability.
+#' @keywords internal
+.rememberSafeNumericBins <- function(handle, scope, breaks, grid = NULL) {
+  allowed_scope <- c("table", "column", "concept_id", "concept_col", "n_bins")
+  if (!is.list(scope) || is.null(names(scope)) || anyNA(names(scope)) ||
+      any(!nzchar(names(scope))) || anyDuplicated(names(scope)) ||
+      length(setdiff(names(scope), allowed_scope)) > 0L ||
+      !all(c("table", "column", "n_bins") %in% names(scope))) {
+    stop("Invalid internal safe numeric-bin contract.", call. = FALSE)
+  }
+  n_bins_numeric <- suppressWarnings(as.numeric(scope$n_bins))
+  n_bins <- suppressWarnings(as.integer(scope$n_bins))
+  if (length(n_bins_numeric) != 1L || !is.finite(n_bins_numeric) ||
+      length(n_bins) != 1L || is.na(n_bins) || n_bins_numeric != n_bins ||
+      n_bins < 2L || n_bins > 100L ||
+      !is.numeric(breaks) || length(breaks) != n_bins + 1L ||
+      any(!is.finite(breaks)) || any(diff(breaks) <= 0)) {
+    stop("Invalid internal safe numeric-bin contract.", call. = FALSE)
+  }
+  ttl <- suppressWarnings(as.numeric(
+    getOption("dsomop.safe_bin_ttl_seconds", 900)
+  ))
+  if (length(ttl) != 1L || is.na(ttl) || !is.finite(ttl) || ttl <= 0) {
+    stop("dsomop.safe_bin_ttl_seconds must be one positive finite number.",
+         call. = FALSE)
+  }
+  now <- as.numeric(Sys.time())
+  cache <- handle$safe_numeric_bins %||% list()
+  if (length(cache) > 0L) {
+    fresh <- vapply(cache, function(x) {
+      is.list(x) && is.numeric(x$expires_at) && length(x$expires_at) == 1L &&
+        is.finite(x$expires_at) && x$expires_at > now
+    }, logical(1))
+    cache <- cache[fresh]
+  }
+  entry <- c(scope, list(
+    breaks = as.numeric(breaks),
+    grid = grid,
+    expires_at = now + ttl
+  ))
+  key <- paste0("bin_", paste0(format(openssl::rand_bytes(12L)), collapse = ""))
+  cache[[key]] <- entry
+  # Bound per-handle state even if an analyst requests many cutpoint variants.
+  if (length(cache) > 128L) cache <- utils::tail(cache, 128L)
+  handle$safe_numeric_bins <- cache
+  invisible(scope)
+}
+
 #' Compute safe histogram bin edges for a numeric column
 #'
-#' Returns quantile-based bin edges that can be safely used as filter
-#' thresholds. Each bin is guaranteed to contain >= nfilter.tab persons.
+#' Returns a public, server-configured grid over one mean value per person.
+#' Contributions outside its declared range are winsorized to the nearest
+#' endpoint. No edge is estimated from protected values. The complete grid is
+#' released only when every bin contains at least \code{nfilter.tab} persons;
+#' counts are banded only after that exact internal gate.
+#'
+#' @section Server configuration:
+#' `dsomop.safe_numeric_grids` must contain an exact entry for the requested
+#' table, column, concept scope and number of bins. Its range and breaks must be
+#' fixed from public clinical knowledge or governance policy before inspecting
+#' the protected data. Configuring observed minima, maxima or quantiles as a
+#' supposedly public grid would defeat this contract. Winsorization bounds each
+#' person's contribution for bin support; it does not modify the source table.
+#' Count banding and `nfilter.noise` are not claimed as differential privacy.
 #'
 #' @param handle CDM handle
 #' @param table Character; table name
 #' @param column Character; numeric column name
 #' @param concept_id Integer or NULL; concept filter
 #' @param n_bins Integer; target number of bins (default 10)
-#' @return List with breaks (numeric vector) and counts (integer vector)
+#' @param concept_col Character or NULL; reviewed concept column used to scope
+#'   `concept_id`. The table's domain concept column is used by default.
+#' @return List with public breaks, banded person counts, the session scope
+#'   contract, and public grid/clipping metadata.
 #' @keywords internal
 .profileSafeCutpoints <- function(handle, table, column, concept_id = NULL,
                                    n_bins = 10L, concept_col = NULL) {
@@ -637,113 +1022,129 @@
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
 
-  if (!column %in% tbl_cols) {
-    stop("Column '", column, "' not found in '", table, "'.", call. = FALSE)
-  }
+  .profilerColumnInfo(bp, table, column, require_numeric = TRUE)
 
-  n_bins <- max(as.integer(n_bins), 2L)
-  n_bins <- min(n_bins, 100L)
+  n_bins_numeric <- suppressWarnings(as.numeric(n_bins))
+  n_bins_integer <- suppressWarnings(as.integer(n_bins))
+  if (length(n_bins) != 1L || length(n_bins_numeric) != 1L ||
+      !is.finite(n_bins_numeric) || length(n_bins_integer) != 1L ||
+      is.na(n_bins_integer) || n_bins_numeric != n_bins_integer ||
+      n_bins_integer < 2L || n_bins_integer > 100L) {
+    stop("n_bins must be one integer between 2 and 100.", call. = FALSE)
+  }
+  n_bins <- n_bins_integer
+
+  if (!"person_id" %in% tbl_cols) {
+    stop("Safe cutpoints require a person-bearing OMOP table.", call. = FALSE)
+  }
 
   # Build WHERE clauses. concept_col defaults to the domain concept but may
   # override to scope by unit_concept_id / *_type_concept_id / value_as_concept_id.
-  where_parts <- paste0(column, " IS NOT NULL")
+  where_parts <- paste0("t.", column, " IS NOT NULL")
+  scope_col <- NULL
   if (!is.null(concept_id)) {
-    scope_col <- .resolveConceptScopeColumn(bp, table, concept_col)
-    if (!is.null(scope_col) && scope_col %in% tbl_cols) {
-      where_parts <- c(where_parts,
-                       paste0(scope_col, " = ", as.integer(concept_id)))
+    concept_num <- suppressWarnings(as.numeric(concept_id))
+    concept_int <- suppressWarnings(as.integer(concept_id))
+    if (length(concept_id) != 1L || length(concept_num) != 1L ||
+        !is.finite(concept_num) || length(concept_int) != 1L ||
+        is.na(concept_int) || concept_num != concept_int) {
+      stop("concept_id must be one finite integer.", call. = FALSE)
     }
+    concept_id <- concept_int
+    scope_col <- .resolveConceptScopeColumn(bp, table, concept_col)
+    if (is.null(scope_col)) {
+      stop("Table '", table,
+           "' has no reviewed concept column for concept_id scoping.",
+           call. = FALSE)
+    }
+    where_parts <- c(where_parts,
+                     paste0("t.", scope_col, " = ", concept_id))
+  } else if (!is.null(concept_col)) {
+    stop("concept_col requires concept_id.", call. = FALSE)
   }
   where_sql <- paste0(" WHERE ", paste(where_parts, collapse = " AND "))
+  contract <- list(
+    table = table,
+    column = column,
+    concept_id = concept_id,
+    concept_col = scope_col,
+    n_bins = n_bins
+  )
 
-  # Fail-closed distinct-person gate over the scoped relation: cutpoint edges
-  # (used as filter thresholds) are disclosive when they describe
-  # < nfilter_subset PEOPLE, no matter how many records they contribute. This
-  # query references columns un-aliased, so gate inline rather than via the
-  # t-aliased .assertNumericDistPersons helper.
-  if ("person_id" %in% tbl_cols) {
-    pc_sql <- paste0("SELECT COUNT(DISTINCT person_id) AS n FROM ",
-                     qualified, where_sql)
-    .assertMinPersons(n_persons = .executeQuery(handle, pc_sql)$n[1])
+  # Collapse longitudinal records before computing the distribution. This gives
+  # every person exactly one contribution, so a patient with many measurements
+  # cannot make a configured grid cell appear well supported by repetition.
+  person_value_sql <- paste0(
+    "SELECT t.person_id AS person_id, ",
+    "AVG(CAST(t.", column, " AS REAL)) AS value ",
+    "FROM ", qualified, " AS t", where_sql,
+    " GROUP BY t.person_id"
+  )
+  count_sql <- paste0("SELECT COUNT(*) AS n FROM (", person_value_sql,
+                      ") AS person_values")
+  n_total <- .executeQuery(handle, .renderSql(handle, count_sql))$n[1]
+  .assertMinPersons(n_persons = n_total)
+
+  if (is.na(n_total) || n_total < as.integer(settings$nfilter_dist %||% 10L)) {
+    stop("Disclosive: operation blocked - insufficient individuals for ",
+         "a numeric distribution.", call. = FALSE)
   }
 
-  # Get total count
-  count_sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified, where_sql)
-  n_total <- .executeQuery(handle, count_sql)$n[1]
-
-  if (is.na(n_total) || n_total < settings$nfilter_subset) {
-    stop("Disclosive: operation blocked — insufficient individuals to meet ",
-         "disclosure threshold. No further details available.",
-         call. = FALSE)
-  }
-
-  # Compute quantile-based breaks
-  probs <- seq(0, 1, length.out = n_bins + 1L)
-  breaks <- numeric(length(probs))
-
-  for (i in seq_along(probs)) {
-    offset_val <- max(0L, as.integer(floor(n_total * probs[i])) - 1L)
-    if (offset_val >= n_total) offset_val <- n_total - 1L
-
-    q_sql <- paste0(
-      "SELECT CAST(", column, " AS REAL) AS val FROM ", qualified,
-      where_sql,
-      " ORDER BY ", column, " ASC LIMIT 1 OFFSET ", offset_val
-    )
-    val <- tryCatch(.executeQuery(handle, q_sql)$val[1],
-                    error = function(e) NA_real_)
-    breaks[i] <- if (!is.na(val)) round(val, 4) else NA_real_
-  }
-
-  # Remove NAs and duplicates while preserving order
-  breaks <- unique(breaks[!is.na(breaks)])
-
-  if (length(breaks) < 2) {
-    return(list(breaks = breaks, counts = integer(0)))
-  }
+  # The released edges are selected exclusively from server-owned public
+  # configuration. `nfilter.noise` is not a DP mechanism and is intentionally
+  # not used to sanitize data-derived order statistics here.
+  grid <- .configuredSafeNumericGrid(
+    table, column, concept_id, scope_col, n_bins,
+    domain_concept_col = .getDomainConceptColumn(bp, table)
+  )
+  breaks <- grid$breaks
+  lower_literal <- .quoteLiteral(grid$lower, handle)
+  upper_literal <- .quoteLiteral(grid$upper, handle)
+  clipped_value_sql <- paste0(
+    "SELECT raw_values.person_id AS person_id, CASE ",
+    "WHEN raw_values.value < ", lower_literal, " THEN ", lower_literal, " ",
+    "WHEN raw_values.value > ", upper_literal, " THEN ", upper_literal, " ",
+    "ELSE raw_values.value END AS value FROM (", person_value_sql,
+    ") AS raw_values"
+  )
 
   # Compute counts per bin
   n_result_bins <- length(breaks) - 1L
-  counts <- integer(n_result_bins)
+  counts <- numeric(n_result_bins)
 
   for (i in seq_len(n_result_bins)) {
     lo <- breaks[i]
     hi <- breaks[i + 1L]
     op <- if (i == n_result_bins) " <= " else " < "
     bin_sql <- paste0(
-      "SELECT COUNT(*) AS n FROM ", qualified, where_sql,
-      " AND CAST(", column, " AS REAL) >= ", lo,
-      " AND CAST(", column, " AS REAL)", op, hi
+      "SELECT COUNT(*) AS n FROM (", clipped_value_sql, ") AS person_values",
+      " WHERE person_values.value >= ", .quoteLiteral(lo, handle),
+      " AND person_values.value", op, .quoteLiteral(hi, handle)
     )
-    cnt <- tryCatch(.executeQuery(handle, bin_sql)$n[1],
-                    error = function(e) 0L)
-    counts[i] <- as.integer(cnt)
+    cnt <- tryCatch(.executeQuery(handle, .renderSql(handle, bin_sql))$n[1],
+                    error = function(e) NA_real_)
+    counts[i] <- as.numeric(cnt)
   }
 
-  # Merge small bins until all >= min_cell
+  # Never merge or omit bins based on protected counts: that would make the
+  # returned edge set itself data-dependent. Fail closed unless the complete
+  # configured grid is supported.
   min_cell <- settings$nfilter_tab
-  while (length(counts) > 1) {
-    small_idx <- which(counts < min_cell)
-    if (length(small_idx) == 0) break
-    # Merge smallest with its neighbor
-    idx <- small_idx[1]
-    if (idx == length(counts)) {
-      # Merge with previous
-      counts[idx - 1L] <- counts[idx - 1L] + counts[idx]
-      counts <- counts[-idx]
-      breaks <- breaks[-(idx + 1L)]
-    } else {
-      # Merge with next
-      counts[idx] <- counts[idx] + counts[idx + 1L]
-      counts <- counts[-(idx + 1L)]
-      breaks <- breaks[-(idx + 1L)]
-    }
+  if (anyNA(counts) || sum(counts) != as.numeric(n_total) ||
+      any(counts < min_cell)) {
+    stop("Disclosive: configured public numeric grid is not supported by ",
+         "enough individuals in every bin.", call. = FALSE)
   }
+  counts <- vapply(counts, .bandCount, numeric(1),
+                   band_width = settings$nfilter_band)
 
-  # Suppress counts below threshold
-  counts[counts < min_cell] <- NA_integer_
-
-  list(breaks = breaks, counts = counts)
+  grid_metadata <- list(
+    lower = grid$lower, upper = grid$upper,
+    clipping = grid$clipping, source = "server_configured_public_grid"
+  )
+  .rememberSafeNumericBins(handle, contract, breaks, grid = grid_metadata)
+  list(breaks = breaks, counts = counts, contract = contract,
+       grid = grid_metadata)
 }
 
 # --- Exploration Profiling ---
@@ -781,7 +1182,7 @@
 #' Shared core used by both single-table and GLOBAL prevalence. Returns the raw,
 #' un-decorated aggregate (concept_id, n_persons?, n_records) for one table with
 #' the page window applied, plus a \code{source_table} tag. Performs NO concept
-#' decoration and NO small-cell suppression — the caller owns those so a global
+#' decoration and NO small-cell suppression - the caller owns those so a global
 #' run decorates/suppresses ONCE over the merged set. The per-table population
 #' gate (\code{.assertMinPersons} on the table's distinct persons) still runs
 #' here so a too-small table never contributes rows.
@@ -810,20 +1211,28 @@
   if (!is.null(cohort_table) && has_person) {
     cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
     from_clause <- paste0(from_clause,
-                          " INNER JOIN ", cohort_table, " AS coh",
+                          " INNER JOIN (SELECT DISTINCT subject_id FROM ",
+                          cohort_table, ") AS coh",
                           " ON t.person_id = coh.subject_id")
   }
   where_parts <- character(0)
   if (!is.null(window)) {
+    if (!is.list(window)) {
+      stop("window must be a list with optional start/end dates.", call. = FALSE)
+    }
+    window <- .validateDateBounds(window$start, window$end,
+                                  "profiling window")
     date_col <- .getDateColumn(bp, table)
     if (!is.null(date_col)) {
       if (!is.null(window$start)) {
         where_parts <- c(where_parts,
-                         paste0("t.", date_col, " >= ", .quoteLiteral(window$start)))
+                         paste0("t.", date_col, " >= ",
+                                .quoteLiteral(window$start, handle)))
       }
       if (!is.null(window$end)) {
         where_parts <- c(where_parts,
-                         paste0("t.", date_col, " <= ", .quoteLiteral(window$end)))
+                         paste0("t.", date_col, " <= ",
+                                .quoteLiteral(window$end, handle)))
       }
     }
   }
@@ -900,9 +1309,6 @@
   effective_top_n <- min(as.integer(top_n), 500L)
   offset <- max(as.integer(offset %||% 0L), 0L)
 
-  if (!is.null(concept_col)) {
-    concept_col <- tolower(.validateIdentifier(concept_col, "column"))
-  }
   if (!is.null(cohort_table)) {
     cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
   }
@@ -958,15 +1364,10 @@
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
 
+  concept_col <- .resolveConceptScopeColumn(bp, table, concept_col)
   if (is.null(concept_col)) {
-    concept_col <- .getDomainConceptColumn(bp, table)
-    if (is.null(concept_col)) {
-      stop("No domain concept column found for table '", table,
-           "'. Provide concept_col explicitly.", call. = FALSE)
-    }
-  }
-  if (!concept_col %in% tbl_cols) {
-    stop("Column '", concept_col, "' not found in '", table, "'.", call. = FALSE)
+    stop("No releasable concept column found for table '", table,
+         "'.", call. = FALSE)
   }
 
   result <- .prevalenceOneTable(handle, bp, table, concept_col, metric,
@@ -1050,11 +1451,16 @@
 #' @param value_col Character; numeric column name
 #' @param cohort_table Character; cohort temp table name (NULL)
 #' @param window List with start/end dates (NULL)
+#' @param concept_id Integer or NULL; optional concept scope.
+#' @param concept_col Character or NULL; concept column for that scope.
+#' @param unit Distribution unit. \code{"person"} (default) contributes one
+#'   within-person mean; \code{"record"} is allowed only for a 1:1 relation.
 #' @return List with p05, p95, n_total
 #' @keywords internal
 .profileNumericRange <- function(handle, table, value_col,
                                   cohort_table = NULL, window = NULL,
-                                  concept_id = NULL, concept_col = NULL) {
+                                  concept_id = NULL, concept_col = NULL,
+                                  unit = "person") {
   table <- tolower(.validateIdentifier(table, "table"))
   value_col <- tolower(.validateIdentifier(value_col, "column"))
   bp <- .buildBlueprint(handle)
@@ -1067,9 +1473,7 @@
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
 
-  if (!value_col %in% tbl_cols) {
-    stop("Column '", value_col, "' not found in '", table, "'.", call. = FALSE)
-  }
+  .profilerColumnInfo(bp, table, value_col, require_numeric = TRUE)
 
   from_clause <- paste0(qualified, " AS t")
   where_parts <- paste0("t.", value_col, " IS NOT NULL")
@@ -1077,20 +1481,28 @@
   if (!is.null(cohort_table) && "person_id" %in% tbl_cols) {
     cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
     from_clause <- paste0(from_clause,
-                          " INNER JOIN ", cohort_table, " AS coh",
+                          " INNER JOIN (SELECT DISTINCT subject_id FROM ",
+                          cohort_table, ") AS coh",
                           " ON t.person_id = coh.subject_id")
   }
 
   if (!is.null(window)) {
+    if (!is.list(window)) {
+      stop("window must be a list with optional start/end dates.", call. = FALSE)
+    }
+    window <- .validateDateBounds(window$start, window$end,
+                                  "profiling window")
     date_col <- .getDateColumn(bp, table)
     if (!is.null(date_col)) {
       if (!is.null(window$start)) {
         where_parts <- c(where_parts,
-                         paste0("t.", date_col, " >= ", .quoteLiteral(window$start)))
+                         paste0("t.", date_col, " >= ",
+                                .quoteLiteral(window$start, handle)))
       }
       if (!is.null(window$end)) {
         where_parts <- c(where_parts,
-                         paste0("t.", date_col, " <= ", .quoteLiteral(window$end)))
+                         paste0("t.", date_col, " <= ",
+                                .quoteLiteral(window$end, handle)))
       }
     }
   }
@@ -1115,8 +1527,11 @@
   # records they contribute (one person with many measurements must not leak).
   .assertNumericDistPersons(handle, from_clause, where_sql, tbl_cols)
 
-  count_sql <- paste0("SELECT COUNT(*) AS n FROM ", from_clause, where_sql)
-  n_total <- .executeQuery(handle, count_sql)$n[1]
+  distribution_sql <- .numericDistributionSql(
+    handle, from_clause, where_sql, value_col, tbl_cols, unit = unit)
+  count_sql <- paste0("SELECT COUNT(*) AS n FROM (", distribution_sql,
+                      ") AS distribution_values")
+  n_total <- .executeQuery(handle, .renderSql(handle, count_sql))$n[1]
 
   if (is.na(n_total) || n_total == 0) {
     return(list(p05 = NA_real_, p95 = NA_real_, n_total = 0L))
@@ -1124,45 +1539,39 @@
 
   # PERCENTILE LEAKAGE GUARD: With small samples, even clamped percentiles
   # (p05/p95) return values near min/max, identifying individuals at the
-  # extremes of the distribution. E.g., with n=5, p05 ≈ 1st of 5 ≈ min.
+  # extremes of the distribution. E.g., with n=5, p05 is approximately the minimum.
   # nfilter_dist (default 10) ensures enough data points for safe estimation.
   settings <- .omopDisclosureSettings()
   nfilter_dist <- settings$nfilter_dist %||% 10L
-  if (n_total < nfilter_dist) {
-    return(list(p05 = NA_real_, p95 = NA_real_, n_total = as.integer(n_total)))
-  }
-
-  offset_p05 <- max(0L, as.integer(floor(n_total * 0.05)) - 1L)
-  offset_p95 <- max(0L, as.integer(floor(n_total * 0.95)) - 1L)
-
-  if (handle$target_dialect == "sqlite") {
-    p05_sql <- paste0(
-      "SELECT CAST(t.", value_col, " AS REAL) AS val FROM ", from_clause,
-      where_sql,
-      " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p05
-    )
-    p95_sql <- paste0(
-      "SELECT CAST(t.", value_col, " AS REAL) AS val FROM ", from_clause,
-      where_sql,
-      " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p95
-    )
-  } else {
-    p05_sql <- .renderSql(handle, paste0(
-      "SELECT CAST(t.", value_col, " AS FLOAT) AS val FROM ", from_clause,
-      where_sql,
-      " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p05
-    ))
-    p95_sql <- .renderSql(handle, paste0(
-      "SELECT CAST(t.", value_col, " AS FLOAT) AS val FROM ", from_clause,
-      where_sql,
-      " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p95
+  tail_min <- max(as.integer(settings$nfilter_tab),
+                  as.integer(settings$nfilter_subset), 1L)
+  if (n_total < max(nfilter_dist, 2L * tail_min)) {
+    return(list(
+      p05 = NA_real_, p95 = NA_real_,
+      n_total = .bandCount(n_total, settings$nfilter_band)
     ))
   }
+
+  offset_p05 <- .protectedQuantileOffset(n_total, 0.05, settings)
+  offset_p95 <- .protectedQuantileOffset(n_total, 0.95, settings)
+
+  ordered_sql <- paste0(
+    "SELECT distribution_values.value AS val FROM (", distribution_sql,
+    ") AS distribution_values ORDER BY distribution_values.value ASC"
+  )
+  ordered_sql <- .renderSql(handle, ordered_sql)
+  p05_sql <- paste0(ordered_sql,
+                    .paginationClause(handle$target_dialect, 1L, offset_p05))
+  p95_sql <- paste0(ordered_sql,
+                    .paginationClause(handle$target_dialect, 1L, offset_p95))
 
   p05_val <- tryCatch(.executeQuery(handle, p05_sql)$val[1], error = function(e) NA_real_)
   p95_val <- tryCatch(.executeQuery(handle, p95_sql)$val[1], error = function(e) NA_real_)
 
-  list(p05 = p05_val, p95 = p95_val, n_total = as.integer(n_total))
+  list(
+    p05 = p05_val, p95 = p95_val,
+    n_total = .bandCount(n_total, settings$nfilter_band)
+  )
 }
 
 #' Compute a safe histogram with suppressed low-count bins
@@ -1174,14 +1583,41 @@
 #' @param cohort_table Character; cohort temp table name (NULL)
 #' @param window List with start/end dates (NULL)
 #' @param breaks Numeric vector; shared bin edges from two-pass pooling (NULL = compute locally)
+#' @param unit Distribution unit. \code{"person"} (default) contributes one
+#'   within-person mean; \code{"record"} is allowed only for a 1:1 relation.
 #' @return Data frame with bin_start, bin_end, count, suppressed
 #' @keywords internal
 .profileNumericHistogram <- function(handle, table, value_col,
                                       bins = 20L, cohort_table = NULL,
                                       window = NULL, breaks = NULL,
-                                      concept_id = NULL, concept_col = NULL) {
+                                      concept_id = NULL, concept_col = NULL,
+                                      unit = "person") {
   table <- tolower(.validateIdentifier(table, "table"))
   value_col <- tolower(.validateIdentifier(value_col, "column"))
+
+  bins_numeric <- suppressWarnings(as.numeric(bins))
+  bins_integer <- suppressWarnings(as.integer(bins))
+  if (length(bins) != 1L || length(bins_numeric) != 1L ||
+      !is.finite(bins_numeric) || length(bins_integer) != 1L ||
+      is.na(bins_integer) || bins_numeric != bins_integer ||
+      bins_integer < 2L || bins_integer > 200L) {
+    stop("bins must be one integer between 2 and 200.", call. = FALSE)
+  }
+  bins <- bins_integer
+
+  if (!is.null(breaks)) {
+    raw_breaks <- unlist(breaks, use.names = FALSE)
+    numeric_breaks <- suppressWarnings(as.numeric(raw_breaks))
+    if (length(raw_breaks) < 2L || length(raw_breaks) > 201L ||
+        length(numeric_breaks) != length(raw_breaks) ||
+        any(!is.finite(numeric_breaks)) || any(diff(numeric_breaks) <= 0)) {
+      stop("breaks must contain 2 to 201 finite, strictly increasing numeric ",
+           "values.", call. = FALSE)
+    }
+    # From this point only validated numeric values reach SQL interpolation.
+    breaks <- numeric_breaks
+  }
+
   bp <- .buildBlueprint(handle)
   settings <- .omopDisclosureSettings()
 
@@ -1193,14 +1629,7 @@
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
 
-  if (!value_col %in% tbl_cols) {
-    stop("Column '", value_col, "' not found in '", table, "'.", call. = FALSE)
-  }
-
-  bins <- as.integer(bins)
-  if (bins < 2L || bins > 200L) {
-    stop("bins must be between 2 and 200.", call. = FALSE)
-  }
+  .profilerColumnInfo(bp, table, value_col, require_numeric = TRUE)
 
   # Build FROM / WHERE clauses
   from_clause <- paste0(qualified, " AS t")
@@ -1209,20 +1638,28 @@
   if (!is.null(cohort_table) && "person_id" %in% tbl_cols) {
     cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
     from_clause <- paste0(from_clause,
-                          " INNER JOIN ", cohort_table, " AS coh",
+                          " INNER JOIN (SELECT DISTINCT subject_id FROM ",
+                          cohort_table, ") AS coh",
                           " ON t.person_id = coh.subject_id")
   }
 
   if (!is.null(window)) {
+    if (!is.list(window)) {
+      stop("window must be a list with optional start/end dates.", call. = FALSE)
+    }
+    window <- .validateDateBounds(window$start, window$end,
+                                  "profiling window")
     date_col <- .getDateColumn(bp, table)
     if (!is.null(date_col)) {
       if (!is.null(window$start)) {
         where_parts <- c(where_parts,
-                         paste0("t.", date_col, " >= ", .quoteLiteral(window$start)))
+                         paste0("t.", date_col, " >= ",
+                                .quoteLiteral(window$start, handle)))
       }
       if (!is.null(window$end)) {
         where_parts <- c(where_parts,
-                         paste0("t.", date_col, " <= ", .quoteLiteral(window$end)))
+                         paste0("t.", date_col, " <= ",
+                                .quoteLiteral(window$end, handle)))
       }
     }
   }
@@ -1247,9 +1684,11 @@
   # PEOPLE, no matter how many records they contribute.
   .assertNumericDistPersons(handle, from_clause, where_sql, tbl_cols)
 
-  # Get total non-NULL count first
-  count_sql <- paste0("SELECT COUNT(*) AS n FROM ", from_clause, where_sql)
-  n_total <- .executeQuery(handle, count_sql)$n[1]
+  distribution_sql <- .numericDistributionSql(
+    handle, from_clause, where_sql, value_col, tbl_cols, unit = unit)
+  count_sql <- paste0("SELECT COUNT(*) AS n FROM (", distribution_sql,
+                      ") AS distribution_values")
+  n_total <- .executeQuery(handle, .renderSql(handle, count_sql))$n[1]
 
   if (is.na(n_total) || n_total == 0) {
     return(.dropSuppressed(data.frame(bin_start = numeric(0), bin_end = numeric(0),
@@ -1262,33 +1701,26 @@
     # Shared breaks provided: use them directly
     bins <- length(breaks) - 1L
   } else {
-    # Compute safe range using 5th and 95th percentile approximations
-    offset_p05 <- max(0L, as.integer(floor(n_total * 0.05)) - 1L)
-    offset_p95 <- max(0L, as.integer(floor(n_total * 0.95)) - 1L)
-
-    if (handle$target_dialect == "sqlite") {
-      p05_sql <- paste0(
-        "SELECT CAST(t.", value_col, " AS REAL) AS val FROM ", from_clause,
-        where_sql,
-        " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p05
-      )
-      p95_sql <- paste0(
-        "SELECT CAST(t.", value_col, " AS REAL) AS val FROM ", from_clause,
-        where_sql,
-        " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p95
-      )
-    } else {
-      p05_sql <- .renderSql(handle, paste0(
-        "SELECT CAST(t.", value_col, " AS FLOAT) AS val FROM ", from_clause,
-        where_sql,
-        " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p05
-      ))
-      p95_sql <- .renderSql(handle, paste0(
-        "SELECT CAST(t.", value_col, " AS FLOAT) AS val FROM ", from_clause,
-        where_sql,
-        " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_p95
-      ))
+    nfilter_dist <- settings$nfilter_dist %||% 10L
+    tail_min <- max(as.integer(settings$nfilter_tab),
+                    as.integer(settings$nfilter_subset), 1L)
+    if (n_total < max(nfilter_dist, 2L * tail_min)) {
+      stop("Disclosive: sample size too small for safe histogram edges. ",
+           "Protected tails require more contributions.", call. = FALSE)
     }
+    # Compute safe range using 5th and 95th percentile approximations
+    offset_p05 <- .protectedQuantileOffset(n_total, 0.05, settings)
+    offset_p95 <- .protectedQuantileOffset(n_total, 0.95, settings)
+
+    ordered_sql <- paste0(
+      "SELECT distribution_values.value AS val FROM (", distribution_sql,
+      ") AS distribution_values ORDER BY distribution_values.value ASC"
+    )
+    ordered_sql <- .renderSql(handle, ordered_sql)
+    p05_sql <- paste0(ordered_sql,
+                      .paginationClause(handle$target_dialect, 1L, offset_p05))
+    p95_sql <- paste0(ordered_sql,
+                      .paginationClause(handle$target_dialect, 1L, offset_p95))
 
     p05_val <- tryCatch(.executeQuery(handle, p05_sql)$val[1], error = function(e) NA_real_)
     p95_val <- tryCatch(.executeQuery(handle, p95_sql)$val[1], error = function(e) NA_real_)
@@ -1323,14 +1755,14 @@
     if (i == bins) {
       # Last bin includes the upper bound
       case_parts[i] <- paste0(
-        "SUM(CASE WHEN CAST(t.", value_col, " AS REAL) >= ", lo,
-        " AND CAST(t.", value_col, " AS REAL) <= ", hi,
+        "SUM(CASE WHEN distribution_values.value >= ", lo,
+        " AND distribution_values.value <= ", hi,
         " THEN 1 ELSE 0 END) AS bin_", i
       )
     } else {
       case_parts[i] <- paste0(
-        "SUM(CASE WHEN CAST(t.", value_col, " AS REAL) >= ", lo,
-        " AND CAST(t.", value_col, " AS REAL) < ", hi,
+        "SUM(CASE WHEN distribution_values.value >= ", lo,
+        " AND distribution_values.value < ", hi,
         " THEN 1 ELSE 0 END) AS bin_", i
       )
     }
@@ -1338,11 +1770,10 @@
 
   bin_sql <- paste0(
     "SELECT ", paste(case_parts, collapse = ", "),
-    " FROM ", from_clause,
-    where_sql
+    " FROM (", distribution_sql, ") AS distribution_values"
   )
 
-  bin_result <- .executeQuery(handle, bin_sql)
+  bin_result <- .executeQuery(handle, .renderSql(handle, bin_sql))
 
   # Assemble result data frame
   result <- data.frame(
@@ -1363,6 +1794,10 @@
   # Drop bins with small counts (no hints), then drop the now-redundant flag
   # column so no `suppressed` marker is ever returned.
   result <- .suppressSmallCounts(result, "count")
+  if (nrow(result) > 0L) {
+    result$count <- vapply(result$count, .bandCount, numeric(1),
+                           band_width = settings$nfilter_band)
+  }
 
   .dropSuppressed(result)
 }
@@ -1377,21 +1812,30 @@
 #' @param window List with start/end dates (NULL)
 #' @param rounding Integer; decimal places for rounding
 #' @param concept_id Integer or NULL; restrict to rows of this concept
+#' @param unit Distribution unit. \code{"person"} (default) contributes one
+#'   within-person mean; \code{"record"} is allowed only for a 1:1 relation.
 #' @return Data frame with probability and value
 #' @keywords internal
 .profileNumericQuantiles <- function(handle, table, value_col,
                                       probs = c(0.05, 0.25, 0.5, 0.75, 0.95),
                                       cohort_table = NULL, window = NULL,
                                       rounding = 2L, concept_id = NULL,
-                                      concept_col = NULL) {
+                                      concept_col = NULL, unit = "person") {
   table <- tolower(.validateIdentifier(table, "table"))
   value_col <- tolower(.validateIdentifier(value_col, "column"))
 
-  # EXTREME VALUE GUARD: Clamp probabilities to [0.05, 0.95] to prevent
-  # min/max extraction via extreme quantiles. Without this, a request for
-  # probs = c(0.001, 0.999) would return values nearly identical to MIN/MAX,
-  # potentially identifying individuals at the tails of the distribution.
-  probs <- pmax(0.05, pmin(0.95, as.numeric(probs)))
+  # Bound both tail reach and query multiplicity. Clamping malformed/extreme
+  # requests would silently create duplicate queries and still reveal that an
+  # extreme was requested; reject them fail-closed instead.
+  probs_numeric <- suppressWarnings(as.numeric(probs))
+  if (length(probs) < 1L || length(probs) > 9L ||
+      length(probs_numeric) != length(probs) ||
+      any(!is.finite(probs_numeric)) || any(probs_numeric < 0.05) ||
+      any(probs_numeric > 0.95) || anyDuplicated(probs_numeric)) {
+    stop("probs must contain 1 to 9 unique finite probabilities between ",
+         "0.05 and 0.95.", call. = FALSE)
+  }
+  probs <- probs_numeric
   bp <- .buildBlueprint(handle)
   settings <- .omopDisclosureSettings()
 
@@ -1403,11 +1847,17 @@
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
 
-  if (!value_col %in% tbl_cols) {
-    stop("Column '", value_col, "' not found in '", table, "'.", call. = FALSE)
-  }
+  .profilerColumnInfo(bp, table, value_col, require_numeric = TRUE)
 
-  rounding <- as.integer(rounding)
+  rounding_numeric <- suppressWarnings(as.numeric(rounding))
+  rounding_integer <- suppressWarnings(as.integer(rounding))
+  if (length(rounding) != 1L || length(rounding_numeric) != 1L ||
+      !is.finite(rounding_numeric) || length(rounding_integer) != 1L ||
+      is.na(rounding_integer) || rounding_numeric != rounding_integer ||
+      rounding_integer < 0L || rounding_integer > 4L) {
+    stop("rounding must be one integer between 0 and 4.", call. = FALSE)
+  }
+  rounding <- rounding_integer
 
   # Build FROM / WHERE clauses
   from_clause <- paste0(qualified, " AS t")
@@ -1416,20 +1866,28 @@
   if (!is.null(cohort_table) && "person_id" %in% tbl_cols) {
     cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
     from_clause <- paste0(from_clause,
-                          " INNER JOIN ", cohort_table, " AS coh",
+                          " INNER JOIN (SELECT DISTINCT subject_id FROM ",
+                          cohort_table, ") AS coh",
                           " ON t.person_id = coh.subject_id")
   }
 
   if (!is.null(window)) {
+    if (!is.list(window)) {
+      stop("window must be a list with optional start/end dates.", call. = FALSE)
+    }
+    window <- .validateDateBounds(window$start, window$end,
+                                  "profiling window")
     date_col <- .getDateColumn(bp, table)
     if (!is.null(date_col)) {
       if (!is.null(window$start)) {
         where_parts <- c(where_parts,
-                         paste0("t.", date_col, " >= ", .quoteLiteral(window$start)))
+                         paste0("t.", date_col, " >= ",
+                                .quoteLiteral(window$start, handle)))
       }
       if (!is.null(window$end)) {
         where_parts <- c(where_parts,
-                         paste0("t.", date_col, " <= ", .quoteLiteral(window$end)))
+                         paste0("t.", date_col, " <= ",
+                                .quoteLiteral(window$end, handle)))
       }
     }
   }
@@ -1452,12 +1910,14 @@
   # Fail-closed distinct-person gate over the scoped relation: quantiles are
   # disclosive when they describe < nfilter_subset PEOPLE, no matter how many
   # records they contribute (the record-count gate below is necessary but not
-  # sufficient — one person with many values would otherwise pass it).
+  # sufficient - one person with many values would otherwise pass it).
   .assertNumericDistPersons(handle, from_clause, where_sql, tbl_cols)
 
-  # Get total non-NULL count
-  count_sql <- paste0("SELECT COUNT(*) AS n FROM ", from_clause, where_sql)
-  n_total <- .executeQuery(handle, count_sql)$n[1]
+  distribution_sql <- .numericDistributionSql(
+    handle, from_clause, where_sql, value_col, tbl_cols, unit = unit)
+  count_sql <- paste0("SELECT COUNT(*) AS n FROM (", distribution_sql,
+                      ") AS distribution_values")
+  n_total <- .executeQuery(handle, .renderSql(handle, count_sql))$n[1]
 
   # Block if total non-NULL values < nfilter_subset
   if (is.na(n_total) || n_total < settings$nfilter_subset) {
@@ -1468,9 +1928,11 @@
   # Block quantile output if sample too small for safe percentile estimation.
   # With small n, even clamped probs can return values close to min/max.
   nfilter_dist <- settings$nfilter_dist %||% 10L
-  if (n_total < nfilter_dist) {
+  tail_min <- max(as.integer(settings$nfilter_tab),
+                  as.integer(settings$nfilter_subset), 1L)
+  if (n_total < max(nfilter_dist, 2L * tail_min)) {
     stop("Disclosive: sample size too small for safe quantile estimation. ",
-         "Minimum ", nfilter_dist, " non-NULL values required.", call. = FALSE)
+         "Protected tails require more contributions.", call. = FALSE)
   }
 
   # Compute quantiles using SQL ORDER BY + OFFSET approximation
@@ -1481,13 +1943,14 @@
   )
 
   for (i in seq_along(probs)) {
-    offset_val <- max(0L, as.integer(floor(n_total * probs[i])) - 1L)
+    offset_val <- .protectedQuantileOffset(n_total, probs[i], settings)
 
     q_sql <- paste0(
-      "SELECT CAST(t.", value_col, " AS REAL) AS val FROM ", from_clause,
-      where_sql,
-      " ORDER BY t.", value_col, " ASC LIMIT 1 OFFSET ", offset_val
+      "SELECT distribution_values.value AS val FROM (", distribution_sql,
+      ") AS distribution_values ORDER BY distribution_values.value ASC"
     )
+    q_sql <- paste0(.renderSql(handle, q_sql),
+                    .paginationClause(handle$target_dialect, 1L, offset_val))
 
     val <- tryCatch(.executeQuery(handle, q_sql)$val[1], error = function(e) NA_real_)
     result$value[i] <- if (!is.na(val)) round(val, rounding) else NA_real_
@@ -1504,11 +1967,15 @@
 #' @param granularity Character; "year", "quarter", or "month"
 #' @param cohort_table Character; cohort temp table name (NULL)
 #' @param window List with start/end dates (NULL)
-#' @return Data frame with period, n_records, suppressed
+#' @param concept_id Integer or NULL; optional concept scope.
+#' @param concept_col Character or NULL; concept column for that scope.
+#' @return Data frame with period, banded n_records and, for person-bearing
+#'   tables, banded n_persons. Unsafe periods are omitted.
 #' @keywords internal
 .profileDateCounts <- function(handle, table, date_col = NULL,
                                 granularity = "year", cohort_table = NULL,
-                                window = NULL) {
+                                window = NULL, concept_id = NULL,
+                                concept_col = NULL) {
   table <- tolower(.validateIdentifier(table, "table"))
   bp <- .buildBlueprint(handle)
   settings <- .omopDisclosureSettings()
@@ -1535,15 +2002,24 @@
   if (!date_col %in% tbl_cols) {
     stop("Column '", date_col, "' not found in '", table, "'.", call. = FALSE)
   }
+  date_info <- .profilerColumnInfo(bp, table, date_col)
+  if (!isTRUE(date_info$row$is_date[1])) {
+    stop("Column '", date_col, "' is not a declared OMOP date field.",
+         call. = FALSE)
+  }
 
   granularity <- match.arg(granularity, c("year", "quarter", "month"))
 
   # Build date extraction expression based on dialect
   if (handle$target_dialect == "sqlite") {
+    quarter_number <- .omopFloorDivideSql(
+      paste0("CAST(strftime('%m', t.", date_col, ") AS INTEGER) + 2"),
+      3L
+    )
     date_expr <- switch(granularity,
       "year"    = paste0("strftime('%Y', t.", date_col, ")"),
       "quarter" = paste0("strftime('%Y', t.", date_col, ") || '-Q' || ",
-                         "((CAST(strftime('%m', t.", date_col, ") AS INTEGER) + 2) / 3)"),
+                         quarter_number),
       "month"   = paste0("strftime('%Y-%m', t.", date_col, ")")
     )
   } else if (handle$target_dialect == "mysql") {
@@ -1570,25 +2046,49 @@
   if (!is.null(cohort_table) && "person_id" %in% tbl_cols) {
     cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
     from_clause <- paste0(from_clause,
-                          " INNER JOIN ", cohort_table, " AS coh",
+                          " INNER JOIN (SELECT DISTINCT subject_id FROM ",
+                          cohort_table, ") AS coh",
                           " ON t.person_id = coh.subject_id")
   }
 
   if (!is.null(window)) {
+    if (!is.list(window)) {
+      stop("window must be a list with start/end dates.", call. = FALSE)
+    }
+    if (is.null(window$start) || is.null(window$end)) {
+      stop("Date-count windows require both start and end dates.",
+           call. = FALSE)
+    }
+    window <- .validateDateBounds(window$start, window$end,
+                                  "profiling window")
     if (!is.null(window$start)) {
       where_parts <- c(where_parts,
-                       paste0("t.", date_col, " >= ", .quoteLiteral(window$start)))
+                       paste0("t.", date_col, " >= ",
+                              .quoteLiteral(window$start, handle)))
     }
     if (!is.null(window$end)) {
       where_parts <- c(where_parts,
-                       paste0("t.", date_col, " <= ", .quoteLiteral(window$end)))
+                       paste0("t.", date_col, " <= ",
+                              .quoteLiteral(window$end, handle)))
     }
+  }
+
+  if (!is.null(concept_id)) {
+    ccol <- .resolveConceptScopeColumn(bp, table, concept_col)
+    if (is.null(ccol)) {
+      stop("Table '", table, "' has no concept column to scope by.",
+           call. = FALSE)
+    }
+    where_parts <- c(where_parts,
+                     paste0("t.", ccol, " = ", as.integer(concept_id)))
   }
 
   where_sql <- paste0(" WHERE ", paste(where_parts, collapse = " AND "))
 
+  has_person <- "person_id" %in% tbl_cols
   sql <- paste0(
     "SELECT ", date_expr, " AS period, COUNT(*) AS n_records",
+    if (has_person) ", COUNT(DISTINCT t.person_id) AS n_persons" else "",
     " FROM ", from_clause,
     where_sql,
     " GROUP BY ", date_expr,
@@ -1598,13 +2098,24 @@
   result <- .executeQuery(handle, sql)
 
   if (nrow(result) == 0) {
-    return(.dropSuppressed(data.frame(period = character(0), n_records = integer(0),
-                      suppressed = logical(0), stringsAsFactors = FALSE)))
+    empty <- data.frame(period = character(0), n_records = numeric(0),
+                        suppressed = logical(0), stringsAsFactors = FALSE)
+    if (has_person) empty$n_persons <- numeric(0)
+    return(.dropSuppressed(empty))
   }
 
-  # Drop bins with small counts (no hints), then the redundant flag column.
+  # For person-bearing tables, a period is gated on distinct PEOPLE as well as
+  # records. Many longitudinal rows from one person therefore cannot make that
+  # period releasable. Only after the exact gates pass are counts banded.
   result$suppressed <- FALSE
-  result <- .suppressSmallCounts(result, "n_records")
+  count_cols <- c("n_records", if (has_person) "n_persons")
+  result <- .suppressSmallCounts(result, count_cols)
+  if (nrow(result) > 0L) {
+    for (cc in count_cols) {
+      result[[cc]] <- vapply(result[[cc]], .bandCount, numeric(1),
+                             band_width = settings$nfilter_band)
+    }
+  }
 
   .dropSuppressed(result)
 }
@@ -1614,7 +2125,7 @@
 #' Full drilldown profile for a single concept within a table
 #'
 #' Returns summary stats, numeric distribution, categorical values, date
-#' coverage, and missingness — all disclosure-controlled — for records
+#' coverage, and missingness - all disclosure-controlled - for records
 #' matching a given concept_id.
 #'
 #' @param handle CDM handle
@@ -1657,8 +2168,7 @@
   if (has_person) {
     summary_sql <- paste0(
       "SELECT COUNT(*) AS n_records, ",
-      "COUNT(DISTINCT person_id) AS n_persons, ",
-      "CAST(COUNT(*) AS REAL) / NULLIF(COUNT(DISTINCT person_id), 0) AS records_per_person_mean ",
+      "COUNT(DISTINCT person_id) AS n_persons ",
       "FROM ", qualified,
       " WHERE ", where_concept
     )
@@ -1687,8 +2197,6 @@
     n_persons <- NA_real_
   }
 
-  rpm <- if (has_person) summary_raw$records_per_person_mean[1] else NA_real_
-
   # Longitudinal: % persons with >1 record
   pct_persons_multi <- NA_real_
   if (has_person && !is.na(summary_raw$n_persons[1]) &&
@@ -1701,8 +2209,17 @@
     )
     n_multi <- tryCatch(.executeQuery(handle, multi_sql)$n_multi[1],
                         error = function(e) NA_real_)
-    if (!is.na(n_multi) && n_multi >= settings$nfilter_tab) {
-      pct_persons_multi <- round(n_multi / summary_raw$n_persons[1] * 100, 2)
+    n_nonmulti <- summary_raw$n_persons[1] - n_multi
+    groups_safe <- !is.na(n_multi) &&
+      (n_multi == 0 || n_multi >= settings$nfilter_tab) &&
+      (n_nonmulti == 0 || n_nonmulti >= settings$nfilter_tab)
+    if (groups_safe) {
+      multi_banded <- .bandCount(n_multi, settings$nfilter_band)
+      persons_banded <- .bandCount(summary_raw$n_persons[1],
+                                   settings$nfilter_band)
+      if (persons_banded > 0 && (n_multi == 0 || multi_banded > 0)) {
+        pct_persons_multi <- round(multi_banded / persons_banded * 100, 0)
+      }
     }
   }
 
@@ -1714,107 +2231,44 @@
     concept_name <- cinfo$concept_name[1]
   }
 
-  # Band the reported record/person counts at the return boundary. The person
-  # gate, the small-cell suppression, and the ratios above (records_per_person,
-  # pct_persons_multi) were all computed from the EXACT counts (summary_raw);
-  # only the two reported counts are banded.
+  # Band counts before deriving any returned ratio. Exact counts are used only
+  # for suppression decisions and never become reconstructable through a mean
+  # or percentage calculated at full precision.
   n_records <- .bandCount(n_records, settings$nfilter_band)
   if (has_person) n_persons <- .bandCount(n_persons, settings$nfilter_band)
+  rpm <- if (has_person && !is.na(n_records) && !is.na(n_persons) &&
+             n_persons > 0) round(n_records / n_persons, 2) else NA_real_
 
   summary_out <- list(
     concept_id = concept_id,
     concept_name = concept_name,
     n_records = n_records,
     n_persons = n_persons,
-    records_per_person_mean = if (!is.na(rpm)) round(rpm, 2) else NA_real_,
+    records_per_person_mean = rpm,
     pct_persons_multi = pct_persons_multi
   )
 
   # --- 2. Numeric summary (only if value_as_number exists) ---
   numeric_summary <- NULL
   if ("value_as_number" %in% tbl_cols) {
-    val_col <- "value_as_number"
-    from_clause <- paste0(qualified, " AS t")
-    where_parts <- paste0("t.", where_concept,
-                          " AND t.", val_col, " IS NOT NULL")
-    where_sql <- paste0(" WHERE ", where_parts)
-
-    count_sql <- paste0("SELECT COUNT(*) AS n",
-                        if ("person_id" %in% tbl_cols)
-                          ", COUNT(DISTINCT t.person_id) AS n_persons" else "",
-                        " FROM ", from_clause, where_sql)
-    cnt_row <- tryCatch(.executeQuery(handle, count_sql), error = function(e) NULL)
-    n_vals <- if (!is.null(cnt_row)) cnt_row$n[1] else 0L
-    # Gate on distinct PERSONS, not records: one patient contributing many
-    # measurements must not by itself enable a value distribution (the standalone
-    # histogram path already has this person gate).
-    n_pers <- if (!is.null(cnt_row) && "n_persons" %in% names(cnt_row))
-      cnt_row$n_persons[1] else n_vals
-
-    if (!is.na(n_vals) && n_vals >= settings$nfilter_subset &&
-        !is.na(n_pers) && n_pers >= settings$nfilter_subset) {
-      # Quantiles
-      probs <- c(0.05, 0.25, 0.5, 0.75, 0.95)
-      quantiles <- data.frame(probability = probs, value = numeric(length(probs)),
-                              stringsAsFactors = FALSE)
-      for (i in seq_along(probs)) {
-        offset_val <- max(0L, as.integer(floor(n_vals * probs[i])) - 1L)
-        q_sql <- paste0(
-          "SELECT CAST(t.", val_col, " AS REAL) AS val FROM ", from_clause,
-          where_sql,
-          " ORDER BY t.", val_col, " ASC LIMIT 1 OFFSET ", offset_val
-        )
-        val <- tryCatch(.executeQuery(handle, q_sql)$val[1],
-                        error = function(e) NA_real_)
-        quantiles$value[i] <- if (!is.na(val)) round(val, 2) else NA_real_
-      }
-
-      # Histogram using 5th/95th from quantiles as range
-      p05 <- quantiles$value[1]
-      p95 <- quantiles$value[5]
-      histogram <- NULL
-
-      if (!is.na(p05) && !is.na(p95) && p05 != p95) {
-        bins <- 20L
-        bin_width <- (p95 - p05) / bins
-        breaks <- seq(p05, p95, by = bin_width)
-        if (length(breaks) < bins + 1L) breaks <- c(breaks, p95)
-        breaks <- breaks[seq_len(bins + 1L)]
-
-        case_parts <- character(bins)
-        for (j in seq_len(bins)) {
-          lo <- breaks[j]; hi <- breaks[j + 1L]
-          op <- if (j == bins) " <= " else " < "
-          case_parts[j] <- paste0(
-            "SUM(CASE WHEN CAST(t.", val_col, " AS REAL) >= ", lo,
-            " AND CAST(t.", val_col, " AS REAL)", op, hi,
-            " THEN 1 ELSE 0 END) AS bin_", j
-          )
-        }
-        bin_sql <- paste0("SELECT ", paste(case_parts, collapse = ", "),
-                          " FROM ", from_clause, where_sql)
-        bin_result <- tryCatch(.executeQuery(handle, bin_sql),
-                               error = function(e) NULL)
-
-        if (!is.null(bin_result)) {
-          histogram <- data.frame(
-            bin_start = breaks[seq_len(bins)],
-            bin_end = breaks[seq_len(bins) + 1L],
-            count = integer(bins), suppressed = logical(bins),
-            stringsAsFactors = FALSE
-          )
-          for (j in seq_len(bins)) {
-            col_name <- paste0("bin_", j)
-            cnt <- if (col_name %in% names(bin_result))
-              as.integer(bin_result[[col_name]][1]) else 0L
-            histogram$count[j] <- cnt
-            histogram$suppressed[j] <- FALSE
-          }
-          # Drop bins with small counts (no hints), then the redundant flag column.
-          histogram <- .dropSuppressed(.suppressSmallCounts(histogram, "count"))
-        }
-      }
-
+    # Reuse the central person-unit distribution paths. This keeps drilldown
+    # semantics identical to the public profilers and prevents repeated records
+    # from a few patients from dominating either edges or bin counts.
+    quantiles <- tryCatch(
+      .profileNumericQuantiles(
+        handle, table, "value_as_number",
+        concept_id = concept_id, concept_col = concept_col, unit = "person"
+      ),
+      error = function(e) NULL
+    )
+    histogram <- tryCatch(
+      .profileNumericHistogram(
+        handle, table, "value_as_number", bins = 20L,
+        concept_id = concept_id, concept_col = concept_col, unit = "person"
+      ),
+      error = function(e) NULL
+    )
+    if (!is.null(quantiles) || !is.null(histogram)) {
       numeric_summary <- list(quantiles = quantiles, histogram = histogram)
     }
   }
@@ -1897,85 +2351,37 @@
   date_range <- NULL
   date_col <- .getDateColumn(bp, table)
   if (!is.null(date_col)) {
-    # Use 5th/95th percentile for safe date range
-    date_count_sql <- paste0(
-      "SELECT COUNT(*) AS n FROM ", qualified,
-      " WHERE ", where_concept,
-      " AND ", date_col, " IS NOT NULL"
+    month_counts <- tryCatch(
+      .profileDateCounts(
+        handle, table, date_col = date_col, granularity = "month",
+        concept_id = concept_id, concept_col = concept_col
+      ),
+      error = function(e) NULL
     )
-    n_dates <- tryCatch(.executeQuery(handle, date_count_sql)$n[1],
-                        error = function(e) 0L)
-
-    if (!is.na(n_dates) && n_dates >= settings$nfilter_subset) {
-      # Bin p05/p95 to year-month to prevent exact date disclosure
-      off_p05 <- max(0L, as.integer(floor(n_dates * 0.05)) - 1L)
-      off_p95 <- max(0L, as.integer(floor(n_dates * 0.95)) - 1L)
-
-      if (handle$target_dialect == "sqlite") {
-        ym_expr <- paste0("strftime('%Y-%m', ", date_col, ")")
-      } else if (handle$target_dialect == "mysql") {
-        ym_expr <- paste0("DATE_FORMAT(", date_col, ", '%Y-%m')")
-      } else {
-        ym_expr <- paste0("TO_CHAR(", date_col, ", 'YYYY-MM')")
-      }
-
-      p05_sql <- paste0(
-        "SELECT ", ym_expr, " AS val FROM ", qualified,
-        " WHERE ", where_concept,
-        " AND ", date_col, " IS NOT NULL",
-        " ORDER BY ", date_col, " ASC LIMIT 1 OFFSET ", off_p05
-      )
-      p95_sql <- paste0(
-        "SELECT ", ym_expr, " AS val FROM ", qualified,
-        " WHERE ", where_concept,
-        " AND ", date_col, " IS NOT NULL",
-        " ORDER BY ", date_col, " ASC LIMIT 1 OFFSET ", off_p95
-      )
-
-      min_month_safe <- tryCatch(.executeQuery(handle, p05_sql)$val[1],
-                                error = function(e) NA_character_)
-      max_month_safe <- tryCatch(.executeQuery(handle, p95_sql)$val[1],
-                                error = function(e) NA_character_)
-
-      # Date counts by year for concept-filtered records
-      if (handle$target_dialect == "sqlite") {
-        date_expr <- paste0("strftime('%Y', ", date_col, ")")
-      } else if (handle$target_dialect == "mysql") {
-        date_expr <- paste0("CAST(YEAR(", date_col, ") AS CHAR)")
-      } else {
-        date_expr <- paste0("CAST(EXTRACT(YEAR FROM ", date_col, ") AS VARCHAR)")
-      }
-      dc_sql <- paste0(
-        "SELECT ", date_expr, " AS period, COUNT(*) AS n_records",
-        " FROM ", qualified,
-        " WHERE ", where_concept,
-        " AND ", date_col, " IS NOT NULL",
-        " GROUP BY ", date_expr,
-        " ORDER BY period ASC"
-      )
-      dc_result <- tryCatch(.executeQuery(handle, dc_sql),
-                            error = function(e) NULL)
-      if (!is.null(dc_result) && nrow(dc_result) > 0) {
-        # "No hints" policy: drop small periods entirely (keeping them with
-        # NA would reveal which years had 1-2 records via subtraction).
-        dc_result <- .suppressSmallCounts(dc_result, "n_records")
-      }
-
+    year_counts <- tryCatch(
+      .profileDateCounts(
+        handle, table, date_col = date_col, granularity = "year",
+        concept_id = concept_id, concept_col = concept_col
+      ),
+      error = function(e) NULL
+    )
+    if (!is.null(month_counts) && nrow(month_counts) > 0L) {
+      supported_months <- sort(as.character(month_counts$period))
       date_range <- list(
         column = date_col,
-        min_month_safe = min_month_safe,
-        max_month_safe = max_month_safe,
-        date_counts = dc_result
+        min_month_safe = supported_months[1],
+        max_month_safe = supported_months[length(supported_months)],
+        date_counts = year_counts
       )
     }
   }
 
   # --- 5. Missingness within concept-filtered rows ---
-  check_cols <- col_df$column_name[!col_df$is_blocked]
-  total_sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified,
-                      " WHERE ", where_concept)
-  total <- tryCatch(.executeQuery(handle, total_sql)$n[1],
-                    error = function(e) 0L)
+  safe_cols <- !col_df$is_blocked & !col_df$is_sensitive &
+    !vapply(col_df$column_name, .detectSensitiveColumns, logical(1))
+  check_cols <- col_df$column_name[safe_cols]
+  total <- summary_raw$n_records[1]
+  total_banded <- .bandCount(total, settings$nfilter_band)
 
   missingness <- data.frame(column_name = character(0),
                             missing_rate = numeric(0),
@@ -1983,17 +2389,43 @@
 
   if (!is.na(total) && total > 0) {
     for (col in check_cols) {
-      miss_sql <- paste0(
-        "SELECT COUNT(*) AS n_missing FROM ", qualified,
-        " WHERE ", where_concept,
-        " AND ", col, " IS NULL"
+      miss_sql <- paste0("SELECT ",
+        "SUM(CASE WHEN ", col, " IS NULL THEN 1 ELSE 0 END) AS n_missing",
+        if (has_person) paste0(
+          ", COUNT(DISTINCT CASE WHEN ", col,
+          " IS NULL THEN person_id END) AS n_missing_persons",
+          ", COUNT(DISTINCT CASE WHEN ", col,
+          " IS NOT NULL THEN person_id END) AS n_value_persons"
+        ) else "",
+        " FROM ", qualified,
+        " WHERE ", where_concept
       )
-      n_missing <- tryCatch(.executeQuery(handle, miss_sql)$n_missing[1],
-                            error = function(e) NA_real_)
+      miss <- tryCatch(.executeQuery(handle, miss_sql),
+                       error = function(e) NULL)
+      n_missing <- if (!is.null(miss)) miss$n_missing[1] else NA_real_
+      n_value <- total - n_missing
+      if (has_person && !is.null(miss)) {
+        missing_safe <- isTRUE(n_missing == 0) ||
+          (!is.na(miss$n_missing_persons[1]) &&
+             miss$n_missing_persons[1] >= settings$nfilter_tab)
+        value_safe <- isTRUE(n_value == 0) ||
+          (!is.na(miss$n_value_persons[1]) &&
+             miss$n_value_persons[1] >= settings$nfilter_tab)
+      } else {
+        missing_safe <- isTRUE(n_missing == 0) ||
+          (!is.na(n_missing) && n_missing >= settings$nfilter_tab)
+        value_safe <- isTRUE(n_value == 0) ||
+          (!is.na(n_value) && n_value >= settings$nfilter_tab)
+      }
+      missing_banded <- .bandCount(n_missing, settings$nfilter_band)
+      rate <- NA_real_
+      if (missing_safe && value_safe && !is.na(total_banded) &&
+          total_banded > 0 && (n_missing == 0 || missing_banded > 0)) {
+        rate <- round(missing_banded / total_banded, 2)
+      }
       missingness <- rbind(missingness, data.frame(
         column_name = col,
-        missing_rate = if (!is.na(n_missing)) round(n_missing / total, 4)
-                       else NA_real_,
+        missing_rate = rate,
         stringsAsFactors = FALSE
       ))
     }
@@ -2020,7 +2452,7 @@
 #'   n_persons
 #' @keywords internal
 .profileLocateConcept <- function(handle, concept_ids) {
-  concept_ids <- as.integer(concept_ids)
+  concept_ids <- .conceptIdList(concept_ids)
   if (length(concept_ids) == 0) {
     return(data.frame(table_name = character(0), concept_column = character(0),
                       concept_id = integer(0), n_records = numeric(0),
@@ -2050,8 +2482,14 @@
     tbl_cols <- col_df$column_name
     has_person <- "person_id" %in% tbl_cols
 
-    # Find concept columns (concept_role != "non_concept")
-    concept_cols <- col_df$column_name[col_df$concept_role != "non_concept"]
+    # Only genuine releasable concept fields may become output dimensions.
+    candidates <- col_df$column_name[col_df$concept_role != "non_concept"]
+    concept_cols <- candidates[vapply(candidates, function(ccol) {
+      !is.null(tryCatch(
+        .resolveConceptScopeColumn(bp, tbl_name, ccol),
+        error = function(e) NULL
+      ))
+    }, logical(1))]
     if (length(concept_cols) == 0) next
 
     for (ccol in concept_cols) {
@@ -2091,6 +2529,11 @@
   # Suppress small counts (drops rows)
   if (nrow(results) > 0) {
     results <- .suppressSmallCounts(results, c("n_records", "n_persons"))
+    band_width <- .omopDisclosureSettings()$nfilter_band
+    for (cc in c("n_records", "n_persons")) {
+      results[[cc]] <- vapply(results[[cc]], .bandCount, numeric(1),
+                              band_width = band_width)
+    }
   }
 
   results
@@ -2110,8 +2553,8 @@
 #' equation the moment any external total is known, so we close it
 #' defensively. This routine repeatedly scans every row and column; whenever a
 #' line contains exactly one hidden NON-ZERO cell, it additionally suppresses
-#' the smallest visible NON-ZERO cell in that line (structural zeros are never
-#' suppressed — they carry no individual). Suppressing a second cell turns the
+#' the smallest visible NON-ZERO cell in that line (structural zeros do not
+#' participate in the arithmetic suppression pass). Suppressing a second cell turns the
 #' line into a two-unknown equation, which is not uniquely solvable. The grid is
 #' finite and each pass only ever adds suppressions, so the process is monotone
 #' and converges.
@@ -2171,10 +2614,10 @@
 #' \enumerate{
 #'   \item Primary: cells with \code{0 < M < t} are suppressed.
 #'   \item Complementary: \code{\link{.complementarySuppress}} runs to a fixpoint.
-#'   \item Render: suppressed cells become \code{NA}; structural zeros stay
-#'     \code{0}; visible cells keep their value.
+#'   \item Render: suppressed cells and structural zeros both become \code{NA};
+#'     visible cells keep their value. This avoids a zero-versus-small hint.
 #'   \item Margins: OMITTED by default. If \code{band_margins = TRUE}, row/col/
-#'     grand totals are returned banded down via \code{\link{.bandCount}} only —
+#'     grand totals are returned banded down via \code{\link{.bandCount}} only -
 #'     exact margins are never returned.
 #' }
 #'
@@ -2183,30 +2626,35 @@
 #' @param t Numeric; \code{nfilter_tab} threshold.
 #' @param band_margins Logical; when TRUE, attach banded margins.
 #' @param band_width Integer; band granularity for margins (default 5).
-#' @return Named list with \code{matrix} (numeric, NA-masked), \code{suppressed}
-#'   (logical, TRUE if every non-zero cell ended up hidden), and optionally
+#' @param support Optional matrix of distinct-person support for record counts.
+#' @return Named list with \code{matrix} (numeric, NA-masked) and optionally
 #'   \code{row_margins}/\code{col_margins}/\code{grand_total} (banded) when
 #'   \code{band_margins = TRUE}.
 #' @keywords internal
-.crossTabSuppress <- function(M, t, band_margins = FALSE, band_width = 5L) {
+.crossTabSuppress <- function(M, t, band_margins = FALSE, band_width = 5L,
+                              support = NULL) {
   M <- matrix(as.integer(M), nrow = nrow(M), ncol = ncol(M),
               dimnames = dimnames(M))
 
   # Step A: primary small-cell suppression (only non-zero cells below threshold)
   S <- (M > 0) & (M < t)
+  if (!is.null(support)) {
+    support <- matrix(as.numeric(support), nrow = nrow(M), ncol = ncol(M),
+                      dimnames = dimnames(M))
+    # A record cell is releasable only if enough distinct people support it.
+    S <- S | ((M > 0) & (is.na(support) | support < t))
+  }
 
   # Step B: iterative complementary suppression to a fixpoint
   S <- .complementarySuppress(M, S)
 
-  # Step C: render NA-masked matrix (structural zeros preserved as 0)
+  # Step C: mask both rare cells and structural zeros. Returning 0 for one and
+  # NA for the other would reveal that a suppressed combination exists.
   out <- matrix(as.numeric(M), nrow = nrow(M), ncol = ncol(M),
                 dimnames = dimnames(M))
-  out[S] <- NA_real_
+  out[S | M == 0] <- NA_real_
 
-  result <- list(
-    matrix     = out,
-    suppressed = all(S[M > 0]) && any(M > 0)
-  )
+  result <- list(matrix = out)
 
   # Step D: margins omitted by default; banded only on explicit opt-in.
   if (isTRUE(band_margins)) {
@@ -2246,7 +2694,7 @@
 #'   chained 2-way tables.
 #' @param band_margins Logical; attach banded (never exact) margins.
 #' @return For a plain call: a named list \code{{row_col, col_col, count_mode,
-#'   row_levels, col_levels, counts (NA-masked matrix), suppressed}}. For a
+#'   row_levels, col_levels, counts (NA-masked matrix)}}. For a
 #'   stratified call: \code{{stratified = TRUE, stratify_by, strata = <named
 #'   list of per-level protected tables>}}.
 #' @keywords internal
@@ -2279,15 +2727,16 @@
   tbl_cols <- col_df$column_name
 
   # Every axis / stratifier is both WHERE-filtered and emitted as raw GROUP BY
-  # level VALUES, so a blocked column here would leak (e.g. value_as_string or a
-  # *_source_value). Reject fail-closed, mirroring .resolveConceptScopeColumn —
-  # crosstab cannot route through that chokepoint (two axes, no domain default).
+  # level VALUES. Route all three through the same central release-policy gate;
+  # in particular, person/entity keys are not blueprint-blocked but are still
+  # forbidden as dimensions.
   for (cc in c(row_col, col_col, stratify_by)) {
-    if (!is.null(cc) && !cc %in% tbl_cols) {
-      stop("Column '", cc, "' not found in '", table, "'.", call. = FALSE)
-    }
-    if (!is.null(cc) && any(col_df$is_blocked[col_df$column_name == cc])) {
-      stop("Column '", cc, "' is blocked (sensitive).", call. = FALSE)
+    if (!is.null(cc)) {
+      info <- .profilerColumnInfo(bp, table, cc)
+      if (isTRUE(info$is_numeric_measure)) {
+        stop("Cross-tab axes must be categorical; continuous column '", cc,
+             "' requires protected binning first.", call. = FALSE)
+      }
     }
   }
   if (count_mode == "persons" && !"person_id" %in% tbl_cols) {
@@ -2299,7 +2748,8 @@
   from_clause <- paste0(qualified, " AS t")
   if (!is.null(cohort_table) && "person_id" %in% tbl_cols) {
     from_clause <- paste0(from_clause,
-                          " INNER JOIN ", cohort_table, " AS coh",
+                          " INNER JOIN (SELECT DISTINCT subject_id FROM ",
+                          cohort_table, ") AS coh",
                           " ON t.person_id = coh.subject_id")
   }
 
@@ -2323,6 +2773,8 @@
   } else {
     "COUNT(*)"
   }
+  person_cell_support <- count_mode == "records" &&
+    "person_id" %in% tbl_cols
 
   # Gate A (persons): distinct persons over the scoped population. For records
   # mode on a person-bearing table we still gate on distinct persons; on a
@@ -2336,50 +2788,47 @@
 
   if (is.null(stratify_by)) {
     return(.crossTabOneSlice(handle, from_clause, where_sql, row_col, col_col,
-                             count_expr, count_mode, t, band_margins, bp, table))
+                             count_expr, count_mode, t, band_margins, bp, table,
+                             person_cell_support = person_cell_support))
   }
 
   # --- Stratified (section 7): independent protected 2-way per stratum ---
   max_strata <- 6L
-  lv_sql <- paste0("SELECT DISTINCT t.", stratify_by, " AS s FROM ",
-                   from_clause, where_sql, " ORDER BY t.", stratify_by)
+  lv_sql <- if ("person_id" %in% tbl_cols) {
+    paste0("SELECT t.", stratify_by, " AS s FROM ", from_clause, where_sql,
+           " GROUP BY t.", stratify_by,
+           " HAVING COUNT(DISTINCT t.person_id) >= ",
+           as.integer(settings$nfilter_subset),
+           " ORDER BY t.", stratify_by)
+  } else {
+    paste0("SELECT DISTINCT t.", stratify_by, " AS s FROM ",
+           from_clause, where_sql, " ORDER BY t.", stratify_by)
+  }
   strata_levels <- .executeQuery(handle, .renderSql(handle, lv_sql))$s
   strata_levels <- strata_levels[!is.na(strata_levels)]
 
   # Cap strata: extra levels are not returned (slice suppressed by omission).
-  capped <- length(strata_levels) > max_strata
-  if (capped) strata_levels <- strata_levels[seq_len(max_strata)]
+  if (length(strata_levels) > max_strata) {
+    strata_levels <- strata_levels[seq_len(max_strata)]
+  }
 
   strata_out <- list()
   for (lv in strata_levels) {
     lv_where <- paste0(where_sql, " AND t.", stratify_by, " = ",
-                       if (is.numeric(lv)) as.integer(lv) else .quoteLiteral(lv))
-
-    # Per-stratum person gate: a stratum below nfilter_subset is fully
-    # suppressed (generic block -> all-NA slice), never partially exposed.
-    slice_ok <- TRUE
-    if ("person_id" %in% tbl_cols) {
-      sp_sql <- paste0("SELECT COUNT(DISTINCT t.person_id) AS n FROM ",
-                       from_clause, lv_where)
-      n_sp <- .executeQuery(handle, .renderSql(handle, sp_sql))$n[1]
-      slice_ok <- !is.na(n_sp) && n_sp >= settings$nfilter_subset
-    }
+                       if (is.numeric(lv)) as.integer(lv) else
+                         .quoteLiteral(lv, handle))
 
     slice <- tryCatch(
       .crossTabOneSlice(handle, from_clause, lv_where, row_col, col_col,
-                        count_expr, count_mode, t, band_margins, bp, table),
+                        count_expr, count_mode, t, band_margins, bp, table,
+                        person_cell_support = person_cell_support),
       error = function(e) NULL
     )
-    if (!slice_ok || is.null(slice)) {
-      slice <- list(row_col = row_col, col_col = col_col,
-                    count_mode = count_mode, suppressed = TRUE,
-                    counts = matrix(numeric(0), 0, 0))
-    }
-    strata_out[[as.character(lv)]] <- slice
+    if (!is.null(slice)) strata_out[[as.character(lv)]] <- slice
   }
 
   list(stratified = TRUE, stratify_by = stratify_by,
-       strata = strata_out, capped = capped)
+       strata = strata_out)
 }
 
 #' Build one protected 2-way slice (dense matrix + suppression + names)
@@ -2387,7 +2836,7 @@
 #' @keywords internal
 .crossTabOneSlice <- function(handle, from_clause, where_sql, row_col, col_col,
                               count_expr, count_mode, t, band_margins,
-                              bp, table) {
+                              bp, table, person_cell_support = FALSE) {
   settings <- .omopDisclosureSettings()
 
   # Gate B (dimensions): distinct level counts on each axis, NULLs dropped.
@@ -2395,41 +2844,92 @@
                    from_clause, where_sql)
   cl_sql <- paste0("SELECT COUNT(DISTINCT t.", col_col, ") AS n FROM ",
                    from_clause, where_sql)
-  nt_sql <- paste0("SELECT COUNT(*) AS n FROM ", from_clause, where_sql)
+  total_expr <- if (count_mode == "persons" || person_cell_support) {
+    "COUNT(DISTINCT t.person_id)"
+  } else {
+    "COUNT(*)"
+  }
+  nt_sql <- paste0("SELECT ", total_expr, " AS n FROM ",
+                   from_clause, where_sql)
   n_rows_lv <- .executeQuery(handle, .renderSql(handle, rl_sql))$n[1]
   n_cols_lv <- .executeQuery(handle, .renderSql(handle, cl_sql))$n[1]
   n_total   <- .executeQuery(handle, .renderSql(handle, nt_sql))$n[1]
   .assertSafeLevels(n_rows_lv, n_total)
   .assertSafeLevels(n_cols_lv, n_total)
 
-  # Gate F: reject degenerate (1xN / Nx1) axes — that is a 1-way distribution.
+  # Gate F: reject degenerate (1xN / Nx1) axes - that is a 1-way distribution.
   if (is.na(n_rows_lv) || is.na(n_cols_lv) || n_rows_lv < 2 || n_cols_lv < 2) {
     stop("Disclosive: cross-tab requires at least 2 levels on each axis ",
          "(a 1xN table is a one-way distribution).", call. = FALSE)
   }
 
+  # No-hints axis policy: a level name is itself output. Keep only levels whose
+  # marginal support clears nfilter_tab (distinct people for person-bearing
+  # tables), so an all-suppressed rare row/column cannot reveal its label.
+  marginal_support_expr <- if (count_mode == "persons" || person_cell_support) {
+    "COUNT(DISTINCT t.person_id)"
+  } else {
+    "COUNT(*)"
+  }
+  safe_row_sql <- paste0(
+    "SELECT t.", row_col, " AS level_v FROM ", from_clause, where_sql,
+    " GROUP BY t.", row_col, " HAVING ", marginal_support_expr,
+    " >= ", as.integer(t))
+  safe_col_sql <- paste0(
+    "SELECT t.", col_col, " AS level_v FROM ", from_clause, where_sql,
+    " GROUP BY t.", col_col, " HAVING ", marginal_support_expr,
+    " >= ", as.integer(t))
+  safe_rows <- .executeQuery(handle, .renderSql(handle, safe_row_sql))$level_v
+  safe_cols <- .executeQuery(handle, .renderSql(handle, safe_col_sql))$level_v
+  if (length(safe_rows) < 2L || length(safe_cols) < 2L) {
+    stop("Disclosive: cross-tab requires at least 2 supported levels on each ",
+         "axis.", call. = FALSE)
+  }
+
   # Build the dense long-form counts.
   agg_sql <- paste0(
     "SELECT t.", row_col, " AS row_v, t.", col_col, " AS col_v, ",
-    count_expr, " AS n FROM ", from_clause, where_sql,
+    count_expr, " AS n",
+    if (person_cell_support)
+      ", COUNT(DISTINCT t.person_id) AS n_persons" else "",
+    " FROM ", from_clause, where_sql,
     " GROUP BY t.", row_col, ", t.", col_col)
   long <- .executeQuery(handle, .renderSql(handle, agg_sql))
   names(long) <- tolower(names(long))
+  long <- long[long$row_v %in% safe_rows & long$col_v %in% safe_cols, ,
+               drop = FALSE]
 
   row_levels <- sort(unique(long$row_v))
   col_levels <- sort(unique(long$col_v))
+  if (length(row_levels) < 2L || length(col_levels) < 2L) {
+    stop("Disclosive: cross-tab requires at least 2 supported levels on each ",
+         "axis.", call. = FALSE)
+  }
 
   M <- matrix(0L, nrow = length(row_levels), ncol = length(col_levels),
               dimnames = list(as.character(row_levels), as.character(col_levels)))
+  P <- if (person_cell_support) {
+    matrix(0L, nrow = length(row_levels), ncol = length(col_levels),
+           dimnames = dimnames(M))
+  } else NULL
   if (nrow(long) > 0) {
     ri <- match(long$row_v, row_levels)
     ci <- match(long$col_v, col_levels)
     for (k in seq_len(nrow(long))) {
       M[ri[k], ci[k]] <- as.integer(long$n[k])
+      if (person_cell_support) {
+        P[ri[k], ci[k]] <- as.integer(long$n_persons[k])
+      }
     }
   }
 
-  sup <- .crossTabSuppress(M, t, band_margins = band_margins)
+  sup <- .crossTabSuppress(M, t, band_margins = band_margins, support = P)
+
+  # Suppression decisions use exact cells; only surviving cells cross the
+  # release boundary, banded to remove one-person differencing resolution.
+  visible <- !is.na(sup$matrix)
+  sup$matrix[visible] <- vapply(sup$matrix[visible], .bandCount, numeric(1),
+                                band_width = settings$nfilter_band)
 
   # Decorate axis labels with concept names when the axis is a concept-id column.
   row_labels <- .crossTabLabels(handle, row_col, row_levels)
@@ -2442,8 +2942,7 @@
     count_mode = count_mode,
     row_levels = row_labels,
     col_levels = col_labels,
-    counts     = sup$matrix,
-    suppressed = sup$suppressed
+    counts     = sup$matrix
   )
   if (isTRUE(band_margins)) {
     out$row_margins <- stats::setNames(sup$row_margins, row_labels)

@@ -40,7 +40,7 @@ chained 2-way tables.}
 }
 \value{
 For a plain call: a named list \code{{row_col, col_col, count_mode,
-  row_levels, col_levels, counts (NA-masked matrix), suppressed}}. For a
+  row_levels, col_levels, counts (NA-masked matrix)}}. For a
   stratified call: \code{{stratified = TRUE, stratify_by, strata = <named
   list of per-level protected tables>}}.
 }

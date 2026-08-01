@@ -20,7 +20,8 @@
 
 cdx_handle <- function(n_persons = 30) {
   h <- create_test_handle(n_persons = n_persons)
-  h$person_key <- as.raw(1:16)
+  .setLegacyTestPersonKey(h, "cohortdx-concepts",
+                          .local_envir = parent.frame())
   .buildBlueprint(h)
   suppressWarnings(.omopAnalysisRegistry(h))
   h
@@ -98,6 +99,22 @@ test_that("(b) resolved_concepts caps the enumeration at nfilter.levels.max", {
   })
 })
 
+test_that("(b) resolved_concepts metadata release has a closed schema", {
+  h <- cdx_handle()
+  on.exit(cleanup_handle(h))
+  entry <- .omopAnalysisResolve(h, "dsomop:cohortdx.resolved_concepts")
+  forged <- data.frame(
+    concept_id = 4000001L, concept_name = "Respiratory disease",
+    domain_id = "Condition", vocabulary_id = "SNOMED",
+    standard_concept = "S", is_excluded = FALSE,
+    unexpected = "not public", stringsAsFactors = FALSE
+  )
+  expect_error(
+    .omopAnalysisGate(h, forged, entry),
+    "vocabulary metadata schema mismatch"
+  )
+})
+
 test_that("(b) resolved_concepts returns an empty frame with no anchor", {
   h <- cdx_handle()
   on.exit(cleanup_handle(h))
@@ -153,6 +170,7 @@ test_that("(d) orphan_concepts fails closed on a sub-threshold scope", {
     DBI::dbExecute(h$conn, paste0(
       "CREATE TEMP TABLE cdx_tiny AS SELECT person_id AS subject_id ",
       "FROM person WHERE person_id IN (1, 2)"))
+    register_test_temp(h, "cdx_tiny")
     expect_error(
       .omopAnalysisRun(h, "dsomop:cohortdx.orphan_concepts",
                        params = list(seed_concept_id = "4000000",

@@ -64,6 +64,8 @@ Create a new OMOP resource client
 \if{html}{\out{<div class="arguments">}}
 \describe{
 \item{\code{resource}}{A resourcer resource object}
+
+\item{\code{...}}{Reserved for compatibility with the parent resource client.}
 }
 \if{html}{\out{</div>}}
 }

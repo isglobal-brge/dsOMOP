@@ -13,7 +13,8 @@
   window = NULL,
   breaks = NULL,
   concept_id = NULL,
-  concept_col = NULL
+  concept_col = NULL,
+  unit = "person"
 )
 }
 \arguments{
@@ -30,6 +31,9 @@
 \item{window}{List with start/end dates (NULL)}
 
 \item{breaks}{Numeric vector; shared bin edges from two-pass pooling (NULL = compute locally)}
+
+\item{unit}{Distribution unit. \code{"person"} (default) contributes one
+within-person mean; \code{"record"} is allowed only for a 1:1 relation.}
 }
 \value{
 Data frame with bin_start, bin_end, count, suppressed

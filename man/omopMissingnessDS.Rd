@@ -18,6 +18,11 @@ omopMissingnessDS(
 \item{table}{Character; table name}
 
 \item{columns}{Character vector; columns to check}
+
+\item{cohort}{Cohort scope: a cohort temp table name, a cohort_definition_id,
+or NULL. Takes precedence over \code{cohort_table}.}
+
+\item{cohort_table}{Character; legacy cohort temp table for filtering (NULL)}
 }
 \value{
 Data frame with missingness rates

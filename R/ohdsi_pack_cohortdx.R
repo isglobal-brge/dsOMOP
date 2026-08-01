@@ -915,7 +915,8 @@
     scope = .omopAnalysisScope(accepts_cohort = FALSE, accepts_tables = FALSE,
                                max_tables = 0L, requires_cohort = FALSE),
     mode  = "aggregate",
-    meta  = c(list(adapter = "ohdsi", tool_id = "cohort_diagnostics"), meta)
+    meta  = c(list(adapter = "ohdsi", tool_id = "cohort_diagnostics",
+                   public_vocabulary_metadata = TRUE), meta)
   )
 }
 

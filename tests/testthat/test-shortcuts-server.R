@@ -45,7 +45,8 @@
 # A keyed handle with the catalog pre-built (mirrors test-analysis-ports-1bc.R).
 shc_handle <- function(n_persons = 40) {
   h <- create_test_handle(n_persons = n_persons)
-  h$person_key <- as.raw(1:16)
+  .setLegacyTestPersonKey(h, "shortcuts-server",
+                          .local_envir = parent.frame())
   .buildBlueprint(h)
   suppressWarnings(.omopAnalysisRegistry(h))
   h

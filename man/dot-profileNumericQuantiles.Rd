@@ -13,7 +13,8 @@
   window = NULL,
   rounding = 2L,
   concept_id = NULL,
-  concept_col = NULL
+  concept_col = NULL,
+  unit = "person"
 )
 }
 \arguments{
@@ -32,6 +33,9 @@
 \item{rounding}{Integer; decimal places for rounding}
 
 \item{concept_id}{Integer or NULL; restrict to rows of this concept}
+
+\item{unit}{Distribution unit. \code{"person"} (default) contributes one
+within-person mean; \code{"record"} is allowed only for a 1:1 relation.}
 }
 \value{
 Data frame with probability and value

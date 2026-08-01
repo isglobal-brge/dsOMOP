@@ -4,7 +4,7 @@
 \alias{.crossTabSuppress}
 \title{Apply primary + complementary suppression to a dense count matrix}
 \usage{
-.crossTabSuppress(M, t, band_margins = FALSE, band_width = 5L)
+.crossTabSuppress(M, t, band_margins = FALSE, band_width = 5L, support = NULL)
 }
 \arguments{
 \item{M}{Integer matrix of true counts (rows = row_col levels, cols =
@@ -15,10 +15,11 @@ col_col levels), missing combos already filled with 0.}
 \item{band_margins}{Logical; when TRUE, attach banded margins.}
 
 \item{band_width}{Integer; band granularity for margins (default 5).}
+
+\item{support}{Optional matrix of distinct-person support for record counts.}
 }
 \value{
-Named list with \code{matrix} (numeric, NA-masked), \code{suppressed}
-  (logical, TRUE if every non-zero cell ended up hidden), and optionally
+Named list with \code{matrix} (numeric, NA-masked) and optionally
   \code{row_margins}/\code{col_margins}/\code{grand_total} (banded) when
   \code{band_margins = TRUE}.
 }
@@ -29,10 +30,10 @@ table's structure). Steps:
 \enumerate{
   \item Primary: cells with \code{0 < M < t} are suppressed.
   \item Complementary: \code{\link{.complementarySuppress}} runs to a fixpoint.
-  \item Render: suppressed cells become \code{NA}; structural zeros stay
-    \code{0}; visible cells keep their value.
+  \item Render: suppressed cells and structural zeros both become \code{NA};
+    visible cells keep their value. This avoids a zero-versus-small hint.
   \item Margins: OMITTED by default. If \code{band_margins = TRUE}, row/col/
-    grand totals are returned banded down via \code{\link{.bandCount}} only —
+    grand totals are returned banded down via \code{\link{.bandCount}} only -
     exact margins are never returned.
 }
 }

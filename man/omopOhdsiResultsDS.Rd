@@ -33,9 +33,11 @@ omopOhdsiResultsDS(
 Data frame with disclosure control applied
 }
 \description{
-Reads rows from a pre-computed OHDSI result table with server-controlled
-disclosure thresholds. Sensitive columns (SQL, JSON definitions) are
-automatically excluded. Count columns are subject to small-cell suppression.
+Reads only columns covered by a reviewed per-table release contract and
+applies server-controlled person and small-cell thresholds. Sensitive or
+uncontracted columns fail closed in strict mode. If an administrator disables
+strict mode, the compatibility result is explicitly marked as a development
+output and must not be treated as disclosure-safe.
 }
 \examples{
 \dontrun{

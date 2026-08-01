@@ -1,69 +1,32 @@
 #!/bin/sh
-# dsOMOP post-install configuration script
-# Runs automatically during R CMD INSTALL on Unix systems.
-#
-# Ensures system libraries for R database driver compilation are present,
-# then pre-installs database drivers and core R dependencies.
-#   - PostgreSQL: RPostgres (primary), RPostgreSQL (fallback)
-#   - MySQL/MariaDB: RMariaDB
-#   - SQL Server, Oracle, Redshift, Snowflake, Databricks, Spark: odbc
+# dsOMOP post-install configuration script.
+# It prepares directory permissions only; deployments provision dependencies.
 
-LOG_PREFIX="[dsOMOP configure]"
-
-log_info() { echo "${LOG_PREFIX} $*"; }
-log_warn() { echo "${LOG_PREFIX} WARNING: $*" >&2; }
-
-# Marker directory
-MARKER_DIR="${DSOMOP_MARKER_DIR:-/var/lib/dsomop}"
-mkdir -p "${MARKER_DIR}" 2>/dev/null || true
-
-# Install system libs needed to compile R database packages
-if command -v apt-get >/dev/null 2>&1; then
-  log_info "Installing system build dependencies..."
-  apt-get update -qq 2>/dev/null
-  apt-get install -y -qq libpq-dev libmariadb-dev unixodbc-dev curl 2>/dev/null || true
-  log_info "System dependencies ready."
+# Prepare only runtime state directories. When file-provider bootstrap is
+# enabled, secret material is generated from the operating-system CSPRNG by the
+# first real OMOP handle use, never while a package or reusable container image
+# is being built or loaded. Injected/scoped providers generate nothing here.
+umask 077
+if [ -n "${DSOMOP_STATE_DIR:-}" ]; then
+  DSOMOP_CONFIG_STATE_ROOT="${DSOMOP_STATE_DIR}"
+elif [ -n "${DSOMOP_MARKER_DIR:-}" ]; then
+  # Backwards-compatible alias; new deployments should use DSOMOP_STATE_DIR.
+  DSOMOP_CONFIG_STATE_ROOT="${DSOMOP_MARKER_DIR}"
+elif [ -n "${HOME:-}" ]; then
+  DSOMOP_CONFIG_STATE_ROOT="${HOME}/.dsomop"
+else
+  DSOMOP_CONFIG_STATE_ROOT=""
 fi
-
-# Determine library path and package repo
-ROCK_LIB="/var/lib/rock/R/library"
-if [ ! -d "${ROCK_LIB}" ]; then
-  ROCK_LIB=""
+DSOMOP_CONFIG_UID="$(id -u 2>/dev/null || echo unknown)"
+if [ -n "${DSOMOP_CONFIG_STATE_ROOT}" ] && [ "${DSOMOP_CONFIG_UID}" != "0" ]; then
+  mkdir -p "${DSOMOP_CONFIG_STATE_ROOT}/secrets" \
+           "${DSOMOP_CONFIG_STATE_ROOT}/keys" 2>/dev/null || true
+  chmod 700 "${DSOMOP_CONFIG_STATE_ROOT}" \
+            "${DSOMOP_CONFIG_STATE_ROOT}/secrets" \
+            "${DSOMOP_CONFIG_STATE_ROOT}/keys" 2>/dev/null || true
 fi
-
-if [ -f /etc/os-release ]; then
-  . /etc/os-release
-fi
-PPM_DISTRO="${VERSION_CODENAME:-noble}"
-PPM_REPO="https://packagemanager.posit.co/cran/__linux__/${PPM_DISTRO}/latest"
-
-# Install all R dependencies
-log_info "Installing R dependencies..."
-R --no-save --no-restore -e "
-  repos <- c(PPM = '${PPM_REPO}', CRAN = 'https://cloud.r-project.org')
-  lib <- if (nzchar('${ROCK_LIB}')) '${ROCK_LIB}' else .libPaths()[1]
-
-  # Core: always needed
-  core <- c('DBI', 'R6', 'RPostgres', 'resourcer', 'jsonlite', 'arrow')
-  # Drivers: best-effort (not all deployments need all backends)
-  drivers <- c('RMariaDB', 'odbc', 'RSQLite')
-
-  for (pkg in c(core, drivers)) {
-    if (!requireNamespace(pkg, quietly = TRUE, lib.loc = lib)) {
-      cat('[dsOMOP configure] Installing', pkg, '...\n')
-      tryCatch(
-        install.packages(pkg, lib = lib, repos = repos, quiet = TRUE, type = 'both'),
-        error = function(e) cat('[dsOMOP configure] WARNING:', pkg, '-', e\$message, '\n')
-      )
-    }
-  }
-
-  cat('[dsOMOP configure] Installed packages:\n')
-  for (pkg in c(core, drivers)) {
-    v <- tryCatch(as.character(packageVersion(pkg)), error = function(e) 'NOT AVAILABLE')
-    cat(sprintf('  %s: %s\n', pkg, v))
-  }
-" 2>&1 | grep "dsOMOP configure" || true
-
-log_info "Ready."
+unset DSOMOP_CONFIG_STATE_ROOT DSOMOP_CONFIG_UID
+# System libraries and R dependencies are provisioned by the deployment image
+# and the package manager. A package configure script must not mutate the host,
+# contact package repositories, or silently install unaudited dependencies.
 exit 0

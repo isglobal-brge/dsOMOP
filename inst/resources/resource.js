@@ -78,11 +78,11 @@ var dsOMOP = (function () {
 
   var types = [
     dbType("postgresql", "PostgreSQL",
-      "Connection to a PostgreSQL OMOP CDM database via " + DBI + " (works out of the box).",
+      "Connection to a PostgreSQL OMOP CDM database via " + DBI + " (requires RPostgres or RPostgreSQL and site integration testing).",
       [host(), port, database()].concat(SCHEMAS), NET_REQ, CREDS_USERPASS),
 
     dbType("redshift", "Amazon Redshift",
-      "Connection to an Amazon Redshift OMOP CDM database via " + DBI + " (PostgreSQL wire-compatible; works out of the box).",
+      "Connection to an Amazon Redshift OMOP CDM database via " + DBI + " (uses RPostgres; requires site integration testing).",
       [host(), port, database()].concat(SCHEMAS), NET_REQ, CREDS_USERPASS),
 
     dbType("mysql", "MySQL",

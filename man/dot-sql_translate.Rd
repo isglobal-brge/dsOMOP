@@ -21,4 +21,9 @@ Handles two transformations:
   \item \code{DATEADD(day, n, expr)} to dialect-specific date arithmetic
 }
 }
+\details{
+This deliberately small built-in translator is not OHDSI SqlRender and does
+not claim its full grammar. Network dialect outputs are contract-tested only
+until exercised against a live vendor database and driver.
+}
 \keyword{internal}

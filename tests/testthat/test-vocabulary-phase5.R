@@ -243,6 +243,11 @@ test_that("DATASHIELD manifest lists every new Phase 5 aggregate", {
     normalizePath(file.path(testthat::test_path(), "..", ".."),
                   mustWork = FALSE)
   })
+  manifest_path <- file.path(pkg_root, "DATASHIELD")
+  skip_if_not(
+    file.exists(manifest_path),
+    "source-only DATASHIELD manifest is excluded from installed test trees"
+  )
 
   new_aggs <- c(
     "omopConceptAncestorsDS", "omopConceptSynonymsDS",
@@ -258,7 +263,7 @@ test_that("DATASHIELD manifest lists every new Phase 5 aggregate", {
     items[nzchar(items)]
   }
 
-  ds_aggs   <- read_field(file.path(pkg_root, "DATASHIELD"), "AggregateMethods")
+  ds_aggs   <- read_field(manifest_path, "AggregateMethods")
   desc_aggs <- read_field(file.path(pkg_root, "DESCRIPTION"), "AggregateMethods")
   ns        <- readLines(file.path(pkg_root, "NAMESPACE"))
 

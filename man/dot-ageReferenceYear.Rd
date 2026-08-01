@@ -20,7 +20,7 @@ Returns the year that \code{year_of_birth} is differenced against to derive
 age. When the filter is anchored to a cohort index date, the reference is a
 dialect-aware SQL expression extracting the year from that per-person index
 date, so ages are computed AT INDEX and the result is deterministic. With no
-index anchor there is no index date to use, so it falls back to the current
-calendar year as an integer literal.
+index anchor there is no reproducible date to use, so the caller must supply
+an explicit reference date instead of depending on the server wall clock.
 }
 \keyword{internal}

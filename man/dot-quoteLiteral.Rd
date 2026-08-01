@@ -4,10 +4,15 @@
 \alias{.quoteLiteral}
 \title{Quote a SQL literal value safely}
 \usage{
-.quoteLiteral(x)
+.quoteLiteral(x, handle = NULL)
 }
 \arguments{
-\item{x}{Value to quote}
+\item{x}{Scalar value to quote.}
+
+\item{handle}{Optional CDM handle. Production SQL builders must supply it so
+the active DBI driver applies the correct escaping rules (notably for
+MySQL/MariaDB backslash escapes). NULL uses ANSI quoting for isolated
+rendering tests only.}
 }
 \value{
 Character; quoted SQL literal

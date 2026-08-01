@@ -262,7 +262,8 @@
 .achillesPersonGate <- function(handle, rows) {
   if (nrow(rows) == 0) return(rows)
   spec_all <- .achilles_record_gate_spec()
-  threshold <- .omopDisclosureSettings()$nfilter_tab
+  settings <- .omopDisclosureSettings()
+  threshold <- max(settings$nfilter_tab, settings$nfilter_subset)
 
   gated_ids <- intersect(unique(rows$analysis_id), .achillesRecordGatedIds())
   if (length(gated_ids) == 0) return(rows)

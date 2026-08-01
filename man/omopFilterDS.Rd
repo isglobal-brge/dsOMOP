@@ -11,20 +11,19 @@ omopFilterDS(x, var, op, value)
 
 \item{var}{Character; an existing, non-protected column to filter on.}
 
-\item{op}{Character; one of \code{"=="}, \code{"!="}, \code{">"},
-\code{">="}, \code{"<"}, \code{"<="}, \code{"in"}, \code{"not_in"}.}
+\item{op}{Character; one of \code{"=="}, \code{"!="}, \code{"in"}, or
+\code{"not_in"}, on a low-cardinality categorical column.}
 
-\item{value}{Comparison value(s). Scalar for the relational operators; a
-vector for \code{"in"} / \code{"not_in"}.}
+\item{value}{Category value(s).}
 }
 \value{
 The filtered omop.table (re-assigned to the caller's symbol).
 }
 \description{
-Applies a single comparison filter to a server-side omop.table and re-gates
-the filtered result on its distinct-person token count (fail-closed): a
-filter that narrows the population below the disclosure threshold errors and
-never returns. Filtering on a protected/identifier column (the person token,
-\code{subject_id}, or any \code{dsomop_protected} column) is rejected, so a
-client cannot probe individual identities.
+Applies a categorical membership/equality filter to a server-side omop.table
+and re-gates both sides of the split on distinct persons. Numeric/date
+thresholds are rejected here because arbitrary repeated cut points form a
+disclosure oracle; express those filters in a recipe using controller-sized
+age/date ranges or protected numeric bins. Protected identifiers are always
+rejected.
 }

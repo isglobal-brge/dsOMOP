@@ -25,8 +25,8 @@ hidden non-zero cell in an otherwise-visible line is a one-unknown linear
 equation the moment any external total is known, so we close it
 defensively. This routine repeatedly scans every row and column; whenever a
 line contains exactly one hidden NON-ZERO cell, it additionally suppresses
-the smallest visible NON-ZERO cell in that line (structural zeros are never
-suppressed — they carry no individual). Suppressing a second cell turns the
+the smallest visible NON-ZERO cell in that line (structural zeros do not
+participate in the arithmetic suppression pass). Suppressing a second cell turns the
 line into a two-unknown equation, which is not uniquely solvable. The grid is
 finite and each pass only ever adds suppressions, so the process is monotone
 and converges.

@@ -55,6 +55,8 @@ Blocked columns include:
   \item \code{lot_number} (manufacturer lot, potentially identifying)
   \item \code{unique_device_id} (device UDI, globally unique)
   \item NOTE / NOTE_NLP text fields (clinical narrative text)
+  \item Direct identifiers such as patient/MRN, SSN, email and phone fields
+  \item Exact dates of birth and generic comment/free-text fields
   \item \code{*_source_concept_id} (source-system identifiers)
   \item LOCATION fields: address, city, zip, county, latitude, longitude
   \item PROVIDER fields: provider_name, npi, dea

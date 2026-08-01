@@ -10,7 +10,9 @@
   date_col = NULL,
   granularity = "year",
   cohort_table = NULL,
-  window = NULL
+  window = NULL,
+  concept_id = NULL,
+  concept_col = NULL
 )
 }
 \arguments{
@@ -25,9 +27,14 @@
 \item{cohort_table}{Character; cohort temp table name (NULL)}
 
 \item{window}{List with start/end dates (NULL)}
+
+\item{concept_id}{Integer or NULL; optional concept scope.}
+
+\item{concept_col}{Character or NULL; concept column for that scope.}
 }
 \value{
-Data frame with period, n_records, suppressed
+Data frame with period, banded n_records and, for person-bearing
+  tables, banded n_persons. Unsafe periods are omitted.
 }
 \description{
 Count records by time bin (year, quarter, month)

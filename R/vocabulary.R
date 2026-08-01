@@ -47,21 +47,35 @@
   )
   select_str <- paste(select_cols, collapse = ", ")
 
-  # Use TOP for OHDSI SQL limit convention
-  effective_limit <- min(as.integer(limit), 500L)
+  # Use TOP for OHDSI SQL limit convention. SQLite treats LIMIT -1 as
+  # unbounded, so reject rather than clamp malformed/non-positive values.
+  limit_num <- suppressWarnings(as.numeric(limit))
+  if (length(limit_num) != 1L || is.na(limit_num) || !is.finite(limit_num) ||
+      limit_num != floor(limit_num) || limit_num < 1L) {
+    stop("limit must be one positive integer.", call. = FALSE)
+  }
+  effective_limit <- min(as.integer(limit_num), 500L)
   sql <- paste0("SELECT TOP ", effective_limit, " ", select_str,
                 " FROM ", concept_table)
 
   where <- character(0)
 
+  if (!is.null(pattern)) {
+    if (!is.character(pattern) || length(pattern) != 1L || is.na(pattern)) {
+      stop("pattern must be one non-missing string.", call. = FALSE)
+    }
+    .validateString(pattern)
+  }
   if (!is.null(pattern) && nzchar(pattern)) {
     where <- c(where, paste0(
       "LOWER(concept_name) LIKE LOWER(",
-      .quoteLiteral(paste0("%", pattern, "%")), ")"
+      .quoteLiteral(paste0("%", pattern, "%"), handle), ")"
     ))
   }
 
-  concept_id <- as.integer(concept_id)
+  if (!is.null(concept_id) && length(concept_id) > 0L) {
+    .sqlIdList(concept_id)
+  }
   concept_id <- concept_id[!is.na(concept_id)]
   if (length(concept_id) > 0) {
     where <- c(where, paste0("concept_id IN (", .sqlIdList(concept_id), ")"))
@@ -69,7 +83,8 @@
 
   if ("standard_concept" %in% avail_cols) {
     if (!is.null(standard)) {
-      where <- c(where, paste0("standard_concept = ", .quoteLiteral(standard)))
+      where <- c(where, paste0("standard_concept = ",
+                               .quoteLiteral(standard, handle)))
     } else if (standard_only) {
       where <- c(where, "standard_concept = 'S'")
     }
@@ -84,11 +99,13 @@
   }
 
   if (!is.null(domain) && "domain_id" %in% avail_cols) {
-    where <- c(where, paste0("LOWER(domain_id) = LOWER(", .quoteLiteral(domain), ")"))
+    where <- c(where, paste0("LOWER(domain_id) = LOWER(",
+                             .quoteLiteral(domain, handle), ")"))
   }
 
   if (!is.null(vocabulary) && "vocabulary_id" %in% avail_cols) {
-    where <- c(where, paste0("vocabulary_id = ", .quoteLiteral(vocabulary)))
+    where <- c(where, paste0("vocabulary_id = ",
+                             .quoteLiteral(vocabulary, handle)))
   }
 
   if (length(where) > 0) {
@@ -228,7 +245,7 @@
 
   bp <- .buildBlueprint(handle)
   if (!"concept_relationship" %in% bp$tables$table_name[bp$tables$present_in_db]) {
-    return(integer(0))
+    stop("concept_relationship table not found.", call. = FALSE)
   }
 
   schema <- .resolveTableSchema(handle, "concept_relationship", "Vocabulary")
@@ -262,22 +279,32 @@
 #' @return Integer vector of expanded concept IDs
 #' @keywords internal
 .vocabExpandConceptSet <- function(handle, concept_set) {
-  base_ids <- as.integer(concept_set$concepts %||% integer(0))
+  base_ids <- .conceptIdList(concept_set$concepts %||% integer(0))
   include_descendants <- concept_set$include_descendants %||% FALSE
   include_mapped <- concept_set$include_mapped %||% FALSE
-  exclude_ids <- as.integer(concept_set$exclude %||% integer(0))
+  exclude_ids <- .conceptIdList(concept_set$exclude %||% integer(0))
+  max_values <- .extractionCap("dsomop.max_filter_values", 10000L)
+  assert_size <- function(ids) {
+    if (length(ids) > max_values) {
+      stop("Expanded concept set exceeds the server max_filter_values cap of ",
+           max_values, ".", call. = FALSE)
+    }
+    invisible(TRUE)
+  }
 
   result_ids <- base_ids
+  assert_size(result_ids)
 
   if (include_descendants && length(base_ids) > 0) {
     tryCatch({
       descendants <- .vocabGetDescendants(handle, base_ids, include_self = TRUE)
       if (nrow(descendants) > 0) {
         result_ids <- unique(c(result_ids, descendants$concept_id))
+        assert_size(result_ids)
       }
     }, error = function(e) {
-      warning("Descendant expansion failed: ", e$message,
-              ". Using base concept IDs only.")
+      stop("Descendant expansion failed: ", conditionMessage(e),
+           call. = FALSE)
     })
   }
 
@@ -286,10 +313,11 @@
       mapped_ids <- .vocabGetMappedConcepts(handle, result_ids)
       if (length(mapped_ids) > 0) {
         result_ids <- unique(c(result_ids, mapped_ids))
+        assert_size(result_ids)
       }
     }, error = function(e) {
-      warning("Mapped-concept expansion failed: ", e$message,
-              ". Using unmapped concept IDs.")
+      stop("Mapped-concept expansion failed: ", conditionMessage(e),
+           call. = FALSE)
     })
   }
 
@@ -297,6 +325,7 @@
     result_ids <- setdiff(result_ids, exclude_ids)
   }
 
+  assert_size(result_ids)
   as.integer(result_ids)
 }
 
@@ -315,8 +344,7 @@
   if (is.list(x) && !is.null(x$concepts)) {
     return(.vocabExpandConceptSet(handle, x))
   }
-  v <- suppressWarnings(as.integer(unlist(x, use.names = FALSE)))
-  unique(v[!is.na(v)])
+  .conceptIdList(x)
 }
 
 #' Translate concept_id columns in a data frame to concept names
@@ -338,12 +366,11 @@
 
   concepts <- tryCatch(
     .vocabLookupConcepts(handle, all_ids),
-    error = function(e) data.frame(concept_id = integer(0),
-                                    concept_name = character(0),
-                                    stringsAsFactors = FALSE)
+    error = function(e) {
+      stop("Concept translation failed: ", conditionMessage(e),
+           call. = FALSE)
+    }
   )
-
-  if (nrow(concepts) == 0) return(df)
 
   concept_map <- stats::setNames(concepts$concept_name,
                                   as.character(concepts$concept_id))
@@ -508,7 +535,7 @@
   rel_clause <- ""
   if (!is.null(relationship_id) && nzchar(relationship_id)) {
     rel_clause <- paste0(" AND cr.relationship_id = ",
-                         .quoteLiteral(relationship_id))
+                         .quoteLiteral(relationship_id, handle))
   }
 
   sql <- paste0(
@@ -579,16 +606,20 @@
 
   where <- character(0)
   if (!is.null(domain) && "domain_id" %in% avail_cols) {
-    where <- c(where, paste0("LOWER(domain_id) = LOWER(", .quoteLiteral(domain), ")"))
+    where <- c(where, paste0("LOWER(domain_id) = LOWER(",
+                             .quoteLiteral(domain, handle), ")"))
   }
   if (!is.null(vocabulary) && "vocabulary_id" %in% avail_cols) {
-    where <- c(where, paste0("vocabulary_id = ", .quoteLiteral(vocabulary)))
+    where <- c(where, paste0("vocabulary_id = ",
+                             .quoteLiteral(vocabulary, handle)))
   }
   if (!is.null(concept_class) && "concept_class_id" %in% avail_cols) {
-    where <- c(where, paste0("concept_class_id = ", .quoteLiteral(concept_class)))
+    where <- c(where, paste0("concept_class_id = ",
+                             .quoteLiteral(concept_class, handle)))
   }
   if (!is.null(standard) && "standard_concept" %in% avail_cols) {
-    where <- c(where, paste0("standard_concept = ", .quoteLiteral(standard)))
+    where <- c(where, paste0("standard_concept = ",
+                             .quoteLiteral(standard, handle)))
   }
   if (!is.null(valid) && "invalid_reason" %in% avail_cols) {
     where <- c(where, if (isTRUE(valid)) "invalid_reason IS NULL"
@@ -609,8 +640,19 @@
   # to avoid ORDER BY on an unknown identifier.
   order_col <- if (!is.null(order) && order %in% select_cols) order else "concept_id"
 
-  offset <- max(0L, as.integer(offset))
-  limit <- min(max(1L, as.integer(limit)), 1000L)
+  offset_num <- suppressWarnings(as.numeric(offset))
+  limit_num <- suppressWarnings(as.numeric(limit))
+  if (length(offset_num) != 1L || is.na(offset_num) ||
+      !is.finite(offset_num) || offset_num != floor(offset_num) ||
+      offset_num < 0L) {
+    stop("offset must be one non-negative integer.", call. = FALSE)
+  }
+  if (length(limit_num) != 1L || is.na(limit_num) || !is.finite(limit_num) ||
+      limit_num != floor(limit_num) || limit_num < 1L) {
+    stop("limit must be one positive integer.", call. = FALSE)
+  }
+  offset <- as.integer(offset_num)
+  limit <- min(as.integer(limit_num), 1000L)
 
   page_sql <- paste0(
     "SELECT ", paste(select_cols, collapse = ", "),

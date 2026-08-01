@@ -16,11 +16,11 @@ Character schema name, or \code{NULL}
 Makes the OHDSI "results" daimon first-class, mirroring how the vocabulary
 schema is resolved. If the site pinned \code{handle$results_schema} (via
 \code{omopInitDS} or the resource URL), that value is honored verbatim with
-no probing. Otherwise the schema holding \code{achilles_results} (or
-\code{achilles_analysis}) is AUTO-DETECTED by probing candidate schemas in
-OHDSI-conventional order: a dedicated \code{results} schema, then
-\code{<cdm_schema>_results}, then the CDM schema (co-located case), then the
-DBMS default schema. The resolved value (which may legitimately be
+no probing. Otherwise only the already-authorized CDM schema is probed for
+co-located results, plus exact namespaces listed by the data controller in
+\code{dsomop.allowed_results_schemas}. It never scans conventional global
+schema names using an analyst-triggered connection. The resolved value (which
+may legitimately be
 \code{NULL}: sqlite has no schemas, or Achilles is absent everywhere) is
 cached on the handle so the probe runs at most once per session.
 }

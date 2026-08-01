@@ -13,7 +13,7 @@ test_that(".resolve_target_dialect maps supported DBMS correctly", {
   expect_equal(.resolve_target_dialect("snowflake"), "snowflake")
   expect_equal(.resolve_target_dialect("spark"), "spark")
   expect_equal(.resolve_target_dialect("sqlite"), "sqlite")
-  expect_equal(.resolve_target_dialect("duckdb"), "sqlite")
+  expect_equal(.resolve_target_dialect("duckdb"), "duckdb")
 })
 
 test_that(".resolve_target_dialect maps mysql and mariadb", {
@@ -47,6 +47,38 @@ test_that(".sql_render handles longest-first ordering to avoid substring collisi
 
 test_that(".sql_render returns sql unchanged when no params given", {
   expect_equal(.sql_render("SELECT 1"), "SELECT 1")
+})
+
+test_that("portable SQL floor bins execute correctly on SQLite", {
+  skip_if_not_installed("RSQLite")
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  sql <- paste0(
+    "SELECT ", .omopFloorBinSql("37", 5L), " AS positive_bin, ",
+    .omopFloorBinSql("-1", 5L), " AS negative_bin, ",
+    .omopFloorDivideSql("13869", 365L), " AS whole_years"
+  )
+  result <- DBI::dbGetQuery(con, sql)
+  expect_equal(result$positive_bin, 35L)
+  expect_equal(result$negative_bin, -5L)
+  expect_equal(result$whole_years, 37L)
+})
+
+test_that("portable SQL floor bins execute correctly on DuckDB", {
+  skip_if_not_installed("duckdb")
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+
+  sql <- paste0(
+    "SELECT ", .omopFloorBinSql("37", 5L), " AS positive_bin, ",
+    .omopFloorBinSql("-1", 5L), " AS negative_bin, ",
+    .omopFloorDivideSql("13869", 365L), " AS whole_years"
+  )
+  result <- DBI::dbGetQuery(con, sql)
+  expect_equal(result$positive_bin, 35L)
+  expect_equal(result$negative_bin, -5L)
+  expect_equal(result$whole_years, 37L)
 })
 
 # --- .sql_translate TOP -> LIMIT tests ---
@@ -100,6 +132,12 @@ test_that(".sql_translate converts DATEADD for sqlite", {
   expect_true(grepl("DATE", sql))
   expect_true(grepl("7 days", sql))
   expect_false(grepl("DATEADD", sql))
+})
+
+test_that(".sql_translate uses DuckDB interval arithmetic", {
+  sql <- .sql_translate("DATEADD(day, 7, start_date)", "duckdb")
+  expect_true(grepl("INTERVAL '1 day'", sql, fixed = TRUE))
+  expect_false(grepl("DATEADD", sql, fixed = TRUE))
 })
 
 test_that(".sql_translate converts DATEADD for bigquery", {

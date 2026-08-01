@@ -3,6 +3,31 @@
 
 # --- CDM Spec Loading ---
 
+# Normalize the current OHDSI CommonDataModel table metadata to the stable
+# values historically exposed by the dsOMOP blueprint API. Official releases
+# use VOCAB/RESULTS/CDM schema labels and upper-case conceptPrefix values with a
+# trailing underscore (for example CONDITION_).
+.normalizeCdmTableMetadata <- function(table_level) {
+  schema <- trimws(as.character(table_level$schema))
+  schema_key <- toupper(schema)
+  schema_labels <- c(
+    CDM = "CDM",
+    VOCAB = "Vocabulary",
+    VOCABULARY = "Vocabulary",
+    RESULT = "Results",
+    RESULTS = "Results"
+  )
+  known_schema <- !is.na(schema_key) & schema_key %in% names(schema_labels)
+  schema[known_schema] <- unname(schema_labels[schema_key[known_schema]])
+  table_level$schema <- schema
+
+  prefix <- trimws(as.character(table_level$conceptPrefix))
+  has_prefix <- !is.na(prefix) & nzchar(prefix)
+  prefix[has_prefix] <- tolower(sub("_+$", "", prefix[has_prefix]))
+  table_level$conceptPrefix <- prefix
+  table_level
+}
+
 #' Load CDM spec for a given version using CommonDataModel package
 #'
 #' @param cdm_version Character; CDM version string (e.g. "5.4", "5.3")
@@ -15,16 +40,22 @@
     cdm_version <- sub("\\.0$", "", cdm_version)
   }
 
-  # Try vendored first (no Java dependency)
+  # Try an exact vendored specification first (no Java dependency).  The
+  # vendored loader has a useful 5.4 default for an unknown/NULL version, but an
+  # explicitly unsupported version must never be silently interpreted as 5.4:
+  # doing so would attach the wrong OHDSI column and relationship semantics.
   vendored <- .loadVendoredSpec(cdm_version)
-  if (!is.null(vendored)) return(vendored)
+  if (!is.null(vendored) &&
+      (is.null(cdm_version) || identical(vendored$version, cdm_version))) {
+    return(vendored)
+  }
 
   # Fall back to CommonDataModel package (may need Java)
   has_cdm_pkg <- tryCatch(
     requireNamespace("CommonDataModel", quietly = TRUE),
     warning = function(w) FALSE
   )
-  if (!has_cdm_pkg) return(.loadVendoredSpec("5.4"))
+  if (!has_cdm_pkg) return(NULL)
 
   supported <- tryCatch(
     CommonDataModel::listSupportedVersions(),
@@ -41,20 +72,23 @@
     }
   }
 
-  if (is.null(version_to_load)) return(.loadVendoredSpec("5.4"))
+  if (is.null(version_to_load)) return(NULL)
 
   pkg_csv <- system.file("csv", package = "CommonDataModel")
   tbl_file <- file.path(pkg_csv, paste0("OMOP_CDMv", version_to_load, "_Table_Level.csv"))
   fld_file <- file.path(pkg_csv, paste0("OMOP_CDMv", version_to_load, "_Field_Level.csv"))
 
   if (!file.exists(tbl_file) || !file.exists(fld_file)) {
-    warning("CDM v", version_to_load, " spec files not found in CommonDataModel package. ",
-            "Falling back to vendored spec.", call. = FALSE)
-    return(.loadVendoredSpec("5.4"))
+    warning("CDM v", version_to_load,
+            " spec files not found in CommonDataModel package.",
+            call. = FALSE)
+    return(NULL)
   }
 
   list(
-    table_level = utils::read.csv(tbl_file, stringsAsFactors = FALSE),
+    table_level = .normalizeCdmTableMetadata(
+      utils::read.csv(tbl_file, stringsAsFactors = FALSE)
+    ),
     field_level = utils::read.csv(fld_file, stringsAsFactors = FALSE),
     version     = version_to_load,
     source      = "CommonDataModel"
@@ -77,11 +111,27 @@
     tbl_file <- file.path(pkg_dir, paste0("OMOP_CDMv", v, "_Table_Level.csv"))
     fld_file <- file.path(pkg_dir, paste0("OMOP_CDMv", v, "_Field_Level.csv"))
     if (file.exists(tbl_file) && file.exists(fld_file)) {
+      provenance <- tryCatch(
+        jsonlite::fromJSON(
+          file.path(pkg_dir, "UPSTREAM_METADATA.json"), simplifyVector = FALSE
+        ),
+        error = function(e) NULL
+      )
+      entries <- provenance$files[c(basename(tbl_file), basename(fld_file))]
+      releases <- unique(vapply(entries, function(x) x$release %||% NA_character_,
+                                character(1)))
+      commits <- unique(vapply(entries, function(x) x$commit %||% NA_character_,
+                               character(1)))
       return(list(
-        table_level = utils::read.csv(tbl_file, stringsAsFactors = FALSE),
+        table_level = .normalizeCdmTableMetadata(
+          utils::read.csv(tbl_file, stringsAsFactors = FALSE)
+        ),
         field_level = utils::read.csv(fld_file, stringsAsFactors = FALSE),
         version     = v,
-        source      = "vendored"
+        source      = "vendored",
+        upstream_source = provenance$source %||% NA_character_,
+        upstream_release = if (length(releases) == 1L) releases else NA_character_,
+        upstream_commit = if (length(commits) == 1L) commits else NA_character_
       ))
     }
   }
@@ -91,7 +141,7 @@
 #' Heuristic concept role classification (no spec)
 #'
 #' @param table Character; the table name.
-#' @param column_name Character; the column name to classify.
+#' @param column Character; the column name to classify.
 #' @return Character; one of "primary", "type", "source", "qualifier", or "other".
 #' @keywords internal
 .classifyConceptRoleHeuristic <- function(table, column) {
@@ -119,8 +169,11 @@
   if (is.null(id) || !nzchar(id)) {
     id <- tryCatch(resource_client$getParsed()$server, error = function(e) NULL)
   }
-  if (is.null(id) || !nzchar(id)) id <- "dsomop-default-resource"
-  as.character(id)
+  if (is.null(id) || length(id) != 1L || is.na(id) || !nzchar(id)) {
+    stop("A stable OMOP resource identity is required for pseudonymization.",
+         call. = FALSE)
+  }
+  enc2utf8(as.character(id))
 }
 
 #' Resolve a persistent per-resource pseudonymization key
@@ -129,13 +182,19 @@
 #' reconnects and DataSHIELD workspace save/load, so a person hashes to the same
 #' token every time without storing any token->id map. Resolution order:
 #' \enumerate{
-#'   \item Env var \code{DSOMOP_PSEUDONYM_KEY_<rid>} then \code{DSOMOP_PSEUDONYM_KEY}
-#'         (hex- or UTF-8-encoded), where \code{<rid>} is a stable hash of the
-#'         resource identity.
-#'   \item R option \code{getOption("dsomop.pseudonym_key")}.
-#'   \item A \code{0600} file at \code{~/.dsomop/keys/<rid>.key} (32 raw bytes).
-#'   \item If none exist: GENERATE 32 random bytes once and PERSIST them to that
-#'         \code{0600} file, so the next handle re-derives the same key.
+#'   \item Per-resource env var \code{DSOMOP_PSEUDONYM_KEY_<rid>} (exact key).
+#'   \item Global env var \code{DSOMOP_PSEUDONYM_ROOT} or R option
+#'         \code{dsomop.pseudonym_root}, treated as a node root from which a
+#'         resource-separated key is derived with HMAC-SHA256.
+#'   \item Legacy global env var \code{DSOMOP_PSEUDONYM_KEY} or R option
+#'         \code{dsomop.pseudonym_key}, retained as an exact key for token
+#'         compatibility only when the administrator explicitly enables
+#'         \code{DSOMOP_ALLOW_LEGACY_GLOBAL_PSEUDONYMS}. It does not provide
+#'         cross-resource separation.
+#'   \item An existing legacy \code{0600} per-resource file at
+#'         \code{<state>/keys/<rid>.key}, retained to avoid invalidating tokens.
+#'   \item The runtime-created \code{0600} node root at
+#'         \code{<state>/secrets/pseudonym_root}, also HMAC-separated by resource.
 #' }
 #' The key never leaves the server, so tokens cannot be reversed client-side.
 #' @param resource_client An OMOPResourceClient instance.
@@ -143,71 +202,266 @@
 #' @keywords internal
 .resolvePersonKey <- function(resource_client) {
   identity <- .resourceIdentity(resource_client)
+  .resolvePersonKeyIdentity(identity)
+}
+
+#' Resolve a pseudonymization key from an already validated resource identity
+#'
+#' Kept separate from \code{\link{.resolvePersonKey}} so session handles can store
+#' only the non-secret identity and re-resolve key material when needed. Raw key
+#' bytes are never cached in a serializable DataSHIELD workspace handle.
+#'
+#' @param identity Stable resource identity string.
+#' @return Raw per-resource pseudonymization key.
+#' @keywords internal
+.resolvePersonKeyIdentity <- function(identity) {
+  .resolvePersonKeyContract(identity)$key
+}
+
+#' Resolve key material and its non-secret lifecycle contract
+#'
+#' @param identity Stable resource identity string.
+#' @return Internal list containing the raw key plus public provider metadata.
+#' @keywords internal
+.resolvePersonKeyContract <- function(identity) {
+  if (!is.character(identity) || length(identity) != 1L || is.na(identity) ||
+      !nzchar(identity)) {
+    stop("A stable OMOP resource identity is required for pseudonymization.",
+         call. = FALSE)
+  }
+  settings <- .dsomopPseudonymSettings()
   # Stable, filesystem-safe per-resource id (also used to scope the env var).
   rid <- substr(as.character(openssl::sha256(charToRaw(identity))), 1L, 32L)
+  scoped_name <- paste0("DSOMOP_PSEUDONYM_KEY_", rid)
 
-  # Coerce a user-supplied key (hex string, plain string, or raw) to raw bytes.
-  .asKeyRaw <- function(v) {
-    if (is.raw(v)) return(v)
-    v <- as.character(v)[1]
-    if (is.na(v) || !nzchar(v)) return(NULL)
-    # Even-length all-hex -> decode as hex; otherwise hash the string to 32 bytes.
-    if (nchar(v) %% 2L == 0L && grepl("^[0-9a-fA-F]+$", v)) {
-      return(as.raw(strtoi(substring(v, seq(1L, nchar(v), 2L),
-                                     seq(2L, nchar(v), 2L)), 16L)))
+  finish <- function(key, provider) {
+    list(
+      key = key,
+      provider = provider,
+      key_id = .personKeyId(key),
+      epoch = settings$epoch,
+      require_existing = settings$require_existing,
+      contract_version = 1L
+    )
+  }
+
+  if (identical(settings$provider, "scoped")) {
+    key <- settings$scoped[[scoped_name]]
+    if (is.null(key)) {
+      stop("The scoped pseudonymization provider has no key for this OMOP ",
+           "resource.", call. = FALSE)
     }
-    as.raw(openssl::sha256(charToRaw(v)))
+    return(finish(key, "scoped"))
   }
 
-  # (a) Environment variables: per-resource first, then global.
-  for (nm in c(paste0("DSOMOP_PSEUDONYM_KEY_", rid), "DSOMOP_PSEUDONYM_KEY")) {
-    ev <- Sys.getenv(nm, unset = "")
-    if (nzchar(ev)) {
-      k <- .asKeyRaw(ev)
-      if (!is.null(k)) return(k)
-    }
+  if (identical(settings$provider, "injected")) {
+    root <- .dsomopSecretSettingValue(settings$root)$value
+    return(finish(.deriveDsomopResourceKey(root, identity), "injected"))
   }
 
-  # (b) R option.
-  opt <- getOption("dsomop.pseudonym_key", default = NULL)
-  if (!is.null(opt)) {
-    k <- .asKeyRaw(opt)
-    if (!is.null(k)) return(k)
+  if (identical(settings$provider, "file")) {
+    root <- .ensureDsomopSecret(
+      "pseudonym_root", require_existing = settings$require_existing)
+    return(finish(.deriveDsomopResourceKey(root, identity), "file"))
   }
 
-  # (c) / (d) Per-resource 0600 key file under ~/.dsomop/keys/.
-  key_dir <- file.path(Sys.getenv("HOME"), ".dsomop", "keys")
+  # An explicitly scoped key is already unique to this resource.
+  scoped <- settings$scoped[[scoped_name]]
+  if (!is.null(scoped)) {
+    return(finish(scoped, "scoped"))
+  }
+
+  # New, unambiguous root setting: derivation prevents cross-resource linkage.
+  if (settings$root$present) {
+    root <- .dsomopSecretSettingValue(settings$root)$value
+    return(finish(.deriveDsomopResourceKey(root, identity), "injected"))
+  }
+
+  # Compatibility contract: this setting was historically the exact token key.
+  # Reinterpreting it as a root would invalidate every existing p2 token.
+  if (settings$legacy$present) {
+    key <- .dsomopSecretSettingValue(settings$legacy)$value
+    return(finish(key, "legacy"))
+  }
+
+  # Preserve a valid legacy per-resource key rather than silently changing all
+  # previously issued tokens during the root-key migration.
+  key_dir <- file.path(.dsomopStateRoot(), "keys")
   key_file <- file.path(key_dir, paste0(rid, ".key"))
-  if (file.exists(key_file)) {
-    k <- tryCatch(readBin(key_file, what = "raw", n = 64L),
-                  error = function(e) NULL)
-    if (!is.null(k) && length(k) >= 16L) return(k)
+  if (file.exists(key_file) || .dsomopIsSymlink(key_file)) {
+    key_file <- .dsomopPrivateSecretDirectory(
+      key_file,
+      .allow_test_path = identical(
+        Sys.getenv("DSOMOP_TEST_ALLOW_EPHEMERAL_STATE", unset = ""), "1"))
+    return(finish(.dsomopValidateSecretFile(key_file), "legacy_file"))
   }
 
-  # (d) Generate once and persist (0600) so the next handle re-derives it.
-  key <- openssl::rand_bytes(32L)
-  persisted <- tryCatch({
-    if (!dir.exists(key_dir)) {
-      dir.create(key_dir, recursive = TRUE, mode = "0700")
-    }
-    writeBin(key, key_file)
-    Sys.chmod(key_file, mode = "0600")
-    TRUE
-  }, error = function(e) FALSE)
-  if (!persisted) {
-    warning("dsOMOP: could not persist pseudonymization key to '", key_file,
-            "'; person tokens may not be stable across reconnect. Set ",
-            "DSOMOP_PSEUDONYM_KEY or getOption('dsomop.pseudonym_key') for a ",
-            "stable key.", call. = FALSE)
+  root <- .ensureDsomopSecret(
+    "pseudonym_root", require_existing = settings$require_existing)
+  finish(.deriveDsomopResourceKey(root, identity), "file")
+}
+
+#' Non-secret identity of a resolved pseudonymization key
+#'
+#' Stored in a handle so changing an injected provider, losing a state volume,
+#' or routing a workspace to a replica with a different root fails closed
+#' instead of silently changing person tokens mid-session.
+#'
+#' @param key Raw pseudonymization key.
+#' @return Character key identifier. It is a fingerprint, never key material.
+#' @keywords internal
+.personKeyId <- function(key) {
+  if (!is.raw(key) || length(key) != 32L) {
+    stop("Cannot identify an invalid pseudonymization key.", call. = FALSE)
   }
-  key
+  paste0(
+    "dsomop-person-key-v1:",
+    paste(format(openssl::sha256(key)), collapse = "")
+  )
+}
+
+#' Resolve the current handle's pseudonymization key without caching it
+#'
+#' Production handles created by \code{\link{.createHandle}} store only
+#' \code{person_key_identity}. A historical handle containing raw
+#' \code{person_key} bytes is accepted only under the explicit administrative
+#' legacy opt-in and only when it contains exactly 32 bytes. There is no safe
+#' implicit migration because the original resource identity cannot be proven;
+#' absent that opt-in the handle fails closed and must be recreated.
+#'
+#' @param handle A CDM handle.
+#' @return Raw pseudonymization key.
+#' @keywords internal
+.personKey <- function(handle) {
+  identity <- handle$person_key_identity
+  has_identity <- is.character(identity) && length(identity) == 1L &&
+    !is.na(identity) && nzchar(identity)
+  if (!has_identity) {
+    legacy <- handle$person_key
+    if (!is.null(legacy)) {
+      if (!is.raw(legacy) || length(legacy) != 32L) {
+        stop("A legacy handle pseudonymization key must contain exactly 32 raw ",
+             "bytes; recreate the OMOP handle.", call. = FALSE)
+      }
+      if (!isTRUE(
+        .dsomopPseudonymLifecycleSettings()$allow_legacy_global
+      )) {
+        stop("Raw person_key handles are disabled by default; recreate the ",
+             "OMOP handle, or explicitly enable the legacy global ",
+             "pseudonymization opt-in for a controlled migration.",
+             call. = FALSE)
+      }
+      return(legacy)
+    }
+    stop("No pseudonymization key provider is available on this handle.",
+         call. = FALSE)
+  }
+  contract <- .resolvePersonKeyContract(identity)
+  current_id <- contract$key_id
+  expected_id <- handle$person_key_id
+  expected_provider <- handle$person_key_provider
+  expected_epoch <- handle$person_key_epoch
+  expected_require_existing <- handle$person_key_require_existing
+  expected_contract_version <- handle$person_key_contract_version
+  changed <- (!is.null(expected_id) &&
+    (!is.character(expected_id) || length(expected_id) != 1L ||
+     is.na(expected_id) || !identical(expected_id, current_id))) ||
+    (!is.null(expected_provider) &&
+     (!is.character(expected_provider) || length(expected_provider) != 1L ||
+      is.na(expected_provider) ||
+      !identical(expected_provider, contract$provider))) ||
+    (!is.null(expected_epoch) &&
+     (!is.numeric(expected_epoch) || length(expected_epoch) != 1L ||
+      is.na(expected_epoch) || !is.finite(expected_epoch) ||
+      expected_epoch != floor(expected_epoch) || expected_epoch < 1 ||
+      !identical(as.integer(expected_epoch), contract$epoch))) ||
+    (!is.null(expected_require_existing) &&
+     (!is.logical(expected_require_existing) ||
+      length(expected_require_existing) != 1L ||
+      is.na(expected_require_existing) ||
+      !identical(expected_require_existing, contract$require_existing))) ||
+    (!is.null(expected_contract_version) &&
+     (!is.numeric(expected_contract_version) ||
+      length(expected_contract_version) != 1L ||
+      is.na(expected_contract_version) ||
+      !is.finite(expected_contract_version) ||
+      expected_contract_version != floor(expected_contract_version) ||
+      expected_contract_version < 1 ||
+      !identical(as.integer(expected_contract_version),
+                 contract$contract_version)))
+  if (changed) {
+    stop("The pseudonymization key contract changed after this handle was created; ",
+         "refusing to emit inconsistent person tokens.", call. = FALSE)
+  }
+  if (is.environment(handle)) {
+    if (is.null(expected_id)) handle$person_key_id <- current_id
+    if (is.null(expected_provider)) {
+      handle$person_key_provider <- contract$provider
+    }
+    if (is.null(expected_epoch)) handle$person_key_epoch <- contract$epoch
+    if (is.null(expected_require_existing)) {
+      handle$person_key_require_existing <- contract$require_existing
+    }
+    if (is.null(expected_contract_version)) {
+      handle$person_key_contract_version <- contract$contract_version
+    }
+  }
+  contract$key
+}
+
+#' Public, non-secret pseudonymization contract for capability reports
+#'
+#' @param handle A CDM handle.
+#' @return A list that never contains raw key material or resource identity.
+#' @keywords internal
+.personKeyPublicContract <- function(handle) {
+  legacy_global_opt_in <- isTRUE(
+    .dsomopPseudonymLifecycleSettings()$allow_legacy_global
+  )
+  identity <- handle$person_key_identity
+  if (is.character(identity) && length(identity) == 1L && !is.na(identity) &&
+      nzchar(identity)) {
+    invisible(.personKey(handle))
+    return(list(
+      available = TRUE,
+      contract_version = handle$person_key_contract_version,
+      provider = handle$person_key_provider,
+      key_id = handle$person_key_id,
+      epoch = handle$person_key_epoch,
+      require_existing = handle$person_key_require_existing,
+      legacy_global_opt_in = legacy_global_opt_in
+    ))
+  }
+  legacy <- handle$person_key
+  if (!is.null(legacy)) {
+    legacy <- .personKey(handle)
+    return(list(
+      available = TRUE,
+      contract_version = 0L,
+      provider = "legacy_handle",
+      key_id = .personKeyId(legacy),
+      epoch = NULL,
+      require_existing = NULL,
+      legacy_global_opt_in = legacy_global_opt_in
+    ))
+  }
+  list(
+    available = FALSE,
+    contract_version = NULL,
+    provider = NULL,
+    key_id = NULL,
+    epoch = NULL,
+    require_existing = NULL,
+    legacy_global_opt_in = legacy_global_opt_in
+  )
 }
 
 #' Create a CDM handle from a resource client
 #'
 #' Resolves the connection, schemas and the per-resource pseudonymization key,
 #' and builds the handle environment used by all extraction/exploration ops.
-#' @param resource_client An OMOPResourceClient instance
+#' @param resource_client An OMOPResourceClient instance. Ownership transfers to
+#'   the returned handle; the client is closed if construction fails.
 #' @param cdm_schema Character; override CDM schema
 #' @param vocab_schema Character; override vocabulary schema
 #' @param results_schema Character; override results schema
@@ -221,6 +475,11 @@
                           results_schema = NULL,
                           temp_schema = NULL,
                           config = list()) {
+  # Ownership transfers to the handle constructor. If any validation or key
+  # bootstrap step fails after opening the DB connection, close the resource
+  # client so a failed initialization cannot strand a connection.
+  tryCatch({
+
   conn <- resource_client$getConnection()
   parsed <- resource_client$getParsed()
   dbms <- parsed$dbms
@@ -242,6 +501,23 @@
   results_schema <- results_schema %||% parsed$results_schema
   temp_schema    <- temp_schema    %||% parsed$temp_schema
 
+  # Schema names ultimately become SQL identifiers in .qualifyTable(). They
+  # may be client-supplied overrides, so validate them before storing the
+  # handle. Dotted identifiers remain available for engines that use a
+  # database/schema namespace; quotes, comments and statement separators do
+  # not.
+  validate_schema <- function(x, label) {
+    if (is.null(x)) return(NULL)
+    if (!is.character(x) || length(x) != 1L || is.na(x) || !nzchar(trimws(x))) {
+      stop(label, " must be one non-empty schema identifier.", call. = FALSE)
+    }
+    .validateIdentifier(x, label)
+  }
+  cdm_schema <- validate_schema(cdm_schema, "cdm_schema")
+  vocab_schema <- validate_schema(vocab_schema, "vocab_schema")
+  results_schema <- validate_schema(results_schema, "results_schema")
+  temp_schema <- validate_schema(temp_schema, "temp_schema")
+
   handle <- new.env(parent = emptyenv())
   handle$conn            <- conn
   handle$dbms            <- dbms
@@ -254,17 +530,77 @@
   handle$config          <- config
   handle$blueprint       <- NULL
   handle$temp_tables     <- character(0)
-  # Persistent PER-RESOURCE secret key for pseudonymizing person/subject keys on
-  # output (see .resolvePersonKey). Resolved from env var / R option / a 0600
-  # key file (generated once and persisted if absent), and never exported to the
-  # client. Because it is keyed to the resource (not the session/process), the
-  # same person hashes to the SAME token across reconnects and across DataSHIELD
-  # workspace save/load, with no token->id map stored anywhere. A different
-  # resource (different key) yields different tokens, so a person is not linkable
-  # across sites.
-  handle$person_key      <- .resolvePersonKey(resource_client)
+  handle$temp_connection <- NULL
+  handle$staging_dirs    <- character(0)
+  # Store only the stable, non-secret key locator. Key bytes are resolved from
+  # the injected provider or private state file for each operation and are never
+  # embedded in a serializable DataSHIELD workspace handle.
+  handle$person_key_identity <- .resourceIdentity(resource_client)
+  person_key_contract <- .resolvePersonKeyContract(handle$person_key_identity)
+  handle$person_key_id <- person_key_contract$key_id
+  handle$person_key_provider <- person_key_contract$provider
+  handle$person_key_epoch <- person_key_contract$epoch
+  handle$person_key_require_existing <-
+    person_key_contract$require_existing
+  handle$person_key_contract_version <-
+    person_key_contract$contract_version
 
   handle
+  }, error = function(e) {
+    close <- tryCatch(resource_client$close, error = function(close_error) NULL)
+    cleanup_error <- if (is.function(close)) {
+      tryCatch({
+        close()
+        NULL
+      }, error = identity)
+    } else {
+      NULL
+    }
+    if (!is.null(cleanup_error)) {
+      stop("OMOP handle construction failed and resource-client cleanup could ",
+           "not be proven. Initialization error: ", conditionMessage(e),
+           "; cleanup error: ", conditionMessage(cleanup_error), call. = FALSE)
+    }
+    stop(e)
+  })
+}
+
+#' Enforce the server-side allowlist for client-supplied schema overrides
+#'
+#' Schema names carried by the resource URL are controlled by the data owner.
+#' In contrast, arguments to \code{omopInitDS()} originate with the analyst and
+#' must not redirect a broadly privileged connection to another tenant. An
+#' administrator can opt in to exact values with the named server option
+#' \code{dsomop.allowed_schema_overrides}; absent that option, every client
+#' override is rejected.
+#'
+#' @param overrides Named list with cdm_schema, vocab_schema, results_schema and
+#'   temp_schema values.
+#' @return NULL, invisibly; errors on a non-allowlisted override.
+#' @keywords internal
+.assertAllowedSchemaOverrides <- function(overrides) {
+  supplied <- !vapply(overrides, is.null, logical(1))
+  if (!any(supplied)) return(invisible(NULL))
+
+  allowlist <- getOption(
+    "dsomop.allowed_schema_overrides",
+    getOption("default.dsomop.allowed_schema_overrides", NULL)
+  )
+  if (!is.list(allowlist) || is.null(names(allowlist))) {
+    stop("Client schema overrides are disabled by the data controller.",
+         call. = FALSE)
+  }
+
+  for (field in names(overrides)[supplied]) {
+    value <- overrides[[field]]
+    allowed <- allowlist[[field]]
+    if (!is.character(value) || length(value) != 1L || is.na(value) ||
+        !is.character(allowed) || !value %in% allowed) {
+      stop("Schema override for '", field,
+           "' is not allowlisted by the data controller.", call. = FALSE)
+    }
+  }
+  invisible(NULL)
 }
 
 #' Close a CDM handle
@@ -275,15 +611,37 @@
 .closeHandle <- function(handle) {
   if (is.null(handle)) return(invisible(NULL))
 
-  conn <- .conn(handle)
+  failures <- character(0)
+  record_failure <- function(e) {
+    failures <<- c(failures, conditionMessage(e))
+    NULL
+  }
 
-  if (length(handle$temp_tables) > 0 && DBI::dbIsValid(conn)) {
+  conn <- tryCatch(.conn(handle), error = record_failure)
+
+  if (!is.null(conn) &&
+      isTRUE(tryCatch(DBI::dbIsValid(conn), error = record_failure)) &&
+      length(handle$temp_tables) > 0L) {
     for (tbl in handle$temp_tables) {
-      .dropTempTable(handle, tbl)
+      tryCatch(.dropTempTable(handle, tbl), error = record_failure)
     }
   }
 
-  if (!is.null(handle$resource_client)) handle$resource_client$close()
+  if (length(handle$staging_dirs %||% character(0)) > 0L) {
+    tryCatch(.cleanupHandleStaging(handle), error = record_failure)
+  }
+
+  if (!is.null(handle$resource_client)) {
+    tryCatch(handle$resource_client$close(), error = record_failure)
+  } else if (!is.null(conn) &&
+             isTRUE(tryCatch(DBI::dbIsValid(conn),
+                             error = record_failure))) {
+    tryCatch(DBI::dbDisconnect(conn), error = record_failure)
+  }
+  if (length(failures) > 0L) {
+    stop("Could not fully close the OMOP handle: ",
+         paste(unique(failures), collapse = "; "), call. = FALSE)
+  }
   invisible(NULL)
 }
 
@@ -467,6 +825,68 @@
 
 # --- Blueprint Construction ---
 
+#' Read the server-authorized CDM extension contract
+#'
+#' Non-standard tables and columns are invisible to the extraction blueprint
+#' unless the data controller explicitly lists them here. The option is a named
+#' list mapping a bare table name to one or more bare column names, for example
+#' \code{list(site_event = c("person_id", "event_date", "value"),
+#' measurement = "site_quality_flag")}. An entry for a standard CDM table
+#' authorizes only the listed additional columns; an entry for a non-standard
+#' table authorizes the table and only those columns. Wildcards are deliberately
+#' unsupported so a later schema change cannot silently expand the release
+#' surface.
+#'
+#' @return Named list of lower-case table-to-column mappings.
+#' @keywords internal
+.allowedCdmExtensionContract <- function() {
+  contract <- getOption(
+    "dsomop.allowed_cdm_extensions",
+    getOption("default.dsomop.allowed_cdm_extensions", list())
+  )
+  if (is.null(contract)) contract <- list()
+  if (!is.list(contract) || (length(contract) > 0L &&
+      (is.null(names(contract)) || anyNA(names(contract)) ||
+       any(!nzchar(names(contract)))))) {
+    stop("dsomop.allowed_cdm_extensions must be a named list mapping table ",
+         "names to explicit column-name vectors.", call. = FALSE)
+  }
+  if (length(contract) == 0L) return(list())
+
+  table_names <- tolower(trimws(names(contract)))
+  if (anyDuplicated(table_names)) {
+    stop("dsomop.allowed_cdm_extensions contains duplicate table names.",
+         call. = FALSE)
+  }
+  valid_bare_name <- function(x) {
+    is.character(x) && length(x) == 1L && !is.na(x) &&
+      grepl("^[A-Za-z_][A-Za-z0-9_]*$", x)
+  }
+  if (!all(vapply(table_names, valid_bare_name, logical(1)))) {
+    stop("dsomop.allowed_cdm_extensions contains an invalid table name; ",
+         "only bare SQL identifiers are permitted.", call. = FALSE)
+  }
+
+  out <- vector("list", length(contract))
+  names(out) <- table_names
+  for (i in seq_along(contract)) {
+    cols <- contract[[i]]
+    if (!is.character(cols) || length(cols) == 0L || anyNA(cols)) {
+      stop("Extension contract for table '", table_names[i],
+           "' must contain one or more explicit column names.",
+           call. = FALSE)
+    }
+    cols <- tolower(trimws(cols))
+    if (!all(vapply(cols, valid_bare_name, logical(1)))) {
+      stop("Extension contract for table '", table_names[i],
+           "' contains an invalid column name; wildcards and qualified ",
+           "identifiers are not permitted.", call. = FALSE)
+    }
+    out[[i]] <- unique(cols)
+  }
+  out
+}
+
 #' Build the SchemaBlueprint for a handle
 #'
 #' Fuses vendored OHDSI metadata with runtime DB introspection.
@@ -534,9 +954,13 @@
   spec <- .loadCdmSpec(cdm_version)
   has_spec <- !is.null(spec)
   if (!has_spec) {
-    warning("No CDM spec available for version '", cdm_version %||% "unknown",
-            "'. Running in introspection-only mode.", call. = FALSE)
+    stop("No supported OHDSI CDM specification is available for version '",
+         cdm_version %||% "unknown", "'. Refusing schema introspection because ",
+         "unknown tables and columns cannot be classified safely.",
+         call. = FALSE)
   }
+
+  extension_contract <- .allowedCdmExtensionContract()
 
   tbl_meta <- if (has_spec) spec$table_level else NULL
   fld_meta <- if (has_spec) spec$field_level else NULL
@@ -563,8 +987,14 @@
       tables$qualified_name[i] <- .qualifyTable(handle, tbl_name, schema)
     }
 
-    # Add DB tables not in spec (introspection discovers extra tables)
-    extra_db <- setdiff(all_db_tables, tables$table_name)
+    # Non-standard tables are invisible by default. A data-controller-owned
+    # contract may expose an exact table/column surface from the CDM schema.
+    # Do not use all_db_tables here: a same-named object in a vocabulary or
+    # results schema must not be mistaken for an authorized CDM extension.
+    extra_db <- intersect(
+      setdiff(db_tables_cdm, tables$table_name),
+      names(extension_contract)
+    )
     if (length(extra_db) > 0) {
       extra_rows <- data.frame(
         table_name      = extra_db,
@@ -579,19 +1009,6 @@
       )
       tables <- rbind(tables, extra_rows)
     }
-  } else {
-    # Introspection-only mode: build from DB tables
-    tables <- data.frame(
-      table_name      = all_db_tables,
-      schema_category = rep("CDM", length(all_db_tables)),
-      concept_prefix  = rep(NA_character_, length(all_db_tables)),
-      has_person_id   = rep(FALSE, length(all_db_tables)),
-      present_in_db   = rep(TRUE, length(all_db_tables)),
-      qualified_name  = vapply(all_db_tables, function(t) {
-        .qualifyTable(handle, t, handle$cdm_schema)
-      }, character(1)),
-      stringsAsFactors = FALSE
-    )
   }
 
   # Build columns: named list of data.frames per table
@@ -609,6 +1026,22 @@
     db_cols <- .listColumnsRaw(handle, tbl_name, schema)
     concept_prefix <- tables$concept_prefix[tables$table_name == tbl_name]
 
+    if (nrow(db_cols) == 0) next
+
+    # Standard tables inherit exactly the columns declared by the loaded OHDSI
+    # specification. Additional columns, and every column of a non-standard
+    # table, require an explicit server-side contract entry. This filtering
+    # happens before any heuristic type/role classification, so an unfamiliar
+    # field can never become selectable merely because its name looks benign.
+    standard_cols <- if (nrow(tbl_flds) > 0L) {
+      tolower(tbl_flds$cdmFieldName)
+    } else {
+      character(0)
+    }
+    authorized_extension_cols <- extension_contract[[tbl_name]] %||%
+      character(0)
+    allowed_cols <- union(standard_cols, authorized_extension_cols)
+    db_cols <- db_cols[db_cols$column_name %in% allowed_cols, , drop = FALSE]
     if (nrow(db_cols) == 0) next
 
     # Build column metadata by merging spec + DB
@@ -778,6 +1211,12 @@
   blueprint$cdm_info     <- cdm_info
   blueprint$spec_version <- if (has_spec) spec$version else NULL
   blueprint$spec_source  <- if (has_spec) spec$source else "introspection_only"
+  blueprint$spec_upstream <- if (has_spec) list(
+    source = spec$upstream_source %||% NULL,
+    release = spec$upstream_release %||% NULL,
+    commit = spec$upstream_commit %||% NULL
+  ) else NULL
+  blueprint$extension_contract <- extension_contract
 
   handle$blueprint <- blueprint
   blueprint
@@ -807,7 +1246,8 @@
 
   # Domain concept: matches the table's conceptPrefix
   if (!is.na(concept_prefix) && nchar(concept_prefix) > 0) {
-    expected_col <- paste0(tolower(concept_prefix), "_concept_id")
+    normalized_prefix <- tolower(sub("_+$", "", trimws(concept_prefix)))
+    expected_col <- paste0(normalized_prefix, "_concept_id")
     if (field == expected_col) return("domain_concept")
   }
 
@@ -861,6 +1301,8 @@
 #'   \item \code{lot_number} (manufacturer lot, potentially identifying)
 #'   \item \code{unique_device_id} (device UDI, globally unique)
 #'   \item NOTE / NOTE_NLP text fields (clinical narrative text)
+#'   \item Direct identifiers such as patient/MRN, SSN, email and phone fields
+#'   \item Exact dates of birth and generic comment/free-text fields
 #'   \item \code{*_source_concept_id} (source-system identifiers)
 #'   \item LOCATION fields: address, city, zip, county, latitude, longitude
 #'   \item PROVIDER fields: provider_name, npi, dea
@@ -871,7 +1313,26 @@
 #' @return Logical
 #' @keywords internal
 .detectSensitiveColumns <- function(column_name) {
+  # Metadata from an unfamiliar driver must never become safe through a failed
+  # or partial name conversion.
+  if (!is.character(column_name) || length(column_name) != 1L ||
+      is.na(column_name) || !nzchar(trimws(column_name))) {
+    return(TRUE)
+  }
+  column_name <- tolower(trimws(column_name))
   sensitive_patterns <- c(
+    # Direct identifiers commonly found in local OMOP extensions
+    "(^|_)patient_(id|identifier|key)($|_)",
+    "(^|_)(mrn|medical_record_number|medical_record_id)($|_)",
+    "(^|_)(ssn|social_security_number)($|_)",
+    "(^|_)(email|email_address|e_mail)($|_)",
+    "(^|_)(phone|phone_number|telephone|mobile|mobile_phone)($|_)",
+    # Exact birth information is a quasi-identifier. Age must be derived using
+    # the package's minimum-width, reference-date-aware age grouping instead.
+    "(^|_)(dob|date_of_birth|birth_date|birth_datetime)($|_)",
+    "^(year|month|day)_of_birth$",
+    # Generic narrative fields used by non-standard tables
+    "(^|_)(comment|comments|free_text|freetext|narrative|remark|remarks)($|_)",
     # Source-system values (all tables): free text from EHR
     "_source_value$",
     # Source concept IDs (may reveal source-system coding)
@@ -893,6 +1354,7 @@
     "^snippet$",
     "^lexical_variant$",
     "^note_nlp_concept_id$",
+    "(^|_)term_modifiers$",
     # LOCATION: address/geo fields (OMOP Privacy Guidance)
     "^address_1$",
     "^address_2$",
@@ -938,11 +1400,11 @@
 #' Makes the OHDSI "results" daimon first-class, mirroring how the vocabulary
 #' schema is resolved. If the site pinned \code{handle$results_schema} (via
 #' \code{omopInitDS} or the resource URL), that value is honored verbatim with
-#' no probing. Otherwise the schema holding \code{achilles_results} (or
-#' \code{achilles_analysis}) is AUTO-DETECTED by probing candidate schemas in
-#' OHDSI-conventional order: a dedicated \code{results} schema, then
-#' \code{<cdm_schema>_results}, then the CDM schema (co-located case), then the
-#' DBMS default schema. The resolved value (which may legitimately be
+#' no probing. Otherwise only the already-authorized CDM schema is probed for
+#' co-located results, plus exact namespaces listed by the data controller in
+#' \code{dsomop.allowed_results_schemas}. It never scans conventional global
+#' schema names using an analyst-triggered connection. The resolved value (which
+#' may legitimately be
 #' \code{NULL}: sqlite has no schemas, or Achilles is absent everywhere) is
 #' cached on the handle so the probe runs at most once per session.
 #'
@@ -971,19 +1433,26 @@
   if (!is.null(handle$results_schema)) {
     return(handle$results_schema)
   }
-  # sqlite (and any dialect without schema namespaces) has no separate results
-  # schema: skip detection; co-located tables are found by bare name.
+  # Without an explicit pin, SQLite only probes its co-located main database.
+  # Attached result databases remain available when the controller supplies a
+  # results_schema in the resource URL.
   if (identical(handle$target_dialect, "sqlite")) {
     return(NULL)
   }
   marker_tables <- c("achilles_results", "achilles_analysis")
   cdm <- handle$cdm_schema
-  candidates <- unique(Filter(function(s) !is.null(s) && nzchar(s), list(
-    "results",
-    if (!is.null(cdm) && nzchar(cdm)) paste0(cdm, "_results") else NULL,
-    cdm,
-    .dbmsDefaultSchema(handle$dbms)
-  )))
+  allowed <- getOption("dsomop.allowed_results_schemas",
+    getOption("default.dsomop.allowed_results_schemas", character(0)))
+  if (!is.character(allowed) || anyNA(allowed)) {
+    stop("dsomop.allowed_results_schemas must be a character vector.",
+         call. = FALSE)
+  }
+  if (length(allowed) > 0L) {
+    allowed <- vapply(allowed, .validateIdentifier, character(1),
+                      what = "allowed results schema")
+  }
+  candidates <- unique(Filter(function(s) !is.null(s) && nzchar(s),
+                              c(cdm, allowed)))
   for (schema in candidates) {
     tbls <- tryCatch(tolower(.listTablesRaw(handle, schema)),
                      error = function(e) character(0))
@@ -1000,10 +1469,12 @@
 #' @return Character; qualified table name for SQL
 #' @keywords internal
 .qualifyTable <- function(handle, table, schema = NULL) {
+  table <- .validateIdentifier(table, "table")
   schema <- schema %||% handle$cdm_schema
-  if (is.null(schema) || schema == "" || handle$target_dialect == "sqlite") {
+  if (is.null(schema) || schema == "") {
     return(table)
   }
+  schema <- .validateIdentifier(schema, "schema")
   paste0(schema, ".", table)
 }
 
@@ -1210,13 +1681,17 @@
     character(0)
   }
 
-  # Count total persons (privacy-safe: only the count, no individual data)
+  # A population total is still differencing material when combined with
+  # filtered releases. Apply the same admission gate and count banding as the
+  # aggregate APIs; return NULL on a small population or connection failure.
   total_persons <- tryCatch({
     if ("person" %in% present$table_name) {
       person_qualified <- .qualifyTable(handle, "person")
       sql <- paste0("SELECT COUNT(*) AS n FROM ", person_qualified)
       res <- .executeQuery(handle, sql)
-      as.numeric(res$n[1])
+      n <- as.numeric(res$n[1])
+      .assertMinPersons(n_persons = n)
+      .bandCount(n, .omopDisclosureSettings()$nfilter_band)
     } else {
       NULL
     }
@@ -1244,15 +1719,40 @@
     cdm_info = bp$cdm_info,
     spec_version = bp$spec_version,
     spec_source = bp$spec_source,
+    spec_upstream = bp$spec_upstream,
     supported_versions = supported_versions,
     achilles_available = isTRUE(handle$has_achilles),
     achilles_tables = intersect(achilles_table_names,
                                  bp$tables$table_name[bp$tables$present_in_db]),
-    disclosure = disclosure
+    database_support = .databaseSupportProfile(handle$dbms),
+    disclosure = disclosure,
+    pseudonymization = .personKeyPublicContract(handle)
   )
 }
 
 # --- Internal Helpers ---
+
+#' Execute a metadata query with the normal reconnect contract
+#' @param handle CDM handle.
+#' @param sql SQL string.
+#' @return Data frame returned by DBI.
+#' @keywords internal
+.metadataQuery <- function(handle, sql) {
+  .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql))
+}
+
+#' Read a DBI result column without assuming driver-specific name casing
+#' @param result Data frame returned by DBI.
+#' @param candidates Accepted column names.
+#' @param default Value returned when no candidate exists.
+#' @return A result column or default.
+#' @keywords internal
+.metadataResultColumn <- function(result, candidates, default = character(0)) {
+  if (!is.data.frame(result) || ncol(result) == 0L) return(default)
+  idx <- match(tolower(candidates), tolower(names(result)))
+  idx <- idx[!is.na(idx)]
+  if (length(idx) == 0L) default else result[[idx[[1]]]]
+}
 
 #' List tables in a schema (raw DB query)
 #'
@@ -1261,42 +1761,59 @@
 #' @return Character vector of table names (lowercase)
 #' @keywords internal
 .listTablesRaw <- function(handle, schema = NULL) {
-  conn <- .conn(handle)
-
   if (handle$target_dialect == "sqlite") {
-    result <- DBI::dbGetQuery(conn,
-      "SELECT name AS table_name FROM sqlite_master WHERE type='table' ORDER BY name")
-    tables <- result$table_name %||% result$name %||% character(0)
+    schema_to_use <- .validateIdentifier(
+      schema %||% handle$cdm_schema %||% "main", "schema")
+    sql <- paste0(
+      "SELECT name AS table_name FROM ", schema_to_use,
+      ".sqlite_master WHERE type IN ('table', 'view') ORDER BY name")
+    result <- .metadataQuery(handle, sql)
+    tables <- .metadataResultColumn(result, c("table_name", "name"))
   } else if (handle$target_dialect == "oracle") {
-    schema_to_use <- toupper(schema %||% handle$cdm_schema %||% "")
+    schema_to_use <- toupper(.validateIdentifier(
+      schema %||% handle$cdm_schema %||% "", "schema"))
     sql <- .renderSql(handle,
-      "SELECT TABLE_NAME FROM ALL_TABLES
+      "SELECT OBJECT_NAME AS TABLE_NAME FROM ALL_OBJECTS
        WHERE OWNER = '@schema'
-       ORDER BY TABLE_NAME",
+         AND OBJECT_TYPE IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW')
+       ORDER BY OBJECT_NAME",
       schema = schema_to_use)
-    result <- DBI::dbGetQuery(conn, sql)
-    tables <- result$TABLE_NAME %||% character(0)
+    result <- .metadataQuery(handle, sql)
+    tables <- .metadataResultColumn(result, "table_name")
   } else if (handle$target_dialect == "bigquery") {
-    schema_to_use <- schema %||% handle$cdm_schema %||% ""
+    schema_to_use <- .validateIdentifier(
+      schema %||% handle$cdm_schema %||% "", "schema")
     sql <- .renderSql(handle,
       "SELECT table_name FROM `@schema.INFORMATION_SCHEMA.TABLES`
-       WHERE table_type = 'BASE TABLE'
        ORDER BY table_name",
       schema = schema_to_use)
-    result <- DBI::dbGetQuery(conn, sql)
-    tables <- result$table_name %||% character(0)
+    result <- .metadataQuery(handle, sql)
+    tables <- .metadataResultColumn(result, "table_name")
+  } else if (handle$target_dialect == "spark") {
+    schema_to_use <- .validateIdentifier(
+      schema %||% handle$cdm_schema %||% "default", "schema")
+    result <- .metadataQuery(
+      handle, paste0("SHOW TABLES IN ", schema_to_use))
+    tables <- .metadataResultColumn(
+      result, c("tableName", "table_name", "tablename"))
   } else {
-    schema_to_use <- schema %||% handle$cdm_schema %||% "public"
+    schema_to_use <- .validateIdentifier(
+      schema %||% handle$cdm_schema %||% "public", "schema")
+    if (handle$target_dialect == "snowflake") {
+      # Unquoted Snowflake identifiers are stored in upper case; querying its
+      # INFORMATION_SCHEMA with a lower-case resource setting returns no rows.
+      schema_to_use <- toupper(schema_to_use)
+    }
     sql <- .renderSql(handle,
       "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
-       WHERE TABLE_SCHEMA = '@schema' AND TABLE_TYPE = 'BASE TABLE'
+       WHERE TABLE_SCHEMA = '@schema'
        ORDER BY TABLE_NAME",
       schema = schema_to_use)
-    result <- DBI::dbGetQuery(conn, sql)
-    tables <- result$table_name %||% result$TABLE_NAME %||% character(0)
+    result <- .metadataQuery(handle, sql)
+    tables <- .metadataResultColumn(result, "table_name")
   }
 
-  tolower(tables)
+  tolower(as.character(tables))
 }
 
 #' List columns in a table (raw DB query)
@@ -1307,55 +1824,106 @@
 #' @return Data frame with column_name, data_type, is_nullable
 #' @keywords internal
 .listColumnsRaw <- function(handle, table, schema = NULL) {
-  conn <- .conn(handle)
+  table <- .validateIdentifier(table, "table")
   empty <- data.frame(column_name = character(0), data_type = character(0),
                       is_nullable = character(0), stringsAsFactors = FALSE)
 
   if (handle$target_dialect == "sqlite") {
-    result <- DBI::dbGetQuery(conn, paste0("PRAGMA table_info('", table, "')"))
+    schema_to_use <- .validateIdentifier(
+      schema %||% handle$cdm_schema %||% "main", "schema")
+    result <- .metadataQuery(handle, paste0(
+      "PRAGMA ", schema_to_use, ".table_info('", table, "')"))
     if (nrow(result) > 0) {
       data.frame(
-        column_name = tolower(result$name),
-        data_type   = tolower(result$type),
-        is_nullable = ifelse(result$notnull == 0, "YES", "NO"),
+        column_name = tolower(.metadataResultColumn(result, "name")),
+        data_type   = tolower(.metadataResultColumn(result, "type")),
+        is_nullable = ifelse(
+          .metadataResultColumn(result, "notnull") == 0, "YES", "NO"),
         stringsAsFactors = FALSE
       )
     } else {
       empty
     }
   } else if (handle$target_dialect == "oracle") {
-    schema_to_use <- toupper(schema %||% handle$cdm_schema %||% "")
+    schema_to_use <- toupper(.validateIdentifier(
+      schema %||% handle$cdm_schema %||% "", "schema"))
     sql <- .renderSql(handle,
       "SELECT COLUMN_NAME, DATA_TYPE, NULLABLE AS IS_NULLABLE
        FROM ALL_TAB_COLUMNS
        WHERE OWNER = '@schema' AND TABLE_NAME = '@table'
        ORDER BY COLUMN_ID",
       schema = schema_to_use, table = toupper(table))
-    result <- DBI::dbGetQuery(conn, sql)
+    result <- .metadataQuery(handle, sql)
+    if (nrow(result) > 0) {
+      nullable <- .metadataResultColumn(result, "is_nullable")
+      data.frame(
+        column_name = tolower(.metadataResultColumn(result, "column_name")),
+        data_type   = tolower(.metadataResultColumn(result, "data_type")),
+        is_nullable = ifelse(nullable == "Y", "YES", "NO"),
+        stringsAsFactors = FALSE
+      )
+    } else {
+      empty
+    }
+  } else if (handle$target_dialect == "bigquery") {
+    schema_to_use <- .validateIdentifier(
+      schema %||% handle$cdm_schema %||% "", "schema")
+    sql <- .renderSql(handle,
+      "SELECT column_name, data_type, is_nullable
+       FROM `@schema.INFORMATION_SCHEMA.COLUMNS`
+       WHERE table_name = '@table'
+       ORDER BY ordinal_position",
+      schema = schema_to_use, table = table)
+    result <- .metadataQuery(handle, sql)
     if (nrow(result) > 0) {
       data.frame(
-        column_name = tolower(result$COLUMN_NAME),
-        data_type   = tolower(result$DATA_TYPE),
-        is_nullable = ifelse(result$IS_NULLABLE == "Y", "YES", "NO"),
+        column_name = tolower(.metadataResultColumn(result, "column_name")),
+        data_type   = tolower(.metadataResultColumn(result, "data_type")),
+        is_nullable = .metadataResultColumn(result, "is_nullable"),
+        stringsAsFactors = FALSE
+      )
+    } else {
+      empty
+    }
+  } else if (handle$target_dialect == "spark") {
+    schema_to_use <- .validateIdentifier(
+      schema %||% handle$cdm_schema %||% "default", "schema")
+    result <- .metadataQuery(handle, paste0(
+      "DESCRIBE TABLE ", schema_to_use, ".", table))
+    if (nrow(result) > 0L) {
+      column_name <- as.character(.metadataResultColumn(
+        result, c("col_name", "column_name")))
+      data_type <- as.character(.metadataResultColumn(result, "data_type"))
+      keep <- nzchar(trimws(column_name)) & !startsWith(trimws(column_name), "#")
+      data.frame(
+        column_name = tolower(column_name[keep]),
+        data_type = tolower(data_type[keep]),
+        is_nullable = rep(NA_character_, sum(keep)),
         stringsAsFactors = FALSE
       )
     } else {
       empty
     }
   } else {
-    schema_to_use <- schema %||% handle$cdm_schema %||% "public"
+    schema_to_use <- .validateIdentifier(
+      schema %||% handle$cdm_schema %||% "public", "schema")
+    table_to_use <- table
+    if (handle$target_dialect == "snowflake") {
+      schema_to_use <- toupper(schema_to_use)
+      table_to_use <- toupper(table_to_use)
+    }
     sql <- .renderSql(handle,
       "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
        FROM INFORMATION_SCHEMA.COLUMNS
        WHERE TABLE_SCHEMA = '@schema' AND TABLE_NAME = '@table'
        ORDER BY ORDINAL_POSITION",
-      schema = schema_to_use, table = table)
-    result <- DBI::dbGetQuery(conn, sql)
+      schema = schema_to_use, table = table_to_use)
+    result <- .metadataQuery(handle, sql)
     if (nrow(result) > 0) {
       data.frame(
-        column_name = tolower(result$column_name %||% result$COLUMN_NAME),
-        data_type   = tolower(result$data_type %||% result$DATA_TYPE),
-        is_nullable = result$is_nullable %||% result$IS_NULLABLE,
+        column_name = tolower(.metadataResultColumn(result, "column_name")),
+        data_type   = tolower(.metadataResultColumn(result, "data_type")),
+        is_nullable = .metadataResultColumn(result, "is_nullable"),
         stringsAsFactors = FALSE
       )
     } else {
@@ -1558,6 +2126,46 @@
 
 # --- Temp Table Helpers ---
 
+#' Build a temporary-object materialization statement
+#'
+#' @param handle A CDM handle.
+#' @param name Validated temporary object name.
+#' @param select_sql SELECT statement to materialize.
+#' @return SQL string for the backend's session-scoped object.
+#' @keywords internal
+.tempCreateSql <- function(handle, name, select_sql) {
+  support <- .databaseSupportProfile(handle$dbms)
+  switch(support$temporary_materialization,
+    session_view = paste0("CREATE TEMPORARY VIEW ", name, " AS ", select_sql),
+    session_table = if (support$target_dialect == "mysql") {
+      paste0("CREATE TEMPORARY TABLE ", name, " AS ", select_sql)
+    } else {
+      paste0("CREATE TEMP TABLE ", name, " AS ", select_sql)
+    },
+    stop("Session-scoped temporary materialization is not implemented safely ",
+         "for DBMS '", support$dbms, "'. This backend can still use read-only ",
+         "operations that do not require cross-statement temporary objects.",
+         call. = FALSE)
+  )
+}
+
+#' Build the matching DROP statement for an owned temporary object
+#'
+#' @param handle A CDM handle.
+#' @param name Validated temporary object name.
+#' @return SQL string.
+#' @keywords internal
+.tempDropSql <- function(handle, name) {
+  support <- .databaseSupportProfile(handle$dbms)
+  if (identical(support$temporary_materialization, "session_view")) {
+    paste0("DROP VIEW IF EXISTS ", name)
+  } else if (support$target_dialect == "mysql") {
+    paste0("DROP TEMPORARY TABLE IF EXISTS ", name)
+  } else {
+    paste0("DROP TABLE IF EXISTS ", name)
+  }
+}
+
 #' Create a temporary table in the database
 #'
 #' @param handle CDM handle
@@ -1566,10 +2174,68 @@
 #' @return The temp table name
 #' @keywords internal
 .createTempTable <- function(handle, name, select_sql) {
-  sql <- paste0("CREATE TEMP TABLE ", name, " AS ", select_sql)
-  .withDbReconnect(handle, function(conn) DBI::dbExecute(conn, sql))
-  handle$temp_tables <- c(handle$temp_tables, name)
+  name <- .validateIdentifier(name, "temporary table")
+  max_tables <- .omopDisclosureSettings()$max_temp_tables_per_handle
+  sql <- .tempCreateSql(handle, name, select_sql)
+  conn <- .conn(handle)
+  # TEMP objects are owned by one physical DB session. If the resource
+  # reconnected, discard the stale registry before creating anything; never let
+  # a stale name authorize a later DROP against a persistent homonym.
+  if (!is.null(handle$temp_connection) &&
+      !identical(handle$temp_connection, conn)) {
+    handle$temp_tables <- character(0)
+    handle$temp_connection <- NULL
+  }
+  if (name %in% (handle$temp_tables %||% character(0))) {
+    stop("Temporary table name is already owned by this session.",
+         call. = FALSE)
+  }
+  if (length(unique(handle$temp_tables %||% character(0))) >= max_tables) {
+    stop("This OMOP handle has reached its server-owned temporary-table cap (",
+         as.integer(max_tables), "); clean up temporary cohorts/outputs before ",
+         "creating more.", call. = FALSE)
+  }
+  .withDbReconnect(handle, function(active_conn) DBI::dbExecute(active_conn, sql))
+  active_conn <- .conn(handle)
+  # The CREATE itself may have triggered .withDbReconnect(). Any names retained
+  # above belonged to `conn`, not to the replacement session. Clear them before
+  # registering the one object whose CREATE succeeded on `active_conn`; otherwise
+  # a later cleanup could authorize DROP against a persistent homonym there.
+  if (!identical(active_conn, conn)) {
+    handle$temp_tables <- character(0)
+    handle$temp_connection <- NULL
+  }
+  handle$temp_connection <- active_conn
+  handle$temp_tables <- unique(c(handle$temp_tables, name))
   name
+}
+
+#' Reserve a collision-free name for an internal temporary object
+#'
+#' Internal plan/analysis work tables must never DROP or replace an object that
+#' was already owned when the operation began. The preferred base is retained
+#' when free; an owner-registry collision receives a cryptographically random
+#' suffix and the caller must use the returned name.
+#'
+#' @param handle CDM handle.
+#' @param base Preferred internal temporary-table name.
+#' @return A valid name absent from the handle's current ownership registry.
+#' @keywords internal
+.reserveTempTableName <- function(handle, base) {
+  base <- .validateIdentifier(base, "internal temporary table")
+  owned <- unique(handle$temp_tables %||% character(0))
+  if (!base %in% owned) return(base)
+
+  # Keep suffixed names below PostgreSQL's 63-byte identifier limit. Internal
+  # names are ASCII, so character and byte lengths coincide here.
+  stem <- substr(base, 1L, 48L)
+  for (attempt in seq_len(128L)) {
+    suffix <- paste0(format(openssl::rand_bytes(6L)), collapse = "")
+    candidate <- paste0(stem, "_", suffix)
+    if (!candidate %in% owned) return(candidate)
+  }
+  stop("Could not reserve a collision-free internal temporary-table name.",
+       call. = FALSE)
 }
 
 #' Drop a temporary table
@@ -1579,10 +2245,52 @@
 #' @return NULL, called for side effect.
 #' @keywords internal
 .dropTempTable <- function(handle, name) {
-  tryCatch(
-    DBI::dbExecute(.conn(handle), paste0("DROP TABLE IF EXISTS ", name)),
-    error = function(e) NULL
-  )
+  name <- .validateIdentifier(name, "temporary table")
+  owned <- handle$temp_tables %||% character(0)
+  if (!name %in% owned) {
+    return(invisible(NULL))
+  }
+  conn <- .conn(handle)
+  if (is.null(handle$temp_connection) ||
+      !identical(handle$temp_connection, conn)) {
+    # The owning DB session has gone away. Its TEMP tables are already gone;
+    # executing DROP now could delete a persistent table with the same name.
+    handle$temp_tables <- character(0)
+    handle$temp_connection <- NULL
+    return(invisible(NULL))
+  }
+  drop_sql <- .tempDropSql(handle, name)
+  # Keep ownership until the database confirms the DROP.  Forgetting a table
+  # after a failed DROP would make cleanup appear successful, prevent a retry,
+  # and under-count the per-handle temporary-object cap.
+  DBI::dbExecute(conn, drop_sql)
   handle$temp_tables <- setdiff(handle$temp_tables, name)
+  if (length(handle$temp_tables) == 0L) handle$temp_connection <- NULL
+  invisible(NULL)
+}
+
+# Drop every temporary object created after an operation-owned snapshot.
+# Existing objects may be caller-provided cohort scopes and must survive.  Work
+# backwards so dependent views/tables are released in reverse creation order.
+.dropTempTablesCreatedSince <- function(handle, owned_before) {
+  owned_before <- unique(as.character(owned_before %||% character(0)))
+  current <- unique(as.character(handle$temp_tables %||% character(0)))
+  to_drop <- rev(setdiff(current, owned_before))
+  if (length(to_drop) == 0L) return(invisible(NULL))
+
+  failures <- character(0)
+  for (name in to_drop) {
+    tryCatch(
+      .dropTempTable(handle, name),
+      error = function(e) {
+        failures <<- c(failures, paste0(name, ": ", conditionMessage(e)))
+        NULL
+      }
+    )
+  }
+  if (length(failures) > 0L) {
+    stop("Could not release operation-owned temporary objects: ",
+         paste(unique(failures), collapse = "; "), call. = FALSE)
+  }
   invisible(NULL)
 }

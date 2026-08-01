@@ -11,6 +11,10 @@ Named list keyed by tool_id
 }
 \description{
 Each entry declares the tool's result table names, count columns that need
-disclosure control, and sensitive columns that must never be returned.
+disclosure control, sensitive columns that must never be returned, and the
+definition/reference metadata tables, and a reviewed release contract for
+each public table. Metadata classification is descriptive only: an
+allowlisted table with neither a count nor a person-basis column is never
+assumed safe.
 }
 \keyword{internal}

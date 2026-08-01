@@ -1,5 +1,33 @@
 # --- Readable Resource URL Parsing Tests (.parseOmopUrl) ---
 
+test_that("the OMOP resolver unregisters through resourcer's class API", {
+  previous_resolver <- .pkg_state$resolver
+  expect_false(is.null(previous_resolver))
+
+  on.exit({
+    has_omop <- any(vapply(
+      resourcer::getResourceResolvers(), inherits, logical(1),
+      "OMOPResourceResolver"
+    ))
+    if (has_omop) {
+      resourcer::unregisterResourceResolver("OMOPResourceResolver")
+    }
+    resourcer::registerResourceResolver(previous_resolver)
+    .pkg_state$resolver <- previous_resolver
+  }, add = TRUE)
+
+  expect_true(any(vapply(
+    resourcer::getResourceResolvers(), inherits, logical(1),
+    "OMOPResourceResolver"
+  )))
+  expect_silent(.unregisterOMOPResourceResolver())
+  expect_null(.pkg_state$resolver)
+  expect_false(any(vapply(
+    resourcer::getResourceResolvers(), inherits, logical(1),
+    "OMOPResourceResolver"
+  )))
+})
+
 test_that(".parseOmopUrl parses a full server URL", {
   p <- .parseOmopUrl(
     "omop+dbi:postgresql://db.example.org:5432/omop?cdm_schema=cdm&vocabulary_schema=vocab")
@@ -146,6 +174,132 @@ test_that("schema resolution uses the connecting user for Oracle's default", {
     .parseOmopUrl("omop+dbi:oracle://h:1521/ORCL"), identity = "scott"))
   expect_equal(h$cdm_schema, "SCOTT")
   expect_equal(h$vocab_schema, "SCOTT")
+})
+
+test_that("schema overrides are validated before they can reach SQL", {
+  client <- fake_client(
+    .parseOmopUrl("omop+dbi:postgresql://h:5432/omop?cdm_schema=cdm"))
+
+  expect_error(
+    .createHandle(client, cdm_schema = "cdm; DROP TABLE person--"),
+    "Invalid cdm_schema"
+  )
+  expect_error(
+    .createHandle(client, results_schema = "results' OR '1'='1"),
+    "Invalid results_schema"
+  )
+  expect_silent(
+    .createHandle(client, cdm_schema = "catalog.cdm",
+                  vocab_schema = "catalog.vocab")
+  )
+})
+
+test_that(".createHandle closes its resource client when initialization fails", {
+  closed <- 0L
+  client <- fake_client(
+    .parseOmopUrl("omop+dbi:postgresql://h:5432/omop?cdm_schema=cdm"))
+  client$close <- function() {
+    closed <<- closed + 1L
+    invisible(NULL)
+  }
+
+  expect_error(
+    .createHandle(client, cdm_schema = "cdm; invalid"),
+    "Invalid cdm_schema"
+  )
+  expect_equal(closed, 1L)
+})
+
+test_that(".createHandle fails closed when resource cleanup also fails", {
+  client <- fake_client(
+    .parseOmopUrl("omop+dbi:postgresql://h:5432/omop?cdm_schema=cdm"))
+  client$close <- function() stop("close failed")
+
+  expect_error(
+    .createHandle(client, cdm_schema = "cdm; invalid"),
+    "construction failed.*cleanup could not be proven.*close failed"
+  )
+})
+
+test_that("omopInitDS rejects an active resource symbol without touching it", {
+  created <- FALSE
+  old_handle <- new.env(parent = emptyenv())
+  local_mocked_bindings(
+    .createHandle = function(...) {
+      created <<- TRUE
+      stop("must not be called")
+    },
+    .package = "dsOMOP"
+  )
+
+  run <- function() {
+    duplicate_resource <- structure(list(), class = "ResourceClient")
+    key <- ".dsomop_handle_duplicate_resource"
+    assign(key, old_handle, envir = environment())
+    on.exit(rm(list = key, envir = environment()), add = TRUE)
+
+    expect_error(
+      omopInitDS("duplicate_resource"),
+      "already active"
+    )
+    expect_identical(get(key, envir = environment()), old_handle)
+  }
+
+  run()
+  expect_false(created)
+})
+
+test_that("omopInitDS closes a new handle when blueprint construction fails", {
+  closed <- 0L
+  new_handle <- new.env(parent = emptyenv())
+  local_mocked_bindings(
+    .createHandle = function(...) new_handle,
+    .buildBlueprint = function(...) stop("blueprint failed"),
+    .closeHandle = function(handle) {
+      expect_identical(handle, new_handle)
+      closed <<- closed + 1L
+      invisible(NULL)
+    },
+    .package = "dsOMOP"
+  )
+
+  run <- function() {
+    failing_resource <- structure(list(), class = "ResourceClient")
+    key <- ".dsomop_handle_failing_resource"
+    expect_error(omopInitDS("failing_resource"), "blueprint failed")
+    expect_false(exists(key, envir = environment(), inherits = FALSE))
+  }
+
+  run()
+  expect_equal(closed, 1L)
+})
+
+test_that("omopInitDS retains a failed handle when cleanup cannot be proven", {
+  new_handle <- new.env(parent = emptyenv())
+  local_mocked_bindings(
+    .createHandle = function(...) new_handle,
+    .buildBlueprint = function(...) stop("blueprint failed"),
+    .closeHandle = function(...) stop("close failed"),
+    .package = "dsOMOP"
+  )
+
+  run <- function() {
+    retained_resource <- structure(list(), class = "ResourceClient")
+    key <- ".dsomop_handle_retained_resource"
+    on.exit({
+      if (exists(key, envir = environment(), inherits = FALSE)) {
+        rm(list = key, envir = environment())
+      }
+    }, add = TRUE)
+
+    expect_error(
+      omopInitDS("retained_resource"),
+      "cleanup could not be proven.*retained"
+    )
+    expect_identical(get(key, envir = environment()), new_handle)
+  }
+
+  run()
 })
 
 # ===========================================================================
@@ -424,7 +578,7 @@ test_that("dialect aliases resolve correctly", {
   expect_equal(.resolve_target_dialect("sqlserver"), "sql server")
   expect_equal(.resolve_target_dialect("synapse"), "sql server")
   expect_equal(.resolve_target_dialect("pdw"), "sql server")
-  expect_equal(.resolve_target_dialect("duckdb"), "sqlite")
+  expect_equal(.resolve_target_dialect("duckdb"), "duckdb")
   expect_equal(.resolve_target_dialect("databricks"), "spark")
   expect_equal(.resolve_target_dialect("mysql"), "mysql")
   expect_equal(.resolve_target_dialect("mariadb"), "mysql")

@@ -9,7 +9,9 @@ omopAnalysisRunAssignDS(
   name,
   params = list(),
   scope = NULL,
-  combine = "union"
+  combine = "union",
+  date_handling = NULL,
+  ...
 )
 }
 \arguments{
@@ -23,6 +25,13 @@ omopAnalysisRunAssignDS(
 
 \item{combine}{Character; "union" (default) or "intersect" when scope has
 multiple sources}
+
+\item{date_handling}{Date policy for the assigned clinical rows: remove
+(default), relative, binned, or server-authorized absolute.}
+
+\item{...}{Additional scalar cohort references and resolved workspace tables,
+independently and contiguously named \code{scope_cohort_1}, ... and
+\code{scope_table_1}, ... without gaps.}
 }
 \value{
 The server-side assignment result (data stays on the server)

@@ -22,16 +22,19 @@
 \item{chunk_size}{Integer; rows per chunk (default 50000)}
 
 \item{chunk_fn}{Optional function(chunk) applied to each chunk before
-writing. Must return a data.frame with the same columns. Used for
-per-chunk transforms like date handling or type conversion.}
+writing. Must return a data.frame; it may remove sensitive columns. Used
+for per-chunk transforms like date handling, type conversion, and
+identifier sanitization.}
 }
 \value{
-Named list with file path, format, row count, and column names
+Named list with file path, format, row count, column names, and
+  stable storage/class type signatures.
 }
 \description{
 Uses DBI::dbSendQuery + dbFetch(n=chunk_size) to avoid loading the full
-result set into R memory. Peak memory is approximately one chunk (~5MB
-for 50K rows). Falls back to CSV if arrow is not installed.
+result set into R memory. Peak R memory is bounded by one transformed chunk
+plus DBI/Arrow writer buffers and therefore still depends on row width.
+Falls back to CSV if Arrow is not installed.
 }
 \details{
 Strategy: each chunk is written as a separate Parquet file in a temporary

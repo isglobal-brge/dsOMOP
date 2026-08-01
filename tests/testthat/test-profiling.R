@@ -30,8 +30,8 @@ test_that("profileTableStats suppresses small counts", {
 
   withr::with_options(list(nfilter.subset = 3), {
     result <- .profileTableStats(handle, "person", stats = c("rows"))
-    expect_true(is.na(result$rows))
-    expect_true(result$rows_suppressed)
+    expect_null(result$rows)
+    expect_null(result$rows_suppressed)
   })
 })
 
@@ -166,6 +166,95 @@ test_that("profileValueCounts blocks sensitive columns", {
   handle
 }
 
+.replace_profile_measurements <- function(handle, person_id, value, date,
+                                           concept_id = 9990100L) {
+  stopifnot(length(person_id) == length(value), length(value) == length(date))
+  n <- length(value)
+  measurement <- data.frame(
+    measurement_id = seq_len(n), person_id = as.integer(person_id),
+    measurement_concept_id = rep(as.integer(concept_id), n),
+    measurement_date = as.character(date),
+    measurement_type_concept_id = rep(44818702L, n),
+    value_as_number = as.numeric(value), value_as_concept_id = rep(0L, n),
+    unit_concept_id = rep(8840L, n), range_low = rep(4, n),
+    range_high = rep(6, n), visit_occurrence_id = rep(NA_integer_, n),
+    stringsAsFactors = FALSE
+  )
+  DBI::dbExecute(handle$conn, "DELETE FROM measurement")
+  fields <- DBI::dbListFields(handle$conn, "measurement")
+  DBI::dbWriteTable(handle$conn, "measurement",
+                    measurement[, intersect(fields, names(measurement)),
+                                drop = FALSE],
+                    append = TRUE)
+  handle$blueprint <- NULL
+  .buildBlueprint(handle)
+  invisible(handle)
+}
+
+.test_public_numeric_grid <- function(concept_id, breaks,
+                                      concept_col = "measurement_concept_id") {
+  list(
+    table = "measurement", column = "value_as_number",
+    concept_id = concept_id, concept_col = concept_col,
+    lower = breaks[1], upper = breaks[length(breaks)],
+    breaks = as.numeric(breaks), clipping = "winsorize"
+  )
+}
+
+test_that("table stats gate every branch on distinct persons", {
+  handle <- .few_person_many_record_handle(n_persons = 2L,
+                                           recs_per_person = 20L)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3), {
+    result <- .profileTableStats(
+      handle, "measurement", stats = c("rows", "persons", "date_range")
+    )
+    expect_null(result$rows)
+    expect_null(result$rows_suppressed)
+    expect_null(result$persons)
+    expect_null(result$persons_suppressed)
+    expect_null(result$date_range)
+  })
+})
+
+test_that("table date range uses only periods supported by enough persons", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  # Six people clear the table gate, but every month belongs to just one person.
+  .replace_profile_measurements(
+    handle,
+    person_id = rep(1:6, each = 4L),
+    value = seq_len(24L),
+    date = rep(sprintf("2020-%02d-15", 1:6), each = 4L)
+  )
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3), {
+    result <- .profileTableStats(handle, "measurement", stats = "date_range")
+    expect_null(result$date_range)
+  })
+})
+
+test_that("column mean SD and missingness gate distinct contributors", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  # Two people contribute many values; four additional people contribute NULL.
+  # Record counts clear every threshold, distinct value contributors do not.
+  .replace_profile_measurements(
+    handle,
+    person_id = c(rep(1:2, each = 20L), 3:6),
+    value = c(seq_len(40L), rep(NA_real_, 4L)),
+    date = rep("2020-01-15", 44L)
+  )
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.dist = 3), {
+    result <- .profileColumnStats(handle, "measurement", "value_as_number")
+    expect_true(is.na(result$mean))
+    expect_true(is.na(result$sd))
+    # The non-missing complement has only two people, so even though four
+    # people have NULL rows the missing-record count must not be released.
+    expect_true(is.na(result$n_missing))
+  })
+})
+
 test_that("numeric-distribution profilers fail closed on < nfilter persons (many records)", {
   handle <- .few_person_many_record_handle(n_persons = 2L, recs_per_person = 12L,
                                            concept_id = 9990001L)
@@ -212,7 +301,12 @@ test_that("numeric-distribution profilers still return for >= nfilter persons", 
   on.exit(cleanup_handle(handle))
 
   withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
-                           dsomop.nfilter.dist = 3), {
+                           dsomop.nfilter.dist = 3,
+                           dsomop.safe_numeric_grids = list(
+                             .test_public_numeric_grid(
+                               9990002L, c(0, 60, 100)
+                             )
+                           )), {
     expect_type(
       .profileNumericRange(handle, "measurement", "value_as_number",
                            concept_id = 9990002L), "list")
@@ -224,7 +318,7 @@ test_that("numeric-distribution profilers still return for >= nfilter persons", 
                                concept_id = 9990002L), "data.frame")
     expect_type(
       .profileSafeCutpoints(handle, "measurement", "value_as_number",
-                            concept_id = 9990002L), "list")
+                            concept_id = 9990002L, n_bins = 2L), "list")
   })
 })
 
@@ -244,7 +338,7 @@ test_that("profileTableStats bands surviving rows/persons to a multiple of 5", {
     expect_equal(res$rows, 10)
     expect_equal(res$persons, 10)
     expect_equal(res$persons %% 5, 0)
-    expect_false(res$persons_suppressed)
+    expect_null(res$persons_suppressed)
   })
 })
 
@@ -268,7 +362,7 @@ test_that("count gate uses the EXACT count while the report is banded", {
   # Exact 13 >= subset 12 must PASS even though banded(13) = 10 < 12 ...
   withr::with_options(list(nfilter.subset = 12, nfilter.tab = 3), {
     res <- .profileTableStats(handle, "person", stats = c("persons"))
-    expect_false(res$persons_suppressed)
+    expect_null(res$persons_suppressed)
     expect_equal(res$persons, 10)     # reported value is banded, gate is exact
   })
   # ... and exact 13 < subset 14 must BLOCK (proves the gate is not the band).
@@ -295,6 +389,30 @@ test_that("profileConceptPrevalence bands n_persons / n_records", {
   })
 })
 
+test_that("concept prevalence accepts only reviewed concept dimensions", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  DBI::dbExecute(
+    handle$conn,
+    "ALTER TABLE condition_occurrence ADD COLUMN condition_source_concept_id INTEGER"
+  )
+  .buildBlueprint(handle)
+
+  expect_error(
+    .profileConceptPrevalence(
+      handle, "condition_occurrence",
+      concept_col = "condition_source_concept_id"
+    ),
+    "not a valid scope column"
+  )
+  expect_error(
+    .profileConceptPrevalence(
+      handle, "condition_occurrence", concept_col = "provider_id"
+    ),
+    "not found|not a valid scope column"
+  )
+})
+
 test_that("profileValueCounts bands the per-value n / n_persons", {
   handle <- create_test_handle(n_persons = 13)
   on.exit(cleanup_handle(handle))
@@ -308,5 +426,532 @@ test_that("profileValueCounts bands the per-value n / n_persons", {
     if ("n_persons" %in% names(res)) {
       expect_true(all(res$n_persons %% 5 == 0))
     }
+  })
+})
+
+# --- Central profiler column gate --------------------------------------------
+
+test_that("public profilers reject identifiers and sensitive values before SQL", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .buildBlueprint(handle)  # cache metadata so the policy gate needs no query
+  symbol <- paste0("profile_column_gate_", Sys.getpid())
+  .setHandle(symbol, handle)
+  on.exit(.removeHandle(symbol), add = TRUE)
+
+  # Disconnect after caching the blueprint. Matching the policy error below
+  # proves rejection happened before any profiler SQL was attempted.
+  DBI::dbDisconnect(handle$conn)
+
+  identifier_calls <- list(
+    function() omopColumnStatsDS(symbol, "person", "person_id"),
+    function() omopValueCountsDS(symbol, "person", "person_id"),
+    function() omopNumericRangeDS(symbol, "person", "person_id"),
+    function() omopNumericHistogramDS(symbol, "person", "person_id"),
+    function() omopNumericQuantilesDS(symbol, "person", "person_id"),
+    function() omopSafeCutpointsDS(symbol, "person", "person_id"),
+    function() omopValueCountsDS(symbol, "condition_occurrence",
+                                 "visit_occurrence_id"),
+    function() omopCrossTabDS(symbol, "condition_occurrence", "person_id",
+                              "condition_concept_id"),
+    function() omopCrossTabDS(symbol, "condition_occurrence",
+                              "condition_concept_id",
+                              "condition_type_concept_id",
+                              stratify_by = "person_id")
+  )
+  for (call in identifier_calls) {
+    expect_error(call(), "Identifier column.*not permitted for profiling")
+  }
+
+  expect_error(
+    omopNumericRangeDS(symbol, "concept", "concept_name"),
+    "not a numeric measure"
+  )
+  expect_error(
+    omopValueCountsDS(symbol, "measurement", "value_as_number"),
+    "continuous"
+  )
+  expect_error(
+    omopCrossTabDS(symbol, "measurement", "value_as_number",
+                   "measurement_concept_id"),
+    "categorical"
+  )
+  expect_error(
+    omopMissingnessDS(symbol, "observation", columns = "value_as_string"),
+    "blocked.*sensitive"
+  )
+})
+
+test_that("public numeric profilers still accept a clinical numeric measure", {
+  handle <- .few_person_many_record_handle(
+    n_persons = 6L, recs_per_person = 4L, concept_id = 9990003L
+  )
+  on.exit(cleanup_handle(handle), add = TRUE)
+  symbol <- paste0("profile_numeric_valid_", Sys.getpid())
+  .setHandle(symbol, handle)
+  on.exit(.removeHandle(symbol), add = TRUE)
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.dist = 3,
+                           dsomop.safe_numeric_grids = list(
+                             .test_public_numeric_grid(
+                               9990003L, c(0, 60, 100)
+                             )
+                           )), {
+    expect_type(
+      omopNumericRangeDS(symbol, "measurement", "value_as_number",
+                         concept_id = 9990003L),
+      "list"
+    )
+    expect_s3_class(
+      omopNumericHistogramDS(symbol, "measurement", "value_as_number",
+                             concept_id = 9990003L),
+      "data.frame"
+    )
+    expect_s3_class(
+      omopNumericQuantilesDS(symbol, "measurement", "value_as_number",
+                             concept_id = 9990003L),
+      "data.frame"
+    )
+    expect_type(
+      omopSafeCutpointsDS(symbol, "measurement", "value_as_number",
+                          concept_id = 9990003L, n_bins = 2L),
+      "list"
+    )
+    stats <- omopColumnStatsDS(symbol, "measurement", "value_as_number",
+                               concept_id = 9990003L)
+    expect_true(is.numeric(stats$mean))
+  })
+})
+
+test_that("numeric histogram rejects malformed or injectable breaks", {
+  handle <- .few_person_many_record_handle(
+    n_persons = 6L, recs_per_person = 4L, concept_id = 9990004L
+  )
+  on.exit(cleanup_handle(handle), add = TRUE)
+
+  bad_breaks <- list(
+    c("0", "1); DROP TABLE person; --"),
+    c(0, NA_real_, 2),
+    c(0, Inf, 2),
+    c(0, 2, 1),
+    c(0, 1, 1)
+  )
+  for (candidate in bad_breaks) {
+    expect_error(
+      .profileNumericHistogram(handle, "measurement", "value_as_number",
+                               breaks = candidate,
+                               concept_id = 9990004L),
+      "finite, strictly increasing numeric"
+    )
+  }
+  expect_error(
+    .profileNumericHistogram(handle, "measurement", "value_as_number",
+                             bins = 2.5, concept_id = 9990004L),
+    "one integer"
+  )
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.dist = 3), {
+    result <- .profileNumericHistogram(
+      handle, "measurement", "value_as_number",
+      breaks = c(0, 10, 30), concept_id = 9990004L
+    )
+    expect_s3_class(result, "data.frame")
+  })
+})
+
+test_that("safe cutpoints use one contribution per person and a public grid", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  # One person's 50 repeated extreme records must still contribute to only one
+  # configured-grid cell after the person-level collapse.
+  .replace_profile_measurements(
+    handle,
+    person_id = c(seq_len(14), rep(15L, 50L)),
+    value = c(10:23, rep(999, 50L)),
+    date = rep("2020-01-15", 64L)
+  )
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.dist = 10,
+                           dsomop.nfilter.band = 5,
+                           dsomop.safe_numeric_grids = list(
+                             .test_public_numeric_grid(
+                               9990100L,
+                               c(0, 12.5, 15.5, 18.5, 21.5, 1000)
+                             )
+                           )), {
+    result <- .profileSafeCutpoints(handle, "measurement", "value_as_number",
+                                    concept_id = 9990100L, n_bins = 5L)
+    expect_equal(result$breaks,
+                 c(0, 12.5, 15.5, 18.5, 21.5, 1000))
+    expect_identical(result$grid$clipping, "winsorize")
+    expect_identical(result$grid$source, "server_configured_public_grid")
+    expect_true(all(result$counts %% 5 == 0))
+    expect_lte(sum(result$counts), 15)
+  })
+})
+
+test_that("safe cutpoints reject a public grid with an under-supported bin", {
+  handle <- .few_person_many_record_handle(n_persons = 5L,
+                                           recs_per_person = 20L)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.dist = 3,
+                           dsomop.safe_numeric_grids = list(
+                             .test_public_numeric_grid(
+                               NULL, c(0, 100, 200), concept_col = NULL
+                             )
+                           )), {
+    expect_error(
+      .profileSafeCutpoints(handle, "measurement", "value_as_number",
+                            n_bins = 2L),
+      "not supported by enough individuals"
+    )
+    expect_length(handle$safe_numeric_bins %||% list(), 0L)
+  })
+})
+
+test_that("safe cutpoints fail closed without a server-configured public grid", {
+  handle <- .few_person_many_record_handle(
+    n_persons = 6L, recs_per_person = 4L, concept_id = 9990200L
+  )
+  on.exit(cleanup_handle(handle), add = TRUE)
+  withr::with_options(list(
+    nfilter.subset = 3, nfilter.tab = 3, dsomop.nfilter.dist = 3,
+    dsomop.safe_numeric_grids = list(),
+    default.dsomop.safe_numeric_grids = list()
+  ), {
+    expect_error(
+      .profileSafeCutpoints(
+        handle, "measurement", "value_as_number",
+        concept_id = 9990200L, n_bins = 2L
+      ),
+      "server administrator must configure a public numeric grid"
+    )
+    expect_length(handle$safe_numeric_bins %||% list(), 0L)
+  })
+})
+
+test_that("omitted grid concept_col means the domain column, not a wildcard", {
+  handle <- .few_person_many_record_handle(
+    n_persons = 6L, recs_per_person = 4L, concept_id = 9990203L
+  )
+  on.exit(cleanup_handle(handle), add = TRUE)
+  default_grid <- .test_public_numeric_grid(9990203L, c(0, 60, 100))
+  default_grid$concept_col <- NULL
+
+  withr::with_options(list(
+    nfilter.subset = 3, nfilter.tab = 3, dsomop.nfilter.dist = 3,
+    dsomop.safe_numeric_grids = list(default_grid)
+  ), {
+    result <- .profileSafeCutpoints(
+      handle, "measurement", "value_as_number",
+      concept_id = 9990203L, n_bins = 2L
+    )
+    expect_equal(result$breaks, c(0, 60, 100))
+    expect_identical(result$contract$concept_col,
+                     "measurement_concept_id")
+  })
+
+  override_grid <- .test_public_numeric_grid(8840L, c(0, 60, 100))
+  override_grid$concept_col <- NULL
+  withr::with_options(list(
+    nfilter.subset = 3, nfilter.tab = 3, dsomop.nfilter.dist = 3,
+    dsomop.safe_numeric_grids = list(override_grid)
+  ), {
+    expect_error(
+      .profileSafeCutpoints(
+        handle, "measurement", "value_as_number", concept_id = 8840L,
+        concept_col = "unit_concept_id", n_bins = 2L
+      ),
+      "configure an exact public numeric grid"
+    )
+  })
+})
+
+test_that("safe cutpoint edges are independent of protected observations", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  public_breaks <- c(0, 50, 100)
+  grid <- .test_public_numeric_grid(9990201L, public_breaks)
+
+  run_cuts <- function(values) {
+    .replace_profile_measurements(
+      handle, person_id = seq_along(values), value = values,
+      date = rep("2020-01-15", length(values)), concept_id = 9990201L
+    )
+    .profileSafeCutpoints(
+      handle, "measurement", "value_as_number",
+      concept_id = 9990201L, n_bins = 2L
+    )
+  }
+
+  withr::with_options(list(
+    nfilter.subset = 3, nfilter.tab = 3, dsomop.nfilter.dist = 3,
+    dsomop.nfilter.band = 1,
+    dsomop.safe_numeric_grids = list(grid)
+  ), {
+    first <- run_cuts(c(1, 2, 3, 101, 102, 103))
+    second <- run_cuts(c(-999, -998, -997, 90, 91, 92))
+    expect_equal(first$breaks, public_breaks)
+    expect_equal(second$breaks, public_breaks)
+    expect_equal(first$counts, c(3, 3))
+    expect_equal(second$counts, c(3, 3))
+    expect_equal(first$grid[c("lower", "upper", "clipping")],
+                 list(lower = 0, upper = 100, clipping = "winsorize"))
+  })
+})
+
+test_that("malformed public grids and internal contracts fail closed", {
+  handle <- .few_person_many_record_handle(
+    n_persons = 6L, recs_per_person = 4L, concept_id = 9990202L
+  )
+  on.exit(cleanup_handle(handle), add = TRUE)
+  malformed <- .test_public_numeric_grid(9990202L, c(0, 50, 100))
+  malformed$lower <- "0; DROP TABLE person; --"
+
+  withr::with_options(list(
+    nfilter.subset = 3, nfilter.tab = 3, dsomop.nfilter.dist = 3,
+    dsomop.safe_numeric_grids = list(malformed)
+  ), {
+    expect_error(
+      .profileSafeCutpoints(
+        handle, "measurement", "value_as_number",
+        concept_id = 9990202L, n_bins = 2L
+      ),
+      "Invalid server option"
+    )
+  })
+  expect_true(DBI::dbExistsTable(handle$conn, "person"))
+  expect_error(
+    .rememberSafeNumericBins(
+      handle, list(table = "measurement", column = "value_as_number",
+                   concept_id = 9990202L,
+                   concept_col = "measurement_concept_id", n_bins = 2L),
+      breaks = c(0, NA_real_, 100)
+    ),
+    "Invalid internal safe numeric-bin contract"
+  )
+  expect_length(handle$safe_numeric_bins %||% list(), 0L)
+})
+
+test_that("numeric range and histogram release only banded counts", {
+  handle <- .few_person_many_record_handle(n_persons = 11L,
+                                           recs_per_person = 4L,
+                                           concept_id = 9990101L)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.dist = 3,
+                           dsomop.nfilter.band = 5), {
+    range <- .profileNumericRange(handle, "measurement", "value_as_number",
+                                  concept_id = 9990101L)
+    expect_equal(range$n_total, 10)
+
+    below_dist <- withr::with_options(list(dsomop.nfilter.dist = 30), {
+      .profileNumericRange(handle, "measurement", "value_as_number",
+                           concept_id = 9990101L)
+    })
+    expect_true(is.na(below_dist$p05) && is.na(below_dist$p95))
+    expect_equal(below_dist$n_total, 10)
+
+    histogram <- .profileNumericHistogram(
+      handle, "measurement", "value_as_number", breaks = c(49, 72, 100),
+      concept_id = 9990101L
+    )
+    expect_equal(histogram$count, c(5, 5))
+    expect_true(all(histogram$count %% 5 == 0))
+  })
+})
+
+test_that("numeric distributions default to one value per person with protected tails", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .replace_profile_measurements(
+    handle,
+    person_id = c(seq_len(14), rep(15L, 50L)),
+    value = c(10:23, rep(999, 50L)),
+    date = rep("2020-01-15", 64L), concept_id = 9990102L
+  )
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.dist = 10,
+                           dsomop.nfilter.band = 5), {
+    range <- .profileNumericRange(
+      handle, "measurement", "value_as_number", concept_id = 9990102L
+    )
+    expect_gt(range$p05, 10)
+    expect_lt(range$p95, 999)
+    expect_equal(range$n_total, 15)
+
+    quantiles <- .profileNumericQuantiles(
+      handle, "measurement", "value_as_number", probs = c(0.05, 0.95),
+      concept_id = 9990102L
+    )
+    expect_gt(quantiles$value[1], 10)
+    expect_lt(quantiles$value[2], 999)
+
+    histogram <- .profileNumericHistogram(
+      handle, "measurement", "value_as_number", breaks = c(0, 100, 1000),
+      concept_id = 9990102L
+    )
+    expect_equal(nrow(histogram), 1L)
+    expect_equal(histogram$count, 10)
+
+    expect_error(
+      .profileNumericRange(
+        handle, "measurement", "value_as_number", concept_id = 9990102L,
+        unit = "record"
+      ),
+      "multiple scoped records"
+    )
+  })
+})
+
+test_that("recurrent cohort membership does not multiply profiling records", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .replace_profile_measurements(
+    handle, person_id = 1:6, value = 1:6,
+    date = rep("2020-01-15", 6L), concept_id = 9990103L
+  )
+  recurrent <- data.frame(
+    subject_id = rep(1:6, each = 3L),
+    cohort_start_date = rep(c("2018-01-01", "2019-01-01", "2020-01-01"), 6L),
+    cohort_end_date = rep(c("2018-12-31", "2019-12-31", "2020-12-31"), 6L)
+  )
+  DBI::dbWriteTable(handle$conn, "recurrent_profile_cohort", recurrent,
+                    overwrite = TRUE)
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           nfilter.levels.density = 1,
+                           dsomop.nfilter.band = 5), {
+    result <- .profileValueCounts(
+      handle, "measurement", "measurement_concept_id",
+      cohort_table = "recurrent_profile_cohort"
+    )
+    expect_equal(result$n, 5)
+    expect_equal(result$n_persons, 5)
+  })
+})
+
+test_that("concept drilldown inherits person-unit distributions and safe ratios", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .replace_profile_measurements(
+    handle,
+    person_id = c(rep(1L, 50L), 2:15),
+    value = c(rep(999, 50L), 10:23),
+    date = rep("2020-01-15", 64L), concept_id = 9990104L
+  )
+  DBI::dbExecute(
+    handle$conn,
+    "UPDATE measurement SET range_low = NULL WHERE person_id >= 3"
+  )
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.dist = 10,
+                           dsomop.nfilter.band = 5), {
+    result <- .profileConceptDrilldown(handle, "measurement", 9990104L)
+    expect_equal(
+      result$summary$records_per_person_mean,
+      result$summary$n_records / result$summary$n_persons
+    )
+    expect_true(is.na(result$summary$pct_persons_multi))
+    expect_gt(result$numeric_summary$quantiles$value[1], 10)
+    expect_lt(tail(result$numeric_summary$quantiles$value, 1), 999)
+    if (nrow(result$numeric_summary$histogram) > 0L) {
+      expect_true(all(result$numeric_summary$histogram$count %% 5 == 0))
+    }
+    range_low <- result$missingness[
+      result$missingness$column_name == "range_low", "missing_rate"
+    ]
+    expect_true(is.na(range_low))
+  })
+})
+
+test_that("date counts gate each period on persons and band released counts", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .replace_profile_measurements(
+    handle,
+    person_id = c(rep(1L, 20L), 2:7),
+    value = seq_len(26L),
+    date = c(rep("2018-01-15", 20L), rep("2019-01-15", 6L))
+  )
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.band = 5), {
+    result <- .profileDateCounts(handle, "measurement", granularity = "year")
+    expect_false("2018" %in% result$period)
+    expect_equal(result$period, "2019")
+    expect_equal(result$n_records, 5)
+    expect_equal(result$n_persons, 5)
+  })
+})
+
+test_that("date counts require an OMOP date column and a closed window", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .buildBlueprint(handle)
+
+  expect_error(
+    .profileDateCounts(handle, "measurement", date_col = "value_as_number"),
+    "not a declared OMOP date field"
+  )
+  expect_error(
+    .profileDateCounts(
+      handle, "measurement", window = list(start = "2020-01-01")
+    ),
+    "require both start and end"
+  )
+})
+
+test_that("public date counts rejects an unowned named cohort scope", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  symbol <- paste0("date_counts_scope_", Sys.getpid())
+  .setHandle(symbol, handle)
+  on.exit(.removeHandle(symbol), add = TRUE)
+
+  expect_error(
+    omopDateCountsDS(symbol, "measurement", cohort_table = "person"),
+    "temporary cohorts created by this handle"
+  )
+  expect_true(DBI::dbExistsTable(handle$conn, "person"))
+})
+
+test_that("numeric quantile and profiling-window inputs fail closed", {
+  handle <- .few_person_many_record_handle(n_persons = 10L,
+                                           recs_per_person = 2L)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  bad_probs <- list(c(0.5, 0.5), c(0.01, 0.5), c(0.5, Inf), seq(0.1, 0.9, 0.08))
+  for (probs in bad_probs) {
+    expect_error(
+      .profileNumericQuantiles(handle, "measurement", "value_as_number",
+                               probs = probs),
+      "unique finite probabilities"
+    )
+  }
+  expect_error(
+    .profileNumericQuantiles(handle, "measurement", "value_as_number",
+                             rounding = 2.5),
+    "rounding must be one integer"
+  )
+  expect_error(
+    .profileNumericRange(
+      handle, "measurement", "value_as_number",
+      window = list(start = "2020-01-01' OR 1=1 --", end = "2020-12-31")
+    ),
+    "ISO date"
+  )
+  withr::with_options(list(dsomop.nfilter.date_range = 30), {
+    expect_error(
+      .profileDateCounts(
+        handle, "measurement",
+        window = list(start = "2020-01-01", end = "2020-01-10")
+      ),
+      "span at least 30 days"
+    )
   })
 })

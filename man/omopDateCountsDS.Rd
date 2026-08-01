@@ -10,7 +10,8 @@ omopDateCountsDS(
   date_col = NULL,
   granularity = "year",
   cohort_table = NULL,
-  window = NULL
+  window = NULL,
+  cohort = NULL
 )
 }
 \arguments{
@@ -25,6 +26,9 @@ omopDateCountsDS(
 \item{cohort_table}{Character; cohort temp table for filtering (NULL)}
 
 \item{window}{List with start/end dates for filtering (NULL)}
+
+\item{cohort}{Cohort scope: a cohort temp table name, a cohort_definition_id,
+or NULL. Takes precedence over \code{cohort_table}.}
 }
 \value{
 Data frame with period, n_records, suppressed

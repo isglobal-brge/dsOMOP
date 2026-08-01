@@ -4,12 +4,16 @@
 \alias{.pseudonymizeIdentifiers}
 \title{Pseudonymize/strip row-level identifiers before DataSHIELD assignment}
 \usage{
-.pseudonymizeIdentifiers(x, key)
+.pseudonymizeIdentifiers(x, key, pseudonymization = NULL)
 }
 \arguments{
 \item{x}{Data frame or list to sanitize. Operates recursively on lists.}
 
 \item{key}{Raw vector; the per-resource secret key (\code{handle$person_key}).}
+
+\item{pseudonymization}{Public, non-secret key contract returned by
+\code{\link{.personKeyPublicContract}}. It is required for person-bearing
+frames and is persisted as the \code{dsomop_pseudonymization} attribute.}
 }
 \value{
 Sanitized object: person/subject keys pseudonymized, other

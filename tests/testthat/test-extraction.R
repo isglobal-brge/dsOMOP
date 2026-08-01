@@ -19,6 +19,31 @@ test_that("compileSelect applies concept filter", {
   expect_true(grepl("IN", sql))
 })
 
+test_that("compileSelect caps raw concept filters and chunks portable IN lists", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  withr::local_options(list(dsomop.max_filter_values = 1001L))
+  sql <- .compileSelect(
+    handle, "condition_occurrence",
+    concept_filter = seq_len(1001L), person_ids = seq_len(1001L)
+  )
+  concept_hits <- gregexpr("condition_concept_id IN (", sql, fixed = TRUE)[[1L]]
+  person_hits <- gregexpr("person_id IN (", sql, fixed = TRUE)[[1L]]
+  expect_gte(sum(concept_hits > 0L), 2L)
+  expect_gte(sum(person_hits > 0L), 2L)
+  expect_match(sql, " OR ", fixed = TRUE)
+
+  withr::local_options(list(dsomop.max_filter_values = 3L))
+  expect_error(
+    .compileSelect(
+      handle, "condition_occurrence", concept_filter = c(1L, 1L, 1L, 1L)
+    ),
+    "max_filter_values"
+  )
+})
+
 test_that("compileSelect blocks sensitive columns", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
@@ -61,7 +86,8 @@ test_that("compileSelect applies time window", {
                          time_window = list(start_date = "2020-01-01",
                                             end_date = "2022-12-31"))
   expect_true(grepl("2020-01-01", sql))
-  expect_true(grepl("2022-12-31", sql))
+  expect_true(grepl("t.condition_start_date < '2023-01-01'", sql,
+                    fixed = TRUE))
 })
 
 test_that("compileSelect applies column filter", {
@@ -189,7 +215,75 @@ test_that("compileTemporalWhere generates calendar filter", {
                                   "condition_start_date")
   expect_length(where, 2)
   expect_true(any(grepl("2020-01-01", where)))
-  expect_true(any(grepl("2023-12-31", where)))
+  expect_true(any(grepl("t.condition_start_date < '2024-01-01'", where,
+                        fixed = TRUE)))
+})
+
+test_that("calendar windows reject injection, invalid dates, and reversed ranges", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  expect_error(
+    .compileTemporalWhere(handle,
+      list(calendar = list(start = "2020-01-01' OR 1=1 --")),
+      "t", "condition_start_date"),
+    "ISO date"
+  )
+  expect_error(
+    .compileTemporalWhere(handle,
+      list(calendar = list(start = "2020-02-30")),
+      "t", "condition_start_date"),
+    "valid date"
+  )
+  expect_error(
+    .compileTemporalWhere(handle,
+      list(calendar = list(start = "2021-01-01", end = "2020-01-01")),
+      "t", "condition_start_date"),
+    "start must not be after end"
+  )
+  expect_error(
+    .compileTemporalWhere(handle,
+      list(calendar = list(start = "2020-01-01")), "t", NULL),
+    "no usable date column"
+  )
+  withr::with_options(list(nfilter.subset = 3), {
+    expect_error(
+      .compileTemporalWhere(handle,
+        list(calendar = list(start = "2020-01-01", end = "2020-01-15")),
+        "t", "condition_start_date"),
+      "at least 30 days"
+    )
+  })
+})
+
+test_that("compileSelect validates time_window dates and disclosure width", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  expect_error(
+    .compileSelect(handle, "measurement", time_window = list(
+      date_column = "measurement_date", start_date = "2020-02-30")),
+    "valid date"
+  )
+  withr::with_options(list(nfilter.subset = 3), {
+    expect_error(
+      .compileSelect(handle, "measurement", time_window = list(
+        date_column = "measurement_date", start_date = "2020-01-01",
+        end_date = "2020-01-15")),
+      "at least 30 days"
+    )
+  })
+})
+
+test_that("date widths are inclusive and use the server policy", {
+  withr::with_options(list(nfilter.subset = 3,
+                           dsomop.nfilter.date_range = 30), {
+    expect_silent(.validateDateBounds("2024-01-01", "2024-01-30", "window"))
+    expect_error(
+      .validateDateBounds("2024-01-01", "2024-01-29", "window"),
+      "at least 30 days"
+    )
+  })
 })
 
 test_that("compileTemporalWhere generates index window filter", {
@@ -204,6 +298,7 @@ test_that("compileTemporalWhere generates index window filter", {
                                   "condition_start_date")
   expect_length(where, 2)
   expect_true(any(grepl("cohort_start_date", where)))
+  expect_true(any(grepl("condition_start_date <", where, fixed = TRUE)))
 })
 
 test_that("compileTemporalWhere returns empty for NULL temporal", {
@@ -214,6 +309,167 @@ test_that("compileTemporalWhere returns empty for NULL temporal", {
   where <- .compileTemporalWhere(handle, NULL, "t",
                                   "condition_start_date")
   expect_length(where, 0)
+})
+
+test_that("temporal and time_window grammars reject ignored fields", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  expect_error(
+    .compileTemporalWhere(handle,
+      list(calender = list(start = "2020-01-01")),
+      "t", "condition_start_date"),
+    "Unknown temporal field"
+  )
+  expect_error(
+    .wrapEventSelect(handle, "SELECT 1",
+      list(event_select = list(order = "first", n = 1L, ties = "all")),
+      "condition_start_date"),
+    "event_select field"
+  )
+  expect_equal(
+    .compileTemporalWhere(handle, list(min_gap = 30L),
+                          "t", "condition_start_date"),
+    "t.condition_start_date IS NOT NULL"
+  )
+  expect_error(
+    .compileSelect(handle, "measurement",
+      time_window = list(start = "2020-01-01", end = "2020-12-31")),
+    "Unknown time_window field"
+  )
+})
+
+test_that("wide refuses arbitrary first rows for duplicate person-concept keys", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  df <- data.frame(
+    person_id = c(1L, 1L),
+    measurement_concept_id = c(3004410L, 3004410L),
+    value_as_number = c(7.2, 8.1)
+  )
+  expect_error(
+    .toWide(df, "measurement", handle),
+    "at most one row per person and concept"
+  )
+})
+
+test_that("wide never embeds OMOP row identifiers in generated columns", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  df <- data.frame(
+    measurement_id = c(101L, 102L),
+    person_id = c(1L, 2L),
+    measurement_concept_id = c(3004410L, 3004410L),
+    visit_occurrence_id = c(201L, 202L),
+    value_as_number = c(7.2, 8.1)
+  )
+
+  wide <- .toWide(df, "measurement", handle)
+
+  expect_false(any(grepl("measurement_id|visit_occurrence_id",
+                         names(wide), fixed = FALSE)))
+  expect_true(any(grepl("value_as_number$", names(wide))))
+})
+
+test_that("concept-only wide projections encode presence without raw rows", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  df <- data.frame(
+    measurement_id = c(101L, 102L),
+    person_id = c(1L, 2L),
+    measurement_concept_id = c(3004410L, 3004410L)
+  )
+
+  wide <- .toWide(df, "measurement", handle)
+
+  expect_equal(nrow(wide), 2L)
+  expect_false(any(grepl("measurement_id", names(wide), fixed = TRUE)))
+  presence <- setdiff(names(wide), "person_id")
+  expect_length(presence, 1L)
+  expect_true(all(wide[[presence]] == 1L))
+})
+
+test_that("closed wide concept sets have stable columns when a concept is absent", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  df <- data.frame(
+    person_id = 1L,
+    measurement_concept_id = 3004410L,
+    value_as_number = 7.2
+  )
+  roster <- data.frame(person_id = c(1L, 2L))
+
+  wide <- .toWide(
+    df, "measurement", handle, translate_concepts = FALSE,
+    roster = roster, expected_concepts = c(3004410L, 3025315L)
+  )
+
+  expect_true(any(grepl("3004410", names(wide), fixed = TRUE)))
+  absent <- grep("3025315", names(wide), fixed = TRUE, value = TRUE)
+  expect_length(absent, 1L)
+  expect_true(all(is.na(wide[[absent]])))
+  expect_error(
+    .toWide(df, "measurement", handle,
+            expected_concepts = 3025315L),
+    "outside the declared concept set"
+  )
+})
+
+test_that("wide and feature reshapes enforce server width caps", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+  df <- data.frame(
+    person_id = c(1L, 2L),
+    measurement_concept_id = c(3004410L, 3025315L),
+    value_as_number = c(7.2, 80)
+  )
+
+  expect_error(
+    withr::with_options(list(dsomop.max_pivot_concepts = 1L),
+      .toWide(df, "measurement", handle)),
+    "concept cap"
+  )
+  expect_error(
+    withr::with_options(list(dsomop.max_output_columns = 2L),
+      .toWide(
+        transform(df[1, , drop = FALSE], range_low = 1),
+        "measurement", handle
+      )),
+    "would create"
+  )
+  expect_error(
+    withr::with_options(list(dsomop.max_feature_specs = 1L),
+      .extractTable(
+        handle, "measurement", representation = "features",
+        feature_specs = list(
+          a = list(type = "count", name = "a", concept_set = 3004410L),
+          b = list(type = "count", name = "b", concept_set = 3025315L)
+        ), translate_concepts = FALSE
+      )),
+    "server cap"
+  )
+})
+
+test_that("feature-level time windows use days_from_index or fail explicitly", {
+  df <- data.frame(
+    person_id = c(1L, 1L, 2L),
+    measurement_concept_id = rep(3004410L, 3),
+    days_from_index = c(-100L, -10L, -20L),
+    value_as_number = c(6, 7, 8)
+  )
+  specs <- list(recent = list(
+    type = "count", name = "recent", concept_set = 3004410L,
+    time_window = list(start = -30L, end = 0L)
+  ))
+  result <- .toFeatures(df, "measurement", specs)
+  expect_equal(result$recent[match(c(1L, 2L), result$person_id)], c(1L, 1L))
+
+  expect_error(
+    .toFeatures(df[, setdiff(names(df), "days_from_index")],
+                "measurement", specs),
+    "requires days_from_index"
+  )
 })
 
 test_that("wrapEventSelect wraps query with ROW_NUMBER CTE", {
@@ -243,6 +499,62 @@ test_that("wrapEventSelect with last order uses DESC", {
   expect_true(grepl("DESC", result))
 })
 
+test_that("event_select can partition independently by concept", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  temporal <- list(
+    event_select = list(order = "first", n = 1L, by = "concept")
+  )
+  sql <- .wrapEventSelect(
+    handle, "SELECT * FROM condition_occurrence", temporal,
+    "condition_start_date"
+  )
+  expect_match(
+    sql,
+    "PARTITION BY person_id, dsomop_event_partition_concept",
+    fixed = TRUE
+  )
+
+  withr::local_options(list(nfilter.subset = 3))
+  result <- .extractTable(
+    handle,
+    table = "condition_occurrence",
+    columns = c("condition_concept_id", "condition_start_date"),
+    translate_concepts = FALSE,
+    representation = "long",
+    temporal = temporal,
+    date_handling = list(mode = "remove")
+  )
+  cells <- table(result$person_id, result$condition_concept_id)
+  expect_lte(max(cells), 1L)
+  expect_gte(sum(rowSums(cells) >= 2L), 3L)
+  expect_false("dsomop_event_partition_concept" %in% names(result))
+})
+
+test_that("event_select orders by a private date when projection omits dates", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  withr::local_options(list(nfilter.subset = 3))
+  result <- .extractTable(
+    handle,
+    table = "condition_occurrence",
+    columns = "condition_concept_id",
+    translate_concepts = FALSE,
+    representation = "long",
+    temporal = list(event_select = list(order = "first", n = 1L)),
+    date_handling = list(mode = "remove")
+  )
+
+  expect_gt(nrow(result), 0L)
+  expect_lte(max(table(result$person_id)), 1L)
+  expect_false(any(c(
+    "condition_start_date", "dsomop_event_order_date",
+    "dsomop_event_order_id", "rn"
+  ) %in% names(result)))
+})
+
 test_that("applyDateHandling relative converts dates to integers", {
   df <- data.frame(
     person_id = c(1, 2),
@@ -268,6 +580,21 @@ test_that("applyDateHandling binned truncates dates by month", {
   expect_equal(result$condition_start_date, "2020-03-01")
 })
 
+test_that("datetime conversion uses the controller timezone deterministically", {
+  instant <- as.POSIXct("2020-12-31 23:30:00", tz = "America/New_York")
+  df <- data.frame(person_id = 1L, event_datetime = instant)
+  withr::with_options(list(dsomop.datetime_timezone = "America/New_York"), {
+    local <- .applyDateHandling(
+      df, list(mode = "binned", bin_width = "month"))
+    expect_identical(local$event_datetime, "2020-12-01")
+  })
+  withr::with_options(list(dsomop.datetime_timezone = "UTC"), {
+    utc <- .applyDateHandling(
+      df, list(mode = "binned", bin_width = "month"))
+    expect_identical(utc$event_datetime, "2021-01-01")
+  })
+})
+
 test_that("applyDateHandling remove drops date columns", {
   df <- data.frame(
     person_id = 1,
@@ -282,6 +609,40 @@ test_that("applyDateHandling remove drops date columns", {
   expect_false("condition_end_date" %in% names(result))
   expect_true("person_id" %in% names(result))
   expect_true("value" %in% names(result))
+})
+
+test_that("date handling fails closed for unsafe or incomplete specifications", {
+  df <- data.frame(
+    person_id = 1L,
+    cohort_start_date = as.Date("2020-01-01"),
+    condition_start_date = as.Date("2020-02-01")
+  )
+
+  expect_error(.normalizeDateHandling("invented"), "Unknown")
+  expect_error(.normalizeDateHandling(list(mode = "remove", ignored = TRUE)),
+               "Unknown date_handling")
+  expect_error(.normalizeDateHandling(list(mode = "relative",
+                                           reference = "today")),
+               "reference must be 'index'")
+  expect_error(.normalizeDateHandling(list(mode = "remove",
+                                           bin_width = "month")),
+               "only valid for binned")
+  expect_error(
+    .applyDateHandling(df[, c("person_id", "condition_start_date")],
+                       list(mode = "relative")),
+    "requires an index date"
+  )
+  expect_error(
+    .normalizeDateHandling(list(mode = "binned", bin_width = "day")),
+    "year, month, or week"
+  )
+  withr::with_options(list(dsomop.allow_absolute_dates = FALSE), {
+    expect_error(
+      .applyDateHandling(df,
+        list(mode = "remove", date_columns = "condition_start_date")),
+      "omits date column"
+    )
+  })
 })
 
 # === New feature types via .toFeatures() ===
@@ -569,24 +930,45 @@ test_that("HFRS weighted scoring produces expected scores", {
   expect_equal(result1$score[result1$person_id == 1], 0)
 })
 
-test_that("DCSI/HFRS graceful fallback when concept_relationship is empty", {
+test_that("FeatureExtraction ancestor sets include descendant-only records", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  dsOMOP:::.buildBlueprint(handle)
+  testthat::local_mocked_bindings(
+    .vocabGetDescendants = function(handle, ancestor_ids,
+                                    include_self = TRUE) {
+      ids <- as.integer(ancestor_ids)
+      data.frame(concept_id = if (201820L %in% ids) 317009L else integer(0))
+    },
+    .package = "dsOMOP"
+  )
+
+  # Person 2 carries only fixture concept 317009. Treating it as a descendant
+  # of diabetes ancestor 201820 proves the score consumes the expanded set.
+  result <- dsOMOP:::.computeComorbidityScore(handle, "charlson", 2L)
+  expect_equal(result$score, 1L)
+  expect_identical(attr(result, "score_meta")$matching,
+                   "concept_ancestor_expanded")
+})
+
+test_that("DCSI/HFRS fail closed when concept_relationship is empty", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   # Delete all concept_relationship rows to simulate missing vocab
   DBI::dbExecute(handle$conn, "DELETE FROM concept_relationship")
   dsOMOP:::.buildBlueprint(handle)
 
-  result <- suppressWarnings(
-    dsOMOP:::.computeComorbidityScore(handle, "dcsi", c(1L, 5L)))
-  expect_equal(nrow(result), 2)
-  expect_true(all(result$score == 0))
+  expect_error(
+    dsOMOP:::.computeComorbidityScore(handle, "dcsi", c(1L, 5L)),
+    "misleading all-zero"
+  )
 
   # Reset cache so HFRS also triggers resolution
   handle$resolved_hfrs <- NULL
-  result_hfrs <- suppressWarnings(
-    dsOMOP:::.computeComorbidityScore(handle, "hfrs", c(3L, 9L)))
-  expect_equal(nrow(result_hfrs), 2)
-  expect_true(all(result_hfrs$score == 0))
+  expect_error(
+    dsOMOP:::.computeComorbidityScore(handle, "hfrs", c(3L, 9L)),
+    "misleading all-zero"
+  )
 })
 
 test_that("DCSI score metadata has correct analysis_id", {
@@ -598,6 +980,12 @@ test_that("DCSI score metadata has correct analysis_id", {
   meta <- attr(result, "score_meta")
   expect_equal(meta$analysis_id, 902L)
   expect_equal(meta$matching, "vocabulary_resolved")
+  expect_identical(meta$adapter, "dsOMOP")
+  expect_identical(meta$upstream, "OHDSI/FeatureExtraction")
+  expect_identical(meta$upstream_release, "v3.14.0")
+  expect_identical(meta$upstream_commit,
+                   "53266f0233c2ee7cae127e8669ad35b0d60406ae")
+  expect_false(meta$upstream_equivalent)
 })
 
 test_that("HFRS score metadata has correct analysis_id", {
@@ -668,8 +1056,10 @@ test_that("computeDerivedColumns with all 5 score types together", {
 
   specs <- list(
     list(kind = "charlson", name = "charlson"),
-    list(kind = "chads2", name = "chads2"),
-    list(kind = "chadsvasc", name = "chadsvasc"),
+    list(kind = "chads2", name = "chads2",
+         reference_date = "2024-07-01"),
+    list(kind = "chadsvasc", name = "chadsvasc",
+         reference_date = "2024-07-01"),
     list(kind = "dcsi", name = "dcsi"),
     list(kind = "hfrs", name = "hfrs")
   )
@@ -778,7 +1168,8 @@ test_that("planExecute with mixed derived columns (age + dcsi + hfrs)", {
         type = "person_level",
         tables = list(),
         derived_columns = list(
-          list(kind = "age", name = "age"),
+          list(kind = "age", name = "age", reference = "today",
+               reference_date = "2024-07-01"),
           list(kind = "sex_mf", name = "sex"),
           list(kind = "dcsi", name = "dcsi"),
           list(kind = "hfrs", name = "hfrs")
@@ -830,39 +1221,39 @@ test_that("HFRS works on v5.3 database", {
 
 # === Warning diagnostics ===
 
-test_that("DCSI warns when concept_relationship is empty", {
+test_that("DCSI errors when concept_relationship is empty", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   DBI::dbExecute(handle$conn, "DELETE FROM concept_relationship")
   dsOMOP:::.buildBlueprint(handle)
 
-  expect_warning(
+  expect_error(
     dsOMOP:::.computeComorbidityScore(handle, "dcsi", c(1L)),
     "no ICD-to-SNOMED mappings"
   )
 })
 
-test_that("HFRS warns when concept_relationship is empty", {
+test_that("HFRS errors when concept_relationship is empty", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   DBI::dbExecute(handle$conn, "DELETE FROM concept_relationship")
   dsOMOP:::.buildBlueprint(handle)
 
-  expect_warning(
+  expect_error(
     dsOMOP:::.computeComorbidityScore(handle, "hfrs", c(3L)),
     "no ICD-to-SNOMED mappings"
   )
 })
 
-test_that("DCSI warns when concept_relationship table does not exist", {
+test_that("DCSI errors when concept_relationship table does not exist", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   DBI::dbExecute(handle$conn, "DROP TABLE concept_relationship")
   dsOMOP:::.buildBlueprint(handle)
 
-  expect_warning(
+  expect_error(
     dsOMOP:::.computeComorbidityScore(handle, "dcsi", c(1L)),
-    "concept_relationship table"
+    "concept_relationship"
   )
 })
 

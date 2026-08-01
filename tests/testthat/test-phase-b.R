@@ -8,7 +8,8 @@
 # A handle with a person key so token <-> id reversal works (Phase D).
 keyed_handle <- function(n_persons = 40) {
   h <- create_test_handle(n_persons = n_persons)
-  h$person_key <- as.raw(1:16)
+  .setLegacyTestPersonKey(h, "phase-b",
+                          .local_envir = parent.frame())
   h
 }
 
@@ -18,6 +19,8 @@ token_frame <- function(handle, ids) {
   toks <- .hashPersonKey(as.character(ids), handle$person_key)
   df <- data.frame(person_id = toks, v = seq_along(ids), stringsAsFactors = FALSE)
   attr(df, "dsomop_protected") <- "person_id"
+  attr(df, "dsomop_pseudonymization") <-
+    .canonicalPseudonymizationContract(.personKeyPublicContract(handle))
   class(df) <- union("omop.table", class(df))
   df
 }
@@ -61,6 +64,68 @@ test_that("cohortFromTokenFrame rejects non-omop.table input (admission gate)", 
   expect_error(.cohortFromTokenFrame(handle, plain), "omop.table")
 })
 
+test_that("cohortFromTokenFrame requires the current pseudonymization contract", {
+  handle <- keyed_handle(40)
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  frame <- token_frame(handle, 1:12)
+  missing <- frame
+  attr(missing, "dsomop_pseudonymization") <- NULL
+  expect_error(.cohortFromTokenFrame(handle, missing), "lacks.*contract")
+
+  stale <- frame
+  contract <- attr(stale, "dsomop_pseudonymization", exact = TRUE)
+  contract$epoch <- as.integer(contract$epoch %||% 1L) + 1L
+  attr(stale, "dsomop_pseudonymization") <- contract
+  expect_error(.cohortFromTokenFrame(handle, stale),
+               "incompatible pseudonymization contract")
+  expect_length(handle$temp_tables, 0L)
+})
+
+test_that("cohortFromTokenFrame cannot overwrite an arbitrary CDM table", {
+  handle <- keyed_handle(40)
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  withr::with_options(list(nfilter.subset = 3), {
+    df <- token_frame(handle, 1:12)
+    expect_error(
+      .cohortFromTokenFrame(handle, df, new_name = "person"),
+      "reserved dsomop_cohort_fromtbl_ namespace"
+    )
+    expect_true(DBI::dbExistsTable(handle$conn, "person"))
+    expect_equal(
+      DBI::dbGetQuery(handle$conn, "SELECT COUNT(*) AS n FROM person")$n,
+      40
+    )
+  })
+})
+
+test_that("public cohort-from-table removes a materialization that fails re-gating", {
+  handle <- keyed_handle(40)
+  symbol <- paste0("cohort_from_table_regate_", Sys.getpid())
+  .setHandle(symbol, handle)
+  on.exit(.removeHandle(symbol), add = TRUE)
+  .buildBlueprint(handle)
+  baseline <- handle$temp_tables
+  new_name <- "dsomop_cohort_fromtbl_regate_failure"
+
+  # Three valid tokens clear the pre-write gate, but only two identify persons
+  # present in the database. The post-materialization gate must fail and the
+  # public operation must remove the newly created sensitive temp table.
+  frame <- token_frame(handle, c(1L, 2L, 999999L))
+  withr::with_options(list(nfilter.subset = 3), {
+    expect_error(
+      omopCohortFromTableDS(frame, symbol, new_name = new_name),
+      "Disclosive"
+    )
+  })
+
+  expect_identical(handle$temp_tables, baseline)
+  expect_false(DBI::dbExistsTable(handle$conn, new_name))
+})
+
 test_that("a workspace-derived cohort actually scopes a downstream explorer", {
   handle <- keyed_handle(40)
   on.exit(cleanup_handle(handle))
@@ -95,6 +160,19 @@ test_that(".resolveCohortTable accepts a table name and re-gates it", {
   })
 })
 
+test_that(".resolveCohortTable rejects unowned named tables", {
+  handle <- keyed_handle(40)
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  withr::with_options(list(nfilter.subset = 3), {
+    expect_error(.resolveCohortTable(handle, "person"),
+                 "temporary cohorts created by this handle")
+    expect_error(.resolveCohortTable(handle, "person; DROP TABLE person"),
+                 "valid SQL identifier|must start")
+  })
+})
+
 test_that(".resolveCohortTable materializes a cohort_definition_id", {
   handle <- keyed_handle(40)
   on.exit(cleanup_handle(handle))
@@ -108,6 +186,36 @@ test_that(".resolveCohortTable materializes a cohort_definition_id", {
       paste0("SELECT COUNT(DISTINCT subject_id) AS n FROM ", ct))$n
     expect_equal(n, 6)
   })
+})
+
+test_that("numeric cohort resolution preserves an owned work-name homonym", {
+  handle <- keyed_handle(40)
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+  base <- "dsomop_cohort_def_1"
+  .createTempTable(
+    handle, base,
+    paste(
+      "SELECT 999 AS subject_id, '2000-01-01' AS cohort_start_date,",
+      "'2000-01-01' AS cohort_end_date"
+    )
+  )
+
+  resolved <- withr::with_options(
+    list(nfilter.subset = 3),
+    .resolveCohortTable(handle, 1L)
+  )
+
+  expect_false(identical(resolved, base))
+  expect_true(all(vapply(c(base, resolved), function(name) {
+    DBI::dbExistsTable(handle$conn, name)
+  }, logical(1))))
+  expect_identical(
+    DBI::dbGetQuery(handle$conn, paste0(
+      "SELECT subject_id FROM ", base
+    ))$subject_id,
+    999L
+  )
 })
 
 test_that("explorers gain a unified cohort arg via .resolveCohortArg", {
@@ -172,9 +280,9 @@ test_that("person domain concept defaults to gender but race/ethnicity selectabl
     expect_true("8527" %in% as.character(rc$value))
     et <- .profileValueCounts(handle, "person", "ethnicity_concept_id")
     expect_true(nrow(et) >= 1)
-    # year_of_birth as a numeric summary
-    yob <- .profileColumnStats(handle, "person", "year_of_birth")
-    expect_true(!is.null(yob$mean))
+    # Exact birth year is a quasi-identifier; age must use protected bands.
+    expect_error(.profileColumnStats(handle, "person", "year_of_birth"),
+                 "blocked \\(sensitive\\)")
   })
 })
 

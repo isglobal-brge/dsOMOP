@@ -12,12 +12,16 @@ omopPlanPreviewDS(omop_symbol, plan)
 \item{plan}{List; the extraction plan to preview}
 }
 \value{
-List with preview information including output schemas and warnings
+List with validation and per-output projection metadata, including
+  completeness/unavailability fields for columns and person counts.
 }
 \description{
-Validates and previews an extraction plan without executing it. Returns
-expected output schemas, estimated row counts, and any validation warnings
-or errors.
+Validates and projects the resolvable parts of an extraction plan without
+materializing cohorts or executing filters. Reported columns are source or
+feature projections and are final only when \code{columns_complete} is true.
+Any reported person count is a disclosure-banded source-table count for an
+unrestricted output, not an estimated row count for the executed result.
+Cohort-dependent outputs with no executable cohort declaration are rejected.
 }
 \examples{
 \dontrun{

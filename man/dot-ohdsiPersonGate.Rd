@@ -4,7 +4,13 @@
 \alias{.ohdsiPersonGate}
 \title{Fail-closed distinct-person gate for a pre-computed OHDSI result}
 \usage{
-.ohdsiPersonGate(result, tool_id, count_cols)
+.ohdsiPersonGate(
+  result,
+  tool_id,
+  count_cols,
+  table_name = NULL,
+  contract = NULL
+)
 }
 \arguments{
 \item{result}{Data frame already returned + cell-suppressed by
@@ -12,7 +18,12 @@
 
 \item{tool_id}{Character; resolved tool id (registry key).}
 
-\item{count_cols}{Character; the count columns detected on this result.}
+\item{count_cols}{Character; the count columns declared for this result.}
+
+\item{table_name}{Optional canonical table name used to resolve its reviewed
+person-basis contract.}
+
+\item{contract}{Optional already-resolved table contract.}
 }
 \value{
 \code{result} with disclosive rows removed (or emptied, fail-closed).
@@ -38,9 +49,10 @@ Behaviour, mirroring the "no hints" fail-closed policy:
     no person denominator), it is rejected (emptied) when
     \code{query_strict} is TRUE, and passed through (cell-suppressed only)
     when strict mode is off;
-  \item a result with no count columns at all (pure definition/reference
-    metadata: \code{*_def}, \code{*_ref}, \code{*_settings}, concept sets) has
-    nothing to disclose and passes through unchanged.
+  \item a result with no count/person basis at all — including definition or
+    configuration metadata — is rejected in strict mode. Arbitrary names,
+    JSON, SQL, and fitted-model configuration are not assumed public merely
+    because they contain no patient count.
 }
 }
 \keyword{internal}

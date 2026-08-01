@@ -4,7 +4,13 @@
 \alias{.extractIntervalsLong}
 \title{Extract interval data from multiple tables relative to index date}
 \usage{
-.extractIntervalsLong(handle, cohort_table, tables, concept_filter = NULL)
+.extractIntervalsLong(
+  handle,
+  cohort_table,
+  tables,
+  concept_filter = NULL,
+  filters = NULL
+)
 }
 \arguments{
 \item{handle}{CDM handle}
@@ -16,8 +22,8 @@
 \item{concept_filter}{Named list; per-table concept ID filters}
 }
 \value{
-Data frame with row_id, subject_id, interval_type, concept_id,
-  start_days_from_index, end_days_from_index
+Data frame with row_id, cohort_row_id, subject_id, interval_type,
+  concept_id, start_days_from_index, end_days_from_index
 }
 \description{
 For each table, joins to the cohort, computes start/end days relative

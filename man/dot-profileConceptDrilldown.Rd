@@ -21,7 +21,7 @@ Named list with summary, numeric_summary, categorical_values,
 }
 \description{
 Returns summary stats, numeric distribution, categorical values, date
-coverage, and missingness — all disclosure-controlled — for records
+coverage, and missingness - all disclosure-controlled - for records
 matching a given concept_id.
 }
 \keyword{internal}

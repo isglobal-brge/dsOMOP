@@ -10,8 +10,9 @@
 \item{force}{Logical; rescan even if cached.}
 }
 \value{
-Data frame with columns \code{pkg}, \code{prefix}, \code{spec} for
-  each package declaring \code{Config/dsOMOP/AnalysisCollection}.
+Data frame with columns \code{pkg}, \code{version}, \code{prefix},
+  and \code{spec} for each allowlisted package declaring
+  \code{Config/dsOMOP/AnalysisCollection}.
 }
 \description{
 The handle-INDEPENDENT half of pack discovery: a single
@@ -19,7 +20,10 @@ The handle-INDEPENDENT half of pack discovery: a single
 every installed package at once (far cheaper than one
 \code{packageDescription} per package). The result is cached on
 \code{.dsomop_env} because the installed package set does not change within an
-R session — so the disk scan runs once per process, not once per handle. Pass
-\code{force=TRUE} to rescan (used by tests).
+R session — so the disk scan runs once per process, not once per handle.
+Discovery is disabled by default. Controllers must set
+\code{options(dsomop.analysis_pack_allowlist =
+c(package = "exact.version"))}; only exact package/version matches are
+executable. Pass \code{force=TRUE} to rescan (used by tests).
 }
 \keyword{internal}

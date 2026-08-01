@@ -3,6 +3,215 @@
 
 # --- Temporal Filtering ---
 
+.isoDate <- function(x, label) {
+  if (length(x) != 1L || is.na(x)) {
+    stop(label, " must be one ISO date (YYYY-MM-DD).", call. = FALSE)
+  }
+  value <- as.character(x)
+  if (!grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", value)) {
+    stop(label, " must be an ISO date (YYYY-MM-DD).", call. = FALSE)
+  }
+  parsed <- suppressWarnings(as.Date(value, format = "%Y-%m-%d"))
+  if (is.na(parsed) || format(parsed, "%Y-%m-%d") != value) {
+    stop(label, " is not a valid date.", call. = FALSE)
+  }
+  parsed
+}
+
+.extractionCap <- function(option, default) {
+  value <- suppressWarnings(as.numeric(getOption(
+    option, getOption(paste0("default.", option), default)
+  )))
+  if (length(value) != 1L || is.na(value) || !is.finite(value) ||
+      value != floor(value) || value < 1L) {
+    stop(option, " must be one positive integer.", call. = FALSE)
+  }
+  value
+}
+
+.filterComplexityVisit <- function(state = NULL, depth = 1L,
+                                   values = 0L) {
+  if (is.null(state)) {
+    state <- new.env(parent = emptyenv())
+    state$nodes <- 0
+    state$values <- 0
+    state$max_depth <- .extractionCap("dsomop.max_filter_depth", 32L)
+    state$max_nodes <- .extractionCap("dsomop.max_filter_nodes", 1024L)
+    state$max_values <- .extractionCap("dsomop.max_filter_values", 10000L)
+  }
+  depth <- suppressWarnings(as.numeric(depth))
+  values <- suppressWarnings(as.numeric(values))
+  if (length(depth) != 1L || !is.finite(depth) || depth < 1L ||
+      depth != floor(depth) || length(values) != 1L || !is.finite(values) ||
+      values < 0L || values != floor(values)) {
+    stop("Invalid filter complexity accounting state.", call. = FALSE)
+  }
+  state$nodes <- state$nodes + 1
+  state$values <- state$values + values
+  if (depth > state$max_depth) {
+    stop("Filter tree exceeds the server max_filter_depth cap of ",
+         state$max_depth, ".", call. = FALSE)
+  }
+  if (state$nodes > state$max_nodes) {
+    stop("Filter tree exceeds the server max_filter_nodes cap of ",
+         state$max_nodes, ".", call. = FALSE)
+  }
+  if (state$values > state$max_values) {
+    stop("Filter tree exceeds the server max_filter_values cap of ",
+         state$max_values, ".", call. = FALSE)
+  }
+  state
+}
+
+.validateDateBounds <- function(start = NULL, end = NULL, context) {
+  parsed_start <- if (!is.null(start)) .isoDate(start, paste0(context, "$start"))
+  parsed_end <- if (!is.null(end)) .isoDate(end, paste0(context, "$end"))
+  if (!is.null(parsed_start) && !is.null(parsed_end)) {
+    if (parsed_start > parsed_end) {
+      stop(context, " start must not be after end.", call. = FALSE)
+    }
+    settings <- .omopDisclosureSettings()
+    inclusive_days <- as.numeric(parsed_end - parsed_start) + 1
+    if (settings$nfilter_subset > 0 &&
+        inclusive_days < settings$nfilter_date_range) {
+      stop(context, " must span at least ", settings$nfilter_date_range,
+           " days while disclosure filtering ",
+           "is enabled.", call. = FALSE)
+    }
+  }
+  list(start = parsed_start, end = parsed_end)
+}
+
+.temporalOffset <- function(x, field) {
+  value <- suppressWarnings(as.integer(x))
+  numeric_value <- suppressWarnings(as.numeric(x))
+  if (length(x) != 1L || length(value) != 1L || is.na(value) ||
+      length(numeric_value) != 1L || is.na(numeric_value) ||
+      numeric_value != value) {
+    stop("temporal$index_window$", field,
+         " must be one integer day offset.", call. = FALSE)
+  }
+  value
+}
+
+.normalizeMinGap <- function(min_gap) {
+  if (!is.list(min_gap)) min_gap <- list(days = min_gap)
+  if (is.null(names(min_gap)) || any(!nzchar(names(min_gap))) ||
+      anyDuplicated(names(min_gap))) {
+    stop("temporal$min_gap must be one integer or a named policy.",
+         call. = FALSE)
+  }
+  unknown <- setdiff(names(min_gap), c("days", "by", "keep"))
+  if (length(unknown) > 0L) {
+    stop("Unknown temporal$min_gap field(s): ",
+         paste(unknown, collapse = ", "), ".", call. = FALSE)
+  }
+  days <- suppressWarnings(as.numeric(min_gap$days))
+  integer_days <- suppressWarnings(as.integer(min_gap$days))
+  if (length(days) != 1L || !is.finite(days) ||
+      length(integer_days) != 1L || is.na(integer_days) ||
+      days != integer_days || integer_days < 1L) {
+    stop("temporal$min_gap$days must be one positive integer.",
+         call. = FALSE)
+  }
+  by <- min_gap$by %||% "concept"
+  keep <- min_gap$keep %||% "first"
+  if (!is.character(by) || length(by) != 1L || is.na(by) ||
+      !tolower(by) %in% c("grain", "concept")) {
+    stop("temporal$min_gap$by must be grain or concept.", call. = FALSE)
+  }
+  if (!is.character(keep) || length(keep) != 1L || is.na(keep) ||
+      !tolower(keep) %in% c("first", "last")) {
+    stop("temporal$min_gap$keep must be first or last.", call. = FALSE)
+  }
+  list(days = integer_days, by = tolower(by), keep = tolower(keep))
+}
+
+.validateTemporalSpec <- function(temporal) {
+  if (is.null(temporal)) return(invisible(TRUE))
+  if (!is.list(temporal) || length(temporal) == 0L || is.null(names(temporal)) ||
+      any(!nzchar(names(temporal))) || anyDuplicated(names(temporal))) {
+    stop("temporal must be a non-empty named specification.", call. = FALSE)
+  }
+  allowed <- c("index_window", "calendar", "event_select", "min_gap")
+  unknown <- setdiff(names(temporal), allowed)
+  if (length(unknown) > 0L) {
+    stop("Unknown temporal field(s): ", paste(unknown, collapse = ", "), ".",
+         call. = FALSE)
+  }
+  supplied_null <- names(temporal)[vapply(temporal, is.null, logical(1))]
+  if (length(supplied_null) > 0L) {
+    stop("Temporal block(s) cannot be NULL when supplied: ",
+         paste(supplied_null, collapse = ", "), ".", call. = FALSE)
+  }
+  if ("min_gap" %in% names(temporal)) .normalizeMinGap(temporal$min_gap)
+
+  validate_bounds_block <- function(block, name) {
+    if (!is.list(block) || is.null(names(block)) ||
+        any(!nzchar(names(block))) || anyDuplicated(names(block))) {
+      stop("temporal$", name, " must be a named list.", call. = FALSE)
+    }
+    unknown <- setdiff(names(block), c("start", "end"))
+    if (length(unknown) > 0L) {
+      stop("Unknown temporal$", name, " field(s): ",
+           paste(unknown, collapse = ", "), ".", call. = FALSE)
+    }
+    if (is.null(block$start) && is.null(block$end)) {
+      stop("temporal$", name, " must contain start and/or end.",
+           call. = FALSE)
+    }
+  }
+  if (!is.null(temporal$index_window)) {
+    validate_bounds_block(temporal$index_window, "index_window")
+  }
+  if (!is.null(temporal$calendar)) {
+    validate_bounds_block(temporal$calendar, "calendar")
+  }
+  if (!is.null(temporal$event_select)) {
+    es <- temporal$event_select
+    if (!is.list(es) || is.null(names(es)) || any(!nzchar(names(es))) ||
+        anyDuplicated(names(es))) {
+      stop("temporal$event_select must be a named list.", call. = FALSE)
+    }
+    unknown <- setdiff(names(es), c("order", "n", "by"))
+    if (length(unknown) > 0L) {
+      stop("Unknown or unsupported temporal$event_select field(s): ",
+           paste(unknown, collapse = ", "), ".", call. = FALSE)
+    }
+    if (!is.character(es$order) || length(es$order) != 1L ||
+        is.na(es$order) || !tolower(es$order) %in% c("first", "last")) {
+      stop("temporal$event_select$order must be first or last.",
+           call. = FALSE)
+    }
+    by <- es$by %||% "grain"
+    if (!is.character(by) || length(by) != 1L || is.na(by) ||
+        !tolower(by) %in% c("grain", "concept")) {
+      stop("temporal$event_select$by must be grain or concept.",
+           call. = FALSE)
+    }
+    n <- es$n %||% 1L
+    numeric_n <- suppressWarnings(as.numeric(n))
+    integer_n <- suppressWarnings(as.integer(n))
+    if (length(n) != 1L || length(numeric_n) != 1L ||
+        !is.finite(numeric_n) || length(integer_n) != 1L ||
+        is.na(integer_n) || numeric_n != integer_n || integer_n < 1L) {
+      stop("temporal$event_select$n must be one positive integer.",
+           call. = FALSE)
+    }
+    max_n <- suppressWarnings(as.numeric(getOption("dsomop.max_event_select_n", 100L)))
+    if (length(max_n) != 1L || is.na(max_n) || !is.finite(max_n) ||
+        max_n != floor(max_n) || max_n < 1L) {
+      stop("dsomop.max_event_select_n must be one positive integer.",
+           call. = FALSE)
+    }
+    if (integer_n > max_n) {
+      stop("temporal$event_select$n exceeds the server cap of ", max_n, ".",
+           call. = FALSE)
+    }
+  }
+  invisible(TRUE)
+}
+
 #' Compile temporal spec into SQL WHERE fragments
 #'
 #' @param handle CDM handle
@@ -13,39 +222,74 @@
 #' @keywords internal
 .compileTemporalWhere <- function(handle, temporal, alias = "t",
                                   date_col = NULL) {
-  if (is.null(temporal) || length(temporal) == 0) return(character(0))
+  if (is.null(temporal)) return(character(0))
+  .validateTemporalSpec(temporal)
   where <- character(0)
 
+  if (!is.null(temporal$min_gap)) {
+    if (is.null(date_col)) {
+      stop("min_gap was supplied, but the table has no usable date column.",
+           call. = FALSE)
+    }
+    where <- c(where, paste0(alias, ".", date_col, " IS NOT NULL"))
+  }
+
   # Index-relative window: days relative to cohort_start_date
-  if (!is.null(temporal$index_window) && !is.null(date_col)) {
+  if (!is.null(temporal$index_window)) {
+    if (is.null(date_col)) {
+      stop("An index_window was supplied, but the table has no usable date ",
+           "column.", call. = FALSE)
+    }
     iw <- temporal$index_window
+    if (!is.list(iw) || (is.null(iw$start) && is.null(iw$end))) {
+      stop("temporal$index_window must contain start and/or end.",
+           call. = FALSE)
+    }
+    iw_start <- if (!is.null(iw$start)) .temporalOffset(iw$start, "start")
+    iw_end <- if (!is.null(iw$end)) .temporalOffset(iw$end, "end")
+    if (!is.null(iw_start) && !is.null(iw_end) && iw_start > iw_end) {
+      stop("temporal$index_window start must not be after end.",
+           call. = FALSE)
+    }
     if (!is.null(iw$start)) {
       where <- c(where, paste0(
         alias, ".", date_col, " >= ",
         .renderSql(handle, "DATEADD(day, @days, c.cohort_start_date)",
-                   days = as.integer(iw$start))
+                   days = iw_start)
       ))
     }
     if (!is.null(iw$end)) {
       where <- c(where, paste0(
-        alias, ".", date_col, " <= ",
+        alias, ".", date_col, " < ",
         .renderSql(handle, "DATEADD(day, @days, c.cohort_start_date)",
-                   days = as.integer(iw$end))
+                   days = as.double(iw_end) + 1)
       ))
     }
   }
 
   # Calendar time filter
-  if (!is.null(temporal$calendar) && !is.null(date_col)) {
+  if (!is.null(temporal$calendar)) {
+    if (is.null(date_col)) {
+      stop("A calendar window was supplied, but the table has no usable date ",
+           "column.", call. = FALSE)
+    }
     cal <- temporal$calendar
+    if (!is.list(cal) || (is.null(cal$start) && is.null(cal$end))) {
+      stop("temporal$calendar must contain start and/or end.", call. = FALSE)
+    }
+    bounds <- .validateDateBounds(cal$start, cal$end, "temporal$calendar")
+    cal_start <- bounds$start
+    cal_end <- bounds$end
     if (!is.null(cal$start)) {
       where <- c(where, paste0(
-        alias, ".", date_col, " >= '", cal$start, "'"
+        alias, ".", date_col, " >= ",
+        .quoteLiteral(as.character(cal_start), handle)
       ))
     }
     if (!is.null(cal$end)) {
       where <- c(where, paste0(
-        alias, ".", date_col, " <= '", cal$end, "'"
+        alias, ".", date_col, " < ",
+        .quoteLiteral(as.character(cal_end + 1L), handle)
       ))
     }
   }
@@ -59,21 +303,177 @@
 #' @param sql Character; base SQL query
 #' @param temporal List; temporal spec with event_select
 #' @param date_col Character; date column for ordering
+#' @param tie_col Character; optional stable tie-break column
 #' @return Character; possibly wrapped SQL
 #' @keywords internal
-.wrapEventSelect <- function(handle, sql, temporal, date_col = NULL) {
-  if (is.null(temporal$event_select) || is.null(date_col)) return(sql)
+.wrapEventSelect <- function(handle, sql, temporal, date_col = NULL,
+                             tie_col = NULL) {
+  .validateTemporalSpec(temporal)
+  if (is.null(temporal$event_select)) return(sql)
+  if (is.null(date_col)) {
+    stop("event_select was supplied, but the table has no usable date column.",
+         call. = FALSE)
+  }
 
   es <- temporal$event_select
-  order_dir <- if (identical(es$order, "last")) "DESC" else "ASC"
+  order_dir <- if (identical(tolower(es$order), "last")) "DESC" else "ASC"
   n <- as.integer(es$n %||% 1L)
 
-  rn_expr <- paste0("ROW_NUMBER() OVER (PARTITION BY person_id ORDER BY ",
-                     date_col, " ", order_dir, ")")
+  partition_col <- if (!is.null(temporal$index_window)) {
+    "cohort_row_id"
+  } else {
+    "person_id"
+  }
+  if (identical(tolower(es$by %||% "grain"), "concept")) {
+    partition_col <- paste(
+      partition_col, "dsomop_event_partition_concept", sep = ", "
+    )
+  }
+  order_terms <- paste0(date_col, " ", order_dir)
+  if (!is.null(tie_col)) {
+    order_terms <- paste0(order_terms, ", ", tie_col, " ASC")
+  }
+  rn_expr <- paste0("ROW_NUMBER() OVER (PARTITION BY ", partition_col,
+                     " ORDER BY ", order_terms, ")")
 
   paste0(
     "SELECT * FROM (SELECT sub.*, ", rn_expr, " AS rn ",
     "FROM (", sql, ") AS sub) AS ranked WHERE ranked.rn <= ", n
+  )
+}
+
+#' Collapse temporally adjacent events into deterministic episodes
+#'
+#' Events are chained when the next event occurs no more than \code{days} after
+#' the previous one. Collapse happens independently by person/cohort episode
+#' and, by default, concept. One source row represents each chain; ties are
+#' broken with the canonical OMOP event primary key.
+#'
+#' @param handle CDM handle.
+#' @param sql Character base SQL query.
+#' @param temporal Temporal specification containing \code{min_gap}.
+#' @param date_col Internal event-date alias.
+#' @param tie_col Internal stable primary-key alias.
+#' @return Character wrapped SQL query.
+#' @keywords internal
+.wrapMinGap <- function(handle, sql, temporal, date_col = NULL,
+                        tie_col = NULL) {
+  .validateTemporalSpec(temporal)
+  if (is.null(temporal$min_gap)) return(sql)
+  if (is.null(date_col)) {
+    stop("min_gap was supplied, but the table has no usable date column.",
+         call. = FALSE)
+  }
+  if (is.null(tie_col)) {
+    stop("min_gap requires a standard OMOP event primary key for ",
+         "deterministic collapse.", call. = FALSE)
+  }
+
+  policy <- .normalizeMinGap(temporal$min_gap)
+  partition <- if (!is.null(temporal$index_window)) {
+    "cohort_row_id"
+  } else {
+    "person_id"
+  }
+  if (identical(policy$by, "concept")) {
+    partition <- paste(partition, "dsomop_event_partition_concept", sep = ", ")
+  }
+  ascending <- paste0(date_col, " ASC, ", tie_col, " ASC")
+  representative <- paste0(
+    date_col, if (identical(policy$keep, "last")) " DESC" else " ASC",
+    ", ", tie_col, " ASC"
+  )
+  previous_date <- paste0(
+    "LAG(", date_col, ") OVER (PARTITION BY ", partition,
+    " ORDER BY ", ascending, ")"
+  )
+  gap_limit <- .renderSql(
+    handle, "DATEADD(day, @days, lagged.dsomop_gap_previous_date)",
+    days = policy$days
+  )
+
+  paste0(
+    "SELECT * FROM (SELECT grouped.*, ROW_NUMBER() OVER (PARTITION BY ",
+    partition, ", dsomop_gap_group ORDER BY ", representative,
+    ") AS dsomop_gap_row FROM (SELECT marked.*, SUM(dsomop_gap_new) OVER (",
+    "PARTITION BY ", partition, " ORDER BY ", ascending,
+    " ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS dsomop_gap_group ",
+    "FROM (SELECT lagged.*, CASE WHEN dsomop_gap_previous_date IS NULL OR ",
+    date_col, " > ", gap_limit,
+    " THEN 1 ELSE 0 END AS dsomop_gap_new FROM (SELECT sub.*, ",
+    previous_date, " AS dsomop_gap_previous_date FROM (", sql,
+    ") AS sub) AS lagged) AS marked) AS grouped) AS collapsed ",
+    "WHERE collapsed.dsomop_gap_row = 1"
+  )
+}
+
+#' Resolve the standard OMOP primary key used to break same-date event ties
+#'
+#' OMOP clinical event tables conventionally use <table>_id as their primary
+#' key. PERSON and DEATH are the two person-keyed exceptions relevant here.
+#'
+#' @param blueprint Schema blueprint.
+#' @param table Character table name.
+#' @return Character primary-key column, or NULL when the table has none.
+#' @keywords internal
+.eventPrimaryKeyColumn <- function(blueprint, table) {
+  table <- tolower(table)
+  cols <- blueprint$columns[[table]]$column_name %||% character(0)
+  candidates <- c(paste0(table, "_id"),
+                  if (table %in% c("person", "death")) "person_id")
+  hit <- intersect(candidates, cols)
+  if (length(hit) > 0L) hit[1] else NULL
+}
+
+#' Build the canonical, deduplicated cohort-episode relation
+#'
+#' The generated cohort_row_id is stable for one cohort snapshot and is shared
+#' by event-level and temporal-covariate outputs. Exact duplicate standard
+#' cohort eras are one episode. Index-event cohorts retain their source event
+#' key, so distinct events with identical dates remain distinct episodes.
+#'
+#' @param cohort_table Character cohort table name.
+#' @param handle Optional CDM handle used to inspect whether the internal
+#'   index-event key is present.
+#' @return Character SQL for a derived cohort table.
+#' @keywords internal
+.rankedCohortSql <- function(cohort_table, handle = NULL) {
+  cohort_table <- .validateIdentifier(cohort_table, "cohort table")
+  fields <- if (is.null(handle)) {
+    character(0)
+  } else {
+    names(.executeQuery(
+      handle, paste0("SELECT * FROM ", cohort_table, " WHERE 1 = 0")
+    ))
+  }
+  episode_key <- if ("dsomop_episode_key" %in% fields) {
+    "dsomop_episode_key"
+  } else if ("index_event_id" %in% fields) {
+    "index_event_id"
+  } else {
+    NULL
+  }
+  key_select <- if (!is.null(episode_key)) {
+    paste0(", cohort_base.", episode_key, " AS dsomop_episode_key")
+  } else {
+    ""
+  }
+  key_source <- if (!is.null(episode_key)) paste0(", ", episode_key) else ""
+  key_order <- if (!is.null(episode_key)) {
+    paste0(", cohort_base.", episode_key)
+  } else {
+    ""
+  }
+  paste0(
+    "(SELECT cohort_base.subject_id, cohort_base.cohort_start_date, ",
+    "cohort_base.cohort_end_date", key_select,
+    ", ROW_NUMBER() OVER (ORDER BY ",
+    "cohort_base.subject_id, cohort_base.cohort_start_date, ",
+    "cohort_base.cohort_end_date", key_order,
+    ") AS cohort_row_id FROM (",
+    "SELECT DISTINCT subject_id, cohort_start_date, cohort_end_date",
+    key_source, " FROM ",
+    cohort_table, ") AS cohort_base)"
   )
 }
 
@@ -95,9 +495,55 @@
   if (is.character(date_handling) && length(date_handling) == 1) {
     date_handling <- list(mode = date_handling)
   }
-  if (is.list(date_handling) &&
-      identical(date_handling$mode, "relative_to_index")) {
-    date_handling$mode <- "relative"
+  if (!is.list(date_handling) || is.null(names(date_handling)) ||
+      any(!nzchar(names(date_handling))) || anyDuplicated(names(date_handling))) {
+    stop("date_handling must be a mode string or a list with $mode.",
+         call. = FALSE)
+  }
+  unknown <- setdiff(names(date_handling),
+                     c("mode", "reference", "bin_width", "date_columns"))
+  if (length(unknown) > 0L) {
+    stop("Unknown date_handling field(s): ", paste(unknown, collapse = ", "),
+         ".", call. = FALSE)
+  }
+  mode <- date_handling$mode
+  if (!is.character(mode) || length(mode) != 1L || is.na(mode) ||
+      !nzchar(mode)) {
+    stop("date_handling$mode must be one of absolute, remove, relative, or ",
+         "binned.", call. = FALSE)
+  }
+  mode <- tolower(mode)
+  if (identical(mode, "relative_to_index")) mode <- "relative"
+  if (!mode %in% c("absolute", "remove", "relative", "binned")) {
+    stop("Unknown date_handling mode: '", mode, "'.", call. = FALSE)
+  }
+  date_handling$mode <- mode
+
+  reference <- date_handling$reference %||% "index"
+  if (!is.character(reference) || length(reference) != 1L ||
+      is.na(reference) || !identical(tolower(reference), "index")) {
+    stop("date_handling$reference must be 'index'.", call. = FALSE)
+  }
+  date_handling$reference <- "index"
+
+  if (!is.null(date_handling$date_columns) &&
+      (!is.character(date_handling$date_columns) ||
+       anyNA(date_handling$date_columns))) {
+    stop("date_handling$date_columns must be a character vector.",
+         call. = FALSE)
+  }
+  if (identical(mode, "binned")) {
+    bin_width <- date_handling$bin_width
+    if (!is.character(bin_width) || length(bin_width) != 1L ||
+        is.na(bin_width) || !tolower(bin_width) %in% c("year", "month", "week")) {
+      stop("date_handling$bin_width is required for binned mode and must be ",
+           "year, month, or week.",
+           call. = FALSE)
+    }
+    date_handling$bin_width <- tolower(bin_width)
+  } else if (!is.null(date_handling$bin_width)) {
+    stop("date_handling$bin_width is only valid for binned mode.",
+         call. = FALSE)
   }
   date_handling
 }
@@ -124,18 +570,58 @@
 #' @keywords internal
 .applyDateHandling <- function(df, date_handling, index_date_col = NULL) {
   date_handling <- .normalizeDateHandling(date_handling)
-  if (is.null(date_handling) || nrow(df) == 0) return(df)
+  if (is.null(date_handling)) return(df)
 
-  mode <- date_handling$mode %||% "absolute"
+  mode <- date_handling$mode
   if (mode == "absolute") return(df)
 
-  # Identify date columns to transform
-  date_columns <- date_handling$date_columns
-  if (is.null(date_columns)) {
-    date_columns <- grep("_date$|_datetime$", names(df), value = TRUE)
+  # Identify every date-like column. A caller-supplied subset is only safe when
+  # raw dates have been explicitly authorized; otherwise omitted date columns
+  # would leave exact dates in an ostensibly transformed result.
+  date_like <- vapply(df, function(x) inherits(x, c("Date", "POSIXt")),
+                      logical(1))
+  all_date_columns <- unique(c(
+    grep("_date$|_datetime$", names(df), value = TRUE),
+    names(df)[date_like],
+    intersect(index_date_col %||% character(0), names(df))
+  ))
+  requested <- date_handling$date_columns
+  if (is.null(requested)) {
+    date_columns <- all_date_columns
+  } else {
+    unknown <- setdiff(requested, names(df))
+    if (length(unknown) > 0) {
+      stop("Unknown date_handling$date_columns: ",
+           paste(unknown, collapse = ", "), ".", call. = FALSE)
+    }
+    not_dates <- setdiff(requested, all_date_columns)
+    if (length(not_dates) > 0) {
+      stop("date_handling$date_columns includes non-date column(s): ",
+           paste(not_dates, collapse = ", "), ".", call. = FALSE)
+    }
+    date_columns <- unique(requested)
+    allow_absolute <- getOption("dsomop.allow_absolute_dates",
+      getOption("default.dsomop.allow_absolute_dates", FALSE))
+    omitted <- setdiff(all_date_columns, date_columns)
+    if (length(omitted) > 0 && !isTRUE(allow_absolute)) {
+      stop("date_handling$date_columns omits date column(s) while absolute ",
+           "dates are disabled: ", paste(omitted, collapse = ", "), ".",
+           call. = FALSE)
+    }
   }
-  date_columns <- intersect(date_columns, names(df))
   if (length(date_columns) == 0) return(df)
+
+  as_date <- function(x, column) {
+    timezone <- .omopDisclosureSettings()$datetime_timezone
+    parsed <- tryCatch({
+      if (inherits(x, "POSIXt")) as.Date(x, tz = timezone) else as.Date(x)
+    }, error = function(e) NULL)
+    if (is.null(parsed) || any(!is.na(x) & is.na(parsed))) {
+      stop("Could not safely convert date column '", column, "'.",
+           call. = FALSE)
+    }
+    parsed
+  }
 
   if (mode == "remove") {
     df <- df[, setdiff(names(df), date_columns), drop = FALSE]
@@ -149,18 +635,29 @@
     } else if ("cohort_start_date" %in% names(df)) {
       ref_col <- "cohort_start_date"
     }
-    if (!is.null(ref_col)) {
-      ref_dates <- as.Date(df[[ref_col]])
-      for (col in date_columns) {
-        if (col == ref_col) next
-        col_dates <- tryCatch(as.Date(df[[col]]), error = function(e) NULL)
-        if (!is.null(col_dates)) {
-          df[[col]] <- as.integer(col_dates - ref_dates)
-        }
-      }
-      # Remove the reference column itself after computing relative days
-      if (ref_col %in% date_columns) {
-        df[[ref_col]] <- 0L
+    if (is.null(ref_col)) {
+      stop("Relative date handling requires an index date column.",
+           call. = FALSE)
+    }
+    if (nrow(df) == 0L) {
+      for (col in date_columns) df[[col]] <- integer(0)
+      return(df)
+    }
+    ref_dates <- as_date(df[[ref_col]], ref_col)
+    for (col in date_columns) {
+      if (col == ref_col) next
+      col_dates <- as_date(df[[col]], col)
+      df[[col]] <- as.integer(col_dates - ref_dates)
+    }
+    # The reference itself is safe only as a relative zero, never as a date.
+    if (ref_col %in% date_columns) {
+      df[[ref_col]] <- 0L
+    } else {
+      allow_absolute <- getOption("dsomop.allow_absolute_dates",
+        getOption("default.dsomop.allow_absolute_dates", FALSE))
+      if (!isTRUE(allow_absolute)) {
+        stop("Relative date handling cannot leave its index date untransformed.",
+             call. = FALSE)
       }
     }
     return(df)
@@ -168,37 +665,43 @@
 
   if (mode == "binned") {
     bin_width <- date_handling$bin_width %||% "month"
+    if (nrow(df) == 0L) {
+      for (col in date_columns) df[[col]] <- character(0)
+      return(df)
+    }
     for (col in date_columns) {
-      col_dates <- tryCatch(as.Date(df[[col]]), error = function(e) NULL)
-      if (!is.null(col_dates)) {
-        df[[col]] <- switch(bin_width,
-          "year"  = format(col_dates, "%Y-01-01"),
-          "month" = format(col_dates, "%Y-%m-01"),
-          "week"  = {
-            # Truncate to start of week (Monday)
-            wday <- as.integer(format(col_dates, "%u"))
-            as.character(col_dates - (wday - 1L))
-          },
-          as.character(col_dates)
-        )
-      }
+      col_dates <- as_date(df[[col]], col)
+      df[[col]] <- switch(bin_width,
+        "year"  = format(col_dates, "%Y-01-01"),
+        "month" = format(col_dates, "%Y-%m-01"),
+        "week"  = {
+          # Truncate to start of week (Monday)
+          wday <- as.integer(format(col_dates, "%u"))
+          as.character(col_dates - (wday - 1L))
+        }
+      )
     }
     return(df)
   }
-
-  df
 }
 
 # --- SQL Compilation ---
 
 #' Quote a SQL literal value safely
 #'
-#' @param x Value to quote
+#' @param x Scalar value to quote.
+#' @param handle Optional CDM handle. Production SQL builders must supply it so
+#'   the active DBI driver applies the correct escaping rules (notably for
+#'   MySQL/MariaDB backslash escapes). NULL uses ANSI quoting for isolated
+#'   rendering tests only.
 #' @return Character; quoted SQL literal
 #' @keywords internal
-.quoteLiteral <- function(x) {
-  if (is.numeric(x)) return(as.character(x))
-  paste0("'", gsub("'", "''", as.character(x)), "'")
+.quoteLiteral <- function(x, handle = NULL) {
+  if (length(x) != 1L || is.na(x)) {
+    stop("SQL literals must be one non-missing scalar value.", call. = FALSE)
+  }
+  conn <- if (is.null(handle)) DBI::ANSI() else .conn(handle)
+  as.character(DBI::dbQuoteLiteral(conn, x))
 }
 
 #' Compile a SQL SELECT for a table extraction
@@ -225,6 +728,9 @@
 #' @param visit_filter List; optional \code{list(concept_ids = ...)} restricting
 #'   events to visits of those \code{visit_concept_id} values via a join on
 #'   \code{visit_occurrence_id} to \code{visit_occurrence}.
+#' @param add_event_order_id Logical; include the source table's OMOP primary
+#'   key under an internal alias for deterministic in-memory ordering. The alias
+#'   is removed before any result is returned.
 #' @return Character; compiled SQL statement
 #' @keywords internal
 .compileSelect <- function(handle, table, columns = NULL,
@@ -233,7 +739,8 @@
                            limit = NULL, block_sensitive = TRUE,
                            temporal = NULL, add_cohort_date = FALSE,
                            filters = NULL, concept_col = NULL,
-                           visit_filter = NULL) {
+                           visit_filter = NULL,
+                           add_event_order_id = FALSE) {
   bp <- .buildBlueprint(handle)
 
   table_lower <- tolower(table)
@@ -256,9 +763,23 @@
     concept_col <- domain_concept_col
   } else {
     concept_col <- tolower(.validateIdentifier(concept_col, "concept column"))
+    if (!concept_col %in% col_df$column_name) {
+      stop("Concept column '", concept_col, "' not found in table '", table,
+           "'.", call. = FALSE)
+    }
   }
   has_concept_col <- !is.null(concept_col) && concept_col %in% col_df$column_name
   has_person_id <- "person_id" %in% col_df$column_name
+  safe_non_person_tables <- c(
+    "cdm_source", "metadata", "cohort_definition", "achilles_analysis"
+  )
+  is_safe_non_person <- identical(tbl_row$schema_category[1], "Vocabulary") ||
+    table_lower %in% safe_non_person_tables
+  if (!has_person_id && !is_safe_non_person) {
+    stop("Row-level extraction of non-person-keyed table '", table,
+         "' is not permitted. A declared person join path and a distinct-",
+         "person disclosure gate are required.", call. = FALSE)
+  }
 
   # Which column does the concept_set (concept_id list) match on? Normally the
   # concept_col, so a caller can scope the set against an alternate concept column
@@ -279,11 +800,48 @@
   has_concept_filter_col <- !is.null(concept_filter_col) &&
     concept_filter_col %in% col_df$column_name
 
+  if (!is.null(concept_filter)) {
+    raw_concepts <- unlist(concept_filter, use.names = FALSE)
+    max_values <- .extractionCap("dsomop.max_filter_values", 10000L)
+    if (length(raw_concepts) > max_values) {
+      stop("concept_filter exceeds the server max_filter_values cap of ",
+           max_values, ".", call. = FALSE)
+    }
+    numeric_concepts <- suppressWarnings(as.numeric(raw_concepts))
+    integer_concepts <- suppressWarnings(as.integer(raw_concepts))
+    if (length(raw_concepts) == 0L || anyNA(numeric_concepts) ||
+        any(!is.finite(numeric_concepts)) || anyNA(integer_concepts) ||
+        any(numeric_concepts != integer_concepts)) {
+      stop("concept_filter must contain one or more finite integer concept ",
+           "IDs.", call. = FALSE)
+    }
+    if (!has_concept_filter_col) {
+      stop("concept_filter was supplied, but table '", table,
+           "' has no usable concept column.", call. = FALSE)
+    }
+    concept_filter <- unique(integer_concepts)
+  }
+
+  if (!is.null(person_ids) && !has_person_id) {
+    stop("person_ids cannot scope table '", table,
+         "' because it has no person_id column.", call. = FALSE)
+  }
+  if (!is.null(cohort_table) && !has_person_id) {
+    stop("cohort_table cannot scope table '", table,
+         "' because it has no person_id column or supported join path.",
+         call. = FALSE)
+  }
+
   # Determine columns to select
   if (is.null(columns)) {
     select_cols <- col_df$column_name
   } else {
-    columns <- tolower(columns)
+    columns <- tolower(as.character(unlist(columns, use.names = FALSE)))
+    missing_columns <- setdiff(columns, col_df$column_name)
+    if (length(missing_columns) > 0) {
+      stop("Column(s) not found in table '", table, "': ",
+           paste(missing_columns, collapse = ", "), ".", call. = FALSE)
+    }
     must_keep <- character(0)
     if (has_person_id) must_keep <- c(must_keep, "person_id")
     if (!is.null(concept_filter)) {
@@ -311,8 +869,10 @@
   }
   if (block_sensitive) {
     blocked <- col_df$column_name[col_df$is_blocked]
-    # Always block exact birth dates/times (quasi-identifiers)
-    always_block <- c("day_of_birth", "birth_datetime")
+    # Exact birth components are quasi-identifiers. Age is exposed only through
+    # the episode-aware, minimum-width age_group derivation.
+    always_block <- c("year_of_birth", "month_of_birth", "day_of_birth",
+                      "birth_datetime")
     blocked <- union(blocked, intersect(always_block, col_df$column_name))
     # Fail closed when a blocked column was EXPLICITLY requested (e.g. a feature
     # value_source of value_as_string / *_source_value / sig). Silently dropping
@@ -346,17 +906,91 @@
   )
 
   # Determine if we need a JOIN (for index_window) or EXISTS (default)
-  needs_cohort_join <- !is.null(temporal$index_window) &&
+  has_index_window <- !is.null(temporal$index_window)
+  if (has_index_window && (is.null(cohort_table) || !has_person_id)) {
+    stop("temporal$index_window requires a cohort table and a person-keyed ",
+         "source table.", call. = FALSE)
+  }
+  if (add_cohort_date && (is.null(cohort_table) || !has_person_id)) {
+    stop("add_cohort_date requires a cohort table and a person-keyed source ",
+         "table.", call. = FALSE)
+  }
+  needs_cohort_join <- (has_index_window || add_cohort_date) &&
     !is.null(cohort_table) && has_person_id
 
-  # Add cohort_start_date to SELECT when requested and cohort join is active
+  # A cohort may contain multiple eras for one person. Rank the DISTINCT cohort
+  # entries once, deterministically, and carry that row id through every
+  # index-relative extraction so downstream reductions never collapse eras back
+  # to person_id.
+  if (needs_cohort_join) {
+    select_parts <- paste0(select_parts, ", c.cohort_row_id")
+  }
   if (add_cohort_date && needs_cohort_join) {
-    select_parts <- paste0(select_parts, ", c.cohort_start_date")
+    select_parts <- paste0(select_parts,
+                           ", c.cohort_start_date, c.cohort_end_date")
+  }
+
+  # Temporal reduction must be able to order even when the public projection
+  # omits the event date. Carry it under an internal alias and remove that alias
+  # before either an in-memory result or a staged chunk is exposed.
+  has_temporal_reduction <- !is.null(temporal$event_select) ||
+    !is.null(temporal$min_gap)
+  if (has_temporal_reduction) {
+    event_date_col <- .getDateColumn(bp, table_lower)
+    if (is.null(event_date_col)) {
+      stop("Temporal event reduction requires a usable date column.",
+           call. = FALSE)
+    }
+    select_parts <- paste0(select_parts, ", ", t_alias, ".", event_date_col,
+                           " AS dsomop_event_order_date")
+    reduce_by_concept <-
+      (!is.null(temporal$event_select) &&
+       identical(tolower(temporal$event_select$by %||% "grain"), "concept")) ||
+      (!is.null(temporal$min_gap) &&
+       identical(.normalizeMinGap(temporal$min_gap)$by, "concept"))
+    if (reduce_by_concept) {
+      if (!has_concept_col) {
+        stop("Temporal reduction by concept requires a usable concept column.",
+             call. = FALSE)
+      }
+      select_parts <- paste0(
+        select_parts, ", ", t_alias, ".", concept_col,
+        " AS dsomop_event_partition_concept"
+      )
+    }
+  }
+
+  # Break same-date ties with the OMOP row primary key. Both internal aliases
+  # are removed after ranking and never become part of the output contract.
+  event_pk_col <- if (has_temporal_reduction ||
+                      isTRUE(add_event_order_id)) {
+    .eventPrimaryKeyColumn(bp, table_lower)
+  } else {
+    NULL
+  }
+  if (!is.null(event_pk_col)) {
+    select_parts <- paste0(select_parts, ", ", t_alias, ".", event_pk_col,
+                           " AS dsomop_event_order_id")
   }
 
   # Use TOP for limit (OHDSI SQL convention, translated to LIMIT by .sql_translate)
   if (!is.null(limit)) {
-    sql <- paste0("SELECT TOP ", as.integer(limit), " ", select_parts,
+    limit_num <- suppressWarnings(as.numeric(limit))
+    if (length(limit_num) != 1L || is.na(limit_num) || !is.finite(limit_num) ||
+        limit_num != floor(limit_num) || limit_num < 1L) {
+      stop("limit must be one positive integer.", call. = FALSE)
+    }
+    max_limit <- suppressWarnings(as.numeric(
+      getOption("dsomop.max_query_rows", 1000000L)
+    ))
+    if (length(max_limit) != 1L || is.na(max_limit) || !is.finite(max_limit) ||
+        max_limit != floor(max_limit) || max_limit < 1L) {
+      stop("dsomop.max_query_rows must be one positive integer.", call. = FALSE)
+    }
+    if (limit_num > max_limit) {
+      stop("limit exceeds the server query-row cap.", call. = FALSE)
+    }
+    sql <- paste0("SELECT TOP ", as.integer(limit_num), " ", select_parts,
                   " FROM ", qualified_table, " AS ", t_alias)
   } else {
     sql <- paste0("SELECT ", select_parts, " FROM ", qualified_table, " AS ", t_alias)
@@ -365,19 +999,21 @@
   # Build WHERE clauses
   where <- character(0)
 
-  if (!is.null(concept_filter) && length(concept_filter) > 0 &&
-      has_concept_filter_col) {
-    ids <- paste(as.integer(concept_filter), collapse = ", ")
-    where <- c(where, paste0(t_alias, ".", concept_filter_col, " IN (", ids, ")"))
+  if (!is.null(concept_filter)) {
+    where <- c(where, .sqlIdInPredicate(
+      paste0(t_alias, ".", concept_filter_col), concept_filter
+    ))
   }
 
-  if (!is.null(person_ids) && has_person_id) {
-    ids <- .sqlIdList(person_ids)
-    where <- c(where, paste0(t_alias, ".person_id IN (", ids, ")"))
+  if (!is.null(person_ids)) {
+    where <- c(where, .sqlIdInPredicate(
+      paste0(t_alias, ".person_id"), person_ids
+    ))
   }
 
   if (needs_cohort_join) {
-    sql <- paste0(sql, " INNER JOIN ", cohort_table,
+    ranked_cohort <- .rankedCohortSql(cohort_table, handle)
+    sql <- paste0(sql, " INNER JOIN ", ranked_cohort,
                   " AS c ON c.subject_id = ", t_alias, ".person_id")
   } else if (!is.null(cohort_table) && has_person_id) {
     where <- c(where, paste0(
@@ -389,25 +1025,44 @@
   # Visit-linkage filter: restrict events to visits of given visit_concept_id
   # values via the visit_occurrence_id FK (present in the join graph). Emitted as
   # an EXISTS so it never multiplies rows or exposes visit identifiers.
-  if (!is.null(visit_filter) && "visit_occurrence_id" %in% col_df$column_name) {
+  if (!is.null(visit_filter)) {
+    if (!"visit_occurrence_id" %in% col_df$column_name) {
+      stop("visit_filter cannot be applied to table '", table,
+           "' because visit_occurrence_id is unavailable.", call. = FALSE)
+    }
     vo_row <- bp$tables[bp$tables$table_name == "visit_occurrence" &
                           bp$tables$present_in_db, , drop = FALSE]
-    visit_ids <- suppressWarnings(as.integer(unlist(
+    raw_visit_ids <- unlist(
       visit_filter$concept_ids %||% visit_filter$visit_concept_id,
-      use.names = FALSE)))
-    visit_ids <- unique(visit_ids[!is.na(visit_ids)])
-    if (nrow(vo_row) > 0 && length(visit_ids) > 0) {
-      where <- c(where, paste0(
-        "EXISTS (SELECT 1 FROM ", vo_row$qualified_name[1], " AS v",
-        " WHERE v.visit_occurrence_id = ", t_alias, ".visit_occurrence_id",
-        " AND v.visit_concept_id IN (",
-        paste(visit_ids, collapse = ", "), "))"
-      ))
+      use.names = FALSE)
+    numeric_visit_ids <- suppressWarnings(as.numeric(raw_visit_ids))
+    visit_ids <- suppressWarnings(as.integer(raw_visit_ids))
+    if (length(raw_visit_ids) == 0L || anyNA(numeric_visit_ids) ||
+        any(!is.finite(numeric_visit_ids)) || anyNA(visit_ids) ||
+        any(numeric_visit_ids != visit_ids)) {
+      stop("visit_filter requires one or more finite integer visit concept ",
+           "IDs.", call. = FALSE)
     }
+    if (nrow(vo_row) == 0) {
+      stop("visit_filter requires the visit_occurrence table.", call. = FALSE)
+    }
+    vo_cols <- bp$columns[["visit_occurrence"]]$column_name
+    required_visit_cols <- c("visit_occurrence_id", "visit_concept_id")
+    if (!all(required_visit_cols %in% vo_cols)) {
+      stop("visit_filter requires visit_occurrence_id and visit_concept_id ",
+           "on visit_occurrence.", call. = FALSE)
+    }
+    visit_ids <- unique(visit_ids)
+    where <- c(where, paste0(
+      "EXISTS (SELECT 1 FROM ", vo_row$qualified_name[1], " AS v",
+      " WHERE v.visit_occurrence_id = ", t_alias, ".visit_occurrence_id",
+      " AND v.visit_concept_id IN (",
+      paste(visit_ids, collapse = ", "), "))"
+    ))
   }
 
   # Temporal WHERE clauses
-  if (!is.null(temporal) && has_person_id) {
+  if (!is.null(temporal)) {
     date_col_temporal <- .getDateColumn(bp, table_lower)
     temporal_where <- .compileTemporalWhere(
       handle, temporal, t_alias, date_col_temporal
@@ -416,16 +1071,55 @@
   }
 
   if (!is.null(time_window)) {
-    date_col <- time_window$date_column %||% .getDateColumn(bp, table_lower)
-    if (!is.null(date_col) && date_col %in% col_df$column_name) {
+    if (!is.list(time_window) || length(time_window) == 0L ||
+        is.null(names(time_window)) || any(!nzchar(names(time_window))) ||
+        anyDuplicated(names(time_window))) {
+      stop("time_window must be a non-empty named specification.",
+           call. = FALSE)
+    }
+    unknown_time_fields <- setdiff(
+      names(time_window), c("date_column", "start_date", "end_date")
+    )
+    if (length(unknown_time_fields) > 0L) {
+      stop("Unknown time_window field(s): ",
+           paste(unknown_time_fields, collapse = ", "), ".", call. = FALSE)
+    }
+    if (!is.null(time_window$date_column)) {
+      if (!is.character(time_window$date_column) ||
+          length(time_window$date_column) != 1L ||
+          is.na(time_window$date_column)) {
+        stop("time_window$date_column must be one column name.",
+             call. = FALSE)
+      }
+      date_col <- tolower(.validateIdentifier(time_window$date_column,
+                                               "time_window date column"))
+    } else {
+      date_col <- .getDateColumn(bp, table_lower)
+    }
+    has_bounds <- !is.null(time_window$start_date) ||
+      !is.null(time_window$end_date)
+    if (!has_bounds) {
+      stop("time_window must contain start_date and/or end_date.",
+           call. = FALSE)
+    }
+    if (has_bounds && (is.null(date_col) || !date_col %in% col_df$column_name)) {
+      stop("A time_window was supplied, but its date column is unavailable.",
+           call. = FALSE)
+    }
+    if (has_bounds) {
+      bounds <- .validateDateBounds(
+        time_window$start_date, time_window$end_date, "time_window"
+      )
       if (!is.null(time_window$start_date)) {
         where <- c(where, paste0(
-          t_alias, ".", date_col, " >= ", .quoteLiteral(time_window$start_date)
+          t_alias, ".", date_col, " >= ",
+          .quoteLiteral(as.character(bounds$start), handle)
         ))
       }
       if (!is.null(time_window$end_date)) {
         where <- c(where, paste0(
-          t_alias, ".", date_col, " <= ", .quoteLiteral(time_window$end_date)
+          t_alias, ".", date_col, " < ",
+          .quoteLiteral(as.character(bounds$end + 1L), handle)
         ))
       }
     }
@@ -443,10 +1137,13 @@
     # column). Resolve them to this table's actual date column BEFORE validation,
     # otherwise the allowlist check rejects the sentinel as an unknown column.
     filters <- .resolveFilterDateColumns(filters, bp, table_lower)
-    .assertCustomFilterSafe(filters, valid_cols)
+    .assertCustomFilterSafe(filters, valid_cols, handle = handle,
+                            table = table_lower)
     filter_sql <- .compileFilter(handle, filters, t_alias, valid_cols)
     if (!is.null(filter_sql) && nchar(filter_sql) > 0) {
       where <- c(where, filter_sql)
+    } else {
+      stop("Custom filter did not compile to a predicate.", call. = FALSE)
     }
   }
 
@@ -528,10 +1225,10 @@
 #' Bridges the \code{\link{.compileFilter}} operator vocabulary onto the filter
 #' families understood by \code{\link{.classifyFilter}} so that every custom
 #' filter leaf is subject to the SAME granularity policy as the cohort filters.
-#' Range/membership operators map to \code{value_threshold} (a constrained
-#' range family); exact-match operators (\code{==}/\code{!=}) on an arbitrary
-#' column map to \code{custom}, which \code{.classifyFilter} blocks, because a
-#' single arbitrary-column equality is the canonical fingerprinting primitive.
+#' Membership/null operators map to \code{value_threshold}; exact-match and
+#' client-authored ordered comparisons map to \code{custom}, which
+#' \code{.classifyFilter} blocks. Dates are handled separately as validated
+#' bounded ranges and numerics require a server-issued \code{value_bin}.
 #' \code{value_bin} is the pre-validated, server-sanctioned binning family and
 #' is always allowed.
 #'
@@ -541,10 +1238,10 @@
 .filterOpClass <- function(op) {
   switch(op,
     "value_bin" = "value_bin",
-    ">=" =, "gte" =, "<=" =, "lte" =, ">" =, "gt" =, "<" =, "lt" =,
-    "between" =, "in" =, "not_in" =, "is_null" =, "not_null" = "value_threshold",
-    # ==, !=, eq, ne and anything unrecognised: treat as arbitrary custom
-    # predicate -> blocked by .classifyFilter (fail-closed).
+    "between" =, "in" =, "not_in" =, "is_null" =,
+      "not_null" = "value_threshold",
+    # Exact and ordered comparisons, plus anything unrecognised, are arbitrary
+    # client thresholds -> blocked by .classifyFilter (fail-closed).
     "custom"
   )
 }
@@ -614,6 +1311,73 @@
   filter
 }
 
+#' Validate a numeric bin against server-issued session state
+#'
+#' @param handle CDM handle carrying the safe-bin cache.
+#' @param table,column Source table and numeric column.
+#' @param value List with finite `lower` and `upper` edges.
+#' @param scope Contract returned by `.profileSafeCutpoints()`.
+#' @return `TRUE` invisibly, or a generic fail-closed error.
+#' @keywords internal
+.assertSafeNumericBinContract <- function(handle, table, column, value, scope) {
+  fail <- function() {
+    stop("Disclosive: numeric bin was not issued for this resource session and ",
+         "table scope; request fresh safe cutpoints first.", call. = FALSE)
+  }
+  if (is.null(handle) || !is.list(scope) || is.null(names(scope)) ||
+      any(!nzchar(names(scope))) || anyDuplicated(names(scope))) fail()
+  allowed <- c("table", "column", "concept_id", "concept_col", "n_bins")
+  if (length(setdiff(names(scope), allowed)) > 0L ||
+      !all(c("table", "column", "n_bins") %in% names(scope))) fail()
+
+  table <- tolower(.validateIdentifier(table, "safe-bin table"))
+  column <- tolower(.validateIdentifier(column, "safe-bin column"))
+  scope_table <- tryCatch(
+    tolower(.validateIdentifier(scope$table, "safe-bin scope table")),
+    error = function(e) ""
+  )
+  scope_column <- tryCatch(
+    tolower(.validateIdentifier(scope$column, "safe-bin scope column")),
+    error = function(e) ""
+  )
+  n_bins_num <- suppressWarnings(as.numeric(scope$n_bins))
+  n_bins_int <- suppressWarnings(as.integer(scope$n_bins))
+  if (!identical(scope_table, table) || !identical(scope_column, column) ||
+      length(n_bins_num) != 1L || !is.finite(n_bins_num) ||
+      length(n_bins_int) != 1L || is.na(n_bins_int) ||
+      n_bins_num != n_bins_int || n_bins_int < 2L || n_bins_int > 100L) fail()
+
+  lower <- suppressWarnings(as.numeric(value$lower))
+  upper <- suppressWarnings(as.numeric(value$upper))
+  if (length(lower) != 1L || length(upper) != 1L ||
+      !is.finite(lower) || !is.finite(upper) || lower >= upper) fail()
+
+  now <- as.numeric(Sys.time())
+  cache <- handle$safe_numeric_bins %||% list()
+  same_nullable <- function(x, y) {
+    if (is.null(x) && is.null(y)) return(TRUE)
+    if (is.null(x) || is.null(y)) return(FALSE)
+    identical(as.character(unlist(x, use.names = FALSE)),
+              as.character(unlist(y, use.names = FALSE)))
+  }
+  matches <- vapply(cache, function(entry) {
+    if (!is.list(entry) || is.null(entry$expires_at) ||
+        !is.finite(entry$expires_at) || entry$expires_at <= now ||
+        !identical(entry$table, table) || !identical(entry$column, column) ||
+        !identical(as.integer(entry$n_bins), n_bins_int) ||
+        !same_nullable(entry$concept_id, scope$concept_id) ||
+        !same_nullable(entry$concept_col, scope$concept_col)) return(FALSE)
+    edges <- suppressWarnings(as.numeric(entry$breaks))
+    if (length(edges) < 2L || any(!is.finite(edges))) return(FALSE)
+    near <- function(edge, target) {
+      any(abs(edge - target) <= 1e-10 * pmax(1, abs(target)))
+    }
+    near(edges, lower) && near(edges, upper)
+  }, logical(1))
+  if (!any(matches)) fail()
+  invisible(TRUE)
+}
+
 #' Validate a custom filter tree against the disclosure policy (fail-closed)
 #'
 #' Walks the same AND/OR/leaf structure as \code{\link{.compileFilter}} and, for
@@ -627,27 +1391,161 @@
 #'
 #' @param filter List; the filter structure
 #' @param valid_columns Character vector; filterable column allowlist
+#' @param handle Optional CDM handle. Required to authenticate `value_bin`
+#'   contracts at a public query boundary.
+#' @param table Optional source table paired with `handle`.
+#' @param .depth Internal recursion depth.
+#' @param .state Internal shared complexity counter.
 #' @return TRUE invisibly, or stops with a disclosure error
 #' @keywords internal
-.assertCustomFilterSafe <- function(filter, valid_columns) {
+.assertCustomFilterSafe <- function(filter, valid_columns, handle = NULL,
+                                    table = NULL, .depth = 1L,
+                                    .state = NULL) {
   if (is.null(filter) || length(filter) == 0) return(invisible(TRUE))
 
-  if ("and" %in% names(filter)) {
-    for (f in filter$and) .assertCustomFilterSafe(f, valid_columns)
+  leaf_values <- if (is.list(filter) && !is.null(names(filter)) &&
+      !any(c("and", "or") %in% names(filter))) {
+    length(unlist(filter$value, use.names = FALSE))
+  } else 0L
+  .state <- .filterComplexityVisit(.state, .depth, leaf_values)
+
+  if (!is.list(filter) || is.null(names(filter)) ||
+      any(!nzchar(names(filter))) || anyDuplicated(names(filter))) {
+    stop("Custom filters must be named AND/OR groups or named leaves.",
+         call. = FALSE)
+  }
+  group_keys <- intersect(names(filter), c("and", "or"))
+  if (length(group_keys) > 0L) {
+    if (length(group_keys) != 1L || length(names(filter)) != 1L) {
+      stop("Custom filter nodes cannot mix AND/OR groups with each other or ",
+           "with leaf fields.", call. = FALSE)
+    }
+  }
+
+  if (identical(group_keys, "and")) {
+    if (!is.list(filter$and) || length(filter$and) == 0) {
+      stop("Custom filter AND group must contain at least one predicate.",
+           call. = FALSE)
+    }
+    for (f in filter$and) {
+      .assertCustomFilterSafe(
+        f, valid_columns, handle = handle, table = table,
+        .depth = .depth + 1L, .state = .state
+      )
+    }
     return(invisible(TRUE))
   }
-  if ("or" %in% names(filter)) {
-    for (f in filter$or) .assertCustomFilterSafe(f, valid_columns)
+  if (identical(group_keys, "or")) {
+    if (!is.list(filter$or) || length(filter$or) == 0) {
+      stop("Custom filter OR group must contain at least one predicate.",
+           call. = FALSE)
+    }
+    for (f in filter$or) {
+      .assertCustomFilterSafe(
+        f, valid_columns, handle = handle, table = table,
+        .depth = .depth + 1L, .state = .state
+      )
+    }
     return(invisible(TRUE))
+  }
+
+  allowed_leaf_fields <- c("var", "op", "value", "safe_scope")
+  unknown_fields <- setdiff(names(filter), allowed_leaf_fields)
+  if (length(unknown_fields) > 0L) {
+    stop("Unknown custom filter leaf field(s): ",
+         paste(unknown_fields, collapse = ", "), ".", call. = FALSE)
+  }
+  if (!all(c("var", "op") %in% names(filter))) {
+    stop("Custom filter leaves require both var and op.", call. = FALSE)
   }
 
   var <- tolower(filter$var %||% "")
   op <- tolower(filter$op %||% "")
+  if (!nzchar(var) || !nzchar(op)) {
+    stop("Custom filter leaves require both var and op.", call. = FALSE)
+  }
+  valid_ops <- c("==", "eq", "!=", "ne", ">=", "gte", "<=", "lte",
+                 ">", "gt", "<", "lt", "in", "not_in", "between",
+                 "is_null", "not_null", "value_bin")
+  if (!op %in% valid_ops) {
+    stop("Unknown custom filter operator: '", op, "'.", call. = FALSE)
+  }
+  if (!op %in% c("is_null", "not_null") &&
+      (!"value" %in% names(filter) || is.null(filter$value))) {
+    stop("Custom filter operator '", op, "' requires a value.",
+         call. = FALSE)
+  }
   .validateIdentifier(var, "filter column")
   if (!var %in% valid_columns) {
     stop("Disclosive: filter on column '", var,
          "' is not permitted (identifier, blocked, or unknown column).",
          call. = FALSE)
+  }
+
+  value <- filter$value
+  is_date <- grepl("_date$|_datetime$", var)
+  if (is_date) {
+    if (!identical(op, "between")) {
+      stop("Disclosive: date filter column '", var,
+           "' only permits one validated BETWEEN range; standalone date ",
+           "comparisons cannot prove a safe width.", call. = FALSE)
+    }
+    values <- unlist(value, use.names = FALSE)
+    if (length(values) != 2L) {
+      stop("Date BETWEEN filters require exactly two ISO dates.",
+           call. = FALSE)
+    }
+    bounds <- .validateDateBounds(values[1], values[2], "date filter")
+    .validateFilter("date_range", list(
+      start = as.character(bounds$start), end = as.character(bounds$end)
+    ))
+    return(invisible(TRUE))
+  }
+
+  if (op %in% c(">=", "gte", "<=", "lte", ">", "gt", "<", "lt")) {
+    stop("Disclosive: client-authored ordered thresholds are not permitted; ",
+         "request a server-issued value_bin for numeric columns.",
+         call. = FALSE)
+  }
+
+  if (identical(op, "value_bin")) {
+    lower <- suppressWarnings(as.numeric(value$lower))
+    upper <- suppressWarnings(as.numeric(value$upper))
+    if (length(value$lower) != 1L || length(value$upper) != 1L ||
+        length(lower) != 1L || length(upper) != 1L ||
+        !is.finite(lower) || !is.finite(upper) || lower >= upper) {
+      stop("value_bin requires finite scalar lower/upper bounds with lower < ",
+           "upper.", call. = FALSE)
+    }
+    if (!is.null(handle)) {
+      .assertSafeNumericBinContract(
+        handle, table = table, column = var, value = value,
+        scope = filter$safe_scope
+      )
+    }
+  }
+
+  if (op %in% c("in", "not_in")) {
+    safe_categories <- c(
+      "domain_id", "vocabulary_id", "concept_class_id",
+      "standard_concept", "invalid_reason"
+    )
+    is_safe_category <- grepl("_concept_id$", var) ||
+      var %in% safe_categories
+    values <- unlist(value, use.names = FALSE)
+    if (!is_safe_category) {
+      stop("Disclosive: IN/NOT IN is only permitted for concept IDs or ",
+           "approved categorical columns, not '", var, "'.", call. = FALSE)
+    }
+    if (length(values) == 0L || anyNA(values)) {
+      stop("IN/NOT IN filters require at least one non-missing value.",
+           call. = FALSE)
+    }
+  }
+
+  if (identical(op, "between")) {
+    stop("Numeric BETWEEN filters are not permitted; use a validated ",
+         "value_bin instead.", call. = FALSE)
   }
   .validateFilter(.filterOpClass(op), list())
   invisible(TRUE)
@@ -659,15 +1557,25 @@
 #' @param filter List; the filter structure
 #' @param table_alias Character; table alias
 #' @param valid_columns Character vector; whitelist
+#' @param .depth Internal recursion depth.
+#' @param .state Internal shared complexity counter.
 #' @return Character; SQL WHERE fragment
 #' @keywords internal
 .compileFilter <- function(handle, filter, table_alias = "t",
-                           valid_columns = NULL) {
+                           valid_columns = NULL, .depth = 1L,
+                           .state = NULL) {
   if (is.null(filter) || length(filter) == 0) return(NULL)
+
+  leaf_values <- if (is.list(filter) && !is.null(names(filter)) &&
+      !any(c("and", "or") %in% names(filter))) {
+    length(unlist(filter$value, use.names = FALSE))
+  } else 0L
+  .state <- .filterComplexityVisit(.state, .depth, leaf_values)
 
   if ("and" %in% names(filter)) {
     parts <- vapply(filter$and, function(f) {
-      .compileFilter(handle, f, table_alias, valid_columns)
+      .compileFilter(handle, f, table_alias, valid_columns,
+                     .depth = .depth + 1L, .state = .state)
     }, character(1))
     parts <- parts[nchar(parts) > 0]
     if (length(parts) == 0) return("")
@@ -676,7 +1584,8 @@
 
   if ("or" %in% names(filter)) {
     parts <- vapply(filter$or, function(f) {
-      .compileFilter(handle, f, table_alias, valid_columns)
+      .compileFilter(handle, f, table_alias, valid_columns,
+                     .depth = .depth + 1L, .state = .state)
     }, character(1))
     parts <- parts[nchar(parts) > 0]
     if (length(parts) == 0) return("")
@@ -695,23 +1604,38 @@
   col_ref <- paste0(table_alias, ".", var)
 
   switch(op,
-    "==" =, "eq" = paste0(col_ref, " = ", .quoteLiteral(value)),
-    "!=" =, "ne" = paste0(col_ref, " != ", .quoteLiteral(value)),
-    ">=" =, "gte" = paste0(col_ref, " >= ", .quoteLiteral(value)),
-    "<=" =, "lte" = paste0(col_ref, " <= ", .quoteLiteral(value)),
-    ">"  =, "gt"  = paste0(col_ref, " > ", .quoteLiteral(value)),
-    "<"  =, "lt"  = paste0(col_ref, " < ", .quoteLiteral(value)),
+    "==" =, "eq" = paste0(col_ref, " = ", .quoteLiteral(value, handle)),
+    "!=" =, "ne" = paste0(col_ref, " != ", .quoteLiteral(value, handle)),
+    ">=" =, "gte" = paste0(col_ref, " >= ", .quoteLiteral(value, handle)),
+    "<=" =, "lte" = paste0(col_ref, " <= ", .quoteLiteral(value, handle)),
+    ">"  =, "gt"  = paste0(col_ref, " > ", .quoteLiteral(value, handle)),
+    "<"  =, "lt"  = paste0(col_ref, " < ", .quoteLiteral(value, handle)),
     "in" = {
-      vals <- paste(vapply(value, .quoteLiteral, character(1)), collapse = ", ")
+      vals <- paste(vapply(value, .quoteLiteral, character(1), handle = handle),
+                    collapse = ", ")
       paste0(col_ref, " IN (", vals, ")")
     },
     "not_in" = {
-      vals <- paste(vapply(value, .quoteLiteral, character(1)), collapse = ", ")
+      vals <- paste(vapply(value, .quoteLiteral, character(1), handle = handle),
+                    collapse = ", ")
       paste0(col_ref, " NOT IN (", vals, ")")
     },
     "between" = {
-      paste0(col_ref, " BETWEEN ", .quoteLiteral(value[1]),
-             " AND ", .quoteLiteral(value[2]))
+      values <- unlist(value, use.names = FALSE)
+      if (grepl("_date$|_datetime$", var)) {
+        start <- .isoDate(values[1], "date filter lower bound")
+        end <- .isoDate(values[2], "date filter upper bound")
+        if (start > end) {
+          stop("Date filter lower bound must not be after its upper bound.",
+               call. = FALSE)
+        }
+        paste0(col_ref, " >= ", .quoteLiteral(as.character(start), handle),
+               " AND ", col_ref, " < ",
+               .quoteLiteral(as.character(end + 1L), handle))
+      } else {
+        paste0(col_ref, " BETWEEN ", .quoteLiteral(values[1], handle),
+               " AND ", .quoteLiteral(values[2], handle))
+      }
     },
     "is_null"  = paste0(col_ref, " IS NULL"),
     "not_null" = paste0(col_ref, " IS NOT NULL"),
@@ -772,7 +1696,35 @@
     out <- sub("\\.0+$", "", out)
   }
   out <- out[!is.na(out) & nzchar(out) & out != "NA"]
+  if (length(out) > 0 && any(!grepl("^[0-9]+$", out))) {
+    stop("Identifier lists must contain only non-negative integer IDs.",
+         call. = FALSE)
+  }
   paste(out, collapse = ", ")
+}
+
+#' Build a portable chunked SQL IN predicate for identifier values
+#'
+#' Oracle accepts at most 1000 expressions in one IN list. Splitting larger
+#' identifier vectors into parenthesized OR clauses is valid on every supported
+#' dialect and avoids requiring a cross-statement temporary table.
+#'
+#' @param column Trusted SQL column expression assembled by dsOMOP.
+#' @param ids Identifier values accepted by \code{\link{.sqlIdList}}.
+#' @param max_per_clause Maximum literals per IN clause.
+#' @return One SQL predicate; empty IDs compile to \code{1 = 0}.
+#' @keywords internal
+.sqlIdInPredicate <- function(column, ids, max_per_clause = 1000L) {
+  literals <- .sqlIdList(ids)
+  if (!nzchar(literals)) return("1 = 0")
+  values <- strsplit(literals, ", ", fixed = TRUE)[[1L]]
+  groups <- split(values, ceiling(seq_along(values) / max_per_clause))
+  clauses <- vapply(groups, function(group) {
+    paste0(column, " IN (", paste(group, collapse = ", "), ")")
+  }, character(1))
+  if (length(clauses) == 1L) clauses else {
+    paste0("(", paste(clauses, collapse = " OR "), ")")
+  }
 }
 
 #' Execute a SQL query and return a data frame
@@ -787,11 +1739,20 @@
   .coerce_integer64(result)
 }
 
+.arrowAvailable <- function() {
+  requireNamespace("arrow", quietly = TRUE)
+}
+
+.renameStagingFile <- function(from, to) {
+  file.rename(from, to)
+}
+
 #' Stream a SQL query result to a Parquet file in chunks
 #'
 #' Uses DBI::dbSendQuery + dbFetch(n=chunk_size) to avoid loading the full
-#' result set into R memory. Peak memory is approximately one chunk (~5MB
-#' for 50K rows). Falls back to CSV if arrow is not installed.
+#' result set into R memory. Peak R memory is bounded by one transformed chunk
+#' plus DBI/Arrow writer buffers and therefore still depends on row width.
+#' Falls back to CSV if Arrow is not installed.
 #'
 #' Strategy: each chunk is written as a separate Parquet file in a temporary
 #' directory. After all chunks are written, arrow::open_dataset() scans them
@@ -803,37 +1764,116 @@
 #' @param output_path Character; path for the output file (.parquet or .csv)
 #' @param chunk_size Integer; rows per chunk (default 50000)
 #' @param chunk_fn Optional function(chunk) applied to each chunk before
-#'   writing. Must return a data.frame with the same columns. Used for
-#'   per-chunk transforms like date handling or type conversion.
-#' @return Named list with file path, format, row count, and column names
+#'   writing. Must return a data.frame; it may remove sensitive columns. Used
+#'   for per-chunk transforms like date handling, type conversion, and
+#'   identifier sanitization.
+#' @return Named list with file path, format, row count, column names, and
+#'   stable storage/class type signatures.
 #' @keywords internal
 .executeQueryToParquet <- function(conn, sql, output_path, chunk_size = 50000L,
                                    chunk_fn = NULL) {
-  use_parquet <- requireNamespace("arrow", quietly = TRUE)
+  old_umask <- Sys.umask("0077")
+  on.exit(Sys.umask(old_umask), add = TRUE)
+  chunk_num <- suppressWarnings(as.numeric(chunk_size))
+  if (length(chunk_num) != 1L || is.na(chunk_num) || !is.finite(chunk_num) ||
+      chunk_num != floor(chunk_num) || chunk_num < 1L || chunk_num > 1000000L) {
+    stop("chunk_size must be one integer from 1 to 1,000,000.", call. = FALSE)
+  }
+  chunk_size <- as.integer(chunk_num)
+  max_rows <- suppressWarnings(as.numeric(
+    getOption("dsomop.max_staged_rows", 50000000L)
+  ))
+  max_bytes <- suppressWarnings(as.numeric(
+    getOption("dsomop.max_staged_bytes", 10 * 1024^3)
+  ))
+  if (length(max_rows) != 1L || is.na(max_rows) || !is.finite(max_rows) ||
+      max_rows != floor(max_rows) || max_rows < 1L ||
+      length(max_bytes) != 1L || is.na(max_bytes) || !is.finite(max_bytes) ||
+      max_bytes < 1) {
+    stop("Staging row/byte caps must be positive finite server values.",
+         call. = FALSE)
+  }
+  use_parquet <- .arrowAvailable()
+
+  if (!is.character(output_path) || length(output_path) != 1L ||
+      is.na(output_path) || !nzchar(output_path)) {
+    stop("output_path must be one non-empty staging path.", call. = FALSE)
+  }
+  staging_dir <- dirname(output_path)
+  staging_token <- basename(staging_dir)
+  staging_base <- .stagingBaseDir()
+  resolved_dir <- tryCatch(
+    normalizePath(staging_dir, winslash = "/", mustWork = TRUE),
+    error = function(e) ""
+  )
+  if (!grepl("^stg_[0-9a-f]{32}$", staging_token) ||
+      .isSymbolicLink(staging_dir) || !dir.exists(staging_dir) ||
+      !identical(resolved_dir,
+                 file.path(staging_base, staging_token))) {
+    stop("Streaming output must stay inside its reserved staging directory.",
+         call. = FALSE)
+  }
+  output_basename <- basename(output_path)
+  if (!grepl("^[A-Za-z_][A-Za-z0-9_.]*\\.parquet$", output_basename)) {
+    stop("Streaming output must have a safe Parquet file name.",
+         call. = FALSE)
+  }
 
   if (!use_parquet) {
     output_path <- sub("\\.parquet$", ".csv", output_path)
   }
-
-  dir.create(dirname(output_path), recursive = TRUE, showWarnings = FALSE)
-  Sys.chmod(dirname(output_path), mode = "0700")
+  if (file.exists(output_path) || .isSymbolicLink(output_path)) {
+    stop("Staged output path already exists.", call. = FALSE)
+  }
+  existing_bytes <- .stagingDirectoryBytes(staging_dir)
+  if (existing_bytes >= max_bytes) {
+    stop("Staged output exceeds the server disk quota.", call. = FALSE)
+  }
 
   col_names <- NULL
+  column_types <- NULL
   n_rows <- 0L
   chunk_idx <- 0L
+  completed <- FALSE
 
   # Temporary directory for per-chunk Parquet files
   chunk_dir <- if (use_parquet) tempfile("pq_chunks_") else NULL
-  if (!is.null(chunk_dir)) dir.create(chunk_dir, recursive = TRUE)
+  out_dir <- NULL
+  if (!is.null(chunk_dir)) {
+    dir.create(chunk_dir, recursive = TRUE, mode = "0700")
+    Sys.chmod(chunk_dir, mode = "0700")
+  }
 
-  rs <- DBI::dbSendQuery(conn, sql)
+  rs <- NULL
   on.exit({
-    if (DBI::dbIsValid(rs)) DBI::dbClearResult(rs)
+    if (!is.null(rs) && DBI::dbIsValid(rs)) DBI::dbClearResult(rs)
     if (!is.null(chunk_dir) && dir.exists(chunk_dir)) {
       unlink(chunk_dir, recursive = TRUE)
     }
-    if (n_rows == 0L && file.exists(output_path)) unlink(output_path)
+    if (!is.null(out_dir) && dir.exists(out_dir)) {
+      unlink(out_dir, recursive = TRUE)
+    }
+    if (!completed && file.exists(output_path)) unlink(output_path)
   }, add = TRUE)
+  rs <- DBI::dbSendQuery(conn, sql)
+
+  # Capture the result schema without consuming rows. A disclosure-safe query
+  # may legitimately be empty; it must still produce a valid, readable staged
+  # file rather than a descriptor pointing at a non-existent path.
+  empty <- DBI::dbFetch(rs, n = 0L)
+  names(empty) <- tolower(names(empty))
+  empty <- .coerce_integer64(empty)
+  if (!is.null(chunk_fn)) empty <- chunk_fn(empty)
+  if (!is.data.frame(empty)) {
+    stop("chunk_fn must return a data.frame.", call. = FALSE)
+  }
+  col_names <- names(empty)
+  schema_signature <- function(x) {
+    vapply(x, function(col) {
+      paste(typeof(col), paste(class(col), collapse = "/"), sep = "|")
+    }, character(1))
+  }
+  column_types <- schema_signature(empty)
 
   repeat {
     chunk <- DBI::dbFetch(rs, n = chunk_size)
@@ -845,9 +1885,17 @@
     if (!is.null(chunk_fn)) {
       chunk <- chunk_fn(chunk)
     }
+    if (!is.data.frame(chunk)) {
+      stop("chunk_fn must return a data.frame.", call. = FALSE)
+    }
+    if (n_rows + nrow(chunk) > max_rows) {
+      stop("Staged output exceeds the server row quota.", call. = FALSE)
+    }
 
-    if (is.null(col_names)) {
-      col_names <- names(chunk)
+    if (!identical(names(chunk), col_names) ||
+        !identical(schema_signature(chunk), column_types)) {
+      stop("Staged chunk transformations must preserve stable names and types.",
+           call. = FALSE)
     }
 
     chunk_idx <- chunk_idx + 1L
@@ -857,51 +1905,82 @@
                                sprintf("chunk_%06d.parquet", chunk_idx))
       arrow::write_parquet(arrow::as_arrow_table(chunk), chunk_path)
     } else {
-      write.table(chunk, output_path,
+      utils::write.table(chunk, output_path,
                   sep = ",", row.names = FALSE,
                   col.names = (n_rows == 0L),
                   append = (n_rows > 0L))
     }
 
     n_rows <- n_rows + nrow(chunk)
+    staged_files <- if (use_parquet) {
+      list.files(chunk_dir, full.names = TRUE)
+    } else {
+      output_path
+    }
+    bytes <- sum(file.info(staged_files)$size, na.rm = TRUE)
+    if (existing_bytes + bytes > max_bytes) {
+      stop("Staged output exceeds the server disk quota.", call. = FALSE)
+    }
   }
 
   DBI::dbClearResult(rs)
+
+  if (chunk_idx == 0L) {
+    if (use_parquet) {
+      arrow::write_parquet(arrow::as_arrow_table(empty), output_path)
+    } else {
+      utils::write.table(empty, output_path, sep = ",", row.names = FALSE,
+                  col.names = TRUE)
+    }
+  }
 
   # Consolidate chunks into a single Parquet file via lazy dataset scan
   if (use_parquet && chunk_idx > 0L) {
     if (chunk_idx == 1L) {
       # Single chunk: just move the file
-      file.rename(
+      moved <- .renameStagingFile(
         file.path(chunk_dir, "chunk_000001.parquet"),
         output_path
       )
+      if (!isTRUE(moved)) {
+        stop("Could not finalize staged Parquet output.", call. = FALSE)
+      }
     } else {
       # Multiple chunks: consolidate without loading into R memory
       ds <- arrow::open_dataset(chunk_dir)
       out_dir <- tempfile("pq_consolidated_")
-      dir.create(out_dir)
+      dir.create(out_dir, mode = "0700")
       arrow::write_dataset(ds, out_dir, format = "parquet",
                             max_rows_per_file = .Machine$integer.max)
       consolidated <- list.files(out_dir, full.names = TRUE,
                                   pattern = "\\.parquet$")
-      file.rename(consolidated[1], output_path)
+      if (length(consolidated) != 1L ||
+          !isTRUE(.renameStagingFile(consolidated[[1]], output_path))) {
+        stop("Could not consolidate staged Parquet output.", call. = FALSE)
+      }
       unlink(out_dir, recursive = TRUE)
+      out_dir <- NULL
     }
     unlink(chunk_dir, recursive = TRUE)
     chunk_dir <- NULL  # prevent on.exit double-cleanup
   }
 
-  if (n_rows > 0L) {
-    Sys.chmod(output_path, mode = "0600")
+  if (!file.exists(output_path)) {
+    stop("Staged query did not create an output file.", call. = FALSE)
   }
+  if (existing_bytes + file.info(output_path)$size > max_bytes) {
+    stop("Staged output exceeds the server disk quota.", call. = FALSE)
+  }
+  Sys.chmod(output_path, mode = "0600")
 
   fmt <- if (use_parquet) "parquet" else "csv"
+  completed <- TRUE
   list(
     file = output_path,
     format = fmt,
     n_rows = n_rows,
-    columns = col_names
+    columns = col_names,
+    column_types = column_types
   )
 }
 
@@ -913,6 +1992,188 @@
 #' @keywords internal
 .executeStatement <- function(handle, sql) {
   invisible(.withDbReconnect(handle, function(conn) DBI::dbExecute(conn, sql)))
+}
+
+#' Resolve concept sets carried by individual feature specifications
+#'
+#' Feature specs keep their own concept-set semantics. In particular, one spec
+#' may request descendants while another spec over the same table may not. The
+#' resolution therefore happens per spec, before both SQL row selection and the
+#' in-memory reductions.
+#'
+#' @param handle CDM handle.
+#' @param specs Named list of feature specifications.
+#' @param table Optional source table. When supplied, output names and value
+#'   columns are validated against the table blueprint before any SQL runs.
+#' @return Feature specifications with concept sets resolved to integer IDs.
+#' @keywords internal
+.resolveFeatureSpecs <- function(handle, specs, table = NULL) {
+  if (is.null(specs)) return(specs)
+  if (!is.list(specs)) {
+    stop("feature_specs must be a list of feature specifications.",
+         call. = FALSE)
+  }
+
+  exact_ids <- function(x) {
+    raw <- unlist(x, use.names = FALSE)
+    if (length(raw) == 0L) return(integer(0))
+    max_values <- .extractionCap("dsomop.max_filter_values", 10000L)
+    if (length(raw) > max_values) {
+      stop("Feature concept_set exceeds the server max_filter_values cap of ",
+           max_values, ".", call. = FALSE)
+    }
+    numeric_ids <- suppressWarnings(as.numeric(raw))
+    integer_ids <- suppressWarnings(as.integer(raw))
+    if (anyNA(numeric_ids) || any(!is.finite(numeric_ids)) ||
+        anyNA(integer_ids) || any(numeric_ids != integer_ids)) {
+      stop("Feature concept_set values must be finite exact integers.",
+           call. = FALSE)
+    }
+    unique(integer_ids)
+  }
+
+  resolved <- lapply(specs, function(spec) {
+    if (!is.list(spec)) {
+      stop("Each feature specification must be a named list.", call. = FALSE)
+    }
+    concept_set <- spec$concept_set
+    if (is.list(concept_set) && !is.null(concept_set$concepts)) {
+      concept_set$concepts <- exact_ids(concept_set$concepts)
+      if (!is.null(concept_set$exclude)) {
+        concept_set$exclude <- exact_ids(concept_set$exclude)
+      }
+      spec$concept_set <- .vocabExpandConceptSet(handle, concept_set)
+      max_values <- .extractionCap("dsomop.max_filter_values", 10000L)
+      if (length(spec$concept_set) > max_values) {
+        stop("Expanded feature concept_set exceeds the server ",
+             "max_filter_values cap of ", max_values, ".", call. = FALSE)
+      }
+    } else {
+      spec$concept_set <- exact_ids(concept_set)
+    }
+    spec
+  })
+
+  if (is.null(table)) return(resolved)
+
+  bp <- .buildBlueprint(handle)
+  table_lower <- tolower(.validateIdentifier(table, "feature source table"))
+  col_df <- bp$columns[[table_lower]]
+  if (is.null(col_df) || nrow(col_df) == 0L) {
+    stop("No columns found for feature source table '", table, "'.",
+         call. = FALSE)
+  }
+  safe_value_columns <- .filterableColumns(bp, table_lower)
+  value_types <- c(
+    "mean_value", "min_value", "max_value", "first_value", "latest_value",
+    "sum_value", "sd_value", "cv_value", "slope_value"
+  )
+  reserved_names <- unique(tolower(c(
+    .identifierColumns(), .PERSON_KEY_COLS(), .EPISODE_KEY_COLS(),
+    "rn", "dsomop_event_order_id", "dsomop_event_order_date",
+    "dsomop_event_partition_concept", ".seq", ".present",
+    "days_from_index"
+  )))
+  list_names <- names(resolved)
+  effective_names <- character(length(resolved))
+
+  for (i in seq_along(resolved)) {
+    spec <- resolved[[i]]
+    name <- spec$name
+    if (!is.null(name) &&
+        (!is.character(name) || length(name) != 1L || is.na(name))) {
+      stop("Feature name must be NULL or one non-missing character value.",
+           call. = FALSE)
+    }
+    if (is.null(name) || !nzchar(name)) {
+      key <- if (!is.null(list_names)) list_names[[i]] else ""
+      if (!is.na(key) && nzchar(key)) {
+        name <- key
+      } else {
+        concept_tag <- if (length(spec$concept_set) > 0L) {
+          paste(spec$concept_set, collapse = "_")
+        } else {
+          "all"
+        }
+        name <- .standardizeName(concept_tag)
+        if (is.na(name) || !nzchar(name)) name <- paste0("feature_", i)
+      }
+    }
+    if (tolower(name) %in% reserved_names) {
+      stop("Feature name '", name, "' is reserved for an identifier or ",
+           "internal linkage column.", call. = FALSE)
+    }
+    spec$name <- name
+    effective_names[[i]] <- tolower(name)
+
+    type <- spec$type %||% "boolean"
+    if (!is.character(type) || length(type) != 1L || is.na(type) ||
+        !nzchar(type)) {
+      stop("Feature '", name,
+           "' type must be one non-empty character value.", call. = FALSE)
+    }
+    supplied_value <- !is.null(spec$value_column)
+    if (supplied_value || type %in% value_types) {
+      value_column <- spec$value_column %||% "value_as_number"
+      if (!is.character(value_column) || length(value_column) != 1L ||
+          is.na(value_column) || !nzchar(value_column)) {
+        stop("Feature '", name,
+             "' value_column must be one non-empty column name.",
+             call. = FALSE)
+      }
+      value_column <- tolower(.validateIdentifier(
+        value_column, paste0("Feature '", name, "' value_column")
+      ))
+      if (!value_column %in% col_df$column_name) {
+        stop("Feature '", name, "' value_column '", value_column,
+             "' does not exist on table '", table, "'.", call. = FALSE)
+      }
+      if (!value_column %in% safe_value_columns) {
+        stop("Disclosive: feature '", name, "' value_column '",
+             value_column, "' is an identifier or blocked column.",
+             call. = FALSE)
+      }
+      spec$value_column <- value_column
+    }
+    resolved[[i]] <- spec
+  }
+
+  if (anyDuplicated(effective_names)) {
+    duplicates <- unique(effective_names[duplicated(effective_names)])
+    stop("Feature output names must be unique; duplicated name(s): ",
+         paste(duplicates, collapse = ", "), ".", call. = FALSE)
+  }
+  resolved
+}
+
+.featureSpecTypes <- function(specs) {
+  if (is.null(specs) || length(specs) == 0L) return(character(0))
+  vapply(specs, function(spec) {
+    type <- spec$type %||% "boolean"
+    if (!is.character(type) || length(type) != 1L || is.na(type) ||
+        !nzchar(type)) {
+      stop("Feature type must be one non-empty character value.",
+           call. = FALSE)
+    }
+    type
+  }, character(1))
+}
+
+.featureScopeFilter <- function(specs, default_concept_col) {
+  if (is.null(specs) || length(specs) == 0L) return(NULL)
+  concept_sets <- lapply(specs, function(spec) spec$concept_set)
+  # One unscoped spec means the shared source stream must remain unscoped.
+  if (any(lengths(concept_sets) == 0L)) return(NULL)
+
+  leaves <- lapply(seq_along(specs), function(i) {
+    column <- specs[[i]]$concept_col %||% default_concept_col
+    if (is.null(column) || length(column) != 1L || is.na(column) ||
+        !nzchar(column)) {
+      stop("A scoped feature requires a usable concept_col.", call. = FALSE)
+    }
+    list(var = tolower(column), op = "in", value = concept_sets[[i]])
+  })
+  if (length(leaves) == 1L) leaves[[1]] else list(or = leaves)
 }
 
 # --- Main Extraction ---
@@ -927,8 +2188,11 @@
 #' @param time_window Named list
 #' @param cohort_table Character; cohort temp table name
 #' @param translate_concepts Logical; replace concept IDs with names
-#' @param representation Character; "long", "wide", or "features"
+#' @param representation Character; "long", "wide", "features", or "sparse".
 #' @param feature_specs Named list; for features mode
+#' @param representation_grain Character; aggregation unit for wide/features,
+#'   either "person" or "episode". Episode grain requires a cohort-anchored
+#'   index window and preserves one row per cohort_row_id.
 #' @param block_sensitive Logical; block sensitive columns
 #' @param temporal List; temporal filtering spec
 #' @param date_handling List; date handling spec
@@ -938,6 +2202,10 @@
 #'   passed through to \code{\link{.compileSelect}}.
 #' @param visit_filter List; optional visit-linkage filter passed through to
 #'   \code{\link{.compileSelect}}.
+#' @details In wide mode, an explicit \code{concept_filter} is also the output
+#'   column contract: every requested concept is materialized even when no
+#'   qualifying row is observed. This keeps a closed concept set structurally
+#'   identical across federated sites.
 #' @return Data frame
 #' @keywords internal
 .extractTable <- function(handle, table, columns = NULL,
@@ -946,12 +2214,351 @@
                           translate_concepts = TRUE,
                           representation = "long",
                           feature_specs = NULL,
+                          representation_grain = "person",
                           block_sensitive = TRUE,
                           temporal = NULL,
                           date_handling = NULL,
                           add_cohort_date = FALSE,
                           filters = NULL, concept_col = NULL,
                           visit_filter = NULL) {
+
+  bp <- .buildBlueprint(handle)
+  feature_person_ids <- NULL
+  feature_roster <- NULL
+  feature_date_col <- NULL
+  feature_concept_col <- NULL
+  feature_types <- character(0)
+  feature_has_time_windows <- FALSE
+  sparse_person_ids <- NULL
+  sparse_roster <- NULL
+  wide_roster <- NULL
+  allowed_representations <- c("long", "wide", "features", "sparse")
+  if (!is.character(representation) || length(representation) != 1L ||
+      is.na(representation) || !representation %in% allowed_representations) {
+    stop("representation must be long, wide, features, or sparse.",
+         call. = FALSE)
+  }
+  if (!is.character(representation_grain) ||
+      length(representation_grain) != 1L || is.na(representation_grain) ||
+      !tolower(representation_grain) %in% c("person", "episode")) {
+    stop("representation_grain must be 'person' or 'episode'.",
+         call. = FALSE)
+  }
+  representation_grain <- tolower(representation_grain)
+  if (identical(representation, "features")) {
+    max_feature_specs <- .extractionCap("dsomop.max_feature_specs", 1000L)
+    if (!is.null(feature_specs) && length(feature_specs) > max_feature_specs) {
+      stop("feature_specs exceeds the server cap of ", max_feature_specs, ".",
+           call. = FALSE)
+    }
+    feature_specs <- .resolveFeatureSpecs(handle, feature_specs, table = table)
+    feature_types <- .featureSpecTypes(feature_specs)
+    feature_has_time_windows <- any(vapply(feature_specs, function(spec) {
+      !is.null(spec$time_window)
+    }, logical(1)))
+
+    feature_concept_col <- concept_col %||%
+      .getDomainConceptColumn(bp, tolower(table))
+    if (!is.null(feature_concept_col)) {
+      feature_concept_col <- tolower(.validateIdentifier(
+        feature_concept_col, "feature concept_col"
+      ))
+    }
+    valid_feature_concept_cols <- intersect(
+      .filterableColumns(bp, tolower(table)),
+      grep("_concept_id$", bp$columns[[tolower(table)]]$column_name,
+           value = TRUE)
+    )
+    if (!is.null(feature_concept_col) &&
+        !tolower(feature_concept_col) %in% valid_feature_concept_cols) {
+      stop("Feature concept_col '", feature_concept_col,
+           "' is not a safe concept column on table '", table, "'.",
+           call. = FALSE)
+    }
+    for (spec in feature_specs) {
+      if (!is.null(spec$concept_col)) {
+        spec_col <- tolower(.validateIdentifier(
+          spec$concept_col, "feature concept_col"
+        ))
+        if (!spec_col %in% valid_feature_concept_cols) {
+          stop("Feature concept_col '", spec_col,
+               "' is not a safe concept column on table '", table, "'.",
+               call. = FALSE)
+        }
+      }
+      if (!is.null(spec$filter)) {
+        .assertCustomFilterSafe(
+          spec$filter, .filterableColumns(bp, tolower(table)),
+          handle = handle, table = tolower(table)
+        )
+      }
+    }
+    feature_scope <- .featureScopeFilter(feature_specs, feature_concept_col)
+    if (!is.null(feature_scope)) {
+      filters <- if (is.null(filters) || length(filters) == 0L) {
+        feature_scope
+      } else {
+        list(and = list(filters, feature_scope))
+      }
+    }
+
+    # Explicit column projections must retain every column needed by a spec's
+    # independent concept scope, value reducer, and in-memory row filter. These
+    # columns are consumed by .toFeatures and never leak as additional output
+    # columns.
+    if (!is.null(columns) && length(feature_specs) > 0L) {
+      spec_concept_cols <- vapply(feature_specs, function(spec) {
+        as.character(spec$concept_col %||% feature_concept_col %||% "")[[1]]
+      }, character(1))
+      spec_concept_cols <- spec_concept_cols[nzchar(spec_concept_cols)]
+      spec_value_cols <- vapply(feature_specs, function(spec) {
+        as.character(spec$value_column %||% "")[[1]]
+      }, character(1))
+      spec_value_cols <- spec_value_cols[nzchar(spec_value_cols)]
+      filter_columns <- function(filter) {
+        if (is.null(filter) || length(filter) == 0L) return(character(0))
+        if (!is.null(filter$and)) {
+          return(unique(unlist(lapply(filter$and, filter_columns),
+                               use.names = FALSE)))
+        }
+        if (!is.null(filter$or)) {
+          return(unique(unlist(lapply(filter$or, filter_columns),
+                               use.names = FALSE)))
+        }
+        tolower(as.character(filter$var %||% ""))
+      }
+      spec_filter_cols <- unique(unlist(lapply(feature_specs, function(spec) {
+        filter_columns(spec$filter)
+      }), use.names = FALSE))
+      spec_filter_cols <- spec_filter_cols[nzchar(spec_filter_cols)]
+
+      types <- .featureSpecTypes(feature_specs)
+      fixed_cols <- character(0)
+      if (any(types == "abnormal_high")) {
+        fixed_cols <- c(fixed_cols, "value_as_number", "range_high")
+      }
+      if (any(types == "abnormal_low")) {
+        fixed_cols <- c(fixed_cols, "value_as_number", "range_low")
+      }
+      if (any(types %in% c("drug_duration", "duration_sum"))) {
+        fixed_cols <- c(fixed_cols, intersect(
+          c("drug_exposure_start_date", "drug_exposure_end_date",
+            "drug_era_start_date", "drug_era_end_date",
+            "condition_era_start_date", "condition_era_end_date",
+            "condition_start_date", "condition_end_date",
+            "visit_start_date", "visit_end_date",
+            "observation_period_start_date", "observation_period_end_date"),
+          bp$columns[[tolower(table)]]$column_name
+        ))
+      }
+      columns <- unique(c(columns, spec_concept_cols, spec_value_cols,
+                          spec_filter_cols, fixed_cols))
+    }
+
+    if (identical(representation_grain, "episode")) {
+      if (is.null(cohort_table)) {
+        stop("Episode-grain features require a cohort table.", call. = FALSE)
+      }
+      feature_roster <- .executeQuery(handle, paste0(
+        "SELECT c.cohort_row_id, c.subject_id AS person_id FROM ",
+        .rankedCohortSql(cohort_table, handle),
+        " AS c ORDER BY c.cohort_row_id"
+      ))
+      feature_roster$cohort_row_id <- as.integer(
+        feature_roster$cohort_row_id)
+      if (anyNA(feature_roster$cohort_row_id) ||
+          anyDuplicated(feature_roster$cohort_row_id)) {
+        stop("Episode-grain feature roster has invalid cohort_row_id values.",
+             call. = FALSE)
+      }
+    } else {
+      feature_person_ids <- if (!is.null(person_ids)) unique(person_ids) else NULL
+      if (is.null(feature_person_ids) && !is.null(cohort_table)) {
+        roster <- .executeQuery(handle, paste0(
+          "SELECT DISTINCT subject_id AS person_id FROM ", cohort_table,
+          " ORDER BY subject_id"
+        ))
+        feature_person_ids <- roster$person_id
+      }
+    }
+
+    date_dependent <- c(
+      "first_value", "latest_value", "time_since", "slope_value",
+      "gap_max_days", "gap_mean_days"
+    )
+    if (any(feature_types %in% date_dependent) || feature_has_time_windows) {
+      feature_date_col <- .getDateColumn(bp, tolower(table))
+      if (!is.null(columns) && !is.null(feature_date_col)) {
+        columns <- unique(c(columns, feature_date_col))
+      }
+    }
+  }
+  if (identical(representation, "sparse")) {
+    if (identical(representation_grain, "episode")) {
+      if (is.null(cohort_table)) {
+        stop("Episode-grain sparse output requires a cohort table.",
+             call. = FALSE)
+      }
+      sparse_roster <- .executeQuery(handle, paste0(
+        "SELECT c.cohort_row_id, c.subject_id AS person_id FROM ",
+        .rankedCohortSql(cohort_table, handle),
+        " AS c ORDER BY c.cohort_row_id"
+      ))
+      sparse_roster$cohort_row_id <- as.integer(sparse_roster$cohort_row_id)
+    } else {
+      sparse_person_ids <- if (!is.null(person_ids)) unique(person_ids) else NULL
+      if (is.null(sparse_person_ids) && !is.null(cohort_table)) {
+        person_roster <- .executeQuery(handle, paste0(
+          "SELECT DISTINCT subject_id AS person_id FROM ", cohort_table,
+          " ORDER BY subject_id"
+        ))
+        sparse_person_ids <- person_roster$person_id
+      }
+    }
+  }
+  if (identical(representation, "wide")) {
+    if (identical(representation_grain, "episode")) {
+      if (is.null(cohort_table)) {
+        stop("Episode-grain wide output requires a cohort table.",
+             call. = FALSE)
+      }
+      wide_roster <- .executeQuery(handle, paste0(
+        "SELECT c.cohort_row_id, c.subject_id AS person_id FROM ",
+        .rankedCohortSql(cohort_table, handle),
+        " AS c ORDER BY c.cohort_row_id"
+      ))
+      wide_roster$cohort_row_id <- as.integer(wide_roster$cohort_row_id)
+    } else if (!is.null(person_ids)) {
+      wide_roster <- data.frame(
+        person_id = unique(person_ids), stringsAsFactors = FALSE
+      )
+    } else if (!is.null(cohort_table)) {
+      wide_roster <- .executeQuery(handle, paste0(
+        "SELECT DISTINCT subject_id AS person_id FROM ", cohort_table,
+        " ORDER BY subject_id"
+      ))
+    }
+  }
+
+  # Validate the release policy before querying, including for empty results.
+  date_handling <- .normalizeDateHandling(date_handling)
+  if (is.null(date_handling)) {
+    default_mode <- getOption("dsomop.default_date_handling", "remove")
+    date_handling <- .normalizeDateHandling(default_mode)
+  }
+  if (identical(date_handling$mode, "absolute")) {
+    allow <- getOption("dsomop.allow_absolute_dates",
+               getOption("default.dsomop.allow_absolute_dates", FALSE))
+    if (!isTRUE(allow)) {
+      stop("Absolute date handling is not permitted by the server. ",
+           "Contact the data controller to enable dsomop.allow_absolute_dates.",
+           call. = FALSE)
+    }
+  }
+  if (identical(representation, "features")) {
+    has_index_window <- !is.null(temporal$index_window)
+    if (has_index_window && !identical(representation_grain, "episode")) {
+      stop("features with temporal$index_window require grain='episode' ",
+           "so recurrent cohort entries are not collapsed by person.",
+           call. = FALSE)
+    }
+    if (!has_index_window && identical(representation_grain, "episode")) {
+      stop("grain='episode' requires temporal$index_window so every ",
+           "event has an explicit episode-relative scope.", call. = FALSE)
+    }
+    if (feature_has_time_windows) {
+      if (!has_index_window) {
+        stop("Feature time_window requires temporal$index_window.",
+             call. = FALSE)
+      }
+      .validateTemporalSpec(temporal)
+      outer <- temporal$index_window
+      outer_start <- if (!is.null(outer$start)) {
+        .temporalOffset(outer$start, "start")
+      } else {
+        NULL
+      }
+      outer_end <- if (!is.null(outer$end)) {
+        .temporalOffset(outer$end, "end")
+      } else {
+        NULL
+      }
+      normalize_feature_bound <- function(value, field, feature_name) {
+        if (is.null(value)) return(NULL)
+        numeric_value <- suppressWarnings(as.numeric(value))
+        integer_value <- suppressWarnings(as.integer(value))
+        if (length(value) != 1L || length(numeric_value) != 1L ||
+            !is.finite(numeric_value) || length(integer_value) != 1L ||
+            is.na(integer_value) || numeric_value != integer_value) {
+          stop("Feature '", feature_name, "' time_window ", field,
+               " must be one integer day offset.", call. = FALSE)
+        }
+        integer_value
+      }
+      for (i in seq_along(feature_specs)) {
+        window <- feature_specs[[i]]$time_window
+        if (is.null(window)) next
+        if (!is.list(window) || is.null(names(window)) ||
+            any(!nzchar(names(window))) || anyDuplicated(names(window)) ||
+            length(setdiff(names(window), c("start", "end"))) > 0L ||
+            (is.null(window$start) && is.null(window$end))) {
+          stop("Feature '", feature_specs[[i]]$name,
+               "' time_window must be a named start/end day window.",
+               call. = FALSE)
+        }
+        window_start <- normalize_feature_bound(
+          window$start, "start", feature_specs[[i]]$name
+        )
+        window_end <- normalize_feature_bound(
+          window$end, "end", feature_specs[[i]]$name
+        )
+        if (!is.null(window_start) && !is.null(window_end) &&
+            window_start > window_end) {
+          stop("Feature '", feature_specs[[i]]$name,
+               "' time_window start must not be after end.", call. = FALSE)
+        }
+        if ((!is.null(outer_start) &&
+             (is.null(window_start) || window_start < outer_start)) ||
+            (!is.null(outer_end) &&
+             (is.null(window_end) || window_end > outer_end))) {
+          stop("Feature '", feature_specs[[i]]$name,
+               "' time_window must be contained in temporal$index_window.",
+               call. = FALSE)
+        }
+        feature_specs[[i]]$time_window <- list(
+          start = window_start, end = window_end
+        )
+      }
+      # Cohort dates and the event date remain server-internal and are needed
+      # to derive days_from_index even when the caller supplied a narrow
+      # projection.
+      add_cohort_date <- TRUE
+    }
+  }
+  if (identical(representation, "wide")) {
+    has_index_window <- !is.null(temporal$index_window)
+    if (has_index_window && !identical(representation_grain, "episode")) {
+      stop("wide with temporal$index_window requires grain='episode' so ",
+           "recurrent cohort entries are not collapsed by person.",
+           call. = FALSE)
+    }
+    if (!has_index_window && identical(representation_grain, "episode")) {
+      stop("wide grain='episode' requires temporal$index_window.",
+           call. = FALSE)
+    }
+  }
+  if (identical(representation, "sparse")) {
+    has_index_window <- !is.null(temporal$index_window)
+    if (has_index_window && !identical(representation_grain, "episode")) {
+      stop("sparse with temporal$index_window requires grain='episode' so ",
+           "recurrent cohort entries are not collapsed by person.",
+           call. = FALSE)
+    }
+    if (!has_index_window && identical(representation_grain, "episode")) {
+      stop("sparse grain='episode' requires temporal$index_window.",
+           call. = FALSE)
+    }
+  }
 
   sql <- .compileSelect(
     handle, table,
@@ -965,17 +2572,33 @@
     add_cohort_date = add_cohort_date,
     filters = filters,
     concept_col = concept_col,
-    visit_filter = visit_filter
+    visit_filter = visit_filter,
+    add_event_order_id = identical(representation, "features") &&
+      any(feature_types %in% c("first_value", "latest_value"))
   )
 
-  # Wrap with event selection (ROW_NUMBER) if requested
-  if (!is.null(temporal$event_select)) {
-    bp <- .buildBlueprint(handle)
-    ev_date_col <- .getDateColumn(bp, tolower(table))
-    sql <- .wrapEventSelect(handle, sql, temporal, ev_date_col)
+  if (!is.null(temporal$min_gap)) {
+    tie_col <- if (!is.null(.eventPrimaryKeyColumn(bp, table))) {
+      "dsomop_event_order_id"
+    } else {
+      NULL
+    }
+    sql <- .wrapMinGap(handle, sql, temporal,
+                       "dsomop_event_order_date", tie_col = tie_col)
   }
 
-  bp <- .buildBlueprint(handle)
+  # Event selection is applied to the collapsed representatives.
+  if (!is.null(temporal$event_select)) {
+    tie_col <- if (!is.null(.eventPrimaryKeyColumn(bp, table))) {
+      "dsomop_event_order_id"
+    } else {
+      NULL
+    }
+    sql <- .wrapEventSelect(handle, sql, temporal,
+                            "dsomop_event_order_date",
+                            tie_col = tie_col)
+  }
+
   col_df <- bp$columns[[tolower(table)]]
   has_person_id <- "person_id" %in% col_df$column_name
 
@@ -991,7 +2614,35 @@
     .assertMinPersons(handle = handle, sql = count_sql)
   }
 
+  max_memory_rows <- suppressWarnings(as.numeric(
+    getOption("dsomop.max_memory_rows", 1000000L)
+  ))
+  if (length(max_memory_rows) != 1L || is.na(max_memory_rows) ||
+      !is.finite(max_memory_rows) || max_memory_rows != floor(max_memory_rows) ||
+      max_memory_rows < 1L) {
+    stop("dsomop.max_memory_rows must be one positive integer.", call. = FALSE)
+  }
+  row_count_sql <- paste0(
+    "SELECT COUNT(*) AS n FROM (", sql, ") AS dsomop_memory_check"
+  )
+  row_count <- suppressWarnings(as.numeric(.executeQuery(handle, row_count_sql)$n[1]))
+  if (is.na(row_count) || !is.finite(row_count)) {
+    stop("Could not verify the extraction row count.", call. = FALSE)
+  }
+  if (row_count > max_memory_rows) {
+    stop("Extraction exceeds the server in-memory row cap (", max_memory_rows,
+         "); use output_mode='staged' for an event-level Parquet output or ",
+         "narrow the population/windows.", call. = FALSE)
+  }
+
   result <- .executeQuery(handle, sql)
+  # ROW_NUMBER and its primary-key tie breaker are internal query machinery.
+  result$rn <- NULL
+  result$dsomop_event_partition_concept <- NULL
+  result[grep("^dsomop_gap_", names(result), value = TRUE)] <- NULL
+  if (!identical(representation, "features")) {
+    result$dsomop_event_order_id <- NULL
+  }
 
   # An empty extraction still needs the representation transform applied so the
   # caller receives a correctly-SHAPED frame. For "features" this means a
@@ -1000,12 +2651,41 @@
   # zero rows when one feature sub-table happens to be empty. Long/wide/sparse
   # keep their historical empty-passthrough behavior.
   if (nrow(result) == 0) {
+    result$dsomop_event_order_date <- NULL
     if (identical(representation, "features")) {
-      empty_feat <- .toFeatures(result, table, feature_specs)
+      if (feature_has_time_windows &&
+          !"days_from_index" %in% names(result)) {
+        result$days_from_index <- integer(0)
+      }
+      empty_feat <- if (identical(representation_grain, "episode")) {
+        .toEpisodeFeatures(
+          result, table, feature_specs, roster = feature_roster,
+          date_col = feature_date_col,
+          default_concept_col = feature_concept_col
+        )
+      } else {
+        .toFeatures(
+          result, table, feature_specs, person_ids = feature_person_ids,
+          date_col = feature_date_col, default_concept_col = feature_concept_col
+        )
+      }
       if (translate_concepts && is.data.frame(empty_feat)) {
         empty_feat <- .vocabTranslateColumns(handle, empty_feat)
       }
       return(empty_feat)
+    }
+    if (identical(representation, "sparse")) {
+      return(.toSparse(
+        result, table, person_ids = sparse_person_ids,
+        roster = sparse_roster, grain = representation_grain
+      ))
+    }
+    if (identical(representation, "wide")) {
+      return(.toWide(
+        result, table, handle, grain = representation_grain,
+        translate_concepts = translate_concepts, roster = wide_roster,
+        expected_concepts = concept_filter
+      ))
     }
     return(result)
   }
@@ -1013,15 +2693,22 @@
   # Compute days_from_index when cohort_start_date is present
   if ("cohort_start_date" %in% names(result)) {
     date_col_for_index <- .getDateColumn(bp, tolower(table))
-    if (!is.null(date_col_for_index) && date_col_for_index %in% names(result)) {
+    date_source <- if (!is.null(date_col_for_index) &&
+                       date_col_for_index %in% names(result)) {
+      date_col_for_index
+    } else if ("dsomop_event_order_date" %in% names(result)) {
+      "dsomop_event_order_date"
+    } else {
+      NULL
+    }
+    if (!is.null(date_source)) {
       result$days_from_index <- as.integer(
-        as.Date(result[[date_col_for_index]]) -
+        as.Date(result[[date_source]]) -
         as.Date(result$cohort_start_date)
       )
     }
-    # Remove cohort_start_date from output (internal use only)
-    result$cohort_start_date <- NULL
   }
+  result$dsomop_event_order_date <- NULL
 
   result <- .convertTypes(result)
 
@@ -1033,22 +2720,6 @@
   # exact dates that could enable longitudinal re-identification.
   # Accept a bare string (e.g. "relative_to_index") or the list form, and map
   # the public synonym onto the internal "relative" mode.
-  date_handling <- .normalizeDateHandling(date_handling)
-  if (is.null(date_handling)) {
-    default_mode <- getOption("dsomop.default_date_handling", "remove")
-    date_handling <- list(mode = default_mode)
-  }
-  # SERVER GATE: "absolute" mode returns raw dates (quasi-identifiers).
-  # Only permitted if the server admin has explicitly authorized it.
-  if (identical(date_handling$mode, "absolute")) {
-    allow <- getOption("dsomop.allow_absolute_dates",
-               getOption("default.dsomop.allow_absolute_dates", FALSE))
-    if (!isTRUE(allow)) {
-      stop("Absolute date handling is not permitted by the server. ",
-           "Contact the data controller to enable dsomop.allow_absolute_dates.",
-           call. = FALSE)
-    }
-  }
   # The "features" builder may need raw dates to compute disclosure-safe
   # aggregates — e.g. drug_duration = end_date - start_date. Its output is a
   # person-level data frame with no raw date columns, so we apply date handling
@@ -1058,6 +2729,9 @@
   agg_repr <- identical(representation, "features")
   if (!agg_repr) {
     result <- .applyDateHandling(result, date_handling)
+    # Cohort dates are internal join references, never output columns.
+    result$cohort_start_date <- NULL
+    result$cohort_end_date <- NULL
   }
 
   # Translate concept-id VALUES to human-readable names, but ONLY for the
@@ -1066,15 +2740,33 @@
   # builders instead match/encode the RAW numeric concept ids (e.g. matching a
   # spec's numeric concept_set, or computing covariateId = conceptId*1000 + k),
   # so they must see untranslated ids; readable labelling happens inside them.
-  if (translate_concepts && representation %in% c("long", "wide")) {
+  if (translate_concepts && identical(representation, "long")) {
     result <- .vocabTranslateColumns(handle, result)
   }
 
   result <- switch(representation,
     "long" = result,
-    "wide" = .toWide(result, table, handle),
-    "features" = .toFeatures(result, table, feature_specs),
-    "sparse" = .toSparse(result, table),
+    "wide" = .toWide(result, table, handle,
+                     grain = representation_grain,
+                     translate_concepts = translate_concepts,
+                     roster = wide_roster,
+                     expected_concepts = concept_filter),
+    "features" = if (identical(representation_grain, "episode")) {
+      .toEpisodeFeatures(
+        result, table, feature_specs, roster = feature_roster,
+        date_col = feature_date_col,
+        default_concept_col = feature_concept_col
+      )
+    } else {
+      .toFeatures(
+        result, table, feature_specs, person_ids = feature_person_ids,
+        date_col = feature_date_col, default_concept_col = feature_concept_col
+      )
+    },
+    "sparse" = .toSparse(
+      result, table, person_ids = sparse_person_ids,
+      roster = sparse_roster, grain = representation_grain
+    ),
     result
   )
 
@@ -1091,6 +2783,8 @@
     result <- .vocabTranslateColumns(handle, result)
   }
 
+  if (is.data.frame(result)) result$dsomop_event_order_id <- NULL
+
   result
 }
 
@@ -1102,8 +2796,6 @@
 #' @return Data frame with converted types
 #' @keywords internal
 .convertTypes <- function(df) {
-  if (nrow(df) == 0) return(df)
-
   for (col in names(df)) {
     if (grepl("_date$", col) && !grepl("_datetime$", col)) {
       df[[col]] <- tryCatch(as.Date(df[[col]]), error = function(e) df[[col]])
@@ -1229,11 +2921,29 @@
 #'
 #' @param df Data frame in long format
 #' @param table Character; source table name
+#' @param handle CDM handle.
+#' @param grain Aggregation unit, "person" or "episode".
+#' @param translate_concepts Logical; include vocabulary names in stable labels
+#'   while retaining the numeric concept ID to prevent name collisions.
+#' @param roster Optional complete data frame of person or cohort-episode keys.
+#'   Rows without qualifying events remain in the wide output with missing
+#'   values rather than disappearing.
+#' @param expected_concepts Optional closed vector of concept IDs. Requested
+#'   concepts are emitted as columns even when absent from \code{df}; observed
+#'   concepts outside this vector are rejected.
 #' @return Data frame in wide format
 #' @keywords internal
-.toWide <- function(df, table, handle = NULL) {
+.toWide <- function(df, table, handle = NULL, grain = "person",
+                    translate_concepts = FALSE, roster = NULL,
+                    expected_concepts = NULL) {
   bp <- .buildBlueprint(handle)
   concept_col <- NULL
+
+  if (!is.character(grain) || length(grain) != 1L || is.na(grain) ||
+      !tolower(grain) %in% c("person", "episode")) {
+    stop("Wide grain must be 'person' or 'episode'.", call. = FALSE)
+  }
+  grain <- tolower(grain)
 
   # Try to find concept column from column names
   possible <- grep("_concept_id$", names(df), value = TRUE)
@@ -1241,38 +2951,185 @@
   possible <- possible[!grepl("_type_concept_id$|_source_concept_id$", possible)]
   if (length(possible) > 0) concept_col <- possible[1]
 
-  if (is.null(concept_col) || !concept_col %in% names(df)) return(df)
-  if (!"person_id" %in% names(df)) return(df)
+  if (is.null(concept_col) || !concept_col %in% names(df)) {
+    stop("Wide representation requires a domain concept column.",
+         call. = FALSE)
+  }
+  if (!"person_id" %in% names(df)) {
+    stop("Wide representation requires person_id.", call. = FALSE)
+  }
 
-  value_cols <- setdiff(names(df), c("person_id", concept_col))
-  if (length(value_cols) == 0) return(df)
+  group_cols <- if (identical(grain, "episode")) {
+    if (!"cohort_row_id" %in% names(df)) {
+      stop("Episode-grain wide data require cohort_row_id.", call. = FALSE)
+    }
+    c("cohort_row_id", "person_id")
+  } else {
+    "person_id"
+  }
 
-  df$.seq <- ave(seq_len(nrow(df)),
-                 df$person_id, df[[concept_col]],
-                 FUN = seq_along)
+  if (!is.null(roster)) {
+    if (!is.data.frame(roster) || !all(group_cols %in% names(roster)) ||
+        anyNA(roster[group_cols]) || anyDuplicated(roster[group_cols])) {
+      stop("Wide roster must contain one unique, non-missing row per ", grain,
+           ".", call. = FALSE)
+    }
+    roster <- roster[, group_cols, drop = FALSE]
+  }
 
-  concepts <- unique(df[[concept_col]])
-  persons <- unique(df$person_id)
+  # Identifier columns must be removed before pivoting. Once an identifier is
+  # embedded in a generated name (for example
+  # `concept_123.measurement_id`), the final release pass can no longer
+  # recognise and drop it by its canonical OMOP column name.
+  identifier_names <- tolower(.identifierColumns())
+  drop_identifiers <- names(df)[
+    tolower(names(df)) %in% identifier_names &
+      !tolower(names(df)) %in% tolower(group_cols)
+  ]
+  if (length(drop_identifiers) > 0L) {
+    df <- df[, setdiff(names(df), drop_identifiers), drop = FALSE]
+  }
 
-  wide <- data.frame(person_id = persons, stringsAsFactors = FALSE)
+  value_cols <- setdiff(names(df), c(group_cols, concept_col))
+  # A concept-only projection is still useful: materialise presence rather
+  # than falling back to the original long rows (which would violate the
+  # advertised representation and could retain row identifiers).
+  if (length(value_cols) == 0L) {
+    df$.present <- 1L
+    value_cols <- ".present"
+  }
+
+  group_key <- do.call(paste, c(lapply(df[group_cols], as.character),
+                                sep = "\r"))
+  key <- paste(group_key, df[[concept_col]], sep = "\r")
+  if (anyDuplicated(key)) {
+    stop("Wide representation requires at most one row per ", grain,
+         " and concept; ",
+         "use event_select with a deterministic single event or an explicit ",
+         "feature reduction (first/last/count/etc.).", call. = FALSE)
+  }
+
+  observed_concepts <- unique(df[[concept_col]][!is.na(df[[concept_col]])])
+  if (!is.null(expected_concepts)) {
+    raw_expected <- unlist(expected_concepts, use.names = FALSE)
+    numeric_expected <- suppressWarnings(as.numeric(raw_expected))
+    integer_expected <- suppressWarnings(as.integer(raw_expected))
+    if (length(raw_expected) == 0L || anyNA(numeric_expected) ||
+        any(!is.finite(numeric_expected)) || anyNA(integer_expected) ||
+        any(numeric_expected != integer_expected)) {
+      stop("expected_concepts must contain finite integer concept IDs.",
+           call. = FALSE)
+    }
+    expected_concepts <- unique(integer_expected)
+    observed_ids <- suppressWarnings(as.integer(as.character(
+      observed_concepts
+    )))
+    if (anyNA(observed_ids) ||
+        length(setdiff(observed_ids, expected_concepts)) > 0L) {
+      stop("Wide data contain concepts outside the declared concept set.",
+           call. = FALSE)
+    }
+    concepts <- expected_concepts
+  } else {
+    concepts <- observed_concepts
+  }
+  max_pivot_concepts <- .extractionCap(
+    "dsomop.max_pivot_concepts", 1000L
+  )
+  if (length(concepts) > max_pivot_concepts) {
+    stop("Wide representation exceeds the server concept cap of ",
+         max_pivot_concepts, "; narrow the concept set.", call. = FALSE)
+  }
+  max_output_columns <- .extractionCap(
+    "dsomop.max_output_columns", 5000L
+  )
+  predicted_columns <- length(group_cols) +
+    as.double(length(concepts)) * length(value_cols)
+  if (predicted_columns > max_output_columns) {
+    stop("Wide representation would create ", predicted_columns,
+         " columns, exceeding the server cap of ", max_output_columns, ".",
+         call. = FALSE)
+  }
+
+  df$.seq <- stats::ave(seq_len(nrow(df)), key, FUN = seq_along)
+
+  wide <- if (is.null(roster)) unique(df[group_cols]) else roster
+  roster_key <- do.call(paste, c(lapply(wide[group_cols], as.character),
+                                 sep = "\r"))
+  event_key <- do.call(paste, c(lapply(df[group_cols], as.character),
+                                sep = "\r"))
+  if (length(setdiff(unique(event_key), roster_key)) > 0L) {
+    stop("Wide events contain a ", grain, " key outside the declared roster.",
+         call. = FALSE)
+  }
+
+  concept_name_map <- character(0)
+  numeric_concepts <- suppressWarnings(as.numeric(as.character(concepts)))
+  integer_concepts <- suppressWarnings(as.integer(as.character(concepts)))
+  exact_numeric <- length(concepts) > 0L & !is.na(integer_concepts) &
+    is.finite(numeric_concepts) & numeric_concepts == integer_concepts
+  if (isTRUE(translate_concepts) && !is.null(handle) && any(exact_numeric)) {
+    concept_rows <- tryCatch(
+      .vocabLookupConcepts(handle, unique(integer_concepts[exact_numeric])),
+      error = function(e) data.frame()
+    )
+    if (nrow(concept_rows) > 0L) {
+      concept_name_map <- stats::setNames(
+        as.character(concept_rows$concept_name),
+        as.character(concept_rows$concept_id)
+      )
+    }
+  }
+
+  label_for_concept <- stats::setNames(
+    vapply(concepts, function(concept) {
+      fallback <- .standardizeName(as.character(concept))
+      if (is.na(fallback) || !nzchar(fallback)) {
+        fallback <- paste0("concept_", concept)
+      }
+      if (!isTRUE(translate_concepts) || is.null(handle)) return(fallback)
+
+      numeric_id <- suppressWarnings(as.numeric(as.character(concept)))
+      integer_id <- suppressWarnings(as.integer(as.character(concept)))
+      if (length(numeric_id) != 1L || !is.finite(numeric_id) ||
+          is.na(integer_id) || numeric_id != integer_id) {
+        return(fallback)
+      }
+      readable_name <- unname(concept_name_map[as.character(integer_id)])
+      readable <- if (length(readable_name) == 1L && !is.na(readable_name)) {
+        .standardizeName(readable_name)
+      } else {
+        ""
+      }
+      if (is.na(readable) || !nzchar(readable)) readable <- "unknown"
+      paste0("concept_", integer_id, "__", readable)
+    }, character(1)),
+    as.character(concepts)
+  )
+  if (anyDuplicated(unname(label_for_concept))) {
+    stop("Wide concept labels are not unique; retain numeric concept IDs or ",
+         "narrow the concept set.", call. = FALSE)
+  }
 
   for (concept in concepts) {
     concept_data <- df[df[[concept_col]] == concept, , drop = FALSE]
-    concept_label <- .standardizeName(as.character(concept))
-    if (is.na(concept_label) || concept_label == "") {
-      concept_label <- paste0("concept_", concept)
-    }
+    concept_label <- unname(label_for_concept[[as.character(concept)]])
 
     for (vcol in value_cols) {
       if (vcol == ".seq") next
       col_name <- paste0(concept_label, ".", vcol)
-      first_occ <- concept_data[concept_data$.seq == 1, c("person_id", vcol),
+      first_occ <- concept_data[concept_data$.seq == 1, c(group_cols, vcol),
                                 drop = FALSE]
-      names(first_occ)[2] <- col_name
-      wide <- merge(wide, first_occ, by = "person_id", all.x = TRUE)
+      names(first_occ)[length(group_cols) + 1L] <- col_name
+      wide <- merge(wide, first_occ, by = group_cols, all.x = TRUE,
+                    sort = FALSE)
     }
   }
 
+  landed_key <- do.call(paste, c(lapply(wide[group_cols], as.character),
+                                 sep = "\r"))
+  wide <- wide[match(roster_key, landed_key), , drop = FALSE]
+  rownames(wide) <- NULL
   wide
 }
 
@@ -1311,16 +3168,76 @@
   if (!nzchar(var) || !var %in% names(df)) return(rep(FALSE, n))
   col <- df[[var]]
 
+  is_date_col <- inherits(col, "Date")
+  is_datetime_col <- inherits(col, c("POSIXct", "POSIXlt"))
+  typed_value <- function(x, label = "filter value") {
+    if (is_date_col) return(.isoDate(x, label))
+    if (is_datetime_col) {
+      date <- .isoDate(x, label)
+      timezone <- attr(col, "tzone")
+      if (is.null(timezone) || length(timezone) == 0L || !nzchar(timezone[1])) {
+        timezone <- "UTC"
+      }
+      return(as.POSIXct(date, tz = timezone[1]))
+    }
+    suppressWarnings(as.numeric(x))
+  }
+  typed_values <- function(x, label = "filter value") {
+    values <- unlist(x, use.names = FALSE)
+    if (is_date_col) {
+      parsed <- lapply(seq_along(values), function(i) {
+        .isoDate(values[i], paste0(label, " ", i))
+      })
+      return(as.Date(vapply(parsed, as.character, character(1))))
+    }
+    if (is_datetime_col) {
+      timezone <- attr(col, "tzone")
+      if (is.null(timezone) || length(timezone) == 0L || !nzchar(timezone[1])) {
+        timezone <- "UTC"
+      }
+      parsed <- lapply(seq_along(values), function(i) {
+        .isoDate(values[i], paste0(label, " ", i))
+      })
+      return(as.POSIXct(vapply(parsed, as.character, character(1)),
+                        tz = timezone[1]))
+    }
+    values
+  }
+
+  between_mask <- function() {
+    values <- unlist(value, use.names = FALSE)
+    if (length(values) != 2L) return(rep(FALSE, n))
+    lower <- typed_value(values[1], "filter lower bound")
+    upper <- typed_value(values[2], "filter upper bound")
+    if (is_datetime_col) {
+      # ISO bounds denote whole calendar days. Use an exclusive next-midnight
+      # upper bound so events later on the stated end date are retained.
+      timezone <- attr(col, "tzone")
+      if (is.null(timezone) || length(timezone) == 0L || !nzchar(timezone[1])) {
+        timezone <- "UTC"
+      }
+      next_midnight <- as.POSIXct(
+        .isoDate(values[2], "filter upper bound") + 1L, tz = timezone[1]
+      )
+      return(col >= lower & col < next_midnight)
+    }
+    col >= lower & col <= upper
+  }
+
   mask <- switch(op,
-    "==" =, "eq" = col == value,
-    "!=" =, "ne" = col != value,
-    ">=" =, "gte" = col >= as.numeric(value),
-    "<=" =, "lte" = col <= as.numeric(value),
-    ">"  =, "gt"  = col > as.numeric(value),
-    "<"  =, "lt"  = col < as.numeric(value),
-    "in" = col %in% unlist(value, use.names = FALSE),
-    "not_in" = !(col %in% unlist(value, use.names = FALSE)),
-    "between" = col >= as.numeric(value[[1]]) & col <= as.numeric(value[[2]]),
+    "==" =, "eq" = col == if (is_date_col || is_datetime_col) {
+      typed_value(value)
+    } else value,
+    "!=" =, "ne" = col != if (is_date_col || is_datetime_col) {
+      typed_value(value)
+    } else value,
+    ">=" =, "gte" = col >= typed_value(value),
+    "<=" =, "lte" = col <= typed_value(value),
+    ">"  =, "gt"  = col > typed_value(value),
+    "<"  =, "lt"  = col < typed_value(value),
+    "in" = !is.na(col) & col %in% typed_values(value),
+    "not_in" = !is.na(col) & !(col %in% typed_values(value)),
+    "between" = between_mask(),
     "is_null" = is.na(col),
     "not_null" = !is.na(col),
     "value_bin" = col >= as.numeric(value$lower) & col < as.numeric(value$upper),
@@ -1335,17 +3252,30 @@
 #' @param df Data frame in long format
 #' @param table Character; source table name
 #' @param specs Named list of feature specifications
+#' @param person_ids Optional complete person roster. Persons with no matching
+#'   records receive zero for occurrence features and NA for value features.
+#' @param date_col Optional OMOP event date column resolved from the blueprint.
+#' @param default_concept_col Optional domain concept column resolved from the
+#'   blueprint; individual specs may override it with \code{concept_col}.
 #' @return Data frame with one row per person
 #' @keywords internal
-.toFeatures <- function(df, table, specs = NULL) {
+.toFeatures <- function(df, table, specs = NULL, person_ids = NULL,
+                        date_col = NULL, default_concept_col = NULL) {
   if (!"person_id" %in% names(df)) return(df)
 
   # Find concept column
   possible <- grep("_concept_id$", names(df), value = TRUE)
   possible <- possible[!grepl("_type_concept_id$|_source_concept_id$", possible)]
-  concept_col <- if (length(possible) > 0) possible[1] else NULL
+  concept_col <- if (!is.null(default_concept_col) &&
+                     default_concept_col %in% names(df)) {
+    default_concept_col
+  } else if (length(possible) > 0) {
+    possible[1]
+  } else {
+    NULL
+  }
 
-  persons <- unique(df$person_id)
+  persons <- if (!is.null(person_ids)) unique(person_ids) else unique(df$person_id)
   features <- data.frame(person_id = persons, stringsAsFactors = FALSE)
 
   # Occurrence/count columns whose absence means 0 (not missing). When this
@@ -1356,6 +3286,123 @@
   zero_fill_cols <- character(0)
   zero_fill_types <- c("boolean", "count", "n_distinct",
                        "abnormal_high", "abnormal_low")
+
+  supported_types <- c(
+    "boolean", "count", "mean_value", "min_value", "max_value",
+    "first_value", "latest_value", "sum_value", "time_since",
+    "drug_duration", "sd_value", "cv_value", "slope_value",
+    "abnormal_high", "abnormal_low", "gap_max_days", "gap_mean_days",
+    "duration_sum", "n_distinct"
+  )
+
+  max_feature_specs <- .extractionCap("dsomop.max_feature_specs", 1000L)
+  if (!is.null(specs) && length(specs) > max_feature_specs) {
+    stop("Feature specification count exceeds the server cap of ",
+         max_feature_specs, ".", call. = FALSE)
+  }
+  max_output_columns <- .extractionCap(
+    "dsomop.max_output_columns", 5000L
+  )
+  if (is.null(specs) || length(specs) == 0L) {
+    auto_concepts <- if (!is.null(concept_col) && concept_col %in% names(df)) {
+      unique(df[[concept_col]][!is.na(df[[concept_col]])])
+    } else {
+      vector(mode = "logical", length = 0L)
+    }
+    max_auto_concepts <- .extractionCap(
+      "dsomop.max_pivot_concepts", 1000L
+    )
+    if (length(auto_concepts) > max_auto_concepts ||
+        1 + 5 * as.double(length(auto_concepts)) > max_output_columns) {
+      stop("Automatic features exceed the server concept/output-column caps; ",
+           "supply an explicit, narrower feature specification.",
+           call. = FALSE)
+    }
+  } else if (1 + length(specs) > max_output_columns) {
+    stop("Features exceed the server output-column cap of ",
+         max_output_columns, ".", call. = FALSE)
+  }
+
+  feature_date_col <- if (!is.null(date_col) && date_col %in% names(df)) {
+    date_col
+  } else {
+    preferred <- c(
+      paste0(tolower(table), "_start_datetime"),
+      paste0(tolower(table), "_start_date"),
+      paste0(tolower(table), "_datetime"),
+      paste0(tolower(table), "_date"),
+      "condition_start_datetime", "condition_start_date",
+      "drug_exposure_start_datetime", "drug_exposure_start_date",
+      "procedure_datetime", "procedure_date", "device_exposure_start_datetime",
+      "device_exposure_start_date", "measurement_datetime", "measurement_date",
+      "observation_datetime", "observation_date", "visit_start_datetime",
+      "visit_start_date", "specimen_datetime", "specimen_date",
+      "note_datetime", "note_date", "death_datetime", "death_date",
+      "condition_era_start_date", "drug_era_start_date", "dose_era_start_date",
+      "observation_period_start_date", "payer_plan_period_start_date"
+    )
+    hit <- intersect(preferred, names(df))
+    if (length(hit) > 0L) hit[1] else NULL
+  }
+
+  feature_pk_col <- {
+    candidates <- c("dsomop_event_order_id", paste0(tolower(table), "_id"),
+                    if (tolower(table) %in% c("person", "death")) "person_id")
+    hit <- intersect(candidates, names(df))
+    if (length(hit) > 0L) hit[1] else NULL
+  }
+
+  as_feature_date <- function(x) {
+    if (inherits(x, "Date")) return(x)
+    if (inherits(x, c("POSIXct", "POSIXlt"))) return(as.POSIXct(x))
+    if (!is.null(feature_date_col) && grepl("_datetime$", feature_date_col)) {
+      return(suppressWarnings(as.POSIXct(x, tz = "UTC")))
+    }
+    suppressWarnings(as.Date(x))
+  }
+
+  select_ordered_event <- function(data, latest, feature_name) {
+    if (is.null(feature_date_col) || !feature_date_col %in% names(data)) {
+      stop("Feature '", feature_name,
+           "' requires a usable OMOP date column for deterministic ordering.",
+           call. = FALSE)
+    }
+    event_dates <- as_feature_date(data[[feature_date_col]])
+    data <- data[!is.na(event_dates), , drop = FALSE]
+    event_dates <- event_dates[!is.na(event_dates)]
+    if (nrow(data) == 0L) return(data)
+
+    date_key <- as.numeric(event_dates)
+    selected_date <- if (latest) max(date_key) else min(date_key)
+    tied_dates <- date_key == selected_date
+    if (sum(tied_dates) > 1L) {
+      if (is.null(feature_pk_col) || !feature_pk_col %in% names(data)) {
+        stop("Feature '", feature_name, "' has same-date events but no OMOP ",
+             "primary key is available for a deterministic tie break.",
+             call. = FALSE)
+      }
+      tied_keys <- data[[feature_pk_col]][tied_dates]
+      if (anyNA(tied_keys) || anyDuplicated(tied_keys)) {
+        stop("Feature '", feature_name,
+             "' has an invalid OMOP primary key among same-date events.",
+             call. = FALSE)
+      }
+    }
+
+    date_order <- if (latest) -date_key else date_key
+    if (!is.null(feature_pk_col) && feature_pk_col %in% names(data)) {
+      ord <- order(date_order, data[[feature_pk_col]], na.last = TRUE,
+                   method = "radix")
+    } else {
+      ord <- order(date_order, na.last = TRUE, method = "radix")
+    }
+    data[ord[1], , drop = FALSE]
+  }
+
+  missing_feature <- function(source = NULL) {
+    if (!is.null(source)) return(source[rep(NA_integer_, length(persons))])
+    rep(NA_real_, length(persons))
+  }
 
   # Helper: generate one feature column
   .add_feature <- function(features, spec, concept_data, concept_str, df) {
@@ -1368,6 +3415,17 @@
     }
 
     spec_type <- if (!is.null(spec)) (spec$type %||% "boolean") else NULL
+    if (!is.null(spec_type) && !spec_type %in% supported_types) {
+      stop("Unknown or unsupported feature type: '", spec_type, "'.",
+           call. = FALSE)
+    }
+    if (!is.null(spec_type) &&
+        spec_type %in% c("first_value", "latest_value", "time_since") &&
+        is.null(feature_date_col)) {
+      stop("Feature '", label,
+           "' requires a usable OMOP date column for deterministic ordering.",
+           call. = FALSE)
+    }
 
     # Boolean feature
     if (is.null(spec_type) || spec_type == "boolean") {
@@ -1377,16 +3435,40 @@
 
     # Count feature
     if (is.null(spec_type) || spec_type == "count") {
-      count_df <- stats::aggregate(
-        concept_data[[names(concept_data)[2]]],
-        by = list(person_id = concept_data$person_id),
-        FUN = length
-      )
       col_name <- if (identical(spec_type, "count")) label
                   else paste0(label, "_count")
-      names(count_df)[2] <- col_name
-      features <- merge(features, count_df, by = "person_id", all.x = TRUE)
+      if (nrow(concept_data) > 0L) {
+        count_df <- stats::aggregate(
+          rep(1L, nrow(concept_data)),
+          by = list(person_id = concept_data$person_id),
+          FUN = length
+        )
+        names(count_df)[2] <- col_name
+        features <- merge(features, count_df, by = "person_id", all.x = TRUE)
+      } else {
+        features[[col_name]] <- 0L
+      }
       features[[col_name]][is.na(features[[col_name]])] <- 0L
+    }
+
+    # Number of distinct concepts after this spec's own concept/window/filter
+    # scoping. An empty concept_set intentionally means all concepts in the
+    # extracted table, matching the client constructor's contract.
+    if (identical(spec_type, "n_distinct")) {
+      distinct_col <- tolower(spec$concept_col %||% concept_col %||% "")
+      if (nzchar(distinct_col) && distinct_col %in% names(concept_data) &&
+          nrow(concept_data) > 0L) {
+        nd_df <- stats::aggregate(
+          concept_data[[distinct_col]],
+          by = list(person_id = concept_data$person_id),
+          FUN = function(x) length(unique(x[!is.na(x)]))
+        )
+        names(nd_df)[2] <- label
+        features <- merge(features, nd_df, by = "person_id", all.x = TRUE)
+      } else {
+        features[[label]] <- 0L
+      }
+      features[[label]][is.na(features[[label]])] <- 0L
     }
 
     # Value-based features
@@ -1425,7 +3507,7 @@
         if (identical(spec_type, "first_value")) {
           first_df <- do.call(rbind, lapply(
             split(num_data, num_data$person_id),
-            function(x) x[which.min(seq_len(nrow(x))), , drop = FALSE]))
+            select_ordered_event, latest = FALSE, feature_name = label))
           first_vals <- data.frame(
             person_id = first_df$person_id,
             val = first_df[[val_col]], stringsAsFactors = FALSE)
@@ -1435,7 +3517,7 @@
         if (identical(spec_type, "latest_value")) {
           last_df <- do.call(rbind, lapply(
             split(num_data, num_data$person_id),
-            function(x) x[nrow(x), , drop = FALSE]))
+            select_ordered_event, latest = TRUE, feature_name = label))
           last_vals <- data.frame(
             person_id = last_df$person_id,
             val = last_df[[val_col]], stringsAsFactors = FALSE)
@@ -1449,6 +3531,55 @@
           names(stat_df)[2] <- label
           features <- merge(features, stat_df, by = "person_id", all.x = TRUE)
         }
+      }
+    }
+
+    # Elapsed time since the latest matching event at or before a fixed
+    # reference date. A missing reference would mean "cohort index" in the
+    # client contract, which is episode-specific and therefore rejected until
+    # feature grouping itself is episode-aware.
+    if (identical(spec_type, "time_since")) {
+      if (is.null(spec$reference_date)) {
+        stop("Feature '", label, "' requires a fixed reference_date; cohort-",
+             "index time_since is episode-aware and is not implemented for ",
+             "person-level features.", call. = FALSE)
+      }
+      reference_date <- .isoDate(
+        spec$reference_date, paste0("Feature '", label, "' reference_date")
+      )
+      unit <- spec$unit %||% "day"
+      if (!is.character(unit) || length(unit) != 1L || is.na(unit) ||
+          !tolower(unit) %in% c("day", "month")) {
+        stop("Feature '", label, "' unit must be day or month.",
+             call. = FALSE)
+      }
+      unit <- tolower(unit)
+
+      event_dates <- as.Date(as_feature_date(concept_data[[feature_date_col]]))
+      eligible <- !is.na(event_dates) & event_dates <= reference_date
+      date_data <- data.frame(
+        person_id = concept_data$person_id[eligible],
+        event_date = event_dates[eligible], stringsAsFactors = FALSE
+      )
+      if (nrow(date_data) > 0L) {
+        latest_dates <- stats::aggregate(
+          date_data$event_date,
+          by = list(person_id = date_data$person_id), FUN = max
+        )
+        if (identical(unit, "day")) {
+          latest_dates$value <- as.integer(reference_date - latest_dates$x)
+        } else {
+          event_lt <- as.POSIXlt(latest_dates$x)
+          reference_lt <- as.POSIXlt(rep(reference_date, nrow(latest_dates)))
+          month_count <- (reference_lt$year - event_lt$year) * 12L +
+            (reference_lt$mon - event_lt$mon)
+          month_count <- month_count -
+            as.integer(reference_lt$mday < event_lt$mday)
+          latest_dates$value <- as.integer(month_count)
+        }
+        latest_dates$x <- NULL
+        names(latest_dates)[2] <- label
+        features <- merge(features, latest_dates, by = "person_id", all.x = TRUE)
       }
     }
 
@@ -1528,7 +3659,7 @@
           num_data$.date_num <- as.numeric(as.Date(num_data[[dcol]]))
           slope_list <- lapply(split(num_data, num_data$person_id), function(x) {
             if (nrow(x) >= 2 && length(unique(x$.date_num)) >= 2) {
-              coef(stats::lm(x[[val_col]] ~ x$.date_num))[2]
+              stats::coef(stats::lm(x[[val_col]] ~ x$.date_num))[2]
             } else NA_real_
           })
           stat_df <- data.frame(
@@ -1643,27 +3774,24 @@
       }
     }
 
-    features
-  }
-
-  # Handle n_distinct specs (cross-concept, computed before per-concept loop)
-  if (!is.null(specs) && length(specs) > 0 &&
-      !is.null(concept_col) && concept_col %in% names(df)) {
-    for (s in specs) {
-      if (identical(s$type, "n_distinct")) {
-        nd_label <- if (!is.null(s$name) && nchar(s$name) > 0) s$name
-                    else "n_distinct"
-        nd_df <- stats::aggregate(
-          df[[concept_col]],
-          by = list(person_id = df$person_id),
-          FUN = function(x) length(unique(x))
-        )
-        names(nd_df)[2] <- nd_label
-        features <- merge(features, nd_df, by = "person_id", all.x = TRUE)
-        features[[nd_label]][is.na(features[[nd_label]])] <- 0L
-        zero_fill_cols <- c(zero_fill_cols, nd_label)
+    # A declared spec always owns a stable output column, even when there are no
+    # matching rows or its value column is entirely missing. Occurrence features
+    # use structural zero; value/temporal features use missingness.
+    if (!is.null(spec_type) && !label %in% names(features)) {
+      if (spec_type %in% zero_fill_types) {
+        features[[label]] <- 0L
+      } else {
+        source <- if (spec_type %in% c("first_value", "latest_value") &&
+                      val_col %in% names(concept_data)) {
+          concept_data[[val_col]]
+        } else {
+          NULL
+        }
+        features[[label]] <- missing_feature(source)
       }
     }
+
+    features
   }
 
   if (!is.null(specs) && length(specs) > 0) {
@@ -1675,7 +3803,6 @@
     for (si in seq_along(specs)) {
       spec <- specs[[si]]
       if (is.null(spec)) next
-      if (identical(spec$type, "n_distinct")) next  # handled above
 
       # Resolve the output column name: an explicit spec$name wins, else the
       # list key the spec was declared under (features = list(nsaid = ...)).
@@ -1694,6 +3821,13 @@
       cs <- cs[!is.na(cs)]
       spec_concept_col <- if (!is.null(spec$concept_col))
         tolower(spec$concept_col) else concept_col
+      if (!is.null(spec$concept_col) &&
+          (length(spec_concept_col) != 1L || is.na(spec_concept_col) ||
+           !nzchar(spec_concept_col) || !spec_concept_col %in% names(df))) {
+        stop("Feature '", spec$name %||% spec_names[[si]] %||% si,
+             "' concept_col is unavailable in the extracted table.",
+             call. = FALSE)
+      }
       if (!is.null(spec_concept_col) && spec_concept_col %in% names(df) &&
           length(cs) > 0) {
         spec_data <- df[df[[spec_concept_col]] %in% cs, , drop = FALSE]
@@ -1701,11 +3835,61 @@
         spec_data <- df
       }
 
+      # A direct server-side plan may attach an index-relative window to one
+      # feature spec. Apply it only when the extraction actually produced the
+      # required relative-day coordinate; otherwise reject rather than silently
+      # broadening the feature to all time.
+      if (!is.null(spec$time_window)) {
+        window <- spec$time_window
+        if (!is.list(window) || is.null(names(window)) ||
+            any(!nzchar(names(window))) || anyDuplicated(names(window)) ||
+            length(setdiff(names(window), c("start", "end"))) > 0L ||
+            (is.null(window$start) && is.null(window$end))) {
+          stop("Feature time_window must be a named start/end day window.",
+               call. = FALSE)
+        }
+        normalize_bound <- function(value, name) {
+          if (is.null(value)) return(NULL)
+          numeric_value <- suppressWarnings(as.numeric(value))
+          integer_value <- suppressWarnings(as.integer(value))
+          if (length(value) != 1L || length(numeric_value) != 1L ||
+              !is.finite(numeric_value) || length(integer_value) != 1L ||
+              is.na(integer_value) || numeric_value != integer_value) {
+            stop("Feature time_window ", name,
+                 " must be one integer day offset.", call. = FALSE)
+          }
+          integer_value
+        }
+        window_start <- normalize_bound(window$start, "start")
+        window_end <- normalize_bound(window$end, "end")
+        if (!is.null(window_start) && !is.null(window_end) &&
+            window_start > window_end) {
+          stop("Feature time_window start must not be after end.",
+               call. = FALSE)
+        }
+        if (!"days_from_index" %in% names(spec_data)) {
+          stop("Feature time_window requires days_from_index; extract through ",
+               "a cohort-anchored index_window.", call. = FALSE)
+        }
+        keep_window <- rep(TRUE, nrow(spec_data))
+        if (!is.null(window_start)) {
+          keep_window <- keep_window &
+            spec_data$days_from_index >= window_start
+        }
+        if (!is.null(window_end)) {
+          keep_window <- keep_window & spec_data$days_from_index <= window_end
+        }
+        keep_window[is.na(keep_window)] <- FALSE
+        spec_data <- spec_data[keep_window, , drop = FALSE]
+      }
+
       # Per-spec row filter (e.g. unit/type slice) scopes THIS feature's rows
       # only, so mutually-exclusive slices on one table become independent
       # columns instead of one contradictory AND. Evaluated in-memory against the
       # already-extracted (disclosure-filtered) frame.
       if (!is.null(spec$filter)) {
+        feature_filter_cols <- setdiff(names(spec_data), .identifierColumns())
+        .assertCustomFilterSafe(spec$filter, feature_filter_cols)
         keep <- .evalFilterMask(spec$filter, spec_data)
         spec_data <- spec_data[keep, , drop = FALSE]
       }
@@ -1727,56 +3911,198 @@
       features <- .add_feature(features, NULL, concept_data, concept_str, df)
     }
   } else {
-    count_df <- stats::aggregate(
-      rep(1, nrow(df)),
-      by = list(person_id = df$person_id),
-      FUN = sum
-    )
-    names(count_df)[2] <- "n_records"
-    features <- merge(features, count_df, by = "person_id", all.x = TRUE)
+    if (nrow(df) > 0L) {
+      count_df <- stats::aggregate(
+        rep(1, nrow(df)),
+        by = list(person_id = df$person_id),
+        FUN = sum
+      )
+      names(count_df)[2] <- "n_records"
+      features <- merge(features, count_df, by = "person_id", all.x = TRUE)
+    } else {
+      features$n_records <- 0L
+    }
     features$n_records[is.na(features$n_records)] <- 0L
   }
 
+  if (length(persons) > 0L && nrow(features) > 0L) {
+    features <- features[match(persons, features$person_id), , drop = FALSE]
+    rownames(features) <- NULL
+  }
   zero_fill_cols <- intersect(unique(zero_fill_cols), names(features))
   if (length(zero_fill_cols) > 0) {
     attr(features, "omop_zero_fill") <- zero_fill_cols
   }
+  if (ncol(features) > max_output_columns) {
+    stop("Features exceeded the server output-column cap after reduction.",
+         call. = FALSE)
+  }
   features
 }
 
-#' Transform event data to FeatureExtraction-compatible sparse format
+#' Compute episode-level features from event data
 #'
-#' Produces a named list with \code{covariates} (sparse triplet) and
-#' \code{covariateRef} (reference table). CovariateId scheme:
+#' Reuses the reviewed person-feature reducers after replacing their grouping
+#' key with the stable cohort episode key. The original person identifier is
+#' restored from the independently materialized cohort roster, so recurrent
+#' entries remain linkable without collapsing them into one person row.
+#'
+#' @param df Event data containing \code{person_id} and \code{cohort_row_id}.
+#' @param table Character source table name.
+#' @param specs Named feature specifications.
+#' @param roster Data frame with one \code{cohort_row_id}/\code{person_id} pair per
+#'   cohort episode, including episodes with no qualifying event.
+#' @param date_col Optional event date column.
+#' @param default_concept_col Optional default concept column.
+#' @return Data frame with one row per cohort episode.
+#' @keywords internal
+.toEpisodeFeatures <- function(df, table, specs = NULL, roster,
+                               date_col = NULL,
+                               default_concept_col = NULL) {
+  required_roster <- c("cohort_row_id", "person_id")
+  if (!is.data.frame(roster) ||
+      !all(required_roster %in% names(roster)) ||
+      anyNA(roster$cohort_row_id) || anyDuplicated(roster$cohort_row_id)) {
+    stop("Episode feature roster must uniquely map cohort_row_id to person_id.",
+         call. = FALSE)
+  }
+  if (!all(c("person_id", "cohort_row_id") %in% names(df))) {
+    stop("Episode-grain features require person_id and cohort_row_id in events.",
+         call. = FALSE)
+  }
+  unknown_episode <- setdiff(unique(df$cohort_row_id), roster$cohort_row_id)
+  unknown_episode <- unknown_episode[!is.na(unknown_episode)]
+  if (length(unknown_episode) > 0L || anyNA(df$cohort_row_id)) {
+    stop("Event rows contain an invalid cohort_row_id.", call. = FALSE)
+  }
+
+  episode_df <- df
+  episode_df$person_id <- episode_df$cohort_row_id
+  features <- .toFeatures(
+    episode_df, table, specs,
+    person_ids = roster$cohort_row_id,
+    date_col = date_col,
+    default_concept_col = default_concept_col
+  )
+  zero_fill <- attr(features, "omop_zero_fill", exact = TRUE)
+  names(features)[names(features) == "person_id"] <- "cohort_row_id"
+  features$cohort_row_id <- as.integer(features$cohort_row_id)
+  features$person_id <- roster$person_id[
+    match(features$cohort_row_id, roster$cohort_row_id)
+  ]
+  keep <- c("cohort_row_id", "person_id",
+            setdiff(names(features), c("cohort_row_id", "person_id")))
+  features <- features[, keep, drop = FALSE]
+  if (length(zero_fill) > 0L) {
+    attr(features, "omop_zero_fill") <- zero_fill
+  }
+  features
+}
+
+#' Transform event data to FeatureExtraction-style sparse format
+#'
+#' Produces a named list with \code{covariates} (sparse triplet),
+#' \code{covariateRef} (reference table), and \code{personRef} (the complete
+#' row-to-person roster). This is a dsOMOP output shape, not an OHDSI
+#' FeatureExtraction CovariateData object. CovariateId scheme:
 #' \code{conceptId * 1000 + analysisId} where analysisId 1=binary,
 #' 2=count, 3=mean, 4=min, 5=max.
 #'
 #' @param df Data frame in long format
 #' @param table Character; source table name
-#' @return Named list with \code{covariates} and \code{covariateRef}
+#' @param person_ids Optional complete person roster for person grain. People
+#'   without qualifying events remain in \code{personRef} and have implicit
+#'   zero covariates.
+#' @param roster Optional episode roster with \code{cohort_row_id} and
+#'   \code{person_id}.
+#' @param grain Aggregation unit, \code{"person"} or \code{"episode"}.
+#' @return Named list with \code{covariates}, \code{covariateRef}, and
+#'   \code{personRef}
 #' @keywords internal
-.toSparse <- function(df, table) {
-  if (!"person_id" %in% names(df)) {
-    return(list(
-      covariates = data.frame(rowId = integer(0), covariateId = numeric(0),
-                              covariateValue = numeric(0),
-                              stringsAsFactors = FALSE),
-      covariateRef = data.frame(covariateId = numeric(0),
-                                covariateName = character(0),
-                                analysisId = integer(0),
-                                conceptId = integer(0),
-                                stringsAsFactors = FALSE)
-    ))
+.toSparse <- function(df, table, person_ids = NULL, roster = NULL,
+                      grain = "person") {
+  if (!is.data.frame(df)) {
+    stop("Sparse input must be a data frame.", call. = FALSE)
+  }
+  if (nrow(df) > 0L && !"person_id" %in% names(df)) {
+    stop("Sparse event data require person_id.", call. = FALSE)
+  }
+  if (!is.character(grain) || length(grain) != 1L || is.na(grain) ||
+      !tolower(grain) %in% c("person", "episode")) {
+    stop("Sparse grain must be 'person' or 'episode'.", call. = FALSE)
+  }
+  grain <- tolower(grain)
+
+  if (identical(grain, "episode")) {
+    if (!is.data.frame(roster) ||
+        !all(c("cohort_row_id", "person_id") %in% names(roster)) ||
+        anyNA(roster$cohort_row_id) || anyNA(roster$person_id) ||
+        anyDuplicated(roster$cohort_row_id)) {
+      stop("Episode sparse output requires a complete unique episode roster.",
+           call. = FALSE)
+    }
+    if (nrow(df) > 0L && !"cohort_row_id" %in% names(df)) {
+      stop("Episode sparse events require cohort_row_id.", call. = FALSE)
+    }
+    observed_keys <- if ("cohort_row_id" %in% names(df)) {
+      unique(df$cohort_row_id[!is.na(df$cohort_row_id)])
+    } else integer(0)
+    unknown_keys <- setdiff(as.character(observed_keys),
+                            as.character(roster$cohort_row_id))
+    if (length(unknown_keys) > 0L) {
+      stop("Sparse events contain episodes outside the declared roster.",
+           call. = FALSE)
+    }
+    if (nrow(df) > 0L) {
+      expected_person <- roster$person_id[
+        match(df$cohort_row_id, roster$cohort_row_id)
+      ]
+      if (anyNA(df$cohort_row_id) || anyNA(expected_person) ||
+          any(as.character(df$person_id) != as.character(expected_person))) {
+        stop("Sparse episode-to-person linkage is inconsistent with the roster.",
+             call. = FALSE)
+      }
+    }
+    person_ref <- data.frame(
+      rowId = seq_len(nrow(roster)),
+      cohort_row_id = roster$cohort_row_id,
+      person_id = roster$person_id,
+      stringsAsFactors = FALSE
+    )
+    row_map <- stats::setNames(person_ref$rowId,
+                               as.character(person_ref$cohort_row_id))
+    df$dsomop_sparse_row_key <- df$cohort_row_id
+  } else {
+    observed_persons <- if ("person_id" %in% names(df)) {
+      unique(df$person_id[!is.na(df$person_id)])
+    } else {
+      vector(mode = if (is.null(person_ids)) "logical" else typeof(person_ids),
+             length = 0L)
+    }
+    persons <- if (is.null(person_ids)) observed_persons else unique(person_ids)
+    if (anyNA(persons)) {
+      stop("Sparse person roster cannot contain missing identifiers.",
+           call. = FALSE)
+    }
+    unknown_persons <- setdiff(as.character(observed_persons),
+                               as.character(persons))
+    if (length(unknown_persons) > 0L) {
+      stop("Sparse events contain people outside the declared roster.",
+           call. = FALSE)
+    }
+    person_ref <- data.frame(
+      rowId = seq_along(persons),
+      person_id = persons,
+      stringsAsFactors = FALSE
+    )
+    row_map <- stats::setNames(seq_along(persons), as.character(persons))
+    df$dsomop_sparse_row_key <- df$person_id
   }
 
   # Find concept column
   possible <- grep("_concept_id$", names(df), value = TRUE)
   possible <- possible[!grepl("_type_concept_id$|_source_concept_id$", possible)]
   concept_col <- if (length(possible) > 0) possible[1] else NULL
-
-  # Build row_id mapping (unique person_id -> rowId)
-  persons <- sort(unique(df$person_id))
-  row_map <- stats::setNames(seq_along(persons), as.character(persons))
 
   covariates <- data.frame(rowId = integer(0), covariateId = numeric(0),
                            covariateValue = numeric(0),
@@ -1788,7 +4114,14 @@
                              stringsAsFactors = FALSE)
 
   if (!is.null(concept_col) && concept_col %in% names(df)) {
-    concepts <- sort(unique(df[[concept_col]]))
+    concepts <- sort(unique(df[[concept_col]][!is.na(df[[concept_col]])]))
+    max_covariate_concepts <- .extractionCap(
+      "dsomop.max_pivot_concepts", 1000L
+    )
+    if (length(concepts) > max_covariate_concepts) {
+      stop("Sparse representation exceeds the server concept cap of ",
+           max_covariate_concepts, ".", call. = FALSE)
+    }
 
     for (cid in concepts) {
       concept_label <- .standardizeName(as.character(cid))
@@ -1798,13 +4131,13 @@
       concept_data <- df[df[[concept_col]] == cid, , drop = FALSE]
 
       # Analysis 1: binary (ever/never)
-      binary_persons <- unique(concept_data$person_id)
-      if (length(binary_persons) > 0) {
+      binary_rows <- unique(concept_data$dsomop_sparse_row_key)
+      if (length(binary_rows) > 0) {
         cov_id <- as.numeric(cid) * 1000 + 1
         covariates <- rbind(covariates, data.frame(
-          rowId = as.integer(row_map[as.character(binary_persons)]),
-          covariateId = rep(cov_id, length(binary_persons)),
-          covariateValue = rep(1, length(binary_persons)),
+          rowId = as.integer(row_map[as.character(binary_rows)]),
+          covariateId = rep(cov_id, length(binary_rows)),
+          covariateValue = rep(1, length(binary_rows)),
           stringsAsFactors = FALSE
         ))
         covariateRef <- rbind(covariateRef, data.frame(
@@ -1819,13 +4152,13 @@
       # Analysis 2: count
       count_agg <- stats::aggregate(
         concept_data[[concept_col]],
-        by = list(person_id = concept_data$person_id),
+        by = list(row_key = concept_data$dsomop_sparse_row_key),
         FUN = length
       )
       if (nrow(count_agg) > 0) {
         cov_id <- as.numeric(cid) * 1000 + 2
         covariates <- rbind(covariates, data.frame(
-          rowId = as.integer(row_map[as.character(count_agg$person_id)]),
+          rowId = as.integer(row_map[as.character(count_agg$row_key)]),
           covariateId = rep(cov_id, nrow(count_agg)),
           covariateValue = as.numeric(count_agg$x),
           stringsAsFactors = FALSE
@@ -1849,13 +4182,13 @@
                                 list(id = 5L, fn = max, nm = "max"))) {
             stat_agg <- stats::aggregate(
               num_data$value_as_number,
-              by = list(person_id = num_data$person_id),
+              by = list(row_key = num_data$dsomop_sparse_row_key),
               FUN = analysis$fn
             )
             if (nrow(stat_agg) > 0) {
               cov_id <- as.numeric(cid) * 1000 + analysis$id
               covariates <- rbind(covariates, data.frame(
-                rowId = as.integer(row_map[as.character(stat_agg$person_id)]),
+                rowId = as.integer(row_map[as.character(stat_agg$row_key)]),
                 covariateId = rep(cov_id, nrow(stat_agg)),
                 covariateValue = as.numeric(stat_agg$x),
                 stringsAsFactors = FALSE
@@ -1874,7 +4207,13 @@
     }
   }
 
-  list(covariates = covariates, covariateRef = covariateRef)
+  if (nrow(covariates) > 0L &&
+      any(!covariates$rowId %in% person_ref$rowId)) {
+    stop("Sparse covariates contain a rowId outside personRef.",
+         call. = FALSE)
+  }
+  list(covariates = covariates, covariateRef = covariateRef,
+       personRef = person_ref)
 }
 
 # --- Derived Columns ---
@@ -1907,12 +4246,32 @@
 
   bp <- .buildBlueprint(handle)
   kinds <- vapply(derived_specs, function(s) s$kind, character(1))
+  index_age <- vapply(derived_specs, function(s) {
+    identical(s$kind, "age") && identical(s$reference %||% "today", "index") &&
+      is.null(s$reference_date)
+  }, logical(1))
+
+  if (any(index_age) && is.null(cohort_table)) {
+    stop("Index-referenced age requires a cohort with an index episode.",
+         call. = FALSE)
+  }
+  missing_fixed_date <- vapply(derived_specs, function(s) {
+    (identical(s$kind, "age") &&
+       identical(s$reference %||% "today", "today") &&
+       is.null(s$reference_date)) ||
+      (s$kind %in% c("prior_obs", "followup", "chads2", "chadsvasc") &&
+         is.null(s$reference_date))
+  }, logical(1))
+  if (any(missing_fixed_date)) {
+    bad <- vapply(derived_specs[missing_fixed_date], function(s) s$name,
+                  character(1))
+    stop("Derived variable(s) ", paste(bad, collapse = ", "),
+         " require an explicit fixed reference_date for reproducibility.",
+         call. = FALSE)
+  }
 
   needs_person <- any(kinds %in% c("age", "sex_mf", "demo_missingness"))
-  needs_obs <- any(kinds %in% c("obs_duration", "prior_obs", "followup")) ||
-    any(kinds == "age" & vapply(derived_specs, function(s) {
-      identical(s$reference, "index")
-    }, logical(1)))
+  needs_obs <- any(kinds %in% c("obs_duration", "prior_obs", "followup"))
   needs_comorbidity <- any(kinds %in% c("charlson", "chads2", "chadsvasc",
                                          "dcsi", "hfrs"))
 
@@ -1972,6 +4331,31 @@
   .assertMinPersons(handle = handle, sql = count_sql)
 
   df <- .executeQuery(handle, sql)
+  if (needs_obs && anyDuplicated(df$person_id)) {
+    stop("Derived observation-period variables found multiple records for a ",
+         "person. Declare an observation-period selection or aggregation ",
+         "policy; person-level output cannot choose one implicitly.",
+         call. = FALSE)
+  }
+
+  # Index-referenced values have cohort-episode grain. Join the canonical
+  # episode map once, before computing any columns, so a recurrent cohort
+  # yields one derived row per episode and every other person-level value is
+  # replicated deterministically across those episodes.
+  if (any(index_age)) {
+    idx_sql <- paste0(
+      "SELECT c.cohort_row_id, c.subject_id AS person_id, ",
+      "c.cohort_start_date FROM ", .rankedCohortSql(cohort_table, handle),
+      " AS c ORDER BY c.cohort_row_id"
+    )
+    idx_df <- .executeQuery(handle, idx_sql)
+    idx_df$cohort_row_id <- as.integer(idx_df$cohort_row_id)
+    idx_df$index_year <- as.integer(
+      format(as.Date(idx_df$cohort_start_date), "%Y")
+    )
+    df <- merge(idx_df, df, by = "person_id", all.x = TRUE, sort = FALSE)
+    df <- df[order(df$cohort_row_id), , drop = FALSE]
+  }
   # A zero-row df (e.g. an empty population from an annihilating set-op) builds a
   # zero-ROW result with the full derived-column SCHEMA rather than NULL, so the
   # output surfaces as an empty data.frame instead of being dropped. The
@@ -1979,6 +4363,11 @@
   # cleanly; comorbidity merges on an empty person set likewise return 0 rows.
 
   result <- data.frame(person_id = df$person_id, stringsAsFactors = FALSE)
+  if ("cohort_row_id" %in% names(df)) {
+    result$cohort_row_id <- df$cohort_row_id
+    result$row_id <- df$cohort_row_id
+    result <- result[, c("row_id", "cohort_row_id", "person_id"), drop = FALSE]
+  }
 
   for (spec in derived_specs) {
     col_name <- spec$name
@@ -1986,25 +4375,25 @@
     if (spec$kind == "age") {
       if ("year_of_birth" %in% names(df)) {
         ref <- spec$reference %||% "today"
-        if (ref == "today" || is.null(cohort_table)) {
-          ref_year <- as.integer(format(Sys.Date(), "%Y"))
-          if (!is.null(spec$reference_date)) {
-            ref_year <- as.integer(format(
-              as.Date(spec$reference_date), "%Y"))
-          }
+        if (!ref %in% c("today", "index")) {
+          stop("Derived age reference must be 'today' or 'index'.",
+               call. = FALSE)
+        }
+        if (!is.null(spec$reference_date)) {
+          ref_date <- .isoDate(
+            spec$reference_date,
+            paste0("Derived age '", col_name, "' reference_date")
+          )
+          ref_year <- as.integer(format(ref_date, "%Y"))
+        } else if (ref == "today") {
+          stop("Derived age requires an explicit fixed reference_date.",
+               call. = FALSE)
         } else {
-          # index: use cohort_start_date — fetch from cohort table
-          idx_sql <- paste0(
-            "SELECT subject_id AS person_id, cohort_start_date FROM ",
-            cohort_table)
-          idx_df <- .executeQuery(handle, idx_sql)
-          idx_df$index_year <- as.integer(
-            format(as.Date(idx_df$cohort_start_date), "%Y"))
-          df <- merge(df, idx_df[, c("person_id", "index_year")],
-                      by = "person_id", all.x = TRUE)
           ref_year <- df$index_year
         }
-        result[[col_name]] <- as.integer(ref_year - df$year_of_birth)
+        age_value <- as.integer(ref_year - df$year_of_birth)
+        age_value[!is.na(age_value) & age_value < 0L] <- NA_integer_
+        result[[col_name]] <- age_value
       } else {
         result[[col_name]] <- NA_integer_
       }
@@ -2031,11 +4420,9 @@
 
     } else if (spec$kind == "prior_obs") {
       if ("observation_period_start_date" %in% names(df)) {
-        ref_date <- if (!is.null(spec$reference_date)) {
-          as.Date(spec$reference_date)
-        } else {
-          Sys.Date()
-        }
+        ref_date <- .isoDate(spec$reference_date,
+                             paste0("Derived prior observation '", col_name,
+                                    "' reference_date"))
         start_d <- as.Date(df$observation_period_start_date)
         result[[col_name]] <- as.integer(ref_date - start_d)
       } else {
@@ -2044,11 +4431,9 @@
 
     } else if (spec$kind == "followup") {
       if ("observation_period_end_date" %in% names(df)) {
-        ref_date <- if (!is.null(spec$reference_date)) {
-          as.Date(spec$reference_date)
-        } else {
-          Sys.Date()
-        }
+        ref_date <- .isoDate(spec$reference_date,
+                             paste0("Derived follow-up '", col_name,
+                                    "' reference_date"))
         end_d <- as.Date(df$observation_period_end_date)
         result[[col_name]] <- as.integer(end_d - ref_date)
       } else {
@@ -2078,12 +4463,13 @@
     } else if (spec$kind %in% c("charlson", "chads2", "chadsvasc",
                                   "dcsi", "hfrs")) {
       score_df <- .computeComorbidityScore(
-        handle, spec$kind, result$person_id,
+        handle, spec$kind, unique(result$person_id),
         reference_date = spec$reference_date)
       zero_val <- if (spec$kind %in% c("hfrs", "dcsi")) 0 else 0L
       if (!is.null(score_df) && nrow(score_df) > 0) {
-        names(score_df)[2] <- col_name
-        result <- merge(result, score_df, by = "person_id", all.x = TRUE)
+        result[[col_name]] <- score_df[[2]][
+          match(result$person_id, score_df$person_id)
+        ]
         result[[col_name]][is.na(result[[col_name]])] <- zero_val
       } else {
         result[[col_name]] <- zero_val
@@ -2286,11 +4672,8 @@
   cr_row <- bp$tables[bp$tables$table_name == "concept_relationship" &
                         bp$tables$present_in_db, , drop = FALSE]
   if (nrow(cr_row) == 0) {
-    warning(score_type, " score requires concept_relationship table ",
-            "but it is not present in the database. ",
-            "All scores will be 0.", call. = FALSE)
-    handle[[cache_key]] <- list()
-    return(list())
+    stop(score_type, " score requires concept_relationship, but that table ",
+         "is not present in the authorized vocabulary schema.", call. = FALSE)
   }
 
   # Resolve table names
@@ -2298,8 +4681,7 @@
   concept_row <- bp$tables[bp$tables$table_name == "concept" &
                              bp$tables$present_in_db, , drop = FALSE]
   if (nrow(concept_row) == 0) {
-    handle[[cache_key]] <- list()
-    return(list())
+    stop(score_type, " score requires the concept table.", call. = FALSE)
   }
   concept_table <- concept_row$qualified_name[1]
 
@@ -2349,11 +4731,9 @@
   resolved_df <- .executeQuery(handle, sql)
 
   if (nrow(resolved_df) == 0) {
-    warning(score_type, " score: no ICD-to-SNOMED mappings found in ",
-            "concept_relationship (vocabulary may not be loaded). ",
-            "All scores will be 0.", call. = FALSE)
-    handle[[cache_key]] <- list()
-    return(list())
+    stop(score_type, " score: no ICD-to-SNOMED mappings were found in ",
+         "concept_relationship; refusing to emit misleading all-zero scores.",
+         call. = FALSE)
   }
 
   # Assign resolved concepts to categories by matching patterns
@@ -2397,15 +4777,14 @@
   if (is.null(person_ids) || length(person_ids) == 0) return(NULL)
 
   # --- Score definitions ---
-  # All concept IDs are ancestor concept IDs from OHDSI FeatureExtraction.
-  # Matching is exact (no concept_ancestor descendant lookup).
-  # Version-pinned to FeatureExtraction v3.5.x / OMOP CDM v5.4.
+  # Concept seeds and analysis IDs are traced to OHDSI FeatureExtraction
+  # v3.14.0, commit 53266f0233c2ee7cae127e8669ad35b0d60406ae.
   #
-  # IMPORTANT: These scores use ancestor concept IDs directly. In the official
-
-  # FeatureExtraction, descendant concepts are resolved via concept_ancestor.
-  # Our implementation matches on the ancestor IDs themselves, which covers
-  # the most common codings but may miss descendant-only records.
+  # This is a dsOMOP adapter, not an upstream-equivalent implementation:
+  # FeatureExtraction uses condition_era, cohort-relative windows and
+  # index-specific inclusion/exclusion rules. dsOMOP reads condition_occurrence,
+  # uses its explicit reference_date where age is required, and applies the
+  # local vocabulary/descendant rules below.
 
   # Charlson Comorbidity Index (analysis_id = 901)
   # Source: FeatureExtraction/inst/sql/sql_server/CharlsonIndex.sql
@@ -2444,7 +4823,8 @@
 
   # CHA2DS2-VASc (analysis_id = 904)
   # Source: FeatureExtraction/inst/sql/sql_server/Chads2Vasc.sql
-  # Uses expanded concept sets from the official SQL definition.
+  # The positive seeds are traced to the official SQL, but dsOMOP expands every
+  # seed locally and does not reproduce its selective descendant/exclusion SQL.
   } else if (score_type == "chadsvasc") {
     categories <- list(
       chf          = list(concepts = c(316139L, 314378L, 318773L,
@@ -2478,41 +4858,39 @@
          "chads2, chadsvasc, dcsi, hfrs.", call. = FALSE)
   }
 
-  # For vocabulary-resolved scores, check if resolution returned anything
-  if (score_type %in% c("dcsi", "hfrs")) {
-    if (length(resolved) == 0) {
-      # Graceful fallback: no vocab mappings -> score 0 for everyone
-      score_result <- data.frame(
-        person_id = person_ids, score = 0, stringsAsFactors = FALSE)
-      analysis_ids <- list(dcsi = 902L, hfrs = 926L)
-      attr(score_result, "score_meta") <- list(
-        score_type = score_type,
-        analysis_id = analysis_ids[[score_type]],
-        upstream = "FeatureExtraction",
-        matching = "vocabulary_resolved",
-        note = "No concept_relationship mappings found; all scores 0"
-      )
-      return(score_result)
+  if (score_type %in% c("charlson", "chads2", "chadsvasc")) {
+    hierarchy_cache <- paste0("resolved_hierarchy_", score_type)
+    expanded_categories <- handle[[hierarchy_cache]]
+    if (is.null(expanded_categories)) {
+      expanded_categories <- lapply(categories, function(category) {
+        descendants <- .vocabGetDescendants(
+          handle, category$concepts, include_self = TRUE
+        )
+        category$concepts <- unique(c(
+          as.integer(category$concepts), as.integer(descendants$concept_id)
+        ))
+        category
+      })
+      handle[[hierarchy_cache]] <- expanded_categories
     }
-  } else {
+    categories <- expanded_categories
+  }
+
+  if (!score_type %in% c("dcsi", "hfrs")) {
     scoring_mode <- "simple_weighted"
   }
 
   bp <- .buildBlueprint(handle)
 
-  # Find condition tables: condition_occurrence, condition_era
-  cond_tables <- c("condition_occurrence", "condition_era")
-  available_tables <- character(0)
-  for (ct in cond_tables) {
-    tbl_row <- bp$tables[bp$tables$table_name == ct &
-                           bp$tables$present_in_db, , drop = FALSE]
-    if (nrow(tbl_row) > 0) {
-      available_tables <- c(available_tables, ct)
-    }
-  }
-  if (length(available_tables) == 0) {
-    return(data.frame(person_id = person_ids, score = 0,
-                      stringsAsFactors = FALSE))
+  # Use one fixed dsOMOP event source on every site. Opportunistically mixing
+  # condition_era where available changes score semantics across databases.
+  available_tables <- "condition_occurrence"
+  condition_row <- bp$tables[
+    bp$tables$table_name == "condition_occurrence" & bp$tables$present_in_db,
+    , drop = FALSE
+  ]
+  if (nrow(condition_row) != 1L) {
+    stop(score_type, " score requires condition_occurrence.", call. = FALSE)
   }
 
   ids_str <- .sqlIdList(person_ids)
@@ -2567,7 +4945,7 @@
       for (cn in cat_names) {
         entries <- Filter(function(e) e$category == cn, resolved)
         # For each person, find the max tier they match
-        person_max_tier <- setNames(rep(0, length(person_ids)), person_ids)
+        person_max_tier <- stats::setNames(rep(0, length(person_ids)), person_ids)
         for (entry in entries) {
           matched_pids <- unique(
             cond_df$person_id[cond_df$concept_id %in% entry$concepts])
@@ -2606,14 +4984,15 @@
       person_table, " WHERE person_id IN (", ids_str, ")")
     person_df <- .executeQuery(handle, person_sql)
     if (nrow(person_df) > 0) {
-      # Age for the CHADS2/CHA2DS2-VASc age bands is computed at the supplied
-      # reference (index) date when available, so the score is deterministic and
-      # reproducible; otherwise it falls back to the current year.
-      ref_year <- if (!is.null(reference_date)) {
-        as.integer(format(as.Date(reference_date), "%Y"))
-      } else {
-        as.integer(format(Sys.Date(), "%Y"))
+      # The age component is always tied to a recipe-persisted date; silently
+      # using the execution date would change a saved study definition.
+      if (is.null(reference_date)) {
+        stop(score_type, " requires an explicit reference_date for its age ",
+             "component.", call. = FALSE)
       }
+      ref_year <- as.integer(format(
+        .isoDate(reference_date, paste0(score_type, " reference_date")), "%Y"
+      ))
       person_df$age <- ref_year - person_df$year_of_birth
       for (i in seq_len(nrow(person_df))) {
         pid <- person_df$person_id[i]
@@ -2649,17 +5028,25 @@
   matching_type <- if (score_type %in% c("dcsi", "hfrs")) {
     "vocabulary_resolved"
   } else {
-    "exact_ancestor"
+    "concept_ancestor_expanded"
   }
   attr(score_result, "score_meta") <- list(
     score_type = score_type,
     analysis_id = analysis_ids[[score_type]],
-    upstream = "FeatureExtraction",
+    adapter = "dsOMOP",
+    upstream = "OHDSI/FeatureExtraction",
+    upstream_release = "v3.14.0",
+    upstream_commit = "53266f0233c2ee7cae127e8669ad35b0d60406ae",
+    upstream_equivalent = FALSE,
     matching = matching_type,
+    divergence = paste0(
+      "dsOMOP condition_occurrence adapter with local vocabulary, ",
+      "descendant and reference-date semantics"
+    ),
     note = if (matching_type == "vocabulary_resolved") {
       "ICD codes resolved to SNOMED via concept_relationship"
     } else {
-      "Ancestor concept IDs matched directly (no concept_ancestor descendant resolution)"
+      "Referenced ancestor seeds expanded locally via concept_ancestor"
     }
   )
 
@@ -2678,10 +5065,13 @@
 #' @param columns Character vector; person columns to include
 #' @param derived Character vector; derived fields to compute
 #' @param translate_concepts Logical; translate concept IDs to names
+#' @param age_breaks Optional public age-grid coarsening negotiated by a
+#'   federation.
 #' @return Data frame with one row per cohort member
 #' @keywords internal
 .extractBaseline <- function(handle, cohort_table, columns = NULL,
-                              derived = NULL, translate_concepts = TRUE) {
+                             derived = NULL, translate_concepts = TRUE,
+                             age_breaks = NULL) {
   if (is.null(cohort_table)) {
     warning("Baseline output requires a cohort; returning NULL.", call. = FALSE)
     return(NULL)
@@ -2695,21 +5085,54 @@
   op_schema <- .resolveTableSchema(handle, "observation_period", "Clinical")
   op_table <- .qualifyTable(handle, "observation_period", op_schema)
 
-  # Default columns if not specified
-  # Note: year_of_birth is included for age_group computation but removed
-  # from final output when age_at_index is a derived field
-  if (is.null(columns)) {
-    columns <- c("gender_concept_id", "year_of_birth", "race_concept_id")
+  derived <- tolower(derived %||% character(0))
+  requested_columns <- if (is.null(columns)) {
+    c("gender_concept_id", "race_concept_id")
+  } else {
+    tolower(columns)
   }
-  columns <- tolower(columns)
+  birth_components <- c("year_of_birth", "month_of_birth", "day_of_birth",
+                        "birth_datetime")
+  requested_birth <- intersect(requested_columns, birth_components)
+  if (length(requested_birth) > 0L) {
+    stop("Disclosive: exact birth components are blocked; request derived ",
+         "age_at_index to receive disclosure-controlled age groups.",
+         call. = FALSE)
+  }
+  columns <- unique(c(
+    requested_columns,
+    if ("age_at_index" %in% derived) "year_of_birth" else character(0)
+  ))
 
-  # Build person column selects (only those available)
+  # Apply the same explicit-column contract as .compileSelect. Baseline uses
+  # bespoke join SQL, so it must not bypass the blueprint blocklist or silently
+  # reduce an unknown request to person_id-only output.
   person_cols <- bp$columns[["person"]]
   if (!is.null(person_cols)) {
     avail_person <- person_cols$column_name
-    select_person_cols <- intersect(columns, avail_person)
-  } else {
+    missing_columns <- setdiff(columns, avail_person)
+    if (length(missing_columns) > 0L) {
+      stop("Baseline person column(s) not found: ",
+           paste(missing_columns, collapse = ", "), ".", call. = FALSE)
+    }
+    blocked <- union(
+      person_cols$column_name[person_cols$is_blocked],
+      intersect(c("month_of_birth", "day_of_birth", "birth_datetime"),
+                avail_person)
+    )
+    # `year_of_birth` may be added internally solely to derive an age group and
+    # is removed before release. Apply the public blocklist only to columns the
+    # caller actually requested; requested birth components already fail above.
+    requested_blocked <- intersect(requested_columns, blocked)
+    if (length(requested_blocked) > 0L) {
+      stop("Disclosive: baseline person column(s) '",
+           paste(requested_blocked, collapse = "', '"),
+           "' are blocked.", call. = FALSE)
+    }
     select_person_cols <- columns
+  } else {
+    stop("Person columns are unavailable for baseline extraction.",
+         call. = FALSE)
   }
 
   person_select <- if (length(select_person_cols) > 0) {
@@ -2719,17 +5142,17 @@
   }
 
   sql <- paste0(
-    "SELECT c.subject_id AS person_id, ",
+    "SELECT c.cohort_row_id, c.subject_id AS person_id, ",
     "c.cohort_start_date, c.cohort_end_date",
     person_select, ", ",
     "op.observation_period_start_date, op.observation_period_end_date",
-    " FROM ", cohort_table, " AS c",
+    " FROM ", .rankedCohortSql(cohort_table, handle), " AS c",
     " INNER JOIN ", person_table, " AS p ON p.person_id = c.subject_id",
     " LEFT JOIN ", op_table, " AS op",
     " ON op.person_id = c.subject_id",
     " AND c.cohort_start_date >= op.observation_period_start_date",
     " AND c.cohort_start_date <= op.observation_period_end_date",
-    " ORDER BY c.subject_id, c.cohort_start_date"
+    " ORDER BY c.cohort_row_id"
   )
 
   .assertMinPersons(handle = handle,
@@ -2738,16 +5161,24 @@
 
   result <- .executeQuery(handle, sql)
   if (nrow(result) == 0) return(result)
+  if (anyDuplicated(result$cohort_row_id)) {
+    stop("Baseline extraction found multiple matching observation periods for ",
+         "one cohort episode; one-row-per-episode output is ambiguous.",
+         call. = FALSE)
+  }
 
-  # Add row_id
-  result$row_id <- seq_len(nrow(result))
+  # row_id remains the legacy name; cohort_row_id is the explicit, shared
+  # episode identity used by every longitudinal output.
+  result$cohort_row_id <- as.integer(result$cohort_row_id)
+  result$row_id <- result$cohort_row_id
 
   # Compute derived fields
-  derived <- tolower(derived %||% character(0))
-
   if ("age_at_index" %in% derived && "year_of_birth" %in% names(result)) {
     index_year <- as.integer(format(as.Date(result$cohort_start_date), "%Y"))
-    result$age_group <- .computeAgeGroups(result$year_of_birth, index_year)
+    result$age_group <- .computeAgeGroups(
+      result$year_of_birth, index_year, age_breaks = age_breaks,
+      person_id = result$person_id
+    )
     # Remove exact year_of_birth from output (quasi-identifier)
     result$year_of_birth <- NULL
   }
@@ -2775,7 +5206,8 @@
     derived_keep <- setdiff(derived_keep, "age_at_index")
     derived_keep <- c(derived_keep, "age_group")
   }
-  keep <- c("row_id", "person_id", select_person_cols, derived_keep)
+  keep <- c("row_id", "cohort_row_id", "person_id", select_person_cols,
+            derived_keep)
   keep <- intersect(keep, names(result))
   result <- result[, keep, drop = FALSE]
 
@@ -2803,7 +5235,8 @@
 #'   \code{\link{.assertCustomFilterSafe}} and ANDed into the outcome-event
 #'   SELECT. It only restricts events; the cohort (one row per member) and its
 #'   distinct-person gate are unaffected, so this can never widen disclosure.
-#' @return Data frame with row_id, person_id, event (0/1), time_to_event_days
+#' @return Data frame with row_id/cohort_row_id, person_id, event (0/1),
+#'   time_to_event_days
 #' @keywords internal
 .extractSurvival <- function(handle, cohort_table, outcome, tar = NULL,
                               event_order = "first", filters = NULL) {
@@ -2812,13 +5245,67 @@
     return(NULL)
   }
 
+  if (!is.character(event_order) || length(event_order) != 1L ||
+      is.na(event_order) || !tolower(event_order) %in% c("first", "last")) {
+    stop("event_order must be 'first' or 'last'.", call. = FALSE)
+  }
+  event_order <- tolower(event_order)
+
+  tar <- tar %||% list()
+  if (!is.list(tar) ||
+      (length(tar) > 0L && (is.null(names(tar)) || any(!nzchar(names(tar))) ||
+                             anyDuplicated(names(tar))))) {
+    stop("tar must be a uniquely named list.", call. = FALSE)
+  }
+  unknown_tar <- setdiff(names(tar),
+                         c("start_offset", "end_offset", "censoring"))
+  if (length(unknown_tar) > 0L) {
+    stop("Unknown TAR field(s): ", paste(unknown_tar, collapse = ", "), ".",
+         call. = FALSE)
+  }
+  exact_offset <- function(value, field, default = NULL) {
+    if (is.null(value)) return(default)
+    numeric_value <- suppressWarnings(as.numeric(value))
+    integer_value <- suppressWarnings(as.integer(value))
+    if (length(value) != 1L || length(numeric_value) != 1L ||
+        !is.finite(numeric_value) || length(integer_value) != 1L ||
+        is.na(integer_value) || numeric_value != integer_value) {
+      stop("tar$", field, " must be one finite exact integer day offset.",
+           call. = FALSE)
+    }
+    integer_value
+  }
+  start_offset <- exact_offset(tar$start_offset, "start_offset", 0L)
+  end_offset <- exact_offset(tar$end_offset, "end_offset", NULL)
+  if (!is.null(end_offset) && start_offset > end_offset) {
+    stop("tar$start_offset must not be after tar$end_offset.", call. = FALSE)
+  }
+  censoring <- tolower(tar$censoring %||% "cohort_end")
+  if (!is.character(censoring) || length(censoring) != 1L ||
+      is.na(censoring) || !identical(censoring, "cohort_end")) {
+    stop("tar$censoring currently supports only 'cohort_end'.", call. = FALSE)
+  }
+  if (!is.null(end_offset) && "censoring" %in% names(tar)) {
+    stop("tar$censoring cannot be combined with an explicit end_offset.",
+         call. = FALSE)
+  }
+
+  if (!is.list(outcome) || is.null(names(outcome)) ||
+      any(!nzchar(names(outcome))) || anyDuplicated(names(outcome)) ||
+      !setequal(names(outcome), c("table", "concept_set")) ||
+      length(names(outcome)) != 2L) {
+    stop("outcome must contain exactly table and concept_set.", call. = FALSE)
+  }
+
+  cohort_table <- .validateIdentifier(cohort_table, "survival cohort table")
   bp <- .buildBlueprint(handle)
 
   # Query 1: cohort members
   cohort_sql <- paste0(
-    "SELECT subject_id AS person_id, cohort_start_date, cohort_end_date",
-    " FROM ", cohort_table,
-    " ORDER BY subject_id"
+    "SELECT c.cohort_row_id, c.subject_id AS person_id, ",
+    "c.cohort_start_date, c.cohort_end_date",
+    " FROM ", .rankedCohortSql(cohort_table, handle), " AS c",
+    " ORDER BY c.cohort_row_id"
   )
 
   .assertMinPersons(handle = handle,
@@ -2828,11 +5315,23 @@
   cohort_df <- .executeQuery(handle, cohort_sql)
   if (nrow(cohort_df) == 0) return(cohort_df)
 
-  cohort_df$row_id <- seq_len(nrow(cohort_df))
+  cohort_start <- suppressWarnings(as.Date(cohort_df$cohort_start_date))
+  cohort_end <- suppressWarnings(as.Date(cohort_df$cohort_end_date))
+  if (any(is.na(cohort_start)) || any(is.na(cohort_end)) ||
+      any(cohort_end < cohort_start)) {
+    stop("Survival cohort episodes require valid dates with end >= start.",
+         call. = FALSE)
+  }
+
+  cohort_df$cohort_row_id <- as.integer(cohort_df$cohort_row_id)
+  cohort_df$row_id <- cohort_df$cohort_row_id
 
   # Query 2: outcome events
-  outcome_table <- tolower(outcome$table)
-  outcome_concepts <- as.integer(outcome$concept_set)
+  outcome_table <- tolower(.validateIdentifier(outcome$table, "outcome table"))
+  outcome_concepts <- .resolveConceptSet(handle, outcome$concept_set)
+  if (length(outcome_concepts) == 0L) {
+    stop("Outcome concept_set resolved to no concepts.", call. = FALSE)
+  }
 
   tbl_row <- bp$tables[bp$tables$table_name == outcome_table, , drop = FALSE]
   if (nrow(tbl_row) == 0 || !tbl_row$present_in_db[1]) {
@@ -2841,17 +5340,24 @@
 
   date_col <- .getDateColumn(bp, outcome_table)
   concept_col <- .getDomainConceptColumn(bp, outcome_table)
+  outcome_columns <- bp$columns[[outcome_table]]$column_name
+  if (is.null(date_col) || !date_col %in% outcome_columns ||
+      is.null(concept_col) || !concept_col %in% outcome_columns) {
+    stop("Outcome table requires reviewed event-date and domain-concept columns.",
+         call. = FALSE)
+  }
   schema <- .resolveTableSchema(handle, outcome_table,
                                  tbl_row$schema_category[1])
   qualified <- .qualifyTable(handle, outcome_table, schema)
 
-  concept_ids_str <- paste(outcome_concepts, collapse = ", ")
+  concept_ids_str <- .sqlIdList(outcome_concepts)
 
   outcome_sql <- paste0(
     "SELECT t.person_id, t.", date_col, " AS outcome_date",
     " FROM ", qualified, " AS t",
-    " INNER JOIN ", cohort_table, " AS c ON c.subject_id = t.person_id",
-    " WHERE t.", concept_col, " IN (", concept_ids_str, ")"
+    " WHERE t.", concept_col, " IN (", concept_ids_str, ")",
+    " AND EXISTS (SELECT 1 FROM ", cohort_table,
+    " AS c WHERE c.subject_id = t.person_id)"
   )
 
   # Custom filter DSL on the outcome events. Validated fail-closed (identifier/
@@ -2861,7 +5367,8 @@
   # unaffected, so the suppression can never be bypassed.
   if (!is.null(filters) && length(filters) > 0) {
     valid_cols <- .filterableColumns(bp, outcome_table)
-    .assertCustomFilterSafe(filters, valid_cols)
+    .assertCustomFilterSafe(filters, valid_cols, handle = handle,
+                            table = outcome_table)
     filter_sql <- .compileFilter(handle, filters, "t", valid_cols)
     if (!is.null(filter_sql) && nchar(filter_sql) > 0) {
       outcome_sql <- paste0(outcome_sql, " AND ", filter_sql)
@@ -2870,21 +5377,28 @@
 
   outcome_df <- .executeQuery(handle, outcome_sql)
 
-  # TAR boundaries
-  start_offset <- as.integer(tar$start_offset %||% 0L)
-  end_offset <- tar$end_offset
-
-  cohort_df$tar_start <- as.Date(cohort_df$cohort_start_date) + start_offset
+  # TAR boundaries. Inputs were validated as exact integers before any query;
+  # cohort dates were validated above rather than allowing NA/negative follow-up
+  # to be interpreted as ordinary censoring.
+  cohort_df$tar_start <- cohort_start + start_offset
   if (!is.null(end_offset)) {
-    cohort_df$tar_end <- as.Date(cohort_df$cohort_start_date) +
-      as.integer(end_offset)
+    cohort_df$tar_end <- cohort_start + end_offset
   } else {
-    cohort_df$tar_end <- as.Date(cohort_df$cohort_end_date)
+    cohort_df$tar_end <- cohort_end
+  }
+  if (any(is.na(cohort_df$tar_end)) ||
+      any(cohort_df$tar_end < cohort_df$tar_start)) {
+    stop("Survival TAR end must not be before TAR start for any episode.",
+         call. = FALSE)
   }
 
   # Merge and process outcomes
   if (nrow(outcome_df) > 0) {
-    outcome_df$outcome_date <- as.Date(outcome_df$outcome_date)
+    raw_outcome_date <- outcome_df$outcome_date
+    outcome_df$outcome_date <- suppressWarnings(as.Date(raw_outcome_date))
+    if (any(!is.na(raw_outcome_date) & is.na(outcome_df$outcome_date))) {
+      stop("Outcome table contains an invalid event date.", call. = FALSE)
+    }
     merged <- merge(cohort_df, outcome_df, by = "person_id", all.x = TRUE)
   } else {
     merged <- cohort_df
@@ -2896,8 +5410,8 @@
     merged$outcome_date >= merged$tar_start &
     merged$outcome_date <= merged$tar_end
 
-  # For each person (row_id), find first/last outcome in TAR
-  result_list <- lapply(split(merged, merged$row_id), function(sub) {
+  # For each cohort episode, find the first/last outcome in its own TAR.
+  result_list <- lapply(split(merged, merged$cohort_row_id), function(sub) {
     tar_events <- sub[sub$in_tar, , drop = FALSE]
     if (nrow(tar_events) > 0) {
       if (event_order == "last") {
@@ -2907,6 +5421,7 @@
       }
       data.frame(
         row_id = sub$row_id[1],
+        cohort_row_id = sub$cohort_row_id[1],
         person_id = sub$person_id[1],
         event = 1L,
         time_to_event_days = as.integer(chosen$outcome_date[1] -
@@ -2916,6 +5431,7 @@
     } else {
       data.frame(
         row_id = sub$row_id[1],
+        cohort_row_id = sub$cohort_row_id[1],
         person_id = sub$person_id[1],
         event = 0L,
         time_to_event_days = as.integer(sub$tar_end[1] - sub$tar_start[1]),
@@ -2925,6 +5441,7 @@
   })
 
   result <- do.call(rbind, result_list)
+  result <- result[order(result$cohort_row_id), , drop = FALSE]
   rownames(result) <- NULL
   result
 }
@@ -2943,7 +5460,22 @@
 #'   cohort_start_date, cohort_end_date
 #' @keywords internal
 .extractCohortMembership <- function(handle, cohort_table,
-                                      cohort_definition_id) {
+                                      cohort_definition_id,
+                                      date_handling = NULL) {
+  date_handling <- .normalizeDateHandling(date_handling)
+  if (is.null(date_handling)) {
+    date_handling <- .normalizeDateHandling(
+      getOption("dsomop.default_date_handling", "remove")
+    )
+  }
+  if (identical(date_handling$mode, "absolute")) {
+    allow <- getOption("dsomop.allow_absolute_dates",
+      getOption("default.dsomop.allow_absolute_dates", FALSE))
+    if (!isTRUE(allow)) {
+      stop("Absolute date handling is not permitted by the server.",
+           call. = FALSE)
+    }
+  }
   if (is.null(cohort_table)) {
     warning("Cohort membership output requires a cohort; returning NULL.",
             call. = FALSE)
@@ -2957,20 +5489,33 @@
   )
 
   sql <- paste0(
-    "SELECT subject_id, cohort_start_date, cohort_end_date",
-    " FROM ", cohort_table,
-    " ORDER BY subject_id, cohort_start_date"
+    "SELECT c.cohort_row_id, c.subject_id, c.cohort_start_date, ",
+    "c.cohort_end_date",
+    " FROM ", .rankedCohortSql(cohort_table, handle), " AS c",
+    " ORDER BY c.cohort_row_id"
   )
 
   result <- .executeQuery(handle, sql)
-  if (nrow(result) == 0) return(result)
+  if (nrow(result) == 0) {
+    result$row_id <- integer(0)
+    result$cohort_definition_id <- integer(0)
+    result <- result[, c("row_id", "cohort_row_id", "subject_id",
+                         "cohort_definition_id", "cohort_start_date",
+                         "cohort_end_date")]
+    return(.applyDateHandling(result, date_handling,
+                              index_date_col = "cohort_start_date"))
+  }
 
-  result$row_id <- seq_len(nrow(result))
+  result$cohort_row_id <- as.integer(result$cohort_row_id)
+  result$row_id <- result$cohort_row_id
   result$cohort_definition_id <- as.integer(cohort_definition_id)
 
   # Reorder columns: row_id, subject_id, cohort_definition_id, dates
-  result[, c("row_id", "subject_id", "cohort_definition_id",
-             "cohort_start_date", "cohort_end_date")]
+  result <- result[, c("row_id", "cohort_row_id", "subject_id",
+                       "cohort_definition_id", "cohort_start_date",
+                       "cohort_end_date")]
+  .applyDateHandling(result, date_handling,
+                     index_date_col = "cohort_start_date")
 }
 
 # --- Intervals Long Extraction ---
@@ -2984,11 +5529,16 @@
 #' @param cohort_table Character; temp table name with cohort members
 #' @param tables Character vector; table names to extract intervals from
 #' @param concept_filter Named list; per-table concept ID filters
-#' @return Data frame with row_id, subject_id, interval_type, concept_id,
-#'   start_days_from_index, end_days_from_index
+#' @return Data frame with row_id, cohort_row_id, subject_id, interval_type,
+#'   concept_id, start_days_from_index, end_days_from_index
 #' @keywords internal
 .extractIntervalsLong <- function(handle, cohort_table, tables,
-                                   concept_filter = NULL) {
+                                   concept_filter = NULL, filters = NULL) {
+  if (!is.character(tables) || length(tables) == 0L || anyNA(tables) ||
+      any(!nzchar(tables)) || anyDuplicated(tolower(tables))) {
+    stop("intervals_long tables must be a non-empty, unique character vector.",
+         call. = FALSE)
+  }
   if (is.null(cohort_table)) {
     warning("Intervals output requires a cohort; returning NULL.",
             call. = FALSE)
@@ -3007,13 +5557,30 @@
   for (tbl_name in tables) {
     tbl_lower <- tolower(tbl_name)
 
-    # Skip if not present in DB
+    # A requested table is part of the output contract. In strict mode an
+    # unavailable table or non-interval shape aborts instead of returning a
+    # deceptively partial multi-table result.
     tbl_row <- bp$tables[bp$tables$table_name == tbl_lower, , drop = FALSE]
-    if (nrow(tbl_row) == 0 || !tbl_row$present_in_db[1]) next
+    if (nrow(tbl_row) == 0 || !tbl_row$present_in_db[1]) {
+      message <- paste0("Intervals table '", tbl_name, "' is unavailable.")
+      if (isTRUE(.omopDisclosureSettings()$query_strict)) {
+        stop(message, call. = FALSE)
+      }
+      warning(message, call. = FALSE)
+      next
+    }
 
-    # Get date pair — skip if no start/end pair
+    # Get date pair.
     date_pair <- .getDatePair(bp, tbl_lower)
-    if (is.null(date_pair)) next
+    if (is.null(date_pair)) {
+      message <- paste0("Intervals table '", tbl_name,
+                        "' has no start/end date pair.")
+      if (isTRUE(.omopDisclosureSettings()$query_strict)) {
+        stop(message, call. = FALSE)
+      }
+      warning(message, call. = FALSE)
+      next
+    }
 
     # Get domain concept column — use concept_role to avoid
     # returning type_concept columns (e.g. period_type_concept_id)
@@ -3021,38 +5588,38 @@
     domain_cols <- col_df$column_name[col_df$concept_role == "domain_concept"]
     concept_col <- if (length(domain_cols) > 0) domain_cols[1] else NULL
 
-    # Resolve qualified table name
-    schema <- .resolveTableSchema(
-      handle, tbl_lower, tbl_row$schema_category[1]
-    )
-    qualified <- .qualifyTable(handle, tbl_lower, schema)
-
-    # Build SELECT
-    select_parts <- paste0(
-      "t.person_id, t.", date_pair$start, ", t.", date_pair$end
-    )
-    if (!is.null(concept_col)) {
-      select_parts <- paste0(select_parts, ", t.", concept_col)
-    }
-    select_parts <- paste0(select_parts, ", c.cohort_start_date")
-
-    sql <- paste0(
-      "SELECT ", select_parts,
-      " FROM ", qualified, " AS t",
-      " INNER JOIN ", cohort_table,
-      " AS c ON c.subject_id = t.person_id"
-    )
-
     # Apply per-table concept filter
     tbl_concepts <- concept_filter[[tbl_lower]] %||%
       concept_filter[[tbl_name]]
-    if (!is.null(tbl_concepts) && !is.null(concept_col)) {
-      ids_str <- paste(as.integer(tbl_concepts), collapse = ", ")
-      sql <- paste0(sql, " WHERE t.", concept_col, " IN (", ids_str, ")")
+    if (!is.null(tbl_concepts) && is.null(concept_col)) {
+      stop("Table '", tbl_name,
+           "' has no domain concept column for its concept_filter.",
+           call. = FALSE)
     }
+
+    # Reuse the normal extraction compiler so custom date/value filters receive
+    # the same identifier allowlist, date-sentinel resolution, and SQL escaping
+    # as event-level outputs. add_cohort_date forces the required cohort join.
+    select_cols <- c(date_pair$start, date_pair$end, concept_col)
+    sql <- .compileSelect(
+      handle, tbl_lower,
+      columns = select_cols,
+      concept_filter = tbl_concepts,
+      cohort_table = cohort_table,
+      add_cohort_date = TRUE,
+      filters = filters,
+      block_sensitive = TRUE,
+      add_event_order_id = TRUE
+    )
+    .assertMinPersons(handle = handle, sql = .compilePersonCount(handle, sql))
 
     tbl_df <- .executeQuery(handle, sql)
     if (nrow(tbl_df) == 0) next
+    if (!"dsomop_event_order_id" %in% names(tbl_df)) {
+      stop("Intervals table '", tbl_name,
+           "' has no standard OMOP primary key for deterministic row order.",
+           call. = FALSE)
+    }
 
     # Compute relative days
     start_dates <- as.Date(tbl_df[[date_pair$start]])
@@ -3060,7 +5627,9 @@
     index_dates <- as.Date(tbl_df$cohort_start_date)
 
     interval_df <- data.frame(
-      subject_id = as.integer(tbl_df$person_id),
+      cohort_row_id = as.integer(tbl_df$cohort_row_id),
+      subject_id = tbl_df$person_id,
+      .event_order_id = tbl_df$dsomop_event_order_id,
       interval_type = rep(tbl_lower, nrow(tbl_df)),
       concept_id = if (!is.null(concept_col))
         as.integer(tbl_df[[concept_col]])
@@ -3076,7 +5645,8 @@
 
   if (length(all_intervals) == 0) {
     return(data.frame(
-      row_id = integer(0), subject_id = integer(0),
+      row_id = integer(0), cohort_row_id = integer(0),
+      subject_id = integer(0),
       interval_type = character(0), concept_id = integer(0),
       start_days_from_index = integer(0),
       end_days_from_index = integer(0),
@@ -3086,10 +5656,15 @@
 
   result <- do.call(rbind, all_intervals)
   rownames(result) <- NULL
+  table_order <- match(result$interval_type, tolower(tables))
+  result <- result[order(table_order, result$cohort_row_id,
+                         result$.event_order_id, na.last = TRUE), , drop = FALSE]
+  rownames(result) <- NULL
   result$row_id <- seq_len(nrow(result))
+  result$.event_order_id <- NULL
 
-  result[, c("row_id", "subject_id", "interval_type", "concept_id",
-             "start_days_from_index", "end_days_from_index")]
+  result[, c("row_id", "cohort_row_id", "subject_id", "interval_type",
+             "concept_id", "start_days_from_index", "end_days_from_index")]
 }
 
 # --- Temporal Covariates ---
@@ -3103,7 +5678,7 @@
 #' @keywords internal
 .generateTimeWindows <- function(bin_width, window_start, window_end) {
   starts <- seq(as.integer(window_start),
-                as.integer(window_end) - 1L,
+                as.integer(window_end),
                 by = as.integer(bin_width))
   ends <- pmin(starts + as.integer(bin_width) - 1L,
                as.integer(window_end))
@@ -3130,23 +5705,71 @@
 #' @param window_start Integer; start of window (days from index)
 #' @param window_end Integer; end of window (days from index)
 #' @param analyses Character vector; analyses to compute
-#' @return Named list with temporalCovariates, covariateRef, timeRef
+#' @return Named list with temporalCovariates, covariateRef, timeRef, and
+#'   personRef (the cohort-episode to person mapping)
 #' @keywords internal
 .extractTemporalCovariates <- function(handle, cohort_table, table,
                                         concept_filter = NULL,
                                         bin_width = 30L,
                                         window_start = -365L,
                                         window_end = 0L,
-                                        analyses = c("binary")) {
+                                        analyses = c("binary"),
+                                        filters = NULL) {
+  integer_setting <- function(value, name) {
+    numeric_value <- suppressWarnings(as.numeric(value))
+    integer_value <- suppressWarnings(as.integer(value))
+    if (length(value) != 1L || length(numeric_value) != 1L ||
+        !is.finite(numeric_value) || length(integer_value) != 1L ||
+        is.na(integer_value) || numeric_value != integer_value) {
+      stop(name, " must be one finite integer.", call. = FALSE)
+    }
+    integer_value
+  }
+  bin_width <- integer_setting(bin_width, "bin_width")
+  window_start <- integer_setting(window_start, "window_start")
+  window_end <- integer_setting(window_end, "window_end")
+  if (bin_width <= 0L) {
+    stop("bin_width must be greater than zero.", call. = FALSE)
+  }
+  if (window_start > window_end) {
+    stop("window_start must not be after window_end.", call. = FALSE)
+  }
+  n_bins <- floor((as.double(window_end) - as.double(window_start)) /
+                    as.double(bin_width)) + 1
+  max_temporal_bins <- .extractionCap("dsomop.max_temporal_bins", 10000L)
+  if (!is.finite(n_bins) || n_bins > max_temporal_bins) {
+    stop("Temporal covariates would create ", n_bins,
+         " bins, exceeding the server cap of ", max_temporal_bins, ".",
+         call. = FALSE)
+  }
+  if (!is.character(analyses) || length(analyses) == 0L || anyNA(analyses) ||
+      any(!analyses %in% c("binary", "count"))) {
+    stop("analyses must be a non-empty subset of binary and count.",
+         call. = FALSE)
+  }
+  analyses <- unique(analyses)
+
   if (is.null(cohort_table)) {
     warning("Temporal covariates output requires a cohort; returning NULL.",
             call. = FALSE)
     return(NULL)
   }
 
-  bin_width <- as.integer(bin_width)
-  window_start <- as.integer(window_start)
-  window_end <- as.integer(window_end)
+  # Materialize the complete episode map independently of qualifying events.
+  # This keeps rowId linkable even for cohort eras with no event in the window,
+  # without returning the absolute index dates used to define those eras.
+  person_ref_raw <- .executeQuery(handle, paste0(
+    "SELECT c.cohort_row_id AS row_id, c.subject_id AS person_id FROM ",
+    .rankedCohortSql(cohort_table, handle),
+    " AS c ORDER BY c.cohort_row_id"
+  ))
+  person_ref <- data.frame(
+    rowId = as.integer(person_ref_raw$row_id),
+    # Keep the canonical identifier spelling so the recursive DataSHIELD
+    # release pass pseudonymizes it; a camelCase alias would bypass that gate.
+    person_id = person_ref_raw$person_id,
+    stringsAsFactors = FALSE
+  )
 
   # Extract events with days_from_index via .extractTable
   events <- .extractTable(
@@ -3158,11 +5781,45 @@
     temporal = list(
       index_window = list(start = window_start, end = window_end)
     ),
-    block_sensitive = TRUE
+    block_sensitive = TRUE,
+    filters = filters,
+    translate_concepts = FALSE
   )
 
   # Generate time windows
   time_ref <- .generateTimeWindows(bin_width, window_start, window_end)
+  analysis_map <- list(binary = 1L, count = 2L)
+  declared_concepts <- if (is.null(concept_filter)) {
+    integer(0)
+  } else {
+    sort(unique(as.integer(unlist(concept_filter, use.names = FALSE))))
+  }
+  make_covariate_ref <- function(concepts) {
+    rows <- lapply(concepts, function(cid) {
+      concept_label <- .standardizeName(as.character(cid))
+      if (is.na(concept_label) || concept_label == "") {
+        concept_label <- paste0("concept_", cid)
+      }
+      do.call(rbind, lapply(analyses, function(analysis_name) {
+        aid <- analysis_map[[analysis_name]]
+        data.frame(
+          covariateId = as.numeric(cid) * 1000 + aid,
+          covariateName = paste0(concept_label, "_", analysis_name),
+          analysisId = aid,
+          conceptId = as.integer(cid),
+          stringsAsFactors = FALSE
+        )
+      }))
+    })
+    if (length(rows) == 0L) {
+      return(data.frame(
+        covariateId = numeric(0), covariateName = character(0),
+        analysisId = integer(0), conceptId = integer(0),
+        stringsAsFactors = FALSE
+      ))
+    }
+    do.call(rbind, rows)
+  }
 
   # Empty result template
   empty_result <- list(
@@ -3171,16 +5828,17 @@
       covariateId = numeric(0), covariateValue = numeric(0),
       stringsAsFactors = FALSE
     ),
-    covariateRef = data.frame(
-      covariateId = numeric(0), covariateName = character(0),
-      analysisId = integer(0), conceptId = integer(0),
-      stringsAsFactors = FALSE
-    ),
-    timeRef = time_ref
+    covariateRef = make_covariate_ref(declared_concepts),
+    timeRef = time_ref,
+    personRef = person_ref
   )
 
   if (nrow(events) == 0 || !"days_from_index" %in% names(events)) {
     return(empty_result)
+  }
+  if (!"cohort_row_id" %in% names(events)) {
+    stop("Temporal covariates require a stable cohort_row_id for each cohort ",
+         "entry.", call. = FALSE)
   }
 
   # Find concept column
@@ -3199,32 +5857,26 @@
   time_ids <- pmin(pmax(time_ids, 1L), nrow(time_ref))
   events$.timeId <- time_ids
 
-  # Build row_id mapping
-  persons <- sort(unique(events$person_id))
-  row_map <- stats::setNames(seq_along(persons),
-                              as.character(persons))
-
-  concepts <- sort(unique(events[[concept_col]]))
+  concepts <- sort(unique(c(
+    declared_concepts,
+    events[[concept_col]][!is.na(events[[concept_col]])]
+  )))
+  max_covariate_concepts <- .extractionCap(
+    "dsomop.max_pivot_concepts", 1000L
+  )
+  if (length(concepts) > max_covariate_concepts) {
+    stop("Temporal covariates exceed the server concept cap of ",
+         max_covariate_concepts, ".", call. = FALSE)
+  }
 
   covariates <- data.frame(
     rowId = integer(0), timeId = integer(0),
     covariateId = numeric(0), covariateValue = numeric(0),
     stringsAsFactors = FALSE
   )
-  covariate_ref <- data.frame(
-    covariateId = numeric(0), covariateName = character(0),
-    analysisId = integer(0), conceptId = integer(0),
-    stringsAsFactors = FALSE
-  )
-
-  analysis_map <- list(binary = 1L, count = 2L)
+  covariate_ref <- make_covariate_ref(concepts)
 
   for (cid in concepts) {
-    concept_label <- .standardizeName(as.character(cid))
-    if (is.na(concept_label) || concept_label == "") {
-      concept_label <- paste0("concept_", cid)
-    }
-
     c_events <- events[events[[concept_col]] == cid, , drop = FALSE]
 
     for (analysis_name in analyses) {
@@ -3234,14 +5886,13 @@
       cov_id <- as.numeric(cid) * 1000 + aid
 
       if (analysis_name == "binary") {
-        # Unique (person, time_bin) pairs
-        uniq <- unique(c_events[, c("person_id", ".timeId"),
+        # Unique (cohort entry, time_bin) pairs. A person can contribute more
+        # than one index era, and each era is a separate covariate row.
+        uniq <- unique(c_events[, c("cohort_row_id", ".timeId"),
                                  drop = FALSE])
         if (nrow(uniq) > 0) {
           covariates <- rbind(covariates, data.frame(
-            rowId = as.integer(
-              row_map[as.character(uniq$person_id)]
-            ),
+            rowId = as.integer(uniq$cohort_row_id),
             timeId = uniq$.timeId,
             covariateId = rep(cov_id, nrow(uniq)),
             covariateValue = rep(1, nrow(uniq)),
@@ -3249,18 +5900,20 @@
           ))
         }
       } else if (analysis_name == "count") {
-        # Count events per (person, time_bin)
-        count_agg <- stats::aggregate(
-          c_events[[concept_col]],
-          by = list(person_id = c_events$person_id,
-                    timeId = c_events$.timeId),
-          FUN = length
-        )
+        # Count events per (cohort entry, time_bin)
+        count_agg <- if (nrow(c_events) > 0L) {
+          stats::aggregate(
+            c_events[[concept_col]],
+            by = list(cohort_row_id = c_events$cohort_row_id,
+                      timeId = c_events$.timeId),
+            FUN = length
+          )
+        } else {
+          data.frame()
+        }
         if (nrow(count_agg) > 0) {
           covariates <- rbind(covariates, data.frame(
-            rowId = as.integer(
-              row_map[as.character(count_agg$person_id)]
-            ),
+            rowId = as.integer(count_agg$cohort_row_id),
             timeId = count_agg$timeId,
             covariateId = rep(cov_id, nrow(count_agg)),
             covariateValue = as.numeric(count_agg$x),
@@ -3268,21 +5921,14 @@
           ))
         }
       }
-
-      covariate_ref <- rbind(covariate_ref, data.frame(
-        covariateId = cov_id,
-        covariateName = paste0(concept_label, "_", analysis_name),
-        analysisId = aid,
-        conceptId = as.integer(cid),
-        stringsAsFactors = FALSE
-      ))
     }
   }
 
   list(
     temporalCovariates = covariates,
     covariateRef = covariate_ref,
-    timeRef = time_ref
+    timeRef = time_ref,
+    personRef = person_ref
   )
 }
 

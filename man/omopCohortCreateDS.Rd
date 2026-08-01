@@ -22,7 +22,8 @@ omopCohortCreateDS(
 
 \item{cohort_id}{Integer; cohort definition ID}
 
-\item{name}{Character; cohort name}
+\item{name}{Reserved for future \code{cohort_definition} metadata support.
+Persistent mode currently writes cohort rows only.}
 
 \item{overwrite}{Logical}
 }

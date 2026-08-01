@@ -4,19 +4,28 @@
 \alias{omopCleanupDS}
 \title{Clean up temp artifacts (Assign)}
 \usage{
-omopCleanupDS(omop_symbol, prefix = "dsomop_")
+omopCleanupDS(omop_symbol, prefix = "dsomop_", close = FALSE, exact = FALSE)
 }
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
 
 \item{prefix}{Character; temp table prefix to clean}
+
+\item{close}{Logical; when true, close and remove the resource handle after
+cleaning. This idempotent mode is used by client disconnect.}
+
+\item{exact}{Logical; when true, \code{prefix} is treated as one exact,
+validated temporary-table name and only that owned object is dropped.
+Staged directories are not cleaned in exact mode.}
 }
 \value{
 Invisible TRUE
 }
 \description{
-Drops all server-side temporary tables whose names match the given prefix.
-Called during session teardown or when resetting state between analyses.
+With \code{exact = FALSE}, drops all owned server-side temporary tables whose
+names match the given prefix and cleans staged artifacts. With
+\code{exact = TRUE}, drops only the named owned table and leaves staging
+untouched. Called during teardown or when resetting analysis state.
 }
 \examples{
 \dontrun{

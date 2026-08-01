@@ -26,7 +26,7 @@ cohort-scoped) relation. Gating those summaries on the RECORD count is not
 enough: one individual can contribute many records (e.g. a single patient
 with 20 lab measurements of the same concept), so a record count can clear
 \code{nfilter_subset}/\code{nfilter_dist} while only one or two PEOPLE are
-described — and p05/p95/quantiles/bin-edges then sit at that handful of
+described - and p05/p95/quantiles/bin-edges then sit at that handful of
 individuals' values (min/max). This mirrors the distinct-person gate already
 enforced in \code{\link{.profileColumnStats}} / \code{\link{.profileValueCounts}}:
 for a person-bearing table it counts \code{DISTINCT person_id} over EXACTLY

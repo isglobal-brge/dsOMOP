@@ -2,7 +2,7 @@
 % Please edit documentation in R/interface.R
 \name{omopAchillesHeelDS}
 \alias{omopAchillesHeelDS}
-\title{Get Achilles Heel data-quality warnings (Aggregate)}
+\title{Get Achilles Heel data-quality warnings (controller-only helper)}
 \usage{
 omopAchillesHeelDS(omop_symbol)
 }
@@ -14,14 +14,14 @@ Data frame with analysis_id, achilles_heel_warning, rule_id,
   record_count
 }
 \description{
-Returns the Achilles Heel data-quality warnings, disclosure-controlled:
-\code{record_count} cells below \code{nfilter.tab} are NA-masked and any
-numeric run interpolated into the warning free-text is scrubbed. Rows (the
-fired data-quality rules) are kept so a client can show which checks fired
-without exposing small counts or embedded values.
+Achilles Heel counts records rather than distinct people and does not provide
+enough information to enforce a person-level contribution contract. This
+helper remains available to a data controller inside the server process, but
+it is deliberately not exported or registered as a DataSHIELD aggregate.
 }
 \examples{
 \dontrun{
 heel <- omopAchillesHeelDS("omop")
 }
 }
+\keyword{internal}

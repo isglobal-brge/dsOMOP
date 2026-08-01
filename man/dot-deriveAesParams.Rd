@@ -2,7 +2,7 @@
 % Please edit documentation in R/interface.R
 \name{.deriveAesParams}
 \alias{.deriveAesParams}
-\title{Derive the AES key + IV for a resource from its secret key}
+\title{Derive encryption and authentication keys for a resource}
 \usage{
 .deriveAesParams(key)
 }
@@ -10,14 +10,12 @@
 \item{key}{Raw vector; the per-resource secret (\code{handle$person_key}).}
 }
 \value{
-List with \code{aes} (32 raw bytes) and \code{iv} (16 raw bytes).
+List with \code{aes}, \code{iv}, and \code{mac} raw keys.
 }
 \description{
-Splits two independent SHA-256 digests of the per-resource secret into a
-32-byte AES-256 key and a 16-byte IV. The IV is FIXED per resource (derived
-deterministically from the same secret), which is what makes the token
-transform deterministic: the same id always encrypts to the same ciphertext.
-This is acceptable here because the plaintexts are opaque high-cardinality
-identifiers used only as join keys, never attacker-chosen messages.
+Derives independent SHA-256 subkeys for AES-256 encryption, its deterministic
+IV, and HMAC authentication. The fixed IV intentionally preserves equality
+for server-side joins; encrypt-then-MAC prevents a client from modifying a
+token and turning the decryptor into a padding/oracle surface.
 }
 \keyword{internal}

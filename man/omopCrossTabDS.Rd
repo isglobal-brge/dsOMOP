@@ -39,6 +39,9 @@ omopCrossTabDS(
 (chained 2-way) tables}
 
 \item{band_margins}{Logical; when TRUE, attach banded (never exact) margins}
+
+\item{cohort}{Cohort scope: a cohort temp table name, a cohort_definition_id,
+or NULL. Takes precedence over \code{cohort_table}.}
 }
 \value{
 For a plain call: a named list with the NA-masked \code{counts}

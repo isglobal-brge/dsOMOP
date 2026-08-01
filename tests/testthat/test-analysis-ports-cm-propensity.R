@@ -22,7 +22,8 @@
 
 cmp_handle <- function(n_persons = 40) {
   h <- create_test_handle(n_persons = n_persons)
-  h$person_key <- as.raw(1:16)
+  .setLegacyTestPersonKey(h, "cm-propensity",
+                          .local_envir = parent.frame())
   .buildBlueprint(h)
   suppressWarnings(.omopAnalysisRegistry(h))
   h
@@ -49,6 +50,7 @@ cmp_make_arms <- function(h) {
     "CREATE TEMP TABLE cmp_C AS SELECT person_id AS subject_id, ",
     "'2020-01-01' AS cohort_start_date, '2024-12-31' AS cohort_end_date ",
     "FROM person WHERE person_id BETWEEN 21 AND 40"))
+  register_test_temp(h, c("cmp_T", "cmp_C"))
   cid <- 9000L
   ins <- function(pid, concept) {
     cid <<- cid + 1L

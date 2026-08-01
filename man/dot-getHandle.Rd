@@ -16,7 +16,8 @@ The OMOP CDM handle object.
 Looks up the server-side OMOP CDM handle object associated with a given
 resource symbol name. In DSLite (multi-server, single R process), each
 server's session environment holds its own handle, avoiding collisions.
-Falls back to the global \code{.dsomop_env} for real DataSHIELD (Opal)
-deployments where each server runs in its own R process.
+A package-global fallback exists only for internal/test handles registered
+explicitly with \code{.setHandle}; public initialization stores exclusively
+in the session environment.
 }
 \keyword{internal}

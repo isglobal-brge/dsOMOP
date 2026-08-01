@@ -19,4 +19,9 @@ Replaces \code{@paramName} tokens with their values. Parameters are sorted
 longest-first to avoid substring collisions (e.g., \code{@schema} before
 \code{@s}).
 }
+\details{
+This is literal template substitution, not DBI parameter binding, identifier
+validation, or SQL sanitization. Callers must pass only controller-owned
+templates and values already validated or quoted by the typed query layer.
+}
 \keyword{internal}

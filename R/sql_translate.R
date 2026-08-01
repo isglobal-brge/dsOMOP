@@ -9,6 +9,10 @@
 #' longest-first to avoid substring collisions (e.g., \code{@schema} before
 #' \code{@s}).
 #'
+#' This is literal template substitution, not DBI parameter binding, identifier
+#' validation, or SQL sanitization. Callers must pass only controller-owned
+#' templates and values already validated or quoted by the typed query layer.
+#'
 #' @param sql Character; SQL template with \code{@param} placeholders
 #' @param ... Named parameter values
 #' @return Character; SQL with parameters substituted
@@ -26,6 +30,41 @@
   sql
 }
 
+#' Build a portable floored integer quotient
+#'
+#' SQL engines disagree on integer division and on whether casting a fractional
+#' value to INTEGER truncates or rounds.  Force decimal division, apply FLOOR,
+#' and only then cast to INTEGER so age/day calculations have identical
+#' semantics across dialects.
+#'
+#' @param expr Character SQL numeric expression.
+#' @param divisor Positive integer divisor.
+#' @return Character SQL expression.
+#' @keywords internal
+.omopFloorDivideSql <- function(expr, divisor) {
+  divisor <- suppressWarnings(as.integer(divisor))
+  if (length(divisor) != 1L || is.na(divisor) || divisor <= 0L) {
+    stop("divisor must be one positive integer.", call. = FALSE)
+  }
+  paste0("CAST(FLOOR((", expr, ") / ", divisor,
+         ".0) AS INTEGER)")
+}
+
+#' Build a portable fixed-width floor bin
+#'
+#' @param expr Character SQL numeric expression.
+#' @param width Positive integer bin width.
+#' @return Character SQL expression yielding the lower integer bin boundary.
+#' @keywords internal
+.omopFloorBinSql <- function(expr, width) {
+  width <- suppressWarnings(as.integer(width))
+  if (length(width) != 1L || is.na(width) || width <= 0L) {
+    stop("width must be one positive integer.", call. = FALSE)
+  }
+  paste0("CAST(FLOOR((", expr, ") / ", width, ".0) * ", width,
+         " AS INTEGER)")
+}
+
 # --- Dialect Translation ---
 
 #' Translate OHDSI SQL (SQL Server dialect) to target dialect
@@ -36,12 +75,29 @@
 #'   \item \code{DATEADD(day, n, expr)} to dialect-specific date arithmetic
 #' }
 #'
+#' This deliberately small built-in translator is not OHDSI SqlRender and does
+#' not claim its full grammar. Network dialect outputs are contract-tested only
+#' until exercised against a live vendor database and driver.
+#'
 #' @param sql Character; SQL in OHDSI/SQL Server convention
 #' @param target_dialect Character; target dialect name
 #' @return Character; translated SQL
 #' @keywords internal
 .sql_translate <- function(sql, target_dialect) {
-  if (is.null(target_dialect) || nchar(target_dialect) == 0L) return(sql)
+  if (is.null(target_dialect)) return(sql)
+  if (!is.character(target_dialect) || length(target_dialect) != 1L ||
+      is.na(target_dialect)) {
+    stop("target_dialect must be one character value.", call. = FALSE)
+  }
+  target_dialect <- tolower(trimws(target_dialect))
+  if (!nzchar(target_dialect)) return(sql)
+  supported <- c("postgresql", "sql server", "oracle", "redshift",
+                 "bigquery", "snowflake", "spark", "sqlite", "duckdb",
+                 "mysql")
+  if (!target_dialect %in% supported) {
+    stop("Unsupported target SQL dialect: '", target_dialect, "'.",
+         call. = FALSE)
+  }
 
   sql <- .translate_dateadd(sql, target_dialect)
   sql <- .translate_top(sql, target_dialect)
@@ -98,6 +154,7 @@
     # Build replacement based on dialect
     replacement <- switch(dialect,
       "postgresql" = paste0("(", expr, " + ", n, " * INTERVAL '1 day')"),
+      "duckdb"     = paste0("(", expr, " + ", n, " * INTERVAL '1 day')"),
       "sqlite"     = paste0("DATE(", expr, ", '", n, " days')"),
       "oracle"     = paste0("(", expr, " + ", n, ")"),
       "bigquery"   = paste0("DATE_ADD(", expr, ", INTERVAL ", n, " DAY)"),
@@ -135,7 +192,6 @@
   if (!grepl("\\bTOP\\b", sql, ignore.case = TRUE)) return(sql)
 
   # Pattern: SELECT TOP <n> ... FROM ...
-  # Capture the number and the rest of the SELECT list + FROM onwards
   pattern <- "(?i)\\bSELECT\\s+TOP\\s+(\\d+)\\b"
 
   while (grepl(pattern, sql, perl = TRUE)) {
@@ -149,19 +205,53 @@
     before <- substr(sql, 1L, match_start - 1L)
     after <- substr(sql, match_end + 1L, nchar(sql))
 
-    # Find where to insert LIMIT: before any trailing semicolon, after the
-    # statement body. We look for the end of this statement.
-    # Handle nested subqueries by tracking parenthesis depth.
+    # Find the end of THIS SELECT. For a TOP inside a CTE/subquery that is the
+    # closing parenthesis, not the end of the outer statement. The previous
+    # implementation always appended LIMIT at the statement end and silently
+    # changed the meaning of nested queries.
     insert_pos <- nchar(after)
     depth <- 0L
-    for (i in seq_len(nchar(after))) {
+    in_single <- FALSE
+    in_double <- FALSE
+    in_backtick <- FALSE
+    i <- 1L
+    while (i <= nchar(after)) {
       ch <- substr(after, i, i)
-      if (ch == "(") depth <- depth + 1L
-      else if (ch == ")") depth <- depth - 1L
-      else if (ch == ";" && depth == 0L) {
+      nxt <- if (i < nchar(after)) substr(after, i + 1L, i + 1L) else ""
+
+      if (in_single) {
+        if (ch == "'" && nxt == "'") {
+          i <- i + 2L
+          next
+        }
+        if (ch == "'") in_single <- FALSE
+      } else if (in_double) {
+        if (ch == '"' && nxt == '"') {
+          i <- i + 2L
+          next
+        }
+        if (ch == '"') in_double <- FALSE
+      } else if (in_backtick) {
+        if (ch == "`") in_backtick <- FALSE
+      } else if (ch == "'") {
+        in_single <- TRUE
+      } else if (ch == '"') {
+        in_double <- TRUE
+      } else if (ch == "`") {
+        in_backtick <- TRUE
+      } else if (ch == "(") {
+        depth <- depth + 1L
+      } else if (ch == ")") {
+        if (depth == 0L) {
+          insert_pos <- i - 1L
+          break
+        }
+        depth <- depth - 1L
+      } else if (ch == ";" && depth == 0L) {
         insert_pos <- i - 1L
         break
       }
+      i <- i + 1L
     }
 
     stmt_body <- trimws(substr(after, 1L, insert_pos))

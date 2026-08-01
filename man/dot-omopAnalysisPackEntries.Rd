@@ -33,7 +33,9 @@ own gate or bypass the one gate). A pack opts in via two DESCRIPTION fields:
 Fail-closed rules (never silently overwrite a native or another pack's id):
 the \code{"dsomop:"} prefix is RESERVED for native entries and a pack
 claiming it is rejected; a pack producing an id that collides with an
-already-registered final id is rejected. Both raise a clear error. The
+already-registered final id is rejected. Entries must be constructed through
+\code{omopAnalysisEntry()}, use compute kind \code{sql} or \code{r}, and
+carry the closed semantic output contract documented there. The
 (expensive) DESCRIPTION scan is delegated to \code{\link{.omopAnalysisPackScan}}
 (cached per session); this function only invokes the discovered registrars and
 enforces the namespacing + collision rules per handle.

@@ -11,6 +11,15 @@
   requires_cohort = FALSE
 )
 }
+\arguments{
+\item{accepts_cohort}{Logical; whether cohort-reference scoping is supported.}
+
+\item{accepts_tables}{Logical; whether workspace-table scoping is supported.}
+
+\item{max_tables}{Integer; maximum number of workspace tables in the scope.}
+
+\item{requires_cohort}{Logical; whether an explicit cohort scope is required.}
+}
 \description{
 \code{requires_cohort} marks an entry whose result is only meaningful over a
 scoped population (the cohort IS the analysis population, e.g. the native

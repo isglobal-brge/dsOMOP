@@ -12,11 +12,11 @@
 # matrix R, assert the released grid is not trivially solvable.
 # ---------------------------------------------------------------------------
 assert_safe_grid <- function(M, R, t) {
-  # (a) Floor: every VISIBLE cell is either a structural zero or >= t.
+  # (a) Floor: every visible cell clears the release threshold.
   vis <- !is.na(R)
   visible_vals <- R[vis]
-  expect_true(all(visible_vals == 0 | visible_vals >= t),
-              info = "no visible non-zero cell below nfilter_tab")
+  expect_true(all(visible_vals >= t),
+              info = "no visible cell below nfilter_tab")
 
   # (b) Single-suppression solvability: a line is recoverable only if it has a
   # UNIQUE hidden non-zero cell AND at least one VISIBLE non-zero cell (then the
@@ -37,22 +37,21 @@ assert_safe_grid <- function(M, R, t) {
                  info = paste("col", j, "has a uniquely recoverable hidden cell"))
   }
 
-  # (c) Structural zeros are rendered identically as 0 (never NA), so an
-  # attacker cannot distinguish "suppressed small" from "true zero".
-  expect_true(all(R[M == 0] == 0),
-              info = "structural zeros rendered as 0")
+  # (c) Structural zeros and suppressed small cells have the same rendering,
+  # so the result does not reveal which kind of hidden cell exists.
+  expect_true(all(is.na(R[M == 0])),
+              info = "structural zeros are masked without a distinct hint")
 }
 
 # === Layer 1: suppression algorithm =========================================
 
-test_that("primary suppression hides cells in (0, t) and keeps zeros as 0", {
+test_that("primary suppression hides cells in (0, t) and masks zeros", {
   M <- matrix(c(10L, 2L,  # 2 is below t=3
                 0L,  20L),
               nrow = 2, byrow = TRUE)
   res <- .crossTabSuppress(M, t = 3)
   R <- res$matrix
-  # The structural zero stays 0
-  expect_equal(R[2, 1], 0)
+  expect_true(is.na(R[2, 1]))
   assert_safe_grid(M, R, 3)
 })
 
@@ -153,20 +152,20 @@ test_that("adversarial 6: differencing -- banded margins do not shift by 1", {
   expect_equal(unname(rA$row_margins[1]), unname(rB$row_margins[1]))
 })
 
-test_that("all-suppressed grid -> all-NA matrix + suppressed flag", {
+test_that("all-suppressed grid has no separate suppression flag", {
   M <- matrix(c(1L, 2L,
                 2L, 1L),
               nrow = 2, byrow = TRUE)
   res <- .crossTabSuppress(M, t = 3)
   expect_true(all(is.na(res$matrix)))
-  expect_true(res$suppressed)
+  expect_false("suppressed" %in% names(res))
 })
 
 test_that("empty population -> empty/all-NA grid, generic (no empty-vs-small leak)", {
   M <- matrix(integer(0), nrow = 0, ncol = 0)
   res <- .crossTabSuppress(M, t = 3)
   expect_equal(length(res$matrix), 0L)
-  expect_false(res$suppressed)  # no non-zero cells at all
+  expect_false("suppressed" %in% names(res))
 })
 
 # === Layer 2: DB-backed end-to-end =========================================
@@ -214,7 +213,7 @@ test_that("omopCrossTabDS decodes JSON args and returns a 2x2 matrix", {
                           "race_concept_id", count_mode = "persons")
     expect_true(is.matrix(res$counts))
     expect_equal(dim(res$counts), c(2L, 2L))
-    expect_false(res$suppressed)
+    expect_false("suppressed" %in% names(res))
     # All four cells are 7 or 8 persons -> all visible, none NA.
     expect_true(all(!is.na(res$counts)))
   })
@@ -225,15 +224,18 @@ test_that("persons vs records counts differ when persons have many records", {
   on.exit(cleanup_handle(handle))
 
   withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           dsomop.nfilter.band = 5,
                            nfilter.levels.max = 40, nfilter.levels.density = 1), {
     rp <- .profileCrossTab(handle, "person", "gender_concept_id",
                            "race_concept_id", count_mode = "persons")
     rr <- .profileCrossTab(handle, "person", "gender_concept_id",
                            "race_concept_id", count_mode = "records")
     # person table is 1 row per person, so records == persons here; assert the
-    # code path runs and both return same-shaped matrices.
+    # code path runs, both return the same shape, and visible cells are banded.
     expect_equal(dim(rp$counts), dim(rr$counts))
-    expect_equal(sum(rp$counts, na.rm = TRUE), 30)
+    expect_equal(rp$counts, rr$counts)
+    expect_true(all(rp$counts[!is.na(rp$counts)] %% 5 == 0))
+    expect_lte(sum(rp$counts, na.rm = TRUE), 30)
   })
 })
 
@@ -301,9 +303,9 @@ test_that("end-to-end grid satisfies the disclosure invariant", {
     res <- .profileCrossTab(handle, "person", "gender_concept_id",
                             "race_concept_id")
     R <- res$counts
-    # No visible cell below threshold (structural zeros allowed).
+    # No visible cell falls below the threshold.
     vis <- !is.na(R)
-    expect_true(all(R[vis] == 0 | R[vis] >= 3))
+    expect_true(all(R[vis] >= 3))
     # No line has a uniquely recoverable hidden cell (lone hidden non-zero with a
     # visible non-zero companion). Checked on the rendered grid directly.
     for (i in seq_len(nrow(R))) {
@@ -319,10 +321,59 @@ test_that("end-to-end grid satisfies the disclosure invariant", {
   })
 })
 
+test_that("record cross-tabs require distinct-person support in every cell", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle))
+  DBI::dbExecute(handle$conn, "DELETE FROM condition_occurrence")
+  persons <- c(rep(1L, 20L), 2:4, 5:7, 8:10)
+  rows <- c(rep(201820L, 23L), rep(255573L, 6L))
+  cols <- c(rep(44818518L, 20L), rep(44786627L, 3L),
+            rep(44818518L, 3L), rep(44786627L, 3L))
+  condition <- data.frame(
+    condition_occurrence_id = seq_along(persons), person_id = persons,
+    condition_concept_id = rows,
+    condition_start_date = rep("2020-01-01", length(persons)),
+    condition_end_date = rep("2020-12-31", length(persons)),
+    condition_type_concept_id = cols,
+    visit_occurrence_id = rep(NA_integer_, length(persons))
+  )
+  DBI::dbWriteTable(handle$conn, "condition_occurrence", condition,
+                    append = TRUE)
+  handle$blueprint <- NULL
+  .buildBlueprint(handle)
+
+  withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
+                           nfilter.levels.max = 40,
+                           nfilter.levels.density = 1), {
+    result <- .profileCrossTab(
+      handle, "condition_occurrence", "condition_concept_id",
+      "condition_type_concept_id", count_mode = "records"
+    )
+    row_label <- .crossTabLabels(handle, "condition_concept_id", 201820L)
+    col_label <- .crossTabLabels(handle, "condition_type_concept_id", 44818518L)
+    # Twenty records from one person are still a primary-suppressed cell.
+    expect_true(is.na(result$counts[row_label, col_label]))
+
+    rare <- condition[1, , drop = FALSE]
+    rare$condition_occurrence_id <- max(condition$condition_occurrence_id) + 1L
+    rare$person_id <- 11L
+    rare$condition_concept_id <- 317009L
+    DBI::dbWriteTable(handle$conn, "condition_occurrence", rare, append = TRUE)
+    rare_result <- .profileCrossTab(
+      handle, "condition_occurrence", "condition_concept_id",
+      "condition_type_concept_id", count_mode = "persons"
+    )
+    rare_label <- .crossTabLabels(handle, "condition_concept_id", 317009L)
+    expect_false(rare_label %in% rare_result$row_levels)
+  })
+})
+
 test_that("stratify_by returns a named list of independent slices, no total", {
   # gender x race stratified by ethnicity (give 2 ethnicity levels).
   df <- big_persons()
-  df$ethnicity_concept_id <- rep(c(38003563L, 38003564L), each = 15L)
+  # Avoid making either stratum coincide with a gender or race axis.
+  df$ethnicity_concept_id <- rep(c(38003563L, 38003563L,
+                                   38003564L, 38003564L), length.out = 30L)
   handle <- make_crosstab_handle(df)
   on.exit(cleanup_handle(handle))
 
@@ -339,12 +390,13 @@ test_that("stratify_by returns a named list of independent slices, no total", {
     expect_false("counts" %in% names(res))
     # Each slice is an independent protected 2-way table.
     for (slice in res$strata) {
-      expect_true("counts" %in% names(slice) || isTRUE(slice$suppressed))
+      expect_true("counts" %in% names(slice))
+      expect_false("suppressed" %in% names(slice))
     }
   })
 })
 
-test_that("stratify_by suppresses a stratum below nfilter_subset entirely", {
+test_that("stratify_by omits a stratum below nfilter_subset without a hint", {
   df <- big_persons()
   # One ethnicity level has only 2 persons -> that whole slice is suppressed.
   df$ethnicity_concept_id <- c(rep(38003563L, 2L), rep(38003564L, 28L))
@@ -356,11 +408,7 @@ test_that("stratify_by suppresses a stratum below nfilter_subset entirely", {
     res <- .profileCrossTab(handle, "person", "gender_concept_id",
                             "race_concept_id",
                             stratify_by = "ethnicity_concept_id")
-    small_slice <- res$strata[["38003563"]]
-    expect_true(isTRUE(small_slice$suppressed))
-    # No visible cell leaks for the small stratum.
-    if (!is.null(small_slice$counts) && length(small_slice$counts) > 0) {
-      expect_true(all(is.na(small_slice$counts)))
-    }
+    expect_false("38003563" %in% names(res$strata))
+    expect_true("38003564" %in% names(res$strata))
   })
 })

@@ -42,7 +42,8 @@ plp_fit_opts <- function() {
 
 plp_fit_handle <- function() {
   h <- create_test_handle(n_persons = 60)
-  h$person_key <- as.raw(1:16)
+  .setLegacyTestPersonKey(h, "plp-fitted",
+                          .local_envir = parent.frame())
   .buildBlueprint(h)
   suppressWarnings(.omopAnalysisRegistry(h))
   h
@@ -86,6 +87,7 @@ plp_fit_setup <- function(h, positives = 1:12,
     "CREATE TEMP TABLE plp_fit_cohort AS SELECT person_id AS subject_id, ",
     "'2020-01-01' AS cohort_start_date, '2024-12-31' AS cohort_end_date ",
     "FROM person WHERE person_id <= %d"), as.integer(cohort_max)))
+  register_test_temp(h, "plp_fit_cohort")
   "plp_fit_cohort"
 }
 
@@ -276,6 +278,7 @@ test_that("(d) a 2-person cohort fails closed before any fit", {
       "CREATE TEMP TABLE plp_fit_tiny AS SELECT person_id AS subject_id, ",
       "'2020-01-01' AS cohort_start_date, '2024-12-31' AS cohort_end_date ",
       "FROM person WHERE person_id IN (1, 2)"))
+    register_test_temp(h, "plp_fit_tiny")
     for (id in PLP_FIT_CANON) {
       expect_error(
         .omopAnalysisRun(h, id, params = plp_fit_params(), scope = "plp_fit_tiny"),

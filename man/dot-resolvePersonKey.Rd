@@ -17,13 +17,19 @@ Returns a raw secret key that is STABLE for a given resource across
 reconnects and DataSHIELD workspace save/load, so a person hashes to the same
 token every time without storing any token->id map. Resolution order:
 \enumerate{
-  \item Env var \code{DSOMOP_PSEUDONYM_KEY_<rid>} then \code{DSOMOP_PSEUDONYM_KEY}
-        (hex- or UTF-8-encoded), where \code{<rid>} is a stable hash of the
-        resource identity.
-  \item R option \code{getOption("dsomop.pseudonym_key")}.
-  \item A \code{0600} file at \code{~/.dsomop/keys/<rid>.key} (32 raw bytes).
-  \item If none exist: GENERATE 32 random bytes once and PERSIST them to that
-        \code{0600} file, so the next handle re-derives the same key.
+  \item Per-resource env var \code{DSOMOP_PSEUDONYM_KEY_<rid>} (exact key).
+  \item Global env var \code{DSOMOP_PSEUDONYM_ROOT} or R option
+        \code{dsomop.pseudonym_root}, treated as a node root from which a
+        resource-separated key is derived with HMAC-SHA256.
+  \item Legacy global env var \code{DSOMOP_PSEUDONYM_KEY} or R option
+        \code{dsomop.pseudonym_key}, retained as an exact key for token
+        compatibility only when the administrator explicitly enables
+        \code{DSOMOP_ALLOW_LEGACY_GLOBAL_PSEUDONYMS}. It does not provide
+        cross-resource separation.
+  \item An existing legacy \code{0600} per-resource file at
+        \code{<state>/keys/<rid>.key}, retained to avoid invalidating tokens.
+  \item The runtime-created \code{0600} node root at
+        \code{<state>/secrets/pseudonym_root}, also HMAC-separated by resource.
 }
 The key never leaves the server, so tokens cannot be reversed client-side.
 }
