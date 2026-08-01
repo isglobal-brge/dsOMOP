@@ -7,6 +7,9 @@
 # Mutable package state
 .pkg_state <- new.env(parent = emptyenv())
 .pkg_state$resolver <- NULL
+.pkg_state$dp_status <- NULL
+.pkg_state$dp_ledger_cache <- new.env(parent = emptyenv())
+.pkg_state$dp_bootstrap_binding <- NULL
 
 # Session-level handle storage
 .dsomop_env <- new.env(parent = emptyenv())
@@ -51,6 +54,10 @@
 #' @param pkgname Package name.
 #' @keywords internal
 .onLoad <- function(libname, pkgname) {
+  # The sticky identity is a versioned wire contract. Detect accidental
+  # canonicalizer drift on every namespace load, including package checks.
+  .dsomopDpCanonicalSelfTest()
+
   # Never generate or read pseudonym key material while loading a namespace.
   # Image builds and generic worker startup must not bake or accidentally share
   # a node identity. The first real handle resolves the configured provider;
@@ -58,6 +65,16 @@
   # create the durable file lazily.
   if (!.dsomopIsInstallOrDevelopmentLoad(libname)) {
     .dsomopPseudonymLifecycleSettings()
+    # DP is opt-in. When enabled, create/validate roots, ledger, durability and
+    # rollback protection now so the service fails during bootstrap rather
+    # than during a researcher's first real request.
+    .pkg_state$dp_status <- .dsomopDpBootstrap()
+  } else {
+    .pkg_state$dp_status <- list(
+      enabled = .dsomopDpEnabled(), ready = FALSE, formal_dp = FALSE,
+      sticky_noise = FALSE, durable_ledger = FALSE,
+      protocol = .DSOMOP_DP_PROTOCOL, mechanism = .DSOMOP_DP_MECHANISM
+    )
   }
 
   # Opal commonly loads the namespace without attaching the package.

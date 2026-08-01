@@ -1,7 +1,7 @@
 Package: dsOMOP
 Type: Package
 Title: DataSHIELD Server-Side Integration for OMOP CDM Databases
-Version: 2.2.34
+Version: 2.3.0
 Authors@R: c(
     person("David", "Sarrat González", role = c("aut", "cre"), email = "david.sarrat@isglobal.org"),
     person("Xavier", "Escribà-Montagut", role = "aut"),
@@ -31,6 +31,7 @@ Imports:
     jsonlite,
     filelock,
     openssl,
+    RSQLite,
     stats,
     utils
 Suggests:
@@ -39,7 +40,6 @@ Suggests:
     RMariaDB,
     ROracle,
     RPostgreSQL,
-    RSQLite,
     duckdb,
     odbc,
     bit64,
@@ -104,6 +104,8 @@ AggregateMethods:
     omopAnalysisListDS,
     omopAnalysisGetDS,
     omopAnalysisRunDS,
+    omopDpStatusDS,
+    omopDpReleaseDS,
     omopFactorLevelsDS
 AssignMethods:
     omopInitDS,
@@ -143,6 +145,21 @@ Options:
     dsomop.datetime_timezone="UTC",
     dsomop.query_strict=TRUE,
     dsomop.allow_absolute_dates=FALSE,
-    dsomop.allow_sensitive_columns=FALSE
+    dsomop.allow_sensitive_columns=FALSE,
+    dsomop.dp.enabled=FALSE,
+    dsomop.dp.domain="",
+    dsomop.dp.snapshot_id="",
+    dsomop.dp.accounting_mode="bounded_accounted",
+    dsomop.dp.total_epsilon=1,
+    dsomop.dp.release_epsilon=0.1,
+    dsomop.dp.privacy_epoch=1,
+    dsomop.dp.require_external_anchor=TRUE,
+    dsomop.dp.noise_provider="auto",
+    dsomop.dp.noise_require_existing=FALSE,
+    dsomop.dp.ledger_provider="auto",
+    dsomop.dp.ledger_require_existing=FALSE,
+    dsomop.dp.max_levels=1000,
+    dsomop.dp.max_contributions=10,
+    dsomop.dp.numeric_grid=65535
 Config/testthat/edition: 3
 RoxygenNote: 7.3.3

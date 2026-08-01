@@ -732,6 +732,9 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
       if (length(cc) > 0L) {
         attr(result, "omop_concept_cols") <- cc
       }
+      result <- .dsomopDpSealPlanOutput(
+        result, plan, nm, dataset_identity = .dsomopDpDatasetIdentity(handle)
+      )
       assign(sym, result, envir = assign_env)
     }
   }
@@ -2619,6 +2622,28 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 
 # --- Concept-factor harmonization (cross-server coordination) ---
 
+.omopConceptLevelAssessment <- function(df, col, person_col) {
+  keep <- !is.na(df[[col]]) & !is.na(df[[person_col]])
+  vals <- as.character(df[[col]][keep])
+  persons <- df[[person_col]][keep]
+  levels_col <- unique(vals)
+  n_levels <- length(levels_col)
+  if (n_levels == 0L) {
+    return(list(levels = character(0), safe = FALSE))
+  }
+  support <- vapply(levels_col, function(level) {
+    length(unique(persons[vals == level]))
+  }, integer(1))
+  safe <- all(support >= .omopDisclosureSettings()$nfilter_tab) && tryCatch(
+    {
+      .assertSafeLevels(n_levels, length(unique(persons)))
+      TRUE
+    },
+    error = function(e) FALSE
+  )
+  list(levels = levels_col, safe = isTRUE(safe))
+}
+
 #' Report disclosure-safe levels of concept-id columns
 #'
 #' Aggregate-mode helper for the client-side concept-factor coordination layer.
@@ -2678,27 +2703,12 @@ omopFactorLevelsDS <- function(df) {
   safe <- list()
   unsafe <- character(0)
   for (col in cols) {
-    keep <- !is.na(df[[col]]) & !is.na(df[[person_col]])
-    vals <- as.character(df[[col]][keep])
-    persons <- df[[person_col]][keep]
-    levels_col <- unique(vals)
-    n_levels <- length(levels_col)
-    n_total <- length(unique(persons))
-    if (n_levels == 0L) {
+    assessment <- .omopConceptLevelAssessment(df, col, person_col)
+    if (length(assessment$levels) == 0L) {
       next
     }
-    support <- vapply(levels_col, function(level) {
-      length(unique(persons[vals == level]))
-    }, integer(1))
-    is_safe <- all(support >= .omopDisclosureSettings()$nfilter_tab) && tryCatch(
-      {
-        .assertSafeLevels(n_levels, n_total)
-        TRUE
-      },
-      error = function(e) FALSE
-    )
-    if (is_safe) {
-      safe[[col]] <- levels_col
+    if (isTRUE(assessment$safe)) {
+      safe[[col]] <- assessment$levels
     } else {
       unsafe <- c(unsafe, col)
     }
@@ -2721,11 +2731,21 @@ omopFactorLevelsDS <- function(df) {
 #' \code{NA} without crashing). Columns absent from this server are silently
 #' skipped, so the same broadcast spec works for every site.
 #'
+#' Recoding is representation-only: every original observed local level must
+#' pass the same per-level person-support, density, and level-cap gate as
+#' \code{\link{omopFactorLevelsDS}}, and the shared contract must cover every
+#' observed value. If any requested present column fails those conditions, the
+#' complete call silently returns the original frame byte-for-byte. This
+#' fail-quiet, all-or-nothing behavior prevents category-presence probes while
+#' guaranteeing that recoding never creates new missing values. A column with
+#' no observed values may still be recoded to the public contract, and safe
+#' levels present only at another site remain valid empty levels locally.
+#'
 #' The level cap is re-enforced here independently of the client: a column whose
 #' requested level count exceeds \code{nfilter.levels.max} is rejected, so a
 #' buggy or hostile client cannot coerce a disclosive factor onto the server.
-#' On error the original data frame keeps its prior value (the assignment is not
-#' applied), so the column safely remains raw.
+#' On validation error the original data frame keeps its prior value (the
+#' assignment is not applied), so the column safely remains raw.
 #'
 #' @param df A data frame previously assigned server-side by
 #'   \code{\link{omopPlanExecuteDS}}.
@@ -2744,6 +2764,13 @@ omopAsFactorColumnsDS <- function(df, spec) {
   if (!is.list(spec) || length(spec) == 0L) {
     return(df)
   }
+  spec_names <- names(spec)
+  if (is.null(spec_names) || anyNA(spec_names) || any(!nzchar(spec_names)) ||
+      anyDuplicated(spec_names)) {
+    stop("omopAsFactorColumnsDS: spec must map unique column names to levels.",
+         call. = FALSE)
+  }
+  source <- df
   cap <- .omopDisclosureSettings()$nfilter_levels_max
   allowed_cols <- grep("_concept_id$", names(df), value = TRUE)
   allowed_cols <- union(
@@ -2754,6 +2781,7 @@ omopAsFactorColumnsDS <- function(df, spec) {
   allowed_cols <- setdiff(allowed_cols,
                           union(.PERSON_KEY_COLS(),
                                 attr(df, "dsomop_protected") %||% character(0)))
+  contracts <- list()
   for (col in names(spec)) {
     # A hostile client cannot coerce a protected key into a factor.
     if (col %in% .PERSON_KEY_COLS()) {
@@ -2781,12 +2809,34 @@ omopAsFactorColumnsDS <- function(df, spec) {
     if (anyDuplicated(levels_col)) {
       stop("omopAsFactorColumnsDS: levels must be unique.", call. = FALSE)
     }
-    observed <- unique(as.character(df[[col]][!is.na(df[[col]])]))
-    if (length(setdiff(observed, levels_col)) > 0L) {
-      stop("omopAsFactorColumnsDS: shared levels do not cover all observed ",
-           "values for '", col, "'.", call. = FALSE)
-    }
-    df[[col]] <- factor(as.character(df[[col]]), levels = levels_col)
+    contracts[[col]] <- levels_col
   }
-  df
+  if (length(contracts) == 0L) {
+    return(source)
+  }
+  keys <- intersect(.PERSON_KEY_COLS(), names(source))
+  if (length(keys) == 0L) {
+    return(source)
+  }
+  person_col <- if ("person_id" %in% keys) "person_id" else keys[[1L]]
+  contract_safe <- vapply(names(contracts), function(col) {
+    assessment <- .omopConceptLevelAssessment(source, col, person_col)
+    all(is.na(source[[col]])) ||
+      (isTRUE(assessment$safe) &&
+       all(assessment$levels %in% contracts[[col]]))
+  }, logical(1L))
+  if (!all(contract_safe)) {
+    return(source)
+  }
+
+  applied_levels <- list()
+  for (col in names(contracts)) {
+    levels_col <- contracts[[col]]
+    recoded <- factor(as.character(source[[col]]), levels = levels_col)
+    if (!identical(recoded, df[[col]])) {
+      df[[col]] <- recoded
+      applied_levels[[col]] <- levels_col
+    }
+  }
+  .dsomopDpResealConceptFactors(df, source, applied_levels)
 }

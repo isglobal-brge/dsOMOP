@@ -1,0 +1,219 @@
+{
+  "schema_version": 1,
+  "source": {
+    "repository": "https://github.com/OHDSI/QueryLibrary",
+    "commit": "df8a21074b08519e581ca1afb7510468538117a4",
+    "audit_file": "inst/queries/upstream_querylibrary_audit.json",
+    "audit_manifest_sha256": "07b718badf25c485a7ac12f035e6f158b28d034ea6fa176598d6f52229c9ac5f"
+  },
+  "scope": {
+    "status": "documentation_only",
+    "authorizes_execution": false,
+    "literal_upstream_sql_authorized": false,
+    "queries_enabled_by_this_registry": 0,
+    "runtime_allowlist": "inst/queries/query_allowlist.json",
+    "mapping_meaning": "mapped_to_bounded_sticky_primitive means that the upstream question may be re-expressed through the named person-bounded sticky-noise primitive. It does not certify formal differential privacy, the literal upstream SQL, its output schema, or direct execution.",
+    "formal_dp_certified": false
+  },
+  "privacy_contract": {
+    "adjacency": "add_or_remove_one_person",
+    "contribution_unit": "person",
+    "longitudinal_rule": "Repeated OMOP records are first collapsed to person-level predicates or de-duplicated person/category pairs, then deterministically capped before aggregation.",
+    "domain_rule": "Every grouping domain, threshold, concept set, time interval and category order is public and fixed before data access; observed levels, data-dependent top-N values and data-dependent bins are forbidden.",
+    "mechanism_rule": "The mapping requires a dedicated server-owned sticky-noise release with canonical semantic query identity and durable replay/accounting. The current built-in sampler and upstream preprocessing are not certified as formal differential privacy; deterministic disclosure control and nfilter.noise are not DP.",
+    "postprocessing_rule": "Only noisy primitive outputs and deterministic post-processing of those outputs may be released; exact support checks, exact extrema and exact intermediate counts are not released."
+  },
+  "families": [
+    {
+      "id": "distinct_person_count",
+      "primitive": "count",
+      "contract": "Evaluate one public predicate per person and count each qualifying person once, regardless of the number of matching OMOP records.",
+      "fixed_public_domain": "The cohort predicate, concept sets, thresholds and temporal window are fixed and public before evaluation.",
+      "sensitivity": {
+        "metric": "L1",
+        "value": 1,
+        "reason": "Adding or removing one person changes one bounded Boolean contribution."
+      }
+    },
+    {
+      "id": "fixed_domain_person_histogram",
+      "primitive": "categorical_histogram",
+      "contract": "De-duplicate person/category pairs, retain at most k categories per person using the primitive's deterministic public ordering, and emit every category in the declared domain, including zero-observation categories.",
+      "fixed_public_domain": "The complete ordered category set and k are fixed and public; observed-only levels and data-dependent top-N selection are forbidden.",
+      "sensitivity": {
+        "metric": "L1",
+        "value": "k",
+        "reason": "Adding or removing one person changes at most k histogram cells by one."
+      }
+    },
+    {
+      "id": "bounded_binary_rate",
+      "primitive": "binary_rate",
+      "contract": "Collapse longitudinal records to one public denominator Boolean and one public numerator Boolean per person, release both bounded counts with separate noise allocations, and derive the rate only as post-processing.",
+      "fixed_public_domain": "Eligibility, index-event, outcome and follow-up definitions are fixed and public before evaluation.",
+      "sensitivity": {
+        "metric": "sequential_L1",
+        "value": [
+          1,
+          1
+        ],
+        "reason": "One person changes the denominator by at most one and the numerator by at most one; the two releases compose sequentially."
+      }
+    }
+  ],
+  "redesigns": [
+    {
+      "upstream_id": "CS02",
+      "path": "care_site/CS02.md",
+      "sha256": "bc2a9dcf5e5e389c8a29b4edb18a5ad96f7b891524573e01c56a9965ba40279d",
+      "status": "mapped_to_bounded_sticky_primitive",
+      "family": "fixed_domain_person_histogram",
+      "public_domain": "Controller-published place_of_service_concept_id values."
+    },
+    {
+      "upstream_id": "CE07",
+      "path": "condition_era/CE07.md",
+      "sha256": "3100526cdb8dcaff2ac6140d0b087411a93b8dd8f6934030265940cbb21c0d70",
+      "status": "mapped_to_bounded_sticky_primitive",
+      "family": "fixed_domain_person_histogram",
+      "public_domain": "Controller-published comorbidity concept set and deterministic per-person category cap k."
+    },
+    {
+      "upstream_id": "CE10",
+      "path": "condition_era/CE10.md",
+      "sha256": "bc936210da9d9a4dd353770b96795acb2c5842c413a2c14d7a18e9e3b707e4e4",
+      "status": "mapped_to_bounded_sticky_primitive",
+      "family": "fixed_domain_person_histogram",
+      "public_domain": "Controller-published condition concept set and deterministic per-person category cap k."
+    },
+    {
+      "upstream_id": "CO11",
+      "path": "condition_occurence/CO11.md",
+      "sha256": "c5fc84e3df8b948446c83df337bca45d4ec9d09b627ad9e618568376dda87573",
+      "status": "mapped_to_bounded_sticky_primitive",
+      "family": "distinct_person_count",
+      "public_domain": "Public condition concept predicate."
+    },
+    {
+      "upstream_id": "COC05",
+      "path": "condition_occurrence_combinations/COC05.md",
+      "sha256": "2ee1bc5efa96c29ee3c5dc8b3139d0945c85d5c37d1519974b443e1adc9495e6",
+      "status": "mapped_to_bounded_sticky_primitive",
+      "family": "bounded_binary_rate",
+      "public_domain": "Public index-condition, eligibility, follow-up and death definitions."
+    },
+    {
+      "upstream_id": "DER09",
+      "path": "drug_era/DER09.md",
+      "sha256": "87546462bdaaeb900df36530f1cf2b835532b56eaba32fa422321e9cc46ae69f",
+      "status": "mapped_to_bounded_sticky_primitive",
+      "family": "distinct_person_count",
+      "public_domain": "Public drug concept predicate."
+    },
+    {
+      "upstream_id": "DEX04",
+      "path": "drug_exposure/DEX04.md",
+      "sha256": "3536ab5ae95c910230639c90373df34bb4bb75daee801e138a3b4324602f2ace",
+      "status": "mapped_to_bounded_sticky_primitive",
+      "family": "fixed_domain_person_histogram",
+      "public_domain": "Controller-published gender_concept_id values."
+    },
+    {
+      "upstream_id": "DEX19",
+      "path": "drug_exposure/DEX19.md",
+      "sha256": "1b744f6d53c5c52628634ec7c63e850c2c5edb70ec08140bc800197b46786290",
+      "status": "mapped_to_bounded_sticky_primitive",
+      "family": "fixed_domain_person_histogram",
+      "public_domain": "Controller-published indication concept set and deterministic per-person category cap k."
+    },
+    {
+      "upstream_id": "DEX21",
+      "path": "drug_exposure/DEX21.md",
+      "sha256": "0783d85d9aced88152e6f9fead2142bd7c191c95f6ff62a9b39ca41c23d871ac",
+      "status": "mapped_to_bounded_sticky_primitive",
+      "family": "distinct_person_count",
+      "public_domain": "Public drug and contraindication concept predicates."
+    },
+    {
+      "upstream_id": "OP01",
+      "path": "obervation_period/OP01.md",
+      "sha256": "8f376aa79243fa036ff9b41f3af84d9f67c419b7e18e43e6a53a9184ab458159",
+      "status": "mapped_to_bounded_sticky_primitive",
+      "family": "distinct_person_count",
+      "public_domain": "Public observation-period duration predicate of more than 365 days."
+    },
+    {
+      "upstream_id": "OP03",
+      "path": "obervation_period/OP03.md",
+      "sha256": "dfe2b736d3ecad7cbd86bb68b92a8228eb2294b5925a8d7d5d62492ca123154b",
+      "status": "mapped_to_bounded_sticky_primitive",
+      "family": "distinct_person_count",
+      "public_domain": "Public calendar year and continuous-observation predicate."
+    },
+    {
+      "upstream_id": "PE02",
+      "path": "person/PE02.md",
+      "sha256": "50e389c5fa65e903598c5aa757336a0ee650a05e2241099f35273836a3a3ec65",
+      "status": "mapped_to_bounded_sticky_primitive",
+      "family": "distinct_person_count",
+      "public_domain": "Controller-published gender_concept_id predicate."
+    },
+    {
+      "upstream_id": "PE03",
+      "path": "person/PE03.md",
+      "sha256": "fc7ad223f8eccf5f0740871b4dadb969baa410e445b0d428759749a5a599e502",
+      "status": "mapped_to_bounded_sticky_primitive",
+      "family": "fixed_domain_person_histogram",
+      "public_domain": "Controller-published complete gender_concept_id domain."
+    },
+    {
+      "upstream_id": "PE11",
+      "path": "person/PE11.md",
+      "sha256": "7cfaaed9a08cc316b6af9a2bd3b05c3c9a4c1b95f22db1981120d3d4d6274863",
+      "status": "mapped_to_bounded_sticky_primitive",
+      "family": "fixed_domain_person_histogram",
+      "public_domain": "The complete ordered month domain 1 through 12; exact birth dates and years remain unavailable."
+    }
+  ],
+  "blocked": [
+    {
+      "reason": "source_or_free_text_labels",
+      "status": "blocked_from_dp_release",
+      "upstream_ids": [
+        "CO20",
+        "DEX17",
+        "DEX38",
+        "PP02"
+      ],
+      "rule": "Noise on frequencies does not sanitize uncontrolled source-value or free-text labels."
+    },
+    {
+      "reason": "exact_zip",
+      "status": "blocked_from_dp_release",
+      "upstream_ids": [
+        "PE08"
+      ],
+      "rule": "Fine-grained ZIP output remains blocked by default; any future geography release requires a separately reviewed coarse public geography domain."
+    },
+    {
+      "reason": "patient_event_or_assignment_rows",
+      "status": "blocked_from_dp_release",
+      "upstream_ids": [
+        "CO06",
+        "CO16",
+        "COC07",
+        "COC08",
+        "DER01",
+        "DER02",
+        "DER04",
+        "DER14",
+        "DER16",
+        "DEX30",
+        "DEX32",
+        "DEX43",
+        "OP09"
+      ],
+      "rule": "Patient, event and selected-subject rows may only remain protected server-side assignment objects; this registry never authorizes their release."
+    }
+  ]
+}

@@ -4522,10 +4522,16 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #' @param assigned Candidate assigned data frame.
 #' @param entry Catalog entry.
 #' @param assign_date_handling Date-handling policy.
+#' @param scope_present Logical; whether any cohort or workspace scope affected
+#'   the loader. QueryLibrary output is DP-sealed only when this is false.
+#' @param effective_params Named list of the validated, rendered parameter
+#'   values actually used by the loader.
 #' @return Sanitized server-side assignment result.
 #' @keywords internal
 .omopAnalysisFinalizeAssign <- function(handle, assigned, entry,
-                                        assign_date_handling = NULL) {
+                                        assign_date_handling = NULL,
+                                        scope_present = FALSE,
+                                        effective_params = list()) {
   assigned <- .omopAnalysisExternalOutputFirewall(
     assigned, entry, assign = TRUE, phase = "raw"
   )
@@ -4587,8 +4593,31 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     .personKey(handle),
     pseudonymization = .personKeyPublicContract(handle)
   )
-  .omopAnalysisExternalOutputFirewall(
+  assigned <- .omopAnalysisExternalOutputFirewall(
     assigned, entry, assign = TRUE, phase = "final"
+  )
+  bare_schemas <- identical(handle$target_dialect, "sqlite")
+  effective_schema <- function(value) {
+    if (bare_schemas || is.null(value) || !nzchar(value)) "" else value
+  }
+  .dsomopDpSealAnalysisAssign(
+    assigned, entry, scope_present = scope_present,
+    effective_params = effective_params,
+    dataset_identity = .dsomopDpDatasetIdentity(handle),
+    public_config = list(
+      target_dialect = handle$target_dialect,
+      schemas = list(
+        cdm = effective_schema(handle$cdm_schema),
+        vocabulary = effective_schema(
+          handle$vocab_schema %||% handle$cdm_schema
+        ),
+        results = effective_schema(
+          handle$results_schema %||% handle$cdm_schema
+        )
+      ),
+      date_handling = dh,
+      output_contract = entry$meta$output_contract
+    )
   )
 }
 
@@ -4731,7 +4760,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       sql <- .sql_translate(sql, handle$target_dialect)
       assigned <- .executeQuery(handle, sql)
       return(.omopAnalysisFinalizeAssign(
-        handle, assigned, entry, assign_date_handling
+        handle, assigned, entry, assign_date_handling,
+        scope_present = !is.null(scope), effective_params = effective
       ))
     }
     df <- .omopAnalysisRunSql(handle, entry, sanitized, scoped)
@@ -4774,7 +4804,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
   if (assign) {
     return(.omopAnalysisFinalizeAssign(
-      handle, df, entry, assign_date_handling
+      handle, df, entry, assign_date_handling,
+      scope_present = !is.null(scope), effective_params = sanitized
     ))
   }
   df <- .omopAnalysisExternalOutputFirewall(

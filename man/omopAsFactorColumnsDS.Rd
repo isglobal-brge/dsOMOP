@@ -32,11 +32,21 @@ estimation uses the global data; study-level meta-analysis yields per-study
 \code{NA} without crashing). Columns absent from this server are silently
 skipped, so the same broadcast spec works for every site.
 
+Recoding is representation-only: every original observed local level must
+pass the same per-level person-support, density, and level-cap gate as
+\code{\link{omopFactorLevelsDS}}, and the shared contract must cover every
+observed value. If any requested present column fails those conditions, the
+complete call silently returns the original frame byte-for-byte. This
+fail-quiet, all-or-nothing behavior prevents category-presence probes while
+guaranteeing that recoding never creates new missing values. A column with
+no observed values may still be recoded to the public contract, and safe
+levels present only at another site remain valid empty levels locally.
+
 The level cap is re-enforced here independently of the client: a column whose
 requested level count exceeds \code{nfilter.levels.max} is rejected, so a
 buggy or hostile client cannot coerce a disclosive factor onto the server.
-On error the original data frame keeps its prior value (the assignment is not
-applied), so the column safely remains raw.
+On validation error the original data frame keeps its prior value (the
+assignment is not applied), so the column safely remains raw.
 }
 \seealso{
 \code{\link{omopFactorLevelsDS}}

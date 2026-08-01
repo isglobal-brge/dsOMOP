@@ -56,8 +56,8 @@ All catalog queries in dsOMOP are classified as:
 `nfilter.noise` is not a general-purpose noise or differential-privacy layer.
 In dsBase it is used by a small number of plotting endpoints and provides no
 privacy budget, contribution bounding or composition accounting. It therefore
-must not be used to reclassify an otherwise unsafe QueryLibrary query. A future
-noise-backed aggregate would require a query-specific sensitivity contract,
+must not be used to reclassify an otherwise unsafe QueryLibrary query. A
+noise-backed aggregate requires a query-specific sensitivity contract,
 public clipping bounds, server-controlled parameters, sticky noise and a
 composition ledger.
 
@@ -90,8 +90,28 @@ only that finite sensitivity is plausible after the recorded public
 clipping/binning and per-person contribution bounds, with server-owned sticky
 noise and a durable composition ledger. It does **not** mean that the upstream
 SQL is safe as written, that `nfilter.noise` supplies formal DP, or that any of
-these queries is enabled today. The inventory authorizes zero runtime queries;
-`query_allowlist.json` remains the independent executable policy.
+these literal upstream queries is enabled. The inventory authorizes zero
+runtime queries; `query_allowlist.json` remains the independent executable
+policy.
+
+`dp_redesign_registry.json` records the narrower first set of 14 upstream
+questions whose semantics can be re-expressed through dedicated
+person-bounded sticky-noise primitives: a distinct-person count, a
+fixed-public-domain person histogram, or a binary rate derived from separately
+protected counts.
+Its `mapped_to_bounded_sticky_primitive` status records that semantic mapping only;
+it never authorizes the pinned upstream SQL or changes the runtime allowlist.
+The registry states each family's contribution rule and sensitivity and pins
+each entry to the audited path and SHA-256. Longitudinal records are collapsed
+to person predicates or de-duplicated person/category pairs and deterministically
+capped before aggregation. Domains, concept sets, thresholds, category order
+and time intervals must be public and fixed before data access—observed levels
+and data-dependent top-N selection are not allowed.
+
+Source/free-text frequency rows (`CO20`, `DEX17`, `DEX38`, `PP02`), exact ZIP
+output (`PE08`) and the 13 patient/event or selected-subject assignment rows
+remain explicitly blocked from DP release. Adding noise to counts cannot make
+their labels, geography or row-level payload safe.
 
 This backlog is deliberately separate from the Recipe DSL. QueryLibrary should
 remain a curated catalog of reviewed analysis patterns; maximum query
@@ -100,8 +120,8 @@ cardinality, temporal semantics and disclosure contracts can be validated.
 
 ### Noise/redesign candidates from upstream
 
-The following upstream families are useful candidates for an optional
-noise-backed aggregate API, but are **not safe merely by adding the current
+The following upstream families are useful next candidates for the dedicated
+DP aggregate API, but are **not safe merely by adding the current
 `nfilter.noise` value**. The local catalog already contains some similarly named
 deterministic summaries (for example drug quantity/days-supply, condition
 duration and drug-cost statistics). Those local routes remove extrema, require
@@ -115,14 +135,15 @@ corresponding upstream query was ported verbatim:
 - Observation-time distributions: OP05, OP06, OP12, OP20.
 - Condition-duration/count distributions: CE01, CE03, CE16.
 
-For a formal noisy variant, each query must be rewritten around a declared contribution
+For a formally private noisy variant, each query must be rewritten around a declared contribution
 unit (normally one bounded contribution per person, or a separately declared
 episode estimand), public clipping bounds, removal of raw minima/maxima, and a
 server-side privacy mechanism with sticky noise and composition accounting.
 Means should be derived from protected bounded sums and counts; quantiles need
 a protected histogram/quantile mechanism rather than noise added to the
-published upstream statistic. Stratified variants also retain the ordinary
-distinct-person and small-cell gates.
+published upstream statistic. A formally private variant must emit its full fixed
+public cell domain and may threshold or band only the noisy result; it must not
+branch first on an exact distinct-person or small-cell gate.
 
 ## Longitudinal contract and remaining backlog
 

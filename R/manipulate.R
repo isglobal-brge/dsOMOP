@@ -114,6 +114,9 @@
 #' @keywords internal
 .retagOmopTable <- function(result, ...) {
   sources <- list(...)
+  # Provenance is content-bound and can never be copied by a generic retag.
+  # Audited person-local verbs re-seal their final result explicitly.
+  attr(result, "dsomop_dp_provenance") <- NULL
   pseudonymization <- do.call(
     .assertOmopTablePseudonymization,
     c(sources, list(caller = ".retagOmopTable"))
@@ -178,19 +181,51 @@ omopMergeDS <- function(x, y, by = "person_id", type = "inner") {
          call. = FALSE)
   }
   # Join grain is explicit: a person key is mandatory; the only optional extra
-  # is the synthetic cohort-episode key used by longitudinal outputs.
+  # is the canonical synthetic cohort-episode key. Legacy row_id aliases cannot
+  # establish that two frames share the same episode namespace.
   person_keys <- .PERSON_KEY_COLS()
   if (length(intersect(by, person_keys)) != 1L ||
-      !all(by %in% c(person_keys, .EPISODE_KEY_COLS()))) {
+      !all(by %in% c(person_keys, "cohort_row_id")) ||
+      length(by) > 2L || anyDuplicated(by)) {
     stop("omopMergeDS: 'by' must contain one person key and may additionally ",
-         "contain only a cohort episode key.", call. = FALSE)
+         "contain only cohort_row_id.", call. = FALSE)
   }
   person_by <- intersect(by, person_keys)[[1]]
+  compatible_join_keys <- vapply(by, function(column) {
+    left <- x[[column]]
+    right <- y[[column]]
+    left_attributes <- attributes(left) %||% list()
+    right_attributes <- attributes(right) %||% list()
+    left_attributes[["names"]] <- NULL
+    right_attributes[["names"]] <- NULL
+    identical(typeof(left), typeof(right)) &&
+      identical(class(left), class(right)) &&
+      identical(left_attributes, right_attributes)
+  }, logical(1L))
+  if (any(!compatible_join_keys)) {
+    stop("omopMergeDS: join-key schemas are incompatible: ",
+         paste(by[!compatible_join_keys], collapse = ", "), ".",
+         call. = FALSE)
+  }
+  # Authenticate the episode namespace before duplicate counts, projected row
+  # counts, or the join itself can create a data-dependent error oracle.
+  merge_provenance <- .dsomopDpMergePreflight(x, y, by)
   if (length(by) == 1L && anyDuplicated(x[[person_by]]) &&
       anyDuplicated(y[[person_by]])) {
     stop("omopMergeDS: both inputs have repeated rows per person; join by ",
          "person_id plus cohort_row_id (episode grain), or reduce one side ",
          "before merging.", call. = FALSE)
+  }
+
+  overlap <- setdiff(intersect(names(x), names(y)), by)
+  protected_overlap <- intersect(
+    overlap,
+    union(attr(x, "dsomop_protected") %||% character(0),
+          attr(y, "dsomop_protected") %||% character(0))
+  )
+  if (length(protected_overlap) > 0L) {
+    stop("omopMergeDS: protected non-key columns overlap across inputs: ",
+         paste(protected_overlap, collapse = ", "), ".", call. = FALSE)
   }
 
   key_string <- function(df) {
@@ -216,7 +251,25 @@ omopMergeDS <- function(x, y, by = "person_id", type = "inner") {
 
   # Fail-closed re-gate on DISTINCT person tokens of the join result.
   .assertMinPersons(n_persons = .omopDistinctPersons(result))
-  .retagOmopTable(result, x, y)
+  result <- .retagOmopTable(result, x, y)
+  # Base merge suffixes overlapping non-key columns. Preserve concept metadata
+  # on the landed names so downstream harmonization cannot lose its allow-list.
+  suffixed_concepts <- c(
+    paste0(intersect(overlap,
+                     attr(x, "omop_concept_cols") %||% character(0)), ".x"),
+    paste0(intersect(overlap,
+                     attr(y, "omop_concept_cols") %||% character(0)), ".y")
+  )
+  suffixed_concepts <- intersect(suffixed_concepts, names(result))
+  if (length(suffixed_concepts) > 0L) {
+    attr(result, "omop_concept_cols") <- union(
+      attr(result, "omop_concept_cols") %||% character(0),
+      suffixed_concepts
+    )
+  }
+  .dsomopDpResealMerge(
+    result, x, y, by, type, preflight = merge_provenance
+  )
 }
 
 #' Filter the rows of an omop.table (Assign)
@@ -306,7 +359,11 @@ omopFilterDS <- function(x, var, op, value) {
   if (nrow(excluded) > 0L) {
     .assertMinPersons(n_persons = .omopDistinctPersons(excluded))
   }
-  .retagOmopTable(result, x)
+  result <- .retagOmopTable(result, x)
+  .dsomopDpResealUnary(
+    result, x, "manipulate/filter",
+    args = list(variable = var, operator = op, value = value)
+  )
 }
 
 #' Coerce/validate a filter value against the target column type
@@ -366,7 +423,8 @@ omopSelectDS <- function(x, cols) {
   # Defensive re-gate (projection cannot lower the person count, but keep the
   # gate so every verb fails closed identically).
   .assertMinPersons(n_persons = .omopDistinctPersons(result))
-  .retagOmopTable(result, x)
+  result <- .retagOmopTable(result, x)
+  .dsomopDpResealProjection(result, x)
 }
 
 #' Row-bind two schema-identical omop.table frames (Assign)
@@ -396,6 +454,22 @@ omopBindRowsDS <- function(x, y) {
     stop("omopBindRowsDS: inputs must have identical column names.",
          call. = FALSE)
   }
+  compatible_schema <- vapply(names(x), function(column) {
+    left <- x[[column]]
+    right <- y[[column]]
+    left_attributes <- attributes(left) %||% list()
+    right_attributes <- attributes(right) %||% list()
+    left_attributes[["names"]] <- NULL
+    right_attributes[["names"]] <- NULL
+    identical(typeof(left), typeof(right)) &&
+      identical(class(left), class(right)) &&
+      identical(left_attributes, right_attributes)
+  }, logical(1L))
+  if (any(!compatible_schema)) {
+    stop("omopBindRowsDS: inputs have incompatible column schemas: ",
+         paste(names(x)[!compatible_schema], collapse = ", "), ".",
+         call. = FALSE)
+  }
   # Both must carry the same person key so the bound frame has a single,
   # well-defined person token to gate on.
   if (!setequal(.omopPersonKeys(x), .omopPersonKeys(y))) {
@@ -411,5 +485,6 @@ omopBindRowsDS <- function(x, y) {
   # Fail-closed re-gate on DISTINCT person tokens: this is the check that blocks
   # the doubling bypass (duplicates collapse to the same distinct count).
   .assertMinPersons(n_persons = .omopDistinctPersons(result))
-  .retagOmopTable(result, x, source_y)
+  result <- .retagOmopTable(result, x, source_y)
+  .dsomopDpResealBind(result, x, source_y)
 }

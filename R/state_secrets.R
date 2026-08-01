@@ -41,14 +41,32 @@
 }
 
 .dsomopStateRoot <- function(
-    configured = getOption(
-      "dsomop.state_dir", getOption("default.dsomop.state_dir")),
+    configured = NULL,
     environment = Sys.getenv(
       "DSOMOP_STATE_DIR",
       unset = Sys.getenv("DSOMOP_MARKER_DIR", unset = "")),
     home = Sys.getenv("HOME", unset = ""),
     .allow_test_path = identical(
       Sys.getenv("DSOMOP_TEST_ALLOW_EPHEMERAL_STATE", unset = ""), "1")) {
+  if (missing(configured)) {
+    explicit <- getOption("dsomop.state_dir", NULL)
+    fallback <- getOption("default.dsomop.state_dir", NULL)
+    explicit_path <- if (is.null(explicit)) NULL else
+      gsub("/+", "/", gsub("\\\\", "/", path.expand(explicit)))
+    environment_path <- if (!nzchar(environment)) NULL else
+      gsub("/+", "/", gsub("\\\\", "/", path.expand(environment)))
+    if (!is.null(explicit_path) && !is.null(environment_path) &&
+        !identical(sub("/+$", "", explicit_path),
+                   sub("/+$", "", environment_path))) {
+      stop("Conflicting dsOMOP state directories are configured.",
+           call. = FALSE)
+    }
+    configured <- if (!is.null(explicit)) {
+      explicit
+    } else if (!nzchar(environment)) {
+      fallback
+    } else NULL
+  }
   value <- if (!is.null(configured)) {
     configured
   } else if (nzchar(environment)) {
@@ -68,6 +86,11 @@
     stop("The persistent dsOMOP state directory must be an absolute canonical path.",
          call. = FALSE)
   }
+  # Use one textual representation throughout path construction and the
+  # containment checks below. POSIX accepts repeated interior separators, but
+  # comparing an uncollapsed path with its normalized parent would otherwise
+  # reject the same directory during nested bootstrap validation.
+  value <- check_value
   if (nchar(value) > 1L) value <- sub("/+$", "", value)
   if (!isTRUE(.allow_test_path)) {
     resolved_value <- normalizePath(check_value, winslash = "/",
@@ -140,6 +163,18 @@
     stop("File-backed dsOMOP secrets require POSIX owner-only permissions.",
          call. = FALSE)
   }
+  if (!is.character(path) || length(path) != 1L || is.na(path) ||
+      !nzchar(path)) {
+    stop("The dsOMOP private-state path is invalid.", call. = FALSE)
+  }
+  path <- gsub("\\\\", "/", path.expand(path))
+  canonical_path <- gsub("/+", "/", path)
+  if (!grepl("^/", path) || grepl("^//", path) ||
+      grepl("(^|/)\\.{1,2}(/|$)", canonical_path)) {
+    stop("The dsOMOP private-state path must be absolute and canonical.",
+         call. = FALSE)
+  }
+  path <- canonical_path
   root <- .dsomopStateRoot(.allow_test_path = .allow_test_path)
   if (!isTRUE(.allow_test_path)) {
     .dsomopAssertNoSymlinkComponents(dirname(root))
@@ -174,10 +209,10 @@
   }
 
   parent <- dirname(path)
-  allowed_parents <- file.path(root, c("secrets", "keys"))
-  if (!identical(parent, allowed_parents[[1]]) &&
-      !identical(parent, allowed_parents[[2]])) {
-    stop("The dsOMOP secret path must be inside the state secrets/keys directory.",
+  allowed_parents <- file.path(root, c("secrets", "keys", "privacy"))
+  if (!parent %in% allowed_parents) {
+    stop("The dsOMOP private-state path must be inside the state ",
+         "secrets/keys/privacy directory.",
          call. = FALSE)
   }
   parent_created <- FALSE
@@ -242,7 +277,9 @@
 
 .dsomopSecretPath <- function(name) {
   if (!is.character(name) || length(name) != 1L || is.na(name) ||
-      !identical(name, "pseudonym_root")) {
+      !name %in% c("pseudonym_root", "dp_noise_root",
+                   "dp_noise_root_receipt", "dp_ledger_root",
+                   "dp_ledger_root_receipt")) {
     stop("Unsupported dsOMOP secret name.", call. = FALSE)
   }
   file.path(.dsomopStateRoot(), "secrets", name)

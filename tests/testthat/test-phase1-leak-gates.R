@@ -343,7 +343,7 @@ test_that("aggregate manifests exclude generic c/list exfiltration aliases", {
     expect_false(any(lhs %in% c("c", "list")))
     expect_false(any(rhs %in% c("base::c", "base::list")))
   }
-  expect_length(datashield, 52L)
+  expect_length(datashield, 54L)
   expect_setequal(datashield, described)
 })
 

@@ -113,6 +113,133 @@ test_that("pinned OHDSI QueryLibrary audit manifest is internally consistent", {
   )
 })
 
+test_that("DP redesign registry pins primitive coverage without authorizing SQL", {
+  registry_path <- system.file(
+    "queries", "dp_redesign_registry.json", package = "dsOMOP"
+  )
+  audit_path <- system.file(
+    "queries", "upstream_querylibrary_audit.json", package = "dsOMOP"
+  )
+  expect_true(nzchar(registry_path))
+  expect_true(nzchar(audit_path))
+
+  registry <- jsonlite::fromJSON(registry_path, simplifyVector = FALSE)
+  audit <- jsonlite::fromJSON(audit_path, simplifyVector = FALSE)
+  expected_ids <- c(
+    "CS02", "CE07", "CE10", "CO11", "COC05", "DER09", "DEX04",
+    "DEX19", "DEX21", "OP01", "OP03", "PE02", "PE03", "PE11"
+  )
+  expected_families <- c(
+    "distinct_person_count", "fixed_domain_person_histogram",
+    "bounded_binary_rate"
+  )
+
+  expect_identical(registry$schema_version, 1L)
+  expect_identical(registry$source$repository, audit$source)
+  expect_identical(registry$source$commit, audit$commit)
+  expect_identical(
+    registry$source$audit_manifest_sha256,
+    audit$manifest_sha256
+  )
+  expect_false(registry$scope$authorizes_execution)
+  expect_false(registry$scope$literal_upstream_sql_authorized)
+  expect_identical(registry$scope$queries_enabled_by_this_registry, 0L)
+  expect_identical(
+    registry$scope$runtime_allowlist,
+    "inst/queries/query_allowlist.json"
+  )
+  expect_match(registry$scope$mapping_meaning, "re-expressed")
+  expect_match(registry$scope$mapping_meaning, "does not certify")
+  expect_false(registry$scope$formal_dp_certified)
+
+  family_ids <- vapply(registry$families, `[[`, character(1L), "id")
+  expect_setequal(family_ids, expected_families)
+  expect_identical(anyDuplicated(family_ids), 0L)
+  expect_true(all(vapply(registry$families, function(family) {
+    nzchar(family$contract) && nzchar(family$fixed_public_domain) &&
+      family$sensitivity$metric %in% c("L1", "sequential_L1") &&
+      nzchar(family$sensitivity$reason)
+  }, logical(1L))))
+
+  redesign_ids <- vapply(
+    registry$redesigns, `[[`, character(1L), "upstream_id"
+  )
+  expect_identical(redesign_ids, expected_ids)
+  expect_identical(anyDuplicated(redesign_ids), 0L)
+  expect_true(all(vapply(registry$redesigns, function(redesign) {
+    identical(redesign$status, "mapped_to_bounded_sticky_primitive") &&
+      redesign$family %in% family_ids &&
+      nzchar(redesign$public_domain) &&
+      grepl("^[0-9a-f]{64}$", redesign$sha256)
+  }, logical(1L))))
+
+  audited <- setNames(
+    audit$queries,
+    vapply(audit$queries, `[[`, character(1L), "upstream_id")
+  )
+  for (redesign in registry$redesigns) {
+    upstream <- audited[[redesign$upstream_id]]
+    expect_false(is.null(upstream), info = redesign$upstream_id)
+    expect_true(upstream$dp_candidate, info = redesign$upstream_id)
+    expect_identical(redesign$path, upstream$path,
+                     info = redesign$upstream_id)
+    expect_identical(redesign$sha256, upstream$sha256,
+                     info = redesign$upstream_id)
+  }
+
+  blocked <- setNames(
+    registry$blocked,
+    vapply(registry$blocked, `[[`, character(1L), "reason")
+  )
+  expect_setequal(names(blocked), c(
+    "source_or_free_text_labels", "exact_zip",
+    "patient_event_or_assignment_rows"
+  ))
+  expect_true(all(vapply(registry$blocked, function(block) {
+    identical(block$status, "blocked_from_dp_release") && nzchar(block$rule)
+  }, logical(1L))))
+
+  audited_ids <- names(audited)
+  source_ids <- audited_ids[vapply(audited, function(query) {
+    identical(query$output_type, "source_value_frequency")
+  }, logical(1L))]
+  zip_ids <- audited_ids[vapply(audited, function(query) {
+    identical(query$output_type, "fine_geography_count")
+  }, logical(1L))]
+  assignment_ids <- audited_ids[vapply(audited, function(query) {
+    identical(query$triage_class, "patient_rows_assignment_only")
+  }, logical(1L))]
+  expect_setequal(
+    unlist(blocked$source_or_free_text_labels$upstream_ids,
+           use.names = FALSE),
+    source_ids
+  )
+  expect_setequal(
+    unlist(blocked$exact_zip$upstream_ids, use.names = FALSE),
+    zip_ids
+  )
+  expect_setequal(
+    unlist(blocked$patient_event_or_assignment_rows$upstream_ids,
+           use.names = FALSE),
+    assignment_ids
+  )
+
+  allowlist <- dsOMOP:::.ql_load_allowlist("dsOMOP")
+  templates <- dsOMOP:::.ql_load_queries("dsOMOP")
+  allowlist_path <- system.file(
+    "queries", "query_allowlist.json", package = "dsOMOP"
+  )
+  allowlist_file <- jsonlite::fromJSON(
+    allowlist_path, simplifyVector = FALSE
+  )
+  allowlist_file_ids <- vapply(
+    allowlist_file, `[[`, character(1L), "id"
+  )
+  expect_setequal(names(allowlist), allowlist_file_ids)
+  expect_false(any(redesign_ids %in% names(allowlist)))
+  expect_false(any(redesign_ids %in% names(templates)))
+})
+
 test_that(".ql_parse_markdown: parses complete query template", {
   md <- '---
 Group: Condition

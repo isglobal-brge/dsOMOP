@@ -12,6 +12,12 @@ factor_test_frame <- function(...) {
   df
 }
 
+factor_safe_options <- list(
+  nfilter.levels.max = 40,
+  nfilter.levels.density = 1,
+  nfilter.tab = 1
+)
+
 # --- omopFactorLevelsDS -------------------------------------------------------
 
 test_that("factorLevels returns empty structure for a non-data.frame", {
@@ -167,59 +173,92 @@ test_that("asFactorColumns is a no-op for an empty spec", {
   expect_identical(omopAsFactorColumnsDS(df, list()), df)
 })
 
+test_that("asFactorColumns rejects ambiguous duplicate column contracts", {
+  df <- factor_test_frame(gender_concept_id = c(8532L, 8507L))
+  spec <- stats::setNames(
+    list(c("8507", "8532"), c("8532", "8507")),
+    c("gender_concept_id", "gender_concept_id")
+  )
+  expect_error(omopAsFactorColumnsDS(df, spec), "unique column names")
+})
+
 test_that("asFactorColumns recodes a column with native-list spec (DSLite path)", {
-  df <- factor_test_frame(gender_concept_id = c(8507L, 8532L, 8507L))
-  spec <- list(gender_concept_id = c("8532", "8507"))
-  out <- omopAsFactorColumnsDS(df, spec)
-  expect_s3_class(out$gender_concept_id, "factor")
-  # Level ORDER is taken verbatim from the shared spec, not the local data.
-  expect_equal(levels(out$gender_concept_id), c("8532", "8507"))
-  expect_equal(as.character(out$gender_concept_id),
-               c("8507", "8532", "8507"))
+  withr::with_options(factor_safe_options, {
+    df <- factor_test_frame(gender_concept_id = c(8507L, 8532L, 8507L))
+    spec <- list(gender_concept_id = c("8532", "8507"))
+    out <- omopAsFactorColumnsDS(df, spec)
+    expect_s3_class(out$gender_concept_id, "factor")
+    # Level ORDER is taken verbatim from the shared spec, not the local data.
+    expect_equal(levels(out$gender_concept_id), c("8532", "8507"))
+    expect_equal(as.character(out$gender_concept_id),
+                 c("8507", "8532", "8507"))
+  })
 })
 
 test_that("asFactorColumns decodes a JSON spec (Opal transport path)", {
-  df <- factor_test_frame(gender_concept_id = c(8507L, 8532L))
-  out <- omopAsFactorColumnsDS(df, '{"gender_concept_id":["8532","8507"]}')
-  expect_s3_class(out$gender_concept_id, "factor")
-  expect_equal(levels(out$gender_concept_id), c("8532", "8507"))
+  withr::with_options(factor_safe_options, {
+    df <- factor_test_frame(gender_concept_id = c(8507L, 8532L))
+    out <- omopAsFactorColumnsDS(df, '{"gender_concept_id":["8532","8507"]}')
+    expect_s3_class(out$gender_concept_id, "factor")
+    expect_equal(levels(out$gender_concept_id), c("8532", "8507"))
+  })
 })
 
 test_that("asFactorColumns harmonization is lossless when levels cover data", {
-  df <- factor_test_frame(gender_concept_id = c(8532L, 8507L, 8532L))
-  out <- omopAsFactorColumnsDS(df, list(gender_concept_id = c("8507", "8532")))
-  # Round-trip back to the original ids: no value dropped to NA.
-  expect_equal(as.integer(as.character(out$gender_concept_id)),
-               c(8532L, 8507L, 8532L))
-  expect_false(anyNA(out$gender_concept_id))
+  withr::with_options(factor_safe_options, {
+    df <- factor_test_frame(gender_concept_id = c(8532L, 8507L, 8532L))
+    out <- omopAsFactorColumnsDS(
+      df, list(gender_concept_id = c("8507", "8532"))
+    )
+    # Round-trip back to the original ids: no value dropped to NA.
+    expect_equal(as.integer(as.character(out$gender_concept_id)),
+                 c(8532L, 8507L, 8532L))
+    expect_false(anyNA(out$gender_concept_id))
+  })
+})
+
+test_that("asFactorColumns makes a safe but partial contract an exact no-op", {
+  withr::with_options(factor_safe_options, {
+    df <- factor_test_frame(gender_concept_id = c(8532L, 8507L, 8532L))
+    expect_silent(out <- omopAsFactorColumnsDS(
+      df, list(gender_concept_id = "8507")
+    ))
+    expect_identical(out, df)
+  })
 })
 
 test_that("asFactorColumns keeps a union level absent locally as an empty level", {
   # Missing-value robustness: '9999' exists on another site but not here.
   # It must survive as a valid (empty) level so the factor coding matches
   # across the federation and pooled models line up.
-  df <- factor_test_frame(gender_concept_id = c(8532L, 8507L))
-  out <- omopAsFactorColumnsDS(df,
-    list(gender_concept_id = c("8507", "8532", "9999")))
-  expect_equal(levels(out$gender_concept_id), c("8507", "8532", "9999"))
-  expect_equal(unname(table(out$gender_concept_id)["9999"]), 0L)
-  expect_false(anyNA(out$gender_concept_id))
+  withr::with_options(factor_safe_options, {
+    df <- factor_test_frame(gender_concept_id = c(8532L, 8507L))
+    out <- omopAsFactorColumnsDS(df,
+      list(gender_concept_id = c("8507", "8532", "9999")))
+    expect_equal(levels(out$gender_concept_id), c("8507", "8532", "9999"))
+    expect_equal(unname(table(out$gender_concept_id)["9999"]), 0L)
+    expect_false(anyNA(out$gender_concept_id))
+  })
 })
 
 test_that("asFactorColumns skips columns absent from this server's frame", {
-  df <- factor_test_frame(gender_concept_id = c(8532L, 8507L))
-  out <- omopAsFactorColumnsDS(df,
-    list(gender_concept_id = c("8507", "8532"),
-         drug_concept_id = c("1", "2")))
-  expect_s3_class(out$gender_concept_id, "factor")
-  expect_false("drug_concept_id" %in% names(out))
+  withr::with_options(factor_safe_options, {
+    df <- factor_test_frame(gender_concept_id = c(8532L, 8507L))
+    out <- omopAsFactorColumnsDS(df,
+      list(gender_concept_id = c("8507", "8532"),
+           drug_concept_id = c("1", "2")))
+    expect_s3_class(out$gender_concept_id, "factor")
+    expect_false("drug_concept_id" %in% names(out))
+  })
 })
 
 test_that("asFactorColumns drops empty and whitespace levels from the spec", {
-  df <- factor_test_frame(gender_concept_id = c(8532L, 8507L))
-  out <- omopAsFactorColumnsDS(df,
-    list(gender_concept_id = c("8507", "", "8532")))
-  expect_equal(levels(out$gender_concept_id), c("8507", "8532"))
+  withr::with_options(factor_safe_options, {
+    df <- factor_test_frame(gender_concept_id = c(8532L, 8507L))
+    out <- omopAsFactorColumnsDS(df,
+      list(gender_concept_id = c("8507", "", "8532")))
+    expect_equal(levels(out$gender_concept_id), c("8507", "8532"))
+  })
 })
 
 test_that("asFactorColumns re-enforces the level cap independently of client", {
@@ -234,14 +273,65 @@ test_that("asFactorColumns re-enforces the level cap independently of client", {
 })
 
 test_that("asFactorColumns recodes a translated (character) concept column", {
-  df <- factor_test_frame(
-    gender_concept_id = c("male", "female", "male"),
-    stringsAsFactors = FALSE
+  withr::with_options(factor_safe_options, {
+    df <- factor_test_frame(
+      gender_concept_id = c("male", "female", "male"),
+      stringsAsFactors = FALSE
+    )
+    out <- omopAsFactorColumnsDS(df,
+      list(gender_concept_id = c("female", "male")))
+    expect_s3_class(out$gender_concept_id, "factor")
+    expect_equal(levels(out$gender_concept_id), c("female", "male"))
+    expect_equal(as.character(out$gender_concept_id),
+                 c("male", "female", "male"))
+  })
+})
+
+test_that("asFactorColumns harmonizes an all-NA column to the public domain", {
+  df <- factor_test_frame(gender_concept_id = c(NA_integer_, NA_integer_))
+  out <- omopAsFactorColumnsDS(
+    df, list(gender_concept_id = c("8507", "8532"))
   )
-  out <- omopAsFactorColumnsDS(df,
-    list(gender_concept_id = c("female", "male")))
   expect_s3_class(out$gender_concept_id, "factor")
-  expect_equal(levels(out$gender_concept_id), c("female", "male"))
-  expect_equal(as.character(out$gender_concept_id),
-               c("male", "female", "male"))
+  expect_identical(levels(out$gender_concept_id), c("8507", "8532"))
+  expect_true(all(is.na(out$gender_concept_id)))
+})
+
+test_that("asFactorColumns does not treat values with missing persons as empty", {
+  df <- factor_test_frame(
+    person_id = c(NA_character_, "p2"),
+    gender_concept_id = c("B", NA_character_)
+  )
+  out <- omopAsFactorColumnsDS(df, list(gender_concept_id = "A"))
+  expect_identical(out, df)
+})
+
+test_that("asFactorColumns cannot be composed as a rare-level oracle", {
+  withr::with_options(list(
+    nfilter.levels.max = 40,
+    nfilter.levels.density = 1,
+    nfilter.tab = 2
+  ), {
+    without_b <- factor_test_frame(
+      gender_concept_id = c(rep("A", 5), "C")
+    )
+    with_b <- factor_test_frame(
+      gender_concept_id = c(rep("A", 4), "B", "C")
+    )
+    contract <- list(gender_concept_id = c("A", "B"))
+
+    out_without_b <- omopAsFactorColumnsDS(without_b, contract)
+    out_with_b <- omopAsFactorColumnsDS(with_b, contract)
+
+    expect_identical(out_without_b, without_b)
+    expect_identical(out_with_b, with_b)
+    expect_identical(
+      omopFactorLevelsDS(out_without_b),
+      omopFactorLevelsDS(out_with_b)
+    )
+    expect_identical(
+      omopFactorLevelsDS(out_with_b)$unsafe,
+      "gender_concept_id"
+    )
+  })
 })

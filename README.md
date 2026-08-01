@@ -55,10 +55,10 @@ The server administrator should instead:
 Set `DSOMOP_STATE_DIR` to an absolute, owner-only directory on a durable volume
 shared by every worker that represents the same logical node. `configure` only
 prepares directories; it never generates secrets while installing a package or
-building a reusable image. Package `.onLoad()` also never reads or generates
-key material: it validates only the public lifecycle settings. On first use by
-an actual OMOP handle, compatibility mode validates an injected secret or, when
-none is supplied, creates and atomically persists a 256-bit pseudonym root under
+building a reusable image. Package `.onLoad()` never reads or generates the
+pseudonym root: it validates only its public lifecycle settings. On first use
+by an actual OMOP handle, compatibility mode validates an injected secret or,
+when none is supplied, creates and atomically persists a 256-bit pseudonym root under
 `$DSOMOP_STATE_DIR/secrets` (mode `0600`, parent mode `0700`). Install and
 development/image loads therefore cannot bake a node identity into an image.
 
@@ -144,14 +144,167 @@ tables from different keys, epochs, protocols or scopes cannot be combined.
 Older workspace objects lacking the contract fail closed and must be recreated;
 matching token-looking strings are not treated as proof of compatibility.
 
-This is pseudonym identity state, not a differential-privacy noise or sticky
-noise root. No privacy budget or DP ledger is implemented by this lifecycle.
-`nfilter.noise` is DataSHIELD's minimum Gaussian plot-noise variance fraction;
-it is neither replay-stable nor an epsilon/delta guarantee, and dsOMOP does not
-silently apply it to unrelated query results. The current capability report therefore sets
-`formal_dp_enabled`, `sticky_noise_enabled` and `privacy_ledger_enabled` to
-`FALSE`; QueryLibrary candidates that need formal DP remain blocked pending a
-separate bounded-sensitivity mechanism and durable composition ledger.
+Pseudonym identity remains separate from differential privacy. dsOMOP now has
+an opt-in, dedicated DP path (`omopDpStatusDS()` / `omopDpReleaseDS()`), and
+never silently adds noise to ordinary aggregates. `nfilter.noise` remains only
+DataSHIELD's minimum Gaussian plot-noise variance fraction; it is not reused as
+epsilon, a sticky seed, or a composition policy.
+
+The sticky-noise path accepts only server-created, person-tokened `omop.table`
+objects with an authenticated, content-bound person-local provenance capsule.
+A copied class or attribute is insufficient. Audited long event plans,
+person-level plans with fixed feature specifications, survival/cohort/interval
+outputs, fixed-concept wide outputs and the six reviewed OMOP event loaders can
+be sealed; safe select/filter/bind operations re-seal their result. Global
+data-derived schemas (automatic wide/features), support-dependent age bands,
+sparse/temporal composite bundles, external packs and staged Parquet files are
+not direct inputs to this endpoint. They remain available to ordinary
+DataSHIELD workflows under their existing disclosure contracts.
+Until cohort handles themselves carry authenticated semantic lineage, scalar
+temporary/persistent cohort references and scoped QueryLibrary assignments are
+conservatively ineligible for this dedicated release path. The same operations
+remain available under the ordinary DataSHIELD gates; DP-eligible cohort
+selection should be expressed in the audited recipe/plan DSL.
+
+The release collapses or caps each person's longitudinal records before
+computing one of five primitives: distinct-person count, fixed-domain
+categorical histogram, fixed-break numeric/date histogram, bounded mean
+sufficient statistics, or a binary rate. Domains, breaks, bounds and
+contribution caps are explicit and are never learned from the released exact
+result. Recipe construction and assignment remain subject to their own
+DataSHIELD disclosure gates; this endpoint does not turn an upstream rejected
+recipe into an admissible one.
+
+DP is disabled by default. A custodian enabling it must set a stable
+`dsomop.dp.domain`, a public immutable ETL/version label in
+`dsomop.dp.snapshot_id`, persistent `DSOMOP_STATE_DIR`, and choose an
+accountant. Advancing the snapshot starts fresh releases but never resets the
+shared ledger or its cumulative composition:
+
+- `bounded_accounted` uses a normalized, capped and summable nominal zeta
+  allocation. A new semantic query is never rejected for "budget exhausted";
+  allocation eventually becomes too small for useful finite-precision
+  sampling, at which point a schema-valid, explicitly `degraded=TRUE`,
+  data-independent payload is returned at epsilon zero. Replays of an existing
+  release remain exact and free. This is bounded accounting, not a formal DP
+  attestation.
+- `sticky_unbounded` keeps a fixed per-release epsilon and likewise never
+  blocks a new query, but cumulative privacy loss is unbounded. It is therefore
+  always reported as `formal_dp=FALSE`, even with an external anchor.
+
+"Never budget blocked" applies only to the allocator. Invalid or disclosive
+inputs, unproved provenance, unsafe configuration, corrupted authenticated
+state and operational resource limits still fail closed. This distinction is
+intentional: accepting those cases would bypass the security boundary. The
+unbounded mode also needs capacity monitoring because every new semantic
+release adds one durable ledger row; no finite local disk can support an
+infinite history.
+
+Both modes report `formal_dp=FALSE` and `sampler_certified=FALSE`. The built-in
+HMAC inverse-CDF sampler has a finite 52-bit uniform support. Eligible
+`omop.table` objects now carry authenticated, content-bound semantic lineage,
+but the recipe executor, contribution bounding and noise mechanism are not yet
+one proof-carrying atomic DP measurement; ordinary DataSHIELD methods also
+remain a separate access channel. The implementation therefore records epsilon
+as a nominal noise calibration and makes no formal delta claim. A future formal
+attestation requires a vetted finite-precision DP sampler and a single
+server-verifiable or database-backed executor that mediates the full
+person-local transformation and release. The durable ledger, sticky replay,
+authenticated lineage and independent roots are active security controls, but
+are not themselves a formal DP proof.
+
+A formal successor should not expose an assigned intermediate frame to other
+aggregate methods. It should accept the canonical plan and statistic in one
+mediated call, enforce add/remove-one-person adjacency across every joined OMOP
+table, apply public deterministic person/episode/event bounds, and invoke a
+vetted finite-precision measurement before any data-dependent response. The
+first noisy payload should then be committed atomically to this ledger and all
+retries should replay that payload; sticky replay need not depend on a custom
+deterministic sampler. Unlimited post-processing without later budget failures
+is possible over a fixed DP synopsis, but unlimited *new* informative queries
+cannot simultaneously retain a finite lifetime privacy loss and fixed utility.
+The existing summable/degraded mode makes that trade-off explicit rather than
+raising a budget-exhaustion error.
+
+The private sticky identity is derived server-side from authenticated canonical
+semantic lineage, the typed statistic, immutable ETL snapshot, privacy epoch
+and mechanism/allocation contract. A separate keyed fingerprint covers the
+bounded sufficient statistic. Under the same lineage and declared snapshot, a
+fingerprint change is treated as snapshot drift and fails closed rather than
+creating another noise sample. Pseudonym tokens themselves are not part of that
+bounded sufficient-statistic fingerprint. Dataset identity is derived from the
+stable resource/dialect/schema contract, independently of the pseudonym key, so
+an intentional pseudonym-key rotation does not by itself reroll a DP release.
+Changing a workspace alias or the public compatibility `population_id` label
+does not reroll noise or consume another allocation. Result formatting
+(`long`, `wide`, vector or raw) happens only in dsOMOPClient and likewise never
+changes the server release identity. Reviewed commutative filters and sets are
+canonicalized, but arbitrary mathematically equivalent recipe constructions
+are not proven equivalent; in `sticky_unbounded` they may therefore consume
+distinct releases. `bounded_accounted` charges every such distinct lineage to
+its summable schedule.
+
+Noise and ledger authentication use independent 32-byte roots outside the R
+package library. `.onLoad()` initializes them and validates SQLite/anchor state
+when DP is enabled, so unsafe permissions or corruption fail during service
+bootstrap. The replaceable noise root may be regenerated if it disappears:
+the independent ledger root preserves authenticated request mappings and old
+payloads, so an identical request cannot reroll. Losing the ledger root or the
+ledger itself cannot be recovered safely and fails closed. File providers use
+owner-only state, atomic no-clobber creation and durability sync; clustered
+deployments may inject `DSOMOP_DP_NOISE_ROOT` and
+`DSOMOP_DP_LEDGER_ROOT` from a secret manager. The client can never submit a
+seed, nonce, epsilon, epoch, reset or force-reroll flag.
+Ledger authentication is fully audited at process bootstrap/cache miss in
+bounded keyset chunks, then only an authenticated append suffix (or the exact
+lookup row) is checked on the hot path. Thus validation does not materialise an
+unbounded ledger history in R memory.
+
+For service bootstrap, every non-secret DP setting has an environment form,
+including `DSOMOP_DP_ENABLED`, `DSOMOP_DP_DOMAIN`,
+`DSOMOP_DP_SNAPSHOT_ID`, `DSOMOP_DP_ACCOUNTING_MODE`, epsilon/epoch and cap
+settings, provider settings, and `DSOMOP_DP_REQUIRE_EXTERNAL_ANCHOR`. Explicit
+R options and environment values may not disagree. A production rollback
+anchor can be provisioned before namespace load as one exported
+`package::function` in `DSOMOP_DP_ANCHOR_PROVIDER`; the function must implement
+the following durable linearizable-CAS provider contract. dsOMOP calls it with
+an opaque `anchor_id` and one of three actions:
+
+```text
+provider(action = "capabilities", anchor_id)
+  -> list(schema_version = 1, provider_id = <stable non-empty string>,
+          external = TRUE, durable = TRUE, linearizable_cas = TRUE)
+
+provider(action = "read", anchor_id)
+  -> NULL, or state
+
+provider(action = "compare_and_swap", anchor_id,
+         expected = NULL|state, replacement = state)
+  -> list(swapped = TRUE|FALSE, state = <durable current state>)
+```
+
+`state` has exactly `schema_version = 1`, 64-hex `ledger_id`, 64-hex
+`policy_hash`, a non-negative integer `next_index`, and `chain_head` equal to
+`GENESIS` at zero or a 64-hex row MAC otherwise. The provider must namespace by
+`anchor_id`; compare canonical state exactly; make compare-and-swap atomic and
+linearizable across all service replicas; durably commit `replacement` before
+returning `swapped=TRUE`; and always return the resulting durable state. These
+values contain no secret root material, but their integrity and continuity are
+security-critical. dsOMOP deliberately ships no pretend network/distributed
+adapter: deployments should bind this contract to their transactional durable
+store and test crash/concurrency semantics.
+
+A single-node
+deployment that deliberately accepts trusted-local rollback protection must
+set `DSOMOP_DP_REQUIRE_EXTERNAL_ANCHOR=false`. This choice is made at service
+startup, never by an analyst or by a query.
+
+The disclosure capability flags become true only after this dedicated service
+has bootstrapped; ordinary suppression/banding never activates them. See
+`inst/queries/dp_redesign_registry.json` for the pinned OHDSI QueryLibrary
+questions mapped to bounded sticky-noise primitives. This is a semantic design
+map only: it neither certifies formal DP nor authorizes the upstream SQL
+verbatim.
 
 The DataSHIELD method allowlist is part of the security boundary. An
 `omop.table` class or a `dsomop_protected` attribute protects calls handled by
@@ -191,7 +344,7 @@ If you prefer using a graphical user interface (GUI) provided by your server for
 
 - **User/organization:** `isglobal-brge`
 - **Package name:** `dsOMOP`
-- **Git reference:** `2.0.0`
+- **Git reference:** `main`
 
 #### Installing from the R console
 
@@ -210,7 +363,7 @@ o <- opal.login(username = "administrator", password = "password", url = "https:
 
 You can then install the `dsOMOP` package using the following command:
 ```R
-dsadmin.install_github_package(o, 'dsOMOP', username='isglobal-brge', ref='2.0.0')
+dsadmin.install_github_package(o, 'dsOMOP', username='isglobal-brge', ref='main')
 ```
 
 ## Creating OMOP CDM resources

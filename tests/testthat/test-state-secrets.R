@@ -215,7 +215,37 @@ test_that("legacy marker directory is only a state-root alias", {
   ))
   withr::local_options(list(
     dsomop.state_dir = NULL, default.dsomop.state_dir = NULL))
-  expect_identical(.dsomopStateRoot(), state)
+  expect_identical(.dsomopStateRoot(), gsub("/+", "/", state))
+})
+
+test_that("an explicit state option cannot redirect an environment bootstrap", {
+  first <- withr::local_tempdir(pattern = "dsomop-state-first-")
+  second <- withr::local_tempdir(pattern = "dsomop-state-second-")
+  withr::local_envvar(c(
+    DSOMOP_STATE_DIR = first,
+    DSOMOP_TEST_ALLOW_EPHEMERAL_STATE = "1"
+  ))
+  withr::local_options(list(dsomop.state_dir = second))
+  expect_error(.dsomopStateRoot(), "Conflicting dsOMOP state directories")
+})
+
+test_that("state roots canonicalize repeated interior separators", {
+  state <- withr::local_tempdir(pattern = "dsomop-state-canonical-")
+  Sys.chmod(state, mode = "0700")
+  canonical <- gsub("/+", "/", state)
+  repeated <- sub("/([^/]+)$", "//\\1", state)
+  withr::local_envvar(c(
+    DSOMOP_STATE_DIR = repeated,
+    DSOMOP_TEST_ALLOW_EPHEMERAL_STATE = "1"
+  ))
+  withr::local_options(list(dsomop.state_dir = state))
+
+  expect_identical(.dsomopStateRoot(), canonical)
+  path <- .dsomopSecretPath("pseudonym_root")
+  expect_identical(dirname(dirname(path)), canonical)
+  expect_silent(.dsomopPrivateSecretDirectory(
+    path, .allow_test_path = TRUE
+  ))
 })
 
 test_that("an injected root is validated but never copied to state", {

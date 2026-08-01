@@ -39,9 +39,9 @@
 #'     add noise to arbitrary query results.}
 #'   \item{\code{formal_dp_enabled}, \code{sticky_noise_enabled},
 #'     \code{privacy_ledger_enabled}}{Explicit capability flags. They are
-#'     currently all \code{FALSE}: suppression/banding and the
-#'     \code{nfilter.noise} plot-noise variance floor are not a formal DP
-#'     accountant.}
+#'     enabled only after the dedicated DP service has completed its early
+#'     bootstrap. Ordinary suppression/banding and the \code{nfilter.noise}
+#'     plot-noise variance floor never activate these flags.}
 #' }
 #'
 #' @section dsOMOP-Specific Settings:
@@ -121,6 +121,8 @@
 #' @return Named list of disclosure thresholds and permissions
 #' @keywords internal
 .omopDisclosureSettings <- function() {
+  dp_status <- .pkg_state$dp_status
+  dp_ready <- is.list(dp_status) && isTRUE(dp_status$ready)
   age_range_min <- as.numeric(
     getOption("dsomop.nfilter.age_range",
       getOption("default.dsomop.nfilter.age_range", 5)))
@@ -153,9 +155,9 @@
                                 getOption("default.nfilter.stringShort", 20))),
     nfilter_noise          = as.numeric(getOption("nfilter.noise",
                                 getOption("default.nfilter.noise", 0.25))),
-    formal_dp_enabled      = FALSE,
-    sticky_noise_enabled   = FALSE,
-    privacy_ledger_enabled = FALSE,
+    formal_dp_enabled      = dp_ready && isTRUE(dp_status$formal_dp),
+    sticky_noise_enabled   = dp_ready && isTRUE(dp_status$sticky_noise),
+    privacy_ledger_enabled = dp_ready && isTRUE(dp_status$durable_ledger),
     # --- dsOMOP-specific settings ---
     query_strict         = as.logical(getOption("dsomop.query_strict",
                                 getOption("default.dsomop.query_strict", TRUE))),

@@ -40,9 +40,9 @@ direct option -> \code{default.*} prefix -> hardcoded fallback.
     add noise to arbitrary query results.}
   \item{\code{formal_dp_enabled}, \code{sticky_noise_enabled},
     \code{privacy_ledger_enabled}}{Explicit capability flags. They are
-    currently all \code{FALSE}: suppression/banding and the
-    \code{nfilter.noise} plot-noise variance floor are not a formal DP
-    accountant.}
+    enabled only after the dedicated DP service has completed its early
+    bootstrap. Ordinary suppression/banding and the \code{nfilter.noise}
+    plot-noise variance floor never activate these flags.}
 }
 }
 

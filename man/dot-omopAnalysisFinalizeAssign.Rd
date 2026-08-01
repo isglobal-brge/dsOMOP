@@ -8,7 +8,9 @@
   handle,
   assigned,
   entry,
-  assign_date_handling = NULL
+  assign_date_handling = NULL,
+  scope_present = FALSE,
+  effective_params = list()
 )
 }
 \arguments{
@@ -19,6 +21,12 @@
 \item{entry}{Catalog entry.}
 
 \item{assign_date_handling}{Date-handling policy.}
+
+\item{scope_present}{Logical; whether any cohort or workspace scope affected
+the loader. QueryLibrary output is DP-sealed only when this is false.}
+
+\item{effective_params}{Named list of the validated, rendered parameter
+values actually used by the loader.}
 }
 \value{
 Sanitized server-side assignment result.
