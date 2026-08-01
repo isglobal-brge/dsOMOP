@@ -11,5 +11,11 @@ Public DP service status.
 }
 \description{
 Returns public mechanism and accountant metadata. Secret key material and
-protected snapshot fingerprints are never returned.
+protected snapshot fingerprints are never returned. Calling this endpoint
+is an explicit service-readiness action: it coordinates bootstrap, commits
+each missing root atomically, and transactionally creates or validates the
+ledger.
+A ready response includes non-secret
+ledger, key and privacy-instance fingerprints for deployment continuity
+checks.
 }

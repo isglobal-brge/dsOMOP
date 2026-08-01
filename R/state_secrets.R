@@ -209,7 +209,14 @@
   }
 
   parent <- dirname(path)
-  allowed_parents <- file.path(root, c("secrets", "keys", "privacy"))
+  # normalizePath() expands macOS' /var -> /private/var alias in the path we
+  # return below. Accept that same already-validated root representation on a
+  # subsequent call; production symlink-component checks above remain strict.
+  canonical_root <- normalizePath(root, winslash = "/", mustWork = TRUE)
+  allowed_parents <- unique(c(
+    file.path(root, c("secrets", "keys", "privacy")),
+    file.path(canonical_root, c("secrets", "keys", "privacy"))
+  ))
   if (!parent %in% allowed_parents) {
     stop("The dsOMOP private-state path must be inside the state ",
          "secrets/keys/privacy directory.",

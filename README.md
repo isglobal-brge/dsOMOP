@@ -245,26 +245,105 @@ distinct releases. `bounded_accounted` charges every such distinct lineage to
 its summable schedule.
 
 Noise and ledger authentication use independent 32-byte roots outside the R
-package library. `.onLoad()` initializes them and validates SQLite/anchor state
-when DP is enabled, so unsafe permissions or corruption fail during service
-bootstrap. The replaceable noise root may be regenerated if it disappears:
-the independent ledger root preserves authenticated request mappings and old
-payloads, so an identical request cannot reroll. Losing the ledger root or the
-ledger itself cannot be recovered safely and fails closed. File providers use
-owner-only state, atomic no-clobber creation and durability sync; clustered
-deployments may inject `DSOMOP_DP_NOISE_ROOT` and
-`DSOMOP_DP_LEDGER_ROOT` from a secret manager. The client can never submit a
-seed, nonce, epsilon, epoch, reset or force-reroll flag.
+package library. `.onLoad()` never reads or binds DP runtime policy and never
+reads or creates those roots. A container build that only loads the namespace
+therefore remains key-free and Armadillo/Opal can apply final profile options
+after package loading. Image builds must not call `omopInitDS()`,
+`omopDpStatusDS()` or `omopDpReleaseDS()` unless the configured state path is
+already a runtime-mounted per-node volume: these calls deliberately constitute
+real service use. Bootstrap is coordinated by private per-artifact and ledger
+locks; each missing root is committed atomically, and the SQLite ledger is
+created or validated transactionally. The
+central policy constructor enforces the same bootstrap as a final guard.
+Production readiness should call `omopDpStatusDS()` after mounting state and
+secrets and before admitting analyst traffic.
+
+The file-backed noise root is replaceable. If it disappears, dsOMOP generates
+a new CSPRNG root; the independent ledger root keeps old request mappings and
+stored payloads authenticated, so an exact retry still returns the old payload.
+For every deployed-ledger recovery, dsOMOP first authenticates the ledger
+identity, continuity receipt, complete release chain, accountant and configured
+external anchor before committing replacement noise material. With
+`DSOMOP_DP_NOISE_REQUIRE_EXISTING=true`, an empty first installation still
+requires provisioning and is not mutated.
+`noise_provider=auto` becomes file-backed once fallback state exists, so the
+later return of a transient injected secret does not block or switch it back.
+An explicit `injected` provider cannot invent a missing secret; its secret
+manager remains responsible for availability. An injected-root rotation is
+detected and recorded under the ledger lock on the next service access
+(normally after a rollout or restart); it does not require a manual
+`privacy_epoch` change and never turns routine key maintenance into a release
+lockout. Existing release identifiers and stored payloads remain
+exact replays because the epoch is preserved. File-root recovery preflight and
+metadata adoption are serialized by the ledger lock, while root/receipt commit
+is serialized by the recovery lock; a stale worker therefore adopts persisted
+material instead of rotating metadata back to its earlier root. Explicit epoch
+advances may skip unused numbers; rollback to an older epoch fails closed.
+Advancing the epoch intentionally creates a new release namespace and is not
+required for key rotation. A live process rejects policy drift until restarted,
+rather than mixing policies mid-request.
+
+The ledger authentication root is continuity-critical and is never silently
+replaced while ledger state or its receipt remains. With the default required
+external anchor, a missing, rolled-back or forked ledger also fails closed. The
+explicit single-node setting `require_external_anchor=false` provides local
+integrity only: it assumes the complete state directory is durably preserved;
+joint deletion or rollback of the ledger and its receipt can look like a clean
+bootstrap and reset accounting. It is not rollback protection against an
+operator or storage adversary. File providers use owner-only state, atomic
+no-clobber creation and durability sync. Injected roots must be exactly 32 raw
+CSPRNG bytes or 64 hexadecimal characters from a secret manager; passphrases
+are rejected. The client can never submit a seed, nonce, epsilon, epoch, reset
+or force-reroll flag.
 Ledger authentication is fully audited at process bootstrap/cache miss in
 bounded keyset chunks, then only an authenticated append suffix (or the exact
 lookup row) is checked on the hot path. Thus validation does not materialise an
 unbounded ledger history in R memory.
 
+`getOption("datashield.seed")` is deliberately **not** key material for this
+service. DataSHIELD backends expose it to make legacy R randomization
+repeatable: Opal reduces its instance-derived value to a logged integer, while
+Armadillo stores an administrator-visible, editable profile value. It lacks
+the entropy, confidentiality, node identity and domain separation required by
+sticky HMAC noise. dsOMOP therefore neither derives roots from it nor includes
+it in query identity; changing backend/profile RNG settings cannot reroll a
+dsOMOP release. Deployments should use the private file roots or inject
+`DSOMOP_DP_NOISE_ROOT` and `DSOMOP_DP_LEDGER_ROOT` from their secret manager.
+See the current backend implementations for
+[Opal](https://github.com/obiba/opal/blob/f0b251a0ce7364b491c830910cd850212b7145ee/opal-datashield/src/main/java/org/obiba/opal/web/datashield/DatashieldSessionsResourceImpl.java#L103-L130)
+and
+[Armadillo](https://github.com/molgenis/molgenis-service-armadillo/blob/6b8a68c278a5dad914389b4a52d05c6ce364df0c/armadillo/src/main/java/org/molgenis/armadillo/metadata/ProfileConfig.java#L107-L123).
+
+A ready `omopDpStatusDS()` response exposes only non-secret continuity
+fingerprints: `privacy_instance_id`, `noise_domain_id`, `ledger_id`,
+`ledger_key_id` and `noise_key_id`. Replicas of one logical node must share the
+same domain, roots, ledger and anchor and, in steady state, report the same
+tuple. During a noise-root rollout, the noise key/domain and privacy-instance
+identifiers change while `ledger_id` and `ledger_key_id` remain stable.
+Independently administered nodes must use a globally unique, stable
+`dsomop.dp.domain` and different key/noise-domain identifiers. dsOMOPClient
+rejects a federated DP release when selected datasources share a noise domain,
+a ledger, or the same domain-scoped ledger authentication key; the latter also
+detects an accidental ledger fork. For DSLite DP testing, use one logical node
+per R process and separate processes for federated nodes, because DSLite
+options and the dsOMOP namespace are process-global. Operators should pin and
+compare identifiers over an
+authenticated administration channel; they diagnose cloning but are not remote
+attestation against a compromised server.
+
 For service bootstrap, every non-secret DP setting has an environment form,
 including `DSOMOP_DP_ENABLED`, `DSOMOP_DP_DOMAIN`,
 `DSOMOP_DP_SNAPSHOT_ID`, `DSOMOP_DP_ACCOUNTING_MODE`, epsilon/epoch and cap
-settings, provider settings, and `DSOMOP_DP_REQUIRE_EXTERNAL_ANCHOR`. Explicit
-R options and environment values may not disagree. A production rollback
+settings, provider settings, and `DSOMOP_DP_REQUIRE_EXTERNAL_ANCHOR`. Shipped
+DataSHIELD values are fallback options named `default.dsomop.dp.*`; profile
+overrides use `dsomop.dp.*`. An explicit profile option and its environment
+value may not disagree, while environment-only configuration does not conflict
+with a shipped fallback. When upgrading an Opal profile from dsOMOP 2.3.0,
+remove legacy live `dsomop.dp.*` defaults before adopting environment-only
+configuration; Opal cannot always attribute and remove previously published R
+options. Keep intentional profile overrides and make any environment value
+match them. Environment variables must reach the R/Rserve process, not only a
+Java container. A production rollback
 anchor can be provisioned before namespace load as one exported
 `package::function` in `DSOMOP_DP_ANCHOR_PROVIDER`; the function must implement
 the following durable linearizable-CAS provider contract. dsOMOP calls it with
@@ -295,7 +374,7 @@ adapter: deployments should bind this contract to their transactional durable
 store and test crash/concurrency semantics.
 
 A single-node
-deployment that deliberately accepts trusted-local rollback protection must
+deployment that deliberately accepts local integrity without rollback protection must
 set `DSOMOP_DP_REQUIRE_EXTERNAL_ANCHOR=false`. This choice is made at service
 startup, never by an analyst or by a query.
 

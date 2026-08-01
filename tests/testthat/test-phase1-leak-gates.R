@@ -376,4 +376,9 @@ test_that("DATASHIELD and DESCRIPTION publish the same server options", {
     split_options(manifest[1, "Options"]),
     split_options(description[1, "Options"])
   )
+  dp_options <- grep(
+    "dsomop\\.dp\\.", split_options(manifest[1, "Options"]), value = TRUE
+  )
+  expect_length(dp_options, 15L)
+  expect_true(all(startsWith(dp_options, "default.dsomop.dp.")))
 })

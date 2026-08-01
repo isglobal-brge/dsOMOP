@@ -739,11 +739,18 @@
 #' Sticky privacy-noise service status (Aggregate)
 #'
 #' Returns public mechanism and accountant metadata. Secret key material and
-#' protected snapshot fingerprints are never returned.
+#' protected snapshot fingerprints are never returned. Calling this endpoint
+#' is an explicit service-readiness action: it coordinates bootstrap, commits
+#' each missing root atomically, and transactionally creates or validates the
+#' ledger.
+#' A ready response includes non-secret
+#' ledger, key and privacy-instance fingerprints for deployment continuity
+#' checks.
 #'
 #' @return Public DP service status.
 #' @export
 omopDpStatusDS <- function() {
+  .dsomopDpEnsureRuntime()
   status <- .dsomopDpPublicStatus(initialize = TRUE)
   status$supported_statistics <- .DSOMOP_DP_STATISTICS
   status$longitudinal_contract <- "deterministic_person_bounding_v1"
@@ -773,6 +780,7 @@ omopDpStatusDS <- function() {
 #' @export
 omopDpReleaseDS <- function(x, spec) {
   spec <- .ds_arg(spec)
+  .dsomopDpEnsureRuntime()
   policy <- .dsomopDpPolicy()
   analysis <- .dsomopDpAnalysis(x, spec, policy)
   .dsomopDpLedgerRelease(

@@ -315,8 +315,10 @@
   }
   env <- Sys.getenv("DSOMOP_DP_NOISE_ROOT", unset = "")
   opt <- .dsomopDpOption("noise_root", NULL)
-  env_root <- if (nzchar(env)) .coerceDsomopSecret(env, "DP noise root") else NULL
-  opt_root <- if (!is.null(opt)) .coerceDsomopSecret(opt, "DP noise root") else NULL
+  env_root <- if (nzchar(env)) .coerceDsomopDpRoot(env, "DP noise root") else NULL
+  opt_root <- if (!is.null(opt)) {
+    .coerceDsomopDpRoot(opt, "DP noise root")
+  } else NULL
   if (!is.null(env_root) && !is.null(opt_root) &&
       !identical(env_root, opt_root)) {
     stop("Conflicting DP noise roots are configured.", call. = FALSE)
@@ -334,9 +336,15 @@
     .dsomopDpOption("noise_require_existing", FALSE),
     "noise_require_existing"
   )
+  file_artifacts <- any(vapply(
+    c("dp_noise_root", "dp_noise_root_receipt"), function(name) {
+      path <- .dsomopSecretPath(name)
+      file.exists(path) || .dsomopIsSymlink(path)
+    }, logical(1L)
+  ))
   list(
     provider = if (identical(provider, "auto")) {
-      if (is.null(injected)) "file" else "injected"
+      if (file_artifacts || is.null(injected)) "file" else "injected"
     } else provider,
     injected = injected,
     require_existing = require_existing
@@ -354,10 +362,10 @@
   env <- Sys.getenv("DSOMOP_DP_LEDGER_ROOT", unset = "")
   opt <- .dsomopDpOption("ledger_root", NULL)
   env_root <- if (nzchar(env)) {
-    .coerceDsomopSecret(env, "DP ledger root")
+    .coerceDsomopDpRoot(env, "DP ledger root")
   } else NULL
   opt_root <- if (!is.null(opt)) {
-    .coerceDsomopSecret(opt, "DP ledger root")
+    .coerceDsomopDpRoot(opt, "DP ledger root")
   } else NULL
   if (!is.null(env_root) && !is.null(opt_root) &&
       !identical(env_root, opt_root)) {
@@ -372,9 +380,15 @@
     stop("The injected DP ledger provider requires ",
          "DSOMOP_DP_LEDGER_ROOT or dsomop.dp.ledger_root.", call. = FALSE)
   }
+  file_artifacts <- any(vapply(
+    c("dp_ledger_root", "dp_ledger_root_receipt"), function(name) {
+      path <- .dsomopSecretPath(name)
+      file.exists(path) || .dsomopIsSymlink(path)
+    }, logical(1L)
+  ))
   list(
     provider = if (provider == "auto") {
-      if (is.null(injected)) "file" else "injected"
+      if (file_artifacts || is.null(injected)) "file" else "injected"
     } else provider,
     injected = injected,
     require_existing = .dsomopDpBoolean(
@@ -386,6 +400,17 @@
 
 .dsomopDpRootId <- function(root) {
   paste0("dpk_", substr(.dsomopDpSha256(root), 1L, 40L))
+}
+
+.coerceDsomopDpRoot <- function(value, label) {
+  if (is.raw(value) && length(value) == 32L) return(value)
+  if (is.character(value) && length(value) == 1L && !is.na(value) &&
+      grepl("^[0-9a-fA-F]{64}$", value)) {
+    return(.coerceDsomopSecret(value, label))
+  }
+  stop("The ", label, " must be exactly 32 raw CSPRNG bytes or 64 ",
+       "hexadecimal characters; passphrases are not accepted.",
+       call. = FALSE)
 }
 
 .dsomopDpLedgerRootId <- function(root) {
@@ -402,10 +427,155 @@
   }, logical(1L)))
 }
 
-.dsomopDpFileRoot <- function(settings = .dsomopDpNoiseSettings()) {
+.dsomopDpNoiseRecoveryCandidate <- function(
+    ledger_path, ledger_settings = .dsomopDpLedgerSettings()) {
+  ledger_files <- c(ledger_path, .dsomopDpLedgerReceiptPath(ledger_path))
+  if (!all(vapply(ledger_files, file.exists, logical(1L))) ||
+      any(vapply(ledger_files, .dsomopIsSymlink, logical(1L)))) {
+    return(FALSE)
+  }
+  if (identical(ledger_settings$provider, "injected")) {
+    return(!is.null(ledger_settings$injected))
+  }
+  root_files <- vapply(
+    c("dp_ledger_root", "dp_ledger_root_receipt"), .dsomopSecretPath,
+    character(1L)
+  )
+  all(vapply(root_files, file.exists, logical(1L))) &&
+    !any(vapply(root_files, .dsomopIsSymlink, logical(1L)))
+}
+
+.dsomopDpAuthenticatedLedgerEvidence <- function(policy) {
+  path <- policy$ledger_path
+  receipt_path <- .dsomopDpLedgerReceiptPath(path)
+  if (!file.exists(path) || !file.exists(receipt_path) ||
+      .dsomopIsSymlink(path) || .dsomopIsSymlink(receipt_path)) {
+    return(FALSE)
+  }
+  value <- tryCatch({
+    old_umask <- Sys.umask("0077")
+    lock <- NULL
+    connection <- NULL
+    transaction <- FALSE
+    on.exit({
+      if (transaction && !is.null(connection)) {
+        try(DBI::dbExecute(connection, "ROLLBACK"), silent = TRUE)
+      }
+      if (!is.null(connection)) {
+        try(DBI::dbDisconnect(connection), silent = TRUE)
+      }
+      if (!is.null(lock)) try(filelock::unlock(lock), silent = TRUE)
+      try(Sys.umask(old_umask), silent = TRUE)
+    }, add = TRUE)
+    lock_path <- paste0(path, ".lock")
+    if (.dsomopIsSymlink(lock_path)) return(FALSE)
+    lock <- filelock::lock(lock_path, timeout = 30000)
+    if (is.null(lock)) return(FALSE)
+    Sys.chmod(lock_path, mode = "0600")
+    if (.dsomopIsSymlink(lock_path) || !.dsomopPrivateMode(lock_path) ||
+        !identical(.dsomopLinkCount(lock_path), 1)) return(FALSE)
+    if (!file.exists(path) || !file.exists(receipt_path) ||
+        .dsomopIsSymlink(path) || .dsomopIsSymlink(receipt_path)) {
+      return(FALSE)
+    }
+    .dsomopDpValidateLedgerArtifact(path)
+    observed_receipt <- .dsomopValidateSecretFile(receipt_path)
+    journal <- paste0(path, "-journal")
+    if (file.exists(journal) || .dsomopIsSymlink(journal)) {
+      .dsomopDpValidateLedgerArtifact(journal)
+    }
+    if (any(vapply(paste0(path, c("-wal", "-shm")), function(candidate) {
+      file.exists(candidate) || .dsomopIsSymlink(candidate)
+    }, logical(1L)))) return(FALSE)
+    # A read-write connection is intentional here: under the ledger lock,
+    # SQLite may need to recover a durable DELETE-mode hot journal left by a
+    # crashed worker before continuity metadata can be read.
+    connection <- DBI::dbConnect(
+      RSQLite::SQLite(), path, synchronous = "full",
+      flags = RSQLite::SQLITE_RW
+    )
+    DBI::dbExecute(connection, "PRAGMA busy_timeout = 30000")
+    DBI::dbExecute(connection, "PRAGMA synchronous = FULL")
+    DBI::dbExecute(connection, "PRAGMA fullfsync = ON")
+    synchronous <- as.integer(DBI::dbGetQuery(
+      connection, "PRAGMA synchronous"
+    )[[1L]][[1L]])
+    fullfsync <- as.integer(DBI::dbGetQuery(
+      connection, "PRAGMA fullfsync"
+    )[[1L]][[1L]])
+    journal_mode <- tolower(DBI::dbGetQuery(
+      connection, "PRAGMA journal_mode = DELETE"
+    )[[1L]][[1L]])
+    if (!identical(journal_mode, "delete") ||
+        !identical(synchronous, 2L) || !identical(fullfsync, 1L)) {
+      return(FALSE)
+    }
+    .dsomopDpValidateLedgerArtifact(path)
+    tables <- DBI::dbListTables(connection)
+    if (!setequal(tables, c("dp_meta", "dp_releases"))) return(FALSE)
+    expected_receipt <- .dsomopDpExpectedLedgerReceipt(connection, policy)
+    if (!identical(observed_receipt, expected_receipt)) return(FALSE)
+    epoch <- suppressWarnings(as.numeric(
+      .dsomopDpMetaGet(connection, "privacy_epoch")
+    ))
+    noise_key_id <- .dsomopDpMetaGet(connection, "current_noise_key_id")
+    if (length(epoch) != 1L || !is.finite(epoch) || epoch < 1 ||
+        epoch != floor(epoch) || policy$privacy_epoch < epoch ||
+        !is.character(noise_key_id) || length(noise_key_id) != 1L ||
+        !grepl("^dpk_[0-9a-f]{40}$", noise_key_id)) return(FALSE)
+    validation_policy <- policy
+    validation_policy$privacy_epoch <- epoch
+    validation_policy$noise_root <- list(
+      key_id = noise_key_id, provider = "file"
+    )
+    validation_policy$keys <- list(
+      ledger = .dsomopDpSubkey(
+        policy$ledger_root$key, policy$domain, "ledger-mac/v1"
+      )
+    )
+    DBI::dbExecute(connection, "BEGIN IMMEDIATE")
+    transaction <- TRUE
+    state <- .dsomopDpValidateLedger(
+      connection, validation_policy, cached = NULL,
+      file_signature = .dsomopDpLedgerFileSignature(path)
+    )
+    capabilities <- .dsomopDpAnchorCapabilities(policy)
+    if (capabilities$external) {
+      anchored <- .dsomopDpAnchorState(
+        .dsomopDpAnchorCall(policy, "read"), policy, allow_null = TRUE
+      )
+      if (is.null(anchored)) {
+        if (state$next_index != 0) return(FALSE)
+      } else {
+        if (!identical(anchored$ledger_id, state$ledger_id) ||
+            anchored$next_index > state$next_index) return(FALSE)
+        local_head <- if (anchored$next_index == 0) {
+          .DSOMOP_DP_GENESIS
+        } else {
+          row <- DBI::dbGetQuery(
+            connection,
+            "SELECT row_mac FROM dp_releases WHERE release_index = ?",
+            params = list(anchored$next_index - 1)
+          )
+          if (nrow(row) != 1L) return(FALSE)
+          row$row_mac[[1L]]
+        }
+        if (!identical(anchored$chain_head, local_head)) return(FALSE)
+      }
+    }
+    DBI::dbExecute(connection, "ROLLBACK")
+    transaction <- FALSE
+    TRUE
+  }, error = function(e) FALSE)
+  isTRUE(value)
+}
+
+.dsomopDpFileRoot <- function(settings = .dsomopDpNoiseSettings(),
+                              recovery_authorized = FALSE) {
   root_path <- .dsomopSecretPath("dp_noise_root")
-  if (isTRUE(settings$require_existing) &&
-      (!file.exists(root_path) || .dsomopIsSymlink(root_path))) {
+  root_exists <- file.exists(root_path) || .dsomopIsSymlink(root_path)
+  if (!root_exists && isTRUE(settings$require_existing) &&
+      !isTRUE(recovery_authorized)) {
     stop("The configured DP noise provider requires an existing root; ",
          "refusing to generate replacement noise material.", call. = FALSE)
   }
@@ -438,12 +608,19 @@
   root_exists <- file.exists(root_path) || .dsomopIsSymlink(root_path)
   receipt_exists <- file.exists(receipt_path) ||
     .dsomopIsSymlink(receipt_path)
-  if (!root_exists && isTRUE(settings$require_existing)) {
+  ledger_exists <- .dsomopDpLedgerArtifactsExist()
+  # `require_existing` can require initial secret provisioning, but it must not
+  # strand a deployed service after accidental noise-root loss. Authenticated
+  # ledger continuity distinguishes recovery from an
+  # unprovisioned first bootstrap when initial provisioning was mandatory.
+  recover_deployed_root <- !root_exists && isTRUE(recovery_authorized)
+  if (!root_exists && isTRUE(settings$require_existing) &&
+      !recover_deployed_root) {
     stop("The configured DP noise provider requires an existing root; ",
          "refusing to generate replacement noise material.", call. = FALSE)
   }
   recovered <- !root_exists &&
-    (receipt_exists || .dsomopDpLedgerArtifactsExist())
+    (receipt_exists || ledger_exists)
   if (!root_exists && receipt_exists) {
     .dsomopValidateSecretFile(receipt_path)
     removed <- unlink(receipt_path, force = TRUE)
@@ -457,7 +634,8 @@
   }
   root <- .ensureDsomopSecret(
     "dp_noise_root", path = root_path,
-    require_existing = settings$require_existing
+    require_existing = isTRUE(settings$require_existing) &&
+      !recover_deployed_root
   )
   expected_receipt <- .dsomopDpHmacRaw(
     root, "dsOMOP/dp/noise-root-continuity-receipt/v1"
@@ -491,6 +669,13 @@
   root_path <- .dsomopSecretPath("dp_ledger_root")
   receipt_path <- .dsomopSecretPath("dp_ledger_root_receipt")
   root_exists <- file.exists(root_path) || .dsomopIsSymlink(root_path)
+  receipt_exists <- file.exists(receipt_path) ||
+    .dsomopIsSymlink(receipt_path)
+  if (!root_exists && receipt_exists) {
+    stop("The DP ledger authentication root is missing while its continuity ",
+         "receipt exists; restore that continuity-critical root.",
+         call. = FALSE)
+  }
   if (!root_exists && .dsomopDpLedgerArtifactsExist()) {
     stop("The DP ledger authentication root is missing while release state ",
          "exists; restore that continuity-critical root.", call. = FALSE)
@@ -508,8 +693,8 @@
   )
 }
 
-.dsomopDpNoiseRoot <- function() {
-  settings <- .dsomopDpNoiseSettings()
+.dsomopDpNoiseRoot <- function(settings = .dsomopDpNoiseSettings(),
+                               recovery_authorized = FALSE) {
   root_state <- if (identical(settings$provider, "injected")) {
     file_artifacts <- vapply(
       c("dp_noise_root", "dp_noise_root_receipt"),
@@ -524,7 +709,7 @@
     }
     list(key = settings$injected, recovered = FALSE)
   } else {
-    .dsomopDpFileRoot(settings)
+    .dsomopDpFileRoot(settings, recovery_authorized = recovery_authorized)
   }
   list(
     key = root_state$key,
@@ -533,6 +718,45 @@
     recovered = isTRUE(root_state$recovered),
     material_exposed = FALSE
   )
+}
+
+.dsomopDpRefreshFileNoisePolicy <- function(policy) {
+  if (!identical(policy$noise_root$provider, "file")) return(policy)
+  root_path <- .dsomopSecretPath("dp_noise_root")
+  receipt_path <- .dsomopSecretPath("dp_noise_root_receipt")
+  recovery_lock_path <- paste0(root_path, ".recovery.lock")
+  if (.dsomopIsSymlink(recovery_lock_path)) {
+    stop("The DP noise-root recovery lock must not be a symbolic link.",
+         call. = FALSE)
+  }
+  recovery_lock <- filelock::lock(recovery_lock_path, timeout = 30000)
+  if (is.null(recovery_lock)) {
+    stop("The DP noise-root recovery lock is unavailable.", call. = FALSE)
+  }
+  on.exit(try(filelock::unlock(recovery_lock), silent = TRUE), add = TRUE)
+  Sys.chmod(recovery_lock_path, mode = "0600")
+  if (.dsomopIsSymlink(recovery_lock_path) ||
+      !.dsomopPrivateMode(recovery_lock_path) ||
+      !identical(.dsomopLinkCount(recovery_lock_path), 1)) {
+    stop("The DP noise-root recovery lock is not private.", call. = FALSE)
+  }
+  root <- .dsomopValidateSecretFile(root_path)
+  observed_receipt <- .dsomopValidateSecretFile(receipt_path)
+  expected_receipt <- .dsomopDpHmacRaw(
+    root, "dsOMOP/dp/noise-root-continuity-receipt/v1"
+  )
+  if (!identical(observed_receipt, expected_receipt)) {
+    stop("The private DP continuity receipt does not match persistent state.",
+         call. = FALSE)
+  }
+  key_id <- .dsomopDpRootId(root)
+  if (!identical(key_id, policy$noise_root$key_id)) {
+    policy$noise_root$key <- root
+    policy$noise_root$key_id <- key_id
+    policy$noise_root$recovered <- TRUE
+    policy$keys$noise <- .dsomopDpSubkey(root, policy$domain, "noise/v1")
+  }
+  policy
 }
 
 .dsomopDpSubkey <- function(root, domain, purpose) {
@@ -583,6 +807,14 @@
 }
 
 .dsomopDpPolicy <- function(require_enabled = TRUE) {
+  # Last-resort lifecycle guard: every path that can resolve DP roots passes
+  # through this constructor. Service entry points initialize explicitly, but
+  # this prevents a future internal DP caller from accidentally bypassing the
+  # durable bootstrap contract.
+  if (is.null(.pkg_state$dp_bootstrap_binding) &&
+      !isTRUE(.pkg_state$dp_bootstrap_in_progress)) {
+    .dsomopDpEnsureRuntime()
+  }
   enabled <- .dsomopDpEnabled()
   if (isTRUE(require_enabled) && !enabled) {
     stop("Differential-privacy releases are disabled by the data custodian.",
@@ -713,8 +945,25 @@
     require_external_anchor = policy$require_external_anchor
   )))
   .dsomopDpAssertBootstrapPolicy(policy)
-  if (!.dsomopDpLedgerArtifactsExist(policy$ledger_path) &&
-      !is.null(policy$anchor_provider)) {
+  noise_settings <- .dsomopDpNoiseSettings()
+  ledger_settings <- .dsomopDpLedgerSettings()
+  noise_missing <- identical(noise_settings$provider, "file") &&
+    !file.exists(.dsomopSecretPath("dp_noise_root")) &&
+    !.dsomopIsSymlink(.dsomopSecretPath("dp_noise_root"))
+  ledger_present <- .dsomopDpLedgerArtifactsExist(policy$ledger_path)
+  recovery_candidate <- noise_missing && ledger_present &&
+    .dsomopDpNoiseRecoveryCandidate(policy$ledger_path, ledger_settings)
+  if (noise_missing && ledger_present && !recovery_candidate) {
+    stop("Existing DP ledger artifacts are insufficient to authenticate ",
+         "noise-root recovery; restore durable continuity state.",
+         call. = FALSE)
+  }
+  if (noise_missing && isTRUE(noise_settings$require_existing) &&
+      !recovery_candidate) {
+    stop("The configured DP noise provider requires an existing root; ",
+         "refusing to generate replacement noise material.", call. = FALSE)
+  }
+  if (!ledger_present && !is.null(policy$anchor_provider)) {
     .dsomopDpAnchorCapabilities(policy)
     anchored <- .dsomopDpAnchorState(
       .dsomopDpAnchorCall(policy, "read"), policy, allow_null = TRUE
@@ -725,8 +974,17 @@
            call. = FALSE)
     }
   }
-  policy$ledger_root <- .dsomopDpLedgerRoot()
-  policy$noise_root <- .dsomopDpNoiseRoot()
+  policy$ledger_root <- .dsomopDpLedgerRoot(ledger_settings)
+  recovery_authorized <- recovery_candidate &&
+    .dsomopDpAuthenticatedLedgerEvidence(policy)
+  if (recovery_candidate && !recovery_authorized) {
+    stop("The existing DP ledger does not authenticate noise-root recovery; ",
+         "restore the previous root or ledger continuity state.",
+         call. = FALSE)
+  }
+  policy$noise_root <- .dsomopDpNoiseRoot(
+    noise_settings, recovery_authorized = recovery_authorized
+  )
   policy$keys <- list(
     ledger = .dsomopDpSubkey(policy$ledger_root$key, domain, "ledger-mac/v1"),
     lookup = .dsomopDpSubkey(policy$ledger_root$key, domain,
@@ -764,6 +1022,37 @@
 }
 
 .dsomopDpLedgerReceiptPath <- function(path) paste0(path, ".receipt")
+
+.dsomopDpExpectedLedgerReceipt <- function(connection, policy) {
+  values <- DBI::dbGetQuery(
+    connection,
+    paste(
+      "SELECT key, value FROM dp_meta WHERE key IN",
+      "('ledger_id', 'policy_hash', 'ledger_key_id')"
+    )
+  )
+  if (nrow(values) != 3L || anyDuplicated(values$key)) {
+    stop("The DP ledger identity metadata is incomplete.", call. = FALSE)
+  }
+  meta <- stats::setNames(values$value, values$key)
+  if (!grepl("^[0-9a-f]{64}$", meta[["ledger_id"]]) ||
+      !identical(meta[["policy_hash"]], policy$policy_hash) ||
+      !identical(meta[["ledger_key_id"]], policy$ledger_root$key_id)) {
+    stop("The DP ledger identity metadata is invalid.", call. = FALSE)
+  }
+  ledger_key <- .dsomopDpSubkey(
+    policy$ledger_root$key, policy$domain, "ledger-mac/v1"
+  )
+  .dsomopDpHmacRaw(
+    ledger_key,
+    .dsomopDpCanonicalJson(list(
+      protocol = "dsomop-dp-ledger-continuity-receipt-v1",
+      ledger_id = meta[["ledger_id"]],
+      policy_hash = policy$policy_hash,
+      ledger_key_id = policy$ledger_root$key_id
+    ))
+  )
+}
 
 .dsomopDpEnsurePrivate32 <- function(path, expected, replace = FALSE,
                                      .sync = .dsomopSyncFile) {
@@ -876,7 +1165,8 @@
 }
 
 .dsomopDpValidateLedger <- function(connection, policy, cached = NULL,
-                                    file_signature = NULL) {
+                                    file_signature = NULL,
+                                    apply_updates = TRUE) {
   required_meta <- c(
     "schema_version", "ledger_id", "policy_hash", "ledger_key_id",
     "current_noise_key_id", "noise_generation", "privacy_epoch",
@@ -908,8 +1198,7 @@
     is.finite(next_index) && next_index >= 0 && next_index == floor(next_index) &&
     is.finite(spent_epsilon) && spent_epsilon >= 0 &&
     is.finite(spent_delta) && spent_delta >= 0
-  if (!valid_numbers || policy$privacy_epoch < epoch ||
-      policy$privacy_epoch > epoch + 1) {
+  if (!valid_numbers || policy$privacy_epoch < epoch) {
     stop("The DP ledger counters or privacy epoch are invalid.",
          call. = FALSE)
   }
@@ -1023,16 +1312,25 @@
     stop("The DP ledger accountant or chain head is inconsistent.",
          call. = FALSE)
   }
-  if (policy$privacy_epoch == epoch + 1) {
-    .dsomopDpMetaSet(connection, "privacy_epoch", policy$privacy_epoch)
+  epoch_update <- policy$privacy_epoch > epoch
+  if (epoch_update) {
+    if (isTRUE(apply_updates)) {
+      .dsomopDpMetaSet(connection, "privacy_epoch", policy$privacy_epoch)
+    }
     epoch <- policy$privacy_epoch
   }
-  if (!identical(values$current_noise_key_id,
-                 policy$noise_root$key_id)) {
-    .dsomopDpMetaSet(connection, "current_noise_key_id",
-                     policy$noise_root$key_id)
+  noise_update <- !identical(
+    values$current_noise_key_id, policy$noise_root$key_id
+  )
+  if (noise_update) {
+    if (isTRUE(apply_updates)) {
+      .dsomopDpMetaSet(connection, "current_noise_key_id",
+                       policy$noise_root$key_id)
+    }
     noise_generation <- noise_generation + 1
-    .dsomopDpMetaSet(connection, "noise_generation", noise_generation)
+    if (isTRUE(apply_updates)) {
+      .dsomopDpMetaSet(connection, "noise_generation", noise_generation)
+    }
   }
   list(
     ledger_id = values$ledger_id,
@@ -1044,7 +1342,9 @@
     spent_epsilon = spent_epsilon,
     spent_delta = spent_delta,
     chain_head = previous,
-    file_signature = file_signature
+    file_signature = file_signature,
+    pending_epoch_update = epoch_update && !isTRUE(apply_updates),
+    pending_noise_update = noise_update && !isTRUE(apply_updates)
   )
 }
 
@@ -1165,6 +1465,10 @@
       !identical(.dsomopLinkCount(lock_path), 1)) {
     stop("The DP ledger lock is not private.", call. = FALSE)
   }
+  # The ledger lock defines the rotation order. A worker that resolved the old
+  # file root before another worker recovered it must adopt the currently
+  # persisted root rather than rotating metadata back to stale material.
+  policy <- .dsomopDpRefreshFileNoisePolicy(policy)
   # Re-evaluate existence only after acquiring the cross-process lock.
   existed <- file.exists(path) || .dsomopIsSymlink(path)
   receipt_existed <- file.exists(receipt_path) ||
@@ -1184,13 +1488,13 @@
            call. = FALSE)
     }
   }
-  connection <- DBI::dbConnect(RSQLite::SQLite(), path)
+  connection <- DBI::dbConnect(
+    RSQLite::SQLite(), path, synchronous = "full",
+    flags = RSQLite::SQLITE_RWC
+  )
   Sys.chmod(path, mode = "0600")
   .dsomopDpValidateLedgerArtifact(path)
   DBI::dbExecute(connection, "PRAGMA busy_timeout = 30000")
-  journal_mode <- tolower(DBI::dbGetQuery(
-    connection, "PRAGMA journal_mode = DELETE"
-  )[[1L]][[1L]])
   DBI::dbExecute(connection, "PRAGMA synchronous = FULL")
   DBI::dbExecute(connection, "PRAGMA fullfsync = ON")
   synchronous <- as.integer(DBI::dbGetQuery(
@@ -1198,6 +1502,9 @@
   )[[1L]][[1L]])
   fullfsync <- as.integer(DBI::dbGetQuery(
     connection, "PRAGMA fullfsync"
+  )[[1L]][[1L]])
+  journal_mode <- tolower(DBI::dbGetQuery(
+    connection, "PRAGMA journal_mode = DELETE"
   )[[1L]][[1L]])
   if (!identical(journal_mode, "delete") ||
       !identical(synchronous, 2L) || !identical(fullfsync, 1L)) {
@@ -1208,15 +1515,56 @@
   transaction <- TRUE
   tables <- DBI::dbListTables(connection)
   fresh <- length(tables) == 0L
+  if (fresh && receipt_existed) {
+    stop("An empty DP ledger conflicts with an existing continuity receipt; ",
+         "restore the durable ledger.", call. = FALSE)
+  }
   if (fresh) {
     .dsomopDpCreateLedger(connection, policy)
   } else if (!setequal(tables, c("dp_meta", "dp_releases"))) {
     stop("The DP ledger schema is unrecognized.", call. = FALSE)
   }
+  if (!fresh && receipt_existed) {
+    observed_receipt <- .dsomopValidateSecretFile(receipt_path)
+    expected_receipt <- .dsomopDpExpectedLedgerReceipt(connection, policy)
+    if (!identical(observed_receipt, expected_receipt)) {
+      stop("The private DP continuity receipt does not match persistent state.",
+           call. = FALSE)
+    }
+  }
+  if (!fresh && !receipt_existed) {
+    next_index <- suppressWarnings(as.numeric(
+      .dsomopDpMetaGet(connection, "next_index")
+    ))
+    if (length(next_index) != 1L || !is.finite(next_index) ||
+        next_index < 0 || next_index != floor(next_index)) {
+      stop("The DP ledger metadata is incomplete.", call. = FALSE)
+    }
+    if (next_index > 0) {
+      stop("The non-empty DP ledger has no continuity receipt; restore its ",
+           "authenticated state.", call. = FALSE)
+    }
+  }
   state <- .dsomopDpValidateLedger(
     connection, policy, cached = .dsomopDpLedgerCacheGet(path, policy),
-    file_signature = if (fresh) NULL else .dsomopDpLedgerFileSignature(path)
+    file_signature = if (fresh) NULL else .dsomopDpLedgerFileSignature(path),
+    apply_updates = FALSE
   )
+  .dsomopDpSyncAnchor(
+    list(connection = connection, policy = policy, state = state),
+    mutate = FALSE
+  )
+  if (isTRUE(state$pending_epoch_update)) {
+    .dsomopDpMetaSet(connection, "privacy_epoch", state$privacy_epoch)
+  }
+  if (isTRUE(state$pending_noise_update)) {
+    .dsomopDpMetaSet(connection, "current_noise_key_id",
+                     policy$noise_root$key_id)
+    .dsomopDpMetaSet(connection, "noise_generation",
+                     state$noise_generation)
+  }
+  state$pending_epoch_update <- NULL
+  state$pending_noise_update <- NULL
   DBI::dbExecute(connection, "COMMIT")
   transaction <- FALSE
   expected_receipt <- .dsomopDpHmacRaw(
@@ -1228,10 +1576,6 @@
       ledger_key_id = policy$ledger_root$key_id
     ))
   )
-  if (!receipt_existed && !fresh && state$next_index > 0) {
-    stop("The non-empty DP ledger has no continuity receipt; restore its ",
-         "authenticated state.", call. = FALSE)
-  }
   .dsomopDpEnsurePrivate32(receipt_path, expected_receipt)
   state$file_signature <- .dsomopDpLedgerFileSignature(path)
   .dsomopDpLedgerCacheSet(path, policy, state)
@@ -1323,7 +1667,7 @@
   list(swapped = result$swapped, state = state)
 }
 
-.dsomopDpSyncAnchor <- function(handle) {
+.dsomopDpSyncAnchor <- function(handle, mutate = TRUE) {
   policy <- handle$policy
   capabilities <- .dsomopDpAnchorCapabilities(policy)
   if (!capabilities$external) {
@@ -1354,6 +1698,7 @@
       stop("The external DP rollback anchor is missing for a non-empty ",
            "ledger.", call. = FALSE)
     }
+    if (!isTRUE(mutate)) return(capabilities)
     result <- .dsomopDpAnchorCas(policy, NULL, target)
     if (!result$swapped && !.dsomopDpAnchorEqual(result$state, target)) {
       stop("The external DP rollback anchor could not initialize safely.",
@@ -1381,6 +1726,7 @@
     stop("The external DP rollback anchor diverges from the local chain.",
          call. = FALSE)
   }
+  if (!isTRUE(mutate)) return(capabilities)
   current <- observed
   while (current$next_index < local$next_index) {
     row <- DBI::dbGetQuery(
@@ -1520,6 +1866,7 @@
   snapshot <- .dsomopDpSnapshotBinding(policy, bounded_snapshot)
   release_id <- .dsomopDpReleaseId(policy, semantic)
   handle <- .dsomopDpOpenLedger(policy)
+  policy <- handle$policy
   transaction <- FALSE
   on.exit({
     if (transaction) {
@@ -1684,6 +2031,16 @@
   payload_value
 }
 
+.dsomopDpDormantStatus <- function() {
+  list(
+    enabled = NA, ready = FALSE, formal_dp = FALSE,
+    sticky_noise = FALSE, durable_ledger = FALSE,
+    bootstrap = "pending_first_service_use",
+    protocol = .DSOMOP_DP_PROTOCOL,
+    mechanism = .DSOMOP_DP_MECHANISM
+  )
+}
+
 .dsomopDpPublicStatus <- function(initialize = TRUE) {
   if (!.dsomopDpEnabled()) {
     return(list(
@@ -1715,6 +2072,7 @@
     allocator = policy$allocator,
     privacy_epoch = policy$privacy_epoch,
     noise_key_id = policy$noise_root$key_id,
+    noise_provider = policy$noise_root$provider,
     max_levels = policy$max_levels,
     max_contributions = policy$max_contributions,
     numeric_grid = policy$numeric_grid,
@@ -1722,10 +2080,31 @@
   )
   if (!initialize) return(status)
   handle <- .dsomopDpOpenLedger(policy)
+  policy <- handle$policy
   on.exit(.dsomopDpCloseLedger(handle), add = TRUE)
   anchor <- .dsomopDpSyncAnchor(handle)
   state <- handle$state
   status$ready <- TRUE
+  status$noise_key_id <- policy$noise_root$key_id
+  status$noise_domain_id <- paste0(
+    "dpn_",
+    substr(.dsomopDpSha256(.dsomopDpCanonicalJson(list(
+      protocol = "dsomop-dp-noise-domain-v1",
+      domain = policy$domain,
+      noise_key_id = policy$noise_root$key_id
+    ))), 1L, 40L)
+  )
+  status$ledger_id <- state$ledger_id
+  status$ledger_key_id <- state$ledger_key_id
+  status$privacy_instance_id <- paste0(
+    "dpi_",
+    substr(.dsomopDpSha256(.dsomopDpCanonicalJson(list(
+      protocol = "dsomop-dp-privacy-instance-v2",
+      domain = policy$domain,
+      ledger_key_id = state$ledger_key_id,
+      noise_key_id = policy$noise_root$key_id
+    ))), 1L, 40L)
+  )
   # The current HMAC inverse-CDF sampler has finite precision and the accepted
   # preprocessing objects do not yet carry a proof-grade person-local
   # provenance contract. The ledger and allocator are real security controls,
@@ -1744,7 +2123,7 @@
   status$rollback_protection <- if (anchor$external) {
     "external_durable_linearizable_cas"
   } else {
-    "trusted_local_authenticated_ledger"
+    "local_integrity_only_no_rollback_protection"
   }
   status$anchor_provider_id <- anchor$provider_id
   status$release_epsilon_contract <- "server_allocator_maximum"
@@ -1776,4 +2155,20 @@
     anchor_provider_id = status$anchor_provider_id %||% "none"
   )
   status
+}
+
+.dsomopDpEnsureRuntime <- function() {
+  if (is.list(.pkg_state$dp_bootstrap_binding)) {
+    # Re-read enablement so post-bootstrap drift still fails closed.
+    .dsomopDpEnabled()
+    return(invisible(.pkg_state$dp_status))
+  }
+  if (isTRUE(.pkg_state$dp_bootstrap_in_progress)) {
+    stop("Recursive DP service bootstrap was detected.", call. = FALSE)
+  }
+  .pkg_state$dp_bootstrap_in_progress <- TRUE
+  on.exit(.pkg_state$dp_bootstrap_in_progress <- FALSE, add = TRUE)
+  status <- .dsomopDpBootstrap()
+  .pkg_state$dp_status <- status
+  invisible(status)
 }

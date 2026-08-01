@@ -10,6 +10,7 @@
 .pkg_state$dp_status <- NULL
 .pkg_state$dp_ledger_cache <- new.env(parent = emptyenv())
 .pkg_state$dp_bootstrap_binding <- NULL
+.pkg_state$dp_bootstrap_in_progress <- FALSE
 
 # Session-level handle storage
 .dsomop_env <- new.env(parent = emptyenv())
@@ -58,24 +59,17 @@
   # canonicalizer drift on every namespace load, including package checks.
   .dsomopDpCanonicalSelfTest()
 
-  # Never generate or read pseudonym key material while loading a namespace.
-  # Image builds and generic worker startup must not bake or accidentally share
-  # a node identity. The first real handle resolves the configured provider;
-  # `auto`, or an explicit `file` provider with require-existing disabled, may
-  # create the durable file lazily.
+  # Never generate or read key material while loading a namespace. Armadillo
+  # also applies its authoritative DataSHIELD profile options only after
+  # loading packages, so binding privacy configuration here would be both too
+  # early and backend-dependent. The first real dsOMOP service entry point
+  # validates the final options and atomically initializes durable state.
   if (!.dsomopIsInstallOrDevelopmentLoad(libname)) {
     .dsomopPseudonymLifecycleSettings()
-    # DP is opt-in. When enabled, create/validate roots, ledger, durability and
-    # rollback protection now so the service fails during bootstrap rather
-    # than during a researcher's first real request.
-    .pkg_state$dp_status <- .dsomopDpBootstrap()
-  } else {
-    .pkg_state$dp_status <- list(
-      enabled = .dsomopDpEnabled(), ready = FALSE, formal_dp = FALSE,
-      sticky_noise = FALSE, durable_ledger = FALSE,
-      protocol = .DSOMOP_DP_PROTOCOL, mechanism = .DSOMOP_DP_MECHANISM
-    )
   }
+  .pkg_state$dp_bootstrap_binding <- NULL
+  .pkg_state$dp_bootstrap_in_progress <- FALSE
+  .pkg_state$dp_status <- .dsomopDpDormantStatus()
 
   # Opal commonly loads the namespace without attaching the package.
   tryCatch(.cleanStaleStagingDirs(), error = function(e) NULL)

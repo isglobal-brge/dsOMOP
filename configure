@@ -3,9 +3,9 @@
 # It prepares directory permissions only; deployments provision dependencies.
 
 # Prepare only runtime state directories; this install hook never creates keys.
-# A file-backed pseudonym root is created on first real OMOP handle use. Opt-in DP
-# roots are created/validated by the first real-service .onLoad(), so a reusable
-# image build still cannot bake service secrets into the package library.
+# Roots are created only by the first real dsOMOP service use, after runtime setup.
+# Namespace loads are key-free. Image builds must not invoke service entry points
+# unless DSOMOP_STATE_DIR is already a runtime-mounted per-node volume.
 umask 077
 if [ -n "${DSOMOP_STATE_DIR:-}" ]; then
   DSOMOP_CONFIG_STATE_ROOT="${DSOMOP_STATE_DIR}"

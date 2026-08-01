@@ -475,6 +475,12 @@ omopInitDS <- function(resource_symbol,
 
   resolved <- get(resource_symbol, envir = session_env, inherits = FALSE)
 
+  # This is the first backend-independent point at which a real dsOMOP request
+  # is known to be running and DataSHIELD profile options have been applied.
+  # DP-disabled services bind that fact without creating keys; DP-enabled
+  # services atomically create or validate both roots and the durable ledger.
+  .dsomopDpEnsureRuntime()
+
   # DSLite resolves resources to ResourceClient objects during assign.resource;
   # Opal passes raw resource objects. Handle both cases.
   if (inherits(resolved, "ResourceClient")) {

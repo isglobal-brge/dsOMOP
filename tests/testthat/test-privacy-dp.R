@@ -54,6 +54,22 @@
     dsomop.dp.max_contributions = 10L,
     dsomop.dp.numeric_grid = 65535L
   ), .local_envir = .local_envir)
+  previous_runtime <- list(
+    status = .pkg_state$dp_status,
+    binding = .pkg_state$dp_bootstrap_binding,
+    in_progress = .pkg_state$dp_bootstrap_in_progress,
+    cache = .pkg_state$dp_ledger_cache
+  )
+  withr::defer({
+    .pkg_state$dp_status <- previous_runtime$status
+    .pkg_state$dp_bootstrap_binding <- previous_runtime$binding
+    .pkg_state$dp_bootstrap_in_progress <- previous_runtime$in_progress
+    .pkg_state$dp_ledger_cache <- previous_runtime$cache
+  }, envir = .local_envir)
+  .pkg_state$dp_status <- NULL
+  .pkg_state$dp_bootstrap_binding <- NULL
+  .pkg_state$dp_bootstrap_in_progress <- FALSE
+  .pkg_state$dp_ledger_cache <- new.env(parent = emptyenv())
   state
 }
 
@@ -66,6 +82,14 @@
     vocabulary_schema = cdm_schema,
     results_schema = cdm_schema
   )
+}
+
+.dp_restart_runtime <- function() {
+  .pkg_state$dp_status <- NULL
+  .pkg_state$dp_bootstrap_binding <- NULL
+  .pkg_state$dp_bootstrap_in_progress <- FALSE
+  .pkg_state$dp_ledger_cache <- new.env(parent = emptyenv())
+  invisible(NULL)
 }
 
 .dp_seal <- function(x, producer, ..., dataset_identity =
@@ -206,7 +230,9 @@ test_that("DP bootstrap settings can be supplied before namespace load", {
   withr::local_options(list(
     dsomop.dp.enabled = NULL,
     dsomop.dp.total_epsilon = NULL,
-    dsomop.dp.anchor_provider = NULL
+    dsomop.dp.anchor_provider = NULL,
+    default.dsomop.dp.enabled = FALSE,
+    default.dsomop.dp.total_epsilon = 1
   ))
   dp_environment <- stats::setNames(
     rep.int(NA_character_, length(.dp_environment_names)),
@@ -221,8 +247,29 @@ test_that("DP bootstrap settings can be supplied before namespace load", {
   expect_identical(.dsomopDpOption("total_epsilon"), 2.5)
   expect_identical(.dsomopDpAnchorProvider(), getExportedValue("stats", "runif"))
 
+  withr::local_options(list(
+    dsomop.dp.enabled = TRUE,
+    dsomop.dp.total_epsilon = 2.5
+  ))
+  expect_true(.dsomopDpEnabled())
+  expect_identical(.dsomopDpOption("total_epsilon"), 2.5)
+  withr::with_envvar(c(DSOMOP_DP_ENABLED = NA_character_), {
+    expect_true(.dsomopDpEnabled())
+  })
+
   withr::local_options(list(dsomop.dp.enabled = FALSE))
   expect_error(.dsomopDpEnabled(), "Conflicting DP option")
+})
+
+test_that("injected DP roots reject passphrases", {
+  expect_error(
+    .coerceDsomopDpRoot(strrep("not-a-csprng-root-", 2L), "DP noise root"),
+    "passphrases are not accepted"
+  )
+  expect_identical(
+    length(.coerceDsomopDpRoot(strrep("a1", 32L), "DP noise root")),
+    32L
+  )
 })
 
 test_that("HMAC stream endpoints remain strictly inside the unit interval", {
@@ -306,6 +353,8 @@ test_that("bootstrap creates independent private noise, ledger and SQLite state"
   }, logical(1L))))
   expect_identical(file.info(noise_path)$size, 32)
   expect_identical(file.info(ledger_root_path)$size, 32)
+  expect_match(status$privacy_instance_id, "^dpi_[0-9a-f]{40}$")
+  expect_match(status$noise_domain_id, "^dpn_[0-9a-f]{40}$")
   expect_false(identical(
     .dsomopValidateSecretFile(noise_path),
     .dsomopValidateSecretFile(ledger_root_path)
@@ -1191,6 +1240,7 @@ test_that("advancing public snapshot adds one release without resetting state", 
   withr::local_options(list(
     dsomop.dp.snapshot_id = "etl-2026-08-02"
   ))
+  .dp_restart_runtime()
   table <- .dp_seal(table, producer = "test/fixture")
   omopDpReleaseDS(table, spec)
   after_rows <- .dp_ledger_rows(state)
@@ -1214,7 +1264,10 @@ test_that("advancing privacy epoch cannot replay an earlier release", {
 
   first <- omopDpReleaseDS(table, spec)
   before <- .dp_ledger_rows(state)
-  withr::local_options(list(dsomop.dp.privacy_epoch = 2L))
+  # Maintenance may legitimately skip unused epoch numbers; advancing must not
+  # block merely because rotations were not contiguous.
+  withr::local_options(list(dsomop.dp.privacy_epoch = 7L))
+  .dp_restart_runtime()
   expect_error(
     omopDpReleaseDS(table, spec),
     "privacy epoch"
@@ -1229,7 +1282,7 @@ test_that("advancing privacy epoch cannot replay an earlier release", {
   expect_identical(first$statistic, second$statistic)
   expect_identical(nrow(before), 1L)
   expect_identical(nrow(after), 2L)
-  expect_identical(as.numeric(after$privacy_epoch), c(1, 2))
+  expect_identical(as.numeric(after$privacy_epoch), c(1, 7))
   expect_identical(length(unique(after$release_id)), 2L)
 })
 
@@ -1311,6 +1364,7 @@ test_that("noise-root loss rotates safely while ledger-root loss fails closed", 
   noise_path <- file.path(state, "secrets", "dp_noise_root")
   ledger_root_path <- file.path(state, "secrets", "dp_ledger_root")
   old_noise <- .dsomopValidateSecretFile(noise_path)
+  withr::local_options(list(dsomop.dp.noise_require_existing = TRUE))
   expect_identical(unlink(noise_path, force = TRUE), 0L)
 
   replay <- omopDpReleaseDS(table, spec)
@@ -1324,6 +1378,164 @@ test_that("noise-root loss rotates safely while ledger-root loss fails closed", 
     omopDpReleaseDS(table, spec),
     "ledger authentication root is missing"
   )
+})
+
+test_that("noise recovery opens existing SQLite state with full durability", {
+  skip_on_os("windows")
+  state <- .dp_local_state()
+  expect_true(omopDpStatusDS()$ready)
+  noise_path <- file.path(state, "secrets", "dp_noise_root")
+  expect_identical(unlink(noise_path, force = TRUE), 0L)
+  .dp_restart_runtime()
+
+  calls <- list()
+  connect <- DBI::dbConnect
+  status <- testthat::with_mocked_bindings(
+    omopDpStatusDS(),
+    dbConnect = function(...) {
+      arguments <- list(...)
+      calls[[length(calls) + 1L]] <<- arguments
+      do.call(connect, arguments)
+    },
+    .package = "DBI"
+  )
+
+  expect_true(status$ready)
+  expect_gte(length(calls), 2L)
+  expect_true(all(vapply(
+    calls, function(arguments) identical(arguments$synchronous, "full"),
+    logical(1L)
+  )))
+  flags <- vapply(calls, `[[`, numeric(1L), "flags")
+  expect_true(RSQLite::SQLITE_RW %in% flags)
+  expect_true(RSQLite::SQLITE_RWC %in% flags)
+})
+
+test_that("required initial noise provisioning fails without state mutation", {
+  skip_on_os("windows")
+  state <- .dp_local_state()
+  withr::local_options(list(dsomop.dp.noise_require_existing = TRUE))
+
+  expect_error(omopDpStatusDS(), "requires an existing root")
+  expect_false(dir.exists(file.path(state, "secrets")))
+  expect_false(dir.exists(file.path(state, "privacy")))
+})
+
+test_that("corrupt ledger cannot authorize replacement noise material", {
+  skip_on_os("windows")
+  state <- .dp_local_state()
+  table <- .dp_test_table()
+  omopDpReleaseDS(table, list(
+    statistic = "count", population_id = "cohort-a"
+  ))
+  ledger <- file.path(state, "privacy", "ledger.sqlite")
+  connection <- DBI::dbConnect(RSQLite::SQLite(), ledger)
+  DBI::dbExecute(
+    connection,
+    "UPDATE dp_releases SET payload = '{\"tampered\":true}' WHERE release_index = 0"
+  )
+  DBI::dbDisconnect(connection)
+  noise_root <- file.path(state, "secrets", "dp_noise_root")
+  expect_identical(unlink(noise_root, force = TRUE), 0L)
+  .dp_restart_runtime()
+
+  expect_error(omopDpStatusDS(), "does not authenticate noise-root recovery")
+  expect_false(file.exists(noise_root))
+})
+
+test_that("a ledger-root receipt never authorizes replacement root creation", {
+  skip_on_os("windows")
+  state <- .dp_local_state()
+  expect_true(omopDpStatusDS()$ready)
+  ledger <- file.path(state, "privacy", "ledger.sqlite")
+  root <- file.path(state, "secrets", "dp_ledger_root")
+  root_receipt <- file.path(state, "secrets", "dp_ledger_root_receipt")
+  expect_true(file.exists(root_receipt))
+  expect_identical(
+    unlink(c(ledger, paste0(ledger, ".receipt")), force = TRUE), 0L
+  )
+  expect_identical(unlink(root, force = TRUE), 0L)
+  .dp_restart_runtime()
+
+  expect_error(omopDpStatusDS(), "continuity receipt exists")
+  expect_false(file.exists(root))
+})
+
+test_that("auto noise provider remains file-backed after injected fallback", {
+  skip_on_os("windows")
+  state <- .dp_local_state()
+  injected <- as.raw(seq.int(0L, 31L))
+  withr::local_options(list(
+    dsomop.dp.noise_provider = "auto",
+    dsomop.dp.noise_root = injected
+  ))
+
+  first <- omopDpStatusDS()
+  expect_identical(first$noise_provider, "injected")
+  noise_path <- file.path(state, "secrets", "dp_noise_root")
+  expect_false(file.exists(noise_path))
+
+  options(dsomop.dp.noise_root = NULL)
+  .dp_restart_runtime()
+  fallback <- omopDpStatusDS()
+  expect_identical(fallback$noise_provider, "file")
+  expect_true(file.exists(noise_path))
+  expect_false(identical(fallback$noise_key_id, first$noise_key_id))
+
+  options(dsomop.dp.noise_root = injected)
+  .dp_restart_runtime()
+  restored <- omopDpStatusDS()
+  expect_identical(restored$noise_provider, "file")
+  expect_identical(restored$noise_key_id, fallback$noise_key_id)
+})
+
+test_that("file rotation adopts the persisted root under the ledger lock", {
+  skip_on_os("windows")
+  state <- .dp_local_state()
+  expect_true(omopDpStatusDS()$ready)
+  stale <- .dsomopDpPolicy()
+  new_root <- as.raw(seq.int(31L, 0L))
+  root_path <- file.path(state, "secrets", "dp_noise_root")
+  receipt_path <- file.path(state, "secrets", "dp_noise_root_receipt")
+  writeBin(new_root, root_path)
+  writeBin(.dsomopDpHmacRaw(
+    new_root, "dsOMOP/dp/noise-root-continuity-receipt/v1"
+  ), receipt_path)
+  Sys.chmod(c(root_path, receipt_path), mode = "0600")
+
+  handle <- .dsomopDpOpenLedger(stale)
+  on.exit(.dsomopDpCloseLedger(handle), add = TRUE)
+  expect_identical(handle$policy$noise_root$key_id,
+                   .dsomopDpRootId(new_root))
+  expect_false(identical(handle$policy$noise_root$key_id,
+                         stale$noise_root$key_id))
+})
+
+test_that("injected noise-root rotation never requires a manual epoch", {
+  skip_on_os("windows")
+  state <- .dp_local_state()
+  first_root <- as.raw(seq.int(0L, 31L))
+  second_root <- as.raw(seq.int(32L, 63L))
+  withr::local_options(list(
+    dsomop.dp.noise_provider = "injected",
+    dsomop.dp.noise_root = first_root
+  ))
+  table <- .dp_test_table()
+  spec <- list(statistic = "count", population_id = "cohort-a")
+  first_release <- omopDpReleaseDS(table, spec)
+  first <- omopDpStatusDS()
+
+  options(dsomop.dp.noise_root = second_root)
+  .dp_restart_runtime()
+  rotated <- omopDpStatusDS()
+  replay <- omopDpReleaseDS(table, spec)
+  meta <- .dp_ledger_meta(state)
+  expect_true(rotated$ready)
+  expect_identical(rotated$privacy_epoch, 1)
+  expect_false(identical(rotated$noise_key_id, first$noise_key_id))
+  expect_identical(replay, first_release)
+  expect_identical(nrow(.dp_ledger_rows(state)), 1L)
+  expect_identical(meta[["next_index"]], "1")
 })
 
 test_that("longitudinal DP primitives bound contributions and return fixed shapes", {
@@ -1724,12 +1936,92 @@ test_that("ledger receipt tampering fails closed", {
   omopDpReleaseDS(table, spec)
 
   receipt <- file.path(state, "privacy", "ledger.sqlite.receipt")
+  original <- .dsomopValidateSecretFile(receipt)
   writeBin(as.raw(rep.int(13L, 32L)), receipt)
   Sys.chmod(receipt, mode = "0600")
+  withr::local_options(list(dsomop.dp.privacy_epoch = 7L))
+  .dp_restart_runtime()
   expect_error(
     omopDpReleaseDS(table, spec),
     "continuity receipt does not match"
   )
+  connection <- DBI::dbConnect(
+    RSQLite::SQLite(), file.path(state, "privacy", "ledger.sqlite")
+  )
+  on.exit(DBI::dbDisconnect(connection), add = TRUE)
+  expect_identical(
+    DBI::dbGetQuery(
+      connection,
+      "SELECT value FROM dp_meta WHERE key = 'privacy_epoch'"
+    )$value[[1L]],
+    "1"
+  )
+  writeBin(original, receipt)
+  Sys.chmod(receipt, mode = "0600")
+})
+
+test_that("anchor incompatibility cannot commit rotation metadata", {
+  skip_on_os("windows")
+  anchor <- .dp_external_anchor()
+  state <- .dp_local_state(
+    require_external_anchor = TRUE, anchor_provider = anchor
+  )
+  expect_true(omopDpStatusDS()$ready)
+  ledger <- file.path(state, "privacy", "ledger.sqlite")
+  read_rotation_meta <- function() {
+    connection <- DBI::dbConnect(RSQLite::SQLite(), ledger)
+    on.exit(DBI::dbDisconnect(connection), add = TRUE)
+    values <- DBI::dbGetQuery(
+      connection,
+      paste(
+        "SELECT key, value FROM dp_meta WHERE key IN",
+        "('privacy_epoch', 'current_noise_key_id', 'noise_generation')"
+      )
+    )
+    stats::setNames(values$value, values$key)
+  }
+  before <- read_rotation_meta()
+  anchored <- anchor("read", anchor_id = "unused")
+  anchored$ledger_id <- strrep("f", 64L)
+  storage <- get("storage", envir = environment(anchor), inherits = FALSE)
+  storage$value <- anchored
+
+  new_root <- as.raw(seq.int(31L, 0L))
+  root_path <- file.path(state, "secrets", "dp_noise_root")
+  receipt_path <- file.path(state, "secrets", "dp_noise_root_receipt")
+  writeBin(new_root, root_path)
+  writeBin(.dsomopDpHmacRaw(
+    new_root, "dsOMOP/dp/noise-root-continuity-receipt/v1"
+  ), receipt_path)
+  Sys.chmod(c(root_path, receipt_path), mode = "0600")
+  withr::local_options(list(dsomop.dp.privacy_epoch = 7L))
+  .dp_restart_runtime()
+
+  expect_error(omopDpStatusDS(), "ahead of or bound to a different ledger")
+  expect_identical(read_rotation_meta(), before)
+})
+
+test_that("an empty ledger cannot replace state covered by a receipt", {
+  skip_on_os("windows")
+  state <- .dp_local_state()
+  expect_true(omopDpStatusDS()$ready)
+  ledger <- file.path(state, "privacy", "ledger.sqlite")
+  receipt <- paste0(ledger, ".receipt")
+  expect_true(file.exists(receipt))
+
+  expect_identical(unlink(ledger, force = TRUE), 0L)
+  connection <- DBI::dbConnect(RSQLite::SQLite(), ledger)
+  DBI::dbDisconnect(connection)
+  Sys.chmod(ledger, mode = "0600")
+  .dp_restart_runtime()
+
+  expect_error(
+    omopDpStatusDS(),
+    "empty DP ledger conflicts with an existing continuity receipt"
+  )
+  connection <- DBI::dbConnect(RSQLite::SQLite(), ledger)
+  on.exit(DBI::dbDisconnect(connection), add = TRUE)
+  expect_length(DBI::dbListTables(connection), 0L)
 })
 
 test_that("a symlinked ledger fails closed before SQLite opens it", {
@@ -1768,15 +2060,17 @@ test_that("concurrent identical releases converge on one stored payload", {
   expect_identical(nrow(.dp_ledger_rows(state)), 1L)
 })
 
-test_that("onLoad runs the DP KAT always and bootstrap only for real services", {
+test_that("onLoad runs the KAT but never bootstraps service secrets", {
   events <- character(0)
   old_status <- .pkg_state$dp_status
   old_resolver <- .pkg_state$resolver
   old_binding <- .pkg_state$dp_bootstrap_binding
+  old_in_progress <- .pkg_state$dp_bootstrap_in_progress
   on.exit({
     .pkg_state$dp_status <- old_status
     .pkg_state$resolver <- old_resolver
     .pkg_state$dp_bootstrap_binding <- old_binding
+    .pkg_state$dp_bootstrap_in_progress <- old_in_progress
   }, add = TRUE)
   withr::local_envvar(c(
     DEVTOOLS_LOAD = NA_character_,
@@ -1793,11 +2087,9 @@ test_that("onLoad runs the DP KAT always and bootstrap only for real services", 
       events <<- c(events, "pseudonym-settings")
       list()
     },
-    .dsomopDpBootstrap = function() {
-      events <<- c(events, "dp-bootstrap")
-      list(enabled = TRUE, ready = TRUE)
+    .dsomopDpEnabled = function() {
+      stop("DP configuration must not be read during namespace load")
     },
-    .dsomopDpEnabled = function() TRUE,
     .cleanStaleStagingDirs = function() invisible(NULL),
     .package = "dsOMOP"
   )
@@ -1813,14 +2105,103 @@ test_that("onLoad runs the DP KAT always and bootstrap only for real services", 
   events <- character(0)
   runtime_library <- withr::local_tempdir(pattern = "dsomop-runtime-lib-")
   expect_silent(.onLoad(runtime_library, "dsOMOP"))
-  expect_identical(events, c("kat", "pseudonym-settings", "dp-bootstrap"))
-  expect_true(.pkg_state$dp_status$ready)
+  expect_identical(events, c("kat", "pseudonym-settings"))
+  expect_false(.pkg_state$dp_status$ready)
+  expect_identical(
+    .pkg_state$dp_status$bootstrap, "pending_first_service_use"
+  )
+  expect_null(.pkg_state$dp_bootstrap_binding)
+})
+
+test_that("image load is key-free and first service use is complete", {
+  skip_on_os("windows")
+  # Armadillo loads packages before applying final profile options. Simulate a
+  # disabled load followed by enabled runtime configuration.
+  state <- .dp_local_state(enabled = FALSE)
+  previous_resolver <- .pkg_state$resolver
+  on.exit(.pkg_state$resolver <- previous_resolver, add = TRUE)
+  testthat::local_mocked_bindings(
+    .dsomopPseudonymLifecycleSettings = function() list(),
+    .cleanStaleStagingDirs = function() invisible(NULL),
+    .package = "dsOMOP"
+  )
+  testthat::local_mocked_bindings(
+    registerResourceResolver = function(resolver) invisible(NULL),
+    .package = "resourcer"
+  )
+  artifacts <- c(
+    file.path(state, "secrets", "dp_noise_root"),
+    file.path(state, "secrets", "dp_ledger_root"),
+    file.path(state, "privacy", "ledger.sqlite")
+  )
+
+  expect_silent(.onLoad("/opt/dsomop/image-library", "dsOMOP"))
+  expect_false(any(file.exists(artifacts)))
+  expect_null(.pkg_state$dp_bootstrap_binding)
+
+  withr::local_options(list(dsomop.dp.enabled = TRUE))
+  first <- omopDpStatusDS()
+  expect_true(all(file.exists(artifacts)))
+  expect_true(first$ready)
+  expect_match(first$privacy_instance_id, "^dpi_[0-9a-f]{40}$")
+  expect_match(first$noise_domain_id, "^dpn_[0-9a-f]{40}$")
+  expect_match(first$ledger_key_id, "^dpl_[0-9a-f]{40}$")
+  expect_match(first$ledger_id, "^[0-9a-f]{64}$")
+
+  .dp_restart_runtime()
+  restarted <- omopDpStatusDS()
+  expect_identical(restarted$privacy_instance_id, first$privacy_instance_id)
+  expect_identical(restarted$ledger_key_id, first$ledger_key_id)
+  expect_identical(restarted$noise_key_id, first$noise_key_id)
+})
+
+test_that("concurrent first service use converges on one privacy identity", {
+  skip_on_os("windows")
+  state <- .dp_local_state()
+  statuses <- parallel::mclapply(
+    seq_len(4L), function(unused) omopDpStatusDS(),
+    mc.cores = 4L, mc.preschedule = FALSE
+  )
+
+  expect_false(any(vapply(statuses, inherits, logical(1L), "try-error")))
+  identities <- vapply(
+    statuses, `[[`, character(1L), "privacy_instance_id"
+  )
+  expect_length(unique(identities), 1L)
+  expect_identical(file.info(
+    file.path(state, "secrets", "dp_noise_root")
+  )$size, 32)
+  expect_identical(file.info(
+    file.path(state, "secrets", "dp_ledger_root")
+  )$size, 32)
+
+  parent <- omopDpStatusDS()
+  expect_identical(parent$privacy_instance_id, identities[[1L]])
+})
+
+test_that("the central policy guard bootstraps and empty nodes differ", {
+  first_state <- .dp_local_state()
+  expect_false(file.exists(file.path(
+    first_state, "secrets", "dp_noise_root"
+  )))
+  expect_silent(.dsomopDpPolicy())
+  first_id <- .pkg_state$dp_status$privacy_instance_id
+  expect_match(first_id, "^dpi_[0-9a-f]{40}$")
+  expect_true(file.exists(file.path(
+    first_state, "privacy", "ledger.sqlite"
+  )))
+
+  second_state <- .dp_local_state()
+  second_id <- omopDpStatusDS()$privacy_instance_id
+  expect_true(file.exists(file.path(
+    second_state, "privacy", "ledger.sqlite"
+  )))
+  expect_false(identical(second_id, first_id))
 })
 
 test_that("a real-service bootstrap rejects late DP enablement", {
-  old_binding <- .pkg_state$dp_bootstrap_binding
-  on.exit(.pkg_state$dp_bootstrap_binding <- old_binding, add = TRUE)
-  .pkg_state$dp_bootstrap_binding <- list(enabled = FALSE)
+  .dp_local_state(enabled = FALSE)
+  expect_silent(.dsomopDpEnsureRuntime())
   withr::local_options(list(dsomop.dp.enabled = TRUE))
   expect_error(.dsomopDpEnabled(), "changed after service bootstrap")
 })

@@ -248,6 +248,31 @@ test_that("state roots canonicalize repeated interior separators", {
   ))
 })
 
+test_that("macOS state aliases remain valid after canonicalization", {
+  skip_on_os("windows")
+  skip_if_not(identical(Sys.info()[["sysname"]], "Darwin"))
+  state <- withr::local_tempdir(pattern = "dsomop-state-alias-")
+  canonical <- normalizePath(state, winslash = "/", mustWork = TRUE)
+  alias <- sub("^/private", "", canonical)
+  skip_if(identical(alias, canonical), "No distinct macOS path alias")
+  Sys.chmod(canonical, mode = "0700")
+  withr::local_envvar(c(
+    DSOMOP_STATE_DIR = alias,
+    DSOMOP_TEST_ALLOW_EPHEMERAL_STATE = "1"
+  ))
+  withr::local_options(list(
+    dsomop.state_dir = NULL, default.dsomop.state_dir = NULL
+  ))
+
+  first <- .dsomopPrivateSecretDirectory(
+    .dsomopSecretPath("pseudonym_root"), .allow_test_path = TRUE
+  )
+  expect_silent(.dsomopPrivateSecretDirectory(
+    first, .allow_test_path = TRUE
+  ))
+  expect_identical(dirname(dirname(first)), canonical)
+})
+
 test_that("an injected root is validated but never copied to state", {
   state <- withr::local_tempdir(pattern = "dsomop-injected-")
   withr::local_envvar(c(
@@ -328,7 +353,7 @@ test_that("configure prepares state only and contains no entropy generation", {
     "rand_bytes|/dev/urandom|openssl[[:space:]]+rand|sample\\.int|runif|rnorm",
     configure, perl = TRUE
   ))
-  expect_match(configure, "first real OMOP handle use", fixed = TRUE)
+  expect_match(configure, "first real[[:space:]]+dsOMOP service use")
   expect_false(grepl(
     "apt-get|install\\.packages|curl|wget|packagemanager|cloud\\.r-project",
     configure, ignore.case = TRUE, perl = TRUE

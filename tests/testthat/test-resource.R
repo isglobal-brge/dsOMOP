@@ -249,6 +249,40 @@ test_that("omopInitDS rejects an active resource symbol without touching it", {
   expect_false(created)
 })
 
+test_that("omopInitDS bootstraps privacy before creating a handle", {
+  events <- character(0)
+  new_handle <- new.env(parent = emptyenv())
+  local_mocked_bindings(
+    .dsomopDpEnsureRuntime = function() {
+      events <<- c(events, "privacy")
+      invisible(NULL)
+    },
+    .createHandle = function(...) {
+      events <<- c(events, "handle")
+      new_handle
+    },
+    .buildBlueprint = function(...) {
+      events <<- c(events, "blueprint")
+      invisible(NULL)
+    },
+    .package = "dsOMOP"
+  )
+
+  run <- function() {
+    ready_resource <- structure(list(), class = "ResourceClient")
+    key <- ".dsomop_handle_ready_resource"
+    on.exit({
+      if (exists(key, envir = environment(), inherits = FALSE)) {
+        rm(list = key, envir = environment())
+      }
+    }, add = TRUE)
+    expect_true(omopInitDS("ready_resource"))
+  }
+
+  run()
+  expect_identical(events, c("privacy", "handle", "blueprint"))
+})
+
 test_that("omopInitDS closes a new handle when blueprint construction fails", {
   closed <- 0L
   new_handle <- new.env(parent = emptyenv())
