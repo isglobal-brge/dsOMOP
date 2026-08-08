@@ -926,6 +926,39 @@
   }))
 }
 
+.dsomopDpMultistateSemantic <- function(output, tie_policy = "priority") {
+  if (!identical(tolower(output$format %||% "survival"), "multi_state")) {
+    return(NULL)
+  }
+  outcomes <- output$outcomes
+  if (!is.list(outcomes) || length(outcomes) == 0L ||
+      is.null(names(outcomes)) || any(!nzchar(names(outcomes))) ||
+      anyDuplicated(names(outcomes))) {
+    stop("DP multi-state lineage requires uniquely named outcomes.",
+         call. = FALSE)
+  }
+  normalized_outcomes <- lapply(names(outcomes), function(name) {
+    list(name = name)
+  })
+  spec <- .normalizeMultistateSpec(
+    normalized_outcomes,
+    transitions = output$transitions,
+    initial_state = output$initial_state,
+    state_hierarchy = output$state_hierarchy,
+    state_step = output$state_step
+  )
+  list(
+    initial_state = spec$initial_state,
+    transitions = spec$transitions,
+    state_hierarchy = spec$state_hierarchy,
+    state_step = if (identical(tie_policy, "sequential")) {
+      spec$state_step
+    } else {
+      NULL
+    }
+  )
+}
+
 .dsomopDpPlanOutputSemantic <- function(output) {
   type <- tolower(output$type %||% "event_level")
   if (identical(type, "event_level")) {
@@ -992,6 +1025,21 @@
   }
   if (identical(type, "survival")) {
     advanced <- !is.null(output$outcomes)
+    format <- tolower(output$format %||% "survival")
+    tie_policy <- tolower(output$tie_policy %||% "priority")
+    multi_state <- .dsomopDpMultistateSemantic(output, tie_policy)
+    outcomes <- .dsomopDpSurvivalOutcomes(output)
+    if (!is.null(multi_state)) {
+      outcome_names <- vapply(outcomes, `[[`, character(1L), "name")
+      outcome_order <- multi_state$transitions$states[
+        multi_state$transitions$states %in% outcome_names
+      ]
+      outcomes <- outcomes[match(outcome_order, outcome_names)]
+      outcomes <- lapply(seq_along(outcomes), function(index) {
+        outcomes[[index]]$priority <- as.integer(index)
+        outcomes[[index]]
+      })
+    }
     censoring <- output$censoring %||% if (advanced) {
       list(cohort_end = TRUE, observation_period_end = TRUE, death = TRUE)
     } else {
@@ -1000,16 +1048,22 @@
     return(list(
       type = type,
       legacy = !advanced,
-      outcomes = .dsomopDpSurvivalOutcomes(output),
-      format = tolower(output$format %||% "survival"),
+      outcomes = outcomes,
+      format = format,
       tar = list(
         start_offset = as.integer(output$tar$start_offset %||% 0L),
         end_offset = if (is.null(output$tar$end_offset)) NULL else
           as.integer(output$tar$end_offset)
       ),
-      event_order = tolower(output$event_order %||% "first"),
+      event_order = tolower(output$event_order %||%
+                              if (identical(format, "multi_state")) {
+                                "all"
+                              } else {
+                                "first"
+                              }),
       washout_days = as.integer(output$washout_days %||% 0L),
-      tie_policy = tolower(output$tie_policy %||% "priority"),
+      tie_policy = tie_policy,
+      multi_state = multi_state,
       censoring = list(
         cohort_end = isTRUE(censoring$cohort_end %||% TRUE),
         observation_period_end = isTRUE(

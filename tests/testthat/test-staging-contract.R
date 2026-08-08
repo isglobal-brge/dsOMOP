@@ -131,6 +131,59 @@ test_that("staged scope is portable, data-independent and fail-closed", {
   )
 })
 
+test_that("multi-state staged contracts preserve graph and component grain", {
+  output <- list(
+    type = "survival",
+    outcomes = list(mi = list(
+      table = "condition_occurrence", concept_set = 316866L
+    )),
+    format = "multi_state",
+    event_order = "all",
+    tie_policy = "priority",
+    transitions = list(index = "mi", mi = character(0)),
+    initial_state = "index"
+  )
+  plan <- list(outputs = list(course = output))
+  main <- .stagedSemanticContract(plan, "course")
+  msdata <- .stagedSemanticContract(plan, "course", component = "msdata")
+  reference <- .stagedSemanticContract(
+    plan, "course", component = "transition_ref"
+  )
+
+  expect_identical(main$output_format, "long")
+  expect_identical(main$grain, "episode_transition")
+  expect_identical(msdata$output_format, "long")
+  expect_identical(msdata$grain, "episode_transition")
+  expect_identical(msdata$date_handling$unit, "calendar_day")
+  expect_identical(reference$output_format, "reference")
+  expect_identical(reference$grain, "state_transition")
+  expect_silent(.validateStagedSemanticContract(msdata))
+  expect_silent(.validateStagedSemanticContract(reference))
+
+  sequential <- plan
+  sequential$outputs$course$tie_policy <- "sequential"
+  sequential$outputs$course$state_step <- 0.01
+  sequential_msdata <- .stagedSemanticContract(
+    sequential, "course", component = "msdata"
+  )
+  expect_identical(
+    sequential_msdata$date_handling$unit,
+    "calendar_day_with_public_within_day_offsets"
+  )
+  expect_silent(.validateStagedSemanticContract(sequential_msdata))
+  invalid_unit <- sequential_msdata
+  invalid_unit$date_handling$unit <- c("calendar_day", "hour")
+  expect_error(.validateStagedSemanticContract(invalid_unit),
+               "date_handling unit")
+
+  changed <- plan
+  changed$outputs$course$state_hierarchy <- c("mi", "index")
+  expect_false(identical(
+    main$query_semantics_sha256,
+    .stagedSemanticContract(changed, "course")$query_semantics_sha256
+  ))
+})
+
 test_that("staged descriptors publish and validate token compatibility", {
   base <- tempfile("dsomop_staging_contract_")
   withr::local_options(list(

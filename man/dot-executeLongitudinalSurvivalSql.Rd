@@ -4,7 +4,7 @@
 \alias{.executeLongitudinalSurvivalSql}
 \title{Execute a compiled longitudinal SQL contract with its safety validations}
 \usage{
-.executeLongitudinalSurvivalSql(handle, compiled)
+.executeLongitudinalSurvivalSql(handle, compiled, chunk_size = NULL)
 }
 \description{
 Execute a compiled longitudinal SQL contract with its safety validations

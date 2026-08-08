@@ -330,6 +330,32 @@
       as.integer(counting$interval_end_days)
   ))
 
+  multistate_contract <- .compileLongitudinalSurvivalSql(
+    handle = handle,
+    cohort_table = full_cohort,
+    outcomes = list(diabetes = list(
+      table = "condition_occurrence", concept_set = 201820L
+    )),
+    censoring = list(observation_period_end = TRUE, death = FALSE),
+    format = "multi_state",
+    event_order = "all",
+    transitions = list(index = "diabetes", diabetes = character(0)),
+    initial_state = "index"
+  )
+  multistate <- .executeLongitudinalSurvivalSql(
+    handle, multistate_contract, chunk_size = 1L
+  )
+  expect_s3_class(multistate$msdata, "msdata")
+  expect_equal(nrow(multistate$msdata), 3L)
+  expect_equal(sum(as.integer(multistate$msdata$status)), 2L)
+  expect_identical(multistate$transition_ref$from_name, "index")
+  expect_identical(multistate$transition_ref$to_name, "diabetes")
+  expect_match(
+    multistate_contract$sql,
+    paste0(schemas[["cdm"]], ".condition_occurrence"),
+    fixed = TRUE
+  )
+
   staging_base <- tempfile(paste0("dsomop_vendor_stage_", dbms, "_"))
   withr::local_options(list(
     dsstaging.base_dir = staging_base,
@@ -355,6 +381,20 @@
       "concept_id", "start_days_from_index", "end_days_from_index"
     )
   )
+
+  multistate_machine <- .newMultistateStreamTransformer(
+    multistate_contract, max_rows = Inf
+  )
+  streamed_multistate <- .executeQueryToParquet(
+    .conn(handle), multistate_contract$sql,
+    file.path(staging_dir, "vendor_multistate.parquet"),
+    chunk_size = 1L,
+    chunk_fn = multistate_machine$transform
+  )
+  expect_silent(multistate_machine$assert_complete())
+  expect_equal(streamed_multistate$n_rows, 3L)
+  expect_identical(streamed_multistate$columns,
+                   multistate_contract$columns)
 
   cohorts <- .cohortList(handle)
   expect_setequal(as.integer(cohorts$cohort_definition_id), c(7L, 8L))

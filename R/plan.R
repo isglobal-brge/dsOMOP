@@ -235,6 +235,30 @@
             ))
           }
         }
+        survival_format <- out$format %||% "survival"
+        if (is.character(survival_format) &&
+            length(survival_format) == 1L && !is.na(survival_format) &&
+            identical(tolower(survival_format), "multi_state")) {
+          graph_error <- tryCatch({
+            graph_outcomes <- lapply(names(survival_outcomes), function(name) {
+              list(name = name)
+            })
+            .normalizeMultistateSpec(
+              graph_outcomes,
+              transitions = out$transitions,
+              initial_state = out$initial_state,
+              state_hierarchy = out$state_hierarchy,
+              state_step = out$state_step
+            )
+            NULL
+          }, error = conditionMessage)
+          if (!is.null(graph_error)) {
+            errors <- c(errors, paste0(
+              "Output '", out_name, "': invalid multi-state graph: ",
+              graph_error
+            ))
+          }
+        }
       }
       censoring <- out$censoring %||% if (is.null(out$outcomes)) {
         list(observation_period_end = TRUE, death = FALSE)
@@ -569,12 +593,22 @@
       } else if (identical(out_preview$format, "counting_process")) {
         c("row_id", "cohort_row_id", "person_id", "outcome_name", "event",
           "interval_number", "interval_start_days", "interval_end_days")
+      } else if (identical(out_preview$format, "multi_state")) {
+        names(.emptyMultistateData())
       } else {
         c("row_id", "cohort_row_id", "person_id", "outcome_name", "event",
           "entry_days_from_index", "exit_days_from_index", "follow_up_days")
       }
       if (identical(out_preview$format, "recurrent_events")) {
         out_preview$components <- c("events", "risk_sets")
+      } else if (identical(out_preview$format, "multi_state")) {
+        out_preview$components <- c("msdata", "transition_ref")
+        out_preview$multi_state <- list(
+          initial_state = out$initial_state,
+          transitions = out$transitions,
+          state_hierarchy = out$state_hierarchy,
+          state_step = out$state_step
+        )
       }
       out_preview$columns_complete <- TRUE
       out_preview$description <- if (is.null(out$outcomes)) {
@@ -3518,7 +3552,57 @@
             staged_descriptors[[dataset_name]] <<- desc
             desc
           }
-          if (identical(survival_sql$format, "recurrent_events")) {
+          if (identical(survival_sql$format, "multi_state")) {
+            machine <- .newMultistateStreamTransformer(
+              survival_sql, max_rows = Inf
+            )
+            multistate_chunk <- function(chunk) {
+              transformed <- machine$transform(chunk)
+              transformed <- .convertTypes(transformed)
+              .pseudonymizeIdentifiers(
+                transformed, person_key,
+                pseudonymization = pseudonymization
+              )
+            }
+            max_fanout <- max(table(survival_sql$multistate$edges$from))
+            stream_chunk_size <- max(1L, floor(50000L / max_fanout))
+            msdata_name <- paste0(out_name, ".msdata")
+            msdata_info <- .executeQueryToParquet(
+              .conn(handle), survival_sql$sql,
+              file.path(staging_dir, paste0(msdata_name, ".parquet")),
+              chunk_size = stream_chunk_size,
+              chunk_fn = multistate_chunk
+            )
+            machine$assert_complete()
+            msdata_desc <- .buildStagedDescriptor(
+              msdata_name, msdata_info, staging_token,
+              pseudonymization = pseudonymization,
+              semantic_contract = .stagedSemanticContract(
+                plan, out_name, component = "msdata"
+              ),
+              bundle_contract = .stagedBundleContract(
+                plan, out_name, staging_token
+              )
+            )
+            transition_name <- paste0(out_name, ".transition_ref")
+            transition_desc <- .stageDataFrame(
+              survival_sql$components$transition_ref,
+              transition_name, staging_dir, staging_token, person_key,
+              pseudonymization = pseudonymization,
+              semantic_contract = .stagedSemanticContract(
+                plan, out_name, component = "transition_ref"
+              ),
+              bundle_contract = .stagedBundleContract(
+                plan, out_name, staging_token
+              )
+            )
+            staged_descriptors[[msdata_name]] <- msdata_desc
+            staged_descriptors[[transition_name]] <- transition_desc
+            results[[out_name]] <- list(
+              msdata = msdata_desc,
+              transition_ref = transition_desc
+            )
+          } else if (identical(survival_sql$format, "recurrent_events")) {
             events_name <- paste0(out_name, ".events")
             risk_name <- paste0(out_name, ".risk_sets")
             results[[out_name]] <- list(

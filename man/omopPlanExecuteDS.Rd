@@ -49,12 +49,15 @@ Temporal covariates are split into four symbols, including the episode-to-
 person map \code{<name>.personRef}.
 Recurrent-event survival outputs are split into \code{<name>.events} and
 \code{<name>.riskSets} so each component remains an ordinary protected table.
+Multi-state survival outputs are split into \code{<name>.msdata} and the
+public graph dictionary \code{<name>.transitionRef}.
 
 When \code{output_mode = "staged"}, outputs are written to protected,
 server-local files and assigned as descriptors inheriting from
 \code{FlowerDatasetDescriptor} and \code{OMOPStagedDatasetDescriptor}.
-Long untranslated event outputs stream in chunks; formats requiring R-side
-transforms are materialized before staging. Each plan-produced descriptor
+Long untranslated event outputs and the stateful multi-state transform stream
+in bounded chunks; other formats requiring R-side transforms are materialized
+before staging. Each plan-produced descriptor
 carries a public \code{metadata$semantic_contract} snapshot of its resolved
 output shape and the server's age/date harmonization policy. The descriptors
 are not download URLs. Same-account readers should resolve them with

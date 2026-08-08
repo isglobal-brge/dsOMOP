@@ -496,7 +496,8 @@ decoy tables that detect routing bleed. It covers metadata discovery, filters,
 date translation, vocabulary lookup, cohort/results routing, one reviewed
 analysis-catalog query, repeated-event `intervals_long`, temporal covariates,
 observation-aware person-period panels, survival/competing-risk/recurrent-event/
-counting-process formats, bounded-chunk staging and session temporary tables. A
+counting-process/multi-state formats, bounded-chunk staging (including the
+stateful multi-state transform) and session temporary tables. A
 site must still test its exact authentication, roles, permissions and server
 version before production use. Other network
 backends remain SQL-contract-only. Operations that need a temporary cohort or
@@ -554,6 +555,25 @@ OHDSI assets, but "aligned" does not mean that every HADES package is embedded:
   deterministic index episode per person and pre-aggregates recurrent outcomes,
   so repeated outcome facts can increase event counts without multiplying that
   person's time at risk.
+- Multi-state plans accept the transition-matrix convention used by `mstate`
+  and return its expanded `(Tstart, Tstop]` risk-set shape, class/`trans`
+  attribute in memory, plus an explicit transition reference for Parquet
+  interchange. This is interoperable with the experimental
+  [OHDSI OmopMultistate snapshot](https://github.com/OHDSI/OmopMultistate/tree/51f40d41470c14f6e7bf86e1ee5334d244f5c0b8),
+  but does not depend on it: dsOMOP keeps source events in schema-qualified SQL
+  and feeds an ordered bounded-memory state machine instead of collecting the
+  full event history into R. The public graph may contain cycles; it is fixed by
+  the analyst and never inferred from private site data. Repeated observations
+  of one state on one calendar day collapse to one state observation; public
+  `priority` or `sequential` policies resolve distinct states observed that day.
+  Sequential staged output labels its unit as
+  `calendar_day_with_public_within_day_offsets`; the fractions are analytic,
+  not observed timestamps.
+  Across all longitudinal survival formats, malformed or incompletely observed
+  episodes are excluded by SQL eligibility rules and the resulting eligible
+  population is re-gated with the ordinary DataSHIELD person threshold. They do
+  not create query-selective data-quality errors that could be used to probe
+  private dates or event integrity.
 - Sparse and temporal-covariate outputs use a FeatureExtraction-style shape,
   including reference tables, but are not FeatureExtraction `CovariateData`
   objects and do not implement its complete settings/covariate universe.

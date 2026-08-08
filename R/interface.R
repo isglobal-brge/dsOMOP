@@ -650,12 +650,15 @@ omopInitDS <- function(resource_symbol,
 #' person map \code{<name>.personRef}.
 #' Recurrent-event survival outputs are split into \code{<name>.events} and
 #' \code{<name>.riskSets} so each component remains an ordinary protected table.
+#' Multi-state survival outputs are split into \code{<name>.msdata} and the
+#' public graph dictionary \code{<name>.transitionRef}.
 #'
 #' When \code{output_mode = "staged"}, outputs are written to protected,
 #' server-local files and assigned as descriptors inheriting from
 #' \code{FlowerDatasetDescriptor} and \code{OMOPStagedDatasetDescriptor}.
-#' Long untranslated event outputs stream in chunks; formats requiring R-side
-#' transforms are materialized before staging. Each plan-produced descriptor
+#' Long untranslated event outputs and the stateful multi-state transform stream
+#' in bounded chunks; other formats requiring R-side transforms are materialized
+#' before staging. Each plan-produced descriptor
 #' carries a public \code{metadata$semantic_contract} snapshot of its resolved
 #' output shape and the server's age/date harmonization policy. The descriptors
 #' are not download URLs. Same-account readers should resolve them with
@@ -719,7 +722,7 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   expanded <- unlist(lapply(symbols, function(sym) paste0(
     sym, c("", ".covariates", ".covariateRef", ".temporalCovariates",
            ".timeRef", ".personRef", ".personPeriods", ".events",
-           ".riskSets")
+           ".riskSets", ".msdata", ".transitionRef")
   )), use.names = FALSE)
   if (anyDuplicated(expanded)) {
     stop("Output symbols collide after sparse/temporal suffix expansion.",
@@ -790,9 +793,28 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
       result, person_key, pseudonymization = pseudonymization
     )
 
+    # Multi-state outputs carry an expanded transition risk set and a public
+    # graph dictionary. Keep both as first-class tables/descriptors because
+    # data-frame attributes do not survive Parquet interchange.
+    if (is.list(result) && !is.data.frame(result) &&
+        all(c("msdata", "transition_ref") %in% names(result))) {
+      msdata <- .dsomopDpSealPlanOutput(
+        result$msdata, plan, nm,
+        dataset_identity = .dsomopDpDatasetIdentity(handle),
+        component = "msdata"
+      )
+      transition_ref <- .dsomopDpSealPlanOutput(
+        result$transition_ref, plan, nm,
+        dataset_identity = .dsomopDpDatasetIdentity(handle),
+        component = "transition_ref"
+      )
+      assign(paste0(sym, ".msdata"), msdata, envir = assign_env)
+      assign(paste0(sym, ".transitionRef"), transition_ref,
+             envir = assign_env)
+
     # Recurrent-event outputs have an event stream and a separate episode risk
     # set. Keep both as first-class protected tables (or staged descriptors).
-    if (is.list(result) && !is.data.frame(result) &&
+    } else if (is.list(result) && !is.data.frame(result) &&
         all(c("events", "risk_sets") %in% names(result))) {
       events <- .dsomopDpSealPlanOutput(
         result$events, plan, nm,

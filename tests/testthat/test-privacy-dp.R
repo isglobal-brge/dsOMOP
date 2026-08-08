@@ -1296,6 +1296,62 @@ test_that("longitudinal plan lineage covers execution order and custom filters",
   endpoint_changed$outputs$out$outcomes$primary$filters <- custom_b
   expect_false(identical(lineage(advanced), lineage(endpoint_changed)))
 
+  multi <- advanced
+  multi$outputs$out$format <- "multi_state"
+  multi$outputs$out$tie_policy <- "priority"
+  multi$outputs$out$initial_state <- "index"
+  multi$outputs$out$transitions <- list(
+    index = c("primary", "secondary"),
+    primary = "secondary",
+    secondary = character(0)
+  )
+  multi$outputs$out$state_hierarchy <- c("primary", "secondary", "index")
+  multi_equivalent <- multi
+  multi_equivalent$outputs$out$transitions <- list(
+    states = c("index", "primary", "secondary"),
+    edges = list(
+      list(from = "index", to = "primary", trans = 1L),
+      list(from = "index", to = "secondary", trans = 2L),
+      list(from = "primary", to = "secondary", trans = 3L)
+    )
+  )
+  expect_identical(lineage(multi), lineage(multi_equivalent))
+  multi_reordered <- multi
+  multi_reordered$outputs$out$outcomes <-
+    multi$outputs$out$outcomes[c("secondary", "primary")]
+  expect_identical(lineage(multi), lineage(multi_reordered))
+  inert_step <- multi
+  inert_step$outputs$out$state_step <- 0.02
+  expect_identical(lineage(multi), lineage(inert_step))
+  multi_changed <- multi
+  multi_changed$outputs$out$state_hierarchy <-
+    c("secondary", "primary", "index")
+  expect_false(identical(lineage(multi), lineage(multi_changed)))
+  graph_changed <- multi
+  graph_changed$outputs$out$transitions <- list(
+    index = "primary", primary = "secondary", secondary = "primary"
+  )
+  expect_false(identical(lineage(multi), lineage(graph_changed)))
+
+  reversible <- advanced
+  reversible$outputs$out$outcomes <- list(
+    well = list(table = "observation", concept_set = 10L),
+    ill = list(table = "condition_occurrence", concept_set = 20L)
+  )
+  reversible$outputs$out$format <- "multi_state"
+  reversible$outputs$out$tie_policy <- "priority"
+  reversible$outputs$out$initial_state <- "well"
+  reversible$outputs$out$transitions <- list(well = "ill", ill = "well")
+  changed_initial_endpoint <- reversible
+  changed_initial_endpoint$outputs$out$outcomes$well$concept_set <- 11L
+  expect_false(identical(
+    lineage(reversible), lineage(changed_initial_endpoint)
+  ))
+  reversed_endpoints <- reversible
+  reversed_endpoints$outputs$out$outcomes <-
+    reversible$outputs$out$outcomes[c("ill", "well")]
+  expect_identical(lineage(reversible), lineage(reversed_endpoints))
+
   interval_semantics <- intervals
   interval_semantics$outputs$out$source_filters <- list(
     condition_occurrence = custom_a

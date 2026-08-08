@@ -166,17 +166,52 @@ test_that("recurrent output has deterministic event numbers and a risk-set compo
   expect_true(all(person2_episode$event_days_from_index <= 9L))
 })
 
-test_that("tie error and malformed censoring data fail closed before release", {
+test_that("malformed event rows are excluded and duplicate keys are deterministic", {
   handle <- .survival_sql_fixture()
   on.exit(cleanup_handle(handle))
 
-  tied <- .compileLongitudinalSurvivalSql(
+  # The fixture primary key reflects a conforming CDM. Recreate this one test
+  # table without the constraint to exercise defensive handling of bad source
+  # rows that can occur in non-conforming imports.
+  DBI::dbExecute(handle$conn, paste0(
+    "CREATE TABLE condition_occurrence_unconstrained AS ",
+    "SELECT * FROM condition_occurrence"
+  ))
+  DBI::dbExecute(handle$conn, "DROP TABLE condition_occurrence")
+  DBI::dbExecute(handle$conn, paste0(
+    "ALTER TABLE condition_occurrence_unconstrained ",
+    "RENAME TO condition_occurrence"
+  ))
+  DBI::dbExecute(handle$conn, paste0(
+    "INSERT INTO condition_occurrence VALUES ",
+    "(13001, 3, 4000002, '2020-01-02', NULL, 44818518, NULL), ",
+    "(13001, 3, 4000002, '2020-01-06', NULL, 44818518, NULL), ",
+    "(NULL, 3, 4000002, '2020-01-07', NULL, 44818518, NULL), ",
+    "(13002, 3, 4000002, NULL, NULL, 44818518, NULL)"
+  ))
+
+  compiled <- .compileLongitudinalSurvivalSql(
     handle, "dsomop_survival_long", .survival_sql_outcomes(),
-    format = "competing_risk", tie_policy = "error"
+    format = "recurrent_events", event_order = "all"
   )
+  result <- .executeLongitudinalSurvivalSql(handle, compiled)$events
+  person_three <- result[result$cohort_row_id == 4L, , drop = FALSE]
+
+  expect_identical(compiled$validation_sql, list())
+  expect_equal(person_three$event_days_from_index, 1L)
+  expect_equal(person_three$outcome_event_number, 1L)
+})
+
+test_that("private eligibility failures expose only the final population gate", {
+  handle <- .survival_sql_fixture()
+  on.exit(cleanup_handle(handle))
+
   expect_error(
-    .executeLongitudinalSurvivalSql(handle, tied),
-    "validation failed: event_ties"
+    .compileLongitudinalSurvivalSql(
+      handle, "dsomop_survival_long", .survival_sql_outcomes(),
+      format = "competing_risk", tie_policy = "error"
+    ),
+    "disclosure oracle"
   )
 
   DBI::dbExecute(handle$conn, paste0(
@@ -187,10 +222,19 @@ test_that("tie error and malformed censoring data fail closed before release", {
     handle, "dsomop_survival_long", .survival_sql_outcomes(),
     format = "competing_risk"
   )
+  expect_identical(malformed$validation_sql, list())
+  expect_match(malformed$population_gate_sql,
+               "FROM risk_episodes", fixed = TRUE)
+  expect_equal(.executeQuery(handle, malformed$population_gate_sql)$n_persons,
+               2L)
   expect_error(
     .executeLongitudinalSurvivalSql(handle, malformed),
-    "validation failed: observation_period_coverage"
+    "insufficient individuals"
   )
+
+  withr::local_options(list(nfilter.subset = 1L))
+  eligible <- .executeLongitudinalSurvivalSql(handle, malformed)
+  expect_false(4L %in% eligible$cohort_row_id)
 })
 
 test_that("survival requires observable TAR entry and washout lookback", {
@@ -208,7 +252,7 @@ test_that("survival requires observable TAR entry and washout lookback", {
   )
   expect_error(
     .executeLongitudinalSurvivalSql(handle, uncovered),
-    "validation failed: observation_period_coverage"
+    "insufficient individuals"
   )
 
   DBI::dbExecute(handle$conn, paste0(
@@ -263,6 +307,204 @@ test_that("counting-process SQL emits ordered non-overlapping daily intervals", 
   )
   expect_equal(nrow(.executeLongitudinalSurvivalSql(handle, recurrent)$risk_sets),
                4L)
+})
+
+test_that("multi-state output follows reachable cyclic paths in bounded chunks", {
+  handle <- .survival_sql_fixture()
+  on.exit(cleanup_handle(handle))
+
+  # The earlier MI on Jan 3 is not reachable from index and must not hide the
+  # first reachable asthma state. The remaining records form a full cycle.
+  DBI::dbExecute(handle$conn, paste0(
+    "INSERT INTO condition_occurrence VALUES ",
+    "(11001, 2, 317009, '2020-01-04', '2020-01-04', 44818518, NULL), ",
+    "(11002, 2, 317009, '2020-01-07', '2020-01-07', 44818518, NULL)"
+  ))
+  outcomes <- list(
+    mi = list(table = "condition_occurrence", concept_set = 4000002L),
+    asthma = list(table = "condition_occurrence", concept_set = 317009L)
+  )
+  compiled <- .compileLongitudinalSurvivalSql(
+    handle, "dsomop_survival_long", outcomes,
+    format = "multi_state", event_order = "all",
+    transitions = list(
+      index = "asthma", mi = "asthma", asthma = "mi"
+    ),
+    initial_state = "index", tie_policy = "priority"
+  )
+
+  one_row_chunks <- .executeLongitudinalSurvivalSql(
+    handle, compiled, chunk_size = 1L
+  )
+  regular_chunks <- .executeLongitudinalSurvivalSql(
+    handle, compiled, chunk_size = 1000L
+  )
+  reordered_compiled <- .compileLongitudinalSurvivalSql(
+    handle, "dsomop_survival_long", outcomes[c("asthma", "mi")],
+    format = "multi_state", event_order = "all",
+    transitions = list(
+      index = "asthma", mi = "asthma", asthma = "mi"
+    ),
+    initial_state = "index", tie_policy = "priority"
+  )
+  reordered <- .executeLongitudinalSurvivalSql(
+    handle, reordered_compiled, chunk_size = 2L
+  )
+  expect_named(one_row_chunks, c("msdata", "transition_ref"))
+  expect_equal(one_row_chunks$msdata, regular_chunks$msdata,
+               ignore_attr = TRUE)
+  expect_identical(one_row_chunks, reordered)
+  expect_s3_class(one_row_chunks$msdata, "msdata")
+  expect_identical(names(one_row_chunks$msdata), compiled$columns)
+  expect_false(any(c("event_key", "event_date", "subject_id") %in%
+                   names(one_row_chunks$msdata)))
+
+  person_two <- one_row_chunks$msdata[
+    one_row_chunks$msdata$cohort_row_id == 3, , drop = FALSE
+  ]
+  expect_equal(person_two$from_name,
+               c("index", "asthma", "mi", "asthma", "mi"))
+  expect_equal(person_two$to_name,
+               c("asthma", "mi", "asthma", "mi", "asthma"))
+  expect_equal(person_two$status, c(1L, 1L, 1L, 1L, 0L))
+  expect_equal(person_two$Tstart, c(-1, 3, 4, 6, 8))
+  expect_equal(person_two$Tstop, c(3, 4, 6, 8, 9))
+  expect_true(all(person_two$Tstart < person_two$Tstop))
+  expect_identical(compiled$semantics$grain, "episode_transition")
+  expect_identical(
+    compiled$semantics$multi_state$unreachable_event_policy,
+    "skip_until_reachable"
+  )
+  expect_equal(one_row_chunks$transition_ref$trans, 1:3)
+  expect_equal(attr(one_row_chunks$msdata, "trans")["index", "asthma"], 1L)
+})
+
+test_that("the initial state can be observed again in a reversible model", {
+  handle <- .survival_sql_fixture()
+  on.exit(cleanup_handle(handle))
+  DBI::dbExecute(handle$conn, paste0(
+    "INSERT INTO condition_occurrence VALUES ",
+    "(11501, 2, 317009, '2020-01-04', '2020-01-04', 44818518, NULL), ",
+    "(11502, 2, 317009, '2020-01-07', '2020-01-07', 44818518, NULL)"
+  ))
+  outcomes <- list(
+    mi = list(table = "condition_occurrence", concept_set = 4000002L),
+    well = list(table = "condition_occurrence", concept_set = 317009L)
+  )
+  compiled <- .compileLongitudinalSurvivalSql(
+    handle, "dsomop_survival_long", outcomes,
+    format = "multi_state", event_order = "all",
+    transitions = list(well = "mi", mi = "well"),
+    initial_state = "well", tie_policy = "priority"
+  )
+  result <- .executeLongitudinalSurvivalSql(handle, compiled)$msdata
+  person_two <- result[result$cohort_row_id == 3, , drop = FALSE]
+
+  expect_equal(person_two$from_name,
+               c("well", "mi", "well", "mi", "well", "mi"))
+  expect_equal(person_two$to_name,
+               c("mi", "well", "mi", "well", "mi", "well"))
+  expect_equal(person_two$status, c(1L, 1L, 1L, 1L, 1L, 0L))
+  expect_identical(compiled$semantics$outcome_priority, c("well", "mi"))
+})
+
+test_that("multi-state sequential ties stay inside the observed calendar day", {
+  handle <- .survival_sql_fixture()
+  on.exit(cleanup_handle(handle))
+  DBI::dbExecute(handle$conn, paste0(
+    "INSERT INTO condition_occurrence VALUES ",
+    "(12001, 3, 4000002, '2020-01-01', '2020-01-01', 44818518, NULL), ",
+    "(12002, 3, 317009, '2020-01-01', '2020-01-01', 44818518, NULL)"
+  ))
+  compiled <- .compileLongitudinalSurvivalSql(
+    handle, "dsomop_survival_long", .survival_sql_outcomes(),
+    format = "multi_state", event_order = "all",
+    transitions = list(
+      index = "myocardial_infarction",
+      myocardial_infarction = "asthma",
+      asthma = character(0)
+    ),
+    state_hierarchy = c("myocardial_infarction", "asthma", "index"),
+    state_step = 0.01, tie_policy = "sequential"
+  )
+  result <- .executeLongitudinalSurvivalSql(handle, compiled)$msdata
+  person_three <- result[result$cohort_row_id == 4, , drop = FALSE]
+
+  expect_equal(person_three$status, c(1L, 1L))
+  expect_equal(person_three$Tstop, c(-0.01, 0), tolerance = 1e-9)
+  expect_true(all(person_three$Tstart < person_three$Tstop))
+  expect_true(all(person_three$Tstop <= 0))
+  expect_match(compiled$semantics$date_output, "public_within_day")
+})
+
+test_that("sequential decimals retain nine-place scale on SQL Server", {
+  sqlserver <- list(dbms = "sqlserver", target_dialect = "sql server")
+  expression <- paste0(
+    .survivalDecimalCast(sqlserver, "state_day"), " - (",
+    .survivalDecimalCast(sqlserver, "within_day_count - within_day_order"),
+    " * ", .survivalDecimalCast(sqlserver, "0.0000001"), ")"
+  )
+
+  expect_equal(lengths(regmatches(
+    expression, gregexpr("DECIMAL(20,9)", expression, fixed = TRUE)
+  )), 3L)
+  expect_false(grepl("DECIMAL(38,9)", expression, fixed = TRUE))
+})
+
+test_that("multi-state graph and tie contracts reject ambiguous shapes", {
+  handle <- .survival_sql_fixture()
+  on.exit(cleanup_handle(handle))
+  outcomes <- .survival_sql_outcomes()
+
+  expect_error(.compileLongitudinalSurvivalSql(
+    handle, "dsomop_survival_long", outcomes,
+    format = "multi_state", event_order = "first",
+    transitions = list(
+      index = "myocardial_infarction",
+      myocardial_infarction = "asthma", asthma = character(0)
+    )
+  ), "event_order='all'")
+  expect_error(.compileLongitudinalSurvivalSql(
+    handle, "dsomop_survival_long", outcomes,
+    format = "multi_state", event_order = "all",
+    transitions = list(
+      index = "myocardial_infarction",
+      myocardial_infarction = character(0), asthma = character(0)
+    )
+  ), "graph-reachable")
+  expect_error(.compileLongitudinalSurvivalSql(
+    handle, "dsomop_survival_long", outcomes,
+    format = "multi_state", event_order = "all", tie_policy = "all",
+    transitions = list(
+      index = "myocardial_infarction",
+      myocardial_infarction = "asthma", asthma = character(0)
+    )
+  ), "only for recurrent_events")
+
+  duplicate_edge <- list(
+    from = "index", to = "myocardial_infarction", 1L, 2L
+  )
+  names(duplicate_edge)[3:4] <- "trans"
+  expect_error(.compileLongitudinalSurvivalSql(
+    handle, "dsomop_survival_long", outcomes,
+    format = "multi_state", event_order = "all",
+    transitions = list(
+      states = c("index", "myocardial_infarction", "asthma"),
+      edges = list(duplicate_edge)
+    )
+  ), "must contain from, to and trans")
+
+  expect_error(
+    .compileLongitudinalSurvivalSql(
+      handle, "dsomop_survival_long", outcomes,
+      format = "multi_state", event_order = "all", tie_policy = "error",
+      transitions = list(
+        index = c("myocardial_infarction", "asthma"),
+        myocardial_infarction = character(0), asthma = character(0)
+      )
+    ),
+    "disclosure oracle"
+  )
 })
 
 test_that("longitudinal survival compiler rejects ambiguous or unsupported shapes", {
@@ -470,5 +712,84 @@ test_that("recurrent plan assignment splits and pseudonymizes both components", 
     staged_risk$metadata$semantic_contract$component, "risk_sets"
   )
   on.exit(unlink(dirname(staged_risk$metadata$file), recursive = TRUE),
+          add = TRUE)
+})
+
+test_that("multi-state plan assignment streams both protected components", {
+  handle <- create_test_handle(n_persons = 15)
+  .survival_set_scoped_person_key(handle)
+  handle_symbol <- paste0("survival_multistate_handle_", Sys.getpid())
+  .setHandle(handle_symbol, handle)
+  on.exit(.removeHandle(handle_symbol), add = TRUE)
+
+  plan <- structure(list(
+    cohort = list(type = "cohort_table", cohort_definition_id = 10L),
+    outputs = list(course = list(
+      type = "survival",
+      outcomes = list(mi = list(
+        table = "condition_occurrence", concept_set = 4000002L
+      )),
+      tar = list(start_offset = 0L, end_offset = 730L),
+      format = "multi_state",
+      event_order = "all",
+      washout_days = 0L,
+      tie_policy = "priority",
+      transitions = list(index = "mi", mi = character(0)),
+      initial_state = "index"
+    )),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  ), class = c("omop_plan", "list"))
+
+  memory_base <- paste0("multistate_memory_", Sys.getpid())
+  withr::with_options(list(nfilter.subset = 3L), {
+    omopPlanExecuteDS(
+      handle_symbol, plan, stats::setNames(memory_base, "course")
+    )
+  })
+  memory_msdata <- get(paste0(memory_base, ".msdata"),
+                       envir = environment(), inherits = FALSE)
+  memory_ref <- get(paste0(memory_base, ".transitionRef"),
+                    envir = environment(), inherits = FALSE)
+  expect_s3_class(memory_msdata, "msdata")
+  expect_s3_class(memory_msdata, "omop.table")
+  expect_true(all(grepl(
+    "^p2[0-9a-f]+\\.[0-9a-f]{64}$", memory_msdata$person_id
+  )))
+  expect_identical(memory_ref$from_name, "index")
+  expect_false(exists(memory_base, envir = environment(), inherits = FALSE))
+
+  staged_base <- paste0("multistate_staged_", Sys.getpid())
+  withr::with_options(list(nfilter.subset = 3L), {
+    omopPlanExecuteDS(
+      handle_symbol, plan, stats::setNames(staged_base, "course"),
+      output_mode = "staged"
+    )
+  })
+  staged_msdata <- get(paste0(staged_base, ".msdata"),
+                       envir = environment(), inherits = FALSE)
+  staged_ref <- get(paste0(staged_base, ".transitionRef"),
+                    envir = environment(), inherits = FALSE)
+  expect_s3_class(staged_msdata, "FlowerDatasetDescriptor")
+  expect_s3_class(staged_ref, "FlowerDatasetDescriptor")
+  read_staged <- function(descriptor) {
+    if (identical(descriptor$metadata$format, "parquet")) {
+      as.data.frame(arrow::read_parquet(descriptor$metadata$file))
+    } else {
+      utils::read.csv(descriptor$metadata$file, stringsAsFactors = FALSE)
+    }
+  }
+  staged_data <- read_staged(staged_msdata)
+  staged_graph <- read_staged(staged_ref)
+  expect_true(all(grepl(
+    "^p2[0-9a-f]+\\.[0-9a-f]{64}$", staged_data$person_id
+  )))
+  expect_identical(staged_graph$from_name, "index")
+  expect_identical(
+    staged_msdata$metadata$semantic_contract$grain, "episode_transition"
+  )
+  expect_identical(
+    staged_ref$metadata$semantic_contract$grain, "state_transition"
+  )
+  on.exit(unlink(dirname(staged_msdata$metadata$file), recursive = TRUE),
           add = TRUE)
 })

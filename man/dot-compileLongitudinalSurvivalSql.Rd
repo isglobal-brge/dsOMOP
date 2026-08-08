@@ -14,6 +14,10 @@
   event_order = NULL,
   washout_days = 0L,
   tie_policy = "priority",
+  transitions = NULL,
+  initial_state = NULL,
+  state_hierarchy = NULL,
+  state_step = NULL,
   legacy = FALSE
 )
 }
@@ -30,18 +34,29 @@
 observation-period end and death default to enabled. admin_date is an
 optional controller-provided ISO date.}
 
-\item{format}{survival, competing_risk, recurrent_events, or
-counting_process.}
+\item{format}{survival, competing_risk, recurrent_events,
+counting_process, or multi_state.}
 
 \item{event_order}{first, last, or all. last is retained for legacy survival
-plans; all is available for recurrent/counting formats only.}
+plans; all is available for recurrent/counting/multi-state formats.}
 
 \item{washout_days}{Minimum clean interval between raw events of the same
 named outcome. Events in the pre-entry lookback participate in washout.}
 
-\item{tie_policy}{priority, error, or all. all is restricted to the event-log
-format because daily start/stop and competing-risk outputs require one
-deterministic event at a time point.}
+\item{tie_policy}{priority, all, or sequential. all is restricted to
+recurrent_events. sequential is restricted to multi_state. The historical
+error policy is rejected before querying because data-dependent failures
+form a disclosure oracle.}
+
+\item{transitions}{Public mstate transition matrix, adjacency list, or
+canonical states/edges contract. Required by multi_state.}
+
+\item{initial_state}{State occupied at time-at-risk entry.}
+
+\item{state_hierarchy}{Public order for simultaneous state observations.}
+
+\item{state_step}{Positive decimal separation used only for sequential
+same-day ordering.}
 
 \item{legacy}{Emit the historical single-outcome survival columns and
 time-to-event semantics. Intended only for old plan shapes.}
@@ -64,5 +79,8 @@ outcome, with input order providing deterministic cause priority.
 `format = "recurrent_events"` returns an event stream plus a separate
 episode risk-set component. `format = "counting_process"` returns
 non-overlapping start/stop rows under the declared daily tie policy.
+`format = "multi_state"` runs a bounded-memory state machine over the
+ordered stream and returns an expanded mstate risk set plus its public
+transition reference.
 }
 \keyword{internal}

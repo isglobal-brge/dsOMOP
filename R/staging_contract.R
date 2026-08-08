@@ -311,7 +311,7 @@
       if (survival_format %in% c("survival", "competing_risk")) {
         "wide"
       } else if (survival_format %in%
-                 c("recurrent_events", "counting_process")) {
+                 c("recurrent_events", "counting_process", "multi_state")) {
         "long"
       } else {
         stop("Invalid staged survival format.", call. = FALSE)
@@ -350,6 +350,7 @@
       competing_risk = "episode",
       recurrent_events = "episode_event",
       counting_process = "episode_interval",
+      multi_state = "episode_transition",
       stop("Invalid staged survival format.", call. = FALSE)
     ),
     concept_dictionary = "concept",
@@ -376,8 +377,17 @@
     person_level = canonical_date_handling(),
     cohort_membership = canonical_date_handling(output$date_handling),
     baseline = list(mode = "remove", reference = "index"),
-    survival = list(mode = "relative", reference = "index",
-                    unit = "calendar_day"),
+    survival = list(
+      mode = "relative", reference = "index",
+      unit = if (identical(tolower(output$format %||% "survival"),
+                           "multi_state") &&
+                    identical(tolower(output$tie_policy %||% "priority"),
+                              "sequential")) {
+        "calendar_day_with_public_within_day_offsets"
+      } else {
+        "calendar_day"
+      }
+    ),
     intervals_long = list(mode = "relative", reference = "index",
                           unit = "calendar_day"),
     temporal_covariates = list(
@@ -404,10 +414,19 @@
                    identical(tolower(representation_grain %||% ""),
                              "episode")) "episode" else "person"
     } else if (identical(output_type, "survival") &&
-               component_lower %in% c("events", "risk_sets")) {
-      if (identical(component_lower, "events")) {
+               component_lower %in% c(
+                 "events", "risk_sets", "msdata", "transition_ref"
+               )) {
+      if (component_lower %in% c("events", "msdata")) {
         output_format <- "long"
-        grain <- "episode_event"
+        grain <- if (identical(component_lower, "msdata")) {
+          "episode_transition"
+        } else {
+          "episode_event"
+        }
+      } else if (identical(component_lower, "transition_ref")) {
+        output_format <- "reference"
+        grain <- "state_transition"
       } else {
         output_format <- "wide"
         grain <- "episode"
@@ -514,7 +533,8 @@
   component <- contract$component
   allowed_components <- c(
     "covariates", "covariateRef", "personRef", "temporalCovariates",
-    "timeRef", "personPeriods", "events", "risk_sets"
+    "timeRef", "personPeriods", "events", "risk_sets", "msdata",
+    "transition_ref"
   )
   if (!is.null(component) &&
       (!is.character(component) || length(component) != 1L ||
@@ -524,7 +544,8 @@
   grain <- scalar(contract$grain, "grain")
   if (!grain %in% c(
     "person", "episode", "episode_outcome", "event", "episode_event", "concept",
-    "episode_interval", "episode_period", "episode_time_concept", "time_bin"
+    "episode_interval", "episode_period", "episode_time_concept", "time_bin",
+    "episode_transition", "state_transition"
   )) fail(" grain")
   if (!is.null(component)) {
     component_types <- list(
@@ -535,7 +556,9 @@
       timeRef = c("temporal_covariates", "person_period"),
       personPeriods = "person_period",
       events = "survival",
-      risk_sets = "survival"
+      risk_sets = "survival",
+      msdata = "survival",
+      transition_ref = "survival"
     )
     component_shape <- switch(component,
       covariates = list(format = "sparse", grain = c("person", "episode")),
@@ -545,7 +568,9 @@
       timeRef = list(format = "reference", grain = "time_bin"),
       personPeriods = list(format = "long", grain = "episode_period"),
       events = list(format = "long", grain = "episode_event"),
-      risk_sets = list(format = "wide", grain = "episode")
+      risk_sets = list(format = "wide", grain = "episode"),
+      msdata = list(format = "long", grain = "episode_transition"),
+      transition_ref = list(format = "reference", grain = "state_transition")
     )
     if (!output_type %in% component_types[[component]] ||
         !identical(output_format, component_shape$format) ||
@@ -566,7 +591,9 @@
       survival = (identical(output_format, "wide") &&
                     grain %in% c("episode", "episode_outcome")) ||
         (identical(output_format, "long") &&
-           grain %in% c("episode_event", "episode_interval")),
+           grain %in% c(
+             "episode_event", "episode_interval", "episode_transition"
+           )),
       concept_dictionary = identical(output_format, "reference") &&
         identical(grain, "concept"),
       cohort_membership = identical(output_format, "long") &&
@@ -622,12 +649,18 @@
     if (!identical(names(date_handling), "mode")) fail(" date_handling")
     date_handling <- list(mode = mode)
   } else if (identical(mode, "relative") && "unit" %in% names(date_handling)) {
+    relative_units <- c(
+      "calendar_day", "calendar_day_with_public_within_day_offsets"
+    )
+    relative_unit <- scalar(date_handling$unit, "date_handling unit")
     if (!setequal(names(date_handling), c("mode", "reference", "unit")) ||
         !identical(date_handling$reference, "index") ||
-        !identical(date_handling$unit, "calendar_day")) {
+        !relative_unit %in% relative_units) {
       fail(" date_handling")
     }
-    date_handling <- list(mode = mode, reference = "index", unit = "calendar_day")
+    date_handling <- list(
+      mode = mode, reference = "index", unit = relative_unit
+    )
   } else {
     normalized <- tryCatch(.normalizeDateHandling(date_handling),
                            error = function(e) NULL)
