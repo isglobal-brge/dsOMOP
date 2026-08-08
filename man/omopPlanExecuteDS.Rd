@@ -47,6 +47,8 @@ three symbols: \code{<name>.covariates}, \code{<name>.covariateRef}, and
 the row-to-pseudonymous-person map \code{<name>.personRef}.
 Temporal covariates are split into four symbols, including the episode-to-
 person map \code{<name>.personRef}.
+Recurrent-event survival outputs are split into \code{<name>.events} and
+\code{<name>.riskSets} so each component remains an ordinary protected table.
 
 When \code{output_mode = "staged"}, outputs are written to protected,
 server-local files and assigned as descriptors inheriting from

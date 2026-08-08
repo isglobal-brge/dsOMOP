@@ -371,6 +371,64 @@
   )
 }
 
+#' Require person-bounded sticky release for exact distribution statistics
+#'
+#' Small-cell suppression and count banding do not make an exact mean, standard
+#' deviation, quantile, minimum or maximum safe: for discrete values the exact
+#' statistic can reveal a count hidden inside its band, and recurrent records
+#' permit unbounded influence by one person. Such templates remain documented
+#' questions but are not executable through the legacy direct-SQL endpoint;
+#' callers use the typed, person-bounded sticky QueryLibrary redesign instead.
+#'
+#' @param query Parsed query template.
+#' @param safety Static or allowlist safety record.
+#' @return Effective safety record.
+#' @keywords internal
+.ql_effective_safety <- function(query, safety) {
+  sql <- query$sql %||% ""
+  exact_distribution <- identical(tolower(query$mode %||% "aggregate"),
+                                  "aggregate") && grepl(
+    paste0("\\b(avg|average|mean|stddev(_pop|_samp)?|stdev|sd|variance|",
+           "var_pop|var_samp|median|percentile(_cont|_disc)?|min|max)\\s*\\("),
+    sql, ignore.case = TRUE, perl = TRUE
+  )
+  if (!exact_distribution) return(safety)
+  list(
+    class = "BLOCKED",
+    reason = paste0(
+      "exact distribution statistics require a typed person-bounded sticky ",
+      "release"
+    ),
+    sensitive_fields = safety$sensitive_fields %||% character(0),
+    sensitive_fields_detected = safety$sensitive_fields_detected %||%
+      character(0),
+    poolable = FALSE,
+    sticky_redesign_available = TRUE
+  )
+}
+
+#' Remove caller-controlled raw top-N clauses from aggregate templates
+#'
+#' QueryLibrary templates historically applied `TOP/LIMIT @top_n` before the
+#' disclosure gate. Varying that value exposes exact within-band rank. Execute
+#' the complete grouped query instead; the unified analysis path applies top-N
+#' only after suppression and banding.
+#'
+#' @param sql Query template SQL.
+#' @return List with rewritten `sql` and logical `post_gate_top_n`.
+#' @keywords internal
+.qlStripRawTopN <- function(sql) {
+  rewritten <- gsub(
+    "\\bSELECT\\s+TOP\\s+@top_n\\s+",
+    "SELECT ", sql, ignore.case = TRUE, perl = TRUE
+  )
+  rewritten <- gsub(
+    "\\s+LIMIT\\s+@top_n\\s*;?\\s*$",
+    "", rewritten, ignore.case = TRUE, perl = TRUE
+  )
+  list(sql = rewritten, post_gate_top_n = !identical(rewritten, sql))
+}
+
 # --- Allowlist Management ----------------------------------------------------
 
 #' Load the query allowlist from inst/queries/
@@ -494,11 +552,9 @@
     if (strict && is.null(al)) next
 
     # Only include queries on the allowlist (or all if no allowlist)
-    safety_class <- if (!is.null(al)) al$class else {
-      # Classify on the fly if not in allowlist
-      cl <- .ql_classify(q$sql, q$mode)
-      cl$class
-    }
+    safety <- if (!is.null(al)) al else .ql_classify(q$sql, q$mode)
+    safety <- .ql_effective_safety(q, safety)
+    safety_class <- safety$class
 
     # Skip BLOCKED queries
     if (safety_class == "BLOCKED") next
@@ -508,7 +564,7 @@
       if (tolower(q$group) != tolower(domain)) next
     }
 
-    poolable <- if (!is.null(al)) (al$poolable %||% FALSE) else FALSE
+    poolable <- safety$poolable %||% FALSE
 
     entries[[length(entries) + 1L]] <- data.frame(
       id = qid,
@@ -553,6 +609,7 @@
   allowlist <- .ql_load_allowlist()
   al <- allowlist[[query_id]]
   safety <- if (!is.null(al)) al else .ql_classify(q$sql, q$mode)
+  safety <- .ql_effective_safety(q, safety)
 
   list(
     id = q$id,
@@ -622,6 +679,7 @@
   }
 
   safety <- if (!is.null(al)) al else .ql_classify(q$sql, q$mode)
+  safety <- .ql_effective_safety(q, safety)
   safety_class <- safety$class %||% safety[["class"]]
 
   # Enforce safety
@@ -636,29 +694,18 @@
          "not aggregate.", call. = FALSE)
   }
 
-  # Render SQL with schema placeholders and user inputs
-  sql <- q$sql
-
-  # Substitute standard schema placeholders. Mirror .qualifyTable: on SQLite or
-  # when no schema is configured, emit BARE table names (strip "@cdm." entirely)
-  # rather than a hardcoded "public." prefix that breaks schemaless backends.
-  bare <- identical(handle$target_dialect, "sqlite")
-  schema_params <- list(
-    cdm = handle$cdm_schema,
-    vocab = handle$vocab_schema %||% handle$cdm_schema,
-    results = handle$results_schema %||% handle$cdm_schema
-  )
-
-  # Add schema qualification patterns (@cdm.table -> schema.table, or -> table)
-  for (schema_name in names(schema_params)) {
-    schema_val <- schema_params[[schema_name]]
-    prefix <- if (bare || is.null(schema_val) || !nzchar(schema_val)) {
-      ""
-    } else {
-      paste0(schema_val, ".")
-    }
-    sql <- gsub(paste0("@", schema_name, "\\."), prefix, sql, fixed = FALSE)
+  # The public aggregate endpoint and this internal compatibility path share
+  # the unified gate, including count banding and post-gate top-N selection.
+  if (identical(mode, "aggregate")) {
+    return(.omopAnalysisRun(
+      handle, paste0("dsomop:", query_id), params = inputs,
+      scope = NULL, combine = "union", assign = FALSE
+    ))
   }
+
+  # Render controller-owned schema placeholders before substituting inputs.
+  # The shared renderer quotes each complete table reference for its DBMS.
+  sql <- .qlRenderSchema(handle, q$sql)
 
   # Build effective inputs: user-provided values + defaults from template
   effective_inputs <- inputs

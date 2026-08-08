@@ -238,7 +238,9 @@
 
   df <- .executeQuery(handle, sql)
   if (!is.data.frame(df) || nrow(df) == 0) return(df)
-  if (nrow(df) > top_n) df <- df[seq_len(top_n), , drop = FALSE]
+  df <- .omopBandedTopN(
+    df, support_cols = "sum_value", top_n = top_n,
+    key_cols = c("time_window", "covariate_id"))
 
   # The proportion (average = sum_value / cohort_size) must NEVER be released as a
   # raw ratio: average * denom re-derives the EXACT un-banded numerator, defeating
@@ -300,25 +302,41 @@
 
   .omopDiagAssertPersons(handle, ctx, src$table, "e", src$person_col)
 
+  event_id_col <- .eventPrimaryKeyColumn(.buildBlueprint(handle),
+                                         src$table_name)
+  if (is.null(event_id_col)) {
+    stop("Temporal covariate distributions require a stable OMOP event key.",
+         call. = FALSE)
+  }
+  matched_value <- if (!is.na(src$value_col)) {
+    paste0(", e.", src$value_col, " AS raw_value")
+  } else {
+    ""
+  }
+  matched <- paste0(
+    "SELECT DISTINCT e.", event_id_col, " AS event_id, e.",
+    src$concept_col, " AS covariate_id, e.", src$person_col,
+    " AS person_id", matched_value, " FROM ", src$table, " e ",
+    "INNER JOIN ", cohort, " c ON c.subject_id = e.", src$person_col,
+    " WHERE 1 = 1", extra
+  )
+
   if (identical(value_kind, "value") && !is.na(src$value_col)) {
     per_person <- paste0(
-      "SELECT e.", src$concept_col, " AS covariate_id, e.", src$person_col,
-      " AS person_id, AVG(CAST(e.", src$value_col, " AS FLOAT)) AS v ",
-      "FROM ", src$table, " e ",
-      "INNER JOIN ", cohort, " c ON c.subject_id = e.", src$person_col,
-      " WHERE e.", src$value_col, " IS NOT NULL", extra,
-      " GROUP BY e.", src$concept_col, ", e.", src$person_col)
+      "SELECT me.covariate_id, me.person_id, ",
+      "AVG(CAST(me.raw_value AS FLOAT)) AS v FROM (", matched, ") me ",
+      "WHERE me.raw_value IS NOT NULL ",
+      "GROUP BY me.covariate_id, me.person_id"
+    )
   } else {
     per_person <- paste0(
-      "SELECT e.", src$concept_col, " AS covariate_id, e.", src$person_col,
-      " AS person_id, COUNT(*) AS v ",
-      "FROM ", src$table, " e ",
-      "INNER JOIN ", cohort, " c ON c.subject_id = e.", src$person_col,
-      " WHERE 1 = 1", extra,
-      " GROUP BY e.", src$concept_col, ", e.", src$person_col)
+      "SELECT me.covariate_id, me.person_id, COUNT(*) AS v FROM (",
+      matched, ") me GROUP BY me.covariate_id, me.person_id"
+    )
   }
   vsql <- .sql_translate(paste0(
-    "SELECT pp.covariate_id, cc.concept_name AS covariate_name, pp.v ",
+    "SELECT pp.covariate_id, cc.concept_name AS covariate_name, ",
+    "pp.person_id, pp.v ",
     "FROM (", per_person, ") pp",
     " LEFT JOIN ", concept, " cc ON cc.concept_id = pp.covariate_id"),
     handle$target_dialect)
@@ -339,6 +357,7 @@
       covariate_id   = p$covariate_id[1],
       covariate_name = p$covariate_name[1],
       count_value    = length(v),
+      n_persons      = length(unique(as.character(p$person_id))),
       min_value      = min(v),   # stripped by the gate
       max_value      = max(v),   # stripped by the gate
       avg_value      = mean(v),
@@ -348,10 +367,9 @@
       stringsAsFactors = FALSE)
   })
   out <- do.call(rbind, rows)
-  out <- out[order(-out$count_value), , drop = FALSE]
-  if (nrow(out) > top_n) out <- out[seq_len(top_n), , drop = FALSE]
-  rownames(out) <- NULL
-  out
+  .omopBandedTopN(
+    out, support_cols = "n_persons", top_n = top_n,
+    key_cols = c("time_window", "covariate_id"))
 }
 
 # --- time_series --------------------------------------------------------------
@@ -433,7 +451,8 @@
     "COUNT(*) AS concept_count, ",
     "COUNT(DISTINCT e.", src$person_col, ") AS concept_subjects ",
     "FROM ", src$table, " e ",
-    "INNER JOIN ", cohort, " c ON c.subject_id = e.", src$person_col,
+    "INNER JOIN (SELECT DISTINCT subject_id FROM ", cohort,
+    ") c ON c.subject_id = e.", src$person_col,
     " LEFT JOIN ", concept, " cc ON cc.concept_id = e.", src$concept_col,
     " WHERE e.", src$concept_col, " IS NOT NULL",
     " GROUP BY e.", src$concept_col, ", cc.concept_name",
@@ -441,8 +460,9 @@
     handle$target_dialect)
 
   df <- .executeQuery(handle, sql)
-  if (is.data.frame(df) && nrow(df) > top_n) df <- df[seq_len(top_n), , drop = FALSE]
-  df
+  .omopBandedTopN(
+    df, support_cols = "concept_subjects", top_n = top_n,
+    key_cols = "concept_id")
 }
 
 # --- resolved_concepts (live concept-set expansion) ---------------------------
@@ -697,8 +717,8 @@
   join_clause <- ""
   if (!is.null(ctx$scoped_cohort)) {
     cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
-    join_clause <- paste0(" INNER JOIN ", cohort,
-                          " c ON c.subject_id = e.", src$person_col)
+    join_clause <- paste0(" INNER JOIN (SELECT DISTINCT subject_id FROM ",
+                          cohort, ") c ON c.subject_id = e.", src$person_col)
   }
   idlist <- paste(cand$concept_id, collapse = ", ")
   sql <- .sql_translate(paste0(
@@ -714,9 +734,9 @@
 
   df <- .executeQuery(handle, sql)
   if (!is.data.frame(df) || nrow(df) == 0) return(data.frame())
-  if (nrow(df) > top_n) df <- df[seq_len(top_n), , drop = FALSE]
-  rownames(df) <- NULL
-  df
+  .omopBandedTopN(
+    df, support_cols = "n_persons", top_n = top_n,
+    key_cols = "concept_id")
 }
 
 # --- Entry builders -----------------------------------------------------------
@@ -809,7 +829,8 @@
     dependencies = list(tables = c("measurement", "concept"),
                         packages = character(0)),
     disclosure  = .omopAnalysisDisclosure(
-      unit = "dist", count_cols = "count_value", min_max = TRUE),
+      unit = "dist", count_cols = c("count_value", "n_persons"),
+      dist_count_col = c("count_value", "n_persons"), min_max = TRUE),
     scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
                                max_tables = 1L, requires_cohort = FALSE),
     mode  = "aggregate",

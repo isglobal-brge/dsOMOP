@@ -15,8 +15,7 @@ loader, or manipulation path.}
 dsOMOPClient.}
 }
 \value{
-A sticky noisy aggregate with explicit certification metadata. The
-  current built-in sampler is reported as non-formal DP.
+A sticky noisy aggregate with mechanism and accounting metadata.
 }
 \description{
 Release one sticky, person-bounded privacy statistic (Aggregate)

@@ -248,6 +248,25 @@ test_that("applyInclusionCriteria returns cohort_temp for empty criteria", {
   expect_equal(result2, "some_table")
 })
 
+test_that("cohort definition and membership resolve independent OHDSI daimons", {
+  h <- new.env(parent = emptyenv())
+  h$cdm_schema <- "cdm"
+  h$vocab_schema <- "vocab"
+  h$results_schema <- "results"
+  bp <- list(tables = data.frame(
+    table_name = c("cohort_definition", "cohort"),
+    present_in_db = c(TRUE, TRUE),
+    qualified_name = c("vocab.cohort_definition", "results.cohort"),
+    stringsAsFactors = FALSE
+  ))
+
+  expect_equal(
+    .cohortReadTable(h, bp, "cohort_definition"),
+    "vocab.cohort_definition"
+  )
+  expect_equal(.cohortReadTable(h, bp, "cohort"), "results.cohort")
+})
+
 test_that("persistent cohorts apply the same inclusion criteria as temporary cohorts", {
   handle <- create_test_handle(n_persons = 15)
   on.exit(cleanup_handle(handle))

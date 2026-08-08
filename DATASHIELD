@@ -63,6 +63,7 @@ AggregateMethods:
   omopAnalysisListDS,
   omopAnalysisGetDS,
   omopAnalysisRunDS,
+  omopQueryLibraryStickyCatalogDS,
   omopDpStatusDS,
   omopDpReleaseDS,
   omopFactorLevelsDS

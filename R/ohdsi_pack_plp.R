@@ -56,6 +56,59 @@
 # dsomop:plp.covariate_summary), so they are discarded. No *_source_value;
 # covariate / outcome concepts translated.
 
+# --- Shared person-level population contract ---------------------------------
+
+#' Earliest PLP-eligible cohort episode per person
+#'
+#' PLP models have one row per person. From a recurrent cohort, select each
+#' person's earliest episode for which one observation period continuously
+#' covers the complete time-at-risk interval. This prevents duplicate model
+#' rows and prevents separate observation spells from being joined across a gap.
+#'
+#' @param handle CDM handle.
+#' @param cohort Validated cohort table.
+#' @param tar_start,tar_end Integer offsets from cohort start.
+#' @param covariate_start,covariate_end Optional baseline-window offsets. When
+#'   supplied, the same observation period must cover baseline, index and TAR.
+#' @return SQL derived table with subject_id and cohort_start_date.
+#' @keywords internal
+.omopPlpEligiblePersonSql <- function(handle, cohort, tar_start, tar_end,
+                                      covariate_start = NULL,
+                                      covariate_end = NULL) {
+  tar_start <- as.integer(tar_start)
+  tar_end <- as.integer(tar_end)
+  if (length(tar_start) != 1L || is.na(tar_start) ||
+      length(tar_end) != 1L || is.na(tar_end) || tar_start > tar_end) {
+    stop("PLP time-at-risk offsets must satisfy start <= end.", call. = FALSE)
+  }
+  if (!is.null(covariate_start) || !is.null(covariate_end)) {
+    covariate_start <- as.integer(covariate_start)
+    covariate_end <- as.integer(covariate_end)
+    if (length(covariate_start) != 1L || is.na(covariate_start) ||
+        length(covariate_end) != 1L || is.na(covariate_end) ||
+        covariate_start > covariate_end) {
+      stop("PLP covariate offsets must satisfy start <= end.", call. = FALSE)
+    }
+  }
+  coverage_start <- min(c(0L, tar_start, covariate_start), na.rm = TRUE)
+  coverage_end <- max(c(0L, tar_end, covariate_end), na.rm = TRUE)
+  obs <- .qualifyTable(handle, "observation_period")
+  coverage_lo <- paste0(
+    "DATEADD(day, ", coverage_start, ", c.cohort_start_date)"
+  )
+  coverage_hi <- paste0(
+    "DATEADD(day, ", coverage_end, ", c.cohort_start_date)"
+  )
+  paste0(
+    "(SELECT c.subject_id, MIN(c.cohort_start_date) AS cohort_start_date FROM ",
+    cohort, " c WHERE EXISTS (SELECT 1 FROM ", obs,
+    " op WHERE op.person_id = c.subject_id AND ",
+    "op.observation_period_start_date <= ", coverage_lo, " AND ",
+    "op.observation_period_end_date >= ", coverage_hi,
+    ") GROUP BY c.subject_id)"
+  )
+}
+
 # --- Canonical attrition kernel ----------------------------------------------
 
 #' Population-construction attrition over a scoped cohort + outcome (kernel)
@@ -119,10 +172,11 @@
       "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
       handle$target_dialect))
 
-    # TAR window bounds, index-relative (DATEADD is dialect-translated by
-    # .sql_translate, exactly as the incidence/follow-up TAR diagnostics do).
-    tar_lo <- paste0("DATEADD(day, ", tar_start, ", c.cohort_start_date)")
-    tar_hi <- paste0("DATEADD(day, ", tar_end, ", c.cohort_start_date)")
+    eligible_person <- .omopPlpEligiblePersonSql(
+      handle, cohort, tar_start, tar_end
+    )
+    tar_lo <- paste0("DATEADD(day, ", tar_start, ", ep.cohort_start_date)")
+    tar_hi <- paste0("DATEADD(day, ", tar_end, ", ep.cohort_start_date)")
 
     # Outcome-positive flag: >= 1 outcome record inside the TAR window. With no
     # outcome concept supplied there is no outcome to count, so the flag is 0 for
@@ -132,26 +186,27 @@
     } else {
       paste0(
         "(CASE WHEN EXISTS (SELECT 1 FROM ", out_src$table, " o WHERE o.",
-        out_src$person_col, " = c.subject_id AND o.", out_src$concept_col,
+        out_src$person_col, " = base.subject_id AND o.", out_src$concept_col,
         " IN (", out_src$id_list, ") AND o.", out_src$date_col, " >= ", tar_lo,
         " AND o.", out_src$date_col, " <= ", tar_hi, ") THEN 1 ELSE 0 END)")
     }
 
-    # Per-subject derived table: in_obs (index inside an observation_period),
-    # has_tar (TAR end on/before observation-period end, among in_obs subjects),
-    # has_outcome (outcome inside TAR). Correlated EXISTS keep it per-subject.
+    # One row per person. in_obs means that at least one cohort episode has an
+    # index covered by an observation period. has_tar and has_outcome use the
+    # same earliest fully observed episode as the fitted model below.
     per_subject <- paste0(
-      "SELECT c.subject_id, ",
+      "SELECT base.subject_id, ",
       "(CASE WHEN EXISTS (SELECT 1 FROM ", obs, " op WHERE op.person_id = ",
-      "c.subject_id AND op.observation_period_start_date <= c.cohort_start_date ",
-      "AND op.observation_period_end_date >= c.cohort_start_date) ",
+      "base.subject_id AND EXISTS (SELECT 1 FROM ", cohort,
+      " ci WHERE ci.subject_id = base.subject_id AND ",
+      "op.observation_period_start_date <= ci.cohort_start_date AND ",
+      "op.observation_period_end_date >= ci.cohort_start_date)) ",
       "THEN 1 ELSE 0 END) AS in_obs, ",
-      "(CASE WHEN EXISTS (SELECT 1 FROM ", obs, " op WHERE op.person_id = ",
-      "c.subject_id AND op.observation_period_start_date <= c.cohort_start_date ",
-      "AND op.observation_period_end_date >= ", tar_hi, ") ",
-      "THEN 1 ELSE 0 END) AS has_tar, ",
+      "(CASE WHEN ep.subject_id IS NOT NULL THEN 1 ELSE 0 END) AS has_tar, ",
       has_outcome_expr, " AS has_outcome ",
-      "FROM ", cohort, " c")
+      "FROM (SELECT DISTINCT subject_id FROM ", cohort, ") base ",
+      "LEFT JOIN ", eligible_person,
+      " ep ON ep.subject_id = base.subject_id")
 
     # One row per construction step via conditional distinct-person counts. Each
     # step is a superset filter of the next (initial >= in_obs >= in_obs&has_tar).
@@ -244,6 +299,12 @@
          description = "Predictor (covariate) domain (0 condition,1 drug,2 procedure,3 measurement,4 observation)."),
     list(name = "max_covariates", type = "int", required = FALSE, default = "20",
          description = "Cap on the number of top-prevalence binary predictors in the design matrix (keeps the GLM well-posed)."),
+    list(name = "covariate_start_offset", type = "int", required = FALSE,
+         default = "-365",
+         description = "Baseline covariate-window start (days from cohort index)."),
+    list(name = "covariate_end_offset", type = "int", required = FALSE,
+         default = "-1",
+         description = "Baseline covariate-window end (days from cohort index; default excludes index/post-index leakage)."),
     list(name = "tar_start_offset", type = "int", required = FALSE, default = "1",
          description = "Time-at-risk start offset (days from cohort index)."),
     list(name = "tar_end_offset", type = "int", required = FALSE, default = "365",
@@ -287,7 +348,6 @@
 .omopPlpFitModel <- function(handle, ctx, params) {
   if (is.null(ctx$scoped_cohort)) return(NULL)
   cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
-  obs    <- .qualifyTable(handle, "observation_period")
 
   out_src <- .omopOutcomeSource(handle, params$outcome_concept_id,
                                 params$outcome_domain_code %||% "0")
@@ -296,56 +356,74 @@
 
   cov_src   <- .omopCovariateSource(handle, params$covariate_domain_code %||% "0")
   max_cov   <- max(as.integer(params$max_covariates %||% "20"), 1L)
+  cov_start <- as.integer(params$covariate_start_offset %||% "-365")
+  cov_end   <- as.integer(params$covariate_end_offset %||% "-1")
   tar_start <- as.integer(params$tar_start_offset %||% "1")
   tar_end   <- as.integer(params$tar_end_offset %||% "365")
+  if (is.na(cov_start) || is.na(cov_end) || cov_start > cov_end) {
+    stop("PLP covariate offsets must satisfy start <= end.", call. = FALSE)
+  }
 
   # Self-gate the scoped target population BEFORE pulling any rows into R.
   .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
     "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
     handle$target_dialect))
 
-  tar_lo <- paste0("DATEADD(day, ", tar_start, ", c.cohort_start_date)")
-  tar_hi <- paste0("DATEADD(day, ", tar_end, ", c.cohort_start_date)")
+  # PLP is a person-level model. Recurrent cohort episodes are reduced
+  # explicitly to each person's earliest episode whose complete TAR is covered
+  # by one continuous observation period; they must never create duplicate model
+  # rows or silently bridge an unobserved gap.
+  eligible_person <- .omopPlpEligiblePersonSql(
+    handle, cohort, tar_start, tar_end,
+    covariate_start = cov_start, covariate_end = cov_end
+  )
+  .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+    "SELECT COUNT(*) AS n FROM ", eligible_person), handle$target_dialect))
+  tar_lo <- paste0("DATEADD(day, ", tar_start, ", p.cohort_start_date)")
+  tar_hi <- paste0("DATEADD(day, ", tar_end, ", p.cohort_start_date)")
 
-  # PLP target population = in observation at index AND sufficient TAR (same
-  # filters as the attrition kernel's final step). One row per retained subject
-  # with the binary outcome (>= 1 outcome record inside the TAR window).
+  # One row per retained person with the binary outcome (>= 1 outcome record
+  # inside the selected episode's TAR window).
   pop_sql <- paste0(
-    "SELECT c.subject_id, ",
+    "SELECT p.subject_id, p.cohort_start_date, ",
     "(CASE WHEN EXISTS (SELECT 1 FROM ", out_src$table, " o WHERE o.",
-    out_src$person_col, " = c.subject_id AND o.", out_src$concept_col, " IN (",
+    out_src$person_col, " = p.subject_id AND o.", out_src$concept_col, " IN (",
     out_src$id_list, ") AND o.", out_src$date_col, " >= ", tar_lo,
     " AND o.", out_src$date_col, " <= ", tar_hi, ") THEN 1 ELSE 0 END) AS outcome ",
-    "FROM ", cohort, " c ",
-    "WHERE EXISTS (SELECT 1 FROM ", obs, " op WHERE op.person_id = c.subject_id ",
-    "AND op.observation_period_start_date <= c.cohort_start_date ",
-    "AND op.observation_period_end_date >= c.cohort_start_date) ",
-    "AND EXISTS (SELECT 1 FROM ", obs, " op2 WHERE op2.person_id = c.subject_id ",
-    "AND op2.observation_period_start_date <= c.cohort_start_date ",
-    "AND op2.observation_period_end_date >= ", tar_hi, ")")
+    "FROM ", eligible_person, " p")
 
   pop <- .executeQuery(handle, .sql_translate(pop_sql, handle$target_dialect))
   if (!is.data.frame(pop) || nrow(pop) == 0) return(NULL)
-  pop$subject_id <- suppressWarnings(as.integer(pop$subject_id))
+  pop$subject_id <- as.character(pop$subject_id)
   pop$outcome    <- suppressWarnings(as.integer(pop$outcome))
-  pop <- pop[!is.na(pop$subject_id) & !is.na(pop$outcome), , drop = FALSE]
+  pop <- pop[!is.na(pop$subject_id) & nzchar(pop$subject_id) &
+               !is.na(pop$outcome), , drop = FALSE]
   if (nrow(pop) == 0) return(NULL)
 
   # Top-K most prevalent binary covariates over the target population (distinct
   # persons per concept). Restricting to top-K is the ridge-style well-posedness
   # control. The pop SELECT is reused as a derived table to scope the covariates.
+  cov_lo <- paste0("DATEADD(day, ", cov_start, ", p.cohort_start_date)")
+  cov_hi <- paste0("DATEADD(day, ", cov_end, ", p.cohort_start_date)")
+  cov_window <- paste0(
+    "e.", cov_src$date_col, " >= ", cov_lo,
+    " AND e.", cov_src$date_col, " <= ", cov_hi
+  )
   cov_sql <- paste0(
     "SELECT e.", cov_src$concept_col, " AS covariate_id, ",
     "COUNT(DISTINCT e.", cov_src$person_col, ") AS n_persons ",
     "FROM ", cov_src$table, " e ",
     "INNER JOIN (", pop_sql, ") p ON p.subject_id = e.", cov_src$person_col,
+    " WHERE ", cov_window,
     " GROUP BY e.", cov_src$concept_col,
     " ORDER BY n_persons DESC")
   cov_top <- .executeQuery(handle, .sql_translate(cov_sql, handle$target_dialect))
   if (!is.data.frame(cov_top) || nrow(cov_top) == 0) return(NULL)
   cov_top$covariate_id <- suppressWarnings(as.integer(cov_top$covariate_id))
   cov_top <- cov_top[!is.na(cov_top$covariate_id), , drop = FALSE]
-  if (nrow(cov_top) > max_cov) cov_top <- cov_top[seq_len(max_cov), , drop = FALSE]
+  cov_top <- .omopBandedTopN(
+    cov_top, support_cols = "n_persons", top_n = max_cov,
+    key_cols = "covariate_id")
   cov_ids <- cov_top$covariate_id
   if (length(cov_ids) == 0) return(NULL)
 
@@ -356,12 +434,13 @@
     cov_src$concept_col, " AS covariate_id ",
     "FROM ", cov_src$table, " e ",
     "INNER JOIN (", pop_sql, ") p ON p.subject_id = e.", cov_src$person_col,
-    " WHERE e.", cov_src$concept_col, " IN (", paste(cov_ids, collapse = ", "), ")")
+    " WHERE ", cov_window, " AND e.", cov_src$concept_col, " IN (",
+    paste(cov_ids, collapse = ", "), ")")
   pres <- .executeQuery(handle, .sql_translate(pres_sql, handle$target_dialect))
 
   X <- matrix(0L, nrow = nrow(pop), ncol = length(cov_ids),
               dimnames = list(NULL, paste0("cov_", cov_ids)))
-  row_of <- match(as.integer(pres$subject_id), pop$subject_id)
+  row_of <- match(as.character(pres$subject_id), pop$subject_id)
   col_of <- match(as.integer(pres$covariate_id), cov_ids)
   ok <- !is.na(row_of) & !is.na(col_of)
   if (any(ok)) X[cbind(row_of[ok], col_of[ok])] <- 1L

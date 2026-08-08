@@ -1,5 +1,92 @@
 # --- Readable Resource URL Parsing Tests (.parseOmopUrl) ---
 
+test_that("resource.js exposes and serializes every supported persistent namespace", {
+  node <- Sys.which("node")
+  skip_if(!nzchar(node), "Node.js is required to execute resource.js")
+
+  resource_js <- system.file("resources", "resource.js", package = "dsOMOP")
+  if (!nzchar(resource_js)) {
+    resource_js <- testthat::test_path("..", "..", "inst", "resources",
+                                      "resource.js")
+  }
+  expect_true(file.exists(resource_js))
+
+  harness <- tempfile(fileext = ".js")
+  on.exit(unlink(harness), add = TRUE)
+  writeLines(c(
+    '"use strict";',
+    'const assert = require("assert/strict");',
+    'const fs = require("fs");',
+    'const vm = require("vm");',
+    'const sandbox = {};',
+    'vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), sandbox);',
+    'const provider = sandbox.dsOMOP;',
+    'assert(provider && provider.settings && provider.asResource);',
+    'const expected = ["cdm_schema", "vocabulary_schema", "results_schema"];',
+    'for (const type of provider.settings.types) {',
+    '  const keys = type.parameters.items.map((item) => item.key);',
+    '  if (type.name === "sqlite") {',
+    '    for (const key of expected) assert(!keys.includes(key), `sqlite: unsupported ${key}`);',
+    '  } else {',
+    '    for (const key of expected) assert(keys.includes(key), `${type.name}: ${key}`);',
+    '  }',
+    '  assert(!keys.includes("temp_schema"), `${type.name}: unsupported temp_schema`);',
+    '  if (type.name === "postgresql") for (const key of ["sslmode", "sslrootcert", "sslcert", "sslkey"]) assert(keys.includes(key), key);',
+    '  if (type.name === "mysql" || type.name === "mariadb") for (const key of ["ssl_required", "ssl_ca", "ssl_cert", "ssl_key"]) assert(keys.includes(key), key);',
+    '  const resource = provider.asResource(type.name, "omop", {',
+    '    host: "db.example.org", port: 5432, database: "/omop",',
+    '    cdm_schema: "cdm space", vocabulary_schema: "vocab/catalog",',
+    '    results_schema: "ohdsi-results", temp_schema: "must_not_leak"',
+    '  }, { username: "user", password: "secret" });',
+    '  assert(resource && resource.format === "omop.dbi.db", type.name);',
+    '  if (type.name === "sqlite") {',
+    '    for (const key of expected) assert(!resource.url.includes(key), `sqlite: ${key}`);',
+    '  } else {',
+    '    assert(resource.url.includes("cdm_schema=cdm%20space"), type.name);',
+    '    assert(resource.url.includes("vocabulary_schema=vocab%2Fcatalog"), type.name);',
+    '    assert(resource.url.includes("results_schema=ohdsi-results"), type.name);',
+    '  }',
+    '  assert(!resource.url.includes("temp_schema"), type.name);',
+    '}',
+    'const pg = provider.asResource("postgresql", "omop", {',
+    '  host: "postgres", port: 5432, database: "omop",',
+    '  cdm_schema: "cdm", vocabulary_schema: "vocab", results_schema: "results"',
+    '}, { username: "user", password: "secret" });',
+    'assert.equal(pg.url, "omop+dbi:postgresql://postgres:5432/omop?cdm_schema=cdm&vocabulary_schema=vocab&results_schema=results");',
+    'assert.equal(pg.identity, "user");',
+    'assert.equal(pg.secret, "secret");',
+    'const pgTls = provider.asResource("postgresql", "secure-pg", {',
+    '  host: "postgres", port: 5432, database: "omop", sslmode: "verify-full",',
+    '  sslrootcert: "/srv/ca.pem", sslcert: "/srv/client.pem", sslkey: "/srv/client.key"',
+    '}, { username: "user", password: "secret" });',
+    'assert(pgTls.url.includes("sslmode=verify-full"));',
+    'assert(pgTls.url.includes("sslrootcert=%2Fsrv%2Fca.pem"));',
+    'const mariaTls = provider.asResource("mariadb", "secure-maria", {',
+    '  host: "maria", port: 3306, database: "omop", ssl_required: true,',
+    '  ssl_ca: "/srv/ca.pem", ssl_cert: "/srv/client.pem", ssl_key: "/srv/client.key"',
+    '}, { username: "user", password: "secret" });',
+    'assert(mariaTls.url.includes("ssl_required=true"));',
+    'assert(mariaTls.url.includes("ssl_ca=%2Fsrv%2Fca.pem"));',
+    'const ipv6 = provider.asResource("postgresql", "ipv6", {',
+    '  host: "2001:db8::1", port: 5432, database: "omop?primary#one"',
+    '}, { username: "user", password: "secret" });',
+    'assert.equal(ipv6.url, "omop+dbi:postgresql://[2001:db8::1]:5432/omop%3Fprimary%23one");',
+    'const file = provider.asResource("sqlite", "file", {',
+    '  database: "/srv/omop files/a?b#c.sqlite"',
+    '}, {});',
+    'assert.equal(file.url, "omop+dbi:sqlite:///srv/omop%20files/a%3Fb%23c.sqlite");',
+    'process.stdout.write(provider.settings.types.map((type) => type.name).join(","));'
+  ), harness)
+
+  output <- system2(node, shQuote(c(harness, resource_js)),
+                    stdout = TRUE, stderr = TRUE)
+  status <- attr(output, "status")
+  expect_true(is.null(status) || identical(status, 0L), info = paste(output, collapse = "\n"))
+  expect_match(paste(output, collapse = "\n"), "postgresql")
+  expect_match(paste(output, collapse = "\n"), "mysql")
+  expect_match(paste(output, collapse = "\n"), "mariadb")
+})
+
 test_that("the OMOP resolver unregisters through resourcer's class API", {
   previous_resolver <- .pkg_state$resolver
   expect_false(is.null(previous_resolver))
@@ -49,6 +136,37 @@ test_that(".parseOmopUrl parses results_schema (and its 'results' alias)", {
     "res")
 })
 
+test_that(".parseOmopUrl validates driver-native TLS options", {
+  pg <- .parseOmopUrl(paste0(
+    "omop+dbi:postgresql://h:5432/omop?sslmode=verify-full&",
+    "sslrootcert=%2Fsrv%2Fca.pem&sslcert=%2Fsrv%2Fclient.pem&",
+    "sslkey=%2Fsrv%2Fclient.key"
+  ))
+  expect_identical(pg$sslmode, "verify-full")
+  expect_identical(pg$sslrootcert, "/srv/ca.pem")
+  expect_identical(pg$sslcert, "/srv/client.pem")
+  expect_identical(pg$sslkey, "/srv/client.key")
+
+  maria <- .parseOmopUrl(paste0(
+    "omop+dbi:mariadb://h:3306/omop?ssl_required=true&",
+    "ssl_ca=%2Fsrv%2Fca.pem&ssl_cert=%2Fsrv%2Fclient.pem&",
+    "ssl_key=%2Fsrv%2Fclient.key"
+  ))
+  expect_true(maria$ssl_required)
+  expect_identical(maria$ssl_ca, "/srv/ca.pem")
+  expect_identical(maria$sslcert, "/srv/client.pem")
+  expect_identical(maria$sslkey, "/srv/client.key")
+
+  expect_error(
+    .parseOmopUrl("postgresql://h/db?sslmode=trust-everything"),
+    "sslmode must be one of"
+  )
+  expect_error(
+    .parseOmopUrl("mariadb://h/db?ssl_required=perhaps"),
+    "ssl_required must be true or false"
+  )
+})
+
 test_that(".parseOmopUrl accepts a bare scheme (no omop+dbi wrapper)", {
   p <- .parseOmopUrl("postgresql://omopdb:5432/omop?cdm_schema=cdm")
   expect_equal(p$dbms, "postgresql")
@@ -62,6 +180,40 @@ test_that(".parseOmopUrl treats the port as optional", {
   expect_equal(p$host, "localhost")
   expect_null(p$port)
   expect_equal(p$database, "omop")
+})
+
+test_that("remote database transport defaults fail secure", {
+  expect_true(.isLoopbackDatabaseHost("localhost"))
+  expect_true(.isLoopbackDatabaseHost("127.0.0.1"))
+  expect_true(.isLoopbackDatabaseHost("::1"))
+  expect_false(.isLoopbackDatabaseHost("db.example.org"))
+
+  expect_equal(.effectivePostgresSslMode(NULL, "db.example.org"),
+               "verify-full")
+  expect_equal(.effectivePostgresSslMode(NULL, "127.0.0.1"), "disable")
+  expect_equal(.effectivePostgresSslMode("require", "127.0.0.1"),
+               "require")
+
+  expect_true(.effectiveMariaTlsRequired(NULL, "db.example.org"))
+  expect_false(.effectiveMariaTlsRequired(NULL, "localhost"))
+  expect_false(.effectiveMariaTlsRequired(FALSE, "db.example.org"))
+  expect_true(.effectiveMariaTlsRequired(
+    FALSE, "localhost", list(ssl_ca = "/srv/ca.pem")
+  ))
+
+  skip_if_not_installed("RMariaDB")
+  expect_gte(utils::packageVersion("RMariaDB"), package_version("1.3.2"))
+  flag <- .mariaTlsClientFlag()
+  expect_equal(bitwAnd(flag, as.integer(RMariaDB::CLIENT_SSL)),
+               as.integer(RMariaDB::CLIENT_SSL))
+  expect_equal(
+    bitwAnd(flag, as.integer(RMariaDB::CLIENT_SSL_VERIFY_SERVER_CERT)),
+    as.integer(RMariaDB::CLIENT_SSL_VERIFY_SERVER_CERT)
+  )
+
+  call_args <- .mariaConnectionCallArgs("driver", list(host = "db.example"))
+  expect_true("group" %in% names(call_args))
+  expect_null(call_args$group)
 })
 
 test_that(".parseOmopUrl normalizes SQL Server spellings to 'sqlserver'", {
@@ -85,6 +237,20 @@ test_that(".parseOmopUrl percent-decodes path and query values", {
   p <- .parseOmopUrl("omop+dbi:postgresql://h:5432/my%20db?cdm_schema=odd%2Fschema")
   expect_equal(p$database, "my db")
   expect_equal(p$cdm_schema, "odd/schema")
+})
+
+test_that(".parseOmopUrl round-trips bracketed IPv6 and reserved path bytes", {
+  network <- .parseOmopUrl(
+    "omop+dbi:postgresql://[2001:db8::1]:5432/omop%3Fprimary%23one"
+  )
+  expect_equal(network$host, "2001:db8::1")
+  expect_equal(network$port, 5432L)
+  expect_equal(network$database, "omop?primary#one")
+
+  file <- .parseOmopUrl(
+    "omop+dbi:sqlite:///srv/omop%20files/a%3Fb%23c.sqlite"
+  )
+  expect_equal(file$database, "/srv/omop files/a?b#c.sqlite")
 })
 
 test_that(".parseOmopUrl rejects the retired base64 format", {
@@ -188,9 +354,70 @@ test_that("schema overrides are validated before they can reach SQL", {
     .createHandle(client, results_schema = "results' OR '1'='1"),
     "Invalid results_schema"
   )
-  expect_silent(
-    .createHandle(client, cdm_schema = "catalog.cdm",
-                  vocab_schema = "catalog.vocab")
+  expect_error(
+    .createHandle(client, cdm_schema = "catalog.cdm"),
+    "postgresql accepts at most 1 namespace component"
+  )
+  expect_error(.validateIdentifier(c("cdm", "other")), "must be one")
+})
+
+test_that("schema namespaces follow each DBMS qualification grammar", {
+  expect_equal(.validateSchemaNamespace("postgresql", "cdm"), "cdm")
+  expect_error(
+    .validateSchemaNamespace("postgresql", "database.cdm", "cdm_schema"),
+    "at most 1"
+  )
+  expect_equal(
+    .validateSchemaNamespace("sqlserver", "database.cdm"),
+    "database.cdm"
+  )
+  expect_equal(
+    .validateSchemaNamespace("snowflake", "database.cdm"),
+    "database.cdm"
+  )
+  expect_equal(
+    .validateSchemaNamespace("bigquery", "project.dataset"),
+    "project.dataset"
+  )
+  expect_error(
+    .validateSchemaNamespace("mysql", "server.database", "cdm_schema"),
+    "at most 1"
+  )
+  expect_error(.validateSchemaNamespace("postgresql", "cdm."), "Invalid")
+  expect_error(.validateSchemaNamespace("postgresql", ".cdm"), "Invalid")
+  expect_error(.validateSchemaNamespace("postgresql", "cdm..private"),
+               "Invalid")
+  expect_equal(.validateSchemaNamespace("postgresql", "CDM-Research"),
+               "CDM-Research")
+})
+
+test_that("table qualification safely quotes non-default namespaces", {
+  handle <- new.env(parent = emptyenv())
+  handle$dbms <- "postgresql"
+  handle$target_dialect <- "postgresql"
+  handle$cdm_schema <- "CDM-Research"
+  expect_equal(.qualifyTable(handle, "person"),
+               '"CDM-Research".person')
+
+  handle$dbms <- "mariadb"
+  handle$target_dialect <- "mysql"
+  handle$cdm_schema <- "cdm-research"
+  expect_equal(.qualifyTable(handle, "person"), "`cdm-research`.person")
+
+  handle$dbms <- "bigquery"
+  handle$target_dialect <- "bigquery"
+  handle$cdm_schema <- "project-id.dataset"
+  expect_equal(.qualifyTable(handle, "person"),
+               "`project-id.dataset.person`")
+})
+
+test_that("SQLite resource handles reject unreachable attached namespaces", {
+  client <- fake_client(.parseOmopUrl(
+    "omop+dbi:sqlite:///tmp/omop.sqlite?cdm_schema=attached"
+  ))
+  expect_error(
+    .createHandle(client),
+    "only support the main namespace"
   )
 })
 

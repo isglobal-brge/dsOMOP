@@ -4,12 +4,15 @@
 \alias{.translate_top}
 \title{Translate SELECT TOP n to SELECT ... LIMIT n}
 \usage{
-.translate_top(sql, dialect)
+.translate_top(sql, dialect, line_comment_tokens = character(0))
 }
 \arguments{
 \item{sql}{Character; SQL containing SELECT TOP patterns}
 
 \item{dialect}{Character; target dialect}
+
+\item{line_comment_tokens}{Character vector of protected terminal line
+comment placeholders.}
 }
 \value{
 Character; SQL with TOP translated to LIMIT

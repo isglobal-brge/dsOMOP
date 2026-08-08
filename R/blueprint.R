@@ -511,12 +511,27 @@
     if (!is.character(x) || length(x) != 1L || is.na(x) || !nzchar(trimws(x))) {
       stop(label, " must be one non-empty schema identifier.", call. = FALSE)
     }
-    .validateIdentifier(x, label)
+    .validateSchemaNamespace(dbms, x, label)
   }
   cdm_schema <- validate_schema(cdm_schema, "cdm_schema")
   vocab_schema <- validate_schema(vocab_schema, "vocab_schema")
   results_schema <- validate_schema(results_schema, "results_schema")
   temp_schema <- validate_schema(temp_schema, "temp_schema")
+
+  if (identical(.normalizeDBMS(dbms), "sqlite")) {
+    configured <- Filter(Negate(is.null), list(
+      cdm_schema = cdm_schema, vocab_schema = vocab_schema,
+      results_schema = results_schema, temp_schema = temp_schema
+    ))
+    invalid <- names(configured)[vapply(
+      configured, function(x) !identical(tolower(x), "main"), logical(1)
+    )]
+    if (length(invalid) > 0L) {
+      stop("SQLite resources open one database file and only support the main ",
+           "namespace; unsupported setting(s): ",
+           paste(invalid, collapse = ", "), ".", call. = FALSE)
+    }
+  }
 
   handle <- new.env(parent = emptyenv())
   handle$conn            <- conn
@@ -532,6 +547,9 @@
   handle$temp_tables     <- character(0)
   handle$temp_connection <- NULL
   handle$staging_dirs    <- character(0)
+  handle$dbms_version    <- NULL
+  handle$physical_table_names <- list()
+  .assertAnalyticDbmsSupport(handle, "dsOMOP connection")
   # Store only the stable, non-secret key locator. Key bytes are resolved from
   # the injected provider or private state file for each operation and are never
   # embedded in a serializable DataSHIELD workspace handle.
@@ -835,7 +853,10 @@
 #' authorizes only the listed additional columns; an entry for a non-standard
 #' table authorizes the table and only those columns. Wildcards are deliberately
 #' unsupported so a later schema change cannot silently expand the release
-#' surface.
+#' surface. Listing a column controls visibility, not identifier semantics:
+#' extension names ending in \code{_id}, \code{_key}, or \code{_identifier}
+#' remain denied unless they are the person/subject key or an explicitly listed
+#' OMOP-shaped \code{*_concept_id} column.
 #'
 #' @return Named list of lower-case table-to-column mappings.
 #' @keywords internal
@@ -919,16 +940,16 @@
     db_tables_results <- .listTablesRaw(handle, results_schema)
   }
 
-  all_db_tables <- unique(c(db_tables_cdm, db_tables_vocab, db_tables_results))
-
   # Step 2: Detect CDM version from cdm_source (before spec loading)
-  cdm_info <- .detectCDMInfo(handle, all_db_tables)
+  # Only the configured CDM namespace is authoritative. A same-named table in
+  # vocabulary/results must never make a missing CDM table appear present.
+  cdm_info <- .detectCDMInfo(handle, db_tables_cdm)
   cdm_version <- cdm_info$cdm_version  # may be NULL
 
   # Step 2b: Structural version detection (fallback / cross-validation)
   # Wrapped in tryCatch so structural detection can never crash blueprint build.
   struct <- tryCatch(
-    .detectCDMVersionFromStructure(handle, all_db_tables),
+    .detectCDMVersionFromStructure(handle, db_tables_cdm),
     error = function(e) NULL
   )
 
@@ -977,11 +998,31 @@
       stringsAsFactors = FALSE
     )
 
-    # Determine which tables exist and where
+    # Determine which tables exist in the namespace selected by their OHDSI
+    # schema category. A union creates false positives when separate namespaces
+    # contain same-named objects.
     for (i in seq_len(nrow(tables))) {
       tbl_name <- tables$table_name[i]
       category <- tables$schema_category[i]
-      tables$present_in_db[i] <- tbl_name %in% all_db_tables
+      category_lower <- tolower(category)
+      category_tables <- if (category_lower %in% c("vocabulary", "vocab")) {
+        if (is.null(handle$vocab_schema) ||
+            identical(handle$vocab_schema, handle$cdm_schema)) {
+          db_tables_cdm
+        } else {
+          db_tables_vocab
+        }
+      } else if (category_lower %in% c("results", "result")) {
+        if (is.null(results_schema) ||
+            identical(results_schema, handle$cdm_schema)) {
+          db_tables_cdm
+        } else {
+          db_tables_results
+        }
+      } else {
+        db_tables_cdm
+      }
+      tables$present_in_db[i] <- tbl_name %in% category_tables
 
       schema <- .resolveTableSchema(handle, tbl_name, category)
       tables$qualified_name[i] <- .qualifyTable(handle, tbl_name, schema)
@@ -989,8 +1030,8 @@
 
     # Non-standard tables are invisible by default. A data-controller-owned
     # contract may expose an exact table/column surface from the CDM schema.
-    # Do not use all_db_tables here: a same-named object in a vocabulary or
-    # results schema must not be mistaken for an authorized CDM extension.
+    # Do not use another namespace here: a same-named object in vocabulary or
+    # results must not be mistaken for an authorized CDM extension.
     extra_db <- intersect(
       setdiff(db_tables_cdm, tables$table_name),
       names(extension_contract)
@@ -1052,6 +1093,8 @@
       concept_role = character(nrow(db_cols)),
       fk_domain    = character(nrow(db_cols)),
       is_date      = logical(nrow(db_cols)),
+      is_extension = !db_cols$column_name %in% standard_cols,
+      is_untyped_identifier = logical(nrow(db_cols)),
       is_sensitive  = logical(nrow(db_cols)),
       is_blocked   = logical(nrow(db_cols)),
       stringsAsFactors = FALSE
@@ -1087,8 +1130,19 @@
       col_df$is_date[j] <- grepl("_date$|_datetime$", col_name) ||
         grepl("^date$|^datetime$", tolower(col_df$cdm_datatype[j]))
 
+      # An explicit extension allow-list controls visibility, not semantics.
+      # Therefore an unfamiliar identifier-shaped field remains denied even
+      # when the controller listed it. Person keys have a dedicated
+      # pseudonymization contract and *_concept_id fields have a reviewed OMOP
+      # concept role; every other extension id/key/identifier is untyped.
+      col_df$is_untyped_identifier[j] <-
+        isTRUE(col_df$is_extension[j]) &&
+        length(.untypedIdentifierColumns(
+          col_name, reviewed = .PERSON_KEY_COLS(), allow_concepts = TRUE
+        )) > 0L
       col_df$is_sensitive[j] <- .detectSensitiveColumns(col_name)
-      col_df$is_blocked[j] <- col_df$is_sensitive[j]
+      col_df$is_blocked[j] <- col_df$is_sensitive[j] ||
+        col_df$is_untyped_identifier[j]
     }
 
     columns[[tbl_name]] <- col_df
@@ -1101,20 +1155,19 @@
   # Discover Achilles tables in results_schema (not in OHDSI spec CSVs)
   achilles_table_names <- c("achilles_analysis", "achilles_results",
                              "achilles_results_dist", "achilles_heel_results")
-  found_achilles <- intersect(tolower(db_tables_results), achilles_table_names)
-  # Also check CDM tables for SQLite (no separate schemas)
-  if (length(found_achilles) == 0) {
-    found_achilles <- intersect(tolower(db_tables_cdm), achilles_table_names)
+  effective_results_tables <- if (is.null(results_schema) ||
+                                   identical(results_schema,
+                                             handle$cdm_schema)) {
+    db_tables_cdm
+  } else {
+    db_tables_results
   }
+  found_achilles <- intersect(tolower(effective_results_tables),
+                              achilles_table_names)
   # Avoid duplicating tables already in the tables data.frame
   new_achilles <- setdiff(found_achilles, tables$table_name)
   if (length(new_achilles) > 0) {
-    achilles_schema <- if (length(intersect(tolower(db_tables_results),
-                                             achilles_table_names)) > 0) {
-      results_schema
-    } else {
-      handle$cdm_schema
-    }
+    achilles_schema <- .effectiveResultsSchema(handle)
     achilles_rows <- data.frame(
       table_name      = new_achilles,
       schema_category = rep("Results", length(new_achilles)),
@@ -1131,12 +1184,7 @@
   # Also mark already-present achilles tables as present_in_db
   existing_achilles <- intersect(found_achilles, tables$table_name)
   if (length(existing_achilles) > 0) {
-    achilles_schema <- if (length(intersect(tolower(db_tables_results),
-                                             achilles_table_names)) > 0) {
-      results_schema
-    } else {
-      handle$cdm_schema
-    }
+    achilles_schema <- .effectiveResultsSchema(handle)
     mask <- tables$table_name %in% existing_achilles
     tables$present_in_db[mask] <- TRUE
     tables$schema_category[mask & tables$schema_category == "CDM"] <- "Results"
@@ -1150,18 +1198,10 @@
   registry <- .ohdsi_tool_registry()
   all_ohdsi_names <- unlist(lapply(registry, function(t) t$table_names),
                              use.names = FALSE)
-  found_ohdsi <- intersect(tolower(db_tables_results), all_ohdsi_names)
-  if (length(found_ohdsi) == 0) {
-    found_ohdsi <- intersect(tolower(db_tables_cdm), all_ohdsi_names)
-  }
+  found_ohdsi <- intersect(tolower(effective_results_tables), all_ohdsi_names)
   new_ohdsi <- setdiff(found_ohdsi, tables$table_name)
   if (length(new_ohdsi) > 0) {
-    ohdsi_schema <- if (length(intersect(tolower(db_tables_results),
-                                          all_ohdsi_names)) > 0) {
-      results_schema
-    } else {
-      handle$cdm_schema
-    }
+    ohdsi_schema <- .effectiveResultsSchema(handle)
     ohdsi_rows <- data.frame(
       table_name      = new_ohdsi,
       schema_category = rep("Results", length(new_ohdsi)),
@@ -1178,12 +1218,7 @@
   # Mark already-present OHDSI tables
   existing_ohdsi <- intersect(found_ohdsi, tables$table_name)
   if (length(existing_ohdsi) > 0) {
-    ohdsi_schema <- if (length(intersect(tolower(db_tables_results),
-                                          all_ohdsi_names)) > 0) {
-      results_schema
-    } else {
-      handle$cdm_schema
-    }
+    ohdsi_schema <- .effectiveResultsSchema(handle)
     mask <- tables$table_name %in% existing_ohdsi
     tables$present_in_db[mask] <- TRUE
     tables$schema_category[mask & tables$schema_category == "CDM"] <- "Results"
@@ -1395,6 +1430,21 @@
   handle$cdm_schema
 }
 
+#' Resolve the effective schema for read-only OHDSI result-table access
+#'
+#' An explicitly configured results schema wins. Otherwise the restricted
+#' controller-side detector may select an allowlisted schema; if it finds no
+#' dedicated results namespace, standard co-located result tables are read from
+#' the CDM schema. Persistent writes continue to require an explicit
+#' \code{handle$results_schema} and do not use this fallback.
+#'
+#' @param handle CDM handle.
+#' @return Character schema name, or \code{NULL} on a schemaless connection.
+#' @keywords internal
+.effectiveResultsSchema <- function(handle) {
+  .resolveResultsSchema(handle) %||% handle$cdm_schema
+}
+
 #' Resolve the schema that actually contains the Achilles / results tables
 #'
 #' Makes the OHDSI "results" daimon first-class, mirroring how the vocabulary
@@ -1448,8 +1498,13 @@
          call. = FALSE)
   }
   if (length(allowed) > 0L) {
-    allowed <- vapply(allowed, .validateIdentifier, character(1),
-                      what = "allowed results schema")
+    allowed <- vapply(allowed, function(namespace) {
+      .validateSchemaNamespace(
+        handle$dbms %||% handle$target_dialect,
+        namespace,
+        "allowed results schema"
+      )
+    }, character(1L))
   }
   candidates <- unique(Filter(function(s) !is.null(s) && nzchar(s),
                               c(cdm, allowed)))
@@ -1459,6 +1514,63 @@
     if (length(intersect(marker_tables, tbls)) > 0) return(schema)
   }
   NULL
+}
+
+# Quote one already validated identifier component only when unquoted SQL would
+# alter or reject it. Standard lowercase OMOP identifiers remain readable.
+.quoteIdentifierPart <- function(handle, value) {
+  if (grepl("^[a-z_][a-z0-9_]*$", value)) return(value)
+  dialect <- tolower(handle$target_dialect %||% "")
+  if (dialect %in% c("snowflake", "oracle") &&
+      grepl("^[A-Z_][A-Z0-9_]*$", value)) {
+    return(value)
+  }
+  if (dialect %in% c("mysql", "spark")) {
+    return(paste0("`", gsub("`", "``", value, fixed = TRUE), "`"))
+  }
+  if (identical(dialect, "sql server")) {
+    return(paste0("[", gsub("]", "]]", value, fixed = TRUE), "]"))
+  }
+  paste0('"', gsub('"', '""', value, fixed = TRUE), '"')
+}
+
+.qualifyNamespace <- function(handle, schema) {
+  schema <- .validateSchemaNamespace(
+    handle$dbms %||% handle$target_dialect, schema, "schema"
+  )
+  parts <- strsplit(schema, ".", fixed = TRUE)[[1L]]
+  if (identical(tolower(handle$target_dialect %||% ""), "bigquery")) {
+    return(paste0("`", paste(parts, collapse = "."), "`"))
+  }
+  paste(vapply(parts, .quoteIdentifierPart, character(1L), handle = handle),
+        collapse = ".")
+}
+
+.metadataIdentifierValue <- function(handle, value) {
+  dialect <- tolower(handle$target_dialect %||% "")
+  if (dialect %in% c("snowflake", "oracle") &&
+      grepl("^[A-Za-z_][A-Za-z0-9_]*$", value) &&
+      identical(value, tolower(value))) {
+    return(toupper(value))
+  }
+  value
+}
+
+# MySQL and MariaDB table names can be case-sensitive while OMOP names are
+# exposed canonically in lower case. Metadata discovery records the exact
+# physical spelling per database; SQL qualification resolves it here.
+.physicalTableName <- function(handle, table, schema = NULL) {
+  table <- .validateIdentifier(table, "table")
+  if (!identical(tolower(handle$target_dialect %||% ""), "mysql")) {
+    return(table)
+  }
+  namespace <- schema %||% handle$cdm_schema %||% "<default>"
+  mapping <- (handle$physical_table_names %||% list())[[namespace]]
+  physical <- unname(mapping[tolower(table)])
+  if (length(physical) == 1L && !is.na(physical)) {
+    return(.validateIdentifier(physical, "physical table"))
+  }
+  table
 }
 
 #' Build a schema-qualified table reference
@@ -1471,11 +1583,20 @@
 .qualifyTable <- function(handle, table, schema = NULL) {
   table <- .validateIdentifier(table, "table")
   schema <- schema %||% handle$cdm_schema
+  table <- .physicalTableName(handle, table, schema)
   if (is.null(schema) || schema == "") {
-    return(table)
+    return(.quoteIdentifierPart(handle, table))
   }
-  schema <- .validateIdentifier(schema, "schema")
-  paste0(schema, ".", table)
+  schema <- .validateSchemaNamespace(
+    handle$dbms %||% handle$target_dialect, schema, "schema"
+  )
+  dialect <- tolower(handle$target_dialect %||% "")
+  parts <- strsplit(schema, ".", fixed = TRUE)[[1L]]
+  if (identical(dialect, "bigquery")) {
+    return(paste0("`", paste(c(parts, table), collapse = "."), "`"))
+  }
+  paste0(.qualifyNamespace(handle, schema), ".",
+         .quoteIdentifierPart(handle, table))
 }
 
 # --- Blueprint Query Helpers ---
@@ -1769,9 +1890,26 @@
       ".sqlite_master WHERE type IN ('table', 'view') ORDER BY name")
     result <- .metadataQuery(handle, sql)
     tables <- .metadataResultColumn(result, c("table_name", "name"))
+  } else if (handle$target_dialect == "postgresql") {
+    schema_to_use <- .validateSchemaNamespace(
+      handle$dbms, schema %||% handle$cdm_schema %||% "public", "schema"
+    )
+    sql <- .renderSql(handle,
+      "SELECT c.relname AS table_name
+       FROM pg_catalog.pg_class c
+       INNER JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = '@schema'
+         AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+         AND pg_catalog.has_schema_privilege(n.oid, 'USAGE')
+         AND pg_catalog.has_table_privilege(c.oid, 'SELECT')
+       ORDER BY c.relname",
+      schema = schema_to_use)
+    result <- .metadataQuery(handle, sql)
+    tables <- .metadataResultColumn(result, "table_name")
   } else if (handle$target_dialect == "oracle") {
-    schema_to_use <- toupper(.validateIdentifier(
-      schema %||% handle$cdm_schema %||% "", "schema"))
+    schema_to_use <- .metadataIdentifierValue(handle,
+      .validateSchemaNamespace(handle$dbms,
+        schema %||% handle$cdm_schema %||% "", "schema"))
     sql <- .renderSql(handle,
       "SELECT OBJECT_NAME AS TABLE_NAME FROM ALL_OBJECTS
        WHERE OWNER = '@schema'
@@ -1781,7 +1919,7 @@
     result <- .metadataQuery(handle, sql)
     tables <- .metadataResultColumn(result, "table_name")
   } else if (handle$target_dialect == "bigquery") {
-    schema_to_use <- .validateIdentifier(
+    schema_to_use <- .validateSchemaNamespace(handle$dbms,
       schema %||% handle$cdm_schema %||% "", "schema")
     sql <- .renderSql(handle,
       "SELECT table_name FROM `@schema.INFORMATION_SCHEMA.TABLES`
@@ -1790,30 +1928,64 @@
     result <- .metadataQuery(handle, sql)
     tables <- .metadataResultColumn(result, "table_name")
   } else if (handle$target_dialect == "spark") {
-    schema_to_use <- .validateIdentifier(
+    schema_to_use <- .validateSchemaNamespace(handle$dbms,
       schema %||% handle$cdm_schema %||% "default", "schema")
     result <- .metadataQuery(
-      handle, paste0("SHOW TABLES IN ", schema_to_use))
+      handle, paste0("SHOW TABLES IN ", .qualifyNamespace(handle, schema_to_use)))
     tables <- .metadataResultColumn(
       result, c("tableName", "table_name", "tablename"))
   } else {
-    schema_to_use <- .validateIdentifier(
-      schema %||% handle$cdm_schema %||% "public", "schema")
+    namespace <- .validateSchemaNamespace(
+      handle$dbms %||% handle$target_dialect,
+      schema %||% handle$cdm_schema %||% "public", "schema"
+    )
+    parts <- strsplit(namespace, ".", fixed = TRUE)[[1L]]
+    schema_to_use <- parts[[length(parts)]]
+    catalog_to_use <- if (length(parts) == 2L) parts[[1L]] else NULL
     if (handle$target_dialect == "snowflake") {
-      # Unquoted Snowflake identifiers are stored in upper case; querying its
-      # INFORMATION_SCHEMA with a lower-case resource setting returns no rows.
-      schema_to_use <- toupper(schema_to_use)
+      schema_to_use <- .metadataIdentifierValue(handle, schema_to_use)
+      if (!is.null(catalog_to_use)) {
+        catalog_to_use <- .metadataIdentifierValue(handle, catalog_to_use)
+      }
     }
-    sql <- .renderSql(handle,
-      "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
-       WHERE TABLE_SCHEMA = '@schema'
-       ORDER BY TABLE_NAME",
-      schema = schema_to_use)
+    catalog_predicate <- if (is.null(catalog_to_use)) "" else paste0(
+      " AND TABLE_CATALOG = '", catalog_to_use, "'"
+    )
+    information_schema <- if (is.null(catalog_to_use)) {
+      "INFORMATION_SCHEMA"
+    } else {
+      paste0(.quoteIdentifierPart(handle, catalog_to_use),
+             ".INFORMATION_SCHEMA")
+    }
+    sql <- .renderSql(
+      handle,
+      paste0(
+        "SELECT TABLE_NAME FROM ", information_schema, ".TABLES ",
+        "WHERE TABLE_SCHEMA = '@schema'@catalog_predicate ",
+        "ORDER BY TABLE_NAME"
+      ),
+      schema = schema_to_use, catalog_predicate = catalog_predicate
+    )
     result <- .metadataQuery(handle, sql)
     tables <- .metadataResultColumn(result, "table_name")
   }
 
-  tolower(as.character(tables))
+  physical_tables <- as.character(tables)
+  canonical_tables <- tolower(physical_tables)
+  if (identical(tolower(handle$target_dialect %||% ""), "mysql")) {
+    duplicates <- unique(canonical_tables[duplicated(canonical_tables)])
+    if (length(duplicates) > 0L) {
+      stop("Ambiguous physical table names collapse to the same canonical ",
+           "OMOP name: ", paste(duplicates, collapse = ", "), ".",
+           call. = FALSE)
+    }
+    namespace <- schema %||% handle$cdm_schema %||% "<default>"
+    mappings <- handle$physical_table_names %||% list()
+    mappings[[namespace]] <- stats::setNames(physical_tables,
+                                             canonical_tables)
+    handle$physical_table_names <- mappings
+  }
+  canonical_tables
 }
 
 #' List columns in a table (raw DB query)
@@ -1825,6 +1997,7 @@
 #' @keywords internal
 .listColumnsRaw <- function(handle, table, schema = NULL) {
   table <- .validateIdentifier(table, "table")
+  physical_table <- .physicalTableName(handle, table, schema)
   empty <- data.frame(column_name = character(0), data_type = character(0),
                       is_nullable = character(0), stringsAsFactors = FALSE)
 
@@ -1844,15 +2017,53 @@
     } else {
       empty
     }
+  } else if (handle$target_dialect == "postgresql") {
+    schema_to_use <- .validateSchemaNamespace(
+      handle$dbms, schema %||% handle$cdm_schema %||% "public", "schema"
+    )
+    sql <- .renderSql(handle,
+      "SELECT a.attname AS column_name,
+              CASE WHEN t.typtype = 'd'
+                   THEN pg_catalog.format_type(t.typbasetype, t.typtypmod)
+                   ELSE pg_catalog.format_type(a.atttypid, a.atttypmod)
+              END AS data_type,
+              CASE WHEN a.attnotnull OR (t.typtype = 'd' AND t.typnotnull)
+                   THEN 'NO' ELSE 'YES' END AS is_nullable
+       FROM pg_catalog.pg_attribute a
+       INNER JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+       INNER JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       INNER JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+       WHERE n.nspname = '@schema'
+         AND c.relname = '@table'
+         AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+         AND a.attnum > 0
+         AND NOT a.attisdropped
+         AND pg_catalog.has_schema_privilege(n.oid, 'USAGE')
+         AND pg_catalog.has_table_privilege(c.oid, 'SELECT')
+       ORDER BY a.attnum",
+      schema = schema_to_use, table = table)
+    result <- .metadataQuery(handle, sql)
+    if (nrow(result) > 0L) {
+      data.frame(
+        column_name = tolower(.metadataResultColumn(result, "column_name")),
+        data_type = tolower(.metadataResultColumn(result, "data_type")),
+        is_nullable = .metadataResultColumn(result, "is_nullable"),
+        stringsAsFactors = FALSE
+      )
+    } else {
+      empty
+    }
   } else if (handle$target_dialect == "oracle") {
-    schema_to_use <- toupper(.validateIdentifier(
-      schema %||% handle$cdm_schema %||% "", "schema"))
+    schema_to_use <- .metadataIdentifierValue(handle,
+      .validateSchemaNamespace(handle$dbms,
+        schema %||% handle$cdm_schema %||% "", "schema"))
     sql <- .renderSql(handle,
       "SELECT COLUMN_NAME, DATA_TYPE, NULLABLE AS IS_NULLABLE
        FROM ALL_TAB_COLUMNS
        WHERE OWNER = '@schema' AND TABLE_NAME = '@table'
        ORDER BY COLUMN_ID",
-      schema = schema_to_use, table = toupper(table))
+      schema = schema_to_use,
+      table = .metadataIdentifierValue(handle, table))
     result <- .metadataQuery(handle, sql)
     if (nrow(result) > 0) {
       nullable <- .metadataResultColumn(result, "is_nullable")
@@ -1866,7 +2077,7 @@
       empty
     }
   } else if (handle$target_dialect == "bigquery") {
-    schema_to_use <- .validateIdentifier(
+    schema_to_use <- .validateSchemaNamespace(handle$dbms,
       schema %||% handle$cdm_schema %||% "", "schema")
     sql <- .renderSql(handle,
       "SELECT column_name, data_type, is_nullable
@@ -1886,10 +2097,11 @@
       empty
     }
   } else if (handle$target_dialect == "spark") {
-    schema_to_use <- .validateIdentifier(
+    schema_to_use <- .validateSchemaNamespace(handle$dbms,
       schema %||% handle$cdm_schema %||% "default", "schema")
-    result <- .metadataQuery(handle, paste0(
-      "DESCRIBE TABLE ", schema_to_use, ".", table))
+    result <- .metadataQuery(
+      handle, paste0("DESCRIBE TABLE ",
+                     .qualifyTable(handle, table, schema_to_use)))
     if (nrow(result) > 0L) {
       column_name <- as.character(.metadataResultColumn(
         result, c("col_name", "column_name")))
@@ -1905,19 +2117,41 @@
       empty
     }
   } else {
-    schema_to_use <- .validateIdentifier(
-      schema %||% handle$cdm_schema %||% "public", "schema")
-    table_to_use <- table
+    namespace <- .validateSchemaNamespace(
+      handle$dbms %||% handle$target_dialect,
+      schema %||% handle$cdm_schema %||% "public", "schema"
+    )
+    parts <- strsplit(namespace, ".", fixed = TRUE)[[1L]]
+    schema_to_use <- parts[[length(parts)]]
+    catalog_to_use <- if (length(parts) == 2L) parts[[1L]] else NULL
+    table_to_use <- physical_table
     if (handle$target_dialect == "snowflake") {
-      schema_to_use <- toupper(schema_to_use)
-      table_to_use <- toupper(table_to_use)
+      schema_to_use <- .metadataIdentifierValue(handle, schema_to_use)
+      if (!is.null(catalog_to_use)) {
+        catalog_to_use <- .metadataIdentifierValue(handle, catalog_to_use)
+      }
+      table_to_use <- .metadataIdentifierValue(handle, table_to_use)
     }
-    sql <- .renderSql(handle,
-      "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
-       FROM INFORMATION_SCHEMA.COLUMNS
-       WHERE TABLE_SCHEMA = '@schema' AND TABLE_NAME = '@table'
-       ORDER BY ORDINAL_POSITION",
-      schema = schema_to_use, table = table_to_use)
+    catalog_predicate <- if (is.null(catalog_to_use)) "" else paste0(
+      " AND TABLE_CATALOG = '", catalog_to_use, "'"
+    )
+    information_schema <- if (is.null(catalog_to_use)) {
+      "INFORMATION_SCHEMA"
+    } else {
+      paste0(.quoteIdentifierPart(handle, catalog_to_use),
+             ".INFORMATION_SCHEMA")
+    }
+    sql <- .renderSql(
+      handle,
+      paste0(
+        "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE ",
+        "FROM ", information_schema, ".COLUMNS ",
+        "WHERE TABLE_SCHEMA = '@schema' AND TABLE_NAME = '@table'",
+        "@catalog_predicate ORDER BY ORDINAL_POSITION"
+      ),
+      schema = schema_to_use, table = table_to_use,
+      catalog_predicate = catalog_predicate
+    )
     result <- .metadataQuery(handle, sql)
     if (nrow(result) > 0) {
       data.frame(
@@ -2161,8 +2395,16 @@
     paste0("DROP VIEW IF EXISTS ", name)
   } else if (support$target_dialect == "mysql") {
     paste0("DROP TEMPORARY TABLE IF EXISTS ", name)
-  } else {
+  } else if (identical(support$dbms, "postgresql")) {
+    paste0("DROP TABLE IF EXISTS pg_temp.", name)
+  } else if (support$dbms %in% c("sqlite", "duckdb")) {
+    paste0("DROP TABLE IF EXISTS temp.", name)
+  } else if (identical(support$temporary_materialization, "session_table")) {
     paste0("DROP TABLE IF EXISTS ", name)
+  } else {
+    stop("Session-scoped temporary materialization is not implemented safely ",
+         "for DBMS '", support$dbms, "'; refusing to generate a DROP that ",
+         "could target a persistent object.", call. = FALSE)
   }
 }
 

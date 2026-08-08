@@ -12,15 +12,14 @@
     "literal_upstream_sql_authorized": false,
     "queries_enabled_by_this_registry": 0,
     "runtime_allowlist": "inst/queries/query_allowlist.json",
-    "mapping_meaning": "mapped_to_bounded_sticky_primitive means that the upstream question may be re-expressed through the named person-bounded sticky-noise primitive. It does not certify formal differential privacy, the literal upstream SQL, its output schema, or direct execution.",
-    "formal_dp_certified": false
+    "mapping_meaning": "mapped_to_bounded_sticky_primitive means that the upstream question may be re-expressed through the named person-bounded sticky-noise primitive. It never authorizes the literal upstream SQL, its output schema, or direct execution."
   },
   "privacy_contract": {
     "adjacency": "add_or_remove_one_person",
     "contribution_unit": "person",
-    "longitudinal_rule": "Repeated OMOP records are first collapsed to person-level predicates or de-duplicated person/category pairs, then deterministically capped before aggregation.",
+    "longitudinal_rule": "Repeated OMOP records are reduced per person, de-duplicated as person/category pairs, or deterministically retained up to a public person-level cap k before aggregation.",
     "domain_rule": "Every grouping domain, threshold, concept set, time interval and category order is public and fixed before data access; observed levels, data-dependent top-N values and data-dependent bins are forbidden.",
-    "mechanism_rule": "The mapping requires a dedicated server-owned sticky-noise release with canonical semantic query identity and durable replay/accounting. The current built-in sampler and upstream preprocessing are not certified as formal differential privacy; deterministic disclosure control and nfilter.noise are not DP.",
+    "mechanism_rule": "The mapping requires a dedicated server-owned sticky-noise release with canonical semantic query identity and durable replay/accounting. Deterministic disclosure control and nfilter.noise do not implement this mechanism.",
     "postprocessing_rule": "Only noisy primitive outputs and deterministic post-processing of those outputs may be released; exact support checks, exact extrema and exact intermediate counts are not released."
   },
   "families": [
@@ -47,6 +46,39 @@
       }
     },
     {
+      "id": "bounded_record_count",
+      "primitive": "bounded_record_count",
+      "contract": "Count at most k records for each person and sum those bounded person contributions.",
+      "fixed_public_domain": "The cohort, event predicate, temporal window and contribution cap k are fixed and public before evaluation.",
+      "sensitivity": {
+        "metric": "L1",
+        "value": "k",
+        "reason": "Adding or removing one person changes the bounded scalar record count by at most k."
+      }
+    },
+    {
+      "id": "fixed_domain_record_histogram",
+      "primitive": "categorical_histogram",
+      "contract": "Retain at most k records per person using a declared ordering column and canonical category tie-break, then emit every category in the fixed domain, including zero-observation categories.",
+      "fixed_public_domain": "The complete category or canonical tuple domain, record ordering and contribution cap k are fixed and public before evaluation.",
+      "sensitivity": {
+        "metric": "L1",
+        "value": "k",
+        "reason": "Adding or removing one person changes at most k total histogram contributions."
+      }
+    },
+    {
+      "id": "bounded_distinct",
+      "primitive": "bounded_distinct",
+      "contract": "De-duplicate categories within each person, retain at most k categories using canonical UTF-8 value ordering, and release the noisy cardinality of their union.",
+      "fixed_public_domain": "The complete vocabulary-derived category domain and contribution cap k are fixed and public; protected values never define the release domain or ordering.",
+      "sensitivity": {
+        "metric": "L1",
+        "value": "k",
+        "reason": "Adding or removing one person can add or remove at most k categories from the union."
+      }
+    },
+    {
       "id": "bounded_binary_rate",
       "primitive": "binary_rate",
       "contract": "Collapse longitudinal records to one public denominator Boolean and one public numerator Boolean per person, release both bounded counts with separate noise allocations, and derive the rate only as post-processing.",
@@ -58,6 +90,31 @@
           1
         ],
         "reason": "One person changes the denominator by at most one and the numerator by at most one; the two releases compose sequentially."
+      }
+    },
+    {
+      "id": "bounded_numeric_histogram",
+      "primitive": "numeric_histogram",
+      "contract": "Reduce to one numeric/date value per person or retain at most k deterministically ordered records per person, clip into fixed public breaks, and emit every public bin.",
+      "fixed_public_domain": "Breaks, reducer, record order and any contribution cap k are fixed and public before evaluation.",
+      "sensitivity": {
+        "metric": "L1",
+        "value": "1_or_k",
+        "reason": "A person changes one bin after person reduction, or at most k bins under the explicitly capped records reducer."
+      }
+    },
+    {
+      "id": "bounded_person_mean",
+      "primitive": "bounded_mean",
+      "contract": "Reduce longitudinal values to one value per person, clip it to fixed public bounds and release only the bounded count and quantized sum used to derive the mean.",
+      "fixed_public_domain": "Numeric bounds, reducer and quantization contract are fixed and public before evaluation.",
+      "sensitivity": {
+        "metric": "sequential_L1",
+        "value": [
+          1,
+          "numeric_grid"
+        ],
+        "reason": "One person changes the bounded count by one and the quantized sum by at most the fixed server grid."
       }
     }
   ],
@@ -175,6 +232,135 @@
       "public_domain": "The complete ordered month domain 1 through 12; exact birth dates and years remain unavailable."
     }
   ],
+  "executable_catalog": {
+    "status": "executable_redesign_specifications",
+    "source_commit": "df8a21074b08519e581ca1afb7510468538117a4",
+    "literal_upstream_sql_authorized": false,
+    "input_contract": "Each mapping operates only on a server-created person-local omop.table prepared through the typed Recipe/Plan path. The mapping fixes the sticky primitive and longitudinal reducer; the analyst must supply every public domain, bound, bin, concept set, time window and record cap before data access.",
+    "output_contract": "Only the sticky primitive output and deterministic post-processing may leave the server. Exact support branches, observed categories, data-dependent top-N values, raw extrema and intermediate rows are forbidden.",
+    "mapped_query_count": 129,
+    "mapping_groups": [
+      {
+        "id": "distinct_person_count",
+        "statistic": "count",
+        "reducer": "any",
+        "contribution_mode": "one_boolean_per_person",
+        "upstream_ids": [
+          "CO11", "DER09", "DEX21", "DEX22", "OP01", "OP03", "OP04", "PE02"
+        ]
+      },
+      {
+        "id": "fixed_domain_person_histogram",
+        "statistic": "categorical_histogram",
+        "reducer": "presence",
+        "contribution_mode": "deduplicated_person_category_pairs",
+        "upstream_ids": [
+          "CS02", "CE06", "CE07", "CE10", "CO24", "COC11",
+          "DER26", "DEX01", "DEX04", "DEX10", "DEX19", "DEX40", "DEX42",
+          "OP16", "PE03", "PE07", "PE11"
+        ]
+      },
+      {
+        "id": "fixed_domain_person_histogram",
+        "statistic": "categorical_histogram",
+        "reducer": "first",
+        "contribution_mode": "one_chronologically_first_category_per_person",
+        "order_by_required": true,
+        "upstream_ids": ["COC01"]
+      },
+      {
+        "id": "bounded_binary_rate",
+        "statistic": "binary_rate",
+        "reducer": "any",
+        "contribution_mode": "one_denominator_and_one_numerator_boolean_per_person",
+        "upstream_ids": [
+          "COC05", "COC09", "DER05", "DER06", "DEX11", "DEX14", "DEX20"
+        ]
+      },
+      {
+        "id": "bounded_person_mean",
+        "statistic": "bounded_mean",
+        "reducer": "mean",
+        "contribution_mode": "one_clipped_reduced_value_per_person",
+        "upstream_ids": [
+          "CO08", "DRC03", "DER03", "DER07", "DEX16", "OP05", "OP06"
+        ]
+      },
+      {
+        "id": "bounded_numeric_histogram",
+        "statistic": "numeric_histogram",
+        "reducer": "mean",
+        "contribution_mode": "one_binned_reduced_value_per_person",
+        "upstream_ids": [
+          "CE01", "CE02", "CE03", "CE08", "CE13", "CE16", "CE17", "CO01",
+          "CO05", "CO07", "CO15", "CO17", "CO21", "CO25", "COC02", "COC06",
+          "COC10", "DER13", "DER15", "DER18", "DEX02", "DEX03", "DEX07",
+          "DEX08", "DEX09", "DEX15", "DEX23", "DEX24", "DEX29", "DEX31",
+          "DEX34", "DEX35", "DEX36", "DEX37", "DRC01", "DRC07", "OP02",
+          "OP07", "OP08", "OP12", "OP14", "OP15", "OP19", "OP20", "PE06",
+          "PE09", "PE10", "PE12", "PP01"
+        ]
+      },
+      {
+        "id": "bounded_numeric_histogram",
+        "statistic": "numeric_histogram",
+        "reducer": "first",
+        "contribution_mode": "one_chronologically_first_binned_value_per_person",
+        "upstream_ids": [
+          "CE12", "CO02", "CO13", "DER11", "DER23", "DEX27", "DEX41", "OP13"
+        ]
+      },
+      {
+        "id": "bounded_numeric_histogram",
+        "statistic": "numeric_histogram",
+        "reducer": "last",
+        "contribution_mode": "one_chronologically_last_binned_value_per_person",
+        "upstream_ids": [
+          "CE11", "CO12", "DER10", "DEX26", "OP11"
+        ]
+      },
+      {
+        "id": "bounded_numeric_histogram",
+        "statistic": "numeric_histogram",
+        "reducer": "records",
+        "contribution_mode": "at_most_k_ordered_records_per_person",
+        "record_cap_required": true,
+        "order_by_required": true,
+        "upstream_ids": [
+          "CE05", "CO09", "CO19", "CO23", "DER17", "DEX33", "OP10", "OP17", "OP18"
+        ]
+      },
+      {
+        "id": "bounded_record_count",
+        "statistic": "bounded_record_count",
+        "reducer": "records",
+        "contribution_mode": "at_most_k_records_per_person",
+        "record_cap_required": true,
+        "upstream_ids": ["CO10", "CO18", "DER08", "DEX25"]
+      },
+      {
+        "id": "fixed_domain_record_histogram",
+        "statistic": "categorical_histogram",
+        "reducer": "records",
+        "contribution_mode": "at_most_k_ordered_records_per_person",
+        "record_cap_required": true,
+        "order_by_required": true,
+        "upstream_ids": [
+          "CE04", "CE09", "CO03", "CO04", "CO14", "CO22", "DER12",
+          "DER21", "DEX05", "DEX13", "DEX18", "DEX28", "DEX39"
+        ]
+      },
+      {
+        "id": "bounded_distinct",
+        "statistic": "bounded_distinct",
+        "reducer": "distinct",
+        "contribution_mode": "at_most_k_distinct_categories_per_person",
+        "record_cap_required": true,
+        "upstream_ids": ["DEX06"]
+      }
+    ],
+    "held_back": []
+  },
   "blocked": [
     {
       "reason": "source_or_free_text_labels",

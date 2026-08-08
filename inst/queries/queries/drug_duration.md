@@ -37,8 +37,8 @@ SELECT de.drug_concept_id,
        c.concept_name,
        COUNT(DISTINCT de.person_id) AS n_persons,
        COUNT(*) AS n_records,
-       AVG(CAST(de.drug_exposure_end_date - de.drug_exposure_start_date AS FLOAT)) AS avg_days,
-       STDDEV(CAST(de.drug_exposure_end_date - de.drug_exposure_start_date AS FLOAT)) AS sd_days
+       AVG(CAST(DATEDIFF(day, de.drug_exposure_start_date, de.drug_exposure_end_date) AS FLOAT)) AS avg_days,
+       STDDEV(CAST(DATEDIFF(day, de.drug_exposure_start_date, de.drug_exposure_end_date) AS FLOAT)) AS sd_days
 FROM @cdm.drug_exposure de
 JOIN @vocab.concept c ON c.concept_id = de.drug_concept_id
 WHERE de.drug_concept_id = @concept_id

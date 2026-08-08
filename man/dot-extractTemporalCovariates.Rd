@@ -13,7 +13,8 @@
   window_start = -365L,
   window_end = 0L,
   analyses = c("binary"),
-  filters = NULL
+  filters = NULL,
+  observation_roster = NULL
 )
 }
 \arguments{
@@ -23,7 +24,7 @@
 
 \item{table}{Character; source OMOP table}
 
-\item{concept_filter}{Numeric vector; concept IDs to include}
+\item{concept_filter}{Numeric vector or OHDSI concept-set specification.}
 
 \item{bin_width}{Integer; bin width in days}
 
@@ -32,6 +33,9 @@
 \item{window_end}{Integer; end of window (days from index)}
 
 \item{analyses}{Character vector; analyses to compute}
+
+\item{observation_roster}{Optional validated internal observation-period
+roster, used by person-period extraction to avoid querying it twice.}
 }
 \value{
 Named list with temporalCovariates, covariateRef, timeRef, and

@@ -23,10 +23,15 @@
 \item{out_src}{\code{\link{.omopOutcomeSource}} list (or NULL -> no events, all
 members censored at the TAR end).}
 
-\item{tar_start_offset, tar_end_offset}{Integer day offsets for the TAR window.}
+\item{tar_start_offset, tar_end_offset}{Integer day offsets for the TAR window.
+Recurrent cohort episodes are reduced to the earliest canonical episode per
+person because this CohortMethod Kaplan-Meier port is a person-level model;
+episode-level/recurrent-event survival remains available through the general
+longitudinal survival plan. The outcome is the first qualifying event inside
+that selected episode's TAR, never the person's first event globally.}
 }
 \value{
-Data frame (arm, time, event), one row per arm member (possibly empty).
+Data frame (arm, time, event), one row per person (possibly empty).
 }
 \description{
 The R-in-session substrate of a Kaplan-Meier comparison: one row per cohort

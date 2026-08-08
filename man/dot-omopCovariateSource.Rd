@@ -12,7 +12,7 @@
 \item{domain_code}{Character/int domain selector.}
 }
 \value{
-list(table, person_col, concept_col, date_col, value_col).
+list(table_name, table, person_col, concept_col, date_col, value_col).
 }
 \description{
 The binary/continuous covariate kernels select their event source by the same

@@ -124,6 +124,173 @@ test_that("profileValueCounts blocks sensitive columns", {
   )
 })
 
+test_that("clinical profilers require a reviewed person_id path", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  expect_error(
+    .profileTableStats(handle, "episode_event", stats = "rows"),
+    "reviewed path to person_id"
+  )
+  expect_error(
+    .profileColumnStats(
+      handle, "episode_event", "episode_event_field_concept_id"
+    ),
+    "reviewed path to person_id"
+  )
+  expect_error(
+    .profileMissingness(
+      handle, "episode_event", "episode_event_field_concept_id"
+    ),
+    "reviewed path to person_id"
+  )
+  expect_error(
+    .profileValueCounts(
+      handle, "episode_event", "episode_event_field_concept_id"
+    ),
+    "reviewed path to person_id"
+  )
+  expect_error(
+    .profileConceptDrilldown(
+      handle, "episode_event", 1147127L,
+      concept_col = "episode_event_field_concept_id"
+    ),
+    "reviewed path to person_id"
+  )
+  expect_error(
+    .profileConceptPrevalence(
+      handle, "episode_event",
+      concept_col = "episode_event_field_concept_id"
+    ),
+    "reviewed path to person_id"
+  )
+  expect_error(
+    .profileSafeCutpoints(handle, "episode_event", "event_id"),
+    "reviewed path to person_id"
+  )
+  expect_error(
+    .profileNumericRange(handle, "episode_event", "event_id"),
+    "reviewed path to person_id"
+  )
+  expect_error(
+    .profileNumericHistogram(handle, "episode_event", "event_id"),
+    "reviewed path to person_id"
+  )
+  expect_error(
+    .profileNumericQuantiles(handle, "episode_event", "event_id"),
+    "reviewed path to person_id"
+  )
+  expect_error(
+    .profileDateCounts(handle, "episode_event"),
+    "reviewed path to person_id"
+  )
+  expect_error(
+    .profileCrossTab(
+      handle, "episode_event", "episode_event_field_concept_id", "event_id",
+      count_mode = "records"
+    ),
+    "reviewed path to person_id"
+  )
+})
+
+test_that("cohort scope is never ignored on a person-less profiling table", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  expect_error(
+    .profileColumnStats(
+      handle, "episode_event", "episode_event_field_concept_id",
+      cohort_table = "cohort"
+    ),
+    "cohort.*no reviewed path to person_id"
+  )
+  expect_error(
+    .profileMissingness(
+      handle, "episode_event", "episode_event_field_concept_id",
+      cohort_table = "cohort"
+    ),
+    "cohort.*no reviewed path to person_id"
+  )
+  expect_error(
+    .profileValueCounts(
+      handle, "episode_event", "episode_event_field_concept_id",
+      cohort_table = "cohort"
+    ),
+    "cohort.*no reviewed path to person_id"
+  )
+  expect_error(
+    .profileConceptPrevalence(
+      handle, "episode_event",
+      concept_col = "episode_event_field_concept_id",
+      cohort_table = "cohort"
+    ),
+    "cohort.*no reviewed path to person_id"
+  )
+  expect_error(
+    .profileNumericRange(
+      handle, "episode_event", "event_id", cohort_table = "cohort"
+    ),
+    "cohort.*no reviewed path to person_id"
+  )
+  expect_error(
+    .profileNumericHistogram(
+      handle, "episode_event", "event_id", cohort_table = "cohort"
+    ),
+    "cohort.*no reviewed path to person_id"
+  )
+  expect_error(
+    .profileNumericQuantiles(
+      handle, "episode_event", "event_id", cohort_table = "cohort"
+    ),
+    "cohort.*no reviewed path to person_id"
+  )
+  expect_error(
+    .profileDateCounts(
+      handle, "episode_event", cohort_table = "cohort"
+    ),
+    "cohort.*no reviewed path to person_id"
+  )
+  expect_error(
+    .profileCrossTab(
+      handle, "episode_event", "episode_event_field_concept_id", "event_id",
+      count_mode = "records", cohort_table = "cohort"
+    ),
+    "cohort.*no reviewed path to person_id"
+  )
+})
+
+test_that("public Vocabulary tables remain explicitly profileable", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  withr::with_options(list(
+    nfilter.subset = 1,
+    nfilter.tab = 1,
+    nfilter.levels.max = 100,
+    nfilter.levels.density = 1,
+    dsomop.nfilter.band = 1
+  ), {
+    expect_true(!is.null(
+      .profileTableStats(handle, "concept", stats = "rows")$rows
+    ))
+    expect_true(is.list(
+      .profileColumnStats(handle, "concept", "standard_concept")
+    ))
+    expect_true(is.data.frame(
+      .profileMissingness(handle, "concept", "standard_concept")
+    ))
+    expect_true(is.data.frame(
+      .profileValueCounts(handle, "concept", "standard_concept")
+    ))
+    expect_true(is.data.frame(
+      .profileDateCounts(handle, "concept", "valid_start_date")
+    ))
+  })
+})
+
 # --- Regression: numeric-distribution profilers must gate on DISTINCT PERSONS,
 # not record counts. A concept with many records but < nfilter_subset distinct
 # persons (e.g. one patient with 20 lab values) previously leaked p05/p95,
@@ -426,6 +593,112 @@ test_that("profileValueCounts bands the per-value n / n_persons", {
     if ("n_persons" %in% names(res)) {
       expect_true(all(res$n_persons %% 5 == 0))
     }
+  })
+})
+
+test_that("top value counts rank by released bands and public values", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  person_id <- c(rep(1L, 20L), 2:9, 10:15)
+  .replace_profile_measurements(
+    handle, person_id = person_id, value = seq_along(person_id),
+    date = rep("2020-01-01", length(person_id)), concept_id = 9990106L
+  )
+  DBI::dbExecute(
+    handle$conn,
+    paste0(
+      "UPDATE measurement SET unit_concept_id = CASE ",
+      "WHEN measurement_id <= 20 THEN 300 ",
+      "WHEN measurement_id <= 28 THEN 200 ELSE 100 END"
+    )
+  )
+
+  withr::with_options(list(
+    nfilter.subset = 3, nfilter.tab = 3,
+    nfilter.levels.max = 10, nfilter.levels.density = 1,
+    dsomop.nfilter.band = 5
+  ), {
+    # Value 300 has the largest record count (20) but only one person and must be
+    # removed before top_n. Safe values 200 (8) and 100 (6) share release band 5,
+    # so their tie is broken on the public value rather than the hidden count.
+    first <- .profileValueCounts(
+      handle, "measurement", "unit_concept_id", top_n = 1
+    )
+    both <- .profileValueCounts(
+      handle, "measurement", "unit_concept_id", top_n = 2
+    )
+    expect_equal(as.character(first$value), "100")
+    expect_equal(as.character(both$value), c("100", "200"))
+    expect_equal(both$n, c(5, 5))
+  })
+})
+
+test_that("prevalence pagination never ranks within a hidden count band", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  DBI::dbExecute(handle$conn, "DELETE FROM condition_occurrence")
+  person_id <- c(rep(1L, 20L), 2:9, 10:15)
+  conditions <- data.frame(
+    condition_occurrence_id = seq_along(person_id),
+    person_id = person_id,
+    condition_concept_id = c(rep(300L, 20), rep(200L, 8), rep(100L, 6)),
+    condition_start_date = rep("2020-01-01", length(person_id)),
+    condition_end_date = rep("2020-12-31", length(person_id)),
+    condition_type_concept_id = rep(44818518L, length(person_id)),
+    visit_occurrence_id = rep(NA_integer_, length(person_id)),
+    stringsAsFactors = FALSE
+  )
+  DBI::dbWriteTable(
+    handle$conn, "condition_occurrence", conditions, append = TRUE
+  )
+  .buildBlueprint(handle)
+
+  withr::with_options(list(
+    nfilter.subset = 3, nfilter.tab = 3, dsomop.nfilter.band = 5
+  ), {
+    first <- .profileConceptPrevalence(
+      handle, "condition_occurrence", top_n = 1, offset = 0
+    )
+    second <- .profileConceptPrevalence(
+      handle, "condition_occurrence", top_n = 1, offset = 1
+    )
+    records_first <- .profileConceptPrevalence(
+      handle, "condition_occurrence", metric = "records", top_n = 1
+    )
+    expect_equal(first$concept_id, 100L)
+    expect_equal(second$concept_id, 200L)
+    expect_equal(records_first$concept_id, 100L)
+    expect_equal(c(first$n_persons, second$n_persons), c(5, 5))
+  })
+})
+
+test_that("concept drilldown categorical order uses released bands", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  person_id <- c(rep(1L, 20L), 2:9, 10:15)
+  .replace_profile_measurements(
+    handle, person_id = person_id, value = seq_along(person_id),
+    date = rep("2020-01-01", length(person_id)), concept_id = 9990105L
+  )
+  DBI::dbExecute(
+    handle$conn,
+    paste0(
+      "UPDATE measurement SET value_as_concept_id = CASE ",
+      "WHEN measurement_id <= 20 THEN 300 ",
+      "WHEN measurement_id <= 28 THEN 200 ELSE 100 END"
+    )
+  )
+
+  withr::with_options(list(
+    nfilter.subset = 3, nfilter.tab = 3,
+    nfilter.levels.max = 10, nfilter.levels.density = 1,
+    dsomop.nfilter.band = 5
+  ), {
+    result <- .profileConceptDrilldown(handle, "measurement", 9990105L)
+    expect_equal(
+      result$categorical_values$value_as_concept_id, c(100L, 200L)
+    )
+    expect_equal(result$categorical_values$n, c(5, 5))
   })
 })
 

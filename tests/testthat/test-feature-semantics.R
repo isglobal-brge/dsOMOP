@@ -185,7 +185,7 @@ test_that("index-derived age preserves recurrent cohort episodes", {
   expect_equal(p1$sex, c("M", "M"))
 })
 
-test_that("fixed age reference overrides index and observation ambiguity fails closed", {
+test_that("fixed age and explicit multi-period observation policies are deterministic", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
@@ -226,13 +226,52 @@ test_that("fixed age reference overrides index and observation ambiguity fails c
   DBI::dbWriteTable(handle$conn, "observation_period", extra_period,
                     append = TRUE)
   withr::with_options(list(nfilter.subset = 0), {
+    observed <- .computeDerivedColumns(
+      handle,
+      list(
+        list(kind = "obs_duration", name = "total_days",
+             period_policy = "total"),
+        list(kind = "obs_duration", name = "first_days",
+             period_policy = "first"),
+        list(kind = "obs_duration", name = "last_days",
+             period_policy = "last"),
+        list(kind = "obs_duration", name = "longest_days",
+             period_policy = "longest"),
+        list(kind = "prior_obs", name = "prior",
+             reference_date = "2010-06-01", period_policy = "containing"),
+        list(kind = "followup", name = "followup",
+             reference_date = "2010-06-01", period_policy = "containing")
+      ),
+      person_ids = 1:3
+    )
+  })
+  p1 <- observed[observed$person_id == 1L, , drop = FALSE]
+  early_days <- as.integer(as.Date("2011-12-31") - as.Date("2010-01-01"))
+  recent_days <- as.integer(as.Date("2024-12-31") - as.Date("2020-01-01"))
+  expect_equal(p1$total_days, early_days + recent_days)
+  expect_equal(p1$first_days, early_days)
+  expect_equal(p1$last_days, recent_days)
+  expect_equal(p1$longest_days, max(early_days, recent_days))
+  expect_equal(p1$prior,
+               as.integer(as.Date("2010-06-01") - as.Date("2010-01-01")))
+  expect_equal(p1$followup,
+               as.integer(as.Date("2011-12-31") - as.Date("2010-06-01")))
+
+  overlap <- extra_period
+  overlap$observation_period_id <- 1000L
+  overlap$observation_period_start_date <- "2010-05-01"
+  overlap$observation_period_end_date <- "2010-07-01"
+  DBI::dbWriteTable(handle$conn, "observation_period", overlap, append = TRUE)
+  withr::with_options(list(nfilter.subset = 0), {
     expect_error(
       .computeDerivedColumns(
         handle,
-        list(list(kind = "obs_duration", name = "observed_days")),
+        list(list(kind = "prior_obs", name = "prior",
+                  reference_date = "2010-06-01",
+                  period_policy = "containing")),
         person_ids = 1:3
       ),
-      "multiple records.*selection or aggregation policy"
+      "covered by multiple periods"
     )
   })
 })
@@ -596,11 +635,11 @@ test_that("longitudinal outputs share one stable cohort episode identity", {
   expect_equal(survival$time_to_event_days,
                c(5L, 9L, 5L, 9L, 5L, 9L))
 
-  # Each interval is evaluated relative to both episode indexes and retains the
-  # canonical episode key as well as its own deterministic interval row_id.
+  # The default relationship is episode overlap, so January events are not
+  # multiplied into the later recurrent episodes for the same people.
   expect_equal(intervals$row_id, seq_len(nrow(intervals)))
-  expect_setequal(intervals$cohort_row_id, 1:6)
-  expect_equal(nrow(intervals), 6L)
+  expect_setequal(intervals$cohort_row_id, c(1L, 3L, 5L))
+  expect_equal(nrow(intervals), 3L)
   expect_equal(
     intervals$start_days_from_index[intervals$cohort_row_id %in% c(1L, 3L, 5L)],
     rep(5L, 3L)

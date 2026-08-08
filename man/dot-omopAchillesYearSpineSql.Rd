@@ -21,9 +21,8 @@ Character; a parenthesised year-spine derived table aliased as
 Analysis 109 (continuous observation per year) needs one row per calendar year
 spanned by the observation periods. The bounds are coarse, non-disclosive
 calendar years queried once (min start year .. max end year over the scoped /
-whole-DB population); the spine itself is materialised SERVER-SIDE —
-\code{generate_series} on PostgreSQL/ANSI engines, a recursive CTE on SQLite —
-so no per-person dates are pulled into R. Returns NULL when the population has
-no observation periods (caller fails closed / returns empty).
+whole-DB population); a bounded controller-built \code{UNION ALL} spine is
+valid on every supported engine, so no vendor-specific series function or
+per-person date transfer is required. Returns NULL for an empty population.
 }
 \keyword{internal}

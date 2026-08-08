@@ -17,8 +17,9 @@
 list(join = "...", cohort = "<validated table or NULL>").
 }
 \description{
-Every native diagnostic restricts its population to \code{ctx$scoped_cohort}
-the same way: an INNER JOIN on \code{subject_id}. NULL scope -> "" (cohort-wide).
+Every native diagnostic restricts its population to the distinct persons in
+\code{ctx$scoped_cohort}. Recurrent cohort episodes therefore filter
+membership without multiplying source records. NULL scope -> "" (cohort-wide).
 The cohort identifier is re-validated here as defence-in-depth.
 }
 \keyword{internal}

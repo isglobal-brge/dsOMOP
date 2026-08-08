@@ -19,8 +19,9 @@
 Character temporary cohort table name
 }
 \description{
-Primary First/Last/All is applied to source events before any inclusion
-filter, matching OHDSI Circe. The source primary key is retained internally so
-same-date source events remain distinct while eligibility is evaluated.
+Primary First/Last/All is applied to source events that fall inside an
+observation period before any inclusion filter, matching OHDSI Circe. The
+source primary key is retained internally so same-date source events remain
+distinct while eligibility is evaluated.
 }
 \keyword{internal}

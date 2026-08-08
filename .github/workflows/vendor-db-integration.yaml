@@ -1,0 +1,102 @@
+name: Vendor database integration
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  separated-omop-namespaces:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b
+        env:
+          POSTGRES_DB: dsomop
+          POSTGRES_USER: dsomop_admin
+          POSTGRES_PASSWORD: dsomop
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U dsomop_admin -d dsomop"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+      mysql:
+        image: mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
+        env:
+          MYSQL_DATABASE: dsomop
+          MYSQL_ROOT_PASSWORD: dsomop
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pdsomop"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=15
+
+      mariadb:
+        image: mariadb:11.4@sha256:67873d30a17f6a9c331f06363b2fa15f38abca415529966d67c84f87f82439fe
+        env:
+          MARIADB_DATABASE: dsomop
+          MARIADB_ROOT_PASSWORD: dsomop
+          MARIADB_ROOT_HOST: "%"
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=15
+
+    env:
+      DSOMOP_TEST_POSTGRES_HOST: 127.0.0.1
+      DSOMOP_TEST_POSTGRES_PORT: 5432
+      DSOMOP_TEST_POSTGRES_DATABASE: dsomop
+      DSOMOP_TEST_POSTGRES_ADMIN_USER: dsomop_admin
+      DSOMOP_TEST_POSTGRES_ADMIN_PASSWORD: dsomop
+      DSOMOP_TEST_MYSQL_HOST: 127.0.0.1
+      DSOMOP_TEST_MYSQL_PORT: 3306
+      DSOMOP_TEST_MYSQL_DATABASE: dsomop
+      DSOMOP_TEST_MYSQL_ADMIN_USER: root
+      DSOMOP_TEST_MYSQL_ADMIN_PASSWORD: dsomop
+      DSOMOP_TEST_MARIADB_HOST: 127.0.0.1
+      DSOMOP_TEST_MARIADB_PORT: 3307
+      DSOMOP_TEST_MARIADB_DATABASE: dsomop
+      DSOMOP_TEST_MARIADB_ADMIN_USER: root
+      DSOMOP_TEST_MARIADB_ADMIN_PASSWORD: dsomop
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: r-lib/actions/setup-r@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2
+        with:
+          dependencies: '"hard"'
+          extra-packages: |
+            any::testthat
+            any::withr
+            any::pkgload
+            any::RPostgres
+            any::RMariaDB
+            any::arrow
+
+      - name: Run real-vendor namespace, longitudinal and query tests
+        shell: Rscript {0}
+        run: |
+          testthat::test_local(
+            filter = "vendor-db-integration",
+            stop_on_failure = TRUE,
+            stop_on_warning = TRUE
+          )

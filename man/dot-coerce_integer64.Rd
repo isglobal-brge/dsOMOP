@@ -4,17 +4,24 @@
 \alias{.coerce_integer64}
 \title{Coerce integer64 columns to a precision-safe type}
 \usage{
-.coerce_integer64(df)
+.coerce_integer64(df, stable = FALSE)
 }
 \arguments{
 \item{df}{A data.frame potentially containing integer64 columns.}
+
+\item{stable}{Logical; always use character for integer64 columns. Integer
+values in identifier-shaped columns are also character in this mode so a
+later BIGINT value cannot change a bounded stream's physical schema.}
 }
 \value{
 The data.frame with integer64 columns converted exactly.
 }
 \description{
 Converts bit64::integer64 columns to plain \code{integer} when every value
-fits int32, otherwise to \code{character}. DataSHIELD cannot serialize
+fits int32, otherwise to \code{character}. With \code{stable = TRUE}, every
+integer64 column becomes character regardless of the current values; bounded
+DBI fetches use this mode so later chunks cannot change physical type when a
+larger 64-bit identifier first appears. DataSHIELD cannot serialize
 integer64, but it handles both integer and character. We deliberately do
 NOT fall back to \code{double}: \code{as.numeric()} rounds values above
 2^53, which silently collapsed distinct 64-bit person ids onto the same

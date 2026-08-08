@@ -37,7 +37,7 @@
 #'     reports this server-owned value, but does not reinterpret it as
 #'     epsilon/delta, a generic DP budget, replay-stable noise, or permission to
 #'     add noise to arbitrary query results.}
-#'   \item{\code{formal_dp_enabled}, \code{sticky_noise_enabled},
+#'   \item{\code{sticky_noise_enabled},
 #'     \code{privacy_ledger_enabled}}{Explicit capability flags. They are
 #'     enabled only after the dedicated DP service has completed its early
 #'     bootstrap. Ordinary suppression/banding and the \code{nfilter.noise}
@@ -74,6 +74,7 @@
 #'     \code{max_pivot_concepts} (default 1000),
 #'     \code{max_output_columns} (default 5000),
 #'     \code{max_temporal_bins} (default 10000),
+#'     \code{max_events_per_group} (default 100),
 #'     \code{max_filter_depth} (default 32),
 #'     \code{max_filter_nodes} (default 1024),
 #'     \code{max_filter_values} (default 10000), and
@@ -155,7 +156,6 @@
                                 getOption("default.nfilter.stringShort", 20))),
     nfilter_noise          = as.numeric(getOption("nfilter.noise",
                                 getOption("default.nfilter.noise", 0.25))),
-    formal_dp_enabled      = dp_ready && isTRUE(dp_status$formal_dp),
     sticky_noise_enabled   = dp_ready && isTRUE(dp_status$sticky_noise),
     privacy_ledger_enabled = dp_ready && isTRUE(dp_status$durable_ledger),
     # --- dsOMOP-specific settings ---
@@ -181,6 +181,10 @@
     max_temporal_bins    = as.numeric(getOption(
                                 "dsomop.max_temporal_bins",
                                 getOption("default.dsomop.max_temporal_bins", 10000L))),
+    max_events_per_group = as.numeric(getOption(
+                                "dsomop.max_events_per_group",
+                                getOption("default.dsomop.max_events_per_group",
+                                          100L))),
     max_filter_depth     = as.numeric(getOption(
                                 "dsomop.max_filter_depth",
                                 getOption("default.dsomop.max_filter_depth", 32L))),
@@ -257,6 +261,7 @@
   numeric_scalar("max_pivot_concepts", 1, integer = TRUE)
   numeric_scalar("max_output_columns", 1, integer = TRUE)
   numeric_scalar("max_temporal_bins", 1, integer = TRUE)
+  numeric_scalar("max_events_per_group", 1, integer = TRUE)
   numeric_scalar("max_filter_depth", 1, integer = TRUE)
   numeric_scalar("max_filter_nodes", 1, integer = TRUE)
   numeric_scalar("max_filter_values", 1, integer = TRUE)
@@ -272,8 +277,7 @@
          "increasing integer lower bounds starting at 0, with every interval ",
          "at least nfilter_age_range years wide.", call. = FALSE)
   }
-  for (name in c("formal_dp_enabled", "sticky_noise_enabled",
-                 "privacy_ledger_enabled", "query_strict",
+  for (name in c("sticky_noise_enabled", "privacy_ledger_enabled", "query_strict",
                  "allow_absolute_dates", "allow_sensitive_cols")) {
     logical_scalar(name)
   }
@@ -354,6 +358,7 @@
     # Route the gate's COUNT(DISTINCT person_id) through the reconnect helper so
     # a renewed connection that dropped the cohort temp table FAILS CLOSED here
     # rather than counting against a vanished table and waving the result past.
+    sql <- .sql_translate(sql, handle$target_dialect)
     result <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql))
     n <- as.numeric(result[[1]][1])
   } else if (!is.null(n_persons)) {
@@ -812,7 +817,10 @@
 #' @keywords internal
 .validateIdentifier <- function(name, what = "identifier") {
   if (is.null(name) || length(name) == 0) return(NULL)
-  name <- trimws(as.character(name)[[1]])
+  if (length(name) != 1L || is.na(name)) {
+    stop(what, " must be one non-missing identifier.", call. = FALSE)
+  }
+  name <- trimws(as.character(name))
 
   if (!grepl("^[A-Za-z_][A-Za-z0-9_.]*$", name)) {
     stop(

@@ -20,10 +20,12 @@
 \description{
 Shared core used by both single-table and GLOBAL prevalence. Returns the raw,
 un-decorated aggregate (concept_id, n_persons?, n_records) for one table with
-the page window applied, plus a \code{source_table} tag. Performs NO concept
-decoration and NO small-cell suppression - the caller owns those so a global
-run decorates/suppresses ONCE over the merged set. The per-table population
-gate (\code{.assertMinPersons} on the table's distinct persons) still runs
-here so a too-small table never contributes rows.
+the page window applied, plus a \code{source_table} tag. It performs no concept
+decoration or final count banding; the caller owns those so a global run does
+them once over the merged set. Small cells are excluded in SQL
+before pagination, and pages are ranked on the release band with concept_id as
+the sole tie-breaker. The per-table population gate (\code{.assertMinPersons}
+on the table's distinct persons) still runs here so a too-small table never
+contributes rows.
 }
 \keyword{internal}

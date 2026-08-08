@@ -185,11 +185,7 @@
 #' fixed gsub (author SQL, kept out of \code{@param} substitution).
 #' @keywords internal
 .omopCmSpliceBirthDate <- function(handle, sql) {
-  birth_dt <- if (identical(handle$target_dialect %||% "", "sqlite")) {
-    "(CAST(p.year_of_birth AS VARCHAR) || '-01-01')"
-  } else {
-    "CAST((CAST(p.year_of_birth AS VARCHAR) || '-01-01') AS DATE)"
-  }
+  birth_dt <- .omopYearStartDateSql(handle, "p.year_of_birth")
   gsub("p.birth_dt", birth_dt, sql, fixed = TRUE)
 }
 
@@ -221,7 +217,7 @@
     cohort <- if (!is.null(ctx$scoped_cohort)) {
       .validateIdentifier(ctx$scoped_cohort, "cohort")
     } else {
-      .qualifyTable(handle, "cohort")
+      .qualifyTable(handle, "cohort", .effectiveResultsSchema(handle))
     }
 
     # Self-gate the population before materialising any step.
@@ -407,27 +403,12 @@
     out_src <- .omopOutcomeSource(handle, outcome_id, domain_code)
 
     arm_row <- function(arm, cohort) {
-      end_col <- .omopCohortEndDateCol(handle, cohort)
-      anchor <- function(a) if (identical(a, "end")) end_col else "cohort_start_date"
-      tar_lo <- paste0("DATEADD(day, ", tar_start, ", coh.", anchor(anchor_start), ")")
-      tar_hi <- paste0("DATEADD(day, ", tar_end, ", coh.", anchor(anchor_end), ")")
-      pdays  <- .omopDateDiffDays(handle, tar_hi, tar_lo)
-
-      outcome_join <- ""
-      out_event_expr <- "0"
-      if (!is.null(out_src)) {
-        outcome_join <- paste0(
-          " LEFT JOIN ", out_src$table, " o ON o.", out_src$person_col,
-          " = coh.subject_id AND o.", out_src$concept_col, " IN (",
-          out_src$id_list, ") AND o.", out_src$date_col, " >= ", tar_lo,
-          " AND o.", out_src$date_col, " <= ", tar_hi)
-        out_event_expr <- paste0("COUNT(o.", out_src$concept_col, ")")
-      }
+      substrate <- .omopPersonOutcomeSubstrateSql(
+        handle, cohort, out_src, tar_start, tar_end,
+        anchor_start, anchor_end)
       sql <- .sql_translate(paste0(
-        "SELECT COUNT(DISTINCT coh.subject_id) AS persons, ",
-        "SUM(", pdays, ") AS person_days, ",
-        out_event_expr, " AS outcomes ",
-        "FROM ", cohort, " coh", outcome_join),
+        "SELECT COUNT(*) AS persons, SUM(arm.person_days) AS person_days, ",
+        "SUM(arm.outcomes) AS outcomes FROM ", substrate, " arm"),
         handle$target_dialect)
       cnt <- .executeQuery(handle, sql)
       data.frame(
@@ -640,26 +621,12 @@
     # Same counting idiom as .omopCmResultFn$arm_row: distinct persons, summed
     # time-at-risk over the TAR window, descendant-expanded outcome events.
     arm_substrate <- function(cohort) {
-      end_col <- .omopCohortEndDateCol(handle, cohort)
-      anchor <- function(a) if (identical(a, "end")) end_col else "cohort_start_date"
-      tar_lo <- paste0("DATEADD(day, ", tar_start, ", coh.", anchor(anchor_start), ")")
-      tar_hi <- paste0("DATEADD(day, ", tar_end, ", coh.", anchor(anchor_end), ")")
-      pdays  <- .omopDateDiffDays(handle, tar_hi, tar_lo)
-      outcome_join <- ""
-      out_event_expr <- "0"
-      if (!is.null(out_src)) {
-        outcome_join <- paste0(
-          " LEFT JOIN ", out_src$table, " o ON o.", out_src$person_col,
-          " = coh.subject_id AND o.", out_src$concept_col, " IN (",
-          out_src$id_list, ") AND o.", out_src$date_col, " >= ", tar_lo,
-          " AND o.", out_src$date_col, " <= ", tar_hi)
-        out_event_expr <- paste0("COUNT(o.", out_src$concept_col, ")")
-      }
+      substrate <- .omopPersonOutcomeSubstrateSql(
+        handle, cohort, out_src, tar_start, tar_end,
+        anchor_start, anchor_end)
       sql <- .sql_translate(paste0(
-        "SELECT COUNT(DISTINCT coh.subject_id) AS persons, ",
-        "SUM(", pdays, ") AS person_days, ",
-        out_event_expr, " AS outcomes ",
-        "FROM ", cohort, " coh", outcome_join),
+        "SELECT COUNT(*) AS persons, SUM(arm.person_days) AS person_days, ",
+        "SUM(arm.outcomes) AS outcomes FROM ", substrate, " arm"),
         handle$target_dialect)
       cnt <- .executeQuery(handle, sql)
       list(persons     = as.numeric(cnt$persons[1]),
@@ -975,9 +942,11 @@
     handle$target_dialect)
   df <- .executeQuery(handle, sql)
   if (!is.data.frame(df) || nrow(df) == 0) return(integer(0))
+  df <- .omopBandedTopN(
+    df, support_cols = "n", top_n = top_k,
+    key_cols = "covariate_id")
   ids <- suppressWarnings(as.integer(df$covariate_id))
   ids <- ids[!is.na(ids)]
-  if (length(ids) > top_k) ids <- ids[seq_len(top_k)]
   ids
 }
 
@@ -989,9 +958,10 @@
 #' subject contributes exactly one row; a covariate the subject has no record of
 #' is 0. The query returns one (subject, covariate) presence row and the pivot to
 #' a wide 0/1 matrix happens in R, so the SQL stays a simple membership join.
-#' Subjects in BOTH arms are assigned to the target arm (a subject cannot hold two
-#' arm labels in one regression); this de-duplication is documented and keeps the
-#' label binary.
+#' The caller supplies the OHDSI-normalised, disjoint effective arms, so no
+#' subject can hold two labels. The roster deliberately does not resolve a
+#' conflict with target precedence: doing so here would make propensity scoring
+#' use a different population from the other CohortMethod estimands.
 #'
 #' @param handle CDM handle.
 #' @param cohort_a,cohort_b Validated arm cohort temp tables (a = target).
@@ -1004,19 +974,22 @@
                                     domain_code = "0") {
   src    <- .omopCovariateSource(handle, domain_code)
 
-  # Arm roster: every subject in either arm, labelled 1 (target) or 0
-  # (comparator). A subject in both arms is labelled target (MAX over the union),
-  # so the label is strictly binary and each subject appears once.
+  # Arm roster: one distinct row per subject in each already-disjoint effective
+  # arm. UNION ALL retains the arm label; any duplicate across labels is an
+  # invariant violation rather than a hidden target-precedence rule.
   roster_sql <- .sql_translate(paste0(
-    "SELECT u.subject_id, MAX(u.arm) AS arm FROM (",
-    "SELECT subject_id, 1 AS arm FROM ", cohort_a,
-    " UNION ALL SELECT subject_id, 0 AS arm FROM ", cohort_b,
-    ") u GROUP BY u.subject_id"),
+    "SELECT ta.subject_id, 1 AS arm FROM (SELECT DISTINCT subject_id FROM ",
+    cohort_a, ") ta UNION ALL ",
+    "SELECT co.subject_id, 0 AS arm FROM (SELECT DISTINCT subject_id FROM ",
+    cohort_b, ") co"),
     handle$target_dialect)
   roster <- .executeQuery(handle, roster_sql)
   if (!is.data.frame(roster) || nrow(roster) == 0) return(NULL)
   roster$subject_id <- as.character(roster$subject_id)
   roster$arm <- as.integer(roster$arm)
+  if (anyDuplicated(roster$subject_id)) {
+    stop("Invalid CohortMethod study population.", call. = FALSE)
+  }
 
   # Start from the roster (subject_id + arm); add one 0/1 column per covariate.
   design <- data.frame(subject_id = roster$subject_id, arm = roster$arm,
@@ -1328,12 +1301,26 @@
 #' @param out_src \code{\link{.omopOutcomeSource}} list (or NULL -> no events, all
 #'   members censored at the TAR end).
 #' @param tar_start_offset,tar_end_offset Integer day offsets for the TAR window.
-#' @return Data frame (arm, time, event), one row per arm member (possibly empty).
+#' Recurrent cohort episodes are reduced to the earliest canonical episode per
+#' person because this CohortMethod Kaplan-Meier port is a person-level model;
+#' episode-level/recurrent-event survival remains available through the general
+#' longitudinal survival plan. The outcome is the first qualifying event inside
+#' that selected episode's TAR, never the person's first event globally.
+#'
+#' @return Data frame (arm, time, event), one row per person (possibly empty).
 #' @keywords internal
 .omopCmKmSubjectFrame <- function(handle, cohort, arm, out_src,
                                   tar_start_offset, tar_end_offset) {
+  ranked <- .rankedCohortSql(cohort, handle)
+  members_sql <- paste0(
+    "(SELECT q.subject_id, q.cohort_start_date, q.cohort_end_date FROM (",
+    "SELECT r.subject_id, r.cohort_start_date, r.cohort_end_date, ",
+    "ROW_NUMBER() OVER (PARTITION BY r.subject_id ORDER BY ",
+    "r.cohort_start_date, r.cohort_end_date, r.cohort_row_id) AS person_rank ",
+    "FROM ", ranked, " r) q WHERE q.person_rank = 1)"
+  )
   members <- .executeQuery(handle, paste0(
-    "SELECT subject_id, cohort_start_date, cohort_end_date FROM ", cohort,
+    "SELECT subject_id, cohort_start_date, cohort_end_date FROM ", members_sql,
     " ORDER BY subject_id"))
   if (!is.data.frame(members) || nrow(members) == 0) return(data.frame())
 
@@ -1344,12 +1331,22 @@
 
   members$outcome_date <- as.Date(NA)
   if (!is.null(out_src)) {
+    tar_lo <- paste0(
+      "DATEADD(day, ", as.integer(tar_start_offset),
+      ", m.cohort_start_date)"
+    )
+    tar_hi <- paste0(
+      "DATEADD(day, ", as.integer(tar_end_offset),
+      ", m.cohort_end_date)"
+    )
     ev <- .executeQuery(handle, .sql_translate(paste0(
-      "SELECT o.", out_src$person_col, " AS subject_id, MIN(o.",
-      out_src$date_col, ") AS outcome_date FROM ", out_src$table, " o ",
-      "INNER JOIN ", cohort, " c ON c.subject_id = o.", out_src$person_col,
-      " WHERE o.", out_src$concept_col, " IN (", out_src$id_list, ") ",
-      "GROUP BY o.", out_src$person_col),
+      "SELECT m.subject_id, MIN(o.", out_src$date_col,
+      ") AS outcome_date FROM ", members_sql, " m ",
+      "INNER JOIN ", out_src$table, " o ON o.", out_src$person_col,
+      " = m.subject_id AND o.", out_src$concept_col, " IN (",
+      out_src$id_list, ") AND o.", out_src$date_col, " >= ", tar_lo,
+      " AND o.", out_src$date_col, " <= ", tar_hi,
+      " GROUP BY m.subject_id"),
       handle$target_dialect))
     if (is.data.frame(ev) && nrow(ev) > 0) {
       first_out <- stats::setNames(as.Date(ev$outcome_date),

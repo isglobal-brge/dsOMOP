@@ -125,12 +125,7 @@
 #' @return Character; SQL scalar expression evaluating to an integer YYYYMM key.
 #' @keywords internal
 .omopAchillesRecordMonthKey <- function(handle, date_expr) {
-  if (identical(handle$target_dialect, "sqlite")) {
-    paste0("CAST(strftime('%Y%m', ", date_expr, ") AS INTEGER)")
-  } else {
-    paste0("EXTRACT(YEAR FROM ", date_expr, ") * 100 + ",
-           "EXTRACT(MONTH FROM ", date_expr, ")")
-  }
+  .omopMonthKeySql(handle, date_expr)
 }
 
 #' Build one record-count entry's live compute function

@@ -2,25 +2,32 @@
 % Please edit documentation in R/analysis_catalog.R
 \name{.omopTwoPopCohorts}
 \alias{.omopTwoPopCohorts}
-\title{Resolve + self-gate the two arms of a two-population analysis}
+\title{Resolve, OHDSI-normalise, and self-gate a two-population analysis}
 \usage{
-.omopTwoPopCohorts(handle, ctx)
+.omopTwoPopCohorts(handle, ctx, overlap_policy = c("ohdsi_first", "preserve"))
 }
 \arguments{
 \item{handle}{CDM handle.}
 
 \item{ctx}{Run-path ctx (carries \code{scoped_cohorts}).}
+
+\item{overlap_policy}{Internal two-arm population policy. The default,
+\code{"ohdsi_first"}, mirrors CohortMethod's public default: assign a
+person to whichever arm starts first, exclude same-day ties, and truncate
+the winning era immediately before the other arm starts. Use
+\code{"preserve"} only for diagnostics whose estimand is the overlap.}
 }
 \value{
-list(a = "<validated arm A>", b = "<validated arm B>") or NULL.
+list(a = "<validated effective arm A>",
+  b = "<validated effective arm B>") or NULL.
 }
 \description{
 Reads \code{ctx$scoped_cohorts} (the length-2 vector the run path resolves for
-a \code{max_tables == 2} kind="r" entry), validates each identifier, and
-self-gates BOTH arms with \code{\link{.assertMinPersons}} BEFORE the fn pulls
-any rows (defence-in-depth on top of the per-arm re-gate already done by
-\code{\link{.omopAnalysisResolveScopePair}}). Returns NULL when scope was not
-two-population (so the fn returns a gate-safe empty frame, exactly like the
-single-cohort ports do for a NULL \code{ctx$scoped_cohort}).
+a \code{max_tables == 2} kind="r" entry), validates and self-gates each raw
+arm, then by default creates disjoint effective CohortMethod populations
+using OHDSI's first-treatment / truncate-to-second rule and re-gates both
+effective arms before any patient-level frame is pulled. The explicit
+\code{"preserve"} policy leaves the raw pair intact for overlap diagnostics.
+Returns NULL when scope was not two-population.
 }
 \keyword{internal}

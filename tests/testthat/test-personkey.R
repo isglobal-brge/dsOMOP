@@ -211,6 +211,32 @@ test_that("(e) OMOP 5.3/5.4 event and polymorphic row identifiers are dropped", 
   expect_true(all(grepl("^p2[0-9a-f]+\\.[0-9a-f]{64}$", out$person_id)))
 })
 
+test_that("(e) unreviewed extension identifiers fail closed at final sanitization", {
+  key <- .testPseudonymKey("extension-identifiers")
+  frame <- data.frame(
+    person_id = c(1, 2, 3),
+    encounter_id = c("enc-1", "enc-2", "enc-3"),
+    member_id = c("member-1", "member-2", "member-3"),
+    account_id = c("account-1", "account-2", "account-3"),
+    local_record_id = c(101L, 102L, 103L),
+    condition_concept_id = c(201820L, 201820L, 201820L),
+    analysis_id = c(1L, 1L, 1L),
+    stringsAsFactors = FALSE
+  )
+
+  out <- .pseudonymizeIdentifiers(
+    frame, key, .testPublicPseudonymization(key)
+  )
+
+  expect_false(any(c(
+    "encounter_id", "member_id", "account_id", "local_record_id"
+  ) %in% names(out)))
+  expect_true(all(c(
+    "person_id", "condition_concept_id", "analysis_id"
+  ) %in% names(out)))
+  expect_true(all(grepl("^p2[0-9a-f]+\\.[0-9a-f]{64}$", out$person_id)))
+})
+
 # --- (f) PER-RESOURCE: different keys -> different tokens ----------------------
 
 test_that("(f) a different key yields different tokens (key is actually used)", {

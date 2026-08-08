@@ -197,8 +197,10 @@
 #' @return Data frame (person_days, events) — one row per subject in the subgroup.
 #' @keywords internal
 .omopCmSubgroupSubjectFrame <- function(handle, cohort, out_src, tar, predicate) {
-  end_col <- .omopCohortEndDateCol(handle, cohort)
-  anchor <- function(a) if (identical(a, "end")) end_col else "cohort_start_date"
+  first <- .omopFirstCohortEpisodeSql(handle, cohort)
+  anchor <- function(a) {
+    if (identical(a, "end")) "cohort_end_date" else "cohort_start_date"
+  }
   tar_lo <- paste0("DATEADD(day, ", tar$start, ", coh.", anchor(tar$anchor_start), ")")
   tar_hi <- paste0("DATEADD(day, ", tar$end, ", coh.", anchor(tar$anchor_end), ")")
   pdays  <- .omopDateDiffDays(handle, tar_hi, tar_lo)
@@ -213,12 +215,14 @@
       " AND o.", out_src$date_col, " <= ", tar_hi)
     out_event_expr <- paste0("COUNT(o.", out_src$concept_col, ")")
   }
-  where <- if (!is.null(predicate)) paste0(" WHERE ", predicate) else ""
+  conditions <- c(paste0(tar_hi, " >= ", tar_lo), predicate)
+  conditions <- conditions[!vapply(conditions, is.null, logical(1))]
+  where <- paste0(" WHERE ", paste(conditions, collapse = " AND "))
   sql <- .omopCmSpliceBirthDate(handle, .sql_translate(paste0(
     "SELECT coh.subject_id AS subject_id, ",
     "MAX(", pdays, ") AS person_days, ",
     out_event_expr, " AS events ",
-    "FROM ", cohort, " coh", outcome_join, where,
+    "FROM ", first, " coh", outcome_join, where,
     " GROUP BY coh.subject_id"),
     handle$target_dialect))
   res <- .executeQuery(handle, sql)

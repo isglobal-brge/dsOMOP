@@ -17,11 +17,9 @@
 Character; a SQL scalar expression evaluating to an integer day count.
 }
 \description{
-Day count between two date expressions (\code{end_expr - start_expr}). Mirrors
-the per-dialect branching the profiling module uses for date functions
-(\code{\link{.sql_translate}} translates only DATEADD/TOP, not date diffs).
-SQLite uses \code{julianday()}; everything else uses ANSI date subtraction
-(Postgres returns an integer day count) with an explicit DAY extraction for
-the engines that return an interval.
+Day count between two generated date expressions. The reviewed local SQL
+translator also supports canonical \code{DATEDIFF(day, start, end)} when the
+operands are identifiers; this helper accepts more general expressions and
+therefore constructs the date difference explicitly for each dialect.
 }
 \keyword{internal}

@@ -2,10 +2,16 @@
 
 #' Extract a complete episode-by-period panel
 #'
-#' Builds on the temporal-covariate contract, adding the complete Cartesian
-#' roster of cohort episodes and relative time bins. Covariate rows remain
-#' sparse: absence of a \code{(rowId, timeId, covariateId)} row means zero.
-#' Absolute index/event dates and source row identifiers are never returned.
+#' Builds on the temporal-covariate contract, adding the episode/time bins that
+#' intersect the unique OMOP observation period covering each index date.
+#' \code{startDay}/\code{endDay} retain the requested bin boundaries, while
+#' \code{observationStartDay}/\code{observationEndDay} delimit the observed part
+#' of that bin and \code{daysObserved} is inclusive. Covariate rows remain
+#' sparse: absence of a \code{(rowId, timeId, covariateId)} row means zero only
+#' when the corresponding \code{personPeriods} row exists. Absolute index/event
+#' dates and source row identifiers are never returned. This descriptive panel
+#' does not infer a risk set from cohort end or death; use survival or
+#' counting-process outputs for explicit time-at-risk analyses.
 #'
 #' @param handle CDM handle.
 #' @param cohort_table Cohort table containing episode dates.
@@ -40,6 +46,9 @@
          call. = FALSE)
   }
 
+  observation_roster <- .loadTemporalObservationRoster(
+    handle, cohort_table
+  )
   temporal <- .extractTemporalCovariates(
     handle = handle,
     cohort_table = cohort_table,
@@ -49,11 +58,18 @@
     window_start = window_start,
     window_end = window_end,
     analyses = analyses,
-    filters = filters
+    filters = filters,
+    observation_roster = observation_roster
   )
 
-  n_periods <- as.double(nrow(temporal$personRef)) *
-    as.double(nrow(temporal$timeRef))
+  time_ref <- temporal$timeRef
+  observed_bins <- lapply(seq_len(nrow(observation_roster)), function(i) {
+    keep <-
+      time_ref$endDay >= observation_roster$observation_start_day[[i]] &
+      time_ref$startDay <= observation_roster$observation_end_day[[i]]
+    which(keep)
+  })
+  n_periods <- sum(as.double(lengths(observed_bins)))
   max_rows <- .extractionCap("dsomop.max_memory_rows", 1000000L)
   if (!is.finite(n_periods) || n_periods > max_rows) {
     stop("person_period roster would create ", n_periods,
@@ -61,15 +77,40 @@
          max_rows, ".", call. = FALSE)
   }
 
-  time_ref <- temporal$timeRef
-  row_ids <- temporal$personRef$rowId
-  person_periods <- data.frame(
-    rowId = rep(as.integer(row_ids), each = nrow(time_ref)),
-    timeId = rep(as.integer(time_ref$timeId), times = length(row_ids)),
-    startDay = rep(as.integer(time_ref$startDay), times = length(row_ids)),
-    endDay = rep(as.integer(time_ref$endDay), times = length(row_ids)),
-    stringsAsFactors = FALSE
-  )
+  rows <- lapply(seq_along(observed_bins), function(i) {
+    bins <- observed_bins[[i]]
+    if (length(bins) == 0L) return(NULL)
+    start_day <- as.integer(time_ref$startDay[bins])
+    end_day <- as.integer(time_ref$endDay[bins])
+    observation_start <- pmax(
+      start_day, observation_roster$observation_start_day[[i]]
+    )
+    observation_end <- pmin(
+      end_day, observation_roster$observation_end_day[[i]]
+    )
+    data.frame(
+      rowId = rep.int(as.integer(observation_roster$cohort_row_id[[i]]),
+                      length(bins)),
+      timeId = as.integer(time_ref$timeId[bins]),
+      startDay = start_day,
+      endDay = end_day,
+      observationStartDay = as.integer(observation_start),
+      observationEndDay = as.integer(observation_end),
+      daysObserved = as.integer(observation_end - observation_start + 1L),
+      stringsAsFactors = FALSE
+    )
+  })
+  rows <- Filter(Negate(is.null), rows)
+  person_periods <- if (length(rows) == 0L) {
+    data.frame(
+      rowId = integer(0), timeId = integer(0), startDay = integer(0),
+      endDay = integer(0), observationStartDay = integer(0),
+      observationEndDay = integer(0), daysObserved = integer(0),
+      stringsAsFactors = FALSE
+    )
+  } else {
+    do.call(rbind, rows)
+  }
 
   list(
     personPeriods = person_periods,

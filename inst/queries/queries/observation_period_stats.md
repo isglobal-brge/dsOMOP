@@ -26,7 +26,7 @@ coverage and follow-up time.
 ```sql
 SELECT EXTRACT(YEAR FROM op.observation_period_start_date) AS start_year,
        COUNT(DISTINCT op.person_id) AS n_persons,
-       AVG(op.observation_period_end_date - op.observation_period_start_date) AS avg_days
+       AVG(DATEDIFF(day, op.observation_period_start_date, op.observation_period_end_date)) AS avg_days
 FROM @cdm.observation_period op
 GROUP BY EXTRACT(YEAR FROM op.observation_period_start_date)
 ORDER BY start_year

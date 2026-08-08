@@ -205,6 +205,94 @@
   )
 }
 
+#' Reviewed non-row identifier names
+#'
+#' Row/entity identifiers remain governed by \code{\link{.identifierColumns}}
+#' and are always removed. This companion allow-list contains identifier-shaped
+#' names whose semantics are fixed either by the vendored OHDSI CDM metadata or
+#' by a typed dsOMOP output contract (for example \code{analysis_id} and
+#' \code{covariate_id}). It exists solely so the final default-deny identifier
+#' pass can distinguish reviewed analytic/reference dimensions from an unknown
+#' local extension such as \code{encounter_id}.
+#'
+#' @return Lower-case character vector.
+#' @keywords internal
+.reviewedIdentifierColumns <- function() {
+  cache_key <- "reviewed_identifier_columns_v1"
+  if (exists(cache_key, envir = .dsomop_env, inherits = FALSE)) {
+    return(get(cache_key, envir = .dsomop_env, inherits = FALSE))
+  }
+
+  official <- unique(unlist(lapply(c("5.3", "5.4"), function(version) {
+    spec <- tryCatch(.loadVendoredSpec(version), error = function(e) NULL)
+    if (is.null(spec) || is.null(spec$field_level) ||
+        !"cdmFieldName" %in% names(spec$field_level)) {
+      return(character(0))
+    }
+    tolower(as.character(spec$field_level$cdmFieldName))
+  }), use.names = FALSE))
+
+  # These are controller-owned analytic/reference dimensions, not source-row
+  # identifiers. Keep the list explicit: an unfamiliar *_id remains denied.
+  analytic <- c(
+    "analysis_id", "case_id", "cohort_id", "covariate_id", "database_id",
+    "dataset_id", "lineage_id", "outcome_id", "output_id", "population_id",
+    "query_id", "release_id", "rule_id", "semantic_query_id", "snapshot_id",
+    "time_id", "tool_id", "upstream_id"
+  )
+  reviewed <- unique(tolower(c(official, analytic, .EPISODE_KEY_COLS())))
+  assign(cache_key, reviewed, envir = .dsomop_env)
+  reviewed
+}
+
+#' Find identifier-shaped columns without reviewed semantics
+#'
+#' The rule is deliberately lexical and default-deny: bare \code{id} and names
+#' ending in \code{_id}, \code{_key}, or \code{_identifier} are identifiers
+#' unless their exact names have been reviewed. Person keys and explicitly
+#' concept-shaped columns are handled by their dedicated contracts.
+#'
+#' @param columns Character vector of column names.
+#' @param reviewed Exact names whose non-row semantics have been reviewed.
+#' @param allow_concepts Whether \code{*_concept_id} names count as typed OMOP
+#'   concept identifiers.
+#' @return The original names classified as untyped identifiers.
+#' @keywords internal
+.untypedIdentifierColumns <- function(columns, reviewed = character(0),
+                                      allow_concepts = TRUE) {
+  if (length(columns) == 0L) return(character(0))
+  columns <- as.character(columns)
+  lower <- tolower(columns)
+  valid <- !is.na(lower) & nzchar(trimws(lower))
+  identifier_shaped <- valid & grepl(
+    "(^id$|_(id|key|identifier)$)", lower, perl = TRUE
+  )
+  person_or_episode <- lower %in% tolower(c(
+    .PERSON_KEY_COLS(), .EPISODE_KEY_COLS()
+  ))
+  concept <- isTRUE(allow_concepts) & grepl("_concept_id$", lower)
+  typed <- lower %in% tolower(as.character(reviewed))
+  columns[identifier_shaped & !person_or_episode & !concept & !typed]
+}
+
+#' Identifier columns that must not survive an assigned output
+#'
+#' Combines the reviewed OHDSI row/entity list with a default-deny fallback for
+#' identifier-shaped names not known to the CDM or a typed dsOMOP output.
+#'
+#' @param columns Character vector of landed column names.
+#' @return Character vector to remove.
+#' @keywords internal
+.outputIdentifierColumns <- function(columns) {
+  columns <- as.character(columns)
+  unique(c(
+    columns[tolower(columns) %in% .identifierColumns()],
+    .untypedIdentifierColumns(
+      columns, reviewed = .reviewedIdentifierColumns(), allow_concepts = TRUE
+    )
+  ))
+}
+
 #' Derive encryption and authentication keys for a resource
 #'
 #' Derives independent SHA-256 subkeys for AES-256 encryption, its deterministic
@@ -362,7 +450,7 @@
   if (inherits(x, "FlowerDatasetDescriptor")) return(x)
 
   if (is.data.frame(x)) {
-    drop <- intersect(setdiff(.identifierColumns(), .PERSON_KEY_COLS()), names(x))
+    drop <- setdiff(.outputIdentifierColumns(names(x)), .PERSON_KEY_COLS())
     if (length(drop) > 0) {
       x[drop] <- NULL
     }
@@ -560,6 +648,8 @@ omopInitDS <- function(resource_symbol,
 #' the row-to-pseudonymous-person map \code{<name>.personRef}.
 #' Temporal covariates are split into four symbols, including the episode-to-
 #' person map \code{<name>.personRef}.
+#' Recurrent-event survival outputs are split into \code{<name>.events} and
+#' \code{<name>.riskSets} so each component remains an ordinary protected table.
 #'
 #' When \code{output_mode = "staged"}, outputs are written to protected,
 #' server-local files and assigned as descriptors inheriting from
@@ -628,7 +718,8 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   }
   expanded <- unlist(lapply(symbols, function(sym) paste0(
     sym, c("", ".covariates", ".covariateRef", ".temporalCovariates",
-           ".timeRef", ".personRef", ".personPeriods")
+           ".timeRef", ".personRef", ".personPeriods", ".events",
+           ".riskSets")
   )), use.names = FALSE)
   if (anyDuplicated(expanded)) {
     stop("Output symbols collide after sparse/temporal suffix expansion.",
@@ -699,9 +790,26 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
       result, person_key, pseudonymization = pseudonymization
     )
 
+    # Recurrent-event outputs have an event stream and a separate episode risk
+    # set. Keep both as first-class protected tables (or staged descriptors).
+    if (is.list(result) && !is.data.frame(result) &&
+        all(c("events", "risk_sets") %in% names(result))) {
+      events <- .dsomopDpSealPlanOutput(
+        result$events, plan, nm,
+        dataset_identity = .dsomopDpDatasetIdentity(handle),
+        component = "events"
+      )
+      risk_sets <- .dsomopDpSealPlanOutput(
+        result$risk_sets, plan, nm,
+        dataset_identity = .dsomopDpDatasetIdentity(handle),
+        component = "risk_sets"
+      )
+      assign(paste0(sym, ".events"), events, envir = assign_env)
+      assign(paste0(sym, ".riskSets"), risk_sets, envir = assign_env)
+
     # Temporal covariates: split into four symbols, preserving the explicit
     # cohort-episode -> pseudonymous-person map needed by longitudinal models.
-    if (is.list(result) && !is.data.frame(result) &&
+    } else if (is.list(result) && !is.data.frame(result) &&
         "temporalCovariates" %in% names(result)) {
       if (!is.null(result$personPeriods)) {
         assign(paste0(sym, ".personPeriods"),

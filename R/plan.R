@@ -103,11 +103,7 @@
 
   if (!is.null(plan$cohort)) {
     if (!is.null(plan$cohort$cohort_definition_id)) {
-      results_tables <- if (!is.null(handle$results_schema)) {
-        .listTablesRaw(handle, handle$results_schema)
-      } else {
-        present_tables
-      }
+      results_tables <- .listTablesRaw(handle, .effectiveResultsSchema(handle))
       if (!"cohort" %in% results_tables) {
         errors <- c(errors,
           "Plan cohort cannot execute: results cohort table not found.")
@@ -219,11 +215,44 @@
     }
 
     if (out_type == "survival") {
-      outcome_tbl <- tolower(out$outcome$table %||% "")
-      if (outcome_tbl != "" && !outcome_tbl %in% present_tables) {
-        errors <- c(errors,
-          paste0("Output '", out_name,
-                 "': outcome table '", outcome_tbl, "' not found."))
+      survival_outcomes <- out$outcomes %||% list(outcome = out$outcome)
+      if (!is.list(survival_outcomes) || length(survival_outcomes) == 0L ||
+          is.null(names(survival_outcomes)) ||
+          any(!nzchar(names(survival_outcomes))) ||
+          anyDuplicated(names(survival_outcomes))) {
+        errors <- c(errors, paste0(
+          "Output '", out_name, "': outcomes must be a non-empty named list."
+        ))
+      } else {
+        for (outcome_name in names(survival_outcomes)) {
+          outcome_tbl <- tolower(
+            survival_outcomes[[outcome_name]]$table %||% ""
+          )
+          if (!nzchar(outcome_tbl) || !outcome_tbl %in% present_tables) {
+            errors <- c(errors, paste0(
+              "Output '", out_name, "': outcome '", outcome_name,
+              "' table '", outcome_tbl, "' not found."
+            ))
+          }
+        }
+      }
+      censoring <- out$censoring %||% if (is.null(out$outcomes)) {
+        list(observation_period_end = TRUE, death = FALSE)
+      } else {
+        list()
+      }
+      if (!identical(censoring$observation_period_end, FALSE) &&
+          !"observation_period" %in% present_tables) {
+        errors <- c(errors, paste0(
+          "Output '", out_name,
+          "': observation-period censoring requires observation_period."
+        ))
+      }
+      if (!identical(censoring$death, FALSE) &&
+          !"death" %in% present_tables) {
+        errors <- c(errors, paste0(
+          "Output '", out_name, "': death censoring requires death."
+        ))
       }
     }
 
@@ -243,10 +272,34 @@
       interval_tables <- out$tables %||% character(0)
       for (itbl in interval_tables) {
         if (!tolower(itbl) %in% present_tables) {
-          warnings <- c(warnings,
+          errors <- c(errors,
             paste0("Output '", out_name,
-                   "': table '", itbl, "' not found; will be skipped."))
+                   "': interval table '", itbl, "' not found."))
         }
+      }
+      longitudinal_error <- tryCatch({
+        .normalizeLongitudinalWindow(
+          out$window, out$interval_match %||% "overlaps"
+        )
+        .normalizeLongitudinalSelection(
+          out$event_select %||% "all",
+          out$select_n %||% 1L,
+          out$select_by %||% "episode_source",
+          out$anchor %||% 0L
+        )
+        if (!is.null(out$source_filters)) {
+          for (itbl in interval_tables) {
+            .longitudinalSourceFilter(
+              out$source_filters, itbl, interval_tables
+            )
+          }
+        }
+        NULL
+      }, error = function(e) conditionMessage(e))
+      if (!is.null(longitudinal_error)) {
+        errors <- c(errors, paste0(
+          "Output '", out_name, "': ", longitudinal_error
+        ))
       }
     }
 
@@ -490,10 +543,48 @@
     }
 
     if (out_type == "survival") {
-      out_preview$outcome_table <- out$outcome$table %||% ""
-      out_preview$outcome_concepts <- out$outcome$concept_set %||% integer(0)
+      survival_outcomes <- out$outcomes %||% list(outcome = out$outcome)
+      out_preview$outcomes <- lapply(survival_outcomes, function(outcome) {
+        list(
+          table = outcome$table %||% "",
+          concept_set = outcome$concept_set %||% integer(0)
+        )
+      })
       out_preview$tar <- out$tar %||% list(start_offset = 0)
-      out_preview$description <- "Time-to-event with event/censoring indicator"
+      out_preview$format <- out$format %||% "survival"
+      out_preview$event_order <- out$event_order %||% "first"
+      out_preview$censoring <- out$censoring %||%
+        if (is.null(out$outcomes)) {
+          list(cohort_end = TRUE, observation_period_end = TRUE, death = FALSE)
+        } else {
+          list(cohort_end = TRUE, observation_period_end = TRUE, death = TRUE)
+        }
+      out_preview$columns <- if (is.null(out$outcomes)) {
+        c("row_id", "cohort_row_id", "person_id", "event",
+          "time_to_event_days")
+      } else if (identical(out_preview$format, "recurrent_events")) {
+        c("row_id", "cohort_row_id", "person_id", "outcome_name", "event",
+          "event_number", "outcome_event_number", "event_days_from_index",
+          "entry_days_from_index", "exit_days_from_index")
+      } else if (identical(out_preview$format, "counting_process")) {
+        c("row_id", "cohort_row_id", "person_id", "outcome_name", "event",
+          "interval_number", "interval_start_days", "interval_end_days")
+      } else {
+        c("row_id", "cohort_row_id", "person_id", "outcome_name", "event",
+          "entry_days_from_index", "exit_days_from_index", "follow_up_days")
+      }
+      if (identical(out_preview$format, "recurrent_events")) {
+        out_preview$components <- c("events", "risk_sets")
+      }
+      out_preview$columns_complete <- TRUE
+      out_preview$description <- if (is.null(out$outcomes)) {
+        "Historical single-outcome time-to-event contract"
+      } else {
+        paste0(
+          "Longitudinal ", out_preview$format, " with named outcomes and ",
+          "episode-specific clinical censoring"
+        )
+      }
     }
 
     if (out_type == "concept_dictionary") {
@@ -507,6 +598,11 @@
 
     if (out_type == "intervals_long") {
       out_preview$tables <- out$tables %||% character(0)
+      out_preview$window <- out$window %||% "cohort_episode"
+      out_preview$interval_match <- out$interval_match %||% "overlaps"
+      out_preview$event_select <- out$event_select %||% "all"
+      out_preview$select_n <- out$select_n %||% 1L
+      out_preview$select_by <- out$select_by %||% "episode_source"
       out_preview$description <- paste0(
         "Interval data from ",
         length(out$tables %||% character(0)), " tables"
@@ -1226,7 +1322,7 @@
   } else if (ftype == "cohort") {
     cid <- integer_param(params$cohort_definition_id,
                          "cohort_definition_id", minimum = 0L)
-    results_schema <- handle$results_schema %||% handle$cdm_schema
+    results_schema <- .effectiveResultsSchema(handle)
     qualified <- .qualifyTable(handle, "cohort", results_schema)
     return(paste0(
       "EXISTS (SELECT 1 FROM ", qualified, " c",
@@ -1704,6 +1800,8 @@
     metadata    = list(
       file    = file_info$file,
       format  = file_info$format,
+      layout  = file_info$layout %||% "file",
+      parts   = file_info$parts %||% NULL,
       n_rows  = .bandCount(
         file_info$n_rows,
         band_width = .omopDisclosureSettings()$nfilter_band
@@ -1840,6 +1938,11 @@
         entry$metadata$column_types, use.names = TRUE
       )
     }
+    if (!is.null(entry$metadata$parts)) {
+      entry$metadata$parts <- unname(as.character(unlist(
+        entry$metadata$parts, use.names = FALSE
+      )))
+    }
     if (!is.null(entry$metadata$semantic_contract$age_breaks)) {
       entry$metadata$semantic_contract$age_breaks <- unname(as.integer(
         unlist(entry$metadata$semantic_contract$age_breaks, use.names = FALSE)
@@ -1866,8 +1969,9 @@
 
 #' Stage a data.frame result to Parquet and return a descriptor
 #'
-#' For output types where SQL cannot be streamed directly (e.g. baseline,
-#' survival), this writes an already-materialized data.frame to Parquet.
+#' For output types where SQL cannot be streamed directly (for example
+#' baseline, person-level, wide, or feature outputs), this writes an
+#' already-materialized data.frame to Parquet.
 #'
 #' @param df Data frame to stage
 #' @param output_name Character; output name
@@ -1965,6 +2069,8 @@
   file_info <- list(
     file    = output_path,
     format  = ext,
+    layout  = "file",
+    parts   = NULL,
     n_rows  = nrow(df),
     columns = names(df),
     column_types = vapply(df, function(col) {
@@ -2123,11 +2229,47 @@
   .createTempTable(handle, name, cohort_sql)
 }
 
+.normalizeIndexEventEndStrategy <- function(end_strategy) {
+  if (is.null(end_strategy)) return(NULL)
+  if (!is.list(end_strategy) || is.null(names(end_strategy)) ||
+      any(!nzchar(names(end_strategy))) || anyDuplicated(names(end_strategy)) ||
+      !identical(names(end_strategy), "DateOffset")) {
+    stop("index_event end_strategy must be NULL or exactly one OHDSI ",
+         "DateOffset strategy.", call. = FALSE)
+  }
+  offset <- end_strategy$DateOffset
+  if (!is.list(offset) || is.null(names(offset)) ||
+      any(!nzchar(names(offset))) || anyDuplicated(names(offset)) ||
+      !setequal(names(offset), c("DateField", "Offset")) ||
+      length(names(offset)) != 2L) {
+    stop("index_event end_strategy$DateOffset must contain exactly ",
+         "DateField and Offset.", call. = FALSE)
+  }
+  date_field <- offset$DateField
+  if (!is.character(date_field) || length(date_field) != 1L ||
+      is.na(date_field) ||
+      !date_field %in% c("StartDate", "EndDate")) {
+    stop("index_event end_strategy DateField must be StartDate or EndDate.",
+         call. = FALSE)
+  }
+  value <- offset$Offset
+  number <- suppressWarnings(as.numeric(value))
+  integer <- suppressWarnings(as.integer(value))
+  if (!is.numeric(value) || length(value) != 1L || length(number) != 1L ||
+      is.na(number) || !is.finite(number) || length(integer) != 1L ||
+      is.na(integer) || number != integer) {
+    stop("index_event end_strategy Offset must be one finite exact integer.",
+         call. = FALSE)
+  }
+  list(DateOffset = list(DateField = date_field, Offset = integer))
+}
+
 #' Materialize real OMOP rows as longitudinal index-event episodes
 #'
-#' Primary First/Last/All is applied to source events before any inclusion
-#' filter, matching OHDSI Circe. The source primary key is retained internally so
-#' same-date source events remain distinct while eligibility is evaluated.
+#' Primary First/Last/All is applied to source events that fall inside an
+#' observation period before any inclusion filter, matching OHDSI Circe. The
+#' source primary key is retained internally so same-date source events remain
+#' distinct while eligibility is evaluated.
 #'
 #' @param handle CDM handle
 #' @param bp Blueprint
@@ -2141,7 +2283,8 @@
     stop("index_event must be a uniquely named list.", call. = FALSE)
   }
   unknown <- setdiff(names(index_event),
-                     c("table", "concept_set", "primary_limit"))
+                     c("table", "concept_set", "primary_limit",
+                       "end_strategy"))
   if (length(unknown) > 0L) {
     stop("Unknown index_event field(s): ", paste(unknown, collapse = ", "),
          ".", call. = FALSE)
@@ -2165,6 +2308,7 @@
          call. = FALSE)
   }
   primary_limit <- tolower(primary_limit)
+  end_strategy <- .normalizeIndexEventEndStrategy(index_event$end_strategy)
 
   row <- bp$tables[bp$tables$table_name == table & bp$tables$present_in_db,
                    , drop = FALSE]
@@ -2184,6 +2328,19 @@
     stop("index_event table '", table,
          "' lacks person, date, interval-end, or stable event-key columns.",
          call. = FALSE)
+  }
+  op_row <- bp$tables[
+    bp$tables$table_name == "observation_period" & bp$tables$present_in_db,
+    , drop = FALSE
+  ]
+  op_cols <- bp$columns[["observation_period"]]$column_name %||% character(0)
+  op_required <- c(
+    "observation_period_id", "person_id", "observation_period_start_date",
+    "observation_period_end_date"
+  )
+  if (nrow(op_row) != 1L || !all(op_required %in% op_cols)) {
+    stop("index_event requires one authorized observation_period table with ",
+         "its person, start, end, and stable key columns.", call. = FALSE)
   }
 
   concept_predicate <- ""
@@ -2230,25 +2387,85 @@
   }
 
   qualified <- row$qualified_name[[1]]
+  op_qualified <- op_row$qualified_name[[1]]
+  op_join <- paste0(
+    "op.person_id = t.person_id AND ",
+    "op.observation_period_start_date <= t.", start_col, " AND ",
+    "op.observation_period_end_date >= t.", start_col
+  )
+  # Apply the ordinary DataSHIELD population gate before any data-quality
+  # diagnostic so a rare concept cannot be probed through differing validation
+  # errors. Candidate events outside every observation period are not eligible
+  # index events and therefore do not contribute to this gate.
+  .assertMinPersons(handle = handle, sql = paste0(
+    "SELECT COUNT(DISTINCT t.person_id) AS n FROM ", qualified,
+    " t INNER JOIN ", op_qualified, " op ON ", op_join,
+    " WHERE t.", start_col, " IS NOT NULL", concept_predicate
+  ))
+  coverage_sql <- paste0(
+    "SELECT COUNT(*) AS n FROM (SELECT t.", event_id_col, " FROM ",
+    qualified, " t LEFT JOIN ", op_qualified, " op ON ", op_join,
+    " WHERE t.", start_col, " IS NOT NULL", concept_predicate,
+    " GROUP BY t.person_id, t.", event_id_col,
+    " HAVING COUNT(op.observation_period_id) > 1) dsomop_bad_index_op"
+  )
+  coverage <- .executeQuery(handle, coverage_sql)
+  if (nrow(coverage) != 1L || !"n" %in% names(coverage) ||
+      is.na(coverage$n[[1]]) || as.numeric(coverage$n[[1]]) > 0) {
+    stop("Candidate index events cannot have overlapping covering ",
+         "observation_period records.", call. = FALSE)
+  }
+
+  cohort_end <- "op.observation_period_end_date"
+  if (!is.null(end_strategy)) {
+    date_field <- end_strategy$DateOffset$DateField
+    source_end <- if (identical(date_field, "StartDate")) {
+      paste0("t.", start_col)
+    } else {
+      paste0("COALESCE(t.", end_col, ", t.", start_col, ")")
+    }
+    offset_end <- .dateAddSql(
+      handle, end_strategy$DateOffset$Offset, source_end
+    )
+    cohort_end <- paste0(
+      "CASE WHEN ", offset_end,
+      " > op.observation_period_end_date THEN ",
+      "op.observation_period_end_date ELSE ", offset_end, " END"
+    )
+  }
   event_select <- paste0(
     "t.person_id AS subject_id, t.", start_col,
-    " AS cohort_start_date, COALESCE(t.", end_col, ", t.", start_col,
-    ") AS cohort_end_date, t.", event_id_col, " AS index_event_id"
+    " AS cohort_start_date, ", cohort_end,
+    " AS cohort_end_date, t.", event_id_col, " AS index_event_id"
   )
   where <- paste0(" WHERE t.", start_col, " IS NOT NULL", concept_predicate)
+  event_from <- paste0(
+    " FROM ", qualified, " t INNER JOIN ", op_qualified, " op ON ", op_join
+  )
   if (identical(primary_limit, "all")) {
-    sql <- paste0("SELECT ", event_select, " FROM ", qualified, " t", where)
+    selected <- paste0("SELECT ", event_select, event_from, where)
+    sql <- if (is.null(end_strategy)) {
+      selected
+    } else {
+      paste0(
+        "SELECT subject_id, cohort_start_date, cohort_end_date, ",
+        "index_event_id FROM (", selected, ") dsomop_offset_event ",
+        "WHERE cohort_end_date >= cohort_start_date"
+      )
+    }
   } else {
     direction <- if (identical(primary_limit, "last")) "DESC" else "ASC"
     ranked <- paste0(
       "SELECT ", event_select, ", ROW_NUMBER() OVER (PARTITION BY t.person_id ",
       "ORDER BY t.", start_col, " ", direction, ", t.", event_id_col, " ",
-      direction, ") AS dsomop_event_ordinal FROM ", qualified, " t", where
+      direction, ") AS dsomop_event_ordinal", event_from, where
     )
     sql <- paste0(
       "SELECT subject_id, cohort_start_date, cohort_end_date, index_event_id ",
       "FROM (", ranked, ") dsomop_ranked_event ",
-      "WHERE dsomop_event_ordinal = 1"
+      "WHERE dsomop_event_ordinal = 1",
+      if (is.null(end_strategy)) "" else
+        " AND cohort_end_date >= cohort_start_date"
     )
   }
   name <- .reserveTempTableName(handle, name)
@@ -2667,6 +2884,7 @@
   }
 
   if (staged) {
+    .validateStagedScopeDeclaration(plan)
     max_outputs <- suppressWarnings(as.numeric(
       getOption("dsomop.max_staged_outputs", 100L)
     ))
@@ -2837,6 +3055,12 @@
   concept_cols_by_output <- list()
   options <- plan$options %||% list()
   translate <- options$translate_concepts %||% TRUE
+  # Staged datasets are an interoperability boundary. Preserve standard OMOP
+  # concept IDs so every long output can stream and downstream OHDSI tools can
+  # join vocabulary tables without loading or mutating the fact dataset. Human
+  # labels belong in a separate concept-reference component, not in-place in a
+  # potentially massive event stream.
+  if (staged) translate <- FALSE
   block_sensitive <- options$block_sensitive %||% TRUE
 
   # Concept expansion cache: expand each unique concept set once
@@ -3094,10 +3318,10 @@
         add_cohort_date <- !is.null(cohort_table) &&
           !is.null(out$temporal$index_window)
 
-        # Staged + long + no translate: stream directly to Parquet
-        # This is the zero-memory path for large event-level extractions.
+        # Every staged long event stream preserves numeric OMOP concept IDs and
+        # therefore writes directly to Parquet without materializing in R.
         # Features/wide/sparse need in-memory reshaping, so they fall through.
-        can_stream <- staged && repr == "long" && !translate
+        can_stream <- staged && repr == "long"
 
         if (can_stream) {
           sql <- .compileSelect(
@@ -3204,9 +3428,9 @@
           desc <- .buildStagedDescriptor(
             out_name, file_info, staging_token,
             pseudonymization = pseudonymization,
-            semantic_contract = .stagedSemanticContract(out),
+            semantic_contract = .stagedSemanticContract(plan, out_name),
             bundle_contract = .stagedBundleContract(
-              out_name, staging_token, out
+              plan, out_name, staging_token
             )
           )
           results[[out_name]] <- desc
@@ -3260,14 +3484,60 @@
         concept_cols_by_output[[out_name]] <- .conceptAliases(base_spec)
 
       } else if (out_type == "survival") {
-        results[[out_name]] <- .extractSurvival(
+        survival_sql <- .compilePlanSurvivalSql(
           handle,
           cohort_table = cohort_table,
-          outcome = out$outcome,
-          tar = out$tar,
-          event_order = out$event_order %||% "first",
-          filters = custom_filters
+          output = out,
+          custom_filters = custom_filters
         )
+        if (staged) {
+          .validateLongitudinalSurvivalSql(handle, survival_sql)
+          survival_chunk <- function(chunk) {
+            chunk <- .convertTypes(chunk)
+            .pseudonymizeIdentifiers(
+              chunk, person_key, pseudonymization = pseudonymization
+            )
+          }
+          stage_survival_component <- function(sql, dataset_name,
+                                               component = NULL) {
+            file_info <- .executeQueryToParquet(
+              .conn(handle), sql,
+              file.path(staging_dir, paste0(dataset_name, ".parquet")),
+              chunk_fn = survival_chunk
+            )
+            desc <- .buildStagedDescriptor(
+              dataset_name, file_info, staging_token,
+              pseudonymization = pseudonymization,
+              semantic_contract = .stagedSemanticContract(
+                plan, out_name, component = component
+              ),
+              bundle_contract = .stagedBundleContract(
+                plan, out_name, staging_token
+              )
+            )
+            staged_descriptors[[dataset_name]] <<- desc
+            desc
+          }
+          if (identical(survival_sql$format, "recurrent_events")) {
+            events_name <- paste0(out_name, ".events")
+            risk_name <- paste0(out_name, ".risk_sets")
+            results[[out_name]] <- list(
+              events = stage_survival_component(
+                survival_sql$sql, events_name, "events"
+              ),
+              risk_sets = stage_survival_component(
+                survival_sql$components$risk_sets, risk_name, "risk_sets"
+              )
+            )
+          } else {
+            desc <- stage_survival_component(survival_sql$sql, out_name)
+            results[[out_name]] <- desc
+          }
+        } else {
+          results[[out_name]] <- .executeLongitudinalSurvivalSql(
+            handle, survival_sql
+          )
+        }
 
       } else if (out_type == "cohort_membership") {
         if (!is.null(custom_filters) && length(custom_filters) > 0) {
@@ -3283,40 +3553,118 @@
         )
 
       } else if (out_type == "intervals_long") {
-        results[[out_name]] <- .extractIntervalsLong(
-          handle,
+        source_filters <- out$source_filters
+        if (!is.null(custom_filters) && length(custom_filters) > 0L) {
+          source_names <- tolower(names(source_filters) %||% character(0))
+          source_filters <- stats::setNames(lapply(out$tables, function(table) {
+            index <- match(tolower(table), source_names)
+            table_filter <- if (is.na(index)) NULL else source_filters[[index]]
+            if (is.null(table_filter) || length(table_filter) == 0L) {
+              custom_filters
+            } else {
+              list(and = list(table_filter, custom_filters))
+            }
+          }), out$tables)
+        }
+        interval_sql <- .compileIntervalsLongSql(
+          handle = handle,
           cohort_table = cohort_table,
           tables = out$tables,
           concept_filter = out$concept_filter,
-          filters = custom_filters
+          filters = source_filters,
+          window = out$window,
+          interval_match = out$interval_match %||% "overlaps",
+          event_select = out$event_select %||% "all",
+          select_n = out$select_n %||% 1L,
+          select_by = out$select_by %||% "episode_source",
+          anchor = out$anchor %||% 0L
         )
+        if (staged) {
+          interval_chunk <- function(chunk) {
+            chunk <- .convertTypes(chunk)
+            .pseudonymizeIdentifiers(
+              chunk, person_key, pseudonymization = pseudonymization
+            )
+          }
+          file_info <- .executeQueryToParquet(
+            .conn(handle), interval_sql,
+            file.path(staging_dir, paste0(out_name, ".parquet")),
+            chunk_fn = interval_chunk
+          )
+          desc <- .buildStagedDescriptor(
+            out_name, file_info, staging_token,
+            pseudonymization = pseudonymization,
+            semantic_contract = .stagedSemanticContract(plan, out_name),
+            bundle_contract = .stagedBundleContract(
+              plan, out_name, staging_token
+            )
+          )
+          results[[out_name]] <- desc
+          staged_descriptors[[out_name]] <- desc
+        } else {
+          results[[out_name]] <- .convertTypes(.executeQuery(
+            handle, interval_sql
+          ))
+        }
 
       } else if (out_type == "temporal_covariates") {
-        results[[out_name]] <- .extractTemporalCovariates(
-          handle,
-          cohort_table = cohort_table,
-          table = out$table,
-          concept_filter = out$concept_set,
-          bin_width = out$bin_width %||% 30L,
-          window_start = out$window_start %||% -365L,
-          window_end = out$window_end %||% 0L,
-          analyses = out$analyses %||% c("binary"),
-          filters = custom_filters
-        )
+        if (staged) {
+          results[[out_name]] <- .compileTemporalSqlComponents(
+            handle = handle,
+            cohort_table = cohort_table,
+            table = out$table,
+            concept_filter = out$concept_set,
+            bin_width = out$bin_width %||% 30L,
+            window_start = out$window_start %||% -365L,
+            window_end = out$window_end %||% 0L,
+            analyses = out$analyses %||% c("binary"),
+            filters = custom_filters,
+            output_type = "temporal_covariates"
+          )
+        } else {
+          results[[out_name]] <- .extractTemporalCovariates(
+            handle,
+            cohort_table = cohort_table,
+            table = out$table,
+            concept_filter = out$concept_set,
+            bin_width = out$bin_width %||% 30L,
+            window_start = out$window_start %||% -365L,
+            window_end = out$window_end %||% 0L,
+            analyses = out$analyses %||% c("binary"),
+            filters = custom_filters
+          )
+        }
       } else if (out_type == "person_period") {
-        results[[out_name]] <- .extractPersonPeriod(
-          handle,
-          cohort_table = cohort_table,
-          table = out$table,
-          concept_filter = out$concept_set,
-          bin_width = out$bin_width %||% 30L,
-          window_start = out$window_start %||% -365L,
-          window_end = out$window_end %||% 0L,
-          analyses = out$analyses %||% c("binary"),
-          grain = out$grain,
-          time_origin = out$time_origin,
-          filters = custom_filters
-        )
+        if (staged) {
+          results[[out_name]] <- .compileTemporalSqlComponents(
+            handle = handle,
+            cohort_table = cohort_table,
+            table = out$table,
+            concept_filter = out$concept_set,
+            bin_width = out$bin_width %||% 30L,
+            window_start = out$window_start %||% -365L,
+            window_end = out$window_end %||% 0L,
+            analyses = out$analyses %||% c("binary"),
+            filters = custom_filters,
+            output_type = "person_period",
+            grain = out$grain,
+            time_origin = out$time_origin
+          )
+        } else {
+          results[[out_name]] <- .extractPersonPeriod(
+            handle,
+            cohort_table = cohort_table,
+            table = out$table,
+            concept_filter = out$concept_set,
+            bin_width = out$bin_width %||% 30L,
+            window_start = out$window_start %||% -365L,
+            window_end = out$window_end %||% 0L,
+            analyses = out$analyses %||% c("binary"),
+            grain = out$grain,
+            time_origin = out$time_origin,
+            filters = custom_filters
+          )
+        }
       } else {
         stop("Unsupported output type '", out_type, "'.", call. = FALSE)
       }
@@ -3341,11 +3689,19 @@
         stop("concept_dictionary is derived from other outputs and cannot ",
              "apply filters$custom directly.", call. = FALSE)
       }
-      results[[out_name]] <- .buildConceptDictionary(
-        handle,
-        results = results,
-        source_outputs = out$source_outputs
-      )
+      results[[out_name]] <- if (staged) {
+        .buildDeclaredConceptDictionary(
+          handle,
+          outputs = outputs,
+          source_outputs = out$source_outputs
+        )
+      } else {
+        .buildConceptDictionary(
+          handle,
+          results = results,
+          source_outputs = out$source_outputs
+        )
+      }
     }, error = function(e) {
       if (isTRUE(.omopDisclosureSettings()$query_strict)) {
         cleanup_plan_temps(remove_staging = TRUE)
@@ -3355,11 +3711,6 @@
       warning("Plan output '", out_name, "' failed: ", e$message)
     })
   }
-
-  # Drop the explicitly tracked working tables now.  The operation-level
-  # on.exit additionally releases every intermediate fold/index/scope object,
-  # including those created before cleanup_plan_temps was installed.
-  cleanup_plan_temps()
 
   # Staged mode: convert remaining data.frame results to descriptors
   if (staged && !is.null(staging_dir)) {
@@ -3375,13 +3726,78 @@
         desc <- .stageDataFrame(
           result, out_name, staging_dir, staging_token, person_key,
           pseudonymization = pseudonymization,
-          semantic_contract = .stagedSemanticContract(outputs[[out_name]]),
+          semantic_contract = .stagedSemanticContract(plan, out_name),
           bundle_contract = .stagedBundleContract(
-            out_name, staging_token, outputs[[out_name]]
+            plan, out_name, staging_token
           )
         )
         results[[out_name]] <- desc
         staged_descriptors[[out_name]] <- desc
+      } else if (inherits(result, "omop_temporal_sql_components")) {
+        for (validation in result$validations) {
+          value <- .executeQuery(handle, validation$sql)[[1L]][[1L]]
+          if (identical(validation$kind, "min_persons")) {
+            .assertMinPersons(n_persons = value)
+          } else if (identical(validation$kind, "max_value")) {
+            numeric_value <- suppressWarnings(as.numeric(value))
+            if (length(numeric_value) != 1L || is.na(numeric_value) ||
+                !is.finite(numeric_value) || numeric_value > validation$max) {
+              stop(validation$label, " exceed the server cap of ",
+                   validation$max, ".", call. = FALSE)
+            }
+          } else {
+            stop("Unknown SQL component validation.", call. = FALSE)
+          }
+        }
+        component_results <- list()
+        for (comp_name in names(result$components)) {
+          component <- result$components[[comp_name]]
+          full_name <- paste0(out_name, ".", comp_name)
+          if (identical(component$kind, "sql")) {
+            component_transform <- local({
+              contract <- component
+              function(chunk) {
+                chunk <- .normalizeTemporalSqlChunk(chunk, contract)
+                chunk <- .convertTypes(chunk)
+                .pseudonymizeIdentifiers(
+                  chunk, person_key, pseudonymization = pseudonymization
+                )
+              }
+            })
+            file_info <- .executeQueryToParquet(
+              .conn(handle), component$sql,
+              file.path(staging_dir, paste0(full_name, ".parquet")),
+              chunk_fn = component_transform
+            )
+            desc <- .buildStagedDescriptor(
+              full_name, file_info, staging_token,
+              pseudonymization = pseudonymization,
+              semantic_contract = .stagedSemanticContract(
+                plan, out_name, component = comp_name
+              ),
+              bundle_contract = .stagedBundleContract(
+                plan, out_name, staging_token
+              )
+            )
+          } else if (identical(component$kind, "data") &&
+                     is.data.frame(component$data)) {
+            desc <- .stageDataFrame(
+              component$data, full_name, staging_dir, staging_token,
+              person_key, pseudonymization = pseudonymization,
+              semantic_contract = .stagedSemanticContract(
+                plan, out_name, component = comp_name
+              ),
+              bundle_contract = .stagedBundleContract(
+                plan, out_name, staging_token
+              )
+            )
+          } else {
+            stop("Invalid SQL-backed temporal component.", call. = FALSE)
+          }
+          component_results[[comp_name]] <- desc
+          staged_descriptors[[full_name]] <- desc
+        }
+        results[[out_name]] <- component_results
       } else if (is.list(result) && !is.data.frame(result)) {
         # For composite results (temporal covariates, sparse), stage each
         # data.frame component
@@ -3392,10 +3808,10 @@
               result[[comp_name]], full_name, staging_dir, staging_token,
               person_key, pseudonymization = pseudonymization,
               semantic_contract = .stagedSemanticContract(
-                outputs[[out_name]], component = comp_name
+                plan, out_name, component = comp_name
               ),
               bundle_contract = .stagedBundleContract(
-                out_name, staging_token, outputs[[out_name]]
+                plan, out_name, staging_token
               )
             )
             result[[comp_name]] <- desc
@@ -3411,6 +3827,11 @@
       staging_committed <- TRUE
     }
   }
+
+  # Drop working tables only after every SQL-backed staged component has been
+  # consumed. The operation-level on.exit additionally releases intermediates
+  # created before cleanup_plan_temps was installed.
+  cleanup_plan_temps()
 
   attr(results, "omop_concept_cols") <- concept_cols_by_output
   results

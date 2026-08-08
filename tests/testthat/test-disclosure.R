@@ -19,9 +19,9 @@ test_that("disclosure settings are read from options", {
 
 test_that("reported DataSHIELD noise is not advertised as formal DP", {
   settings <- .omopDisclosureSettings()
-  expect_false(settings$formal_dp_enabled)
   expect_false(settings$sticky_noise_enabled)
   expect_false(settings$privacy_ledger_enabled)
+  expect_false("formal_dp_enabled" %in% names(settings))
 })
 
 test_that("invalid disclosure settings fail closed instead of weakening gates", {

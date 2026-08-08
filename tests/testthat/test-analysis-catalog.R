@@ -428,6 +428,45 @@ test_that("(e) @cohort hook is injected as a subject_id predicate", {
             regexpr("GROUP BY", injected, fixed = TRUE))
 })
 
+test_that("QueryLibrary schema rendering quotes complete vendor namespaces", {
+  handle <- new.env(parent = emptyenv())
+  handle$dbms <- "postgresql"
+  handle$target_dialect <- "postgresql"
+  handle$cdm_schema <- "CDM-Research"
+  handle$vocab_schema <- "Vocabulary"
+  handle$results_schema <- "Results"
+  handle$results_schema_resolved_done <- TRUE
+  handle$results_schema_resolved <- "Results"
+
+  sql <- .qlRenderSchema(
+    handle,
+    paste0(
+      "SELECT * FROM @cdm.person p JOIN @vocab.concept c ON 1 = 1 ",
+      "WHERE p.label = '@cdm.person'"
+    )
+  )
+  expect_match(sql, 'FROM "CDM-Research".person', fixed = TRUE)
+  expect_match(sql, 'JOIN "Vocabulary".concept', fixed = TRUE)
+  expect_match(sql, "'@cdm.person'", fixed = TRUE)
+
+  handle$dbms <- "mariadb"
+  handle$target_dialect <- "mysql"
+  handle$cdm_schema <- "cdm-research"
+  handle$vocab_schema <- "vocab-research"
+  expect_match(
+    .qlRenderSchema(handle, "SELECT * FROM @cdm.person"),
+    "`cdm-research`.person", fixed = TRUE
+  )
+
+  handle$dbms <- "bigquery"
+  handle$target_dialect <- "bigquery"
+  handle$cdm_schema <- "project-id.dataset"
+  expect_identical(
+    .qlRenderSchema(handle, "SELECT * FROM @cdm.person"),
+    "SELECT * FROM `project-id.dataset.person`"
+  )
+})
+
 test_that("(e) a tiny scoped cohort fails closed before running", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
@@ -737,66 +776,49 @@ test_that("r-in-session ctx carries scoped_cohort + person_set_sql", {
 
 # --- Stage-0 infra: gate camelCase dist + coupling + ratio reconcile ---------
 
-test_that("QueryLibrary statistic entries declare the right dist denominator", {
+test_that("legacy QueryLibrary exact statistics require sticky redesigns", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
 
-  # These STDDEV templates are intentionally absent from SQLite discovery.
-  # Inspect their metadata under a dialect that supports the SQL contract.
   h$target_dialect <- "duckdb"
   entries <- .omopAnalysisQueryEntries(h)
-  value_stats <- entries[["dsomop:measurement.value_stats"]]
-  duration <- entries[["dsomop:condition.duration_stats"]]
-  per_person <- entries[["dsomop:condition_era.eras_per_person_stats"]]
+  ids <- c("measurement.value_stats", "condition.duration_stats",
+           "condition_era.eras_per_person_stats")
 
-  expect_equal(value_stats$disclosure$unit, "dist")
-  expect_equal(value_stats$disclosure$dist_count_col,
-               c("n_values", "n_persons"))
-  expect_setequal(value_stats$disclosure$summary_cols,
-                  c("mean_value", "sd_value"))
-  expect_equal(duration$disclosure$unit, "dist")
-  expect_equal(duration$disclosure$dist_count_col,
-               c("n_records", "n_persons"))
-  expect_equal(per_person$disclosure$unit, "dist")
-  expect_equal(per_person$disclosure$dist_count_col, "n_persons")
+  expect_false(any(paste0("dsomop:", ids) %in% names(entries)))
+  for (id in ids) {
+    expect_equal(.query_get(h, id)$class, "BLOCKED", info = id)
+  }
 })
 
-test_that("QueryLibrary stats keep counts but obey nfilter_dist and no extrema", {
+test_that("top-N selection cannot reveal rank within a disclosure band", {
+  withr::with_options(list(dsomop.nfilter.band = 5), {
+    x <- data.frame(group = c("b", "a", "c"), support = c(9, 6, 11))
+    first <- .omopBandedTopN(
+      x, support_cols = "support", top_n = 2, key_cols = "group")
+    expect_equal(first$group, c("c", "a"))
+
+    # Swap the two exact values inside the same [5, 10) release band. Public
+    # membership/order remains unchanged because the public key breaks the tie.
+    x$support[x$group == "a"] <- 9
+    x$support[x$group == "b"] <- 6
+    second <- .omopBandedTopN(
+      x, support_cols = "support", top_n = 2, key_cols = "group")
+    expect_equal(second$group, first$group)
+  })
+})
+
+test_that("exact QueryLibrary statistics have no direct execution bypass", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
   h$target_dialect <- "duckdb"
-  e <- .omopAnalysisQueryEntries(h)[["dsomop:measurement.value_stats"]]
-
-  raw <- data.frame(
-    measurement_concept_id = c(1L, 2L, 3L),
-    n_persons = c(6L, 12L, 6L),
-    n_values = c(9L, 12L, 100L),
-    mean_value = c(4.5, 8.5, 99),
-    sd_value = c(1.2, 2.4, 0.1),
-    min_value = c(1, 2, 98),
-    max_value = c(9, 15, 100),
-    stringsAsFactors = FALSE
+  listed <- .query_list(h)
+  expect_false("measurement.value_stats" %in% listed$id)
+  expect_null(.omopAnalysisQueryEntries(h)[["dsomop:measurement.value_stats"]])
+  expect_error(
+    .query_exec(h, "measurement.value_stats"),
+    "blocked by safety classification"
   )
-
-  withr::with_options(list(nfilter.tab = 3, dsomop.nfilter.dist = 10,
-                           dsomop.nfilter.band = 5), {
-    out <- .omopAnalysisGate(h, raw, e)
-    expect_equal(nrow(out), 3L)
-    expect_true(all(c("n_persons", "n_values") %in% names(out)))
-    expect_true(all(out$n_persons %% 5 == 0))
-    expect_true(all(out$n_values %% 5 == 0))
-
-    small <- out$measurement_concept_id == 1L  # 9 values: below dist=10
-    large <- out$measurement_concept_id == 2L  # 12 values: releasable
-    repeated <- out$measurement_concept_id == 3L # 100 rows, only 6 persons
-    expect_true(all(is.na(out$mean_value[small])))
-    expect_true(all(is.na(out$sd_value[small])))
-    expect_false(anyNA(out$mean_value[large]))
-    expect_false(anyNA(out$sd_value[large]))
-    expect_true(all(is.na(out$mean_value[repeated])))
-    expect_true(all(is.na(out$sd_value[repeated])))
-    expect_false(any(c("min_value", "max_value") %in% names(out)))
-  })
 })
 
 test_that("gate strips camelCase min/max and masks camelCase summary stats", {
@@ -1456,6 +1478,135 @@ test_that("dist diagnostics never release min/max (gate strip + p-only)", {
   })
 })
 
+test_that("time distribution uses the unique index-covering observation period", {
+  h <- acat_handle(n_persons = 40)
+  on.exit(cleanup_handle(h))
+  cohort <- data.frame(
+    subject_id = 1:10,
+    cohort_start_date = rep("2021-01-01", 10),
+    cohort_end_date = rep("2021-01-31", 10)
+  )
+  DBI::dbWriteTable(h$conn, "acat_multi_op_scope", cohort,
+                    temporary = TRUE)
+  register_test_temp(h, "acat_multi_op_scope")
+  extra <- data.frame(
+    observation_period_id = 1001:1010,
+    person_id = 1:10,
+    observation_period_start_date = rep("2010-01-01", 10),
+    observation_period_end_date = rep("2010-12-31", 10),
+    period_type_concept_id = rep(44818518L, 10)
+  )
+  DBI::dbWriteTable(h$conn, "observation_period", extra, append = TRUE)
+
+  entry <- .omopAnalysisResolve(h, "dsomop:cohortdx.time_distribution")
+  raw <- entry$compute$fn(
+    h, list(scoped_cohort = "acat_multi_op_scope"),
+    list(metric = "prior_observation")
+  )
+  expect_equal(raw$count_value, 10)
+  expect_equal(raw$n_persons, 10)
+  expect_equal(entry$disclosure$dist_count_col,
+               c("count_value", "n_persons"))
+
+  overlapping <- extra[1, , drop = FALSE]
+  overlapping$observation_period_id <- 2001L
+  overlapping$observation_period_start_date <- "2020-06-01"
+  overlapping$observation_period_end_date <- "2021-06-01"
+  DBI::dbWriteTable(h$conn, "observation_period", overlapping, append = TRUE)
+  expect_error(
+    entry$compute$fn(
+      h, list(scoped_cohort = "acat_multi_op_scope"),
+      list(metric = "post_observation")
+    ),
+    "exactly one observation_period"
+  )
+})
+
+test_that("recurrent episodes never substitute for distinct-person distribution support", {
+  h <- acat_handle(n_persons = 40)
+  on.exit(cleanup_handle(h))
+  scope <- rbind(
+    data.frame(subject_id = 1:3, cohort_start_date = "2020-01-01",
+               cohort_end_date = "2020-01-31"),
+    data.frame(subject_id = 1:3, cohort_start_date = "2022-01-01",
+               cohort_end_date = "2022-01-31")
+  )
+  DBI::dbWriteTable(h$conn, "acat_recurrent_scope", scope, temporary = TRUE)
+  register_test_temp(h, "acat_recurrent_scope")
+  ctx <- list(scoped_cohort = "acat_recurrent_scope")
+
+  gated <- function(id, params = list()) {
+    entry <- .omopAnalysisResolve(h, id)
+    raw <- entry$compute$fn(h, ctx, params)
+    .omopAnalysisGate(h, raw, entry)
+  }
+  withr::with_options(list(
+    nfilter.subset = 0, nfilter.tab = 1, nfilter.dist = 5,
+    dsomop.nfilter.band = 1
+  ), {
+    followup <- gated("dsomop:cm.followup_distribution")
+    expect_equal(followup$count_value, 6)
+    expect_equal(followup$n_persons, 3)
+    expect_true(is.na(followup$median_value))
+
+    for (metric in c("age", "time_in_cohort")) {
+      value <- gated("dsomop:fe.continuous", list(metric = metric))
+      expect_equal(value$count_value, 6)
+      expect_equal(value$n_persons, 3)
+      expect_true(is.na(value$median_value))
+    }
+
+    comorbidity <- gated(
+      "dsomop:fe.comorbidity_index", list(index_type = "charlson")
+    )
+    expect_equal(comorbidity$count_value, 3)
+    expect_equal(comorbidity$n_persons, 3)
+    expect_true(is.na(comorbidity$median_value))
+
+    table1_entry <- .omopAnalysisResolve(h, "dsomop:fe.table1")
+    table1 <- table1_entry$compute$fn(h, ctx, list())
+    age_row <- table1[
+      table1$unit == "dist" & table1$characteristic == "age", ,
+      drop = FALSE
+    ]
+    expect_named(table1, c(
+      "characteristic", "level", "unit", "sum_value", "average",
+      "count_value", "avg_value", "stdev_value", "p10_value",
+      "p25_value", "median_value", "p75_value", "p90_value"
+    ))
+    expect_equal(age_row$sum_value, 3)
+    expect_equal(age_row$count_value, 6)
+    expect_true(is.na(age_row$median_value))
+
+    achilles <- gated("dsomop:achilles.103")
+    expect_equal(achilles$count_value, 3)
+
+    DBI::dbExecute(h$conn, "DELETE FROM measurement")
+    DBI::dbExecute(h$conn, paste0(
+      "INSERT INTO measurement ",
+      "(measurement_id, person_id, measurement_concept_id, measurement_date, ",
+      "measurement_type_concept_id, value_as_number, value_as_concept_id, ",
+      "unit_concept_id, range_low, range_high, visit_occurrence_id) VALUES ",
+      "(20001, 1, 3004410, '2021-01-01', 44818702, 1, NULL, NULL, NULL, NULL, NULL), ",
+      "(20002, 2, 3004410, '2021-01-01', 44818702, 1, NULL, NULL, NULL, NULL, NULL), ",
+      "(20003, 3, 3004410, '2021-01-01', 44818702, 1, NULL, NULL, NULL, NULL, NULL)"
+    ))
+    temporal_entry <- .omopAnalysisResolve(
+      h, "dsomop:ohdsi.cohort_diagnostics.temporal_covariate_value_dist"
+    )
+    temporal_raw <- temporal_entry$compute$fn(h, ctx, list(
+      domain_code = "3", value_kind = "count", covariate_ids = "3004410",
+      temporal_start_days = "-1000", temporal_end_days = "1000",
+      top_n = "50"
+    ))
+    expect_equal(temporal_raw$count_value, 3)
+    expect_equal(temporal_raw$n_persons, 3)
+    expect_equal(temporal_raw$avg_value, 1)
+    temporal <- .omopAnalysisGate(h, temporal_raw, temporal_entry)
+    expect_true(is.na(temporal$median_value))
+  })
+})
+
 test_that("person-unit diagnostic counts are banded by the one gate", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
@@ -1512,6 +1663,59 @@ test_that("incidence.rate reconciles rate/proportion over banded counts", {
       }
     }
   })
+})
+
+test_that("person-level incidence counts recurrent outcomes without person-time fan-out", {
+  h <- acat_handle(n_persons = 10)
+  on.exit(cleanup_handle(h))
+
+  episodes <- do.call(rbind, lapply(1:10, function(pid) {
+    data.frame(
+      subject_id = c(pid, pid),
+      cohort_start_date = c("2020-01-01", "2021-01-01"),
+      cohort_end_date = c("2020-01-11", "2021-04-11"),
+      stringsAsFactors = FALSE
+    )
+  }))
+  DBI::dbWriteTable(h$conn, "inc_longitudinal", episodes, temporary = TRUE)
+  register_test_temp(h, "inc_longitudinal")
+
+  DBI::dbExecute(
+    h$conn,
+    "DELETE FROM condition_occurrence WHERE condition_concept_id = 4000002"
+  )
+  event_id <- 90000L
+  add_event <- function(pid, day) {
+    event_id <<- event_id + 1L
+    DBI::dbExecute(h$conn, sprintf(paste0(
+      "INSERT INTO condition_occurrence (condition_occurrence_id, person_id, ",
+      "condition_concept_id, condition_start_date, condition_end_date, ",
+      "condition_type_concept_id) VALUES (%d, %d, 4000002, ",
+      "'2020-01-%02d', '2020-01-%02d', 44818518)"),
+      event_id, pid, day, day))
+  }
+  for (pid in 1:10) {
+    add_event(pid, 3L)
+    add_event(pid, 5L)
+  }
+
+  out_src <- .omopOutcomeSource(h, "4000002", "0")
+  substrate <- .omopPersonOutcomeSubstrateSql(
+    h, "inc_longitudinal", out_src, 0L, 0L, "start", "end")
+  aggregate <- function() .executeQuery(h, .sql_translate(paste0(
+    "SELECT COUNT(*) AS persons, SUM(person_days) AS person_days, ",
+    "SUM(outcomes) AS outcomes FROM ", substrate, " x"),
+    h$target_dialect))
+
+  first <- aggregate()
+  expect_equal(as.numeric(first$persons), 10)
+  expect_equal(as.numeric(first$person_days), 100)
+  expect_equal(as.numeric(first$outcomes), 20)
+
+  for (pid in 1:10) add_event(pid, 7L)
+  second <- aggregate()
+  expect_equal(as.numeric(second$person_days), as.numeric(first$person_days))
+  expect_equal(as.numeric(second$outcomes), 30)
 })
 
 test_that("the diagnostic adapter adds no second gate (single funnel)", {
@@ -1635,12 +1839,24 @@ test_that("covariate_balance recomputes SMD from banded target/comparator", {
   on.exit(cleanup_handle(h))
   withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
                            dsomop.nfilter.band = 5), {
-    target     <- .cohortCreate(h, list(type = "condition", concept_set = c(201820)),
-                                mode = "temporary", cohort_id = 1)
-    comparator <- .cohortCreate(h, list(type = "condition", concept_set = c(255573)),
-                                mode = "temporary", cohort_id = 2)
+    # CohortMethod arms are treatment populations and therefore disjoint after
+    # the OHDSI first-treatment rule. Use an unambiguous fixture here; overlap
+    # itself is tested by the dedicated diagnostic immediately above.
+    DBI::dbExecute(h$conn, paste0(
+      "CREATE TEMP TABLE acat_balance_target AS ",
+      "SELECT person_id AS subject_id, '2020-01-01' AS cohort_start_date, ",
+      "'2024-12-31' AS cohort_end_date FROM person ",
+      "WHERE person_id BETWEEN 1 AND 20"))
+    DBI::dbExecute(h$conn, paste0(
+      "CREATE TEMP TABLE acat_balance_comparator AS ",
+      "SELECT person_id AS subject_id, '2020-01-01' AS cohort_start_date, ",
+      "'2024-12-31' AS cohort_end_date FROM person ",
+      "WHERE person_id BETWEEN 21 AND 40"))
+    register_test_temp(
+      h, c("acat_balance_target", "acat_balance_comparator"))
     df <- .omopAnalysisRun(h, "dsomop:cm.covariate_balance",
-                           scope = list(target, comparator))
+                           scope = list("acat_balance_target",
+                                        "acat_balance_comparator"))
     expect_true(all(c("covariate_id", "target_sum_value", "comparator_sum_value",
                       "target_average", "comparator_average",
                       "std_mean_diff") %in% names(df)))

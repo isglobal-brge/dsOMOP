@@ -38,7 +38,7 @@ direct option -> \code{default.*} prefix -> hardcoded fallback.
     reports this server-owned value, but does not reinterpret it as
     epsilon/delta, a generic DP budget, replay-stable noise, or permission to
     add noise to arbitrary query results.}
-  \item{\code{formal_dp_enabled}, \code{sticky_noise_enabled},
+  \item{\code{sticky_noise_enabled},
     \code{privacy_ledger_enabled}}{Explicit capability flags. They are
     enabled only after the dedicated DP service has completed its early
     bootstrap. Ordinary suppression/banding and the \code{nfilter.noise}
@@ -77,6 +77,7 @@ direct option -> \code{default.*} prefix -> hardcoded fallback.
     \code{max_pivot_concepts} (default 1000),
     \code{max_output_columns} (default 5000),
     \code{max_temporal_bins} (default 10000),
+    \code{max_events_per_group} (default 100),
     \code{max_filter_depth} (default 32),
     \code{max_filter_nodes} (default 1024),
     \code{max_filter_values} (default 10000), and

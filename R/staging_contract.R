@@ -147,13 +147,132 @@
   identical(as.integer(status), 0L)
 }
 
+.stagedScopeItems <- function(value, field) {
+  if (is.null(value)) return(list())
+  items <- if (is.data.frame(value) || .is_omop.table(value)) {
+    list(value)
+  } else if (is.list(value)) {
+    unname(value)
+  } else {
+    as.list(unname(value))
+  }
+  if (any(vapply(items, is.null, logical(1L)))) {
+    stop("A staged ", field, " declaration cannot contain NULL sources.",
+         call. = FALSE)
+  }
+  items
+}
+
+.stagedScopeCohortSemantic <- function(value) {
+  if ((is.numeric(value) && length(value) == 1L && !is.na(value)) ||
+      (is.character(value) && length(value) == 1L && !is.na(value) &&
+       grepl("^[0-9]+$", value))) {
+    return(list(
+      kind = "cohort_definition_id",
+      value = .dsomopPlanCohortIdSemantic(
+        value, field = "scope cohort_definition_id", minimum = 1L
+      )
+    ))
+  }
+  if (!is.character(value) || length(value) != 1L || is.na(value)) {
+    stop("A staged scope cohort must be one cohort definition id or cohort ",
+         "table name.", call. = FALSE)
+  }
+  list(
+    kind = "cohort_table",
+    value = .validateIdentifier(value, "staged scope cohort")
+  )
+}
+
+.stagedPlanScopeSemantic <- function(plan) {
+  scope <- plan$scope
+  if (is.null(scope)) return(NULL)
+  if (!is.list(scope) || is.data.frame(scope) || .is_omop.table(scope)) {
+    stop("A staged plan scope must be a declarative scope list.",
+         call. = FALSE)
+  }
+  combine <- tolower(.stagedScalarString(
+    scope[["combine"]] %||% "union", "staged scope combine"
+  ))
+  if (!combine %in% c("union", "intersect")) {
+    stop("A staged scope combine must be 'union' or 'intersect'.",
+         call. = FALSE)
+  }
+  cohort_sources <- lapply(
+    .stagedScopeItems(scope[["cohort"]], "scope cohort"),
+    .stagedScopeCohortSemantic
+  )
+  table_sources <- lapply(
+    .stagedScopeItems(scope[["tables"]], "scope table"),
+    function(value) {
+      if (!is.character(value) || length(value) != 1L || is.na(value)) {
+        stop("Every staged scope table must be one public workspace symbol.",
+             call. = FALSE)
+      }
+      list(
+        kind = "workspace_table",
+        symbol = .validateIdentifier(value, "staged scope table")
+      )
+    }
+  )
+  sources <- c(cohort_sources, table_sources)
+  if (length(sources) == 0L) return(NULL)
+  list(combine = combine, sources = unname(sources))
+}
+
+# A portable staged contract can bind live workspace scope only through the
+# public declarations retained in plan$scope. Never derive compatibility from
+# frame contents, attributes, DP lineage ids, resource handles or site names.
+.validateStagedScopeDeclaration <- function(plan) {
+  scope <- plan$scope
+  if (is.null(scope)) return(invisible(TRUE))
+  if (!is.list(scope) || is.data.frame(scope) || .is_omop.table(scope)) {
+    stop("Staged output requires a portable declarative scope.",
+         call. = FALSE)
+  }
+  .stagedPlanScopeSemantic(plan)
+  declared_cohorts <- lapply(
+    .stagedScopeItems(scope[["cohort"]], "scope cohort"),
+    .stagedScopeCohortSemantic
+  )
+  declared_tables <- .stagedScopeItems(scope[["tables"]], "scope table")
+  live <- scope[["tables_frames"]]
+  if (is.null(live)) {
+    if (length(declared_tables) > 0L) {
+      stop("Staged workspace scope tables were not resolved from their public ",
+           "declarations.", call. = FALSE)
+    }
+    return(invisible(TRUE))
+  }
+  live_sources <- Filter(
+    Negate(is.null), .stagedScopeItems(live, "resolved scope")
+  )
+  live_is_table <- vapply(live_sources, .is_omop.table, logical(1L))
+  live_cohorts <- lapply(
+    live_sources[!live_is_table], .stagedScopeCohortSemantic
+  )
+  if (!identical(unname(live_cohorts), unname(declared_cohorts)) ||
+      sum(live_is_table) != length(declared_tables)) {
+    stop("Staged scope sources do not match the portable cohort/table ",
+         "declarations in plan$scope.", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
 # Build a public, deterministic snapshot of the output semantics that another
-# server-side package must compare before combining staged datasets. This is not
-# a full plan digest: it captures the harmonisation settings and row/date shape
-# that can otherwise differ silently between nodes.
-.stagedSemanticContract <- function(output, component = NULL) {
+# server-side package must compare before combining staged datasets. The opaque
+# query digest binds the selected cohort/population/scope and every output-level
+# selection/format option without publishing a second copy of the plan contract.
+.stagedSemanticContract <- function(plan, output_name, component = NULL) {
+  if (!is.list(plan) || !is.list(plan$outputs)) {
+    stop("A staged semantic contract requires one extraction plan.",
+         call. = FALSE)
+  }
+  output_name <- .validateIdentifier(output_name, "staged semantic output")
+  output <- plan$outputs[[output_name]]
   if (!is.list(output)) {
-    stop("A staged semantic contract requires one plan output.", call. = FALSE)
+    stop("A staged semantic contract requires a named plan output.",
+         call. = FALSE)
   }
   output_type <- tolower(.stagedScalarString(
     output$type %||% "event_level", "semantic output type"
@@ -185,7 +304,19 @@
     )),
     person_level = "wide",
     baseline = "wide",
-    survival = "wide",
+    survival = {
+      survival_format <- tolower(.stagedScalarString(
+        output$format %||% "survival", "semantic survival format"
+      ))
+      if (survival_format %in% c("survival", "competing_risk")) {
+        "wide"
+      } else if (survival_format %in%
+                 c("recurrent_events", "counting_process")) {
+        "long"
+      } else {
+        stop("Invalid staged survival format.", call. = FALSE)
+      }
+    },
     concept_dictionary = "reference",
     cohort_membership = "long",
     intervals_long = "long",
@@ -213,7 +344,14 @@
       ))
     },
     baseline = "episode",
-    survival = "episode",
+    survival = switch(
+      tolower(output$format %||% "survival"),
+      survival = if (is.null(output$outcomes)) "episode" else "episode_outcome",
+      competing_risk = "episode",
+      recurrent_events = "episode_event",
+      counting_process = "episode_interval",
+      stop("Invalid staged survival format.", call. = FALSE)
+    ),
     concept_dictionary = "concept",
     cohort_membership = "episode",
     intervals_long = "episode_interval",
@@ -265,6 +403,15 @@
       grain <- if (output_type %in% c("temporal_covariates", "person_period") ||
                    identical(tolower(representation_grain %||% ""),
                              "episode")) "episode" else "person"
+    } else if (identical(output_type, "survival") &&
+               component_lower %in% c("events", "risk_sets")) {
+      if (identical(component_lower, "events")) {
+        output_format <- "long"
+        grain <- "episode_event"
+      } else {
+        output_format <- "wide"
+        grain <- "episode"
+      }
     } else {
       component_shape <- switch(
         component_lower,
@@ -282,17 +429,38 @@
   }
 
   settings <- .omopDisclosureSettings()
-  age_breaks <- output$age_breaks %||% settings$age_breaks
+  uses_age <- identical(output_type, "baseline") &&
+    "age_at_index" %in% tolower(output$derived %||% character(0))
+  uses_age <- uses_age || (identical(output_type, "person_level") && index_age)
+  age_breaks <- if (uses_age) {
+    output$age_breaks %||% settings$age_breaks
+  } else {
+    NULL
+  }
+  population_id <- .stagedScalarString(
+    output$population_id %||% "base", "staged output population_id"
+  )
+  query_semantics_sha256 <- .dsomopDpSha256(.dsomopDpCanonicalJson(
+    .dsomopDpLineageValue(list(
+      protocol = "dsomop-staged-query-semantics-v2",
+      population_id = population_id,
+      index_anchor = .dsomopDpPlanCohortSemantic(plan$cohort),
+      population = .dsomopDpPlanPopulationSemantic(plan, population_id),
+      scope = .stagedPlanScopeSemantic(plan),
+      output = .dsomopDpPlanOutputSemantic(output)
+    ))
+  ))
   list(
-    contract_version = "dsomop-staged-semantics-v1",
+    contract_version = "dsomop-staged-semantics-v2",
     output_type = output_type,
     output_format = output_format,
     component = component,
     grain = grain,
     date_handling = date_handling,
+    query_semantics_sha256 = query_semantics_sha256,
     harmonization_contract_version = settings$harmonization_contract_version,
     age_semantics = settings$age_semantics,
-    age_breaks = as.integer(age_breaks),
+    age_breaks = if (is.null(age_breaks)) NULL else as.integer(age_breaks),
     date_semantics = settings$date_semantics,
     date_granularity = settings$date_granularity,
     datetime_timezone = settings$datetime_timezone,
@@ -309,9 +477,9 @@
   }
   required <- c(
     "contract_version", "output_type", "output_format", "component", "grain",
-    "date_handling", "harmonization_contract_version", "age_semantics",
-    "age_breaks", "date_semantics", "date_granularity", "datetime_timezone",
-    "week_start"
+    "date_handling", "query_semantics_sha256",
+    "harmonization_contract_version", "age_semantics", "age_breaks",
+    "date_semantics", "date_granularity", "datetime_timezone", "week_start"
   )
   if (!is.list(contract) || is.null(names(contract)) ||
       any(!nzchar(names(contract))) || anyDuplicated(names(contract)) ||
@@ -325,7 +493,7 @@
   }
 
   contract_version <- scalar(contract$contract_version, "version")
-  if (!identical(contract_version, "dsomop-staged-semantics-v1")) fail(" version")
+  if (!identical(contract_version, "dsomop-staged-semantics-v2")) fail(" version")
   output_type <- scalar(contract$output_type, "output_type")
   allowed_types <- c(
     "person_level", "event_level", "baseline", "survival",
@@ -346,7 +514,7 @@
   component <- contract$component
   allowed_components <- c(
     "covariates", "covariateRef", "personRef", "temporalCovariates",
-    "timeRef", "personPeriods"
+    "timeRef", "personPeriods", "events", "risk_sets"
   )
   if (!is.null(component) &&
       (!is.character(component) || length(component) != 1L ||
@@ -355,7 +523,7 @@
   }
   grain <- scalar(contract$grain, "grain")
   if (!grain %in% c(
-    "person", "episode", "event", "episode_event", "concept",
+    "person", "episode", "episode_outcome", "event", "episode_event", "concept",
     "episode_interval", "episode_period", "episode_time_concept", "time_bin"
   )) fail(" grain")
   if (!is.null(component)) {
@@ -365,7 +533,9 @@
       personRef = c("event_level", "temporal_covariates", "person_period"),
       temporalCovariates = c("temporal_covariates", "person_period"),
       timeRef = c("temporal_covariates", "person_period"),
-      personPeriods = "person_period"
+      personPeriods = "person_period",
+      events = "survival",
+      risk_sets = "survival"
     )
     component_shape <- switch(component,
       covariates = list(format = "sparse", grain = c("person", "episode")),
@@ -373,7 +543,9 @@
       personRef = list(format = "linkage", grain = c("person", "episode")),
       temporalCovariates = list(format = "sparse", grain = "episode_time_concept"),
       timeRef = list(format = "reference", grain = "time_bin"),
-      personPeriods = list(format = "long", grain = "episode_period")
+      personPeriods = list(format = "long", grain = "episode_period"),
+      events = list(format = "long", grain = "episode_event"),
+      risk_sets = list(format = "wide", grain = "episode")
     )
     if (!output_type %in% component_types[[component]] ||
         !identical(output_format, component_shape$format) ||
@@ -391,7 +563,10 @@
           grain %in% c("person", "episode")
       },
       baseline = identical(output_format, "wide") && identical(grain, "episode"),
-      survival = identical(output_format, "wide") && identical(grain, "episode"),
+      survival = (identical(output_format, "wide") &&
+                    grain %in% c("episode", "episode_outcome")) ||
+        (identical(output_format, "long") &&
+           grain %in% c("episode_event", "episode_interval")),
       concept_dictionary = identical(output_format, "reference") &&
         identical(grain, "concept"),
       cohort_membership = identical(output_format, "long") &&
@@ -411,6 +586,13 @@
   if (!is.list(date_handling) || is.null(names(date_handling)) ||
       any(!nzchar(names(date_handling))) || anyDuplicated(names(date_handling))) {
     fail(" date_handling")
+  }
+
+  query_semantics_sha256 <- scalar(
+    contract$query_semantics_sha256, "query_semantics_sha256"
+  )
+  if (!grepl("^[0-9a-f]{64}$", query_semantics_sha256)) {
+    fail(" query_semantics_sha256")
   }
   mode <- scalar(date_handling$mode, "date_handling mode")
   if (identical(mode, "relative_binned")) {
@@ -470,13 +652,17 @@
     value
   })
   names(harmonization) <- harmonization_fields
-  age_numeric <- suppressWarnings(as.numeric(contract$age_breaks))
-  age_breaks <- suppressWarnings(as.integer(contract$age_breaks))
-  if (length(age_breaks) < 2L || anyNA(age_breaks) || any(!is.finite(age_numeric)) ||
-      any(age_numeric != age_breaks) || age_breaks[[1L]] != 0L ||
-      any(diff(age_breaks) <= 0L) ||
-      !all(age_breaks %in% as.integer(settings$age_breaks))) {
-    fail(" age_breaks")
+  if (is.null(contract$age_breaks)) {
+    age_breaks <- NULL
+  } else {
+    age_numeric <- suppressWarnings(as.numeric(contract$age_breaks))
+    age_breaks <- suppressWarnings(as.integer(contract$age_breaks))
+    if (length(age_breaks) < 2L || anyNA(age_breaks) ||
+        any(!is.finite(age_numeric)) || any(age_numeric != age_breaks) ||
+        age_breaks[[1L]] != 0L || any(diff(age_breaks) <= 0L) ||
+        !all(age_breaks %in% as.integer(settings$age_breaks))) {
+      fail(" age_breaks")
+    }
   }
 
   list(
@@ -486,6 +672,7 @@
     component = component,
     grain = grain,
     date_handling = date_handling,
+    query_semantics_sha256 = query_semantics_sha256,
     harmonization_contract_version = harmonization$harmonization_contract_version,
     age_semantics = harmonization$age_semantics,
     age_breaks = age_breaks,
@@ -503,12 +690,12 @@
 #' This output-level contract binds those siblings to one plan output and one
 #' high-entropy staging token while retaining the shared semantic settings.
 #'
+#' @param plan Extraction plan carrying the output and population semantics.
 #' @param output_name Logical plan output name, without a component suffix.
 #' @param token High-entropy staging token.
-#' @param output Plan output specification.
 #' @return Canonical staged bundle contract.
 #' @keywords internal
-.stagedBundleContract <- function(output_name, token, output) {
+.stagedBundleContract <- function(plan, output_name, token) {
   output_name <- .validateIdentifier(output_name, "staged bundle output")
   token <- .stagedScalarString(token, "bundle token")
   if (!grepl("^stg_[0-9a-f]{32}$", token)) {
@@ -519,7 +706,7 @@
     output_id = output_name,
     staged_token = token,
     semantic_contract = .validateStagedSemanticContract(
-      .stagedSemanticContract(output, component = NULL)
+      .stagedSemanticContract(plan, output_name, component = NULL)
     )
   )
 }
@@ -739,13 +926,17 @@ omopStagedDatasetPath <- function(descriptor, expected_key_id = NULL,
     }
   }
 
+  layout <- tolower(.stagedScalarString(metadata$layout %||% "file", "layout"))
+  if (!identical(layout, "file")) {
+    stop("Unsupported staged dataset layout.", call. = FALSE)
+  }
   file <- .stagedScalarString(metadata$file, "file")
   if (!.stagedIsAbsolutePath(file)) {
     stop("The staged descriptor file must be one absolute server path.",
          call. = FALSE)
   }
   file_name <- basename(file)
-  if (!grepl("^[A-Za-z][A-Za-z0-9_.]*\\.(parquet|csv)$", file_name) ||
+  if (!grepl("^[A-Za-z_][A-Za-z0-9_.]*\\.(parquet|csv)$", file_name) ||
       !identical(tolower(tools::file_ext(file_name)), format)) {
     stop("The staged descriptor file name does not match its format.",
          call. = FALSE)

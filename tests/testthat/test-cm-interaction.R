@@ -48,6 +48,17 @@ cmix_allpersons <- function(h, name) {
   name
 }
 
+# A disjoint person range for valid target/comparator interaction tests.
+cmix_persons <- function(h, name, first, last) {
+  DBI::dbExecute(h$conn, paste0(
+    "CREATE TEMP TABLE ", name, " AS SELECT person_id AS subject_id, ",
+    "'2018-01-01' AS cohort_start_date, '2030-12-31' AS cohort_end_date ",
+    "FROM person WHERE person_id BETWEEN ", as.integer(first), " AND ",
+    as.integer(last)))
+  register_test_temp(h, name)
+  name
+}
+
 OHDSI_IX_ID <- "dsomop:ohdsi.cohort_method.cm_interaction_result"
 CANON_IX_ID <- "dsomop:cm.interaction_estimate"
 
@@ -140,8 +151,8 @@ test_that("(c) sex-subgroup interaction runs, returns the documented columns, ba
   h <- cmix_handle(n_persons = 40)
   on.exit(cleanup_handle(h))
   withr::with_options(cmix_opts(), {
-    a <- cmix_allpersons(h, "cmix_t")        # both arms = all 40 persons (each
-    b <- cmix_allpersons(h, "cmix_c")        # sex level ~20 persons per arm)
+    a <- cmix_persons(h, "cmix_t", 1L, 20L)
+    b <- cmix_persons(h, "cmix_c", 21L, 40L)
     df <- .omopAnalysisRun(h, CANON_IX_ID, scope = list(a, b),
                            params = list(subgroup_kind = "sex",
                                          outcome_concept_id = "4000002",
@@ -176,8 +187,8 @@ test_that("(d) a subgroup arm below the subset floor has NA estimate and is drop
   h <- cmix_handle(n_persons = 40)
   on.exit(cleanup_handle(h))
   withr::with_options(cmix_opts(), {
-    a <- cmix_allpersons(h, "cmix_t2")
-    b <- cmix_allpersons(h, "cmix_c2")
+    a <- cmix_persons(h, "cmix_t2", 1L, 20L)
+    b <- cmix_persons(h, "cmix_c2", 21L, 40L)
     df <- .omopAnalysisRun(h, CANON_IX_ID, scope = list(a, b),
                            params = list(subgroup_kind = "concept",
                                          subgroup_concept_id = "317009",
@@ -207,8 +218,8 @@ test_that("(d) the in-fn fail-closed NA fires before the gate (raw frame check)"
   h <- cmix_handle(n_persons = 40)
   on.exit(cleanup_handle(h))
   withr::with_options(cmix_opts(), {
-    a <- cmix_allpersons(h, "cmix_t3")
-    b <- cmix_allpersons(h, "cmix_c3")
+    a <- cmix_persons(h, "cmix_t3", 1L, 20L)
+    b <- cmix_persons(h, "cmix_c3", 21L, 40L)
     fn  <- dsOMOP:::.omopCmInteractionEntry()$compute$fn
     ctx <- list(scoped_cohorts = list(a, b))
     raw <- fn(h, ctx, list(subgroup_kind = "concept",

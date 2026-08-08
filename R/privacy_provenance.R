@@ -10,6 +10,52 @@
 .DSOMOP_DP_DATASET_PROTOCOL <- "dsomop-dp-dataset-identity-v1"
 .DSOMOP_DP_FRAME_DIGEST_PROTOCOL <- "dsomop-dp-frame-digest-chunked-v1"
 .DSOMOP_DP_FRAME_DIGEST_CHUNK_ROWS <- 8192L
+.DSOMOP_DP_FILTER_STATE_ATTRIBUTE <- "dsomop_dp_filter_state"
+
+.dsomopDpFilterState <- function(x, provenance = NULL, policy = NULL) {
+  state <- attr(x, .DSOMOP_DP_FILTER_STATE_ATTRIBUTE, exact = TRUE)
+  if (is.null(state)) return(NULL)
+  valid <- is.list(state) && identical(
+    names(state), c("version", "base_lineage", "filter_tree")
+  ) && identical(state$version, 1L) &&
+    is.character(state$base_lineage) && length(state$base_lineage) == 1L &&
+    !is.na(state$base_lineage) &&
+    grepl("^[0-9a-f]{64}$", state$base_lineage)
+  if (!isTRUE(valid)) {
+    stop("Authenticated DP filter state is malformed.", call. = FALSE)
+  }
+  normalized <- .dsomopDpNormalizeFilterTree(state$filter_tree)
+  if (!identical(normalized, state$filter_tree)) {
+    stop("Authenticated DP filter state is not canonical.", call. = FALSE)
+  }
+  if (is.null(policy)) policy <- .dsomopDpPolicy()
+  if (is.null(provenance)) {
+    provenance <- .dsomopDpVerifyPersonLocal(x, policy = policy)
+  }
+  expected_lineage <- .dsomopDpLineageId(
+    policy, provenance$dataset_id,
+    list(
+      producer = "manipulate/filter",
+      episode_domain = provenance$episode_domain,
+      operation = list(
+        kind = "filter_conjunction",
+        version = 1L,
+        parent = state$base_lineage,
+        filter_tree = state$filter_tree
+      )
+    )
+  )
+  if (!identical(expected_lineage, provenance$lineage_id)) {
+    stop("Authenticated DP filter state does not match its provenance MAC.",
+         call. = FALSE)
+  }
+  state
+}
+
+.dsomopDpSetFilterState <- function(x, state) {
+  attr(x, .DSOMOP_DP_FILTER_STATE_ATTRIBUTE) <- state
+  x
+}
 
 .dsomopDpFrameDigest <- function(x) {
   if (!is.data.frame(x)) {
@@ -143,7 +189,7 @@
     target_dialect = dialect,
     cdm_schema = schema(handle$cdm_schema),
     vocabulary_schema = schema(handle$vocab_schema %||% handle$cdm_schema),
-    results_schema = schema(handle$results_schema %||% handle$cdm_schema)
+    results_schema = schema(.effectiveResultsSchema(handle))
   )
 }
 
@@ -196,13 +242,12 @@
   sort(unique(normalized), na.last = NA, method = "radix")
 }
 
-.dsomopDpLineageNodeSet <- function(nodes) {
-  normalized <- lapply(nodes, .dsomopDpNormalizeFilterTree)
-  keys <- vapply(normalized, .dsomopDpLineageKey, character(1L))
+.dsomopDpOrderLineageNodes <- function(nodes) {
+  keys <- vapply(nodes, .dsomopDpLineageKey, character(1L))
   keep <- !duplicated(keys)
-  normalized <- normalized[keep]
+  nodes <- nodes[keep]
   keys <- keys[keep]
-  unname(normalized[order(keys, method = "radix")])
+  unname(nodes[order(keys, method = "radix")])
 }
 
 .dsomopDpNormalizeFilterTree <- function(node) {
@@ -217,10 +262,23 @@
     if (!is.list(children) || length(children) == 0L) {
       stop("DP filter lineage received an empty logical group.", call. = FALSE)
     }
-    return(stats::setNames(list(.dsomopDpLineageNodeSet(children)), groups))
+    group <- groups[[1L]]
+    normalized <- lapply(children, .dsomopDpNormalizeFilterTree)
+    # AND and OR are associative. Flatten nested groups of the same kind before
+    # de-duplicating and sorting so parenthesization and input order cannot mint
+    # a fresh sticky-noise identity for the same Boolean expression.
+    normalized <- unlist(lapply(normalized, function(child) {
+      if (identical(names(child), group)) child[[group]] else list(child)
+    }), recursive = FALSE)
+    normalized <- .dsomopDpOrderLineageNodes(normalized)
+    return(stats::setNames(list(normalized), group))
   }
   if (is.null(fields)) {
-    return(list(and = .dsomopDpLineageNodeSet(node)))
+    normalized <- lapply(node, .dsomopDpNormalizeFilterTree)
+    normalized <- unlist(lapply(normalized, function(child) {
+      if (identical(names(child), "and")) child$and else list(child)
+    }), recursive = FALSE)
+    return(list(and = .dsomopDpOrderLineageNodes(normalized)))
   }
   if ("type" %in% fields) {
     params <- node$params %||% list()
@@ -254,7 +312,7 @@
   if (all(c("var", "op") %in% fields)) {
     op <- tolower(node$op)
     aliases <- c(
-      "==" = "eq", "eq" = "eq", "!=" = "ne", "ne" = "ne",
+      "==" = "in", "eq" = "in", "!=" = "not_in", "ne" = "not_in",
       ">=" = "gte", "gte" = "gte", "<=" = "lte", "lte" = "lte",
       ">" = "gt", "gt" = "gt", "<" = "lt", "lt" = "lt"
     )
@@ -601,6 +659,28 @@
   unname(lapply(scope, .dsomopDpScopeLineageSemantic, policy = policy))
 }
 
+.dsomopPlanCohortIdSemantic <- function(value, field = "cohort_definition_id",
+                                        minimum = 0L) {
+  if (is.null(value)) return(NULL)
+  if (is.list(value) && !is.data.frame(value) && length(value) == 1L) {
+    value <- value[[1L]]
+  }
+  numeric_value <- if (is.character(value) && length(value) == 1L &&
+      !is.na(value) && grepl("^[0-9]+$", value)) {
+    suppressWarnings(as.numeric(value))
+  } else if (is.numeric(value) && length(value) == 1L && !is.na(value)) {
+    as.numeric(value)
+  } else {
+    NA_real_
+  }
+  if (!is.finite(numeric_value) || numeric_value != floor(numeric_value) ||
+      numeric_value < minimum || numeric_value > .Machine$integer.max) {
+    stop("Plan semantic ", field, " must be one exact integer >= ",
+         minimum, ".", call. = FALSE)
+  }
+  as.integer(numeric_value)
+}
+
 .dsomopDpPlanCohortSemantic <- function(cohort) {
   if (is.null(cohort)) return(NULL)
   list(
@@ -608,6 +688,9 @@
                                          !is.null(cohort$filter_tree)) {
       "spec"
     } else "none"),
+    cohort_definition_id = .dsomopPlanCohortIdSemantic(
+      cohort$cohort_definition_id
+    ),
     spec = cohort$spec,
     filter_tree = if (is.null(cohort$filter_tree)) NULL else
       .dsomopDpNormalizeFilterTree(cohort$filter_tree),
@@ -675,6 +758,11 @@
     cohort = if (identical(population_id, "base")) {
       .dsomopDpPlanCohortSemantic(plan$cohort)
     } else NULL,
+    cohort_definition_id = .dsomopPlanCohortIdSemantic(
+      population$cohort_definition_id,
+      field = paste0("population '", population_id,
+                     "' cohort_definition_id")
+    ),
     filter_tree = if (is.null(population$filter_tree)) NULL else
       .dsomopDpNormalizeFilterTree(population$filter_tree),
     episode_policy = tolower(population$episode_policy %||% "any_episode"),
@@ -764,11 +852,76 @@
     stop("DP intervals lineage requires named per-table concept filters.",
          call. = FALSE)
   }
+  concept_names <- names(concept_filter)
+  if (is.null(concept_names) || any(!nzchar(concept_names)) ||
+      anyDuplicated(tolower(concept_names))) {
+    stop("DP intervals lineage requires unique per-table concept filters.",
+         call. = FALSE)
+  }
+  concept_names <- tolower(concept_names)
   unname(lapply(tables, function(table) {
-    value <- concept_filter[[tolower(table)]] %||% concept_filter[[table]]
+    index <- match(tolower(table), concept_names)
+    value <- if (is.na(index)) NULL else concept_filter[[index]]
     list(
       table = tolower(table),
       concepts = .dsomopDpNormalizeConceptSet(value)
+    )
+  }))
+}
+
+.dsomopDpCombinedFilter <- function(...) {
+  trees <- Filter(function(tree) !is.null(tree) && length(tree) > 0L,
+                  list(...))
+  if (length(trees) == 0L) return(NULL)
+  if (length(trees) == 1L) {
+    return(.dsomopDpNormalizeFilterTree(trees[[1L]]))
+  }
+  .dsomopDpNormalizeFilterTree(list(and = trees))
+}
+
+.dsomopDpIntervalsFilters <- function(tables, source_filters, global_filter) {
+  if (!is.null(source_filters)) {
+    if (!is.list(source_filters) || is.null(names(source_filters)) ||
+        any(!nzchar(names(source_filters))) ||
+        anyDuplicated(tolower(names(source_filters)))) {
+      stop("DP intervals lineage requires unique per-table source filters.",
+           call. = FALSE)
+    }
+    source_names <- tolower(names(source_filters))
+  } else {
+    source_names <- character(0)
+  }
+  unname(lapply(tables, function(table) {
+    index <- match(tolower(table), source_names)
+    source_filter <- if (is.na(index)) NULL else source_filters[[index]]
+    list(
+      table = tolower(table),
+      filter = .dsomopDpCombinedFilter(source_filter, global_filter)
+    )
+  }))
+}
+
+.dsomopDpSurvivalOutcomes <- function(output) {
+  advanced <- !is.null(output$outcomes)
+  outcomes <- if (advanced) output$outcomes else list(outcome = output$outcome)
+  if (!is.list(outcomes) || length(outcomes) == 0L ||
+      is.null(names(outcomes)) || any(!nzchar(names(outcomes))) ||
+      anyDuplicated(names(outcomes))) {
+    stop("DP survival lineage requires uniquely named outcomes.",
+         call. = FALSE)
+  }
+  global_filter <- output$filters$custom
+  unname(lapply(seq_along(outcomes), function(index) {
+    endpoint <- outcomes[[index]]
+    if (!is.list(endpoint)) {
+      stop("DP survival lineage received an invalid outcome.", call. = FALSE)
+    }
+    list(
+      name = names(outcomes)[[index]],
+      priority = as.integer(index),
+      table = tolower(endpoint$table %||% ""),
+      concept_set = .dsomopDpNormalizeConceptSet(endpoint$concept_set),
+      filter = .dsomopDpCombinedFilter(endpoint$filters, global_filter)
     )
   }))
 }
@@ -838,24 +991,33 @@
     ))
   }
   if (identical(type, "survival")) {
+    advanced <- !is.null(output$outcomes)
+    censoring <- output$censoring %||% if (advanced) {
+      list(cohort_end = TRUE, observation_period_end = TRUE, death = TRUE)
+    } else {
+      list(cohort_end = TRUE, observation_period_end = TRUE, death = FALSE)
+    }
     return(list(
       type = type,
-      outcome = list(
-        table = tolower(output$outcome$table %||% ""),
-        concept_set = .dsomopDpNormalizeConceptSet(
-          output$outcome$concept_set
-        )
-      ),
+      legacy = !advanced,
+      outcomes = .dsomopDpSurvivalOutcomes(output),
+      format = tolower(output$format %||% "survival"),
       tar = list(
         start_offset = as.integer(output$tar$start_offset %||% 0L),
         end_offset = if (is.null(output$tar$end_offset)) NULL else
-          as.integer(output$tar$end_offset),
-        censoring = if (is.null(output$tar$end_offset))
-          tolower(output$tar$censoring %||% "cohort_end") else NULL
+          as.integer(output$tar$end_offset)
       ),
       event_order = tolower(output$event_order %||% "first"),
-      custom_filter = if (is.null(output$filters$custom)) NULL else
-        .dsomopDpNormalizeFilterTree(output$filters$custom)
+      washout_days = as.integer(output$washout_days %||% 0L),
+      tie_policy = tolower(output$tie_policy %||% "priority"),
+      censoring = list(
+        cohort_end = isTRUE(censoring$cohort_end %||% TRUE),
+        observation_period_end = isTRUE(
+          censoring$observation_period_end %||% TRUE
+        ),
+        death = isTRUE(censoring$death %||% TRUE),
+        admin_date = censoring$admin_date %||% NULL
+      )
     ))
   }
   if (identical(type, "cohort_membership")) {
@@ -874,15 +1036,52 @@
       concept_filter = .dsomopDpIntervalsConcepts(
         tables, output$concept_filter
       ),
-      custom_filter = if (is.null(output$filters$custom)) NULL else
-        .dsomopDpNormalizeFilterTree(output$filters$custom)
+      source_filters = .dsomopDpIntervalsFilters(
+        tables, output$source_filters, output$filters$custom
+      ),
+      window = if (is.null(output$window)) {
+        list(reference = "cohort_episode")
+      } else {
+        .dsomopDpLineageObject(output$window)
+      },
+      interval_match = tolower(output$interval_match %||% "overlaps"),
+      event_select = tolower(output$event_select %||% "all"),
+      select_n = as.integer(output$select_n %||% 1L),
+      select_by = tolower(output$select_by %||% "episode_source"),
+      anchor = as.integer(output$anchor %||% 0L)
     ))
+  }
+  if (type %in% c("temporal_covariates", "person_period")) {
+    return(list(
+      type = type,
+      table = tolower(output$table %||% ""),
+      concept_set = .dsomopDpNormalizeConceptSet(output$concept_set),
+      bin_width = as.integer(output$bin_width %||% 30L),
+      window_start = as.integer(output$window_start %||% -365L),
+      window_end = as.integer(output$window_end %||% 0L),
+      analyses = sort(unique(tolower(unname(output$analyses %||% "binary")))),
+      filter = .dsomopDpCombinedFilter(output$filters$custom),
+      grain = if (identical(type, "person_period")) {
+        tolower(output$grain %||% "episode")
+      } else NULL,
+      time_origin = if (identical(type, "person_period")) {
+        tolower(output$time_origin %||% "index")
+      } else NULL
+    ))
+  }
+  if (identical(type, "concept_dictionary")) {
+    sources <- output$source_outputs
+    if (!is.null(sources)) {
+      sources <- sort(unique(as.character(unlist(sources, use.names = FALSE))))
+    }
+    return(list(type = type, source_outputs = sources))
   }
   stop("This plan output has no audited DP lineage contract.",
        call. = FALSE)
 }
 
-.dsomopDpPlanLineageSemantic <- function(plan, output_name, policy) {
+.dsomopDpPlanLineageSemantic <- function(plan, output_name, policy,
+                                         component = NULL) {
   output <- plan$outputs[[output_name]]
   population_id <- output$population_id %||% "base"
   scope <- plan$scope
@@ -898,7 +1097,8 @@
   }
   list(
     kind = "plan_output",
-    contract_version = 1L,
+    contract_version = 2L,
+    component = component,
     scope = list(
       combine = tolower(if (is.list(scope) && !is.data.frame(scope)) {
         scope$combine %||% "union"
@@ -908,7 +1108,9 @@
     index_anchor = .dsomopDpPlanCohortSemantic(plan$cohort),
     population = .dsomopDpPlanPopulationSemantic(plan, population_id),
     output = .dsomopDpPlanOutputSemantic(output),
-    public_output_contract = .stagedSemanticContract(output),
+    public_output_contract = .stagedSemanticContract(
+      plan, output_name, component
+    ),
     options = list(
       translate_concepts = isTRUE(options$translate_concepts %||% TRUE),
       block_sensitive = isTRUE(options$block_sensitive %||% TRUE)
@@ -917,7 +1119,8 @@
 }
 
 .dsomopDpSealPlanOutput <- function(x, plan, output_name,
-                                    dataset_identity = NULL) {
+                                    dataset_identity = NULL,
+                                    component = NULL) {
   attr(x, "dsomop_dp_provenance") <- NULL
   if (!.dsomopDpEnabled() || !is.data.frame(x) || !.is_omop.table(x)) {
     return(x)
@@ -934,7 +1137,9 @@
     "long"
   }
   lineage <- tryCatch(
-    .dsomopDpPlanLineageSemantic(plan, output_name, policy),
+    .dsomopDpPlanLineageSemantic(
+      plan, output_name, policy, component = component
+    ),
     error = function(e) NULL
   )
   if (is.null(lineage)) return(x)
@@ -949,7 +1154,9 @@
     ))
   } else NULL
   .dsomopDpSealPersonLocal(
-    x, producer = paste("plan", type, representation, sep = "/"),
+    x, producer = paste(
+      "plan", type, representation, component %||% "primary", sep = "/"
+    ),
     episode_domain = episode_domain, lineage = lineage, policy = policy,
     dataset_id = dataset_id
   )
@@ -1006,6 +1213,7 @@
 
 .dsomopDpResealUnary <- function(result, source, producer, args = list()) {
   attr(result, "dsomop_dp_provenance") <- NULL
+  attr(result, .DSOMOP_DP_FILTER_STATE_ATTRIBUTE) <- NULL
   if (!.dsomopDpEnabled()) return(result)
   policy <- .dsomopDpPolicy()
   provenance <- .dsomopDpVerifyPersonLocal(
@@ -1013,25 +1221,47 @@
   )
   if (is.null(provenance)) return(result)
   if (identical(producer, "manipulate/filter")) {
-    no_op <- identical(nrow(result), nrow(source)) &&
-      identical(names(result), names(source)) &&
-      identical(rownames(result), rownames(source)) &&
-      all(vapply(names(result), function(column) {
-        identical(result[[column]], source[[column]])
-      }, logical(1L)))
-    if (isTRUE(no_op)) {
-      return(.dsomopDpSealInheritedLineage(
-        result, provenance, producer, policy
-      ))
-    }
+    filter_state <- .dsomopDpFilterState(
+      source, provenance = provenance, policy = policy
+    )
     operator <- tolower(args$operator %||% "")
-    # Equality and singleton membership have the same row semantics here,
-    # including the explicit drop of NA comparisons. Give them one lineage.
-    if (identical(operator, "==")) operator <- "in"
+    # Equality/membership aliases have the same row semantics here, including
+    # the explicit drop of NA comparisons. Give each pair one lineage.
+    if (operator %in% c("==", "eq")) operator <- "in"
+    if (operator %in% c("!=", "ne")) operator <- "not_in"
     args$operator <- operator
     if (operator %in% c("in", "not_in")) {
       args$value <- .dsomopDpLineageSet(args$value)
     }
+    filter_leaf <- list(
+      var = args$variable, op = args$operator, value = args$value
+    )
+    base_lineage <- if (is.null(filter_state)) {
+      provenance$lineage_id
+    } else filter_state$base_lineage
+    filter_children <- if (is.null(filter_state)) {
+      list(filter_leaf)
+    } else list(filter_state$filter_tree, filter_leaf)
+    filter_tree <- .dsomopDpNormalizeFilterTree(list(and = filter_children))
+    filter_state <- list(
+      version = 1L,
+      base_lineage = base_lineage,
+      filter_tree = filter_tree
+    )
+    result <- .dsomopDpSetFilterState(result, filter_state)
+    return(.dsomopDpSealPersonLocal(
+      result,
+      producer = producer,
+      episode_domain = provenance$episode_domain,
+      lineage = list(
+        kind = "filter_conjunction",
+        version = 1L,
+        parent = base_lineage,
+        filter_tree = filter_tree
+      ),
+      policy = policy,
+      dataset_id = provenance$dataset_id
+    ))
   }
   .dsomopDpSealPersonLocal(
     result,
@@ -1075,6 +1305,7 @@
 
 .dsomopDpResealProjection <- function(result, source) {
   attr(result, "dsomop_dp_provenance") <- NULL
+  attr(result, .DSOMOP_DP_FILTER_STATE_ATTRIBUTE) <- NULL
   if (!.dsomopDpEnabled()) return(result)
   policy <- .dsomopDpPolicy()
   provenance <- .dsomopDpVerifyPersonLocal(
@@ -1092,6 +1323,10 @@
     stop("A DP projection changed rows or retained column values.",
          call. = FALSE)
   }
+  result <- .dsomopDpSetFilterState(
+    result,
+    .dsomopDpFilterState(source, provenance = provenance, policy = policy)
+  )
   .dsomopDpSealInheritedLineage(
     result, provenance, "manipulate/select", policy
   )
@@ -1103,6 +1338,8 @@
          call. = FALSE)
   }
   if (length(applied_levels) == 0L) return(source)
+  attr(result, "dsomop_dp_provenance") <- NULL
+  attr(result, .DSOMOP_DP_FILTER_STATE_ATTRIBUTE) <- NULL
   if (is.null(names(applied_levels)) ||
       anyNA(names(applied_levels)) || any(!nzchar(names(applied_levels))) ||
       anyDuplicated(names(applied_levels))) {
@@ -1120,7 +1357,6 @@
          call. = FALSE)
   }
   if (!.dsomopDpEnabled()) {
-    attr(result, "dsomop_dp_provenance") <- NULL
     return(result)
   }
   policy <- .dsomopDpPolicy()
@@ -1128,7 +1364,6 @@
     source, policy = policy, allow_missing = TRUE
   )
   if (is.null(provenance)) {
-    attr(result, "dsomop_dp_provenance") <- NULL
     return(result)
   }
   if (length(applied_columns) == 0L) return(source)
@@ -1144,6 +1379,8 @@
   result_attributes <- attributes(result)
   source_attributes[["dsomop_dp_provenance"]] <- NULL
   result_attributes[["dsomop_dp_provenance"]] <- NULL
+  source_attributes[[.DSOMOP_DP_FILTER_STATE_ATTRIBUTE]] <- NULL
+  result_attributes[[.DSOMOP_DP_FILTER_STATE_ATTRIBUTE]] <- NULL
   source_attributes <- normalize_attributes(source_attributes)
   result_attributes <- normalize_attributes(result_attributes)
   valid <- identical(nrow(result), nrow(source)) &&
@@ -1179,25 +1416,15 @@
     stop("Concept-factor recoding changed rows, identifiers, values, or ",
          "unauthorized column metadata.", call. = FALSE)
   }
-  .dsomopDpSealPersonLocal(
-    result,
-    producer = "represent/concept_factor",
-    episode_domain = provenance$episode_domain,
-    lineage = list(
-      kind = "concept_factor_recode",
-      version = 1L,
-      parent = provenance$lineage_id,
-      level_contract = unname(Map(function(column, levels) {
-        list(column = column, levels = unname(levels))
-      }, applied_columns, applied_levels))
-    ),
-    policy = policy,
-    dataset_id = provenance$dataset_id
-  )
+  # Factor-level metadata changes representation semantics. Until that
+  # transformation has one proven canonical identity, keep the recoded table
+  # usable outside DP releases but withdraw authenticated DP provenance.
+  result
 }
 
 .dsomopDpResealBind <- function(result, x, y) {
   attr(result, "dsomop_dp_provenance") <- NULL
+  attr(result, .DSOMOP_DP_FILTER_STATE_ATTRIBUTE) <- NULL
   if (!.dsomopDpEnabled()) return(result)
   policy <- .dsomopDpPolicy()
   left <- .dsomopDpVerifyPersonLocal(
@@ -1208,21 +1435,9 @@
   )
   if (is.null(left) || is.null(right)) return(result)
   if (!identical(left$dataset_id, right$dataset_id)) return(result)
-  episode_domain <- if (identical(left$episode_domain, right$episode_domain)) {
-    left$episode_domain
-  } else NULL
-  .dsomopDpSealPersonLocal(
-    result,
-    producer = "manipulate/bind_rows",
-    episode_domain = episode_domain,
-    lineage = list(
-      kind = "bind_rows",
-      parents = sort(c(left$lineage_id, right$lineage_id), method = "radix"),
-      columns = names(result)
-    ),
-    policy = policy,
-    dataset_id = left$dataset_id
-  )
+  # Row-bind has partition and duplicate representations that are not yet
+  # canonicalized strongly enough for sticky releases.
+  result
 }
 
 .dsomopDpMergePreflight <- function(x, y, by) {
@@ -1248,6 +1463,7 @@
 .dsomopDpResealMerge <- function(result, x, y, by, type,
                                   preflight = NULL) {
   attr(result, "dsomop_dp_provenance") <- NULL
+  attr(result, .DSOMOP_DP_FILTER_STATE_ATTRIBUTE) <- NULL
   if (!.dsomopDpEnabled()) return(result)
   if (is.null(preflight)) {
     preflight <- .dsomopDpMergePreflight(x, y, by)
@@ -1257,26 +1473,7 @@
   right <- preflight$right
   if (is.null(left) || is.null(right)) return(result)
   if (!identical(left$dataset_id, right$dataset_id)) return(result)
-  episode_domain <- if (identical(left$episode_domain,
-                                  right$episode_domain)) {
-    left$episode_domain
-  } else NULL
-  .dsomopDpSealPersonLocal(
-    result,
-    producer = "manipulate/merge",
-    episode_domain = episode_domain,
-    lineage = list(
-      kind = "merge",
-      # Operand roles are semantic for left joins, suffix assignment and final
-      # column order. Never sort these parents as if the join were commutative.
-      parents = c(left$lineage_id, right$lineage_id),
-      left_columns = names(x),
-      right_columns = names(y),
-      by = unname(as.character(by)),
-      type = tolower(type),
-      columns = names(result)
-    ),
-    policy = policy,
-    dataset_id = left$dataset_id
-  )
+  # Join cardinality and operand representations are not canonicalized strongly
+  # enough for sticky releases. Keep the ordinary result but fail DP closed.
+  result
 }

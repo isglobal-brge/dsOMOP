@@ -120,7 +120,8 @@
     "SELECT e.", src$person_col, " AS person_id, ", rn, " AS seq_pos, ",
     "e.", src$concept_col, " AS concept_id ",
     "FROM ", src$table, " e ",
-    "INNER JOIN ", cohort, " c ON c.subject_id = e.", src$person_col,
+    "INNER JOIN (SELECT DISTINCT subject_id FROM ", cohort,
+    ") c ON c.subject_id = e.", src$person_col,
     " WHERE ", where)
   sql <- .sql_translate(paste0(
     "SELECT s.person_id, s.seq_pos, s.concept_id, cc.concept_name ",
@@ -390,9 +391,9 @@
     cohort_size     = cohort_size,
     pct_treated     = NA_real_,
     stringsAsFactors = FALSE)
-  out <- out[order(out$treatment_layer, -out$n_treated), , drop = FALSE]
-  if (nrow(out) > top_n) out <- out[seq_len(top_n), , drop = FALSE]
-  rownames(out) <- NULL
+  out <- .omopBandedTopN(
+    out, support_cols = "n_treated", top_n = top_n,
+    key_cols = "treatment", priority_cols = "treatment_layer")
 
   # The ONE sanctioned ratio exception: recompute the percentage from the banded
   # numerator + denominator (NA when either side is suppressed) BEFORE returning.
@@ -452,7 +453,8 @@
     "SELECT e.", src$concept_col, " AS covariate_id, e.", src$person_col,
     " AS person_id, AVG(CAST(", dur, " AS FLOAT)) AS v ",
     "FROM ", src$table, " e ",
-    "INNER JOIN ", cohort, " c ON c.subject_id = e.", src$person_col,
+    "INNER JOIN (SELECT DISTINCT subject_id FROM ", cohort,
+    ") c ON c.subject_id = e.", src$person_col,
     " WHERE ", where,
     " GROUP BY e.", src$concept_col, ", e.", src$person_col)
   vsql <- .sql_translate(paste0(
@@ -484,10 +486,9 @@
       stringsAsFactors = FALSE)
   })
   out <- do.call(rbind, rows)
-  out <- out[order(-out$count_value), , drop = FALSE]
-  if (nrow(out) > top_n) out <- out[seq_len(top_n), , drop = FALSE]
-  rownames(out) <- NULL
-  out
+  .omopBandedTopN(
+    out, support_cols = "count_value", top_n = top_n,
+    key_cols = "covariate_id")
 }
 
 # --- Shared param specs -------------------------------------------------------

@@ -1,6 +1,28 @@
 # Module: Cohort Operations
 # Server-side cohort creation, combination, and management.
 
+# Resolve one cohort-system table independently. This matters across official
+# CDM releases: in the vendored 5.3 metadata cohort_definition is Vocabulary,
+# whereas 5.4 places both cohort_definition and cohort in Results.
+.cohortReadTable <- function(handle, blueprint, table) {
+  table <- tolower(.validateIdentifier(table, "cohort table"))
+  rows <- blueprint$tables[
+    blueprint$tables$table_name == table & blueprint$tables$present_in_db,
+    , drop = FALSE
+  ]
+  if (nrow(rows) == 1L && nzchar(rows$qualified_name[[1L]])) {
+    return(rows$qualified_name[[1L]])
+  }
+
+  # `cohort` is not part of the 5.3 CDM metadata but remains the standard OHDSI
+  # results table. Permit it only in the effective controller-authorized
+  # results namespace; do not scan unrelated schemas.
+  schema <- .effectiveResultsSchema(handle)
+  available <- tryCatch(.listTablesRaw(handle, schema),
+                        error = function(e) character(0))
+  if (table %in% available) .qualifyTable(handle, table, schema) else NULL
+}
+
 #' List available cohort definitions
 #'
 #' @param handle CDM handle
@@ -18,23 +40,12 @@
     stringsAsFactors = FALSE
   )
 
-  # Resolve the schema holding cohort_definition (results first, then CDM).
+  # Resolve definition and membership independently because OHDSI assigns them
+  # to different daimons in some CDM releases.
   bp <- .buildBlueprint(handle)
-  results_schema <- handle$results_schema
-  tables_to_check <- character(0)
-  if (!is.null(results_schema)) {
-    tables_to_check <- .listTablesRaw(handle, results_schema)
-  }
-  if (!"cohort_definition" %in% tables_to_check) {
-    if ("cohort_definition" %in% bp$tables$table_name[bp$tables$present_in_db]) {
-      results_schema <- handle$cdm_schema
-    } else {
-      return(empty_df)
-    }
-  }
-
-  def_tbl    <- .qualifyTable(handle, "cohort_definition", results_schema)
-  cohort_tbl <- .qualifyTable(handle, "cohort", results_schema)
+  def_tbl <- .cohortReadTable(handle, bp, "cohort_definition")
+  cohort_tbl <- .cohortReadTable(handle, bp, "cohort")
+  if (is.null(def_tbl) || is.null(cohort_tbl)) return(empty_df)
 
   # DISCLOSURE: a cohort with < nfilter_subset DISTINCT subjects is INVISIBLE —
   # omitted entirely (a sub-threshold cohort is treated as if it does not exist).
@@ -74,25 +85,26 @@
 .cohortGetDefinition <- function(handle, cohort_definition_id) {
   settings <- .omopDisclosureSettings()
   threshold <- settings$nfilter_subset
-  results_schema <- handle$results_schema %||% handle$cdm_schema
+  bp <- .buildBlueprint(handle)
+  cohort_tbl <- .cohortReadTable(handle, bp, "cohort")
+  def_tbl <- .cohortReadTable(handle, bp, "cohort_definition")
   cid <- as.integer(cohort_definition_id)
+  not_found <- function()
+    stop("Cohort definition ", cid, " not found.", call. = FALSE)
 
   # DISCLOSURE: a cohort with < nfilter_subset distinct subjects is treated as
   # NONEXISTENT. An absent id and a sub-threshold id return the IDENTICAL
   # "not found" — a caller can never confirm a small cohort exists, nor read its
   # name/description/syntax. Only at/above-threshold cohorts are readable.
-  cohort_tbl <- .qualifyTable(handle, "cohort", results_schema)
+  if (is.null(cohort_tbl) || is.null(def_tbl)) not_found()
   n <- tryCatch(
     .executeQuery(handle, paste0(
       "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort_tbl,
       " WHERE cohort_definition_id = ", cid))$n[1],
     error = function(e) 0)
   n <- if (length(n) == 0L || is.na(n)) 0 else n
-  not_found <- function()
-    stop("Cohort definition ", cid, " not found.", call. = FALSE)
   if (n < threshold) not_found()
 
-  def_tbl <- .qualifyTable(handle, "cohort_definition", results_schema)
   result <- tryCatch(.executeQuery(handle, paste0(
     "SELECT * FROM ", def_tbl, " WHERE cohort_definition_id = ", cid)),
     error = function(e) NULL)
@@ -672,7 +684,7 @@
       (is.character(cohort) && length(cohort) == 1L &&
        grepl("^[0-9]+$", cohort))) {
     cid <- as.integer(cohort)
-    results_schema <- handle$results_schema %||% handle$cdm_schema
+    results_schema <- .effectiveResultsSchema(handle)
     qualified <- .qualifyTable(handle, "cohort", results_schema)
 
     cohort_sql <- paste0(

@@ -81,13 +81,11 @@
     cohort_incidence = list(
       incidence_summary = .ohdsiResultContract(
         public_columns = c("target_cohort_definition_id", "outcome_id",
-                           "persons_at_risk", "person_outcomes", "outcomes",
-                           "incidence_proportion_p100p", "incidence_rate_p100py"),
+                           "persons_at_risk", "person_outcomes", "outcomes"),
         filter_columns = c("target_cohort_definition_id", "outcome_id"),
         count_columns = c("persons_at_risk", "person_outcomes", "outcomes"),
         person_columns = c("persons_at_risk", "person_outcomes"),
-        statistic_columns = c("incidence_proportion_p100p",
-                               "incidence_rate_p100py"),
+        statistic_columns = character(0),
         unit = "record"
       )
     ),
@@ -399,7 +397,7 @@
         actual_name <- db_tables[idx]
         qualified <- bp$tables$qualified_name[bp$tables$table_name == actual_name]
         if (length(qualified) == 0) {
-          schema <- handle$results_schema %||% handle$cdm_schema
+          schema <- .effectiveResultsSchema(handle)
           qualified <- .qualifyTable(handle, actual_name, schema)
         }
         n <- tryCatch({
@@ -423,7 +421,7 @@
           actual_name <- db_tables[pidx]
           qualified <- bp$tables$qualified_name[bp$tables$table_name == actual_name]
           if (length(qualified) == 0) {
-            schema <- handle$results_schema %||% handle$cdm_schema
+            schema <- .effectiveResultsSchema(handle)
             qualified <- .qualifyTable(handle, actual_name, schema)
           }
           n <- tryCatch({
@@ -488,7 +486,7 @@
     if (length(cols) > 0L) return(cols)
   }
   if (is.null(handle)) return(character(0))
-  schema <- .resolveResultsSchema(handle) %||% handle$cdm_schema
+  schema <- .effectiveResultsSchema(handle)
   info <- tryCatch(
     .listColumnsRaw(handle, table_name, schema),
     error = function(e) NULL
@@ -731,8 +729,7 @@
   if (nrow(bp_match) == 0) {
     stop("Table '", table_name, "' not found in database.", call. = FALSE)
   }
-  results_schema <- .resolveResultsSchema(handle)
-  authorised_schema <- results_schema %||% handle$cdm_schema
+  authorised_schema <- .effectiveResultsSchema(handle)
   expected_qualified <- .qualifyTable(handle, table_name_lower,
                                        authorised_schema)
   bp_match <- bp_match[

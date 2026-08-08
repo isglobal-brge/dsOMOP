@@ -14,9 +14,9 @@ Named list describing translation, metadata and temporary-object
   support.
 }
 \description{
-This is a static implementation profile, not a claim that a live server or
-vendor driver was exercised. Embedded backends have executable package
-tests; every network backend still requires site-specific integration
-testing (driver, permissions, catalog layout and server version).
+This is a static implementation profile, not a claim of feature parity on
+every vendor version. PostgreSQL, MySQL and MariaDB have executable CI smoke
+tests with separate CDM, vocabulary and results namespaces; every deployment
+still requires site-specific testing of authentication and permissions.
 }
 \keyword{internal}

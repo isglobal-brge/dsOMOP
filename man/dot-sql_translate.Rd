@@ -15,15 +15,16 @@
 Character; translated SQL
 }
 \description{
-Handles two transformations:
+Handles three transformations:
 \enumerate{
   \item \code{SELECT TOP n ...} to \code{SELECT ... LIMIT n} (non-SQL Server)
+  \item \code{DATEDIFF(day, start, end)} to dialect-specific date arithmetic
   \item \code{DATEADD(day, n, expr)} to dialect-specific date arithmetic
 }
 }
 \details{
 This deliberately small built-in translator is not OHDSI SqlRender and does
-not claim its full grammar. Network dialect outputs are contract-tested only
-until exercised against a live vendor database and driver.
+not claim its full grammar. PostgreSQL and the MySQL-family paths have live
+vendor smoke tests; other network dialect outputs remain contract-tested.
 }
 \keyword{internal}

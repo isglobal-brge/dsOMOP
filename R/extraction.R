@@ -854,6 +854,29 @@
     select_cols <- unique(c(must_keep, intersect(columns, col_df$column_name)))
   }
 
+  # Extension visibility is not identifier authorization. Unknown *_id/_key/
+  # *_identifier fields have no OHDSI or typed dsOMOP semantics and are always
+  # denied, including when a controller has enabled sensitive text access.
+  # This gate is intentionally separate from block_sensitive so the
+  # administrative PII bypass cannot expose local row/member/account keys.
+  untyped_identifier_cols <- if (
+    "is_untyped_identifier" %in% names(col_df)
+  ) {
+    col_df$column_name[col_df$is_untyped_identifier]
+  } else {
+    character(0)
+  }
+  if (!is.null(columns)) {
+    requested_identifiers <- intersect(tolower(columns), untyped_identifier_cols)
+    if (length(requested_identifiers) > 0L) {
+      stop("Disclosive: extension column(s) '",
+           paste(requested_identifiers, collapse = "', '"),
+           "' are untyped identifiers and cannot be extracted from table '",
+           table, "'.", call. = FALSE)
+    }
+  }
+  select_cols <- setdiff(select_cols, untyped_identifier_cols)
+
   # PRIVILEGE ESCALATION GATE: block_sensitive = FALSE exposes PII columns
   # (source_value, free text, provider identifiers, geographic data).
   # This is a deliberate server-admin decision, NOT a client preference.
@@ -1162,7 +1185,11 @@
 #' @return Character; SQL returning single count
 #' @keywords internal
 .compilePersonCount <- function(handle, from_sql) {
-  paste0("SELECT COUNT(DISTINCT person_id) AS n_persons FROM (", from_sql, ") AS sub")
+  .sql_translate(
+    paste0("SELECT COUNT(DISTINCT person_id) AS n_persons FROM (",
+           from_sql, ") AS sub"),
+    handle$target_dialect
+  )
 }
 
 #' Compile SQL for concept lookup
@@ -1653,7 +1680,10 @@
 #' Coerce integer64 columns to a precision-safe type
 #'
 #' Converts bit64::integer64 columns to plain \code{integer} when every value
-#' fits int32, otherwise to \code{character}. DataSHIELD cannot serialize
+#' fits int32, otherwise to \code{character}. With \code{stable = TRUE}, every
+#' integer64 column becomes character regardless of the current values; bounded
+#' DBI fetches use this mode so later chunks cannot change physical type when a
+#' larger 64-bit identifier first appears. DataSHIELD cannot serialize
 #' integer64, but it handles both integer and character. We deliberately do
 #' NOT fall back to \code{double}: \code{as.numeric()} rounds values above
 #' 2^53, which silently collapsed distinct 64-bit person ids onto the same
@@ -1662,16 +1692,27 @@
 #' pseudonymous person key.
 #'
 #' @param df A data.frame potentially containing integer64 columns.
+#' @param stable Logical; always use character for integer64 columns. Integer
+#'   values in identifier-shaped columns are also character in this mode so a
+#'   later BIGINT value cannot change a bounded stream's physical schema.
 #' @return The data.frame with integer64 columns converted exactly.
 #' @keywords internal
-.coerce_integer64 <- function(df) {
+.coerce_integer64 <- function(df, stable = FALSE) {
   for (col in names(df)) {
     if (inherits(df[[col]], "integer64")) {
       v <- df[[col]]
       nona <- v[!is.na(v)]
       fits_int <- length(nona) == 0 ||
         (min(nona) >= -2147483647 && max(nona) <= 2147483647)
-      df[[col]] <- if (fits_int) as.integer(v) else as.character(v)
+      df[[col]] <- if (!isTRUE(stable) && fits_int) {
+        as.integer(v)
+      } else {
+        as.character(v)
+      }
+    } else if (isTRUE(stable) && is.integer(df[[col]]) &&
+               grepl("(^id$|_(id|key|identifier)$)", tolower(col),
+                     perl = TRUE)) {
+      df[[col]] <- as.character(df[[col]])
     }
   }
   df
@@ -1747,17 +1788,15 @@
   file.rename(from, to)
 }
 
-#' Stream a SQL query result to a Parquet file in chunks
+#' Stream a SQL query result to one Parquet file in bounded chunks
 #'
 #' Uses DBI::dbSendQuery + dbFetch(n=chunk_size) to avoid loading the full
 #' result set into R memory. Peak R memory is bounded by one transformed chunk
 #' plus DBI/Arrow writer buffers and therefore still depends on row width.
-#' Falls back to CSV if Arrow is not installed.
-#'
-#' Strategy: each chunk is written as a separate Parquet file in a temporary
-#' directory. After all chunks are written, arrow::open_dataset() scans them
-#' lazily and arrow::write_dataset() consolidates into a single Parquet file
-#' without loading the full dataset into R memory.
+#' Falls back to a CSV file if Arrow is not installed. Arrow's low-level
+#' Parquet writer appends each fetched batch as a row group in one pending file,
+#' which is atomically renamed after the footer is closed. This avoids a second
+#' scan and never creates a duplicate of the complete result.
 #'
 #' @param conn DBI connection
 #' @param sql Character; SQL query to execute
@@ -1836,24 +1875,28 @@
   chunk_idx <- 0L
   completed <- FALSE
 
-  # Temporary directory for per-chunk Parquet files
-  chunk_dir <- if (use_parquet) tempfile("pq_chunks_") else NULL
-  out_dir <- NULL
-  if (!is.null(chunk_dir)) {
-    dir.create(chunk_dir, recursive = TRUE, mode = "0700")
-    Sys.chmod(chunk_dir, mode = "0700")
+  # The low-level writer keeps one open Parquet file and emits one or more row
+  # groups per fetched batch. The pending file is in the destination directory,
+  # so final publication is an atomic same-filesystem rename.
+  pending_file <- NULL
+  if (use_parquet) {
+    pending_file <- tempfile(
+      pattern = paste0(output_basename, ".pending-"),
+      tmpdir = staging_dir
+    )
   }
 
   rs <- NULL
+  parquet_writer <- NULL
+  parquet_sink <- NULL
   on.exit({
     if (!is.null(rs) && DBI::dbIsValid(rs)) DBI::dbClearResult(rs)
-    if (!is.null(chunk_dir) && dir.exists(chunk_dir)) {
-      unlink(chunk_dir, recursive = TRUE)
+    if (!is.null(parquet_writer)) try(parquet_writer$Close(), silent = TRUE)
+    if (!is.null(parquet_sink)) try(parquet_sink$close(), silent = TRUE)
+    if (!is.null(pending_file) && file.exists(pending_file)) unlink(pending_file)
+    if (!completed && (file.exists(output_path) || dir.exists(output_path))) {
+      unlink(output_path, recursive = TRUE)
     }
-    if (!is.null(out_dir) && dir.exists(out_dir)) {
-      unlink(out_dir, recursive = TRUE)
-    }
-    if (!completed && file.exists(output_path)) unlink(output_path)
   }, add = TRUE)
   rs <- DBI::dbSendQuery(conn, sql)
 
@@ -1862,7 +1905,7 @@
   # file rather than a descriptor pointing at a non-existent path.
   empty <- DBI::dbFetch(rs, n = 0L)
   names(empty) <- tolower(names(empty))
-  empty <- .coerce_integer64(empty)
+  empty <- .coerce_integer64(empty, stable = TRUE)
   if (!is.null(chunk_fn)) empty <- chunk_fn(empty)
   if (!is.data.frame(empty)) {
     stop("chunk_fn must return a data.frame.", call. = FALSE)
@@ -1873,14 +1916,27 @@
       paste(typeof(col), paste(class(col), collapse = "/"), sep = "|")
     }, character(1))
   }
-  column_types <- schema_signature(empty)
+  empty_column_types <- schema_signature(empty)
+
+  open_parquet_writer <- function(example) {
+    parquet_sink <<- arrow::FileOutputStream$create(pending_file)
+    example_table <- arrow::Table$create(example)
+    writer_properties <- arrow::ParquetWriterProperties$create(
+      column_names = col_names
+    )
+    parquet_writer <<- arrow::ParquetFileWriter$create(
+      schema = example_table$schema,
+      sink = parquet_sink,
+      properties = writer_properties
+    )
+  }
 
   repeat {
     chunk <- DBI::dbFetch(rs, n = chunk_size)
     if (nrow(chunk) == 0L) break
 
     names(chunk) <- tolower(names(chunk))
-    chunk <- .coerce_integer64(chunk)
+    chunk <- .coerce_integer64(chunk, stable = TRUE)
 
     if (!is.null(chunk_fn)) {
       chunk <- chunk_fn(chunk)
@@ -1892,18 +1948,28 @@
       stop("Staged output exceeds the server row quota.", call. = FALSE)
     }
 
+    chunk_types <- schema_signature(chunk)
     if (!identical(names(chunk), col_names) ||
-        !identical(schema_signature(chunk), column_types)) {
+        (chunk_idx > 0L && !identical(chunk_types, column_types))) {
       stop("Staged chunk transformations must preserve stable names and types.",
            call. = FALSE)
     }
 
     chunk_idx <- chunk_idx + 1L
+    if (chunk_idx == 1L) {
+      # DBI drivers may report an empty BIGINT result as plain numeric and add
+      # their integer64 class only when values are fetched (notably RMariaDB).
+      # The first real chunk therefore defines the non-empty physical schema;
+      # every later chunk is still required to match it exactly.
+      column_types <- chunk_types
+      if (use_parquet) open_parquet_writer(chunk)
+    }
 
     if (use_parquet) {
-      chunk_path <- file.path(chunk_dir,
-                               sprintf("chunk_%06d.parquet", chunk_idx))
-      arrow::write_parquet(arrow::as_arrow_table(chunk), chunk_path)
+      parquet_writer$WriteTable(
+        arrow::Table$create(chunk),
+        as.integer(nrow(chunk))
+      )
     } else {
       utils::write.table(chunk, output_path,
                   sep = ",", row.names = FALSE,
@@ -1913,7 +1979,7 @@
 
     n_rows <- n_rows + nrow(chunk)
     staged_files <- if (use_parquet) {
-      list.files(chunk_dir, full.names = TRUE)
+      pending_file
     } else {
       output_path
     }
@@ -1926,58 +1992,49 @@
   DBI::dbClearResult(rs)
 
   if (chunk_idx == 0L) {
-    if (use_parquet) {
-      arrow::write_parquet(arrow::as_arrow_table(empty), output_path)
-    } else {
+    column_types <- empty_column_types
+    if (use_parquet) open_parquet_writer(empty)
+    if (!use_parquet) {
       utils::write.table(empty, output_path, sep = ",", row.names = FALSE,
                   col.names = TRUE)
     }
   }
 
-  # Consolidate chunks into a single Parquet file via lazy dataset scan
-  if (use_parquet && chunk_idx > 0L) {
-    if (chunk_idx == 1L) {
-      # Single chunk: just move the file
-      moved <- .renameStagingFile(
-        file.path(chunk_dir, "chunk_000001.parquet"),
-        output_path
-      )
-      if (!isTRUE(moved)) {
-        stop("Could not finalize staged Parquet output.", call. = FALSE)
-      }
-    } else {
-      # Multiple chunks: consolidate without loading into R memory
-      ds <- arrow::open_dataset(chunk_dir)
-      out_dir <- tempfile("pq_consolidated_")
-      dir.create(out_dir, mode = "0700")
-      arrow::write_dataset(ds, out_dir, format = "parquet",
-                            max_rows_per_file = .Machine$integer.max)
-      consolidated <- list.files(out_dir, full.names = TRUE,
-                                  pattern = "\\.parquet$")
-      if (length(consolidated) != 1L ||
-          !isTRUE(.renameStagingFile(consolidated[[1]], output_path))) {
-        stop("Could not consolidate staged Parquet output.", call. = FALSE)
-      }
-      unlink(out_dir, recursive = TRUE)
-      out_dir <- NULL
+  if (use_parquet) {
+    parquet_writer$Close()
+    parquet_writer <- NULL
+    parquet_sink$close()
+    parquet_sink <- NULL
+    Sys.chmod(pending_file, mode = "0600")
+    if (!file.exists(pending_file) ||
+        !isTRUE(.renameStagingFile(pending_file, output_path))) {
+      stop("Could not atomically publish staged Parquet output.",
+           call. = FALSE)
     }
-    unlink(chunk_dir, recursive = TRUE)
-    chunk_dir <- NULL  # prevent on.exit double-cleanup
+    pending_file <- NULL
   }
 
   if (!file.exists(output_path)) {
     stop("Staged query did not create an output file.", call. = FALSE)
   }
-  if (existing_bytes + file.info(output_path)$size > max_bytes) {
+  output_bytes <- if (dir.exists(output_path)) {
+    .stagingDirectoryBytes(output_path)
+  } else {
+    file.info(output_path)$size
+  }
+  if (existing_bytes + output_bytes > max_bytes) {
     stop("Staged output exceeds the server disk quota.", call. = FALSE)
   }
-  Sys.chmod(output_path, mode = "0600")
+  Sys.chmod(output_path, mode = if (dir.exists(output_path)) "0700" else "0600")
 
   fmt <- if (use_parquet) "parquet" else "csv"
+  layout <- "file"
   completed <- TRUE
   list(
     file = output_path,
     format = fmt,
+    layout = layout,
+    parts = NULL,
     n_rows = n_rows,
     columns = col_names,
     column_types = column_types
@@ -2900,12 +2957,21 @@
     return(df)
   }
   ids <- .identifierColumns()
+  reviewed_ids <- .reviewedIdentifierColumns()
   cur <- names(df)
   for (i in seq_along(spec$source)) {
     s <- spec$source[i]
     a <- spec$alias[i]
     if (identical(s, a)) next
     if (tolower(s) %in% ids || tolower(a) %in% ids) next
+    if (length(.untypedIdentifierColumns(
+      c(s, a), reviewed = reviewed_ids, allow_concepts = TRUE
+    )) > 0L) next
+    # A benign value must not acquire concept-id privileges merely by being
+    # renamed. Concept aliases may lose the suffix (and are separately tagged),
+    # but only a concept-shaped source may land under a *_concept_id name.
+    if (grepl("_concept_id$", tolower(a)) &&
+        !grepl("_concept_id$", tolower(s))) next
     hit <- which(tolower(cur) == tolower(s))
     if (length(hit) == 1L) cur[hit] <- a
   }
@@ -4296,17 +4362,10 @@
 
   sql <- paste0("SELECT DISTINCT ", select_parts, " FROM ", person_table, " p")
 
+  op_table <- NULL
   if (needs_obs) {
     op_schema <- .resolveTableSchema(handle, "observation_period", "Clinical")
     op_table <- .qualifyTable(handle, "observation_period", op_schema)
-    sql <- paste0(sql,
-      " LEFT JOIN ", op_table, " op ON op.person_id = p.person_id")
-    if (any(kinds %in% c("obs_duration", "prior_obs", "followup"))) {
-      # Add observation period columns
-      sql <- sub("FROM", paste0(
-        ", op.observation_period_start_date, op.observation_period_end_date FROM"
-      ), sql)
-    }
   }
 
   # Filter to cohort person IDs
@@ -4331,11 +4390,17 @@
   .assertMinPersons(handle = handle, sql = count_sql)
 
   df <- .executeQuery(handle, sql)
-  if (needs_obs && anyDuplicated(df$person_id)) {
-    stop("Derived observation-period variables found multiple records for a ",
-         "person. Declare an observation-period selection or aggregation ",
-         "policy; person-level output cannot choose one implicitly.",
-         call. = FALSE)
+  obs_df <- NULL
+  if (needs_obs) {
+    obs_sql <- paste0(
+      "SELECT op.person_id, op.observation_period_start_date, ",
+      "op.observation_period_end_date FROM ", op_table, " op INNER JOIN ",
+      person_table, " p ON p.person_id = op.person_id"
+    )
+    if (length(where) > 0L) {
+      obs_sql <- paste0(obs_sql, " WHERE ", paste(where, collapse = " AND "))
+    }
+    obs_df <- .executeQuery(handle, obs_sql)
   }
 
   # Index-referenced values have cohort-episode grain. Join the canonical
@@ -4367,6 +4432,75 @@
     result$cohort_row_id <- df$cohort_row_id
     result$row_id <- df$cohort_row_id
     result <- result[, c("row_id", "cohort_row_id", "person_id"), drop = FALSE]
+  }
+
+  observation_value <- function(spec) {
+    if (is.null(obs_df)) return(rep(NA_integer_, nrow(df)))
+    policy <- tolower(spec$period_policy %||%
+      if (identical(spec$kind, "obs_duration")) "total" else "containing")
+    allowed <- if (identical(spec$kind, "obs_duration")) {
+      c("total", "first", "last", "longest")
+    } else {
+      "containing"
+    }
+    if (!is.character(policy) || length(policy) != 1L || is.na(policy) ||
+        !policy %in% allowed) {
+      stop("Derived observation-period policy for '", spec$name,
+           "' must be one of: ", paste(allowed, collapse = ", "), ".",
+           call. = FALSE)
+    }
+    reference <- if (identical(policy, "containing")) {
+      .isoDate(spec$reference_date,
+               paste0("Derived ", spec$kind, " '", spec$name,
+                      "' reference_date"))
+    } else {
+      NULL
+    }
+    groups <- split(seq_len(nrow(obs_df)), as.character(obs_df$person_id))
+    vapply(as.character(df$person_id), function(person) {
+      rows <- groups[[person]]
+      if (is.null(rows) || length(rows) == 0L) return(NA_integer_)
+      starts <- suppressWarnings(as.Date(
+        obs_df$observation_period_start_date[rows]
+      ))
+      ends <- suppressWarnings(as.Date(
+        obs_df$observation_period_end_date[rows]
+      ))
+      if (anyNA(starts) || anyNA(ends) || any(ends < starts)) {
+        stop("Observation-period dates are invalid for derived variables.",
+             call. = FALSE)
+      }
+      durations <- as.integer(ends - starts)
+      if (identical(policy, "containing")) {
+        covering <- which(starts <= reference & ends >= reference)
+        if (length(covering) == 0L) return(NA_integer_)
+        if (length(covering) > 1L) {
+          stop("A derived observation-period reference is covered by ",
+               "multiple periods.", call. = FALSE)
+        }
+        selected <- covering[[1L]]
+        if (identical(spec$kind, "prior_obs")) {
+          return(as.integer(reference - starts[[selected]]))
+        }
+        return(as.integer(ends[[selected]] - reference))
+      }
+      if (identical(policy, "total")) {
+        ordered <- order(starts, ends)
+        if (length(ordered) > 1L && any(
+          starts[ordered[-1L]] <= ends[ordered[-length(ordered)]]
+        )) {
+          stop("Total observation duration requires non-overlapping periods.",
+               call. = FALSE)
+        }
+        return(as.integer(sum(durations)))
+      }
+      selected <- switch(policy,
+        first = order(starts, ends)[[1L]],
+        last = order(starts, ends, decreasing = TRUE)[[1L]],
+        longest = order(-durations, starts, ends)[[1L]]
+      )
+      durations[[selected]]
+    }, integer(1L))
   }
 
   for (spec in derived_specs) {
@@ -4409,36 +4543,13 @@
       }
 
     } else if (spec$kind == "obs_duration") {
-      if ("observation_period_start_date" %in% names(df) &&
-          "observation_period_end_date" %in% names(df)) {
-        start_d <- as.Date(df$observation_period_start_date)
-        end_d <- as.Date(df$observation_period_end_date)
-        result[[col_name]] <- as.integer(end_d - start_d)
-      } else {
-        result[[col_name]] <- NA_integer_
-      }
+      result[[col_name]] <- observation_value(spec)
 
     } else if (spec$kind == "prior_obs") {
-      if ("observation_period_start_date" %in% names(df)) {
-        ref_date <- .isoDate(spec$reference_date,
-                             paste0("Derived prior observation '", col_name,
-                                    "' reference_date"))
-        start_d <- as.Date(df$observation_period_start_date)
-        result[[col_name]] <- as.integer(ref_date - start_d)
-      } else {
-        result[[col_name]] <- NA_integer_
-      }
+      result[[col_name]] <- observation_value(spec)
 
     } else if (spec$kind == "followup") {
-      if ("observation_period_end_date" %in% names(df)) {
-        ref_date <- .isoDate(spec$reference_date,
-                             paste0("Derived follow-up '", col_name,
-                                    "' reference_date"))
-        end_d <- as.Date(df$observation_period_end_date)
-        result[[col_name]] <- as.integer(end_d - ref_date)
-      } else {
-        result[[col_name]] <- NA_integer_
-      }
+      result[[col_name]] <- observation_value(spec)
 
     } else if (spec$kind == "demo_missingness") {
       demo_cols <- c("year_of_birth", "month_of_birth", "day_of_birth",
@@ -5532,8 +5643,9 @@
 #' @return Data frame with row_id, cohort_row_id, subject_id, interval_type,
 #'   concept_id, start_days_from_index, end_days_from_index
 #' @keywords internal
-.extractIntervalsLong <- function(handle, cohort_table, tables,
-                                   concept_filter = NULL, filters = NULL) {
+.extractIntervalsLongLegacy <- function(handle, cohort_table, tables,
+                                         concept_filter = NULL,
+                                         filters = NULL) {
   if (!is.character(tables) || length(tables) == 0L || anyNA(tables) ||
       any(!nzchar(tables)) || anyDuplicated(tolower(tables))) {
     stop("intervals_long tables must be a non-empty, unique character vector.",
@@ -5700,11 +5812,13 @@
 #' @param handle CDM handle
 #' @param cohort_table Character; temp table name with cohort members
 #' @param table Character; source OMOP table
-#' @param concept_filter Numeric vector; concept IDs to include
+#' @param concept_filter Numeric vector or OHDSI concept-set specification.
 #' @param bin_width Integer; bin width in days
 #' @param window_start Integer; start of window (days from index)
 #' @param window_end Integer; end of window (days from index)
 #' @param analyses Character vector; analyses to compute
+#' @param observation_roster Optional validated internal observation-period
+#'   roster, used by person-period extraction to avoid querying it twice.
 #' @return Named list with temporalCovariates, covariateRef, timeRef, and
 #'   personRef (the cohort-episode to person mapping)
 #' @keywords internal
@@ -5714,7 +5828,8 @@
                                         window_start = -365L,
                                         window_end = 0L,
                                         analyses = c("binary"),
-                                        filters = NULL) {
+                                        filters = NULL,
+                                        observation_roster = NULL) {
   integer_setting <- function(value, name) {
     numeric_value <- suppressWarnings(as.numeric(value))
     integer_value <- suppressWarnings(as.integer(value))
@@ -5755,19 +5870,37 @@
     return(NULL)
   }
 
+  max_covariate_concepts <- .extractionCap(
+    "dsomop.max_pivot_concepts", 1000L
+  )
+  resolved_concepts <- .normalizeTemporalSqlConcepts(
+    handle, concept_filter, max_covariate_concepts
+  )
+
+  if (is.null(observation_roster)) {
+    observation_roster <- .loadTemporalObservationRoster(
+      handle, cohort_table
+    )
+  } else if (!is.data.frame(observation_roster) ||
+             !identical(
+               names(observation_roster),
+               c(
+                 "cohort_row_id", "person_id", "observation_start_day",
+                 "observation_end_day"
+               )
+             ) || anyNA(observation_roster) ||
+             anyDuplicated(observation_roster$cohort_row_id)) {
+    stop("Invalid internal observation-period roster.", call. = FALSE)
+  }
+
   # Materialize the complete episode map independently of qualifying events.
   # This keeps rowId linkable even for cohort eras with no event in the window,
   # without returning the absolute index dates used to define those eras.
-  person_ref_raw <- .executeQuery(handle, paste0(
-    "SELECT c.cohort_row_id AS row_id, c.subject_id AS person_id FROM ",
-    .rankedCohortSql(cohort_table, handle),
-    " AS c ORDER BY c.cohort_row_id"
-  ))
   person_ref <- data.frame(
-    rowId = as.integer(person_ref_raw$row_id),
+    rowId = as.integer(observation_roster$cohort_row_id),
     # Keep the canonical identifier spelling so the recursive DataSHIELD
     # release pass pseudonymizes it; a camelCase alias would bypass that gate.
-    person_id = person_ref_raw$person_id,
+    person_id = observation_roster$person_id,
     stringsAsFactors = FALSE
   )
 
@@ -5775,7 +5908,7 @@
   events <- .extractTable(
     handle,
     table = table,
-    concept_filter = concept_filter,
+    concept_filter = resolved_concepts,
     cohort_table = cohort_table,
     add_cohort_date = TRUE,
     temporal = list(
@@ -5789,10 +5922,10 @@
   # Generate time windows
   time_ref <- .generateTimeWindows(bin_width, window_start, window_end)
   analysis_map <- list(binary = 1L, count = 2L)
-  declared_concepts <- if (is.null(concept_filter)) {
+  declared_concepts <- if (is.null(resolved_concepts)) {
     integer(0)
   } else {
-    sort(unique(as.integer(unlist(concept_filter, use.names = FALSE))))
+    resolved_concepts
   }
   make_covariate_ref <- function(concepts) {
     rows <- lapply(concepts, function(cid) {
@@ -5833,13 +5966,33 @@
     personRef = person_ref
   )
 
-  if (nrow(events) == 0 || !"days_from_index" %in% names(events)) {
+  if (nrow(events) == 0L) {
+    .assertMinPersons(n_persons = 0L)
     return(empty_result)
   }
-  if (!"cohort_row_id" %in% names(events)) {
+  if (!all(c("cohort_row_id", "person_id", "days_from_index") %in%
+           names(events))) {
     stop("Temporal covariates require a stable cohort_row_id for each cohort ",
          "entry.", call. = FALSE)
   }
+
+  observation_match <- match(
+    events$cohort_row_id, observation_roster$cohort_row_id
+  )
+  if (anyNA(observation_match) || any(
+    events$person_id != observation_roster$person_id[observation_match]
+  )) {
+    stop("Temporal events do not match the validated cohort episode roster.",
+         call. = FALSE)
+  }
+  observed <-
+    events$days_from_index >=
+      observation_roster$observation_start_day[observation_match] &
+    events$days_from_index <=
+      observation_roster$observation_end_day[observation_match]
+  events <- events[!is.na(observed) & observed, , drop = FALSE]
+  .assertMinPersons(n_persons = length(unique(events$person_id)))
+  if (nrow(events) == 0L) return(empty_result)
 
   # Find concept column
   possible <- grep("_concept_id$", names(events), value = TRUE)
@@ -5861,9 +6014,6 @@
     declared_concepts,
     events[[concept_col]][!is.na(events[[concept_col]])]
   )))
-  max_covariate_concepts <- .extractionCap(
-    "dsomop.max_pivot_concepts", 1000L
-  )
   if (length(concepts) > max_covariate_concepts) {
     stop("Temporal covariates exceed the server concept cap of ",
          max_covariate_concepts, ".", call. = FALSE)

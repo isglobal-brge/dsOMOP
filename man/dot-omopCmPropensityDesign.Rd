@@ -32,8 +32,9 @@ single data frame (the design matrix the in-session glm is fitted on). Each
 subject contributes exactly one row; a covariate the subject has no record of
 is 0. The query returns one (subject, covariate) presence row and the pivot to
 a wide 0/1 matrix happens in R, so the SQL stays a simple membership join.
-Subjects in BOTH arms are assigned to the target arm (a subject cannot hold two
-arm labels in one regression); this de-duplication is documented and keeps the
-label binary.
+The caller supplies the OHDSI-normalised, disjoint effective arms, so no
+subject can hold two labels. The roster deliberately does not resolve a
+conflict with target precedence: doing so here would make propensity scoring
+use a different population from the other CohortMethod estimands.
 }
 \keyword{internal}

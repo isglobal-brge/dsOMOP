@@ -7,8 +7,8 @@
 # longitudinal data before a bounded DP statistic is requested.
 
 .DSOMOP_DP_STATISTICS <- c(
-  "count", "categorical_histogram", "numeric_histogram",
-  "bounded_mean", "binary_rate"
+  "count", "bounded_record_count", "categorical_histogram",
+  "numeric_histogram", "bounded_distinct", "bounded_mean", "binary_rate"
 )
 
 .dsomopDpQueryLibraryStatus <- function() {
@@ -18,32 +18,14 @@
   if (!nzchar(path) || !file.exists(path)) {
     return(list(available = FALSE, literal_sql_authorized = FALSE))
   }
-  registry <- tryCatch(
-    jsonlite::fromJSON(path, simplifyVector = FALSE),
-    error = function(e) NULL
-  )
-  redesigns <- registry$redesigns %||% list()
-  valid <- is.list(registry) && identical(as.numeric(registry$schema_version), 1) &&
-    is.list(registry$source) && is.list(redesigns) &&
-    all(vapply(redesigns, function(entry) {
-      is.list(entry) &&
-        identical(entry$status, "mapped_to_bounded_sticky_primitive") &&
-        is.character(entry$upstream_id) && length(entry$upstream_id) == 1L &&
-        is.character(entry$family) && length(entry$family) == 1L
-    }, logical(1L)))
-  if (!isTRUE(valid)) {
-    stop("The installed OHDSI DP redesign registry is malformed.",
-         call. = FALSE)
-  }
+  catalog <- .omopQueryLibraryStickyCatalog()
   list(
     available = TRUE,
-    upstream_commit = registry$source$commit,
-    mapped_to_bounded_sticky_primitive = vapply(
-      redesigns, `[[`, character(1L), "upstream_id"
-    ),
-    primitive_family = vapply(redesigns, `[[`, character(1L), "family"),
-    literal_sql_authorized = FALSE,
-    formal_dp_certified = FALSE
+    upstream_commit = unique(catalog$source_commit)[[1L]],
+    mapped_query_count = nrow(catalog),
+    mapped_to_bounded_sticky_primitive = catalog$upstream_id,
+    primitive_family = catalog$family,
+    literal_sql_authorized = FALSE
   )
 }
 
@@ -342,15 +324,24 @@
   }
   levels <- sort(levels, method = "radix")
   reducer <- common$reducer
-  if (!reducer %in% c("presence", "mode", "first", "last", "any")) {
+  if (!reducer %in% c(
+    "presence", "mode", "first", "last", "records", "any"
+  )) {
     stop("Unsupported categorical longitudinal reducer.", call. = FALSE)
   }
   if (identical(reducer, "any")) reducer <- "presence"
-  if (!is.null(common$order_by) && !reducer %in% c("first", "last")) {
-    stop("Categorical order_by is only valid for first/last reducers.",
+  if (!is.null(common$order_by) &&
+      !reducer %in% c("first", "last", "records")) {
+    stop("Categorical order_by is only valid for first/last/records reducers.",
          call. = FALSE)
   }
-  cap <- if (reducer == "presence") common$max_contributions else 1L
+  if (identical(reducer, "records") && is.null(common$order_by)) {
+    stop("Categorical records reducers require a public order_by column.",
+         call. = FALSE)
+  }
+  cap <- if (reducer %in% c("presence", "records")) {
+    common$max_contributions
+  } else 1L
   groups <- .dsomopDpOrderedGroups(input$token)
   selected_cell <- unlist(lapply(groups, function(indices) {
     candidate <- values[indices]
@@ -359,6 +350,17 @@
                                          candidate %in% levels]),
                         method = "radix")
       candidate <- utils::head(candidate, cap)
+    } else if (reducer == "records") {
+      indices <- indices[
+        !is.na(values[indices]) & values[indices] %in% levels &
+          !is.na(common$order_value[indices])
+      ]
+      if (length(indices)) {
+        indices <- indices[order(
+          common$order_value[indices], values[indices], method = "radix"
+        )]
+        candidate <- values[utils::head(indices, cap)]
+      } else candidate <- character(0)
     } else if (reducer == "mode") {
       candidate <- candidate[!is.na(candidate) & candidate %in% levels]
       if (length(candidate)) {
@@ -400,6 +402,98 @@
   }
   list(semantic = semantic, snapshot = snapshot,
        sensitivity = list(l1 = cap, unit = "person"), payload_fn = payload_fn)
+}
+
+.dsomopDpBoundedRecordCount <- function(input, common) {
+  if (!identical(common$reducer, "records")) {
+    stop("bounded_record_count requires reducer='records'.", call. = FALSE)
+  }
+  if (!is.null(common$order_by)) {
+    stop("bounded_record_count does not use order_by.", call. = FALSE)
+  }
+  groups <- .dsomopDpOrderedGroups(input$token)
+  cap <- common$max_contributions
+  true_count <- sum(vapply(
+    groups, function(indices) min(length(indices), cap), integer(1L)
+  ))
+  semantic <- list(
+    statistic = "bounded_record_count", unit = "record",
+    reducer = "records", max_contributions = cap
+  )
+  snapshot <- list(count = as.numeric(true_count))
+  payload_fn <- function(epsilon, policy, release_context, degraded = FALSE) {
+    list(
+      statistic = "bounded_record_count",
+      noisy_count = if (degraded) 0 else .dsomopDpNoisyInteger(
+        true_count, policy, release_context, "bounded-record-count",
+        epsilon, cap
+      ),
+      reducer = "records", max_contributions = cap,
+      degraded = isTRUE(degraded)
+    )
+  }
+  list(
+    semantic = semantic, snapshot = snapshot,
+    sensitivity = list(l1 = cap, unit = "person"), payload_fn = payload_fn
+  )
+}
+
+.dsomopDpBoundedDistinct <- function(input, spec, policy, common) {
+  if (!identical(common$reducer, "distinct")) {
+    stop("bounded_distinct requires reducer='distinct'.", call. = FALSE)
+  }
+  if (!is.null(common$order_by)) {
+    stop("bounded_distinct uses server-owned canonical value ordering, not ",
+         "order_by.", call. = FALSE)
+  }
+  values <- input$x[[common$variable]]
+  .dsomopDpValueType(values)
+  values <- enc2utf8(as.character(values))
+  levels <- .dsomopDpSpecAtomic(spec$levels, "levels")
+  if (length(levels) < 1L || length(levels) > policy$max_levels) {
+    stop("bounded_distinct levels exceed the server-owned level cap.",
+         call. = FALSE)
+  }
+  levels <- enc2utf8(as.character(levels))
+  if (any(!nzchar(levels)) || any(nchar(levels, type = "bytes") > 256L) ||
+      anyDuplicated(levels)) {
+    stop("bounded_distinct levels must be unique, non-empty public labels.",
+         call. = FALSE)
+  }
+  levels <- sort(levels, method = "radix")
+  cap <- common$max_contributions
+  groups <- .dsomopDpOrderedGroups(input$token)
+  selected <- unlist(lapply(groups, function(indices) {
+    candidate <- sort(unique(values[indices][
+      !is.na(values[indices]) & values[indices] %in% levels
+    ]), method = "radix")
+    utils::head(candidate, cap)
+  }), use.names = FALSE)
+  true_count <- length(unique(selected))
+  semantic <- list(
+    statistic = "bounded_distinct", variable = common$variable,
+    value_type = "categorical_utf8_v1", levels = levels,
+    reducer = "distinct", max_contributions = cap,
+    selection_order = "canonical_utf8_value_radix"
+  )
+  snapshot <- list(count = as.numeric(true_count))
+  payload_fn <- function(epsilon, policy, release_context, degraded = FALSE) {
+    list(
+      statistic = "bounded_distinct",
+      noisy_count = if (degraded) 0 else .dsomopDpNoisyInteger(
+        true_count, policy, release_context, "bounded-distinct-cardinality",
+        epsilon, cap
+      ),
+      reducer = "distinct", max_contributions = cap,
+      domain_size = length(levels),
+      selection_order = "canonical_utf8_value_radix",
+      value_type = "categorical_utf8_v1", degraded = isTRUE(degraded)
+    )
+  }
+  list(
+    semantic = semantic, snapshot = snapshot,
+    sensitivity = list(l1 = cap, unit = "person"), payload_fn = payload_fn
+  )
 }
 
 .dsomopDpNumericHistogram <- function(input, spec, policy, common) {
@@ -683,7 +777,7 @@
            call. = FALSE)
     }
   }
-  variable <- if (statistic == "count") NULL else {
+  variable <- if (statistic %in% c("count", "bounded_record_count")) NULL else {
     .dsomopDpColumn(input$x, spec$variable, "variable")
   }
   reducer <- tolower(as.character(.dsomopDpSpecScalar(
@@ -718,10 +812,14 @@
         degraded = isTRUE(degraded)
       )
     )
+  } else if (statistic == "bounded_record_count") {
+    analysis <- .dsomopDpBoundedRecordCount(input, common)
   } else if (statistic == "categorical_histogram") {
     analysis <- .dsomopDpCategorical(input, spec, policy, common)
   } else if (statistic == "numeric_histogram") {
     analysis <- .dsomopDpNumericHistogram(input, spec, policy, common)
+  } else if (statistic == "bounded_distinct") {
+    analysis <- .dsomopDpBoundedDistinct(input, spec, policy, common)
   } else if (statistic == "bounded_mean") {
     analysis <- .dsomopDpBoundedMean(input, spec, policy, common)
   } else {
@@ -775,18 +873,24 @@ omopDpStatusDS <- function() {
 #'   loader, or manipulation path.
 #' @param spec Typed DP statistic specification, usually JSON-encoded by
 #'   dsOMOPClient.
-#' @return A sticky noisy aggregate with explicit certification metadata. The
-#'   current built-in sampler is reported as non-formal DP.
+#' @return A sticky noisy aggregate with mechanism and accounting metadata.
 #' @export
 omopDpReleaseDS <- function(x, spec) {
   spec <- .ds_arg(spec)
   .dsomopDpEnsureRuntime()
   policy <- .dsomopDpPolicy()
   analysis <- .dsomopDpAnalysis(x, spec, policy)
-  .dsomopDpLedgerRelease(
+  value <- .dsomopDpLedgerRelease(
     policy = policy, semantic = analysis$semantic,
     bounded_snapshot = analysis$snapshot,
     sensitivity = analysis$sensitivity,
     payload_fn = analysis$payload_fn
   )
+  # Ledgers created by earlier releases contain public attestation fields that
+  # are no longer part of the API. Preserve their authenticated payload at rest
+  # and remove only those legacy fields from the returned release.
+  value[c(
+    "formal_dp", "sampler_certified", "epsilon_semantics", "delta_semantics"
+  )] <- NULL
+  value
 }

@@ -8,6 +8,7 @@
   unit = "person",
   count_cols = character(0),
   person_id_col = NULL,
+  dist_count_col = NULL,
   min_max = FALSE,
   gate = "distinct_person"
 )
@@ -18,6 +19,9 @@
 \item{count_cols}{Character vector of count-valued result columns.}
 
 \item{person_id_col}{Character; person identifier column, or NULL.}
+
+\item{dist_count_col}{Character vector; for distribution outputs, every
+count-basis column that must clear \code{nfilter.dist}.}
 
 \item{min_max}{Logical; whether minimum/maximum outputs require protection.}
 

@@ -18,8 +18,11 @@ Description: Server-side DataSHIELD package providing typed, reviewed access to
     Includes DBI/ODBC resource connectors for PostgreSQL, SQLite, DuckDB,
     MySQL/MariaDB, SQL Server/Synapse/PDW, Oracle, Redshift, BigQuery,
     Snowflake, Spark, and Databricks, plus a small built-in SQL helper for
-    parameter rendering and common DATEADD/TOP translations. Query feature
-    parity depends on the target DBMS and installed driver.
+    parameter rendering, common DATEADD/DATEDIFF/TOP translations, and Oracle
+    alias syntax. Canonical OHDSI
+    SQL can optionally be rendered and translated with OHDSI SqlRender on its
+    supported dialects; MySQL/MariaDB remain an explicitly reviewed extension.
+    Query feature parity depends on the target DBMS and installed driver.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Depends:
@@ -37,7 +40,7 @@ Imports:
 Suggests:
     arrow,
     RPostgres,
-    RMariaDB,
+    RMariaDB (>= 1.3.2),
     ROracle,
     RPostgreSQL,
     duckdb,
@@ -50,6 +53,7 @@ Suggests:
     DSLite,
     dsOMOPClient,
     CommonDataModel,
+    SqlRender (>= 1.10.0),
     survival,
     gnm
 AggregateMethods:
@@ -104,6 +108,7 @@ AggregateMethods:
     omopAnalysisListDS,
     omopAnalysisGetDS,
     omopAnalysisRunDS,
+    omopQueryLibraryStickyCatalogDS,
     omopDpStatusDS,
     omopDpReleaseDS,
     omopFactorLevelsDS

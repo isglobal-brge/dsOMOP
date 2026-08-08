@@ -300,6 +300,102 @@ test_that("server contract exposes only named extension columns", {
   )
 })
 
+test_that("untyped extension identifiers are denied independently of PII access", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  DBI::dbExecute(handle$conn, paste(
+    "CREATE TABLE site_identity_extension (person_id INTEGER,",
+    "event_concept_id INTEGER, research_score REAL, encounter_id TEXT,",
+    "member_id TEXT, account_id TEXT, local_record_id INTEGER,",
+    "external_member_key TEXT, source_identifier TEXT)"
+  ))
+  DBI::dbExecute(handle$conn, paste(
+    "INSERT INTO site_identity_extension VALUES",
+    "(1, 201820, 1.1, 'e1', 'm1', 'a1', 101, 'k1', 's1'),",
+    "(2, 201820, 2.2, 'e2', 'm2', 'a2', 102, 'k2', 's2'),",
+    "(3, 201820, 3.3, 'e3', 'm3', 'a3', 103, 'k3', 's3')"
+  ))
+  extension_ids <- c(
+    "encounter_id", "member_id", "account_id", "local_record_id",
+    "external_member_key", "source_identifier"
+  )
+  withr::local_options(list(dsomop.allowed_cdm_extensions = list(
+    site_identity_extension = c(
+      "person_id", "event_concept_id", "research_score", extension_ids
+    )
+  )))
+
+  bp <- .buildBlueprint(handle, force = TRUE)
+  cols <- bp$columns[["site_identity_extension"]]
+  expect_true(all(cols$is_extension))
+  expect_true(all(cols$is_untyped_identifier[match(
+    extension_ids, cols$column_name
+  )]))
+  expect_true(all(cols$is_blocked[match(extension_ids, cols$column_name)]))
+  expect_false(cols$is_untyped_identifier[
+    cols$column_name == "event_concept_id"
+  ])
+  expect_false(cols$is_untyped_identifier[cols$column_name == "person_id"])
+
+  sql <- .compileSelect(handle, "site_identity_extension")
+  expect_true(grepl("event_concept_id", sql, fixed = TRUE))
+  expect_true(grepl("research_score", sql, fixed = TRUE))
+  expect_false(any(vapply(extension_ids, grepl, logical(1), x = sql,
+                          fixed = TRUE)))
+  expect_false(any(extension_ids %in% .filterableColumns(
+    bp, "site_identity_extension"
+  )))
+
+  expect_error(
+    .compileSelect(
+      handle, "site_identity_extension", columns = "encounter_id"
+    ),
+    "untyped identifiers"
+  )
+  withr::local_options(list(dsomop.allow_sensitive_columns = TRUE))
+  expect_error(
+    .compileSelect(
+      handle, "site_identity_extension", columns = "account_id",
+      block_sensitive = FALSE
+    ),
+    "untyped identifiers"
+  )
+
+  withr::local_options(list(nfilter.subset = 3L))
+  extracted <- .extractTable(
+    handle, "site_identity_extension", translate_concepts = FALSE
+  )
+  expect_false(any(extension_ids %in% names(extracted)))
+  expect_true(all(c("person_id", "event_concept_id", "research_score") %in%
+                    names(extracted)))
+})
+
+test_that("column aliases cannot disguise untyped or fake concept identifiers", {
+  frame <- data.frame(
+    research_score = 1:3,
+    event_concept_id = c(1L, 2L, 3L)
+  )
+
+  untyped <- .applyColumnAliases(
+    frame, .colSpec(c(encounter_id = "research_score"))
+  )
+  expect_true("research_score" %in% names(untyped))
+  expect_false("encounter_id" %in% names(untyped))
+
+  fake_concept <- .applyColumnAliases(
+    frame, .colSpec(c(local_record_concept_id = "research_score"))
+  )
+  expect_true("research_score" %in% names(fake_concept))
+  expect_false("local_record_concept_id" %in% names(fake_concept))
+
+  reviewed_concept <- .applyColumnAliases(
+    frame, .colSpec(c(diagnosis = "event_concept_id"))
+  )
+  expect_true("diagnosis" %in% names(reviewed_concept))
+  expect_false("event_concept_id" %in% names(reviewed_concept))
+})
+
 test_that("blueprint refuses unclassified introspection without an OHDSI spec", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
@@ -591,6 +687,43 @@ test_that("structural detection identifies v5.3 DB", {
   expect_null(result$checks$episode_table)
   # No procedure_end_date
   expect_equal(result$checks$procedure_end_date, "5.3")
+})
+
+test_that("blueprint presence is scoped to each configured OHDSI daimon", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  DBI::dbExecute(handle$conn, "ATTACH DATABASE ':memory:' AS vocab")
+  DBI::dbExecute(handle$conn, "ATTACH DATABASE ':memory:' AS results")
+  handle$cdm_schema <- "main"
+  handle$vocab_schema <- "vocab"
+  handle$results_schema <- "results"
+
+  first <- .buildBlueprint(handle)
+  expect_false(first$tables$present_in_db[
+    first$tables$table_name == "concept"
+  ])
+  expect_false(any(
+    first$tables$table_name == "achilles_results" &
+      first$tables$present_in_db
+  ))
+
+  DBI::dbExecute(
+    handle$conn,
+    "CREATE TABLE vocab.concept (concept_id INTEGER, concept_name TEXT)"
+  )
+  DBI::dbExecute(
+    handle$conn,
+    "CREATE TABLE results.achilles_results (analysis_id INTEGER, count_value INTEGER)"
+  )
+  handle$blueprint <- NULL
+  handle$results_schema_resolved_done <- FALSE
+  second <- .buildBlueprint(handle)
+  concept <- second$tables[second$tables$table_name == "concept", ]
+  achilles <- second$tables[second$tables$table_name == "achilles_results", ]
+  expect_true(concept$present_in_db)
+  expect_equal(concept$qualified_name, "vocab.concept")
+  expect_true(achilles$present_in_db)
+  expect_equal(achilles$qualified_name, "results.achilles_results")
 })
 
 test_that("structural detection used as fallback when cdm_source missing", {

@@ -38,8 +38,8 @@ SELECT vo.visit_concept_id,
        c.concept_name AS visit_name,
        COUNT(DISTINCT vo.person_id) AS n_persons,
        COUNT(*) AS n_records,
-       AVG(CAST(vo.visit_end_date - vo.visit_start_date AS FLOAT)) AS avg_days,
-       STDDEV(CAST(vo.visit_end_date - vo.visit_start_date AS FLOAT)) AS sd_days
+       AVG(CAST(DATEDIFF(day, vo.visit_start_date, vo.visit_end_date) AS FLOAT)) AS avg_days,
+       STDDEV(CAST(DATEDIFF(day, vo.visit_start_date, vo.visit_end_date) AS FLOAT)) AS sd_days
 FROM @cdm.visit_occurrence vo
 JOIN @vocab.concept c ON c.concept_id = vo.visit_concept_id
 WHERE vo.visit_end_date IS NOT NULL

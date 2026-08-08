@@ -305,7 +305,7 @@ test_that("(b) cohort_overlap counts both / A-only / B-only / either", {
   })
 })
 
-test_that("(b) the SMD ports are fixture-limited on small cohorts (gate-empty)", {
+test_that("(b) the SMD ports are fixture-limited on small cohorts", {
   # On the bare fixture every per-covariate arm count over a ~6-person cohort
   # bands below threshold, so the gate drops every covariate (no two-armed
   # survivor). This is CORRECT gating, not a failure; a live SMD over arms with a
@@ -317,8 +317,14 @@ test_that("(b) the SMD ports are fixture-limited on small cohorts (gate-empty)",
     b <- p1bc_copd(h, id = 2L)
     smd <- .omopAnalysisRun(h, "dsomop:char.risk_factor_smd", scope = list(a, b))
     expect_equal(nrow(smd), 0L)
-    bal <- .omopAnalysisRun(h, "dsomop:cm.covariate_balance", scope = list(a, b))
-    expect_equal(nrow(bal), 0L)
+    # CohortMethod balance applies the OHDSI first-treatment rule. After the
+    # three shared people are assigned by index date, an effective arm falls
+    # below nfilter and is generically rejected before balance is computed.
+    expect_error(
+      .omopAnalysisRun(h, "dsomop:cm.covariate_balance",
+                       scope = list(a, b)),
+      "insufficient individuals"
+    )
   })
 })
 

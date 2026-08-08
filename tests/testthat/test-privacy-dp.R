@@ -300,8 +300,11 @@ test_that("disabled DP creates no state and refuses releases", {
 
   expect_false(status$enabled)
   expect_false(status$ready)
-  expect_false(status$formal_dp)
   expect_false(status$sticky_noise)
+  expect_false(any(c(
+    "formal_dp", "sampler_certified", "epsilon_semantics", "delta_semantics",
+    "bounded_composition"
+  ) %in% names(status)))
   expect_false(dir.exists(file.path(state, "secrets")))
   expect_false(dir.exists(file.path(state, "privacy")))
   expect_error(
@@ -323,12 +326,13 @@ test_that("bootstrap creates independent private noise, ledger and SQLite state"
   expect_true(status$ready)
   expect_true(status$sticky_noise)
   expect_true(status$durable_ledger)
-  expect_false(status$formal_dp)
   expect_true(status$bounded_accounting)
-  expect_false(status$bounded_composition)
-  expect_false(status$sampler_certified)
   expect_identical(status$privacy_guarantee,
-                   "sticky_noise_not_formally_certified_dp")
+                   .DSOMOP_PRIVACY_GUARANTEE)
+  expect_false(any(c(
+    "formal_dp", "sampler_certified", "epsilon_semantics", "delta_semantics",
+    "bounded_composition"
+  ) %in% names(status)))
 
   secrets <- file.path(state, "secrets")
   privacy <- file.path(state, "privacy")
@@ -449,12 +453,14 @@ test_that("chunked frame authentication covers every row and its order", {
   expect_false(identical(.dsomopDpFrameDigest(reordered), original))
 })
 
-test_that("audited person-local manipulations re-seal their outputs", {
+test_that("filters accumulate canonically and unsafe transforms invalidate", {
   .dp_local_state()
   raw <- data.frame(
-    person_id = 1:12,
-    group = rep(c("A", "B"), each = 6L),
-    value = seq_len(12),
+    person_id = 1:24,
+    group = rep(c("A", "B"), each = 12L),
+    site = rep(c("X", "Y"), 12L),
+    scope = c(rep("keep", 12L), rep(c("keep", "drop"), 6L)),
+    value = seq_len(24),
     stringsAsFactors = FALSE
   )
   source <- .dp_seal(
@@ -471,9 +477,59 @@ test_that("audited person-local manipulations re-seal their outputs", {
   expect_false(identical(.dp_lineage(filtered), .dp_lineage(other_filter)))
   no_op_filter <- omopFilterDS(filtered, "group", "in", "A")
   expect_identical(.dp_lineage(no_op_filter), .dp_lineage(filtered))
-  selected <- omopSelectDS(filtered, c("group", "value"))
+  selected <- omopSelectDS(filtered, c("group", "site", "value"))
+  reordered_selection <- omopSelectDS(filtered, c("value", "site", "group"))
   expect_silent(.dsomopDpVerifyPersonLocal(selected))
   expect_identical(.dp_lineage(selected), .dp_lineage(filtered))
+  expect_identical(.dp_lineage(reordered_selection), .dp_lineage(filtered))
+
+  tampered_state <- filtered
+  state <- attr(
+    tampered_state, .DSOMOP_DP_FILTER_STATE_ATTRIBUTE, exact = TRUE
+  )
+  state$filter_tree <- .dsomopDpNormalizeFilterTree(list(
+    var = "group", op = "in", value = "B"
+  ))
+  attr(tampered_state, .DSOMOP_DP_FILTER_STATE_ATTRIBUTE) <- state
+  expect_error(
+    omopFilterDS(tampered_state, "site", "==", "X"),
+    "provenance MAC|filter state does not match"
+  )
+
+  # Changing ad-hoc filters accumulate into one canonical conjunction, so
+  # execution order and a row-preserving projection cannot reroll noise.
+  twice_filtered <- omopFilterDS(filtered, "site", "==", "X")
+  reverse_filtered <- omopFilterDS(
+    omopFilterDS(source, "site", "in", "X"), "group", "in", "A"
+  )
+  projected_then_filtered <- omopFilterDS(selected, "site", "in", "X")
+  reordered_then_filtered <- omopFilterDS(
+    reordered_selection, "site", "==", "X"
+  )
+  expect_identical(nrow(twice_filtered), 6L)
+  expect_silent(.dsomopDpVerifyPersonLocal(twice_filtered))
+  expect_identical(.dp_lineage(twice_filtered), .dp_lineage(reverse_filtered))
+  expect_identical(
+    .dp_lineage(twice_filtered), .dp_lineage(projected_then_filtered)
+  )
+  expect_identical(
+    .dp_lineage(twice_filtered), .dp_lineage(reordered_then_filtered)
+  )
+  # Canonical identity must not depend on which conjunct happens to become a
+  # data-dependent no-op after the first filter.
+  redundant_after_group <- omopFilterDS(filtered, "scope", "==", "keep")
+  redundant_after_value <- omopFilterDS(
+    omopFilterDS(source, "scope", "==", "keep"), "group", "==", "A"
+  )
+  expect_identical(
+    .dp_lineage(redundant_after_group),
+    .dp_lineage(redundant_after_value)
+  )
+  release_spec <- list(statistic = "count")
+  expect_identical(
+    omopDpReleaseDS(twice_filtered, release_spec),
+    omopDpReleaseDS(reordered_then_filtered, release_spec)
+  )
 
   left <- .dp_seal(
     .testPseudonymize(raw[1:6, , drop = FALSE]), producer = "test/left"
@@ -482,18 +538,53 @@ test_that("audited person-local manipulations re-seal their outputs", {
     .testPseudonymize(raw[7:12, , drop = FALSE]), producer = "test/right"
   )
   bound <- omopBindRowsDS(left, right)
-  expect_silent(.dsomopDpVerifyPersonLocal(bound))
   reverse_bound <- omopBindRowsDS(right, left)
   duplicate_bound <- omopBindRowsDS(left, left)
-  expect_identical(.dp_lineage(bound), .dp_lineage(reverse_bound))
-  expect_false(identical(.dp_lineage(bound),
-                         .dp_lineage(duplicate_bound)))
+  expect_true(all(vapply(
+    list(bound, reverse_bound, duplicate_bound),
+    function(value) is.null(attr(
+      value, "dsomop_dp_provenance", exact = TRUE
+    )), logical(1L)
+  )))
 
   joined <- omopMergeDS(source, omopSelectDS(source, "value"))
-  expect_silent(.dsomopDpVerifyPersonLocal(joined))
+  expect_null(attr(joined, "dsomop_dp_provenance", exact = TRUE))
+  expect_null(attr(
+    omopFilterDS(joined, "site", "==", "X"),
+    "dsomop_dp_provenance", exact = TRUE
+  ))
+
+  bound_filtered <- omopBindRowsDS(filtered, other_filter)
+  expect_null(attr(
+    bound_filtered, "dsomop_dp_provenance", exact = TRUE
+  ))
+  expect_null(attr(
+    omopFilterDS(bound_filtered, "site", "==", "X"),
+    "dsomop_dp_provenance", exact = TRUE
+  ))
 })
 
-test_that("row-bind reduction is invariant to operand order", {
+test_that("negative filter aliases share semantics and sticky lineage", {
+  .dp_local_state()
+  raw <- data.frame(
+    person_id = 1:13,
+    group = c(rep("A", 6L), rep("B", 6L), NA_character_),
+    stringsAsFactors = FALSE
+  )
+  source <- .dp_seal(
+    .testPseudonymize(raw), producer = "test/negative-filter-aliases"
+  )
+
+  not_equal <- omopFilterDS(source, "group", "!=", "B")
+  singleton_not_in <- omopFilterDS(source, "group", "not_in", "B")
+
+  expect_identical(not_equal$person_id, singleton_not_in$person_id)
+  expect_identical(not_equal$group, singleton_not_in$group)
+  expect_false(anyNA(not_equal$group))
+  expect_identical(.dp_lineage(not_equal), .dp_lineage(singleton_not_in))
+})
+
+test_that("row-bind invalidates provenance but reduction remains deterministic", {
   .dp_local_state()
   left_raw <- data.frame(
     person_id = 1:6,
@@ -520,12 +611,15 @@ test_that("row-bind reduction is invariant to operand order", {
     upper = 1e16,
     reducer = "mean"
   )
-  policy <- .dsomopDpPolicy()
-
-  expect_identical(.dp_lineage(forward), .dp_lineage(reverse))
+  expect_null(attr(forward, "dsomop_dp_provenance", exact = TRUE))
+  expect_null(attr(reverse, "dsomop_dp_provenance", exact = TRUE))
   expect_identical(
-    .dsomopDpAnalysis(forward, spec, policy)$snapshot,
-    .dsomopDpAnalysis(reverse, spec, policy)$snapshot
+    .dsomopDpReduceOne(
+      forward$person_id, forward$measurement, spec$reducer
+    ),
+    .dsomopDpReduceOne(
+      reverse$person_id, reverse$measurement, spec$reducer
+    )
   )
 
   low <- 1
@@ -578,7 +672,7 @@ test_that("row-bind reduction is invariant to operand order", {
   )
 })
 
-test_that("merge provenance preserves operand roles and dataset boundaries", {
+test_that("merge validates boundaries and invalidates DP provenance", {
   .dp_local_state()
   x_raw <- data.frame(
     person_id = 1:8, left_value = seq_len(8), stringsAsFactors = FALSE
@@ -592,11 +686,9 @@ test_that("merge provenance preserves operand roles and dataset boundaries", {
   inner <- omopMergeDS(x, y, by = "person_id", type = "inner")
   left <- omopMergeDS(x, y, by = "person_id", type = "left")
   swapped <- omopMergeDS(y, x, by = "person_id", type = "inner")
-  expect_silent(.dsomopDpVerifyPersonLocal(inner))
-  expect_silent(.dsomopDpVerifyPersonLocal(left))
-  expect_silent(.dsomopDpVerifyPersonLocal(swapped))
-  expect_false(identical(.dp_lineage(inner), .dp_lineage(left)))
-  expect_false(identical(.dp_lineage(inner), .dp_lineage(swapped)))
+  expect_true(all(vapply(list(inner, left, swapped), function(value) {
+    is.null(attr(value, "dsomop_dp_provenance", exact = TRUE))
+  }, logical(1L))))
 
   unsealed_y <- .testPseudonymize(y_raw)
   expect_null(attr(
@@ -631,8 +723,12 @@ test_that("merge provenance preserves operand roles and dataset boundaries", {
     by = "person_id", type = "inner"
   )
   expect_identical(names(first_partition), names(second_partition))
-  expect_false(identical(.dp_lineage(first_partition),
-                         .dp_lineage(second_partition)))
+  expect_null(attr(
+    first_partition, "dsomop_dp_provenance", exact = TRUE
+  ))
+  expect_null(attr(
+    second_partition, "dsomop_dp_provenance", exact = TRUE
+  ))
 
   concept_x_raw <- data.frame(
     person_id = 1:6,
@@ -657,7 +753,9 @@ test_that("merge provenance preserves operand roles and dataset boundaries", {
     attr(concept_join, "omop_concept_cols"),
     c("measurement_concept_id.x", "measurement_concept_id.y")
   )
-  expect_silent(.dsomopDpVerifyPersonLocal(concept_join))
+  expect_null(attr(
+    concept_join, "dsomop_dp_provenance", exact = TRUE
+  ))
 
   protected_x <- concept_x
   protected_y <- concept_y
@@ -702,8 +800,9 @@ test_that("merge provenance preserves operand roles and dataset boundaries", {
     episode_x, episode_y,
     by = c("person_id", "cohort_row_id"), type = "inner"
   )
-  expect_identical(.dp_capsule(episode_join)$episode_domain,
-                   "episode-domain-a")
+  expect_null(attr(
+    episode_join, "dsomop_dp_provenance", exact = TRUE
+  ))
   mismatched_episode_y <- .dp_seal(
     .testPseudonymize(episode_raw_y), producer = "test/episode-right",
     episode_domain = "episode-domain-b"
@@ -771,13 +870,13 @@ test_that("merge provenance preserves operand roles and dataset boundaries", {
   )
 })
 
-test_that("lossless factor harmonization has semantic, not level-order lineage", {
+test_that("factor harmonization invalidates DP provenance", {
   .dp_local_state()
   raw <- data.frame(
-    person_id = 1:8,
-    cohort_row_id = 101:108,
-    gender_concept_id = rep(c(8507L, 8532L), 4L),
-    race_concept_id = rep(c(1L, 2L), 4L),
+    person_id = 1:12,
+    cohort_row_id = 101:112,
+    gender_concept_id = rep(c(8507L, 8532L), 6L),
+    race_concept_id = rep(c(1L, 2L), 6L),
     stringsAsFactors = FALSE
   )
   attr(raw, "omop_concept_cols") <-
@@ -797,17 +896,18 @@ test_that("lossless factor harmonization has semantic, not level-order lineage",
     race_concept_id = c("1", "2")
   ))
 
-  expect_silent(.dsomopDpVerifyPersonLocal(first))
-  expect_silent(.dsomopDpVerifyPersonLocal(reordered))
-  expect_identical(.dp_capsule(first)$episode_domain,
-                   "factor-episode-domain")
-  expect_false(identical(.dp_lineage(first), .dp_lineage(reordered)))
-  expect_false(identical(.dp_lineage(first), .dp_lineage(two_columns)))
+  expect_true(all(vapply(list(first, reordered, two_columns), function(value) {
+    is.null(attr(value, "dsomop_dp_provenance", exact = TRUE))
+  }, logical(1L))))
+  expect_null(attr(
+    omopFilterDS(first, "gender_concept_id", "==", "8507"),
+    "dsomop_dp_provenance", exact = TRUE
+  ))
   no_op <- omopAsFactorColumnsDS(first, list(
     gender_concept_id = levels(first$gender_concept_id)
   ))
   expect_identical(no_op, first)
-  expect_identical(.dp_capsule(no_op), .dp_capsule(first))
+  expect_null(attr(no_op, "dsomop_dp_provenance", exact = TRUE))
 
   excluded <- omopAsFactorColumnsDS(source, list(
     gender_concept_id = "8507"
@@ -960,6 +1060,39 @@ test_that("plan provenance admits fixed longitudinal shapes only", {
   ))
 })
 
+test_that("plan lineage distinguishes persistent cohort definition ids", {
+  .dp_local_state()
+  policy <- .dsomopDpPolicy()
+  lineage <- function(plan) {
+    .dsomopDpLineageKey(
+      .dsomopDpPlanLineageSemantic(plan, "out", policy)
+    )
+  }
+  base <- list(outputs = list(out = list(
+    type = "event_level",
+    table = "measurement",
+    representation = list(format = "long")
+  )))
+
+  cohort_7 <- base
+  cohort_7$cohort <- list(
+    type = "cohort_table", cohort_definition_id = 7L
+  )
+  cohort_8 <- cohort_7
+  cohort_8$cohort$cohort_definition_id <- 8L
+  expect_false(identical(lineage(cohort_7), lineage(cohort_8)))
+
+  population_7 <- base
+  population_7$outputs$out$population_id <- "stored"
+  population_7$populations <- list(
+    base = list(kind = "criteria"),
+    stored = list(kind = "criteria", cohort_definition_id = 7L)
+  )
+  population_8 <- population_7
+  population_8$populations$stored$cohort_definition_id <- 8L
+  expect_false(identical(lineage(population_7), lineage(population_8)))
+})
+
 test_that("plan lineage canonicalizes commutative filters but preserves scope order", {
   .dp_local_state()
   frame <- .testPseudonymize(data.frame(
@@ -1006,6 +1139,37 @@ test_that("plan lineage canonicalizes commutative filters but preserves scope or
     params = list(table = "Measurement", concept_ids = c(20L, 10L))
   )
   sex_filter <- list(type = "sex", params = list(value = "F"))
+  nested_aliases <- list(and = list(
+    list(var = "group", op = "==", value = "A"),
+    list(and = list(
+      list(var = "site", op = "in", value = "X"),
+      list(var = "status", op = "!=", value = "bad")
+    ))
+  ))
+  flat_aliases <- list(and = list(
+    list(var = "status", op = "not_in", value = "bad"),
+    list(var = "site", op = "==", value = "X"),
+    list(var = "group", op = "in", value = "A")
+  ))
+  expect_identical(
+    .dsomopDpNormalizeFilterTree(nested_aliases),
+    .dsomopDpNormalizeFilterTree(flat_aliases)
+  )
+  nested_or <- list(or = list(
+    list(var = "group", op = "eq", value = "A"),
+    list(or = list(
+      list(var = "site", op = "==", value = "X"),
+      list(var = "group", op = "in", value = "A")
+    ))
+  ))
+  flat_or <- list(or = list(
+    list(var = "site", op = "in", value = "X"),
+    list(var = "group", op = "==", value = "A")
+  ))
+  expect_identical(
+    .dsomopDpNormalizeFilterTree(nested_or),
+    .dsomopDpNormalizeFilterTree(flat_or)
+  )
   canonical <- base
   canonical$cohort <- list(filter_tree = list(and = list(
     concept_filter, sex_filter, concept_filter
@@ -1090,6 +1254,79 @@ test_that("longitudinal plan lineage covers execution order and custom filters",
   intervals_changed <- intervals
   intervals_changed$outputs$out$filters$custom <- custom_b
   expect_false(identical(lineage(intervals), lineage(intervals_changed)))
+
+  advanced <- list(outputs = list(out = list(
+    type = "survival",
+    outcomes = list(
+      primary = list(
+        table = "condition_occurrence", concept_set = c(10L, 20L),
+        filters = custom_a
+      ),
+      secondary = list(
+        table = "drug_exposure", concept_set = c(30L, 40L)
+      )
+    ),
+    tar = list(start_offset = 1L, end_offset = 60L),
+    format = "recurrent_events",
+    event_order = "all",
+    washout_days = 7L,
+    tie_policy = "all",
+    censoring = list(
+      cohort_end = TRUE, observation_period_end = TRUE, death = TRUE,
+      admin_date = "2025-12-31"
+    )
+  )))
+  change_advanced <- function(field, value) {
+    changed <- advanced
+    changed$outputs$out[[field]] <- value
+    changed
+  }
+  expect_false(identical(
+    lineage(advanced),
+    lineage(change_advanced("washout_days", 8L))
+  ))
+  expect_false(identical(
+    lineage(advanced),
+    lineage(change_advanced("censoring", list(
+      cohort_end = TRUE, observation_period_end = FALSE, death = TRUE,
+      admin_date = "2025-12-31"
+    )))
+  ))
+  endpoint_changed <- advanced
+  endpoint_changed$outputs$out$outcomes$primary$filters <- custom_b
+  expect_false(identical(lineage(advanced), lineage(endpoint_changed)))
+
+  interval_semantics <- intervals
+  interval_semantics$outputs$out$source_filters <- list(
+    condition_occurrence = custom_a
+  )
+  interval_semantics$outputs$out$window <- list(start = -30L, end = 90L)
+  interval_semantics$outputs$out$interval_match <- "overlaps"
+  interval_semantics$outputs$out$event_select <- "nearest"
+  interval_semantics$outputs$out$select_n <- 2L
+  interval_semantics$outputs$out$select_by <- "episode_source_concept"
+  interval_semantics$outputs$out$anchor <- 5L
+  interval_window_changed <- interval_semantics
+  interval_window_changed$outputs$out$window$end <- 91L
+  interval_source_changed <- interval_semantics
+  interval_source_changed$outputs$out$source_filters$condition_occurrence <-
+    custom_b
+  expect_false(identical(
+    lineage(interval_semantics), lineage(interval_window_changed)
+  ))
+  expect_false(identical(
+    lineage(interval_semantics), lineage(interval_source_changed)
+  ))
+
+  event_component <- .dp_lineage(.dsomopDpSealPlanOutput(
+    frame, advanced, "out", dataset_identity = .dp_dataset_identity(),
+    component = "events"
+  ))
+  risk_component <- .dp_lineage(.dsomopDpSealPlanOutput(
+    frame, advanced, "out", dataset_identity = .dp_dataset_identity(),
+    component = "risk_sets"
+  ))
+  expect_false(identical(event_component, risk_component))
 })
 
 test_that("population lineage binds the global anchor and validates set operations", {
@@ -1563,6 +1800,89 @@ test_that("longitudinal DP primitives bound contributions and return fixed shape
   expect_length(categorical$counts, 3L)
   expect_identical(categorical$max_contributions, 2L)
 
+  record_count_spec <- list(
+    statistic = "bounded_record_count", reducer = "records",
+    max_contributions = 2L, population_id = "cohort-a"
+  )
+  record_count_analysis <- .dsomopDpAnalysis(
+    table, record_count_spec, policy
+  )
+  expect_identical(record_count_analysis$snapshot$count, 6)
+  expect_identical(record_count_analysis$sensitivity$l1, 2L)
+  record_count <- omopDpReleaseDS(table, record_count_spec)
+  expect_identical(record_count$statistic, "bounded_record_count")
+  expect_identical(record_count$reducer, "records")
+  expect_identical(record_count$max_contributions, 2L)
+  expect_identical(omopDpReleaseDS(table, record_count_spec), record_count)
+
+  categorical_records_spec <- list(
+    statistic = "categorical_histogram", variable = "category",
+    levels = c("c", "a", "b"), reducer = "records",
+    max_contributions = 2L, order_by = "event_date",
+    population_id = "cohort-a"
+  )
+  categorical_records_analysis <- .dsomopDpAnalysis(
+    table, categorical_records_spec, policy
+  )
+  expect_identical(categorical_records_analysis$snapshot$counts, c(2, 3, 1))
+  expect_identical(categorical_records_analysis$sensitivity$l1, 2L)
+  expect_identical(
+    .dsomopDpAnalysis(
+      .dp_test_table(reverse_rows = TRUE), categorical_records_spec, policy
+    )$snapshot,
+    categorical_records_analysis$snapshot
+  )
+  categorical_records <- omopDpReleaseDS(table, categorical_records_spec)
+  expect_identical(categorical_records$reducer, "records")
+  expect_identical(categorical_records$levels, c("a", "b", "c"))
+  expect_length(categorical_records$counts, 3L)
+
+  tied_raw <- data.frame(
+    person_id = c(1L, 1L, 1L, 2L),
+    category = c("c", "a", "b", "c"),
+    event_date = as.Date("2020-01-01"), stringsAsFactors = FALSE
+  )
+  tied <- .dp_seal(
+    .testPseudonymize(tied_raw), producer = "test/canonical-record-order"
+  )
+  tied_reverse <- .dp_seal(
+    .testPseudonymize(tied_raw[4:1, , drop = FALSE]),
+    producer = "test/canonical-record-order"
+  )
+  tied_spec <- categorical_records_spec
+  tied_spec$population_id <- "tied-order"
+  tied_forward <- .dsomopDpAnalysis(tied, tied_spec, policy)
+  tied_backward <- .dsomopDpAnalysis(tied_reverse, tied_spec, policy)
+  expect_identical(tied_forward$snapshot$counts, c(1, 1, 1))
+  expect_identical(tied_forward$snapshot, tied_backward$snapshot)
+
+  distinct_spec <- list(
+    statistic = "bounded_distinct", variable = "category",
+    levels = c("c", "a", "b"), reducer = "distinct",
+    max_contributions = 2L, population_id = "cohort-a"
+  )
+  distinct_analysis <- .dsomopDpAnalysis(table, distinct_spec, policy)
+  expect_identical(distinct_analysis$snapshot$count, 3)
+  expect_identical(distinct_analysis$sensitivity$l1, 2L)
+  expect_identical(distinct_analysis$semantic$levels, c("a", "b", "c"))
+  expect_identical(
+    .dsomopDpAnalysis(
+      .dp_test_table(reverse_rows = TRUE), distinct_spec, policy
+    )$snapshot,
+    distinct_analysis$snapshot
+  )
+  distinct <- omopDpReleaseDS(table, distinct_spec)
+  expect_identical(distinct$statistic, "bounded_distinct")
+  expect_identical(distinct$domain_size, 3L)
+  expect_identical(distinct$selection_order, "canonical_utf8_value_radix")
+  expect_identical(omopDpReleaseDS(table, distinct_spec), distinct)
+  distinct_cap_one <- distinct_spec
+  distinct_cap_one$max_contributions <- 1L
+  expect_identical(
+    .dsomopDpAnalysis(table, distinct_cap_one, policy)$snapshot$count,
+    2
+  )
+
   numeric <- omopDpReleaseDS(table, list(
     statistic = "numeric_histogram",
     variable = "measurement",
@@ -1660,6 +1980,26 @@ test_that("irrelevant ordering and unbounded public domains are rejected", {
     order_by = "event_date", population_id = "cohort-a"
   ), policy), "order_by is only valid")
   expect_error(.dsomopDpAnalysis(table, list(
+    statistic = "categorical_histogram", variable = "category",
+    levels = c("a", "b", "c"), reducer = "records",
+    max_contributions = 2L, population_id = "cohort-a"
+  ), policy), "require a public order_by")
+  expect_error(.dsomopDpAnalysis(table, list(
+    statistic = "bounded_record_count", reducer = "presence",
+    max_contributions = 2L, population_id = "cohort-a"
+  ), policy), "requires reducer='records'")
+  expect_error(.dsomopDpAnalysis(table, list(
+    statistic = "bounded_distinct", variable = "category",
+    reducer = "distinct", max_contributions = 2L,
+    population_id = "cohort-a"
+  ), policy), "field 'levels' is required")
+  expect_error(.dsomopDpAnalysis(table, list(
+    statistic = "bounded_distinct", variable = "category",
+    levels = c("a", "b", "c"), reducer = "distinct",
+    max_contributions = 2L, order_by = "event_date",
+    population_id = "cohort-a"
+  ), policy), "canonical value ordering")
+  expect_error(.dsomopDpAnalysis(table, list(
     statistic = "numeric_histogram", variable = "measurement",
     breaks = c(0, 5, 10), reducer = "mean",
     order_by = "event_date", population_id = "cohort-a"
@@ -1748,7 +2088,7 @@ test_that("terminal bounded allocation returns safely without ledger growth", {
   expect_identical(.dp_ledger_meta(state)[["next_index"]], "0")
 })
 
-test_that("sticky-unbounded mode is never advertised as formal DP", {
+test_that("sticky-unbounded mode reports its actual accounting contract", {
   anchor <- .dp_external_anchor()
   .dp_local_state(
     accounting_mode = "sticky_unbounded",
@@ -1761,12 +2101,64 @@ test_that("sticky-unbounded mode is never advertised as formal DP", {
   expect_true(status$ready)
   expect_identical(status$rollback_protection,
                    "external_durable_linearizable_cas")
-  expect_false(status$formal_dp)
   expect_false(status$bounded_accounting)
-  expect_false(status$bounded_composition)
   expect_true(status$never_budget_blocked)
+  expect_identical(status$privacy_guarantee, .DSOMOP_PRIVACY_GUARANTEE)
+  expect_false(any(c(
+    "formal_dp", "sampler_certified", "epsilon_semantics", "delta_semantics",
+    "bounded_composition"
+  ) %in% names(status)))
   expect_identical(allocation$epsilon, 0.1)
   expect_false(allocation$degraded)
+})
+
+test_that("legacy policy fingerprints and release payloads remain readable", {
+  state <- .dp_local_state()
+  table <- .dp_test_table()
+  spec <- list(statistic = "count", population_id = "cohort-a")
+  first <- omopDpReleaseDS(table, spec)
+  policy <- .dsomopDpPolicy()
+
+  expect_identical(
+    policy$policy_hash,
+    "91db783cdd773dfa6156e1d3128ce4155fe860f5baa2c045bee75b04b143b321"
+  )
+
+  path <- file.path(state, "privacy", "ledger.sqlite")
+  connection <- DBI::dbConnect(RSQLite::SQLite(), path)
+  on.exit(try(DBI::dbDisconnect(connection), silent = TRUE), add = TRUE)
+  row <- DBI::dbGetQuery(connection, paste(
+    "SELECT release_id, release_index, semantic_query_id, snapshot_id,",
+    "protected_fingerprint, mechanism, epsilon, delta, sensitivity,",
+    "privacy_epoch, noise_key_id, payload, previous_chain, row_mac",
+    "FROM dp_releases WHERE release_index = 0"
+  ))
+  legacy <- jsonlite::fromJSON(row$payload[[1L]], simplifyVector = TRUE)
+  legacy$formal_dp <- FALSE
+  legacy$sampler_certified <- FALSE
+  legacy$epsilon_semantics <- "nominal_noise_calibration_not_certified_dp"
+  legacy$delta_semantics <- "no_formal_delta_claim"
+  row$payload[[1L]] <- .dsomopDpCanonicalJson(legacy)
+  fields <- .dsomopDpReleaseFields(row)
+  row_mac <- .dsomopDpRowMac(policy, fields)
+  DBI::dbExecute(
+    connection,
+    "UPDATE dp_releases SET payload = ?, row_mac = ? WHERE release_index = 0",
+    params = list(row$payload[[1L]], row_mac)
+  )
+  DBI::dbExecute(
+    connection,
+    "UPDATE dp_meta SET value = ? WHERE key = 'chain_head'",
+    params = list(row_mac)
+  )
+  DBI::dbDisconnect(connection)
+  connection <- NULL
+
+  replay <- omopDpReleaseDS(table, spec)
+  expect_identical(replay, first)
+  expect_false(any(c(
+    "formal_dp", "sampler_certified", "epsilon_semantics", "delta_semantics"
+  ) %in% names(replay)))
 })
 
 test_that("ledger payload and accountant tampering fail closed", {

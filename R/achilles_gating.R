@@ -105,7 +105,6 @@
 #' @keywords internal
 .achillesCompanionPersonCounts <- function(handle, analysis_id) {
   analysis_id <- as.integer(analysis_id)
-  dialect <- handle$target_dialect
 
   companion_specs <- list(
     "220"  = list(table = "visit_occurrence",     kind = "month", date = "visit_start_date"),
@@ -130,23 +129,18 @@
   }
 
   qualified <- .qualifyTable(handle, spec$table, handle$cdm_schema)
-  txt_cast <- if (identical(dialect, "postgresql")) "VARCHAR" else "TEXT"
-  month_key <- if (identical(dialect, "postgresql")) {
-    paste0("EXTRACT(YEAR FROM ", spec$date, ") * 100 + ",
-           "EXTRACT(MONTH FROM ", spec$date, ")")
-  } else {
-    paste0("CAST(strftime('%Y%m', ", spec$date, ") AS INTEGER)")
-  }
+  month_key <- .omopMonthKeySql(handle, spec$date %||% "event_date")
+  text_cast <- function(expression) .omopTextCastSql(handle, expression, 64L)
 
   sql <- switch(spec$kind,
     "month" = paste0(
-      "SELECT CAST(", month_key, " AS ", txt_cast, ") AS stratum_1, ",
+      "SELECT ", text_cast(month_key), " AS stratum_1, ",
       "COUNT(DISTINCT person_id) AS n_persons FROM ", qualified,
       " WHERE ", spec$date, " IS NOT NULL",
       " GROUP BY ", month_key
     ),
     "concept" = paste0(
-      "SELECT CAST(", spec$col, " AS ", txt_cast, ") AS stratum_1, ",
+      "SELECT ", text_cast(spec$col), " AS stratum_1, ",
       "COUNT(DISTINCT person_id) AS n_persons FROM ", qualified,
       " WHERE ", spec$col, " IS NOT NULL",
       " GROUP BY ", spec$col
@@ -162,8 +156,8 @@
         "ELSE 'Within Range' END"
       )
       paste0(
-        "SELECT CAST(measurement_concept_id AS ", txt_cast, ") AS stratum_1, ",
-        "CAST(unit_concept_id AS ", txt_cast, ") AS stratum_2, ",
+        "SELECT ", text_cast("measurement_concept_id"), " AS stratum_1, ",
+        text_cast("unit_concept_id"), " AS stratum_2, ",
         bucket, " AS stratum_3, ",
         "COUNT(DISTINCT person_id) AS n_persons FROM ", qualified,
         " WHERE value_as_number IS NOT NULL",

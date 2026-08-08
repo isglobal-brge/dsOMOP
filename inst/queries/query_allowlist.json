@@ -48,13 +48,13 @@
   },
   {
     "id": "condition.duration_stats",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons",
       "n_records"
     ],
-    "pool_strategy": "weighted_mean"
+    "pool_strategy": "none"
   },
   {
     "id": "condition.prevalence_by_visit_type",
@@ -134,33 +134,33 @@
   },
   {
     "id": "drug.duration_stats",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons",
       "n_records"
     ],
-    "pool_strategy": "weighted_mean"
+    "pool_strategy": "none"
   },
   {
     "id": "drug.quantity_stats",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons",
       "n_records"
     ],
-    "pool_strategy": "weighted_mean"
+    "pool_strategy": "none"
   },
   {
     "id": "drug.days_supply_stats",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons",
       "n_records"
     ],
-    "pool_strategy": "weighted_mean"
+    "pool_strategy": "none"
   },
   {
     "id": "drug.concomitant_medications",
@@ -221,13 +221,13 @@
   },
   {
     "id": "measurement.value_stats",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons",
       "n_values"
     ],
-    "pool_strategy": "weighted_mean"
+    "pool_strategy": "none"
   },
   {
     "id": "measurement.prevalence_by_unit",
@@ -401,13 +401,13 @@
   },
   {
     "id": "visit.duration_stats",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons",
       "n_records"
     ],
-    "pool_strategy": "weighted_mean"
+    "pool_strategy": "none"
   },
   {
     "id": "death.summary",
@@ -438,12 +438,12 @@
   },
   {
     "id": "observation_period.length_stats",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons"
     ],
-    "pool_strategy": "weighted_mean"
+    "pool_strategy": "none"
   },
   {
     "id": "observation_period.coverage_by_year",
@@ -457,12 +457,12 @@
   },
   {
     "id": "observation_period.length_by_gender",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons"
     ],
-    "pool_strategy": "weighted_mean"
+    "pool_strategy": "none"
   },
   {
     "id": "device.prevalence_by_concept",
@@ -535,8 +535,8 @@
   },
   {
     "id": "condition_era.eras_per_person_stats",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons"
     ],
@@ -544,8 +544,8 @@
   },
   {
     "id": "condition_era.length_stats",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons",
       "n_records"
@@ -578,23 +578,23 @@
   },
   {
     "id": "drug_cost.cost_per_unit_stats",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons",
       "n_records"
     ],
-    "pool_strategy": "weighted_mean"
+    "pool_strategy": "none"
   },
   {
     "id": "drug_cost.out_of_pocket_stats",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons",
       "n_records"
     ],
-    "pool_strategy": "weighted_mean"
+    "pool_strategy": "none"
   },
   {
     "id": "drug_era.by_month",
@@ -608,23 +608,23 @@
   },
   {
     "id": "drug_era.exposure_count_stats",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons",
       "n_records"
     ],
-    "pool_strategy": "weighted_mean"
+    "pool_strategy": "none"
   },
   {
     "id": "drug_era.length_stats",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons",
       "n_records"
     ],
-    "pool_strategy": "weighted_mean"
+    "pool_strategy": "none"
   },
   {
     "id": "drug_era.prevalence_by_concept",
@@ -679,12 +679,12 @@
   },
   {
     "id": "observation_period.length_months_stats",
-    "class": "SAFE_AGGREGATE",
-    "poolable": true,
+    "class": "BLOCKED",
+    "poolable": false,
     "sensitive_fields": [
       "n_persons"
     ],
-    "pool_strategy": "weighted_mean"
+    "pool_strategy": "none"
   },
   {
     "id": "observation_period.long_period_count",

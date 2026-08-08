@@ -10,6 +10,10 @@
 .DSOMOP_DP_LOOKUP_PROTOCOL <- "dsomop-dp-private-release-lookup-v3"
 .DSOMOP_DP_MECHANISM <- "dsomop-sticky-discrete-laplace-prf-v1"
 .DSOMOP_DP_SAMPLER <- "hmac-inverse-cdf-52bit-v1"
+.DSOMOP_PRIVACY_GUARANTEE <- paste0(
+  "sticky_person_bounded_noise_with_authenticated_lineage_",
+  "and_nominal_accounting"
+)
 .DSOMOP_DP_LEDGER_SCHEMA <- 2L
 .DSOMOP_DP_GENESIS <- "GENESIS"
 .DSOMOP_DP_MIN_USEFUL_EPSILON <- 1e-6
@@ -880,7 +884,6 @@
     canonical_protocol = .DSOMOP_DP_CANONICAL_PROTOCOL,
     mechanism = .DSOMOP_DP_MECHANISM,
     sampler = .DSOMOP_DP_SAMPLER,
-    sampler_certified = FALSE,
     min_useful_epsilon = .DSOMOP_DP_MIN_USEFUL_EPSILON,
     adjacency = "add_remove_person",
     domain = domain,
@@ -929,7 +932,10 @@
     lookup_protocol = .DSOMOP_DP_LOOKUP_PROTOCOL,
     mechanism = policy$mechanism,
     sampler = policy$sampler,
-    sampler_certified = policy$sampler_certified,
+    # Keep the v1 fingerprint byte-for-byte compatible with durable ledgers
+    # created before public certification flags were removed. This literal is
+    # neither configurable nor exposed by the runtime API.
+    sampler_certified = FALSE,
     min_useful_epsilon = policy$min_useful_epsilon,
     adjacency = policy$adjacency,
     domain = policy$domain,
@@ -1940,8 +1946,7 @@
   )
   reserved <- c(
     "protocol", "mechanism", "adjacency", "epsilon", "delta",
-    "sensitivity", "accounting_mode", "allocator", "sticky", "formal_dp",
-    "sampler", "sampler_certified", "epsilon_semantics", "delta_semantics"
+    "sensitivity", "accounting_mode", "allocator", "sticky", "sampler"
   )
   if (!is.list(value) || is.null(names(value)) || anyNA(names(value)) ||
       anyDuplicated(names(value)) ||
@@ -1959,11 +1964,7 @@
     accounting_mode = policy$accounting_mode,
     allocator = policy$allocator,
     sticky = TRUE,
-    formal_dp = FALSE,
-    sampler = policy$sampler,
-    sampler_certified = FALSE,
-    epsilon_semantics = "nominal_noise_calibration_not_certified_dp",
-    delta_semantics = "no_formal_delta_claim"
+    sampler = policy$sampler
   ))
   payload <- .dsomopDpCanonicalJson(payload_value)
   payload_value <- jsonlite::fromJSON(payload, simplifyVector = TRUE)
@@ -2033,8 +2034,7 @@
 
 .dsomopDpDormantStatus <- function() {
   list(
-    enabled = NA, ready = FALSE, formal_dp = FALSE,
-    sticky_noise = FALSE, durable_ledger = FALSE,
+    enabled = NA, ready = FALSE, sticky_noise = FALSE, durable_ledger = FALSE,
     bootstrap = "pending_first_service_use",
     protocol = .DSOMOP_DP_PROTOCOL,
     mechanism = .DSOMOP_DP_MECHANISM
@@ -2044,22 +2044,21 @@
 .dsomopDpPublicStatus <- function(initialize = TRUE) {
   if (!.dsomopDpEnabled()) {
     return(list(
-      enabled = FALSE, ready = FALSE, formal_dp = FALSE,
-      sticky_noise = FALSE, durable_ledger = FALSE,
+      enabled = FALSE, ready = FALSE, sticky_noise = FALSE,
+      durable_ledger = FALSE,
       protocol = .DSOMOP_DP_PROTOCOL,
       mechanism = .DSOMOP_DP_MECHANISM
     ))
   }
   policy <- .dsomopDpPolicy()
   status <- list(
-    enabled = TRUE, ready = FALSE, formal_dp = FALSE,
-    sticky_noise = TRUE, durable_ledger = FALSE,
+    enabled = TRUE, ready = FALSE, sticky_noise = TRUE,
+    durable_ledger = FALSE,
     protocol = policy$protocol,
     canonical_protocol = policy$canonical_protocol,
     mechanism = policy$mechanism,
     sampler = policy$sampler,
-    sampler_certified = policy$sampler_certified,
-    privacy_guarantee = "sticky_noise_not_formally_certified_dp",
+    privacy_guarantee = .DSOMOP_PRIVACY_GUARANTEE,
     adjacency = policy$adjacency,
     domain = policy$domain,
     snapshot_id = policy$snapshot_id,
@@ -2105,19 +2104,9 @@
       noise_key_id = policy$noise_root$key_id
     ))), 1L, 40L)
   )
-  # The current HMAC inverse-CDF sampler has finite precision and the accepted
-  # preprocessing objects do not yet carry a proof-grade person-local
-  # provenance contract. The ledger and allocator are real security controls,
-  # but they must not be advertised as a formal (epsilon, delta)-DP proof.
-  status$formal_dp <- FALSE
-  status$sampler_certified <- FALSE
-  status$privacy_guarantee <- "sticky_noise_not_formally_certified_dp"
-  status$epsilon_semantics <- "nominal_noise_calibration_not_certified_dp"
-  status$delta_semantics <- "no_formal_delta_claim"
   status$bounded_accounting <- identical(
     policy$accounting_mode, "bounded_accounted"
   )
-  status$bounded_composition <- FALSE
   status$never_budget_blocked <- TRUE
   status$durable_ledger <- TRUE
   status$rollback_protection <- if (anchor$external) {

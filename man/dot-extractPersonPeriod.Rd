@@ -45,9 +45,15 @@ A list containing \code{personPeriods}, sparse
   complete episode-to-person \code{personRef}.
 }
 \description{
-Builds on the temporal-covariate contract, adding the complete Cartesian
-roster of cohort episodes and relative time bins. Covariate rows remain
-sparse: absence of a \code{(rowId, timeId, covariateId)} row means zero.
-Absolute index/event dates and source row identifiers are never returned.
+Builds on the temporal-covariate contract, adding the episode/time bins that
+intersect the unique OMOP observation period covering each index date.
+\code{startDay}/\code{endDay} retain the requested bin boundaries, while
+\code{observationStartDay}/\code{observationEndDay} delimit the observed part
+of that bin and \code{daysObserved} is inclusive. Covariate rows remain
+sparse: absence of a \code{(rowId, timeId, covariateId)} row means zero only
+when the corresponding \code{personPeriods} row exists. Absolute index/event
+dates and source row identifiers are never returned. This descriptive panel
+does not infer a risk set from cohort end or death; use survival or
+counting-process outputs for explicit time-at-risk analyses.
 }
 \keyword{internal}

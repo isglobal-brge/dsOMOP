@@ -1,3 +1,29 @@
+# Raw TOP/LIMIT must never select rows before the unified disclosure gate.
+test_that("QueryLibrary top-N is deferred until after disclosure banding", {
+  limit <- .qlStripRawTopN(paste(
+    "SELECT concept_id, COUNT(*) AS n_persons FROM x",
+    "GROUP BY concept_id ORDER BY n_persons DESC LIMIT @top_n"
+  ))
+  top <- .qlStripRawTopN(paste(
+    "SELECT TOP @top_n concept_id, COUNT(*) AS n_persons FROM x",
+    "GROUP BY concept_id ORDER BY n_persons DESC"
+  ))
+  expect_true(limit$post_gate_top_n)
+  expect_true(top$post_gate_top_n)
+  expect_false(grepl("LIMIT|TOP", limit$sql, ignore.case = TRUE))
+  expect_false(grepl("LIMIT|TOP", top$sql, ignore.case = TRUE))
+
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+  entry <- .omopAnalysisQueryEntries(handle)[[
+    "dsomop:condition.prevalence_by_concept"
+  ]]
+  expect_true(entry$meta$post_gate_top_n)
+  expect_false(grepl("LIMIT\\s+@top_n|TOP\\s+@top_n", entry$compute$sql,
+                     ignore.case = TRUE, perl = TRUE))
+})
+
 # ==============================================================================
 # Unit Tests: Query Template System (Templates, Classification, SDC)
 # ==============================================================================
@@ -131,7 +157,10 @@ test_that("DP redesign registry pins primitive coverage without authorizing SQL"
   )
   expected_families <- c(
     "distinct_person_count", "fixed_domain_person_histogram",
-    "bounded_binary_rate"
+    "bounded_record_count", "fixed_domain_record_histogram",
+    "bounded_distinct",
+    "bounded_binary_rate", "bounded_numeric_histogram",
+    "bounded_person_mean"
   )
 
   expect_identical(registry$schema_version, 1L)
@@ -149,8 +178,6 @@ test_that("DP redesign registry pins primitive coverage without authorizing SQL"
     "inst/queries/query_allowlist.json"
   )
   expect_match(registry$scope$mapping_meaning, "re-expressed")
-  expect_match(registry$scope$mapping_meaning, "does not certify")
-  expect_false(registry$scope$formal_dp_certified)
 
   family_ids <- vapply(registry$families, `[[`, character(1L), "id")
   expect_setequal(family_ids, expected_families)
@@ -626,16 +653,15 @@ test_that("allowlist classes are explicit and blocked entries stay blocked", {
     q <- queries[[qid]]
     if (is.null(q)) next
 
-    cl <- dsOMOP:::.ql_classify(q$sql, q$mode)
-
     expect_true(
       al$class %in% c("SAFE_AGGREGATE", "SAFE_ASSIGN", "BLOCKED"),
       info = paste("Allowlist query", qid, "has an invalid class")
     )
     if (identical(al$class, "BLOCKED")) {
-      expect_equal(cl$class, "BLOCKED",
+      effective <- dsOMOP:::.ql_effective_safety(q, al)
+      expect_equal(effective$class, "BLOCKED",
                    info = paste("Blocked query", qid,
-                                "must also fail the static classifier"))
+                                "must remain blocked by effective policy"))
     }
   }
 

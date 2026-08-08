@@ -167,11 +167,12 @@ remain available under the ordinary DataSHIELD gates; DP-eligible cohort
 selection should be expressed in the audited recipe/plan DSL.
 
 The release collapses or caps each person's longitudinal records before
-computing one of five primitives: distinct-person count, fixed-domain
-categorical histogram, fixed-break numeric/date histogram, bounded mean
-sufficient statistics, or a binary rate. Domains, breaks, bounds and
-contribution caps are explicit and are never learned from the released exact
-result. Recipe construction and assignment remain subject to their own
+computing one of seven primitives: distinct-person count, bounded record count,
+fixed-domain categorical histogram, fixed-break numeric/date histogram,
+bounded distinct-category cardinality, bounded mean sufficient statistics, or
+a binary rate. Domains, breaks, bounds and contribution caps are explicit and
+are never learned from the released exact result. Recipe construction and
+assignment remain subject to their own
 DataSHIELD disclosure gates; this endpoint does not turn an upstream rejected
 recipe into an admissible one.
 
@@ -186,11 +187,9 @@ shared ledger or its cumulative composition:
   allocation eventually becomes too small for useful finite-precision
   sampling, at which point a schema-valid, explicitly `degraded=TRUE`,
   data-independent payload is returned at epsilon zero. Replays of an existing
-  release remain exact and free. This is bounded accounting, not a formal DP
-  attestation.
+  release remain exact and free.
 - `sticky_unbounded` keeps a fixed per-release epsilon and likewise never
-  blocks a new query, but cumulative privacy loss is unbounded. It is therefore
-  always reported as `formal_dp=FALSE`, even with an external anchor.
+  blocks a new query, but cumulative privacy loss is unbounded.
 
 "Never budget blocked" applies only to the allocator. Invalid or disclosive
 inputs, unproved provenance, unsafe configuration, corrupted authenticated
@@ -200,31 +199,14 @@ unbounded mode also needs capacity monitoring because every new semantic
 release adds one durable ledger row; no finite local disk can support an
 infinite history.
 
-Both modes report `formal_dp=FALSE` and `sampler_certified=FALSE`. The built-in
-HMAC inverse-CDF sampler has a finite 52-bit uniform support. Eligible
-`omop.table` objects now carry authenticated, content-bound semantic lineage,
-but the recipe executor, contribution bounding and noise mechanism are not yet
-one proof-carrying atomic DP measurement; ordinary DataSHIELD methods also
-remain a separate access channel. The implementation therefore records epsilon
-as a nominal noise calibration and makes no formal delta claim. A future formal
-attestation requires a vetted finite-precision DP sampler and a single
-server-verifiable or database-backed executor that mediates the full
-person-local transformation and release. The durable ledger, sticky replay,
-authenticated lineage and independent roots are active security controls, but
-are not themselves a formal DP proof.
-
-A formal successor should not expose an assigned intermediate frame to other
-aggregate methods. It should accept the canonical plan and statistic in one
-mediated call, enforce add/remove-one-person adjacency across every joined OMOP
-table, apply public deterministic person/episode/event bounds, and invoke a
-vetted finite-precision measurement before any data-dependent response. The
-first noisy payload should then be committed atomically to this ledger and all
-retries should replay that payload; sticky replay need not depend on a custom
-deterministic sampler. Unlimited post-processing without later budget failures
-is possible over a fixed DP synopsis, but unlimited *new* informative queries
-cannot simultaneously retain a finite lifetime privacy loss and fixed utility.
-The existing summable/degraded mode makes that trade-off explicit rather than
-raising a budget-exhaustion error.
+Both modes expose one descriptive contract,
+`privacy_guarantee="sticky_person_bounded_noise_with_authenticated_lineage_and_nominal_accounting"`.
+It describes the implemented contribution bounding, sticky replay,
+authenticated lineage and accounting controls without exposing a separate
+certification mode. Epsilon remains the mechanism's nominal noise calibration.
+Unlimited *new* informative queries cannot simultaneously retain finite
+lifetime privacy loss and fixed utility; the summable mode therefore degrades
+to a data-independent result instead of raising a budget-exhaustion error.
 
 The private sticky identity is derived server-side from authenticated canonical
 semantic lineage, the typed statistic, immutable ETL snapshot, privacy epoch
@@ -463,6 +445,17 @@ These resources contain the following parameters:
   deployment uses a separate results daimon.
 - `warehouse` / `driver` (backend-specific, optional): Snowflake warehouse or
   an ODBC driver-name override.
+- PostgreSQL TLS options `sslmode`, `sslrootcert`, `sslcert` and `sslkey`.
+  When `sslmode` is omitted, remote hosts default to `verify-full`; loopback
+  defaults to `disable`. An explicit site policy may override that choice.
+- MySQL/MariaDB TLS options `ssl_required`, `ssl_ca`, `ssl_cert` and `ssl_key`.
+  Remote hosts require encrypted, certificate-verified transport by default;
+  loopback does not. Configure `ssl_ca` when the server CA is not already in
+  the connector trust store. dsOMOP disables RMariaDB option-file groups so a
+  host-level client configuration cannot silently weaken this policy.
+  Explicitly setting `ssl_required=false` for a remote host disables this
+  protection and should be reserved for a deployment-level exception. Required
+  TLS sessions must negotiate TLS 1.2 or TLS 1.3.
 
 Where the backend uses username/password authentication, credentials are not URL
 parameters: they are supplied separately as the resource identity and secret.
@@ -474,30 +467,42 @@ To configure a resource for dsOMOP, ensure that you have the above details accur
 ### Database support contract
 
 The factories above are connector and SQL-adapter contracts, not a claim of
-feature parity on every vendor/version. The current implementation uses DBI
-directly; it does **not** call OHDSI `DatabaseConnector` or `SqlRender` at
-runtime. Its local SQL translator covers the SQL patterns currently emitted by
-dsOMOP (principally `TOP` and `DATEADD`), not the complete SqlRender grammar.
+feature parity on every vendor/version. Database execution uses DBI directly;
+`DatabaseConnector` is not a runtime dependency. dsOMOP's own generated SQL
+uses its reviewed local subset (`TOP`, day `DATEADD`/`DATEDIFF`, and Oracle's
+bare-alias syntax). Separately,
+controller-owned canonical OHDSI SQL can use the official optional `SqlRender`
+render/translate path. That path fails closed when `SqlRender` or the requested
+dialect is unavailable and never falls back silently to the smaller local
+translator. MySQL/MariaDB are a reviewed dsOMOP extension rather than an OHDSI
+SqlRender target.
 
 | Backend | R driver | Metadata path | Cross-statement temporary object | Verification in this repository |
 |---|---|---|---|---|
-| PostgreSQL | RPostgres; RPostgreSQL fallback | `information_schema` | session temp table | SQL contract tests only |
+| PostgreSQL | RPostgres; RPostgreSQL fallback | privilege-filtered `pg_catalog` | `pg_temp` session table | live PostgreSQL 16 CI with separate schemas |
 | SQLite | RSQLite | SQLite catalogs, including attached schemas | session temp table | executable integration tests |
 | DuckDB | duckdb | DBI/`information_schema` | session temp table | optional executable tests when installed |
-| MySQL / MariaDB | RMariaDB | `information_schema` | session temporary table | SQL contract tests only |
+| MySQL / MariaDB | RMariaDB | `information_schema`, preserving case-sensitive physical names | `DROP TEMPORARY TABLE` lifecycle | live MySQL 8.4 and MariaDB 11.4 CI with separate databases |
 | SQL Server / Synapse / PDW | odbc | `information_schema` | unavailable for dsOMOP cross-statement recipes | SQL contract tests only |
 | Oracle | ROracle or odbc | Oracle catalogs | unavailable for dsOMOP cross-statement recipes | SQL contract tests only |
-| Redshift | RPostgres | `information_schema` | session temp table | SQL contract tests only |
+| Redshift | RPostgres | `information_schema` | unavailable cross-statement | SQL contract tests only |
 | BigQuery | bigrquery | dataset-qualified `INFORMATION_SCHEMA` | unavailable for dsOMOP cross-statement recipes | SQL contract tests only |
-| Snowflake | odbc | `information_schema` with Snowflake casing | session temp table | SQL contract tests only |
-| Spark / Databricks | odbc | `SHOW TABLES` / `DESCRIBE TABLE` | session temporary view | SQL contract tests only |
+| Snowflake | odbc | `information_schema` with Snowflake casing | unavailable cross-statement | SQL contract tests only |
+| Spark / Databricks | odbc | `SHOW TABLES` / `DESCRIBE TABLE` | unavailable cross-statement | SQL contract tests only |
 
-No network/vendor backend currently runs in live CI. A site must therefore test
-its exact driver, authentication, catalog/schema layout, permissions and server
-version before production use. Operations that need a temporary cohort or
+The vendor workflow exercises PostgreSQL, MySQL and MariaDB through their real
+drivers, with distinct CDM, vocabulary and results namespaces plus same-named
+decoy tables that detect routing bleed. It covers metadata discovery, filters,
+date translation, vocabulary lookup, cohort/results routing, one reviewed
+analysis-catalog query, repeated-event `intervals_long`, temporal covariates,
+observation-aware person-period panels, survival/competing-risk/recurrent-event/
+counting-process formats, bounded-chunk staging and session temporary tables. A
+site must still test its exact authentication, roles, permissions and server
+version before production use. Other network
+backends remain SQL-contract-only. Operations that need a temporary cohort or
 working relation fail explicitly on backends whose safe cross-statement
-materialisation is not implemented; simple metadata or single-statement
-queries may still work. The `database_support` element returned in the server
+materialisation is not implemented; simple metadata or single-statement queries
+may still work. The `database_support` element returned in the server
 capabilities reports this adapter profile.
 
 ### OHDSI alignment and interoperability
@@ -512,11 +517,22 @@ OHDSI assets, but "aligned" does not mean that every HADES package is embedded:
   `CommonDataModel` is installed, its published CSV metadata can supply another
   explicitly supported version. An unknown version fails closed. Non-standard
   tables/columns are invisible unless the controller lists them in
-  `dsomop.allowed_cdm_extensions`.
+  `dsomop.allowed_cdm_extensions`. That list grants visibility, not identifier
+  semantics: unknown extension `*_id`, `*_key`, and `*_identifier` fields remain
+  blocked (also when sensitive-column access is enabled); person keys are
+  pseudonymized and explicitly listed `*_concept_id` fields retain their OMOP
+  concept semantics.
 - The package can consume standard cohort/result tables and selected Achilles
   results. Some catalog analyses are local ports with OHDSI-inspired IDs or
   output shapes; they are not calls into Achilles, CohortMethod,
   FeatureExtraction or other HADES packages.
+- Two-arm CohortMethod ports use the pinned upstream default
+  `keep first, truncate to second`: the first treatment in time wins, its era is
+  truncated before the second starts when they overlap, and same-day first
+  treatments are excluded. Both effective arms are re-gated before modelling;
+  only the protected `cohort_overlap` diagnostic intentionally retains the raw
+  arms. This contract is audited against OHDSI CohortMethod commit
+  [`dd1a2a856ef608547a99d3db2d60d5c872f80dc6`](https://github.com/OHDSI/CohortMethod/blob/dd1a2a856ef608547a99d3db2d60d5c872f80dc6/inst/sql/CreateOrCountCohorts.sql#L62-L106).
 - Circe/ATLAS JSON interoperability is a documented subset implemented by
   dsOMOPClient. `CirceR` and `CohortGenerator` are not runtime dependencies, and
   the package does not promise arbitrary Circe expression execution. Age
@@ -524,6 +540,20 @@ OHDSI assets, but "aligned" does not mean that every HADES package is embedded:
   (`YEAR(event_date) - person.year_of_birth`), rather than silently inventing a
   birthday from nullable OMOP month/day fields; see the audited Circe-be source
   at [commit `498893689a9cf4f09c2a43cc893bb01116db7184`](https://github.com/OHDSI/Circe-be/blob/498893689a9cf4f09c2a43cc893bb01116db7184/src/main/java/org/ohdsi/circe/cohortdefinition/builders/ConditionOccurrenceSqlBuilder.java#L173-L176).
+  Index-event cohorts likewise use the unique observation period covering the
+  event as their default end. The supported Circe `DateOffset` subset can use
+  `StartDate` or `EndDate` plus an integer day offset, always capped at the
+  observation-period end; `EndDate + 0` requests the source-event end. This
+  follows the audited [Circe cohort-end builder](https://github.com/OHDSI/Circe-be/blob/498893689a9cf4f09c2a43cc893bb01116db7184/src/main/java/org/ohdsi/circe/cohortdefinition/CohortExpressionQueryBuilder.java#L332-L338).
+- Longitudinal analyses use OMOP's native repeated-row model: every source row
+  remains a distinct fact and can attach to each compatible recurrent cohort
+  episode. Public analytical time is deliberately `calendar_day`; same-day
+  facts remain distinct and are ordered internally by their OMOP primary key,
+  while source row identifiers and cross-episode linkage tokens stay private.
+  A named person-level OHDSI estimand is the explicit exception: it selects one
+  deterministic index episode per person and pre-aggregates recurrent outcomes,
+  so repeated outcome facts can increase event counts without multiplying that
+  person's time at risk.
 - Sparse and temporal-covariate outputs use a FeatureExtraction-style shape,
   including reference tables, but are not FeatureExtraction `CovariateData`
   objects and do not implement its complete settings/covariate universe.
@@ -550,11 +580,12 @@ OHDSI assets, but "aligned" does not mean that every HADES package is embedded:
 ### Staged outputs
 
 `output_mode = "staged"` stores outputs in a private server-local directory and
-assigns descriptors instead of final in-session data frames. Arrow produces
-Parquet; without Arrow the fallback is CSV. Only long, untranslated event
-outputs stream through bounded chunks today. Wide, feature, baseline, survival
-and composite outputs are materialised in R before being written, so staged
-mode does not make every format constant-memory.
+assigns descriptors instead of final in-session data frames. Arrow produces one
+Parquet file from bounded DBI fetches and row groups; without Arrow the fallback
+is CSV. SQL-backed long-event, interval, survival,
+temporal-covariate and person-period components stream without materialising
+the complete result in R. Wide/features, baseline, person-level and other
+in-memory outputs are still materialised before staging.
 
 The path is readable only by the server OS identity (directory `0700`, files
 `0600`). A descriptor is neither a client download URL nor a general export

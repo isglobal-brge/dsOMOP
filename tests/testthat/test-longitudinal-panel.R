@@ -149,6 +149,20 @@ test_that("person_period returns a complete regular overlapping-episode roster",
                rep(2L, 6L))
   expect_equal(panel$timeRef$startDay, c(0L, 5L))
   expect_equal(panel$timeRef$endDay, c(4L, 9L))
+  expect_equal(
+    names(panel$personPeriods),
+    c(
+      "rowId", "timeId", "startDay", "endDay",
+      "observationStartDay", "observationEndDay", "daysObserved"
+    )
+  )
+  expect_equal(
+    panel$personPeriods$observationStartDay, panel$personPeriods$startDay
+  )
+  expect_equal(
+    panel$personPeriods$observationEndDay, panel$personPeriods$endDay
+  )
+  expect_true(all(panel$personPeriods$daysObserved == 5L))
   expect_setequal(panel$covariateRef$conceptId, c(900001L, 900002L))
   expect_false(any(panel$temporalCovariates$covariateId %in%
                      c(900002001, 900002002)))

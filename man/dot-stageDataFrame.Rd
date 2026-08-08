@@ -37,7 +37,8 @@ every person-bearing staged output.}
 Staged dataset descriptor (Parquet, or CSV when Arrow is unavailable)
 }
 \description{
-For output types where SQL cannot be streamed directly (e.g. baseline,
-survival), this writes an already-materialized data.frame to Parquet.
+For output types where SQL cannot be streamed directly (for example
+baseline, person-level, wide, or feature outputs), this writes an
+already-materialized data.frame to Parquet.
 }
 \keyword{internal}

@@ -149,6 +149,44 @@ test_that("(c) the released log_estimate equals a hand-fit Cox/Poisson", {
   })
 })
 
+test_that("(c) person-level effect frames use one coherent longitudinal episode", {
+  h <- cmeff_handle(n_persons = 10)
+  on.exit(cleanup_handle(h))
+
+  episodes <- do.call(rbind, lapply(1:10, function(pid) {
+    data.frame(
+      subject_id = c(pid, pid),
+      cohort_start_date = c("2020-01-01", "2021-01-01"),
+      cohort_end_date = c("2020-01-11", "2021-12-31"),
+      stringsAsFactors = FALSE
+    )
+  }))
+  DBI::dbWriteTable(h$conn, "cme_longitudinal", episodes, temporary = TRUE)
+  register_test_temp(h, "cme_longitudinal")
+  DBI::dbExecute(
+    h$conn,
+    "DELETE FROM condition_occurrence WHERE condition_concept_id = 4000002"
+  )
+  for (pid in 1:10) {
+    DBI::dbExecute(h$conn, sprintf(paste0(
+      "INSERT INTO condition_occurrence (condition_occurrence_id, person_id, ",
+      "condition_concept_id, condition_start_date, condition_end_date, ",
+      "condition_type_concept_id) VALUES (%d, %d, 4000002, ",
+      "'2021-02-01', '2021-02-01', 44818518)"), 91000L + pid, pid))
+  }
+
+  out_src <- .omopOutcomeSource(h, "4000002", "0")
+  tar <- list(start = 0L, end = 0L,
+              anchor_start = "start", anchor_end = "end")
+  frame <- .omopCmEffectArmData(
+    h, "cme_longitudinal", 1L, out_src, tar)
+
+  expect_equal(nrow(frame$data), 10L)
+  expect_equal(frame$persons, 10L)
+  expect_equal(frame$outcomes, 0)
+  expect_true(all(frame$data$tar_days == 10))
+})
+
 # ---------------------------------------------------------------------------- #
 # (d) Disclosure: fail-closed on small arm; un-scoped/single-arm; estimate NA'd.
 # ---------------------------------------------------------------------------- #

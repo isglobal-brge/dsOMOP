@@ -479,6 +479,27 @@ test_that("resolveResultsSchema auto-detects a dedicated results schema", {
   })
 })
 
+test_that("allowlisted results namespaces use each DBMS grammar", {
+  for (case in list(
+    list(dbms = "mariadb", dialect = "mysql", schema = "results-prod"),
+    list(dbms = "bigquery", dialect = "bigquery",
+         schema = "project-id.results_dataset")
+  )) {
+    handle <- .rs_handle(cdm_schema = "cdm", dialect = case$dialect)
+    handle$dbms <- case$dbms
+    testthat::local_mocked_bindings(
+      .listTablesRaw = function(handle, schema) {
+        if (identical(schema, case$schema)) "achilles_results" else character(0)
+      },
+      .package = "dsOMOP"
+    )
+    withr::with_options(
+      list(dsomop.allowed_results_schemas = case$schema),
+      expect_identical(.resolveResultsSchema(handle), case$schema)
+    )
+  }
+})
+
 test_that("resolveResultsSchema finds achilles co-located in the cdm schema", {
   h <- .rs_handle()
   testthat::local_mocked_bindings(

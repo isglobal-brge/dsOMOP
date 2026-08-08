@@ -154,6 +154,49 @@
   list(row = crow, is_numeric_measure = is_numeric_measure)
 }
 
+#' Require a reviewed population unit before profiling a table
+#'
+#' Clinical and results tables may only be profiled when they expose the reviewed
+#' direct `person_id` route used by the disclosure gates below. Do not infer
+#' event-domain joins here: an unreviewed join can change the population unit and
+#' a missing join would fall back to unsafe record counts. A small explicit set
+#' of public OMOP Vocabulary/source-metadata tables remains record-based.
+#'
+#' @keywords internal
+.profilerHasReviewedPersonScope <- function(bp, table, cohort_table = NULL) {
+  columns <- bp$columns[[table]]$column_name %||% character(0)
+  has_person <- "person_id" %in% columns
+  if (has_person) return(TRUE)
+
+  if (!is.null(cohort_table)) {
+    stop("Profiling cohort scope cannot be applied to table '", table,
+         "': no reviewed path to person_id is available.", call. = FALSE)
+  }
+
+  table_row <- bp$tables[bp$tables$table_name == table, , drop = FALSE]
+  category <- if (nrow(table_row) == 1L) {
+    tolower(table_row$schema_category[[1L]])
+  } else {
+    ""
+  }
+  if (length(category) != 1L || is.na(category)) category <- ""
+  public_vocabulary <- c(
+    "concept", "concept_ancestor", "concept_class", "concept_relationship",
+    "concept_synonym", "domain", "drug_strength", "relationship",
+    "vocabulary"
+  )
+  public_metadata <- c("cdm_source", "metadata")
+  is_public <- (category == "vocabulary" && table %in% public_vocabulary) ||
+    (category == "cdm" && table %in% public_metadata)
+  if (!is_public) {
+    stop("Profiling table '", table,
+         "' requires a reviewed path to person_id; none is available.",
+         call. = FALSE)
+  }
+
+  FALSE
+}
+
 #' Fail-closed distinct-person gate for a scoped numeric-distribution query
 #'
 #' The numeric-distribution profilers (range / quantiles / histogram / safe
@@ -262,7 +305,7 @@
   tbl_cols <- col_df$column_name
   result <- list()
   settings <- .omopDisclosureSettings()
-  has_person <- "person_id" %in% tbl_cols
+  has_person <- .profilerHasReviewedPersonScope(bp, table)
 
   # Every statistic from a person-bearing table describes a population, even
   # when the requested output is only a row count or a date range. Gate that
@@ -344,11 +387,13 @@
   if (nrow(tbl_row) == 0) stop("Table '", table, "' not found.", call. = FALSE)
 
   col_df <- bp$columns[[table]]
+  has_person <- .profilerHasReviewedPersonScope(
+    bp, table, cohort_table = cohort_table
+  )
   column_info <- .profilerColumnInfo(bp, table, column)
 
   qualified <- tbl_row$qualified_name[1]
   settings <- .omopDisclosureSettings()
-  has_person <- "person_id" %in% col_df$column_name
 
   # FROM + optional cohort scope (INNER JOIN on subject_id, as in prevalence).
   # Everything is computed over this scoped relation so the distinct-person gate
@@ -569,6 +614,9 @@
 
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
+  has_person <- .profilerHasReviewedPersonScope(
+    bp, table, cohort_table = cohort_table
+  )
 
   if (!is.null(columns)) {
     columns <- tolower(columns)
@@ -586,7 +634,6 @@
 
   qualified <- tbl_row$qualified_name[1]
   settings <- .omopDisclosureSettings()
-  has_person <- "person_id" %in% col_df$column_name
 
   # FROM + optional cohort scope (INNER JOIN on subject_id, as in prevalence).
   from_clause <- paste0(qualified, " AS t")
@@ -684,6 +731,9 @@
   if (nrow(tbl_row) == 0) stop("Table '", table, "' not found.", call. = FALSE)
 
   col_df <- bp$columns[[table]]
+  has_person <- .profilerHasReviewedPersonScope(
+    bp, table, cohort_table = cohort_table
+  )
   column_info <- .profilerColumnInfo(bp, table, column)
   if (isTRUE(column_info$is_numeric_measure)) {
     stop("Column '", column, "' is continuous; use a protected numeric range, ",
@@ -692,7 +742,6 @@
   }
 
   qualified <- tbl_row$qualified_name[1]
-  has_person <- "person_id" %in% col_df$column_name
 
   # FROM + optional cohort scope (INNER JOIN on subject_id, as in prevalence).
   from_clause <- paste0(qualified, " AS t")
@@ -747,17 +796,18 @@
   # dropped. The record count (n) is retained as a separate column.
   effective_limit <- min(as.integer(top_n), 500L)
   sql <- paste0(
-    "SELECT TOP ", effective_limit,
-    " CAST(t.", column, " AS VARCHAR) AS value, ",
+    "SELECT CAST(t.", column, " AS VARCHAR) AS value, ",
     "COUNT(*) AS n",
     if (has_person) ", COUNT(DISTINCT t.person_id) AS n_persons " else " ",
     "FROM ", from_clause, " ",
     "WHERE t.", column, " IS NOT NULL", concept_clause, " ",
-    "GROUP BY t.", column, " ",
-    "ORDER BY COUNT(*) DESC"
+    "GROUP BY t.", column
   )
 
-  # Translate TOP to LIMIT for sqlite/postgresql
+  # The level gate above bounds this aggregate, so fetch all admissible groups.
+  # Selecting TOP/LIMIT on the exact COUNT(*) would expose within-band rank when
+  # callers vary top_n. Suppress first, then rank only on the released count band
+  # with the public categorical value as deterministic tie-breaker.
   translated <- .renderSql(handle, sql)
   result <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, translated))
   names(result) <- tolower(names(result))
@@ -770,6 +820,9 @@
     result <- .suppressSmallCounts(result,
                                    if (has_person) "n_persons" else "n")
   }
+  result <- .omopBandedTopN(
+    result, support_cols = "n", top_n = effective_limit, key_cols = "value"
+  )
 
   # Band the surviving record/person counts at the return boundary so the exact
   # per-value count (a differencing primitive) is never released. Suppression
@@ -1021,6 +1074,7 @@
   qualified <- tbl_row$qualified_name[1]
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
+  has_person <- .profilerHasReviewedPersonScope(bp, table)
 
   .profilerColumnInfo(bp, table, column, require_numeric = TRUE)
 
@@ -1034,7 +1088,7 @@
   }
   n_bins <- n_bins_integer
 
-  if (!"person_id" %in% tbl_cols) {
+  if (!has_person) {
     stop("Safe cutpoints require a person-bearing OMOP table.", call. = FALSE)
   }
 
@@ -1181,11 +1235,13 @@
 #'
 #' Shared core used by both single-table and GLOBAL prevalence. Returns the raw,
 #' un-decorated aggregate (concept_id, n_persons?, n_records) for one table with
-#' the page window applied, plus a \code{source_table} tag. Performs NO concept
-#' decoration and NO small-cell suppression - the caller owns those so a global
-#' run decorates/suppresses ONCE over the merged set. The per-table population
-#' gate (\code{.assertMinPersons} on the table's distinct persons) still runs
-#' here so a too-small table never contributes rows.
+#' the page window applied, plus a \code{source_table} tag. It performs no concept
+#' decoration or final count banding; the caller owns those so a global run does
+#' them once over the merged set. Small cells are excluded in SQL
+#' before pagination, and pages are ranked on the release band with concept_id as
+#' the sole tie-breaker. The per-table population gate (\code{.assertMinPersons}
+#' on the table's distinct persons) still runs here so a too-small table never
+#' contributes rows.
 #'
 #' @keywords internal
 .prevalenceOneTable <- function(handle, bp, table, concept_col, metric,
@@ -1197,14 +1253,15 @@
   qualified <- tbl_row$qualified_name[1]
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
+  has_person <- .profilerHasReviewedPersonScope(
+    bp, table, cohort_table = cohort_table
+  )
 
   if (is.null(concept_col)) {
     concept_col <- .getDomainConceptColumn(bp, table)
     if (is.null(concept_col)) return(NULL)
   }
   if (!concept_col %in% tbl_cols) return(NULL)
-
-  has_person <- "person_id" %in% tbl_cols
 
   # FROM / cohort join / window (same shape as the legacy single-table path).
   from_clause <- paste0(qualified, " AS t")
@@ -1248,17 +1305,36 @@
     .assertMinPersons(n_persons = n_total_persons)
   }
 
+  settings <- .omopDisclosureSettings()
   order_col <- if (metric == "persons") "n_persons" else "n_records"
+  person_count_expr <- "COUNT(DISTINCT t.person_id)"
+  record_count_expr <- "COUNT(*)"
   if (has_person) {
     select_expr <- paste0(
       "SELECT t.", concept_col, " AS concept_id, ",
-      "COUNT(DISTINCT t.person_id) AS n_persons, ",
-      "COUNT(*) AS n_records")
+      person_count_expr, " AS n_persons, ",
+      record_count_expr, " AS n_records")
   } else {
     order_col <- "n_records"
     select_expr <- paste0(
       "SELECT t.", concept_col, " AS concept_id, ",
-      "COUNT(*) AS n_records")
+      record_count_expr, " AS n_records")
+  }
+  support_expr <- if (order_col == "n_persons") {
+    person_count_expr
+  } else {
+    record_count_expr
+  }
+  banded_support_expr <- paste0(
+    "FLOOR((", support_expr, ") / ", as.integer(settings$nfilter_band), ".0)"
+  )
+  having_sql <- if (has_person) {
+    paste0(" HAVING ", person_count_expr, " >= ",
+           as.integer(settings$nfilter_tab), " AND ", record_count_expr,
+           " >= ", as.integer(settings$nfilter_tab))
+  } else {
+    paste0(" HAVING ", record_count_expr, " >= ",
+           as.integer(settings$nfilter_tab))
   }
 
   sql <- paste0(
@@ -1266,10 +1342,13 @@
     " FROM ", from_clause,
     where_sql,
     " GROUP BY t.", concept_col,
-    " ORDER BY ", order_col, " DESC")
+    having_sql,
+    " ORDER BY ", banded_support_expr, " DESC, ",
+    "CASE WHEN t.", concept_col, " IS NULL THEN 1 ELSE 0 END ASC, ",
+    "t.", concept_col, " ASC")
 
-  # Pagination is applied AFTER rendering (see .paginationClause): bypass TOP so
-  # offset is expressible. The window is bounded by effective_top_n upstream.
+  # Pagination is applied AFTER suppression and band-based ordering. Therefore
+  # top_n/offset cannot reveal the exact order of concepts within one count band.
   translated <- paste0(.renderSql(handle, sql),
                        .paginationClause(handle$target_dialect, limit, offset))
   result <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, translated))
@@ -1348,7 +1427,11 @@
                         source_table = character(0), stringsAsFactors = FALSE))
     }
     ord_col <- if (metric == "persons") "n_persons" else "n_records"
-    result <- result[order(-result[[ord_col]]), , drop = FALSE]
+    result <- .omopBandedTopN(
+      result, support_cols = ord_col,
+      top_n = min(nrow(result), offset + effective_top_n),
+      key_cols = c("source_table", "concept_id")
+    )
     take <- seq_len(min(nrow(result), effective_top_n)) + offset
     take <- take[take <= nrow(result)]
     result <- result[take, , drop = FALSE]
@@ -1472,13 +1555,16 @@
   qualified <- tbl_row$qualified_name[1]
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
+  has_person <- .profilerHasReviewedPersonScope(
+    bp, table, cohort_table = cohort_table
+  )
 
   .profilerColumnInfo(bp, table, value_col, require_numeric = TRUE)
 
   from_clause <- paste0(qualified, " AS t")
   where_parts <- paste0("t.", value_col, " IS NOT NULL")
 
-  if (!is.null(cohort_table) && "person_id" %in% tbl_cols) {
+  if (!is.null(cohort_table) && has_person) {
     cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
     from_clause <- paste0(from_clause,
                           " INNER JOIN (SELECT DISTINCT subject_id FROM ",
@@ -1628,6 +1714,9 @@
   qualified <- tbl_row$qualified_name[1]
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
+  has_person <- .profilerHasReviewedPersonScope(
+    bp, table, cohort_table = cohort_table
+  )
 
   .profilerColumnInfo(bp, table, value_col, require_numeric = TRUE)
 
@@ -1635,7 +1724,7 @@
   from_clause <- paste0(qualified, " AS t")
   where_parts <- paste0("t.", value_col, " IS NOT NULL")
 
-  if (!is.null(cohort_table) && "person_id" %in% tbl_cols) {
+  if (!is.null(cohort_table) && has_person) {
     cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
     from_clause <- paste0(from_clause,
                           " INNER JOIN (SELECT DISTINCT subject_id FROM ",
@@ -1846,6 +1935,9 @@
   qualified <- tbl_row$qualified_name[1]
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
+  has_person <- .profilerHasReviewedPersonScope(
+    bp, table, cohort_table = cohort_table
+  )
 
   .profilerColumnInfo(bp, table, value_col, require_numeric = TRUE)
 
@@ -1863,7 +1955,7 @@
   from_clause <- paste0(qualified, " AS t")
   where_parts <- paste0("t.", value_col, " IS NOT NULL")
 
-  if (!is.null(cohort_table) && "person_id" %in% tbl_cols) {
+  if (!is.null(cohort_table) && has_person) {
     cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
     from_clause <- paste0(from_clause,
                           " INNER JOIN (SELECT DISTINCT subject_id FROM ",
@@ -1987,6 +2079,9 @@
   qualified <- tbl_row$qualified_name[1]
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
+  has_person <- .profilerHasReviewedPersonScope(
+    bp, table, cohort_table = cohort_table
+  )
 
   # Auto-detect date column if not provided
   if (is.null(date_col)) {
@@ -2028,6 +2123,15 @@
       "quarter" = paste0("CONCAT(YEAR(t.", date_col, "), '-Q', QUARTER(t.", date_col, "))"),
       "month"   = paste0("DATE_FORMAT(t.", date_col, ", '%Y-%m')")
     )
+  } else if (handle$target_dialect == "sql server") {
+    date_expr <- switch(granularity,
+      "year" = paste0("CAST(YEAR(t.", date_col, ") AS VARCHAR(4))"),
+      "quarter" = paste0("CONCAT(YEAR(t.", date_col,
+                         "), '-Q', DATEPART(quarter, t.", date_col, "))"),
+      "month" = paste0("CONCAT(YEAR(t.", date_col,
+                       "), '-', RIGHT('0' + CAST(MONTH(t.", date_col,
+                       ") AS VARCHAR(2)), 2))")
+    )
   } else {
     # PostgreSQL and other dialects: use EXTRACT
     date_expr <- switch(granularity,
@@ -2043,7 +2147,7 @@
   from_clause <- paste0(qualified, " AS t")
   where_parts <- paste0("t.", date_col, " IS NOT NULL")
 
-  if (!is.null(cohort_table) && "person_id" %in% tbl_cols) {
+  if (!is.null(cohort_table) && has_person) {
     cohort_table <- .validateIdentifier(cohort_table, "cohort_table")
     from_clause <- paste0(from_clause,
                           " INNER JOIN (SELECT DISTINCT subject_id FROM ",
@@ -2085,7 +2189,6 @@
 
   where_sql <- paste0(" WHERE ", paste(where_parts, collapse = " AND "))
 
-  has_person <- "person_id" %in% tbl_cols
   sql <- paste0(
     "SELECT ", date_expr, " AS period, COUNT(*) AS n_records",
     if (has_person) ", COUNT(DISTINCT t.person_id) AS n_persons" else "",
@@ -2149,6 +2252,7 @@
   qualified <- tbl_row$qualified_name[1]
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
+  has_person <- .profilerHasReviewedPersonScope(bp, table)
 
   # Resolve the concept column through the single authoritative chokepoint:
   # auto-detect the domain concept when concept_col is NULL, otherwise validate
@@ -2163,7 +2267,6 @@
   where_concept <- paste0(concept_col, " = ", concept_id)
 
   # --- 1. Summary statistics ---
-  has_person <- "person_id" %in% tbl_cols
 
   if (has_person) {
     summary_sql <- paste0(
@@ -2283,8 +2386,7 @@
       "FROM ", qualified,
       " WHERE ", where_concept,
       " AND value_as_concept_id IS NOT NULL ",
-      "GROUP BY value_as_concept_id ",
-      "ORDER BY COUNT(*) DESC"
+      "GROUP BY value_as_concept_id"
     )
     cat_result <- tryCatch(.executeQuery(handle, cat_sql),
                            error = function(e) NULL)
@@ -2310,6 +2412,10 @@
         # partition persons and a hidden level is not recoverable from a total.
         cat_result <- .suppressSmallCounts(
           cat_result, if (has_person_col) "n_persons" else "n")
+        cat_result <- .omopBandedTopN(
+          cat_result, support_cols = "n", top_n = nrow(cat_result),
+          key_cols = "value_as_concept_id"
+        )
         if (nrow(cat_result) > 0) {
           band_width <- settings$nfilter_band
           cat_result$n <- vapply(cat_result$n, .bandCount, numeric(1),
@@ -2725,6 +2831,9 @@
   qualified <- tbl_row$qualified_name[1]
   col_df <- bp$columns[[table]]
   tbl_cols <- col_df$column_name
+  has_person <- .profilerHasReviewedPersonScope(
+    bp, table, cohort_table = cohort_table
+  )
 
   # Every axis / stratifier is both WHERE-filtered and emitted as raw GROUP BY
   # level VALUES. Route all three through the same central release-policy gate;
@@ -2739,14 +2848,14 @@
       }
     }
   }
-  if (count_mode == "persons" && !"person_id" %in% tbl_cols) {
+  if (count_mode == "persons" && !has_person) {
     stop("Table '", table, "' has no person_id; use count_mode='records'.",
          call. = FALSE)
   }
 
   # FROM / cohort scoping (cohort INNER JOIN on subject_id, as in prevalence).
   from_clause <- paste0(qualified, " AS t")
-  if (!is.null(cohort_table) && "person_id" %in% tbl_cols) {
+  if (!is.null(cohort_table) && has_person) {
     from_clause <- paste0(from_clause,
                           " INNER JOIN (SELECT DISTINCT subject_id FROM ",
                           cohort_table, ") AS coh",
@@ -2773,13 +2882,12 @@
   } else {
     "COUNT(*)"
   }
-  person_cell_support <- count_mode == "records" &&
-    "person_id" %in% tbl_cols
+  person_cell_support <- count_mode == "records" && has_person
 
   # Gate A (persons): distinct persons over the scoped population. For records
   # mode on a person-bearing table we still gate on distinct persons; on a
   # person-less table we cannot, so the build itself must remain safe.
-  if ("person_id" %in% tbl_cols) {
+  if (has_person) {
     n_sql <- paste0("SELECT COUNT(DISTINCT t.person_id) AS n FROM ",
                     from_clause, where_sql)
     n_persons <- .executeQuery(handle, .renderSql(handle, n_sql))$n[1]
@@ -2794,7 +2902,7 @@
 
   # --- Stratified (section 7): independent protected 2-way per stratum ---
   max_strata <- 6L
-  lv_sql <- if ("person_id" %in% tbl_cols) {
+  lv_sql <- if (has_person) {
     paste0("SELECT t.", stratify_by, " AS s FROM ", from_clause, where_sql,
            " GROUP BY t.", stratify_by,
            " HAVING COUNT(DISTINCT t.person_id) >= ",

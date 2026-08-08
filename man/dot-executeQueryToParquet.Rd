@@ -2,7 +2,7 @@
 % Please edit documentation in R/extraction.R
 \name{.executeQueryToParquet}
 \alias{.executeQueryToParquet}
-\title{Stream a SQL query result to a Parquet file in chunks}
+\title{Stream a SQL query result to one Parquet file in bounded chunks}
 \usage{
 .executeQueryToParquet(
   conn,
@@ -34,12 +34,9 @@ Named list with file path, format, row count, column names, and
 Uses DBI::dbSendQuery + dbFetch(n=chunk_size) to avoid loading the full
 result set into R memory. Peak R memory is bounded by one transformed chunk
 plus DBI/Arrow writer buffers and therefore still depends on row width.
-Falls back to CSV if Arrow is not installed.
-}
-\details{
-Strategy: each chunk is written as a separate Parquet file in a temporary
-directory. After all chunks are written, arrow::open_dataset() scans them
-lazily and arrow::write_dataset() consolidates into a single Parquet file
-without loading the full dataset into R memory.
+Falls back to a CSV file if Arrow is not installed. Arrow's low-level
+Parquet writer appends each fetched batch as a row group in one pending file,
+which is atomically renamed after the footer is closed. This avoids a second
+scan and never creates a duplicate of the complete result.
 }
 \keyword{internal}

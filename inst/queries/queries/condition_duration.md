@@ -37,8 +37,8 @@ SELECT co.condition_concept_id,
        c.concept_name,
        COUNT(DISTINCT co.person_id) AS n_persons,
        COUNT(*) AS n_records,
-       AVG(CAST(co.condition_end_date - co.condition_start_date AS INTEGER)) AS avg_days,
-       STDDEV(CAST(co.condition_end_date - co.condition_start_date AS INTEGER)) AS sd_days
+       AVG(CAST(DATEDIFF(day, co.condition_start_date, co.condition_end_date) AS INTEGER)) AS avg_days,
+       STDDEV(CAST(DATEDIFF(day, co.condition_start_date, co.condition_end_date) AS INTEGER)) AS sd_days
 FROM @cdm.condition_occurrence co
 JOIN @vocab.concept c ON c.concept_id = co.condition_concept_id
 WHERE co.condition_concept_id = @concept_id

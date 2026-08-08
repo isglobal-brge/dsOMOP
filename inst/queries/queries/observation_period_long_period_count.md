@@ -30,7 +30,7 @@ sufficient follow-up time.
 ```sql
 SELECT COUNT(DISTINCT person_id) AS n_persons
 FROM @cdm.observation_period
-WHERE (observation_period_end_date - observation_period_start_date) >= @min_days
+WHERE DATEDIFF(day, observation_period_start_date, observation_period_end_date) >= @min_days
 ```
 
 ## Sensitive Fields

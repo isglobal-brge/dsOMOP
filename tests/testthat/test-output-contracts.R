@@ -796,6 +796,36 @@ test_that("intervals_long applies a generic custom date range", {
   })
 })
 
+test_that("intervals_long ANDs global and source-specific filters", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  plan <- list(
+    cohort = list(type = "cohort_table", cohort_definition_id = 1),
+    outputs = list(iv = list(
+      type = "intervals_long",
+      tables = "condition_occurrence",
+      source_filters = list(condition_occurrence = list(
+        var = "condition_concept_id", op = "in", value = 201820L
+      )),
+      filters = list(custom = list(
+        var = "start_date", op = "between",
+        value = list("2019-01-01", "2020-12-31")
+      ))
+    )),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  class(plan) <- c("omop_plan", "list")
+
+  withr::with_options(list(nfilter.subset = 3, dsomop.query_strict = TRUE), {
+    result <- .planExecute(handle, plan, list(iv = "iv_df"))$iv
+    expect_gt(nrow(result), 0L)
+    expect_true(all(result$concept_id == 201820L))
+    expect_true(all(result$interval_type == "condition_occurrence"))
+  })
+})
+
 test_that("intervals_long rejects requested tables without interval dates", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
@@ -809,7 +839,7 @@ test_that("intervals_long rejects requested tables without interval dates", {
 
   withr::with_options(list(nfilter.subset = 3, dsomop.query_strict = TRUE), {
     expect_error(.planExecute(handle, plan, list(iv = "iv_df")),
-                 "no start/end date pair")
+                 "no reviewed start/end date pair")
   })
 })
 
@@ -1086,6 +1116,10 @@ test_that("episode-grain sparse output preserves recurrent episode linkage", {
 test_that("temporal_covariates returns covariates and episode references", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
+  DBI::dbExecute(
+    handle$conn,
+    "UPDATE observation_period SET observation_period_start_date = '2018-01-01'"
+  )
   .buildBlueprint(handle)
 
   plan <- list(
@@ -1150,6 +1184,10 @@ test_that("temporal_covariates returns covariates and episode references", {
 test_that("temporal_covariates applies custom value bins", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
+  DBI::dbExecute(
+    handle$conn,
+    "UPDATE observation_period SET observation_period_start_date = '2018-01-01'"
+  )
   .buildBlueprint(handle)
   plan <- list(
     cohort = list(type = "cohort_table", cohort_definition_id = 1),
@@ -1234,6 +1272,10 @@ test_that("temporal_covariates window is clock-independent (deterministic)", {
   extract_tc <- function() {
     handle <- create_test_handle()
     on.exit(cleanup_handle(handle))
+    DBI::dbExecute(
+      handle$conn,
+      "UPDATE observation_period SET observation_period_start_date = '2018-01-01'"
+    )
     .buildBlueprint(handle)
 
     plan <- list(

@@ -2,7 +2,7 @@
 //
 // Exposes an "OMOP CDM Database" category whose types are the individual
 // database engines dsOMOP can resolve. Each type shows only the fields that
-// engine needs; the CDM and vocabulary schemas are always optional.
+// engine needs; the CDM, vocabulary, and results namespaces are optional.
 //
 // The Opal resource form renderer consumes the OBiBa schema-form dialect:
 // parameters/credentials are { type: "array", items: [ { key, type, title } ] }
@@ -11,10 +11,18 @@
 //
 // asResource builds the readable URL the dsOMOP resolver parses (R/resource.R,
 // .parseOmopUrl):
-//   omop+dbi:<dbms>://<host>[:<port>]/<database>?cdm_schema=...&vocabulary_schema=...
+//   omop+dbi:<dbms>://<host>[:<port>]/<database>?cdm_schema=...&vocabulary_schema=...&results_schema=...
 // File engines use an empty authority and an absolute path:
 //   omop+dbi:sqlite:///srv/data/omop.sqlite
 // The resolver matches on format == "omop.dbi.db".
+//
+// temp_schema is deliberately not exposed here: dsOMOP's working tables are
+// connection-scoped TEMPORARY tables whose namespace is managed by the DBMS.
+// Merely persisting a temp_schema URL parameter would promise routing that the
+// query layer does not perform.
+// SQLite likewise exposes no schema fields: the resource opens one database
+// file and does not ATTACH additional databases, so separate CDM, vocabulary,
+// or results namespaces would not be reachable through this provider.
 var dsOMOP = (function () {
 
   var SCHEMA = "http://json-schema.org/schema#";
@@ -33,7 +41,7 @@ var dsOMOP = (function () {
   };
   var resultsSchema = {
     key: "results_schema", type: "string", title: "Results schema (optional)",
-    description: "Schema holding generated result tables (Achilles, Data Quality Dashboard, and other OHDSI/HADES outputs). Defaults to the CDM schema, or the engine default when no CDM schema is set."
+    description: "Schema containing Achilles, Data Quality Dashboard, and other OHDSI/HADES result tables. If omitted, dsOMOP probes only the configured CDM schema and schemas explicitly allowlisted by the data controller."
   };
   var warehouse = {
     key: "warehouse", type: "string", title: "Warehouse (optional)",
@@ -43,6 +51,22 @@ var dsOMOP = (function () {
     key: "driver", type: "string", title: "ODBC driver (optional)",
     description: "ODBC driver name to override the engine default."
   };
+  var pgSslMode = {
+    key: "sslmode", type: "string", title: "TLS mode (optional)",
+    description: "libpq mode: disable, allow, prefer, require, verify-ca, or verify-full. If omitted, remote hosts use verify-full and loopback uses disable."
+  };
+  var pgSslRootCert = { key: "sslrootcert", type: "string", title: "TLS CA certificate path (optional)" };
+  var pgSslCert = { key: "sslcert", type: "string", title: "TLS client certificate path (optional)" };
+  var pgSslKey = { key: "sslkey", type: "string", title: "TLS client key path (optional)" };
+  var mariaSslRequired = {
+    key: "ssl_required", type: "boolean", title: "Require authenticated TLS transport",
+    description: "If omitted, authenticated TLS is required for remote hosts and optional only on loopback. Supply ssl_ca when the server CA is not in the connector trust store."
+  };
+  var mariaSslCa = { key: "ssl_ca", type: "string", title: "Trusted TLS CA certificate path (optional)" };
+  var mariaSslCert = { key: "ssl_cert", type: "string", title: "TLS client certificate path (optional)" };
+  var mariaSslKey = { key: "ssl_key", type: "string", title: "TLS client key path (optional)" };
+  var PG_TLS = [pgSslMode, pgSslRootCert, pgSslCert, pgSslKey];
+  var MARIA_TLS = [mariaSslRequired, mariaSslCa, mariaSslCert, mariaSslKey];
   var SCHEMAS = [cdmSchema, vocabularySchema, resultsSchema];
 
   // --- credentials blocks ---------------------------------------------------
@@ -79,7 +103,7 @@ var dsOMOP = (function () {
   var types = [
     dbType("postgresql", "PostgreSQL",
       "Connection to a PostgreSQL OMOP CDM database via " + DBI + " (requires RPostgres or RPostgreSQL and site integration testing).",
-      [host(), port, database()].concat(SCHEMAS), NET_REQ, CREDS_USERPASS),
+      [host(), port, database()].concat(SCHEMAS, PG_TLS), NET_REQ, CREDS_USERPASS),
 
     dbType("redshift", "Amazon Redshift",
       "Connection to an Amazon Redshift OMOP CDM database via " + DBI + " (uses RPostgres; requires site integration testing).",
@@ -87,11 +111,11 @@ var dsOMOP = (function () {
 
     dbType("mysql", "MySQL",
       "Connection to a MySQL OMOP CDM database via " + DBI + " (needs the RMariaDB driver on the Rock server).",
-      [host(), port, database()].concat(SCHEMAS), NET_REQ, CREDS_USERPASS),
+      [host(), port, database()].concat(SCHEMAS, MARIA_TLS), NET_REQ, CREDS_USERPASS),
 
     dbType("mariadb", "MariaDB",
       "Connection to a MariaDB OMOP CDM database via " + DBI + " (needs the RMariaDB driver on the Rock server).",
-      [host(), port, database()].concat(SCHEMAS), NET_REQ, CREDS_USERPASS),
+      [host(), port, database()].concat(SCHEMAS, MARIA_TLS), NET_REQ, CREDS_USERPASS),
 
     dbType("sqlserver", "Microsoft SQL Server",
       "Connection to a SQL Server OMOP CDM database via " + DBI + " (needs the odbc package and a SQL Server ODBC driver).",
@@ -128,7 +152,7 @@ var dsOMOP = (function () {
 
     dbType("sqlite", "SQLite (file)",
       "Connection to a file-backed SQLite OMOP CDM database on the Rock server (needs the RSQLite package).",
-      [database("Database file path on the Rock server")].concat(SCHEMAS), ["database"],
+      [database("Database file path on the Rock server")], ["database"],
       credsNone("File-backed engine opened directly from the Rock server filesystem; no credentials required.")),
 
     dbType("duckdb", "DuckDB (file)",
@@ -167,29 +191,59 @@ var dsOMOP = (function () {
 
     var enc = encodeURIComponent;
     var query = [];
+    function encodePath(value) {
+      return String(value || "").split("/").map(enc).join("/");
+    }
+    function encodeHost(value) {
+      var raw = String(value || "");
+      if (raw.charAt(0) === "[" && raw.charAt(raw.length - 1) === "]") {
+        raw = raw.slice(1, -1);
+      }
+      if (raw.indexOf(":") >= 0) {
+        if (!/^[0-9A-Fa-f:.%A-Za-z0-9_-]+$/.test(raw)) {
+          throw new Error("Invalid IPv6 host");
+        }
+        return "[" + raw.replace(/%/g, "%25") + "]";
+      }
+      return enc(raw);
+    }
     function addQuery(key, val) {
       if (val !== undefined && val !== null && String(val).length > 0) {
         query.push(key + "=" + enc(val));
       }
     }
-    addQuery("cdm_schema", params.cdm_schema);
-    addQuery("vocabulary_schema", params.vocabulary_schema);
-    addQuery("results_schema", params.results_schema);
+    if (type !== "sqlite") {
+      addQuery("cdm_schema", params.cdm_schema);
+      addQuery("vocabulary_schema", params.vocabulary_schema);
+      addQuery("results_schema", params.results_schema);
+    }
     addQuery("warehouse", params.warehouse);
     addQuery("driver", params.driver);
+    if (type === "postgresql") {
+      addQuery("sslmode", params.sslmode);
+      addQuery("sslrootcert", params.sslrootcert);
+      addQuery("sslcert", params.sslcert);
+      addQuery("sslkey", params.sslkey);
+    }
+    if (type === "mysql" || type === "mariadb") {
+      addQuery("ssl_required", params.ssl_required);
+      addQuery("ssl_ca", params.ssl_ca);
+      addQuery("ssl_cert", params.ssl_cert);
+      addQuery("ssl_key", params.ssl_key);
+    }
     var qs = query.length > 0 ? ("?" + query.join("&")) : "";
 
     if (fileEngines[type]) {
       var path = String(params.database || "").replace(/^\/+/, "");
-      return { name: name, url: "omop+dbi:" + type + ":///" + path + qs, format: "omop.dbi.db" };
+      return { name: name, url: "omop+dbi:" + type + ":///" + encodePath(path) + qs, format: "omop.dbi.db" };
     }
 
-    var authority = params.host || "";
+    var authority = encodeHost(params.host);
     if (!noPortEngines[type] && params.port !== undefined && params.port !== null && String(params.port).length > 0) {
       authority += ":" + params.port;
     }
     var db = String(params.database || "").replace(/^\/+/, "");
-    var url = "omop+dbi:" + type + "://" + authority + "/" + db + qs;
+    var url = "omop+dbi:" + type + "://" + authority + "/" + enc(db) + qs;
 
     if (noCredEngines[type]) {
       return { name: name, url: url, format: "omop.dbi.db" };

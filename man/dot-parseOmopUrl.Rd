@@ -19,6 +19,7 @@ The \code{omop+dbi:} wrapper is optional (a bare \code{<dbms>://...} is
 accepted). File-backed engines use an empty authority and an absolute path,
 e.g. \code{omop+dbi:sqlite:///srv/data/omop.sqlite}. Recognized query keys:
 \code{cdm_schema}, \code{vocabulary_schema}, \code{results_schema},
-\code{temp_schema}, \code{warehouse}, \code{driver} (plus a few aliases).
+\code{temp_schema}, \code{warehouse}, \code{driver}, and optional
+driver-native TLS settings (plus a few aliases).
 }
 \keyword{internal}

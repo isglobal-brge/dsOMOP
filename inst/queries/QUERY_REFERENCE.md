@@ -33,9 +33,11 @@ In particular, SQLite does not advertise templates that require `EXTRACT`,
 `STDDEV` or plain date subtraction, and SQL Server/Oracle do not advertise
 templates that retain an untranslated `LIMIT`. The complete announced catalog
 is executed against empty OMOP 5.4 schemas in SQLite and, when installed,
-DuckDB tests. Network engines remain contract-tested rather than live-tested;
-moving the templates to canonical OHDSI SqlRender SQL plus vendor CI is still
-required before claiming full cross-vendor QueryLibrary parity.
+DuckDB tests. PostgreSQL 16, MySQL 8.4 and MariaDB 11.4 also run live CI
+contracts with separate CDM, vocabulary and results namespaces. Other network
+engines remain SQL-contract-tested; each site must still validate its exact
+driver, privileges and server version before claiming full cross-vendor
+QueryLibrary parity.
 
 ## Safety Classification
 
@@ -61,7 +63,7 @@ noise-backed aggregate requires a query-specific sensitivity contract,
 public clipping bounds, server-controlled parameters, sticky noise and a
 composition ledger.
 
-## Upstream coverage backlog
+## Upstream coverage inventory and executable redesigns
 
 The 201 upstream queries were triaged by the result they expose, not merely by
 SQL syntax:
@@ -85,49 +87,69 @@ statistical redesign even where their output column names look like ordinary
 counts. The exact membership and reasons are in the JSON rather than being
 implicit in this summary table.
 
-The inventory marks 130 redesigned aggregates as `dp_candidate`. This means
+The inventory marks 130 entries as `dp_candidate`. One of those entries is
+the exact-ZIP query `PE08`, which the executable policy still blocks. The 129
+aggregate questions in the rewritable/statistical triage classes are the set
+now mapped to executable sticky redesigns. A candidate flag means
 only that finite sensitivity is plausible after the recorded public
 clipping/binning and per-person contribution bounds, with server-owned sticky
 noise and a durable composition ledger. It does **not** mean that the upstream
-SQL is safe as written, that `nfilter.noise` supplies formal DP, or that any of
+SQL is safe as written, that `nfilter.noise` supplies the sticky mechanism, or that any of
 these literal upstream queries is enabled. The inventory authorizes zero
-runtime queries; `query_allowlist.json` remains the independent executable
-policy.
+literal upstream SQL. `query_allowlist.json` remains the independent policy for
+the older curated SQL catalog, while the sticky endpoint accepts only the typed
+primitive mappings recorded below.
 
-`dp_redesign_registry.json` records the narrower first set of 14 upstream
-questions whose semantics can be re-expressed through dedicated
-person-bounded sticky-noise primitives: a distinct-person count, a
-fixed-public-domain person histogram, or a binary rate derived from separately
-protected counts.
-Its `mapped_to_bounded_sticky_primitive` status records that semantic mapping only;
+`dp_redesign_registry.json` retains the first 14 individually documented
+questions and now also contains an executable semantic catalog of 129 mappings:
+the original 14 plus 115 additional questions expressible through seven
+bounded sticky primitives. The server joins every mapping to the pinned audit,
+validates its upstream ID/commit/path/hash and exposes public catalog metadata;
+the client constructs the fixed `omop_privacy` specification and verifies the
+same mapping on every selected server before release. Neither path renders or
+executes upstream SQL.
+
+The 129 questions are re-expressed through dedicated
+person-bounded sticky-noise primitives: a distinct-person count, a bounded
+record count, a fixed-public-domain person or record histogram, a public-bin
+numeric histogram, bounded distinct-category cardinality, a bounded person
+mean, or a binary rate. Numeric and categorical record histograms use the
+`records` reducer with an explicit order and finite per-person record cap;
+scalar record counts and distinct cardinality also require an explicit cap.
+Its `mapped_to_bounded_sticky_primitive` status
+records that semantic mapping only;
 it never authorizes the pinned upstream SQL or changes the runtime allowlist.
 The registry states each family's contribution rule and sensitivity and pins
 each entry to the audited path and SHA-256. Longitudinal records are collapsed
-to person predicates or de-duplicated person/category pairs and deterministically
-capped before aggregation. Domains, concept sets, thresholds, category order
-and time intervals must be public and fixed before data access—observed levels
-and data-dependent top-N selection are not allowed.
+to person predicates, de-duplicated person/category pairs, or deterministically
+retained up to the declared cap before aggregation. Domains, concept sets,
+thresholds, category order and time intervals must be public and fixed before
+data access—observed output levels and data-dependent top-N selection are not
+allowed. The 18 formerly held aggregate questions now target explicit capped
+estimands; they do not claim to reproduce their unbounded upstream estimands.
+
+The 13 row/patient/event questions, four uncontrolled-source label questions
+and exact-ZIP `PE08` remain blocked from client release.
 
 Source/free-text frequency rows (`CO20`, `DEX17`, `DEX38`, `PP02`), exact ZIP
 output (`PE08`) and the 13 patient/event or selected-subject assignment rows
 remain explicitly blocked from DP release. Adding noise to counts cannot make
 their labels, geography or row-level payload safe.
 
-This backlog is deliberately separate from the Recipe DSL. QueryLibrary should
+This upstream coverage is deliberately separate from the Recipe DSL. QueryLibrary should
 remain a curated catalog of reviewed analysis patterns; maximum query
 flexibility belongs in the typed Recipe/Plan compiler, where table relations,
 cardinality, temporal semantics and disclosure contracts can be validated.
 
-### Noise/redesign candidates from upstream
+### Semantics of bounded upstream redesigns
 
-The following upstream families are useful next candidates for the dedicated
-DP aggregate API, but are **not safe merely by adding the current
-`nfilter.noise` value**. The local catalog already contains some similarly named
-deterministic summaries (for example drug quantity/days-supply, condition
-duration and drug-cost statistics). Those local routes remove extrema, require
-both person and value/record support, mask small distributions and band counts;
-they still provide no DP composition guarantee and are not proof that the
-corresponding upstream query was ported verbatim:
+The following representative upstream families now have bounded sticky
+mappings, but are **not safe merely by adding the current `nfilter.noise`
+value**. The local SQL catalog also contains some similarly named deterministic
+summaries (for example drug quantity/days-supply, condition duration and
+drug-cost statistics). Those local routes remove extrema, require both person
+and value/record support, mask small distributions and band counts; they are
+not proof that the corresponding upstream query was ported verbatim:
 
 - Costs: DRC01, DRC03, DRC07.
 - Drug-exposure distributions: DEX23 (days supply), DEX31 (records/person),
@@ -135,17 +157,17 @@ corresponding upstream query was ported verbatim:
 - Observation-time distributions: OP05, OP06, OP12, OP20.
 - Condition-duration/count distributions: CE01, CE03, CE16.
 
-For a formally private noisy variant, each query must be rewritten around a declared contribution
-unit (normally one bounded contribution per person, or a separately declared
-episode estimand), public clipping bounds, removal of raw minima/maxima, and a
-server-side privacy mechanism with sticky noise and composition accounting.
+Each executable sticky specification therefore declares its contribution unit
+(normally one bounded contribution per person, or a separately declared record
+cap), public clipping bounds, removal of raw minima/maxima, and a server-side
+privacy mechanism with sticky noise and composition accounting.
 Means should be derived from protected bounded sums and counts; quantiles need
 a protected histogram/quantile mechanism rather than noise added to the
-published upstream statistic. A formally private variant must emit its full fixed
+published upstream statistic. A sticky variant must emit its full fixed
 public cell domain and may threshold or band only the noisy result; it must not
 branch first on an exact distinct-person or small-cell gate.
 
-## Longitudinal contract and remaining backlog
+## Longitudinal contract and remaining boundaries
 
 QueryLibrary expansion and longitudinal Recipe work must be reviewed together,
 because many repeated records can still represent very few people. The
@@ -181,23 +203,23 @@ The current longitudinal contract is explicit:
   10,000 temporal bins. Federated requests must honor the minimum compatible
   cap across sites; these are operational limits, not disclosure guarantees.
 
-Remaining work before claiming general longitudinal analysis support includes:
+Boundaries that remain before claiming unrestricted longitudinal analysis
+support include:
 
-1. Extend the basic regular person-period panel with explicit censoring and
-   risk-interval semantics for counting-process, recurrent-event and
-   competing-risk/multi-state estimands.
+1. Named counting-process, recurrent-event and competing-risk outputs have
+   explicit contracts; arbitrary general multi-state transition models remain
+   outside the reviewed output surface.
 2. Add an explicit cross-table joined-long contract. Today a multi-table Recipe
    long request is split into separate table outputs rather than a relational
    join chosen implicitly.
 3. Extend selection beyond the current grain-wide and concept-partitioned
    first/last-N modes when an estimand needs a different partition key; named
    feature reducers remain the preferred route for concept-set-specific values.
-4. Promote QueryLibrary families only after recording upstream ID and commit,
+4. Promote any future QueryLibrary families only after recording upstream ID and commit,
    CDM/table dependencies, supported DBMS, contribution bounds and disclosure
    unit (person, episode or record).
-5. Treat optional noisy releases as a separate privacy mechanism. They require
-   bounded sensitivity, sticky randomness and composition accounting;
-   `nfilter.noise` alone is not sufficient.
+5. Keep sticky releases on the dedicated bounded privacy path with canonical
+   identity and durable accounting; `nfilter.noise` alone is not a substitute.
 
 ## Local Catalog Index
 
@@ -208,6 +230,11 @@ documented here but cannot execute. `Poolable` means that a reviewed client
 pooling strategy is declared; it is not a claim that suppressed or banded
 values recover the exact cross-site statistic.
 
+For executable templates with `top_n`, dsOMOP removes the upstream raw
+`TOP`/`LIMIT`, evaluates every grouped cell, applies the common disclosure gate
+and then orders by the released support band plus public grouping keys. Varying
+`top_n` therefore cannot reveal the exact ordering of cells inside one band.
+
 ### Condition Domain
 
 | ID | Name | Inputs | Poolable |
@@ -217,7 +244,7 @@ values recover the exact cross-site statistic.
 | condition.prevalence_by_age | Condition prevalence by age group | concept_id | Yes |
 | condition.prevalence_by_year | Condition prevalence by year | concept_id, top_n | Yes |
 | condition.comorbidity | Comorbidities of a condition | concept_id, top_n | Yes |
-| condition.duration_stats | Condition duration statistics | concept_id | Yes |
+| condition.duration_stats | Condition duration statistics (**BLOCKED; use sticky bounded statistics**) | concept_id | No |
 | condition.prevalence_by_visit_type | Condition prevalence by visit type | concept_id | Yes |
 | condition.prevalence_by_specialty | Condition prevalence by provider specialty | concept_id | Yes |
 | condition.drug_overlap | Drugs used by condition patients | concept_id, top_n | Yes |
@@ -231,9 +258,9 @@ values recover the exact cross-site statistic.
 | drug.prevalence_by_gender | Drug exposure prevalence by gender | concept_id | Yes |
 | drug.prevalence_by_age | Drug exposure prevalence by age group | concept_id | Yes |
 | drug.prevalence_by_year | Drug exposure prevalence by year | concept_id, top_n | Yes |
-| drug.duration_stats | Drug exposure duration statistics | concept_id | Yes |
-| drug.quantity_stats | Drug quantity statistics | concept_id | Yes |
-| drug.days_supply_stats | Drug days supply statistics | concept_id | Yes |
+| drug.duration_stats | Drug exposure duration statistics (**BLOCKED; use sticky bounded statistics**) | concept_id | No |
+| drug.quantity_stats | Drug quantity statistics (**BLOCKED; use sticky bounded statistics**) | concept_id | No |
+| drug.days_supply_stats | Drug days supply statistics (**BLOCKED; use sticky bounded statistics**) | concept_id | No |
 | drug.concomitant_medications | Concomitant medications | concept_id, top_n | Yes |
 | drug.prevalence_by_route | Drug exposure by route | concept_id | Yes |
 
@@ -245,7 +272,7 @@ values recover the exact cross-site statistic.
 | measurement.prevalence_by_gender | Measurement prevalence by gender | concept_id | Yes |
 | measurement.prevalence_by_age | Measurement prevalence by age group | concept_id | Yes |
 | measurement.prevalence_by_year | Measurement prevalence by year | concept_id, top_n | Yes |
-| measurement.value_stats | Measurement value statistics | concept_id | Yes |
+| measurement.value_stats | Measurement value statistics (**BLOCKED; use sticky bounded statistics**) | concept_id | No |
 | measurement.prevalence_by_unit | Measurement prevalence by unit | concept_id | Yes |
 
 ### Procedure Domain
@@ -284,7 +311,7 @@ values recover the exact cross-site statistic.
 | visit.type_by_gender | Visit type by gender | (none) | Yes |
 | visit.type_by_year | Visit type by year | (none) | Yes |
 | visit.type_by_age | Visit type by age group | visit_concept_id | Yes |
-| visit.duration_stats | Visit duration statistics | visit_concept_id | Yes |
+| visit.duration_stats | Visit duration statistics (**BLOCKED; use sticky bounded statistics**) | visit_concept_id | No |
 
 ### Death Domain
 
@@ -298,9 +325,9 @@ values recover the exact cross-site statistic.
 
 | ID | Name | Inputs | Poolable |
 |----|------|--------|----------|
-| observation_period.length_stats | Observation period length statistics | (none) | Yes |
+| observation_period.length_stats | Observation period length statistics (**BLOCKED; use sticky bounded statistics**) | (none) | No |
 | observation_period.coverage_by_year | Observation period coverage by year | (none) | Yes |
-| observation_period.length_by_gender | Observation period length by gender | (none) | Yes |
+| observation_period.length_by_gender | Observation period length by gender (**BLOCKED; use sticky bounded statistics**) | (none) | No |
 
 ### Device Domain
 
@@ -328,23 +355,23 @@ values recover the exact cross-site statistic.
 | condition_era.prevalence_by_concept | SAFE_AGGREGATE | Yes |
 | condition_era.by_gender | SAFE_AGGREGATE | Yes |
 | condition_era.by_season | SAFE_AGGREGATE | Yes |
-| condition_era.eras_per_person_stats | SAFE_AGGREGATE | Yes |
-| condition_era.length_stats | SAFE_AGGREGATE | Yes |
+| condition_era.eras_per_person_stats | BLOCKED | No |
+| condition_era.length_stats | BLOCKED | No |
 | condition_occurrence.load | SAFE_ASSIGN | No |
 | condition_occurrence.type_distribution | SAFE_AGGREGATE | Yes |
 | death.load | SAFE_ASSIGN | No |
-| drug_cost.cost_per_unit_stats | SAFE_AGGREGATE | Yes |
-| drug_cost.out_of_pocket_stats | SAFE_AGGREGATE | Yes |
+| drug_cost.cost_per_unit_stats | BLOCKED | No |
+| drug_cost.out_of_pocket_stats | BLOCKED | No |
 | drug_era.by_month | SAFE_AGGREGATE | Yes |
-| drug_era.exposure_count_stats | SAFE_AGGREGATE | Yes |
-| drug_era.length_stats | SAFE_AGGREGATE | Yes |
+| drug_era.exposure_count_stats | BLOCKED | No |
+| drug_era.length_stats | BLOCKED | No |
 | drug_era.prevalence_by_concept | SAFE_AGGREGATE | Yes |
 | drug_exposure.load | SAFE_ASSIGN | No |
 | drug_exposure.type_distribution | SAFE_AGGREGATE | Yes |
 | general.record_count_by_table | SAFE_AGGREGATE | Yes |
 | measurement.load | SAFE_ASSIGN | No |
 | observation.load | SAFE_ASSIGN | No |
-| observation_period.length_months_stats | SAFE_AGGREGATE | Yes |
+| observation_period.length_months_stats | BLOCKED | No |
 | observation_period.long_period_count | SAFE_AGGREGATE | Yes |
 | observation_period.persons_with_n_periods | SAFE_AGGREGATE | Yes |
 | payer_plan.by_plan_concept | SAFE_AGGREGATE | Yes |

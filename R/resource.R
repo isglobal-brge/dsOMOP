@@ -63,8 +63,8 @@
     "sqlite3"         = "sqlite",
     "duckdb"          = "duckdb"
   )
-  out <- aliases[[s]]
-  if (is.null(out)) s else out
+  out <- unname(aliases[s])
+  if (length(out) == 0L || is.na(out)) s else out
 }
 
 #' Default schema for a DBMS when none is supplied
@@ -103,12 +103,54 @@
   )
 }
 
+#' Validate a DBMS namespace used to qualify OMOP tables
+#'
+#' Most supported engines use one schema/database component. Engines whose SQL
+#' grammar and metadata APIs support catalog.schema accept at most two. This
+#' rejects a resource configuration at bootstrap instead of letting it produce
+#' invalid or misrouted SQL during a private request.
+#'
+#' @param dbms Character DBMS name.
+#' @param namespace Character namespace.
+#' @param label Character field label for errors.
+#' @return The validated namespace.
+#' @keywords internal
+.validateSchemaNamespace <- function(dbms, namespace, label = "schema") {
+  if (is.null(namespace) || length(namespace) == 0L) return(NULL)
+  if (!is.character(namespace) || length(namespace) != 1L ||
+      is.na(namespace)) {
+    stop(label, " must be one non-missing namespace.", call. = FALSE)
+  }
+  namespace <- trimws(namespace)
+  if (!nzchar(namespace)) {
+    stop(label, " must be one non-empty namespace.", call. = FALSE)
+  }
+  canonical <- .normalizeDBMS(dbms)
+  parts <- strsplit(namespace, ".", fixed = TRUE)[[1L]]
+  if (startsWith(namespace, ".") || endsWith(namespace, ".") ||
+      any(!nzchar(parts)) ||
+      any(!grepl("^[A-Za-z_][A-Za-z0-9_-]*$", parts))) {
+    stop("Invalid ", label, " namespace '", namespace, "'.", call. = FALSE)
+  }
+  catalog_schema <- c(
+    "sqlserver", "synapse", "pdw", "snowflake", "bigquery", "spark",
+    "databricks", "duckdb"
+  )
+  maximum <- if (canonical %in% catalog_schema) 2L else 1L
+  if (length(parts) > maximum) {
+    stop(label, " for ", canonical, " accepts at most ", maximum,
+         " namespace component", if (maximum == 1L) "" else "s", ".",
+         call. = FALSE)
+  }
+  namespace
+}
+
 #' Describe the database adapter surface honestly
 #'
-#' This is a static implementation profile, not a claim that a live server or
-#' vendor driver was exercised. Embedded backends have executable package
-#' tests; every network backend still requires site-specific integration
-#' testing (driver, permissions, catalog layout and server version).
+#' This is a static implementation profile, not a claim of feature parity on
+#' every vendor version. PostgreSQL, MySQL and MariaDB have executable CI smoke
+#' tests with separate CDM, vocabulary and results namespaces; every deployment
+#' still requires site-specific testing of authentication and permissions.
 #'
 #' @param dbms Character DBMS name.
 #' @return Named list describing translation, metadata and temporary-object
@@ -117,16 +159,18 @@
 .databaseSupportProfile <- function(dbms) {
   canonical <- .normalizeDBMS(dbms)
   dialect <- .resolve_target_dialect(canonical)
+  sqlrender <- .sqlRenderRuntimeInfo(canonical, inspect_runtime = FALSE)
 
   temp_mode <- switch(canonical,
-    postgresql =, sqlite =, duckdb =, mysql =, mariadb =,
-    redshift =, snowflake = "session_table",
-    spark =, databricks = "session_view",
+    postgresql =, sqlite =, duckdb =, mysql =, mariadb = "session_table",
+    redshift =, snowflake =, spark =, databricks =
+      "unavailable_cross_statement",
     sqlserver =, synapse =, pdw =, oracle =, bigquery =
       "unavailable_cross_statement",
     "unavailable"
   )
   metadata_mode <- switch(canonical,
+    postgresql = "postgresql_catalog",
     sqlite = "sqlite_catalog",
     oracle = "oracle_catalog",
     bigquery = "dataset_information_schema",
@@ -134,23 +178,115 @@
     "information_schema"
   )
   verification <- switch(canonical,
+    postgresql =, mysql =, mariadb = "vendor_integration_tests",
     sqlite = "embedded_integration_tests",
     duckdb = "optional_embedded_integration_tests",
     "sql_contract_tests_only"
   )
+  ohdsi_temp_mode <- if (is.null(sqlrender$target_dialect)) {
+    "unsupported_mysql_extension"
+  } else if (canonical %in% c(
+    "oracle", "bigquery", "redshift", "snowflake", "spark", "databricks"
+  )) {
+    "unsafe_lifecycle_blocked"
+  } else {
+    "session_scoped_when_explicitly_allowed"
+  }
 
   list(
     dbms = canonical,
     target_dialect = dialect,
-    sql_translation = "builtin_top_dateadd_subset",
-    sql_translation_patterns = c("select_top_integer", "dateadd_day_integer"),
-    sqlrender_runtime = FALSE,
+    sql_translation = "builtin_reviewed_subset",
+    sql_translation_patterns = c(
+      "select_top_integer", "dateadd_day_integer", "datediff_day_integer",
+      "cast_target_normalization", "sample_stddev_mysql", "oracle_bare_alias"
+    ),
+    ohdsi_sql_translation = if (is.null(sqlrender$target_dialect)) {
+      "reviewed_mysql_extension_only"
+    } else {
+      "optional_sqlrender_fail_closed"
+    },
+    sqlrender_target_dialect = sqlrender$target_dialect,
+    sqlrender_installed = sqlrender$installed,
+    sqlrender_version = sqlrender$version,
+    sqlrender_runtime = sqlrender$target_available,
+    ohdsi_temporary_objects = ohdsi_temp_mode,
     metadata_discovery = metadata_mode,
     temporary_materialization = temp_mode,
     support_tier = verification,
     verification = verification,
-    live_vendor_ci = FALSE
+    live_vendor_ci = canonical %in% c("postgresql", "mysql", "mariadb")
   )
+}
+
+#' Read and cache the connected database server version
+#' @param handle CDM handle.
+#' @return Character version string, or \code{NULL} when unavailable.
+#' @keywords internal
+.databaseServerVersion <- function(handle) {
+  configured <- handle$dbms_version %||% NULL
+  if (!is.null(configured)) return(as.character(configured)[[1L]])
+  version <- tryCatch({
+    result <- .withDbReconnect(handle, function(conn) {
+      DBI::dbGetQuery(conn, "SELECT VERSION() AS dsomop_server_version")
+    })
+    if (!is.data.frame(result) || nrow(result) != 1L || ncol(result) != 1L ||
+        is.na(result[[1L]][[1L]])) NULL else as.character(result[[1L]][[1L]])
+  }, error = function(e) NULL)
+  if (!is.null(version) && nzchar(version)) handle$dbms_version <- version
+  version
+}
+
+#' Compare a vendor version string with a minimum version
+#' @keywords internal
+.databaseVersionAtLeast <- function(version, minimum, family) {
+  if (!is.character(version) || length(version) != 1L || is.na(version) ||
+      !nzchar(version)) return(FALSE)
+  matches <- regmatches(
+    version, gregexpr("[0-9]+\\.[0-9]+(?:\\.[0-9]+)?", version, perl = TRUE)
+  )[[1L]]
+  if (length(matches) == 0L || identical(matches, "")) return(FALSE)
+  candidate <- if (identical(family, "mariadb")) {
+    matches[[length(matches)]]
+  } else {
+    matches[[1L]]
+  }
+  parsed <- tryCatch(numeric_version(candidate), error = function(e) NULL)
+  !is.null(parsed) && parsed >= numeric_version(minimum)
+}
+
+#' Enforce the common analytic SQL baseline for MySQL-family engines
+#'
+#' dsOMOP's longitudinal and recipe contracts use CTEs and window functions.
+#' Verify their vendor minimum once, at connection bootstrap and again in SQL
+#' compilers used by synthetic test handles, so an unsupported server never
+#' fails halfway through a private request.
+#'
+#' @param handle CDM handle.
+#' @param context User-facing operation label.
+#' @return \code{TRUE}, invisibly.
+#' @keywords internal
+.assertAnalyticDbmsSupport <- function(handle, context = "dsOMOP analytic SQL") {
+  dbms <- .normalizeDBMS(handle$dbms %||% handle$target_dialect %||% "")
+  if (!dbms %in% c("mysql", "mariadb")) return(invisible(TRUE))
+
+  version <- .databaseServerVersion(handle)
+  family <- if (identical(dbms, "mariadb") ||
+                (!is.null(version) && grepl("mariadb", version,
+                                           ignore.case = TRUE))) {
+    "mariadb"
+  } else {
+    "mysql"
+  }
+  minimum <- if (identical(family, "mariadb")) "10.2.0" else "8.0.0"
+  if (!.databaseVersionAtLeast(version, minimum, family)) {
+    stop(context, " requires a verified ",
+         if (identical(family, "mariadb")) "MariaDB >= 10.2" else
+           "MySQL >= 8.0",
+         " server (CTE and window-function baseline); the connected version ",
+         "could not be verified as compatible.", call. = FALSE)
+  }
+  invisible(TRUE)
 }
 
 #' Remove NULL DBI connection arguments
@@ -178,6 +314,137 @@
   paste0(endpoint_host, separator, port)
 }
 
+.isLoopbackDatabaseHost <- function(host) {
+  if (is.null(host) || !is.character(host) || length(host) != 1L ||
+      is.na(host)) return(FALSE)
+  value <- tolower(trimws(host))
+  value %in% c("localhost", "::1", "0:0:0:0:0:0:0:1") ||
+    grepl("^127(?:\\.[0-9]{1,3}){3}$", value, perl = TRUE)
+}
+
+.effectivePostgresSslMode <- function(mode, host) {
+  mode %||% if (.isLoopbackDatabaseHost(host)) "disable" else "verify-full"
+}
+
+.effectiveMariaTlsRequired <- function(required, host, tls_material = list()) {
+  configured <- if (is.null(required)) {
+    !.isLoopbackDatabaseHost(host)
+  } else {
+    isTRUE(required)
+  }
+  configured || any(!vapply(tls_material, is.null, logical(1L)))
+}
+
+.mariaTlsClientFlag <- function() {
+  if (utils::packageVersion("RMariaDB") < "1.3.2") {
+    stop("Authenticated MySQL/MariaDB TLS requires RMariaDB >= 1.3.2.",
+         call. = FALSE)
+  }
+  exports <- getNamespaceExports("RMariaDB")
+  required <- c("CLIENT_SSL", "CLIENT_SSL_VERIFY_SERVER_CERT")
+  if (!all(required %in% exports)) {
+    stop("The installed RMariaDB version cannot verify MySQL/MariaDB server ",
+         "certificates. Upgrade RMariaDB before enabling TLS.", call. = FALSE)
+  }
+  bitwOr(
+    as.integer(getExportedValue("RMariaDB", "CLIENT_SSL")),
+    as.integer(getExportedValue("RMariaDB", "CLIENT_SSL_VERIFY_SERVER_CERT"))
+  )
+}
+
+.mariaConnectionCallArgs <- function(driver, args) {
+  # RMariaDB otherwise reads the [rs-dbi] option-file group. A local option
+  # file must not be able to weaken the TLS policy assembled above.
+  c(list(driver), list(group = NULL), args)
+}
+
+# Keep timestamp decoding and SQL literal parsing independent of PostgreSQL
+# server defaults. The resource client calls this for every newly opened
+# connection, including reconnects.
+.ensurePostgresUtc <- function(connection) {
+  ok <- tryCatch({
+    DBI::dbExecute(connection, "SET TIME ZONE 'UTC'")
+    DBI::dbExecute(connection, "SET standard_conforming_strings TO on")
+    timezone <- DBI::dbGetQuery(connection, "SHOW TIME ZONE")
+    strings <- DBI::dbGetQuery(connection, "SHOW standard_conforming_strings")
+    value <- if (is.data.frame(timezone) && nrow(timezone) == 1L &&
+                 ncol(timezone) == 1L) {
+      as.character(timezone[[1L]][[1L]])
+    } else {
+      NA_character_
+    }
+    string_mode <- if (is.data.frame(strings) && nrow(strings) == 1L &&
+                       ncol(strings) == 1L) {
+      tolower(as.character(strings[[1L]][[1L]]))
+    } else {
+      NA_character_
+    }
+    is.character(value) && length(value) == 1L && !is.na(value) &&
+      toupper(value) %in% c("UTC", "ETC/UTC") &&
+      identical(string_mode, "on")
+  }, error = function(e) FALSE)
+  if (!isTRUE(ok)) {
+    try(DBI::dbDisconnect(connection), silent = TRUE)
+    stop("PostgreSQL connection could not establish a verified UTC session.",
+         call. = FALSE)
+  }
+  connection
+}
+
+.ensureMariaSession <- function(connection, require_tls) {
+  mode_ok <- tryCatch({
+    current <- DBI::dbGetQuery(
+      connection, "SELECT @@SESSION.sql_mode AS sql_mode"
+    )
+    value <- as.character(current[[1L]][[1L]] %||% "")
+    modes <- trimws(strsplit(value, ",", fixed = TRUE)[[1L]])
+    modes <- modes[nzchar(modes) & modes != "NO_BACKSLASH_ESCAPES"]
+    modes <- unique(c(modes, "ANSI_QUOTES"))
+    if (any(!grepl("^[A-Z0-9_]+$", modes))) {
+      stop("The MySQL/MariaDB session reported an invalid sql_mode.")
+    }
+    literal <- as.character(DBI::dbQuoteString(
+      connection, paste(modes, collapse = ",")
+    ))
+    DBI::dbExecute(connection, paste0("SET SESSION sql_mode = ", literal))
+    verified <- DBI::dbGetQuery(
+      connection, "SELECT @@SESSION.sql_mode AS sql_mode"
+    )
+    active <- trimws(strsplit(
+      as.character(verified[[1L]][[1L]] %||% ""), ",", fixed = TRUE
+    )[[1L]])
+    "ANSI_QUOTES" %in% active && !"NO_BACKSLASH_ESCAPES" %in% active
+  }, error = function(e) FALSE)
+  if (!isTRUE(mode_ok)) {
+    try(DBI::dbDisconnect(connection), silent = TRUE)
+    stop("MySQL/MariaDB connection could not establish the required SQL ",
+         "literal and identifier modes.", call. = FALSE)
+  }
+  if (isTRUE(require_tls)) {
+    tls_ok <- tryCatch({
+      read_status <- function(name) {
+        status <- DBI::dbGetQuery(
+          connection, paste0("SHOW STATUS LIKE '", name, "'")
+        )
+        value_column <- match("value", tolower(names(status)))
+        if (nrow(status) != 1L || is.na(value_column)) return(NA_character_)
+        as.character(status[[value_column]][[1L]])
+      }
+      cipher <- read_status("Ssl_cipher")
+      version <- read_status("Ssl_version")
+      !is.na(cipher) && nzchar(cipher) &&
+        version %in% c("TLSv1.2", "TLSv1.3")
+    }, error = function(e) FALSE)
+    if (!isTRUE(tls_ok)) {
+      try(DBI::dbDisconnect(connection), silent = TRUE)
+      stop("MySQL/MariaDB resource requires authenticated TLS 1.2 or newer, ",
+           "but the session did not verify that transport contract.",
+           call. = FALSE)
+    }
+  }
+  connection
+}
+
 #' Normalize a Snowflake server name
 #' @param host Account identifier or complete Snowflake host name.
 #' @return Complete Snowflake host name.
@@ -196,7 +463,8 @@
 #' accepted). File-backed engines use an empty authority and an absolute path,
 #' e.g. \code{omop+dbi:sqlite:///srv/data/omop.sqlite}. Recognized query keys:
 #' \code{cdm_schema}, \code{vocabulary_schema}, \code{results_schema},
-#' \code{temp_schema}, \code{warehouse}, \code{driver} (plus a few aliases).
+#' \code{temp_schema}, \code{warehouse}, \code{driver}, and optional
+#' driver-native TLS settings (plus a few aliases).
 #'
 #' @param url Character; the resource URL.
 #' @return Named list with dbms, host, port, database, server and schema/extra fields.
@@ -320,6 +588,34 @@
     }
     NULL
   }
+  option_value <- function(name, ...) {
+    value <- pick(name, ...)
+    if (is.null(value)) return(NULL)
+    if (grepl("[\\r\\n]", value, perl = TRUE)) {
+      stop("OMOP resource URL option '", name,
+           "' contains unsupported control characters.", call. = FALSE)
+    }
+    value
+  }
+  sslmode <- option_value("sslmode", "ssl_mode")
+  if (!is.null(sslmode)) {
+    sslmode <- tolower(sslmode)
+    allowed_sslmode <- c(
+      "disable", "allow", "prefer", "require", "verify-ca", "verify-full"
+    )
+    if (!sslmode %in% allowed_sslmode) {
+      stop("sslmode must be one of: ", paste(allowed_sslmode, collapse = ", "),
+           ".", call. = FALSE)
+    }
+  }
+  ssl_required <- option_value("ssl_required", "tls_required")
+  if (!is.null(ssl_required)) {
+    normalized <- tolower(ssl_required)
+    if (!normalized %in% c("true", "false", "1", "0")) {
+      stop("ssl_required must be true or false.", call. = FALSE)
+    }
+    ssl_required <- normalized %in% c("true", "1")
+  }
 
   list(
     dbms              = .normalizeDBMS(dbms_raw),
@@ -332,7 +628,15 @@
     results_schema    = pick("results_schema", "results"),
     temp_schema       = pick("temp_schema", "temp"),
     warehouse         = pick("warehouse"),
-    driver            = pick("driver")
+    driver            = pick("driver"),
+    sslmode           = sslmode,
+    sslrootcert       = option_value("sslrootcert", "ssl_root_cert"),
+    sslcert           = option_value("sslcert", "ssl_cert"),
+    sslkey            = option_value("sslkey", "ssl_key"),
+    ssl_required      = ssl_required,
+    ssl_ca            = option_value("ssl_ca"),
+    ssl_capath        = option_value("ssl_capath"),
+    ssl_cipher        = option_value("ssl_cipher")
   )
 }
 
@@ -367,19 +671,34 @@ OMOPResourceClient <- R6::R6Class(
       dbms <- tolower(p$dbms %||% "")
 
       if (dbms == "postgresql") {
+        sslmode <- .effectivePostgresSslMode(p$sslmode, p$host)
         if (requireNamespace("RPostgres", quietly = TRUE)) {
           args <- .compactConnectionArgs(list(
             host = p$host, port = p$port, dbname = p$database,
-            user = user, password = pass))
-          return(do.call(DBI::dbConnect,
-                         c(list(RPostgres::Postgres()), args)))
+            user = user, password = pass, timezone = "UTC",
+            sslmode = sslmode, sslrootcert = p$sslrootcert,
+            sslcert = p$sslcert, sslkey = p$sslkey))
+          connection <- do.call(
+            DBI::dbConnect, c(list(RPostgres::Postgres()), args)
+          )
+          return(.ensurePostgresUtc(connection))
         }
         if (requireNamespace("RPostgreSQL", quietly = TRUE)) {
+          if (!identical(sslmode, "disable") || any(!vapply(
+              list(p$sslrootcert, p$sslcert, p$sslkey),
+              is.null, logical(1L)))) {
+            stop("Resource-level PostgreSQL TLS options require RPostgres; ",
+                 "the legacy RPostgreSQL fallback cannot apply them safely.",
+                 call. = FALSE)
+          }
           args <- .compactConnectionArgs(list(
             host = p$host, port = p$port, dbname = p$database,
-            user = user, password = pass))
-          return(do.call(DBI::dbConnect,
-                         c(list(RPostgreSQL::PostgreSQL()), args)))
+            user = user, password = pass,
+            options = "-c timezone=UTC"))
+          connection <- do.call(
+            DBI::dbConnect, c(list(RPostgreSQL::PostgreSQL()), args)
+          )
+          return(.ensurePostgresUtc(connection))
         }
         stop("No PostgreSQL driver found. Install RPostgres or RPostgreSQL.",
              call. = FALSE)
@@ -412,10 +731,21 @@ OMOPResourceClient <- R6::R6Class(
       if (dbms %in% c("mysql", "mariadb")) {
         if (!requireNamespace("RMariaDB", quietly = TRUE))
           stop("RMariaDB package required for MySQL/MariaDB.", call. = FALSE)
+        require_tls <- .effectiveMariaTlsRequired(
+          p$ssl_required, p$host,
+          list(p$ssl_ca, p$ssl_capath, p$sslcert, p$sslkey, p$ssl_cipher)
+        )
         args <- .compactConnectionArgs(list(
           host = p$host, port = p$port, dbname = p$database,
-          user = user, password = pass))
-        return(do.call(DBI::dbConnect, c(list(RMariaDB::MariaDB()), args)))
+          username = user, password = pass, timezone = "+00:00",
+          client.flag = if (require_tls) .mariaTlsClientFlag() else NULL,
+          ssl.key = p$sslkey, ssl.cert = p$sslcert, ssl.ca = p$ssl_ca,
+          ssl.capath = p$ssl_capath, ssl.cipher = p$ssl_cipher))
+        connection <- do.call(
+          DBI::dbConnect,
+          .mariaConnectionCallArgs(RMariaDB::MariaDB(), args)
+        )
+        return(.ensureMariaSession(connection, require_tls))
       }
 
       if (dbms == "oracle") {

@@ -18,6 +18,9 @@ measurement = "site_quality_flag")}. An entry for a standard CDM table
 authorizes only the listed additional columns; an entry for a non-standard
 table authorizes the table and only those columns. Wildcards are deliberately
 unsupported so a later schema change cannot silently expand the release
-surface.
+surface. Listing a column controls visibility, not identifier semantics:
+extension names ending in \code{_id}, \code{_key}, or \code{_identifier}
+remain denied unless they are the person/subject key or an explicitly listed
+OMOP-shaped \code{*_concept_id} column.
 }
 \keyword{internal}

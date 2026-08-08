@@ -5,15 +5,131 @@ test_staged_output <- function(format = "long") {
   )
 }
 
-test_staged_semantics <- function(format = "long", component = NULL) {
+test_staged_plan <- function(output = test_staged_output(),
+                             output_name = "analysis") {
+  outputs <- list(output)
+  names(outputs) <- output_name
+  list(outputs = outputs)
+}
+
+test_staged_semantics <- function(format = "long", component = NULL,
+                                  output_name = "analysis") {
   .stagedSemanticContract(
-    test_staged_output(format), component = component
+    test_staged_plan(test_staged_output(format), output_name),
+    output_name, component = component
   )
 }
 
 test_staged_bundle <- function(output_name, token, format = "long") {
-  .stagedBundleContract(output_name, token, test_staged_output(format))
+  .stagedBundleContract(
+    test_staged_plan(test_staged_output(format), output_name),
+    output_name, token
+  )
 }
+
+test_that("staged semantics bind cohort and selected population definitions", {
+  digest <- function(plan) {
+    .stagedSemanticContract(plan, "analysis")$query_semantics_sha256
+  }
+
+  cohort_7 <- test_staged_plan()
+  cohort_7$cohort <- list(
+    type = "cohort_table", cohort_definition_id = 7L
+  )
+  cohort_8 <- cohort_7
+  cohort_8$cohort$cohort_definition_id <- 8L
+  expect_false(identical(digest(cohort_7), digest(cohort_8)))
+
+  population_7 <- test_staged_plan()
+  population_7$outputs$analysis$population_id <- "selected"
+  population_7$populations <- list(
+    base = list(kind = "criteria"),
+    selected = list(kind = "criteria", cohort_definition_id = 7L)
+  )
+  population_8 <- population_7
+  population_8$populations$selected$cohort_definition_id <- 8L
+  expect_false(identical(digest(population_7), digest(population_8)))
+
+  filtered <- population_7
+  filtered$populations$selected$cohort_definition_id <- NULL
+  filtered$populations$selected$filter_tree <- list(
+    type = "sex", params = list(value = "F")
+  )
+  filtered_other <- filtered
+  filtered_other$populations$selected$filter_tree$params$value <- "M"
+  expect_false(identical(digest(filtered), digest(filtered_other)))
+
+  indexed <- population_7
+  indexed$populations$selected$cohort_definition_id <- NULL
+  indexed$populations$selected$index_event <- list(
+    table = "condition_occurrence", concept_set = 201820L,
+    primary_limit = "first"
+  )
+  indexed_other <- indexed
+  indexed_other$populations$selected$index_event$primary_limit <- "last"
+  expect_false(identical(digest(indexed), digest(indexed_other)))
+})
+
+test_that("staged scope is portable, data-independent and fail-closed", {
+  frame_a <- data.frame(person_id = 1:3)
+  class(frame_a) <- c("omop.table", "data.frame")
+  attr(frame_a, "site_lineage") <- "site-a"
+  frame_b <- data.frame(person_id = 101:103, extra = 1L)
+  class(frame_b) <- c("omop.table", "data.frame")
+  attr(frame_b, "site_lineage") <- "site-b"
+
+  first <- test_staged_plan()
+  first$scope <- list(
+    cohort = 42L,
+    tables = "eligible_people",
+    combine = "intersect",
+    tables_frames = list(42L, frame_a)
+  )
+  second <- first
+  second$scope$tables_frames <- list(42L, frame_b)
+
+  expect_silent(.validateStagedScopeDeclaration(first))
+  expect_silent(.validateStagedScopeDeclaration(second))
+  expect_identical(
+    .stagedSemanticContract(first, "analysis")$query_semantics_sha256,
+    .stagedSemanticContract(second, "analysis")$query_semantics_sha256
+  )
+
+  changed_id <- first
+  changed_id$scope$cohort <- 43L
+  changed_id$scope$tables_frames[[1L]] <- 43L
+  expect_false(identical(
+    .stagedSemanticContract(first, "analysis")$query_semantics_sha256,
+    .stagedSemanticContract(changed_id, "analysis")$query_semantics_sha256
+  ))
+  changed_combine <- first
+  changed_combine$scope$combine <- "union"
+  expect_false(identical(
+    .stagedSemanticContract(first, "analysis")$query_semantics_sha256,
+    .stagedSemanticContract(changed_combine,
+                            "analysis")$query_semantics_sha256
+  ))
+  changed_symbol <- first
+  changed_symbol$scope$tables <- "other_eligible_people"
+  expect_false(identical(
+    .stagedSemanticContract(first, "analysis")$query_semantics_sha256,
+    .stagedSemanticContract(changed_symbol,
+                            "analysis")$query_semantics_sha256
+  ))
+
+  undeclared <- test_staged_plan()
+  undeclared$scope <- list(tables_frames = frame_a, combine = "union")
+  expect_error(
+    .validateStagedScopeDeclaration(undeclared),
+    "do not match the portable"
+  )
+  unresolved <- test_staged_plan()
+  unresolved$scope <- list(tables = "eligible_people", combine = "union")
+  expect_error(
+    .validateStagedScopeDeclaration(unresolved),
+    "were not resolved"
+  )
+})
 
 test_that("staged descriptors publish and validate token compatibility", {
   base <- tempfile("dsomop_staging_contract_")
@@ -219,12 +335,15 @@ test_that("component siblings share an output bundle without sharing shape", {
     type = "temporal_covariates", bin_width = 30L,
     window_start = -365L, window_end = 0L
   )
-  bundle <- .stagedBundleContract("trajectory", token, output)
+  plan <- test_staged_plan(output, "trajectory")
+  bundle <- .stagedBundleContract(plan, "trajectory", token)
   person_ref <- .stageDataFrame(
     data.frame(person_id = 1:3, cohort_row_id = 11:13),
     "trajectory.personRef", directory, token, key,
     pseudonymization = public,
-    semantic_contract = .stagedSemanticContract(output, "personRef"),
+    semantic_contract = .stagedSemanticContract(
+      plan, "trajectory", "personRef"
+    ),
     bundle_contract = bundle
   )
   temporal <- .stageDataFrame(
@@ -234,7 +353,9 @@ test_that("component siblings share an output bundle without sharing shape", {
     ),
     "trajectory.temporalCovariates", directory, token, key,
     pseudonymization = public,
-    semantic_contract = .stagedSemanticContract(output, "temporalCovariates"),
+    semantic_contract = .stagedSemanticContract(
+      plan, "trajectory", "temporalCovariates"
+    ),
     bundle_contract = bundle
   )
 
@@ -242,6 +363,10 @@ test_that("component siblings share an output bundle without sharing shape", {
     person_ref$metadata$semantic_contract,
     temporal$metadata$semantic_contract
   ))
+  expect_identical(
+    person_ref$metadata$semantic_contract$query_semantics_sha256,
+    temporal$metadata$semantic_contract$query_semantics_sha256
+  )
   expect_identical(
     person_ref$metadata$bundle_contract,
     temporal$metadata$bundle_contract
@@ -261,7 +386,7 @@ test_that("component siblings share an output bundle without sharing shape", {
   )
 
   other_token <- .generateStagingToken()
-  incompatible <- .stagedBundleContract("trajectory", other_token, output)
+  incompatible <- .stagedBundleContract(plan, "trajectory", other_token)
   expect_error(
     omopStagedDatasetPath(
       temporal, expected_bundle_contract = incompatible
@@ -278,12 +403,13 @@ test_that("staging manifest v2 round-trips complete descriptors", {
   directory <- .createStagingDir(token)
   key <- openssl::rand_bytes(32L)
   output <- test_staged_output()
+  plan <- test_staged_plan(output, "analysis")
   descriptor <- .stageDataFrame(
     data.frame(person_id = 1:3, value = c(2, 4, 8)),
     "analysis", directory, token, key,
     pseudonymization = .testPublicPseudonymization(key),
-    semantic_contract = .stagedSemanticContract(output),
-    bundle_contract = .stagedBundleContract("analysis", token, output)
+    semantic_contract = .stagedSemanticContract(plan, "analysis"),
+    bundle_contract = .stagedBundleContract(plan, "analysis", token)
   )
 
   path <- .writeStagingManifest(directory, list(analysis = descriptor))

@@ -117,14 +117,18 @@
 #' @param unit Character; disclosure unit (person, record, or distribution).
 #' @param count_cols Character vector of count-valued result columns.
 #' @param person_id_col Character; person identifier column, or NULL.
+#' @param dist_count_col Character vector; for distribution outputs, every
+#'   count-basis column that must clear \code{nfilter.dist}.
 #' @param min_max Logical; whether minimum/maximum outputs require protection.
 #' @param gate Character; disclosure-gate strategy.
 #' @keywords internal
 .omopAnalysisDisclosure <- function(unit = "person", count_cols = character(0),
-                                    person_id_col = NULL, min_max = FALSE,
+                                    person_id_col = NULL,
+                                    dist_count_col = NULL, min_max = FALSE,
                                     gate = "distinct_person") {
   list(person_id_col = person_id_col,
        count_cols    = count_cols %||% character(0),
+       dist_count_col = dist_count_col,
        unit          = unit,
        min_max       = isTRUE(min_max),
        gate          = gate)
@@ -195,10 +199,12 @@ omopAnalysisScope <- function(accepts_cohort = TRUE, accepts_tables = TRUE,
 #' @return A disclosure spec list.
 #' @export
 omopAnalysisDisclosure <- function(unit = "person", count_cols = character(0),
-                                   person_id_col = NULL, min_max = FALSE,
+                                   person_id_col = NULL,
+                                   dist_count_col = NULL, min_max = FALSE,
                                    gate = "distinct_person") {
   .omopAnalysisDisclosure(unit = unit, count_cols = count_cols,
-                          person_id_col = person_id_col, min_max = min_max,
+                          person_id_col = person_id_col,
+                          dist_count_col = dist_count_col, min_max = min_max,
                           gate = gate)
 }
 
@@ -445,13 +451,16 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   entries <- list()
   for (qid in names(queries)) {
     q <- queries[[qid]]
+    safe_top_n <- .qlStripRawTopN(q$sql)
+    query_sql <- safe_top_n$sql
     al <- allowlist[[qid]]
     if (strict && is.null(al)) next
 
     safety <- if (!is.null(al)) al else .ql_classify(q$sql, q$mode)
+    safety <- .ql_effective_safety(q, safety)
     safety_class <- safety$class %||% safety[["class"]]
     if (identical(safety_class, "BLOCKED")) next
-    supported_dialects <- .omopQuerySupportedDialects(q$sql)
+    supported_dialects <- .omopQuerySupportedDialects(query_sql)
     if (!dialect %in% supported_dialects) next
 
     # Sensitive count columns: declared by the template (preferred), else
@@ -484,7 +493,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     # claim a capability we cannot honour. See .omopAnalysisInjectCohort.
     scope_col <- q$scope_column
     scopable <- !is.null(scope_col) && nzchar(scope_col) &&
-      grepl("@cohort\\b", q$sql)
+      grepl("@cohort\\b", query_sql)
 
     name <- paste0("dsomop:", qid)
     query_disclosure <- .omopAnalysisDisclosure(
@@ -501,9 +510,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       description = q$description,
       domain      = tolower(q$group %||% "general"),
       params      = .omopAnalysisParamsFromInputs(q$inputs),
-      compute     = list(kind = "sql", sql = q$sql, fn = NULL),
+      compute     = list(kind = "sql", sql = query_sql, fn = NULL),
       dependencies = list(
-        tables = .omopQueryTableDependencies(q$sql),
+        tables = .omopQueryTableDependencies(query_sql),
         packages = character(0)
       ),
       disclosure  = query_disclosure,
@@ -514,6 +523,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       meta  = list(adapter = "query", query_id = qid,
                    inputs_df = q$inputs, strict = strict,
                    scope_column = scope_col,
+                   post_gate_top_n = safe_top_n$post_gate_top_n,
                    cdm_version = q$cdm_version,
                    supported_dialects = supported_dialects,
                    target_dialect = dialect)
@@ -756,7 +766,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
              " LEFT JOIN ", concept,
              " c ON c.concept_id = p.gender_concept_id",
              " GROUP BY p.gender_concept_id, c.concept_name",
-             " ORDER BY n_persons DESC"),
+             " ORDER BY p.gender_concept_id"),
       handle$target_dialect)
     .executeQuery(handle, sql)
   }
@@ -798,12 +808,10 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
 #' Dialect-aware whole-day difference expression
 #'
-#' Day count between two date expressions (\code{end_expr - start_expr}). Mirrors
-#' the per-dialect branching the profiling module uses for date functions
-#' (\code{\link{.sql_translate}} translates only DATEADD/TOP, not date diffs).
-#' SQLite uses \code{julianday()}; everything else uses ANSI date subtraction
-#' (Postgres returns an integer day count) with an explicit DAY extraction for
-#' the engines that return an interval.
+#' Day count between two generated date expressions. The reviewed local SQL
+#' translator also supports canonical \code{DATEDIFF(day, start, end)} when the
+#' operands are identifiers; this helper accepts more general expressions and
+#' therefore constructs the date difference explicitly for each dialect.
 #'
 #' @param handle CDM handle (selects the dialect).
 #' @param end_expr Character; SQL date expression for the later date.
@@ -815,13 +823,21 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   if (identical(dialect, "sqlite")) {
     paste0("CAST(julianday(", end_expr, ") - julianday(", start_expr,
            ") AS INTEGER)")
-  } else if (dialect %in% c("sql server", "redshift")) {
+  } else if (dialect %in% c("sql server", "redshift", "snowflake")) {
     paste0("DATEDIFF(day, ", start_expr, ", ", end_expr, ")")
+  } else if (dialect %in% c("mysql", "spark")) {
+    paste0("DATEDIFF(", end_expr, ", ", start_expr, ")")
   } else if (identical(dialect, "bigquery")) {
-    paste0("DATE_DIFF(", end_expr, ", ", start_expr, ", DAY)")
+    paste0("DATE_DIFF(CAST(", end_expr, " AS DATE), CAST(", start_expr,
+           " AS DATE), DAY)")
+  } else if (identical(dialect, "oracle")) {
+    paste0("CAST(TRUNC(", end_expr, ") - TRUNC(", start_expr,
+           ") AS INTEGER)")
   } else {
-    # PostgreSQL/duckdb and friends: date - date yields an integer day count.
-    paste0("CAST(", end_expr, " - ", start_expr, " AS INTEGER)")
+    # PostgreSQL DATEADD yields a timestamp (date + interval). Cast each bound
+    # back to DATE before subtraction so the result is a calendar-day integer,
+    # never an interval that PostgreSQL cannot cast to INTEGER.
+    paste0("CAST(", end_expr, " AS DATE) - CAST(", start_expr, " AS DATE)")
   }
 }
 
@@ -831,8 +847,10 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   dialect <- handle$target_dialect %||% ""
   if (identical(dialect, "sqlite")) {
     paste0("CAST(strftime('%Y', ", date_expr, ") AS INTEGER)")
+  } else if (dialect %in% c("mysql", "sql server", "spark")) {
+    paste0("YEAR(", date_expr, ")")
   } else {
-    paste0("CAST(EXTRACT(YEAR FROM ", date_expr, ") AS INTEGER)")
+    .omopIntegerCastSql(handle, paste0("EXTRACT(YEAR FROM ", date_expr, ")"))
   }
 }
 
@@ -872,6 +890,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     list("condition_occurrence", "condition_concept_id", "condition_start_date"))
 
   list(
+    table_name  = spec[[1]],
     table       = .qualifyTable(handle, spec[[1]]),
     person_col  = "person_id",
     date_col    = spec[[3]],
@@ -882,8 +901,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
 #' INNER JOIN clause onto the scoped cohort (or "" when cohort-wide)
 #'
-#' Every native diagnostic restricts its population to \code{ctx$scoped_cohort}
-#' the same way: an INNER JOIN on \code{subject_id}. NULL scope -> "" (cohort-wide).
+#' Every native diagnostic restricts its population to the distinct persons in
+#' \code{ctx$scoped_cohort}. Recurrent cohort episodes therefore filter
+#' membership without multiplying source records. NULL scope -> "" (cohort-wide).
 #' The cohort identifier is re-validated here as defence-in-depth.
 #'
 #' @param ctx Run-path ctx.
@@ -895,8 +915,10 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   if (is.null(ctx$scoped_cohort)) return(list(join = "", cohort = NULL))
   cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
   list(
-    join = paste0(" INNER JOIN ", cohort, " coh ON coh.subject_id = ",
-                  alias, ".", person_col),
+    join = paste0(
+      " INNER JOIN (SELECT DISTINCT subject_id FROM ", cohort,
+      ") coh ON coh.subject_id = ", alias, ".", person_col
+    ),
     cohort = cohort
   )
 }
@@ -958,6 +980,173 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   if (isTRUE(has_end)) "cohort_end_date" else "cohort_start_date"
 }
 
+#' Build the canonical first cohort episode for person-level OHDSI analyses
+#'
+#' General dsOMOP longitudinal extraction preserves every cohort episode. Some
+#' OHDSI analyses, however, require exactly one index episode per person. This
+#' helper makes that reduction explicit and deterministic: exact duplicate eras
+#' are collapsed and the earliest start/end pair is selected per subject. A
+#' start-only cohort is treated as a one-day episode.
+#'
+#' @param handle CDM handle.
+#' @param cohort Validated cohort table name.
+#' @return SQL for a derived table with one row per subject.
+#' @keywords internal
+.omopFirstCohortEpisodeSql <- function(handle, cohort) {
+  cohort <- .validateIdentifier(cohort, "cohort")
+  end_col <- .omopCohortEndDateCol(handle, cohort)
+  end_select <- if (identical(end_col, "cohort_end_date")) {
+    "cohort_end_date"
+  } else {
+    "cohort_start_date AS cohort_end_date"
+  }
+  paste0(
+    "(SELECT ranked.subject_id, ranked.cohort_start_date, ",
+    "ranked.cohort_end_date FROM (",
+    "SELECT episodes.subject_id, episodes.cohort_start_date, ",
+    "episodes.cohort_end_date, ROW_NUMBER() OVER (PARTITION BY ",
+    "episodes.subject_id ORDER BY episodes.cohort_start_date, ",
+    "episodes.cohort_end_date) AS dsomop_episode_order FROM (",
+    "SELECT DISTINCT subject_id, cohort_start_date, ", end_select,
+    " FROM ", cohort, ") episodes) ranked ",
+    "WHERE ranked.dsomop_episode_order = 1)"
+  )
+}
+
+#' Build one person-level TAR/outcome row from the canonical index episode
+#'
+#' The returned relation has one row per person and pre-aggregates outcome rows
+#' inside that person's selected time-at-risk window. Consequently, repeated
+#' outcome events increase `outcomes` but can never fan out `person_days`.
+#' Episodes whose requested TAR ends before it starts are omitted.
+#'
+#' @param handle CDM handle.
+#' @param cohort Validated cohort table name.
+#' @param out_src Outcome source returned by `.omopOutcomeSource`, or NULL.
+#' @param tar_start,tar_end Integer TAR offsets.
+#' @param anchor_start,anchor_end Either `"start"` or `"end"`.
+#' @return SQL for a derived person-level outcome substrate.
+#' @keywords internal
+.omopPersonOutcomeSubstrateSql <- function(handle, cohort, out_src,
+                                           tar_start, tar_end,
+                                           anchor_start = "start",
+                                           anchor_end = "end") {
+  first <- .omopFirstCohortEpisodeSql(handle, cohort)
+  anchor <- function(value) {
+    if (identical(value, "end")) "cohort_end_date" else "cohort_start_date"
+  }
+  tar_lo <- paste0("DATEADD(day, ", as.integer(tar_start), ", coh.",
+                   anchor(anchor_start), ")")
+  tar_hi <- paste0("DATEADD(day, ", as.integer(tar_end), ", coh.",
+                   anchor(anchor_end), ")")
+  pdays <- .omopDateDiffDays(handle, tar_hi, tar_lo)
+
+  outcomes <- "0"
+  person_outcomes <- "0"
+  if (!is.null(out_src)) {
+    predicate <- paste0(
+      "o.", out_src$person_col, " = coh.subject_id AND o.",
+      out_src$concept_col, " IN (", out_src$id_list, ") AND o.",
+      out_src$date_col, " >= ", tar_lo, " AND o.", out_src$date_col,
+      " <= ", tar_hi)
+    outcomes <- paste0("(SELECT COUNT(o.", out_src$concept_col, ") FROM ",
+                       out_src$table, " o WHERE ", predicate, ")")
+    person_outcomes <- paste0(
+      "CASE WHEN EXISTS (SELECT 1 FROM ", out_src$table,
+      " o WHERE ", predicate, ") THEN 1 ELSE 0 END")
+  }
+
+  paste0(
+    "(SELECT coh.subject_id, coh.cohort_start_date, coh.cohort_end_date, ",
+    pdays, " AS person_days, ", outcomes, " AS outcomes, ",
+    person_outcomes, " AS person_outcomes FROM ", first, " coh ",
+    "WHERE ", tar_hi, " >= ", tar_lo, ")"
+  )
+}
+
+#' Select top-N groups without exposing within-band rank
+#'
+#' Ordering directly by an exact support count lets callers vary `top_n` to
+#' learn rank differences that count banding was meant to hide. Rank on the
+#' same server-owned count bands used for release, then use only public group
+#' keys as deterministic tie-breakers. Returned counts remain untouched for the
+#' normal disclosure gate.
+#'
+#' @param df Aggregate data frame.
+#' @param support_cols Count columns defining support.
+#' @param top_n Maximum number of rows.
+#' @param key_cols Public grouping columns used as stable tie-breakers.
+#' @param priority_cols Optional public columns ordered before banded support.
+#' @return A deterministically ordered subset of `df`.
+#' @keywords internal
+.omopBandedTopN <- function(df, support_cols, top_n, key_cols,
+                            priority_cols = character(0)) {
+  if (!is.data.frame(df) || nrow(df) == 0L) return(df)
+  required <- unique(c(support_cols, key_cols, priority_cols))
+  if (length(support_cols) == 0L || any(!required %in% names(df))) {
+    stop("Internal top-N contract is missing support or key columns.",
+         call. = FALSE)
+  }
+  top_n <- max(as.integer(top_n)[1], 1L)
+  band_width <- .omopDisclosureSettings()$nfilter_band
+  banded <- vapply(support_cols, function(col) {
+    vapply(as.numeric(df[[col]]), .bandCount, numeric(1),
+           band_width = band_width)
+  }, numeric(nrow(df)))
+  if (is.null(dim(banded))) banded <- matrix(banded, ncol = 1L)
+  score <- apply(banded, 1L, function(x) {
+    if (all(is.na(x))) -Inf else max(x, na.rm = TRUE)
+  })
+  priorities <- lapply(priority_cols, function(col) df[[col]])
+  keys <- lapply(key_cols, function(col) as.character(df[[col]]))
+  ord <- do.call(order, c(priorities, list(-score), keys,
+                          list(na.last = TRUE, method = "radix")))
+  keep <- ord[seq_len(min(length(ord), top_n))]
+  out <- df[keep, , drop = FALSE]
+  rownames(out) <- NULL
+  out
+}
+
+#' Apply a QueryLibrary top-N only after the unified disclosure gate
+#' @keywords internal
+.omopAnalysisPostGateTopN <- function(df, entry, sanitized) {
+  if (!isTRUE(entry$meta$post_gate_top_n) || !is.data.frame(df) ||
+      nrow(df) == 0L) {
+    return(df)
+  }
+  spec <- Filter(function(p) identical(p$name, "top_n"), entry$params)
+  default <- if (length(spec) == 1L) spec[[1L]]$default else NULL
+  top_n <- suppressWarnings(as.integer(sanitized$top_n %||% default))
+  if (length(top_n) != 1L || is.na(top_n) || top_n < 1L) {
+    stop("QueryLibrary top_n is missing after parameter validation.",
+         call. = FALSE)
+  }
+
+  person_support <- intersect(
+    entry$disclosure$person_id_col %||% character(0), names(df)
+  )
+  support <- if (length(person_support) > 0L) {
+    person_support
+  } else {
+    intersect(entry$disclosure$count_cols %||% character(0), names(df))
+  }
+  count_cols <- intersect(
+    entry$disclosure$count_cols %||% character(0), names(df)
+  )
+  key_cols <- setdiff(names(df), count_cols)
+  key_cols <- key_cols[!grepl(
+    "(^|_)(avg|average|mean|rate|ratio|proportion|sd|std|median|p[0-9]+)(_|$)",
+    key_cols, ignore.case = TRUE, perl = TRUE
+  )]
+  if (length(support) == 0L || length(key_cols) == 0L) {
+    stop("QueryLibrary top-N has no reviewed public support/key contract.",
+         call. = FALSE)
+  }
+  .omopBandedTopN(
+    df, support_cols = support, top_n = top_n, key_cols = key_cols
+  )
+}
+
 # --- Native diagnostic 1: incidence rate -------------------------------------
 
 #' \code{dsomop:incidence.rate} entry (CohortIncidence, re-implemented)
@@ -997,11 +1186,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
       handle$target_dialect))
 
-    end_col <- .omopCohortEndDateCol(handle, cohort)
-    anchor <- function(a) if (identical(a, "end")) end_col else "cohort_start_date"
-    tar_lo <- paste0("DATEADD(day, ", tar_start, ", c.", anchor(anchor_start), ")")
-    tar_hi <- paste0("DATEADD(day, ", tar_end, ", c.", anchor(anchor_end), ")")
-    pdays  <- .omopDateDiffDays(handle, tar_hi, tar_lo)
+    anchor <- function(a) {
+      if (identical(a, "end")) "cohort_end_date" else "cohort_start_date"
+    }
 
     # Strata expressions.
     strata_sel <- c("'all' AS stratum")
@@ -1016,54 +1203,43 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       age_years <- .omopFloorDivideSql(age_at, 365L)
       ageband <- .omopFloorBinSql(age_years, age_band)
       strata_sel <- if (by_gender) {
-        paste0("gc.concept_name || '|' || CAST(", ageband, " AS VARCHAR) AS stratum")
-      } else paste0("CAST(", ageband, " AS VARCHAR) AS stratum")
+        paste0(.omopConcatSql(
+          handle, "gc.concept_name", "'|'",
+          .omopTextCastSql(handle, ageband)
+        ), " AS stratum")
+      } else paste0(.omopTextCastSql(handle, ageband), " AS stratum")
       grp <- c(grp, ageband)
     }
     if (by_year) {
       yr <- .omopYearExpr(handle, paste0("c.", anchor(anchor_start)))
       strata_sel <- if (length(grp) > 0) {
-        paste0(sub(" AS stratum$", "", strata_sel), " || '|' || CAST(", yr,
-               " AS VARCHAR) AS stratum")
-      } else paste0("CAST(", yr, " AS VARCHAR) AS stratum")
+        paste0(.omopConcatSql(
+          handle, sub(" AS stratum$", "", strata_sel), "'|'",
+          .omopTextCastSql(handle, yr)
+        ), " AS stratum")
+      } else paste0(.omopTextCastSql(handle, yr), " AS stratum")
       grp <- c(grp, yr)
     }
     group_by <- if (length(grp) > 0) paste0(" GROUP BY ", paste(grp, collapse = ", ")) else ""
 
     # person birth date (year-01-01) for age; gender concept name.
-    birth_dt <- if (identical(handle$target_dialect %||% "", "sqlite")) {
-      "(CAST(p.year_of_birth AS VARCHAR) || '-01-01')"
-    } else {
-      "CAST((CAST(p.year_of_birth AS VARCHAR) || '-01-01') AS DATE)"
-    }
+    birth_dt <- .omopYearStartDateSql(handle, "p.year_of_birth")
 
     out_src <- .omopOutcomeSource(handle, outcome_id, domain_code)
-    outcome_join <- ""
-    out_event_expr <- "0"
-    out_person_expr <- "NULL"
-    if (!is.null(out_src)) {
-      # outcomes (records) and person_outcomes (distinct persons) within TAR.
-      outcome_join <- paste0(
-        " LEFT JOIN ", out_src$table, " o ON o.", out_src$person_col,
-        " = c.subject_id AND o.", out_src$concept_col, " IN (", out_src$id_list,
-        ") AND o.", out_src$date_col, " >= ", tar_lo,
-        " AND o.", out_src$date_col, " <= ", tar_hi)
-      out_event_expr  <- paste0("COUNT(o.", out_src$concept_col, ")")
-      out_person_expr <- paste0("COUNT(DISTINCT o.", out_src$person_col, ")")
-    }
+    substrate <- .omopPersonOutcomeSubstrateSql(
+      handle, cohort, out_src, tar_start, tar_end, anchor_start, anchor_end)
 
     sql <- .sql_translate(paste0(
       "SELECT ", strata_sel, ", ",
       "COUNT(DISTINCT c.subject_id) AS persons_at_risk, ",
-      "SUM(", pdays, ") AS person_days, ",
-      out_event_expr, " AS outcomes, ",
-      out_person_expr, " AS person_outcomes ",
-      "FROM ", cohort, " c ",
+      "SUM(c.person_days) AS person_days, ",
+      "SUM(c.outcomes) AS outcomes, ",
+      "SUM(c.person_outcomes) AS person_outcomes ",
+      "FROM ", substrate, " c ",
       "INNER JOIN ", person, " p ON p.person_id = c.subject_id ",
       "LEFT JOIN ", concept, " gc ON gc.concept_id = p.gender_concept_id",
-      outcome_join,
       group_by,
-      " ORDER BY persons_at_risk DESC"),
+      " ORDER BY stratum"),
       handle$target_dialect)
     # Splice the dialect-specific birth-date expression in last (it is author SQL,
     # not user input, and is kept out of @param substitution).
@@ -1174,25 +1350,33 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       "4" = list("observation", "observation_concept_id", "observation_date"),
       list("condition_occurrence", "condition_concept_id", "condition_start_date"))
     tbl <- .qualifyTable(handle, spec[[1]])
+    event_id_col <- .eventPrimaryKeyColumn(.buildBlueprint(handle), spec[[1]])
+    if (is.null(event_id_col)) {
+      stop("Index-event breakdown requires a stable OMOP event key.",
+           call. = FALSE)
+    }
+    ranked <- .rankedCohortSql(cohort, handle)
 
     # Events occurring ON the cohort index date, per concept.
     on_index <- paste0("e.", spec[[3]], " = c.cohort_start_date")
     .omopDiagAssertPersons(handle, ctx, tbl, "e", "person_id")
 
+    matched <- paste0(
+      "SELECT DISTINCT e.", event_id_col, " AS event_id, e.", spec[[2]],
+      " AS concept_id, e.person_id FROM ", tbl, " e INNER JOIN ", ranked,
+      " c ON c.subject_id = e.person_id AND ", on_index
+    )
     sql <- .sql_translate(paste0(
-      "SELECT e.", spec[[2]], " AS concept_id, cc.concept_name, ",
-      "COUNT(*) AS concept_count, ",
-      "COUNT(DISTINCT e.person_id) AS subject_count ",
-      "FROM ", tbl, " e ",
-      "INNER JOIN ", cohort, " c ON c.subject_id = e.person_id AND ", on_index,
-      " LEFT JOIN ", concept, " cc ON cc.concept_id = e.", spec[[2]],
-      " GROUP BY e.", spec[[2]], ", cc.concept_name",
+      "SELECT m.concept_id, cc.concept_name, COUNT(*) AS concept_count, ",
+      "COUNT(DISTINCT m.person_id) AS subject_count FROM (", matched, ") m ",
+      "LEFT JOIN ", concept, " cc ON cc.concept_id = m.concept_id",
+      " GROUP BY m.concept_id, cc.concept_name",
       " ORDER BY concept_count DESC"),
       handle$target_dialect)
 
     df <- .executeQuery(handle, sql)
-    if (is.data.frame(df) && nrow(df) > top_n) df <- df[seq_len(top_n), , drop = FALSE]
-    df
+    .omopBandedTopN(df, support_cols = "subject_count", top_n = top_n,
+                    key_cols = "concept_id")
   }
 
   .omopAnalysisEntry(
@@ -1223,6 +1407,39 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   )
 }
 
+#' Reduce recurrent episode values to one equally weighted value per person
+#'
+#' The returned support retains both the number of valid episode values and the
+#' number of distinct people, while summary statistics use each person's mean
+#' episode value. This prevents one person with many recurrent episodes from
+#' dominating a released distribution.
+#'
+#' @param values Data frame containing person_id and v.
+#' @return List with values, count_value and n_persons.
+#' @keywords internal
+.omopPersonWeightedDistributionValues <- function(values) {
+  if (!is.data.frame(values) ||
+      !all(c("person_id", "v") %in% names(values))) {
+    stop("Distribution values require person_id and v.", call. = FALSE)
+  }
+  numeric_v <- suppressWarnings(as.numeric(values$v))
+  person_id <- as.character(values$person_id)
+  keep <- !is.na(numeric_v) & !is.na(person_id) & nzchar(person_id)
+  if (!any(keep)) {
+    return(list(values = numeric(0), count_value = 0L, n_persons = 0L))
+  }
+  valid <- data.frame(
+    person_id = person_id[keep], v = numeric_v[keep],
+    stringsAsFactors = FALSE
+  )
+  per_person <- stats::aggregate(v ~ person_id, data = valid, FUN = mean)
+  list(
+    values = as.numeric(per_person$v),
+    count_value = nrow(valid),
+    n_persons = nrow(per_person)
+  )
+}
+
 # --- Native diagnostic 3: time distribution ----------------------------------
 
 #' \code{dsomop:cohortdx.time_distribution} entry (CohortDiagnostics)
@@ -1241,41 +1458,66 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   fn <- function(handle, ctx, params) {
     if (is.null(ctx$scoped_cohort)) return(data.frame())
     cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
-    obs <- .qualifyTable(handle, "observation_period")
     metric <- params$metric %||% "time_in_cohort"
-    end_col <- .omopCohortEndDateCol(handle, cohort)
-
-    # Per-person day value depending on the metric.
-    value_expr <- switch(metric,
-      "prior_observation" =
-        .omopDateDiffDays(handle, "c.cohort_start_date", "op.observation_period_start_date"),
-      "post_observation" =
-        .omopDateDiffDays(handle, "op.observation_period_end_date", "c.cohort_start_date"),
-      .omopDateDiffDays(handle, paste0("c.", end_col), "c.cohort_start_date"))
 
     .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
       "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
       handle$target_dialect))
 
-    # Per-person values, then summarise in R into a dist row (snake_case so the
-    # gate's dist branch strips min/max + masks stats below nfilter_dist).
-    join_obs <- if (metric %in% c("prior_observation", "post_observation")) {
-      paste0(" INNER JOIN ", obs, " op ON op.person_id = c.subject_id")
-    } else ""
+    # OMOP permits several non-overlapping observation periods per person.
+    # Prior/post observation is episode-specific: use only the unique period
+    # covering that episode's index date, never every period for the person.
+    if (metric %in% c("prior_observation", "post_observation")) {
+      observation <- .temporalObservationSqlContract(handle, cohort)
+      invalid <- suppressWarnings(as.numeric(
+        .executeQuery(handle, observation$invalid)[[1L]][[1L]]
+      ))
+      if (length(invalid) != 1L || is.na(invalid) || !is.finite(invalid) ||
+          invalid != 0) {
+        stop("Every cohort episode must have exactly one observation_period ",
+             "covering its index date.", call. = FALSE)
+      }
+      source_sql <- observation$observed
+      value_expr <- if (identical(metric, "prior_observation")) {
+        .omopDateDiffDays(
+          handle, "c.cohort_start_date", "c.observation_period_start_date"
+        )
+      } else {
+        .omopDateDiffDays(
+          handle, "c.observation_period_end_date", "c.cohort_start_date"
+        )
+      }
+    } else {
+      ranked <- .rankedCohortSql(cohort, handle)
+      source_sql <- paste0(
+        "SELECT r.cohort_row_id, r.subject_id AS person_id, ",
+        "r.cohort_start_date, r.cohort_end_date FROM ", ranked, " r"
+      )
+      value_expr <- .omopDateDiffDays(
+        handle, "c.cohort_end_date", "c.cohort_start_date"
+      )
+    }
+
+    values_sql <- paste0(
+      "SELECT c.person_id, ", value_expr, " AS v FROM (", source_sql, ") c"
+    )
     vsql <- .sql_translate(paste0(
-      "SELECT ", value_expr, " AS v FROM ", cohort, " c", join_obs),
+      "SELECT x.person_id, x.v FROM (", values_sql,
+      ") x WHERE x.v IS NOT NULL"),
       handle$target_dialect)
     vals <- .executeQuery(handle, vsql)
-    v <- suppressWarnings(as.numeric(vals$v))
-    v <- v[!is.na(v)]
+    support <- .omopPersonWeightedDistributionValues(vals)
+    v <- support$values
     if (length(v) == 0) {
       return(data.frame(metric = character(0), count_value = integer(0),
+                        n_persons = integer(0),
                         stringsAsFactors = FALSE))
     }
     qs <- stats::quantile(v, c(.10, .25, .5, .75, .90), names = FALSE, type = 7)
     data.frame(
       metric       = metric,
-      count_value  = length(v),
+      count_value  = support$count_value,
+      n_persons    = support$n_persons,
       min_value    = min(v),   # stripped by the gate
       max_value    = max(v),   # stripped by the gate
       avg_value    = mean(v),
@@ -1286,11 +1528,17 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     )
   }
 
+  disclosure <- .omopAnalysisDisclosure(
+    unit = "dist", count_cols = c("count_value", "n_persons"),
+    dist_count_col = c("count_value", "n_persons"), min_max = TRUE
+  )
+
   .omopAnalysisEntry(
     name        = name,
     description = paste0("Distribution (days) of prior-observation, ",
                          "post-observation, or time-in-cohort over the scoped ",
-                         "cohort."),
+                         "cohort. Summary statistics give every person equal ",
+                         "weight across recurrent episodes."),
     domain      = "general",
     params      = list(
       list(name = "metric", type = "enum", required = FALSE,
@@ -1303,8 +1551,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     ),
     dependencies = list(tables = c("observation_period"),
                         packages = character(0)),
-    disclosure = .omopAnalysisDisclosure(
-      unit = "dist", count_cols = "count_value", min_max = TRUE),
+    disclosure = disclosure,
     scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
                                max_tables = 1L),
     mode  = "aggregate",
@@ -1347,20 +1594,22 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     tar    <- .omopDateDiffDays(handle, tar_hi, tar_lo)
 
     vsql <- .sql_translate(paste0(
-      "SELECT ", tar, " AS v FROM ", cohort, " c"),
+      "SELECT c.subject_id AS person_id, ", tar, " AS v FROM ", cohort, " c"),
       handle$target_dialect)
     vals <- .executeQuery(handle, vsql)
-    v <- suppressWarnings(as.numeric(vals$v))
-    v <- v[!is.na(v)]
+    support <- .omopPersonWeightedDistributionValues(vals)
+    v <- support$values
     if (length(v) == 0) {
       return(data.frame(metric = character(0), count_value = integer(0),
+                        n_persons = integer(0),
                         stringsAsFactors = FALSE))
     }
     # p10..p90 ONLY — NEVER native 0%/100% (those ARE min/max).
     qs <- stats::quantile(v, c(.10, .25, .5, .75, .90), names = FALSE, type = 7)
     data.frame(
       metric       = "time_at_risk",
-      count_value  = length(v),
+      count_value  = support$count_value,
+      n_persons    = support$n_persons,
       avg_value    = mean(v),
       stdev_value  = stats::sd(v),
       p10_value    = qs[1], p25_value = qs[2], median_value = qs[3],
@@ -1372,7 +1621,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   .omopAnalysisEntry(
     name        = name,
     description = paste0("Quantiles (p10-p90) of time-at-risk (days) over the ",
-                         "scoped cohort. Min/max are never emitted."),
+                         "scoped cohort. Recurrent episodes are averaged within ",
+                         "person before the quantiles; min/max are never emitted."),
     domain      = "general",
     params      = list(
       list(name = "tar_start_offset", type = "int", required = FALSE, default = "0"),
@@ -1388,7 +1638,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     ),
     dependencies = list(tables = character(0), packages = character(0)),
     disclosure = .omopAnalysisDisclosure(
-      unit = "dist", count_cols = "count_value", min_max = TRUE),
+      unit = "dist", count_cols = c("count_value", "n_persons"),
+      dist_count_col = c("count_value", "n_persons"), min_max = TRUE),
     scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
                                max_tables = 1L),
     mode  = "aggregate",
@@ -1420,31 +1671,53 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     scale <- as.integer(params$time_scale %||% "1")  # bin width in days
     if (!scale %in% c(1L, 30L, 365L)) scale <- 1L
     first_only <- identical(params$first_occurrence_only %||% "0", "1")
+    event_id_col <- .eventPrimaryKeyColumn(
+      .buildBlueprint(handle), out_src$table_name
+    )
+    if (is.null(event_id_col)) {
+      stop("Time-to-event analysis requires a stable OMOP event key.",
+           call. = FALSE)
+    }
 
     .omopDiagAssertPersons(handle, ctx, out_src$table, "o", out_src$person_col,
                            where_sql = paste0("o.", out_src$concept_col,
                                               " IN (", out_src$id_list, ")"))
 
-    # Day-offset from index, binned by `scale`. For first-occurrence-only, reduce
-    # each person to their earliest qualifying event via a correlated MIN.
+    # Day-offset from each cohort episode's index, binned by `scale`. A physical
+    # OMOP event may legitimately occupy different relative bins for different
+    # episodes, but is deduplicated within each person's bin. Contributions are
+    # capped per person/bin using the server policy before aggregation.
+    ranked <- .rankedCohortSql(cohort, handle)
     offset_expr <- .omopDateDiffDays(handle, paste0("o.", out_src$date_col),
                                      "c.cohort_start_date")
     bin_expr <- .omopFloorBinSql(offset_expr, scale)
-    first_clause <- if (first_only) {
-      paste0(" AND o.", out_src$date_col, " = (SELECT MIN(o2.", out_src$date_col,
-             ") FROM ", out_src$table, " o2 WHERE o2.", out_src$person_col,
-             " = o.", out_src$person_col, " AND o2.", out_src$concept_col,
-             " IN (", out_src$id_list, "))")
-    } else ""
+    event_rank <- paste0(
+      "ROW_NUMBER() OVER (PARTITION BY c.cohort_row_id ORDER BY o.",
+      out_src$date_col, ", o.", event_id_col, ")"
+    )
+    matched_base <- paste0(
+      "SELECT c.cohort_row_id, c.subject_id AS person_id, o.",
+      event_id_col, " AS event_id, ", bin_expr, " AS day_offset, ",
+      event_rank, " AS event_rank FROM ", ranked, " c INNER JOIN ",
+      out_src$table, " o ON c.subject_id = o.", out_src$person_col,
+      " AND o.", out_src$concept_col, " IN (", out_src$id_list, ")"
+    )
+    matched <- paste0(
+      "SELECT mb.person_id, mb.event_id, mb.day_offset FROM (", matched_base,
+      ") mb", if (first_only) " WHERE mb.event_rank = 1" else ""
+    )
+    per_person_bin <- paste0(
+      "SELECT m.person_id, m.day_offset, COUNT(DISTINCT m.event_id) AS n ",
+      "FROM (", matched, ") m GROUP BY m.person_id, m.day_offset"
+    )
+    cap <- as.integer(.omopDisclosureSettings()$max_events_per_group)
+    capped <- paste0("CASE WHEN p.n > ", cap, " THEN ", cap,
+                     " ELSE p.n END")
 
     sql <- .sql_translate(paste0(
-      "SELECT ", bin_expr, " AS day_offset, ",
-      "COUNT(*) AS num_events, ",
-      "COUNT(DISTINCT o.", out_src$person_col, ") AS persons ",
-      "FROM ", out_src$table, " o ",
-      "INNER JOIN ", cohort, " c ON c.subject_id = o.", out_src$person_col,
-      " AND o.", out_src$concept_col, " IN (", out_src$id_list, ")", first_clause,
-      " GROUP BY ", bin_expr,
+      "SELECT p.day_offset, SUM(", capped, ") AS num_events, ",
+      "COUNT(*) AS persons FROM (", per_person_bin, ") p ",
+      "GROUP BY p.day_offset",
       " ORDER BY day_offset"),
       handle$target_dialect)
 
@@ -1528,8 +1801,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       handle$target_dialect)
 
     df <- .executeQuery(handle, sql)
-    if (is.data.frame(df) && nrow(df) > top_n) df <- df[seq_len(top_n), , drop = FALSE]
-    df
+    .omopBandedTopN(df, support_cols = "subjects", top_n = top_n,
+                    key_cols = c("concept_id", "position"))
   }
 
   .omopAnalysisEntry(
@@ -1574,7 +1847,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #'
 #' @param handle CDM handle.
 #' @param domain_code Character/int domain selector.
-#' @return list(table, person_col, concept_col, date_col, value_col).
+#' @return list(table_name, table, person_col, concept_col, date_col, value_col).
 #' @keywords internal
 .omopCovariateSource <- function(handle, domain_code = "0") {
   dom <- as.character(domain_code %||% "0")
@@ -1588,6 +1861,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     list("condition_occurrence", "condition_concept_id", "condition_start_date",
          NA))
   list(
+    table_name  = spec[[1]],
     table       = .qualifyTable(handle, spec[[1]]),
     person_col  = "person_id",
     concept_col = spec[[2]],
@@ -1628,9 +1902,10 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     "SELECT e.", src$concept_col, " AS covariate_id, cc.concept_name AS ",
     "covariate_name, COUNT(DISTINCT e.", src$person_col, ") AS sum_value, ",
     "CAST(COUNT(DISTINCT e.", src$person_col, ") AS FLOAT) / ", denom_sql,
-    " AS average ",
+    " AS average, ", denom_sql, " AS cohort_size ",
     "FROM ", src$table, " e ",
-    "INNER JOIN ", cohort, " c ON c.subject_id = e.", src$person_col,
+    "INNER JOIN (SELECT DISTINCT subject_id FROM ", cohort,
+    ") c ON c.subject_id = e.", src$person_col,
     " LEFT JOIN ", concept, " cc ON cc.concept_id = e.", src$concept_col,
     " GROUP BY e.", src$concept_col, ", cc.concept_name",
     " ORDER BY sum_value DESC"),
@@ -1638,7 +1913,14 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
   df <- .executeQuery(handle, sql)
   if (!is.data.frame(df) || nrow(df) == 0) return(df)
-  if (nrow(df) > top_n) df <- df[seq_len(top_n), , drop = FALSE]
+  df <- .omopBandedTopN(df, support_cols = "sum_value", top_n = top_n,
+                        key_cols = "covariate_id")
+  df$average <- NA_real_
+  df <- .omopAnalysisReconcileRatio(
+    df, numerator_col = "sum_value", denominator_col = "cohort_size",
+    ratio_col = "average", scale = 1
+  )
+  df$cohort_size <- NULL
   df$domain <- as.character(domain_code %||% "0")
   df
 }
@@ -1679,7 +1961,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       "SELECT e.", src$concept_col, " AS covariate_id, e.", src$person_col,
       " AS person_id, AVG(CAST(e.", src$value_col, " AS FLOAT)) AS v ",
       "FROM ", src$table, " e ",
-      "INNER JOIN ", cohort, " c ON c.subject_id = e.", src$person_col,
+      "INNER JOIN (SELECT DISTINCT subject_id FROM ", cohort,
+      ") c ON c.subject_id = e.", src$person_col,
       " WHERE e.", src$value_col, " IS NOT NULL",
       " GROUP BY e.", src$concept_col, ", e.", src$person_col)
   } else {
@@ -1688,11 +1971,13 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       "SELECT e.", src$concept_col, " AS covariate_id, e.", src$person_col,
       " AS person_id, COUNT(*) AS v ",
       "FROM ", src$table, " e ",
-      "INNER JOIN ", cohort, " c ON c.subject_id = e.", src$person_col,
+      "INNER JOIN (SELECT DISTINCT subject_id FROM ", cohort,
+      ") c ON c.subject_id = e.", src$person_col,
       " GROUP BY e.", src$concept_col, ", e.", src$person_col)
   }
   vsql <- .sql_translate(paste0(
-    "SELECT pp.covariate_id, cc.concept_name AS covariate_name, pp.v ",
+    "SELECT pp.covariate_id, cc.concept_name AS covariate_name, ",
+    "pp.person_id, pp.v ",
     "FROM (", per_person, ") pp",
     " LEFT JOIN ", concept, " cc ON cc.concept_id = pp.covariate_id"),
     handle$target_dialect)
@@ -1711,6 +1996,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       covariate_id   = p$covariate_id[1],
       covariate_name = p$covariate_name[1],
       count_value    = length(v),
+      n_persons      = length(unique(as.character(p$person_id))),
       min_value      = min(v),   # stripped by the gate
       max_value      = max(v),   # stripped by the gate
       avg_value      = mean(v),
@@ -1720,10 +2006,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       stringsAsFactors = FALSE)
   })
   out <- do.call(rbind, rows)
-  out <- out[order(-out$count_value), , drop = FALSE]
-  if (nrow(out) > top_n) out <- out[seq_len(top_n), , drop = FALSE]
-  rownames(out) <- NULL
-  out
+  .omopBandedTopN(out, support_cols = "n_persons", top_n = top_n,
+                  key_cols = "covariate_id")
 }
 
 #' Demographic prevalence rows (gender / age-group / race / ethnicity)
@@ -1750,6 +2034,10 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     handle$target_dialect))
 
   denom_sql <- paste0("(SELECT COUNT(DISTINCT subject_id) FROM ", cohort, ")")
+  cohort_person <- paste0(
+    "(SELECT subject_id, MIN(cohort_start_date) AS cohort_start_date FROM ",
+    cohort, " GROUP BY subject_id)"
+  )
   age_at <- .omopDateDiffDays(handle, "c.cohort_start_date", "p.birth_dt")
   age_years <- .omopFloorDivideSql(age_at, 365L)
   age_grp <- .omopFloorBinSql(age_years, 10L)
@@ -1769,25 +2057,25 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     sql <- .sql_translate(paste0(
       "SELECT '", b[[1]], "' AS characteristic, ", b[[2]], " AS level, ",
       "COUNT(DISTINCT p.person_id) AS sum_value, ",
-      "CAST(COUNT(DISTINCT p.person_id) AS FLOAT) / ", denom_sql, " AS average ",
+      "CAST(COUNT(DISTINCT p.person_id) AS FLOAT) / ", denom_sql,
+      " AS average, ", denom_sql, " AS cohort_size ",
       "FROM ", person, " p ",
-      "INNER JOIN ", cohort, " c ON c.subject_id = p.person_id", label_join,
+      "INNER JOIN ", cohort_person, " c ON c.subject_id = p.person_id",
+      label_join,
       " GROUP BY ", b[[2]]),
       handle$target_dialect)
     .executeQuery(handle, sql)
   })
 
-  birth_dt <- if (identical(handle$target_dialect %||% "", "sqlite")) {
-    "(CAST(p.year_of_birth AS VARCHAR) || '-01-01')"
-  } else {
-    "CAST((CAST(p.year_of_birth AS VARCHAR) || '-01-01') AS DATE)"
-  }
+  birth_dt <- .omopYearStartDateSql(handle, "p.year_of_birth")
   age_sql <- .sql_translate(paste0(
-    "SELECT 'age_group' AS characteristic, CAST(", age_grp,
-    " AS VARCHAR) AS level, COUNT(DISTINCT p.person_id) AS sum_value, ",
-    "CAST(COUNT(DISTINCT p.person_id) AS FLOAT) / ", denom_sql, " AS average ",
+    "SELECT 'age_group' AS characteristic, ",
+    .omopTextCastSql(handle, age_grp),
+    " AS level, COUNT(DISTINCT p.person_id) AS sum_value, ",
+    "CAST(COUNT(DISTINCT p.person_id) AS FLOAT) / ", denom_sql,
+    " AS average, ", denom_sql, " AS cohort_size ",
     "FROM ", person, " p ",
-    "INNER JOIN ", cohort, " c ON c.subject_id = p.person_id",
+    "INNER JOIN ", cohort_person, " c ON c.subject_id = p.person_id",
     " GROUP BY ", age_grp),
     handle$target_dialect)
   age_sql <- gsub("p.birth_dt", birth_dt, age_sql, fixed = TRUE)
@@ -1795,6 +2083,12 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
   out <- do.call(rbind, parts)
   if (!is.data.frame(out) || nrow(out) == 0) return(data.frame())
+  out$average <- NA_real_
+  out <- .omopAnalysisReconcileRatio(
+    out, numerator_col = "sum_value", denominator_col = "cohort_size",
+    ratio_col = "average", scale = 1
+  )
+  out$cohort_size <- NULL
   rownames(out) <- NULL
   out
 }
@@ -1857,28 +2151,38 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     # (sum_value) and DROPS any row whose declared count is NA, so the two
     # populations cannot each declare a different count column. We therefore make
     # sum_value the UNIFIED person-basis column across both populations (binary =
-    # prevalence numerator; dist = contributing-person count_value) and pre-apply
+    # prevalence numerator; dist = distinct contributing persons) and pre-apply
     # the dist disclosure controls here so the dist rows are already gate-
     # consistent under the person branch: strip min/max, mask sub-nfilter_dist
     # stats, and band count_value in-fn (the gate then suppresses+bands sum_value
     # uniformly). No row is left with an NA in the single gated column.
     if (!is.null(dist)) {
+      if (!all(c("count_value", "n_persons") %in% names(dist))) {
+        stop("Table 1 distribution rows lack a distinct-person support basis.",
+             call. = FALSE)
+      }
       settings <- .omopDisclosureSettings()
       nfd <- settings$nfilter_dist %||% 10L
       bw  <- settings$nfilter_band
       thr <- settings$nfilter_tab
+      value_count <- suppressWarnings(as.numeric(dist$count_value))
+      person_count <- suppressWarnings(as.numeric(dist$n_persons))
       dist$min_value <- NULL
       dist$max_value <- NULL
       stat_cols <- intersect(c("avg_value", "stdev_value", "p10_value",
                                "p25_value", "median_value", "p75_value",
                                "p90_value"), names(dist))
-      small <- !is.na(dist$count_value) & dist$count_value < nfd
+      small <- is.na(value_count) | is.na(person_count) |
+        value_count < nfd | person_count < nfd
       if (any(small)) dist[small, stat_cols] <- NA_real_
-      # Unified person basis + in-fn band of the dist count.
-      dist$sum_value <- vapply(as.numeric(dist$count_value), .bandCount,
+      # Unified distinct-person basis plus a separately banded value/episode
+      # count. n_persons is internal and is dropped by all_cols below.
+      dist$sum_value <- vapply(person_count, .bandCount,
                                numeric(1), band_width = bw)
-      dist$sum_value[is.na(dist$count_value) | dist$count_value < thr] <- NA_real_
-      dist$count_value <- dist$sum_value
+      dist$count_value <- vapply(value_count, .bandCount,
+                                 numeric(1), band_width = bw)
+      dist$sum_value[is.na(person_count) | person_count < thr] <- NA_real_
+      dist$count_value[is.na(value_count) | value_count < thr] <- NA_real_
       dist$average <- NA_real_
       dist$characteristic <- dist$metric
       dist$level <- dist$metric
@@ -2032,7 +2336,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     dependencies = list(tables = c("measurement", "person", "concept"),
                         packages = character(0)),
     disclosure = .omopAnalysisDisclosure(
-      unit = "dist", count_cols = "count_value", min_max = TRUE),
+      unit = "dist", count_cols = c("count_value", "n_persons"),
+      dist_count_col = c("count_value", "n_persons"), min_max = TRUE),
     scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
                                max_tables = 1L),
     mode  = "aggregate",
@@ -2096,19 +2401,22 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   score_expr <- paste(comp_exprs, collapse = " + ")
 
   vsql <- .sql_translate(paste0(
-    "SELECT ", score_expr, " AS v FROM ", cohort, " c"),
+    "SELECT ", score_expr, " AS v FROM (SELECT DISTINCT subject_id FROM ",
+    cohort, ") c"),
     handle$target_dialect)
   vals <- .executeQuery(handle, vsql)
   v <- suppressWarnings(as.numeric(vals$v))
   v <- v[!is.na(v)]
   if (length(v) == 0) {
     return(data.frame(metric = character(0), count_value = integer(0),
+                      n_persons = integer(0),
                       stringsAsFactors = FALSE))
   }
   qs <- stats::quantile(v, c(.10, .25, .5, .75, .90), names = FALSE, type = 7)
   data.frame(
     metric       = paste0(index_type, "_index"),
     count_value  = length(v),
+    n_persons    = length(v),
     min_value    = min(v),   # stripped by the gate
     max_value    = max(v),   # stripped by the gate
     avg_value    = mean(v),
@@ -2130,26 +2438,25 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     handle$target_dialect))
 
   age_at <- .omopDateDiffDays(handle, "c.cohort_start_date", "p.birth_dt")
-  birth_dt <- if (identical(handle$target_dialect %||% "", "sqlite")) {
-    "(CAST(p.year_of_birth AS VARCHAR) || '-01-01')"
-  } else {
-    "CAST((CAST(p.year_of_birth AS VARCHAR) || '-01-01') AS DATE)"
-  }
+  birth_dt <- .omopYearStartDateSql(handle, "p.year_of_birth")
   vsql <- .sql_translate(paste0(
-    "SELECT ", .omopFloorDivideSql(age_at, 365L), " AS v FROM ", cohort, " c ",
+    "SELECT c.subject_id AS person_id, ",
+    .omopFloorDivideSql(age_at, 365L), " AS v FROM ", cohort, " c ",
     "INNER JOIN ", person, " p ON p.person_id = c.subject_id"),
     handle$target_dialect)
   vsql <- gsub("p.birth_dt", birth_dt, vsql, fixed = TRUE)
   vals <- .executeQuery(handle, vsql)
-  v <- suppressWarnings(as.numeric(vals$v))
-  v <- v[!is.na(v)]
+  support <- .omopPersonWeightedDistributionValues(vals)
+  v <- support$values
   if (length(v) == 0) {
     return(data.frame(metric = character(0), count_value = integer(0),
+                      n_persons = integer(0),
                       stringsAsFactors = FALSE))
   }
   qs <- stats::quantile(v, c(.10, .25, .5, .75, .90), names = FALSE, type = 7)
   data.frame(
-    metric = "age", count_value = length(v),
+    metric = "age", count_value = support$count_value,
+    n_persons = support$n_persons,
     min_value = min(v), max_value = max(v),
     avg_value = mean(v), stdev_value = stats::sd(v),
     p10_value = qs[1], p25_value = qs[2], median_value = qs[3],
@@ -2170,17 +2477,20 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
   diff <- .omopDateDiffDays(handle, paste0("c.", end_col), "c.cohort_start_date")
   vsql <- .sql_translate(paste0(
-    "SELECT ", diff, " AS v FROM ", cohort, " c"), handle$target_dialect)
+    "SELECT c.subject_id AS person_id, ", diff, " AS v FROM ", cohort, " c"),
+    handle$target_dialect)
   vals <- .executeQuery(handle, vsql)
-  v <- suppressWarnings(as.numeric(vals$v))
-  v <- v[!is.na(v)]
+  support <- .omopPersonWeightedDistributionValues(vals)
+  v <- support$values
   if (length(v) == 0) {
     return(data.frame(metric = character(0), count_value = integer(0),
+                      n_persons = integer(0),
                       stringsAsFactors = FALSE))
   }
   qs <- stats::quantile(v, c(.10, .25, .5, .75, .90), names = FALSE, type = 7)
   data.frame(
-    metric = "time_in_cohort", count_value = length(v),
+    metric = "time_in_cohort", count_value = support$count_value,
+    n_persons = support$n_persons,
     min_value = min(v), max_value = max(v),
     avg_value = mean(v), stdev_value = stats::sd(v),
     p10_value = qs[1], p25_value = qs[2], median_value = qs[3],
@@ -2227,7 +2537,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     dependencies = list(tables = c("condition_occurrence"),
                         packages = character(0)),
     disclosure = .omopAnalysisDisclosure(
-      unit = "dist", count_cols = "count_value", min_max = TRUE),
+      unit = "dist", count_cols = c("count_value", "n_persons"),
+      dist_count_col = c("count_value", "n_persons"), min_max = TRUE),
     scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
                                max_tables = 1L),
     mode  = "aggregate",
@@ -2290,10 +2601,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
                                      value_kind = "value", top_n = top_n)
     cont_out <- NULL
     if (is.data.frame(cont) && nrow(cont) > 0) {
-      keep <- !is.na(cont$count_value) & cont$count_value >= (min_count %||% 0)
-      cont <- cont[keep, , drop = FALSE]
-      if (nrow(cont) > 0) {
-        cont_out <- data.frame(
+      cont_out <- data.frame(
           kind = "continuous", covariate_id = cont$covariate_id,
           covariate_name = as.character(cont$covariate_name),
           # sum_value is the UNIFIED person-basis column the single gate keys on
@@ -2306,23 +2614,28 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
           p25_value = cont$p25_value, median_value = cont$median_value,
           p75_value = cont$p75_value, p90_value = cont$p90_value,
           stringsAsFactors = FALSE)
-        # Pre-strip the continuous block so the person-unit gate (which does NOT
-        # run the dist mask) still releases gate-consistent stats: mask sub-
-        # nfilter_dist rows' stats (min/max already absent here) and band the
-        # count in-fn (the gate bands sum_value; keep count_value consistent).
-        settings <- .omopDisclosureSettings()
-        nfd <- settings$nfilter_dist %||% 10L
-        bw  <- settings$nfilter_band
-        thr <- settings$nfilter_tab
-        sc <- c("avg_value", "stdev_value", "p10_value", "p25_value",
-                "median_value", "p75_value", "p90_value")
-        small <- !is.na(cont_out$count_value) & cont_out$count_value < nfd
-        if (any(small)) cont_out[small, sc] <- NA_real_
-        banded <- vapply(as.numeric(cont_out$count_value), .bandCount,
-                         numeric(1), band_width = bw)
-        banded[is.na(cont_out$count_value) | cont_out$count_value < thr] <- NA_real_
-        cont_out$count_value <- banded
-      }
+      # Pre-strip the continuous block so the person-unit gate (which does NOT
+      # run the dist mask) still releases gate-consistent stats: mask sub-
+      # nfilter_dist rows' stats (min/max already absent here) and band the
+      # count in-fn (the gate bands sum_value; keep count_value consistent).
+      settings <- .omopDisclosureSettings()
+      nfd <- settings$nfilter_dist %||% 10L
+      bw  <- settings$nfilter_band
+      thr <- settings$nfilter_tab
+      sc <- c("avg_value", "stdev_value", "p10_value", "p25_value",
+              "median_value", "p75_value", "p90_value")
+      raw_count <- suppressWarnings(as.numeric(cont_out$count_value))
+      small <- !is.na(raw_count) & raw_count < nfd
+      if (any(small)) cont_out[small, sc] <- NA_real_
+      banded <- vapply(raw_count, .bandCount, numeric(1), band_width = bw)
+      banded[is.na(raw_count) | raw_count < thr] <- NA_real_
+      cont_out$count_value <- banded
+      cont_out$sum_value <- banded
+      # min_count is user-controlled, so apply it only to the already-banded
+      # support count; otherwise repeated calls can binary-search an exact N.
+      keep <- !is.na(banded) & banded >= (min_count %||% 0)
+      cont_out <- cont_out[keep, , drop = FALSE]
+      if (nrow(cont_out) == 0L) cont_out <- NULL
     }
 
     out <- do.call(rbind, Filter(Negate(is.null), list(bin_out, cont_out)))
@@ -2398,12 +2711,16 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     # then per-(covariate, outcome-status) distinct-person prevalence. Both group
     # sizes are distinct-person counts (unit="person"), so the gate suppresses +
     # bands them and couples the proportion to the suppressed numerator.
+    cohort_person <- paste0(
+      "(SELECT subject_id, MIN(cohort_start_date) AS cohort_start_date FROM ",
+      cohort, " GROUP BY subject_id)"
+    )
     status <- paste0(
       "(SELECT c.subject_id, (CASE WHEN EXISTS (SELECT 1 FROM ", out_src$table,
       " o WHERE o.", out_src$person_col, " = c.subject_id AND o.",
       out_src$concept_col, " IN (", out_src$id_list, ") AND o.",
       out_src$date_col, " >= c.cohort_start_date) THEN 1 ELSE 0 END) AS outcome ",
-      "FROM ", cohort, " c)")
+      "FROM ", cohort_person, " c)")
 
     .omopDiagAssertPersons(handle, ctx, cov_src$table, "e", cov_src$person_col)
 
@@ -2414,7 +2731,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       "COUNT(DISTINCT e.", cov_src$person_col, ") AS sum_value, ",
       "CAST(COUNT(DISTINCT e.", cov_src$person_col, ") AS FLOAT) / ",
       "(SELECT COUNT(*) FROM ", status, " s2 WHERE s2.outcome = s.outcome) ",
-      "AS average ",
+      "AS average, (SELECT COUNT(*) FROM ", status,
+      " s3 WHERE s3.outcome = s.outcome) AS group_size ",
       "FROM ", cov_src$table, " e ",
       "INNER JOIN ", status, " s ON s.subject_id = e.", cov_src$person_col,
       " LEFT JOIN ", concept, " cc ON cc.concept_id = e.", cov_src$concept_col,
@@ -2428,10 +2746,18 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     # kept covariate are retained so the scatter pairs are complete.
     if (length(unique(df$covariate_id)) > top_n) {
       ord <- stats::aggregate(sum_value ~ covariate_id, data = df, FUN = max)
-      ord <- ord[order(-ord$sum_value), , drop = FALSE]
-      keep_ids <- ord$covariate_id[seq_len(top_n)]
+      ord <- .omopBandedTopN(
+        ord, support_cols = "sum_value", top_n = top_n,
+        key_cols = "covariate_id")
+      keep_ids <- ord$covariate_id
       df <- df[df$covariate_id %in% keep_ids, , drop = FALSE]
     }
+    df$average <- NA_real_
+    df <- .omopAnalysisReconcileRatio(
+      df, numerator_col = "sum_value", denominator_col = "group_size",
+      ratio_col = "average", scale = 1
+    )
+    df$group_size <- NULL
     rownames(df) <- NULL
     df
   }
@@ -2470,29 +2796,37 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
 # --- Native two-population helpers --------------------------------------------
 #
-# The three TWO-POPULATION ports below (cohort overlap, risk-factor SMD,
-# covariate balance) compare two INDEPENDENT arms. The run path resolves their
+# TWO-POPULATION ports compare two independently scoped arms. The run path
+# resolves their
 # scope PER ELEMENT into ctx$scoped_cohorts (a length-2 vector of two
 # independently re-gated cohort temp tables; see .omopAnalysisResolveScopePair)
 # rather than folding into one cohort. Each fn reads that pair, self-gates BOTH
 # arms BEFORE materialising, and returns an aggregate-only frame the ONE gate
 # (.omopAnalysisGate) then suppresses + bands. No entry registers its own gate.
 
-#' Resolve + self-gate the two arms of a two-population analysis
+#' Resolve, OHDSI-normalise, and self-gate a two-population analysis
 #'
 #' Reads \code{ctx$scoped_cohorts} (the length-2 vector the run path resolves for
-#' a \code{max_tables == 2} kind="r" entry), validates each identifier, and
-#' self-gates BOTH arms with \code{\link{.assertMinPersons}} BEFORE the fn pulls
-#' any rows (defence-in-depth on top of the per-arm re-gate already done by
-#' \code{\link{.omopAnalysisResolveScopePair}}). Returns NULL when scope was not
-#' two-population (so the fn returns a gate-safe empty frame, exactly like the
-#' single-cohort ports do for a NULL \code{ctx$scoped_cohort}).
+#' a \code{max_tables == 2} kind="r" entry), validates and self-gates each raw
+#' arm, then by default creates disjoint effective CohortMethod populations
+#' using OHDSI's first-treatment / truncate-to-second rule and re-gates both
+#' effective arms before any patient-level frame is pulled. The explicit
+#' \code{"preserve"} policy leaves the raw pair intact for overlap diagnostics.
+#' Returns NULL when scope was not two-population.
 #'
 #' @param handle CDM handle.
 #' @param ctx Run-path ctx (carries \code{scoped_cohorts}).
-#' @return list(a = "<validated arm A>", b = "<validated arm B>") or NULL.
+#' @param overlap_policy Internal two-arm population policy. The default,
+#'   \code{"ohdsi_first"}, mirrors CohortMethod's public default: assign a
+#'   person to whichever arm starts first, exclude same-day ties, and truncate
+#'   the winning era immediately before the other arm starts. Use
+#'   \code{"preserve"} only for diagnostics whose estimand is the overlap.
+#' @return list(a = "<validated effective arm A>",
+#'   b = "<validated effective arm B>") or NULL.
 #' @keywords internal
-.omopTwoPopCohorts <- function(handle, ctx) {
+.omopTwoPopCohorts <- function(handle, ctx,
+                               overlap_policy = c("ohdsi_first", "preserve")) {
+  overlap_policy <- match.arg(overlap_policy)
   pair <- ctx$scoped_cohorts
   if (is.null(pair) || length(pair) != 2) return(NULL)
   a <- .validateIdentifier(pair[[1]], "cohort")
@@ -2502,7 +2836,64 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       "SELECT COUNT(DISTINCT subject_id) AS n FROM ", ct),
       handle$target_dialect))
   }
-  list(a = a, b = b)
+  if (identical(overlap_policy, "preserve")) return(list(a = a, b = b))
+
+  # OHDSI CohortMethod source audited at commit
+  # dd1a2a856ef608547a99d3db2d60d5c872f80dc6:
+  # R/SettingsObjects.R (public default) and inst/sql/CreateOrCountCohorts.sql
+  # (keep-first / truncate-to-second implementation). The official vignette
+  # states the same contract at vignettes/SingleStudies.Rmd lines 209-211:
+  # https://github.com/OHDSI/CohortMethod/tree/dd1a2a856ef608547a99d3db2d60d5c872f80dc6
+  #
+  # Always materialise the effective arms. In particular, do not first COUNT or
+  # branch on the intersection: a special "overlap present" failure would turn
+  # even a one-person intersection into an observable oracle. Only the ordinary,
+  # generic minimum-population gate below can reject an effective arm.
+  first_a <- .omopFirstCohortEpisodeSql(handle, a)
+  first_b <- .omopFirstCohortEpisodeSql(handle, b)
+  effective_sql <- function(first, other) {
+    .sql_translate(paste0(
+      "SELECT f.subject_id, f.cohort_start_date, ",
+      "CASE WHEN o.subject_id IS NOT NULL AND o.cohort_start_date < ",
+      "f.cohort_end_date THEN DATEADD(day, -1, o.cohort_start_date) ",
+      "ELSE f.cohort_end_date END AS cohort_end_date ",
+      "FROM ", first, " f LEFT JOIN ", other,
+      " o ON o.subject_id = f.subject_id ",
+      "WHERE o.subject_id IS NULL OR ",
+      "f.cohort_start_date < o.cohort_start_date"),
+      handle$target_dialect)
+  }
+
+  created <- character(0)
+  complete <- FALSE
+  on.exit({
+    if (!complete) {
+      for (ct in rev(created)) {
+        try(.dropTempTable(handle, ct), silent = TRUE)
+      }
+    }
+  }, add = TRUE)
+
+  effective_a <- .reserveTempTableName(handle, "dsomop_cm_effective_a")
+  effective_a <- .createTempTable(
+    handle, effective_a, effective_sql(first_a, first_b))
+  created <- c(created, effective_a)
+  effective_b <- .reserveTempTableName(handle, "dsomop_cm_effective_b")
+  effective_b <- .createTempTable(
+    handle, effective_b, effective_sql(first_b, first_a))
+  created <- c(created, effective_b)
+
+  # Re-gate AFTER assignment/truncation. Raw arms may both clear nfilter while
+  # one effective arm does not; no patient-level frame or model may be built in
+  # that case. .assertMinPersons deliberately emits one generic message without
+  # an overlap flag, count, arm label, or attrition detail.
+  for (ct in c(effective_a, effective_b)) {
+    .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+      "SELECT COUNT(DISTINCT subject_id) AS n FROM ", ct),
+      handle$target_dialect))
+  }
+  complete <- TRUE
+  list(a = effective_a, b = effective_b)
 }
 
 #' Standardized mean difference between two binary prevalences
@@ -2611,10 +3002,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     b_average      = pb,
     smd            = .omopBinarySmd(pa, pb),
     stringsAsFactors = FALSE)
-  # Keep top-N by the larger of the two (raw) arm counts before the gate prunes.
-  ord <- order(-pmax(a_raw, b_raw))
-  out <- out[ord, , drop = FALSE]
-  if (nrow(out) > top_n) out <- out[seq_len(top_n), , drop = FALSE]
+  out <- .omopBandedTopN(
+    out, support_cols = c("a_sum_value", "b_sum_value"), top_n = top_n,
+    key_cols = "covariate_id")
   names(out)[names(out) == "a_sum_value"] <- paste0(a_label, "_sum_value")
   names(out)[names(out) == "b_sum_value"] <- paste0(b_label, "_sum_value")
   names(out)[names(out) == "a_average"]   <- paste0(a_label, "_average")
@@ -2640,7 +3030,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     "}", sep = "\n")
 
   fn <- function(handle, ctx, params) {
-    cohorts <- .omopTwoPopCohorts(handle, ctx)
+    cohorts <- .omopTwoPopCohorts(
+      handle, ctx, overlap_policy = "preserve")
     if (is.null(cohorts)) return(data.frame())
     a <- cohorts$a; b <- cohorts$b
 
@@ -2709,7 +3100,10 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     "}", sep = "\n")
 
   fn <- function(handle, ctx, params) {
-    cohorts <- .omopTwoPopCohorts(handle, ctx)
+    # This characterization entry receives explicitly defined case/non-case
+    # populations; it is not a CohortMethod new-user treatment estimand.
+    cohorts <- .omopTwoPopCohorts(
+      handle, ctx, overlap_policy = "preserve")
     if (is.null(cohorts)) return(data.frame())
     domain <- params$domain_code %||% "0"
     top_n  <- as.integer(params$top_n %||% "50")
@@ -4470,16 +4864,28 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   schema_params <- list(
     cdm     = handle$cdm_schema,
     vocab   = handle$vocab_schema %||% handle$cdm_schema,
-    results = handle$results_schema %||% handle$cdm_schema
+    results = .effectiveResultsSchema(handle)
   )
   for (schema_name in names(schema_params)) {
     schema_val <- schema_params[[schema_name]]
-    prefix <- if (bare || is.null(schema_val) || !nzchar(schema_val)) {
-      ""
-    } else {
-      paste0(schema_val, ".")
+    protected <- .protectSqlTranslationSegments(sql)
+    pattern <- paste0(
+      "@", schema_name, "\\.([A-Za-z_][A-Za-z0-9_]*)"
+    )
+    locations <- gregexpr(pattern, protected$sql, perl = TRUE)[[1L]]
+    if (!identical(locations[[1L]], -1L)) {
+      hits <- regmatches(protected$sql, list(locations))[[1L]]
+      tables <- sub(pattern, "\\1", hits, perl = TRUE)
+      replacements <- vapply(tables, function(table) {
+        if (bare || is.null(schema_val) || !nzchar(schema_val)) {
+          .validateIdentifier(table, "QueryLibrary table")
+        } else {
+          .qualifyTable(handle, table, schema_val)
+        }
+      }, character(1L))
+      regmatches(protected$sql, list(locations)) <- list(replacements)
     }
-    sql <- gsub(paste0("@", schema_name, "\\."), prefix, sql, fixed = FALSE)
+    sql <- .restoreSqlTranslationSegments(protected$sql, protected)
   }
   sql
 }
@@ -4611,9 +5017,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
         vocabulary = effective_schema(
           handle$vocab_schema %||% handle$cdm_schema
         ),
-        results = effective_schema(
-          handle$results_schema %||% handle$cdm_schema
-        )
+        results = effective_schema(.effectiveResultsSchema(handle))
       ),
       date_handling = dh,
       output_contract = entry$meta$output_contract
@@ -4812,6 +5216,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     df, entry, assign = FALSE, phase = "raw"
   )
   df <- .omopAnalysisGate(handle, df, entry)
+  df <- .omopAnalysisPostGateTopN(df, entry, sanitized)
   .omopAnalysisExternalOutputFirewall(
     df, entry, assign = FALSE, phase = "final"
   )

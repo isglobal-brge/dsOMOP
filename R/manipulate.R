@@ -348,7 +348,7 @@ omopFilterDS <- function(x, var, op, value) {
   )
   # NA comparisons are dropped (treated as non-matching), consistent with the
   # fail-closed "no hints" policy elsewhere in the disclosure layer.
-  keep[is.na(keep)] <- FALSE
+  keep[is.na(keep) | is.na(col)] <- FALSE
   result <- x[keep, , drop = FALSE]
   rownames(result) <- NULL
 

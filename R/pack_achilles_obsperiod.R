@@ -93,11 +93,7 @@
                          "op", "person_id")
 
   # birth date as year-01-01 (spliced post-translate; author SQL, not user input).
-  birth_dt <- if (identical(handle$target_dialect %||% "", "sqlite")) {
-    "(CAST(p.year_of_birth AS VARCHAR) || '-01-01')"
-  } else {
-    "CAST((CAST(p.year_of_birth AS VARCHAR) || '-01-01') AS DATE)"
-  }
+  birth_dt <- .omopYearStartDateSql(handle, "p.year_of_birth")
 
   value_expr <- if (identical(value_kind, "age")) {
     age_days <- .omopDateDiffDays(handle, "fop.op_start", "p.birth_dt")
@@ -344,10 +340,9 @@
 #' Analysis 109 (continuous observation per year) needs one row per calendar year
 #' spanned by the observation periods. The bounds are coarse, non-disclosive
 #' calendar years queried once (min start year .. max end year over the scoped /
-#' whole-DB population); the spine itself is materialised SERVER-SIDE —
-#' \code{generate_series} on PostgreSQL/ANSI engines, a recursive CTE on SQLite —
-#' so no per-person dates are pulled into R. Returns NULL when the population has
-#' no observation periods (caller fails closed / returns empty).
+#' whole-DB population); a bounded controller-built \code{UNION ALL} spine is
+#' valid on every supported engine, so no vendor-specific series function or
+#' per-person date transfer is required. Returns NULL for an empty population.
 #'
 #' @param handle CDM handle.
 #' @param ctx Run-path ctx (carries \code{scoped_cohort}).
@@ -367,18 +362,18 @@
   hi <- suppressWarnings(as.integer(bounds$hi_year[1]))
   if (length(lo) == 0 || is.na(lo) || is.na(hi) || hi < lo) return(NULL)
 
-  if (identical(handle$target_dialect %||% "", "sqlite")) {
-    # SQLite has no generate_series(start, stop): recurse from lo to hi.
-    paste0(
-      "(WITH RECURSIVE ", alias, "_cte(yr) AS (",
-      "SELECT ", lo, " UNION ALL SELECT yr + 1 FROM ", alias, "_cte ",
-      "WHERE yr < ", hi, ") SELECT yr FROM ", alias, "_cte) ", alias)
-  } else {
-    # PostgreSQL/duckdb and friends: generate_series(lo, hi).
-    paste0(
-      "(SELECT CAST(gs AS INTEGER) AS yr FROM generate_series(", lo, ", ", hi,
-      ") AS gs) ", alias)
+  max_years <- suppressWarnings(as.integer(getOption(
+    "dsomop.max_calendar_spine_years",
+    getOption("default.dsomop.max_calendar_spine_years", 1000L)
+  )))
+  n_years <- hi - lo + 1L
+  if (length(max_years) != 1L || is.na(max_years) || max_years < 1L ||
+      n_years > max_years) {
+    stop("Observation-period calendar span exceeds the server year-spine cap.",
+         call. = FALSE)
   }
+  year_selects <- paste0("SELECT ", seq.int(lo, hi), " AS yr")
+  paste0("(", paste(year_selects, collapse = " UNION ALL "), ") ", alias)
 }
 
 #' Persons by age at first observation period, optionally by gender (101/102)

@@ -80,12 +80,7 @@
 #' @return Character; an integer YYYYMM SQL expression.
 #' @keywords internal
 .omopAchillesCountMonthKey <- function(handle, date_expr) {
-  if (identical(handle$target_dialect, "sqlite")) {
-    paste0("CAST(strftime('%Y%m', ", date_expr, ") AS INTEGER)")
-  } else {
-    paste0("EXTRACT(YEAR FROM ", date_expr, ") * 100 + ",
-           "EXTRACT(MONTH FROM ", date_expr, ")")
-  }
+  .omopMonthKeySql(handle, date_expr)
 }
 
 #' Build the live person-count fn for one Achilles count analysis

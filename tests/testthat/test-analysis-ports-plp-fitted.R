@@ -54,6 +54,10 @@ plp_fit_setup <- function(h, positives = 1:12,
                           covA = c(1:8, 13:20), covC = c(9:14, 21:26),
                           cohort_max = 30L) {
   conn <- h$conn
+  DBI::dbExecute(conn, paste0(
+    "UPDATE observation_period SET observation_period_start_date = ",
+    "'2018-01-01', observation_period_end_date = '2025-12-31'"
+  ))
   DBI::dbExecute(conn, "DELETE FROM condition_occurrence")
   nid <- 0L
   mk <- function(pid, cid, d) {

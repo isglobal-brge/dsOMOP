@@ -4,14 +4,14 @@
 \alias{.stagedBundleContract}
 \title{Build an output-level staged bundle contract}
 \usage{
-.stagedBundleContract(output_name, token, output)
+.stagedBundleContract(plan, output_name, token)
 }
 \arguments{
+\item{plan}{Extraction plan carrying the output and population semantics.}
+
 \item{output_name}{Logical plan output name, without a component suffix.}
 
 \item{token}{High-entropy staging token.}
-
-\item{output}{Plan output specification.}
 }
 \value{
 Canonical staged bundle contract.

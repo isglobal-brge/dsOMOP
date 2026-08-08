@@ -70,8 +70,10 @@
 #'   persons, person_days, outcomes).
 #' @keywords internal
 .omopCmEffectArmData <- function(handle, cohort, arm, out_src, tar) {
-  end_col <- .omopCohortEndDateCol(handle, cohort)
-  anchor  <- function(a) if (identical(a, "end")) end_col else "cohort_start_date"
+  first <- .omopFirstCohortEpisodeSql(handle, cohort)
+  anchor <- function(a) {
+    if (identical(a, "end")) "cohort_end_date" else "cohort_start_date"
+  }
   tar_lo  <- paste0("DATEADD(day, ", tar$start, ", coh.", anchor(tar$anchor_start), ")")
   tar_hi  <- paste0("DATEADD(day, ", tar$end, ", coh.", anchor(tar$anchor_end), ")")
   full_days <- .omopDateDiffDays(handle, tar_hi, tar_lo)
@@ -96,7 +98,8 @@
     "SELECT coh.subject_id AS subject_id, ",
     "MAX(", full_days, ") AS full_days, ",
     event_days_expr, " AS event_days ",
-    "FROM ", cohort, " coh", outcome_join,
+    "FROM ", first, " coh", outcome_join,
+    " WHERE ", tar_hi, " >= ", tar_lo,
     " GROUP BY coh.subject_id"),
     handle$target_dialect)
   raw <- .executeQuery(handle, sql)

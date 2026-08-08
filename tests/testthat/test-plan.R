@@ -191,13 +191,58 @@ test_plan_output_contract <- function() {
   )
 }
 
-test_plan_semantic_contract <- function() {
-  .stagedSemanticContract(test_plan_output_contract())
+test_plan_contract_plan <- function(output_name = "analysis",
+                                    output = test_plan_output_contract()) {
+  outputs <- list(output)
+  names(outputs) <- output_name
+  list(outputs = outputs)
+}
+
+test_plan_semantic_contract <- function(output_name = "analysis") {
+  .stagedSemanticContract(
+    test_plan_contract_plan(output_name), output_name
+  )
 }
 
 test_plan_bundle_contract <- function(output_name, token) {
-  .stagedBundleContract(output_name, token, test_plan_output_contract())
+  .stagedBundleContract(
+    test_plan_contract_plan(output_name), output_name, token
+  )
 }
+
+test_that("staged semantics bind longitudinal query shape without irrelevant age grids", {
+  first <- list(
+    type = "intervals_long",
+    tables = c("condition_occurrence"),
+    concept_filter = list(condition_occurrence = c(10L, 20L)),
+    source_filters = list(condition_occurrence = list(
+      var = "condition_type_concept_id", op = "in", value = c(1L, 2L)
+    )),
+    window = list(start = -30L, end = 90L),
+    interval_match = "overlaps",
+    event_select = "nearest",
+    select_n = 1L,
+    select_by = "episode_source",
+    anchor = 0L
+  )
+  changed <- first
+  changed$window$end <- 91L
+  first_contract <- .stagedSemanticContract(
+    test_plan_contract_plan("intervals", first), "intervals"
+  )
+  changed_contract <- .stagedSemanticContract(
+    test_plan_contract_plan("intervals", changed), "intervals"
+  )
+
+  expect_null(first_contract$age_breaks)
+  expect_false(identical(
+    first_contract$query_semantics_sha256,
+    changed_contract$query_semantics_sha256
+  ))
+  expect_identical(
+    .validateStagedSemanticContract(first_contract), first_contract
+  )
+})
 
 set_test_person_key <- function(handle,
                                 key = .testPseudonymKey("plan-resource")) {
@@ -299,6 +344,13 @@ test_that("empty staged date handling preserves the non-empty schema contract", 
       "empty_dates", basename(staging_dir)
     )
   )
+  if (identical(info$format, "parquet")) {
+    expect_identical(descriptor$metadata$layout, "file")
+    expect_identical(
+      omopStagedDatasetPath(descriptor),
+      normalizePath(info$file, winslash = "/", mustWork = TRUE)
+    )
+  }
   expect_setequal(names(read_staged_output(descriptor)), info$columns)
 })
 
@@ -386,6 +438,73 @@ test_that("streaming fetches bounded chunks and publishes their schema", {
   expect_lte(max(fetched), 2L)
   expect_equal(sum(fetched), info$n_rows)
   expect_setequal(names(info$column_types), info$columns)
+  if (identical(info$format, "parquet")) {
+    expect_identical(info$layout, "file")
+    expect_true(file.exists(info$file))
+    expect_false(dir.exists(info$file))
+    reader <- arrow::ParquetFileReader$create(info$file)
+    expect_gt(reader$num_row_groups, 1L)
+  }
+})
+
+test_that("streaming takes a non-empty schema from the first fetched chunk", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  base <- tempfile("dsstaging_driver_schema_")
+  withr::local_options(list(dsstaging.base_dir = base))
+  staging_dir <- .createStagingDir(.generateStagingToken())
+  on.exit(unlink(base, recursive = TRUE), add = TRUE)
+
+  # Reproduce the DBI shape used by RMariaDB for BIGINT expressions: an empty
+  # fetch is numeric, while fetched values carry a more specific class/type.
+  testthat::local_mocked_bindings(
+    .coerce_integer64 = function(x, stable = FALSE) {
+      if (nrow(x) > 0L) x$person_id <- as.integer(x$person_id)
+      x
+    },
+    .package = "dsOMOP"
+  )
+  info <- .executeQueryToParquet(
+    handle$conn,
+    "SELECT CAST(person_id AS REAL) AS person_id FROM person ORDER BY person_id",
+    file.path(staging_dir, "driver_schema.parquet"),
+    chunk_size = 2L
+  )
+
+  expect_equal(
+    info$n_rows,
+    nrow(DBI::dbGetQuery(handle$conn, "SELECT person_id FROM person"))
+  )
+  expect_identical(unname(info$column_types), "integer|integer")
+})
+
+test_that("streaming keeps BIGINT physical types stable across bounded chunks", {
+  skip_if_not_installed("bit64")
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  base <- tempfile("dsstaging_bigint_chunks_")
+  withr::local_options(list(dsstaging.base_dir = base))
+  staging_dir <- .createStagingDir(.generateStagingToken())
+  on.exit(unlink(base, recursive = TRUE), add = TRUE)
+  testthat::local_mocked_bindings(
+    .arrowAvailable = function() FALSE,
+    .package = "dsOMOP"
+  )
+
+  info <- .executeQueryToParquet(
+    handle$conn,
+    paste0(
+      "SELECT CAST(1 AS INTEGER) AS big_id ",
+      "UNION ALL SELECT CAST(3000000000 AS INTEGER) AS big_id"
+    ),
+    file.path(staging_dir, "bigint_chunks.parquet"),
+    chunk_size = 1L
+  )
+
+  expect_equal(info$n_rows, 2L)
+  expect_identical(unname(info$column_types), "character|character")
+  expect_match(paste(readLines(info$file, warn = FALSE), collapse = "\n"),
+               "3000000000")
 })
 
 test_that("streaming fails closed when a chunk changes column types", {
@@ -401,7 +520,7 @@ test_that("streaming fails closed when a chunk changes column types", {
 
   expect_error(.executeQueryToParquet(
     handle$conn,
-    "SELECT person_id, gender_concept_id FROM person ORDER BY person_id",
+    "SELECT person_id, year_of_birth FROM person ORDER BY person_id",
     output,
     chunk_size = 2L,
     chunk_fn = function(x) {
@@ -410,7 +529,7 @@ test_that("streaming fails closed when a chunk changes column types", {
       )
       if (nrow(x) > 0L) {
         seen <<- seen + 1L
-        if (seen > 1L) x$gender_concept_id <- as.character(x$gender_concept_id)
+        if (seen > 1L) x$year_of_birth <- as.character(x$year_of_birth)
       }
       x
     }
@@ -482,14 +601,14 @@ test_that("streaming quotas remove incomplete outputs", {
   expect_false(file.exists(byte_output))
 })
 
-test_that("stream setup errors do not strand Arrow chunk directories", {
+test_that("stream setup errors do not strand pending output", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle), add = TRUE)
   base <- tempfile("dsstaging_query_error_")
   withr::local_options(list(dsstaging.base_dir = base))
   staging_dir <- .createStagingDir(.generateStagingToken())
   on.exit(unlink(base, recursive = TRUE), add = TRUE)
-  chunks_before <- list.dirs(tempdir(), recursive = FALSE, full.names = TRUE)
+  files_before <- list.files(staging_dir, all.files = TRUE, no.. = TRUE)
   output <- file.path(staging_dir, "invalid.parquet")
 
   expect_error(
@@ -497,16 +616,12 @@ test_that("stream setup errors do not strand Arrow chunk directories", {
                            output),
     "no such column"
   )
-  chunks_after <- list.dirs(tempdir(), recursive = FALSE, full.names = TRUE)
-  new_chunks <- setdiff(
-    grep("pq_chunks_", chunks_after, value = TRUE),
-    grep("pq_chunks_", chunks_before, value = TRUE)
-  )
-  expect_length(new_chunks, 0L)
+  files_after <- list.files(staging_dir, all.files = TRUE, no.. = TRUE)
+  expect_identical(files_after, files_before)
   expect_false(file.exists(output))
 })
 
-test_that("failed Parquet finalization removes consolidation temporaries", {
+test_that("failed Parquet publication removes pending output", {
   skip_if_not(.arrowAvailable())
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle), add = TRUE)
@@ -514,7 +629,7 @@ test_that("failed Parquet finalization removes consolidation temporaries", {
   withr::local_options(list(dsstaging.base_dir = base))
   staging_dir <- .createStagingDir(.generateStagingToken())
   on.exit(unlink(base, recursive = TRUE), add = TRUE)
-  dirs_before <- list.dirs(tempdir(), recursive = FALSE, full.names = TRUE)
+  files_before <- list.files(staging_dir, all.files = TRUE, no.. = TRUE)
   output <- file.path(staging_dir, "finalize.parquet")
   testthat::local_mocked_bindings(
     .renameStagingFile = function(from, to) FALSE,
@@ -524,17 +639,13 @@ test_that("failed Parquet finalization removes consolidation temporaries", {
   expect_error(.executeQueryToParquet(
     handle$conn, "SELECT person_id FROM person ORDER BY person_id",
     output, chunk_size = 2L
-  ), "Could not consolidate")
-  dirs_after <- list.dirs(tempdir(), recursive = FALSE, full.names = TRUE)
-  temp_pattern <- "pq_(chunks|consolidated)_"
-  expect_length(setdiff(
-    grep(temp_pattern, dirs_after, value = TRUE),
-    grep(temp_pattern, dirs_before, value = TRUE)
-  ), 0L)
+  ), "Could not atomically publish")
+  files_after <- list.files(staging_dir, all.files = TRUE, no.. = TRUE)
+  expect_identical(files_after, files_before)
   expect_false(file.exists(output))
 })
 
-test_that("the byte quota applies to the whole staged dataset directory", {
+test_that("the byte quota applies to the whole staged plan directory", {
   base <- tempfile("dsstaging_total_quota_")
   withr::local_options(list(dsstaging.base_dir = base))
   token <- .generateStagingToken()
@@ -990,7 +1101,7 @@ test_that("streamed staged plans sanitize identifiers inside every chunk", {
   expect_setequal(descriptor$metadata$columns, names(landed))
   semantics <- descriptor$metadata$semantic_contract
   expect_identical(semantics$contract_version,
-                   "dsomop-staged-semantics-v1")
+                   "dsomop-staged-semantics-v2")
   expect_identical(semantics$output_type, "event_level")
   expect_identical(semantics$output_format, "long")
   expect_identical(semantics$grain, "event")
@@ -1071,6 +1182,10 @@ test_that("plan output symbols cannot collide with person-period components", {
 test_that("staged temporal outputs preserve descriptors and personRef", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle), add = TRUE)
+  DBI::dbExecute(
+    handle$conn,
+    "UPDATE observation_period SET observation_period_start_date = '2018-01-01'"
+  )
   set_test_person_key(handle)
   handle_symbol <- paste0("staged_temporal_handle_", Sys.getpid())
   output_symbol <- paste0("staged_temporal_output_", Sys.getpid())
