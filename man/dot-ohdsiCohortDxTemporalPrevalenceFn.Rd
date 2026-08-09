@@ -16,7 +16,7 @@
 }
 \value{
 Data frame (time_window, covariate_id, covariate_name, sum_value,
-  average) or empty.
+  cohort_size, average) or empty.
 }
 \description{
 Replaces the precomputed \code{temporal_covariate_value} read with a live

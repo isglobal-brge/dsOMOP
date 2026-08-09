@@ -380,62 +380,25 @@
     n_rows = integer(0), stringsAsFactors = FALSE
   )
 
-  bp <- .buildBlueprint(handle)
-  db_tables <- bp$tables$table_name[bp$tables$present_in_db]
-  db_tables_lower <- tolower(db_tables)
-
+  schema <- .effectiveResultsSchema(handle)
+  db_tables <- .listTablesRaw(handle, schema)
   registry <- .ohdsi_tool_registry()
   rows <- list()
 
-  for (tid in names(registry)) {
+  for (actual_name in db_tables) {
+    tid <- .ohdsi_table_to_tool(actual_name)
+    if (is.null(tid)) next
     tool <- registry[[tid]]
-
-    for (known_name in tool$table_names) {
-      # Strategy 1: Exact match
-      idx <- match(known_name, db_tables_lower)
-      if (!is.na(idx)) {
-        actual_name <- db_tables[idx]
-        qualified <- bp$tables$qualified_name[bp$tables$table_name == actual_name]
-        if (length(qualified) == 0) {
-          schema <- .effectiveResultsSchema(handle)
-          qualified <- .qualifyTable(handle, actual_name, schema)
-        }
-        n <- tryCatch({
-          sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified)
-          as.integer(.executeQuery(handle, sql)$n[1])
-        }, error = function(e) 0L)
-        rows[[length(rows) + 1]] <- data.frame(
-          table_name = actual_name, tool_id = tid,
-          tool_name = tool$tool_name, qualified_name = qualified,
-          n_rows = n, stringsAsFactors = FALSE
-        )
-        next
-      }
-
-      # Strategy 2: Prefix-pattern match
-      for (pat in tool$prefix_patterns) {
-        prefixed <- sub("^", pat, known_name)
-        prefixed <- sub("\\^", "", prefixed)  # clean regex anchor
-        pidx <- match(prefixed, db_tables_lower)
-        if (!is.na(pidx)) {
-          actual_name <- db_tables[pidx]
-          qualified <- bp$tables$qualified_name[bp$tables$table_name == actual_name]
-          if (length(qualified) == 0) {
-            schema <- .effectiveResultsSchema(handle)
-            qualified <- .qualifyTable(handle, actual_name, schema)
-          }
-          n <- tryCatch({
-            sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified)
-            as.integer(.executeQuery(handle, sql)$n[1])
-          }, error = function(e) 0L)
-          rows[[length(rows) + 1]] <- data.frame(
-            table_name = actual_name, tool_id = tid,
-            tool_name = tool$tool_name, qualified_name = qualified,
-            n_rows = n, stringsAsFactors = FALSE
-          )
-        }
-      }
-    }
+    qualified <- .qualifyTable(handle, actual_name, schema)
+    n <- tryCatch({
+      sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified)
+      as.integer(.executeQuery(handle, sql)$n[1])
+    }, error = function(e) 0L)
+    rows[[length(rows) + 1L]] <- data.frame(
+      table_name = actual_name, tool_id = tid,
+      tool_name = tool$tool_name, qualified_name = qualified,
+      n_rows = n, stringsAsFactors = FALSE
+    )
   }
 
   if (length(rows) == 0) return(empty)
@@ -630,6 +593,204 @@
 
 # --- Generic Query ---
 
+#' Resolve one reviewed physical OHDSI result-table contract
+#'
+#' Keeps physical result-table ownership separate from analysis-catalog live
+#' overlays. The returned canonical name and disclosure contract are inert
+#' metadata; no query is executed.
+#'
+#' @param table_name Character; requested physical OHDSI result-table name.
+#' @param tool_id Optional character tool identifier.
+#' @return Named resolution metadata and the reviewed disclosure contract.
+#' @keywords internal
+.ohdsiResolveResultContract <- function(table_name, tool_id = NULL) {
+  if (!is.character(table_name) || length(table_name) != 1L ||
+      is.na(table_name) || !nzchar(table_name)) {
+    stop("table_name must be one non-empty table identifier.", call. = FALSE)
+  }
+  table_name <- .validateIdentifier(table_name, "table")
+  registry <- .ohdsi_tool_registry()
+  owners <- names(registry)[vapply(registry, function(tool) {
+    length(.ohdsi_table_matches_tool(table_name, tool)) == 1L
+  }, logical(1L))]
+
+  if (is.null(tool_id)) {
+    if (length(owners) == 0L) {
+      stop("Table '", table_name,
+           "' is not a registered OHDSI result table. Only allowlisted OHDSI ",
+           "result tables may be queried.", call. = FALSE)
+    }
+    if (length(owners) != 1L) {
+      stop("Table '", table_name,
+           "' has ambiguous OHDSI tool ownership and cannot be queried.",
+           call. = FALSE)
+    }
+    tool_id <- owners[[1L]]
+  } else {
+    if (!is.character(tool_id) || length(tool_id) != 1L || is.na(tool_id) ||
+        !nzchar(tool_id)) {
+      stop("tool_id must be one registered OHDSI tool identifier.",
+           call. = FALSE)
+    }
+    tool_id <- tolower(tool_id)
+    if (!tool_id %in% names(registry)) {
+      stop("Unknown OHDSI tool_id: '", tool_id, "'.", call. = FALSE)
+    }
+    if (!tool_id %in% owners) {
+      stop("Table '", table_name, "' is not registered for OHDSI tool '",
+           tool_id, "'.", call. = FALSE)
+    }
+  }
+
+  canonical <- .ohdsi_table_matches_tool(table_name, registry[[tool_id]])
+  if (length(canonical) != 1L) {
+    stop("Table '", table_name,
+         "' is not a uniquely registered OHDSI result table.", call. = FALSE)
+  }
+  contract <- registry[[tool_id]]$contracts[[canonical[[1L]]]]
+  strict <- isTRUE(.omopDisclosureSettings()$query_strict)
+  if (strict && (!is.list(contract) ||
+                 !identical(contract$release, "public"))) {
+    stop("Table '", table_name,
+         "' has no reviewed public disclosure contract. It is available only ",
+         "to administrators in non-strict development mode.", call. = FALSE)
+  }
+  list(
+    requested_table = tolower(table_name), canonical_table = canonical[[1L]],
+    tool_id = tool_id, tool = registry[[tool_id]], contract = contract,
+    strict = strict
+  )
+}
+
+#' Resolve the requested physical table in the authorised results namespace
+#'
+#' Registry resolution above establishes the canonical OHDSI contract. This
+#' helper separately proves that the exact requested physical table exists in
+#' the controller-authorised results namespace. The distinction matters for
+#' standard tool prefixes such as \code{cd_cohort_count}: the canonical contract
+#' is \code{cohort_count}, while SQL must address the prefixed physical table.
+#'
+#' @param handle CDM handle.
+#' @param resolved Result from \code{\link{.ohdsiResolveResultContract}}.
+#' @return Named physical table, qualified name, and cached blueprint.
+#' @keywords internal
+.ohdsiResolvePhysicalResultTable <- function(handle, resolved) {
+  bp <- .buildBlueprint(handle)
+  table_name <- resolved$requested_table
+  authorised_schema <- .effectiveResultsSchema(handle)
+
+  # Blueprint rows carry the authoritative schema classification for tables it
+  # knows. Preserve that fail-closed check, including for co-located results.
+  bp_match <- bp$tables[
+    tolower(bp$tables$table_name) == table_name & bp$tables$present_in_db,
+    , drop = FALSE
+  ]
+  if (nrow(bp_match) > 0L) {
+    if (nrow(bp_match) != 1L ||
+        !tolower(bp_match$schema_category[[1L]]) %in% c("result", "results")) {
+      stop("Table '", table_name,
+           "' is not available from an authorized OHDSI results schema.",
+           call. = FALSE)
+    }
+    actual_table <- tolower(bp_match$table_name[[1L]])
+    qualified <- bp_match$qualified_name[[1L]]
+    expected <- .qualifyTable(handle, actual_table, authorised_schema)
+    if (!identical(tolower(qualified), tolower(expected))) {
+      stop("Table '", table_name,
+           "' is not available from an authorized OHDSI results schema.",
+           call. = FALSE)
+    }
+    return(list(table_name = actual_table, qualified_name = qualified,
+                blueprint = bp))
+  }
+
+  # Prefixed OHDSI result tables are intentionally not part of the CDM
+  # blueprint specification. Resolve them by exact name, but only inside the
+  # already-authorised results namespace; never scan or fall back to another
+  # schema.
+  available <- tryCatch(
+    tolower(.listTablesRaw(handle, authorised_schema)),
+    error = function(e) character(0)
+  )
+  matches <- available[available == table_name]
+  if (length(matches) == 0L) {
+    stop("Table '", table_name, "' not found in database.", call. = FALSE)
+  }
+  if (length(matches) != 1L) {
+    stop("Table '", table_name,
+         "' is not uniquely available from the authorized OHDSI results ",
+         "schema.", call. = FALSE)
+  }
+  actual_table <- matches[[1L]]
+  list(
+    table_name = actual_table,
+    qualified_name = .qualifyTable(handle, actual_table, authorised_schema),
+    blueprint = bp
+  )
+}
+
+#' Return the typed pooling contract for a physical OHDSI result table
+#'
+#' @param handle CDM handle.
+#' @param table_name Character; requested physical OHDSI result-table name.
+#' @param tool_id Optional character tool identifier.
+#' @return Closed versioned pooling-contract metadata.
+#' @keywords internal
+.ohdsiResultPoolingContract <- function(handle, table_name, tool_id = NULL) {
+  resolved <- .ohdsiResolveResultContract(table_name, tool_id)
+  if (!isTRUE(resolved$strict)) {
+    stop("Physical OHDSI pooling is available only for reviewed public ",
+         "contracts in strict mode.", call. = FALSE)
+  }
+  physical <- .ohdsiResolvePhysicalResultTable(handle, resolved)
+  actual_cols <- .ohdsiBlueprintColumns(
+    physical$blueprint, physical$table_name, handle
+  )
+  required_basis <- unique(c(resolved$contract$count_columns,
+                             resolved$contract$person_columns))
+  missing_basis <- setdiff(required_basis, actual_cols)
+  if (length(resolved$contract$person_columns) == 0L ||
+      length(missing_basis) > 0L) {
+    stop("Table '", resolved$requested_table,
+         "' does not provide the complete contracted person/count basis",
+         if (length(missing_basis) > 0L) paste0(": ",
+           paste(missing_basis, collapse = ", ")) else "",
+         ".", call. = FALSE)
+  }
+  entry <- list(meta = list(
+    tool_id = resolved$tool_id,
+    table_name = resolved$canonical_table,
+    public_vocabulary_metadata = FALSE
+  ))
+  pooling_contract <- .omopAnalysisValidatePoolingContract(
+    .omopOhdsiPrecomputedPoolingContract(entry),
+    paste0("physical OHDSI result ", resolved$tool_id, ".",
+           resolved$canonical_table)
+  )
+  roles <- vapply(pooling_contract$columns, `[[`, character(1L), "role")
+  required_pooling_columns <- names(roles)[
+    !roles %in% c("label", "nonpoolable", "ratio")
+  ]
+  if (identical(pooling_contract$strategy, "effect_estimate")) {
+    required_pooling_columns <- union(
+      required_pooling_columns,
+      c(pooling_contract$log_estimate, pooling_contract$standard_error)
+    )
+  }
+  missing_pooling <- setdiff(required_pooling_columns, actual_cols)
+  if (length(missing_pooling) > 0L) {
+    stop("Table '", resolved$requested_table,
+         "' does not provide the complete contracted pooling schema: ",
+         paste(missing_pooling, collapse = ", "), ".", call. = FALSE)
+  }
+  list(
+    contract_version = 1L,
+    tool_id = resolved$tool_id,
+    table_name = resolved$canonical_table,
+    pooling_contract = pooling_contract
+  )
+}
+
 #' Query an OHDSI result table
 #'
 #' @param handle CDM handle
@@ -647,70 +808,20 @@
 .ohdsiGetResults <- function(handle, table_name, columns = NULL,
                               filters = NULL, order_by = NULL,
                               limit = 5000L, tool_id = NULL) {
-  # Validate table name
-  if (!is.character(table_name) || length(table_name) != 1L ||
-      is.na(table_name) || !nzchar(table_name)) {
-    stop("table_name must be one non-empty table identifier.", call. = FALSE)
-  }
-  table_name <- .validateIdentifier(table_name, "table")
-  table_name_lower <- tolower(table_name)
-
-  # Allowlist: only tables declared in the tool registry may be queried.
-  # This prevents querying raw CDM tables (person, condition_occurrence, etc.)
-  # through the OHDSI results endpoint.
+  resolved <- .ohdsiResolveResultContract(table_name, tool_id)
+  table_name <- resolved$requested_table
+  canonical_table <- resolved$canonical_table
+  tool_id <- resolved$tool_id
   registry <- .ohdsi_tool_registry()
-  owners <- names(registry)[vapply(registry, function(tool) {
-    length(.ohdsi_table_matches_tool(table_name, tool)) == 1L
-  }, logical(1))]
-
-  if (is.null(tool_id)) {
-    if (length(owners) == 0L) {
-      stop("Table '", table_name,
-           "' is not a registered OHDSI result table. ",
-           "Only allowlisted OHDSI result tables may be queried.",
-           call. = FALSE)
-    }
-    if (length(owners) != 1L) {
-      stop("Table '", table_name,
-           "' has ambiguous OHDSI tool ownership and cannot be queried.",
-           call. = FALSE)
-    }
-    tool_id <- owners[[1]]
-  } else {
-    if (!is.character(tool_id) || length(tool_id) != 1L ||
-        is.na(tool_id) || !nzchar(tool_id)) {
-      stop("tool_id must be one registered OHDSI tool identifier.",
-           call. = FALSE)
-    }
-    tool_id <- tolower(tool_id)
-    if (!tool_id %in% names(registry)) {
-      stop("Unknown OHDSI tool_id: '", tool_id, "'.", call. = FALSE)
-    }
-    if (!tool_id %in% owners) {
-      stop("Table '", table_name, "' is not registered for OHDSI tool '",
-           tool_id, "'.", call. = FALSE)
-    }
-  }
-
-  canonical_matches <- .ohdsi_table_matches_tool(
-    table_name, registry[[tool_id]]
-  )
-  if (length(canonical_matches) != 1L) {
-    stop("Table '", table_name,
-         "' is not a registered OHDSI result table. ",
-         "Only allowlisted OHDSI result tables may be queried.",
-         call. = FALSE)
-  }
-  canonical_table <- canonical_matches[[1]]
-  contract <- registry[[tool_id]]$contracts[[canonical_table]]
-  strict <- isTRUE(.omopDisclosureSettings()$query_strict)
-  if (strict && (!is.list(contract) ||
-                 !identical(contract$release, "public"))) {
-    stop("Table '", table_name,
-         "' has no reviewed public disclosure contract. It is available only ",
-         "to administrators in non-strict development mode.", call. = FALSE)
-  }
+  contract <- resolved$contract
+  strict <- resolved$strict
   finish <- function(x) {
+    if (strict && is.null(columns) && is.data.frame(x)) {
+      for (column in setdiff(contract$public_columns, names(x))) {
+        x[[column]] <- rep(NA, nrow(x))
+      }
+      x <- x[, contract$public_columns, drop = FALSE]
+    }
     if (!strict) {
       attr(x, "dsomop.disclosure_safe") <- FALSE
       attr(x, "dsomop.release_mode") <- "admin_development"
@@ -718,31 +829,13 @@
     x
   }
 
-  # Verify that the table exists in the handle's authorised results daimon.
-  # The schema-category check prevents a same-named raw CDM/vocabulary table
-  # from being accepted.  The qualified-name check also prevents the CDM copy
-  # from winning when a dedicated results schema is configured.  SQLite and
-  # genuinely co-located deployments resolve to the CDM/default schema here.
-  bp <- .buildBlueprint(handle)
-  bp_match <- bp$tables[tolower(bp$tables$table_name) == table_name_lower &
-                          bp$tables$present_in_db, , drop = FALSE]
-  if (nrow(bp_match) == 0) {
-    stop("Table '", table_name, "' not found in database.", call. = FALSE)
-  }
-  authorised_schema <- .effectiveResultsSchema(handle)
-  expected_qualified <- .qualifyTable(handle, table_name_lower,
-                                       authorised_schema)
-  bp_match <- bp_match[
-    tolower(bp_match$schema_category) %in% c("result", "results") &
-      tolower(bp_match$qualified_name) == tolower(expected_qualified),
-    , drop = FALSE
-  ]
-  if (nrow(bp_match) != 1L) {
-    stop("Table '", table_name,
-         "' is not available from an authorized OHDSI results schema.",
-         call. = FALSE)
-  }
-  qualified <- bp_match$qualified_name[1]
+  # Resolve only the exact requested physical table in the authorised results
+  # namespace. Canonical and prefixed tool tables share the same reviewed
+  # contract but remain distinct physical objects.
+  physical <- .ohdsiResolvePhysicalResultTable(handle, resolved)
+  bp <- physical$blueprint
+  qualified <- physical$qualified_name
+  actual_table <- physical$table_name
 
   # Get sensitive columns to exclude
   sensitive <- character(0)
@@ -752,7 +845,7 @@
 
   # DBI metadata captured by the blueprint is the sole source of schema
   # introspection here: never SELECT * from a result table.
-  actual_cols <- .ohdsiBlueprintColumns(bp, table_name_lower, handle)
+  actual_cols <- .ohdsiBlueprintColumns(bp, actual_table, handle)
   if (length(actual_cols) == 0L) {
     stop("Could not inspect columns for OHDSI result table '", table_name,
          "'.", call. = FALSE)

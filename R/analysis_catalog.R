@@ -522,6 +522,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       mode  = if (identical(mode, "assign")) "assign" else "aggregate",
       meta  = list(adapter = "query", query_id = qid,
                    inputs_df = q$inputs, strict = strict,
+                   output_fields = as.character(q$outputs$field),
                    scope_column = scope_col,
                    post_gate_top_n = safe_top_n$post_gate_top_n,
                    cdm_version = q$cdm_version,
@@ -1920,7 +1921,6 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     df, numerator_col = "sum_value", denominator_col = "cohort_size",
     ratio_col = "average", scale = 1
   )
-  df$cohort_size <- NULL
   df$domain <- as.character(domain_code %||% "0")
   df
 }
@@ -2276,7 +2276,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     dependencies = list(tables = c("condition_occurrence", "concept"),
                         packages = character(0)),
     disclosure = .omopAnalysisDisclosure(
-      unit = "person", count_cols = "sum_value"),
+      unit = "person", count_cols = c("sum_value", "cohort_size")),
     scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
                                max_tables = 1L),
     mode  = "aggregate",
@@ -2301,16 +2301,26 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
   fn <- function(handle, ctx, params) {
     metric <- params$metric %||% "measurement_value"
-    if (identical(metric, "age")) return(.omopAgeDistribution(handle, ctx))
-    if (identical(metric, "time_in_cohort")) {
+    out <- if (identical(metric, "age")) {
+      .omopAgeDistribution(handle, ctx)
+    } else if (identical(metric, "time_in_cohort")) {
       # Reuse the time-in-cohort dist (single covariate row).
-      return(.omopTimeInCohortDistribution(handle, ctx))
+      .omopTimeInCohortDistribution(handle, ctx)
+    } else {
+      # Default: per-measurement-concept value distributions.
+      .omopCovariateContinuous(handle, ctx,
+                               domain_code = params$domain_code %||% "3",
+                               value_kind = "value",
+                               top_n = as.integer(params$top_n %||% "50"))
     }
-    # Default: per-measurement-concept value distributions.
-    .omopCovariateContinuous(handle, ctx,
-                             domain_code = params$domain_code %||% "3",
-                             value_kind = "value",
-                             top_n = as.integer(params$top_n %||% "50"))
+    if (!is.data.frame(out) || nrow(out) == 0L) return(out)
+    out$metric <- metric
+    if (!"covariate_id" %in% names(out)) out$covariate_id <- NA_integer_
+    if (!"covariate_name" %in% names(out)) out$covariate_name <- metric
+    out[, c("metric", "covariate_id", "covariate_name", "count_value",
+            "n_persons", "min_value", "max_value", "avg_value",
+            "stdev_value", "p10_value", "p25_value", "median_value",
+            "p75_value", "p90_value"), drop = FALSE]
   }
 
   .omopAnalysisEntry(
@@ -2757,7 +2767,6 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       df, numerator_col = "sum_value", denominator_col = "group_size",
       ratio_col = "average", scale = 1
     )
-    df$group_size <- NULL
     rownames(df) <- NULL
     df
   }
@@ -2786,7 +2795,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     dependencies = list(tables = c("condition_occurrence", "concept"),
                         packages = character(0)),
     disclosure = .omopAnalysisDisclosure(
-      unit = "person", count_cols = "sum_value"),
+      unit = "person", count_cols = c("sum_value", "group_size")),
     scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
                                max_tables = 1L),
     mode  = "aggregate",
@@ -3737,6 +3746,11 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       semantics %in% c("metric", "relative_day", "duration")
     ]
   }
+  entry$meta$pooling_contract <- if (identical(mode, "aggregate")) {
+    .omopAnalysisValidatePoolingContract(
+      .omopExternalPoolingContract(entry), final_id
+    )
+  } else NULL
   entry
 }
 
@@ -4026,7 +4040,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   # Append pack-contributed entries, rejecting any id that collides with a
   # native id or another pack's id (fail-closed; never silently overwrite).
   pack <- .omopAnalysisPackEntries(handle, existing = native)
-  entries <- c(native, pack)
+  entries <- .omopAnalysisAttachPoolingContracts(c(native, pack))
 
   .omopAnalysisWarnDeps(handle, entries)
 
@@ -4164,6 +4178,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     pack_version = e$meta$pack_version,
     pack_contract_version = e$meta$pack_contract_version,
     output_contract = e$meta$output_contract,
+    pooling_contract = e$meta$pooling_contract,
     # Inert client-side plot recipe (type + a deparsed function(df, params) string).
     # The server NEVER evaluates this; the client renders it locally on the
     # already-gated aggregate. NULL for analyses without a plot.
@@ -5217,7 +5232,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   )
   df <- .omopAnalysisGate(handle, df, entry)
   df <- .omopAnalysisPostGateTopN(df, entry, sanitized)
-  .omopAnalysisExternalOutputFirewall(
+  df <- .omopAnalysisExternalOutputFirewall(
     df, entry, assign = FALSE, phase = "final"
   )
+  .omopAnalysisNormalizePoolingOutput(df, entry)
 }

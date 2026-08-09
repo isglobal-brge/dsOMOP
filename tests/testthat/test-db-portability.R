@@ -49,12 +49,15 @@ test_that("database support profiles distinguish tested and contract-only adapte
   expect_null(.databaseSupportProfile("mysql")$sqlrender_target_dialect)
   expect_equal(.databaseSupportProfile("mysql")$ohdsi_sql_translation,
                "reviewed_mysql_extension_only")
-  expect_identical(.databaseSupportProfile("postgresql")$sqlrender_version,
-                   if (requireNamespace("SqlRender", quietly = TRUE)) {
-                     as.character(utils::packageVersion("SqlRender"))
-                   } else {
-                     NULL
-                   })
+  sqlrender_path <- suppressWarnings(tryCatch(
+    find.package("SqlRender", quiet = TRUE), error = function(e) ""
+  ))
+  expect_identical(
+    .databaseSupportProfile("postgresql")$sqlrender_version,
+    if (nzchar(sqlrender_path)) {
+      as.character(utils::packageVersion("SqlRender"))
+    } else NULL
+  )
   expect_equal(.databaseSupportProfile("oracle")$ohdsi_temporary_objects,
                "unsafe_lifecycle_blocked")
   expect_equal(.databaseSupportProfile("bigquery")$ohdsi_temporary_objects,

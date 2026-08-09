@@ -2355,6 +2355,31 @@ omopOhdsiResultsDS <- function(omop_symbol, table_name, columns = NULL,
   result
 }
 
+#' Get the pooling contract for a physical OHDSI result table (Aggregate)
+#'
+#' @description
+#' Resolves the exact physical result table inside the server-authorised OHDSI
+#' results namespace and returns its reviewed, typed pooling contract. The
+#' contract is inert metadata with a closed output schema; it contains no SQL,
+#' database-qualified names, credentials, or raw result values. Unreviewed or
+#' malformed physical tables fail closed.
+#'
+#' @param omop_symbol Character; the OMOP handle symbol
+#' @param table_name Character; physical OHDSI result-table name
+#' @param tool_id Character; optional tool identifier for registry lookup
+#' @return Named list containing contract version, canonical tool and table
+#'   identifiers, and the typed pooling contract
+#' @examples
+#' \dontrun{
+#' contract <- omopOhdsiResultContractDS("omop", "cohort_count")
+#' }
+#' @export
+omopOhdsiResultContractDS <- function(omop_symbol, table_name,
+                                      tool_id = NULL) {
+  handle <- .getHandle(omop_symbol)
+  .ohdsiResultPoolingContract(handle, table_name, tool_id)
+}
+
 #' Get OHDSI tool summary (Aggregate)
 #'
 #' @description

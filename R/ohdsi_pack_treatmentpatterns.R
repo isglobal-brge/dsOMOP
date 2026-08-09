@@ -156,6 +156,29 @@
   labs
 }
 
+#' Collapse ordered treatment rows by stable OMOP concept identifier
+#'
+#' @keywords internal
+.omopTxPathCollapseConcepts <- function(rows, max_len) {
+  ids <- suppressWarnings(as.integer(rows$concept_id))
+  labels <- as.character(rows$concept_name)
+  labels[is.na(labels) | !nzchar(labels)] <- "Unmapped"
+  keep <- !is.na(ids)
+  ids <- ids[keep]
+  labels <- labels[keep]
+  if (length(ids) > 1L) {
+    keep <- c(TRUE, ids[-1L] != ids[-length(ids)])
+    ids <- ids[keep]
+    labels <- labels[keep]
+  }
+  if (length(ids) > max_len) {
+    ids <- ids[seq_len(max_len)]
+    labels <- labels[seq_len(max_len)]
+  }
+  data.frame(concept_id = ids, concept_name = labels,
+             stringsAsFactors = FALSE)
+}
+
 # --- pathways: bespoke hierarchical node/edge gate ----------------------------
 
 #' Hierarchically gate per-prefix node + edge person counts (the bespoke gate)
@@ -186,10 +209,12 @@
 #' \code{person_count} (a no-op on the already-gated values, or a fail-closed drop
 #' of an \code{"Other"} node still below \code{nfilter.tab}).
 #'
-#' @param paths List of character vectors; one collapsed path per person.
+#' @param paths List of data frames with stable concept ids and display names;
+#'   one collapsed path per person.
 #' @param max_len Integer; the path-length cap (\code{<= 5}).
-#' @return Data frame (row_type, depth, parent_path, path, treatment,
-#'   person_count) — aggregate-only, hierarchically consistent.
+#' @return Data frame (row_type, depth, stable path identifiers, display labels,
+#'   treatment concept id, person_count) — aggregate-only and hierarchically
+#'   consistent.
 #' @keywords internal
 .omopTxPathHierarchicalGate <- function(paths, max_len) {
   settings <- .omopDisclosureSettings()
@@ -202,14 +227,18 @@
   if (n_persons == 0) return(data.frame())
 
   rows <- list()
-  add_row <- function(row_type, depth, parent_path, path, treatment, cnt) {
+  add_row <- function(row_type, depth, parent_path_id, path_id,
+                      treatment_concept_id, parent_path, path, treatment, cnt) {
     rows[[length(rows) + 1L]] <<- data.frame(
-      row_type     = row_type,
-      depth        = as.integer(depth),
-      parent_path  = parent_path,
-      path         = path,
-      treatment    = treatment,
-      person_count = as.numeric(cnt),
+      row_type            = row_type,
+      depth               = as.integer(depth),
+      parent_path_id      = parent_path_id,
+      path_id             = path_id,
+      treatment_concept_id = as.integer(treatment_concept_id),
+      parent_path         = parent_path,
+      path                = path,
+      treatment           = treatment,
+      person_count        = as.numeric(cnt),
       stringsAsFactors = FALSE)
   }
 
@@ -229,10 +258,11 @@
       idx <- survivors[[pkey]]
       if (length(idx) == 0) next
       plabel <- parent_label[[pkey]]
+      parent_id <- if (identical(pkey, "__root__")) "" else pkey
       # Next treatment for each person at this depth ("" when the path ended).
       nxt <- vapply(idx, function(i) {
         p <- paths[[i]]
-        if (length(p) >= depth) p[[depth]] else ""
+        if (nrow(p) >= depth) as.character(p$concept_id[[depth]]) else ""
       }, character(1))
       ended <- nxt == ""
       # Persons whose path ENDS at this depth contribute to the parent node only
@@ -253,13 +283,19 @@
 
       # Emit each kept child as a NODE (the prefix) and an EDGE (parent->child),
       # band both counts, and queue it as a surviving parent for the next depth.
-      for (treat in names(kept)) {
-        members <- kept[[treat]]
+      for (treat_id in names(kept)) {
+        members <- kept[[treat_id]]
+        treat <- paths[[members[[1L]]]]$concept_name[[depth]]
         node_path <- if (nzchar(plabel)) paste0(plabel, sep, treat) else treat
+        node_id <- if (nzchar(parent_id)) {
+          paste0(parent_id, ">", treat_id)
+        } else treat_id
         cnt <- .bandCount(length(members), band_width = band)
-        add_row("node", depth, plabel, node_path, treat, cnt)
-        add_row("edge", depth, plabel, node_path, treat, cnt)
-        ckey <- node_path
+        add_row("node", depth, parent_id, node_id, as.integer(treat_id),
+                plabel, node_path, treat, cnt)
+        add_row("edge", depth, parent_id, node_id, as.integer(treat_id),
+                plabel, node_path, treat, cnt)
+        ckey <- node_id
         next_survivors[[ckey]] <- members
         next_parent_label[[ckey]] <- node_path
       }
@@ -270,9 +306,14 @@
       # gate's universal pass drops it fail-closed if it is itself < nfilter.tab.
       if (length(small_idx) > 0) {
         node_path <- if (nzchar(plabel)) paste0(plabel, sep, "Other") else "Other"
+        node_id <- if (nzchar(parent_id)) {
+          paste0(parent_id, ">other")
+        } else "other"
         cnt <- .bandCount(length(small_idx), band_width = band)
-        add_row("node", depth, plabel, node_path, "Other", cnt)
-        add_row("edge", depth, plabel, node_path, "Other", cnt)
+        add_row("node", depth, parent_id, node_id, NA_integer_, plabel,
+                node_path, "Other", cnt)
+        add_row("edge", depth, parent_id, node_id, NA_integer_, plabel,
+                node_path, "Other", cnt)
       }
     }
     if (length(next_survivors) == 0) break
@@ -317,8 +358,8 @@
 
   rows <- rows[order(rows$person_id, suppressWarnings(as.integer(rows$seq_pos))),
                , drop = FALSE]
-  per_person <- split(rows$concept_name, rows$person_id)
-  paths <- lapply(per_person, .omopTxPathCollapse, max_len = max_len)
+  per_person <- split(rows, rows$person_id)
+  paths <- lapply(per_person, .omopTxPathCollapseConcepts, max_len = max_len)
 
   .omopTxPathHierarchicalGate(paths, max_len)
 }
@@ -341,8 +382,8 @@
 #' @param handle CDM handle.
 #' @param ctx Run-path ctx (carries \code{scoped_cohort}).
 #' @param params Sanitized params (see the entry's param specs).
-#' @return Data frame (treatment_layer, treatment, n_treated, cohort_size,
-#'   pct_treated) or empty.
+#' @return Data frame (treatment_layer, treatment_concept_id, treatment,
+#'   n_treated, cohort_size, pct_treated) or empty.
 #' @keywords internal
 .omopTxPathPercentageTreatedFn <- function(handle, ctx, params) {
   if (is.null(ctx$scoped_cohort)) return(data.frame())
@@ -366,34 +407,45 @@
 
   rows <- rows[order(rows$person_id, suppressWarnings(as.integer(rows$seq_pos))),
                , drop = FALSE]
-  per_person <- split(rows$concept_name, rows$person_id)
-  paths <- lapply(per_person, .omopTxPathCollapse, max_len = max_len)
+  per_person <- split(rows, rows$person_id)
+  paths <- lapply(per_person, .omopTxPathCollapseConcepts, max_len = max_len)
 
   # One (layer, drug) key per person per layer: a person is counted ONCE per
   # layer for the drug they take at that layer, so n_treated is a distinct-person
   # count by construction.
   layer_drug <- list()
   for (p in paths) {
-    for (k in seq_along(p)) {
-      key <- paste0(k, "\t", p[[k]])
-      layer_drug[[key]] <- (layer_drug[[key]] %||% 0L) + 1L
+    for (k in seq_len(nrow(p))) {
+      key <- paste0(k, "\t", p$concept_id[[k]])
+      if (is.null(layer_drug[[key]])) {
+        layer_drug[[key]] <- list(
+          treatment_layer = k,
+          treatment_concept_id = p$concept_id[[k]],
+          treatment = p$concept_name[[k]],
+          n_treated = 1L
+        )
+      } else {
+        layer_drug[[key]]$n_treated <- layer_drug[[key]]$n_treated + 1L
+      }
     }
   }
   if (length(layer_drug) == 0) return(data.frame())
 
-  keys  <- names(layer_drug)
-  parts <- strsplit(keys, "\t", fixed = TRUE)
-  out <- data.frame(
-    treatment_layer = vapply(parts, function(x) as.integer(x[[1]]), integer(1)),
-    treatment       = vapply(parts, function(x) x[[2]], character(1)),
-    n_treated       = vapply(keys, function(k) as.numeric(layer_drug[[k]]),
-                             numeric(1)),
-    cohort_size     = cohort_size,
-    pct_treated     = NA_real_,
-    stringsAsFactors = FALSE)
+  out <- do.call(rbind, lapply(layer_drug, function(x) {
+    data.frame(
+      treatment_layer = as.integer(x$treatment_layer),
+      treatment_concept_id = as.integer(x$treatment_concept_id),
+      treatment = as.character(x$treatment),
+      n_treated = as.numeric(x$n_treated),
+      cohort_size = cohort_size,
+      pct_treated = NA_real_,
+      stringsAsFactors = FALSE
+    )
+  }))
+  rownames(out) <- NULL
   out <- .omopBandedTopN(
     out, support_cols = "n_treated", top_n = top_n,
-    key_cols = "treatment", priority_cols = "treatment_layer")
+    key_cols = "treatment_concept_id", priority_cols = "treatment_layer")
 
   # The ONE sanctioned ratio exception: recompute the percentage from the banded
   # numerator + denominator (NA when either side is suppressed) BEFORE returning.

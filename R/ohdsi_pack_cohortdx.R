@@ -25,7 +25,7 @@
 #       dsomop:ohdsi.cohort_diagnostics.time_series
 #       dsomop:ohdsi.cohort_diagnostics.included_source_concept
 #       dsomop:ohdsi.cohort_diagnostics.orphan_concept
-#       dsomop:characterization.c_cohort_counts  (shares the cohort_count fn)
+#       dsomop:ohdsi.characterization.c_cohort_counts  (shares the cohort_count fn)
 #   * the NEW canonical natives the registry ids alias (same fn, canonical name):
 #       dsomop:cohortdx.temporal_prevalence       (PLAN dsomop:fe.temporal_prevalence)
 #       dsomop:cohortdx.time_series
@@ -199,7 +199,7 @@
 #' @param params Sanitized params: \code{domain_code}, \code{covariate_ids},
 #'   \code{temporal_start_days}, \code{temporal_end_days}, \code{top_n}.
 #' @return Data frame (time_window, covariate_id, covariate_name, sum_value,
-#'   average) or empty.
+#'   cohort_size, average) or empty.
 #' @keywords internal
 .ohdsiCohortDxTemporalPrevalenceFn <- function(handle, ctx, params) {
   if (is.null(ctx$scoped_cohort)) return(data.frame())
@@ -254,8 +254,6 @@
   df <- .omopAnalysisReconcileRatio(df, numerator_col = "sum_value",
                                     denominator_col = "cohort_size",
                                     ratio_col = "average", scale = 1)
-  # Drop the (now-banded) denominator helper so the output schema is unchanged.
-  df <- df[, setdiff(names(df), "cohort_size"), drop = FALSE]
   rownames(df) <- NULL
   df
 }
@@ -787,7 +785,7 @@
       count_cols    = c("cohort_subjects", "cohort_entries"),
       person_id_col = "cohort_subjects"),
     scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
-                               max_tables = 1L, requires_cohort = FALSE),
+                               max_tables = 1L, requires_cohort = TRUE),
     mode  = "aggregate",
     meta  = c(list(adapter = adapter), meta)
   )
@@ -807,7 +805,7 @@
     dependencies = list(tables = c("condition_occurrence", "concept"),
                         packages = character(0)),
     disclosure  = .omopAnalysisDisclosure(
-      unit = "person", count_cols = "sum_value"),
+      unit = "person", count_cols = c("sum_value", "cohort_size")),
     scope = .omopAnalysisScope(accepts_cohort = TRUE, accepts_tables = TRUE,
                                max_tables = 1L, requires_cohort = FALSE),
     mode  = "aggregate",
@@ -1010,7 +1008,8 @@
 #' expects to concatenate.
 #'
 #' Both the registry ids the precomputed adapter used
-#' (\code{dsomop:ohdsi.cohort_diagnostics.*}, \code{dsomop:characterization.c_cohort_counts})
+#' (\code{dsomop:ohdsi.cohort_diagnostics.*},
+#' \code{dsomop:ohdsi.characterization.c_cohort_counts})
 #' and the NEW canonical natives they alias (\code{dsomop:cohortdx.temporal_prevalence},
 #' \code{dsomop:cohortdx.time_series}, \code{dsomop:cohortdx.included_source_concepts},
 #' \code{dsomop:cohortdx.resolved_concepts})
@@ -1033,7 +1032,7 @@
       "dsomop:ohdsi.cohort_diagnostics.cohort_count", "ohdsi_live",
       list(tool_id = "cohort_diagnostics", table_name = "cohort_count")),
     .ohdsiCohortDxCohortCountEntry(
-      "dsomop:characterization.c_cohort_counts", "ohdsi_live",
+      "dsomop:ohdsi.characterization.c_cohort_counts", "ohdsi_live",
       list(tool_id = "characterization", table_name = "c_cohort_counts")),
 
     # temporal_covariate_value -> canonical temporal_prevalence (+ alias).

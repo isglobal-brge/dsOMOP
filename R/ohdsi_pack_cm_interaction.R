@@ -263,7 +263,12 @@
 #' @keywords internal
 .omopCmFitSubgroupEffect <- function(target_frame, comparator_frame,
                                      model_type = "poisson") {
-  na_fit <- list(log_estimate = NA_real_, se_log_estimate = NA_real_)
+  requested_model <- tolower(model_type %||% "poisson")
+  use_cox <- identical(requested_model, "cox") &&
+    requireNamespace("survival", quietly = TRUE)
+  actual_model <- if (use_cox) "cox" else "poisson"
+  na_fit <- list(log_estimate = NA_real_, se_log_estimate = NA_real_,
+                 model_type = actual_model)
   nt <- nrow(target_frame); nc <- nrow(comparator_frame)
   if (nt == 0 || nc == 0) return(na_fit)
 
@@ -279,9 +284,6 @@
   # The effect is unidentified without at least one event; bail to NA.
   if (sum(df$events) <= 0) return(na_fit)
 
-  use_cox <- identical(tolower(model_type %||% "poisson"), "cox") &&
-    requireNamespace("survival", quietly = TRUE)
-
   fit_res <- tryCatch({
     if (use_cox) {
       surv <- survival::Surv(time = df$person_days,
@@ -289,13 +291,15 @@
       fit  <- survival::coxph(surv ~ arm, data = df)
       sm   <- summary(fit)$coefficients
       list(log_estimate = as.numeric(sm["arm", "coef"]),
-           se_log_estimate = as.numeric(sm["arm", "se(coef)"]))
+           se_log_estimate = as.numeric(sm["arm", "se(coef)"]),
+           model_type = actual_model)
     } else {
       fit <- stats::glm(events ~ arm + offset(log(person_days)),
                         family = stats::poisson(), data = df)
       sm  <- summary(fit)$coefficients
       list(log_estimate = as.numeric(sm["arm", "Estimate"]),
-           se_log_estimate = as.numeric(sm["arm", "Std. Error"]))
+           se_log_estimate = as.numeric(sm["arm", "Std. Error"]),
+           model_type = actual_model)
     }
   }, error = function(e) na_fit)
 
@@ -420,6 +424,7 @@
 
       rows[[length(rows) + 1L]] <- data.frame(
         subgroup_label         = sg$label,
+        model_type             = fit$model_type,
         target_persons         = as.numeric(ta$persons),
         comparator_persons     = as.numeric(co$persons),
         target_outcomes        = as.numeric(ta$outcomes),

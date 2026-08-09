@@ -14,8 +14,8 @@
 \item{params}{Sanitized params (see the entry's param specs).}
 }
 \value{
-Data frame (treatment_layer, treatment, n_treated, cohort_size,
-  pct_treated) or empty.
+Data frame (treatment_layer, treatment_concept_id, treatment,
+  n_treated, cohort_size, pct_treated) or empty.
 }
 \description{
 For each treatment LAYER (1..max_path_length) and each drug appearing at that

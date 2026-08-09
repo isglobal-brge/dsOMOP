@@ -7,13 +7,15 @@
 .omopTxPathHierarchicalGate(paths, max_len)
 }
 \arguments{
-\item{paths}{List of character vectors; one collapsed path per person.}
+\item{paths}{List of data frames with stable concept ids and display names;
+one collapsed path per person.}
 
 \item{max_len}{Integer; the path-length cap (\code{<= 5}).}
 }
 \value{
-Data frame (row_type, depth, parent_path, path, treatment,
-  person_count) — aggregate-only, hierarchically consistent.
+Data frame (row_type, depth, stable path identifiers, display labels,
+  treatment concept id, person_count) — aggregate-only and hierarchically
+  consistent.
 }
 \description{
 The one analysis whose disclosure needs gate logic beyond the standard

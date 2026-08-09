@@ -207,6 +207,7 @@ test_that("(b) fe.continuous returns un-masked stats for a >= nfilter_dist cohor
                            params = list(metric = "measurement_value",
                                          domain_code = "3"), scope = allp)
     expect_true(nrow(bw) >= 1L)
+    expect_true(all(bw$metric == "measurement_value"))
     wrow <- bw[bw$covariate_id == 3025315, ]
     expect_equal(nrow(wrow), 1L)
     expect_equal(wrow$count_value, 10)            # 13 banded down to 10
@@ -221,6 +222,8 @@ test_that("(b) fe.continuous returns un-masked stats for a >= nfilter_dist cohor
                             params = list(metric = "age"), scope = allp)
     expect_equal(nrow(age), 1L)
     expect_equal(age$metric, "age")
+    expect_true(is.na(age$covariate_id))
+    expect_equal(age$covariate_name, "age")
     expect_true(age$count_value %% 5 == 0)
   })
 })

@@ -437,6 +437,14 @@ OHDSI assets, but "aligned" does not mean that every HADES package is embedded:
   results. Some catalog analyses are local ports with OHDSI-inspired IDs or
   output shapes; they are not calls into Achilles, CohortMethod,
   FeatureExtraction or other HADES packages.
+- Every aggregate catalog entry exposes a closed, typed pooling contract to the
+  client. Contracts identify grouping keys, presentation labels, additive
+  sufficient statistics, reconstructible ratios and moments, inverse-variance
+  effects, Kaplan-Meier risk sets, or an explicit non-poolable estimand. Physical
+  OHDSI result tables have a separate reviewed contract endpoint, so a live
+  catalog overlay can never be mistaken for the requested stored result table.
+  Standard concept IDs, rather than human-readable labels, define cross-site
+  identity when both are available.
 - Two-arm CohortMethod ports use the pinned upstream default
   `keep first, truncate to second`: the first treatment in time wins, its era is
   truncated before the second starts when they overlap, and same-day first

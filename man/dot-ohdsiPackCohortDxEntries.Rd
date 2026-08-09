@@ -21,7 +21,8 @@ expects to concatenate.
 }
 \details{
 Both the registry ids the precomputed adapter used
-(\code{dsomop:ohdsi.cohort_diagnostics.*}, \code{dsomop:characterization.c_cohort_counts})
+(\code{dsomop:ohdsi.cohort_diagnostics.*},
+\code{dsomop:ohdsi.characterization.c_cohort_counts})
 and the NEW canonical natives they alias (\code{dsomop:cohortdx.temporal_prevalence},
 \code{dsomop:cohortdx.time_series}, \code{dsomop:cohortdx.included_source_concepts},
 \code{dsomop:cohortdx.resolved_concepts})

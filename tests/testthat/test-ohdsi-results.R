@@ -45,6 +45,92 @@ test_that("strict OHDSI contracts require an explicit same-row person basis", {
   }
 })
 
+test_that("physical OHDSI pooling endpoint returns a closed validated contract", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  symbol <- paste0("ohdsi_contract_", Sys.getpid())
+  .setHandle(symbol, handle)
+  on.exit(.removeHandle(symbol), add = TRUE)
+
+  result <- omopOhdsiResultContractDS(symbol, "cohort_count")
+  expect_named(
+    result,
+    c("contract_version", "tool_id", "table_name", "pooling_contract")
+  )
+  expect_identical(result$contract_version, 1L)
+  expect_identical(result$tool_id, "cohort_diagnostics")
+  expect_identical(result$table_name, "cohort_count")
+  expect_silent(.omopAnalysisValidatePoolingContract(
+    result$pooling_contract, "test physical OHDSI result"
+  ))
+
+  reviewed <- .ohdsiReviewedContracts()$cohort_diagnostics$cohort_count
+  expect_identical(
+    names(result$pooling_contract$columns), reviewed$public_columns
+  )
+  physical <- .ohdsiGetResults(handle, "cohort_count")
+  expect_identical(names(physical), names(result$pooling_contract$columns))
+  expect_false(any(c("qualified_name", "sql", "contract") %in% names(result)))
+})
+
+test_that("physical OHDSI contracts resolve an exact registered tool prefix", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  DBI::dbExecute(
+    handle$conn,
+    paste(
+      "CREATE TABLE cd_cohort_count AS",
+      "SELECT cohort_id, cohort_entries, cohort_subjects, database_id",
+      "FROM cohort_count"
+    )
+  )
+
+  result <- .ohdsiResultPoolingContract(
+    handle, "cd_cohort_count", tool_id = "cohort_diagnostics"
+  )
+  expect_identical(result$tool_id, "cohort_diagnostics")
+  expect_identical(result$table_name, "cohort_count")
+  expect_identical(
+    names(result$pooling_contract$columns),
+    c("cohort_id", "cohort_entries", "cohort_subjects", "database_id")
+  )
+
+  physical <- .ohdsiGetResults(
+    handle, "cd_cohort_count", tool_id = "cohort_diagnostics"
+  )
+  expect_identical(names(physical), names(result$pooling_contract$columns))
+  expect_gt(nrow(physical), 0L)
+
+  discovered <- .ohdsiFindResultTables(handle)
+  expect_true("cd_cohort_count" %in% discovered$table_name)
+})
+
+test_that("physical OHDSI pooling contracts fail closed", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+
+  expect_error(
+    .ohdsiResultPoolingContract(handle, "cohort_count", tool_id = "plp"),
+    "not registered for OHDSI tool"
+  )
+  expect_error(
+    .ohdsiResultPoolingContract(handle, "incidence_rate"),
+    "no reviewed public disclosure contract"
+  )
+  DBI::dbExecute(
+    handle$conn,
+    paste(
+      "CREATE TABLE cd_cohort_count AS",
+      "SELECT cohort_entries, cohort_subjects, database_id",
+      "FROM cohort_count"
+    )
+  )
+  expect_error(
+    .ohdsiResultPoolingContract(handle, "cd_cohort_count"),
+    "complete contracted pooling schema: cohort_id"
+  )
+})
+
 test_that("ohdsi_table_to_tool maps known tables correctly", {
   # DQD removed: dqdashboard_results no longer maps to any registered tool.
   expect_null(.ohdsi_table_to_tool("dqdashboard_results"))
