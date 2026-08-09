@@ -20,12 +20,10 @@ fi
 DSOMOP_CONFIG_UID="$(id -u 2>/dev/null || echo unknown)"
 if [ -n "${DSOMOP_CONFIG_STATE_ROOT}" ] && [ "${DSOMOP_CONFIG_UID}" != "0" ]; then
   mkdir -p "${DSOMOP_CONFIG_STATE_ROOT}/secrets" \
-           "${DSOMOP_CONFIG_STATE_ROOT}/keys" \
-           "${DSOMOP_CONFIG_STATE_ROOT}/privacy" 2>/dev/null || true
+           "${DSOMOP_CONFIG_STATE_ROOT}/keys" 2>/dev/null || true
   chmod 700 "${DSOMOP_CONFIG_STATE_ROOT}" \
             "${DSOMOP_CONFIG_STATE_ROOT}/secrets" \
-            "${DSOMOP_CONFIG_STATE_ROOT}/keys" \
-            "${DSOMOP_CONFIG_STATE_ROOT}/privacy" 2>/dev/null || true
+            "${DSOMOP_CONFIG_STATE_ROOT}/keys" 2>/dev/null || true
 fi
 unset DSOMOP_CONFIG_STATE_ROOT DSOMOP_CONFIG_UID
 # System libraries and R dependencies are provisioned by the deployment image

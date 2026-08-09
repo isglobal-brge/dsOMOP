@@ -214,12 +214,12 @@
   # subsequent call; production symlink-component checks above remain strict.
   canonical_root <- normalizePath(root, winslash = "/", mustWork = TRUE)
   allowed_parents <- unique(c(
-    file.path(root, c("secrets", "keys", "privacy")),
-    file.path(canonical_root, c("secrets", "keys", "privacy"))
+    file.path(root, c("secrets", "keys")),
+    file.path(canonical_root, c("secrets", "keys"))
   ))
   if (!parent %in% allowed_parents) {
     stop("The dsOMOP private-state path must be inside the state ",
-         "secrets/keys/privacy directory.",
+         "secrets or keys directory.",
          call. = FALSE)
   }
   parent_created <- FALSE
@@ -284,9 +284,7 @@
 
 .dsomopSecretPath <- function(name) {
   if (!is.character(name) || length(name) != 1L || is.na(name) ||
-      !name %in% c("pseudonym_root", "dp_noise_root",
-                   "dp_noise_root_receipt", "dp_ledger_root",
-                   "dp_ledger_root_receipt")) {
+      !name %in% c("pseudonym_root", "dp_noise_root")) {
     stop("Unsupported dsOMOP secret name.", call. = FALSE)
   }
   file.path(.dsomopStateRoot(), "secrets", name)
@@ -375,7 +373,8 @@
 
 .ensureDsomopSecret <- function(
     name, path = .dsomopSecretPath(name), random_bytes = openssl::rand_bytes,
-    require_existing = FALSE, .sync = .dsomopSyncFile,
+    require_existing = FALSE, replace_invalid = FALSE,
+    .sync = .dsomopSyncFile,
     .allow_test_path = identical(
       Sys.getenv("DSOMOP_TEST_ALLOW_EPHEMERAL_STATE", unset = ""), "1")) {
   if (!is.function(random_bytes)) {
@@ -387,6 +386,10 @@
   if (!is.logical(require_existing) || length(require_existing) != 1L ||
       is.na(require_existing)) {
     stop("require_existing must be TRUE or FALSE.", call. = FALSE)
+  }
+  if (!is.logical(replace_invalid) || length(replace_invalid) != 1L ||
+      is.na(replace_invalid)) {
+    stop("replace_invalid must be TRUE or FALSE.", call. = FALSE)
   }
   # Production deployments can require a pre-provisioned durable key. Check
   # before creating directories or a lock file so a lost/empty volume never
@@ -422,10 +425,28 @@
     stop("A dsOMOP secret must not be a symbolic link.", call. = FALSE)
   }
   if (file.exists(path)) {
-    value <- .dsomopValidateSecretFile(path)
-    .dsomopRequireSync(path, .sync)
+    value <- tryCatch(.dsomopValidateSecretFile(path), error = identity)
+    if (is.raw(value)) {
+      .dsomopRequireSync(path, .sync)
+      .dsomopRequireSync(dirname(path), .sync)
+      return(value)
+    }
+    if (!isTRUE(replace_invalid)) stop(value)
+    info <- file.info(path)
+    safe_to_replace <- nrow(info) == 1L && !isTRUE(info$isdir[[1L]]) &&
+      !is.na(info$uid[[1L]]) &&
+      identical(as.integer(info$uid[[1L]]), .dsomopEffectiveUid()) &&
+      .dsomopPrivateMode(path) &&
+      utils::file_test("-f", path) &&
+      identical(tryCatch(.dsomopLinkCount(path), error = function(e) NA_real_),
+                1)
+    if (!isTRUE(safe_to_replace)) stop(value)
+    removed <- unlink(path, force = TRUE)
+    if (!identical(as.integer(removed), 0L) || file.exists(path) ||
+        .dsomopIsSymlink(path)) {
+      stop("The invalid dsOMOP secret could not be replaced.", call. = FALSE)
+    }
     .dsomopRequireSync(dirname(path), .sync)
-    return(value)
   }
   if (isTRUE(require_existing)) {
     stop("The configured pseudonymization provider requires an existing ",

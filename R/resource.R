@@ -647,6 +647,7 @@
 #'
 #' @importFrom R6 R6Class
 #' @importFrom DBI dbConnect dbDisconnect dbIsValid
+#' @importFrom RSQLite SQLite
 #' @keywords internal
 OMOPResourceClient <- R6::R6Class(
 
@@ -707,7 +708,7 @@ OMOPResourceClient <- R6::R6Class(
       if (dbms == "sqlite") {
         if (!requireNamespace("RSQLite", quietly = TRUE))
           stop("RSQLite package required for SQLite connections.", call. = FALSE)
-        return(DBI::dbConnect(RSQLite::SQLite(), dbname = p$database))
+        return(DBI::dbConnect(SQLite(), dbname = p$database))
       }
 
       if (dbms == "duckdb") {

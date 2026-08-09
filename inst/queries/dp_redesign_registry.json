@@ -4,22 +4,21 @@
     "repository": "https://github.com/OHDSI/QueryLibrary",
     "commit": "df8a21074b08519e581ca1afb7510468538117a4",
     "audit_file": "inst/queries/upstream_querylibrary_audit.json",
-    "audit_manifest_sha256": "07b718badf25c485a7ac12f035e6f158b28d034ea6fa176598d6f52229c9ac5f"
+    "query_corpus_manifest_sha256": "07b718badf25c485a7ac12f035e6f158b28d034ea6fa176598d6f52229c9ac5f"
   },
   "scope": {
-    "status": "documentation_only",
-    "authorizes_execution": false,
-    "literal_upstream_sql_authorized": false,
-    "queries_enabled_by_this_registry": 0,
+    "registry_role": "typed_algorithm_allowlist",
+    "typed_redesigns_enabled": 129,
+    "literal_upstream_sql_enabled": 0,
     "runtime_allowlist": "inst/queries/query_allowlist.json",
     "mapping_meaning": "mapped_to_bounded_sticky_primitive means that the upstream question may be re-expressed through the named person-bounded sticky-noise primitive. It never authorizes the literal upstream SQL, its output schema, or direct execution."
   },
   "privacy_contract": {
-    "adjacency": "add_or_remove_one_person",
+    "adjacency": "add_remove_person",
     "contribution_unit": "person",
     "longitudinal_rule": "Repeated OMOP records are reduced per person, de-duplicated as person/category pairs, or deterministically retained up to a public person-level cap k before aggregation.",
     "domain_rule": "Every grouping domain, threshold, concept set, time interval and category order is public and fixed before data access; observed levels, data-dependent top-N values and data-dependent bins are forbidden.",
-    "mechanism_rule": "The mapping requires a dedicated server-owned sticky-noise release with canonical semantic query identity and durable replay/accounting. Deterministic disclosure control and nfilter.noise do not implement this mechanism.",
+    "mechanism_rule": "The mapping requires a dedicated server-owned fixed per-release sticky-noise mechanism with canonical semantic query identity. Deterministic disclosure control and nfilter.noise do not implement this mechanism. The registry selects reviewed algorithms; it is not a query quota or cumulative privacy budget.",
     "postprocessing_rule": "Only noisy primitive outputs and deterministic post-processing of those outputs may be released; exact support checks, exact extrema and exact intermediate counts are not released."
   },
   "families": [

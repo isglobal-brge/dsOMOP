@@ -15,7 +15,8 @@ loader, or manipulation path.}
 dsOMOPClient.}
 }
 \value{
-A sticky noisy aggregate with mechanism and accounting metadata.
+A deterministic sticky noisy aggregate with per-release mechanism
+  metadata.
 }
 \description{
 Release one sticky, person-bounded privacy statistic (Aggregate)

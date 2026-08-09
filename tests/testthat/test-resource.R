@@ -75,16 +75,31 @@ test_that("resource.js exposes and serializes every supported persistent namespa
     '  database: "/srv/omop files/a?b#c.sqlite"',
     '}, {});',
     'assert.equal(file.url, "omop+dbi:sqlite:///srv/omop%20files/a%3Fb%23c.sqlite");',
-    'process.stdout.write(provider.settings.types.map((type) => type.name).join(","));'
+    'process.stdout.write("DBMS=" + provider.settings.types.map((type) => type.name).join(","));'
   ), harness)
 
   output <- system2(node, shQuote(c(harness, resource_js)),
                     stdout = TRUE, stderr = TRUE)
   status <- attr(output, "status")
   expect_true(is.null(status) || identical(status, 0L), info = paste(output, collapse = "\n"))
-  expect_match(paste(output, collapse = "\n"), "postgresql")
-  expect_match(paste(output, collapse = "\n"), "mysql")
-  expect_match(paste(output, collapse = "\n"), "mariadb")
+  dbms_line <- grep("^DBMS=", output, value = TRUE)
+  expect_length(dbms_line, 1L)
+  emitted <- strsplit(sub("^DBMS=", "", dbms_line), ",", fixed = TRUE)[[1L]]
+  supported <- c(
+    "postgresql", "redshift", "mysql", "mariadb", "sqlserver",
+    "synapse", "pdw", "oracle", "snowflake", "spark", "databricks",
+    "bigquery", "sqlite", "duckdb"
+  )
+  expect_identical(anyDuplicated(emitted), 0L)
+  expect_setequal(emitted, supported)
+  profiles <- lapply(emitted, .databaseSupportProfile)
+  expect_identical(vapply(profiles, `[[`, character(1), "dbms"), emitted)
+  expect_true(all(vapply(
+    profiles,
+    function(profile) is.character(profile$target_dialect) &&
+      length(profile$target_dialect) == 1L && nzchar(profile$target_dialect),
+    logical(1)
+  )))
 })
 
 test_that("the OMOP resolver unregisters through resourcer's class API", {

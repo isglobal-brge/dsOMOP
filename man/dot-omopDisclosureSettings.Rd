@@ -38,11 +38,10 @@ direct option -> \code{default.*} prefix -> hardcoded fallback.
     reports this server-owned value, but does not reinterpret it as
     epsilon/delta, a generic DP budget, replay-stable noise, or permission to
     add noise to arbitrary query results.}
-  \item{\code{sticky_noise_enabled},
-    \code{privacy_ledger_enabled}}{Explicit capability flags. They are
-    enabled only after the dedicated DP service has completed its early
-    bootstrap. Ordinary suppression/banding and the \code{nfilter.noise}
-    plot-noise variance floor never activate these flags.}
+  \item{\code{sticky_noise_enabled}}{Explicit capability flag. It is enabled
+    only after the dedicated DP service has initialized its persistent noise
+    root. Ordinary suppression/banding and the \code{nfilter.noise}
+    plot-noise variance floor never activate this flag.}
 }
 }
 
@@ -63,7 +62,7 @@ direct option -> \code{default.*} prefix -> hardcoded fallback.
     supra-threshold count is never released. This reduces one-person
     differencing resolution (e.g. a 49 -> 47 funnel delta reports 45 for
     both), but crossing a band boundary can still change the release;
-    banding is not a formal privacy accountant. See
+    banding does not provide cumulative privacy guarantees. See
     \code{\link{.bandCount}}.}
   \item{\code{nfilter_age_range} (default 5)}{Minimum inclusive width, in
     years, accepted for age-range and closed age-group filters while

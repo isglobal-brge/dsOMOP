@@ -386,8 +386,8 @@
     value_type = value_type, levels = levels, reducer = reducer,
     max_contributions = cap, order_by = common$order_by
   )
-  payload_fn <- function(epsilon, policy, release_context, degraded = FALSE) {
-    noisy <- if (degraded) rep.int(0, length(counts)) else vapply(
+  payload_fn <- function(epsilon, policy, release_context) {
+    noisy <- vapply(
       seq_along(counts), function(index) .dsomopDpNoisyInteger(
         counts[[index]], policy, release_context,
         sprintf("histogram-cell-%08d", index), epsilon, cap
@@ -396,8 +396,7 @@
     list(
       statistic = "categorical_histogram", levels = levels,
       counts = as.numeric(noisy), reducer = reducer,
-      max_contributions = cap, value_type = value_type,
-      degraded = isTRUE(degraded)
+      max_contributions = cap, value_type = value_type
     )
   }
   list(semantic = semantic, snapshot = snapshot,
@@ -421,15 +420,14 @@
     reducer = "records", max_contributions = cap
   )
   snapshot <- list(count = as.numeric(true_count))
-  payload_fn <- function(epsilon, policy, release_context, degraded = FALSE) {
+  payload_fn <- function(epsilon, policy, release_context) {
     list(
       statistic = "bounded_record_count",
-      noisy_count = if (degraded) 0 else .dsomopDpNoisyInteger(
+      noisy_count = .dsomopDpNoisyInteger(
         true_count, policy, release_context, "bounded-record-count",
         epsilon, cap
       ),
-      reducer = "records", max_contributions = cap,
-      degraded = isTRUE(degraded)
+      reducer = "records", max_contributions = cap
     )
   }
   list(
@@ -477,17 +475,17 @@
     selection_order = "canonical_utf8_value_radix"
   )
   snapshot <- list(count = as.numeric(true_count))
-  payload_fn <- function(epsilon, policy, release_context, degraded = FALSE) {
+  payload_fn <- function(epsilon, policy, release_context) {
     list(
       statistic = "bounded_distinct",
-      noisy_count = if (degraded) 0 else .dsomopDpNoisyInteger(
+      noisy_count = .dsomopDpNoisyInteger(
         true_count, policy, release_context, "bounded-distinct-cardinality",
         epsilon, cap
       ),
       reducer = "distinct", max_contributions = cap,
       domain_size = length(levels),
       selection_order = "canonical_utf8_value_radix",
-      value_type = "categorical_utf8_v1", degraded = isTRUE(degraded)
+      value_type = "categorical_utf8_v1"
     )
   }
   list(
@@ -546,8 +544,8 @@
     interval_contract = "left_closed_right_open_last_closed"
   )
   snapshot <- list(counts = as.numeric(counts))
-  payload_fn <- function(epsilon, policy, release_context, degraded = FALSE) {
-    noisy <- if (degraded) rep.int(0, length(counts)) else vapply(
+  payload_fn <- function(epsilon, policy, release_context) {
+    noisy <- vapply(
       seq_along(counts), function(index) .dsomopDpNoisyInteger(
         counts[[index]], policy, release_context,
         sprintf("histogram-cell-%08d", index), epsilon, cap
@@ -557,8 +555,7 @@
       statistic = "numeric_histogram", breaks = breaks$public,
       counts = as.numeric(noisy), reducer = reducer,
       max_contributions = cap, value_type = numeric$type,
-      interval_contract = "left_closed_right_open_last_closed",
-      degraded = isTRUE(degraded)
+      interval_contract = "left_closed_right_open_last_closed"
     )
   }
   list(semantic = semantic, snapshot = snapshot,
@@ -611,19 +608,14 @@
   snapshot <- list(
     count = as.numeric(true_count), sum_grid = as.numeric(true_sum)
   )
-  payload_fn <- function(epsilon, policy, release_context, degraded = FALSE) {
-    if (degraded) {
-      noisy_count <- 0
-      noisy_sum <- 0
-    } else {
-      noisy_count <- .dsomopDpNoisyInteger(
-        true_count, policy, release_context, "mean-count", epsilon / 2, 1
-      )
-      noisy_sum <- .dsomopDpNoisyInteger(
-        true_sum, policy, release_context, "mean-sum-grid", epsilon / 2, grid
-      )
-      noisy_sum <- min(noisy_sum, noisy_count * grid)
-    }
+  payload_fn <- function(epsilon, policy, release_context) {
+    noisy_count <- .dsomopDpNoisyInteger(
+      true_count, policy, release_context, "mean-count", epsilon / 2, 1
+    )
+    noisy_sum <- .dsomopDpNoisyInteger(
+      true_sum, policy, release_context, "mean-sum-grid", epsilon / 2, grid
+    )
+    noisy_sum <- min(noisy_sum, noisy_count * grid)
     estimate <- if (noisy_count > 0) {
       lower + span * noisy_sum / (noisy_count * grid)
     } else NULL
@@ -631,8 +623,7 @@
       statistic = "bounded_mean", noisy_count = noisy_count,
       noisy_sum_grid = noisy_sum, value = estimate, lower = lower,
       upper = upper, numeric_grid = grid, reducer = reducer,
-      value_type = numeric$type,
-      degraded = isTRUE(degraded)
+      value_type = numeric$type
     )
   }
   list(
@@ -706,21 +697,16 @@
   snapshot <- list(
     numerator = as.numeric(numerator), denominator = as.numeric(denominator)
   )
-  payload_fn <- function(epsilon, policy, release_context, degraded = FALSE) {
-    if (degraded) {
-      noisy_denominator <- 0
-      noisy_numerator <- 0
-    } else {
-      noisy_denominator <- .dsomopDpNoisyInteger(
-        denominator, policy, release_context, "rate-denominator",
-        epsilon / 2, 1
-      )
-      noisy_numerator <- .dsomopDpNoisyInteger(
-        numerator, policy, release_context, "rate-numerator",
-        epsilon / 2, 1
-      )
-      noisy_numerator <- min(noisy_numerator, noisy_denominator)
-    }
+  payload_fn <- function(epsilon, policy, release_context) {
+    noisy_denominator <- .dsomopDpNoisyInteger(
+      denominator, policy, release_context, "rate-denominator",
+      epsilon / 2, 1
+    )
+    noisy_numerator <- .dsomopDpNoisyInteger(
+      numerator, policy, release_context, "rate-numerator",
+      epsilon / 2, 1
+    )
+    noisy_numerator <- min(noisy_numerator, noisy_denominator)
     estimate <- if (noisy_denominator > 0) {
       noisy_numerator / noisy_denominator
     } else NULL
@@ -728,8 +714,7 @@
       statistic = "binary_rate", noisy_numerator = noisy_numerator,
       noisy_denominator = noisy_denominator, value = estimate,
       reducer = reducer, denominator = denominator_contract,
-      value_type = value_type,
-      degraded = isTRUE(degraded)
+      value_type = value_type
     )
   }
   list(
@@ -802,14 +787,12 @@
       semantic = list(statistic = "count", unit = "distinct_person"),
       snapshot = list(count = as.numeric(true_count)),
       sensitivity = list(l1 = 1, unit = "person"),
-      payload_fn = function(epsilon, policy, release_context,
-                            degraded = FALSE) list(
+      payload_fn = function(epsilon, policy, release_context) list(
         statistic = "count",
-        noisy_count = if (degraded) 0 else .dsomopDpNoisyInteger(
+        noisy_count = .dsomopDpNoisyInteger(
           true_count, policy, release_context, "distinct-person-count",
           epsilon, 1
-        ),
-        degraded = isTRUE(degraded)
+        )
       )
     )
   } else if (statistic == "bounded_record_count") {
@@ -836,14 +819,11 @@
 
 #' Sticky privacy-noise service status (Aggregate)
 #'
-#' Returns public mechanism and accountant metadata. Secret key material and
-#' protected snapshot fingerprints are never returned. Calling this endpoint
-#' is an explicit service-readiness action: it coordinates bootstrap, commits
-#' each missing root atomically, and transactionally creates or validates the
-#' ledger.
-#' A ready response includes non-secret
-#' ledger, key and privacy-instance fingerprints for deployment continuity
-#' checks.
+#' Returns the public fixed-per-release mechanism contract. Secret key material
+#' and protected snapshot fingerprints are never returned. Calling this
+#' endpoint initializes the single persistent noise root atomically when the
+#' service is enabled. Previous calls do not create state or affect whether a
+#' later protected operation may run.
 #'
 #' @return Public DP service status.
 #' @export
@@ -852,13 +832,6 @@ omopDpStatusDS <- function() {
   status <- .dsomopDpPublicStatus(initialize = TRUE)
   status$supported_statistics <- .DSOMOP_DP_STATISTICS
   status$longitudinal_contract <- "deterministic_person_bounding_v1"
-  status$budget_behavior <- if (!isTRUE(status$enabled)) {
-    "disabled"
-  } else if (isTRUE(status$bounded_accounting)) {
-    "degrade_to_data_independent_zero_no_error"
-  } else {
-    "fixed_epsilon_no_budget_exhaustion_error_unbounded_composition"
-  }
   status$person_local_provenance_required <- TRUE
   status$provenance_protocol <- .DSOMOP_DP_PROVENANCE_PROTOCOL
   status$ohdsi_querylibrary <- .dsomopDpQueryLibraryStatus()
@@ -873,24 +846,18 @@ omopDpStatusDS <- function() {
 #'   loader, or manipulation path.
 #' @param spec Typed DP statistic specification, usually JSON-encoded by
 #'   dsOMOPClient.
-#' @return A sticky noisy aggregate with mechanism and accounting metadata.
+#' @return A deterministic sticky noisy aggregate with per-release mechanism
+#'   metadata.
 #' @export
 omopDpReleaseDS <- function(x, spec) {
   spec <- .ds_arg(spec)
   .dsomopDpEnsureRuntime()
   policy <- .dsomopDpPolicy()
   analysis <- .dsomopDpAnalysis(x, spec, policy)
-  value <- .dsomopDpLedgerRelease(
+  .dsomopDpRelease(
     policy = policy, semantic = analysis$semantic,
     bounded_snapshot = analysis$snapshot,
     sensitivity = analysis$sensitivity,
     payload_fn = analysis$payload_fn
   )
-  # Ledgers created by earlier releases contain public attestation fields that
-  # are no longer part of the API. Preserve their authenticated payload at rest
-  # and remove only those legacy fields from the returned release.
-  value[c(
-    "formal_dp", "sampler_certified", "epsilon_semantics", "delta_semantics"
-  )] <- NULL
-  value
 }

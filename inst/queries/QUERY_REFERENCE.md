@@ -57,11 +57,10 @@ All catalog queries in dsOMOP are classified as:
 
 `nfilter.noise` is not a general-purpose noise or differential-privacy layer.
 In dsBase it is used by a small number of plotting endpoints and provides no
-privacy budget, contribution bounding or composition accounting. It therefore
-must not be used to reclassify an otherwise unsafe QueryLibrary query. A
-noise-backed aggregate requires a query-specific sensitivity contract,
-public clipping bounds, server-controlled parameters, sticky noise and a
-composition ledger.
+person-level contribution bounding or semantic stickiness. It therefore must
+not be used to reclassify an otherwise unsafe QueryLibrary query. A protected
+noise-backed aggregate requires a query-specific sensitivity contract, public
+clipping bounds, server-controlled parameters and deterministic sticky noise.
 
 ## Upstream coverage inventory and executable redesigns
 
@@ -93,7 +92,7 @@ aggregate questions in the rewritable/statistical triage classes are the set
 now mapped to executable sticky redesigns. A candidate flag means
 only that finite sensitivity is plausible after the recorded public
 clipping/binning and per-person contribution bounds, with server-owned sticky
-noise and a durable composition ledger. It does **not** mean that the upstream
+noise under a fixed per-release contract. It does **not** mean that the upstream
 SQL is safe as written, that `nfilter.noise` supplies the sticky mechanism, or that any of
 these literal upstream queries is enabled. The inventory authorizes zero
 literal upstream SQL. `query_allowlist.json` remains the independent policy for
@@ -160,7 +159,7 @@ not proof that the corresponding upstream query was ported verbatim:
 Each executable sticky specification therefore declares its contribution unit
 (normally one bounded contribution per person, or a separately declared record
 cap), public clipping bounds, removal of raw minima/maxima, and a server-side
-privacy mechanism with sticky noise and composition accounting.
+privacy mechanism with fixed per-release sticky noise.
 Means should be derived from protected bounded sums and counts; quantiles need
 a protected histogram/quantile mechanism rather than noise added to the
 published upstream statistic. A sticky variant must emit its full fixed
@@ -219,7 +218,8 @@ support include:
    CDM/table dependencies, supported DBMS, contribution bounds and disclosure
    unit (person, episode or record).
 5. Keep sticky releases on the dedicated bounded privacy path with canonical
-   identity and durable accounting; `nfilter.noise` alone is not a substitute.
+   identity and a fixed per-release contract; `nfilter.noise` alone is not a
+   substitute.
 
 ## Local Catalog Index
 

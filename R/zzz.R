@@ -8,8 +8,7 @@
 .pkg_state <- new.env(parent = emptyenv())
 .pkg_state$resolver <- NULL
 .pkg_state$dp_status <- NULL
-.pkg_state$dp_ledger_cache <- new.env(parent = emptyenv())
-.pkg_state$dp_bootstrap_binding <- NULL
+.pkg_state$dp_runtime <- NULL
 .pkg_state$dp_bootstrap_in_progress <- FALSE
 
 # Session-level handle storage
@@ -67,7 +66,7 @@
   if (!.dsomopIsInstallOrDevelopmentLoad(libname)) {
     .dsomopPseudonymLifecycleSettings()
   }
-  .pkg_state$dp_bootstrap_binding <- NULL
+  .pkg_state$dp_runtime <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
   .pkg_state$dp_status <- .dsomopDpDormantStatus()
 

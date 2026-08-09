@@ -29,10 +29,20 @@
   groups <- if (is.list(catalog)) catalog$mapping_groups else NULL
   if (!is.list(registry) || !is.list(audit) || !is.list(catalog) ||
       !is.list(groups) || length(groups) == 0L ||
+      !identical(registry$schema_version, 1L) ||
+      !identical(audit$schema_version, 2L) ||
       !identical(registry$source$commit, audit$commit) ||
       !identical(catalog$source_commit, audit$commit) ||
-      !identical(registry$source$audit_manifest_sha256,
+      !identical(registry$source$query_corpus_manifest_sha256,
                  audit$manifest_sha256) ||
+      !identical(registry$scope$registry_role,
+                 "typed_algorithm_allowlist") ||
+      !identical(registry$scope$typed_redesigns_enabled,
+                 catalog$mapped_query_count) ||
+      !identical(registry$scope$literal_upstream_sql_enabled, 0L) ||
+      !identical(registry$privacy_contract$adjacency,
+                 "add_remove_person") ||
+      !identical(catalog$status, "executable_redesign_specifications") ||
       !identical(catalog$literal_upstream_sql_authorized, FALSE)) {
     stop("The installed OHDSI QueryLibrary redesign metadata is inconsistent.",
          call. = FALSE)
@@ -132,11 +142,10 @@
 #' \code{omop.table} prepared through the typed Recipe/Plan path.
 #'
 #' This catalog is a semantic redesign map, not a general QueryLibrary SQL
-#' executor and not a formal-DP certification surface. It exposes no SQL text,
-#' seed, epsilon control, reroll control, or \code{formal_dp} mode. Runtime
-#' releases use the single sticky privacy contract advertised by
-#' \code{omopDpStatusDS()} and remain subject to that contract's documented
-#' accounting boundary.
+#' executor. It exposes no SQL text, seed, epsilon control, or reroll control.
+#' Runtime releases use the single fixed per-release sticky privacy contract
+#' advertised by \code{omopDpStatusDS()}; the catalog is an algorithm allowlist,
+#' not a query quota or privacy-budget permission list.
 #'
 #' @return A data frame of audited redesign mappings.
 #' @export

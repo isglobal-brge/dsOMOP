@@ -10,12 +10,9 @@ omopDpStatusDS()
 Public DP service status.
 }
 \description{
-Returns public mechanism and accountant metadata. Secret key material and
-protected snapshot fingerprints are never returned. Calling this endpoint
-is an explicit service-readiness action: it coordinates bootstrap, commits
-each missing root atomically, and transactionally creates or validates the
-ledger.
-A ready response includes non-secret
-ledger, key and privacy-instance fingerprints for deployment continuity
-checks.
+Returns the public fixed-per-release mechanism contract. Secret key material
+and protected snapshot fingerprints are never returned. Calling this
+endpoint initializes the single persistent noise root atomically when the
+service is enabled. Previous calls do not create state or affect whether a
+later protected operation may run.
 }

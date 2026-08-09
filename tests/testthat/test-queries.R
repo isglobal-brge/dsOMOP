@@ -167,12 +167,16 @@ test_that("DP redesign registry pins primitive coverage without authorizing SQL"
   expect_identical(registry$source$repository, audit$source)
   expect_identical(registry$source$commit, audit$commit)
   expect_identical(
-    registry$source$audit_manifest_sha256,
+    registry$source$query_corpus_manifest_sha256,
     audit$manifest_sha256
   )
-  expect_false(registry$scope$authorizes_execution)
-  expect_false(registry$scope$literal_upstream_sql_authorized)
-  expect_identical(registry$scope$queries_enabled_by_this_registry, 0L)
+  expect_identical(
+    registry$scope$registry_role,
+    "typed_algorithm_allowlist"
+  )
+  expect_identical(registry$scope$typed_redesigns_enabled, 129L)
+  expect_identical(registry$scope$literal_upstream_sql_enabled, 0L)
+  expect_identical(registry$privacy_contract$adjacency, "add_remove_person")
   expect_identical(
     registry$scope$runtime_allowlist,
     "inst/queries/query_allowlist.json"
@@ -540,6 +544,50 @@ test_that(".ql_load_allowlist: loads from package inst", {
   expect_equal(entry$class, "SAFE_AGGREGATE")
   expect_true(entry$poolable)
   expect_true("n_persons" %in% entry$sensitive_fields)
+})
+
+test_that("query allowlist schema and IDs are unambiguous", {
+  path <- system.file(
+    "queries", "query_allowlist.json", package = "dsOMOP"
+  )
+  entries <- jsonlite::fromJSON(path, simplifyVector = FALSE)
+  expect_identical(dsOMOP:::.ql_validate_allowlist(entries), entries)
+
+  ids <- vapply(entries, `[[`, character(1L), "id")
+  expect_identical(anyDuplicated(ids), 0L)
+  expect_setequal(
+    ids,
+    c(names(dsOMOP:::.ql_load_queries("dsOMOP")), "omopCrossTabDS")
+  )
+
+  duplicate <- entries
+  duplicate[[2L]]$id <- duplicate[[1L]]$id
+  expect_error(
+    dsOMOP:::.ql_validate_allowlist(duplicate),
+    "duplicate query IDs"
+  )
+
+  malformed <- entries
+  malformed[[1L]]$class <- NULL
+  expect_error(
+    dsOMOP:::.ql_validate_allowlist(malformed),
+    "invalid schema"
+  )
+
+  unexpected <- entries
+  unexpected[[1L]]$unreviewed <- TRUE
+  expect_error(
+    dsOMOP:::.ql_validate_allowlist(unexpected),
+    "invalid schema"
+  )
+
+  incoherent <- entries
+  incoherent[[1L]]$poolable <- FALSE
+  incoherent[[1L]]$pool_strategy <- "none"
+  expect_error(
+    dsOMOP:::.ql_validate_allowlist(incoherent),
+    "invalid schema"
+  )
 })
 
 test_that(".ql_load_allowlist: errors in strict mode for missing package", {

@@ -65,14 +65,66 @@ test_that("vendored CDM metadata matches pinned OHDSI release bytes", {
   manifest <- jsonlite::fromJSON(
     file.path(root, "UPSTREAM_METADATA.json"), simplifyVector = FALSE
   )
-  expect_identical(manifest$source, "OHDSI/CommonDataModel")
+  pinned <- .DSOMOP_VENDORED_OHDSI_METADATA
+  expect_setequal(names(manifest), c("contract_version", "source", "files"))
+  expect_identical(as.integer(manifest$contract_version),
+                   pinned$contract_version)
+  expect_identical(manifest$source, pinned$source)
+  expect_setequal(names(manifest$files), names(pinned$files))
+  disk_files <- list.files(
+    root,
+    pattern = "^OMOP_CDMv[0-9]+\\.[0-9]+_(Field|Table)_Level\\.csv$"
+  )
+  expect_setequal(disk_files, names(pinned$files))
   for (name in names(manifest$files)) {
     path <- file.path(root, name)
     expect_true(file.exists(path), info = name)
+    expect_setequal(names(manifest$files[[name]]),
+                    c("release", "commit", "sha256"))
+    expect_identical(manifest$files[[name]], pinned$files[[name]], info = name)
     bytes <- readBin(path, what = "raw", n = file.info(path)$size)
     actual <- unclass(as.character(openssl::sha256(bytes)))
     expect_identical(actual, manifest$files[[name]]$sha256, info = name)
   }
+  expect_silent(.loadVerifiedVendoredMetadata(root))
+})
+
+test_that("vendored OHDSI verification rejects manifest and byte tampering", {
+  root <- system.file("ohdsi", package = "dsOMOP")
+  if (!nzchar(root)) {
+    root <- testthat::test_path("..", "..", "inst", "ohdsi")
+  }
+  copy_fixture <- function() {
+    target <- tempfile("dsomop-ohdsi-")
+    dir.create(target, mode = "0700")
+    expect_true(all(file.copy(
+      list.files(root, full.names = TRUE), target, copy.mode = TRUE
+    )))
+    target
+  }
+
+  bytes_dir <- copy_fixture()
+  on.exit(unlink(bytes_dir, recursive = TRUE, force = TRUE), add = TRUE)
+  field_path <- file.path(bytes_dir, "OMOP_CDMv5.4_Field_Level.csv")
+  field_bytes <- readBin(
+    field_path, what = "raw", n = file.info(field_path)$size
+  )
+  writeBin(c(field_bytes, charToRaw("\n")), field_path)
+  expect_error(
+    .loadVerifiedVendoredMetadata(bytes_dir),
+    "content hash does not match"
+  )
+
+  manifest_dir <- copy_fixture()
+  on.exit(unlink(manifest_dir, recursive = TRUE, force = TRUE), add = TRUE)
+  manifest_path <- file.path(manifest_dir, "UPSTREAM_METADATA.json")
+  manifest <- jsonlite::fromJSON(manifest_path, simplifyVector = FALSE)
+  manifest$files[["OMOP_CDMv5.4_Field_Level.csv"]]$release <- "v5.4.999"
+  jsonlite::write_json(manifest, manifest_path, auto_unbox = TRUE, pretty = TRUE)
+  expect_error(
+    .loadVerifiedVendoredMetadata(manifest_dir),
+    "manifest entry is invalid"
+  )
 })
 
 test_that("listSupportedVersions is accessible", {

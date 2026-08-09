@@ -565,8 +565,9 @@ omopInitDS <- function(resource_symbol,
 
   # This is the first backend-independent point at which a real dsOMOP request
   # is known to be running and DataSHIELD profile options have been applied.
-  # DP-disabled services bind that fact without creating keys; DP-enabled
-  # services atomically create or validate both roots and the durable ledger.
+  # A DP-disabled service creates no privacy key. When sticky releases are
+  # enabled, initialize or validate their single persistent root now so
+  # deployment faults surface before the first protected release.
   .dsomopDpEnsureRuntime()
 
   # DSLite resolves resources to ResourceClient objects during assign.resource;

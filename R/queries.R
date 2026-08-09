@@ -431,6 +431,47 @@
 
 # --- Allowlist Management ----------------------------------------------------
 
+.ql_validate_allowlist <- function(entries) {
+  required <- c(
+    "id", "class", "poolable", "sensitive_fields", "pool_strategy"
+  )
+  scalar_string <- function(value) {
+    is.character(value) && length(value) == 1L && !is.na(value) &&
+      nzchar(value)
+  }
+  valid_entry <- function(entry) {
+    if (!is.list(entry) || is.null(names(entry)) ||
+        !setequal(names(entry), required) ||
+        !scalar_string(entry$id) ||
+        !grepl("^[A-Za-z][A-Za-z0-9_.-]{0,127}$", entry$id) ||
+        !scalar_string(entry$class) ||
+        !entry$class %in% c("SAFE_AGGREGATE", "SAFE_ASSIGN", "BLOCKED") ||
+        !is.logical(entry$poolable) || length(entry$poolable) != 1L ||
+        is.na(entry$poolable) ||
+        !identical(entry$poolable, identical(entry$class, "SAFE_AGGREGATE")) ||
+        !is.list(entry$sensitive_fields) ||
+        !scalar_string(entry$pool_strategy) ||
+        !entry$pool_strategy %in% c("sum", "none") ||
+        !identical(entry$pool_strategy,
+                   if (isTRUE(entry$poolable)) "sum" else "none")) {
+      return(FALSE)
+    }
+    sensitive <- unlist(entry$sensitive_fields, use.names = FALSE)
+    length(sensitive) == 0L ||
+      (is.character(sensitive) && !anyNA(sensitive) &&
+       all(nzchar(sensitive)) && !anyDuplicated(sensitive))
+  }
+  if (!is.list(entries) || length(entries) == 0L ||
+      !all(vapply(entries, valid_entry, logical(1L)))) {
+    stop("Query allowlist has an invalid schema.", call. = FALSE)
+  }
+  ids <- vapply(entries, `[[`, character(1L), "id")
+  if (anyDuplicated(ids)) {
+    stop("Query allowlist contains duplicate query IDs.", call. = FALSE)
+  }
+  entries
+}
+
 #' Load the query allowlist from inst/queries/
 #'
 #' Reads the curated allowlist JSON file that maps query IDs to their safety
@@ -454,7 +495,7 @@
   tryCatch({
     raw <- readLines(path, warn = FALSE)
     json_text <- paste(raw, collapse = "\n")
-    entries <- .ql_parse_json(json_text)
+    entries <- .ql_validate_allowlist(.ql_parse_json(json_text))
     # Convert list of entries to named list keyed by id
     result <- list()
     for (entry in entries) {

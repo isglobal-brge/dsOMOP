@@ -416,23 +416,23 @@ dp_assessment <- function(id, type, flags) {
     type,
     exact_date_statistic = paste(
       "Replace exact dates with public bins and use a bounded sticky-DP",
-      "histogram/quantile mechanism with composition accounting."
+      "histogram/quantile mechanism under one fixed per-release contract."
     ),
     exact_demographic_statistic = paste(
       "Use common public age/date bands, one bounded contribution per person",
-      "and sticky-DP counts with composition accounting."
+      "and sticky-DP counts under one fixed per-release contract."
     ),
     numeric_histogram = paste(
       "Apply public clipping and bins plus a per-person contribution cap, then",
-      "release a sticky-DP histogram with composition accounting."
+      "release a sticky-DP histogram under one fixed per-release contract."
     ),
     continuous_summary = paste(
       "Use public clipping and contribution bounds; derive the result from",
       "sticky-DP sums/counts or a DP histogram, never noisy raw extrema."
     ),
     rate_or_proportion = paste(
-      "Release bounded sticky-DP numerator and denominator counts under one",
-      "ledger, then derive the rate by post-processing."
+      "Release bounded sticky-DP numerator and denominator counts within one",
+      "per-release epsilon allocation, then derive the rate by post-processing."
     ),
     fine_geography_count = paste(
       "A candidate only with a complete public ZIP domain, one residence per",
@@ -440,7 +440,7 @@ dp_assessment <- function(id, type, flags) {
     ),
     paste(
       "After enforcing public categories and bounded per-person contributions,",
-      "sticky-DP counts are possible with composition accounting."
+      "sticky-DP counts are possible under one fixed per-release contract."
     )
   )
   list(candidate = TRUE, reason = reason)
@@ -592,7 +592,7 @@ inventory <- list(
     candidate_means = paste(
       "A redesigned aggregate can have finite sensitivity after the stated",
       "public bins/clips and per-person contribution bounds, using sticky",
-      "noise and durable composition accounting."
+      "noise under a fixed per-release contract."
     ),
     candidate_does_not_mean = paste(
       "The upstream SQL is safe as written, that nfilter.noise is formal DP,",

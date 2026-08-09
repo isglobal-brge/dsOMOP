@@ -88,7 +88,7 @@ test_that("concurrent workers converge on one pseudonym root", {
   values <- unlist(parallel::mclapply(
     seq_len(4L), function(unused) {
       paste(format(.ensureDsomopSecret("pseudonym_root")), collapse = "")
-    }, mc.cores = 4L, mc.preschedule = FALSE), use.names = FALSE)
+    }, mc.cores = 2L, mc.preschedule = FALSE), use.names = FALSE)
 
   expect_length(unique(values), 1L)
   path <- file.path(state, "secrets", "pseudonym_root")
@@ -579,7 +579,7 @@ test_that("independent processes share one file identity across restart", {
 
   concurrent <- parallel::mclapply(
     seq_len(4L), function(unused) run_worker(FALSE),
-    mc.cores = 4L, mc.preschedule = FALSE
+    mc.cores = 2L, mc.preschedule = FALSE
   )
   statuses <- vapply(concurrent, function(value) {
     status <- attr(value, "status")

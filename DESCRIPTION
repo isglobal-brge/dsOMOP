@@ -1,7 +1,7 @@
 Package: dsOMOP
 Type: Package
 Title: DataSHIELD Server-Side Integration for OMOP CDM Databases
-Version: 2.3.1
+Version: 2.4.0
 Authors@R: c(
     person("David", "Sarrat González", role = c("aut", "cre"), email = "david.sarrat@isglobal.org"),
     person("Xavier", "Escribà-Montagut", role = "aut"),
@@ -154,15 +154,8 @@ Options:
     default.dsomop.dp.enabled=FALSE,
     default.dsomop.dp.domain="",
     default.dsomop.dp.snapshot_id="",
-    default.dsomop.dp.accounting_mode="bounded_accounted",
-    default.dsomop.dp.total_epsilon=1,
     default.dsomop.dp.release_epsilon=0.1,
     default.dsomop.dp.privacy_epoch=1,
-    default.dsomop.dp.require_external_anchor=TRUE,
-    default.dsomop.dp.noise_provider="auto",
-    default.dsomop.dp.noise_require_existing=FALSE,
-    default.dsomop.dp.ledger_provider="auto",
-    default.dsomop.dp.ledger_require_existing=FALSE,
     default.dsomop.dp.max_levels=1000,
     default.dsomop.dp.max_contributions=10,
     default.dsomop.dp.numeric_grid=65535

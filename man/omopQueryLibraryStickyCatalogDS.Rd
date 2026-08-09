@@ -17,9 +17,8 @@ the person-bounded sticky primitive that may be used on a protected
 }
 \details{
 This catalog is a semantic redesign map, not a general QueryLibrary SQL
-executor and not a formal-DP certification surface. It exposes no SQL text,
-seed, epsilon control, reroll control, or \code{formal_dp} mode. Runtime
-releases use the single sticky privacy contract advertised by
-\code{omopDpStatusDS()} and remain subject to that contract's documented
-accounting boundary.
+executor. It exposes no SQL text, seed, epsilon control, or reroll control.
+Runtime releases use the single fixed per-release sticky privacy contract
+advertised by \code{omopDpStatusDS()}; the catalog is an algorithm allowlist,
+not a query quota or privacy-budget permission list.
 }

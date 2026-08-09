@@ -379,6 +379,14 @@ test_that("DATASHIELD and DESCRIPTION publish the same server options", {
   dp_options <- grep(
     "dsomop\\.dp\\.", split_options(manifest[1, "Options"]), value = TRUE
   )
-  expect_length(dp_options, 15L)
-  expect_true(all(startsWith(dp_options, "default.dsomop.dp.")))
+  expect_identical(unname(dp_options), sort(c(
+    "default.dsomop.dp.domain=\"\"",
+    "default.dsomop.dp.enabled=FALSE",
+    "default.dsomop.dp.max_contributions=10",
+    "default.dsomop.dp.max_levels=1000",
+    "default.dsomop.dp.numeric_grid=65535",
+    "default.dsomop.dp.privacy_epoch=1",
+    "default.dsomop.dp.release_epsilon=0.1",
+    "default.dsomop.dp.snapshot_id=\"\""
+  )))
 })

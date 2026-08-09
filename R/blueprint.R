@@ -3,6 +3,116 @@
 
 # --- CDM Spec Loading ---
 
+.DSOMOP_VENDORED_OHDSI_METADATA <- list(
+  contract_version = 1L,
+  source = "OHDSI/CommonDataModel",
+  files = list(
+    "OMOP_CDMv5.3_Field_Level.csv" = list(
+      release = "v5.3.2",
+      commit = "dd85c0d30bb3dd4bd16c5dbef7dbf9dd93075fa2",
+      sha256 = "04dc596bb963d1c9827d07da885e347fb77acf7ecce298cc8fb26229e2246c0c"
+    ),
+    "OMOP_CDMv5.3_Table_Level.csv" = list(
+      release = "v5.3.2",
+      commit = "dd85c0d30bb3dd4bd16c5dbef7dbf9dd93075fa2",
+      sha256 = "41a3141745b00ca6d2e4d159429d4245179c4887ee1ec096a203312cff33483f"
+    ),
+    "OMOP_CDMv5.4_Field_Level.csv" = list(
+      release = "v5.4.2",
+      commit = "aa047a3c620b5c842b4370a0c965e2aa72203b1d",
+      sha256 = "94006d0fac2a3911b5665ce421468fa99af23fb51a633148e5fe6045916ad950"
+    ),
+    "OMOP_CDMv5.4_Table_Level.csv" = list(
+      release = "v5.4.2",
+      commit = "aa047a3c620b5c842b4370a0c965e2aa72203b1d",
+      sha256 = "b2cc6b68dd229dec2f73fee5091e8b4bd44cdb1bdb7f6b410f05feaea31269d6"
+    )
+  )
+)
+
+.loadVerifiedVendoredMetadata <- function(pkg_dir) {
+  fail <- function(detail) {
+    stop("Vendored OHDSI metadata integrity verification failed: ", detail,
+         ".", call. = FALSE)
+  }
+  if (!is.character(pkg_dir) || length(pkg_dir) != 1L || is.na(pkg_dir) ||
+      !nzchar(pkg_dir) || !dir.exists(pkg_dir)) {
+    fail("metadata directory is unavailable")
+  }
+  manifest_path <- file.path(pkg_dir, "UPSTREAM_METADATA.json")
+  if (!file.exists(manifest_path) || !utils::file_test("-f", manifest_path)) {
+    fail("manifest is unavailable")
+  }
+  manifest <- tryCatch(
+    jsonlite::fromJSON(manifest_path, simplifyVector = FALSE),
+    error = function(e) NULL
+  )
+  expected <- .DSOMOP_VENDORED_OHDSI_METADATA
+  if (!is.list(manifest) || is.null(names(manifest)) ||
+      anyNA(names(manifest)) || anyDuplicated(names(manifest)) ||
+      !setequal(names(manifest), c("contract_version", "source", "files")) ||
+      !is.numeric(manifest$contract_version) ||
+      length(manifest$contract_version) != 1L ||
+      is.na(manifest$contract_version) ||
+      !is.finite(manifest$contract_version) ||
+      manifest$contract_version != expected$contract_version ||
+      !identical(manifest$source, expected$source) ||
+      !is.list(manifest$files) || is.null(names(manifest$files)) ||
+      anyNA(names(manifest$files)) || anyDuplicated(names(manifest$files)) ||
+      !setequal(names(manifest$files), names(expected$files))) {
+    fail("manifest contract, source, or file set is invalid")
+  }
+
+  disk_files <- list.files(
+    pkg_dir,
+    pattern = "^OMOP_CDMv[0-9]+\\.[0-9]+_(Field|Table)_Level\\.csv$",
+    full.names = FALSE
+  )
+  if (anyDuplicated(disk_files) ||
+      !setequal(disk_files, names(expected$files))) {
+    fail("installed file set does not match the pinned contract")
+  }
+
+  bytes <- stats::setNames(vector("list", length(expected$files)),
+                           names(expected$files))
+  for (name in names(expected$files)) {
+    entry <- manifest$files[[name]]
+    pinned <- expected$files[[name]]
+    if (!is.list(entry) || is.null(names(entry)) || anyNA(names(entry)) ||
+        anyDuplicated(names(entry)) ||
+        !setequal(names(entry), c("release", "commit", "sha256")) ||
+        !identical(entry$release, pinned$release) ||
+        !identical(entry$commit, pinned$commit) ||
+        !identical(entry$sha256, pinned$sha256) ||
+        !grepl("^v[0-9]+\\.[0-9]+\\.[0-9]+$", entry$release) ||
+        !grepl("^[0-9a-f]{40}$", entry$commit) ||
+        !grepl("^[0-9a-f]{64}$", entry$sha256)) {
+      fail(paste0("manifest entry is invalid for ", name))
+    }
+    path <- file.path(pkg_dir, name)
+    info <- file.info(path)
+    if (!file.exists(path) || !utils::file_test("-f", path) ||
+        nrow(info) != 1L || is.na(info$size[[1L]]) || info$size[[1L]] < 1) {
+      fail(paste0("pinned file is unavailable for ", name))
+    }
+    value <- tryCatch(
+      readBin(path, what = "raw", n = info$size[[1L]]),
+      error = function(e) raw()
+    )
+    observed <- unclass(as.character(openssl::sha256(value)))
+    if (length(value) != info$size[[1L]] ||
+        !identical(observed, pinned$sha256)) {
+      fail(paste0("content hash does not match for ", name))
+    }
+    bytes[[name]] <- value
+  }
+  list(manifest = manifest, bytes = bytes)
+}
+
+.readVendoredCsvBytes <- function(value) {
+  utils::read.csv(text = rawToChar(value), stringsAsFactors = FALSE)
+}
+
 # Normalize the current OHDSI CommonDataModel table metadata to the stable
 # values historically exposed by the dsOMOP blueprint API. Official releases
 # use VOCAB/RESULTS/CDM schema labels and upper-case conceptPrefix values with a
@@ -105,18 +215,14 @@
   if (pkg_dir == "") {
     pkg_dir <- system.file("ohdsi", package = "dsOMOP", lib.loc = .libPaths())
   }
+  verified <- .loadVerifiedVendoredMetadata(pkg_dir)
+  provenance <- verified$manifest
   version <- sub("^[vV]", "", trimws(version %||% "5.4"))
   version <- sub("\\.0$", "", version)
   for (v in unique(c(version, "5.4"))) {
     tbl_file <- file.path(pkg_dir, paste0("OMOP_CDMv", v, "_Table_Level.csv"))
     fld_file <- file.path(pkg_dir, paste0("OMOP_CDMv", v, "_Field_Level.csv"))
     if (file.exists(tbl_file) && file.exists(fld_file)) {
-      provenance <- tryCatch(
-        jsonlite::fromJSON(
-          file.path(pkg_dir, "UPSTREAM_METADATA.json"), simplifyVector = FALSE
-        ),
-        error = function(e) NULL
-      )
       entries <- provenance$files[c(basename(tbl_file), basename(fld_file))]
       releases <- unique(vapply(entries, function(x) x$release %||% NA_character_,
                                 character(1)))
@@ -124,9 +230,11 @@
                                character(1)))
       return(list(
         table_level = .normalizeCdmTableMetadata(
-          utils::read.csv(tbl_file, stringsAsFactors = FALSE)
+          .readVendoredCsvBytes(verified$bytes[[basename(tbl_file)]])
         ),
-        field_level = utils::read.csv(fld_file, stringsAsFactors = FALSE),
+        field_level = .readVendoredCsvBytes(
+          verified$bytes[[basename(fld_file)]]
+        ),
         version     = v,
         source      = "vendored",
         upstream_source = provenance$source %||% NA_character_,

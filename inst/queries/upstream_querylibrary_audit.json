@@ -31,7 +31,7 @@
     "queries_enabled_by_this_inventory": 0
   },
   "dp_semantics": {
-    "candidate_means": "A redesigned aggregate can have finite sensitivity after the stated public bins/clips and per-person contribution bounds, using sticky noise and durable composition accounting.",
+    "candidate_means": "A redesigned aggregate can have finite sensitivity after the stated public bins/clips and per-person contribution bounds, using sticky noise under a fixed per-release contract.",
     "candidate_does_not_mean": "The upstream SQL is safe as written, that nfilter.noise is formal DP, or that the query is currently executable."
   },
   "domains": {
@@ -134,7 +134,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "C01",
@@ -580,7 +580,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact age or birth components are returned; common public age/date bands are required before release.",
       "dp_candidate": true,
-      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts with composition accounting."
+      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts under one fixed per-release contract."
     },
     {
       "upstream_id": "CE03",
@@ -656,7 +656,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CE05",
@@ -690,7 +690,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CE06",
@@ -724,7 +724,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CE07",
@@ -754,7 +754,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CE08",
@@ -823,7 +823,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CE10",
@@ -854,7 +854,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CE11",
@@ -892,7 +892,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact date extrema/quantiles or dates are returned; replace them with public temporal bins or a protected temporal mechanism.",
       "dp_candidate": true,
-      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism with composition accounting."
+      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism under one fixed per-release contract."
     },
     {
       "upstream_id": "CE12",
@@ -930,7 +930,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact date extrema/quantiles or dates are returned; replace them with public temporal bins or a protected temporal mechanism.",
       "dp_candidate": true,
-      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism with composition accounting."
+      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism under one fixed per-release contract."
     },
     {
       "upstream_id": "CE13",
@@ -1076,7 +1076,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "The statistic lacks public clipping/binning and bounded per-person contributions; raw extrema, quantiles, means or rates are not releasable.",
       "dp_candidate": true,
-      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram with composition accounting."
+      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram under one fixed per-release contract."
     },
     {
       "upstream_id": "CO02",
@@ -1107,7 +1107,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact date extrema/quantiles or dates are returned; replace them with public temporal bins or a protected temporal mechanism.",
       "dp_candidate": true,
-      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism with composition accounting."
+      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism under one fixed per-release contract."
     },
     {
       "upstream_id": "CO03",
@@ -1139,7 +1139,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CO04",
@@ -1171,7 +1171,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CO05",
@@ -1205,7 +1205,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact age or birth components are returned; common public age/date bands are required before release.",
       "dp_candidate": true,
-      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts with composition accounting."
+      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts under one fixed per-release contract."
     },
     {
       "upstream_id": "CO06",
@@ -1270,7 +1270,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "The statistic lacks public clipping/binning and bounded per-person contributions; raw extrema, quantiles, means or rates are not releasable.",
       "dp_candidate": true,
-      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram with composition accounting."
+      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram under one fixed per-release contract."
     },
     {
       "upstream_id": "CO08",
@@ -1331,7 +1331,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CO10",
@@ -1358,7 +1358,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CO11",
@@ -1383,7 +1383,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CO12",
@@ -1422,7 +1422,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact date extrema/quantiles or dates are returned; replace them with public temporal bins or a protected temporal mechanism.",
       "dp_candidate": true,
-      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism with composition accounting."
+      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism under one fixed per-release contract."
     },
     {
       "upstream_id": "CO13",
@@ -1461,7 +1461,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact date extrema/quantiles or dates are returned; replace them with public temporal bins or a protected temporal mechanism.",
       "dp_candidate": true,
-      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism with composition accounting."
+      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism under one fixed per-release contract."
     },
     {
       "upstream_id": "CO14",
@@ -1492,7 +1492,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CO15",
@@ -1616,7 +1616,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CO19",
@@ -1644,7 +1644,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CO20",
@@ -1746,7 +1746,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CO23",
@@ -1778,7 +1778,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CO24",
@@ -1814,7 +1814,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "CO25",
@@ -1844,7 +1844,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "The statistic lacks public clipping/binning and bounded per-person contributions; raw extrema, quantiles, means or rates are not releasable.",
       "dp_candidate": true,
-      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram with composition accounting."
+      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram under one fixed per-release contract."
     },
     {
       "upstream_id": "COC01",
@@ -1883,7 +1883,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "COC02",
@@ -1964,7 +1964,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "COC06",
@@ -2125,7 +2125,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "The statistic lacks public clipping/binning and bounded per-person contributions; raw extrema, quantiles, means or rates are not releasable.",
       "dp_candidate": true,
-      "dp_justification": "Release bounded sticky-DP numerator and denominator counts under one ledger, then derive the rate by post-processing."
+      "dp_justification": "Release bounded sticky-DP numerator and denominator counts within one per-release epsilon allocation, then derive the rate by post-processing."
     },
     {
       "upstream_id": "COC10",
@@ -2209,7 +2209,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "D01",
@@ -3207,7 +3207,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "The statistic lacks public clipping/binning and bounded per-person contributions; raw extrema, quantiles, means or rates are not releasable.",
       "dp_candidate": true,
-      "dp_justification": "Release bounded sticky-DP numerator and denominator counts under one ledger, then derive the rate by post-processing."
+      "dp_justification": "Release bounded sticky-DP numerator and denominator counts within one per-release epsilon allocation, then derive the rate by post-processing."
     },
     {
       "upstream_id": "DER06",
@@ -3239,7 +3239,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "The statistic lacks public clipping/binning and bounded per-person contributions; raw extrema, quantiles, means or rates are not releasable.",
       "dp_candidate": true,
-      "dp_justification": "Release bounded sticky-DP numerator and denominator counts under one ledger, then derive the rate by post-processing."
+      "dp_justification": "Release bounded sticky-DP numerator and denominator counts within one per-release epsilon allocation, then derive the rate by post-processing."
     },
     {
       "upstream_id": "DER07",
@@ -3294,7 +3294,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DER09",
@@ -3319,7 +3319,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DER10",
@@ -3355,7 +3355,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact date extrema/quantiles or dates are returned; replace them with public temporal bins or a protected temporal mechanism.",
       "dp_candidate": true,
-      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism with composition accounting."
+      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism under one fixed per-release contract."
     },
     {
       "upstream_id": "DER11",
@@ -3392,7 +3392,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact date extrema/quantiles or dates are returned; replace them with public temporal bins or a protected temporal mechanism.",
       "dp_candidate": true,
-      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism with composition accounting."
+      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism under one fixed per-release contract."
     },
     {
       "upstream_id": "DER12",
@@ -3420,7 +3420,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DER13",
@@ -3569,7 +3569,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DER18",
@@ -3638,7 +3638,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DER23",
@@ -3676,7 +3676,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact date extrema/quantiles or dates are returned; replace them with public temporal bins or a protected temporal mechanism.",
       "dp_candidate": true,
-      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism with composition accounting."
+      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism under one fixed per-release contract."
     },
     {
       "upstream_id": "DER26",
@@ -3707,7 +3707,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX01",
@@ -3738,7 +3738,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX02",
@@ -3774,7 +3774,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact age or birth components are returned; common public age/date bands are required before release.",
       "dp_candidate": true,
-      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts with composition accounting."
+      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX03",
@@ -3847,7 +3847,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX05",
@@ -3878,7 +3878,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX06",
@@ -3908,7 +3908,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX07",
@@ -4044,7 +4044,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX11",
@@ -4078,7 +4078,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "The statistic lacks public clipping/binning and bounded per-person contributions; raw extrema, quantiles, means or rates are not releasable.",
       "dp_candidate": true,
-      "dp_justification": "Release bounded sticky-DP numerator and denominator counts under one ledger, then derive the rate by post-processing."
+      "dp_justification": "Release bounded sticky-DP numerator and denominator counts within one per-release epsilon allocation, then derive the rate by post-processing."
     },
     {
       "upstream_id": "DEX12",
@@ -4140,7 +4140,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX14",
@@ -4168,7 +4168,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX15",
@@ -4203,7 +4203,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "The statistic lacks public clipping/binning and bounded per-person contributions; raw extrema, quantiles, means or rates are not releasable.",
       "dp_candidate": true,
-      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram with composition accounting."
+      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX16",
@@ -4242,7 +4242,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "The statistic lacks public clipping/binning and bounded per-person contributions; raw extrema, quantiles, means or rates are not releasable.",
       "dp_candidate": true,
-      "dp_justification": "Release bounded sticky-DP numerator and denominator counts under one ledger, then derive the rate by post-processing."
+      "dp_justification": "Release bounded sticky-DP numerator and denominator counts within one per-release epsilon allocation, then derive the rate by post-processing."
     },
     {
       "upstream_id": "DEX17",
@@ -4301,7 +4301,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX19",
@@ -4331,7 +4331,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX20",
@@ -4364,7 +4364,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX21",
@@ -4393,7 +4393,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX22",
@@ -4422,7 +4422,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX23",
@@ -4485,7 +4485,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "The statistic lacks public clipping/binning and bounded per-person contributions; raw extrema, quantiles, means or rates are not releasable.",
       "dp_candidate": true,
-      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram with composition accounting."
+      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX25",
@@ -4512,7 +4512,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX26",
@@ -4549,7 +4549,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact date extrema/quantiles or dates are returned; replace them with public temporal bins or a protected temporal mechanism.",
       "dp_candidate": true,
-      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism with composition accounting."
+      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX27",
@@ -4586,7 +4586,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact date extrema/quantiles or dates are returned; replace them with public temporal bins or a protected temporal mechanism.",
       "dp_candidate": true,
-      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism with composition accounting."
+      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX28",
@@ -4616,7 +4616,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX29",
@@ -4763,7 +4763,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX34",
@@ -4826,7 +4826,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "The statistic lacks public clipping/binning and bounded per-person contributions; raw extrema, quantiles, means or rates are not releasable.",
       "dp_candidate": true,
-      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram with composition accounting."
+      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX36",
@@ -4889,7 +4889,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "The statistic lacks public clipping/binning and bounded per-person contributions; raw extrema, quantiles, means or rates are not releasable.",
       "dp_candidate": true,
-      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram with composition accounting."
+      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX38",
@@ -4947,7 +4947,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX40",
@@ -4978,7 +4978,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX41",
@@ -5016,7 +5016,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact date extrema/quantiles or dates are returned; replace them with public temporal bins or a protected temporal mechanism.",
       "dp_candidate": true,
-      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism with composition accounting."
+      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX42",
@@ -5047,7 +5047,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "DEX43",
@@ -5599,7 +5599,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "OP02",
@@ -5628,7 +5628,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "The statistic lacks public clipping/binning and bounded per-person contributions; raw extrema, quantiles, means or rates are not releasable.",
       "dp_candidate": true,
-      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram with composition accounting."
+      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram under one fixed per-release contract."
     },
     {
       "upstream_id": "OP03",
@@ -5653,7 +5653,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "OP04",
@@ -5681,7 +5681,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "OP05",
@@ -5866,7 +5866,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "OP11",
@@ -5903,7 +5903,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact date extrema/quantiles or dates are returned; replace them with public temporal bins or a protected temporal mechanism.",
       "dp_candidate": true,
-      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism with composition accounting."
+      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism under one fixed per-release contract."
     },
     {
       "upstream_id": "OP12",
@@ -5976,7 +5976,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact date extrema/quantiles or dates are returned; replace them with public temporal bins or a protected temporal mechanism.",
       "dp_candidate": true,
-      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism with composition accounting."
+      "dp_justification": "Replace exact dates with public bins and use a bounded sticky-DP histogram/quantile mechanism under one fixed per-release contract."
     },
     {
       "upstream_id": "OP14",
@@ -6054,7 +6054,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact age or birth components are returned; common public age/date bands are required before release.",
       "dp_candidate": true,
-      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts with composition accounting."
+      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts under one fixed per-release contract."
     },
     {
       "upstream_id": "OP16",
@@ -6090,7 +6090,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "OP17",
@@ -6118,7 +6118,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "OP18",
@@ -6146,7 +6146,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "OP19",
@@ -6187,7 +6187,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact age or birth components are returned; common public age/date bands are required before release.",
       "dp_candidate": true,
-      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts with composition accounting."
+      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts under one fixed per-release contract."
     },
     {
       "upstream_id": "OP20",
@@ -6292,7 +6292,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "The statistic lacks public clipping/binning and bounded per-person contributions; raw extrema, quantiles, means or rates are not releasable.",
       "dp_candidate": true,
-      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram with composition accounting."
+      "dp_justification": "Apply public clipping and bins plus a per-person contribution cap, then release a sticky-DP histogram under one fixed per-release contract."
     },
     {
       "upstream_id": "PP02",
@@ -6348,7 +6348,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "PE03",
@@ -6377,7 +6377,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "PE06",
@@ -6404,7 +6404,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact age or birth components are returned; common public age/date bands are required before release.",
       "dp_candidate": true,
-      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts with composition accounting."
+      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts under one fixed per-release contract."
     },
     {
       "upstream_id": "PE07",
@@ -6432,7 +6432,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "PE08",
@@ -6493,7 +6493,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact age or birth components are returned; common public age/date bands are required before release.",
       "dp_candidate": true,
-      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts with composition accounting."
+      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts under one fixed per-release contract."
     },
     {
       "upstream_id": "PE10",
@@ -6521,7 +6521,7 @@
       "triage_class": "statistical_needs_redesign",
       "triage_reason": "Exact age or birth components are returned; common public age/date bands are required before release.",
       "dp_candidate": true,
-      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts with composition accounting."
+      "dp_justification": "Use common public age/date bands, one bounded contribution per person and sticky-DP counts under one fixed per-release contract."
     },
     {
       "upstream_id": "PE11",
@@ -6547,7 +6547,7 @@
       "triage_class": "rewritable_patient_aggregate",
       "triage_reason": "Rewrite around distinct-person support, public grouping values, small-cell controls and bounded per-person contributions.",
       "dp_candidate": true,
-      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible with composition accounting."
+      "dp_justification": "After enforcing public categories and bounded per-person contributions, sticky-DP counts are possible under one fixed per-release contract."
     },
     {
       "upstream_id": "PE12",
