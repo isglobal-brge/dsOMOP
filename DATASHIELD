@@ -95,6 +95,7 @@ Options:
   dsomop.allow_absolute_dates=FALSE,
   dsomop.allow_sensitive_columns=FALSE,
   default.dsomop.dp.enabled=FALSE,
+  default.dsomop.dp.disjoint_persons=FALSE,
   default.dsomop.dp.domain="",
   default.dsomop.dp.snapshot_id="",
   default.dsomop.dp.release_epsilon=0.1,

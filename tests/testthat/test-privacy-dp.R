@@ -1,5 +1,6 @@
 .dp_environment_names <- c(
-  "DSOMOP_DP_ENABLED", "DSOMOP_DP_DOMAIN", "DSOMOP_DP_SNAPSHOT_ID",
+  "DSOMOP_DP_ENABLED", "DSOMOP_DP_DISJOINT_PERSONS",
+  "DSOMOP_DP_DOMAIN", "DSOMOP_DP_SNAPSHOT_ID",
   "DSOMOP_DP_RELEASE_EPSILON", "DSOMOP_DP_PRIVACY_EPOCH",
   "DSOMOP_DP_MAX_LEVELS", "DSOMOP_DP_MAX_CONTRIBUTIONS",
   "DSOMOP_DP_NUMERIC_GRID", "DSOMOP_DP_NOISE_ROOT"
@@ -10,6 +11,7 @@
                             noise_root = NULL,
                             snapshot_id = "etl-2026-08-01",
                             privacy_epoch = 1L,
+                            disjoint_persons = FALSE,
                             .local_envir = parent.frame()) {
   state <- withr::local_tempdir(
     pattern = "dsomop-dp-", .local_envir = .local_envir
@@ -29,6 +31,7 @@
   withr::local_options(list(
     dsomop.state_dir = state,
     dsomop.dp.enabled = enabled,
+    dsomop.dp.disjoint_persons = disjoint_persons,
     dsomop.dp.domain = "dsomop-dp-test",
     dsomop.dp.snapshot_id = snapshot_id,
     dsomop.dp.release_epsilon = release_epsilon,
@@ -197,6 +200,48 @@ test_that("DP bootstrap settings can be supplied before namespace load", {
 
   withr::local_options(list(dsomop.dp.enabled = FALSE))
   expect_error(.dsomopDpEnabled(), "Conflicting DP option")
+
+  withr::local_options(list(
+    dsomop.dp.enabled = NULL,
+    dsomop.dp.disjoint_persons = TRUE
+  ))
+  withr::with_envvar(c(DSOMOP_DP_DISJOINT_PERSONS = "yes"), {
+    expect_true(.dsomopDpBoolean(
+      .dsomopDpOption("disjoint_persons"), "disjoint_persons"
+    ))
+  })
+  withr::with_envvar(c(DSOMOP_DP_DISJOINT_PERSONS = "false"), {
+    expect_error(
+      .dsomopDpOption("disjoint_persons"), "Conflicting DP option"
+    )
+  })
+  withr::with_envvar(c(DSOMOP_DP_DISJOINT_PERSONS = "sometimes"), {
+    expect_error(
+      .dsomopDpOption("disjoint_persons"), "must be TRUE or FALSE"
+    )
+  })
+})
+
+test_that("disjoint-person attestation does not mint new sticky noise", {
+  .dp_local_state(noise_root = as.raw(0:31), disjoint_persons = FALSE)
+  input <- .dp_test_table()
+  spec <- list(statistic = "count", population_id = "cohort-a")
+
+  first_policy <- .dsomopDpPolicy()
+  first_status <- omopDpStatusDS()
+  first_release <- omopDpReleaseDS(input, spec)
+  expect_false(first_status$disjoint_persons)
+
+  options(dsomop.dp.disjoint_persons = TRUE)
+  expect_error(.dsomopDpPolicy(), "DP policy changed during this R session")
+  .dp_restart_runtime()
+
+  second_policy <- .dsomopDpPolicy()
+  second_status <- omopDpStatusDS()
+  second_release <- omopDpReleaseDS(input, spec)
+  expect_true(second_status$disjoint_persons)
+  expect_identical(first_policy$policy_hash, second_policy$policy_hash)
+  expect_identical(first_release, second_release)
 })
 
 test_that("injected DP roots require exactly 256 bits", {
@@ -264,6 +309,7 @@ test_that("bootstrap creates only one private persistent root", {
                    "fixed_per_release_semantic_prf_v1")
   expect_identical(status$privacy_call_quota, "none")
   expect_identical(status$history_dependent, FALSE)
+  expect_identical(status$disjoint_persons, FALSE)
   expect_identical(status$persistent_state, "noise_root_only")
   expect_identical(status$privacy_guarantee,
                    .DSOMOP_PRIVACY_GUARANTEE)
@@ -1909,7 +1955,10 @@ test_that("irrelevant ordering and unbounded public domains are rejected", {
 })
 
 test_that("public status and release expose the fixed v2 contract", {
-  .dp_local_state(noise_root = as.raw(0:31), release_epsilon = 0.25)
+  .dp_local_state(
+    noise_root = as.raw(0:31), release_epsilon = 0.25,
+    disjoint_persons = TRUE
+  )
   status <- omopDpStatusDS()
 
   expect_true(status$enabled)
@@ -1922,6 +1971,7 @@ test_that("public status and release expose the fixed v2 contract", {
   expect_identical(status$release_delta, 0)
   expect_identical(status$privacy_call_quota, "none")
   expect_identical(status$history_dependent, FALSE)
+  expect_identical(status$disjoint_persons, TRUE)
   expect_identical(status$persistent_state, "noise_root_only")
   expect_setequal(status$supported_statistics, c(
     "count", "bounded_record_count", "categorical_histogram",
