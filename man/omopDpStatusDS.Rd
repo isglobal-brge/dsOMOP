@@ -14,8 +14,5 @@ Returns the public fixed-per-release mechanism contract. Secret key material
 and protected snapshot fingerprints are never returned. Calling this
 endpoint initializes the single persistent noise root atomically when the
 service is enabled. Previous calls do not create state or affect whether a
-later protected operation may run. An enabled status includes the logical
-\code{disjoint_persons} field: a server-owned cross-site attestation used
-only for federated composition metadata. It never changes the per-site
-mechanism or noise.
+later protected operation may run.
 }

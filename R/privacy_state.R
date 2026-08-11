@@ -123,7 +123,6 @@
   configured <- getOption(option, NULL)
   environment_names <- c(
     enabled = "DSOMOP_DP_ENABLED",
-    disjoint_persons = "DSOMOP_DP_DISJOINT_PERSONS",
     domain = "DSOMOP_DP_DOMAIN",
     snapshot_id = "DSOMOP_DP_SNAPSHOT_ID",
     release_epsilon = "DSOMOP_DP_RELEASE_EPSILON",
@@ -150,7 +149,7 @@
     suppressWarnings(as.numeric(raw))
   } else raw
   if (!is.null(configured)) {
-    same <- if (name %in% c("enabled", "disjoint_persons")) {
+    same <- if (identical(name, "enabled")) {
       identical(.dsomopDpBoolean(configured, name),
                 .dsomopDpBoolean(environment, name))
     } else if (name %in% numeric_names) {
@@ -285,9 +284,6 @@
     sampler = .DSOMOP_DP_SAMPLER,
     privacy_contract = .DSOMOP_DP_CONTRACT,
     adjacency = "add_remove_person",
-    disjoint_persons = .dsomopDpBoolean(
-      .dsomopDpOption("disjoint_persons", FALSE), "disjoint_persons"
-    ),
     domain = domain,
     snapshot_id = snapshot_id,
     release_epsilon = .dsomopDpNumber(
@@ -311,8 +307,6 @@
       2^24 - 1, integer = TRUE
     )
   )
-  # Cross-site disjointness changes only the reported composition of a
-  # federated release. It must not mint a new per-site noise sample.
   policy$policy_hash <- .dsomopDpSha256(.dsomopDpCanonicalJson(list(
     schema_version = policy$schema_version,
     protocol = policy$protocol,
@@ -348,11 +342,9 @@
 
   runtime <- .pkg_state$dp_runtime
   if (is.list(runtime)) {
-    if (!identical(runtime$policy_hash, config$policy_hash) ||
-        !identical(runtime$policy$disjoint_persons,
-                   config$disjoint_persons)) {
+    if (!identical(runtime$policy_hash, config$policy_hash)) {
       stop("DP policy changed during this R session; restart the session after ",
-           "changing server privacy configuration.", call. = FALSE)
+           "changing the snapshot or privacy parameters.", call. = FALSE)
     }
     return(runtime$policy)
   }
@@ -552,7 +544,6 @@
     privacy_guarantee = .DSOMOP_PRIVACY_GUARANTEE,
     privacy_contract = policy$privacy_contract,
     adjacency = policy$adjacency,
-    disjoint_persons = policy$disjoint_persons,
     domain = policy$domain,
     snapshot_id = policy$snapshot_id,
     release_epsilon = policy$release_epsilon,

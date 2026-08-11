@@ -271,15 +271,11 @@ output contracts as the surrounding security boundary.
 
 Non-secret configuration is available through matching `dsomop.dp.*` options
 and `DSOMOP_DP_*` environment variables, including enablement, domain, public
-snapshot identifier, fixed release epsilon, privacy epoch, the server caps for
-levels, contributions and numeric quantization, and the server-owned
-`disjoint_persons` attestation (`DSOMOP_DP_DISJOINT_PERSONS`). The attestation
-defaults to false and should be enabled only when governance guarantees that a
-real person belongs to at most one participating node. It affects only the
-reported cross-site composition and never changes the per-site sticky noise.
-Explicit option and environment values must agree. `omopDpStatusDS()` is
-suitable as a production readiness check after the persistent state volume and
-final profile have been mounted.
+snapshot identifier, fixed release epsilon, privacy epoch and the server caps
+for levels, contributions and numeric quantization. Explicit option and
+environment values must agree. `omopDpStatusDS()` is suitable as a production
+readiness check after the persistent state volume and final profile have been
+mounted.
 
 The DataSHIELD method allowlist is part of the security boundary. An
 `omop.table` class or a `dsomop_protected` attribute protects calls handled by
