@@ -494,6 +494,7 @@ test_that("omopInitDS rejects an active resource symbol without touching it", {
 test_that("omopInitDS bootstraps privacy before creating a handle", {
   events <- character(0)
   new_handle <- new.env(parent = emptyenv())
+  withr::local_envvar(ROCK_VERSION = NA_character_)
   local_mocked_bindings(
     .dsomopDpEnsureRuntime = function() {
       events <<- c(events, "privacy")
@@ -523,11 +524,230 @@ test_that("omopInitDS bootstraps privacy before creating a handle", {
 
   run()
   expect_identical(events, c("privacy", "handle", "blueprint"))
+  expect_false(exists(
+    "handle_ready_resource", envir = .dsomop_env, inherits = FALSE
+  ))
+})
+
+test_that("omopInitDS persists Rock handles between method calls", {
+  new_handle <- new.env(parent = emptyenv())
+  closed <- 0L
+  global_key <- "handle_rock_resource"
+  on.exit({
+    if (exists(global_key, envir = .dsomop_env, inherits = FALSE)) {
+      rm(list = global_key, envir = .dsomop_env)
+    }
+  }, add = TRUE)
+  local_mocked_bindings(
+    .createHandle = function(...) new_handle,
+    .buildBlueprint = function(...) invisible(NULL),
+    .closeHandle = function(handle) {
+      expect_identical(handle, new_handle)
+      closed <<- closed + 1L
+      invisible(NULL)
+    },
+    .package = "dsOMOP"
+  )
+  withr::local_envvar(ROCK_VERSION = "2.2.1")
+
+  run <- function() {
+    rock_resource <- structure(list(), class = "ResourceClient")
+    expect_true(omopInitDS("rock_resource"))
+  }
+
+  run()
+  expect_identical(.getHandle("rock_resource"), new_handle)
+  expect_true(.removeHandle("rock_resource"))
+  expect_equal(closed, 1L)
+  expect_false(exists(global_key, envir = .dsomop_env, inherits = FALSE))
+})
+
+test_that("packaged Rock installations are detected without ROCK_VERSION", {
+  new_handle <- new.env(parent = emptyenv())
+  global_key <- "handle_packaged_rock_resource"
+  had_info <- exists(".info", envir = .GlobalEnv, inherits = FALSE)
+  old_info <- if (had_info) get(".info", envir = .GlobalEnv) else NULL
+  on.exit({
+    if (exists(global_key, envir = .dsomop_env, inherits = FALSE)) {
+      rm(list = global_key, envir = .dsomop_env)
+    }
+    if (had_info) {
+      assign(".info", old_info, envir = .GlobalEnv)
+    } else if (exists(".info", envir = .GlobalEnv, inherits = FALSE)) {
+      rm(list = ".info", envir = .GlobalEnv)
+    }
+  }, add = TRUE)
+  assign(
+    ".info",
+    jsonlite::fromJSON(paste0(
+      '{"id":"test-rock","type":"rock",',
+      '"cluster":"default","tags":[]}'
+    )),
+    envir = .GlobalEnv
+  )
+  withr::local_envvar(c(ROCK_VERSION = NA_character_, ROCK_HOME = "/srv"))
+  local_mocked_bindings(
+    .createHandle = function(...) new_handle,
+    .buildBlueprint = function(...) invisible(NULL),
+    .closeHandle = function(handle) {
+      expect_identical(handle, new_handle)
+      invisible(NULL)
+    },
+    .package = "dsOMOP"
+  )
+
+  run <- function() {
+    packaged_rock_resource <- structure(list(), class = "ResourceClient")
+    expect_true(omopInitDS("packaged_rock_resource"))
+  }
+
+  run()
+  expect_identical(.getHandle("packaged_rock_resource"), new_handle)
+  expect_true(.removeHandle("packaged_rock_resource"))
+})
+
+test_that("session-local Rock-like metadata does not select global storage", {
+  new_handle <- new.env(parent = emptyenv())
+  global_key <- "handle_untrusted_info_resource"
+  had_info <- exists(".info", envir = .GlobalEnv, inherits = FALSE)
+  old_info <- if (had_info) get(".info", envir = .GlobalEnv) else NULL
+  if (had_info) rm(list = ".info", envir = .GlobalEnv)
+  on.exit({
+    if (exists(global_key, envir = .dsomop_env, inherits = FALSE)) {
+      rm(list = global_key, envir = .dsomop_env)
+    }
+    if (had_info) assign(".info", old_info, envir = .GlobalEnv)
+  }, add = TRUE)
+  withr::local_envvar(c(ROCK_VERSION = NA_character_, ROCK_HOME = "/srv"))
+  local_mocked_bindings(
+    .createHandle = function(...) new_handle,
+    .buildBlueprint = function(...) invisible(NULL),
+    .closeHandle = function(handle) {
+      expect_identical(handle, new_handle)
+      invisible(NULL)
+    },
+    .package = "dsOMOP"
+  )
+
+  run <- function() {
+    .info <- list(
+      id = "not-global",
+      type = "rock",
+      cluster = "default",
+      tags = character()
+    )
+    untrusted_info_resource <- structure(list(), class = "ResourceClient")
+    expect_true(omopInitDS("untrusted_info_resource"))
+    expect_identical(
+      get(".dsomop_handle_untrusted_info_resource", envir = environment()),
+      new_handle
+    )
+    expect_true(.removeHandle("untrusted_info_resource"))
+  }
+
+  run()
+  expect_false(exists(global_key, envir = .dsomop_env, inherits = FALSE))
+})
+
+test_that("DSLite session isolation overrides inherited Rock environment", {
+  new_handle <- new.env(parent = emptyenv())
+  global_key <- "handle_dslite_resource"
+  on.exit({
+    if (exists(global_key, envir = .dsomop_env, inherits = FALSE)) {
+      rm(list = global_key, envir = .dsomop_env)
+    }
+  }, add = TRUE)
+  local_mocked_bindings(
+    .createHandle = function(...) new_handle,
+    .buildBlueprint = function(...) invisible(NULL),
+    .package = "dsOMOP"
+  )
+  withr::local_envvar(ROCK_VERSION = "2.2.1")
+
+  run <- function() {
+    session_env <- environment()
+    attr(session_env, "name") <- "DSLiteEnv_1234"
+    dslite_resource <- structure(list(), class = "ResourceClient")
+    expect_true(omopInitDS("dslite_resource"))
+    expect_identical(
+      get(".dsomop_handle_dslite_resource", envir = session_env),
+      new_handle
+    )
+  }
+
+  run()
+  expect_false(exists(global_key, envir = .dsomop_env, inherits = FALSE))
+})
+
+test_that("two DSLite sessions can use the same resource symbol safely", {
+  closed <- list()
+  local_mocked_bindings(
+    .dsomopDpEnsureRuntime = function() invisible(NULL),
+    .createHandle = function(resource_client, ...) resource_client$handle,
+    .buildBlueprint = function(...) invisible(NULL),
+    .closeHandle = function(handle) {
+      closed[[length(closed) + 1L]] <<- handle
+      invisible(NULL)
+    },
+    .package = "dsOMOP"
+  )
+  withr::local_envvar(ROCK_VERSION = "2.2.1")
+
+  make_session <- function(name, handle) {
+    session <- new.env(parent = environment())
+    attr(session, "name") <- name
+    session$shared_resource <- structure(
+      list(handle = handle), class = "ResourceClient"
+    )
+    evalq(omopInitDS("shared_resource"), envir = session)
+    session
+  }
+  handle_a <- new.env(parent = emptyenv())
+  handle_b <- new.env(parent = emptyenv())
+  session_a <- make_session("DSLiteEnv_1001", handle_a)
+  session_b <- make_session("DSLiteEnv_1002", handle_b)
+
+  expect_identical(
+    evalq(.getHandle("shared_resource"), envir = session_a), handle_a
+  )
+  expect_identical(
+    evalq(.getHandle("shared_resource"), envir = session_b), handle_b
+  )
+  expect_false(exists(
+    "handle_shared_resource", envir = .dsomop_env, inherits = FALSE
+  ))
+  expect_true(evalq(.removeHandle("shared_resource"), envir = session_a))
+  expect_true(evalq(.removeHandle("shared_resource"), envir = session_b))
+  expect_equal(length(closed), 2L)
+})
+
+test_that("persistent global-eval sessions retain local handles across calls", {
+  handle <- new.env(parent = emptyenv())
+  local_mocked_bindings(
+    .dsomopDpEnsureRuntime = function() invisible(NULL),
+    .createHandle = function(...) handle,
+    .buildBlueprint = function(...) invisible(NULL),
+    .closeHandle = function(value) {
+      expect_identical(value, handle)
+      invisible(NULL)
+    },
+    .package = "dsOMOP"
+  )
+  withr::local_envvar(ROCK_VERSION = NA_character_)
+  session <- new.env(parent = environment())
+  session$armadillo_resource <- structure(list(), class = "ResourceClient")
+
+  expect_true(evalq(omopInitDS("armadillo_resource"), envir = session))
+  expect_identical(
+    evalq(.getHandle("armadillo_resource"), envir = session), handle
+  )
+  expect_true(evalq(.removeHandle("armadillo_resource"), envir = session))
 })
 
 test_that("omopInitDS closes a new handle when blueprint construction fails", {
   closed <- 0L
   new_handle <- new.env(parent = emptyenv())
+  withr::local_envvar(ROCK_VERSION = NA_character_)
   local_mocked_bindings(
     .createHandle = function(...) new_handle,
     .buildBlueprint = function(...) stop("blueprint failed"),
@@ -552,6 +772,7 @@ test_that("omopInitDS closes a new handle when blueprint construction fails", {
 
 test_that("omopInitDS retains a failed handle when cleanup cannot be proven", {
   new_handle <- new.env(parent = emptyenv())
+  withr::local_envvar(ROCK_VERSION = NA_character_)
   local_mocked_bindings(
     .createHandle = function(...) new_handle,
     .buildBlueprint = function(...) stop("blueprint failed"),
@@ -576,6 +797,37 @@ test_that("omopInitDS retains a failed handle when cleanup cannot be proven", {
   }
 
   run()
+})
+
+test_that("Rock retains a failed handle when cleanup cannot be proven", {
+  new_handle <- new.env(parent = emptyenv())
+  global_key <- "handle_rock_retained_resource"
+  on.exit({
+    if (exists(global_key, envir = .dsomop_env, inherits = FALSE)) {
+      rm(list = global_key, envir = .dsomop_env)
+    }
+  }, add = TRUE)
+  local_mocked_bindings(
+    .dsomopDpEnsureRuntime = function() invisible(NULL),
+    .createHandle = function(...) new_handle,
+    .buildBlueprint = function(...) stop("blueprint failed"),
+    .closeHandle = function(...) stop("close failed"),
+    .package = "dsOMOP"
+  )
+  withr::local_envvar(ROCK_VERSION = "2.2.1")
+
+  run <- function() {
+    rock_retained_resource <- structure(list(), class = "ResourceClient")
+    expect_error(
+      omopInitDS("rock_retained_resource"),
+      "cleanup could not be proven.*retained"
+    )
+  }
+
+  run()
+  expect_identical(
+    get(global_key, envir = .dsomop_env, inherits = FALSE), new_handle
+  )
 })
 
 # ===========================================================================

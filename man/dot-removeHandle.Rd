@@ -2,7 +2,7 @@
 % Please edit documentation in R/interface.R
 \name{.removeHandle}
 \alias{.removeHandle}
-\title{Remove an OMOP CDM handle from the session environment}
+\title{Remove an OMOP CDM handle from the server session}
 \usage{
 .removeHandle(symbol)
 }
@@ -14,8 +14,8 @@ Invisible NULL (called for side effect).
 }
 \description{
 Closes the database connection associated with the handle and removes it
-from the calling DataSHIELD session environment. The package-global fallback
-is retained for internal/test handles. No-op if no handle exists for the
-given symbol, making disconnect retries safe.
+from either the calling DSLite session environment or Rock's process-local
+registry. The latter is also used by internal tests. No-op if no handle
+exists for the given symbol, making disconnect retries safe.
 }
 \keyword{internal}

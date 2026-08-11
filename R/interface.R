@@ -74,9 +74,9 @@
 #' Looks up the server-side OMOP CDM handle object associated with a given
 #' resource symbol name. In DSLite (multi-server, single R process), each
 #' server's session environment holds its own handle, avoiding collisions.
-#' A package-global fallback exists only for internal/test handles registered
-#' explicitly with \code{.setHandle}; public initialization stores exclusively
-#' in the session environment.
+#' Rock sessions use the package-local registry because each R connection has
+#' its own process, while DSLite handles remain in their per-server session
+#' environment because multiple DSLite servers share one R process.
 #'
 #' @param symbol Character; the resource symbol name identifying the handle.
 #' @return The OMOP CDM handle object.
@@ -84,8 +84,7 @@
 .getHandle <- function(symbol) {
   local_key <- paste0(".dsomop_handle_", symbol)
 
-  # Search active call frames because Opal/DSLite wrappers can add different
-  # depths. Public handles are never placed in package-global state.
+  # Search active call frames because DSLite wrappers can add different depths.
   frames <- sys.frames()
   for (i in rev(seq_along(frames))) {
     if (exists(local_key, envir = frames[[i]], inherits = FALSE)) {
@@ -93,7 +92,7 @@
     }
   }
 
-  # Fallback: global package environment (works for Opal single-process)
+  # Fallback: process-local registry for Rock sessions and internal tests.
   key <- paste0("handle_", symbol)
   if (!exists(key, envir = .dsomop_env)) {
     stop("No OMOP handle for symbol '", symbol,
@@ -102,11 +101,12 @@
   get(key, envir = .dsomop_env)
 }
 
-#' Store an OMOP CDM handle in the session environment
+#' Store an OMOP CDM handle in the process-local registry
 #'
-#' Saves the given handle object into the dsOMOP session environment under a
-#' key derived from the resource symbol name. Overwrites any existing handle
-#' for the same symbol.
+#' Saves the given handle object into dsOMOP's package-local registry under a
+#' key derived from the resource symbol name. Rock uses this registry because
+#' each DataSHIELD connection runs in its own R process. Overwrites any existing
+#' handle for the same symbol.
 #'
 #' @param symbol Character; the resource symbol name.
 #' @param handle The OMOP CDM handle object to store.
@@ -117,12 +117,12 @@
   assign(key, handle, envir = .dsomop_env)
 }
 
-#' Remove an OMOP CDM handle from the session environment
+#' Remove an OMOP CDM handle from the server session
 #'
 #' Closes the database connection associated with the handle and removes it
-#' from the calling DataSHIELD session environment. The package-global fallback
-#' is retained for internal/test handles. No-op if no handle exists for the
-#' given symbol, making disconnect retries safe.
+#' from either the calling DSLite session environment or Rock's process-local
+#' registry. The latter is also used by internal tests. No-op if no handle
+#' exists for the given symbol, making disconnect retries safe.
 #'
 #' @param symbol Character; the resource symbol name.
 #' @return Invisible NULL (called for side effect).
@@ -518,8 +518,8 @@
 #'
 #' @description
 #' Creates a server-side connection to an OMOP CDM database from a DataSHIELD
-#' resource. The handle is stored in the dsOMOP session environment and used
-#' by all subsequent OMOP operations.
+#' resource. The handle is retained within the current DataSHIELD server
+#' session and used by all subsequent OMOP operations.
 #'
 #' @param resource_symbol Character; the resource symbol name
 #' @param cdm_schema Character; override CDM schema
@@ -562,6 +562,35 @@ omopInitDS <- function(resource_symbol,
   }
 
   resolved <- get(resource_symbol, envir = session_env, inherits = FALSE)
+  session_name <- attr(session_env, "name", exact = TRUE)
+  dslite_session <- is.character(session_name) &&
+    length(session_name) == 1L && !is.na(session_name) &&
+    grepl("^DSLiteEnv_[0-9]{4}$", session_name)
+  rock_info <- if (exists(".info", envir = .GlobalEnv, inherits = FALSE)) {
+    get(".info", envir = .GlobalEnv, inherits = FALSE)
+  } else {
+    NULL
+  }
+  rock_info_valid <- is.list(rock_info) &&
+    all(c("id", "type", "cluster", "tags") %in% names(rock_info)) &&
+    is.character(rock_info$id) && length(rock_info$id) == 1L &&
+    !is.na(rock_info$id) && nzchar(rock_info$id) &&
+    identical(rock_info$type, "rock") &&
+    is.character(rock_info$cluster) && length(rock_info$cluster) == 1L &&
+    !is.na(rock_info$cluster) && nzchar(rock_info$cluster) &&
+    (is.character(rock_info$tags) ||
+       (is.list(rock_info$tags) && length(rock_info$tags) == 0L))
+  rock_runtime <- nzchar(Sys.getenv("ROCK_VERSION", unset = "")) ||
+    (nzchar(Sys.getenv("ROCK_HOME", unset = "")) && rock_info_valid)
+  process_local <- !dslite_session && rock_runtime
+  store_handle <- function(value) {
+    if (process_local) {
+      .setHandle(resource_symbol, value)
+    } else {
+      assign(local_key, value, envir = session_env)
+    }
+    invisible(TRUE)
+  }
 
   # This is the first backend-independent point at which a real dsOMOP request
   # is known to be running and DataSHIELD profile options have been applied.
@@ -570,8 +599,8 @@ omopInitDS <- function(resource_symbol,
   # deployment faults surface before the first protected release.
   .dsomopDpEnsureRuntime()
 
-  # DSLite resolves resources to ResourceClient objects during assign.resource;
-  # Opal passes raw resource objects. Handle both cases.
+  # DataSHIELD backends may expose a resolved ResourceClient or the raw
+  # resource object. Handle both forms.
   if (inherits(resolved, "ResourceClient")) {
     resource_client <- resolved
   } else {
@@ -601,7 +630,7 @@ omopInitDS <- function(resource_symbol,
     }, error = identity)
     if (!is.null(cleanup_error)) {
       retained <- tryCatch({
-        assign(local_key, handle, envir = session_env)
+        store_handle(handle)
         TRUE
       }, error = function(store_error) FALSE)
       stop(
@@ -622,13 +651,11 @@ omopInitDS <- function(resource_symbol,
 
   tryCatch(.buildBlueprint(handle), error = abort_initialization)
 
-  # DSLite session isolation: in DSLite (multi-server, single R process),
-  # each DataSHIELD session has its own environment. We store the handle
-  # in parent.frame() (the session env) under a unique key so that
-  # server_a's handle is not overwritten by server_b. Without this,
-  # .dsomop_env (global) would be shared, causing cross-server data leaks.
+  # DSLite servers share one R process, so handles stay in the calling server
+  # environment. Rock wrapper frames are ephemeral, while each R connection is
+  # process-isolated, so retain that handle in the package-local registry.
   tryCatch(
-    assign(local_key, handle, envir = session_env),
+    store_handle(handle),
     error = function(e) {
       abort_initialization(simpleError(
         "Could not store the OMOP handle in the DataSHIELD session."
@@ -2347,6 +2374,7 @@ omopOhdsiResultsDS <- function(omop_symbol, table_name, columns = NULL,
                                 limit = 5000L, tool_id = NULL) {
   handle <- .getHandle(omop_symbol)
   filters <- .ds_arg(filters)
+  order_by <- .ds_arg(order_by)
   # The internal consumer adds contracted disclosure-basis columns to the SQL
   # projection and removes them only after gating, so caller projection cannot
   # bypass the person gate.

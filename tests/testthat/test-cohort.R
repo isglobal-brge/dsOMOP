@@ -509,6 +509,123 @@ test_that("cohort intersection preserves left eras without K-by-K multiplication
   })
 })
 
+test_that("identical cohort inputs preserve set semantics and lifecycle", {
+  handle <- create_test_handle(n_persons = 15)
+  on.exit(cleanup_handle(handle))
+
+  rows_with_duplicate <- paste(
+    "SELECT 1 AS subject_id, '2020-01-01' AS cohort_start_date,",
+    "'2020-01-31' AS cohort_end_date UNION ALL",
+    "SELECT 1, '2020-01-01', '2020-01-31' UNION ALL",
+    "SELECT 2, '2020-02-01', '2020-02-29' UNION ALL",
+    "SELECT 3, '2020-03-01', '2020-03-31'"
+  )
+  .createTempTable(handle, "cohort_same", rows_with_duplicate)
+
+  withr::with_options(list(nfilter.subset = 3), {
+    intersected <- .cohortCombine(
+      handle, "intersect", "cohort_same", "cohort_same",
+      "cohort_same_intersect"
+    )
+    united <- .cohortCombine(
+      handle, "union", "cohort_same", "cohort_same",
+      "cohort_same_union"
+    )
+
+    intersected_rows <- DBI::dbGetQuery(
+      handle$conn, paste0("SELECT * FROM ", intersected)
+    )
+    united_rows <- DBI::dbGetQuery(
+      handle$conn, paste0("SELECT * FROM ", united)
+    )
+    expect_equal(nrow(intersected_rows), 4L)
+    expect_equal(nrow(united_rows), 3L)
+    expect_setequal(
+      handle$temp_tables,
+      c("cohort_same", "cohort_same_intersect", "cohort_same_union")
+    )
+
+    before_difference <- handle$temp_tables
+    expect_error(
+      .cohortCombine(
+        handle, "setdiff", "cohort_same", "cohort_same",
+        "cohort_same_difference"
+      ),
+      "insufficient individuals"
+    )
+    expect_identical(handle$temp_tables, before_difference)
+    expect_false(DBI::dbExistsTable(handle$conn, "cohort_same_difference"))
+  })
+
+  withr::with_options(list(nfilter.subset = 0), {
+    difference <- .cohortCombine(
+      handle, "setdiff", "cohort_same", "cohort_same",
+      "cohort_same_difference"
+    )
+    expect_identical(difference, "cohort_same_difference")
+    expect_true(DBI::dbExistsTable(handle$conn, difference))
+    expect_identical(nrow(DBI::dbReadTable(handle$conn, difference)), 0L)
+    expect_true(difference %in% handle$temp_tables)
+  })
+})
+
+test_that("identical cohort SQL reads a MySQL temporary table only once", {
+  handle <- new.env(parent = emptyenv())
+  handle$temp_tables <- "mysql_temp_cohort"
+  handle$target_dialect <- "mysql"
+  gate_sql <- create_sql <- character(0)
+
+  testthat::local_mocked_bindings(
+    .assertMinPersons = function(handle = NULL, sql = NULL,
+                                 n_persons = NULL) {
+      gate_sql <<- c(gate_sql, sql)
+      invisible(TRUE)
+    },
+    .createTempTable = function(handle, name, sql) {
+      create_sql <<- c(create_sql, sql)
+      name
+    },
+    .package = "dsOMOP"
+  )
+
+  expect_identical(
+    .cohortCombine(
+      handle, "intersect", "mysql_temp_cohort", "mysql_temp_cohort",
+      "mysql_intersect"
+    ),
+    "mysql_intersect"
+  )
+  expect_identical(
+    .cohortCombine(
+      handle, "union", "mysql_temp_cohort", "mysql_temp_cohort",
+      "mysql_union"
+    ),
+    "mysql_union"
+  )
+  expect_identical(
+    .cohortCombine(
+      handle, "setdiff", "mysql_temp_cohort", "mysql_temp_cohort",
+      "mysql_setdiff"
+    ),
+    "mysql_setdiff"
+  )
+
+  references <- function(sql) {
+    matches <- gregexpr("\\bmysql_temp_cohort\\b", sql, perl = TRUE)[[1L]]
+    if (identical(matches, -1L)) 0L else length(matches)
+  }
+  expect_identical(
+    unname(vapply(gate_sql, references, integer(1L))), c(1L, 1L, 1L)
+  )
+  expect_identical(
+    unname(vapply(create_sql, references, integer(1L))), c(1L, 1L, 1L)
+  )
+  expect_false(any(grepl(" EXISTS | UNION ", create_sql, fixed = TRUE)))
+  expect_false(grepl("SELECT DISTINCT", create_sql[[1L]], fixed = TRUE))
+  expect_true(grepl("SELECT DISTINCT", create_sql[[2L]], fixed = TRUE))
+  expect_true(grepl("WHERE 1 = 0", create_sql[[3L]], fixed = TRUE))
+})
+
 test_that("cohort set operations accept only owned, valid temp-table names", {
   handle <- create_test_handle(n_persons = 15)
   on.exit(cleanup_handle(handle))

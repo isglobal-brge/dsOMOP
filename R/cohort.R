@@ -404,7 +404,23 @@
   if (!is.null(new_name)) {
     new_name <- .validateIdentifier(new_name, "new cohort")
   }
-  sql <- switch(tolower(op),
+  operation <- tolower(op)
+  same_input <- identical(cohort_table_a, cohort_table_b)
+  sql <- if (same_input) switch(operation,
+    "intersect" = paste0(
+      "SELECT subject_id, cohort_start_date, cohort_end_date FROM ",
+      cohort_table_a
+    ),
+    "union" = paste0(
+      "SELECT DISTINCT subject_id, cohort_start_date, cohort_end_date FROM ",
+      cohort_table_a
+    ),
+    "setdiff" =, "difference" = paste0(
+      "SELECT subject_id, cohort_start_date, cohort_end_date FROM ",
+      cohort_table_a, " WHERE 1 = 0"
+    ),
+    stop("Unknown cohort operation: '", op, "'", call. = FALSE)
+  ) else switch(operation,
     "intersect" = paste0(
       "SELECT a.subject_id, a.cohort_start_date, a.cohort_end_date ",
       "FROM ", cohort_table_a, " AS a ",

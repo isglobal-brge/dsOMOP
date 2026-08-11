@@ -827,7 +827,12 @@
 }
 
 .dsomopDpPersonTableSequence <- function(tables) {
-  if (is.null(tables)) return(list())
+  # Derived-only person-level recipes intentionally carry `tables = list()`.
+  # That is a fixed empty source-table sequence, not a malformed unnamed
+  # sequence; the audited derived-column specifications supply the data path.
+  if (is.null(tables) || (is.list(tables) && length(tables) == 0L)) {
+    return(list())
+  }
   if (!is.list(tables) || is.null(names(tables))) {
     stop("DP person-level lineage requires named source tables.", call. = FALSE)
   }
@@ -1007,7 +1012,9 @@
     return(list(
       type = type,
       tables = .dsomopDpPersonTableSequence(output$tables),
-      derived_columns = output$derived_columns,
+      derived_columns = .normalizeDerivedColumnSpecs(
+        output$derived_columns
+      ),
       custom_filter = if (is.null(output$filters$custom)) NULL else
         .dsomopDpNormalizeFilterTree(output$filters$custom),
       date_handling = .dsomopDpEffectiveDateHandling()

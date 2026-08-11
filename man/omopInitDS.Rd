@@ -31,8 +31,8 @@ The handle symbol (assigned server-side)
 }
 \description{
 Creates a server-side connection to an OMOP CDM database from a DataSHIELD
-resource. The handle is stored in the dsOMOP session environment and used
-by all subsequent OMOP operations.
+resource. The handle is retained within the current DataSHIELD server
+session and used by all subsequent OMOP operations.
 }
 \examples{
 \dontrun{

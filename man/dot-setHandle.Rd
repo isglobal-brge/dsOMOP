@@ -2,7 +2,7 @@
 % Please edit documentation in R/interface.R
 \name{.setHandle}
 \alias{.setHandle}
-\title{Store an OMOP CDM handle in the session environment}
+\title{Store an OMOP CDM handle in the process-local registry}
 \usage{
 .setHandle(symbol, handle)
 }
@@ -15,8 +15,9 @@
 Invisible NULL (called for side effect).
 }
 \description{
-Saves the given handle object into the dsOMOP session environment under a
-key derived from the resource symbol name. Overwrites any existing handle
-for the same symbol.
+Saves the given handle object into dsOMOP's package-local registry under a
+key derived from the resource symbol name. Rock uses this registry because
+each DataSHIELD connection runs in its own R process. Overwrites any existing
+handle for the same symbol.
 }
 \keyword{internal}

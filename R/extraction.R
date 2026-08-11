@@ -4284,6 +4284,150 @@
 
 # --- Derived Columns ---
 
+# Normalize the closed set of person-level derived specifications. Execution
+# and DP lineage both use this function so ignored fields cannot create a new
+# sticky-noise identity for an unchanged computation.
+.normalizeDerivedColumnSpecs <- function(derived_specs) {
+  if (is.null(derived_specs) || length(derived_specs) == 0L) return(list())
+  if (!is.list(derived_specs)) {
+    stop("derived_columns must be a list of specifications.", call. = FALSE)
+  }
+
+  supported <- c(
+    "age", "sex_mf", "obs_duration", "prior_obs", "followup",
+    "demo_missingness", "charlson", "chads2", "chadsvasc", "dcsi",
+    "hfrs"
+  )
+  allowed <- list(
+    age = c("kind", "name", "reference", "reference_date"),
+    sex_mf = c("kind", "name"),
+    obs_duration = c("kind", "name", "period_policy"),
+    prior_obs = c("kind", "name", "reference_date", "period_policy"),
+    followup = c("kind", "name", "reference_date", "period_policy"),
+    demo_missingness = c("kind", "name"),
+    charlson = c("kind", "name"),
+    chads2 = c("kind", "name", "reference_date"),
+    chadsvasc = c("kind", "name", "reference_date"),
+    dcsi = c("kind", "name"),
+    hfrs = c("kind", "name")
+  )
+  scalar_text <- function(value, label) {
+    if (!is.character(value) || length(value) != 1L || is.na(value) ||
+        !nzchar(value)) {
+      stop(label, " must be one non-empty string.", call. = FALSE)
+    }
+    value
+  }
+  fixed_date <- function(value, label, required = FALSE) {
+    if (is.null(value)) {
+      if (required) stop(label, " is required.", call. = FALSE)
+      return(NULL)
+    }
+    format(.isoDate(value, label), "%Y-%m-%d")
+  }
+  fixed_year <- function(value, label, required = FALSE) {
+    value <- fixed_date(value, label, required)
+    if (is.null(value)) return(NULL)
+    paste0(substr(value, 1L, 4L), "-01-01")
+  }
+
+  normalized <- lapply(seq_along(derived_specs), function(index) {
+    spec <- derived_specs[[index]]
+    if (!is.list(spec) || is.null(names(spec)) || anyNA(names(spec)) ||
+        any(!nzchar(names(spec))) || anyDuplicated(names(spec))) {
+      stop("Derived column specification ", index,
+           " must be one uniquely named object.", call. = FALSE)
+    }
+    kind <- scalar_text(spec[["kind"]], paste0(
+      "Derived column specification ", index, " kind"
+    ))
+    if (!kind %in% supported) {
+      stop("Unsupported derived column kind '", kind, "'.", call. = FALSE)
+    }
+    unknown <- setdiff(names(spec), allowed[[kind]])
+    if (length(unknown) > 0L) {
+      stop("Unknown field(s) for derived column kind '", kind, "': ",
+           paste(unknown, collapse = ", "), ".", call. = FALSE)
+    }
+    name <- scalar_text(spec[["name"]], paste0("Derived ", kind, " name"))
+    name <- .validateIdentifier(name, paste0("derived ", kind, " column"))
+    if (tolower(name) %in% c(
+      "person_id", "subject_id", "row_id", "cohort_row_id"
+    )) {
+      stop("Derived column name '", name,
+           "' is reserved for row identity.", call. = FALSE)
+    }
+
+    switch(kind,
+      age = {
+        reference <- scalar_text(
+          spec[["reference"]] %||% "today", "Derived age reference"
+        )
+        if (!reference %in% c("today", "index")) {
+          stop("Derived age reference must be 'today' or 'index'.",
+               call. = FALSE)
+        }
+        reference_date <- fixed_year(
+          spec[["reference_date"]], paste0("Derived age '", name,
+                                            "' reference_date"),
+          required = identical(reference, "today")
+        )
+        # A fixed date overrides the reference mode during execution.
+        if (!is.null(reference_date)) reference <- "today"
+        list(
+          kind = kind, name = name, reference = reference,
+          reference_date = reference_date
+        )
+      },
+      obs_duration = {
+        policy <- scalar_text(
+          spec[["period_policy"]] %||% "total",
+          paste0("Derived ", kind, " period_policy")
+        )
+        if (!policy %in% c("total", "first", "last", "longest")) {
+          stop("Derived obs_duration period_policy must be one of: total, ",
+               "first, last, longest.", call. = FALSE)
+        }
+        list(kind = kind, name = name, period_policy = policy)
+      },
+      prior_obs =, followup = {
+        policy <- scalar_text(
+          spec[["period_policy"]] %||% "containing",
+          paste0("Derived ", kind, " period_policy")
+        )
+        if (!identical(policy, "containing")) {
+          stop("Derived ", kind,
+               " period_policy must be 'containing'.", call. = FALSE)
+        }
+        list(
+          kind = kind, name = name,
+          reference_date = fixed_date(
+            spec[["reference_date"]],
+            paste0("Derived ", kind, " '", name, "' reference_date"),
+            required = TRUE
+          ),
+          period_policy = policy
+        )
+      },
+      chads2 =, chadsvasc = list(
+        kind = kind, name = name,
+        reference_date = fixed_year(
+          spec[["reference_date"]],
+          paste0("Derived ", kind, " '", name, "' reference_date"),
+          required = TRUE
+        )
+      ),
+      list(kind = kind, name = name)
+    )
+  })
+
+  output_names <- vapply(normalized, `[[`, character(1L), "name")
+  if (anyDuplicated(output_names)) {
+    stop("Derived column names must be unique.", call. = FALSE)
+  }
+  unname(normalized)
+}
+
 #' Compute person-level derived columns (age, sex, observation duration)
 #'
 #' Fetches data from the \code{person} table (and \code{observation_period}
@@ -4308,7 +4452,8 @@
 .computeDerivedColumns <- function(handle, derived_specs,
                                     person_ids = NULL,
                                     cohort_table = NULL) {
-  if (is.null(derived_specs) || length(derived_specs) == 0) return(NULL)
+  derived_specs <- .normalizeDerivedColumnSpecs(derived_specs)
+  if (length(derived_specs) == 0L) return(NULL)
 
   bp <- .buildBlueprint(handle)
   kinds <- vapply(derived_specs, function(s) s$kind, character(1))

@@ -546,6 +546,28 @@ test_that("public OHDSI endpoint bands every returned count", {
   }
 })
 
+test_that("public OHDSI endpoint decodes transport-safe ordering", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  symbol <- paste0("ohdsi_order_transport_", Sys.getpid())
+  .setHandle(symbol, handle)
+  on.exit(.removeHandle(symbol), add = TRUE)
+
+  json <- as.character(jsonlite::toJSON("cohort_id DESC", auto_unbox = TRUE))
+  encoded <- gsub("[\r\n]", "", jsonlite::base64_enc(charToRaw(json)))
+  encoded <- gsub("\\+", "-", encoded)
+  encoded <- gsub("/", "_", encoded)
+  encoded <- paste0("B64:", gsub("=+$", "", encoded))
+
+  result <- omopOhdsiResultsDS(
+    symbol, "cohort_count", order_by = encoded
+  )
+  expect_s3_class(result, "data.frame")
+  if (nrow(result) > 1L) {
+    expect_true(all(diff(result$cohort_id) <= 0))
+  }
+})
+
 test_that("ohdsiGetResults requires table membership in the selected tool", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))

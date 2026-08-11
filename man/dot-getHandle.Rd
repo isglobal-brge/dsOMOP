@@ -16,8 +16,8 @@ The OMOP CDM handle object.
 Looks up the server-side OMOP CDM handle object associated with a given
 resource symbol name. In DSLite (multi-server, single R process), each
 server's session environment holds its own handle, avoiding collisions.
-A package-global fallback exists only for internal/test handles registered
-explicitly with \code{.setHandle}; public initialization stores exclusively
-in the session environment.
+Rock sessions use the package-local registry because each R connection has
+its own process, while DSLite handles remain in their per-server session
+environment because multiple DSLite servers share one R process.
 }
 \keyword{internal}

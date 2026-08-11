@@ -981,6 +981,168 @@ test_that("plan provenance admits fixed longitudinal shapes only", {
   ))
 })
 
+test_that("derived-only person-level age plans carry DP provenance", {
+  .dp_local_state()
+  plan <- list(
+    outputs = list(ages = list(
+      type = "person_level",
+      tables = list(),
+      representation = "features",
+      derived_columns = list(age_at_2025 = list(
+        kind = "age", name = "age_at_2025", reference = "today",
+        reference_date = "2025-07-01"
+      )),
+      population_id = "base",
+      options = list()
+    )),
+    populations = list(base = list(
+      id = "base", label = "All Persons", kind = "criteria"
+    )),
+    options = list(
+      translate_concepts = TRUE, block_sensitive = TRUE,
+      factor_concepts = TRUE
+    ),
+    cohort = NULL,
+    scope = NULL
+  )
+
+  expect_true(.dsomopDpPlanOutputPersonLocal(plan, "ages", list()))
+  expect_silent(.dsomopDpPlanLineageSemantic(
+    plan, "ages", .dsomopDpPolicy()
+  ))
+  expect_error(
+    .dsomopDpPersonTableSequence(character()),
+    "requires named source tables"
+  )
+
+  handle <- create_test_handle()
+  identity <- "test://resource-scoped/derived-only-age"
+  key <- .testPseudonymKey("derived-only-age")
+  resource_id <- substr(
+    as.character(openssl::sha256(charToRaw(identity))), 1L, 32L
+  )
+  pseudonym_environment <- paste(format(key), collapse = "")
+  names(pseudonym_environment) <- paste0(
+    "DSOMOP_PSEUDONYM_KEY_", resource_id
+  )
+  withr::local_envvar(c(
+    pseudonym_environment,
+    DSOMOP_PSEUDONYM_PROVIDER = "scoped",
+    DSOMOP_PSEUDONYM_EPOCH = "1",
+    DSOMOP_PSEUDONYM_REQUIRE_EXISTING = "false",
+    DSOMOP_PSEUDONYM_ROOT = "",
+    DSOMOP_PSEUDONYM_KEY = ""
+  ))
+  handle$person_key_identity <- identity
+  handle$person_key_id <- .personKeyId(key)
+  handle$person_key_provider <- "scoped"
+  handle$person_key_epoch <- 1L
+  handle$person_key_require_existing <- FALSE
+  handle$person_key_contract_version <- 1L
+  handle_symbol <- paste0("dp_derived_age_", Sys.getpid())
+  .setHandle(handle_symbol, handle)
+  on.exit(.removeHandle(handle_symbol), add = TRUE)
+
+  assign_environment <- new.env(parent = environment())
+  assign_environment$handle_symbol <- handle_symbol
+  assign_environment$plan <- plan
+  eval(quote(omopPlanExecuteDS(
+    handle_symbol, plan, list(ages = "D_ages_diag")
+  )), envir = assign_environment)
+  sealed <- get("D_ages_diag", envir = assign_environment, inherits = FALSE)
+  expect_silent(.dsomopDpVerifyPersonLocal(sealed))
+
+  spec <- list(
+    statistic = "numeric_histogram", variable = "age_at_2025",
+    breaks = c(0, 30, 40, 50, 100), reducer = "mean",
+    max_contributions = 1L
+  )
+  first <- omopDpReleaseDS(sealed, spec)
+  second <- omopDpReleaseDS(sealed, spec)
+  expect_identical(first, second)
+  expect_identical(first$statistic, "numeric_histogram")
+
+  changed <- plan
+  changed$outputs$ages$derived_columns$age_at_2025$reference_date <-
+    "2024-07-01"
+  changed_sealed <- .dp_seal_plan(sealed, changed, "ages")
+  expect_false(identical(.dp_lineage(sealed), .dp_lineage(changed_sealed)))
+})
+
+test_that("derived column lineage uses a closed canonical contract", {
+  .dp_local_state()
+  semantic_key <- function(specs) {
+    .dsomopDpLineageKey(.dsomopDpPlanOutputSemantic(list(
+      type = "person_level",
+      tables = list(),
+      derived_columns = specs,
+      filters = list()
+    )))
+  }
+  age <- list(
+    kind = "age", name = "age_at_2025", reference = "today",
+    reference_date = "2025-07-01"
+  )
+  reordered <- list(
+    reference_date = as.Date("2025-07-01"), reference = "today",
+    name = "age_at_2025", kind = "age"
+  )
+
+  expect_identical(semantic_key(list(age)), semantic_key(list(reordered)))
+  expect_identical(
+    semantic_key(list(public_label = age)),
+    semantic_key(list(age))
+  )
+  fixed_index <- age
+  fixed_index$reference <- "index"
+  expect_identical(semantic_key(list(age)), semantic_key(list(fixed_index)))
+  omitted_reference <- age[c("kind", "name", "reference_date")]
+  expect_identical(
+    semantic_key(list(age)), semantic_key(list(omitted_reference))
+  )
+  same_year <- age
+  same_year$reference_date <- "2025-12-31"
+  expect_identical(semantic_key(list(age)), semantic_key(list(same_year)))
+  chads_start <- list(
+    kind = "chads2", name = "chads2", reference_date = "2025-01-01"
+  )
+  chads_end <- list(
+    reference_date = "2025-12-31", name = "chads2", kind = "chads2"
+  )
+  expect_identical(
+    semantic_key(list(chads_start)), semantic_key(list(chads_end))
+  )
+  expect_identical(
+    semantic_key(list(list(
+      kind = "obs_duration", name = "observed_days"
+    ))),
+    semantic_key(list(list(
+      name = "observed_days", period_policy = "total",
+      kind = "obs_duration"
+    )))
+  )
+
+  with_nonce <- age
+  with_nonce$ignored_nonce <- "reroll"
+  expect_error(
+    semantic_key(list(with_nonce)),
+    "Unknown field.*ignored_nonce"
+  )
+  expect_error(
+    semantic_key(list(age, age)),
+    "names must be unique"
+  )
+  reserved <- age
+  reserved$name <- "person_id"
+  expect_error(semantic_key(list(reserved)), "reserved for row identity")
+
+  changed_date <- age
+  changed_date$reference_date <- "2024-07-01"
+  expect_false(identical(
+    semantic_key(list(age)), semantic_key(list(changed_date))
+  ))
+})
+
 test_that("plan lineage distinguishes persistent cohort definition ids", {
   .dp_local_state()
   policy <- .dsomopDpPolicy()
