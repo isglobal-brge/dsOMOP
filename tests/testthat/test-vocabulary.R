@@ -9,6 +9,18 @@ test_that("concept search finds concepts by name", {
   expect_true(201820 %in% result$concept_id)
 })
 
+test_that("concept search tolerates punctuation and word order", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+
+  flexible <- .vocabSearchConcepts(handle, "infarction / myocardial-acute")
+  expect_true(312327 %in% flexible$concept_id)
+
+  wildcard <- .vocabSearchConcepts(handle, "acute%infarction")
+  expect_true(312327 %in% wildcard$concept_id)
+})
+
 test_that("concept search filters by domain", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))

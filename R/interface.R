@@ -1427,8 +1427,9 @@ omopValueCountsDS <- function(omop_symbol, table, column,
 #' a reference-data (vocabulary) reader and is not disclosure-gated.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
-#' @param pattern Character; search pattern (case-insensitive substring match);
-#'   NULL or "" to search by \code{concept_id} only
+#' @param pattern Character; case-insensitive search text. Spaces and
+#'   punctuation separate required name tokens; \% and \code{_} retain
+#'   SQL LIKE wildcard semantics. NULL or "" searches by \code{concept_id} only
 #' @param domain Character; domain filter (e.g., "Condition", "Drug")
 #' @param vocabulary Character; vocabulary filter (e.g., "SNOMED", "RxNorm")
 #' @param standard_only Logical; only standard concepts (ignored when

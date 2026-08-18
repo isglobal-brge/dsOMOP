@@ -67,10 +67,17 @@
     .validateString(pattern)
   }
   if (!is.null(pattern) && nzchar(pattern)) {
-    where <- c(where, paste0(
+    # Ordinary searches are token-based, so punctuation and whitespace do not
+    # have to match the vocabulary spelling. Explicit SQL LIKE wildcards keep
+    # their documented literal-pattern behaviour.
+    tokens <- if (grepl("[%_]", pattern)) pattern else {
+      unique(regmatches(pattern, gregexpr("[[:alnum:]]+", pattern))[[1L]])
+    }
+    if (length(tokens) == 0L) tokens <- pattern
+    where <- c(where, vapply(tokens, function(token) paste0(
       "LOWER(concept_name) LIKE LOWER(",
-      .quoteLiteral(paste0("%", pattern, "%"), handle), ")"
-    ))
+      .quoteLiteral(paste0("%", token, "%"), handle), ")"
+    ), character(1L)))
   }
 
   if (!is.null(concept_id) && length(concept_id) > 0L) {

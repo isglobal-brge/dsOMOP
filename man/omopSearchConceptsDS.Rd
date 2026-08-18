@@ -19,8 +19,9 @@ omopSearchConceptsDS(
 \arguments{
 \item{omop_symbol}{Character; the OMOP handle symbol}
 
-\item{pattern}{Character; search pattern (case-insensitive substring match);
-NULL or "" to search by \code{concept_id} only}
+\item{pattern}{Character; case-insensitive search text. Spaces and
+punctuation separate required name tokens; \% and \code{_} retain
+SQL LIKE wildcard semantics. NULL or "" searches by \code{concept_id} only}
 
 \item{domain}{Character; domain filter (e.g., "Condition", "Drug")}
 
