@@ -20,10 +20,53 @@ Client baseline: `d21ed5cfa95cf417be1972d4257982b66a94a1c0`.
   vignette, affected checked-in website passages and NEWS.md. No client API or
   argument defaults needed changing. No matching default-off Studio text found.
 
-The subsequent report-only commit records this file; its identifier is available
-in the branch log and is not embedded recursively in its own contents.
+Previous report-only commit: `0734aea8c57eb8cc837f44dc4d25cd883e56d60c`.
 
-## Validation
+Reviewer follow-up:
+
+- `1104dc995cfddbe74c56b446f8f2c21d2b78b38d` — source multi-row and metadata
+  fallback derivation, process-wide warning, explicit-snapshot bypass and tests.
+- `bce6eba3ef2de8d91ced13268e9f4f5304eac31d` — fallback precedence and privacy
+  rationale in README, disclosure controls and NEWS.
+
+The final report-only commit is recorded in branch history, avoiding a recursive
+self-reference. Client remains unchanged at the accepted commit above.
+
+## Reviewer follow-up validation
+
+| Run | Test blocks | Passed expectations | Failures/errors | Warnings/skips |
+| --- | ---: | ---: | ---: | ---: |
+| Follow-up baseline DP file | 49 | 373 | 0 / 0 | 0 / 0 |
+| Follow-up final DP file | 52 | 393 | 0 / 0 | 0 / 0 |
+| Follow-up full server source suite | 1,250 | 7,477 | 0 / 0 | 0 / 3 |
+| Follow-up clean-archive installed suite | — | 7,412 | 0 / 0 | 0 / 26 |
+
+`R CMD build --no-build-vignettes .` succeeded, followed by
+`_R_CHECK_FORCE_SUGGESTS_=false R CMD check --no-manual --output=.dp-followup-check dsOMOP_2.6.0.tar.gz`:
+**Status: OK**, zero errors, warnings or notes, including installed-package tests.
+The three external-vendor source skips and 26 installed-package skips have the
+same reasons as the original delivery below. Source expectation count increased
+by 20 (7,457 → 7,477); installed expectation count by 20 (7,392 → 7,412).
+Archive SHA-256:
+`2ee2edd10c7be3d43b85006e7655322dbdbcb3999dbf8832792622ba3172a7e9`.
+The source and installed full suites each ran once for this follow-up.
+
+The targeted run verifies exact tags for single/multi/fallback/resource-only
+hashes, source/vocabulary row-order invariance, explicit configuration (including
+snapshot-only overrides), missing/empty/incomplete/blank source data, unavailable
+vocabulary, warning-once behavior across runtime restarts/resources, separation
+of resource snapshots and policy-change rejection when vocabulary changes.
+Existing default-on, opt-out, conflict, persistent-root and DSLite tests pass.
+
+Evidence: `.dp-followup-before.{log,rds}`, `.dp-followup-targeted.{log,rds}`,
+`.dp-followup-full.{log,rds}`, `.dp-followup-build.log`,
+`.dp-followup-check.log`, `.dp-followup-check/dsOMOP.Rcheck`.
+The clean archive excludes all `.dp-*` artifacts and this report. Roxygen help
+was regenerated. No mechanism, epsilon/delta, cap, sticky catalogue or client API
+changes were needed. The accepted client documentation remains accurate at its
+existing level of detail; no further client change/version bump was made.
+
+## Original delivery validation (historical)
 
 | Run | Test blocks | Passed expectations | Failures/errors | Warnings/skips |
 | --- | ---: | ---: | ---: | ---: |
@@ -92,14 +135,32 @@ and temporary schemas do not enter this identity. Known default ports are
 normalized. Host aliases are not resolved by DNS. In-memory databases and
 unavailable/ambiguous coordinates require explicit custodial identifiers.
 
-The snapshot is `cdm_` plus SHA-256 of canonical JSON tagged
-`dsomop-dp-cdm-snapshot-v1`, containing that resource hash and exactly one
-`cdm_source` row's **cdm_source_name, cdm_release_date, cdm_version,
-vocabulary_version**. Values are converted to text; each field must exist and be
-nonmissing/nonblank. Zero/multiple rows, missing tables/fields, unreadable metadata
-and failed identity resolution fail closed with an error naming both
-`dsomop.dp.domain` and `dsomop.dp.snapshot_id`. Each explicit identifier takes
-precedence independently; configuring both avoids metadata derivation entirely.
+Snapshot precedence is explicit → complete `cdm_source` → vocabulary fallback
+→ resource-only fallback. The snapshot is `cdm_` plus SHA-256 of canonical JSON
+containing a protocol tag, resource hash and metadata. A single complete source
+row preserves **exactly** `dsomop-dp-cdm-snapshot-v1` and the four text fields
+**cdm_source_name, cdm_release_date, cdm_version, vocabulary_version**. Multiple
+complete rows use `dsomop-dp-cdm-snapshot-multi-v1`; all rows (including duplicates)
+are ordered by their canonical JSON bytes using radix sorting.
+
+Missing/unreadable/empty source tables or any absent, NA or blank required field
+fall back to all `vocabulary_id`/`vocabulary_version` pairs, including `None`,
+with the same canonical sorting, tagged `dsomop-dp-cdm-snapshot-fallback-v1`.
+Vocabulary is read from the handle's vocabulary schema. If it too is unavailable,
+empty or incomplete, metadata is null and the tag is
+`dsomop-dp-cdm-snapshot-resource-only-v1`. Resource identity remains mandatory;
+there is no shared generic domain. Unresolvable/in-memory coordinates and
+conflicting option/environment values still fail closed.
+
+Each explicit identifier wins independently. An explicit snapshot skips metadata
+reads and fallback warnings even when the domain must be derived. Configuring
+both identifiers skips derivation entirely. Fallback emits one warning per R
+process, held in package state independently of DSLite session/runtime state,
+naming both explicit options and requiring an epoch bump after every reload.
+The warning uses R's standard warning/log channel. A fallback snapshot cannot
+track data reloads: unchanged snapshot labels permit comparisons/differencing
+across reloads. Epoch rotation remains mandatory; it does not create a cumulative
+privacy budget or eliminate composition of distinct releases.
 
 Different resource domains select different HMAC subkeys under the same persistent
 root, separating semantic IDs, provenance, protected fingerprints and noise.
@@ -126,10 +187,10 @@ so the client's existing duplicate-node pooling protection is unchanged.
 
 ## Author release decisions and deployment review
 
-- Confirm that the four requested metadata fields are the intended versioned
-  fingerprint contract. This implementation requires all four, and rejects
-  multiple cdm_source rows. Sites with incomplete metadata must configure both
-  identifiers explicitly; this is intentionally fail closed.
+- The author-decided fallback is implemented; no fingerprint decision is pending.
+  This implementation uses all vocabulary pairs (including `None`), not only
+  `None`. Single-row fingerprints remain unchanged. Reviewers can verify exact
+  protocol tags through the hash-contract tests.
 - Mount persistent private state for the default file provider, including across
   container replacement and replicas. The existing injected-root alternative is
   unchanged. Test ephemeral-state permission does not weaken identity checks.
