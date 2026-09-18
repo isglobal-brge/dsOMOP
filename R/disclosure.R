@@ -121,7 +121,8 @@
 #' @return Named list of disclosure thresholds and permissions
 #' @keywords internal
 .omopDisclosureSettings <- function() {
-  dp_status <- .pkg_state$dp_status
+  state <- .dsomopDpState()
+  dp_status <- state$dp_status
   dp_ready <- is.list(dp_status) && isTRUE(dp_status$ready)
   age_range_min <- as.numeric(
     getOption("dsomop.nfilter.age_range",

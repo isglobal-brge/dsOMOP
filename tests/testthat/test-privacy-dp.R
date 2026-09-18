@@ -171,7 +171,7 @@ test_that("DP bootstrap settings can be supplied before namespace load", {
   withr::local_options(list(
     dsomop.dp.enabled = NULL,
     dsomop.dp.release_epsilon = NULL,
-    default.dsomop.dp.enabled = FALSE,
+    default.dsomop.dp.enabled = TRUE,
     default.dsomop.dp.release_epsilon = 0.1
   ))
   dp_environment <- stats::setNames(
@@ -2226,4 +2226,151 @@ test_that("runtime rejects late enablement changes", {
   expect_silent(.dsomopDpEnsureRuntime())
   withr::local_options(list(dsomop.dp.enabled = TRUE))
   expect_error(.dsomopDpEnabled(), "changed during this R session")
+})
+
+.dp_derived_handle <- function(database = "warehouse", source = TRUE) {
+  handle <- if (source) create_test_handle() else create_test_handle_no_source()
+  handle$resource_client <- list(getParsed = function() list(
+    dbms = "postgresql", host = "DB.EXAMPLE", port = 5432L,
+    database = database, user = "ignored", password = "ignored"
+  ), getConnection = function() handle$conn)
+  if (source) {
+    DBI::dbExecute(handle$conn, "ALTER TABLE cdm_source ADD COLUMN cdm_release_date TEXT")
+    DBI::dbExecute(handle$conn, "UPDATE cdm_source SET cdm_release_date = '2026-08-01'")
+  }
+  handle
+}
+
+test_that("DP defaults on with option and environment opt-outs intact", {
+  .dp_local_state(enabled = NULL)
+  withr::local_options(list(default.dsomop.dp.enabled = NULL))
+  expect_true(.dsomopDpEnabled())
+  withr::with_options(list(dsomop.dp.enabled = FALSE), {
+    expect_false(.dsomopDpEnabled())
+  })
+  withr::with_envvar(c(DSOMOP_DP_ENABLED = "0"), {
+    expect_false(.dsomopDpEnabled())
+  })
+})
+
+test_that("derived resource policies separate keys and reject live changes", {
+  .dp_local_state()
+  withr::local_options(list(dsomop.dp.domain = "", dsomop.dp.snapshot_id = ""))
+  first <- .dp_derived_handle("one")
+  second <- .dp_derived_handle("two")
+  on.exit({cleanup_handle(first); cleanup_handle(second)}, add = TRUE)
+  expect_silent(.dsomopDpEnsureRuntime(first))
+  policy <- .dsomopDpPolicy()
+  expect_match(policy$domain, "^resource_[0-9a-f]{64}$")
+  expect_match(policy$snapshot_id, "^cdm_[0-9a-f]{64}$")
+  expect_error(.dsomopDpEnsureRuntime(second), "policy changed")
+  expect_identical(.dsomopDpPolicy()$policy_hash, policy$policy_hash)
+  .dp_restart_runtime()
+  .dsomopDpEnsureRuntime(second)
+  other <- .dsomopDpPolicy()
+  expect_false(identical(policy$domain, other$domain))
+  expect_false(identical(policy$keys$noise, other$keys$noise))
+  expect_false(identical(.dsomopDpSemanticId(policy, list(query = "same")),
+                         .dsomopDpSemanticId(other, list(query = "same"))))
+  DBI::dbExecute(second$conn, "UPDATE cdm_source SET vocabulary_version = 'next'")
+  expect_error(.dsomopDpPolicy(), "policy changed")
+})
+
+test_that("explicit identifiers take precedence and incomplete metadata fails closed", {
+  .dp_local_state()
+  handle <- .dp_derived_handle(source = FALSE)
+  on.exit(cleanup_handle(handle), add = TRUE)
+  expect_silent(.dsomopDpEnsureRuntime(handle))
+  expect_identical(.dsomopDpPolicy()$domain, "dsomop-dp-test")
+  expect_identical(.dsomopDpPolicy()$snapshot_id, "etl-2026-08-01")
+  .dp_restart_runtime()
+  withr::local_options(list(dsomop.dp.domain = "", dsomop.dp.snapshot_id = ""))
+  expect_error(.dsomopDpEnsureRuntime(handle),
+               "cdm_source.*dsomop.dp.domain and dsomop.dp.snapshot_id")
+  expect_null(.pkg_state$dp_runtime)
+})
+
+test_that("derived identifiers respect partial overrides and conflicts", {
+  .dp_local_state()
+  handle <- .dp_derived_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  withr::local_options(list(dsomop.dp.snapshot_id = ""))
+  .dsomopDpEnsureRuntime(handle)
+  expect_identical(.dsomopDpPolicy()$domain, "dsomop-dp-test")
+  expect_identical(.dsomopDpPolicy()$snapshot_id,
+                   .dsomopDpDerivedIdentity(handle)$snapshot_id)
+  withr::with_envvar(c(DSOMOP_DP_DOMAIN = "conflict"), {
+    expect_error(.dsomopDpPolicy(), "Conflicting DP option")
+  })
+  withr::with_envvar(c(DSOMOP_DP_SNAPSHOT_ID = "conflict"), {
+    expect_error(.dsomopDpPolicy(), "Conflicting DP option")
+  })
+})
+
+test_that("DSLite sessions isolate derived policies under a shared persistent root", {
+  .dp_local_state()
+  withr::local_options(list(dsomop.dp.domain = "", dsomop.dp.snapshot_id = ""))
+  handles <- list(.dp_derived_handle("one"), .dp_derived_handle("two"))
+  on.exit(lapply(handles, cleanup_handle), add = TRUE)
+  old_sessions <- .pkg_state$dp_sessions
+  on.exit(.pkg_state$dp_sessions <- old_sessions, add = TRUE)
+  .pkg_state$dp_sessions <- NULL
+  sessions <- lapply(1:2, function(i) {
+    env <- new.env()
+    attr(env, "name") <- sprintf("DSLiteEnv_%04d", i)
+    env$handle <- handles[[i]]
+    env
+  })
+  initialize <- function(env) evalq({
+    .dsomopDpEnsureRuntime(handle)
+    .dsomopDpPolicy()
+  }, env)
+  first <- initialize(sessions[[1]])
+  second <- initialize(sessions[[2]])
+  expect_false(identical(first$domain, second$domain))
+  expect_identical(first$noise_root$key_id, second$noise_root$key_id)
+  expect_false(identical(first$keys$noise, second$keys$noise))
+  expect_identical(initialize(sessions[[1]])$policy_hash, first$policy_hash)
+})
+
+test_that("canonical coordinates ignore credentials and normalize default ports", {
+  .dp_local_state()
+  handle <- .dp_derived_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  original <- .dsomopDpDerivedIdentity(handle)
+  handle$resource_client$getParsed <- function() list(
+    dbms = "postgresql", host = "db.example", database = "warehouse",
+    password = "changed", user = "different", sslmode = "verify-full"
+  )
+  expect_identical(.dsomopDpDerivedIdentity(handle), original)
+  handle$vocab_schema <- "different_dataset"
+  expect_false(identical(.dsomopDpDerivedIdentity(handle)$domain,
+                         original$domain))
+  handle$vocab_schema <- NULL
+  DBI::dbExecute(handle$conn, "UPDATE cdm_source SET cdm_release_date = NULL")
+  expect_error(.dsomopDpDerivedIdentity(handle), "cdm_source")
+})
+
+test_that("default-on initialization derives identity from a real SQLite resource", {
+  .dp_local_state(enabled = NULL)
+  withr::local_options(list(default.dsomop.dp.enabled = NULL,
+                            dsomop.dp.domain = "", dsomop.dp.snapshot_id = ""))
+  database <- withr::local_tempfile(fileext = ".sqlite")
+  conn <- create_test_omop_db(database)
+  DBI::dbExecute(conn, "ALTER TABLE cdm_source ADD COLUMN cdm_release_date TEXT")
+  DBI::dbExecute(conn, "UPDATE cdm_source SET cdm_release_date = '2026-08-01'")
+  DBI::dbDisconnect(conn)
+  resource <- resourcer::newResource(
+    name = "default_dp", url = paste0("omop+dbi:sqlite://", database),
+    format = "omop"
+  )
+  session <- new.env()
+  session$default_dp <- OMOPResourceClient$new(resource)
+  evalq(omopInitDS("default_dp"), session)
+  handle <- session$.dsomop_handle_default_dp
+  on.exit(.closeHandle(handle), add = TRUE)
+  expect_true(omopDpStatusDS()$enabled)
+  expect_true(omopDpStatusDS()$ready)
+  expect_match(.dsomopDpPolicy()$domain, "^resource_")
+  expect_gt(nrow(omopQueryLibraryStickyCatalogDS()), 0L)
 })

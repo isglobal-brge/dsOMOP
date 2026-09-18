@@ -592,13 +592,6 @@ omopInitDS <- function(resource_symbol,
     invisible(TRUE)
   }
 
-  # This is the first backend-independent point at which a real dsOMOP request
-  # is known to be running and DataSHIELD profile options have been applied.
-  # A DP-disabled service creates no privacy key. When sticky releases are
-  # enabled, initialize or validate their single persistent root now so
-  # deployment faults surface before the first protected release.
-  .dsomopDpEnsureRuntime()
-
   # DataSHIELD backends may expose a resolved ResourceClient or the raw
   # resource object. Handle both forms.
   if (inherits(resolved, "ResourceClient")) {
@@ -649,6 +642,8 @@ omopInitDS <- function(resource_symbol,
     stop(e)
   }
 
+  # Resolve metadata defaults only after connection, with cleanup on failure.
+  tryCatch(.dsomopDpEnsureRuntime(handle), error = abort_initialization)
   tryCatch(.buildBlueprint(handle), error = abort_initialization)
 
   # DSLite servers share one R process, so handles stay in the calling server

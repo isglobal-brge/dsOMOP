@@ -118,6 +118,16 @@
   invisible(TRUE)
 }
 
+#' Read custodial DP options
+#'
+#' Since 2.6.0, the DP release channel is enabled by default. Explicit options
+#' and DSOMOP_DP_* environment values must agree. Set dsomop.dp.enabled = FALSE
+#' or DSOMOP_DP_ENABLED=0 to opt out. Empty domain/snapshot defaults are derived
+#' from a connected resource by .dsomopDpPolicyConfig().
+#' @param name DP setting name without its option prefix.
+#' @param default Fallback when no custodial setting is present.
+#' @return The configured setting or fallback.
+#' @keywords internal
 .dsomopDpOption <- function(name, default = NULL) {
   option <- paste0("dsomop.dp.", name)
   configured <- getOption(option, NULL)
@@ -194,8 +204,9 @@
 }
 
 .dsomopDpEnabled <- function() {
-  enabled <- .dsomopDpBoolean(.dsomopDpOption("enabled", FALSE), "enabled")
-  runtime <- .pkg_state$dp_runtime
+  state <- .dsomopDpState()
+  enabled <- .dsomopDpBoolean(.dsomopDpOption("enabled", TRUE), "enabled")
+  runtime <- state$dp_runtime
   if (is.list(runtime) && !identical(runtime$enabled, enabled)) {
     stop("DP enablement changed during this R session; restart the session ",
          "after changing server privacy configuration.", call. = FALSE)
@@ -255,7 +266,105 @@
   )))
 }
 
+# Keep DSLite's independent server sessions separate within its shared process.
+# Secrets remain in package-local state, never in a serializable OMOP handle.
+.dsomopDpState <- function() {
+  for (frame in rev(sys.frames())) {
+    name <- attr(frame, "name", exact = TRUE)
+    if (is.character(name) && length(name) == 1L && !is.na(name) &&
+        grepl("^DSLiteEnv_[0-9]{4}$", name)) {
+      if (is.null(.pkg_state$dp_sessions)) {
+        .pkg_state$dp_sessions <- new.env(parent = emptyenv())
+      }
+      if (is.null(.pkg_state$dp_sessions[[name]])) {
+        .pkg_state$dp_sessions[[name]] <- new.env(parent = emptyenv())
+      }
+      return(.pkg_state$dp_sessions[[name]])
+    }
+  }
+  .pkg_state
+}
+
+.dsomopDpDerivedIdentity <- function(handle) {
+  unavailable <- function() {
+    stop("Cannot derive DP identity from the connected resource and cdm_source; ",
+         "configure dsomop.dp.domain and dsomop.dp.snapshot_id explicitly ",
+         "or provide complete cdm_source metadata.", call. = FALSE)
+  }
+  if (is.null(handle)) unavailable()
+  # Only database coordinates are admitted; URL credentials, user names and
+  # connection/security options cannot enter public hashes or rotate noise.
+  identity <- tryCatch({
+    parsed <- handle$resource_client$getParsed()
+    database <- parsed$database
+    if (!is.character(database) || length(database) != 1L ||
+        is.na(database) || !nzchar(database)) stop("Missing database")
+    dialect <- .normalizeDBMS(parsed$dbms)
+    if (dialect %in% c("sqlite", "duckdb")) {
+      if (database == ":memory:") stop("No persistent database identity")
+      database <- normalizePath(path.expand(database), winslash = "/",
+                                mustWork = TRUE)
+    }
+    host <- tolower(parsed$host %||% "")
+    if (grepl("[@/?#]", host) ||
+        (!dialect %in% c("sqlite", "duckdb") && !nzchar(host))) {
+      stop("Ambiguous database host")
+    }
+    default_ports <- c(postgresql = 5432L, redshift = 5439L,
+                       mysql = 3306L, mariadb = 3306L, sqlserver = 1433L,
+                       synapse = 1433L, pdw = 1433L, oracle = 1521L,
+                       snowflake = 443L)
+    port <- parsed$port
+    if (is.null(port) && dialect %in% names(default_ports)) {
+      port <- unname(default_ports[dialect])
+    }
+    schema <- function(value) {
+      if (dialect == "sqlite") "" else value %||% ""
+    }
+    list(protocol = "dsomop-dp-resource-v1", dbms = dialect,
+         host = host, port = port, database = database,
+         cdm_schema = schema(handle$cdm_schema),
+         vocabulary_schema = schema(handle$vocab_schema))
+  }, error = function(e) NULL)
+  if (is.null(identity)) unavailable()
+  resource_id <- .dsomopDpSha256(.dsomopDpCanonicalJson(identity))
+  metadata <- tryCatch({
+    fields <- c("cdm_source_name", "cdm_release_date", "cdm_version",
+                "vocabulary_version")
+    sql <- .renderSql(handle, "SELECT TOP 2 * FROM @qualified",
+                      qualified = .qualifyTable(handle, "cdm_source"))
+    row <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql))
+    names(row) <- tolower(names(row))
+    if (nrow(row) != 1L || !all(fields %in% names(row))) stop("Invalid metadata")
+    values <- lapply(row[fields], function(value) {
+      value <- as.character(value)
+      if (length(value) != 1L || is.na(value) || !nzchar(trimws(value))) {
+        stop("Missing metadata")
+      }
+      enc2utf8(value)
+    })
+    values
+  }, error = function(e) NULL)
+  if (is.null(metadata)) unavailable()
+  list(domain = paste0("resource_", resource_id),
+       snapshot_id = paste0("cdm_", .dsomopDpSha256(.dsomopDpCanonicalJson(list(
+         protocol = "dsomop-dp-cdm-snapshot-v1", resource = resource_id,
+         metadata = metadata
+       )))))
+}
+
+#' Resolve the server-owned DP release policy
+#'
+#' Missing domain and snapshot_id values are SHA-256 fingerprints of canonical
+#' resource coordinates and cdm_source metadata (cdm_source_name,
+#' cdm_release_date, cdm_version, vocabulary_version). Explicit values win.
+#' Missing metadata fails closed: configure both dsomop.dp.domain and
+#' dsomop.dp.snapshot_id. Bump dsomop.dp.privacy_epoch when data change without
+#' metadata changes. The default file noise root requires a persistent private
+#' DSOMOP_STATE_DIR (or dsomop.state_dir); ephemeral state is test-only.
+#' @keywords internal
 .dsomopDpPolicyConfig <- function() {
+  state <- .dsomopDpState()
   enabled <- .dsomopDpEnabled()
   if (!enabled) {
     return(list(
@@ -263,13 +372,18 @@
       mechanism = .DSOMOP_DP_MECHANISM
     ))
   }
-  domain <- .dsomopDpString(.dsomopDpOption("domain", ""), "domain")
+  domain <- .dsomopDpString(.dsomopDpOption("domain", ""), "domain",
+                            required = FALSE)
+  snapshot_id <- .dsomopDpString(.dsomopDpOption("snapshot_id", ""),
+                                 "snapshot_id", required = FALSE)
+  if (!nzchar(domain) || !nzchar(snapshot_id)) {
+    derived <- .dsomopDpDerivedIdentity(state$dp_handle)
+    if (!nzchar(domain)) domain <- derived$domain
+    if (!nzchar(snapshot_id)) snapshot_id <- derived$snapshot_id
+  }
   if (!grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", domain)) {
     stop("dsomop.dp.domain contains unsupported characters.", call. = FALSE)
   }
-  snapshot_id <- .dsomopDpString(
-    .dsomopDpOption("snapshot_id", ""), "snapshot_id"
-  )
   if (!grepl("^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,255}$", snapshot_id)) {
     stop("dsomop.dp.snapshot_id contains unsupported characters.",
          call. = FALSE)
@@ -329,8 +443,9 @@
 }
 
 .dsomopDpPolicy <- function(require_enabled = TRUE) {
-  if (!is.list(.pkg_state$dp_runtime) &&
-      !isTRUE(.pkg_state$dp_bootstrap_in_progress)) {
+  state <- .dsomopDpState()
+  if (!is.list(state$dp_runtime) &&
+      !isTRUE(state$dp_bootstrap_in_progress)) {
     .dsomopDpEnsureRuntime()
   }
   config <- .dsomopDpPolicyConfig()
@@ -340,7 +455,7 @@
   }
   if (!isTRUE(config$enabled)) return(config)
 
-  runtime <- .pkg_state$dp_runtime
+  runtime <- state$dp_runtime
   if (is.list(runtime)) {
     if (!identical(runtime$policy_hash, config$policy_hash)) {
       stop("DP policy changed during this R session; restart the session after ",
@@ -360,7 +475,7 @@
                                 "protected-fingerprint/v1"),
     noise = .dsomopDpSubkey(root$key, config$domain, "noise/v1")
   )
-  .pkg_state$dp_runtime <- list(
+  state$dp_runtime <- list(
     enabled = TRUE, policy_hash = config$policy_hash, policy = config
   )
   config
@@ -570,24 +685,35 @@
 }
 
 .dsomopDpBootstrap <- function() {
+  state <- .dsomopDpState()
   .dsomopDpCanonicalSelfTest()
   status <- .dsomopDpPublicStatus(initialize = .dsomopDpEnabled())
   if (!isTRUE(status$enabled)) {
-    .pkg_state$dp_runtime <- list(enabled = FALSE)
+    state$dp_runtime <- list(enabled = FALSE)
   }
-  .pkg_state$dp_status <- status
+  state$dp_status <- status
   status
 }
 
-.dsomopDpEnsureRuntime <- function() {
-  if (is.list(.pkg_state$dp_runtime)) {
-    .dsomopDpEnabled()
-    return(invisible(.pkg_state$dp_status))
+.dsomopDpEnsureRuntime <- function(handle = NULL) {
+  state <- .dsomopDpState()
+  previous_handle <- state$dp_handle
+  committed <- FALSE
+  if (!is.null(handle)) state$dp_handle <- handle
+  on.exit({
+    if (!committed) state$dp_handle <- previous_handle
+  }, add = TRUE)
+  if (is.list(state$dp_runtime)) {
+    .dsomopDpPolicy(require_enabled = FALSE)
+    committed <- TRUE
+    return(invisible(state$dp_status))
   }
-  if (isTRUE(.pkg_state$dp_bootstrap_in_progress)) {
+  if (isTRUE(state$dp_bootstrap_in_progress)) {
     stop("Recursive DP service bootstrap was detected.", call. = FALSE)
   }
-  .pkg_state$dp_bootstrap_in_progress <- TRUE
-  on.exit(.pkg_state$dp_bootstrap_in_progress <- FALSE, add = TRUE)
-  invisible(.dsomopDpBootstrap())
+  state$dp_bootstrap_in_progress <- TRUE
+  on.exit(state$dp_bootstrap_in_progress <- FALSE, add = TRUE)
+  status <- .dsomopDpBootstrap()
+  committed <- TRUE
+  invisible(status)
 }

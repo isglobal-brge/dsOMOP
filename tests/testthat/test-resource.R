@@ -491,12 +491,12 @@ test_that("omopInitDS rejects an active resource symbol without touching it", {
   expect_false(created)
 })
 
-test_that("omopInitDS bootstraps privacy before creating a handle", {
+test_that("omopInitDS bootstraps privacy after connecting and before building the blueprint", {
   events <- character(0)
   new_handle <- new.env(parent = emptyenv())
   withr::local_envvar(ROCK_VERSION = NA_character_)
   local_mocked_bindings(
-    .dsomopDpEnsureRuntime = function() {
+    .dsomopDpEnsureRuntime = function(handle = NULL) {
       events <<- c(events, "privacy")
       invisible(NULL)
     },
@@ -523,7 +523,7 @@ test_that("omopInitDS bootstraps privacy before creating a handle", {
   }
 
   run()
-  expect_identical(events, c("privacy", "handle", "blueprint"))
+  expect_identical(events, c("handle", "privacy", "blueprint"))
   expect_false(exists(
     "handle_ready_resource", envir = .dsomop_env, inherits = FALSE
   ))
@@ -682,7 +682,7 @@ test_that("DSLite session isolation overrides inherited Rock environment", {
 test_that("two DSLite sessions can use the same resource symbol safely", {
   closed <- list()
   local_mocked_bindings(
-    .dsomopDpEnsureRuntime = function() invisible(NULL),
+    .dsomopDpEnsureRuntime = function(handle = NULL) invisible(NULL),
     .createHandle = function(resource_client, ...) resource_client$handle,
     .buildBlueprint = function(...) invisible(NULL),
     .closeHandle = function(handle) {
@@ -724,7 +724,7 @@ test_that("two DSLite sessions can use the same resource symbol safely", {
 test_that("persistent global-eval sessions retain local handles across calls", {
   handle <- new.env(parent = emptyenv())
   local_mocked_bindings(
-    .dsomopDpEnsureRuntime = function() invisible(NULL),
+    .dsomopDpEnsureRuntime = function(handle = NULL) invisible(NULL),
     .createHandle = function(...) handle,
     .buildBlueprint = function(...) invisible(NULL),
     .closeHandle = function(value) {
@@ -808,7 +808,7 @@ test_that("Rock retains a failed handle when cleanup cannot be proven", {
     }
   }, add = TRUE)
   local_mocked_bindings(
-    .dsomopDpEnsureRuntime = function() invisible(NULL),
+    .dsomopDpEnsureRuntime = function(handle = NULL) invisible(NULL),
     .createHandle = function(...) new_handle,
     .buildBlueprint = function(...) stop("blueprint failed"),
     .closeHandle = function(...) stop("close failed"),

@@ -3,6 +3,10 @@
 
 library(dsOMOP)
 
+# Legacy endpoint fixtures deliberately exercise the custodial DP opt-out.
+# DP tests install their own policy; default-on tests clear this fallback.
+options(default.dsomop.dp.enabled = FALSE)
+
 # Deterministic 32-byte material and its matching public contract for focused
 # tests of person-bearing outputs. Production code never receives this helper.
 .testPseudonymKey <- function(label = "dsomop-test-key") {

@@ -828,6 +828,7 @@
 #' @return Public DP service status.
 #' @export
 omopDpStatusDS <- function() {
+  state <- .dsomopDpState()
   .dsomopDpEnsureRuntime()
   status <- .dsomopDpPublicStatus(initialize = TRUE)
   status$supported_statistics <- .DSOMOP_DP_STATISTICS
@@ -835,7 +836,7 @@ omopDpStatusDS <- function() {
   status$person_local_provenance_required <- TRUE
   status$provenance_protocol <- .DSOMOP_DP_PROVENANCE_PROTOCOL
   status$ohdsi_querylibrary <- .dsomopDpQueryLibraryStatus()
-  .pkg_state$dp_status <- status
+  state$dp_status <- status
   status
 }
 
