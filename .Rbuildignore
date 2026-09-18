@@ -3,3 +3,5 @@
 ^LICENSE\.md$
 ^DATASHIELD$
 ^\.github$
+^\.dp-
+^STATUS_DP\.md$
