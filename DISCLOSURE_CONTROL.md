@@ -15,13 +15,31 @@ and effective CDM and vocabulary schemas. Credentials, transport settings,
 resource display names, results schemas and temporary schemas are excluded.
 SQLite's implicit and explicit `main` schema have the same identity.
 
-The snapshot is a separate SHA-256 fingerprint of that resource identity and
-exactly one `cdm_source` row's `cdm_source_name`, `cdm_release_date`, `cdm_version`
-and `vocabulary_version`, converted to text. All four fields must be present
-and non-empty. Missing, unreadable or ambiguous metadata, an in-memory database,
-or unavailable database coordinates fail closed with instructions to configure
-both identifiers. No generic shared fallback domain is used. Initialize the
-resource with `omopInitDS()` before calling DP status when using derived defaults.
+Snapshot precedence is **explicit configuration → complete `cdm_source` →
+fallback**. The snapshot hashes the resource identity and the source fields
+`cdm_source_name`, `cdm_release_date`, `cdm_version` and `vocabulary_version`,
+converted to text. One complete row retains the `dsomop-dp-cdm-snapshot-v1`
+contract; multiple complete rows are all canonically sorted and hashed under
+`dsomop-dp-cdm-snapshot-multi-v1`.
+
+Missing/unreadable tables, zero rows, or missing/blank fields fall back to all
+canonically sorted `vocabulary_id`/`vocabulary_version` pairs from `vocabulary`
+(including the `None` row), plus resource identity, under
+`dsomop-dp-cdm-snapshot-fallback-v1`. If vocabulary metadata is also unavailable
+or incomplete, resource identity alone is hashed under
+`dsomop-dp-cdm-snapshot-resource-only-v1`. Startup proceeds with one warning per
+R process, shared across DSLite sessions: custodians must bump
+`dsomop.dp.privacy_epoch` after **each data reload**, or configure
+`dsomop.dp.domain` and `dsomop.dp.snapshot_id` explicitly. A snapshot unchanged
+across data reloads lets an analyst difference releases across reloads; fallback
+metadata cannot automatically track those changes. Each explicit identifier
+wins independently, and an explicit snapshot skips metadata derivation.
+
+In-memory databases and unavailable/ambiguous resource coordinates still fail
+closed with instructions to configure both identifiers. Conflicting option and
+environment values still fail closed. No generic shared fallback domain is used.
+Initialize the resource with `omopInitDS()` before calling DP status when using
+derived defaults.
 
 The derived snapshot follows metadata, not every data edit. Custodians **must
 bump `dsomop.dp.privacy_epoch` / `DSOMOP_DP_PRIVACY_EPOCH` when data change without
@@ -35,7 +53,7 @@ A persistent private state directory is required for the default file-backed
 noise root: mount `DSOMOP_STATE_DIR` (or `dsomop.state_dir`) across restarts and
 replicas. The default `~/.dsomop` is suitable only when the home is persistent.
 `DSOMOP_TEST_ALLOW_EPHEMERAL_STATE=1` permits temporary paths in tests only; it
-does not supply a resource identity, metadata, or bypass policy checks.
+does not supply a resource identity or bypass policy checks.
 
 The mechanism remains person-bounded sticky discrete Laplace, with default
 release epsilon 0.1, maximum epsilon 8 and delta 0. Contribution and level caps
