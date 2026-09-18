@@ -10,9 +10,11 @@
 Missing domain and snapshot_id values are SHA-256 fingerprints of canonical
 resource coordinates and cdm_source metadata (cdm_source_name,
 cdm_release_date, cdm_version, vocabulary_version). Explicit values win.
-Missing metadata fails closed: configure both dsomop.dp.domain and
-dsomop.dp.snapshot_id. Bump dsomop.dp.privacy_epoch when data change without
-metadata changes. The default file noise root requires a persistent private
+Complete source rows are canonically sorted; incomplete or absent source
+metadata falls back to sorted vocabulary versions, then resource identity
+alone, with one warning per R session. Explicit domain/snapshot values win.
+Bump dsomop.dp.privacy_epoch after each fallback data reload or whenever data
+change without metadata changes. The default file noise root requires a persistent private
 DSOMOP_STATE_DIR (or dsomop.state_dir); ephemeral state is test-only.
 }
 \keyword{internal}

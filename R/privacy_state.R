@@ -285,11 +285,11 @@
   .pkg_state
 }
 
-.dsomopDpDerivedIdentity <- function(handle) {
+.dsomopDpDerivedIdentity <- function(handle, derive_snapshot = TRUE) {
   unavailable <- function() {
-    stop("Cannot derive DP identity from the connected resource and cdm_source; ",
+    stop("Cannot derive DP identity from the connected resource; ",
          "configure dsomop.dp.domain and dsomop.dp.snapshot_id explicitly ",
-         "or provide complete cdm_source metadata.", call. = FALSE)
+         "or provide unambiguous persistent resource coordinates.", call. = FALSE)
   }
   if (is.null(handle)) unavailable()
   # Only database coordinates are admitted; URL credentials, user names and
@@ -328,28 +328,51 @@
   }, error = function(e) NULL)
   if (is.null(identity)) unavailable()
   resource_id <- .dsomopDpSha256(.dsomopDpCanonicalJson(identity))
-  metadata <- tryCatch({
-    fields <- c("cdm_source_name", "cdm_release_date", "cdm_version",
-                "vocabulary_version")
-    sql <- .renderSql(handle, "SELECT TOP 2 * FROM @qualified",
-                      qualified = .qualifyTable(handle, "cdm_source"))
-    row <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql))
-    names(row) <- tolower(names(row))
-    if (nrow(row) != 1L || !all(fields %in% names(row))) stop("Invalid metadata")
-    values <- lapply(row[fields], function(value) {
+  domain <- paste0("resource_", resource_id)
+  if (!derive_snapshot) return(list(domain = domain))
+  read_rows <- function(table, fields) {
+    sql <- .renderSql(handle, "SELECT * FROM @qualified",
+                      qualified = .qualifyTable(handle, table, schema =
+                        if (table == "vocabulary") handle$vocab_schema else NULL))
+    rows <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql))
+    names(rows) <- tolower(names(rows))
+    if (!nrow(rows) || !all(fields %in% names(rows))) stop("Invalid metadata")
+    values <- lapply(rows[fields], function(value) {
       value <- as.character(value)
-      if (length(value) != 1L || is.na(value) || !nzchar(trimws(value))) {
-        stop("Missing metadata")
-      }
+      if (anyNA(value) || any(!nzchar(trimws(value)))) stop("Missing metadata")
       enc2utf8(value)
     })
-    values
-  }, error = function(e) NULL)
-  if (is.null(metadata)) unavailable()
-  list(domain = paste0("resource_", resource_id),
+    rows <- lapply(seq_len(nrow(rows)), function(i) lapply(values, `[`, i))
+    canonical <- vapply(rows, .dsomopDpCanonicalJson, character(1))
+    rows[order(canonical, method = "radix")]
+  }
+  metadata <- tryCatch(read_rows("cdm_source", c(
+    "cdm_source_name", "cdm_release_date", "cdm_version", "vocabulary_version"
+  )), error = function(e) NULL)
+  if (!is.null(metadata)) {
+    protocol <- if (length(metadata) == 1L) {
+      metadata <- metadata[[1L]]
+      "dsomop-dp-cdm-snapshot-v1"
+    } else "dsomop-dp-cdm-snapshot-multi-v1"
+  } else {
+    metadata <- tryCatch(read_rows("vocabulary", c(
+      "vocabulary_id", "vocabulary_version"
+    )), error = function(e) NULL)
+    protocol <- if (is.null(metadata)) {
+      "dsomop-dp-cdm-snapshot-resource-only-v1"
+    } else "dsomop-dp-cdm-snapshot-fallback-v1"
+    # Process-wide, including across DSLite sessions and runtime restarts.
+    if (!isTRUE(.pkg_state$dp_snapshot_fallback_warned)) {
+      .pkg_state$dp_snapshot_fallback_warned <- TRUE
+      warning("DP fallback snapshot cannot track data reloads; the custodian ",
+              "must bump dsomop.dp.privacy_epoch after each reload. ",
+              "Alternatively configure dsomop.dp.domain and ",
+              "dsomop.dp.snapshot_id explicitly.", call. = FALSE)
+    }
+  }
+  list(domain = domain,
        snapshot_id = paste0("cdm_", .dsomopDpSha256(.dsomopDpCanonicalJson(list(
-         protocol = "dsomop-dp-cdm-snapshot-v1", resource = resource_id,
-         metadata = metadata
+         protocol = protocol, resource = resource_id, metadata = metadata
        )))))
 }
 
@@ -358,9 +381,11 @@
 #' Missing domain and snapshot_id values are SHA-256 fingerprints of canonical
 #' resource coordinates and cdm_source metadata (cdm_source_name,
 #' cdm_release_date, cdm_version, vocabulary_version). Explicit values win.
-#' Missing metadata fails closed: configure both dsomop.dp.domain and
-#' dsomop.dp.snapshot_id. Bump dsomop.dp.privacy_epoch when data change without
-#' metadata changes. The default file noise root requires a persistent private
+#' Complete source rows are canonically sorted; incomplete or absent source
+#' metadata falls back to sorted vocabulary versions, then resource identity
+#' alone, with one warning per R session. Explicit domain/snapshot values win.
+#' Bump dsomop.dp.privacy_epoch after each fallback data reload or whenever data
+#' change without metadata changes. The default file noise root requires a persistent private
 #' DSOMOP_STATE_DIR (or dsomop.state_dir); ephemeral state is test-only.
 #' @keywords internal
 .dsomopDpPolicyConfig <- function() {
@@ -377,7 +402,8 @@
   snapshot_id <- .dsomopDpString(.dsomopDpOption("snapshot_id", ""),
                                  "snapshot_id", required = FALSE)
   if (!nzchar(domain) || !nzchar(snapshot_id)) {
-    derived <- .dsomopDpDerivedIdentity(state$dp_handle)
+    derived <- .dsomopDpDerivedIdentity(state$dp_handle,
+                                        derive_snapshot = !nzchar(snapshot_id))
     if (!nzchar(domain)) domain <- derived$domain
     if (!nzchar(snapshot_id)) snapshot_id <- derived$snapshot_id
   }

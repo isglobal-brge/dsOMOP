@@ -41,13 +41,16 @@
   previous_runtime <- list(
     status = .pkg_state$dp_status,
     runtime = .pkg_state$dp_runtime,
+    fallback_warned = .pkg_state$dp_snapshot_fallback_warned,
     in_progress = .pkg_state$dp_bootstrap_in_progress
   )
   withr::defer({
+    .pkg_state$dp_snapshot_fallback_warned <- previous_runtime$fallback_warned
     .pkg_state$dp_status <- previous_runtime$status
     .pkg_state$dp_runtime <- previous_runtime$runtime
     .pkg_state$dp_bootstrap_in_progress <- previous_runtime$in_progress
   }, envir = .local_envir)
+  .pkg_state$dp_snapshot_fallback_warned <- FALSE
   .pkg_state$dp_status <- NULL
   .pkg_state$dp_runtime <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
@@ -2276,7 +2279,7 @@ test_that("derived resource policies separate keys and reject live changes", {
   expect_error(.dsomopDpPolicy(), "policy changed")
 })
 
-test_that("explicit identifiers take precedence and incomplete metadata fails closed", {
+test_that("explicit identifiers take precedence over fallback metadata", {
   .dp_local_state()
   handle <- .dp_derived_handle(source = FALSE)
   on.exit(cleanup_handle(handle), add = TRUE)
@@ -2285,9 +2288,8 @@ test_that("explicit identifiers take precedence and incomplete metadata fails cl
   expect_identical(.dsomopDpPolicy()$snapshot_id, "etl-2026-08-01")
   .dp_restart_runtime()
   withr::local_options(list(dsomop.dp.domain = "", dsomop.dp.snapshot_id = ""))
-  expect_error(.dsomopDpEnsureRuntime(handle),
-               "cdm_source.*dsomop.dp.domain and dsomop.dp.snapshot_id")
-  expect_null(.pkg_state$dp_runtime)
+  expect_warning(.dsomopDpEnsureRuntime(handle), "must bump dsomop.dp.privacy_epoch")
+  expect_true(.dsomopDpPolicy()$enabled)
 })
 
 test_that("derived identifiers respect partial overrides and conflicts", {
@@ -2348,7 +2350,7 @@ test_that("canonical coordinates ignore credentials and normalize default ports"
                          original$domain))
   handle$vocab_schema <- NULL
   DBI::dbExecute(handle$conn, "UPDATE cdm_source SET cdm_release_date = NULL")
-  expect_error(.dsomopDpDerivedIdentity(handle), "cdm_source")
+  expect_warning(.dsomopDpDerivedIdentity(handle), "fallback snapshot")
 })
 
 test_that("default-on initialization derives identity from a real SQLite resource", {
@@ -2373,4 +2375,82 @@ test_that("default-on initialization derives identity from a real SQLite resourc
   expect_true(omopDpStatusDS()$ready)
   expect_match(.dsomopDpPolicy()$domain, "^resource_")
   expect_gt(nrow(omopQueryLibraryStickyCatalogDS()), 0L)
+})
+
+.dp_expected_snapshot <- function(identity, protocol, metadata) {
+  paste0("cdm_", .dsomopDpSha256(.dsomopDpCanonicalJson(list(
+    protocol = protocol, resource = sub("^resource_", "", identity$domain),
+    metadata = metadata
+  ))))
+}
+
+test_that("complete source rows retain single-row hashes and sort all multiple rows", {
+  .dp_local_state()
+  handle <- .dp_derived_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  row <- DBI::dbGetQuery(handle$conn, "SELECT * FROM cdm_source")
+  fields <- c("cdm_source_name", "cdm_release_date", "cdm_version", "vocabulary_version")
+  metadata <- lapply(row[fields], as.character)
+  single <- .dsomopDpDerivedIdentity(handle)
+  expect_identical(single$snapshot_id, .dp_expected_snapshot(
+    single, "dsomop-dp-cdm-snapshot-v1", metadata))
+  other <- row
+  other$cdm_source_name <- "Another source"
+  DBI::dbAppendTable(handle$conn, "cdm_source", other)
+  rows <- list(metadata, lapply(other[fields], as.character))
+  rows <- rows[order(vapply(rows, .dsomopDpCanonicalJson, character(1)), method = "radix")]
+  multi <- .dsomopDpDerivedIdentity(handle)
+  expect_identical(multi$snapshot_id, .dp_expected_snapshot(
+    multi, "dsomop-dp-cdm-snapshot-multi-v1", rows))
+  DBI::dbExecute(handle$conn, "DELETE FROM cdm_source")
+  DBI::dbAppendTable(handle$conn, "cdm_source", rbind(other, row))
+  expect_identical(.dsomopDpDerivedIdentity(handle), multi)
+})
+
+test_that("fallback sorts vocabulary pairs and warns once across resources and restarts", {
+  .dp_local_state()
+  withr::local_options(list(dsomop.dp.domain = "", dsomop.dp.snapshot_id = ""))
+  handles <- list(.dp_derived_handle("one", source = FALSE),
+                  .dp_derived_handle("two", source = FALSE))
+  on.exit(lapply(handles, cleanup_handle), add = TRUE)
+  vocabulary <- data.frame(vocabulary_id = c("Z", "None"),
+                           vocabulary_version = c("2026", "v5"))
+  for (handle in handles) DBI::dbWriteTable(handle$conn, "vocabulary", vocabulary, overwrite = TRUE)
+  expect_warning(.dsomopDpEnsureRuntime(handles[[1]]),
+    "cannot track data reloads.*must bump dsomop.dp.privacy_epoch.*dsomop.dp.domain.*dsomop.dp.snapshot_id")
+  first <- .dsomopDpDerivedIdentity(handles[[1]])
+  expect_identical(first$snapshot_id, .dp_expected_snapshot(first,
+    "dsomop-dp-cdm-snapshot-fallback-v1", list(
+      list(vocabulary_id = "None", vocabulary_version = "v5"),
+      list(vocabulary_id = "Z", vocabulary_version = "2026"))))
+  DBI::dbWriteTable(handles[[1]]$conn, "vocabulary", vocabulary[2:1, ], overwrite = TRUE)
+  expect_identical(.dsomopDpDerivedIdentity(handles[[1]]), first)
+  .dp_restart_runtime()
+  expect_silent(.dsomopDpEnsureRuntime(handles[[2]]))
+  expect_false(identical(.dsomopDpPolicy()$snapshot_id, first$snapshot_id))
+  DBI::dbExecute(handles[[2]]$conn, "UPDATE vocabulary SET vocabulary_version = 'next'")
+  expect_error(.dsomopDpPolicy(), "policy changed")
+})
+
+test_that("empty incomplete and blank source metadata use resource-only fallback without vocabulary", {
+  .dp_local_state()
+  handle <- .dp_derived_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  DBI::dbExecute(handle$conn, "DROP TABLE IF EXISTS vocabulary")
+  DBI::dbExecute(handle$conn, "UPDATE cdm_source SET cdm_release_date = ' '")
+  expect_warning(identity <- .dsomopDpDerivedIdentity(handle), "fallback snapshot")
+  expect_identical(identity$snapshot_id, .dp_expected_snapshot(identity,
+    "dsomop-dp-cdm-snapshot-resource-only-v1", NULL))
+  DBI::dbExecute(handle$conn, "DELETE FROM cdm_source")
+  expect_silent(expect_identical(.dsomopDpDerivedIdentity(handle), identity))
+  DBI::dbExecute(handle$conn, "DROP TABLE cdm_source")
+  DBI::dbWriteTable(handle$conn, "cdm_source", data.frame(cdm_source_name = "incomplete"))
+  expect_silent(expect_identical(.dsomopDpDerivedIdentity(handle), identity))
+  withr::local_options(list(dsomop.dp.domain = ""))
+  .pkg_state$dp_snapshot_fallback_warned <- FALSE
+  expect_silent(.dsomopDpEnsureRuntime(handle))
+  expect_identical(.dsomopDpPolicy()$snapshot_id, "etl-2026-08-01")
+  expect_false(.pkg_state$dp_snapshot_fallback_warned)
+  handle$resource_client$getParsed <- function() list(dbms = "sqlite", database = ":memory:")
+  expect_error(.dsomopDpDerivedIdentity(handle), "dsomop.dp.domain and dsomop.dp.snapshot_id")
 })
