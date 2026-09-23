@@ -186,6 +186,21 @@ count and sum of a bounded mean or between a binary-rate numerator and
 denominator—but the public result reports the complete per-release mechanism
 contract.
 
+Since dsOMOP 2.6.1, the noise sampler
+`dsomop-dp-exact-discrete-laplace-v1` uses the exact integer/rational algorithm
+of Canonne, Kamath and Steinke (2020), with arbitrary-precision arithmetic from
+`gmp`. It replaces the 52-bit inverse transform, whose finite noise support
+invalidated the previous pure-DP claim. Epsilon and sensitivity are the exact
+binary rationals represented by their R numbers; there is no decimal rounding
+or floating-point probability transform. The noise calibration and output
+clipping are unchanged. With independent random bits this implemented
+mechanism is pure DP, with delta 0. Its keyed HMAC deployment relies on the
+cryptographic pseudorandomness assumption for those bits; this is not a claim
+that a finite key supplies information-theoretic infinite randomness. See
+[DISCLOSURE_CONTROL.md](DISCLOSURE_CONTROL.md) for the sampler protocol and
+exactness argument, and [SAMPLER_DIAGNOSIS.md](SAMPLER_DIAGNOSIS.md) for the
+original defect.
+
 There is no cumulative budget, release counter, quota, rate limit or
 history-dependent admission decision, whether global or scoped by resource,
 user, snapshot or query. Releases never degrade because earlier questions were
@@ -206,6 +221,15 @@ without storing the earlier payload. If the bounded statistic changes while the
 public snapshot label is stale, its protected fingerprint changes the PRF
 context instead of reusing noise that could cancel under subtraction. The
 fingerprint, semantic release identity and raw PRF material are never returned.
+
+The exact sampler publishes mechanism identifier
+`dsomop-sticky-discrete-laplace-prf-v2` and uses hashed policy schema 3. The
+release-envelope protocol and public policy fields remain compatible with
+dsOMOPClient 2.7.2, which accepts delta 0 and rejects differing sampler or
+mechanism identifiers across selected servers. The protocol change gives
+upgraded releases new sticky identities and therefore potentially new draws;
+it cannot retroactively protect disclosures from the old sampler. Deploy the
+same sampler version across replicas of a logical node.
 
 Public compatibility labels and client-side packaging of one release do not
 mint new noise. Reviewed commutative filters, Boolean aliases and set-valued

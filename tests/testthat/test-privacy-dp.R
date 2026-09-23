@@ -213,28 +213,6 @@ test_that("injected DP roots require exactly 256 bits", {
   )
 })
 
-test_that("HMAC stream endpoints remain strictly inside the unit interval", {
-  key <- as.raw(rep.int(1L, 32L))
-  context <- list(query = "endpoint-test")
-
-  all_zero <- testthat::with_mocked_bindings(
-    .dsomopDpUniform(key, context, 1L, 1L),
-    .dsomopDpHmacRaw = function(key, value) raw(32L),
-    .package = "dsOMOP"
-  )
-  all_one <- testthat::with_mocked_bindings(
-    .dsomopDpUniform(key, context, 1L, 1L),
-    .dsomopDpHmacRaw = function(key, value) as.raw(rep.int(255L, 32L)),
-    .package = "dsOMOP"
-  )
-
-  expect_gt(all_zero, 0)
-  expect_lt(all_zero, 1)
-  expect_gt(all_one, 0)
-  expect_lt(all_one, 1)
-  expect_lt(all_zero, all_one)
-})
-
 test_that("disabled DP creates no state and refuses releases", {
   state <- .dp_local_state(enabled = FALSE)
   status <- .dsomopDpPublicStatus(initialize = TRUE)
@@ -1911,7 +1889,7 @@ test_that("irrelevant ordering and unbounded public domains are rejected", {
   ), policy), "level cap")
 })
 
-test_that("public status and release expose the fixed v2 contract", {
+test_that("public status and release identify the exact sampler", {
   .dp_local_state(noise_root = as.raw(0:31), release_epsilon = 0.25)
   status <- omopDpStatusDS()
 
@@ -1923,6 +1901,9 @@ test_that("public status and release expose the fixed v2 contract", {
                    "fixed_per_release_semantic_prf_v1")
   expect_identical(status$release_epsilon, 0.25)
   expect_identical(status$release_delta, 0)
+  expect_identical(status$sampler, "dsomop-dp-exact-discrete-laplace-v1")
+  expect_identical(status$mechanism, "dsomop-sticky-discrete-laplace-prf-v2")
+  expect_identical(.dsomopDpPolicy()$schema_version, 3L)
   expect_identical(status$privacy_call_quota, "none")
   expect_identical(status$history_dependent, FALSE)
   expect_identical(status$persistent_state, "noise_root_only")
@@ -1944,6 +1925,8 @@ test_that("public status and release expose the fixed v2 contract", {
   expect_identical(value$epsilon, 0.25)
   expect_identical(value$delta, 0L)
   expect_identical(value$sticky, TRUE)
+  expect_identical(value$sampler, status$sampler)
+  expect_identical(value$mechanism, status$mechanism)
 })
 
 test_that("more than one hundred semantic queries do not grow persistent state", {

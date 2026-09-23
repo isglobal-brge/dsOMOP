@@ -9,8 +9,8 @@
 .DSOMOP_DP_PROTOCOL <- "dsomop-dp-release-v2"
 .DSOMOP_DP_CANONICAL_PROTOCOL <- "dsomop-dp-canonical-json-v1"
 .DSOMOP_DP_RELEASE_PROTOCOL <- "dsomop-dp-semantic-release-v1"
-.DSOMOP_DP_MECHANISM <- "dsomop-sticky-discrete-laplace-prf-v1"
-.DSOMOP_DP_SAMPLER <- "hmac-inverse-cdf-52bit-v1"
+.DSOMOP_DP_MECHANISM <- "dsomop-sticky-discrete-laplace-prf-v2"
+.DSOMOP_DP_SAMPLER <- "dsomop-dp-exact-discrete-laplace-v1"
 .DSOMOP_PRIVACY_GUARANTEE <-
   "sticky_person_bounded_discrete_laplace_per_release_v1"
 .DSOMOP_DP_CONTRACT <- "fixed_per_release_semantic_prf_v1"
@@ -101,16 +101,22 @@
          "until an explicit protocol version is installed.", call. = FALSE)
   }
   sampler_observed <- .dsomopDpSha256(.dsomopDpCanonicalJson(list(
-    protocol = "dsomop-dp-sampler-kat-v1",
-    noise = .dsomopDpDiscreteLaplace(
-      as.raw(0:31),
-      list(protocol = "dsomop-sampler-kat-v1", query = "fixed",
-           component = "count"),
-      coordinate = 7L, epsilon = 0.25, sensitivity = 3
-    )
+    protocol = "dsomop-dp-sampler-kat-v2",
+    sampler = .DSOMOP_DP_SAMPLER,
+    noise = vapply(seq_len(9L), function(i) as.character(
+      .dsomopDpDiscreteLaplace(
+        as.raw(0:31),
+        list(protocol = "dsomop-sampler-kat-v2", query = "fixed",
+             component = "count"),
+        coordinate = i,
+        epsilon = c(0.1, 0.25, 1, 8, 0.1, 8, 1e-6, 0.25, 1)[[i]],
+        sensitivity = c(1, 3, 1, 1, 65535, 3, 2^24 - 1,
+                        2^53 - 1, 2^300)[[i]]
+      )
+    ), character(1L))
   )))
   sampler_expected <-
-    "f41d43840fc89a32939f8413d825b14d5900a13ae80e0f37b35111294e4acaf0"
+    "e5cbb32edc915648286b5bc06b802a6dfd49226fac0cd97cc88043b2918095f9"
   if (!identical(sampler_observed, sampler_expected)) {
     stop("The sticky-noise sampler changed; releases are disabled until an ",
          "explicit sampler protocol version is installed.", call. = FALSE)
@@ -416,7 +422,7 @@
   }
   policy <- list(
     enabled = TRUE,
-    schema_version = 2L,
+    schema_version = 3L,
     protocol = .DSOMOP_DP_PROTOCOL,
     canonical_protocol = .DSOMOP_DP_CANONICAL_PROTOCOL,
     release_protocol = .DSOMOP_DP_RELEASE_PROTOCOL,
@@ -507,37 +513,6 @@
   config
 }
 
-.dsomopDpUniform <- function(key, context, coordinate, draw) {
-  digest <- .dsomopDpHmacRaw(key, .dsomopDpCanonicalJson(list(
-    protocol = "dsomop-dp-hmac-stream-v1",
-    context = context,
-    coordinate = as.numeric(coordinate),
-    draw = as.numeric(draw)
-  )))
-  bytes <- as.integer(digest[seq_len(7L)])
-  high48 <- 0
-  for (byte in bytes[seq_len(6L)]) high48 <- high48 * 256 + byte
-  integer52 <- high48 * 16 + floor(bytes[[7L]] / 16)
-  (integer52 + 1) / (2^52 + 1)
-}
-
-.dsomopDpDiscreteLaplace <- function(key, context, coordinate, epsilon,
-                                     sensitivity) {
-  if (!is.numeric(epsilon) || length(epsilon) != 1L || !is.finite(epsilon) ||
-      epsilon <= 0 || epsilon > 8 || !is.numeric(sensitivity) ||
-      length(sensitivity) != 1L || !is.finite(sensitivity) ||
-      sensitivity <= 0) {
-    stop("The discrete-Laplace allocation is invalid.", call. = FALSE)
-  }
-  log_alpha <- -epsilon / sensitivity
-  geometric <- function(draw) {
-    if (log_alpha < log(.Machine$double.xmin)) return(0)
-    u <- .dsomopDpUniform(key, context, coordinate, draw)
-    floor(log1p(-u) / log_alpha)
-  }
-  geometric(1L) - geometric(2L)
-}
-
 .dsomopDpNoisyInteger <- function(value, policy, release_context, component,
                                   epsilon, sensitivity, lower = 0,
                                   upper = 2^53 - 1) {
@@ -559,7 +534,12 @@
     policy$keys$noise, context, coordinate = 1L,
     epsilon = epsilon, sensitivity = sensitivity
   )
-  min(upper, max(lower, value + noise))
+  # Add and clip while still exact, including noise beyond the R integer range.
+  # Only the bounded result is converted to the existing public numeric type.
+  noisy <- gmp::as.bigz(value) + noise
+  if (noisy < lower) return(lower)
+  if (noisy > upper) return(upper)
+  as.numeric(noisy)
 }
 
 .dsomopDpSemanticId <- function(policy, semantic) {

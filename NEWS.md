@@ -1,3 +1,24 @@
+# dsOMOP 2.6.1
+
+- Replace the finite-precision inverse-CDF noise sampler with the exact
+  integer/rational discrete-Laplace algorithm of Canonne, Kamath and Steinke
+  (2020), driven by the deterministic keyed HMAC bit stream. The sampler
+  protocol is `dsomop-dp-exact-discrete-laplace-v1`, the mechanism identifier is
+  `dsomop-sticky-discrete-laplace-prf-v2`, and the hashed policy schema is 3.
+- Noise calibration, contribution bounds, output clipping and the public policy
+  surface are unchanged. The implemented sampler now has the exact ideal
+  distribution: pure DP with delta 0 holds with independent random bits;
+  deployment through keyed HMAC relies on its cryptographic pseudorandomness
+  assumption. This is still a per-release guarantee, without a cumulative
+  privacy budget.
+- Add `gmp` for exact arithmetic. Epsilon and sensitivity retain the exact
+  binary rational values of the supplied R numbers, with no decimal rounding.
+  New sampler metadata changes sticky release identities; upgrading can draw
+  new noise and does not repair previous disclosures. dsOMOPClient 2.7.2 accepts
+  the new metadata and delta 0 unchanged, and rejects mixed sampler versions
+  within one federated release. See `DISCLOSURE_CONTROL.md` and
+  `SAMPLER_DIAGNOSIS.md` for the algorithm and reproduced defect.
+
 # dsOMOP 2.6.0
 
 - The DP release channel is enabled by default since 2.6.0. Custodians may opt

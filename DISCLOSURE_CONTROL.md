@@ -56,8 +56,8 @@ replicas. The default `~/.dsomop` is suitable only when the home is persistent.
 does not supply a resource identity or bypass policy checks.
 
 The mechanism remains person-bounded sticky discrete Laplace, with default
-release epsilon 0.1, maximum epsilon 8 and delta 0. Contribution and level caps
-are unchanged. Resource domains separate HMAC subkeys; both identifiers enter
+release epsilon 0.1, admitted range [1e-6, 8] and delta 0. Contribution and level
+caps are unchanged. Resource domains separate HMAC subkeys; both identifiers enter
 the policy hash and release context. Equal canonical queries on distinct
 resources therefore use different PRF keys. Discrete noise draws can coincide
 by chance; independence does not imply unequal numeric outputs on every call.
@@ -68,3 +68,78 @@ This is a per-release guarantee, with no finite cumulative privacy budget.
 See README.md for the complete deployment, root lifecycle and composition
 contract. The QueryLibrary sticky catalogue is public metadata and remains
 available before DP initialization; executing a release still validates policy.
+
+## Exact discrete-Laplace sampler (2.6.1)
+
+The previous `hmac-inverse-cdf-52bit-v1` sampler transformed finite 52-bit
+uniforms. At epsilon 8 and sensitivity 1 its noise support was only [-4, 4],
+so neighbouring counts could have different output supports and violate pure
+DP. The endpoint reproduction and complete affected-statistic inventory are in
+[SAMPLER_DIAGNOSIS.md](SAMPLER_DIAGNOSIS.md).
+
+The replacement `dsomop-dp-exact-discrete-laplace-v1` follows Canonne, Kamath
+and Steinke (2020), [The Discrete Gaussian for Differential Privacy, section
+5](https://arxiv.org/html/2004.00010v4#S5). All sampler probability decisions use
+exact integer/rational arithmetic. For rational x in [0, 1], successive exact
+Bernoulli(x/k) trials stop at their first failure; the parity of the stopping
+index gives Bernoulli(exp(-x)) by the alternating exponential series. Larger
+x is split into its integer and fractional parts. No exponential is evaluated
+numerically.
+
+For the exact rate epsilon/sensitivity = s/t, draw U uniformly from
+{0, ..., t-1}, accepting it with probability exp(-U/t). Independently let V
+count consecutive successful Bernoulli(exp(-1)) trials. Then
+G = floor((U + tV)/s) has geometric survival probability
+Pr[G >= k] = exp(-k s/t). Choose a fair sign and restart for negative zero.
+The resulting integer Z has probability mass
+
+`Pr[Z = z] = (1 - alpha) / (1 + alpha) * alpha^abs(z)`,
+where `alpha = exp(-epsilon / sensitivity)`.
+
+There is no fixed noise bound, bit budget or rejection cutoff. For neighbouring
+integer statistics differing by at most sensitivity, the probability ratio at
+every integer output is at most exp(epsilon). Histogram coordinates use the
+person-level L1 bound; mean and rate components retain their sequential
+half-epsilon allocations. Noise is added using arbitrary-precision integers,
+then clipped to the existing public bounds (normally [0, 2^53-1]) before
+conversion back to an R number. Clipping is post-processing and preserves the
+privacy inequality.
+
+The canonical inputs are the exact IEEE-754 binary rational values of the
+validated R epsilon and sensitivity, converted with `gmp::as.bigq`. For
+example, R's `0.1` is `3602879701896397/36028797018963968`, not decimal 1/10.
+The ratio is formed using rational arithmetic; no printed decimal
+approximation is reparsed. Division of epsilon by two in means and rates is
+exact throughout the admitted range. Integer sensitivities and grid sizes are
+represented exactly as well.
+
+The deterministic bit stream uses HMAC-SHA256 under the existing secret noise
+key, with domain `dsomop-dp-hmac-bit-stream-v1`. Its context and coordinate
+select a stream; an arbitrary-precision per-coordinate draw counter, serialized
+as canonical decimal text, selects each 256-bit block. All bytes are consumed
+in order, least-significant bit first within each byte. Counters neither wrap
+nor round. The same key and complete context replay the same bits and noise,
+while component/coordinate and counter separation select distinct PRF inputs.
+No release history or random-generator state is persisted.
+
+With independent random bits the implemented mechanism has the exact ideal
+distribution and pure differential privacy (delta 0). The deployed keyed
+stream makes the corresponding cryptographic pseudorandomness assumption
+about HMAC; a finite secret key is not an information-theoretic source of
+infinitely many independent bits. The per-release scope and composition
+limitations above are unchanged.
+
+The mechanism identifier is `dsomop-sticky-discrete-laplace-prf-v2`, and the
+hashed policy schema changes from 2 to 3. Both the public sampler and mechanism
+metadata distinguish old and repaired releases. The release-envelope protocol
+`dsomop-dp-release-v2`, canonical-JSON protocol, semantic-release protocol,
+privacy-contract label and privacy-guarantee label keep their existing versions
+because their field structure and semantics are unchanged. dsOMOPClient 2.7.2
+already accepts these new sampler/mechanism strings and delta 0, verifies
+payloads against preflight metadata, and rejects mixed versions across selected
+servers. No client update is required.
+
+Changing the sampler changes the policy hash and sticky release identity, so an
+upgraded query can receive a new draw. All replicas of one logical node must
+use the same version. This repair does not retroactively protect old releases
+or erase their contribution to privacy loss.
