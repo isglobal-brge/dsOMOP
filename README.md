@@ -223,8 +223,31 @@ an authenticated DP provenance capsule or a new release mechanism.
 
 The DP release channel is enabled by default since dsOMOP 2.6.0. Custodians
 can opt out with `options(dsomop.dp.enabled = FALSE)` or `DSOMOP_DP_ENABLED=0`.
-Explicit option and environment settings must agree. Ordinary aggregates keep
-their existing disclosure contracts; analysts request DP releases explicitly.
+Explicit option and environment settings must agree. The custodial option
+`dsomop.dp.exclusive` defaults to `FALSE` for compatibility. **Set
+`options(dsomop.dp.exclusive = TRUE)` in production** to make the typed DP
+channel exclusive for standard statistical releases while DP is enabled.
+The DataSHIELD profile fallback is `default.dsomop.dp.exclusive = FALSE`;
+custodians can set it to `TRUE` instead. Analysts cannot set this policy
+through a dsOMOP endpoint.
+
+With exclusivity off, the standard suppression-and-banding surface remains
+available. With both `dsomop.dp.enabled` and `dsomop.dp.exclusive` true, the
+standard statistical endpoints refuse with a message directing analysts to
+`omopDpReleaseDS` (`ds.omop.dp.release` on the client). Disabling DP also
+disables the exclusivity gate. `omopDpStatusDS()` reports the configured
+`exclusive` flag even when DP is disabled; the gate is active only when both
+`enabled` and `exclusive` are true. The flag is read on each request and does
+not change the DP mechanism, policy hash, sticky noise, or release identity.
+
+Structural schema and vocabulary metadata remain available. Capabilities omit
+`total_persons` in exclusive mode, so existing clients can still connect. For
+memory-mode plan preparation, first set
+`plan <- ds.omop.plan.options(plan, factor_concepts = FALSE)`, then call
+`ds.omop.plan.execute(plan)`: observed factor levels reveal a distinct count
+and are blocked. See
+[DISCLOSURE_CONTROL.md](DISCLOSURE_CONTROL.md) for the complete endpoint list
+and the scope of this gate.
 
 When `dsomop.dp.domain` / `DSOMOP_DP_DOMAIN` and
 `dsomop.dp.snapshot_id` / `DSOMOP_DP_SNAPSHOT_ID` are unset or have empty

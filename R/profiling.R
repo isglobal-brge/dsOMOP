@@ -1,6 +1,28 @@
 # Module: Profiling Engine
 # Data profiling functions for table stats, column stats, distributions, and concept analysis.
 
+# Custodial release-channel policy. Keep this outside the DP mechanism policy:
+# choosing the public surface must not change sticky noise or release identity.
+.dsomopDpExclusive <- function() {
+  .dsomopDpBoolean(.dsomopDpOption("exclusive", FALSE), "exclusive")
+}
+
+.dsomopStandardStatisticsAllowed <- function() {
+  !(.dsomopDpExclusive() && .dsomopDpEnabled())
+}
+
+# All count-bearing standard aggregate wrappers call this before resolving a
+# handle, decoding arguments, reading cached results, or querying population
+# data. Internal profiling remains available for server-side preparation.
+.dsomopRequireStandardStatistics <- function() {
+  if (!.dsomopStandardStatisticsAllowed()) {
+    stop("DP-exclusive mode blocks standard statistical releases. ",
+         "Use the typed DP channel omopDpReleaseDS ",
+         "(ds.omop.dp.release on the client).", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
 #' Resolve the concept column a profiler scopes its concept_id filter on
 #'
 #' By default a concept scope (\code{concept_id}) restricts to the table's

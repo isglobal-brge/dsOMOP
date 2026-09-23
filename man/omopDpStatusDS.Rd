@@ -7,7 +7,9 @@
 omopDpStatusDS()
 }
 \value{
-Public DP service status.
+Public DP service status, including the custodial \code{exclusive}
+flag. Standard statistical releases are blocked when both \code{enabled}
+and \code{exclusive} are TRUE.
 }
 \description{
 Returns the public fixed-per-release mechanism contract. Secret key material

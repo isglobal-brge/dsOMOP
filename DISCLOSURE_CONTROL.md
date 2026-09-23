@@ -2,8 +2,92 @@
 
 The DP release channel is enabled by default since dsOMOP 2.6.0. Custodians
 can opt out with `options(dsomop.dp.enabled = FALSE)` or `DSOMOP_DP_ENABLED=0`.
-Explicit option and environment settings must agree. Ordinary aggregates keep
-their existing disclosure contracts; analysts request DP releases explicitly.
+Explicit option and environment settings must agree. The custodial option
+`dsomop.dp.exclusive` defaults to `FALSE` for compatibility. **Set
+`options(dsomop.dp.exclusive = TRUE)` in production** to make the typed DP
+channel exclusive for standard statistical releases while DP is enabled.
+The DataSHIELD profile fallback is `default.dsomop.dp.exclusive = FALSE`;
+custodians can set it to `TRUE` instead. Analysts cannot set this policy
+through a dsOMOP endpoint.
+
+With exclusivity off, the standard suppression-and-banding surface remains
+available. With both `dsomop.dp.enabled` and `dsomop.dp.exclusive` true, the
+standard statistical endpoints refuse with a message directing analysts to
+`omopDpReleaseDS` (`ds.omop.dp.release` on the client). Disabling DP also
+disables the exclusivity gate. `omopDpStatusDS()` reports the configured
+`exclusive` flag even when DP is disabled; the gate is active only when both
+`enabled` and `exclusive` are true. The flag is read on each request and does
+not change the DP mechanism, policy hash, sticky noise, or release identity.
+
+## Exclusive standard-surface policy
+
+One shared policy in `R/profiling.R` (`.dsomopStandardStatisticsAllowed` and
+`.dsomopRequireStandardStatistics`) gates the following aggregate wrappers in
+`R/interface.R` before handle lookup, argument decoding, cohort resolution,
+cached-result access or queries. Entire statistical endpoints refuse, including
+requests that would otherwise produce an empty or fully suppressed result.
+
+| Refusing endpoint | Covered output |
+| --- | --- |
+| `omopTableStatsDS` | Row and distinct-person counts |
+| `omopColumnStatsDS` | Total, missing, distinct and person counts; means |
+| `omopDomainCoverageDS` | Per-domain person counts |
+| `omopMissingnessDS` | Missingness counts and rates |
+| `omopValueCountsDS` | Value frequencies |
+| `omopConceptPrevalenceDS` | Person and record counts |
+| `omopCrossTabDS` | Contingency counts and optional margins |
+| `omopNumericRangeDS` | Population count and distribution summary |
+| `omopNumericHistogramDS` | Histogram counts |
+| `omopNumericQuantilesDS` | Population-derived distribution profiling |
+| `omopDateCountsDS` | Temporal counts |
+| `omopConceptDrilldownDS` | Counts, means, frequencies and missingness |
+| `omopLocateConceptDS` | Per-table record and person counts |
+| `omopSafeCutpointsDS` | Banded bin counts |
+| `omopPlanPreviewDS` | Per-output population counts |
+| `omopCohortListDS` | Cohort sizes |
+| `omopCohortGetDefinitionDS` | Population-admitted definition records, including local count columns |
+| `omopAchillesStatusDS` | Number of distinct populated analyses |
+| `omopAchillesResultsDS` | Precomputed counts |
+| `omopAchillesDistributionDS` | Support counts, means and distributions |
+| `omopAchillesCatalogDS` | Populated analysis IDs, whose length is a distinct count |
+| `omopOhdsiStatusDS` | Result-table row totals |
+| `omopOhdsiTablesDS` | Result-table row counts |
+| `omopOhdsiResultsDS` | Contracted counts, rates, means and other results |
+| `omopOhdsiSummaryDS` | Result-table row counts |
+| `omopQueryExecDS` | Aggregate query results |
+| `omopAnalysisRunDS` | Aggregate analysis results |
+| `omopFactorLevelsDS` | Observed levels, whose length is a distinct count |
+
+`omopGetCapabilitiesDS` uses the same policy to omit `total_persons` in
+exclusive mode. Its remaining structural metadata keeps existing client
+connections usable. Schema, column types, join relationships, vocabulary
+reference data, static analysis definitions, result contracts, disclosure
+settings and DP status/catalogue metadata remain available. Vocabulary
+concept totals count public reference records, not the clinical population.
+Reference tables are expected to contain reference metadata, including any
+custodial extension columns.
+`omopCohortGetDefinitionDS` also refuses: its population-admitted response
+forwards unrestricted definition columns that can include local cohort counts.
+
+Server-side assignment and authenticated DP input preparation remain available.
+For memory-mode plans, first set
+`plan <- ds.omop.plan.options(plan, factor_concepts = FALSE)`, then call
+`ds.omop.plan.execute(plan)` to skip automatic observed factor-level discovery.
+Supply public DP categories, bounds and breaks directly
+in the typed DP specification; the standard profiling endpoints cannot be used
+to learn them in exclusive mode. The seven supported typed DP statistics
+remain available with identical sticky releases in either mode. Older
+dsOMOPClient 2.7.2 already preserves the new status field and displays it in its
+ordinary list output; no client upgrade is required.
+
+The gate covers dsOMOP's registered standard aggregate surface. It does not
+alter internal profiling helpers, controller-only `omopAchillesHeelDS`, or
+methods from other DataSHIELD packages. Custodians must review those separately
+in the deployed method allowlist. It also does not make metadata admission or
+assignment side channels differentially private, retract earlier releases, or
+provide a finite cumulative privacy budget.
+
+## DP identity and deployment
 
 When `dsomop.dp.domain` / `DSOMOP_DP_DOMAIN` and
 `dsomop.dp.snapshot_id` / `DSOMOP_DP_SNAPSHOT_ID` are unset or have empty
