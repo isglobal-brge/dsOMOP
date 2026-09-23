@@ -825,12 +825,16 @@
 #' service is enabled. Previous calls do not create state or affect whether a
 #' later protected operation may run.
 #'
-#' @return Public DP service status.
+#' @return Public DP service status, including the custodial \code{exclusive}
+#'   flag (default TRUE). Custodians can set \code{dsomop.dp.exclusive = FALSE}
+#'   to restore standard statistics. Standard releases are blocked when both
+#'   \code{enabled} and \code{exclusive} are TRUE.
 #' @export
 omopDpStatusDS <- function() {
   state <- .dsomopDpState()
   .dsomopDpEnsureRuntime()
   status <- .dsomopDpPublicStatus(initialize = TRUE)
+  status$exclusive <- .dsomopDpExclusive()
   status$supported_statistics <- .DSOMOP_DP_STATISTICS
   status$longitudinal_contract <- "deterministic_person_bounding_v1"
   status$person_local_provenance_required <- TRUE

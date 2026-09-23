@@ -1159,6 +1159,8 @@ omopPingDS <- function(omop_symbol = NULL) {
 #' tables, DBMS type, CDM version, a disclosure-banded population size (when
 #' releasable), and a hash for cache invalidation. Used by the client to adapt
 #' the UI to the server's data model.
+#' In DP-exclusive mode, only structural metadata is returned; the
+#' \code{total_persons} population-count field is omitted.
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @return Named list with schema summary and hash
@@ -1168,8 +1170,11 @@ omopPingDS <- function(omop_symbol = NULL) {
 #' }
 #' @export
 omopGetCapabilitiesDS <- function(omop_symbol) {
+  statistics_allowed <- .dsomopStandardStatisticsAllowed()
   handle <- .getHandle(omop_symbol)
-  .getCapabilities(handle)
+  capabilities <- .getCapabilities(handle)
+  if (!statistics_allowed) capabilities$total_persons <- NULL
+  capabilities
 }
 
 #' Report active disclosure thresholds (Aggregate)
@@ -1279,6 +1284,7 @@ omopRelationshipGraphDS <- function(omop_symbol) {
 #' @export
 omopTableStatsDS <- function(omop_symbol, table,
                              stats = c("rows", "persons")) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   stats <- .ds_arg(stats)
   if (is.list(stats)) stats <- unlist(stats)
@@ -1313,6 +1319,7 @@ omopTableStatsDS <- function(omop_symbol, table,
 omopColumnStatsDS <- function(omop_symbol, table, column, concept_id = NULL,
                               concept_col = NULL, cohort = NULL,
                               cohort_table = NULL) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   concept_id <- .ds_arg(concept_id)
   concept_col <- .ds_arg(concept_col)
@@ -1337,6 +1344,7 @@ omopColumnStatsDS <- function(omop_symbol, table, column, concept_id = NULL,
 #' }
 #' @export
 omopDomainCoverageDS <- function(omop_symbol) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   .profileDomainCoverage(handle)
 }
@@ -1363,6 +1371,7 @@ omopDomainCoverageDS <- function(omop_symbol) {
 omopMissingnessDS <- function(omop_symbol, table,
                               columns = NULL, cohort = NULL,
                               cohort_table = NULL) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   columns <- .ds_arg(columns)
   if (is.list(columns)) columns <- as.character(unlist(columns))
@@ -1400,6 +1409,7 @@ omopValueCountsDS <- function(omop_symbol, table, column,
                               top_n = 20, concept_id = NULL,
                               concept_col = NULL, cohort = NULL,
                               cohort_table = NULL) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   concept_id <- .ds_arg(concept_id)
   concept_col <- .ds_arg(concept_col)
@@ -1756,6 +1766,7 @@ omopCdmVersionDS <- function(omop_symbol) {
 #' }
 #' @export
 omopPlanPreviewDS <- function(omop_symbol, plan) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   plan <- .ds_arg(plan)
   # Preview is the cheapest, most-repeated data-touching op and is the primary
@@ -1787,6 +1798,7 @@ omopPlanPreviewDS <- function(omop_symbol, plan) {
 #' }
 #' @export
 omopCohortListDS <- function(omop_symbol) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   .cohortList(handle)
 }
@@ -1807,6 +1819,7 @@ omopCohortListDS <- function(omop_symbol) {
 #' @export
 omopCohortGetDefinitionDS <- function(omop_symbol,
                                       cohort_definition_id) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   .cohortGetDefinition(handle, cohort_definition_id)
 }
@@ -1846,6 +1859,7 @@ omopConceptPrevalenceDS <- function(omop_symbol, table = NULL, concept_col = NUL
                                      cohort_table = NULL, window = NULL,
                                      offset = 0L, global = FALSE,
                                      cohort = NULL) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
   offset <- as.integer(.ds_arg(offset) %||% 0L)
@@ -1898,6 +1912,7 @@ omopCrossTabDS <- function(omop_symbol, table, row_col, col_col,
                            row_concept_ids = NULL, col_concept_ids = NULL,
                            cohort_table = NULL, stratify_by = NULL,
                            band_margins = FALSE, cohort = NULL) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
   count_mode <- .ds_arg(count_mode)
@@ -1962,6 +1977,7 @@ omopNumericRangeDS <- function(omop_symbol, table, value_col,
                                 cohort_table = NULL, window = NULL,
                                 concept_id = NULL, concept_col = NULL,
                                 cohort = NULL) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   concept_id <- .ds_arg(concept_id)
   concept_col <- .ds_arg(concept_col)
@@ -2004,6 +2020,7 @@ omopNumericHistogramDS <- function(omop_symbol, table, value_col,
                                     window = NULL, breaks = NULL,
                                     concept_id = NULL, concept_col = NULL,
                                     cohort = NULL) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   breaks <- .ds_arg(breaks)
   concept_id <- .ds_arg(concept_id)
@@ -2048,6 +2065,7 @@ omopNumericQuantilesDS <- function(omop_symbol, table, value_col,
                                     cohort_table = NULL, window = NULL,
                                     rounding = 2L, concept_id = NULL,
                                     concept_col = NULL, cohort = NULL) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   probs <- .ds_arg(probs)
   concept_id <- .ds_arg(concept_id)
@@ -2083,6 +2101,7 @@ omopNumericQuantilesDS <- function(omop_symbol, table, value_col,
 omopDateCountsDS <- function(omop_symbol, table, date_col = NULL,
                               granularity = "year", cohort_table = NULL,
                               window = NULL, cohort = NULL) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
   .profileDateCounts(handle, table, date_col, granularity,
@@ -2110,6 +2129,7 @@ omopDateCountsDS <- function(omop_symbol, table, date_col = NULL,
 #' @export
 omopConceptDrilldownDS <- function(omop_symbol, table, concept_id,
                                    concept_col = NULL) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   .profileConceptDrilldown(handle, table, as.integer(concept_id),
                            concept_col = concept_col)
@@ -2132,6 +2152,7 @@ omopConceptDrilldownDS <- function(omop_symbol, table, concept_id,
 #' }
 #' @export
 omopLocateConceptDS <- function(omop_symbol, concept_ids) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   concept_ids <- .ds_arg(concept_ids)
   if (is.list(concept_ids)) concept_ids <- as.integer(unlist(concept_ids))
@@ -2166,6 +2187,7 @@ omopLocateConceptDS <- function(omop_symbol, concept_ids) {
 omopSafeCutpointsDS <- function(omop_symbol, table, column,
                                  concept_id = NULL, n_bins = 10L,
                                  concept_col = NULL) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   concept_col <- .ds_arg(concept_col)
   .profileSafeCutpoints(handle, table, column, concept_id, as.integer(n_bins),
@@ -2188,6 +2210,7 @@ omopSafeCutpointsDS <- function(omop_symbol, table, column,
 #' }
 #' @export
 omopAchillesStatusDS <- function(omop_symbol) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   .achillesStatus(handle)
 }
@@ -2228,6 +2251,7 @@ omopAchillesAnalysesDS <- function(omop_symbol, domain = NULL) {
 #' }
 #' @export
 omopAchillesResultsDS <- function(omop_symbol, analysis_ids) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   analysis_ids <- .ds_arg(analysis_ids)
   if (is.list(analysis_ids)) analysis_ids <- as.integer(unlist(analysis_ids))
@@ -2251,6 +2275,7 @@ omopAchillesResultsDS <- function(omop_symbol, analysis_ids) {
 #' }
 #' @export
 omopAchillesDistributionDS <- function(omop_symbol, analysis_ids) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   analysis_ids <- .ds_arg(analysis_ids)
   if (is.list(analysis_ids)) analysis_ids <- as.integer(unlist(analysis_ids))
@@ -2272,6 +2297,7 @@ omopAchillesDistributionDS <- function(omop_symbol, analysis_ids) {
 #' }
 #' @export
 omopAchillesCatalogDS <- function(omop_symbol) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   .achillesDiscoverCatalog(handle)
 }
@@ -2314,6 +2340,7 @@ omopAchillesHeelDS <- function(omop_symbol) {
 #' }
 #' @export
 omopOhdsiStatusDS <- function(omop_symbol) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   .ohdsiStatus(handle)
 }
@@ -2332,6 +2359,7 @@ omopOhdsiStatusDS <- function(omop_symbol) {
 #' }
 #' @export
 omopOhdsiTablesDS <- function(omop_symbol) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   result <- .ohdsiFilterPublicInventory(.ohdsiFindResultTables(handle))
   if (nrow(result) > 0L) {
@@ -2368,6 +2396,7 @@ omopOhdsiTablesDS <- function(omop_symbol) {
 omopOhdsiResultsDS <- function(omop_symbol, table_name, columns = NULL,
                                 filters = NULL, order_by = NULL,
                                 limit = 5000L, tool_id = NULL) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   filters <- .ds_arg(filters)
   order_by <- .ds_arg(order_by)
@@ -2419,6 +2448,7 @@ omopOhdsiResultContractDS <- function(omop_symbol, table_name,
 #' }
 #' @export
 omopOhdsiSummaryDS <- function(omop_symbol, tool_id) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   .ohdsiGetSummary(handle, tool_id)
 }
@@ -2501,6 +2531,7 @@ omopQueryGetDS <- function(omop_symbol, query_id) {
 omopQueryExecDS <- function(omop_symbol, query_id,
                                inputs = list(),
                                mode = "aggregate") {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   .validateIdentifier(query_id, "query_id")
   inputs <- .ds_arg(inputs)
@@ -2741,6 +2772,7 @@ omopAnalysisGetDS <- function(omop_symbol, name) {
 #' @export
 omopAnalysisRunDS <- function(omop_symbol, name, params = list(),
                               scope = NULL, combine = "union", ...) {
+  .dsomopRequireStandardStatistics()
   handle <- .getHandle(omop_symbol)
   name <- .ds_arg(name)
   if (is.list(name)) name <- name[[1]]
@@ -2861,6 +2893,7 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 #' @seealso \code{\link{omopAsFactorColumnsDS}}, \code{\link{.assertSafeLevels}}
 #' @export
 omopFactorLevelsDS <- function(df) {
+  .dsomopRequireStandardStatistics()
   cap <- .omopDisclosureSettings()$nfilter_levels_max
   empty <- list(levels = list(), unsafe = character(0), nfilter_levels_max = cap)
   if (!is.data.frame(df) || !.is_omop.table(df)) {

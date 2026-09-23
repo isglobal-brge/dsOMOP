@@ -247,8 +247,32 @@ an authenticated DP provenance capsule or a new release mechanism.
 
 The DP release channel is enabled by default since dsOMOP 2.6.0. Custodians
 can opt out with `options(dsomop.dp.enabled = FALSE)` or `DSOMOP_DP_ENABLED=0`.
-Explicit option and environment settings must agree. Ordinary aggregates keep
-their existing disclosure contracts; analysts request DP releases explicitly.
+Explicit option and environment settings must agree. The custodial option
+`dsomop.dp.exclusive` defaults to `TRUE` since dsOMOP 2.7.0: while DP is
+enabled, covered statistics can be released only through the typed DP channel.
+The DataSHIELD profile fallback is `default.dsomop.dp.exclusive = TRUE`.
+Custodians can restore standard population statistics with
+`options(dsomop.dp.exclusive = FALSE)` (or set the profile fallback to `FALSE`).
+Analysts cannot set this policy or bypass the noise through a client option.
+
+With exclusivity off, the standard suppression-and-banding surface remains
+available. With both `dsomop.dp.enabled` and `dsomop.dp.exclusive` true, the
+standard statistical endpoints refuse with a message directing analysts to
+`omopDpReleaseDS` (`ds.omop.dp.release` on the client). Disabling DP also
+disables the exclusivity gate. `omopDpStatusDS()` reports the configured
+`exclusive` flag even when DP is disabled; the gate is active only when both
+`enabled` and `exclusive` are true. The flag is read on each request and does
+not change the DP mechanism, policy hash, sticky noise, or release identity.
+
+Structural schema and vocabulary metadata remain available. Capabilities omit
+`total_persons` in exclusive mode, so existing clients can still connect. For
+memory-mode plan preparation, dsOMOPClient 2.7.3 automatically skips observed
+factor-level discovery with an explanatory message, because observed levels
+reveal a distinct count. With older clients, set
+`plan <- ds.omop.plan.options(plan, factor_concepts = FALSE)` before calling
+`ds.omop.plan.execute(plan)`. See
+[DISCLOSURE_CONTROL.md](DISCLOSURE_CONTROL.md) for the complete endpoint list
+and the scope of this gate.
 
 When `dsomop.dp.domain` / `DSOMOP_DP_DOMAIN` and
 `dsomop.dp.snapshot_id` / `DSOMOP_DP_SNAPSHOT_ID` are unset or have empty

@@ -1,12 +1,26 @@
-# dsOMOP 2.6.1
+# dsOMOP 2.7.0
 
+- Make the typed DP channel exclusive by default while DP is enabled. The
+  custodial `dsomop.dp.exclusive` option and its DataSHIELD fallback
+  `default.dsomop.dp.exclusive` default to `TRUE`; custodians can set `FALSE`
+  to restore standard population statistics. Analysts cannot bypass this
+  policy through a client option.
+- A shared interface policy refuses 28 standard statistical routes, including
+  profiling, query/analysis results, result inventories and observed factor
+  levels, and directs analysts to `ds.omop.dp.release`. Structural capabilities
+  remain available without `total_persons`; schema, vocabulary metadata and
+  server-side DP input preparation remain available.
+- Report the configured `exclusive` flag in DP status, including when DP is
+  disabled. Switching exclusivity does not change the mechanism, policy hash
+  or sticky releases. dsOMOPClient 2.7.3 automatically skips observed factor
+  discovery during exclusive-mode plan preparation and displays exclusivity.
 - Replace the finite-precision inverse-CDF noise sampler with the exact
   integer/rational discrete-Laplace algorithm of Canonne, Kamath and Steinke
   (2020), driven by the deterministic keyed HMAC bit stream. The sampler
   protocol is `dsomop-dp-exact-discrete-laplace-v1`, the mechanism identifier is
   `dsomop-sticky-discrete-laplace-prf-v2`, and the hashed policy schema is 3.
-- Noise calibration, contribution bounds, output clipping and the public policy
-  surface are unchanged. The implemented sampler now has the exact ideal
+- DP noise calibration, contribution bounds and output clipping are unchanged.
+  The implemented sampler now has the exact ideal
   distribution: pure DP with delta 0 holds with independent random bits;
   deployment through keyed HMAC relies on its cryptographic pseudorandomness
   assumption. This is still a per-release guarantee, without a cumulative

@@ -7,7 +7,10 @@
 omopDpStatusDS()
 }
 \value{
-Public DP service status.
+Public DP service status, including the custodial \code{exclusive}
+flag (default TRUE). Custodians can set \code{dsomop.dp.exclusive = FALSE}
+to restore standard statistics. Standard releases are blocked when both
+\code{enabled} and \code{exclusive} are TRUE.
 }
 \description{
 Returns the public fixed-per-release mechanism contract. Secret key material

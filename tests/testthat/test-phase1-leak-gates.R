@@ -382,6 +382,7 @@ test_that("DATASHIELD and DESCRIPTION publish the same server options", {
   expect_identical(unname(dp_options), sort(c(
     "default.dsomop.dp.domain=\"\"",
     "default.dsomop.dp.enabled=TRUE",
+    "default.dsomop.dp.exclusive=TRUE",
     "default.dsomop.dp.max_contributions=10",
     "default.dsomop.dp.max_levels=1000",
     "default.dsomop.dp.numeric_grid=65535",

@@ -2437,3 +2437,65 @@ test_that("empty incomplete and blank source metadata use resource-only fallback
   handle$resource_client$getParsed <- function() list(dbms = "sqlite", database = ":memory:")
   expect_error(.dsomopDpDerivedIdentity(handle), "dsomop.dp.domain and dsomop.dp.snapshot_id")
 })
+
+test_that("DP status reports configured exclusivity in enabled and disabled modes", {
+  check_status <- function(enabled) {
+    .dp_local_state(enabled = enabled, noise_root = as.raw(0:31))
+    withr::local_options(list(
+      dsomop.dp.exclusive = NULL,
+      default.dsomop.dp.exclusive = NULL
+    ))
+    expect_identical(omopDpStatusDS()$exclusive, TRUE)
+
+    for (exclusive in c(TRUE, FALSE)) {
+      withr::with_options(list(dsomop.dp.exclusive = exclusive), {
+        status <- omopDpStatusDS()
+        expect_identical(status$enabled, enabled)
+        expect_identical(status$exclusive, exclusive)
+        expect_identical(.pkg_state$dp_status$exclusive, exclusive)
+      })
+    }
+  }
+  check_status(TRUE)
+  check_status(FALSE)
+})
+
+test_that("all typed DP statistics remain sticky across exclusive channel modes", {
+  .dp_local_state(noise_root = as.raw(0:31))
+  withr::local_options(list(dsomop.dp.exclusive = FALSE))
+  input <- .dp_test_table()
+  specs <- list(
+    list(statistic = "count"),
+    list(statistic = "bounded_record_count", reducer = "records",
+         max_contributions = 2L),
+    list(statistic = "categorical_histogram", variable = "category",
+         levels = c("a", "b", "c"), reducer = "presence",
+         max_contributions = 2L),
+    list(statistic = "numeric_histogram", variable = "measurement",
+         breaks = c(0, 5, 10), reducer = "records",
+         max_contributions = 2L),
+    list(statistic = "bounded_distinct", variable = "category",
+         levels = c("a", "b", "c"), reducer = "distinct",
+         max_contributions = 2L),
+    list(statistic = "bounded_mean", variable = "measurement",
+         lower = 0, upper = 10, reducer = "mean"),
+    list(statistic = "binary_rate", variable = "flag", positive = "yes",
+         reducer = "any", denominator = "all_persons")
+  )
+  release_all <- function() {
+    lapply(specs, function(spec) omopDpReleaseDS(input, spec))
+  }
+  standard_mode <- release_all()
+  expect_setequal(vapply(standard_mode, `[[`, character(1L), "statistic"),
+                  omopDpStatusDS()$supported_statistics)
+
+  withr::with_options(list(dsomop.dp.exclusive = TRUE), {
+    expect_true(omopDpStatusDS()$exclusive)
+    expect_error(omopTableStatsDS("unused", "person"), "DP-exclusive")
+    expect_identical(release_all(), standard_mode)
+    # DP input can also be prepared after the exclusive gate is activated.
+    expect_identical(.dp_test_table(), input)
+  })
+  expect_false(omopDpStatusDS()$exclusive)
+  expect_identical(release_all(), standard_mode)
+})
