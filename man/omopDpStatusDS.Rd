@@ -16,8 +16,10 @@ Public DP service status, including the custodial \code{exclusive}
 Returns the public fixed-per-release mechanism contract. Secret key material
 and protected snapshot fingerprints are never returned. Calling this
 endpoint validates the provisioned noise root and authenticated first-answer
-store when the service is enabled. Custodians must initialize the store with
-\code{omopInitializeReleaseStore()} and pin its UUID in service configuration.
+store when the service is enabled. Fresh or pre-store upgrade state initializes
+automatically when no store, local pin or configured UUID exists. Custodians
+can also use \code{omopInitializeReleaseStore()}; external UUID pinning is
+recommended for stronger loss detection. Established state loss fails closed.
 Status declares history-dependent first-answer bindings and public storage
 reservations; there is no cumulative privacy budget or privacy call quota.
 }

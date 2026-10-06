@@ -13,25 +13,38 @@ Status declares `history_dependent = TRUE`,
 `persistent_state = "noise_root_and_release_bindings"`,
 `release_binding = "snapshot_first_answer_v1"`, `privacy_call_quota = "none"`,
 and `service_capacity = "public_identity_reservations_v1"`. The client recognizes
-the old stateless contract as old and refuses incompatible federation pooling.
+the old stateless contract as old and refuses its releases by default. The
+opt-in `dsomop.dp.allow_legacy_servers = TRUE` transition option warns about
+each legacy server's equality residual and records every server's contract,
+including for mixed or pooled-only results.
 
-Custodians initialize with `omopInitializeReleaseStore()`, then pin its returned
-UUID outside the state directory in `DSOMOP_DP_RELEASE_STORE_ID` /
-`dsomop.dp.release_store_id`. Persistent `DSOMOP_STATE_DIR` contains the root,
-authenticated SQLite store and permanent locks; injected roots require the store
-too. Missing or corrupt established state/root fails closed without automatic
-replacement. The default logical capacity is 1 GiB, adjustable with
+First use initializes automatically when the store, configured UUID and local
+pin are absent, including over 2.7.0-style state, and emits a custodian message.
+It syncs an owner-only `release-store-id` pin outside `release-bindings/`.
+`omopInitializeReleaseStore()` remains available for explicit setup. We recommend
+pinning its returned UUID outside the state directory in
+`DSOMOP_DP_RELEASE_STORE_ID` / `dsomop.dp.release_store_id`: a configured UUID
+must match both local pin and authenticated header. Persistent `DSOMOP_STATE_DIR`
+contains the root, pin, authenticated SQLite store and permanent locks; injected
+roots require the store too. Missing or corrupt established state/root fails
+closed without automatic replacement, including store/database loss with a pin.
+The default logical capacity is 1 GiB, adjustable with
 `dsomop.dp.release_store_bytes` / `DSOMOP_DP_RELEASE_STORE_BYTES`; public
 reservations are charged once per new R, existing R remain readable at capacity,
 and there is no eviction. See README for the public reservation formula.
 
 Answers can remain stale indefinitely until explicit snapshot/epoch rotation
 and session restart. New requests against mutable data can reflect different
-source versions. Back up root, complete store, locks and external UUID together;
-stop/drain all workers before restore. The operator/storage must prevent rollback
+source versions. Back up root, pin, complete store, locks and any external UUID
+together; stop/drain all workers before restore. The operator/storage must prevent rollback
 to an earlier complete valid state: no independent monotonic witness is present.
-Upgrades require explicit initialization/publication migration; old stateless
-answers cannot be reconstructed and byte equality across versions is not promised.
+Without external pinning, deleting the whole state root permits a fresh install
+with a new file-backed root/domain; injected roots remain externally controlled.
+Deleting store and pin together while retaining the root is a residual only
+external UUID pinning prevents. Neither deletion is a supported recovery method.
+Upgrade setup is automatic, but a planned publication migration remains necessary:
+old stateless answers cannot be reconstructed and byte equality across versions
+is not promised.
 
 The repeated-successful-payload guarantee is conditional on intact retained
 state and the same public admission schedule. It is not a full temporal-transcript

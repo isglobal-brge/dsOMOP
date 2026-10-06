@@ -8,11 +8,18 @@
   private contents or evaluate the payload again. Provenance/MAC and typed
   admission remain mandatory.
 - Add an authenticated, atomically committed persistent binding store under
-  `DSOMOP_STATE_DIR`, explicit administrative initialization and externally
-  pinned store UUID. Missing/corrupt established state or root fails closed;
-  roots are no longer silently regenerated. Injected roots require bindings too.
-  Replicas must share root and store, backups must retain the consistent set,
-  and whole-state rollback remains an operator/storage trust assumption.
+  `DSOMOP_STATE_DIR`. Fresh state and 2.7.0-style state automatically initialize
+  on first use when no store, configured UUID or local pin exists, with a
+  custodian message and a synced owner-only `release-store-id` pin outside the
+  store directory. Keep `omopInitializeReleaseStore()` for explicit setup.
+  Configured UUIDs take precedence and must match the pin and authenticated
+  header. Missing/corrupt established state or root fails closed; roots are no
+  longer silently regenerated. Injected roots require bindings too. Replicas
+  and backups must retain the consistent root/pin/store/lock set.
+- Recommend external UUID pinning: without it, deleting the whole state root
+  permits a fresh installation (new root/domain with the file-backed provider),
+  and deleting both store and pin while retaining the noise root is not detected.
+  Whole-state rollback remains an operator/storage trust assumption.
 - Reserve public capacity once per new request identity, default 1 GiB through
   `dsomop.dp.release_store_bytes` / `DSOMOP_DP_RELEASE_STORE_BYTES`. Keep existing
   answers readable at capacity with no eviction or privacy call quota.
@@ -21,8 +28,10 @@
   coherent database snapshot. This repeated-payload guarantee is not a finite
   cumulative budget or a full temporal-transcript DP guarantee.
 - Publish release protocol v3 and the snapshot-first-answer status contract;
-  pair with dsOMOPClient 2.7.4. Old stateless answers cannot be reconstructed, and
-  upgrades require explicit initialization/publication migration. Keep all seven
+  pair with dsOMOPClient 2.7.4, whose legacy-server transition option is opt-in
+  with warnings and per-server contract metadata. Old stateless answers cannot
+  be reconstructed; plan the publication migration even though store setup is
+  automatic. Keep all seven
   primitives, QueryLibrary paths, exact sampler, sensitivities, contribution
   bounds, epsilon/delta defaults, component allocation and clipping unchanged.
 

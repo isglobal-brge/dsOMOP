@@ -242,8 +242,10 @@ The release protocol is `dsomop-dp-release-v3`, with privacy contract
 `release_binding = "snapshot_first_answer_v1"`,
 `privacy_call_quota = "none"` and
 `service_capacity = "public_identity_reservations_v1"`. Use dsOMOPClient 2.7.4,
-which recognizes the old v2 stateless contract explicitly and refuses to pool
-incompatible contracts. The exact sampler
+which refuses legacy v2 releases by default. During a staged upgrade, its
+`dsomop.dp.allow_legacy_servers = TRUE` option permits them with a warning naming
+each legacy server and the unrotated-refresh equality residual; results record
+each server's contract, including in mixed federations. The exact sampler
 `dsomop-dp-exact-discrete-laplace-v1`, mechanism
 `dsomop-sticky-discrete-laplace-prf-v2` are unchanged. The versioned policy schema
 is now 4 for the first-answer contract.
@@ -344,20 +346,41 @@ across restarts and replicas. Directories must be owner-only `0700`, and files
 `~/.dsomop` is suitable only when the home is persistent.
 `DSOMOP_TEST_ALLOW_EPHEMERAL_STATE=1` is for tests only.
 
-Before serving requests, initialize once from a trusted administrator R session:
+First use automatically initializes the store when `release-bindings/` is
+absent and neither a configured store UUID nor `release-store-id` pin file
+exists. This also supports upgrades from 2.7.0 with an existing noise root but
+no release store. Initialization uses the same path as the administrative
+initializer, logs a custodian `message()`, and durably writes the UUID to
+`DSOMOP_STATE_DIR/release-store-id`, outside `release-bindings/`. This owner-only
+`0600` file has the same owner, symlink and hard-link checks as other state files.
+The permanent `.release-store-init.lock` serializes initialization across workers.
+
+Explicit setup remains available from a trusted administrator R session:
 
 ```r
 Sys.setenv(DSOMOP_STATE_DIR = "/srv/dsomop/state")
 store_id <- dsOMOP::omopInitializeReleaseStore()
 ```
 
-Persist the returned UUID in deployment configuration **outside the state
-directory**, as `DSOMOP_DP_RELEASE_STORE_ID` or `dsomop.dp.release_store_id`.
-An absent expected UUID does not authorize automatic service initialization.
-The administrative initializer is not a DataSHIELD analyst method. A fresh
-installation provisions the existing CSPRNG noise root normally; an established
-store never silently regenerates or replaces a missing, malformed or mismatched
-root. Package loading remains key-free.
+For stronger loss detection, **we recommend pinning the returned UUID outside
+the state directory**, as `DSOMOP_DP_RELEASE_STORE_ID` or
+`dsomop.dp.release_store_id`. A configured UUID takes precedence and must match
+both the local pin and authenticated store header; any mismatch fails closed.
+An existing externally pinned store is authenticated before adopting a local
+pin. Repeating explicit initialization validates existing state and returns its
+UUID. The initializer is not a DataSHIELD analyst method. A fresh installation
+provisions the existing CSPRNG noise root normally; an established store never
+silently regenerates or replaces a missing, malformed or mismatched root.
+Package loading remains key-free.
+
+Once either the pin or configured UUID exists, loss of `release-bindings/` or
+its database fails closed; it never starts an empty replacement store. Without
+an external UUID, deleting the **whole state root** is indistinguishable from a
+fresh installation: the normal file-backed setup creates a new noise root and
+release domain. An injected root remains externally controlled. Deleting both
+the store and local pin while retaining the noise root is a residual that only
+external UUID pinning prevents. Neither deletion is a supported refresh or
+recovery procedure. External pinning also detects loss of the entire state root.
 
 The file-backed root is `DSOMOP_STATE_DIR/secrets/dp_noise_root`. A custodian
 may instead inject exactly 32 raw CSPRNG bytes or 64 hexadecimal characters
@@ -389,14 +412,16 @@ root and store. Provide physical disk headroom for SQLite journals and backups.
 Validation and bounded-statistic preparation still precede the capacity decision;
 this implementation does not promise refusal before private data are read.
 
-All replicas of one logical node must share the root, transactional store,
-external UUID, public domain/snapshot/epoch and mechanism configuration, on
-storage that honors the package's locking and durability operations. Distinct
+All replicas of one logical node must share the root, local pin, transactional
+store, permanent locks, any external UUID, public domain/snapshot/epoch and
+mechanism configuration, on storage that honors the package's locking and
+durability operations. Distinct
 nodes must use distinct roots and domains. Compare public noise-domain
 fingerprints during readiness checks.
 
 Back up the **whole consistent state**, including the root (or its secret-manager
-configuration), database, permanent locks and external UUID configuration.
+configuration), local pin, database, permanent locks and any external UUID
+configuration.
 Missing/corrupt records, store or root fail closed with one stable analyst error
 and a custodian diagnostic. Stop/drain every worker before restoring or replacing
 state or lock files; never repair by deleting rows or reinitializing an existing
@@ -405,10 +430,11 @@ detect rollback of the entire state to a previously valid backup: the operator
 and storage must prevent whole-state rollback; no independent monotonic witness
 is implemented.
 
-Upgrading from the old stateless contract requires explicit store initialization
-and a planned publication/epoch migration with compatible clients. Old unrecorded
-answers cannot be reconstructed or retrospectively protected, and byte equality
-is not promised across protocol upgrades. Retain old state for its old domain.
+Upgrading from the old stateless contract automatically initializes the binding
+store on first use, without a mandatory setup command. Plan the publication/epoch
+migration with compatible clients: old unrecorded answers cannot be reconstructed
+or retrospectively protected, and byte equality is not promised across protocol
+upgrades. Retain old state for its old domain.
 For later publications, rotate the snapshot or epoch on a public schedule,
 including no-op refreshes, rather than only when private data change.
 
