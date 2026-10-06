@@ -1923,6 +1923,165 @@ test_that("irrelevant ordering and unbounded public domains are rejected", {
   ), policy), "level cap")
 })
 
+test_that("first and last admission is unchanged by resealed private values", {
+  state <- .dp_local_state(noise_root = as.raw(0:31))
+  observed <- data.frame(
+    person_id = c(1L, 1L, 2L), category = c("a", "b", "a"),
+    measurement = c(1, 8, 3), flag = c("yes", "no", "yes"),
+    event_date = as.Date("2020-01-01") + 0:2,
+    stringsAsFactors = FALSE
+  )
+  missing <- observed
+  missing$category[] <- missing$flag[] <- NA_character_
+  missing$measurement[] <- NA_real_
+  inputs <- lapply(list(missing = missing, observed = observed,
+                        empty = observed[FALSE, , drop = FALSE]), function(raw) {
+    .dp_seal(.testPseudonymize(raw), producer = "test/public-admission")
+  })
+  expect_length(unique(vapply(inputs, .dp_lineage, character(1L))), 1L)
+
+  families <- list(
+    list(statistic = "categorical_histogram", variable = "category",
+         levels = c("a", "b")),
+    list(statistic = "numeric_histogram", variable = "measurement",
+         breaks = c(0, 5, 10)),
+    list(statistic = "bounded_mean", variable = "measurement",
+         lower = 0, upper = 10),
+    list(statistic = "binary_rate", variable = "flag", positive = "yes",
+         denominator = "all_persons"),
+    list(statistic = "binary_rate", variable = "flag", positive = "yes",
+         denominator = "nonmissing")
+  )
+  specs <- unlist(lapply(families, function(spec) {
+    lapply(c("first", "last"), function(reducer) {
+      c(spec, list(reducer = reducer))
+    })
+  }), recursive = FALSE)
+  required_order <- "Longitudinal first/last reducers require a public order_by column."
+  for (spec in specs) {
+    messages <- vapply(inputs, function(input) {
+      tryCatch({
+        omopDpReleaseDS(input, spec)
+        NA_character_
+      }, error = conditionMessage)
+    }, character(1L))
+    expect_identical(unname(messages), rep(required_order, length(inputs)),
+                     info = paste(spec$statistic, spec$reducer,
+                                  spec$denominator))
+  }
+  expect_identical(.dp_binding_count(state), 0L)
+
+  for (spec in specs) {
+    spec$order_by <- "event_date"
+    first <- serialize(omopDpReleaseDS(inputs$missing, spec), NULL, version = 3L)
+    for (input in inputs[c("observed", "empty")]) {
+      expect_identical(
+        serialize(omopDpReleaseDS(input, spec), NULL, version = 3L), first,
+        info = paste(spec$statistic, spec$reducer, spec$denominator)
+      )
+    }
+  }
+  expect_identical(.dp_binding_count(state), length(specs))
+  empty_categorical <- .dsomopDpAnalysis(
+    inputs$empty,
+    c(families[[1L]], list(reducer = "first", order_by = "event_date")),
+    .dsomopDpPolicy()
+  )
+  expect_identical(empty_categorical$snapshot$counts, c(0, 0))
+})
+
+test_that("public DP requirements reject before private admission or lookup", {
+  state <- .dp_local_state()
+  input <- .dp_test_table()
+  # This intentionally unsealed schema variant must fail its public type check,
+  # without reaching the private provenance/MAC inspection below.
+  input$unsupported <- rep(list(1L), nrow(input))
+  specs <- list(
+    bounded_record_count = list(statistic = "bounded_record_count",
+                                reducer = "records"),
+    categorical_histogram = list(statistic = "categorical_histogram",
+                                  variable = "category", levels = c("a", "b"),
+                                  reducer = "presence"),
+    numeric_histogram = list(statistic = "numeric_histogram",
+                              variable = "measurement", breaks = c(0, 5, 10),
+                              reducer = "mean"),
+    bounded_distinct = list(statistic = "bounded_distinct",
+                            variable = "category", levels = c("a", "b"),
+                            reducer = "distinct"),
+    bounded_mean = list(statistic = "bounded_mean", variable = "measurement",
+                        lower = 0, upper = 10, reducer = "mean"),
+    binary_rate = list(statistic = "binary_rate", variable = "flag",
+                       positive = "yes", reducer = "any")
+  )
+  invalid <- function(statistic, ..., error) {
+    list(spec = utils::modifyList(specs[[statistic]], list(...)), error = error)
+  }
+  cases <- list(
+    invalid("bounded_record_count", reducer = "presence",
+            error = "requires reducer='records'"),
+    invalid("bounded_record_count", order_by = "event_date",
+            error = "does not use order_by"),
+    invalid("categorical_histogram", levels = c("a", "a"),
+            error = "unique, non-empty public labels"),
+    invalid("categorical_histogram", reducer = "mean",
+            error = "Unsupported categorical longitudinal reducer"),
+    invalid("categorical_histogram", order_by = "event_date",
+            error = "order_by is only valid"),
+    invalid("categorical_histogram", reducer = "records",
+            error = "require a public order_by"),
+    invalid("categorical_histogram", variable = "unsupported",
+            error = "value column has an unsupported type"),
+    invalid("numeric_histogram", variable = "category",
+            error = "requires a numeric, Date, or UTC datetime column"),
+    invalid("numeric_histogram", breaks = c(0, 10, 5),
+            error = "strictly increasing"),
+    invalid("numeric_histogram", reducer = "presence",
+            error = "Unsupported numeric longitudinal reducer"),
+    invalid("numeric_histogram", order_by = "event_date",
+            error = "order_by is only valid"),
+    invalid("bounded_distinct", levels = character(0),
+            error = "level cap"),
+    invalid("bounded_distinct", reducer = "presence",
+            error = "requires reducer='distinct'"),
+    invalid("bounded_distinct", order_by = "event_date",
+            error = "canonical value ordering"),
+    invalid("bounded_mean", variable = "event_date",
+            error = "requires a numeric column"),
+    invalid("bounded_mean", lower = -.Machine$double.xmax,
+            upper = .Machine$double.xmax, error = "finite positive span"),
+    invalid("bounded_mean", reducer = "records",
+            error = "Unsupported bounded-mean longitudinal reducer"),
+    invalid("bounded_mean", order_by = "event_date",
+            error = "order_by is only valid"),
+    invalid("binary_rate", positive = character(0),
+            error = "positive values must be non-empty"),
+    invalid("binary_rate", denominator = "observed",
+            error = "denominator must be all_persons or nonmissing"),
+    invalid("binary_rate", reducer = "mean",
+            error = "Unsupported binary-rate longitudinal reducer"),
+    invalid("binary_rate", order_by = "event_date",
+            error = "order_by is only valid"),
+    invalid("binary_rate", reducer = "first", order_by = "unsupported",
+            error = "order_by column has an unsupported type")
+  )
+  for (statistic in c("categorical_histogram", "numeric_histogram",
+                      "bounded_mean", "binary_rate")) {
+    cases[[length(cases) + 1L]] <- invalid(
+      statistic, reducer = "first", error = "require a public order_by"
+    )
+  }
+  testthat::local_mocked_bindings(
+    .dsomopDpValidateInput = function(...) stop("Private input was inspected"),
+    .dsomopDpRelease = function(...) stop("First-answer lookup was reached"),
+    .package = "dsOMOP"
+  )
+  for (case in cases) {
+    expect_error(omopDpReleaseDS(input, case$spec), case$error,
+                 info = .dsomopDpCanonicalJson(case$spec))
+  }
+  expect_identical(.dp_binding_count(state), 0L)
+})
+
 test_that("public status and release identify the exact sampler", {
   .dp_local_state(noise_root = as.raw(0:31), release_epsilon = 0.25)
   status <- omopDpStatusDS()

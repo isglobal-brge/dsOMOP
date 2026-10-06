@@ -139,7 +139,7 @@
   )
 }
 
-.dsomopDpValueType <- function(value) {
+.dsomopDpValueType <- function(value, label = "selected DP value") {
   if (inherits(value, "Date")) return("date")
   if (inherits(value, c("POSIXct", "POSIXlt"))) return("datetime_utc")
   if (is.factor(value)) return("factor")
@@ -147,7 +147,7 @@
   if (is.integer(value)) return("integer")
   if (is.numeric(value)) return("numeric")
   if (is.character(value)) return("character")
-  stop("The selected DP value column has an unsupported type.", call. = FALSE)
+  stop("The ", label, " column has an unsupported type.", call. = FALSE)
 }
 
 .dsomopDpOrderVector <- function(x, order_by) {
@@ -174,12 +174,12 @@
 }
 
 .dsomopDpPickIndex <- function(indices, values, order_value, last = FALSE) {
-  usable <- indices[!is.na(values[indices])]
-  if (length(usable) == 0L) return(integer(0))
   if (is.null(order_value)) {
     stop("Longitudinal first/last reducers require a public order_by column.",
          call. = FALSE)
   }
+  usable <- indices[!is.na(values[indices])]
+  if (length(usable) == 0L) return(integer(0))
   usable <- usable[!is.na(order_value[usable])]
   if (length(usable) == 0L) return(integer(0))
   tie_value <- values[usable]
@@ -305,40 +305,224 @@
   list(numeric = numeric, public = public)
 }
 
-.dsomopDpCategorical <- function(input, spec, policy, common) {
+# Parse only public specification and column-schema requirements. This must
+# finish before provenance verification, person-token filtering, or any value
+# conversion/reduction, so missing private values cannot change admission.
+.dsomopDpParseSpec <- function(x, spec, policy) {
+  if (!is.data.frame(x) || !.is_omop.table(x)) {
+    stop("omopDpReleaseDS requires a server-created omop.table.",
+         call. = FALSE)
+  }
+  if (!is.list(spec) || is.null(names(spec)) || anyNA(names(spec)) ||
+      any(!nzchar(names(spec))) || anyDuplicated(names(spec))) {
+    stop("The DP specification must be one uniquely named object.",
+         call. = FALSE)
+  }
+  forbidden <- c("seed", "nonce", "epsilon", "delta", "fresh_noise",
+                 "force", "reset", "privacy_epoch", "noise_root")
+  if (any(names(spec) %in% forbidden)) {
+    stop("DP seeds, allocations, epochs and reroll controls are server-owned.",
+         call. = FALSE)
+  }
+  allowed <- c(
+    "statistic", "variable", "levels", "breaks", "lower", "upper",
+    "reducer", "max_contributions", "positive", "denominator", "order_by",
+    "population_id"
+  )
+  if (any(!names(spec) %in% allowed)) {
+    stop("The DP specification contains an unsupported field.", call. = FALSE)
+  }
+  statistic <- tolower(as.character(
+    .dsomopDpSpecScalar(spec$statistic, "statistic")
+  ))
+  if (!statistic %in% .DSOMOP_DP_STATISTICS) {
+    stop("Unsupported DP statistic.", call. = FALSE)
+  }
+  if (!is.null(spec$population_id)) {
+    population_id <- .dsomopDpSpecScalar(
+      spec$population_id, "population_id"
+    )
+    if (!is.character(population_id) ||
+        !grepl("^[A-Za-z0-9][A-Za-z0-9._:@+/-]{0,255}$", population_id)) {
+      stop("DP population_id must be one valid public compatibility label.",
+           call. = FALSE)
+    }
+  }
+  variable <- if (statistic %in% c("count", "bounded_record_count")) NULL else {
+    .dsomopDpColumn(x, spec$variable, "variable")
+  }
+  reducer <- tolower(as.character(.dsomopDpSpecScalar(
+    spec$reducer %||% "any", "reducer"
+  )))
+  max_contributions <- .dsomopDpSpecInteger(
+    spec$max_contributions %||% 1L, "max_contributions", 1,
+    policy$max_contributions
+  )
+  order_by <- .dsomopDpColumn(
+    x, spec$order_by, "order_by", required = FALSE
+  )
+  common <- list(
+    statistic = statistic, variable = variable, reducer = reducer,
+    max_contributions = max_contributions, order_by = order_by
+  )
+  if (!is.null(order_by)) {
+    .dsomopDpValueType(x[[order_by]], label = "DP order_by")
+  }
+  if (!is.null(variable)) {
+    common$value_type <- .dsomopDpValueType(x[[variable]])
+  }
+  if (statistic %in% c("numeric_histogram", "bounded_mean")) {
+    if (!common$value_type %in% c("integer", "numeric", "date", "datetime_utc")) {
+      stop("This DP statistic requires a numeric, Date, or UTC datetime column.",
+           call. = FALSE)
+    }
+    if (common$value_type %in% c("integer", "numeric")) {
+      common$value_type <- "number"
+    }
+  }
+  if (statistic == "categorical_histogram") {
+    levels <- .dsomopDpSpecAtomic(spec$levels, "levels")
+    if (length(levels) < 1L || length(levels) > policy$max_levels) {
+      stop("Categorical DP levels exceed the server-owned level cap.",
+           call. = FALSE)
+    }
+    levels <- enc2utf8(as.character(levels))
+    if (any(!nzchar(levels)) || any(nchar(levels, type = "bytes") > 256L) ||
+        anyDuplicated(levels)) {
+      stop("Categorical DP levels must be unique, non-empty public labels.",
+           call. = FALSE)
+    }
+    levels <- sort(levels, method = "radix")
+    reducer <- common$reducer
+    if (!reducer %in% c(
+      "presence", "mode", "first", "last", "records", "any"
+    )) {
+      stop("Unsupported categorical longitudinal reducer.", call. = FALSE)
+    }
+    if (identical(reducer, "any")) reducer <- "presence"
+    if (!is.null(common$order_by) &&
+        !reducer %in% c("first", "last", "records")) {
+      stop("Categorical order_by is only valid for first/last/records reducers.",
+           call. = FALSE)
+    }
+    if (identical(reducer, "records") && is.null(common$order_by)) {
+      stop("Categorical records reducers require a public order_by column.",
+           call. = FALSE)
+    }
+    common$levels <- levels
+    common$reducer <- reducer
+  } else if (statistic == "bounded_record_count") {
+    if (!identical(common$reducer, "records")) {
+      stop("bounded_record_count requires reducer='records'.", call. = FALSE)
+    }
+    if (!is.null(common$order_by)) {
+      stop("bounded_record_count does not use order_by.", call. = FALSE)
+    }
+  } else if (statistic == "bounded_distinct") {
+    if (!identical(common$reducer, "distinct")) {
+      stop("bounded_distinct requires reducer='distinct'.", call. = FALSE)
+    }
+    if (!is.null(common$order_by)) {
+      stop("bounded_distinct uses server-owned canonical value ordering, not ",
+           "order_by.", call. = FALSE)
+    }
+    levels <- .dsomopDpSpecAtomic(spec$levels, "levels")
+    if (length(levels) < 1L || length(levels) > policy$max_levels) {
+      stop("bounded_distinct levels exceed the server-owned level cap.",
+           call. = FALSE)
+    }
+    levels <- enc2utf8(as.character(levels))
+    if (any(!nzchar(levels)) || any(nchar(levels, type = "bytes") > 256L) ||
+        anyDuplicated(levels)) {
+      stop("bounded_distinct levels must be unique, non-empty public labels.",
+           call. = FALSE)
+    }
+    levels <- sort(levels, method = "radix")
+    common$levels <- levels
+  } else if (statistic == "numeric_histogram") {
+    breaks <- .dsomopDpBreaks(spec$breaks, common$value_type, policy)
+    reducer <- common$reducer
+    if (!reducer %in% c("any", "min", "max", "mean", "median", "first",
+                        "last", "records")) {
+      stop("Unsupported numeric longitudinal reducer.", call. = FALSE)
+    }
+    if (reducer == "any") reducer <- "mean"
+    if (!is.null(common$order_by) &&
+        !reducer %in% c("first", "last", "records")) {
+      stop("Numeric order_by is only valid for first/last/records reducers.",
+           call. = FALSE)
+    }
+    common$breaks <- breaks
+    common$reducer <- reducer
+  } else if (statistic == "bounded_mean") {
+    if (!identical(common$value_type, "number")) {
+      stop("bounded_mean currently requires a numeric column.", call. = FALSE)
+    }
+    lower <- .dsomopDpSpecNumber(spec$lower, "lower")
+    upper <- .dsomopDpSpecNumber(spec$upper, "upper")
+    span <- upper - lower
+    if (lower >= upper || !is.finite(span)) {
+      stop("DP mean bounds must have one finite positive span.",
+           call. = FALSE)
+    }
+    reducer <- common$reducer
+    if (!reducer %in% c("any", "min", "max", "mean", "median", "first",
+                        "last")) {
+      stop("Unsupported bounded-mean longitudinal reducer.", call. = FALSE)
+    }
+    if (reducer == "any") reducer <- "mean"
+    if (!is.null(common$order_by) && !reducer %in% c("first", "last")) {
+      stop("Bounded-mean order_by is only valid for first/last reducers.",
+           call. = FALSE)
+    }
+    common$lower <- lower
+    common$upper <- upper
+    common$span <- span
+    common$reducer <- reducer
+  } else if (statistic == "binary_rate") {
+    positive <- .dsomopDpSpecAtomic(spec$positive, "positive")
+    positive <- sort(unique(enc2utf8(as.character(positive))), method = "radix")
+    if (length(positive) < 1L || length(positive) > policy$max_levels ||
+        any(!nzchar(positive)) ||
+        any(nchar(positive, type = "bytes") > 256L)) {
+      stop("binary_rate positive values must be non-empty and within the ",
+           "server-owned level cap.",
+           call. = FALSE)
+    }
+    reducer <- common$reducer
+    if (!reducer %in% c("any", "all", "first", "last")) {
+      stop("Unsupported binary-rate longitudinal reducer.", call. = FALSE)
+    }
+    if (!is.null(common$order_by) && !reducer %in% c("first", "last")) {
+      stop("Binary-rate order_by is only valid for first/last reducers.",
+           call. = FALSE)
+    }
+    denominator_contract <- .dsomopDpSpecScalar(
+      spec$denominator %||% "all_persons", "denominator"
+    )
+    if (!is.character(denominator_contract) ||
+        !denominator_contract %in% c("all_persons", "nonmissing")) {
+      stop("binary_rate denominator must be all_persons or nonmissing.",
+           call. = FALSE)
+    }
+    common$positive <- positive
+    common$denominator <- denominator_contract
+  }
+  if (statistic %in% c("categorical_histogram", "numeric_histogram",
+                       "bounded_mean", "binary_rate") &&
+      common$reducer %in% c("first", "last") && is.null(order_by)) {
+    stop("Longitudinal first/last reducers require a public order_by column.",
+         call. = FALSE)
+  }
+  common
+}
+
+.dsomopDpCategorical <- function(input, common) {
   variable <- common$variable
-  values <- input$x[[variable]]
-  .dsomopDpValueType(values)
   value_type <- "categorical_utf8_v1"
-  values <- enc2utf8(as.character(values))
-  levels <- .dsomopDpSpecAtomic(spec$levels, "levels")
-  if (length(levels) < 1L || length(levels) > policy$max_levels) {
-    stop("Categorical DP levels exceed the server-owned level cap.",
-         call. = FALSE)
-  }
-  levels <- enc2utf8(as.character(levels))
-  if (any(!nzchar(levels)) || any(nchar(levels, type = "bytes") > 256L) ||
-      anyDuplicated(levels)) {
-    stop("Categorical DP levels must be unique, non-empty public labels.",
-         call. = FALSE)
-  }
-  levels <- sort(levels, method = "radix")
+  values <- enc2utf8(as.character(input$x[[variable]]))
+  levels <- common$levels
   reducer <- common$reducer
-  if (!reducer %in% c(
-    "presence", "mode", "first", "last", "records", "any"
-  )) {
-    stop("Unsupported categorical longitudinal reducer.", call. = FALSE)
-  }
-  if (identical(reducer, "any")) reducer <- "presence"
-  if (!is.null(common$order_by) &&
-      !reducer %in% c("first", "last", "records")) {
-    stop("Categorical order_by is only valid for first/last/records reducers.",
-         call. = FALSE)
-  }
-  if (identical(reducer, "records") && is.null(common$order_by)) {
-    stop("Categorical records reducers require a public order_by column.",
-         call. = FALSE)
-  }
   cap <- if (reducer %in% c("presence", "records")) {
     common$max_contributions
   } else 1L
@@ -379,7 +563,7 @@
     }
     if (length(candidate)) match(candidate, levels) else integer(0)
   }), use.names = FALSE)
-  counts <- tabulate(selected_cell, nbins = length(levels))
+  counts <- tabulate(as.integer(selected_cell), nbins = length(levels))
   snapshot <- list(counts = as.numeric(counts))
   semantic <- list(
     statistic = "categorical_histogram", variable = variable,
@@ -404,12 +588,6 @@
 }
 
 .dsomopDpBoundedRecordCount <- function(input, common) {
-  if (!identical(common$reducer, "records")) {
-    stop("bounded_record_count requires reducer='records'.", call. = FALSE)
-  }
-  if (!is.null(common$order_by)) {
-    stop("bounded_record_count does not use order_by.", call. = FALSE)
-  }
   groups <- .dsomopDpOrderedGroups(input$token)
   cap <- common$max_contributions
   true_count <- sum(vapply(
@@ -436,29 +614,9 @@
   )
 }
 
-.dsomopDpBoundedDistinct <- function(input, spec, policy, common) {
-  if (!identical(common$reducer, "distinct")) {
-    stop("bounded_distinct requires reducer='distinct'.", call. = FALSE)
-  }
-  if (!is.null(common$order_by)) {
-    stop("bounded_distinct uses server-owned canonical value ordering, not ",
-         "order_by.", call. = FALSE)
-  }
-  values <- input$x[[common$variable]]
-  .dsomopDpValueType(values)
-  values <- enc2utf8(as.character(values))
-  levels <- .dsomopDpSpecAtomic(spec$levels, "levels")
-  if (length(levels) < 1L || length(levels) > policy$max_levels) {
-    stop("bounded_distinct levels exceed the server-owned level cap.",
-         call. = FALSE)
-  }
-  levels <- enc2utf8(as.character(levels))
-  if (any(!nzchar(levels)) || any(nchar(levels, type = "bytes") > 256L) ||
-      anyDuplicated(levels)) {
-    stop("bounded_distinct levels must be unique, non-empty public labels.",
-         call. = FALSE)
-  }
-  levels <- sort(levels, method = "radix")
+.dsomopDpBoundedDistinct <- function(input, common) {
+  values <- enc2utf8(as.character(input$x[[common$variable]]))
+  levels <- common$levels
   cap <- common$max_contributions
   groups <- .dsomopDpOrderedGroups(input$token)
   selected <- unlist(lapply(groups, function(indices) {
@@ -494,21 +652,11 @@
   )
 }
 
-.dsomopDpNumericHistogram <- function(input, spec, policy, common) {
+.dsomopDpNumericHistogram <- function(input, common) {
   variable <- common$variable
   numeric <- .dsomopDpNumericValues(input$x[[variable]])
-  breaks <- .dsomopDpBreaks(spec$breaks, numeric$type, policy)
+  breaks <- common$breaks
   reducer <- common$reducer
-  if (!reducer %in% c("any", "min", "max", "mean", "median", "first",
-                      "last", "records")) {
-    stop("Unsupported numeric longitudinal reducer.", call. = FALSE)
-  }
-  if (reducer == "any") reducer <- "mean"
-  if (!is.null(common$order_by) &&
-      !reducer %in% c("first", "last", "records")) {
-    stop("Numeric order_by is only valid for first/last/records reducers.",
-         call. = FALSE)
-  }
   selected <- numeric(0)
   if (reducer == "records") {
     groups <- .dsomopDpOrderedGroups(input$token)
@@ -562,29 +710,13 @@
        sensitivity = list(l1 = cap, unit = "person"), payload_fn = payload_fn)
 }
 
-.dsomopDpBoundedMean <- function(input, spec, policy, common) {
+.dsomopDpBoundedMean <- function(input, policy, common) {
   variable <- common$variable
   numeric <- .dsomopDpNumericValues(input$x[[variable]])
-  if (!identical(numeric$type, "number")) {
-    stop("bounded_mean currently requires a numeric column.", call. = FALSE)
-  }
-  lower <- .dsomopDpSpecNumber(spec$lower, "lower")
-  upper <- .dsomopDpSpecNumber(spec$upper, "upper")
-  span <- upper - lower
-  if (lower >= upper || !is.finite(span)) {
-    stop("DP mean bounds must have one finite positive span.",
-         call. = FALSE)
-  }
+  lower <- common$lower
+  upper <- common$upper
+  span <- common$span
   reducer <- common$reducer
-  if (!reducer %in% c("any", "min", "max", "mean", "median", "first",
-                      "last")) {
-    stop("Unsupported bounded-mean longitudinal reducer.", call. = FALSE)
-  }
-  if (reducer == "any") reducer <- "mean"
-  if (!is.null(common$order_by) && !reducer %in% c("first", "last")) {
-    stop("Bounded-mean order_by is only valid for first/last reducers.",
-         call. = FALSE)
-  }
   reduced <- .dsomopDpReduceOne(
     input$token, numeric$value, reducer, common$order_value
   )
@@ -634,37 +766,13 @@
   )
 }
 
-.dsomopDpBinaryRate <- function(input, spec, policy, common) {
+.dsomopDpBinaryRate <- function(input, common) {
   variable <- common$variable
-  values <- input$x[[variable]]
-  .dsomopDpValueType(values)
   value_type <- "categorical_utf8_v1"
-  values <- enc2utf8(as.character(values))
-  positive <- .dsomopDpSpecAtomic(spec$positive, "positive")
-  positive <- sort(unique(enc2utf8(as.character(positive))), method = "radix")
-  if (length(positive) < 1L || length(positive) > policy$max_levels ||
-      any(!nzchar(positive)) ||
-      any(nchar(positive, type = "bytes") > 256L)) {
-    stop("binary_rate positive values must be non-empty and within the ",
-         "server-owned level cap.",
-         call. = FALSE)
-  }
+  values <- enc2utf8(as.character(input$x[[variable]]))
+  positive <- common$positive
   reducer <- common$reducer
-  if (!reducer %in% c("any", "all", "first", "last")) {
-    stop("Unsupported binary-rate longitudinal reducer.", call. = FALSE)
-  }
-  if (!is.null(common$order_by) && !reducer %in% c("first", "last")) {
-    stop("Binary-rate order_by is only valid for first/last reducers.",
-         call. = FALSE)
-  }
-  denominator_contract <- .dsomopDpSpecScalar(
-    spec$denominator %||% "all_persons", "denominator"
-  )
-  if (!is.character(denominator_contract) ||
-      !denominator_contract %in% c("all_persons", "nonmissing")) {
-    stop("binary_rate denominator must be all_persons or nonmissing.",
-         call. = FALSE)
-  }
+  denominator_contract <- common$denominator
   groups <- .dsomopDpOrderedGroups(input$token)
   binary <- as.logical(unlist(lapply(groups, function(indices) {
     observed <- values[indices]
@@ -726,60 +834,10 @@
 }
 
 .dsomopDpAnalysis <- function(x, spec, policy) {
+  common <- .dsomopDpParseSpec(x, spec, policy)
   input <- .dsomopDpValidateInput(x, policy)
-  if (!is.list(spec) || is.null(names(spec)) || anyNA(names(spec)) ||
-      any(!nzchar(names(spec))) || anyDuplicated(names(spec))) {
-    stop("The DP specification must be one uniquely named object.",
-         call. = FALSE)
-  }
-  forbidden <- c("seed", "nonce", "epsilon", "delta", "fresh_noise",
-                 "force", "reset", "privacy_epoch", "noise_root")
-  if (any(names(spec) %in% forbidden)) {
-    stop("DP seeds, allocations, epochs and reroll controls are server-owned.",
-         call. = FALSE)
-  }
-  allowed <- c(
-    "statistic", "variable", "levels", "breaks", "lower", "upper",
-    "reducer", "max_contributions", "positive", "denominator", "order_by",
-    "population_id"
-  )
-  if (any(!names(spec) %in% allowed)) {
-    stop("The DP specification contains an unsupported field.", call. = FALSE)
-  }
-  statistic <- tolower(as.character(
-    .dsomopDpSpecScalar(spec$statistic, "statistic")
-  ))
-  if (!statistic %in% .DSOMOP_DP_STATISTICS) {
-    stop("Unsupported DP statistic.", call. = FALSE)
-  }
-  if (!is.null(spec$population_id)) {
-    population_id <- .dsomopDpSpecScalar(
-      spec$population_id, "population_id"
-    )
-    if (!is.character(population_id) ||
-        !grepl("^[A-Za-z0-9][A-Za-z0-9._:@+/-]{0,255}$", population_id)) {
-      stop("DP population_id must be one valid public compatibility label.",
-           call. = FALSE)
-    }
-  }
-  variable <- if (statistic %in% c("count", "bounded_record_count")) NULL else {
-    .dsomopDpColumn(input$x, spec$variable, "variable")
-  }
-  reducer <- tolower(as.character(.dsomopDpSpecScalar(
-    spec$reducer %||% "any", "reducer"
-  )))
-  max_contributions <- .dsomopDpSpecInteger(
-    spec$max_contributions %||% 1L, "max_contributions", 1,
-    policy$max_contributions
-  )
-  order_by <- .dsomopDpColumn(
-    input$x, spec$order_by, "order_by", required = FALSE
-  )
-  common <- list(
-    variable = variable, reducer = reducer,
-    max_contributions = max_contributions, order_by = order_by,
-    order_value = .dsomopDpOrderVector(input$x, order_by)
-  )
+  common$order_value <- .dsomopDpOrderVector(input$x, common$order_by)
+  statistic <- common$statistic
   if (statistic == "count") {
     people <- sort(unique(input$token), method = "radix")
     true_count <- length(people)
@@ -798,15 +856,15 @@
   } else if (statistic == "bounded_record_count") {
     analysis <- .dsomopDpBoundedRecordCount(input, common)
   } else if (statistic == "categorical_histogram") {
-    analysis <- .dsomopDpCategorical(input, spec, policy, common)
+    analysis <- .dsomopDpCategorical(input, common)
   } else if (statistic == "numeric_histogram") {
-    analysis <- .dsomopDpNumericHistogram(input, spec, policy, common)
+    analysis <- .dsomopDpNumericHistogram(input, common)
   } else if (statistic == "bounded_distinct") {
-    analysis <- .dsomopDpBoundedDistinct(input, spec, policy, common)
+    analysis <- .dsomopDpBoundedDistinct(input, common)
   } else if (statistic == "bounded_mean") {
-    analysis <- .dsomopDpBoundedMean(input, spec, policy, common)
+    analysis <- .dsomopDpBoundedMean(input, policy, common)
   } else {
-    analysis <- .dsomopDpBinaryRate(input, spec, policy, common)
+    analysis <- .dsomopDpBinaryRate(input, common)
   }
   analysis$semantic <- c(list(
     protocol = .DSOMOP_DP_PROTOCOL,
