@@ -7,6 +7,11 @@
   resealing one or many changed persons or restarting R; hits do not fingerprint
   private contents or evaluate the payload again. Provenance/MAC and typed
   admission remain mandatory.
+- Validate public DP specifications before private input processing or stored
+  answer lookup. First/last reducers require `order_by` even on empty or
+  all-missing data; public column types, levels, bounds and reducer requirements
+  are checked during parsing for every primitive. Empty categorical inputs now
+  prepare zero counts instead of failing before lookup.
 - Add an authenticated, atomically committed persistent binding store under
   `DSOMOP_STATE_DIR`. Fresh state and 2.7.0-style state automatically initialize
   on first use when no store, configured UUID or local pin exists, with a
