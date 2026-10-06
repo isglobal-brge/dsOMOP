@@ -1,19 +1,18 @@
 # Sticky differential-privacy state.
 #
-# Privacy releases have one deliberately small state contract: a persistent
-# 256-bit custodial root. No release history is stored or consulted. HMAC
-# domain separation derives independent keys for provenance, semantic identity,
-# protected-snapshot binding, and noise.  Recomputing an identical release is
-# therefore sticky without memoization or database state.
+# A persistent custodial root authenticates permanent first-answer bindings.
+# Public request identity selects the response; private content binds only the
+# first release's noise context. Provenance admission still precedes lookup.
 
-.DSOMOP_DP_PROTOCOL <- "dsomop-dp-release-v2"
+.DSOMOP_DP_PROTOCOL <- "dsomop-dp-release-v3"
 .DSOMOP_DP_CANONICAL_PROTOCOL <- "dsomop-dp-canonical-json-v1"
 .DSOMOP_DP_RELEASE_PROTOCOL <- "dsomop-dp-semantic-release-v1"
+.DSOMOP_DP_REQUEST_PROTOCOL <- "dsomop-dp-public-request-v1"
 .DSOMOP_DP_MECHANISM <- "dsomop-sticky-discrete-laplace-prf-v2"
 .DSOMOP_DP_SAMPLER <- "dsomop-dp-exact-discrete-laplace-v1"
 .DSOMOP_PRIVACY_GUARANTEE <-
   "sticky_person_bounded_discrete_laplace_per_release_v1"
-.DSOMOP_DP_CONTRACT <- "fixed_per_release_semantic_prf_v1"
+.DSOMOP_DP_CONTRACT <- "fixed_per_release_snapshot_first_answer_v1"
 
 .dsomopDpHex <- function(value) {
   if (!is.raw(value)) stop("Cannot encode non-raw DP state.", call. = FALSE)
@@ -235,33 +234,40 @@
 }
 
 .dsomopDpNoiseRoot <- function() {
-  environment <- Sys.getenv("DSOMOP_DP_NOISE_ROOT", unset = "")
-  configured <- getOption(
-    "dsomop.dp.noise_root",
-    getOption("default.dsomop.dp.noise_root", NULL)
-  )
-  environment_root <- if (nzchar(environment)) {
-    .coerceDsomopDpRoot(environment)
-  } else NULL
-  configured_root <- if (!is.null(configured)) {
-    .coerceDsomopDpRoot(configured)
-  } else NULL
-  if (!is.null(environment_root) && !is.null(configured_root) &&
-      !identical(environment_root, configured_root)) {
-    stop("Conflicting DP noise roots are configured.", call. = FALSE)
+  established <- .dsomopDpBindingEstablished()
+  resolve <- function() {
+    environment <- Sys.getenv("DSOMOP_DP_NOISE_ROOT", unset = "")
+    configured <- getOption(
+      "dsomop.dp.noise_root",
+      getOption("default.dsomop.dp.noise_root", NULL)
+    )
+    environment_root <- if (nzchar(environment)) {
+      .coerceDsomopDpRoot(environment)
+    } else NULL
+    configured_root <- if (!is.null(configured)) {
+      .coerceDsomopDpRoot(configured)
+    } else NULL
+    if (!is.null(environment_root) && !is.null(configured_root) &&
+        !identical(environment_root, configured_root)) {
+      stop("Conflicting DP noise roots are configured.", call. = FALSE)
+    }
+    injected <- environment_root %||% configured_root
+    if (!is.null(injected)) {
+      return(list(
+        key = injected, key_id = .dsomopDpRootId(injected),
+        provider = "custodial_injected", material_exposed = FALSE
+      ))
+    }
+    root <- .ensureDsomopSecret(
+      "dp_noise_root", require_existing = established,
+      replace_invalid = !established
+    )
+    list(
+      key = root, key_id = .dsomopDpRootId(root),
+      provider = "persistent_file", material_exposed = FALSE
+    )
   }
-  injected <- environment_root %||% configured_root
-  if (!is.null(injected)) {
-    return(list(
-      key = injected, key_id = .dsomopDpRootId(injected),
-      provider = "custodial_injected", material_exposed = FALSE
-    ))
-  }
-  root <- .ensureDsomopSecret("dp_noise_root", replace_invalid = TRUE)
-  list(
-    key = root, key_id = .dsomopDpRootId(root),
-    provider = "persistent_file", material_exposed = FALSE
-  )
+  if (established) .dsomopDpBindingGuard(resolve()) else resolve()
 }
 
 .dsomopDpSubkey <- function(root, domain, purpose) {
@@ -391,8 +397,10 @@
 #' metadata falls back to sorted vocabulary versions, then resource identity
 #' alone, with one warning per R session. Explicit domain/snapshot values win.
 #' Bump dsomop.dp.privacy_epoch after each fallback data reload or whenever data
-#' change without metadata changes. The default file noise root requires a persistent private
-#' DSOMOP_STATE_DIR (or dsomop.state_dir); ephemeral state is test-only.
+#' change without metadata changes. All enabled services require a persistent
+#' private DSOMOP_STATE_DIR (or dsomop.state_dir), an explicitly initialized
+#' release store and an externally pinned store UUID, including injected-root
+#' deployments. Ephemeral state is test-only.
 #' @keywords internal
 .dsomopDpPolicyConfig <- function() {
   state <- .dsomopDpState()
@@ -422,7 +430,7 @@
   }
   policy <- list(
     enabled = TRUE,
-    schema_version = 3L,
+    schema_version = 4L,
     protocol = .DSOMOP_DP_PROTOCOL,
     canonical_protocol = .DSOMOP_DP_CANONICAL_PROTOCOL,
     release_protocol = .DSOMOP_DP_RELEASE_PROTOCOL,
@@ -493,6 +501,7 @@
       stop("DP policy changed during this R session; restart the session after ",
            "changing the snapshot or privacy parameters.", call. = FALSE)
     }
+    .dsomopDpBindingCheck(runtime$policy)
     return(runtime$policy)
   }
 
@@ -507,6 +516,10 @@
                                 "protected-fingerprint/v1"),
     noise = .dsomopDpSubkey(root$key, config$domain, "noise/v1")
   )
+  binding <- .dsomopDpBindingIdentity()
+  config$binding_store_id <- binding$store_id
+  config$binding_state_root <- binding$state_root
+  .dsomopDpBindingCheck(config)
   state$dp_runtime <- list(
     enabled = TRUE, policy_hash = config$policy_hash, policy = config
   )
@@ -582,6 +595,28 @@
   )))
 }
 
+.dsomopDpRequestId <- function(policy, wrapped_semantic) {
+  .dsomopDpHmac(policy$keys$query, .dsomopDpCanonicalJson(list(
+    protocol = .DSOMOP_DP_REQUEST_PROTOCOL,
+    domain = policy$domain,
+    policy_hash = policy$policy_hash,
+    snapshot_id = .dsomopDpPublicSnapshotId(policy),
+    privacy_epoch = policy$privacy_epoch,
+    semantic = wrapped_semantic
+  )))
+}
+
+# Public worst-case serialized response allowance: fixed metadata, public
+# strings (including escaping), and histogram coordinates. No private count,
+# fingerprint or observed payload size controls capacity admission. The store
+# adds no eviction and never refunds a reservation for a smaller actual answer.
+.dsomopDpResponseReservation <- function(wrapped_semantic) {
+  public_bytes <- nchar(.dsomopDpCanonicalJson(wrapped_semantic), type = "bytes")
+  statistic <- wrapped_semantic$statistic
+  coordinates <- max(1, length(statistic$levels), length(statistic$breaks))
+  8192 + 16384 + 4 * public_bytes + 64 * coordinates
+}
+
 .dsomopDpRelease <- function(policy, semantic, bounded_snapshot,
                              sensitivity, payload_fn) {
   if (!is.function(payload_fn)) stop("payload_fn must be a function.",
@@ -594,44 +629,50 @@
     sensitivity = sensitivity,
     statistic = semantic
   )
-  semantic_query_id <- .dsomopDpSemanticId(policy, semantic)
-  snapshot <- .dsomopDpSnapshotBinding(policy, bounded_snapshot)
-  release_id <- .dsomopDpReleaseId(policy, semantic, snapshot)
-  release_context <- list(
-    release_id = release_id,
-    semantic_query_id = semantic_query_id,
-    snapshot_id = snapshot$snapshot_id,
-    protected_fingerprint = snapshot$protected_fingerprint,
-    policy_hash = policy$policy_hash
-  )
-  value <- payload_fn(
-    epsilon = policy$release_epsilon,
-    policy = policy,
-    release_context = release_context
-  )
-  reserved <- c(
-    "protocol", "mechanism", "adjacency", "epsilon", "delta",
-    "sensitivity", "privacy_contract", "sticky", "sampler"
-  )
-  if (!is.list(value) || is.null(names(value)) || anyNA(names(value)) ||
-      anyDuplicated(names(value)) ||
-      any(c("noise_root", "seed", "raw_noise") %in% names(value)) ||
-      any(reserved %in% names(value))) {
-    stop("The DP mechanism returned an invalid payload.", call. = FALSE)
+  request_id <- .dsomopDpRequestId(policy, semantic)
+  make_fresh <- function() {
+    semantic_query_id <- .dsomopDpSemanticId(policy, semantic)
+    snapshot <- .dsomopDpSnapshotBinding(policy, bounded_snapshot)
+    release_id <- .dsomopDpReleaseId(policy, semantic, snapshot)
+    release_context <- list(
+      release_id = release_id,
+      semantic_query_id = semantic_query_id,
+      snapshot_id = snapshot$snapshot_id,
+      protected_fingerprint = snapshot$protected_fingerprint,
+      policy_hash = policy$policy_hash
+    )
+    value <- payload_fn(
+      epsilon = policy$release_epsilon,
+      policy = policy,
+      release_context = release_context
+    )
+    reserved <- c(
+      "protocol", "mechanism", "adjacency", "epsilon", "delta",
+      "sensitivity", "privacy_contract", "sticky", "sampler"
+    )
+    if (!is.list(value) || is.null(names(value)) || anyNA(names(value)) ||
+        anyDuplicated(names(value)) ||
+        any(c("noise_root", "seed", "raw_noise") %in% names(value)) ||
+        any(reserved %in% names(value))) {
+      stop("The DP mechanism returned an invalid payload.", call. = FALSE)
+    }
+    payload <- c(value, list(
+      protocol = policy$protocol,
+      mechanism = policy$mechanism,
+      adjacency = policy$adjacency,
+      epsilon = policy$release_epsilon,
+      delta = policy$release_delta,
+      sensitivity = sensitivity,
+      privacy_contract = policy$privacy_contract,
+      sticky = TRUE,
+      sampler = policy$sampler
+    ))
+    jsonlite::fromJSON(
+      .dsomopDpCanonicalJson(payload), simplifyVector = TRUE
+    )
   }
-  payload <- c(value, list(
-    protocol = policy$protocol,
-    mechanism = policy$mechanism,
-    adjacency = policy$adjacency,
-    epsilon = policy$release_epsilon,
-    delta = policy$release_delta,
-    sensitivity = sensitivity,
-    privacy_contract = policy$privacy_contract,
-    sticky = TRUE,
-    sampler = policy$sampler
-  ))
-  jsonlite::fromJSON(
-    .dsomopDpCanonicalJson(payload), simplifyVector = TRUE
+  .dsomopDpBindingRelease(
+    policy, request_id, .dsomopDpResponseReservation(semantic), make_fresh
   )
 }
 
@@ -673,9 +714,11 @@
     max_levels = policy$max_levels,
     max_contributions = policy$max_contributions,
     numeric_grid = policy$numeric_grid,
-    history_dependent = FALSE,
+    history_dependent = TRUE,
     privacy_call_quota = "none",
-    persistent_state = "noise_root_only"
+    persistent_state = "noise_root_and_release_bindings",
+    release_binding = "snapshot_first_answer_v1",
+    service_capacity = "public_identity_reservations_v1"
   )
   if (!isTRUE(initialize)) return(status)
   status$noise_key_id <- policy$noise_root$key_id
