@@ -53,6 +53,15 @@ administrative timing, validation failures, availability and other DataSHIELD
 outputs remain outside that guarantee. README and DISCLOSURE_CONTROL.md describe
 the current deployment and residuals.
 
+## Scaling
+
+Every request authenticates the full first-answer inventory: O(entries),
+including entries retained across snapshot/epoch rotations. A review benchmark
+measured about 25 seconds for one existing-answer replay at 40,000 entries;
+concurrent requests may time out. Keep the reservation capacity sized for this
+cost, or lower `dsomop.dp.release_store_bytes` before the inventory grows.
+Incremental authentication is future work.
+
 ## Historical default-on report (2.6.0)
 
 The remainder is retained historical validation evidence. Its stateless/root-only

@@ -267,8 +267,11 @@ metadata distinguish old and repaired releases. The first-answer release-envelop
 `release_binding = "snapshot_first_answer_v1"`, `privacy_call_quota = "none"`
 and `service_capacity = "public_identity_reservations_v1"`. dsOMOPClient 2.7.4
 recognizes the older stateless v2 contract explicitly and refuses mixed-contract
-pooling. Sampler, mechanism and canonical JSON are unchanged by this first-answer
-update; the versioned policy schema is now 4.
+pooling by default. With `dsomop.dp.allow_legacy_servers = TRUE`, it permits
+legacy and mixed-contract pooling, warns for each legacy server about the
+unrotated-refresh equality residual, and records every server's contract in the
+result, including pooled-only results. Sampler, mechanism and canonical JSON are
+unchanged by this first-answer update; the versioned policy schema is now 4.
 
 Changing the sampler changes the policy hash and sticky release identity, so an
 upgraded query can receive a new draw. All replicas of one logical node must

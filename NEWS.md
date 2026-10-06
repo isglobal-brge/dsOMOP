@@ -23,6 +23,11 @@
 - Reserve public capacity once per new request identity, default 1 GiB through
   `dsomop.dp.release_store_bytes` / `DSOMOP_DP_RELEASE_STORE_BYTES`. Keep existing
   answers readable at capacity with no eviction or privacy call quota.
+- Known scaling limitation: every request authenticates the full first-answer
+  inventory in O(entries). A review benchmark measured about 25 seconds for an
+  existing-answer replay at 40,000 entries; concurrent requests may time out.
+  Size reservation capacity accordingly, or lower `dsomop.dp.release_store_bytes`
+  before the inventory grows. Incremental authentication is future work.
 - Answers stay stale until explicit custodian snapshot/epoch rotation and session
   restart. Different requests against a mutable source need not reflect one
   coherent database snapshot. This repeated-payload guarantee is not a finite
