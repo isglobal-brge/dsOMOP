@@ -144,6 +144,8 @@ tables from different keys, epochs, protocols or scopes cannot be combined.
 Older workspace objects lacking the contract fail closed and must be recreated;
 matching token-looking strings are not treated as proof of compatibility.
 
+### Sticky noise
+
 Pseudonym identity remains separate from differential privacy. dsOMOP provides
 a dedicated DP path through `omopDpStatusDS()` and `omopDpReleaseDS()` and never
 silently adds noise to ordinary loads, assignments or aggregates. Preparing a
@@ -201,35 +203,50 @@ that a finite key supplies information-theoretic infinite randomness. See
 exactness argument, and [SAMPLER_DIAGNOSIS.md](SAMPLER_DIAGNOSIS.md) for the
 original defect.
 
-There is no cumulative budget, release counter, quota, rate limit or
-history-dependent admission decision, whether global or scoped by resource,
-user, snapshot or query. Releases never degrade because earlier questions were
-asked. There is also no SQLite privacy database, stored result, payload
-memoization or other state that grows with the number of calls. Invalid input,
-unproved provenance, an unsafe secret path or a request outside a reviewed
-primitive still fails closed because those checks are the disclosure boundary,
-not usage limits.
+Since 2.7.1, the first successful answer for each public request identity,
+public snapshot and privacy epoch is permanent. Every later valid request for
+that identity returns the stored complete canonical response, byte for byte,
+including after a restart. One changed person, many changed persons, unchanged
+data and a valid resealed row reordering all replay that first answer. The hit
+path neither evaluates the mechanism payload nor compares private fingerprints.
+Ordinary typed admission and provenance/MAC checks still run on every request.
 
-Sticky noise is recomputed by a versioned HMAC/PRF identity. Its canonical
-context binds the authenticated dataset and query lineage, typed statistic,
-person-bounding contract, public snapshot identifier, privacy epoch, mechanism,
-sampler, effective sensitivity and internal epsilon split, and a keyed
-fingerprint of the bounded sufficient statistic. Component labels separate
-histogram cells and multi-part mechanisms. With the same root and complete
-semantic context, an exact retry or rerun receives exactly the same noise
-without storing the earlier payload. If the bounded statistic changes while the
-public snapshot label is stale, its protected fingerprint changes the PRF
-context instead of reusing noise that could cancel under subtraction. The
-fingerprint, semantic release identity and raw PRF material are never returned.
+The public request identity includes authenticated dataset/query lineage, the
+typed statistic, public bounds/reducer/contribution contract, policy hash,
+domain, public snapshot, privacy epoch, mechanism and sensitivity. It excludes
+protected fingerprints, person sets, extraction tokens, frame MACs and display
+names. For a new public identity, the existing content-bound HMAC/PRF mechanism
+still includes the keyed bounded-statistic fingerprint as private defence in
+depth. Component labels, samplers, sensitivities, epsilon allocations and
+clipping are unchanged. Fingerprints and raw PRF material are never returned.
 
-The exact sampler publishes mechanism identifier
-`dsomop-sticky-discrete-laplace-prf-v2` and uses hashed policy schema 3. The
-release-envelope protocol and public policy fields remain compatible with
-dsOMOPClient 2.7.2, which accepts delta 0 and rejects differing sampler or
-mechanism identifiers across selected servers. The protocol change gives
-upgraded releases new sticky identities and therefore potentially new draws;
-it cannot retroactively protect disclosures from the old sampler. Deploy the
-same sampler version across replicas of a logical node.
+Answers remain **stale until the custodian rotates the snapshot or privacy
+epoch and restarts sessions**, with no limit on staleness if rotation is omitted.
+There is no analyst refresh switch or content-dependent refresh threshold.
+Different requests first evaluated at different times can reflect different
+versions of a mutable source; a public snapshot label does not provide a
+transactionally coherent database snapshot across requests. Releases expose no
+data-dependent stale flag.
+
+There is no cumulative epsilon budget or privacy call quota. The persistent
+store reserves public storage capacity once per new request identity; existing
+identities remain readable at capacity. There is no eviction. Invalid inputs,
+unproved provenance, unsafe or missing state and requests outside the reviewed
+primitives still fail closed. Storage capacity is an availability setting, not
+a privacy accountant.
+
+The release protocol is `dsomop-dp-release-v3`, with privacy contract
+`fixed_per_release_snapshot_first_answer_v1`. Status reports
+`history_dependent = TRUE`,
+`persistent_state = "noise_root_and_release_bindings"`,
+`release_binding = "snapshot_first_answer_v1"`,
+`privacy_call_quota = "none"` and
+`service_capacity = "public_identity_reservations_v1"`. Use dsOMOPClient 2.7.4,
+which recognizes the old v2 stateless contract explicitly and refuses to pool
+incompatible contracts. The exact sampler
+`dsomop-dp-exact-discrete-laplace-v1`, mechanism
+`dsomop-sticky-discrete-laplace-prf-v2` are unchanged. The versioned policy schema
+is now 4 for the first-answer contract.
 
 Public compatibility labels and client-side packaging of one release do not
 mint new noise. Reviewed commutative filters, Boolean aliases and set-valued
@@ -274,6 +291,8 @@ reveal a distinct count. With older clients, set
 [DISCLOSURE_CONTROL.md](DISCLOSURE_CONTROL.md) for the complete endpoint list
 and the scope of this gate.
 
+### Custodian release state and freshness
+
 When `dsomop.dp.domain` / `DSOMOP_DP_DOMAIN` and
 `dsomop.dp.snapshot_id` / `DSOMOP_DP_SNAPSHOT_ID` are unset or have empty
 package defaults, initialization derives them from the connected resource.
@@ -300,8 +319,8 @@ or incomplete, resource identity alone is hashed under
 R process, shared across DSLite sessions: custodians must bump
 `dsomop.dp.privacy_epoch` after **each data reload**, or configure
 `dsomop.dp.domain` and `dsomop.dp.snapshot_id` explicitly. A snapshot unchanged
-across data reloads lets an analyst difference releases across reloads; fallback
-metadata cannot automatically track those changes. Each explicit identifier
+across data reloads freezes existing first answers; fallback metadata cannot
+automatically track those changes. Each explicit identifier
 wins independently, and an explicit snapshot skips metadata derivation.
 
 In-memory databases and unavailable/ambiguous resource coordinates still fail
@@ -318,59 +337,92 @@ DSLite server sessions keep separate policies within their shared R process.
 For replicas and database aliases of one logical dataset, configure matching
 explicit identifiers if canonical connection coordinates differ.
 
-A persistent private state directory is required for the default file-backed
-noise root: mount `DSOMOP_STATE_DIR` (or `dsomop.state_dir`) across restarts and
-replicas. The default `~/.dsomop` is suitable only when the home is persistent.
-`DSOMOP_TEST_ALLOW_EPHEMERAL_STATE=1` permits temporary paths in tests only; it
-does not supply a resource identity or bypass policy checks.
+Every enabled deployment, including one with an injected noise root, requires
+persistent private state at `DSOMOP_STATE_DIR` (or `dsomop.state_dir`). Mount it
+across restarts and replicas. Directories must be owner-only `0700`, and files
+`0600`; existing owner, symlink and hard-link checks apply. The default
+`~/.dsomop` is suitable only when the home is persistent.
+`DSOMOP_TEST_ALLOW_EPHEMERAL_STATE=1` is for tests only.
 
-An enabled service uses one private 32-byte CSPRNG
-root, persisted outside the package library at
-`DSOMOP_STATE_DIR/secrets/dp_noise_root`. HMAC domain separation derives
-independent subkeys for provenance, semantic identity, protected fingerprints
-and noise. For DP, `.onLoad()` performs only key-free public checks and never
-reads or creates the root, so installing the package or loading it while
-building an image does not clone node secrets. The first real enabled service
-use—normally `omopInitDS()`, `omopDpStatusDS()` or
-`omopDpReleaseDS()`—creates or validates the root after the final DataSHIELD
-profile is available. Creation uses a private lock, operating-system CSPRNG,
-same-directory atomic no-clobber commit, durability synchronization and
-owner-only `0700`/`0600` permissions.
+Before serving requests, initialize once from a trusted administrator R session:
 
-The default file provider requires no manual key provisioning. If the root is
-missing, or if an owner-only regular root file is corrupt, the next real service
-bootstrap generates and persists a replacement automatically. Symlinks, hard
-links, foreign ownership and non-private storage remain errors rather than being
-silently replaced. A custodian may instead inject exactly 32 raw CSPRNG bytes or
-64 hexadecimal characters with `DSOMOP_DP_NOISE_ROOT` or
-`dsomop.dp.noise_root`; passphrases are rejected. Root bytes are never stored in
-an OMOP handle or returned to the client. `omopDpStatusDS()` exposes only a
-non-secret key/domain fingerprint for deployment checks.
+```r
+Sys.setenv(DSOMOP_STATE_DIR = "/srv/dsomop/state")
+store_id <- dsOMOP::omopInitializeReleaseStore()
+```
 
-All replicas serving the same logical node, dataset and snapshot must share the
-same persistent root (or the same injected root), domain, snapshot identifier,
-privacy epoch and mechanism configuration. Otherwise equivalent requests can
-receive independent samples and be averaged. Independently administered nodes
-must use distinct domains and roots. Persistent state must therefore be mounted
-per logical node before real service use; operators should compare the public
-noise-domain fingerprint across replicas during readiness checks.
+Persist the returned UUID in deployment configuration **outside the state
+directory**, as `DSOMOP_DP_RELEASE_STORE_ID` or `dsomop.dp.release_store_id`.
+An absent expected UUID does not authorize automatic service initialization.
+The administrative initializer is not a DataSHIELD analyst method. A fresh
+installation provisions the existing CSPRNG noise root normally; an established
+store never silently regenerates or replaces a missing, malformed or mismatched
+root. Package loading remains key-free.
 
-Loss or intentional replacement of the root starts a new sticky-noise namespace
-and changes subsequent samples. Automatic regeneration keeps the service
-available, but repeated adversarial deletion would defeat stickiness; write
-access to the private state volume is consequently part of the server trust
-boundary. A coordinated privacy-epoch change also starts a new semantic
-namespace. Neither event is available to an analyst through the release API.
+The file-backed root is `DSOMOP_STATE_DIR/secrets/dp_noise_root`. A custodian
+may instead inject exactly 32 raw CSPRNG bytes or 64 hexadecimal characters
+through `dsomop.dp.noise_root` / `DSOMOP_DP_NOISE_ROOT`; passphrases are rejected.
+Injected roots still require the persistent store, and changing the injected
+root does not rekey an existing store. Root bytes are never put in OMOP handles
+or returned to analysts.
 
-The privacy claim is deliberately per semantic release. Identical retries share
-one sample, but different lineages, statistics, snapshots, epochs or protected
-statistics may receive independent noise. Because dsOMOP imposes no cumulative
-budget or history-based call limit, composition across arbitrarily many distinct
-informative releases is neither bounded nor tracked by this service. Sticky
-noise therefore reduces averaging of repetitions; it does not turn unlimited
-distinct queries into a finite cumulative-DP guarantee. Deployments must retain
-the DataSHIELD method allowlist, person-level contribution bounds and reviewed
-output contracts as the surrounding security boundary.
+The store is `DSOMOP_STATE_DIR/release-bindings/releases.sqlite`, with permanent
+lock files under `release-bindings/`. Its header and all response records are
+MAC-authenticated with a subkey derived from the noise root. Records are
+verified before deserialization; the authenticated table head detects missing
+or replaced rows. Public reservations are committed before payload evaluation;
+per-request locks serialize competing first writers, and the complete canonical
+response commits atomically before it is returned. A crash before commit emits
+no payload; a crash after commit replays the committed answer. Pending public
+reservations survive crashes and can be completed without another charge.
+
+The logical capacity defaults to **1 GiB** (`1073741824` bytes), configured by
+`dsomop.dp.release_store_bytes` / `DSOMOP_DP_RELEASE_STORE_BYTES`. Each new R
+reserves `8192 + 16384 + 4 * public_bytes + 64 * max(1, levels, breaks)` bytes:
+`public_bytes` is the UTF-8 canonical JSON size of its wrapped public semantics,
+and `levels` / `breaks` are their public vector lengths. This conservative public
+reservation covers response and record/lock overhead; it is not measured from
+private results. Reservations are never refunded and answers are never evicted.
+At capacity, only new public identities are refused; valid existing identities
+continue to replay. Custodians may increase capacity while retaining the same
+root and store. Provide physical disk headroom for SQLite journals and backups.
+Validation and bounded-statistic preparation still precede the capacity decision;
+this implementation does not promise refusal before private data are read.
+
+All replicas of one logical node must share the root, transactional store,
+external UUID, public domain/snapshot/epoch and mechanism configuration, on
+storage that honors the package's locking and durability operations. Distinct
+nodes must use distinct roots and domains. Compare public noise-domain
+fingerprints during readiness checks.
+
+Back up the **whole consistent state**, including the root (or its secret-manager
+configuration), database, permanent locks and external UUID configuration.
+Missing/corrupt records, store or root fail closed with one stable analyst error
+and a custodian diagnostic. Stop/drain every worker before restoring or replacing
+state or lock files; never repair by deleting rows or reinitializing an existing
+store. Restore the matching set, rather than selected payloads. A MAC cannot
+detect rollback of the entire state to a previously valid backup: the operator
+and storage must prevent whole-state rollback; no independent monotonic witness
+is implemented.
+
+Upgrading from the old stateless contract requires explicit store initialization
+and a planned publication/epoch migration with compatible clients. Old unrecorded
+answers cannot be reconstructed or retrospectively protected, and byte equality
+is not promised across protocol upgrades. Retain old state for its old domain.
+For later publications, rotate the snapshot or epoch on a public schedule,
+including no-op refreshes, rather than only when private data change.
+
+The exact guarantee is conditional: within an intact retained protocol/runtime/key
+domain, once an identity has a committed answer, every later valid request for
+that identity returns those canonical bytes independently of newly resealed
+content. Given the first answer and the same public admission schedule, later
+successful payloads add no observation. This closes the conditional temporal
+equality selection in [isglobal-brge/dsOMOP#20](https://github.com/isglobal-brge/dsOMOP/issues/20).
+Different requests and rotations still compose; there is no finite lifetime
+privacy accountant or full temporal-transcript DP claim. Administrative timing,
+validation failures, availability, other DataSHIELD outputs and storage rollback
+remain outside this repeated-payload guarantee. Retain the method allowlist,
+person contribution bounds and reviewed output contracts.
 
 Non-secret configuration is available through matching `dsomop.dp.*` options
 and `DSOMOP_DP_*` environment variables, including enablement, domain, public

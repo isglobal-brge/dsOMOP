@@ -102,4 +102,6 @@ Options:
   default.dsomop.dp.privacy_epoch=1,
   default.dsomop.dp.max_levels=1000,
   default.dsomop.dp.max_contributions=10,
-  default.dsomop.dp.numeric_grid=65535
+  default.dsomop.dp.numeric_grid=65535,
+  default.dsomop.dp.release_store_id="",
+  default.dsomop.dp.release_store_bytes=1073741824

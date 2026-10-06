@@ -821,9 +821,11 @@
 #'
 #' Returns the public fixed-per-release mechanism contract. Secret key material
 #' and protected snapshot fingerprints are never returned. Calling this
-#' endpoint initializes the single persistent noise root atomically when the
-#' service is enabled. Previous calls do not create state or affect whether a
-#' later protected operation may run.
+#' endpoint validates the provisioned noise root and authenticated first-answer
+#' store when the service is enabled. Custodians must initialize the store with
+#' \code{omopInitializeReleaseStore()} and pin its UUID in service configuration.
+#' Status declares history-dependent first-answer bindings and public storage
+#' reservations; there is no cumulative privacy budget or privacy call quota.
 #'
 #' @return Public DP service status, including the custodial \code{exclusive}
 #'   flag (default TRUE). Custodians can set \code{dsomop.dp.exclusive = FALSE}
@@ -846,13 +848,21 @@ omopDpStatusDS <- function() {
 
 #' Release one sticky, person-bounded privacy statistic (Aggregate)
 #'
+#' The first successful answer for each public request, snapshot and privacy
+#' epoch is permanent. Later valid requests replay the complete canonical
+#' response, even after unrotated data changes, without evaluating a new payload.
+#' Provenance and typed admission are still required. Custodians restore freshness
+#' by rotating the public snapshot or epoch and restarting sessions. Different
+#' requests against mutable sources need not reflect one coherent source snapshot.
+#'
 #' @param x A server-created, pseudonymous \code{omop.table} carrying an
 #'   authenticated person-local provenance capsule from an audited plan,
 #'   loader, or manipulation path.
 #' @param spec Typed DP statistic specification, usually JSON-encoded by
 #'   dsOMOPClient.
 #' @return A deterministic sticky noisy aggregate with per-release mechanism
-#'   metadata.
+#'   metadata, persisted before return and replayed byte-identically for the same
+#'   public identity. New identities require a public storage reservation.
 #' @export
 omopDpReleaseDS <- function(x, spec) {
   spec <- .ds_arg(spec)
