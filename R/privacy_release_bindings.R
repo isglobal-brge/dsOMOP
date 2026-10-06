@@ -1,5 +1,6 @@
 # Permanent first answers. This state is authoritative, never an evictable cache.
-# The expected UUID must be pinned in deployment configuration outside this tree.
+# The local UUID pin survives store loss. External pinning also detects loss of
+# both the store and its local pin (or loss of the complete state root).
 # MACs detect altered/deleted rows, not a rollback of an entire valid snapshot.
 .DSOMOP_DP_BINDING_SCHEMA <- "dsomop-dp-first-answer-store-v1"
 .DSOMOP_DP_STATE_ERROR <-
@@ -72,15 +73,85 @@
   if (has_setting || nzchar(Sys.getenv("DSOMOP_DP_RELEASE_STORE_ID", ""))) {
     return(TRUE)
   }
-  directory <- file.path(.dsomopStateRoot(), "release-bindings")
-  file.exists(directory) || dir.exists(directory) || .dsomopIsSymlink(directory)
+  state_root <- .dsomopStateRoot()
+  .dsomopDpBindingExists(file.path(state_root, "release-bindings")) ||
+    .dsomopDpBindingExists(file.path(state_root, "release-store-id"))
+}
+
+.dsomopDpBindingExists <- function(path) {
+  file.exists(path) || dir.exists(path) || .dsomopIsSymlink(path)
+}
+
+.dsomopDpBindingValidId <- function(id) {
+  is.character(id) && length(id) == 1L && !is.na(id) &&
+    grepl("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$", id)
+}
+
+.dsomopDpBindingReadPin <- function(state_root) {
+  path <- file.path(state_root, "release-store-id")
+  if (!.dsomopDpBindingExists(path)) return(NULL)
+  .dsomopDpBindingFile(path)
+  before <- file.info(path)[c("size", "mtime", "ctime")]
+  if (!identical(before$size, 36)) stop("The release store UUID pin is malformed.")
+  bytes <- readBin(path, "raw", 37L)
+  .dsomopDpBindingFile(path)
+  after <- file.info(path)[c("size", "mtime", "ctime")]
+  if (length(bytes) != 36L || !identical(before, after)) {
+    stop("The release store UUID pin changed while being read.")
+  }
+  id <- rawToChar(bytes)
+  if (!.dsomopDpBindingValidId(id)) stop("The release store UUID pin is malformed.")
+  # Also finish durability checks after a previous process was interrupted
+  # between publishing the pin and synchronizing its containing directory.
+  .dsomopRequireSync(path)
+  .dsomopRequireSync(state_root)
+  id
+}
+
+.dsomopDpBindingWritePin <- function(state_root, store_id) {
+  old_umask <- Sys.umask("0077")
+  on.exit(Sys.umask(old_umask), add = TRUE)
+  path <- file.path(state_root, "release-store-id")
+  temporary <- tempfile(".release-store-id-", tmpdir = state_root)
+  on.exit(if (file.exists(temporary)) unlink(temporary), add = TRUE)
+  connection <- file(temporary, "wb")
+  on.exit(try(close(connection), silent = TRUE), add = TRUE)
+  writeBin(charToRaw(store_id), connection)
+  flush(connection)
+  close(connection)
+  Sys.chmod(temporary, "0600")
+  .dsomopDpBindingFile(temporary)
+  .dsomopRequireSync(temporary)
+  if (!isTRUE(suppressWarnings(file.link(temporary, path)))) {
+    stop("Could not publish the release store UUID pin without replacing existing state.")
+  }
+  if (unlink(temporary) != 0L) stop("Could not finalize the release store UUID pin.")
+  if (!identical(.dsomopDpBindingReadPin(state_root), store_id)) {
+    stop("The published release store UUID pin is invalid.")
+  }
+  invisible(store_id)
 }
 
 .dsomopDpBindingIdentity <- function() {
   .dsomopDpBindingGuard({
-    id <- .dsomopDpBindingSettings()$store_id
-    if (!nzchar(id)) stop("The expected release store UUID is not configured.")
-    list(store_id = id, state_root = .dsomopStateRoot())
+    settings <- .dsomopDpBindingSettings()
+    state_root <- .dsomopStateRoot()
+    if (!.dsomopDpBindingExists(file.path(state_root, "release-store-id"))) {
+      # Recheck all first-use conditions under the initialization lock: another
+      # worker may have published the database but not yet its final pin.
+      id <- .dsomopDpBindingInitialize(automatic = TRUE)
+    } else {
+      .dsomopDpBindingDirectory(state_root)
+      lock <- .dsomopDpBindingLock(file.path(state_root, ".release-store-init.lock"))
+      on.exit(filelock::unlock(lock), add = TRUE)
+      id <- .dsomopDpBindingReadPin(state_root)
+      if (is.null(id)) stop("The established release store UUID pin is missing.")
+      if (nzchar(settings$store_id) && !identical(settings$store_id, id)) {
+        stop("The configured release store UUID differs from its local pin.")
+      }
+      if (nzchar(settings$store_id)) id <- settings$store_id
+    }
+    list(store_id = id, state_root = state_root)
   })
 }
 
@@ -319,15 +390,23 @@
 #' Initialize the permanent DP first-answer store
 #'
 #' Custodian-only local setup, not a DataSHIELD aggregate or assign method.
-#' Run once with the expected store ID unset, then retain the returned UUID in
-#' deployment configuration outside \code{DSOMOP_STATE_DIR}, using
-#' \code{DSOMOP_DP_RELEASE_STORE_ID} or \code{dsomop.dp.release_store_id}.
+#' Fresh and pre-store installations initialize automatically on first DP use.
+#' This function permits explicit setup with the expected store ID unset. Both
+#' paths write an owner-only \code{release-store-id} UUID pin in the state root,
+#' outside \code{release-bindings}. Retain the returned UUID in external
+#' deployment configuration using \code{DSOMOP_DP_RELEASE_STORE_ID} or
+#' \code{dsomop.dp.release_store_id} for stronger loss detection.
 #' Initialization provisions a noise root on a fresh install, as before.
 #' Repeating initialization authenticates existing state and returns its ID;
 #' it never replaces a missing or corrupt established store or noise root.
 #'
 #' Preserve the complete store, permanent lock files, noise root, and external
-#' UUID. Stop all workers before restoration. MACs do not detect restoring an
+#' UUID, local pin, and initialization lock. Without external pinning, deleting
+#' the entire state root creates a fresh installation (and a new release domain
+#' with a file-backed noise root; an injected root remains externally retained);
+#' deleting both the store and its pin while retaining the root is also
+#' undetectable. External UUID pinning detects these losses.
+#' Stop all workers before restoration. MACs do not detect restoring an
 #' older complete valid snapshot; avoiding whole-state rollback is a custodial
 #' and storage assumption. Interrupted incomplete initialization requires
 #' custodian recovery. There is no automatic repair or eviction.
@@ -339,37 +418,83 @@ omopInitializeReleaseStore <- function(store_id = NULL) {
   .dsomopDpBindingInitialize(store_id)
 }
 
-.dsomopDpBindingInitialize <- function(store_id = NULL) {
+.dsomopDpBindingInitialize <- function(store_id = NULL, automatic = FALSE) {
   .dsomopDpBindingGuard({
     settings <- .dsomopDpBindingSettings()
-    root <- .dsomopDpNoiseRoot()
     state_root <- .dsomopStateRoot()
+    directory <- file.path(state_root, "release-bindings")
+    database <- file.path(directory, "releases.sqlite")
+    pin_path <- file.path(state_root, "release-store-id")
+    bootstrap_path <- file.path(state_root, ".release-store-init.lock")
+    if ((.dsomopDpBindingExists(pin_path) || nzchar(settings$store_id)) &&
+        !.dsomopDpBindingExists(directory)) {
+      stop("The established release store is missing; initialization cannot replace it.")
+    }
+    root <- .dsomopDpNoiseRoot()
     if (!dir.exists(state_root)) {
       .dsomopAssertNoSymlinkComponents(state_root)
-      if (!dir.create(state_root, recursive = TRUE, mode = "0700")) {
+      if (!dir.create(state_root, recursive = TRUE, mode = "0700") &&
+          !dir.exists(state_root)) {
         stop("Could not initialize the release state root.")
       }
       Sys.chmod(state_root, "0700")
     }
     .dsomopDpBindingDirectory(state_root)
-    directory <- file.path(state_root, "release-bindings")
-    database <- file.path(directory, "releases.sqlite")
-    existed <- file.exists(directory) || dir.exists(directory) ||
-      .dsomopIsSymlink(directory)
-    if (!file.exists(database) && (existed || nzchar(settings$store_id))) {
+    context_for <- function(id) list(
+      store_id = id, state_root = state_root, directory = directory,
+      database = database, global_lock = file.path(directory, ".store.lock"),
+      locks = file.path(directory, "locks"), key_id = root$key_id,
+      key = .dsomopDpHmacRaw(root$key, "dsOMOP/release-binding-MAC/v1")
+    )
+    validate_id <- function(id, pin = NULL) {
+      if (!.dsomopDpBindingValidId(id) ||
+          (!is.null(store_id) && !identical(id, store_id)) ||
+          (!is.null(pin) && !identical(id, pin)) ||
+          (nzchar(settings$store_id) && !identical(id, settings$store_id))) {
+        stop("The release store UUID is invalid or conflicts with its pin or configuration.")
+      }
+      id
+    }
+    if (.dsomopDpBindingExists(pin_path)) {
+      # A published pin also establishes this permanent lock. Never recreate an
+      # inode that another worker might still hold after accidental deletion.
+      .dsomopDpBindingFile(bootstrap_path)
+    } else if (!.dsomopDpBindingExists(bootstrap_path)) {
+      if (.dsomopDpBindingExists(directory) &&
+          !.dsomopDpBindingExists(bootstrap_path)) {
+        # Upgrade the original externally pinned 2.7.1 setup only after full
+        # authentication under its existing permanent store lock.
+        if (isTRUE(automatic) && !nzchar(settings$store_id)) {
+          stop("The established release store has neither a local nor configured UUID pin.")
+        }
+        id <- validate_id(.dsomopDpBindingReadStoreId(context_for(NULL)))
+        .dsomopDpBindingTransaction(context_for(id), function(connection, inventory) {
+          .dsomopDpBindingCreateLock(bootstrap_path)
+        })
+      } else .dsomopDpBindingCreateLock(bootstrap_path)
+    }
+    bootstrap_lock <- .dsomopDpBindingLock(bootstrap_path)
+    on.exit(try(filelock::unlock(bootstrap_lock), silent = TRUE), add = TRUE)
+    pin <- .dsomopDpBindingReadPin(state_root)
+    if (!is.null(pin) && nzchar(settings$store_id) &&
+        !identical(pin, settings$store_id)) {
+      stop("The configured release store UUID differs from its local pin.")
+    }
+    existed <- .dsomopDpBindingExists(directory)
+    if (!file.exists(database) &&
+        (existed || !is.null(pin) || nzchar(settings$store_id))) {
       stop("The established release store is missing; initialization cannot replace it.")
     }
     if (existed) {
-      header_id <- .dsomopDpBindingReadStoreId(list(
-        state_root = state_root, directory = directory, database = database,
-        locks = file.path(directory, "locks"),
-        global_lock = file.path(directory, ".store.lock")))
-      if (length(header_id) != 1L || is.na(header_id)) stop("Invalid store UUID.")
-      if (!is.null(store_id) && !identical(store_id, header_id)) {
-        stop("The requested UUID differs from the established release store.")
+      if (isTRUE(automatic) && is.null(pin) && !nzchar(settings$store_id)) {
+        stop("The established release store has neither a local nor configured UUID pin.")
       }
-      store_id <- header_id
-    } else if (is.null(store_id)) {
+      id <- validate_id(.dsomopDpBindingReadStoreId(context_for(NULL)), pin)
+      .dsomopDpBindingTransaction(context_for(id), function(connection, inventory) TRUE)
+      if (is.null(pin)) .dsomopDpBindingWritePin(state_root, id)
+      return(id)
+    }
+    if (is.null(store_id)) {
       bytes <- openssl::rand_bytes(16L)
       bytes[[7L]] <- as.raw(bitwOr(bitwAnd(as.integer(bytes[[7L]]), 15L), 64L))
       bytes[[9L]] <- as.raw(bitwOr(bitwAnd(as.integer(bytes[[9L]]), 63L), 128L))
@@ -377,21 +502,8 @@ omopInitializeReleaseStore <- function(store_id = NULL) {
       store_id <- paste(substring(hex, c(1, 9, 13, 17, 21), c(8, 12, 16, 20, 32)),
                         collapse = "-")
     }
-    if (!is.character(store_id) || length(store_id) != 1L || is.na(store_id) ||
-        !grepl("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$", store_id) ||
-        (nzchar(settings$store_id) && !identical(store_id, settings$store_id))) {
-      stop("The release store UUID is invalid or conflicts with configuration.")
-    }
-    context <- list(
-      store_id = store_id, state_root = state_root, directory = directory,
-      database = database, global_lock = file.path(directory, ".store.lock"),
-      locks = file.path(directory, "locks"), key_id = root$key_id,
-      key = .dsomopDpHmacRaw(root$key, "dsOMOP/release-binding-MAC/v1")
-    )
-    if (existed) {
-      .dsomopDpBindingTransaction(context, function(connection, inventory) TRUE)
-      return(store_id)
-    }
+    validate_id(store_id)
+    context <- context_for(store_id)
     old_umask <- Sys.umask("0077")
     on.exit(Sys.umask(old_umask), add = TRUE)
     .dsomopDpBindingDirectory(directory, create = TRUE)
@@ -427,6 +539,12 @@ omopInitializeReleaseStore <- function(store_id = NULL) {
     .dsomopDpBindingFile(database)
     .dsomopRequireSync(directory)
     .dsomopRequireSync(state_root)
+    .dsomopDpBindingWritePin(state_root, store_id)
+    if (isTRUE(automatic)) {
+      message("[dsomop-dp-state] Custodian: automatically initialized permanent ",
+              "DP first-answer store ", store_id, "; local UUID pin: ", pin_path,
+              ". Retain the UUID in external configuration for stronger loss detection.")
+    }
     store_id
   })
 }

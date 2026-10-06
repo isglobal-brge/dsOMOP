@@ -2713,3 +2713,16 @@ test_that("a fresh R process replays the canonical complete primitive response",
                    lapply(first, serialize, connection = NULL, version = 3L))
   expect_identical(.dp_binding_count(state), 7L)
 })
+
+test_that("an enabled DP service upgrades a pre-store state on first policy use", {
+  state <- .dp_local_state(enabled = FALSE)
+  old_root <- .dsomopDpNoiseRoot()
+  withr::local_options(dsomop.dp.enabled = TRUE)
+  expect_message(policy <- .dsomopDpPolicy(), "Custodian: automatically initialized")
+  expect_identical(policy$noise_root, old_root)
+  expect_identical(.dsomopDpBindingReadPin(state), policy$binding_store_id)
+  expect_true(.dsomopDpPublicStatus()$ready)
+  .dp_restart_runtime()
+  expect_identical(.dsomopDpPolicy()$binding_store_id, policy$binding_store_id)
+  expect_identical(getOption("dsomop.dp.release_store_id"), "")
+})
