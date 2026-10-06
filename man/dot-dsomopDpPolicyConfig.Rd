@@ -14,7 +14,9 @@ Complete source rows are canonically sorted; incomplete or absent source
 metadata falls back to sorted vocabulary versions, then resource identity
 alone, with one warning per R session. Explicit domain/snapshot values win.
 Bump dsomop.dp.privacy_epoch after each fallback data reload or whenever data
-change without metadata changes. The default file noise root requires a persistent private
-DSOMOP_STATE_DIR (or dsomop.state_dir); ephemeral state is test-only.
+change without metadata changes. All enabled services require a persistent
+private DSOMOP_STATE_DIR (or dsomop.state_dir), an explicitly initialized
+release store and an externally pinned store UUID, including injected-root
+deployments. Ephemeral state is test-only.
 }
 \keyword{internal}
