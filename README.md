@@ -412,6 +412,13 @@ root and store. Provide physical disk headroom for SQLite journals and backups.
 Validation and bounded-statistic preparation still precede the capacity decision;
 this implementation does not promise refusal before private data are read.
 
+**Scaling.** Every request authenticates the full first-answer inventory, so
+work is O(entries), including entries retained across snapshot/epoch rotations.
+A review benchmark measured about 25 seconds for one existing-answer replay
+at 40,000 entries; concurrent requests may time out. Keep the reservation
+capacity sized for this cost, or lower `dsomop.dp.release_store_bytes` before
+the inventory grows. Incremental authentication is future work.
+
 All replicas of one logical node must share the root, local pin, transactional
 store, permanent locks, any external UUID, public domain/snapshot/epoch and
 mechanism configuration, on storage that honors the package's locking and
