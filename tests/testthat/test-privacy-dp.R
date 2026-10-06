@@ -2,7 +2,8 @@
   "DSOMOP_DP_ENABLED", "DSOMOP_DP_DOMAIN", "DSOMOP_DP_SNAPSHOT_ID",
   "DSOMOP_DP_RELEASE_EPSILON", "DSOMOP_DP_PRIVACY_EPOCH",
   "DSOMOP_DP_MAX_LEVELS", "DSOMOP_DP_MAX_CONTRIBUTIONS",
-  "DSOMOP_DP_NUMERIC_GRID", "DSOMOP_DP_NOISE_ROOT"
+  "DSOMOP_DP_NUMERIC_GRID", "DSOMOP_DP_NOISE_ROOT",
+  "DSOMOP_DP_RELEASE_STORE_ID", "DSOMOP_DP_RELEASE_STORE_BYTES"
 )
 
 .dp_local_state <- function(release_epsilon = 0.1,
@@ -34,6 +35,8 @@
     dsomop.dp.release_epsilon = release_epsilon,
     dsomop.dp.privacy_epoch = privacy_epoch,
     dsomop.dp.noise_root = noise_root,
+    dsomop.dp.release_store_id = "",
+    dsomop.dp.release_store_bytes = 1024^3,
     dsomop.dp.max_levels = 1000L,
     dsomop.dp.max_contributions = 10L,
     dsomop.dp.numeric_grid = 65535L
@@ -54,6 +57,11 @@
   .pkg_state$dp_status <- NULL
   .pkg_state$dp_runtime <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
+  if (!identical(enabled, FALSE)) {
+    store_id <- .dsomopDpBindingInitialize()
+    withr::local_options(list(dsomop.dp.release_store_id = store_id),
+                        .local_envir = .local_envir)
+  }
   state
 }
 
@@ -123,6 +131,13 @@
     no.. = TRUE, include.dirs = FALSE
   )
   sort(substring(files, nchar(state) + 2L), method = "radix")
+}
+
+.dp_binding_count <- function(state) {
+  conn <- DBI::dbConnect(RSQLite::SQLite(),
+                         file.path(state, "release-bindings", "releases.sqlite"))
+  on.exit(DBI::dbDisconnect(conn), add = TRUE)
+  as.integer(DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM bindings")$n)
 }
 
 test_that("DP canonical encoding has a stable KAT and normalizes object order", {
@@ -232,7 +247,7 @@ test_that("disabled DP creates no state and refuses releases", {
   expect_false(dir.exists(file.path(state, "privacy")))
 })
 
-test_that("bootstrap creates only one private persistent root", {
+test_that("bootstrap validates the private root and initialized binding store", {
   skip_on_os("windows")
   state <- .dp_local_state()
   status <- .dsomopDpPublicStatus(initialize = TRUE)
@@ -240,12 +255,14 @@ test_that("bootstrap creates only one private persistent root", {
   expect_true(status$enabled)
   expect_true(status$ready)
   expect_true(status$sticky_noise)
-  expect_identical(status$protocol, "dsomop-dp-release-v2")
+  expect_identical(status$protocol, "dsomop-dp-release-v3")
   expect_identical(status$privacy_contract,
-                   "fixed_per_release_semantic_prf_v1")
+                   "fixed_per_release_snapshot_first_answer_v1")
   expect_identical(status$privacy_call_quota, "none")
-  expect_identical(status$history_dependent, FALSE)
-  expect_identical(status$persistent_state, "noise_root_only")
+  expect_identical(status$history_dependent, TRUE)
+  expect_identical(status$persistent_state, "noise_root_and_release_bindings")
+  expect_identical(status$release_binding, "snapshot_first_answer_v1")
+  expect_identical(status$service_capacity, "public_identity_reservations_v1")
   expect_identical(status$privacy_guarantee,
                    .DSOMOP_PRIVACY_GUARANTEE)
 
@@ -262,9 +279,12 @@ test_that("bootstrap creates only one private persistent root", {
   }, logical(1L))))
   expect_identical(file.info(noise_path)$size, 32)
   expect_match(status$noise_domain_id, "^dpn_[0-9a-f]{40}$")
-  expect_setequal(.dp_state_files(state), c(
-    "secrets/dp_noise_root", "secrets/dp_noise_root.lock"
-  ))
+  files <- .dp_state_files(state)
+  expect_true(all(c("secrets/dp_noise_root", "secrets/dp_noise_root.lock",
+                    "release-bindings/releases.sqlite") %in% files))
+  expect_true(all(vapply(file.path(state, files), function(path) {
+    identical(as.integer(file.info(path)$mode), 384L)
+  }, logical(1L))))
 })
 
 test_that("DP releases require authenticated person-local provenance", {
@@ -1550,7 +1570,7 @@ test_that("population lineage binds the global cohort and validates set operatio
   }
 })
 
-test_that("protected bounded snapshots select distinct private release streams", {
+test_that("protected fingerprints remain distinct but repeats use the first answer", {
   .dp_local_state(noise_root = as.raw(0:31))
   table <- .dp_test_table()
   spec <- list(statistic = "count", population_id = "cohort-a")
@@ -1582,6 +1602,20 @@ test_that("protected bounded snapshots select distinct private release streams",
   expect_false(identical(first_binding$protected_fingerprint,
                          changed_binding$protected_fingerprint))
   expect_false(identical(first_id, changed_id))
+  request_id <- function(analysis) .dsomopDpRequestId(policy, list(
+    protocol = policy$protocol, mechanism = policy$mechanism,
+    privacy_contract = policy$privacy_contract, adjacency = policy$adjacency,
+    sensitivity = analysis$sensitivity, statistic = analysis$semantic
+  ))
+  expect_identical(request_id(first_analysis), request_id(changed_analysis))
+  expect_identical(request_id(first_analysis), request_id(.dsomopDpAnalysis(
+    .dp_test_table(reverse_rows = TRUE),
+    list(statistic = "count", population_id = "another-display-name"), policy
+  )))
+
+  expect_identical(second, first)
+  expect_identical(serialize(second, NULL, version = 3L),
+                   serialize(first, NULL, version = 3L))
   expect_identical(omopDpReleaseDS(changed, spec), second)
   expect_true(all(vapply(list(first, second), function(value) {
     !any(c(
@@ -1896,17 +1930,19 @@ test_that("public status and release identify the exact sampler", {
   expect_true(status$enabled)
   expect_true(status$ready)
   expect_true(status$sticky_noise)
-  expect_identical(status$protocol, "dsomop-dp-release-v2")
+  expect_identical(status$protocol, "dsomop-dp-release-v3")
   expect_identical(status$privacy_contract,
-                   "fixed_per_release_semantic_prf_v1")
+                   "fixed_per_release_snapshot_first_answer_v1")
   expect_identical(status$release_epsilon, 0.25)
   expect_identical(status$release_delta, 0)
   expect_identical(status$sampler, "dsomop-dp-exact-discrete-laplace-v1")
   expect_identical(status$mechanism, "dsomop-sticky-discrete-laplace-prf-v2")
-  expect_identical(.dsomopDpPolicy()$schema_version, 3L)
+  expect_identical(.dsomopDpPolicy()$schema_version, 4L)
   expect_identical(status$privacy_call_quota, "none")
-  expect_identical(status$history_dependent, FALSE)
-  expect_identical(status$persistent_state, "noise_root_only")
+  expect_identical(status$history_dependent, TRUE)
+  expect_identical(status$persistent_state, "noise_root_and_release_bindings")
+  expect_identical(status$release_binding, "snapshot_first_answer_v1")
+  expect_identical(status$service_capacity, "public_identity_reservations_v1")
   expect_setequal(status$supported_statistics, c(
     "count", "bounded_record_count", "categorical_histogram",
     "numeric_histogram", "bounded_distinct", "bounded_mean", "binary_rate"
@@ -1919,9 +1955,9 @@ test_that("public status and release identify the exact sampler", {
     "statistic", "noisy_count", "protocol", "mechanism", "adjacency",
     "epsilon", "delta", "sensitivity", "privacy_contract", "sticky", "sampler"
   ))
-  expect_identical(value$protocol, "dsomop-dp-release-v2")
+  expect_identical(value$protocol, "dsomop-dp-release-v3")
   expect_identical(value$privacy_contract,
-                   "fixed_per_release_semantic_prf_v1")
+                   "fixed_per_release_snapshot_first_answer_v1")
   expect_identical(value$epsilon, 0.25)
   expect_identical(value$delta, 0L)
   expect_identical(value$sticky, TRUE)
@@ -1929,15 +1965,10 @@ test_that("public status and release identify the exact sampler", {
   expect_identical(value$mechanism, status$mechanism)
 })
 
-test_that("more than one hundred semantic queries do not grow persistent state", {
+test_that("new public identities persist one answer each without a privacy call quota", {
   skip_on_os("windows")
   state <- .dp_local_state()
   expect_true(omopDpStatusDS()$ready)
-  before <- .dp_state_files(state)
-  expect_setequal(before, c(
-    "secrets/dp_noise_root", "secrets/dp_noise_root.lock"
-  ))
-
   raw <- .testPseudonymize(data.frame(
     person_id = 1:8, value = seq_len(8), stringsAsFactors = FALSE
   ))
@@ -1945,42 +1976,40 @@ test_that("more than one hundred semantic queries do not grow persistent state",
     input <- .dp_seal(raw, producer = paste0("test/query-", index))
     omopDpReleaseDS(input, list(statistic = "count"))
   })
-
   expect_length(values, 128L)
   expect_true(all(vapply(
     values, function(value) identical(value$epsilon, 0.1), logical(1L)
   )))
-  expect_identical(.dp_state_files(state), before)
-  expect_false(any(grepl(
-    "\\.sqlite(?:3)?$", .dp_state_files(state), ignore.case = TRUE
-  )))
+  expect_identical(.dp_binding_count(state), 128L)
   status <- omopDpStatusDS()
   expect_identical(status$privacy_call_quota, "none")
-  expect_identical(status$history_dependent, FALSE)
+  expect_identical(status$history_dependent, TRUE)
 })
 
-test_that("missing and privately corrupt roots regenerate automatically", {
+test_that("established stores never replace missing or privately corrupt roots", {
   skip_on_os("windows")
   state <- .dp_local_state()
   first <- omopDpStatusDS()
   root_path <- file.path(state, "secrets", "dp_noise_root")
+  original <- readBin(root_path, "raw", n = 32L)
 
+  # A new root would make the retained first answers unverifiable and permit
+  # a second release. Recovery must restore the original consistent state.
   expect_identical(unlink(root_path, force = TRUE), 0L)
   .dp_restart_runtime()
-  after_missing <- omopDpStatusDS()
-  expect_true(after_missing$ready)
-  expect_identical(file.info(root_path)$size, 32)
-  expect_false(identical(after_missing$noise_key_id, first$noise_key_id))
+  expect_error(omopDpStatusDS(), .DSOMOP_DP_STATE_ERROR, fixed = TRUE)
+  expect_false(file.exists(root_path))
 
   writeBin(as.raw(c(1L, 2L, 3L)), root_path)
   Sys.chmod(root_path, mode = "0600")
   .dp_restart_runtime()
-  after_corruption <- omopDpStatusDS()
-  expect_true(after_corruption$ready)
-  expect_identical(file.info(root_path)$size, 32)
-  expect_false(identical(after_corruption$noise_key_id,
-                         after_missing$noise_key_id))
-  expect_identical(as.integer(file.info(root_path)$mode), 384L)
+  expect_error(omopDpStatusDS(), .DSOMOP_DP_STATE_ERROR, fixed = TRUE)
+  expect_identical(readBin(root_path, "raw", n = 32L), as.raw(1:3))
+
+  writeBin(original, root_path)
+  Sys.chmod(root_path, mode = "0600")
+  .dp_restart_runtime()
+  expect_identical(omopDpStatusDS()$noise_key_id, first$noise_key_id)
 })
 
 test_that("symbolic-link root substitution fails closed", {
@@ -1995,7 +2024,7 @@ test_that("symbolic-link root substitution fails closed", {
   expect_true(file.symlink(target, root_path))
   .dp_restart_runtime()
 
-  expect_error(omopDpStatusDS(), "symbolic link")
+  expect_error(omopDpStatusDS(), .DSOMOP_DP_STATE_ERROR, fixed = TRUE)
   expect_identical(readBin(target, what = "raw", n = 32L), as.raw(0:31))
 })
 
@@ -2008,11 +2037,11 @@ test_that("unsafe root permissions fail closed", {
   on.exit(try(Sys.chmod(root_path, mode = "0600"), silent = TRUE), add = TRUE)
   .dp_restart_runtime()
 
-  expect_error(omopDpStatusDS(), "regular owner-only file with mode 0600")
+  expect_error(omopDpStatusDS(), .DSOMOP_DP_STATE_ERROR, fixed = TRUE)
   expect_identical(file.info(root_path)$size, 32)
 })
 
-test_that("an injected root performs no filesystem writes", {
+test_that("an injected root still requires persistent first-answer bindings", {
   skip_on_os("windows")
   state <- .dp_local_state(noise_root = as.raw(0:31))
   status <- omopDpStatusDS()
@@ -2023,11 +2052,15 @@ test_that("an injected root performs no filesystem writes", {
   expect_true(status$ready)
   expect_identical(status$noise_provider, "custodial_injected")
   expect_identical(value$epsilon, status$release_epsilon)
-  expect_length(.dp_state_files(state), 0L)
+  expect_false(file.exists(file.path(state, "secrets", "dp_noise_root")))
+  expect_identical(.dp_binding_count(state), 1L)
+  before <- .dp_state_files(state)
 
   .dp_restart_runtime()
   expect_identical(omopDpStatusDS()$noise_key_id, status$noise_key_id)
-  expect_length(.dp_state_files(state), 0L)
+  expect_identical(.dp_state_files(state), before)
+  expect_identical(omopDpReleaseDS(.dp_test_table(), list(statistic = "count")),
+                   value)
 })
 
 test_that("noise-domain identity detects one root across semantic domains", {
@@ -2042,7 +2075,7 @@ test_that("noise-domain identity detects one root across semantic domains", {
   expect_identical(second$noise_domain_id, first$noise_domain_id)
 })
 
-test_that("injected root rotation is accepted after runtime reset", {
+test_that("an established binding store refuses an injected root replacement", {
   skip_on_os("windows")
   state <- .dp_local_state(noise_root = as.raw(0:31))
   table <- .dp_test_table()
@@ -2052,38 +2085,39 @@ test_that("injected root rotation is accepted after runtime reset", {
 
   options(dsomop.dp.noise_root = as.raw(32:63))
   .dp_restart_runtime()
-  second_status <- omopDpStatusDS()
-  expect_error(omopDpReleaseDS(table, spec), "provenance MAC")
-  second_value <- omopDpReleaseDS(.dp_test_table(), spec)
+  expect_error(omopDpStatusDS(), .DSOMOP_DP_STATE_ERROR, fixed = TRUE)
+  expect_identical(.dp_binding_count(state), 1L)
 
-  expect_true(second_status$ready)
-  expect_identical(second_status$privacy_epoch, first_status$privacy_epoch)
-  expect_false(identical(second_status$noise_key_id,
-                         first_status$noise_key_id))
-  expect_identical(second_value$statistic, first_value$statistic)
-  expect_length(.dp_state_files(state), 0L)
+  options(dsomop.dp.noise_root = as.raw(0:31))
+  .dp_restart_runtime()
+  expect_identical(omopDpStatusDS()$noise_key_id, first_status$noise_key_id)
+  expect_identical(omopDpReleaseDS(table, spec), first_value)
 })
 
-test_that("concurrent identical releases are deterministic without stored rows", {
+test_that("concurrent different valid contents commit one first answer", {
   skip_on_os("windows")
   state <- .dp_local_state()
   table <- .dp_test_table()
+  changed <- table
+  people <- unique(changed$person_id)
+  changed$person_id[changed$person_id == people[[3L]]] <- people[[2L]]
+  changed <- .dp_seal(changed, producer = "test/fixture")
+  expect_identical(.dp_lineage(table), .dp_lineage(changed))
   spec <- list(statistic = "count", population_id = "cohort-a")
-  expect_true(omopDpStatusDS()$ready)
-  before <- .dp_state_files(state)
-
   values <- parallel::mclapply(
     1:4,
-    function(unused) omopDpReleaseDS(table, spec),
+    function(index) omopDpReleaseDS(if (index %% 2L) table else changed, spec),
     mc.cores = 2L,
     mc.preschedule = FALSE
   )
-
   expect_false(any(vapply(values, inherits, logical(1L), "try-error")))
-  expect_true(all(vapply(
-    values[-1L], identical, logical(1L), values[[1L]]
-  )))
-  expect_identical(.dp_state_files(state), before)
+  expect_true(all(vapply(values[-1L], function(value) {
+    identical(serialize(value, NULL, version = 3L),
+              serialize(values[[1L]], NULL, version = 3L))
+  }, logical(1L))))
+  expect_identical(.dp_binding_count(state), 1L)
+  expect_identical(omopDpReleaseDS(table, spec), values[[1L]])
+  expect_identical(omopDpReleaseDS(changed, spec), values[[1L]])
 })
 
 test_that("onLoad runs self-tests but remains key-free", {
@@ -2160,6 +2194,8 @@ test_that("image load is key-free and first service use is complete", {
   expect_null(.pkg_state$dp_runtime)
 
   withr::local_options(list(dsomop.dp.enabled = TRUE))
+  store_id <- .dsomopDpBindingInitialize()
+  withr::local_options(list(dsomop.dp.release_store_id = store_id))
   first <- omopDpStatusDS()
   expect_true(file.exists(root_path))
   expect_true(first$ready)
@@ -2171,7 +2207,7 @@ test_that("image load is key-free and first service use is complete", {
   expect_identical(restarted$noise_key_id, first$noise_key_id)
 })
 
-test_that("concurrent first service use converges on one noise identity", {
+test_that("concurrent runtime use converges on the provisioned noise identity", {
   skip_on_os("windows")
   state <- .dp_local_state()
   statuses <- parallel::mclapply(
@@ -2195,7 +2231,8 @@ test_that("concurrent first service use converges on one noise identity", {
 test_that("the central policy guard initializes status and empty nodes differ", {
   first_state <- .dp_local_state()
   root_path <- file.path(first_state, "secrets", "dp_noise_root")
-  expect_false(file.exists(root_path))
+  expect_true(file.exists(root_path))
+  expect_null(.pkg_state$dp_runtime)
   expect_silent(.dsomopDpPolicy())
   expect_true(.pkg_state$dp_status$ready)
   first_id <- .pkg_state$dp_status$noise_domain_id
@@ -2498,4 +2535,181 @@ test_that("all typed DP statistics remain sticky across exclusive channel modes"
   })
   expect_false(omopDpStatusDS()$exclusive)
   expect_identical(release_all(), standard_mode)
+})
+
+.dp_first_answer_specs <- function() list(
+  list(statistic = "count"),
+  list(statistic = "bounded_record_count", reducer = "records",
+       max_contributions = 2L),
+  list(statistic = "categorical_histogram", variable = "category",
+       levels = c("a", "b", "c"), reducer = "presence",
+       max_contributions = 2L),
+  list(statistic = "numeric_histogram", variable = "measurement",
+       breaks = c(0, 5, 10), reducer = "records", max_contributions = 2L),
+  list(statistic = "bounded_distinct", variable = "category",
+       levels = c("a", "b", "c"), reducer = "distinct",
+       max_contributions = 2L),
+  list(statistic = "bounded_mean", variable = "measurement",
+       lower = 0, upper = 10, reducer = "mean"),
+  list(statistic = "binary_rate", variable = "flag", positive = "yes",
+       reducer = "any", denominator = "all_persons")
+)
+
+.dp_first_answer_input <- function(changed_persons = 0L, reverse = FALSE,
+                                   producer = "test/first-answer-matrix") {
+  raw <- data.frame(
+    person_id = 1:8, category = rep(c("a", "b"), 4L),
+    measurement = 1:8, flag = rep(c("yes", "no"), 4L),
+    stringsAsFactors = FALSE
+  )
+  raw <- rbind(raw, data.frame(
+    person_id = 8L + seq_len(changed_persons),
+    category = rep("c", changed_persons),
+    measurement = rep(9, changed_persons),
+    flag = rep("yes", changed_persons), stringsAsFactors = FALSE
+  ))
+  if (reverse) raw <- raw[rev(seq_len(nrow(raw))), , drop = FALSE]
+  .dp_seal(.testPseudonymize(raw), producer = producer)
+}
+
+test_that("all seven primitives freeze complete bytes for zero one two three and many edits", {
+  state <- .dp_local_state(noise_root = as.raw(0:31))
+  first_input <- .dp_first_answer_input()
+  specs <- .dp_first_answer_specs()
+  first <- lapply(specs, function(spec) omopDpReleaseDS(first_input, spec))
+  first_bytes <- lapply(first, serialize, connection = NULL, version = 3L)
+  expect_setequal(vapply(first, `[[`, character(1L), "statistic"),
+                  .DSOMOP_DP_STATISTICS)
+
+  for (changed_persons in c(0L, 1L, 2L, 3L, 64L)) {
+    # Resealing is a trusted custodian operation. Ordinary edited or reordered
+    # capsules remain invalid; no MAC check is relaxed to permit these inputs.
+    input <- .dp_first_answer_input(changed_persons, reverse = TRUE)
+    expect_identical(.dp_lineage(input), .dp_lineage(first_input))
+    expect_identical(length(unique(input$person_id)), 8L + changed_persons)
+    for (index in seq_along(specs)) {
+      value <- omopDpReleaseDS(input, specs[[index]])
+      expect_identical(value, first[[index]])
+      expect_identical(serialize(value, NULL, version = 3L), first_bytes[[index]])
+    }
+  }
+  expect_identical(.dp_binding_count(state), 7L)
+
+  .dp_restart_runtime()
+  after_restart <- lapply(specs, function(spec) {
+    omopDpReleaseDS(.dp_first_answer_input(64L), spec)
+  })
+  expect_identical(lapply(after_restart, serialize, connection = NULL,
+                          version = 3L), first_bytes)
+  expect_identical(.dp_binding_count(state), 7L)
+})
+
+test_that("first-answer hits never fingerprint or evaluate a payload again", {
+  .dp_local_state(noise_root = as.raw(0:31))
+  input <- .dp_first_answer_input()
+  spec <- list(statistic = "count")
+  first <- omopDpReleaseDS(input, spec)
+  policy <- .dsomopDpPolicy()
+  changed <- .dp_first_answer_input(64L)
+  analysis <- .dsomopDpAnalysis(changed, spec, policy)
+  testthat::local_mocked_bindings(
+    .dsomopDpSnapshotBinding = function(...) {
+      stop("A hit must not compare private fingerprints")
+    },
+    .package = "dsOMOP"
+  )
+  replay <- .dsomopDpRelease(
+    policy, analysis$semantic, analysis$snapshot, analysis$sensitivity,
+    payload_fn = function(...) stop("A hit must not evaluate the payload")
+  )
+  expect_identical(serialize(replay, NULL, version = 3L),
+                   serialize(first, NULL, version = 3L))
+  invalid <- changed
+  invalid$person_id[[1L]] <- invalid$person_id[[2L]]
+  expect_error(omopDpReleaseDS(invalid, spec), "provenance MAC does not match")
+})
+
+test_that("snapshot epoch and public request changes get independent fresh contexts", {
+  state <- .dp_local_state(noise_root = as.raw(0:31))
+  contexts <- list()
+  release <- function(changed_persons = 0L,
+                       producer = "test/first-answer-matrix") {
+    input <- .dp_first_answer_input(changed_persons, producer = producer)
+    policy <- .dsomopDpPolicy()
+    analysis <- .dsomopDpAnalysis(input, list(statistic = "count"), policy)
+    .dsomopDpRelease(policy, analysis$semantic, analysis$snapshot,
+      analysis$sensitivity, function(epsilon, policy, release_context) {
+        contexts[[length(contexts) + 1L]] <<- release_context
+        analysis$payload_fn(epsilon, policy, release_context)
+      })
+  }
+  first <- release()
+  expect_identical(release(64L), first)
+  expect_length(contexts, 1L)
+
+  # Rotation is a public custodian publication decision, even with unchanged data.
+  options(dsomop.dp.privacy_epoch = 2L)
+  .dp_restart_runtime()
+  epoch_answer <- release()
+  expect_length(contexts, 2L)
+  expect_identical(release(1L), epoch_answer)
+  options(dsomop.dp.snapshot_id = "etl-2026-08-02")
+  .dp_restart_runtime()
+  snapshot_answer <- release()
+  expect_length(contexts, 3L)
+  expect_identical(release(64L), snapshot_answer)
+
+  independent <- release(64L, producer = "test/independent-public-request")
+  expect_length(contexts, 4L)
+  expect_identical(release(1L, producer = "test/independent-public-request"),
+                   independent)
+  options(dsomop.dp.privacy_epoch = 3L)
+  .dp_restart_runtime()
+  changed_epoch <- release(64L)
+  expect_length(contexts, 5L)
+  expect_identical(release(), changed_epoch)
+  options(dsomop.dp.snapshot_id = "etl-2026-08-03")
+  .dp_restart_runtime()
+  changed_snapshot <- release(3L)
+  expect_length(contexts, 6L)
+  expect_identical(release(), changed_snapshot)
+  expect_length(unique(vapply(contexts, `[[`, character(1L), "release_id")), 6L)
+  expect_identical(.dp_binding_count(state), 6L)
+})
+
+test_that("a fresh R process replays the canonical complete primitive response", {
+  skip_on_os("windows")
+  state <- .dp_local_state(noise_root = as.raw(0:31))
+  specs <- .dp_first_answer_specs()
+  first <- lapply(specs, function(spec) {
+    omopDpReleaseDS(.dp_first_answer_input(), spec)
+  })
+  work <- withr::local_tempdir(pattern = "dsomop-first-answer-restart-")
+  configuration <- options()[grep("^dsomop\\.", names(options()))]
+  saveRDS(list(options = configuration,
+               input = .dp_first_answer_input(64L), specs = specs),
+          file.path(work, "request.rds"))
+  package_root <- normalizePath(testthat::test_path("..", ".."),
+                                winslash = "/", mustWork = TRUE)
+  script <- file.path(work, "worker.R")
+  writeLines(c(
+    "args <- commandArgs(TRUE)",
+    "request <- readRDS(file.path(args[[1L]], 'request.rds'))",
+    "options(request$options)",
+    "if (file.exists(file.path(args[[2L]], 'R', 'privacy_state.R'))) {",
+    "  suppressMessages(pkgload::load_all(args[[2L]], quiet = TRUE))",
+    "} else suppressPackageStartupMessages(library(dsOMOP))",
+    "result <- lapply(request$specs, function(spec) {",
+    "  dsOMOP::omopDpReleaseDS(request$input, spec)",
+    "})",
+    "saveRDS(lapply(result, serialize, connection = NULL, version = 3L),",
+    "        file.path(args[[1L]], 'result.rds'))"
+  ), script)
+  output <- system2(file.path(R.home("bin"), "Rscript"),
+    c("--vanilla", shQuote(script), shQuote(work), shQuote(package_root)),
+    stdout = TRUE, stderr = TRUE)
+  expect_null(attr(output, "status"), info = paste(output, collapse = "\n"))
+  expect_identical(readRDS(file.path(work, "result.rds")),
+                   lapply(first, serialize, connection = NULL, version = 3L))
+  expect_identical(.dp_binding_count(state), 7L)
 })
