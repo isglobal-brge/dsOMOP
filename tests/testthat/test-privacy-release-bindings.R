@@ -1,4 +1,5 @@
-.binding_fixture <- function(.local_envir = parent.frame()) {
+.binding_fixture <- function(initialize = TRUE, configured = TRUE,
+                             .local_envir = parent.frame()) {
   skip_on_os("windows")
   state <- withr::local_tempdir("dsomop-binding-", .local_envir = .local_envir)
   Sys.chmod(state, "0700")
@@ -14,11 +15,16 @@
     default.dsomop.dp.noise_root = NULL,
     dsomop.dp.release_store_id = "", dsomop.dp.release_store_bytes = 2^30
   ), .local_envir = .local_envir)
-  id <- omopInitializeReleaseStore()
-  withr::local_options(list(dsomop.dp.release_store_id = id),
-                       .local_envir = .local_envir)
-  list(state = state, id = id, policy = list(noise_root = .dsomopDpNoiseRoot()),
-       database = file.path(state, "release-bindings", "releases.sqlite"))
+  id <- if (initialize) omopInitializeReleaseStore() else NULL
+  if (initialize && configured) {
+    withr::local_options(list(dsomop.dp.release_store_id = id),
+                         .local_envir = .local_envir)
+  }
+  list(state = state, id = id,
+       policy = if (initialize) list(noise_root = .dsomopDpNoiseRoot()) else NULL,
+       database = file.path(state, "release-bindings", "releases.sqlite"),
+       pin = file.path(state, "release-store-id"),
+       bootstrap_lock = file.path(state, ".release-store-init.lock"))
 }
 
 .binding_id <- function(letter = "a") paste(rep(letter, 64L), collapse = "")
@@ -35,7 +41,7 @@
   } else DBI::dbExecute(connection, sql, params = params)
 }
 
-test_that("release store initialization is explicit, idempotent, and private", {
+test_that("explicit release store initialization is idempotent and privately pinned", {
   fixture <- .binding_fixture()
   expect_identical(omopInitializeReleaseStore(), fixture$id)
   expect_identical(.dsomopDpBindingIdentity(),
@@ -49,8 +55,9 @@ test_that("release store initialization is explicit, idempotent, and private", {
   expect_equal(.binding_sql(fixture, "SELECT count(*) AS n FROM bindings")$n, 0)
 
   withr::local_options(dsomop.dp.release_store_id = "")
-  expect_error(suppressMessages(.binding_get(fixture)), .DSOMOP_DP_STATE_ERROR,
-               fixed = TRUE)
+  # The durable local pin now supplies the identity when no external UUID is set.
+  expect_identical(.binding_get(fixture), list(value = 1))
+  expect_identical(.dsomopDpBindingReadPin(fixture$state), fixture$id)
   expect_identical(omopInitializeReleaseStore(), fixture$id)
 })
 
@@ -297,4 +304,238 @@ test_that("two processes with different candidate payloads publish exactly one a
   expect_identical(values[[1L]], values[[2L]])
   expect_length(readLines(counter), 1L)
   expect_equal(.binding_sql(fixture, "SELECT count(*) AS n FROM bindings")$n, 1)
+})
+
+test_that("first use initializes a fresh state root with a durable private UUID pin", {
+  fixture <- .binding_fixture(initialize = FALSE)
+  unlink(fixture$state, recursive = TRUE)
+  expect_message(identity <- .dsomopDpBindingIdentity(),
+                 "Custodian: automatically initialized permanent DP first-answer store")
+  expect_true(.dsomopDpBindingValidId(identity$store_id))
+  expect_identical(identity$state_root, fixture$state)
+  expect_identical(.dsomopDpBindingReadPin(fixture$state), identity$store_id)
+  expect_true(.dsomopPrivateMode(fixture$pin))
+  expect_identical(.dsomopLinkCount(fixture$pin), 1)
+  expect_true(.dsomopPrivateMode(fixture$bootstrap_lock))
+  expect_identical(getOption("dsomop.dp.release_store_id"), "")
+  fixture$policy <- list(noise_root = .dsomopDpNoiseRoot())
+  first <- .binding_get(fixture)
+  expect_identical(.binding_get(fixture, fn = function() stop("must not execute")), first)
+  expect_identical(omopInitializeReleaseStore(), identity$store_id)
+})
+
+test_that("a pre-store 2.7.0 state upgrades automatically without changing its root", {
+  fixture <- .binding_fixture(initialize = FALSE)
+  old_root <- .dsomopDpNoiseRoot()
+  expect_false(dir.exists(dirname(fixture$database)))
+  expect_message(identity <- .dsomopDpBindingIdentity(), "automatically initialized")
+  expect_identical(.dsomopDpNoiseRoot(), old_root)
+  expect_identical(.dsomopDpBindingReadPin(fixture$state), identity$store_id)
+  fixture$policy <- list(noise_root = old_root)
+  expect_identical(.binding_get(fixture), list(value = 1))
+})
+
+test_that("a local pin refuses missing stores and databases without external configuration", {
+  for (lost in c("database", "directory")) local({
+    fixture <- .binding_fixture(configured = FALSE)
+    first <- .binding_get(fixture)
+    target <- if (lost == "database") fixture$database else dirname(fixture$database)
+    unlink(target, recursive = TRUE)
+    expect_true(file.exists(fixture$pin))
+    expect_error(suppressMessages(.binding_get(fixture)), .DSOMOP_DP_STATE_ERROR,
+                 fixed = TRUE)
+    expect_error(suppressMessages(omopInitializeReleaseStore()), .DSOMOP_DP_STATE_ERROR,
+                 fixed = TRUE)
+    expect_false(file.exists(target))
+  })
+})
+
+test_that("configured UUIDs must match both the local pin and authenticated header", {
+  fixture <- .binding_fixture(configured = FALSE)
+  other <- "00000000-0000-0000-0000-000000000000"
+  local({
+    withr::local_options(dsomop.dp.release_store_id = other)
+    expect_error(suppressMessages(.binding_get(fixture)), .DSOMOP_DP_STATE_ERROR,
+                 fixed = TRUE)
+    expect_error(suppressMessages(omopInitializeReleaseStore()), .DSOMOP_DP_STATE_ERROR,
+                 fixed = TRUE)
+  })
+  local({
+    withr::local_options(dsomop.dp.release_store_id = NULL)
+    withr::local_envvar(DSOMOP_DP_RELEASE_STORE_ID = other)
+    expect_error(suppressMessages(.binding_get(fixture)), .DSOMOP_DP_STATE_ERROR,
+                 fixed = TRUE)
+  })
+  # A validly formatted replacement pin cannot override the authenticated header.
+  writeBin(charToRaw(other), fixture$pin)
+  expect_error(suppressMessages(.binding_get(fixture)), .DSOMOP_DP_STATE_ERROR,
+               fixed = TRUE)
+  expect_error(suppressMessages(omopInitializeReleaseStore()), .DSOMOP_DP_STATE_ERROR,
+               fixed = TRUE)
+})
+
+test_that("unsafe and malformed UUID pins cannot be adopted or repaired", {
+  for (damage in c("mode", "hardlink", "symlink", "directory", "malformed")) local({
+    fixture <- .binding_fixture(configured = FALSE)
+    if (damage == "mode") Sys.chmod(fixture$pin, "0644")
+    if (damage == "hardlink") expect_true(file.link(fixture$pin, paste0(fixture$pin, ".link")))
+    if (damage == "symlink") {
+      unlink(fixture$pin)
+      expect_true(file.symlink(paste0(fixture$pin, ".missing"), fixture$pin))
+    }
+    if (damage == "directory") {
+      unlink(fixture$pin)
+      expect_true(dir.create(fixture$pin, mode = "0700"))
+    }
+    if (damage == "malformed") writeBin(charToRaw(paste(rep("z", 36), collapse = "")), fixture$pin)
+    expect_true(.dsomopDpBindingEstablished())
+    expect_error(suppressMessages(.binding_get(fixture)), .DSOMOP_DP_STATE_ERROR,
+                 fixed = TRUE)
+    expect_error(suppressMessages(omopInitializeReleaseStore()), .DSOMOP_DP_STATE_ERROR,
+                 fixed = TRUE)
+  })
+})
+
+test_that("a pin preserves established-root and permanent bootstrap-lock guards", {
+  fixture <- .binding_fixture(configured = FALSE)
+  unlink(fixture$bootstrap_lock)
+  expect_error(suppressMessages(.binding_get(fixture)), .DSOMOP_DP_STATE_ERROR,
+               fixed = TRUE)
+  expect_error(suppressMessages(omopInitializeReleaseStore()), .DSOMOP_DP_STATE_ERROR,
+               fixed = TRUE)
+  expect_false(file.exists(fixture$bootstrap_lock))
+  unlink(dirname(fixture$database), recursive = TRUE)
+  root_path <- file.path(fixture$state, "secrets", "dp_noise_root")
+  unlink(root_path)
+  expect_error(suppressMessages(.dsomopDpNoiseRoot()), .DSOMOP_DP_STATE_ERROR,
+               fixed = TRUE)
+  expect_false(file.exists(root_path))
+})
+
+test_that("old externally pinned stores acquire a local pin only after authentication", {
+  fixture <- .binding_fixture()
+  first <- .binding_get(fixture)
+  unlink(c(fixture$pin, fixture$bootstrap_lock))
+  expect_identical(.dsomopDpBindingIdentity()$store_id, fixture$id)
+  expect_identical(.dsomopDpBindingReadPin(fixture$state), fixture$id)
+  expect_identical(.binding_get(fixture, fn = function() stop("must not execute")), first)
+  unlink(c(fixture$pin, fixture$bootstrap_lock))
+  .binding_sql(fixture, "UPDATE header SET head_mac = 'invalid'")
+  expect_error(suppressMessages(.binding_get(fixture)), .DSOMOP_DP_STATE_ERROR,
+               fixed = TRUE)
+  expect_false(file.exists(fixture$pin))
+  expect_false(file.exists(fixture$bootstrap_lock))
+})
+
+test_that("an unpinned existing store requires explicit authenticated setup", {
+  fixture <- .binding_fixture(configured = FALSE)
+  first <- .binding_get(fixture)
+  unlink(fixture$pin)
+  expect_error(suppressMessages(.binding_get(fixture)), .DSOMOP_DP_STATE_ERROR,
+               fixed = TRUE)
+  expect_false(file.exists(fixture$pin))
+  expect_identical(omopInitializeReleaseStore(), fixture$id)
+  expect_identical(.binding_get(fixture), first)
+})
+
+test_that("pin durability failures prevent payload evaluation", {
+  fixture <- .binding_fixture(initialize = FALSE)
+  fixture$policy <- list(noise_root = .dsomopDpNoiseRoot())
+  synchronize <- .dsomopRequireSync
+  executions <- 0L
+  make <- function() { executions <<- executions + 1L; list(value = executions) }
+  local({
+    testthat::local_mocked_bindings(.dsomopRequireSync = function(path, ...) {
+      if (identical(path, fixture$pin)) stop("injected pin sync failure")
+      synchronize(path, ...)
+    }, .package = "dsOMOP")
+    expect_error(suppressMessages(.binding_get(fixture, fn = make)),
+                 .DSOMOP_DP_STATE_ERROR, fixed = TRUE)
+    expect_identical(executions, 0L)
+    expect_true(file.exists(fixture$pin))
+    expect_error(suppressMessages(.binding_get(fixture, fn = make)),
+                 .DSOMOP_DP_STATE_ERROR, fixed = TRUE)
+    expect_identical(executions, 0L)
+  })
+  expect_identical(.binding_get(fixture, fn = make), list(value = 1L))
+})
+
+test_that("a fresh R session reuses the local pin with no configured UUID", {
+  fixture <- .binding_fixture(configured = FALSE)
+  first <- .binding_get(fixture, fn = function() list(value = 71L))
+  directory <- withr::local_tempdir()
+  script <- .binding_worker_script(directory)
+  output <- file.path(directory, "response.bin")
+  log <- file.path(directory, "worker.log")
+  status <- suppressWarnings(system2(file.path(R.home("bin"), "Rscript"),
+    shQuote(c(script, fixture$state, "", "replay", output)), stdout = log, stderr = log))
+  expect_identical(status, 0L, info = paste(readLines(log), collapse = "\n"))
+  expect_identical(readBin(output, "raw", file.info(output)$size), .binding_bytes(first))
+  expect_identical(.dsomopDpBindingReadPin(fixture$state), fixture$id)
+})
+
+test_that("concurrent first use waits for the store and pin to be fully published", {
+  fixture <- .binding_fixture(initialize = FALSE)
+  ready <- file.path(fixture$state, "initialization-in-progress")
+  counter <- file.path(fixture$state, "executions")
+  publish <- .dsomopDpBindingWritePin
+  testthat::local_mocked_bindings(.dsomopDpBindingWritePin = function(state_root, store_id) {
+    file.create(ready)
+    Sys.sleep(0.25)
+    publish(state_root, store_id)
+  }, .package = "dsOMOP")
+  values <- parallel::mclapply(1:2, function(candidate) {
+    if (candidate == 2L) {
+      deadline <- Sys.time() + 10
+      while (!file.exists(ready) && Sys.time() < deadline) Sys.sleep(0.01)
+      if (!file.exists(ready)) stop("first initializer did not reach pin publication")
+    }
+    identity <- suppressMessages(.dsomopDpBindingIdentity())
+    policy <- list(noise_root = .dsomopDpNoiseRoot())
+    value <- .dsomopDpBindingRelease(policy, .binding_id(), .binding_charge, function() {
+      cat(candidate, "\n", file = counter, append = TRUE)
+      list(candidate = candidate)
+    })
+    list(id = identity$store_id, bytes = .binding_bytes(value))
+  }, mc.cores = 2L, mc.preschedule = FALSE)
+  expect_true(all(vapply(values, is.list, logical(1L))))
+  expect_identical(values[[1L]], values[[2L]])
+  expect_identical(.dsomopDpBindingReadPin(fixture$state), values[[1L]]$id)
+  expect_length(readLines(counter), 1L)
+  expect_equal(.binding_sql(fixture, "SELECT count(*) AS n FROM bindings")$n, 1)
+})
+
+test_that("whole-root loss starts a fresh domain only without external pinning", {
+  fixture <- .binding_fixture(configured = FALSE)
+  first <- .binding_get(fixture)
+  old_root <- fixture$policy$noise_root
+  unlink(fixture$state, recursive = TRUE)
+  expect_message(identity <- .dsomopDpBindingIdentity(), "automatically initialized")
+  expect_false(identical(identity$store_id, fixture$id))
+  expect_false(identical(.dsomopDpNoiseRoot()$key_id, old_root$key_id))
+  expect_error(suppressMessages(.binding_get(fixture)), .DSOMOP_DP_STATE_ERROR,
+               fixed = TRUE)
+  fixture$policy <- list(noise_root = .dsomopDpNoiseRoot())
+  expect_identical(.binding_get(fixture, fn = function() list(value = 99)), list(value = 99))
+})
+
+test_that("a stale absent-lock observation joins a concurrently published store", {
+  fixture <- .binding_fixture(initialize = FALSE)
+  exists <- .dsomopDpBindingExists
+  raced <- FALSE
+  competing_id <- NULL
+  testthat::local_mocked_bindings(.dsomopDpBindingExists = function(path) {
+    if (identical(path, fixture$bootstrap_lock) && !raced) {
+      raced <<- TRUE
+      # Simulate another worker publishing after this worker observed no lock,
+      # but before it inspects the release directory in the migration branch.
+      competing_id <<- omopInitializeReleaseStore()
+      return(FALSE)
+    }
+    exists(path)
+  }, .package = "dsOMOP")
+  identity <- .dsomopDpBindingIdentity()
+  expect_true(raced)
+  expect_identical(identity$store_id, competing_id)
+  expect_identical(.dsomopDpBindingReadPin(fixture$state), competing_id)
 })
