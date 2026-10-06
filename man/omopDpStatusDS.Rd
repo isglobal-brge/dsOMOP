@@ -8,14 +8,16 @@ omopDpStatusDS()
 }
 \value{
 Public DP service status, including the custodial \code{exclusive}
-flag (default TRUE). Custodians can set \code{dsomop.dp.exclusive = FALSE}
-to restore standard statistics. Standard releases are blocked when both
-\code{enabled} and \code{exclusive} are TRUE.
+  flag (default TRUE). Custodians can set \code{dsomop.dp.exclusive = FALSE}
+  to restore standard statistics. Standard releases are blocked when both
+  \code{enabled} and \code{exclusive} are TRUE.
 }
 \description{
 Returns the public fixed-per-release mechanism contract. Secret key material
 and protected snapshot fingerprints are never returned. Calling this
-endpoint initializes the single persistent noise root atomically when the
-service is enabled. Previous calls do not create state or affect whether a
-later protected operation may run.
+endpoint validates the provisioned noise root and authenticated first-answer
+store when the service is enabled. Custodians must initialize the store with
+\code{omopInitializeReleaseStore()} and pin its UUID in service configuration.
+Status declares history-dependent first-answer bindings and public storage
+reservations; there is no cumulative privacy budget or privacy call quota.
 }

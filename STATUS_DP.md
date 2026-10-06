@@ -1,4 +1,49 @@
-# DP default-on release status
+# DP first-answer release status (2.7.1)
+
+The current server contract is `dsomop-dp-release-v3` /
+`fixed_per_release_snapshot_first_answer_v1`, paired with dsOMOPClient 2.7.4.
+It implements [isglobal-brge/dsOMOP#20](https://github.com/isglobal-brge/dsOMOP/issues/20):
+one complete canonical response is retained permanently for each public request,
+snapshot and privacy epoch. Every later valid request for that identity replays
+those bytes, independently of newly resealed contents. Hits do not evaluate the
+payload or compare protected fingerprints. Typed admission and provenance/MAC
+checks remain mandatory, and fresh-path primitives/calibration are unchanged.
+
+Status declares `history_dependent = TRUE`,
+`persistent_state = "noise_root_and_release_bindings"`,
+`release_binding = "snapshot_first_answer_v1"`, `privacy_call_quota = "none"`,
+and `service_capacity = "public_identity_reservations_v1"`. The client recognizes
+the old stateless contract as old and refuses incompatible federation pooling.
+
+Custodians initialize with `omopInitializeReleaseStore()`, then pin its returned
+UUID outside the state directory in `DSOMOP_DP_RELEASE_STORE_ID` /
+`dsomop.dp.release_store_id`. Persistent `DSOMOP_STATE_DIR` contains the root,
+authenticated SQLite store and permanent locks; injected roots require the store
+too. Missing or corrupt established state/root fails closed without automatic
+replacement. The default logical capacity is 1 GiB, adjustable with
+`dsomop.dp.release_store_bytes` / `DSOMOP_DP_RELEASE_STORE_BYTES`; public
+reservations are charged once per new R, existing R remain readable at capacity,
+and there is no eviction. See README for the public reservation formula.
+
+Answers can remain stale indefinitely until explicit snapshot/epoch rotation
+and session restart. New requests against mutable data can reflect different
+source versions. Back up root, complete store, locks and external UUID together;
+stop/drain all workers before restore. The operator/storage must prevent rollback
+to an earlier complete valid state: no independent monotonic witness is present.
+Upgrades require explicit initialization/publication migration; old stateless
+answers cannot be reconstructed and byte equality across versions is not promised.
+
+The repeated-successful-payload guarantee is conditional on intact retained
+state and the same public admission schedule. It is not a full temporal-transcript
+DP claim or a finite lifetime privacy accountant. Distinct requests/rotations,
+administrative timing, validation failures, availability and other DataSHIELD
+outputs remain outside that guarantee. README and DISCLOSURE_CONTROL.md describe
+the current deployment and residuals.
+
+## Historical default-on report (2.6.0)
+
+The remainder is retained historical validation evidence. Its stateless/root-only
+and automatic-provisioning descriptions are superseded by the 2.7.1 contract above.
 
 Work is confined to the two requested repositories, on `feat/dp-default-on`.
 No pushes or tags. Server: **2.6.0**. Client: **2.7.2** (documentation only).

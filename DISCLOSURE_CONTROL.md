@@ -118,8 +118,8 @@ or incomplete, resource identity alone is hashed under
 R process, shared across DSLite sessions: custodians must bump
 `dsomop.dp.privacy_epoch` after **each data reload**, or configure
 `dsomop.dp.domain` and `dsomop.dp.snapshot_id` explicitly. A snapshot unchanged
-across data reloads lets an analyst difference releases across reloads; fallback
-metadata cannot automatically track those changes. Each explicit identifier
+across data reloads freezes previously released answers; fallback metadata
+cannot automatically track those changes. Each explicit identifier
 wins independently, and an explicit snapshot skips metadata derivation.
 
 In-memory databases and unavailable/ambiguous resource coordinates still fail
@@ -136,9 +136,11 @@ DSLite server sessions keep separate policies within their shared R process.
 For replicas and database aliases of one logical dataset, configure matching
 explicit identifiers if canonical connection coordinates differ.
 
-A persistent private state directory is required for the default file-backed
-noise root: mount `DSOMOP_STATE_DIR` (or `dsomop.state_dir`) across restarts and
-replicas. The default `~/.dsomop` is suitable only when the home is persistent.
+A persistent private state directory is required for the noise root and release
+bindings, including with an injected root: mount `DSOMOP_STATE_DIR` (or
+`dsomop.state_dir`) across restarts and replicas. Initialize with the administrative
+`omopInitializeReleaseStore()` and pin its UUID externally through
+`DSOMOP_DP_RELEASE_STORE_ID` / `dsomop.dp.release_store_id`. The default `~/.dsomop` is suitable only when the home is persistent.
 `DSOMOP_TEST_ALLOW_EPHEMERAL_STATE=1` permits temporary paths in tests only; it
 does not supply a resource identity or bypass policy checks.
 
@@ -149,11 +151,36 @@ the policy hash and release context. Equal canonical queries on distinct
 resources therefore use different PRF keys. Discrete noise draws can coincide
 by chance; independence does not imply unequal numeric outputs on every call.
 
-The protected-statistic fingerprint remains in sticky release keys, preventing
-noise cancellation when bounded statistics change under stale metadata.
-This is a per-release guarantee, with no finite cumulative privacy budget.
-See README.md for the complete deployment, root lifecycle and composition
-contract. The QueryLibrary sticky catalogue is public metadata and remains
+In 2.7.1, each public request identity, snapshot and epoch binds permanently to
+its first complete canonical response. Every later valid request replays those
+bytes, whether zero, one or many persons changed. Provenance and typed admission
+still run; hits neither compare private fingerprints nor call the payload
+function. The fingerprint remains private defence in depth on the fresh path.
+There is no refresh boundary and no analyst force-refresh control. Answers can
+remain stale indefinitely until the custodian rotates the snapshot or epoch and
+restarts sessions. New requests against mutable data need not agree with the
+source version reflected by earlier answers.
+
+Responses and the table head are authenticated before decoding, and publication
+commits before return. Missing/corrupt state or root fails closed; established
+roots are never automatically replaced. Keep a consistent root/store/lock backup
+and the expected UUID outside the payload directory; stop workers before restore.
+Whole-state rollback to an earlier valid backup is an explicit operator/storage
+trust assumption, not cryptographically detected by the record MACs.
+
+Capacity is public storage admission, not an epsilon budget: the default 1 GiB
+`dsomop.dp.release_store_bytes` / `DSOMOP_DP_RELEASE_STORE_BYTES` reserves once
+per new public identity, retains answers permanently without eviction, and allows
+existing identities to replay at capacity. Validation/statistic preparation may
+already have read private data before a new identity is refused.
+
+This closes the conditional repeated-identity temporal equality selection in
+[isglobal-brge/dsOMOP#20](https://github.com/isglobal-brge/dsOMOP/issues/20),
+conditional on retained state and the same public admission schedule. It adds
+no finite cumulative budget or full temporal-transcript DP claim. Distinct
+requests and public rotations compose; admission failures, administration,
+timing, availability and other DataSHIELD outputs remain separate.
+See README.md for initialization, capacity reservations, recovery and migration. The QueryLibrary sticky catalogue is public metadata and remains
 available before DP initialization; executing a release still validates policy.
 
 ## Exact discrete-Laplace sampler (2.6.1)
@@ -207,7 +234,8 @@ as canonical decimal text, selects each 256-bit block. All bytes are consumed
 in order, least-significant bit first within each byte. Counters neither wrap
 nor round. The same key and complete context replay the same bits and noise,
 while component/coordinate and counter separation select distinct PRF inputs.
-No release history or random-generator state is persisted.
+No random-generator state is persisted. Since 2.7.1 the complete first response
+is persisted separately; successful repeats do not re-enter this sampler.
 
 With independent random bits the implemented mechanism has the exact ideal
 distribution and pure differential privacy (delta 0). The deployed keyed
@@ -218,13 +246,15 @@ limitations above are unchanged.
 
 The mechanism identifier is `dsomop-sticky-discrete-laplace-prf-v2`, and the
 hashed policy schema changes from 2 to 3. Both the public sampler and mechanism
-metadata distinguish old and repaired releases. The release-envelope protocol
-`dsomop-dp-release-v2`, canonical-JSON protocol, semantic-release protocol,
-privacy-contract label and privacy-guarantee label keep their existing versions
-because their field structure and semantics are unchanged. dsOMOPClient 2.7.2
-already accepts these new sampler/mechanism strings and delta 0, verifies
-payloads against preflight metadata, and rejects mixed versions across selected
-servers. No client update is required.
+metadata distinguish old and repaired releases. The first-answer release-envelope protocol in 2.7.1 is
+`dsomop-dp-release-v3`, with privacy contract
+`fixed_per_release_snapshot_first_answer_v1`. Status truthfully declares
+`history_dependent = TRUE`, `persistent_state = "noise_root_and_release_bindings"`,
+`release_binding = "snapshot_first_answer_v1"`, `privacy_call_quota = "none"`
+and `service_capacity = "public_identity_reservations_v1"`. dsOMOPClient 2.7.4
+recognizes the older stateless v2 contract explicitly and refuses mixed-contract
+pooling. Sampler, mechanism and canonical JSON are unchanged by this first-answer
+update; the versioned policy schema is now 4.
 
 Changing the sampler changes the policy hash and sticky release identity, so an
 upgraded query can receive a new draw. All replicas of one logical node must

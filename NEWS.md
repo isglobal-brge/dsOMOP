@@ -1,3 +1,31 @@
+# dsOMOP 2.7.1
+
+- Resolve the conditional temporal equality oracle in
+  [isglobal-brge/dsOMOP#20](https://github.com/isglobal-brge/dsOMOP/issues/20)
+  with one permanent first answer per public request, snapshot and privacy
+  epoch. Valid repeats return the entire stored canonical response, even after
+  resealing one or many changed persons or restarting R; hits do not fingerprint
+  private contents or evaluate the payload again. Provenance/MAC and typed
+  admission remain mandatory.
+- Add an authenticated, atomically committed persistent binding store under
+  `DSOMOP_STATE_DIR`, explicit administrative initialization and externally
+  pinned store UUID. Missing/corrupt established state or root fails closed;
+  roots are no longer silently regenerated. Injected roots require bindings too.
+  Replicas must share root and store, backups must retain the consistent set,
+  and whole-state rollback remains an operator/storage trust assumption.
+- Reserve public capacity once per new request identity, default 1 GiB through
+  `dsomop.dp.release_store_bytes` / `DSOMOP_DP_RELEASE_STORE_BYTES`. Keep existing
+  answers readable at capacity with no eviction or privacy call quota.
+- Answers stay stale until explicit custodian snapshot/epoch rotation and session
+  restart. Different requests against a mutable source need not reflect one
+  coherent database snapshot. This repeated-payload guarantee is not a finite
+  cumulative budget or a full temporal-transcript DP guarantee.
+- Publish release protocol v3 and the snapshot-first-answer status contract;
+  pair with dsOMOPClient 2.7.4. Old stateless answers cannot be reconstructed, and
+  upgrades require explicit initialization/publication migration. Keep all seven
+  primitives, QueryLibrary paths, exact sampler, sensitivities, contribution
+  bounds, epsilon/delta defaults, component allocation and clipping unchanged.
+
 # dsOMOP 2.7.0
 
 - Make the typed DP channel exclusive by default while DP is enabled. The
