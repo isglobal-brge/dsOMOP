@@ -1,4 +1,71 @@
-# DP default-on release status
+# DP first-answer release status (2.7.1)
+
+The current server contract is `dsomop-dp-release-v3` /
+`fixed_per_release_snapshot_first_answer_v1`, paired with dsOMOPClient 2.7.4.
+It implements [isglobal-brge/dsOMOP#20](https://github.com/isglobal-brge/dsOMOP/issues/20):
+one complete canonical response is retained permanently for each public request,
+snapshot and privacy epoch. Every later valid request for that identity replays
+those bytes, independently of newly resealed contents. Hits do not evaluate the
+payload or compare protected fingerprints. Typed admission and provenance/MAC
+checks remain mandatory, and fresh-path primitives/calibration are unchanged.
+
+Status declares `history_dependent = TRUE`,
+`persistent_state = "noise_root_and_release_bindings"`,
+`release_binding = "snapshot_first_answer_v1"`, `privacy_call_quota = "none"`,
+and `service_capacity = "public_identity_reservations_v1"`. The client recognizes
+the old stateless contract as old and refuses its releases by default. The
+opt-in `dsomop.dp.allow_legacy_servers = TRUE` transition option warns about
+each legacy server's equality residual and records every server's contract,
+including for mixed or pooled-only results.
+
+First use initializes automatically when the store, configured UUID and local
+pin are absent, including over 2.7.0-style state, and emits a custodian message.
+It syncs an owner-only `release-store-id` pin outside `release-bindings/`.
+`omopInitializeReleaseStore()` remains available for explicit setup. We recommend
+pinning its returned UUID outside the state directory in
+`DSOMOP_DP_RELEASE_STORE_ID` / `dsomop.dp.release_store_id`: a configured UUID
+must match both local pin and authenticated header. Persistent `DSOMOP_STATE_DIR`
+contains the root, pin, authenticated SQLite store and permanent locks; injected
+roots require the store too. Missing or corrupt established state/root fails
+closed without automatic replacement, including store/database loss with a pin.
+The default logical capacity is 1 GiB, adjustable with
+`dsomop.dp.release_store_bytes` / `DSOMOP_DP_RELEASE_STORE_BYTES`; public
+reservations are charged once per new R, existing R remain readable at capacity,
+and there is no eviction. See README for the public reservation formula.
+
+Answers can remain stale indefinitely until explicit snapshot/epoch rotation
+and session restart. New requests against mutable data can reflect different
+source versions. Back up root, pin, complete store, locks and any external UUID
+together; stop/drain all workers before restore. The operator/storage must prevent rollback
+to an earlier complete valid state: no independent monotonic witness is present.
+Without external pinning, deleting the whole state root permits a fresh install
+with a new file-backed root/domain; injected roots remain externally controlled.
+Deleting store and pin together while retaining the root is a residual only
+external UUID pinning prevents. Neither deletion is a supported recovery method.
+Upgrade setup is automatic, but a planned publication migration remains necessary:
+old stateless answers cannot be reconstructed and byte equality across versions
+is not promised.
+
+The repeated-successful-payload guarantee is conditional on intact retained
+state and the same public admission schedule. It is not a full temporal-transcript
+DP claim or a finite lifetime privacy accountant. Distinct requests/rotations,
+administrative timing, validation failures, availability and other DataSHIELD
+outputs remain outside that guarantee. README and DISCLOSURE_CONTROL.md describe
+the current deployment and residuals.
+
+## Scaling
+
+Every request authenticates the full first-answer inventory: O(entries),
+including entries retained across snapshot/epoch rotations. A review benchmark
+measured about 25 seconds for one existing-answer replay at 40,000 entries;
+concurrent requests may time out. Keep the reservation capacity sized for this
+cost, or lower `dsomop.dp.release_store_bytes` before the inventory grows.
+Incremental authentication is future work.
+
+## Historical default-on report (2.6.0)
+
+The remainder is retained historical validation evidence. Its stateless/root-only
+and automatic-provisioning descriptions are superseded by the 2.7.1 contract above.
 
 Work is confined to the two requested repositories, on `feat/dp-default-on`.
 No pushes or tags. Server: **2.6.0**. Client: **2.7.2** (documentation only).

@@ -16,8 +16,14 @@ dsOMOPClient.}
 }
 \value{
 A deterministic sticky noisy aggregate with per-release mechanism
-  metadata.
+  metadata, persisted before return and replayed byte-identically for the same
+  public identity. New identities require a public storage reservation.
 }
 \description{
-Release one sticky, person-bounded privacy statistic (Aggregate)
+The first successful answer for each public request, snapshot and privacy
+epoch is permanent. Later valid requests replay the complete canonical
+response, even after unrotated data changes, without evaluating a new payload.
+Provenance and typed admission are still required. Custodians restore freshness
+by rotating the public snapshot or epoch and restarting sessions. Different
+requests against mutable sources need not reflect one coherent source snapshot.
 }
