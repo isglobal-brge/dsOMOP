@@ -84,7 +84,7 @@
 
 .dsomopDpBindingValidId <- function(id) {
   is.character(id) && length(id) == 1L && !is.na(id) &&
-    grepl("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$", id)
+    grepl("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$", id, useBytes = TRUE)
 }
 
 .dsomopDpBindingReadPin <- function(state_root) {

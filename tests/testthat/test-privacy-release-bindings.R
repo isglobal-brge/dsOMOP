@@ -396,6 +396,15 @@ test_that("unsafe and malformed UUID pins cannot be adopted or repaired", {
   })
 })
 
+test_that("non-UTF8 UUID pins fail with only the stable state error", {
+  fixture <- .binding_fixture(configured = FALSE)
+  writeBin(as.raw(rep(255L, 36L)), fixture$pin)
+  expect_no_warning(expect_error(suppressMessages(.binding_get(fixture)),
+                                 .DSOMOP_DP_STATE_ERROR, fixed = TRUE))
+  expect_no_warning(expect_error(suppressMessages(omopInitializeReleaseStore()),
+                                 .DSOMOP_DP_STATE_ERROR, fixed = TRUE))
+})
+
 test_that("a pin preserves established-root and permanent bootstrap-lock guards", {
   fixture <- .binding_fixture(configured = FALSE)
   unlink(fixture$bootstrap_lock)
