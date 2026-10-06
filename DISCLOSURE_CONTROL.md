@@ -138,9 +138,17 @@ explicit identifiers if canonical connection coordinates differ.
 
 A persistent private state directory is required for the noise root and release
 bindings, including with an injected root: mount `DSOMOP_STATE_DIR` (or
-`dsomop.state_dir`) across restarts and replicas. Initialize with the administrative
-`omopInitializeReleaseStore()` and pin its UUID externally through
-`DSOMOP_DP_RELEASE_STORE_ID` / `dsomop.dp.release_store_id`. The default `~/.dsomop` is suitable only when the home is persistent.
+`dsomop.state_dir`) across restarts and replicas. First use automatically
+initializes when the store, configured UUID and local pin are all absent,
+including upgrades from 2.7.0 with an existing noise root. The initializer logs
+a custodian message and syncs the owner-only `0600` UUID pin at
+`DSOMOP_STATE_DIR/release-store-id`, outside `release-bindings/`; owner, symlink
+and hard-link checks apply. `omopInitializeReleaseStore()` remains available
+for explicit setup and authenticates existing state on repeated calls.
+We recommend also pinning its UUID outside the state root through
+`DSOMOP_DP_RELEASE_STORE_ID` / `dsomop.dp.release_store_id`. A configured UUID
+takes precedence and must match the local pin and authenticated store header.
+The default `~/.dsomop` is suitable only when the home is persistent.
 `DSOMOP_TEST_ALLOW_EPHEMERAL_STATE=1` permits temporary paths in tests only; it
 does not supply a resource identity or bypass policy checks.
 
@@ -163,8 +171,14 @@ source version reflected by earlier answers.
 
 Responses and the table head are authenticated before decoding, and publication
 commits before return. Missing/corrupt state or root fails closed; established
-roots are never automatically replaced. Keep a consistent root/store/lock backup
-and the expected UUID outside the payload directory; stop workers before restore.
+roots are never automatically replaced. A local pin or configured UUID makes
+loss of the store directory or database fatal. Keep a consistent root/pin/store/lock
+backup and any external UUID configuration; stop workers before restore.
+Without external pinning, deleting the entire state root permits a fresh
+installation with a new file-backed root and release domain (injected roots
+remain externally controlled). Deleting both store and local pin while keeping
+the noise root is a residual only external UUID pinning prevents. External
+pinning also detects whole-root loss; deletion is not a refresh/recovery method.
 Whole-state rollback to an earlier valid backup is an explicit operator/storage
 trust assumption, not cryptographically detected by the record MACs.
 

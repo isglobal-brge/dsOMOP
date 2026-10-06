@@ -399,9 +399,9 @@
 #' Bump dsomop.dp.privacy_epoch after each fallback data reload or whenever data
 #' change without metadata changes. All enabled services require a persistent
 #' private DSOMOP_STATE_DIR (or dsomop.state_dir), including injected-root
-#' deployments. First use initializes the release store and a local UUID pin;
-#' external UUID pinning is recommended for stronger state-loss detection.
-#' Ephemeral state is test-only.
+#' deployments. First use initializes when the store, configured UUID and local
+#' pin are absent; established state loss fails closed. External UUID pinning is
+#' recommended for stronger loss detection. Ephemeral state is test-only.
 #' @keywords internal
 .dsomopDpPolicyConfig <- function() {
   state <- .dsomopDpState()
