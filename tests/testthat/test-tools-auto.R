@@ -4,8 +4,7 @@
   "DSOMOP_DP_ENABLED", "DSOMOP_DP_DOMAIN", "DSOMOP_DP_SNAPSHOT_ID",
   "DSOMOP_DP_RELEASE_EPSILON", "DSOMOP_DP_PRIVACY_EPOCH",
   "DSOMOP_DP_MAX_LEVELS", "DSOMOP_DP_MAX_CONTRIBUTIONS",
-  "DSOMOP_DP_NUMERIC_GRID", "DSOMOP_DP_NOISE_ROOT",
-  "DSOMOP_DP_RELEASE_STORE_ID", "DSOMOP_DP_RELEASE_STORE_BYTES"
+  "DSOMOP_DP_NUMERIC_GRID", "DSOMOP_DP_NOISE_ROOT"
 )
 
 # A private DP service for one test (same contract as test-privacy-dp.R).
@@ -27,28 +26,19 @@
     dsomop.dp.domain = "dsomop-tools-test",
     dsomop.dp.snapshot_id = "tools-2026-11-01",
     dsomop.dp.release_epsilon = 0.1, dsomop.dp.privacy_epoch = 1L,
-    dsomop.dp.noise_root = NULL, dsomop.dp.release_store_id = "",
-    dsomop.dp.release_store_bytes = 1024^3
+    dsomop.dp.noise_root = NULL
   ), .local_envir = .local_envir)
   previous <- list(status = .pkg_state$dp_status,
                    runtime = .pkg_state$dp_runtime,
-                   warned = .pkg_state$dp_snapshot_fallback_warned,
                    in_progress = .pkg_state$dp_bootstrap_in_progress)
   withr::defer({
     .pkg_state$dp_status <- previous$status
     .pkg_state$dp_runtime <- previous$runtime
-    .pkg_state$dp_snapshot_fallback_warned <- previous$warned
     .pkg_state$dp_bootstrap_in_progress <- previous$in_progress
   }, envir = .local_envir)
   .pkg_state$dp_status <- NULL
   .pkg_state$dp_runtime <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
-  if (isTRUE(enabled)) {
-    withr::local_options(
-      list(dsomop.dp.release_store_id = .dsomopDpBindingInitialize()),
-      .local_envir = .local_envir
-    )
-  }
   state
 }
 

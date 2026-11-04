@@ -159,15 +159,12 @@ Options:
     default.dsomop.tools.mode="auto",
     default.dsomop.dp.enabled=TRUE,
     default.dsomop.dp.exclusive=FALSE,
-    default.dsomop.dp.binding="stateless",
     default.dsomop.dp.domain="",
     default.dsomop.dp.snapshot_id="",
     default.dsomop.dp.release_epsilon=0.1,
     default.dsomop.dp.privacy_epoch=1,
     default.dsomop.dp.max_levels=1000,
     default.dsomop.dp.max_contributions=10,
-    default.dsomop.dp.numeric_grid=65535,
-    default.dsomop.dp.release_store_id="",
-    default.dsomop.dp.release_store_bytes=1073741824
+    default.dsomop.dp.numeric_grid=65535
 Config/testthat/edition: 3
 RoxygenNote: 7.3.3

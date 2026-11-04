@@ -901,19 +901,12 @@
 #' Sticky privacy-noise service status (Aggregate)
 #'
 #' Returns the public fixed-per-release mechanism contract. Secret key material
-#' and protected snapshot fingerprints are never returned. With the default
-#' stateless binding (\code{dsomop.dp.binding = "stateless"}) the only state is
+#' and protected snapshot fingerprints are never returned. The only DP state is
 #' the noise root: answers are deterministic in the root, the question, the
 #' protected statistic and a private automatic database version, and status
-#' declares \code{release_binding = "seed_data_versioned_v1"}. With the
-#' first-answer binding, calling this endpoint validates the provisioned noise
-#' root and authenticated first-answer store; fresh or pre-store upgrade state
-#' initializes automatically when no store, local pin or configured UUID
-#' exists, custodians can also use \code{omopInitializeReleaseStore()}, external
-#' UUID pinning is recommended for stronger loss detection, and established
-#' state loss fails closed; status then declares history-dependent first-answer
-#' bindings and public storage reservations. There is no cumulative privacy
-#' budget or privacy call quota.
+#' declares \code{release_binding = "seed_data_versioned_v1"} and
+#' \code{persistent_state = "noise_root_only"}. A damaged root fails closed.
+#' There is no cumulative privacy budget or privacy call quota.
 #' DP serves only the OHDSI community tools, so the status requires them to be
 #' enabled (\code{dsomop.tools.enabled}). It derives the service identity from
 #' the session's connected OMOP resource when no explicit
@@ -1037,16 +1030,11 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
 
 #' Release one sticky, person-bounded privacy statistic (Aggregate)
 #'
-#' With the default stateless binding the answer is a deterministic function of
-#' the secret noise root, the public request, the protected statistic and a
-#' private automatic database version: repeating a request returns the same
-#' answer without stored state, and a database reload re-draws every answer.
-#' With the first-answer binding (\code{dsomop.dp.binding = "first_answer"}), the
-#' first successful answer for each public request, snapshot and privacy epoch
-#' is permanent: later valid requests replay the complete canonical response,
-#' even after unrotated data changes, without evaluating a new payload, and
-#' custodians restore freshness by rotating the public snapshot or epoch and
-#' restarting sessions. Provenance and typed admission are always required.
+#' The answer is a deterministic function of the secret noise root, the public
+#' request, the protected statistic and a private automatic database version:
+#' repeating a request returns the same answer without stored state, and a
+#' database reload re-draws every answer at once. Provenance and typed
+#' admission are always required.
 #'
 #' @param x A server-created, pseudonymous \code{omop.table} produced by an
 #'   OHDSI community tool (for example an analysis-catalog loader) and carrying
