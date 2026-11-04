@@ -1,15 +1,45 @@
-# DP first-answer release status (2.7.1)
+# DP release status (2.10.0)
 
 The current server contract is `dsomop-dp-release-v3` /
+`fixed_per_release_seed_data_versioned_v1`, paired with dsOMOPClient 2.10.0.
+Every answer is a deterministic function of the secret noise root, the public
+question, the keyed fingerprint of the bounded statistic and a private automatic
+database version (the largest identifier of each present clinical table, keyed
+and never released). Nothing but the root is stored. A repeated valid question
+recomputes the same canonical bytes after restarts and on every R server with
+the same root, configuration and data; a reload that adds rows re-draws every
+answer at once. Typed admission and provenance/MAC checks remain mandatory, and
+primitives, sampler, mechanism and calibration are unchanged.
+
+Status declares `history_dependent = FALSE`,
+`persistent_state = "noise_root_only"`,
+`release_binding = "seed_data_versioned_v1"`, `privacy_call_quota = "none"` and
+`service_capacity = "none"`. dsOMOPClient 2.10.0 accepts this contract and the
+first-answer contract below, alone or mixed, and still refuses legacy v2
+releases by default.
+
+The root is created on first use with a custodian message; a damaged, unsafe or
+substituted root fails closed and is never replaced. Upgrading from 2.7.1 to
+2.9.x re-draws previously asked questions once: the `release-bindings/` store is
+no longer read, `omopInitializeReleaseStore()` is a deprecated no-op and the
+store options are gone. For
+[isglobal-brge/dsOMOP#20](https://github.com/isglobal-brge/dsOMOP/issues/20), a
+refresh that adds rows re-draws every answer; an in-place edit that adds no row
+with a larger identifier still needs an epoch bump (README,
+DISCLOSURE_CONTROL.md).
+
+## First-answer contract (2.7.1 to 2.9.x, superseded)
+
+The 2.7.1 to 2.9.x server contract was `dsomop-dp-release-v3` /
 `fixed_per_release_snapshot_first_answer_v1`, paired with dsOMOPClient 2.7.4.
-It implements [isglobal-brge/dsOMOP#20](https://github.com/isglobal-brge/dsOMOP/issues/20):
+It implemented [isglobal-brge/dsOMOP#20](https://github.com/isglobal-brge/dsOMOP/issues/20):
 one complete canonical response is retained permanently for each public request,
 snapshot and privacy epoch. Every later valid request for that identity replays
 those bytes, independently of newly resealed contents. Hits do not evaluate the
 payload or compare protected fingerprints. Typed admission and provenance/MAC
 checks remain mandatory, and fresh-path primitives/calibration are unchanged.
 
-Status declares `history_dependent = TRUE`,
+Status declared `history_dependent = TRUE`,
 `persistent_state = "noise_root_and_release_bindings"`,
 `release_binding = "snapshot_first_answer_v1"`, `privacy_call_quota = "none"`,
 and `service_capacity = "public_identity_reservations_v1"`. The client recognizes
@@ -53,7 +83,7 @@ administrative timing, validation failures, availability and other DataSHIELD
 outputs remain outside that guarantee. README and DISCLOSURE_CONTROL.md describe
 the current deployment and residuals.
 
-## Scaling
+### Scaling of the first-answer store
 
 Every request authenticates the full first-answer inventory: O(entries),
 including entries retained across snapshot/epoch rotations. A review benchmark

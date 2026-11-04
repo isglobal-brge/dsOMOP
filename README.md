@@ -253,76 +253,52 @@ that a finite key supplies information-theoretic infinite randomness. See
 exactness argument, and [SAMPLER_DIAGNOSIS.md](SAMPLER_DIAGNOSIS.md) for the
 original defect.
 
-Since 2.10.0 the default binding (`dsomop.dp.binding = "stateless"`) stores
-nothing but the secret noise root. Every answer is a deterministic function of
-that root, the canonical question, the protected statistic and a private
-automatic database version (the largest identifier of each present clinical
-table, keyed with the root and never released). The same question on the same
-data returns the same answer after restarts and on every R server that shares
-the root, without a store, capacity limit or lock. A database reload changes
-the version, so every answer re-draws at once and nobody can tell which
-statistics changed; a change the version misses re-draws only the changed
-statistic and never reveals its exact difference. Each database version is a
-new release for privacy accounting. The root is created once in the state
-directory, or the custodian supplies it with `DSOMOP_DP_NOISE_ROOT` /
-`dsomop.dp.noise_root` (then nothing is written, and several R servers share
-it); a damaged root fails closed instead of being replaced. Status reports
-`release_binding = "seed_data_versioned_v1"`,
-`persistent_state = "noise_root_only"`, `service_capacity = "none"` and
-`history_dependent = FALSE`, with privacy contract
-`fixed_per_release_seed_data_versioned_v1`. Explicit DP releases need
-dsOMOPClient 2.10.0, which accepts this contract; the analysis-catalog DP
-questions work with any client. Upgrading re-draws previously asked questions
-once.
+Since 2.10.0 dsOMOP stores nothing but the secret noise root. Every answer is a
+deterministic function of that root, the canonical question, the protected
+statistic and a private automatic database version (the largest identifier of
+each present clinical table, keyed with the root and never released). The same
+question on the same data returns the same answer, byte for byte, after
+restarts and on every R server that shares the root, without a store, capacity
+limit or lock. A database reload that adds rows changes the version, so every
+answer re-draws at once and nobody can tell which statistics changed. An
+in-place edit that adds no row with a larger identifier keeps the version and
+re-draws only the statistics it changed: repeating a question across such an
+edit shows whether its statistic changed, never by how much (the conditional
+equality of [isglobal-brge/dsOMOP#20](https://github.com/isglobal-brge/dsOMOP/issues/20)),
+so custodians rotate the epoch after in-place edits. Each database version is
+a new release for privacy accounting.
 
-The custodian can select the first-answer binding of dsOMOP 2.7.1 to 2.9.x
-(`dsomop.dp.binding = "first_answer"`), described next. With it, the first
-successful answer for each public request identity,
-public snapshot and privacy epoch is permanent. Every later valid request for
-that identity returns the stored complete canonical response, byte for byte,
-including after a restart. One changed person, many changed persons, unchanged
-data and a valid resealed row reordering all replay that first answer. The hit
-path neither evaluates the mechanism payload nor compares private fingerprints.
-Ordinary typed admission and provenance/MAC checks still run on every request.
+The public question includes authenticated dataset/query lineage, the typed
+statistic, public bounds/reducer/contribution contract, policy hash, domain,
+public snapshot, privacy epoch, mechanism and sensitivity. Display names and
+row order are not part of it. The keyed fingerprint of the bounded statistic
+selects the noise but is never returned, nor are raw PRF material and the
+database version. Component labels, samplers, sensitivities, epsilon
+allocations and clipping are unchanged.
 
-The public request identity includes authenticated dataset/query lineage, the
-typed statistic, public bounds/reducer/contribution contract, policy hash,
-domain, public snapshot, privacy epoch, mechanism and sensitivity. It excludes
-protected fingerprints, person sets, extraction tokens, frame MACs and display
-names. For a new public identity, the existing content-bound HMAC/PRF mechanism
-still includes the keyed bounded-statistic fingerprint as private defence in
-depth. Component labels, samplers, sensitivities, epsilon allocations and
-clipping are unchanged. Fingerprints and raw PRF material are never returned.
-
-Answers remain **stale until the custodian rotates the snapshot or privacy
-epoch and restarts sessions**, with no limit on staleness if rotation is omitted.
-There is no analyst refresh switch or content-dependent refresh threshold.
-Different requests first evaluated at different times can reflect different
-versions of a mutable source; a public snapshot label does not provide a
-transactionally coherent database snapshot across requests. Releases expose no
-data-dependent stale flag.
-
-There is no cumulative epsilon budget or privacy call quota. The persistent
-store reserves public storage capacity once per new request identity; existing
-identities remain readable at capacity. There is no eviction. Invalid inputs,
-unproved provenance, unsafe or missing state and requests outside the reviewed
-primitives still fail closed. Storage capacity is an availability setting, not
-a privacy accountant.
+There is no cumulative epsilon budget or privacy call quota. A repeated
+question returns its answer instead of fresh noise, so averaging repeats gains
+nothing; different questions compose as usual. Invalid inputs, unproved
+provenance, a damaged root and requests outside the reviewed primitives still
+fail closed.
 
 The release protocol is `dsomop-dp-release-v3`, with privacy contract
-`fixed_per_release_snapshot_first_answer_v1`. Status reports
-`history_dependent = TRUE`,
-`persistent_state = "noise_root_and_release_bindings"`,
-`release_binding = "snapshot_first_answer_v1"`,
-`privacy_call_quota = "none"` and
-`service_capacity = "public_identity_reservations_v1"`. Use dsOMOPClient 2.7.4,
-which refuses legacy v2 releases by default. During a staged upgrade, its
-`dsomop.dp.allow_legacy_servers = TRUE` option permits them with a warning naming
-each legacy server and the unrotated-refresh equality residual; results record
-each server's contract, including in mixed federations. The exact sampler
-`dsomop-dp-exact-discrete-laplace-v1`, mechanism
-`dsomop-sticky-discrete-laplace-prf-v2` are unchanged. The versioned policy schema
-is now 4 for the first-answer contract.
+`fixed_per_release_seed_data_versioned_v1`. Status reports
+`release_binding = "seed_data_versioned_v1"`,
+`persistent_state = "noise_root_only"`, `service_capacity = "none"`,
+`history_dependent = FALSE` and `privacy_call_quota = "none"`. The exact
+sampler `dsomop-dp-exact-discrete-laplace-v1`, the mechanism
+`dsomop-sticky-discrete-laplace-prf-v2` and policy schema 4 are unchanged.
+Explicit DP releases need dsOMOPClient 2.10.0, which accepts this contract and
+the first-answer contract of servers 2.7.1 to 2.9.x; the analysis-catalog DP
+questions work with any client.
+
+dsOMOP 2.7.1 to 2.9.x kept a permanent first-answer store instead
+(`DSOMOP_STATE_DIR/release-bindings/`). 2.10.0 no longer reads it, so upgrading
+re-draws previously asked questions once, and the custodian can archive or
+remove those files afterwards. `omopInitializeReleaseStore()` remains only as a
+deprecated no-op; `dsomop.dp.release_store_id` and
+`dsomop.dp.release_store_bytes` are ignored.
 
 Public compatibility labels and client-side packaging of one release do not
 mint new noise. Reviewed commutative filters, Boolean aliases and set-valued
@@ -382,145 +358,60 @@ canonically sorted `vocabulary_id`/`vocabulary_version` pairs from `vocabulary`
 (including the `None` row), plus resource identity, under
 `dsomop-dp-cdm-snapshot-fallback-v1`. If vocabulary metadata is also unavailable
 or incomplete, resource identity alone is hashed under
-`dsomop-dp-cdm-snapshot-resource-only-v1`. Startup proceeds with one warning per
-R process, shared across DSLite sessions: custodians must bump
-`dsomop.dp.privacy_epoch` after **each data reload**, or configure
-`dsomop.dp.domain` and `dsomop.dp.snapshot_id` explicitly. A snapshot unchanged
-across data reloads freezes existing first answers; fallback metadata cannot
-automatically track those changes. Each explicit identifier
-wins independently, and an explicit snapshot skips metadata derivation.
+`dsomop-dp-cdm-snapshot-resource-only-v1`. Each explicit identifier wins
+independently, and an explicit snapshot skips metadata derivation.
+
+Reloads that add rows need no custodian action. Without an explicit snapshot,
+each R session reads the private database version once (one `MAX()` over the
+primary key of each present clinical table, an index lookup) and keys every
+answer with it, so such a reload re-draws every answer from the next session
+on, even when the `cdm_source` metadata did not change. After an in-place edit
+that adds no row with a larger identifier, bump `dsomop.dp.privacy_epoch` /
+`DSOMOP_DP_PRIVACY_EPOCH` and restart sessions; otherwise only the changed
+statistics re-draw, which shows which ones changed. A custodian who sets
+`dsomop.dp.snapshot_id` declares versions explicitly: the database is then not
+read, and the snapshot or the epoch must change with every reload. Rotating
+the snapshot or the epoch re-draws every answer, like a reload.
 
 In-memory databases and unavailable/ambiguous resource coordinates still fail
 closed with instructions to configure both identifiers. Conflicting option and
 environment values still fail closed. No generic shared fallback domain is used.
 Connecting (`omopInitDS()`) never initializes DP; DP binds to the connected
-resource when a community tool first uses it.
-
-The derived snapshot follows metadata, not every data edit. Custodians **must
-bump `dsomop.dp.privacy_epoch` / `DSOMOP_DP_PRIVACY_EPOCH` when data change without
-metadata changes**, and restart affected sessions. Policy changes during a
-session fail closed. Use a separate session for a different derived resource;
-DSLite server sessions keep separate policies within their shared R process.
-For replicas and database aliases of one logical dataset, configure matching
+resource when a community tool first uses it. Policy changes during a session
+fail closed. Use a separate session for a different derived resource; DSLite
+server sessions keep separate policies within their shared R process. For
+replicas and database aliases of one logical dataset, configure matching
 explicit identifiers if canonical connection coordinates differ.
 
-Every enabled deployment, including one with an injected noise root, requires
-persistent private state at `DSOMOP_STATE_DIR` (or `dsomop.state_dir`). Mount it
-across restarts and replicas. Directories must be owner-only `0700`, and files
-`0600`; existing owner, symlink and hard-link checks apply. The default
-`~/.dsomop` is suitable only when the home is persistent.
-`DSOMOP_TEST_ALLOW_EPHEMERAL_STATE=1` is for tests only.
+The only DP state is the noise root, `DSOMOP_STATE_DIR/secrets/dp_noise_root`
+(or under `dsomop.state_dir`; the default `~/.dsomop` is suitable only when the
+home is persistent). First use creates it from the operating system's CSPRNG
+and logs a custodian `message()`. Keep the state directory on persistent
+storage: every answer re-draws if the root is lost. Directories must be
+owner-only `0700` and files `0600`; existing owner, symlink and hard-link
+checks apply. A damaged, unsafe or substituted root is never replaced: DP fails
+closed with one stable analyst error and a custodian diagnostic in the server
+log. `DSOMOP_TEST_ALLOW_EPHEMERAL_STATE=1` is for tests only.
 
-First use automatically initializes the store when `release-bindings/` is
-absent and neither a configured store UUID nor `release-store-id` pin file
-exists. This also supports upgrades from 2.7.0 with an existing noise root but
-no release store. Initialization uses the same path as the administrative
-initializer, logs a custodian `message()`, and durably writes the UUID to
-`DSOMOP_STATE_DIR/release-store-id`, outside `release-bindings/`. This owner-only
-`0600` file has the same owner, symlink and hard-link checks as other state files.
-The permanent `.release-store-init.lock` serializes initialization across workers.
+A custodian may instead inject exactly 32 raw CSPRNG bytes or 64 hexadecimal
+characters through `dsomop.dp.noise_root` / `DSOMOP_DP_NOISE_ROOT`; passphrases
+are rejected. Nothing is then written for DP, and R servers given the same
+root, domain, snapshot, epoch and mechanism configuration return the same
+answers on the same data, so replicas of one logical node share nothing else.
+Distinct nodes must use distinct roots and domains; compare public
+noise-domain fingerprints during readiness checks. Root bytes are never put in
+OMOP handles or returned to analysts, and package loading remains key-free.
+Back up the root (or its secret-manager configuration): restoring it restores
+every answer.
 
-Explicit setup remains available from a trusted administrator R session:
-
-```r
-Sys.setenv(DSOMOP_STATE_DIR = "/srv/dsomop/state")
-store_id <- dsOMOP::omopInitializeReleaseStore()
-```
-
-For stronger loss detection, **we recommend pinning the returned UUID outside
-the state directory**, as `DSOMOP_DP_RELEASE_STORE_ID` or
-`dsomop.dp.release_store_id`. A configured UUID takes precedence and must match
-both the local pin and authenticated store header; any mismatch fails closed.
-An existing externally pinned store is authenticated before adopting a local
-pin. Repeating explicit initialization validates existing state and returns its
-UUID. The initializer is not a DataSHIELD analyst method. A fresh installation
-provisions the existing CSPRNG noise root normally; an established store never
-silently regenerates or replaces a missing, malformed or mismatched root.
-Package loading remains key-free.
-
-Once either the pin or configured UUID exists, loss of `release-bindings/` or
-its database fails closed; it never starts an empty replacement store. Without
-an external UUID, deleting the **whole state root** is indistinguishable from a
-fresh installation: the normal file-backed setup creates a new noise root and
-release domain. An injected root remains externally controlled. Deleting both
-the store and local pin while retaining the noise root is a residual that only
-external UUID pinning prevents. Neither deletion is a supported refresh or
-recovery procedure. External pinning also detects loss of the entire state root.
-
-The file-backed root is `DSOMOP_STATE_DIR/secrets/dp_noise_root`. A custodian
-may instead inject exactly 32 raw CSPRNG bytes or 64 hexadecimal characters
-through `dsomop.dp.noise_root` / `DSOMOP_DP_NOISE_ROOT`; passphrases are rejected.
-Injected roots still require the persistent store, and changing the injected
-root does not rekey an existing store. Root bytes are never put in OMOP handles
-or returned to analysts.
-
-The store is `DSOMOP_STATE_DIR/release-bindings/releases.sqlite`, with permanent
-lock files under `release-bindings/`. Its header and all response records are
-MAC-authenticated with a subkey derived from the noise root. Records are
-verified before deserialization; the authenticated table head detects missing
-or replaced rows. Public reservations are committed before payload evaluation;
-per-request locks serialize competing first writers, and the complete canonical
-response commits atomically before it is returned. A crash before commit emits
-no payload; a crash after commit replays the committed answer. Pending public
-reservations survive crashes and can be completed without another charge.
-
-The logical capacity defaults to **1 GiB** (`1073741824` bytes), configured by
-`dsomop.dp.release_store_bytes` / `DSOMOP_DP_RELEASE_STORE_BYTES`. Each new R
-reserves `8192 + 16384 + 4 * public_bytes + 64 * max(1, levels, breaks)` bytes:
-`public_bytes` is the UTF-8 canonical JSON size of its wrapped public semantics,
-and `levels` / `breaks` are their public vector lengths. This conservative public
-reservation covers response and record/lock overhead; it is not measured from
-private results. Reservations are never refunded and answers are never evicted.
-At capacity, only new public identities are refused; valid existing identities
-continue to replay. Custodians may increase capacity while retaining the same
-root and store. Provide physical disk headroom for SQLite journals and backups.
-Validation and bounded-statistic preparation still precede the capacity decision;
-this implementation does not promise refusal before private data are read.
-
-**Scaling.** Every request authenticates the full first-answer inventory, so
-work is O(entries), including entries retained across snapshot/epoch rotations.
-A review benchmark measured about 25 seconds for one existing-answer replay
-at 40,000 entries; concurrent requests may time out. Keep the reservation
-capacity sized for this cost, or lower `dsomop.dp.release_store_bytes` before
-the inventory grows. Incremental authentication is future work.
-
-All replicas of one logical node must share the root, local pin, transactional
-store, permanent locks, any external UUID, public domain/snapshot/epoch and
-mechanism configuration, on storage that honors the package's locking and
-durability operations. Distinct
-nodes must use distinct roots and domains. Compare public noise-domain
-fingerprints during readiness checks.
-
-Back up the **whole consistent state**, including the root (or its secret-manager
-configuration), local pin, database, permanent locks and any external UUID
-configuration.
-Missing/corrupt records, store or root fail closed with one stable analyst error
-and a custodian diagnostic. Stop/drain every worker before restoring or replacing
-state or lock files; never repair by deleting rows or reinitializing an existing
-store. Restore the matching set, rather than selected payloads. A MAC cannot
-detect rollback of the entire state to a previously valid backup: the operator
-and storage must prevent whole-state rollback; no independent monotonic witness
-is implemented.
-
-Upgrading from the old stateless contract automatically initializes the binding
-store on first use, without a mandatory setup command. Plan the publication/epoch
-migration with compatible clients: old unrecorded answers cannot be reconstructed
-or retrospectively protected, and byte equality is not promised across protocol
-upgrades. Retain old state for its old domain.
-For later publications, rotate the snapshot or epoch on a public schedule,
-including no-op refreshes, rather than only when private data change.
-
-The exact guarantee is conditional: within an intact retained protocol/runtime/key
-domain, once an identity has a committed answer, every later valid request for
-that identity returns those canonical bytes independently of newly resealed
-content. Given the first answer and the same public admission schedule, later
-successful payloads add no observation. This closes the conditional temporal
-equality selection in [isglobal-brge/dsOMOP#20](https://github.com/isglobal-brge/dsOMOP/issues/20).
-Different requests and rotations still compose; there is no finite lifetime
-privacy accountant or full temporal-transcript DP claim. Administrative timing,
-validation failures, availability, other DataSHIELD outputs and storage rollback
-remain outside this repeated-payload guarantee. Retain the method allowlist,
-person contribution bounds and reviewed output contracts.
+The guarantee is conditional: within one root, domain, snapshot, epoch and
+database version, a repeated valid question returns the same canonical bytes,
+so repeats add no observation. Different questions, database versions and
+rotations compose; there is no finite lifetime privacy accountant or full
+temporal-transcript DP claim. Administrative timing, validation failures,
+availability and other DataSHIELD outputs remain outside this repeated-payload
+guarantee. Retain the method allowlist, person contribution bounds and reviewed
+output contracts.
 
 Non-secret configuration is available through matching `dsomop.dp.*` options
 and `DSOMOP_DP_*` environment variables, including enablement, domain, public

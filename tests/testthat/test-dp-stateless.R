@@ -1,19 +1,17 @@
-# Seed-only (stateless) DP binding, the default since 2.10.0: every answer is a
-# deterministic function of the secret root, the question, the protected
-# statistic and a private automatic database version. Only the root persists.
+# Seed-only DP (dsOMOP 2.10.0): every answer is a deterministic function of the
+# secret root, the question, the protected statistic and a private automatic
+# database version. Only the root persists.
 
 .stateless_environment <- c(
   "DSOMOP_DP_ENABLED", "DSOMOP_DP_DOMAIN", "DSOMOP_DP_SNAPSHOT_ID",
   "DSOMOP_DP_RELEASE_EPSILON", "DSOMOP_DP_PRIVACY_EPOCH",
   "DSOMOP_DP_MAX_LEVELS", "DSOMOP_DP_MAX_CONTRIBUTIONS",
-  "DSOMOP_DP_NUMERIC_GRID", "DSOMOP_DP_NOISE_ROOT",
-  "DSOMOP_DP_RELEASE_STORE_ID", "DSOMOP_DP_RELEASE_STORE_BYTES",
-  "DSOMOP_DP_BINDING"
+  "DSOMOP_DP_NUMERIC_GRID", "DSOMOP_DP_NOISE_ROOT"
 )
 
 # A private state directory and no custodial snapshot, so the DP identity and
 # the database version are derived from the connected resource.
-.stateless_state <- function(binding = NULL, .local_envir = parent.frame()) {
+.stateless_state <- function(.local_envir = parent.frame()) {
   state <- withr::local_tempdir(pattern = "dsomop-stateless-",
                                 .local_envir = .local_envir)
   Sys.chmod(state, mode = "0700")
@@ -30,19 +28,16 @@
     dsomop.state_dir = state, dsomop.dp.enabled = TRUE,
     dsomop.dp.domain = NULL, dsomop.dp.snapshot_id = NULL,
     default.dsomop.dp.domain = NULL, default.dsomop.dp.snapshot_id = NULL,
-    dsomop.dp.noise_root = NULL, dsomop.dp.binding = binding,
-    default.dsomop.dp.binding = NULL, dsomop.dp.release_store_id = "",
+    dsomop.dp.noise_root = NULL,
     dsomop.dp.release_epsilon = 0.1, dsomop.dp.privacy_epoch = 1L
   ), .local_envir = .local_envir)
   previous <- list(status = .pkg_state$dp_status,
                    runtime = .pkg_state$dp_runtime,
-                   handle = .pkg_state$dp_handle,
-                   warned = .pkg_state$dp_snapshot_fallback_warned)
+                   handle = .pkg_state$dp_handle)
   withr::defer({
     .pkg_state$dp_status <- previous$status
     .pkg_state$dp_runtime <- previous$runtime
     .pkg_state$dp_handle <- previous$handle
-    .pkg_state$dp_snapshot_fallback_warned <- previous$warned
   }, envir = .local_envir)
   .stateless_restart()
   state
@@ -76,9 +71,8 @@
   )
 }
 
-test_that("seed-only is the default binding and reports its contract", {
+test_that("the DP service reports the seed-only contract", {
   .stateless_state()
-  expect_identical(.dsomopDpBindingMode(), "stateless")
   handle <- .stateless_handle()
   on.exit(cleanup_handle(handle))
   .dsomopDpEnsureRuntime(handle)
@@ -89,9 +83,8 @@ test_that("seed-only is the default binding and reports its contract", {
   expect_false(status$history_dependent)
   expect_identical(status$privacy_contract,
                    "fixed_per_release_seed_data_versioned_v1")
-  withr::with_options(list(dsomop.dp.binding = "loose"),
-                      expect_error(.dsomopDpBindingMode(),
-                                   "stateless.*first_answer"))
+  expect_warning(expect_identical(omopInitializeReleaseStore(), NA_character_),
+                 "stores no DP answers")
 })
 
 test_that("answers are deterministic across restarts and only the root persists", {
@@ -156,17 +149,4 @@ test_that("seed-only releases need the resource or a custodial snapshot", {
   expect_match(.dsomopDpDataVersion(NULL, as.raw(1:32),
                                     custodial_snapshot = TRUE),
                "^[0-9a-f]{64}$")
-})
-
-test_that("the first-answer binding keeps its store", {
-  .stateless_state(binding = "first_answer")
-  handle <- .stateless_handle()
-  on.exit(cleanup_handle(handle))
-  # Without a custodial snapshot the first-answer binding warns that it
-  # cannot follow reloads; the stateless binding has no such limitation.
-  suppressWarnings(.dsomopDpEnsureRuntime(handle))
-  status <- omopDpStatusDS()
-  expect_identical(status$release_binding, "snapshot_first_answer_v1")
-  expect_identical(status$persistent_state, "noise_root_and_release_bindings")
-  expect_true(status$history_dependent)
 })
