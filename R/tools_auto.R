@@ -395,13 +395,21 @@
   disclosure
 }
 
+# Presentation columns: they depend only on the grouping keys (concept, unit,
+# currency, gender and visit ids, bins, cells), so they never split a pooled
+# group. Every other non-statistic column is a grouping key.
+.DSOMOP_TOOLS_LABEL_COLS <- c("concept_name", "visit_name", "gender_name",
+                              "unit_name", "currency_name", "bin_label",
+                              "bin_lower", "bin_upper")
+
 .dsomopToolsPoolingContract <- function(entry) {
   spec <- entry$meta$tools_spec
   shape <- entry$meta$tools_shape
   columns <- .dsomopToolsOutputCols(spec, shape)
+  labels <- intersect(.DSOMOP_TOOLS_LABEL_COLS, columns)
   if (shape %in% c("histogram", "partition")) {
     return(.omopPoolingTabular(columns, sum_cols = "n_persons",
-                               label_cols = setdiff(columns, "n_persons")))
+                               label_cols = labels))
   }
   s <- spec$summary
   sum_cols <- c("n_persons", s$n_col)
@@ -411,9 +419,7 @@
     stats::setNames(list(list(mean = s$mean_col, count = weight)), s$sd_col)
   } else list()
   .omopPoolingTabular(columns, sum_cols = sum_cols, weighted_means = weighted,
-                      pooled_sds = pooled,
-                      label_cols = setdiff(columns, c(sum_cols, s$mean_col,
-                                                      s$sd_col)))
+                      pooled_sds = pooled, label_cols = labels)
 }
 
 # --- Catalog entries -------------------------------------------------------------

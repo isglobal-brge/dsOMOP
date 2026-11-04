@@ -437,3 +437,30 @@ test_that("reviewed questions build dialect-specific SQL for every dialect", {
     }
   }
 })
+
+test_that("pooling keys identify every released row of a reviewed question", {
+  .tools_dp_state()
+  h <- tools_handle()
+  on.exit(cleanup_handle(h))
+  for (mode in c("auto", "standard")) {
+    withr::with_options(list(dsomop.tools.mode = mode), {
+      registry <- suppressWarnings(.omopAnalysisRegistry(h, force = TRUE))
+      for (id in names(.dsomopToolsReviewedQueries())) {
+        entry <- registry[[paste0("dsomop:", id)]]
+        contract <- entry$meta$pooling_contract
+        roles <- vapply(contract$columns, `[[`, character(1L), "role")
+        keys <- names(roles)[roles == "key"]
+        out <- tools_run(h, id, .tools_params[[id]] %||% list())
+        if (nrow(out) > 1L) {
+          expect_gt(length(keys), 0L, label = paste(mode, id))
+          expect_false(anyDuplicated(do.call(paste, c(
+            lapply(out[keys], function(x) ifelse(is.na(x), "<NA>", x)),
+            sep = "\r"))) > 0L, label = paste(mode, id))
+        }
+        # Presentation columns never act as keys.
+        expect_false(any(c("concept_name", "bin_label", "gender_name") %in%
+                           keys), label = paste(mode, id))
+      }
+    })
+  }
+})
