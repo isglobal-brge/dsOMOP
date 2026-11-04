@@ -595,6 +595,7 @@
     # Only include queries on the allowlist (or all if no allowlist)
     safety <- if (!is.null(al)) al else .ql_classify(q$sql, q$mode)
     safety <- .ql_effective_safety(q, safety)
+    safety <- .ql_reviewed_safety(qid, safety)
     safety_class <- safety$class
 
     # Skip BLOCKED queries
@@ -651,6 +652,7 @@
   al <- allowlist[[query_id]]
   safety <- if (!is.null(al)) al else .ql_classify(q$sql, q$mode)
   safety <- .ql_effective_safety(q, safety)
+  safety <- .ql_reviewed_safety(query_id, safety)
 
   list(
     id = q$id,
@@ -662,9 +664,42 @@
     poolable = safety$poolable %||% FALSE,
     cdm_version = q$cdm_version,
     inputs = q$inputs,
-    outputs = q$outputs,
-    sensitive_fields = q$sensitive_fields
+    outputs = if (!is.null(safety$output_fields)) {
+      data.frame(field = safety$output_fields, stringsAsFactors = FALSE)
+    } else q$outputs,
+    sensitive_fields = q$sensitive_fields,
+    protection = safety$protection
   )
+}
+
+#' Effective safety of a template answered by a reviewed replacement
+#'
+#' The raw SQL of the distribution templates stays blocked; the analysis
+#' catalog answers them through the reviewed replacements of tools_auto.R.
+#'
+#' @param query_id Template id.
+#' @param safety Effective safety record of the raw SQL.
+#' @return The safety record, reopened for reviewed questions.
+#' @keywords internal
+.ql_reviewed_safety <- function(query_id, safety) {
+  spec <- .dsomopToolsReviewedQueries()[[query_id]]
+  if (is.null(spec) || !identical(safety$class, "BLOCKED")) return(safety)
+  mode <- .dsomopToolsMode()
+  shape <- .dsomopToolsShape(spec, mode)
+  protection <- if (identical(shape, "summary")) {
+    if (identical(mode, "dp")) "refused (no DP release in DP-only mode)" else
+      "standard"
+  } else if (identical(mode, "standard")) {
+    "standard"
+  } else if (identical(mode, "dp")) {
+    "dp"
+  } else {
+    "dp (standard gate when DP is unavailable)"
+  }
+  list(class = "SAFE_AGGREGATE", reason = "reviewed replacement",
+       sensitive_fields = "n_persons", poolable = TRUE,
+       protection = protection,
+       output_fields = .dsomopToolsOutputCols(spec, shape))
 }
 
 #' Execute a query template with SDC enforcement

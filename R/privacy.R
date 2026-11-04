@@ -875,6 +875,29 @@
   analysis
 }
 
+# The DP service derives its public identity from the connected resource. The
+# core never binds it (connecting does not touch DP); the status endpoint binds
+# the session's OMOP handle when the session has exactly one and no community
+# tool has bound one yet.
+.dsomopDpSessionHandle <- function() {
+  if (!is.null(.dsomopDpState()$dp_handle)) return(NULL)
+  handles <- list()
+  for (frame in rev(sys.frames())) {
+    keys <- grep("^\\.dsomop_handle_", ls(frame, all.names = TRUE),
+                 value = TRUE)
+    for (key in keys) {
+      handles[[length(handles) + 1L]] <- get(key, envir = frame,
+                                             inherits = FALSE)
+    }
+  }
+  if (length(handles) == 0L) {
+    keys <- grep("^handle_", ls(.dsomop_env, all.names = TRUE), value = TRUE)
+    handles <- lapply(keys, get, envir = .dsomop_env, inherits = FALSE)
+  }
+  handles <- unique(handles)
+  if (length(handles) == 1L) handles[[1L]] else NULL
+}
+
 #' Sticky privacy-noise service status (Aggregate)
 #'
 #' Returns the public fixed-per-release mechanism contract. Secret key material
@@ -886,18 +909,25 @@
 #' recommended for stronger loss detection. Established state loss fails closed.
 #' Status declares history-dependent first-answer bindings and public storage
 #' reservations; there is no cumulative privacy budget or privacy call quota.
+#' DP serves only the OHDSI community tools, so the status requires them to be
+#' enabled (\code{dsomop.tools.enabled}). It derives the service identity from
+#' the session's connected OMOP resource when no explicit
+#' \code{dsomop.dp.domain}/\code{dsomop.dp.snapshot_id} are configured.
 #'
 #' @return Public DP service status, including the custodial \code{exclusive}
-#'   flag (default FALSE). When a custodian sets \code{dsomop.dp.exclusive =
-#'   TRUE} (with DP enabled), the OHDSI community tools release results only
-#'   through the typed DP channel. The core (loading tables, filters, factors,
-#'   dsOMOP's own exploration) never depends on it.
+#'   flag (default FALSE) and \code{tools_mode}, the effective protection mode
+#'   of the OHDSI community tools (\code{"auto"} by default, \code{"standard"}
+#'   or \code{"dp"}; \code{dsomop.dp.exclusive = TRUE} with DP enabled selects
+#'   \code{"dp"}). The core (loading tables, filters, factors, dsOMOP's own
+#'   exploration) never depends on either.
 #' @export
 omopDpStatusDS <- function() {
+  .dsomopRequireCommunityTool(dp_routes = TRUE)
   state <- .dsomopDpState()
-  .dsomopDpEnsureRuntime()
+  .dsomopDpEnsureRuntime(.dsomopDpSessionHandle())
   status <- .dsomopDpPublicStatus(initialize = TRUE)
   status$exclusive <- .dsomopDpExclusive()
+  status$tools_mode <- .dsomopToolsMode()
   status$supported_statistics <- .DSOMOP_DP_STATISTICS
   status$longitudinal_contract <- "deterministic_person_bounding_v1"
   status$person_local_provenance_required <- TRUE

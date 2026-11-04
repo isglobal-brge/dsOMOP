@@ -2489,7 +2489,7 @@ omopQueryGetDS <- function(omop_symbol, query_id) {
 omopQueryExecDS <- function(omop_symbol, query_id,
                                inputs = list(),
                                mode = "aggregate") {
-  .dsomopRequireCommunityTool()
+  .dsomopRequireCommunityTool(dp_routes = TRUE)
   handle <- .getHandle(omop_symbol)
   .validateIdentifier(query_id, "query_id")
   inputs <- .ds_arg(inputs)
@@ -2730,7 +2730,7 @@ omopAnalysisGetDS <- function(omop_symbol, name) {
 #' @export
 omopAnalysisRunDS <- function(omop_symbol, name, params = list(),
                               scope = NULL, combine = "union", ...) {
-  .dsomopRequireCommunityTool()
+  .dsomopRequireCommunityTool(dp_routes = TRUE)
   handle <- .getHandle(omop_symbol)
   name <- .ds_arg(name)
   if (is.list(name)) name <- name[[1]]

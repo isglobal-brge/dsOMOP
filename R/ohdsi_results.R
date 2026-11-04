@@ -1048,8 +1048,9 @@
       available = nrow(tool_tables) > 0,
       tables = tool_tables$table_name,
       n_tables = nrow(tool_tables),
-      total_rows = if (nrow(tool_tables) == 0L) 0 else
-        .ohdsiBandInventoryCounts(sum(tool_tables$n_rows))[[1]]
+      # Result-table row counts are not person counts (one person can generate
+      # many rows) and have no person gate, so they are not released.
+      total_rows = NA_real_
     )
   }
 
@@ -1090,7 +1091,7 @@
     available = TRUE,
     tables = within(
       tool_tables[, c("table_name", "n_rows"), drop = FALSE],
-      n_rows <- .ohdsiBandInventoryCounts(n_rows)
+      n_rows <- rep(NA_real_, length(n_rows))
     )
   )
 }

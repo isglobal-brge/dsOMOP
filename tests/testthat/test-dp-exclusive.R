@@ -15,6 +15,11 @@
   "omopOhdsiTablesDS", "omopOhdsiResultsDS", "omopOhdsiSummaryDS",
   "omopQueryExecDS", "omopAnalysisRunDS", "omopAnalysisRunAssignDS"
 )
+# The analysis catalog and the query library choose a protection route per
+# question (tools_auto.R): in DP-only mode their run path refuses every
+# standard statistic, before any scope or data is touched, and still answers
+# the reviewed questions that have a DP release.
+.dp_routed_endpoints <- c("omopQueryExecDS", "omopAnalysisRunDS")
 
 .dp_exclusive_local_policy <- function(enabled = TRUE, exclusive = TRUE,
                                         .local_envir = parent.frame()) {
@@ -46,12 +51,19 @@
 
 test_that("exclusive DP rejects every community-tool endpoint first", {
   .dp_exclusive_local_policy()
-  for (endpoint in .dp_exclusive_endpoints) {
+  expect_identical(.dsomopToolsMode(), "dp")
+  for (endpoint in setdiff(.dp_exclusive_endpoints, .dp_routed_endpoints)) {
     fn <- get(endpoint, envir = asNamespace("dsOMOP"))
-    expect_error(fn(), "DP-exclusive.*omopDpReleaseDS", info = endpoint)
+    expect_error(fn(), "DP-only mode", info = endpoint)
     expect_error(
       eval(.dp_exclusive_probe(endpoint)),
-      "DP-exclusive.*omopDpReleaseDS", info = endpoint
+      "DP-only mode", info = endpoint
+    )
+  }
+  for (endpoint in .dp_routed_endpoints) {
+    expect_error(
+      eval(.dp_exclusive_probe(endpoint)),
+      "endpoint argument evaluated", info = endpoint
     )
   }
 })
@@ -125,7 +137,7 @@ test_that("exclusivity defaults off and supports custodial opt-ins", {
 
   withr::local_options(list(default.dsomop.dp.exclusive = TRUE))
   expect_true(.dsomopDpExclusive())
-  expect_error(omopAchillesResultsDS(), "DP-exclusive.*omopDpReleaseDS")
+  expect_error(omopAchillesResultsDS(), "DP-only mode")
 
   withr::local_options(list(dsomop.dp.exclusive = FALSE))
   expect_false(.dsomopDpExclusive())
@@ -134,7 +146,7 @@ test_that("exclusivity defaults off and supports custodial opt-ins", {
   withr::local_options(list(default.dsomop.dp.exclusive = FALSE,
                            dsomop.dp.exclusive = TRUE))
   expect_true(.dsomopDpExclusive())
-  expect_error(omopAchillesResultsDS(), "DP-exclusive.*omopDpReleaseDS")
+  expect_error(omopAchillesResultsDS(), "DP-only mode")
 })
 
 test_that("invalid exclusivity settings fail closed before tool arguments", {

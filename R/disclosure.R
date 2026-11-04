@@ -155,6 +155,8 @@
                                 getOption("default.nfilter.stringShort", 20))),
     nfilter_noise          = as.numeric(getOption("nfilter.noise",
                                 getOption("default.nfilter.noise", 0.25))),
+    nfilter_glm            = as.numeric(getOption("nfilter.glm",
+                                getOption("default.nfilter.glm", 0.33))),
     formal_dp_enabled      = FALSE,
     sticky_noise_enabled   = FALSE,
     privacy_ledger_enabled = FALSE,
@@ -253,6 +255,7 @@
   numeric_scalar("nfilter_string", 1, integer = TRUE)
   numeric_scalar("nfilter_stringShort", 1, integer = TRUE)
   numeric_scalar("nfilter_noise", 0)
+  numeric_scalar("nfilter_glm", .Machine$double.eps, 1)
   numeric_scalar("nfilter_dist", 0, integer = TRUE)
   numeric_scalar("nfilter_band", 1, integer = TRUE)
   numeric_scalar("nfilter_age_range", 1, integer = TRUE)
@@ -290,6 +293,44 @@
   }
 
   settings
+}
+
+#' Admit the binary design of an in-session model (DataSHIELD glm rules)
+#'
+#' The fitted community-tool models (Patient-Level Prediction, the CohortMethod
+#' propensity model) release only aggregates of their predictions, but they
+#' must still satisfy the checks dsBase applies before \code{ds.glm} returns
+#' anything: every binary predictor needs \code{nfilter.tab} persons with AND
+#' without it (a covariate almost everyone has singles out the few who lack
+#' it), and the number of parameters may not exceed \code{nfilter.glm} times
+#' the number of persons (a saturated model reproduces its data). Predictors
+#' are kept in their given order (most prevalent first) until the dimension
+#' cap is reached.
+#'
+#' @param X Numeric 0/1 matrix or data frame of candidate predictors.
+#' @param y Optional 0/1 response; when given, both classes need
+#'   \code{nfilter.tab} persons or the model is not admitted.
+#' @return Integer indices of the admitted columns of \code{X}, or NULL when
+#'   the response is not admissible.
+#' @keywords internal
+.omopModelAdmitBinaryDesign <- function(X, y = NULL) {
+  settings <- .omopDisclosureSettings()
+  thr <- settings$nfilter_tab
+  n <- NROW(X)
+  if (!is.null(y)) {
+    y <- as.integer(y)
+    if (sum(y == 1L, na.rm = TRUE) < thr || sum(y == 0L, na.rm = TRUE) < thr) {
+      return(NULL)
+    }
+  }
+  if (NCOL(X) == 0L || n == 0L) return(integer(0))
+  X <- as.matrix(X)
+  present <- colSums(X == 1, na.rm = TRUE)
+  absent <- n - present
+  admitted <- unname(which(present >= thr & absent >= thr))
+  # Intercept plus predictors must stay within nfilter.glm * n.
+  max_predictors <- max(floor(settings$nfilter_glm * n) - 1L, 0L)
+  utils::head(admitted, max_predictors)
 }
 
 #' Validate canonical age-group labels against a server age grid

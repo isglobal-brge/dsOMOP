@@ -406,17 +406,14 @@
       substrate <- .omopPersonOutcomeSubstrateSql(
         handle, cohort, out_src, tar_start, tar_end,
         anchor_start, anchor_end)
-      sql <- .sql_translate(paste0(
-        "SELECT COUNT(*) AS persons, SUM(arm.person_days) AS person_days, ",
-        "SUM(arm.outcomes) AS outcomes FROM ", substrate, " arm"),
-        handle$target_dialect)
-      cnt <- .executeQuery(handle, sql)
+      cnt <- .omopCmArmCounts(handle, substrate)
       data.frame(
         arm         = arm,
-        persons     = as.numeric(cnt$persons[1]),
-        person_days = as.numeric(cnt$person_days[1]),
-        outcomes    = as.numeric(cnt$outcomes[1]),
+        persons     = cnt$persons,
+        person_days = cnt$person_days,
+        outcomes    = cnt$outcomes,
         mdrr        = NA_real_,
+        outcome_persons = cnt$outcome_persons,
         stringsAsFactors = FALSE)
     }
 
@@ -430,16 +427,57 @@
     # the arm rows that survive gating on their own person counts — i.e. the MDRR
     # is released iff the arms it summarises are themselves releasable. The arm
     # counts are declared (not pre-gated); the single gate bands them.
-    total_out <- sum(c(ta$outcomes, co$outcomes), na.rm = TRUE)
+    # Outcomes are recurrent events: their support is the number of distinct
+    # persons with an outcome, not the arm size. An arm's outcome count (and the
+    # MDRR built from the total) needs nfilter.tab outcome persons.
+    total_out <- .omopCmSupportedOutcomes(ta, co)
     mdrr <- .omopCmMdrr(total_out, ta$person_days, co$person_days,
                         alpha = alpha, power = power, two_sided = two_sided)
     ta$mdrr <- as.numeric(mdrr)
     co$mdrr <- as.numeric(mdrr)
+    ta$outcomes[!.omopCmOutcomeSupported(ta$outcome_persons)] <- NA_real_
+    co$outcomes[!.omopCmOutcomeSupported(co$outcome_persons)] <- NA_real_
 
     out <- rbind(ta, co)
+    out$outcome_persons <- NULL
     rownames(out) <- NULL
     out
   }
+}
+
+#' Per-arm persons, person-time, outcomes and outcome-contributing persons
+#'
+#' @param handle CDM handle.
+#' @param substrate Per-person TAR substrate SQL
+#'   (\code{\link{.omopPersonOutcomeSubstrateSql}}).
+#' @return List of numeric scalars.
+#' @keywords internal
+.omopCmArmCounts <- function(handle, substrate) {
+  sql <- .sql_translate(paste0(
+    "SELECT COUNT(*) AS persons, SUM(arm.person_days) AS person_days, ",
+    "SUM(arm.outcomes) AS outcomes, ",
+    "SUM(CASE WHEN arm.outcomes > 0 THEN 1 ELSE 0 END) AS outcome_persons ",
+    "FROM ", substrate, " arm"),
+    handle$target_dialect)
+  cnt <- .executeQuery(handle, sql)
+  list(persons = as.numeric(cnt$persons[1]),
+       person_days = as.numeric(cnt$person_days[1]),
+       outcomes = as.numeric(cnt$outcomes[1]),
+       outcome_persons = as.numeric(cnt$outcome_persons[1]))
+}
+
+# Whether a count of outcome-contributing persons supports an outcome release.
+.omopCmOutcomeSupported <- function(outcome_persons) {
+  x <- suppressWarnings(as.numeric(outcome_persons))
+  !is.na(x) & x >= .omopDisclosureSettings()$nfilter_tab
+}
+
+# Total outcomes across both arms, or NA when fewer than nfilter.tab distinct
+# persons contribute them.
+.omopCmSupportedOutcomes <- function(ta, co) {
+  persons <- sum(c(ta$outcome_persons, co$outcome_persons))
+  if (!isTRUE(.omopCmOutcomeSupported(persons))) return(NA_real_)
+  sum(c(ta$outcomes, co$outcomes), na.rm = TRUE)
 }
 
 #' \code{dsomop:ohdsi.cohort_method.cm_result} entry (CohortMethod substrate + MDRR)
@@ -624,20 +662,14 @@
       substrate <- .omopPersonOutcomeSubstrateSql(
         handle, cohort, out_src, tar_start, tar_end,
         anchor_start, anchor_end)
-      sql <- .sql_translate(paste0(
-        "SELECT COUNT(*) AS persons, SUM(arm.person_days) AS person_days, ",
-        "SUM(arm.outcomes) AS outcomes FROM ", substrate, " arm"),
-        handle$target_dialect)
-      cnt <- .executeQuery(handle, sql)
-      list(persons     = as.numeric(cnt$persons[1]),
-           person_days = as.numeric(cnt$person_days[1]),
-           outcomes    = as.numeric(cnt$outcomes[1]))
+      .omopCmArmCounts(handle, substrate)
     }
     ta <- arm_substrate(cohorts$a)
     co <- arm_substrate(cohorts$b)
 
-    # (a) mdrr -- reuse the cm_result kernel verbatim (bands inputs; NA-on-suppress).
-    total_out <- sum(c(ta$outcomes, co$outcomes), na.rm = TRUE)
+    # (a) mdrr -- reuse the cm_result kernel verbatim (bands inputs; NA-on-suppress),
+    # with the outcome total supported by its distinct outcome persons.
+    total_out <- .omopCmSupportedOutcomes(ta, co)
     mdrr <- .omopCmMdrr(total_out, ta$person_days, co$person_days,
                         alpha = alpha, power = power, two_sided = two_sided)
 
@@ -1040,9 +1072,11 @@
 #' @keywords internal
 .omopCmPropensityScores <- function(design) {
   cov_cols <- grep("^cov_", names(design), value = TRUE)
-  # Keep only covariates with >= 2 distinct values (a real contrast to fit on).
-  varying <- cov_cols[vapply(cov_cols, function(c)
-    length(unique(design[[c]])) > 1L, logical(1))]
+  # Model admission (DataSHIELD glm rules): keep covariates with nfilter.tab
+  # persons with and without them (which also drops constant columns), within
+  # the nfilter.glm dimension cap. Arm sizes are gated by the callers.
+  admitted <- .omopModelAdmitBinaryDesign(design[, cov_cols, drop = FALSE])
+  varying <- cov_cols[admitted]
   if (length(varying) == 0) {
     fit <- stats::glm(arm ~ 1, data = design, family = stats::binomial())
   } else {

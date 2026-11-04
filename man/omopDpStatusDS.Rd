@@ -8,10 +8,11 @@ omopDpStatusDS()
 }
 \value{
 Public DP service status, including the custodial \code{exclusive}
-flag (default FALSE). When a custodian sets \code{dsomop.dp.exclusive =
-TRUE} (with DP enabled), the OHDSI community tools release results only
-through the typed DP channel. The core (loading tables, filters, factors,
-dsOMOP's own exploration) never depends on it.
+  flag (default FALSE) and \code{tools_mode}, the effective protection mode
+  of the OHDSI community tools (\code{"auto"} by default, \code{"standard"}
+  or \code{"dp"}; \code{dsomop.dp.exclusive = TRUE} with DP enabled selects
+  \code{"dp"}). The core (loading tables, filters, factors, dsOMOP's own
+  exploration) never depends on either.
 }
 \description{
 Returns the public fixed-per-release mechanism contract. Secret key material
@@ -23,4 +24,8 @@ can also use \code{omopInitializeReleaseStore()}; external UUID pinning is
 recommended for stronger loss detection. Established state loss fails closed.
 Status declares history-dependent first-answer bindings and public storage
 reservations; there is no cumulative privacy budget or privacy call quota.
+DP serves only the OHDSI community tools, so the status requires them to be
+enabled (\code{dsomop.tools.enabled}). It derives the service identity from
+the session's connected OMOP resource when no explicit
+\code{dsomop.dp.domain}/\code{dsomop.dp.snapshot_id} are configured.
 }
