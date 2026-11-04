@@ -776,7 +776,7 @@ test_that("r-in-session ctx carries scoped_cohort + person_set_sql", {
 
 # --- Stage-0 infra: gate camelCase dist + coupling + ratio reconcile ---------
 
-test_that("legacy QueryLibrary exact statistics require sticky redesigns", {
+test_that("QueryLibrary exact statistics are answered by reviewed replacements", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
 
@@ -785,10 +785,18 @@ test_that("legacy QueryLibrary exact statistics require sticky redesigns", {
   ids <- c("measurement.value_stats", "condition.duration_stats",
            "condition_era.eras_per_person_stats")
 
-  expect_false(any(paste0("dsomop:", ids) %in% names(entries)))
   for (id in ids) {
-    expect_equal(.query_get(h, id)$class, "BLOCKED", info = id)
+    entry <- entries[[paste0("dsomop:", id)]]
+    # The raw template SQL never runs: the entry is the reviewed replacement.
+    expect_identical(entry$meta$adapter, "tools_auto", info = id)
+    expect_identical(entry$compute$kind, "r", info = id)
+    expect_null(entry$compute$sql, info = id)
+    expect_equal(.query_get(h, id)$class, "SAFE_AGGREGATE", info = id)
+    q <- .ql_load_queries()[[id]]
+    raw <- .ql_effective_safety(q, .ql_load_allowlist()[[id]])
+    expect_equal(raw$class, "BLOCKED", info = id)
   }
+  expect_null(entries[["dsomop:person.load"]])
 })
 
 test_that("top-N selection cannot reveal rank within a disclosure band", {
@@ -813,8 +821,13 @@ test_that("exact QueryLibrary statistics have no direct execution bypass", {
   on.exit(cleanup_handle(h))
   h$target_dialect <- "duckdb"
   listed <- .query_list(h)
-  expect_false("measurement.value_stats" %in% listed$id)
-  expect_null(.omopAnalysisQueryEntries(h)[["dsomop:measurement.value_stats"]])
+  # Listed as the reviewed question, executable only through the catalog.
+  expect_true("measurement.value_stats" %in% listed$id)
+  expect_identical(
+    .omopAnalysisQueryEntries(h)[["dsomop:measurement.value_stats"]]$meta$adapter,
+    "tools_auto"
+  )
+  expect_false("person.load" %in% listed$id)
   expect_error(
     .query_exec(h, "measurement.value_stats"),
     "blocked by safety classification"

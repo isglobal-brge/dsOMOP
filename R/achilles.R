@@ -271,20 +271,14 @@
                 has_analysis_table = FALSE))
   }
 
-  n_analyses <- 0L
+  # Which analyses a site has populated is patient-derived occupancy without a
+  # person gate (an analysis of a rare event is populated when one person has
+  # it). Status therefore reports the reviewed analyses this server can serve
+  # from its present result tables, which depends on configuration only.
+  n_analyses <- nrow(.achillesReviewedCatalog(found))
   # Fired Heel rules are data-derived record metadata without a person-level
   # contribution contract, so their exact number is not part of this status.
   n_heel <- NA_integer_
-
-  if ("achilles_results" %in% found) {
-    qualified <- .qualifyTable(handle, "achilles_results",
-                                .resolveResultsSchema(handle))
-    sql <- paste0("SELECT COUNT(DISTINCT analysis_id) AS n FROM ", qualified)
-    n_analyses <- tryCatch(
-      as.integer(.executeQuery(handle, sql)$n[1]),
-      error = function(e) 0L
-    )
-  }
 
   list(available = TRUE, tables = found,
        n_analyses = n_analyses, n_heel_warnings = n_heel,
@@ -557,20 +551,37 @@
 
 # Dynamic Catalog Discovery
 
-#' Get the reviewed Achilles analysis catalog for populated results
+#' Get the reviewed Achilles analysis catalog for the present result tables
 #'
 #' Database-supplied names and stratum descriptions are free text, and custom
-#' analysis IDs have no dsOMOP release review. This helper therefore intersects
-#' populated IDs with the static OHDSI metadata shipped by dsOMOP.
+#' analysis IDs have no dsOMOP release review. This helper therefore returns
+#' the static OHDSI metadata shipped by dsOMOP for the analyses the present
+#' result tables can serve; populated analysis IDs are not released.
 #'
 #' @param handle CDM handle
 #' @return data.frame with analysis_id, analysis_name, domain, stratum_*_name, result_table
 #' @keywords internal
 .achillesDiscoverCatalog <- function(handle) {
-  avail_ids <- .achillesDiscoverIds(handle)
+  bp <- .buildBlueprint(handle)
+  present <- bp$tables$table_name[bp$tables$present_in_db]
+  .achillesReviewedCatalog(present)
+}
+
+#' Reviewed Achilles analyses served by the present result tables
+#'
+#' Public configuration metadata: the static OHDSI catalog shipped by dsOMOP,
+#' restricted to analyses whose result table exists. Whether a site populated
+#' an analysis is not released (it has no person gate).
+#'
+#' @param tables Character vector of present table names.
+#' @return data.frame of reviewed catalog rows ordered by analysis_id.
+#' @keywords internal
+.achillesReviewedCatalog <- function(tables) {
   static <- .achilles_catalog_static()
-  found <- static[static$analysis_id %in% avail_ids, , drop = FALSE]
-  found[order(found$analysis_id), , drop = FALSE]
+  found <- static[static$result_table %in% tables, , drop = FALSE]
+  found <- found[order(found$analysis_id), , drop = FALSE]
+  rownames(found) <- NULL
+  found
 }
 
 #' Query distinct analysis_ids from achilles_results

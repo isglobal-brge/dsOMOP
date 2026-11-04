@@ -15,8 +15,10 @@
   .dsomopDpBoolean(.dsomopDpOption("exclusive", FALSE), "exclusive")
 }
 
+# Standard statistics of the community tools are refused only in DP-only mode
+# (dsomop.tools.mode = "dp", or dsomop.dp.exclusive = TRUE with DP enabled).
 .dsomopStandardStatisticsAllowed <- function() {
-  !(.dsomopDpExclusive() && .dsomopDpEnabled())
+  !identical(.dsomopToolsMode(), "dp")
 }
 
 # The community tools are enabled unless the custodian disables them.
@@ -33,23 +35,29 @@
 }
 
 # Every community-tool endpoint calls this before resolving a handle, decoding
-# arguments, reading cached results, or querying population data.
-.dsomopRequireCommunityTool <- function() {
+# arguments, reading cached results, or querying population data. Endpoints
+# whose run path selects a protection route per question (the analysis catalog
+# and the query library) pass dp_routes = TRUE: the run path then refuses
+# standard statistics in DP-only mode question by question.
+.dsomopRequireCommunityTool <- function(dp_routes = FALSE) {
   if (!.dsomopToolsEnabled()) {
     stop("The OHDSI community tools (Achilles, OHDSI results, the analysis ",
          "catalog and the query library) are disabled on this server. The ",
          "data custodian can enable them again with the dsomop.tools.enabled ",
          "option.", call. = FALSE)
   }
-  .dsomopRequireStandardStatistics()
+  if (!isTRUE(dp_routes)) .dsomopRequireStandardStatistics()
+  invisible(TRUE)
 }
 
 # Exclusive DP (a custodian opt-in) applies to the community tools only.
 .dsomopRequireStandardStatistics <- function() {
   if (!.dsomopStandardStatisticsAllowed()) {
-    stop("DP-exclusive mode blocks standard statistical releases. ",
-         "Use the typed DP channel omopDpReleaseDS ",
-         "(ds.omop.dp.release on the client).", call. = FALSE)
+    stop("The data custodian has set the community tools to DP-only mode ",
+         "(dsomop.tools.mode = \"dp\" or dsomop.dp.exclusive = TRUE), which ",
+         "blocks standard statistical releases. Questions with a DP release ",
+         "(per-person durations, per-person counts and demographic ",
+         "distributions of the query library) still run.", call. = FALSE)
   }
   invisible(TRUE)
 }

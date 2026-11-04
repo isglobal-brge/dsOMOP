@@ -1,7 +1,7 @@
 Package: dsOMOP
 Type: Package
 Title: DataSHIELD Server-Side Integration for OMOP CDM Databases
-Version: 2.8.0
+Version: 2.9.0
 Authors@R: c(
     person("David", "Sarrat González", role = c("aut", "cre"), email = "david.sarrat@isglobal.org"),
     person("Xavier", "Escribà-Montagut", role = "aut"),
@@ -135,6 +135,7 @@ Options:
     nfilter.string=80,
     nfilter.stringShort=20,
     nfilter.noise=0.25,
+    nfilter.glm=0.33,
     dsomop.nfilter.dist=10,
     dsomop.nfilter.band=5,
     dsomop.nfilter.age_range=5,
@@ -154,6 +155,7 @@ Options:
     dsomop.allow_absolute_dates=FALSE,
     dsomop.allow_sensitive_columns=FALSE,
     default.dsomop.tools.enabled=TRUE,
+    default.dsomop.tools.mode="auto",
     default.dsomop.dp.enabled=TRUE,
     default.dsomop.dp.exclusive=FALSE,
     default.dsomop.dp.domain="",

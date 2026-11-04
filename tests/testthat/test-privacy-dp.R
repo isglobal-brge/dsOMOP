@@ -2583,7 +2583,7 @@ test_that("all typed DP statistics remain sticky across exclusive channel modes"
 
   withr::with_options(list(dsomop.dp.exclusive = TRUE), {
     expect_true(omopDpStatusDS()$exclusive)
-    expect_error(omopAchillesResultsDS("unused", 1L), "DP-exclusive")
+    expect_error(omopAchillesResultsDS("unused", 1L), "DP-only mode")
     expect_identical(release_all(), standard_mode)
     # DP input can also be prepared after the exclusive gate is activated.
     expect_identical(.dp_test_table(), input)

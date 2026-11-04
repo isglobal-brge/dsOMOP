@@ -192,7 +192,8 @@
       handle$target_dialect)
     s1_obs <- .sql_translate(paste0(
       "SELECT COUNT(DISTINCT op.observation_period_id) AS outcome_observation_periods, ",
-      "SUM(", observed_days, ") AS observed_days ",
+      "SUM(", observed_days, ") AS observed_days, ",
+      "COUNT(DISTINCT op.person_id) AS observed_persons ",
       "FROM (SELECT DISTINCT person_id FROM (", case_sql, ") c0) cse ",
       "INNER JOIN ", obs, " op ON op.person_id = cse.person_id"),
       handle$target_dialect)
@@ -235,13 +236,20 @@
       ev <- .executeQuery(handle, s1_events)
       ob <- .executeQuery(handle, s1_obs)
       if (!is.data.frame(ev) || nrow(ev) == 0) NULL else {
+        has_ob <- is.data.frame(ob) && nrow(ob) > 0
+        # The observation metrics of all cases rest on the cases that HAVE an
+        # observation period, which may be fewer than all cases: they need
+        # nfilter.tab such persons of their own.
+        ob_supported <- has_ob && isTRUE(
+          as.numeric(ob$observed_persons[1]) >=
+            .omopDisclosureSettings()$nfilter_tab)
         data.frame(
           outcome_subjects            = ev$outcome_subjects[1],
           outcome_events              = ev$outcome_events[1],
-          outcome_observation_periods = if (is.data.frame(ob) && nrow(ob) > 0)
-            ob$outcome_observation_periods[1] else 0L,
-          observed_days               = if (is.data.frame(ob) && nrow(ob) > 0)
-            ob$observed_days[1] else 0L,
+          outcome_observation_periods = if (ob_supported)
+            ob$outcome_observation_periods[1] else NA_real_,
+          observed_days               = if (ob_supported)
+            ob$observed_days[1] else NA_real_,
           step = "all_cases", stringsAsFactors = FALSE)
       }
     }
@@ -891,7 +899,9 @@
     data             = long,
     n_cases          = length(case_id),
     exposed_events   = sum(exp_ev, na.rm = TRUE),
-    unexposed_events = sum(unexp_ev, na.rm = TRUE))
+    unexposed_events = sum(unexp_ev, na.rm = TRUE),
+    exposed_event_persons   = sum(exp_ev > 0, na.rm = TRUE),
+    unexposed_event_persons = sum(unexp_ev > 0, na.rm = TRUE))
 }
 
 #' Fit the SCCS conditional Poisson in the R session and extract log-IRR + SE
@@ -1034,9 +1044,17 @@
     releasable_count <- function(x) is.finite(x) && x >= thr
     exp_b   <- band_or_na(cd$exposed_events)
     unexp_b <- band_or_na(cd$unexposed_events)
+    # Events recur: each window's events need nfilter.tab distinct cases with an
+    # event in that window, not just enough cases overall. An unsupported window
+    # suppresses its event count (the gate then drops the row) and the estimate.
+    exp_supported <- isTRUE(cd$exposed_event_persons >= thr)
+    unexp_supported <- isTRUE(cd$unexposed_event_persons >= thr)
+    if (!exp_supported) cd$exposed_events <- NA_real_
+    if (!unexp_supported) cd$unexposed_events <- NA_real_
     # Every kept case contributes to BOTH periods by construction, so n_cases is
     # the case basis for BOTH windows; require it >= nfilter.subset.
     estimate_releasable <- releasable_count(exp_b) && releasable_count(unexp_b) &&
+      exp_supported && unexp_supported &&
       is.finite(cd$n_cases) && cd$n_cases >= sub
     if (!estimate_releasable) {
       irr <- NA_real_; ci_lo <- NA_real_; ci_hi <- NA_real_

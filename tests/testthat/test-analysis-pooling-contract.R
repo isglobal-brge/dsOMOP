@@ -130,7 +130,12 @@ test_that("every QueryLibrary DBMS subset carries its declared exact schema", {
       if (identical(entry$mode, "assign")) {
         expect_null(entry$meta$pooling_contract, info = entry$name)
       } else {
-        expected <- as.character(queries[[entry$meta$query_id]]$outputs$field)
+        # Reviewed replacements declare their own closed output schema.
+        expected <- if (identical(entry$meta$adapter, "tools_auto")) {
+          entry$meta$output_fields
+        } else {
+          as.character(queries[[entry$meta$query_id]]$outputs$field)
+        }
         expect_identical(names(entry$meta$pooling_contract$columns), expected,
                          info = paste(dialect, entry$name))
         seen <- union(seen, entry$meta$query_id)

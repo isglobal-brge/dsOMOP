@@ -2,7 +2,7 @@
 % Please edit documentation in R/achilles.R
 \name{.achillesDiscoverCatalog}
 \alias{.achillesDiscoverCatalog}
-\title{Get the reviewed Achilles analysis catalog for populated results}
+\title{Get the reviewed Achilles analysis catalog for the present result tables}
 \usage{
 .achillesDiscoverCatalog(handle)
 }
@@ -14,7 +14,8 @@ data.frame with analysis_id, analysis_name, domain, stratum_*_name, result_table
 }
 \description{
 Database-supplied names and stratum descriptions are free text, and custom
-analysis IDs have no dsOMOP release review. This helper therefore intersects
-populated IDs with the static OHDSI metadata shipped by dsOMOP.
+analysis IDs have no dsOMOP release review. This helper therefore returns
+the static OHDSI metadata shipped by dsOMOP for the analyses the present
+result tables can serve; populated analysis IDs are not released.
 }
 \keyword{internal}
