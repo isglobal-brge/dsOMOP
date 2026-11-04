@@ -61,6 +61,13 @@ Their protection mode is the custodial option `dsomop.tools.mode`:
   other standard statistic of the tools. `dsomop.dp.exclusive = TRUE` (with DP
   enabled) selects this mode.
 
+The typed sticky DP channel (`omopDpReleaseDS()`) accepts only tables the
+community tools prepared and sealed: `omopDpPlanExecuteDS()` runs a typed
+plan or recipe through the same plan engine as table loading and seals its
+person-local outputs. The analyst chooses the population and variables (for
+example an age at a public reference year); the custodian owns every privacy
+setting.
+
 Every catalog result carries the attribute `dsomop_protection` (`"standard"`,
 `"dp"` or `"standard_fallback"`, with the estimand and, for DP, epsilon,
 sensitivity and the noise standard deviation). Standard outputs implement
