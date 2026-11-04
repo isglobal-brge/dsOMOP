@@ -380,6 +380,7 @@ test_that("DATASHIELD and DESCRIPTION publish the same server options", {
     "dsomop\\.dp\\.", split_options(manifest[1, "Options"]), value = TRUE
   )
   expect_identical(unname(dp_options), sort(c(
+    "default.dsomop.dp.binding=\"stateless\"",
     "default.dsomop.dp.domain=\"\"",
     "default.dsomop.dp.enabled=TRUE",
     "default.dsomop.dp.exclusive=FALSE",

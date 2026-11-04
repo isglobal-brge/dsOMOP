@@ -21,10 +21,14 @@ A deterministic sticky noisy aggregate with per-release mechanism
   public identity. New identities require a public storage reservation.
 }
 \description{
-The first successful answer for each public request, snapshot and privacy
-epoch is permanent. Later valid requests replay the complete canonical
-response, even after unrotated data changes, without evaluating a new payload.
-Provenance and typed admission are still required. Custodians restore freshness
-by rotating the public snapshot or epoch and restarting sessions. Different
-requests against mutable sources need not reflect one coherent source snapshot.
+With the default stateless binding the answer is a deterministic function of
+the secret noise root, the public request, the protected statistic and a
+private automatic database version: repeating a request returns the same
+answer without stored state, and a database reload re-draws every answer.
+With the first-answer binding (\code{dsomop.dp.binding = "first_answer"}), the
+first successful answer for each public request, snapshot and privacy epoch
+is permanent: later valid requests replay the complete canonical response,
+even after unrotated data changes, without evaluating a new payload, and
+custodians restore freshness by rotating the public snapshot or epoch and
+restarting sessions. Provenance and typed admission are always required.
 }

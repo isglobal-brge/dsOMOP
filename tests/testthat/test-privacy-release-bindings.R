@@ -13,6 +13,7 @@
   withr::local_options(list(
     dsomop.state_dir = state, dsomop.dp.noise_root = NULL,
     default.dsomop.dp.noise_root = NULL,
+    dsomop.dp.binding = "first_answer",
     dsomop.dp.release_store_id = "", dsomop.dp.release_store_bytes = 2^30
   ), .local_envir = .local_envir)
   id <- if (initialize) omopInitializeReleaseStore() else NULL

@@ -16,14 +16,19 @@ Public DP service status, including the custodial \code{exclusive}
 }
 \description{
 Returns the public fixed-per-release mechanism contract. Secret key material
-and protected snapshot fingerprints are never returned. Calling this
-endpoint validates the provisioned noise root and authenticated first-answer
-store when the service is enabled. Fresh or pre-store upgrade state initializes
-automatically when no store, local pin or configured UUID exists. Custodians
-can also use \code{omopInitializeReleaseStore()}; external UUID pinning is
-recommended for stronger loss detection. Established state loss fails closed.
-Status declares history-dependent first-answer bindings and public storage
-reservations; there is no cumulative privacy budget or privacy call quota.
+and protected snapshot fingerprints are never returned. With the default
+stateless binding (\code{dsomop.dp.binding = "stateless"}) the only state is
+the noise root: answers are deterministic in the root, the question, the
+protected statistic and a private automatic database version, and status
+declares \code{release_binding = "seed_data_versioned_v1"}. With the
+first-answer binding, calling this endpoint validates the provisioned noise
+root and authenticated first-answer store; fresh or pre-store upgrade state
+initializes automatically when no store, local pin or configured UUID
+exists, custodians can also use \code{omopInitializeReleaseStore()}, external
+UUID pinning is recommended for stronger loss detection, and established
+state loss fails closed; status then declares history-dependent first-answer
+bindings and public storage reservations. There is no cumulative privacy
+budget or privacy call quota.
 DP serves only the OHDSI community tools, so the status requires them to be
 enabled (\code{dsomop.tools.enabled}). It derives the service identity from
 the session's connected OMOP resource when no explicit

@@ -11,6 +11,7 @@
                             noise_root = NULL,
                             snapshot_id = "etl-2026-08-01",
                             privacy_epoch = 1L,
+                            binding = "first_answer",
                             .local_envir = parent.frame()) {
   state <- withr::local_tempdir(
     pattern = "dsomop-dp-", .local_envir = .local_envir
@@ -37,6 +38,7 @@
     dsomop.dp.noise_root = noise_root,
     dsomop.dp.release_store_id = "",
     dsomop.dp.release_store_bytes = 1024^3,
+    dsomop.dp.binding = binding,
     dsomop.dp.max_levels = 1000L,
     dsomop.dp.max_contributions = 10L,
     dsomop.dp.numeric_grid = 65535L
@@ -57,7 +59,7 @@
   .pkg_state$dp_status <- NULL
   .pkg_state$dp_runtime <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
-  if (!identical(enabled, FALSE)) {
+  if (!identical(enabled, FALSE) && identical(binding, "first_answer")) {
     store_id <- .dsomopDpBindingInitialize()
     withr::local_options(list(dsomop.dp.release_store_id = store_id),
                         .local_envir = .local_envir)

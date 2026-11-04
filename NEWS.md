@@ -1,3 +1,26 @@
+# dsOMOP 2.10.0
+
+- Seed-only DP by default: the new custodial option `dsomop.dp.binding`
+  (`"stateless"` by default, or `"first_answer"`). In the stateless binding
+  every answer is a deterministic function of the secret noise root, the
+  canonical question, the protected statistic and a private automatic
+  database version (the largest identifier of each present clinical table,
+  keyed with the root and never released). Nothing but the root is stored:
+  no first-answer store, capacity limit or lock, answers are identical after
+  restarts and on every R server that shares the root (`DSOMOP_DP_NOISE_ROOT`
+  / `dsomop.dp.noise_root`), and a database reload re-draws every answer at
+  once. A damaged root fails closed instead of being replaced. Status reports
+  `release_binding = "seed_data_versioned_v1"`,
+  `persistent_state = "noise_root_only"`, `service_capacity = "none"`,
+  `history_dependent = FALSE` and privacy contract
+  `fixed_per_release_seed_data_versioned_v1`. Explicit DP releases need
+  dsOMOPClient 2.10.0. Upgrading re-draws previously asked questions once.
+- The first-answer binding (2.7.1 to 2.9.x) is unchanged when selected: same
+  release identities, store, capacity and loss handling.
+- `omopDpReleaseDS()` binds the session's OMOP resource when no community
+  tool has, so the database version is always available.
+- New DataSHIELD option `default.dsomop.dp.binding="stateless"`.
+
 # dsOMOP 2.9.2
 
 - Fix federated pooling of the reviewed QueryLibrary questions (2.9.0 and
