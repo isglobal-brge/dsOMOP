@@ -296,7 +296,7 @@ test_that("DP releases require authenticated person-local provenance", {
 
   expect_error(
     omopDpReleaseDS(raw, spec),
-    "person-local DP provenance capsule"
+    "carries no DP provenance"
   )
   sealed <- .dp_seal(raw, producer = "test/fixture")
   expect_silent(.dsomopDpVerifyPersonLocal(sealed))
@@ -375,7 +375,7 @@ test_that("chunked frame authentication covers every row and its order", {
   expect_false(identical(.dsomopDpFrameDigest(reordered), original))
 })
 
-test_that("filters accumulate canonically and unsafe transforms invalidate", {
+test_that("core filters, projections and binds keep values and never add DP provenance", {
   .dp_local_state()
   raw <- data.frame(
     person_id = 1:24,
@@ -385,117 +385,52 @@ test_that("filters accumulate canonically and unsafe transforms invalidate", {
     value = seq_len(24),
     stringsAsFactors = FALSE
   )
-  source <- .dp_seal(
-    .testPseudonymize(raw), producer = "test/fixture"
-  )
+  source <- .testPseudonymize(raw)
+  no_provenance <- function(value) {
+    is.null(attr(value, "dsomop_dp_provenance", exact = TRUE))
+  }
 
   filtered <- omopFilterDS(source, "group", "==", "A")
-  expect_silent(.dsomopDpVerifyPersonLocal(filtered))
-  repeated <- omopFilterDS(source, "group", "==", "A")
   singleton_in <- omopFilterDS(source, "group", "in", "A")
-  other_filter <- omopFilterDS(source, "group", "==", "B")
-  expect_identical(.dp_lineage(filtered), .dp_lineage(repeated))
-  expect_identical(.dp_lineage(filtered), .dp_lineage(singleton_in))
-  expect_false(identical(.dp_lineage(filtered), .dp_lineage(other_filter)))
-  no_op_filter <- omopFilterDS(filtered, "group", "in", "A")
-  expect_identical(.dp_lineage(no_op_filter), .dp_lineage(filtered))
+  expect_identical(nrow(filtered), 12L)
+  expect_identical(filtered$value, singleton_in$value)
   selected <- omopSelectDS(filtered, c("group", "site", "value"))
-  reordered_selection <- omopSelectDS(filtered, c("value", "site", "group"))
-  expect_silent(.dsomopDpVerifyPersonLocal(selected))
-  expect_identical(.dp_lineage(selected), .dp_lineage(filtered))
-  expect_identical(.dp_lineage(reordered_selection), .dp_lineage(filtered))
+  expect_identical(nrow(selected), 12L)
 
-  tampered_state <- filtered
-  state <- attr(
-    tampered_state, .DSOMOP_DP_FILTER_STATE_ATTRIBUTE, exact = TRUE
-  )
-  state$filter_tree <- .dsomopDpNormalizeFilterTree(list(
-    var = "group", op = "in", value = "B"
-  ))
-  attr(tampered_state, .DSOMOP_DP_FILTER_STATE_ATTRIBUTE) <- state
-  expect_error(
-    omopFilterDS(tampered_state, "site", "==", "X"),
-    "provenance MAC|filter state does not match"
-  )
-
-  # Changing ad-hoc filters accumulate into one canonical conjunction, so
-  # execution order and a row-preserving projection cannot reroll noise.
   twice_filtered <- omopFilterDS(filtered, "site", "==", "X")
   reverse_filtered <- omopFilterDS(
     omopFilterDS(source, "site", "in", "X"), "group", "in", "A"
   )
-  projected_then_filtered <- omopFilterDS(selected, "site", "in", "X")
-  reordered_then_filtered <- omopFilterDS(
-    reordered_selection, "site", "==", "X"
-  )
   expect_identical(nrow(twice_filtered), 6L)
-  expect_silent(.dsomopDpVerifyPersonLocal(twice_filtered))
-  expect_identical(.dp_lineage(twice_filtered), .dp_lineage(reverse_filtered))
-  expect_identical(
-    .dp_lineage(twice_filtered), .dp_lineage(projected_then_filtered)
-  )
-  expect_identical(
-    .dp_lineage(twice_filtered), .dp_lineage(reordered_then_filtered)
-  )
-  # Canonical identity must not depend on which conjunct happens to become a
-  # data-dependent no-op after the first filter.
-  redundant_after_group <- omopFilterDS(filtered, "scope", "==", "keep")
-  redundant_after_value <- omopFilterDS(
-    omopFilterDS(source, "scope", "==", "keep"), "group", "==", "A"
-  )
-  expect_identical(
-    .dp_lineage(redundant_after_group),
-    .dp_lineage(redundant_after_value)
-  )
-  release_spec <- list(statistic = "count")
-  expect_identical(
-    omopDpReleaseDS(twice_filtered, release_spec),
-    omopDpReleaseDS(reordered_then_filtered, release_spec)
-  )
+  expect_identical(sort(twice_filtered$value), sort(reverse_filtered$value))
 
-  left <- .dp_seal(
-    .testPseudonymize(raw[1:6, , drop = FALSE]), producer = "test/left"
+  bound <- omopBindRowsDS(
+    .testPseudonymize(raw[1:6, , drop = FALSE]),
+    .testPseudonymize(raw[7:12, , drop = FALSE])
   )
-  right <- .dp_seal(
-    .testPseudonymize(raw[7:12, , drop = FALSE]), producer = "test/right"
-  )
-  bound <- omopBindRowsDS(left, right)
-  reverse_bound <- omopBindRowsDS(right, left)
-  duplicate_bound <- omopBindRowsDS(left, left)
-  expect_true(all(vapply(
-    list(bound, reverse_bound, duplicate_bound),
-    function(value) is.null(attr(
-      value, "dsomop_dp_provenance", exact = TRUE
-    )), logical(1L)
-  )))
-
+  expect_identical(nrow(bound), 12L)
   joined <- omopMergeDS(source, omopSelectDS(source, "value"))
-  expect_null(attr(joined, "dsomop_dp_provenance", exact = TRUE))
-  expect_null(attr(
-    omopFilterDS(joined, "site", "==", "X"),
-    "dsomop_dp_provenance", exact = TRUE
-  ))
+  expect_identical(nrow(joined), 24L)
 
-  bound_filtered <- omopBindRowsDS(filtered, other_filter)
-  expect_null(attr(
-    bound_filtered, "dsomop_dp_provenance", exact = TRUE
-  ))
-  expect_null(attr(
-    omopFilterDS(bound_filtered, "site", "==", "X"),
-    "dsomop_dp_provenance", exact = TRUE
-  ))
+  expect_true(all(vapply(
+    list(filtered, singleton_in, selected, twice_filtered, reverse_filtered,
+         bound, joined),
+    no_provenance, logical(1L)
+  )))
+  # The DP channel refuses core tables: they never carry DP provenance.
+  expect_error(
+    omopDpReleaseDS(twice_filtered, list(statistic = "count")),
+    "carries no DP provenance"
+  )
 })
-
-test_that("negative filter aliases share semantics and sticky lineage", {
+test_that("negative filter aliases share semantics", {
   .dp_local_state()
   raw <- data.frame(
     person_id = 1:13,
     group = c(rep("A", 6L), rep("B", 6L), NA_character_),
     stringsAsFactors = FALSE
   )
-  source <- .dp_seal(
-    .testPseudonymize(raw), producer = "test/negative-filter-aliases"
-  )
+  source <- .testPseudonymize(raw)
 
   not_equal <- omopFilterDS(source, "group", "!=", "B")
   singleton_not_in <- omopFilterDS(source, "group", "not_in", "B")
@@ -503,9 +438,8 @@ test_that("negative filter aliases share semantics and sticky lineage", {
   expect_identical(not_equal$person_id, singleton_not_in$person_id)
   expect_identical(not_equal$group, singleton_not_in$group)
   expect_false(anyNA(not_equal$group))
-  expect_identical(.dp_lineage(not_equal), .dp_lineage(singleton_not_in))
+  expect_null(attr(not_equal, "dsomop_dp_provenance", exact = TRUE))
 })
-
 test_that("row-bind invalidates provenance but reduction remains deterministic", {
   .dp_local_state()
   left_raw <- data.frame(
@@ -588,13 +522,14 @@ test_that("row-bind invalidates provenance but reduction remains deterministic",
     category = factor(rep(c("a", "b"), 3L), levels = c("b", "a")),
     stringsAsFactors = FALSE
   )), producer = "test/factor-bind-right")
-  expect_error(
-    omopBindRowsDS(factor_left, factor_right),
-    "incompatible column schemas"
-  )
+  # As before DP, binding factors with differently ordered levels works and
+  # keeps every label.
+  factor_bound <- omopBindRowsDS(factor_left, factor_right)
+  expect_identical(nrow(factor_bound), 12L)
+  expect_setequal(as.character(factor_bound$category), c("a", "b"))
 })
 
-test_that("merge validates boundaries and invalidates DP provenance", {
+test_that("merge keeps its ordinary validations and ignores DP provenance", {
   .dp_local_state()
   x_raw <- data.frame(
     person_id = 1:8, left_value = seq_len(8), stringsAsFactors = FALSE
@@ -725,73 +660,34 @@ test_that("merge validates boundaries and invalidates DP provenance", {
   expect_null(attr(
     episode_join, "dsomop_dp_provenance", exact = TRUE
   ))
+  # Episode joins work as before DP: DP provenance, episode domains and exact
+  # key storage types never restrict a merge.
   mismatched_episode_y <- .dp_seal(
     .testPseudonymize(episode_raw_y), producer = "test/episode-right",
     episode_domain = "episode-domain-b"
   )
-  withr::with_options(list(dsomop.max_memory_rows = 1L), {
-    expect_error(
-      omopMergeDS(
-        episode_x, mismatched_episode_y,
-        by = c("person_id", "cohort_row_id"), type = "inner"
-      ),
-      "authenticated episode domain"
+  for (other in list(mismatched_episode_y, .testPseudonymize(episode_raw_y))) {
+    joined <- omopMergeDS(
+      episode_x, other, by = c("person_id", "cohort_row_id"), type = "inner"
     )
-  })
-  missing_episode_y <- .dp_seal(
-    .testPseudonymize(episode_raw_y), producer = "test/episode-right"
-  )
-  expect_error(
-    omopMergeDS(
-      episode_x, missing_episode_y,
-      by = c("person_id", "cohort_row_id"), type = "inner"
-    ),
-    "authenticated episode domain"
-  )
-  expect_error(
-    omopMergeDS(
-      episode_x, .testPseudonymize(episode_raw_y),
-      by = c("person_id", "cohort_row_id"), type = "inner"
-    ),
-    "authenticated episode domain"
-  )
-  other_dataset_episode_y <- .dp_seal(
-    .testPseudonymize(episode_raw_y), producer = "test/episode-right",
-    episode_domain = "episode-domain-a",
-    dataset_identity = .dp_dataset_identity("other-resource")
-  )
-  expect_error(
-    omopMergeDS(
-      episode_x, other_dataset_episode_y,
-      by = c("person_id", "cohort_row_id"), type = "inner"
-    ),
-    "authenticated episode domain"
-  )
+    expect_identical(nrow(joined), 6L)
+  }
   numeric_episode_y_raw <- episode_raw_y
   numeric_episode_y_raw$cohort_row_id <-
     as.numeric(numeric_episode_y_raw$cohort_row_id)
-  numeric_episode_y <- .dp_seal(
-    .testPseudonymize(numeric_episode_y_raw),
-    producer = "test/episode-right", episode_domain = "episode-domain-a"
+  numeric_join <- omopMergeDS(
+    episode_x, .testPseudonymize(numeric_episode_y_raw),
+    by = c("person_id", "cohort_row_id"), type = "inner"
   )
-  expect_error(
-    omopMergeDS(
-      episode_x, numeric_episode_y,
-      by = c("person_id", "cohort_row_id"), type = "inner"
-    ),
-    "join-key schemas are incompatible"
-  )
+  expect_identical(nrow(numeric_join), 6L)
 
-  rowid_x <- episode_x
-  rowid_y <- episode_y
-  rowid_x$row_id <- rowid_x$cohort_row_id
-  rowid_y$row_id <- rowid_y$cohort_row_id
-  expect_error(
-    omopMergeDS(rowid_x, rowid_y, by = c("person_id", "row_id")),
-    "only cohort_row_id"
-  )
+  rowid_x <- .testPseudonymize(episode_raw_x)
+  rowid_y <- .testPseudonymize(episode_raw_y)
+  names(rowid_x)[names(rowid_x) == "cohort_row_id"] <- "row_id"
+  names(rowid_y)[names(rowid_y) == "cohort_row_id"] <- "row_id"
+  rowid_join <- omopMergeDS(rowid_x, rowid_y, by = c("person_id", "row_id"))
+  expect_identical(nrow(rowid_join), 6L)
 })
-
 test_that("factor harmonization invalidates DP provenance", {
   .dp_local_state()
   raw <- data.frame(
@@ -982,7 +878,7 @@ test_that("plan provenance admits fixed longitudinal shapes only", {
   ))
 })
 
-test_that("derived-only person-level age plans carry DP provenance", {
+test_that("derived-only person-level age plans load without DP provenance", {
   .dp_local_state()
   plan <- list(
     outputs = list(ages = list(
@@ -1050,26 +946,24 @@ test_that("derived-only person-level age plans carry DP provenance", {
   eval(quote(omopPlanExecuteDS(
     handle_symbol, plan, list(ages = "D_ages_diag")
   )), envir = assign_environment)
-  sealed <- get("D_ages_diag", envir = assign_environment, inherits = FALSE)
-  expect_silent(.dsomopDpVerifyPersonLocal(sealed))
-
-  spec <- list(
-    statistic = "numeric_histogram", variable = "age_at_2025",
-    breaks = c(0, 30, 40, 50, 100), reducer = "mean",
-    max_contributions = 1L
+  loaded <- get("D_ages_diag", envir = assign_environment, inherits = FALSE)
+  expect_true("age_at_2025" %in% names(loaded))
+  expect_null(attr(loaded, "dsomop_dp_provenance", exact = TRUE))
+  expect_error(
+    omopDpReleaseDS(loaded, list(statistic = "count")),
+    "carries no DP provenance"
   )
-  first <- omopDpReleaseDS(sealed, spec)
-  second <- omopDpReleaseDS(sealed, spec)
-  expect_identical(first, second)
-  expect_identical(first$statistic, "numeric_histogram")
 
+  # The DP lineage machinery itself (used by the community tools) still
+  # separates different derived semantics.
   changed <- plan
   changed$outputs$ages$derived_columns$age_at_2025$reference_date <-
     "2024-07-01"
-  changed_sealed <- .dp_seal_plan(sealed, changed, "ages")
-  expect_false(identical(.dp_lineage(sealed), .dp_lineage(changed_sealed)))
+  expect_false(identical(
+    .dp_lineage(.dp_seal_plan(loaded, plan, "ages")),
+    .dp_lineage(.dp_seal_plan(loaded, changed, "ages"))
+  ))
 })
-
 test_that("derived column lineage uses a closed canonical contract", {
   .dp_local_state()
   semantic_key <- function(specs) {
@@ -2549,6 +2443,9 @@ test_that("default-on initialization derives identity from a real SQLite resourc
   evalq(omopInitDS("default_dp"), session)
   handle <- session$.dsomop_handle_default_dp
   on.exit(.closeHandle(handle), add = TRUE)
+  # Connecting never initializes DP; a community tool binds it when used.
+  expect_null(.pkg_state$dp_runtime)
+  .dsomopDpEnsureRuntime(handle)
   expect_true(omopDpStatusDS()$enabled)
   expect_true(omopDpStatusDS()$ready)
   expect_match(.dsomopDpPolicy()$domain, "^resource_")
@@ -2640,7 +2537,7 @@ test_that("DP status reports configured exclusivity in enabled and disabled mode
       dsomop.dp.exclusive = NULL,
       default.dsomop.dp.exclusive = NULL
     ))
-    expect_identical(omopDpStatusDS()$exclusive, TRUE)
+    expect_identical(omopDpStatusDS()$exclusive, FALSE)
 
     for (exclusive in c(TRUE, FALSE)) {
       withr::with_options(list(dsomop.dp.exclusive = exclusive), {
@@ -2686,7 +2583,7 @@ test_that("all typed DP statistics remain sticky across exclusive channel modes"
 
   withr::with_options(list(dsomop.dp.exclusive = TRUE), {
     expect_true(omopDpStatusDS()$exclusive)
-    expect_error(omopTableStatsDS("unused", "person"), "DP-exclusive")
+    expect_error(omopAchillesResultsDS("unused", 1L), "DP-exclusive")
     expect_identical(release_all(), standard_mode)
     # DP input can also be prepared after the exclusive gate is activated.
     expect_identical(.dp_test_table(), input)

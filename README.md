@@ -26,6 +26,24 @@ The `dsOMOP` ecosystem comprises two essential components designed to work in ta
 
 - **Client-Side package `dsOMOPClient`**: Utilized by researchers and data analysts, this package facilitates the communication with the `dsOMOP` package on the server. It sends data requests and receives processed data for analysis, ensuring a user-friendly experience for specifying data needs and analysis parameters. For code, installation instructions, and more, visit [https://github.com/isglobal-brge/dsOMOPClient](https://github.com/isglobal-brge/dsOMOPClient).
 
+## Core functionality and differential privacy
+
+dsOMOP's core works exactly as it did before differential privacy (DP) was
+added: connecting, loading tables into the DataSHIELD session through plans and
+recipes, filters, concept factors, merges and row binding, cohorts, and
+dsOMOP's own exploration statistics. It runs under the standard DataSHIELD
+disclosure controls (`nfilter.*`) only, and never initializes, consults or
+depends on DP in any configuration.
+
+DP concerns only the integrated OHDSI community tools: Achilles results, OHDSI
+results tables, the analysis catalog and the query library. They are enabled
+by default and run under the standard controls, as before; the custodian can
+disable them with `dsomop.tools.enabled = FALSE` (or the DataSHIELD profile
+option `default.dsomop.tools.enabled`). If the custodian sets
+`dsomop.dp.exclusive = TRUE` with DP enabled, they release results only
+through the typed DP channel described in "Sticky noise" below. An automatic,
+adaptive DP mode for these tools is planned.
+
 ## Installation
 
 To install the server-side package `dsOMOP`, follow the steps below. This guide assumes that you have administrative access to the DataSHIELD server and the necessary permissions to install R packages.
@@ -155,13 +173,13 @@ longitudinal dataset and releasing a noisy statistic are distinct operations.
 or reroll controls.
 
 The DP path accepts only server-created, person-tokened `omop.table` objects
+produced by an OHDSI community tool (for example an analysis-catalog loader)
 with an authenticated, content-bound, person-local provenance capsule. A copied
-class or attribute is not sufficient. Audited recipe/plan outputs, reviewed
-event loaders and supported transformations preserve canonical lineage; an
-operation whose person-local semantics cannot be established does not become
-DP-eligible merely because its result has the right columns. Ordinary
-DataSHIELD disclosure gates continue to apply while data are selected, linked
-and formatted.
+class or attribute is not sufficient. Since 2.8.0, tables loaded through plans
+or recipes, and the results of filters, factors, merges and row binding, never
+carry DP provenance: the core does not take part in DP. Ordinary DataSHIELD
+disclosure gates continue to apply while data are selected, linked and
+formatted.
 
 Before adding noise, dsOMOP deterministically collapses or caps repeated
 longitudinal records for each person. A release uses one of seven reviewed
@@ -266,34 +284,25 @@ The mapping authorizes the bounded algorithm and its typed parameters, never
 the upstream SQL text verbatim. Arbitrary SQL remains blocked and cannot create
 an authenticated DP provenance capsule or a new release mechanism.
 
-The DP release channel is enabled by default since dsOMOP 2.6.0. Custodians
-can opt out with `options(dsomop.dp.enabled = FALSE)` or `DSOMOP_DP_ENABLED=0`.
-Explicit option and environment settings must agree. The custodial option
-`dsomop.dp.exclusive` defaults to `TRUE` since dsOMOP 2.7.0: while DP is
-enabled, covered statistics can be released only through the typed DP channel.
-The DataSHIELD profile fallback is `default.dsomop.dp.exclusive = TRUE`.
-Custodians can restore standard population statistics with
-`options(dsomop.dp.exclusive = FALSE)` (or set the profile fallback to `FALSE`).
-Analysts cannot set this policy or bypass the noise through a client option.
+The DP release channel serves the OHDSI community tools only. It is enabled
+by default (`dsomop.dp.enabled`); custodians can opt out with
+`options(dsomop.dp.enabled = FALSE)` or `DSOMOP_DP_ENABLED=0`. Explicit option
+and environment settings must agree. Since dsOMOP 2.8.0 the custodial option
+`dsomop.dp.exclusive` defaults to `FALSE` (profile fallback
+`default.dsomop.dp.exclusive = FALSE`) and, when a custodian sets it, applies
+only to the community-tool endpoints: with DP enabled they then refuse with a
+message directing analysts to `omopDpReleaseDS` (`ds.omop.dp.release` on the
+client). dsOMOP 2.7.x applied this gate to its own standard statistics too;
+2.8.0 does not. Analysts cannot set this policy or bypass the noise through a
+client option. `omopDpStatusDS()` reports the configured `exclusive` flag; the
+flag is read on each request and does not change the DP mechanism, policy
+hash, sticky noise, or release identity.
 
-With exclusivity off, the standard suppression-and-banding surface remains
-available. With both `dsomop.dp.enabled` and `dsomop.dp.exclusive` true, the
-standard statistical endpoints refuse with a message directing analysts to
-`omopDpReleaseDS` (`ds.omop.dp.release` on the client). Disabling DP also
-disables the exclusivity gate. `omopDpStatusDS()` reports the configured
-`exclusive` flag even when DP is disabled; the gate is active only when both
-`enabled` and `exclusive` are true. The flag is read on each request and does
-not change the DP mechanism, policy hash, sticky noise, or release identity.
-
-Structural schema and vocabulary metadata remain available. Capabilities omit
-`total_persons` in exclusive mode, so existing clients can still connect. For
-memory-mode plan preparation, dsOMOPClient 2.7.3 automatically skips observed
-factor-level discovery with an explanatory message, because observed levels
-reveal a distinct count. With older clients, set
-`plan <- ds.omop.plan.options(plan, factor_concepts = FALSE)` before calling
-`ds.omop.plan.execute(plan)`. See
-[DISCLOSURE_CONTROL.md](DISCLOSURE_CONTROL.md) for the complete endpoint list
-and the scope of this gate.
+dsOMOP's own statistics, capabilities (including the banded population size),
+structural and vocabulary metadata, and observed concept-factor levels are
+always available under the standard controls, whatever the DP settings. See
+[DISCLOSURE_CONTROL.md](DISCLOSURE_CONTROL.md) for the endpoint list and the
+scope of the gate.
 
 ### Custodian release state and freshness
 
@@ -330,8 +339,8 @@ wins independently, and an explicit snapshot skips metadata derivation.
 In-memory databases and unavailable/ambiguous resource coordinates still fail
 closed with instructions to configure both identifiers. Conflicting option and
 environment values still fail closed. No generic shared fallback domain is used.
-Initialize the resource with `omopInitDS()` before calling DP status when using
-derived defaults.
+Connecting (`omopInitDS()`) never initializes DP; DP binds to the connected
+resource when a community tool first uses it.
 
 The derived snapshot follows metadata, not every data edit. Custodians **must
 bump `dsomop.dp.privacy_epoch` / `DSOMOP_DP_PRIVACY_EPOCH` when data change without

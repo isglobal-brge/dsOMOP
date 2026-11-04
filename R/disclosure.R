@@ -37,10 +37,12 @@
 #'     reports this server-owned value, but does not reinterpret it as
 #'     epsilon/delta, a generic DP budget, replay-stable noise, or permission to
 #'     add noise to arbitrary query results.}
-#'   \item{\code{sticky_noise_enabled}}{Explicit capability flag. It is enabled
-#'     only after the dedicated DP service has initialized its persistent noise
-#'     root. Ordinary suppression/banding and the \code{nfilter.noise}
-#'     plot-noise variance floor never activate this flag.}
+#'   \item{\code{formal_dp_enabled}, \code{sticky_noise_enabled},
+#'     \code{privacy_ledger_enabled}}{Explicit capability flags. They are
+#'     always \code{FALSE}: these settings describe the core, whose
+#'     suppression/banding and \code{nfilter.noise} plot-noise variance floor
+#'     are not a formal DP accountant. The community tools report their own
+#'     DP status.}
 #' }
 #'
 #' @section dsOMOP-Specific Settings:
@@ -121,9 +123,6 @@
 #' @return Named list of disclosure thresholds and permissions
 #' @keywords internal
 .omopDisclosureSettings <- function() {
-  state <- .dsomopDpState()
-  dp_status <- state$dp_status
-  dp_ready <- is.list(dp_status) && isTRUE(dp_status$ready)
   age_range_min <- as.numeric(
     getOption("dsomop.nfilter.age_range",
       getOption("default.dsomop.nfilter.age_range", 5)))
@@ -156,7 +155,9 @@
                                 getOption("default.nfilter.stringShort", 20))),
     nfilter_noise          = as.numeric(getOption("nfilter.noise",
                                 getOption("default.nfilter.noise", 0.25))),
-    sticky_noise_enabled   = dp_ready && isTRUE(dp_status$sticky_noise),
+    formal_dp_enabled      = FALSE,
+    sticky_noise_enabled   = FALSE,
+    privacy_ledger_enabled = FALSE,
     # --- dsOMOP-specific settings ---
     query_strict         = as.logical(getOption("dsomop.query_strict",
                                 getOption("default.dsomop.query_strict", TRUE))),
@@ -276,7 +277,8 @@
          "increasing integer lower bounds starting at 0, with every interval ",
          "at least nfilter_age_range years wide.", call. = FALSE)
   }
-  for (name in c("sticky_noise_enabled", "query_strict",
+  for (name in c("formal_dp_enabled", "sticky_noise_enabled",
+                 "privacy_ledger_enabled", "query_strict",
                  "allow_absolute_dates", "allow_sensitive_cols")) {
     logical_scalar(name)
   }

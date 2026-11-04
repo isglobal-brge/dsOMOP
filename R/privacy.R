@@ -888,9 +888,10 @@
 #' reservations; there is no cumulative privacy budget or privacy call quota.
 #'
 #' @return Public DP service status, including the custodial \code{exclusive}
-#'   flag (default TRUE). Custodians can set \code{dsomop.dp.exclusive = FALSE}
-#'   to restore standard statistics. Standard releases are blocked when both
-#'   \code{enabled} and \code{exclusive} are TRUE.
+#'   flag (default FALSE). When a custodian sets \code{dsomop.dp.exclusive =
+#'   TRUE} (with DP enabled), the OHDSI community tools release results only
+#'   through the typed DP channel. The core (loading tables, filters, factors,
+#'   dsOMOP's own exploration) never depends on it.
 #' @export
 omopDpStatusDS <- function() {
   state <- .dsomopDpState()
@@ -915,9 +916,10 @@ omopDpStatusDS <- function() {
 #' by rotating the public snapshot or epoch and restarting sessions. Different
 #' requests against mutable sources need not reflect one coherent source snapshot.
 #'
-#' @param x A server-created, pseudonymous \code{omop.table} carrying an
-#'   authenticated person-local provenance capsule from an audited plan,
-#'   loader, or manipulation path.
+#' @param x A server-created, pseudonymous \code{omop.table} produced by an
+#'   OHDSI community tool (for example an analysis-catalog loader) and carrying
+#'   its authenticated person-local provenance capsule. Tables loaded through
+#'   plans, recipes or manipulation never carry DP provenance.
 #' @param spec Typed DP statistic specification, usually JSON-encoded by
 #'   dsOMOPClient.
 #' @return A deterministic sticky noisy aggregate with per-release mechanism

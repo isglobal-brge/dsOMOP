@@ -1,51 +1,38 @@
 # Differential-privacy release channel
 
-The DP release channel is enabled by default since dsOMOP 2.6.0. Custodians
-can opt out with `options(dsomop.dp.enabled = FALSE)` or `DSOMOP_DP_ENABLED=0`.
-Explicit option and environment settings must agree. The custodial option
-`dsomop.dp.exclusive` defaults to `TRUE` since dsOMOP 2.7.0: while DP is
-enabled, covered statistics can be released only through the typed DP channel.
-The DataSHIELD profile fallback is `default.dsomop.dp.exclusive = TRUE`.
-Custodians can restore standard population statistics with
-`options(dsomop.dp.exclusive = FALSE)` (or set the profile fallback to `FALSE`).
-Analysts cannot set this policy or bypass the noise through a client option.
+Since dsOMOP 2.8.0, differential privacy (DP) concerns only the integrated
+OHDSI community tools: Achilles results, OHDSI results tables, the analysis
+catalog and the query library. dsOMOP's core (connecting, loading tables
+through plans and recipes, filters, concept factors, merges and row binding,
+cohorts and dsOMOP's own exploration statistics) works exactly as it did
+before DP was added, under the standard DataSHIELD disclosure controls
+(`nfilter.*`) only. It never initializes, consults or depends on DP, and its
+tables never carry DP provenance.
 
-With exclusivity off, the standard suppression-and-banding surface remains
-available. With both `dsomop.dp.enabled` and `dsomop.dp.exclusive` true, the
-standard statistical endpoints refuse with a message directing analysts to
-`omopDpReleaseDS` (`ds.omop.dp.release` on the client). Disabling DP also
-disables the exclusivity gate. `omopDpStatusDS()` reports the configured
-`exclusive` flag even when DP is disabled; the gate is active only when both
-`enabled` and `exclusive` are true. The flag is read on each request and does
-not change the DP mechanism, policy hash, sticky noise, or release identity.
+The community tools are enabled by default (`dsomop.tools.enabled`, profile
+fallback `default.dsomop.tools.enabled = TRUE`); custodians can disable them
+with `dsomop.tools.enabled = FALSE`. The DP release
+channel is enabled by default since dsOMOP 2.6.0; custodians can opt out with
+`options(dsomop.dp.enabled = FALSE)` or `DSOMOP_DP_ENABLED=0`. Explicit option
+and environment settings must agree. The custodial option
+`dsomop.dp.exclusive` defaults to `FALSE` since 2.8.0 (it defaulted to `TRUE`
+in 2.7.x and then covered dsOMOP's own statistics too). When a custodian sets
+it and DP is enabled, the community-tool endpoints release results only
+through the typed DP channel. Analysts cannot set this policy or bypass the
+noise through a client option. `omopDpStatusDS()` reports the configured
+`exclusive` flag; the flag is read on each request and does not change the DP
+mechanism, policy hash, sticky noise, or release identity.
 
-## Exclusive standard-surface policy
+## Community-tool gate
 
-One shared policy in `R/profiling.R` (`.dsomopStandardStatisticsAllowed` and
-`.dsomopRequireStandardStatistics`) gates the following aggregate wrappers in
-`R/interface.R` before handle lookup, argument decoding, cohort resolution,
-cached-result access or queries. Entire statistical endpoints refuse, including
-requests that would otherwise produce an empty or fully suppressed result.
+One shared policy in `R/profiling.R` (`.dsomopRequireCommunityTool`, which
+checks that `dsomop.tools.enabled` is not `FALSE` and then
+`.dsomopRequireStandardStatistics`)
+gates the following endpoints in `R/interface.R` before handle lookup,
+argument decoding, cohort resolution, cached-result access or queries.
 
-| Refusing endpoint | Covered output |
+| Gated endpoint | Covered output |
 | --- | --- |
-| `omopTableStatsDS` | Row and distinct-person counts |
-| `omopColumnStatsDS` | Total, missing, distinct and person counts; means |
-| `omopDomainCoverageDS` | Per-domain person counts |
-| `omopMissingnessDS` | Missingness counts and rates |
-| `omopValueCountsDS` | Value frequencies |
-| `omopConceptPrevalenceDS` | Person and record counts |
-| `omopCrossTabDS` | Contingency counts and optional margins |
-| `omopNumericRangeDS` | Population count and distribution summary |
-| `omopNumericHistogramDS` | Histogram counts |
-| `omopNumericQuantilesDS` | Population-derived distribution profiling |
-| `omopDateCountsDS` | Temporal counts |
-| `omopConceptDrilldownDS` | Counts, means, frequencies and missingness |
-| `omopLocateConceptDS` | Per-table record and person counts |
-| `omopSafeCutpointsDS` | Banded bin counts |
-| `omopPlanPreviewDS` | Per-output population counts |
-| `omopCohortListDS` | Cohort sizes |
-| `omopCohortGetDefinitionDS` | Population-admitted definition records, including local count columns |
 | `omopAchillesStatusDS` | Number of distinct populated analyses |
 | `omopAchillesResultsDS` | Precomputed counts |
 | `omopAchillesDistributionDS` | Support counts, means and distributions |
@@ -56,35 +43,23 @@ requests that would otherwise produce an empty or fully suppressed result.
 | `omopOhdsiSummaryDS` | Result-table row counts |
 | `omopQueryExecDS` | Aggregate query results |
 | `omopAnalysisRunDS` | Aggregate analysis results |
-| `omopFactorLevelsDS` | Observed levels, whose length is a distinct count |
+| `omopAnalysisRunAssignDS` | Server-side analysis tables |
 
-`omopGetCapabilitiesDS` uses the same policy to omit `total_persons` in
-exclusive mode. Its remaining structural metadata keeps existing client
-connections usable. Schema, column types, join relationships, vocabulary
-reference data, static analysis definitions, result contracts, disclosure
-settings and DP status/catalogue metadata remain available. Vocabulary
-concept totals count public reference records, not the clinical population.
-Reference tables are expected to contain reference metadata, including any
-custodial extension columns.
-`omopCohortGetDefinitionDS` also refuses: its population-admitted response
-forwards unrestricted definition columns that can include local cohort counts.
+dsOMOP's own endpoints are never gated by DP: table and column statistics,
+domain coverage, missingness, value counts, concept prevalence, crosstabs,
+numeric range, histograms and quantiles, date counts, concept drilldown and
+location, safe cutpoints, plan preview, cohort list and definitions, observed
+concept-factor levels (`omopFactorLevelsDS`) and capabilities (including the
+banded population size). They apply the standard suppression and banding.
 
-Server-side assignment and authenticated DP input preparation remain available.
-For memory-mode plans, dsOMOPClient 2.7.3 automatically skips observed
-factor-level discovery with an explanatory message when any selected server
-is exclusive. With older clients, first set
-`plan <- ds.omop.plan.options(plan, factor_concepts = FALSE)`, then call
-`ds.omop.plan.execute(plan)`.
-Supply public DP categories, bounds and breaks directly
-in the typed DP specification; the standard profiling endpoints cannot be used
-to learn them in exclusive mode. The seven supported typed DP statistics
-remain available with identical sticky releases in either mode. dsOMOPClient
-2.7.3 also displays exclusivity in DP status and directs refused helpers to
-`ds.omop.dp.release`; it remains compatible with 2.6.0 servers that do not
-report an `exclusive` field.
+Only outputs of the community tools can carry DP provenance and be released
+through `omopDpReleaseDS` (`ds.omop.dp.release` on the client). Supply public
+DP categories, bounds and breaks directly in the typed DP specification. The
+seven supported typed DP statistics remain available with identical sticky
+releases whether or not exclusivity is set.
 
-The gate covers dsOMOP's registered standard aggregate surface. It does not
-alter internal profiling helpers, controller-only `omopAchillesHeelDS`, or
+The gate covers the registered community-tool surface. It does not alter
+internal profiling helpers, controller-only `omopAchillesHeelDS`, or
 methods from other DataSHIELD packages. Custodians must review those separately
 in the deployed method allowlist. It also does not make metadata admission or
 assignment side channels differentially private, retract earlier releases, or
