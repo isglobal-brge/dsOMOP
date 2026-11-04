@@ -4,8 +4,7 @@
   "DSOMOP_DP_ENABLED", "DSOMOP_DP_DOMAIN", "DSOMOP_DP_SNAPSHOT_ID",
   "DSOMOP_DP_RELEASE_EPSILON", "DSOMOP_DP_PRIVACY_EPOCH",
   "DSOMOP_DP_MAX_LEVELS", "DSOMOP_DP_MAX_CONTRIBUTIONS",
-  "DSOMOP_DP_NUMERIC_GRID", "DSOMOP_DP_NOISE_ROOT",
-  "DSOMOP_DP_RELEASE_STORE_ID", "DSOMOP_DP_RELEASE_STORE_BYTES"
+  "DSOMOP_DP_NUMERIC_GRID", "DSOMOP_DP_NOISE_ROOT"
 )
 
 # A private DP service for one test (same contract as test-privacy-dp.R).
@@ -27,28 +26,19 @@
     dsomop.dp.domain = "dsomop-tools-test",
     dsomop.dp.snapshot_id = "tools-2026-11-01",
     dsomop.dp.release_epsilon = 0.1, dsomop.dp.privacy_epoch = 1L,
-    dsomop.dp.noise_root = NULL, dsomop.dp.release_store_id = "",
-    dsomop.dp.release_store_bytes = 1024^3
+    dsomop.dp.noise_root = NULL
   ), .local_envir = .local_envir)
   previous <- list(status = .pkg_state$dp_status,
                    runtime = .pkg_state$dp_runtime,
-                   warned = .pkg_state$dp_snapshot_fallback_warned,
                    in_progress = .pkg_state$dp_bootstrap_in_progress)
   withr::defer({
     .pkg_state$dp_status <- previous$status
     .pkg_state$dp_runtime <- previous$runtime
-    .pkg_state$dp_snapshot_fallback_warned <- previous$warned
     .pkg_state$dp_bootstrap_in_progress <- previous$in_progress
   }, envir = .local_envir)
   .pkg_state$dp_status <- NULL
   .pkg_state$dp_runtime <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
-  if (isTRUE(enabled)) {
-    withr::local_options(
-      list(dsomop.dp.release_store_id = .dsomopDpBindingInitialize()),
-      .local_envir = .local_envir
-    )
-  }
   state
 }
 
@@ -152,7 +142,7 @@ test_that("the tools mode defaults to auto and follows the custodian", {
 
 test_that("every reviewed question has a closed schema and pooling contract", {
   h <- tools_handle()
-  on.exit(cleanup_handle(h))
+  on.exit(cleanup_handle(h), add = TRUE)
   reviewed <- .dsomopToolsReviewedQueries()
   expect_setequal(names(reviewed), c(.tools_histogram_ids,
                                      .tools_partition_ids, .tools_summary_ids))
@@ -174,7 +164,7 @@ test_that("every reviewed question has a closed schema and pooling contract", {
 
 test_that("auto mode without DP releases the same tables under the standard gate", {
   h <- tools_handle()
-  on.exit(cleanup_handle(h))
+  on.exit(cleanup_handle(h), add = TRUE)
   withr::local_options(list(dsomop.tools.mode = "auto",
                             dsomop.dp.enabled = FALSE,
                             nfilter.tab = 3, dsomop.nfilter.band = 5))
@@ -197,7 +187,7 @@ test_that("auto mode without DP releases the same tables under the standard gate
 test_that("auto mode with DP releases complete sticky noisy histograms", {
   .tools_dp_state()
   h <- tools_handle()
-  on.exit(cleanup_handle(h))
+  on.exit(cleanup_handle(h), add = TRUE)
   withr::local_options(list(dsomop.tools.mode = "auto"))
   out <- tools_run(h, "condition.duration_stats", list(concept_id = 201820))
   label <- attr(out, "dsomop_protection")
@@ -235,7 +225,7 @@ test_that("auto mode with DP releases complete sticky noisy histograms", {
 
 test_that("each person changes exactly one cell of a DP histogram by one", {
   h <- tools_handle(40)
-  on.exit(cleanup_handle(h))
+  on.exit(cleanup_handle(h), add = TRUE)
   reviewed <- .dsomopToolsReviewedQueries()
   cells <- function(id, params) {
     spec <- reviewed[[id]]
@@ -268,7 +258,7 @@ test_that("each person changes exactly one cell of a DP histogram by one", {
 
 test_that("standard mode answers the original summaries under the gate", {
   h <- tools_handle()
-  on.exit(cleanup_handle(h))
+  on.exit(cleanup_handle(h), add = TRUE)
   withr::local_options(list(dsomop.tools.mode = "standard",
                             dsomop.nfilter.dist = 10, nfilter.tab = 3,
                             dsomop.nfilter.band = 5))
@@ -306,7 +296,7 @@ test_that("standard mode answers the original summaries under the gate", {
 test_that("DP-only mode refuses standard statistics and keeps DP questions", {
   .tools_dp_state()
   h <- tools_handle()
-  on.exit(cleanup_handle(h))
+  on.exit(cleanup_handle(h), add = TRUE)
   withr::local_options(list(dsomop.tools.mode = "dp"))
   out <- tools_run(h, "condition.duration_stats", list(concept_id = 201820))
   expect_identical(attr(out, "dsomop_protection")$protection, "dp")
@@ -321,7 +311,7 @@ test_that("DP-only mode refuses standard statistics and keeps DP questions", {
 
 test_that("DP-only mode refuses when the DP service is unavailable", {
   h <- tools_handle()
-  on.exit(cleanup_handle(h))
+  on.exit(cleanup_handle(h), add = TRUE)
   withr::local_options(list(dsomop.tools.mode = "dp",
                             dsomop.dp.enabled = FALSE))
   expect_error(tools_run(h, "condition.duration_stats",
@@ -441,7 +431,7 @@ test_that("reviewed questions build dialect-specific SQL for every dialect", {
 test_that("pooling keys identify every released row of a reviewed question", {
   .tools_dp_state()
   h <- tools_handle()
-  on.exit(cleanup_handle(h))
+  on.exit(cleanup_handle(h), add = TRUE)
   for (mode in c("auto", "standard")) {
     withr::with_options(list(dsomop.tools.mode = mode), {
       registry <- suppressWarnings(.omopAnalysisRegistry(h, force = TRUE))

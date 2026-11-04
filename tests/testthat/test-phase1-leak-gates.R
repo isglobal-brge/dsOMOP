@@ -388,8 +388,6 @@ test_that("DATASHIELD and DESCRIPTION publish the same server options", {
     "default.dsomop.dp.numeric_grid=65535",
     "default.dsomop.dp.privacy_epoch=1",
     "default.dsomop.dp.release_epsilon=0.1",
-    "default.dsomop.dp.release_store_bytes=1073741824",
-    "default.dsomop.dp.release_store_id=\"\"",
     "default.dsomop.dp.snapshot_id=\"\""
   )))
   # The OHDSI community tools are published enabled.

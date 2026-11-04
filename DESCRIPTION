@@ -1,7 +1,7 @@
 Package: dsOMOP
 Type: Package
 Title: DataSHIELD Server-Side Integration for OMOP CDM Databases
-Version: 2.9.2
+Version: 2.10.0
 Authors@R: c(
     person("David", "Sarrat González", role = c("aut", "cre"), email = "david.sarrat@isglobal.org"),
     person("Xavier", "Escribà-Montagut", role = "aut"),
@@ -165,8 +165,6 @@ Options:
     default.dsomop.dp.privacy_epoch=1,
     default.dsomop.dp.max_levels=1000,
     default.dsomop.dp.max_contributions=10,
-    default.dsomop.dp.numeric_grid=65535,
-    default.dsomop.dp.release_store_id="",
-    default.dsomop.dp.release_store_bytes=1073741824
+    default.dsomop.dp.numeric_grid=65535
 Config/testthat/edition: 3
 RoxygenNote: 7.3.3

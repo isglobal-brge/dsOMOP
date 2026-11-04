@@ -1,3 +1,34 @@
+# dsOMOP 2.10.0
+
+- Seed-only DP: the first-answer store of 2.7.1 to 2.9.x is removed. Every
+  answer is a deterministic function of the secret noise root, the canonical
+  question, the protected statistic and a private automatic database version
+  (the largest identifier of each present clinical table, keyed with the root
+  and never released). Nothing but the root is stored: no store, capacity
+  limit, lock or scaling cost. Answers are identical after restarts and on
+  every R server that shares the root (`DSOMOP_DP_NOISE_ROOT` /
+  `dsomop.dp.noise_root`), and a reload that adds rows re-draws every answer
+  at once, without an epoch bump. In-place edits that add no row with a larger
+  identifier still need an epoch bump (README, isglobal-brge/dsOMOP#20).
+- Status reports `release_binding = "seed_data_versioned_v1"`,
+  `persistent_state = "noise_root_only"`, `service_capacity = "none"`,
+  `history_dependent = FALSE` and privacy contract
+  `fixed_per_release_seed_data_versioned_v1` (protocol `dsomop-dp-release-v3`,
+  sampler and mechanism unchanged). Explicit DP releases need dsOMOPClient
+  2.10.0; the analysis-catalog DP questions work with any client.
+- Upgrading re-draws previously asked questions once. Existing
+  `release-bindings/` files are no longer read and can be archived.
+  `omopInitializeReleaseStore()` is deprecated and does nothing; the options
+  `dsomop.dp.release_store_id` and `dsomop.dp.release_store_bytes` and their
+  DataSHIELD profile defaults are removed.
+- The noise root is created on first use with a custodian message, and a
+  damaged, unsafe or substituted root fails closed (one stable analyst error,
+  the reason in the server log) instead of being replaced.
+- Fallback snapshot identities no longer warn: the database version tracks
+  reloads.
+- `omopDpReleaseDS()` binds the session's OMOP resource when no community
+  tool has, so the database version is always available.
+
 # dsOMOP 2.9.2
 
 - Fix federated pooling of the reviewed QueryLibrary questions (2.9.0 and
