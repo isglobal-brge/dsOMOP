@@ -28,18 +28,6 @@
   invisible(TRUE)
 }
 
-.dsomopIsInstallOrDevelopmentLoad <- function(libname) {
-  path <- normalizePath(libname, winslash = "/", mustWork = FALSE)
-  install_environment <- c(
-    Sys.getenv("R_INSTALL_PKG", unset = ""),
-    Sys.getenv("R_PACKAGE_DIR", unset = ""),
-    Sys.getenv("_R_CHECK_PACKAGE_NAME_", unset = "")
-  )
-  grepl("(^|/)00LOCK([^/]*)(/|$)", path) ||
-    any(nzchar(install_environment)) ||
-    nzchar(Sys.getenv("DEVTOOLS_LOAD", unset = ""))
-}
-
 .dsomopStateRoot <- function(
     configured = NULL,
     environment = Sys.getenv(

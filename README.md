@@ -56,7 +56,8 @@ Set `DSOMOP_STATE_DIR` to an absolute, owner-only directory on a durable volume
 shared by every worker that represents the same logical node. `configure` only
 prepares directories; it never generates secrets while installing a package or
 building a reusable image. Package `.onLoad()` never reads or generates the
-pseudonym root: it validates only its public lifecycle settings. On first use
+pseudonym root and runs no checks that could fail (R test-loads a package while
+installing it); the lifecycle settings are validated when used. On first use
 by an actual OMOP handle, compatibility mode validates an injected secret or,
 when none is supplied, creates and atomically persists a 256-bit pseudonym root under
 `$DSOMOP_STATE_DIR/secrets` (mode `0600`, parent mode `0700`). Install and
@@ -190,8 +191,9 @@ contract.
 
 Since dsOMOP 2.6.1, the noise sampler
 `dsomop-dp-exact-discrete-laplace-v1` uses the exact integer/rational algorithm
-of Canonne, Kamath and Steinke (2020), with arbitrary-precision arithmetic from
-`gmp`. It replaces the 52-bit inverse transform, whose finite noise support
+of Canonne, Kamath and Steinke (2020), with exact arbitrary-precision integer
+arithmetic in plain R (2.7.0 and 2.7.1 used `gmp`, which draws the same noise
+but needs the GNU MP headers to build). It replaces the 52-bit inverse transform, whose finite noise support
 invalidated the previous pure-DP claim. Epsilon and sensitivity are the exact
 binary rationals represented by their R numbers; there is no decimal rounding
 or floating-point probability transform. The noise calibration and output
@@ -504,6 +506,13 @@ If you prefer using a graphical user interface (GUI) provided by your server for
 - **User/organization:** `isglobal-brge`
 - **Package name:** `dsOMOP`
 - **Git reference:** `main`
+
+The R dependencies (`DBI`, `R6`, `resourcer`, `jsonlite`, `filelock`,
+`openssl`, `RSQLite`) are installed automatically. Built from source, they need
+no system libraries beyond the OpenSSL and libcurl headers that Opal/Rock
+images already include for `openssl` and `resourcer`. If the GUI reports
+nothing, the R server log (for Rock, its container log) shows the R output of
+the installation.
 
 #### Installing from the R console
 

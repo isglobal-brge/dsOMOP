@@ -1,3 +1,23 @@
+# dsOMOP 2.7.2
+
+- Install on any R server without extra system libraries. The exact
+  discrete-Laplace sampler no longer uses `gmp`, whose source build needs the
+  GNU MP headers (`libgmp-dev`). On R servers that install CRAN source
+  packages (for example Rock images whose repository is
+  `https://cloud.r-project.org`), 2.7.0 and 2.7.1 could not be installed
+  (`configure: error: Header file gmp.h not found`, then `dependency 'gmp' is
+  not available`), and the Opal administration UI showed no error. The exact
+  arithmetic is now plain R (`R/privacy_bigint.R`) and draws exactly the same
+  noise as before: the sampler protocol, the self-test answers and sticky
+  release identities are unchanged. `gmp` is only a suggested package, used by
+  tests that compare both implementations.
+- Package loading no longer runs the DP self-test or validates pseudonym
+  settings. R test-loads every package while installing it, so any failing
+  check there made the package impossible to install. The DP bootstrap still
+  runs the canonical-encoder and sampler self-test before the first release and
+  refuses releases if it fails; pseudonym settings are validated when first
+  used.
+
 # dsOMOP 2.7.1
 
 - Resolve the conditional temporal equality oracle in

@@ -25,10 +25,10 @@ test_that("the keyed bit stream replays and separates coordinates and blocks", {
   expect_false(identical(original, read_bits(draw = 1L)))
   expect_false(identical(original[1:256], original[257:512]))
   expect_false(identical(original[257:512], original[513:768]))
-  large_coordinate <- gmp::as.bigz("9007199254740992")
+  large_coordinate <- .dsomopBigInteger("9007199254740992")
   expect_false(identical(
     read_bits(coordinate = large_coordinate),
-    read_bits(coordinate = large_coordinate + 1L)
+    read_bits(coordinate = .dsomopBigAdd(large_coordinate, 1L))
   ))
   expect_identical(original[257:512], read_bits(draw = 1L, n = 256L))
   expect_identical(original[513:768], read_bits(draw = 2L, n = 256L))
@@ -37,10 +37,10 @@ test_that("the keyed bit stream replays and separates coordinates and blocks", {
 test_that("stream blocks consume every raw bit and counters never round", {
   observed <- character()
   coordinates <- character()
-  first <- gmp::as.bigz("9007199254740992")
+  first <- .dsomopBigInteger("9007199254740992")
   output <- testthat::with_mocked_bindings({
     bits <- .dsomopDpBitStream(
-      .dp_sampler_key, list(query = "counter"), first + 1L, first
+      .dp_sampler_key, list(query = "counter"), .dsomopBigAdd(first, 1L), first
     )
     vapply(seq_len(768L), function(i) bits(), integer(1))
   }, .dsomopDpHmacRaw = function(key, value) {
@@ -59,7 +59,7 @@ test_that("the exact sampler KAT disables releases if its protocol drifts", {
   expect_invisible(.dsomopDpCanonicalSelfTest())
   expect_error(testthat::with_mocked_bindings(
     .dsomopDpCanonicalSelfTest(),
-    .dsomopDpDiscreteLaplace = function(...) gmp::as.bigz(0L),
+    .dsomopDpDiscreteLaplace = function(...) .dsomopBigInteger(0L),
     .package = "dsOMOP"
   ), "sampler changed")
 })
@@ -72,7 +72,8 @@ test_that("uniform integers use exact rejection and arbitrary precision", {
     3L, .dp_sampler_bits(c(1, 1, 0, 1))
   )), "1")
   expect_identical(as.character(.dsomopDpUniformInteger(
-    gmp::as.bigz(2)^80 + 1L, .dp_sampler_bits(c(rep(0L, 80L), 1L))
+    .dsomopBigAdd(.dsomopBigShiftLeft(1L, 80L), 1L),
+    .dp_sampler_bits(c(rep(0L, 80L), 1L))
   )), "1")
 })
 
@@ -83,7 +84,7 @@ test_that("rational Bernoulli decisions compare binary prefixes exactly", {
   expect_false(.dsomopDpBernoulli(1L, 2L, .dp_sampler_bits(1L)))
   expect_true(.dsomopDpBernoulli(1L, 3L, .dp_sampler_bits(c(0L, 0L))))
   expect_false(.dsomopDpBernoulli(1L, 3L, .dp_sampler_bits(c(0L, 1L, 1L))))
-  denominator <- gmp::as.bigz(2)^80
+  denominator <- .dsomopBigShiftLeft(1L, 80L)
   expect_true(.dsomopDpBernoulli(
     1L, denominator, .dp_sampler_bits(rep(0L, 80L))
   ))
@@ -114,7 +115,7 @@ test_that("epsilon eight has finite positive-probability paths beyond four", {
       .dsomopDpBitStream = function(...) scripted,
       .package = "dsOMOP"
     )
-    expect_s3_class(noise, "bigz")
+    expect_s3_class(noise, "dsomop_bigint")
     expect_identical(as.character(noise), if (sign == 0L) "5" else "-5")
   }
 })
@@ -139,7 +140,7 @@ test_that("the sampler preserves integers beyond exact double precision", {
     .dsomopDpBitStream = function(...) scripted,
     .package = "dsOMOP"
   )
-  expect_s3_class(noise, "bigz")
+  expect_s3_class(noise, "dsomop_bigint")
   expect_identical(as.character(noise), "1267650600228229401496703205377")
 })
 
@@ -148,16 +149,16 @@ test_that("epsilon canonicalisation keeps the exact supplied binary rational", {
   noise <- testthat::with_mocked_bindings(
     .dsomopDpDiscreteLaplace(.dp_sampler_key, list(), 1L, 0.1, 3),
     .dsomopDpGeometric = function(numerator, denominator, bits) {
-      observed <<- gmp::as.bigq(numerator, denominator)
-      gmp::as.bigz(1L)
+      observed <<- paste0(.dsomopBigDecimal(numerator), "/",
+                          .dsomopBigDecimal(denominator))
+      .dsomopBigInteger(1L)
     },
     .dsomopDpBitStream = function(...) .dp_sampler_bits(0L),
     .package = "dsOMOP"
   )
-  expect_identical(as.character(observed),
-                   "3602879701896397/108086391056891904")
+  expect_identical(observed, "3602879701896397/108086391056891904")
   expect_identical(as.character(noise), "1")
-  expect_false(isTRUE(observed == gmp::as.bigq(1L, 30L)))
+  expect_false(identical(observed, "1/30"))
 })
 
 test_that("keyed discrete Laplace is deterministic across fresh streams", {
@@ -169,8 +170,8 @@ test_that("keyed discrete Laplace is deterministic across fresh streams", {
   small_epsilon <- .dsomopDpDiscreteLaplace(
     .dp_sampler_key, context, 7L, 1e-6, 2^24 - 1
   )
-  expect_s3_class(small_epsilon, "bigz")
-  expect_length(small_epsilon, 1L)
+  expect_s3_class(small_epsilon, "dsomop_bigint")
+  expect_match(as.character(small_epsilon), "^-?[0-9]+$")
 })
 
 test_that("noisy integer addition and clipping happen before numeric conversion", {
@@ -187,12 +188,16 @@ test_that("noisy integer addition and clipping happen before numeric conversion"
       .package = "dsOMOP"
     )
   }
-  expect_identical(with_noise(gmp::as.bigz(2)^100), 2^53 - 1)
-  expect_identical(with_noise(-(gmp::as.bigz(2)^100)), 0)
-  expect_identical(with_noise(-(gmp::as.bigz(2)^53) + 2L, 2^53 - 1), 1)
-  expect_identical(with_noise(gmp::as.bigz(1L), 2^53 - 1), 2^53 - 1)
-  expect_identical(with_noise(gmp::as.bigz(-200L), lower = -10), -10)
-  expect_identical(with_noise(gmp::as.bigz(200L), upper = 120), 120)
+  big <- function(x) .dsomopBigInteger(x)
+  expect_identical(with_noise(.dsomopBigShiftLeft(1L, 100L)), 2^53 - 1)
+  expect_identical(with_noise(.dsomopBigNegate(.dsomopBigShiftLeft(1L, 100L))),
+                   0)
+  expect_identical(with_noise(
+    .dsomopBigAdd(.dsomopBigNegate(.dsomopBigShiftLeft(1L, 53L)), 2L), 2^53 - 1
+  ), 1)
+  expect_identical(with_noise(big(1L), 2^53 - 1), 2^53 - 1)
+  expect_identical(with_noise(big(-200L), lower = -10), -10)
+  expect_identical(with_noise(big(200L), upper = 120), 120)
 })
 
 .dp_sampler_distribution <- function(epsilon, sensitivity, n = 10000L) {

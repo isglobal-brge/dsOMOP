@@ -54,7 +54,7 @@ test_that("database support profiles distinguish tested and contract-only adapte
   ))
   expect_identical(
     .databaseSupportProfile("postgresql")$sqlrender_version,
-    if (nzchar(sqlrender_path)) {
+    if (length(sqlrender_path) == 1L && nzchar(sqlrender_path)) {
       as.character(utils::packageVersion("SqlRender"))
     } else NULL
   )
