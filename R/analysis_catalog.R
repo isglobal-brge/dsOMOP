@@ -447,6 +447,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   allowlist <- .ql_load_allowlist()
   strict <- isTRUE(.omopDisclosureSettings()$query_strict)
   dialect <- tolower(handle$target_dialect %||% "")
+  reviewed <- .dsomopToolsReviewedQueries()
+  tools_mode <- .dsomopToolsMode()
 
   entries <- list()
   for (qid in names(queries)) {
@@ -455,6 +457,14 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     query_sql <- safe_top_n$sql
     al <- allowlist[[qid]]
     if (strict && is.null(al)) next
+    # Distribution templates are answered by reviewed, server-owned
+    # replacements (see tools_auto.R) instead of their raw SQL.
+    if (!is.null(reviewed[[qid]])) {
+      entries[[paste0("dsomop:", qid)]] <- .dsomopToolsAutoEntry(
+        qid, q, reviewed[[qid]], tools_mode
+      )
+      next
+    }
 
     safety <- if (!is.null(al)) al else .ql_classify(q$sql, q$mode)
     safety <- .ql_effective_safety(q, safety)
@@ -1146,6 +1156,108 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   .omopBandedTopN(
     df, support_cols = support, top_n = top_n, key_cols = key_cols
   )
+}
+
+#' Parse the final ORDER BY clause of a QueryLibrary template
+#'
+#' Returns the ordered output columns with their direction, or an empty list
+#' when the template has no top-level ORDER BY of plain columns.
+#'
+#' @param sql Template SQL.
+#' @return List of \code{list(col, desc)}.
+#' @keywords internal
+.omopSqlOrderSpec <- function(sql) {
+  if (!is.character(sql) || length(sql) != 1L || is.na(sql)) return(list())
+  hits <- gregexpr("\\bORDER\\s+BY\\b", sql, ignore.case = TRUE,
+                   perl = TRUE)[[1L]]
+  if (identical(hits[[1L]], -1L)) return(list())
+  last <- hits[[length(hits)]]
+  tail <- substr(sql, last + attr(hits, "match.length")[[length(hits)]],
+                 nchar(sql))
+  tail <- sub("\\bLIMIT\\b.*$", "", tail, ignore.case = TRUE, perl = TRUE)
+  tail <- trimws(sub(";\\s*$", "", tail))
+  # An ORDER BY inside OVER(...) or a sub-select is not the final order.
+  if (!nzchar(tail) || grepl("[()]", tail)) return(list())
+  items <- trimws(strsplit(tail, ",", fixed = TRUE)[[1L]])
+  spec <- list()
+  for (item in items) {
+    m <- regmatches(item, regexec(
+      "^(?:[A-Za-z_][A-Za-z0-9_]*\\.)?([A-Za-z_][A-Za-z0-9_]*)(?:\\s+(ASC|DESC))?$",
+      item, ignore.case = TRUE, perl = TRUE))[[1L]]
+    if (length(m) == 0L) return(list())
+    spec[[length(spec) + 1L]] <- list(col = tolower(m[[2L]]),
+                                      desc = identical(toupper(m[[3L]]), "DESC"))
+  }
+  spec
+}
+
+#' Record the order contract of a raw analysis frame
+#'
+#' Rows ordered by a count before banding would reveal the order of counts
+#' that banding makes equal. QueryLibrary templates declare their order in SQL;
+#' live Achilles frames are ordered by \code{count_value} when it does not
+#' increase. The released order is rebuilt from released values afterwards.
+#'
+#' @param df Raw frame before the gate.
+#' @param entry Catalog entry.
+#' @return An order spec (list of \code{list(col, desc)}) or NULL.
+#' @keywords internal
+.omopAnalysisRawOrder <- function(df, entry) {
+  if (!is.data.frame(df) || nrow(df) < 2L) return(NULL)
+  adapter <- entry$meta$adapter %||% ""
+  count_cols <- c(entry$disclosure$count_cols %||% character(0), "count_value")
+  if (identical(adapter, "query")) {
+    spec <- .omopSqlOrderSpec(entry$compute$sql)
+    uses_counts <- any(vapply(spec, function(x) x$col %in% count_cols,
+                              logical(1L)))
+    return(if (uses_counts) spec else NULL)
+  }
+  if (adapter %in% c("achilles", "achilles_live") &&
+      "count_value" %in% names(df)) {
+    value <- suppressWarnings(as.numeric(df$count_value))
+    if (!anyNA(value) && !is.unsorted(rev(value))) {
+      return(list(list(col = "count_value", desc = TRUE)))
+    }
+  }
+  NULL
+}
+
+#' Order a released frame from released values and public keys only
+#'
+#' @param df Frame after the gate.
+#' @param entry Catalog entry.
+#' @param spec Order spec from \code{\link{.omopAnalysisRawOrder}}.
+#' @return \code{df}, deterministically ordered.
+#' @keywords internal
+.omopAnalysisReleasedOrder <- function(df, entry, spec) {
+  if (is.null(spec) || !is.data.frame(df) || nrow(df) < 2L) return(df)
+  spec <- Filter(function(x) x$col %in% names(df), spec)
+  if (length(spec) == 0L) return(df)
+  count_cols <- c(entry$disclosure$count_cols %||% character(0), "count_value")
+  ordered <- vapply(spec, function(x) x$col, character(1L))
+  keys <- setdiff(names(df), c(count_cols, ordered))
+  keys <- keys[!grepl(paste0(
+    "(^|_)(avg|average|mean|rate|ratio|proportion|percent|pct|sd|std|",
+    "stdev|stddev|median|p[0-9]+|min|max)(_|$)"), keys,
+    ignore.case = TRUE, perl = TRUE)]
+  direction <- function(value, desc) {
+    if (!is.numeric(value)) {
+      value <- match(as.character(value),
+                     sort(unique(as.character(value)), method = "radix"))
+    }
+    if (isTRUE(desc)) -value else value
+  }
+  args <- c(
+    lapply(spec, function(x) direction(df[[x$col]], x$desc)),
+    lapply(keys, function(k) {
+      value <- df[[k]]
+      if (is.numeric(value)) value else as.character(value)
+    }),
+    list(na.last = TRUE, method = "radix")
+  )
+  out <- df[do.call(order, args), , drop = FALSE]
+  rownames(out) <- NULL
+  out
 }
 
 # --- Native diagnostic 1: incidence rate -------------------------------------
@@ -4025,7 +4137,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #' @return Named list of \code{omop_analysis_entry} objects keyed by name.
 #' @keywords internal
 .omopAnalysisRegistry <- function(handle, force = FALSE) {
-  if (!is.null(handle$analysis_catalog) && !force) {
+  tools_mode <- .dsomopToolsMode()
+  if (!is.null(handle$analysis_catalog) && !force &&
+      identical(handle$analysis_catalog_mode, tools_mode)) {
     return(handle$analysis_catalog)
   }
 
@@ -4045,6 +4159,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   .omopAnalysisWarnDeps(handle, entries)
 
   handle$analysis_catalog <- entries
+  handle$analysis_catalog_mode <- tools_mode
   entries
 }
 
@@ -4163,7 +4278,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #' @keywords internal
 .omopAnalysisGet <- function(handle, name) {
   e <- .omopAnalysisResolve(handle, name)
-  list(
+  out <- list(
     name        = e$name,
     description = e$description,
     domain      = e$domain,
@@ -4184,6 +4299,14 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     # already-gated aggregate. NULL for analyses without a plot.
     plot        = e$compute$plot
   )
+  # Reviewed community-tool questions (tools_auto.R) answer with the shape of
+  # the server's protection mode; only they carry it, so the metadata of every
+  # other entry is unchanged.
+  if (identical(e$meta$adapter, "tools_auto")) {
+    out$tools <- list(mode = e$meta$tools_mode, shape = e$meta$tools_shape,
+                      estimand = e$meta$tools_spec$value_label)
+  }
+  out
 }
 
 # --- Parameter validation + sanitization -------------------------------------
@@ -5090,6 +5213,17 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
   sanitized <- .omopAnalysisSanitizeParams(entry, params)
 
+  # Protection route of the community tools (tools_auto.R). Reviewed questions
+  # choose DP, the standard gate or a refusal from the custodial mode; every
+  # other aggregate output is a standard statistic, refused only in DP-only
+  # mode.
+  tools_route <- NULL
+  if (identical(entry$meta$adapter, "tools_auto")) {
+    tools_route <- .dsomopToolsRoute(handle, entry)
+  } else if (!assign) {
+    .dsomopRequireStandardStatistics()
+  }
+
   kind <- entry$compute$kind %||% "sql"
 
   # Workspace frames are an explicit, bounded catalog capability. Enforce the
@@ -5220,7 +5354,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       person_set_sql = if (!is.null(scoped)) {
         paste0("(SELECT subject_id FROM ", scoped, ")")
       } else NULL,
-      scoped_cohorts = scoped_pair
+      scoped_cohorts = scoped_pair,
+      entry = if (!is.null(tools_route)) entry else NULL,
+      tools_route = tools_route
     )
     df <- entry$compute$fn(handle, ctx, sanitized)
   }
@@ -5231,13 +5367,19 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       scope_present = !is.null(scope), effective_params = sanitized
     ))
   }
+  if (!is.null(tools_route)) {
+    return(.dsomopToolsFinalize(handle, df, entry, sanitized))
+  }
+  raw_order <- .omopAnalysisRawOrder(df, entry)
   df <- .omopAnalysisExternalOutputFirewall(
     df, entry, assign = FALSE, phase = "raw"
   )
   df <- .omopAnalysisGate(handle, df, entry)
+  df <- .omopAnalysisReleasedOrder(df, entry, raw_order)
   df <- .omopAnalysisPostGateTopN(df, entry, sanitized)
   df <- .omopAnalysisExternalOutputFirewall(
     df, entry, assign = FALSE, phase = "final"
   )
-  .omopAnalysisNormalizePoolingOutput(df, entry)
+  df <- .omopAnalysisNormalizePoolingOutput(df, entry)
+  .dsomopToolsLabel(df, entry, "standard")
 }

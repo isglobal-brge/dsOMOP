@@ -813,6 +813,9 @@
 .omopAnalysisDirectPoolingContract <- function(entry) {
   adapter <- entry$meta$adapter %||% ""
   if (identical(adapter, "query")) return(.omopQueryPoolingContract(entry))
+  if (identical(adapter, "tools_auto")) {
+    return(.dsomopToolsPoolingContract(entry))
+  }
   if (adapter %in% c("achilles", "achilles_live")) {
     return(.omopAchillesPoolingContract(entry))
   }

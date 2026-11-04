@@ -374,10 +374,18 @@
         list(frame       = fr,
              persons     = nrow(fr),
              outcomes    = sum(fr$events, na.rm = TRUE),
+             outcome_persons = sum(fr$events > 0, na.rm = TRUE),
              person_days = sum(fr$person_days, na.rm = TRUE))
       }
       ta <- counts(cohorts$a)
       co <- counts(cohorts$b)
+      # Outcome events can recur: each arm's outcome count needs nfilter.tab
+      # distinct persons with an outcome. An unsupported count is suppressed
+      # (the gate then drops the subgroup row) together with the estimate.
+      ta_supported <- ta$outcome_persons >= settings$nfilter_tab
+      co_supported <- co$outcome_persons >= settings$nfilter_tab
+      if (!ta_supported) ta$outcomes <- NA_real_
+      if (!co_supported) co$outcomes <- NA_real_
 
       # Fit the per-subgroup effect IN-SESSION on the per-subject frames.
       fit <- .omopCmFitSubgroupEffect(ta$frame, co$frame, model_type = model_type)
@@ -409,6 +417,7 @@
       co_out_b <- band_or_na(co$outcomes)
       arms_ok <- !is.na(ta_band) && !is.na(co_band) &&
         ta_band >= settings$nfilter_subset && co_band >= settings$nfilter_subset &&
+        ta_supported && co_supported &&
         releasable_count(ta_out_b) && releasable_count(co_out_b)
 
       log_est <- fit$log_estimate
