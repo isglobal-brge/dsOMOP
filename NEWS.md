@@ -1,3 +1,13 @@
+# dsOMOP 2.9.2
+
+- Fix federated pooling of the reviewed QueryLibrary questions (2.9.0 and
+  2.9.1): their pooling contracts declared every non-count column as a label,
+  so a federation whose servers returned more than one row (every DP
+  histogram and partition, and multi-row summaries) failed with "group keys
+  are not unique". Concept, unit, currency, gender and visit ids, bins and
+  partition cells are now grouping keys; names and bin bounds remain labels.
+  Pooled DP counts are the sums of the per-server noisy counts.
+
 # dsOMOP 2.9.1
 
 - New community-tool assign method `omopDpPlanExecuteDS()`: prepares
