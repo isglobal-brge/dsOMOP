@@ -234,8 +234,9 @@ conversion back to an R number. Clipping is post-processing and preserves the
 privacy inequality.
 
 The canonical inputs are the exact IEEE-754 binary rational values of the
-validated R epsilon and sensitivity, converted with `gmp::as.bigq`. For
-example, R's `0.1` is `3602879701896397/36028797018963968`, not decimal 1/10.
+validated R epsilon and sensitivity, converted exactly: each positive double
+is an odd integer times a power of two, and the ratio is reduced by the gcd of
+the odd parts. For example, R's `0.1` is `3602879701896397/36028797018963968`, not decimal 1/10.
 The ratio is formed using rational arithmetic; no printed decimal
 approximation is reparsed. Division of epsilon by two in means and rates is
 exact throughout the admitted range. Integer sensitivities and grid sizes are
