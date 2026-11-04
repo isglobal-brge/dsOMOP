@@ -8,9 +8,10 @@ omopDpStatusDS()
 }
 \value{
 Public DP service status, including the custodial \code{exclusive}
-  flag (default TRUE). Custodians can set \code{dsomop.dp.exclusive = FALSE}
-  to restore standard statistics. Standard releases are blocked when both
-  \code{enabled} and \code{exclusive} are TRUE.
+flag (default FALSE). When a custodian sets \code{dsomop.dp.exclusive =
+TRUE} (with DP enabled), the OHDSI community tools release results only
+through the typed DP channel. The core (loading tables, filters, factors,
+dsOMOP's own exploration) never depends on it.
 }
 \description{
 Returns the public fixed-per-release mechanism contract. Secret key material

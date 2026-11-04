@@ -491,7 +491,7 @@ test_that("omopInitDS rejects an active resource symbol without touching it", {
   expect_false(created)
 })
 
-test_that("omopInitDS bootstraps privacy after connecting and before building the blueprint", {
+test_that("omopInitDS never touches DP and builds the blueprint after connecting", {
   events <- character(0)
   new_handle <- new.env(parent = emptyenv())
   withr::local_envvar(ROCK_VERSION = NA_character_)
@@ -523,7 +523,7 @@ test_that("omopInitDS bootstraps privacy after connecting and before building th
   }
 
   run()
-  expect_identical(events, c("handle", "privacy", "blueprint"))
+  expect_identical(events, c("handle", "blueprint"))
   expect_false(exists(
     "handle_ready_resource", envir = .dsomop_env, inherits = FALSE
   ))

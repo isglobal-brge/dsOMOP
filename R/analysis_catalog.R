@@ -5021,22 +5021,26 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   effective_schema <- function(value) {
     if (bare_schemas || is.null(value) || !nzchar(value)) "" else value
   }
-  .dsomopDpSealAnalysisAssign(
-    assigned, entry, scope_present = scope_present,
-    effective_params = effective_params,
-    dataset_identity = .dsomopDpDatasetIdentity(handle),
-    public_config = list(
-      target_dialect = handle$target_dialect,
-      schemas = list(
-        cdm = effective_schema(handle$cdm_schema),
-        vocabulary = effective_schema(
-          handle$vocab_schema %||% handle$cdm_schema
+  .dsomopDpBestEffort(
+    assigned,
+    .dsomopDpSealToolOutput(handle, .dsomopDpSealAnalysisAssign(
+      assigned, entry, scope_present = scope_present,
+      effective_params = effective_params,
+      dataset_identity = .dsomopDpDatasetIdentity(handle),
+      public_config = list(
+        target_dialect = handle$target_dialect,
+        schemas = list(
+          cdm = effective_schema(handle$cdm_schema),
+          vocabulary = effective_schema(
+            handle$vocab_schema %||% handle$cdm_schema
+          ),
+          results = effective_schema(.effectiveResultsSchema(handle))
         ),
-        results = effective_schema(.effectiveResultsSchema(handle))
-      ),
-      date_handling = dh,
-      output_contract = entry$meta$output_contract
-    )
+        date_handling = dh,
+        output_contract = entry$meta$output_contract
+      )
+    )),
+    "analysis output"
   )
 }
 

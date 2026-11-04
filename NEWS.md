@@ -1,3 +1,36 @@
+# dsOMOP 2.8.0
+
+- The core no longer depends on differential privacy (DP). Connecting, loading
+  tables through plans and recipes, filters, concept factors, merges and row
+  binding, cohorts and dsOMOP's own exploration statistics work as they did
+  before DP was added, under the standard DataSHIELD disclosure controls only.
+  On the same database, plans, filters, selections, merges and row binds load
+  tables identical to dsOMOP 2.2.34 (values, column types and person tokens).
+  Removed from the core: the DP-exclusive gate on dsOMOP's own statistics,
+  plan preview, cohort list and definitions, factor-level discovery and the
+  capabilities population count; DP provenance sealing of plan outputs and of
+  filter, select, merge, bind and factor results; the DP runtime bootstrap in
+  `omopInitDS()`; the merge DP preflight; the DP-era restrictions on merge keys
+  (the episode aliases `row_id`, `rowid` and `rowId`, and compatible key
+  storage types, work again) and on row binding (compatible column types and
+  differently ordered factor levels bind again); the DP lineage canonicalizer
+  in derived-column execution (extra fields such as `label`, and policies in
+  any case, work again); and DP helpers in staged-output descriptors, which now
+  use their own canonical fingerprint. Disclosure settings report the pre-DP
+  constant flags again.
+- Integer `*_concept_id` columns can be filtered by equality and membership,
+  like factor columns and under the same categorical controls.
+- The OHDSI community tools (Achilles results, OHDSI results tables, the
+  analysis catalog and the query library) stay enabled by default under the
+  standard controls; custodians can disable them with
+  `dsomop.tools.enabled = FALSE`. `dsomop.dp.exclusive` now defaults to
+  `FALSE` and applies only to these tools. DP releases accept only
+  outputs of the community tools. Their DP lineage keeps the 2.7.x canonical
+  identities, so existing first answers are unchanged.
+- DP-era fixes to the core are kept: concept-factor safety checks, merge
+  suffix protection, the filter's missing-value exclusion, identifier
+  sanitization, staged streaming and the Opal cohort transport fixes.
+
 # dsOMOP 2.7.2
 
 - Install on any R server without extra system libraries. The exact
