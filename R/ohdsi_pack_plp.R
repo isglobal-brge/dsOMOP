@@ -445,9 +445,11 @@
   ok <- !is.na(row_of) & !is.na(col_of)
   if (any(ok)) X[cbind(row_of[ok], col_of[ok])] <- 1L
 
-  # Drop zero-variance predictors (a constant column is collinear with the
-  # intercept and makes the GLM rank-deficient).
-  keep <- apply(X, 2, function(col) length(unique(col)) > 1)
+  # Model admission (DataSHIELD glm rules): each predictor needs nfilter.tab
+  # persons with and without it (this also drops constant columns), and the
+  # dimension stays within nfilter.glm * n. Rare outcome classes are handled
+  # by the release guards of each PLP output (their scalars are masked).
+  keep <- .omopModelAdmitBinaryDesign(X)
   X <- X[, keep, drop = FALSE]
   cov_ids <- cov_ids[keep]
   if (ncol(X) == 0) return(NULL)
@@ -735,10 +737,19 @@
     df$sensitivity[is.na(df$tp) | df$tp == 0] <- NA_real_
     df$ppv[is.na(df$tp) | df$tp == 0]         <- NA_real_
     df$specificity[is.na(df$tn) | df$tn == 0] <- NA_real_
-    # Band the two cells not covered by a reconcile (fp, fn) so no confusion cell
-    # is ever released at 1-person resolution.
-    df$fp <- vapply(df$fp, .bandCount, numeric(1), band_width = bw)
-    df$fn <- vapply(df$fn, .bandCount, numeric(1), band_width = bw)
+    # Gate and band the two cells not covered by a reconcile (fp, fn) exactly as
+    # the reconcile treats tp/tn: a cell below nfilter_tab is suppressed (NA) and
+    # every other cell is banded, so no confusion cell is released at 1-person
+    # resolution even when a custodian configures a band narrower than the
+    # small-cell threshold.
+    band_or_na <- function(x) {
+      x <- as.numeric(x)
+      v <- vapply(x, .bandCount, numeric(1), band_width = bw)
+      v[is.na(x) | x < settings$nfilter_tab] <- NA_real_
+      v
+    }
+    df$fp <- band_or_na(df$fp)
+    df$fn <- band_or_na(df$fn)
     df
   }
 

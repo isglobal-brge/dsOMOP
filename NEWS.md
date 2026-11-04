@@ -1,3 +1,56 @@
+# dsOMOP 2.9.0
+
+- Automatic protection for the OHDSI community tools, with nothing to
+  configure: the new custodial option `dsomop.tools.mode` (default `"auto"`).
+  The core is unchanged and never uses DP.
+- The 18 query-library questions that were blocked because they release exact
+  person-level distributions are answered again, by reviewed server-owned
+  replacements (their raw SQL still never runs; `person.load` stays blocked):
+  - per-person durations and counts (`condition.duration_stats`,
+    `drug.duration_stats`, `drug.days_supply_stats`,
+    `drug_era.exposure_count_stats`, `condition_era.eras_per_person_stats`,
+    `visit.duration_stats`, `observation_period.length_by_gender`) are released
+    in auto mode as histograms of one value per person (the mean of the
+    person's records, or their count) over fixed public bins, with sticky
+    discrete-Laplace noise of sensitivity 1 person;
+  - demographic distributions (`person.year_of_birth_distribution`,
+    `person.birth_month_distribution`, `person.gender_by_age_decade`) as
+    complete public partitions with the same noise;
+  - values, quantities and costs (`measurement.value_stats`, now per unit;
+    `drug.quantity_stats`; `drug_cost.*`, now per currency) and the
+    all-concept or by-year length summaries use the standard person-supported
+    summary (both the record and the person count must reach
+    `dsomop.nfilter.dist`).
+  When the DP service is disabled or unavailable, auto mode releases the same
+  tables under the standard controls (`standard_fallback`). `"standard"` mode
+  returns the original summaries under the standard controls only, and `"dp"`
+  mode (also selected by `dsomop.dp.exclusive = TRUE` with DP enabled) refuses
+  every standard statistic of the tools.
+- Every analysis-catalog result carries the attribute `dsomop_protection`
+  (`"standard"`, `"dp"` or `"standard_fallback"`, the estimand and, for DP,
+  epsilon, sensitivity, adjacency and the noise standard deviation).
+- Disclosure repairs in the community tools:
+  - released rows are ordered from released (banded) values and public keys,
+    so the order of QueryLibrary and live Achilles results no longer reveals
+    the order of counts inside one band;
+  - Patient-Level Prediction false-positive and false-negative cells are
+    suppressed below `nfilter.tab` like the other confusion cells;
+  - CohortMethod outcome counts and the MDRR, the CohortMethod interaction
+    estimates, and the SCCS incidence-rate ratio require `nfilter.tab`
+    distinct persons with an outcome (per arm or window), not only enough
+    persons in the arm; the first SCCS attrition step requires
+    `nfilter.tab` persons with an observation period for its observation
+    metrics;
+  - the Patient-Level Prediction and propensity models apply the DataSHIELD
+    `glm` admission rules before fitting: each binary covariate needs
+    `nfilter.tab` persons with and without it, and the number of parameters
+    stays within `nfilter.glm` (default 0.33) times the number of persons;
+  - Achilles status and catalog report the reviewed analyses the present
+    result tables can serve instead of which analyses a site populated, and
+    the OHDSI status and summary no longer release result-table row counts.
+- New DataSHIELD options: `default.dsomop.tools.mode="auto"` and
+  `nfilter.glm=0.33`. `omopDpStatusDS()` reports `tools_mode`.
+
 # dsOMOP 2.8.0
 
 - The core no longer depends on differential privacy (DP). Connecting, loading

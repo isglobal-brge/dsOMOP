@@ -37,12 +37,35 @@ depends on DP in any configuration.
 
 DP concerns only the integrated OHDSI community tools: Achilles results, OHDSI
 results tables, the analysis catalog and the query library. They are enabled
-by default and run under the standard controls, as before; the custodian can
-disable them with `dsomop.tools.enabled = FALSE` (or the DataSHIELD profile
-option `default.dsomop.tools.enabled`). If the custodian sets
-`dsomop.dp.exclusive = TRUE` with DP enabled, they release results only
-through the typed DP channel described in "Sticky noise" below. An automatic,
-adaptive DP mode for these tools is planned.
+by default (`dsomop.tools.enabled`, default `TRUE`) and need no configuration.
+Their protection mode is the custodial option `dsomop.tools.mode`:
+
+- `"auto"` (default): every output that the standard DataSHIELD controls
+  protect adequately (counts, prevalence, Table 1, incidence, characterization,
+  survival and model summaries) runs under those controls, without DP. The
+  query-library questions that release person-level distributions are answered
+  by reviewed replacements: per-person durations and per-person counts
+  (condition, drug, visit and observation-period durations, days supply, eras
+  per person, exposures per era) become histograms of one value per person over
+  fixed public bins, and the demographic distributions (year of birth, birth
+  month, gender by age decade) complete public partitions, both released with
+  sticky discrete-Laplace noise (epsilon-DP for the add/remove-one-person
+  neighbour, sensitivity 1). If the DP service is disabled or not available,
+  the same tables are released under the standard controls instead, so these
+  questions always get an answer. Values without a public scale (measurement
+  values per unit, quantities, costs per currency, all-concept era lengths)
+  use the standard person-supported summary.
+- `"standard"`: the original summaries (counts, means, SDs) under the standard
+  controls only; no DP anywhere.
+- `"dp"`: DP only. Questions without a DP release are refused, as is every
+  other standard statistic of the tools. `dsomop.dp.exclusive = TRUE` (with DP
+  enabled) selects this mode.
+
+Every catalog result carries the attribute `dsomop_protection` (`"standard"`,
+`"dp"` or `"standard_fallback"`, with the estimand and, for DP, epsilon,
+sensitivity and the noise standard deviation). Standard outputs implement
+statistical disclosure control, not DP; a session that mixes standard and DP
+outputs has no overall DP guarantee.
 
 ## Installation
 

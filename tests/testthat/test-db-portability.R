@@ -387,6 +387,13 @@ test_that("SQLite cleanup cannot drop a persistent temporary-table homonym", {
     entry <- entries[[name]]
     expect_true(handle$target_dialect %in%
                   entry$meta$supported_dialects, info = name)
+    if (identical(entry$meta$adapter, "tools_auto")) {
+      # Reviewed replacements build portable SQL at run time.
+      expect_error(suppressWarnings(suppressMessages(
+        .omopAnalysisRun(handle, name, list())
+      )), NA, info = name)
+      next
+    }
     expect_error({
       params <- .omopAnalysisSanitizeParams(entry, list())
       .omopAnalysisRunSql(handle, entry, params, scoped = NULL)
@@ -404,7 +411,9 @@ test_that("every QueryLibrary entry announced for SQLite is executable", {
   )
 
   expect_false("dsomop:condition.prevalence_by_year" %in% names(entries))
-  expect_false("dsomop:condition.duration_stats" %in% names(entries))
+  # Exact distribution templates are answered by reviewed replacements.
+  expect_identical(entries[["dsomop:condition.duration_stats"]]$meta$adapter,
+                   "tools_auto")
   expect_true("dsomop:condition.prevalence_by_concept" %in% names(entries))
 })
 
@@ -419,9 +428,10 @@ test_that("every QueryLibrary entry announced for DuckDB is executable", {
   )
 
   expect_true("dsomop:condition.prevalence_by_year" %in% names(entries))
-  # Exact AVG/SD/MIN/MAX templates are available only through the typed,
-  # person-bounded sticky redesign path, never the direct SQL catalog.
-  expect_false("dsomop:drug_era.length_stats" %in% names(entries))
+  # Exact AVG/SD/MIN/MAX templates never run as raw SQL: the catalog answers
+  # them through reviewed replacements.
+  expect_identical(entries[["dsomop:drug_era.length_stats"]]$meta$adapter,
+                   "tools_auto")
 })
 
 test_that("contract-only query catalogs omit unsupported SQL constructs", {
@@ -436,6 +446,8 @@ test_that("contract-only query catalogs omit unsupported SQL constructs", {
   sql_server <- new.env(parent = emptyenv())
   sql_server$target_dialect <- "sql server"
   sql_server_entries <- .omopAnalysisQueryEntries(sql_server)
+  sql_server_entries <- Filter(function(entry) !is.null(entry$compute$sql),
+                               sql_server_entries)
   expect_false(any(vapply(sql_server_entries, function(entry) {
     grepl("\\b(LIMIT|EXTRACT|STDDEV)\\b", entry$compute$sql,
           ignore.case = TRUE, perl = TRUE)
