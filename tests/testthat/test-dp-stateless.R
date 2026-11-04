@@ -74,7 +74,7 @@
 test_that("the DP service reports the seed-only contract", {
   .stateless_state()
   handle <- .stateless_handle()
-  on.exit(cleanup_handle(handle))
+  on.exit(cleanup_handle(handle), add = TRUE)
   .dsomopDpEnsureRuntime(handle)
   status <- omopDpStatusDS()
   expect_identical(status$release_binding, "seed_data_versioned_v1")
@@ -90,7 +90,7 @@ test_that("the DP service reports the seed-only contract", {
 test_that("answers are deterministic across restarts and only the root persists", {
   state <- .stateless_state()
   handle <- .stateless_handle()
-  on.exit(cleanup_handle(handle))
+  on.exit(cleanup_handle(handle), add = TRUE)
   first <- .stateless_release(handle)
   expect_identical(attr(first, "dsomop_protection")$protection, "dp")
   .stateless_restart()
@@ -105,7 +105,7 @@ test_that("answers are deterministic across restarts and only the root persists"
 test_that("a database reload re-draws every answer at once", {
   .stateless_state()
   handle <- .stateless_handle()
-  on.exit(cleanup_handle(handle))
+  on.exit(cleanup_handle(handle), add = TRUE)
   before <- .stateless_release(handle)
   # A new person anywhere changes the private database version.
   DBI::dbExecute(handle$conn, paste(
@@ -121,7 +121,7 @@ test_that("a database reload re-draws every answer at once", {
 test_that("a damaged root fails closed instead of being replaced", {
   state <- .stateless_state()
   handle <- .stateless_handle()
-  on.exit(cleanup_handle(handle))
+  on.exit(cleanup_handle(handle), add = TRUE)
   .stateless_release(handle)
   root <- file.path(state, "secrets", "dp_noise_root")
   writeBin(as.raw(1:5), root)
@@ -135,7 +135,7 @@ test_that("a custodian-supplied root leaves no state on disk", {
   state <- .stateless_state()
   withr::local_envvar(c(DSOMOP_DP_NOISE_ROOT = strrep("ab", 32L)))
   handle <- .stateless_handle()
-  on.exit(cleanup_handle(handle))
+  on.exit(cleanup_handle(handle), add = TRUE)
   first <- .stateless_release(handle)
   .stateless_restart()
   expect_identical(.stateless_release(handle)$n_persons, first$n_persons)
@@ -154,7 +154,7 @@ test_that("seed-only releases need the resource or a custodial snapshot", {
 test_that("a clinical table without its identifier does not disable DP", {
   .stateless_state()
   handle <- .stateless_handle()
-  on.exit(cleanup_handle(handle))
+  on.exit(cleanup_handle(handle), add = TRUE)
   DBI::dbExecute(handle$conn, "CREATE TABLE cost (cost_event_id INTEGER)")
   key <- as.raw(1:32)
   version <- .dsomopDpDataVersion(handle, key)
