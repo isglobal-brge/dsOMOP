@@ -100,6 +100,7 @@ Options:
   default.dsomop.tools.mode="auto",
   default.dsomop.dp.enabled=TRUE,
   default.dsomop.dp.exclusive=FALSE,
+  default.dsomop.dp.binding="stateless",
   default.dsomop.dp.domain="",
   default.dsomop.dp.snapshot_id="",
   default.dsomop.dp.release_epsilon=0.1,

@@ -253,7 +253,31 @@ that a finite key supplies information-theoretic infinite randomness. See
 exactness argument, and [SAMPLER_DIAGNOSIS.md](SAMPLER_DIAGNOSIS.md) for the
 original defect.
 
-Since 2.7.1, the first successful answer for each public request identity,
+Since 2.10.0 the default binding (`dsomop.dp.binding = "stateless"`) stores
+nothing but the secret noise root. Every answer is a deterministic function of
+that root, the canonical question, the protected statistic and a private
+automatic database version (the largest identifier of each present clinical
+table, keyed with the root and never released). The same question on the same
+data returns the same answer after restarts and on every R server that shares
+the root, without a store, capacity limit or lock. A database reload changes
+the version, so every answer re-draws at once and nobody can tell which
+statistics changed; a change the version misses re-draws only the changed
+statistic and never reveals its exact difference. Each database version is a
+new release for privacy accounting. The root is created once in the state
+directory, or the custodian supplies it with `DSOMOP_DP_NOISE_ROOT` /
+`dsomop.dp.noise_root` (then nothing is written, and several R servers share
+it); a damaged root fails closed instead of being replaced. Status reports
+`release_binding = "seed_data_versioned_v1"`,
+`persistent_state = "noise_root_only"`, `service_capacity = "none"` and
+`history_dependent = FALSE`, with privacy contract
+`fixed_per_release_seed_data_versioned_v1`. Explicit DP releases need
+dsOMOPClient 2.10.0, which accepts this contract; the analysis-catalog DP
+questions work with any client. Upgrading re-draws previously asked questions
+once.
+
+The custodian can select the first-answer binding of dsOMOP 2.7.1 to 2.9.x
+(`dsomop.dp.binding = "first_answer"`), described next. With it, the first
+successful answer for each public request identity,
 public snapshot and privacy epoch is permanent. Every later valid request for
 that identity returns the stored complete canonical response, byte for byte,
 including after a restart. One changed person, many changed persons, unchanged

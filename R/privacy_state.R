@@ -1,8 +1,15 @@
 # Sticky differential-privacy state.
 #
-# A persistent custodial root authenticates permanent first-answer bindings.
-# Public request identity selects the response; private content binds only the
-# first release's noise context. Provenance admission still precedes lookup.
+# Two custodial bindings (dsomop.dp.binding):
+#   "stateless" (default since 2.10.0): every answer is a deterministic function
+#     of the secret noise root, the canonical question, the protected statistic
+#     and a private automatic database version. Nothing is stored except the
+#     root, answers are identical after restarts and on every R server that
+#     shares the root, and a database reload re-draws every answer at once.
+#   "first_answer": a persistent custodial root authenticates permanent
+#     first-answer bindings. Public request identity selects the response;
+#     private content binds only the first release's noise context.
+# Provenance admission precedes both.
 
 .DSOMOP_DP_PROTOCOL <- "dsomop-dp-release-v3"
 .DSOMOP_DP_CANONICAL_PROTOCOL <- "dsomop-dp-canonical-json-v1"
@@ -13,6 +20,9 @@
 .DSOMOP_PRIVACY_GUARANTEE <-
   "sticky_person_bounded_discrete_laplace_per_release_v1"
 .DSOMOP_DP_CONTRACT <- "fixed_per_release_snapshot_first_answer_v1"
+.DSOMOP_DP_STATELESS_CONTRACT <- "fixed_per_release_seed_data_versioned_v1"
+.DSOMOP_DP_STATELESS_BINDING <- "seed_data_versioned_v1"
+.DSOMOP_DP_BINDINGS <- c("stateless", "first_answer")
 
 .dsomopDpHex <- function(value) {
   if (!is.raw(value)) stop("Cannot encode non-raw DP state.", call. = FALSE)
@@ -144,7 +154,8 @@
     privacy_epoch = "DSOMOP_DP_PRIVACY_EPOCH",
     max_levels = "DSOMOP_DP_MAX_LEVELS",
     max_contributions = "DSOMOP_DP_MAX_CONTRIBUTIONS",
-    numeric_grid = "DSOMOP_DP_NUMERIC_GRID"
+    numeric_grid = "DSOMOP_DP_NUMERIC_GRID",
+    binding = "DSOMOP_DP_BINDING"
   )
   environment_name <- unname(environment_names[name])
   if (length(environment_name) != 1L || is.na(environment_name)) {
@@ -208,6 +219,70 @@
   enc2utf8(value)
 }
 
+# Custodial binding of DP answers: "stateless" (default) or "first_answer".
+.dsomopDpBindingMode <- function() {
+  value <- .dsomopDpOption("binding", "stateless")
+  if (!is.character(value) || length(value) != 1L || is.na(value) ||
+      !tolower(trimws(value)) %in% .DSOMOP_DP_BINDINGS) {
+    stop("dsomop.dp.binding must be \"stateless\" or \"first_answer\".",
+         call. = FALSE)
+  }
+  tolower(trimws(value))
+}
+
+# Clinical tables whose largest identifier tracks database reloads. The
+# lookups use the primary-key index, so they stay cheap on large databases.
+.DSOMOP_DP_VERSIONED_TABLES <- c(
+  person = "person_id", observation_period = "observation_period_id",
+  visit_occurrence = "visit_occurrence_id", visit_detail = "visit_detail_id",
+  condition_occurrence = "condition_occurrence_id",
+  drug_exposure = "drug_exposure_id",
+  procedure_occurrence = "procedure_occurrence_id",
+  device_exposure = "device_exposure_id", measurement = "measurement_id",
+  observation = "observation_id", note = "note_id", specimen = "specimen_id",
+  condition_era = "condition_era_id", drug_era = "drug_era_id",
+  dose_era = "dose_era_id", payer_plan_period = "payer_plan_period_id",
+  cost = "cost_id", episode = "episode_id"
+)
+
+#' Private automatic database version of the stateless DP binding
+#'
+#' The largest identifier of every present clinical table, keyed with the
+#' protected subkey: a reload changes it, so every stateless answer re-draws at
+#' once and nobody can tell which statistics changed. It is never released. A
+#' read failure stops the release rather than producing a different version.
+#'
+#' @param handle CDM handle, or NULL.
+#' @param key Protected subkey.
+#' @param custodial_snapshot Logical; the custodian configured the snapshot.
+#' @return Hex version string.
+#' @keywords internal
+.dsomopDpDataVersion <- function(handle, key, custodial_snapshot = FALSE) {
+  if (is.null(handle)) {
+    if (isTRUE(custodial_snapshot)) {
+      return(.dsomopDpHmac(key, "dsomop-dp-data-version-v1/custodial-snapshot"))
+    }
+    stop("Stateless DP releases need the connected OMOP resource (or a ",
+         "custodial dsomop.dp.snapshot_id).", call. = FALSE)
+  }
+  blueprint <- .buildBlueprint(handle)
+  present <- tolower(blueprint$tables$table_name[blueprint$tables$present_in_db])
+  tables <- sort(intersect(names(.DSOMOP_DP_VERSIONED_TABLES), present),
+                 method = "radix")
+  values <- lapply(stats::setNames(tables, tables), function(table) {
+    column <- .DSOMOP_DP_VERSIONED_TABLES[[table]]
+    sql <- .sql_translate(paste0("SELECT MAX(", column, ") AS m FROM ",
+                                 .qualifyTable(handle, table)),
+                          handle$target_dialect)
+    value <- .executeQuery(handle, sql)$m[[1L]]
+    if (is.null(value) || is.na(value)) "" else
+      format(value, scientific = FALSE, trim = TRUE)
+  })
+  .dsomopDpHmac(key, .dsomopDpCanonicalJson(list(
+    protocol = "dsomop-dp-data-version-v1", tables = values
+  )))
+}
+
 .dsomopDpEnabled <- function() {
   state <- .dsomopDpState()
   enabled <- .dsomopDpBoolean(.dsomopDpOption("enabled", TRUE), "enabled")
@@ -234,7 +309,10 @@
 }
 
 .dsomopDpNoiseRoot <- function() {
-  established <- .dsomopDpBindingEstablished()
+  stateless <- identical(.dsomopDpBindingMode(), "stateless")
+  # A stateless root is created on first use and never replaced: losing it
+  # re-draws every answer, so a corrupted root fails closed.
+  established <- !stateless && .dsomopDpBindingEstablished()
   resolve <- function() {
     environment <- Sys.getenv("DSOMOP_DP_NOISE_ROOT", unset = "")
     configured <- getOption(
@@ -260,7 +338,7 @@
     }
     root <- .ensureDsomopSecret(
       "dp_noise_root", require_existing = established,
-      replace_invalid = !established
+      replace_invalid = !established && !stateless
     )
     list(
       key = root, key_id = .dsomopDpRootId(root),
@@ -374,7 +452,9 @@
       "dsomop-dp-cdm-snapshot-resource-only-v1"
     } else "dsomop-dp-cdm-snapshot-fallback-v1"
     # Process-wide, including across DSLite sessions and runtime restarts.
-    if (!isTRUE(.pkg_state$dp_snapshot_fallback_warned)) {
+    # The stateless binding tracks reloads through its private data version.
+    if (!isTRUE(.pkg_state$dp_snapshot_fallback_warned) &&
+        !identical(.dsomopDpBindingMode(), "stateless")) {
       .pkg_state$dp_snapshot_fallback_warned <- TRUE
       warning("DP fallback snapshot cannot track data reloads; the custodian ",
               "must bump dsomop.dp.privacy_epoch after each reload. ",
@@ -412,10 +492,12 @@
       mechanism = .DSOMOP_DP_MECHANISM
     ))
   }
+  binding <- .dsomopDpBindingMode()
   domain <- .dsomopDpString(.dsomopDpOption("domain", ""), "domain",
                             required = FALSE)
   snapshot_id <- .dsomopDpString(.dsomopDpOption("snapshot_id", ""),
                                  "snapshot_id", required = FALSE)
+  custodial_snapshot <- nzchar(snapshot_id)
   if (!nzchar(domain) || !nzchar(snapshot_id)) {
     derived <- .dsomopDpDerivedIdentity(state$dp_handle,
                                         derive_snapshot = !nzchar(snapshot_id))
@@ -437,7 +519,11 @@
     release_protocol = .DSOMOP_DP_RELEASE_PROTOCOL,
     mechanism = .DSOMOP_DP_MECHANISM,
     sampler = .DSOMOP_DP_SAMPLER,
-    privacy_contract = .DSOMOP_DP_CONTRACT,
+    privacy_contract = if (identical(binding, "stateless")) {
+      .DSOMOP_DP_STATELESS_CONTRACT
+    } else .DSOMOP_DP_CONTRACT,
+    binding = binding,
+    custodial_snapshot = custodial_snapshot,
     adjacency = "add_remove_person",
     domain = domain,
     snapshot_id = snapshot_id,
@@ -502,7 +588,9 @@
       stop("DP policy changed during this R session; restart the session after ",
            "changing the snapshot or privacy parameters.", call. = FALSE)
     }
-    .dsomopDpBindingCheck(runtime$policy)
+    if (!identical(runtime$policy$binding, "stateless")) {
+      .dsomopDpBindingCheck(runtime$policy)
+    }
     return(runtime$policy)
   }
 
@@ -517,10 +605,19 @@
                                 "protected-fingerprint/v1"),
     noise = .dsomopDpSubkey(root$key, config$domain, "noise/v1")
   )
-  binding <- .dsomopDpBindingIdentity()
-  config$binding_store_id <- binding$store_id
-  config$binding_state_root <- binding$state_root
-  .dsomopDpBindingCheck(config)
+  if (identical(config$binding, "stateless")) {
+    # Nothing but the root persists: the private database version is read
+    # from the data once per R session.
+    config$data_version <- .dsomopDpDataVersion(
+      state$dp_handle, config$keys$protected,
+      custodial_snapshot = config$custodial_snapshot
+    )
+  } else {
+    binding <- .dsomopDpBindingIdentity()
+    config$binding_store_id <- binding$store_id
+    config$binding_state_root <- binding$state_root
+    .dsomopDpBindingCheck(config)
+  }
   state$dp_runtime <- list(
     enabled = TRUE, policy_hash = config$policy_hash, policy = config
   )
@@ -585,7 +682,7 @@
 }
 
 .dsomopDpReleaseId <- function(policy, semantic, snapshot) {
-  .dsomopDpHmac(policy$keys$query, .dsomopDpCanonicalJson(list(
+  identity <- list(
     protocol = policy$release_protocol,
     domain = policy$domain,
     policy_hash = policy$policy_hash,
@@ -593,7 +690,12 @@
     protected_fingerprint = snapshot$protected_fingerprint,
     privacy_epoch = policy$privacy_epoch,
     semantic = semantic
-  )))
+  )
+  # The first-answer binding keeps its 2.7.x release identity unchanged.
+  if (identical(policy$binding, "stateless")) {
+    identity$data_version <- policy$data_version
+  }
+  .dsomopDpHmac(policy$keys$query, .dsomopDpCanonicalJson(identity))
 }
 
 .dsomopDpRequestId <- function(policy, wrapped_semantic) {
@@ -672,6 +774,12 @@
       .dsomopDpCanonicalJson(payload), simplifyVector = TRUE
     )
   }
+  if (identical(policy$binding, "stateless")) {
+    # Deterministic in the root, the question, the protected statistic and
+    # the private database version: repeating it returns the same answer
+    # without any stored state.
+    return(make_fresh())
+  }
   .dsomopDpBindingRelease(
     policy, request_id, .dsomopDpResponseReservation(semantic), make_fresh
   )
@@ -715,11 +823,17 @@
     max_levels = policy$max_levels,
     max_contributions = policy$max_contributions,
     numeric_grid = policy$numeric_grid,
-    history_dependent = TRUE,
+    history_dependent = !identical(policy$binding, "stateless"),
     privacy_call_quota = "none",
-    persistent_state = "noise_root_and_release_bindings",
-    release_binding = "snapshot_first_answer_v1",
-    service_capacity = "public_identity_reservations_v1"
+    persistent_state = if (identical(policy$binding, "stateless")) {
+      "noise_root_only"
+    } else "noise_root_and_release_bindings",
+    release_binding = if (identical(policy$binding, "stateless")) {
+      .DSOMOP_DP_STATELESS_BINDING
+    } else "snapshot_first_answer_v1",
+    service_capacity = if (identical(policy$binding, "stateless")) {
+      "none"
+    } else "public_identity_reservations_v1"
   )
   if (!isTRUE(initialize)) return(status)
   status$noise_key_id <- policy$noise_root$key_id
