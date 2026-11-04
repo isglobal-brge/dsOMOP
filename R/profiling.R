@@ -1,19 +1,50 @@
 # Module: Profiling Engine
 # Data profiling functions for table stats, column stats, distributions, and concept analysis.
 
-# Custodial release-channel policy. Keep this outside the DP mechanism policy:
-# choosing the public surface must not change sticky noise or release identity.
+# The core of dsOMOP (connecting, loading tables through plans and recipes,
+# filters, factors, cohorts, manipulation and dsOMOP's own exploration) never
+# depends on differential privacy: it runs under the standard DataSHIELD
+# disclosure controls (nfilter.*) only. DP and the settings below concern only
+# the integrated OHDSI community tools: Achilles, OHDSI results tables, the
+# analysis catalog and the query library.
+
+# Custodial release-channel policy for the community tools. Keep this outside
+# the DP mechanism policy: choosing the public surface must not change sticky
+# noise or release identity.
 .dsomopDpExclusive <- function() {
-  .dsomopDpBoolean(.dsomopDpOption("exclusive", TRUE), "exclusive")
+  .dsomopDpBoolean(.dsomopDpOption("exclusive", FALSE), "exclusive")
 }
 
 .dsomopStandardStatisticsAllowed <- function() {
   !(.dsomopDpExclusive() && .dsomopDpEnabled())
 }
 
-# All count-bearing standard aggregate wrappers call this before resolving a
-# handle, decoding arguments, reading cached results, or querying population
-# data. Internal profiling remains available for server-side preparation.
+# The community tools are enabled unless the custodian disables them.
+.dsomopToolsEnabled <- function() {
+  value <- getOption("dsomop.tools.enabled",
+                     getOption("default.dsomop.tools.enabled", TRUE))
+  .dsomopParsePseudonymBoolean(value, "dsomop.tools.enabled")
+}
+
+# DP runtime is needed only when the community tools are enabled with DP on.
+.dsomopToolsDpActive <- function() {
+  isTRUE(tryCatch(.dsomopToolsEnabled() && .dsomopDpEnabled(),
+                  error = function(e) FALSE))
+}
+
+# Every community-tool endpoint calls this before resolving a handle, decoding
+# arguments, reading cached results, or querying population data.
+.dsomopRequireCommunityTool <- function() {
+  if (!.dsomopToolsEnabled()) {
+    stop("The OHDSI community tools (Achilles, OHDSI results, the analysis ",
+         "catalog and the query library) are disabled on this server. The ",
+         "data custodian can enable them again with the dsomop.tools.enabled ",
+         "option.", call. = FALSE)
+  }
+  .dsomopRequireStandardStatistics()
+}
+
+# Exclusive DP (a custodian opt-in) applies to the community tools only.
 .dsomopRequireStandardStatistics <- function() {
   if (!.dsomopStandardStatisticsAllowed()) {
     stop("DP-exclusive mode blocks standard statistical releases. ",

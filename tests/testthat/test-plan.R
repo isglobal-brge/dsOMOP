@@ -552,20 +552,25 @@ test_that("streaming cannot escape or overwrite its reserved directory", {
     "reserved staging directory"
   )
 
+  # Without arrow the writer stages CSV next to the requested .parquet path,
+  # so the sentinel must sit at the path that would actually be written.
+  written_ext <- if (.arrowAvailable()) ".parquet" else ".csv"
   existing <- file.path(staging_dir, "existing.parquet")
-  writeLines("sentinel", existing)
+  existing_written <- sub("\\.parquet$", written_ext, existing)
+  writeLines("sentinel", existing_written)
   expect_error(
     .executeQueryToParquet(handle$conn, sql, existing),
     "already exists"
   )
-  expect_identical(readLines(existing), "sentinel")
+  expect_identical(readLines(existing_written), "sentinel")
 
   if (.Platform$OS.type != "windows") {
     external <- tempfile("dsstaging_output_target_")
     writeLines("outside", external)
     on.exit(unlink(external), add = TRUE)
     linked_output <- file.path(staging_dir, "linked.parquet")
-    if (isTRUE(file.symlink(external, linked_output))) {
+    linked_written <- sub("\\.parquet$", written_ext, linked_output)
+    if (isTRUE(file.symlink(external, linked_written))) {
       expect_error(
         .executeQueryToParquet(handle$conn, sql, linked_output),
         "already exists"

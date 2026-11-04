@@ -38,10 +38,12 @@ direct option -> \code{default.*} prefix -> hardcoded fallback.
     reports this server-owned value, but does not reinterpret it as
     epsilon/delta, a generic DP budget, replay-stable noise, or permission to
     add noise to arbitrary query results.}
-  \item{\code{sticky_noise_enabled}}{Explicit capability flag. It is enabled
-    only after the dedicated DP service has initialized its persistent noise
-    root. Ordinary suppression/banding and the \code{nfilter.noise}
-    plot-noise variance floor never activate this flag.}
+  \item{\code{formal_dp_enabled}, \code{sticky_noise_enabled},
+    \code{privacy_ledger_enabled}}{Explicit capability flags. They are
+    always \code{FALSE}: these settings describe the core, whose
+    suppression/banding and \code{nfilter.noise} plot-noise variance floor
+    are not a formal DP accountant. The community tools report their own
+    DP status.}
 }
 }
 

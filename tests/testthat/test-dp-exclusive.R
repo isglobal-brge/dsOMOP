@@ -1,16 +1,19 @@
-# Keep the public surface explicit: adding a statistical aggregate requires a
-# decision about the DP-exclusive gate as well as a registration entry.
-.dp_exclusive_endpoints <- c(
+# Keep the public surface explicit. The core endpoints never consult DP or the
+# community-tools setting; the community-tool endpoints are disabled unless the
+# custodian enables them, and follow exclusive DP when a custodian opts in.
+.dp_core_endpoints <- c(
   "omopTableStatsDS", "omopColumnStatsDS", "omopDomainCoverageDS",
   "omopMissingnessDS", "omopValueCountsDS", "omopConceptPrevalenceDS",
   "omopCrossTabDS", "omopNumericRangeDS", "omopNumericHistogramDS",
   "omopNumericQuantilesDS", "omopDateCountsDS", "omopConceptDrilldownDS",
   "omopLocateConceptDS", "omopSafeCutpointsDS", "omopPlanPreviewDS",
-  "omopCohortListDS", "omopCohortGetDefinitionDS",
+  "omopCohortListDS", "omopCohortGetDefinitionDS", "omopFactorLevelsDS"
+)
+.dp_exclusive_endpoints <- c(
   "omopAchillesStatusDS", "omopAchillesResultsDS",
   "omopAchillesDistributionDS", "omopAchillesCatalogDS", "omopOhdsiStatusDS",
   "omopOhdsiTablesDS", "omopOhdsiResultsDS", "omopOhdsiSummaryDS",
-  "omopQueryExecDS", "omopAnalysisRunDS", "omopFactorLevelsDS"
+  "omopQueryExecDS", "omopAnalysisRunDS", "omopAnalysisRunAssignDS"
 )
 
 .dp_exclusive_local_policy <- function(enabled = TRUE, exclusive = TRUE,
@@ -41,7 +44,7 @@
   as.call(c(list(as.name(endpoint)), arguments))
 }
 
-test_that("exclusive DP rejects every standard statistical endpoint first", {
+test_that("exclusive DP rejects every community-tool endpoint first", {
   .dp_exclusive_local_policy()
   for (endpoint in .dp_exclusive_endpoints) {
     fn <- get(endpoint, envir = asNamespace("dsOMOP"))
@@ -53,7 +56,49 @@ test_that("exclusive DP rejects every standard statistical endpoint first", {
   }
 })
 
-test_that("nonexclusive DP retains every standard endpoint's argument path", {
+test_that("core endpoints never consult DP, whatever its settings", {
+  for (settings in list(
+    list(dsomop.dp.enabled = TRUE, dsomop.dp.exclusive = TRUE),
+    list(dsomop.dp.enabled = TRUE, dsomop.dp.exclusive = "invalid"),
+    list(dsomop.dp.enabled = "invalid", dsomop.dp.exclusive = TRUE),
+    list(dsomop.tools.enabled = FALSE)
+  )) {
+    withr::with_options(settings, {
+      for (endpoint in .dp_core_endpoints) {
+        expect_error(
+          eval(.dp_exclusive_probe(endpoint)),
+          "endpoint argument evaluated", info = endpoint
+        )
+      }
+    })
+  }
+})
+
+test_that("community tools are enabled by default; disabling refuses first", {
+  withr::local_options(list(dsomop.tools.enabled = NULL,
+                            default.dsomop.tools.enabled = NULL))
+  expect_true(.dsomopToolsEnabled())
+  withr::local_options(list(dsomop.tools.enabled = FALSE))
+  expect_false(.dsomopToolsEnabled())
+  for (endpoint in .dp_exclusive_endpoints) {
+    fn <- get(endpoint, envir = asNamespace("dsOMOP"))
+    argument_names <- setdiff(names(formals(fn)), "...")
+    arguments <- stats::setNames(
+      rep(list(quote(stop("endpoint argument evaluated", call. = FALSE))),
+          length(argument_names)),
+      argument_names
+    )
+    expect_error(
+      eval(as.call(c(list(as.name(endpoint)), arguments))),
+      "community tools .* are disabled on this server", info = endpoint
+    )
+  }
+  withr::local_options(list(dsomop.tools.enabled = NULL,
+                            default.dsomop.tools.enabled = FALSE))
+  expect_false(.dsomopToolsEnabled())
+})
+
+test_that("nonexclusive DP retains every tool endpoint's argument path", {
   .dp_exclusive_local_policy(exclusive = FALSE)
   for (endpoint in .dp_exclusive_endpoints) {
     expect_error(
@@ -63,7 +108,7 @@ test_that("nonexclusive DP retains every standard endpoint's argument path", {
   }
 })
 
-test_that("exclusivity leaves standard endpoints open when DP is disabled", {
+test_that("exclusivity leaves tool endpoints open when DP is disabled", {
   .dp_exclusive_local_policy(enabled = FALSE)
   for (endpoint in .dp_exclusive_endpoints) {
     expect_error(
@@ -73,33 +118,33 @@ test_that("exclusivity leaves standard endpoints open when DP is disabled", {
   }
 })
 
-test_that("exclusivity defaults on and supports custodial opt-outs", {
+test_that("exclusivity defaults off and supports custodial opt-ins", {
   .dp_exclusive_local_policy(exclusive = NULL)
-  expect_true(.dsomopDpExclusive())
-  expect_error(omopTableStatsDS(), "DP-exclusive.*omopDpReleaseDS")
-
-  withr::local_options(list(default.dsomop.dp.exclusive = FALSE))
   expect_false(.dsomopDpExclusive())
   expect_silent(.dsomopRequireStandardStatistics())
 
-  withr::local_options(list(dsomop.dp.exclusive = TRUE))
+  withr::local_options(list(default.dsomop.dp.exclusive = TRUE))
   expect_true(.dsomopDpExclusive())
-  expect_error(omopTableStatsDS(), "DP-exclusive.*omopDpReleaseDS")
+  expect_error(omopAchillesResultsDS(), "DP-exclusive.*omopDpReleaseDS")
 
-  withr::local_options(list(default.dsomop.dp.exclusive = TRUE,
-                           dsomop.dp.exclusive = FALSE))
+  withr::local_options(list(dsomop.dp.exclusive = FALSE))
   expect_false(.dsomopDpExclusive())
   expect_silent(.dsomopRequireStandardStatistics())
+
+  withr::local_options(list(default.dsomop.dp.exclusive = FALSE,
+                           dsomop.dp.exclusive = TRUE))
+  expect_true(.dsomopDpExclusive())
+  expect_error(omopAchillesResultsDS(), "DP-exclusive.*omopDpReleaseDS")
 })
 
-test_that("invalid exclusivity settings fail closed before endpoint arguments", {
+test_that("invalid exclusivity settings fail closed before tool arguments", {
   .dp_exclusive_local_policy()
   for (invalid in list(NA, 2, "invalid", c(TRUE, FALSE), list(TRUE),
                        character(0))) {
     withr::with_options(list(dsomop.dp.exclusive = invalid), {
       expect_error(.dsomopDpExclusive(), "dsomop.dp.exclusive.*TRUE or FALSE")
       expect_error(
-        omopTableStatsDS(stop("endpoint argument evaluated")),
+        omopAchillesResultsDS(stop("endpoint argument evaluated")),
         "dsomop.dp.exclusive.*TRUE or FALSE"
       )
     })
@@ -159,7 +204,7 @@ test_that("structural and vocabulary metadata remain available in exclusive DP",
   expect_identical(metadata(), baseline)
 })
 
-test_that("exclusive capabilities retain connection metadata without a population count", {
+test_that("capabilities keep the banded population in every DP mode", {
   .dp_exclusive_local_policy(enabled = FALSE, exclusive = FALSE)
   withr::local_options(list(nfilter.subset = 3, dsomop.nfilter.band = 5))
   handle <- create_test_handle(n_persons = 15)
@@ -179,8 +224,5 @@ test_that("exclusive capabilities retain connection metadata without a populatio
 
   withr::local_options(list(dsomop.dp.enabled = TRUE,
                            dsomop.dp.exclusive = TRUE))
-  structural <- omopGetCapabilitiesDS(symbol)
-  expect_false("total_persons" %in% names(structural))
-  baseline$total_persons <- NULL
-  expect_identical(structural, baseline)
+  expect_identical(omopGetCapabilitiesDS(symbol), baseline)
 })

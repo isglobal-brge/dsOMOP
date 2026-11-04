@@ -163,13 +163,57 @@
   items
 }
 
+.stagedCohortIdSemantic <- function(value, field = "cohort_definition_id",
+                                    minimum = 0L) {
+  if (is.null(value)) return(NULL)
+  if (is.list(value) && !is.data.frame(value) && length(value) == 1L) {
+    value <- value[[1L]]
+  }
+  numeric_value <- if (is.character(value) && length(value) == 1L &&
+      !is.na(value) && grepl("^[0-9]+$", value)) {
+    suppressWarnings(as.numeric(value))
+  } else if (is.numeric(value) && length(value) == 1L && !is.na(value)) {
+    as.numeric(value)
+  } else {
+    NA_real_
+  }
+  if (!is.finite(numeric_value) || numeric_value != floor(numeric_value) ||
+      numeric_value < minimum || numeric_value > .Machine$integer.max) {
+    stop("Staged ", field, " must be one exact integer >= ", minimum, ".",
+         call. = FALSE)
+  }
+  as.integer(numeric_value)
+}
+
+# Core-owned canonical encoding for the staged query fingerprint. Names are
+# sorted at every level and values encoded losslessly, so every server of the
+# same version computes the same digest; it never rejects a plan shape.
+.stagedCanonical <- function(x) {
+  if (is.factor(x)) x <- as.character(x)
+  if (inherits(x, "Date")) x <- format(x, "%Y-%m-%d")
+  if (is.list(x) && !is.data.frame(x)) {
+    if (!is.null(names(x))) x <- x[order(names(x), method = "radix")]
+    x <- lapply(x, .stagedCanonical)
+  }
+  x
+}
+
+.stagedQuerySemanticsSha256 <- function(value) {
+  json <- as.character(jsonlite::toJSON(
+    .stagedCanonical(value), auto_unbox = TRUE, null = "null", na = "null",
+    digits = NA, POSIXt = "ISO8601", UTC = TRUE, pretty = FALSE
+  ))
+  paste(format(as.raw(openssl::sha256(charToRaw(enc2utf8(json))))),
+        collapse = "")
+}
+
 .stagedScopeCohortSemantic <- function(value) {
   if ((is.numeric(value) && length(value) == 1L && !is.na(value)) ||
       (is.character(value) && length(value) == 1L && !is.na(value) &&
        grepl("^[0-9]+$", value))) {
     return(list(
       kind = "cohort_definition_id",
-      value = .dsomopPlanCohortIdSemantic(
+      value = .stagedCohortIdSemantic(
         value, field = "scope cohort_definition_id", minimum = 1L
       )
     ))
@@ -459,15 +503,13 @@
   population_id <- .stagedScalarString(
     output$population_id %||% "base", "staged output population_id"
   )
-  query_semantics_sha256 <- .dsomopDpSha256(.dsomopDpCanonicalJson(
-    .dsomopDpLineageValue(list(
-      protocol = "dsomop-staged-query-semantics-v2",
-      population_id = population_id,
-      index_anchor = .dsomopDpPlanCohortSemantic(plan$cohort),
-      population = .dsomopDpPlanPopulationSemantic(plan, population_id),
-      scope = .stagedPlanScopeSemantic(plan),
-      output = .dsomopDpPlanOutputSemantic(output)
-    ))
+  query_semantics_sha256 <- .stagedQuerySemanticsSha256(list(
+    protocol = "dsomop-staged-query-semantics-v3",
+    population_id = population_id,
+    cohort = plan$cohort,
+    populations = plan$populations,
+    scope = .stagedPlanScopeSemantic(plan),
+    output = output
   ))
   list(
     contract_version = "dsomop-staged-semantics-v2",
