@@ -2279,7 +2279,7 @@ test_that("concurrent different valid contents commit one first answer", {
   expect_identical(omopDpReleaseDS(changed, spec), values[[1L]])
 })
 
-test_that("onLoad runs self-tests but remains key-free", {
+test_that("onLoad runs no self-tests, reads no configuration and never fails", {
   events <- character(0)
   old_status <- .pkg_state$dp_status
   old_runtime <- .pkg_state$dp_runtime
@@ -2300,11 +2300,11 @@ test_that("onLoad runs self-tests but remains key-free", {
   testthat::local_mocked_bindings(
     .dsomopDpCanonicalSelfTest = function() {
       events <<- c(events, "kat")
-      invisible(TRUE)
+      stop("a failing self-test must not break loading or installation")
     },
     .dsomopPseudonymLifecycleSettings = function() {
       events <<- c(events, "pseudonym-settings")
-      list()
+      stop("malformed settings must not break loading or installation")
     },
     .dsomopDpEnabled = function() {
       stop("DP configuration must not be read during namespace load")
@@ -2318,13 +2318,12 @@ test_that("onLoad runs self-tests but remains key-free", {
   )
 
   expect_silent(.onLoad("/opt/R/00LOCK-dsOMOP/00new", "dsOMOP"))
-  expect_identical(events, "kat")
+  expect_identical(events, character(0))
   expect_false(.pkg_state$dp_status$ready)
 
-  events <- character(0)
   runtime_library <- withr::local_tempdir(pattern = "dsomop-runtime-lib-")
   expect_silent(.onLoad(runtime_library, "dsOMOP"))
-  expect_identical(events, c("kat", "pseudonym-settings"))
+  expect_identical(events, character(0))
   expect_false(.pkg_state$dp_status$ready)
   expect_identical(
     .pkg_state$dp_status$bootstrap, "pending_first_sticky_use"

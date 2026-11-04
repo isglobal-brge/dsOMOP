@@ -1,7 +1,7 @@
 Package: dsOMOP
 Type: Package
 Title: DataSHIELD Server-Side Integration for OMOP CDM Databases
-Version: 2.7.1
+Version: 2.7.2
 Authors@R: c(
     person("David", "Sarrat González", role = c("aut", "cre"), email = "david.sarrat@isglobal.org"),
     person("Xavier", "Escribà-Montagut", role = "aut"),
@@ -33,13 +33,13 @@ Imports:
     resourcer,
     jsonlite,
     filelock,
-    gmp,
     openssl,
     RSQLite,
     stats,
     utils
 Suggests:
     arrow,
+    gmp,
     RPostgres,
     RMariaDB (>= 1.3.2),
     ROracle,

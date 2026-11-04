@@ -12,7 +12,8 @@
 \item{pkgname}{Package name.}
 }
 \description{
-Validates public pseudonym lifecycle configuration in real service runtimes
-and registers the resource resolver.
+Registers the resource resolver. Loading never runs checks that can fail:
+R test-loads every package while installing it, so a failing load hook makes
+the package impossible to install.
 }
 \keyword{internal}

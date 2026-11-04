@@ -47,25 +47,22 @@
 
 #' Package load hook
 #'
-#' Validates public pseudonym lifecycle configuration in real service runtimes
-#' and registers the resource resolver.
+#' Registers the resource resolver. Loading never runs checks that can fail:
+#' R test-loads every package while installing it, so a failing load hook makes
+#' the package impossible to install.
 #'
 #' @param libname Library path.
 #' @param pkgname Package name.
 #' @keywords internal
 .onLoad <- function(libname, pkgname) {
-  # The sticky identity is a versioned wire contract. Detect accidental
-  # canonicalizer drift on every namespace load, including package checks.
-  .dsomopDpCanonicalSelfTest()
-
-  # Never generate or read key material while loading a namespace. Armadillo
-  # also applies its authoritative DataSHIELD profile options only after
-  # loading packages, so binding privacy configuration here would be both too
-  # early and backend-dependent. The first real dsOMOP service entry point
-  # validates the final options and atomically initializes durable state.
-  if (!.dsomopIsInstallOrDevelopmentLoad(libname)) {
-    .dsomopPseudonymLifecycleSettings()
-  }
+  # Never generate or read key material, configuration or self-tests while
+  # loading a namespace. Armadillo also applies its authoritative DataSHIELD
+  # profile options only after loading packages, so binding privacy
+  # configuration here would be both too early and backend-dependent. The first
+  # real dsOMOP service entry point validates the final options and atomically
+  # initializes durable state; the DP bootstrap runs the canonical-encoder and
+  # sampler self-test (.dsomopDpCanonicalSelfTest) before any release, and
+  # pseudonym settings are validated when pseudonyms are first used.
   .pkg_state$dp_sessions <- NULL
   .pkg_state$dp_handle <- NULL
   .pkg_state$dp_runtime <- NULL
