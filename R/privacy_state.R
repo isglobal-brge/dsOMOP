@@ -102,7 +102,7 @@
   sampler_observed <- .dsomopDpSha256(.dsomopDpCanonicalJson(list(
     protocol = "dsomop-dp-sampler-kat-v2",
     sampler = .DSOMOP_DP_SAMPLER,
-    noise = vapply(seq_len(9L), function(i) as.character(
+    noise = vapply(seq_len(9L), function(i) .dsomopBigDecimal(
       .dsomopDpDiscreteLaplace(
         as.raw(0:31),
         list(protocol = "dsomop-sampler-kat-v2", query = "fixed",
@@ -550,10 +550,10 @@
   )
   # Add and clip while still exact, including noise beyond the R integer range.
   # Only the bounded result is converted to the existing public numeric type.
-  noisy <- gmp::as.bigz(value) + noise
-  if (noisy < lower) return(lower)
-  if (noisy > upper) return(upper)
-  as.numeric(noisy)
+  noisy <- .dsomopBigAdd(value, noise)
+  if (.dsomopBigCompare(noisy, lower) < 0L) return(lower)
+  if (.dsomopBigCompare(noisy, upper) > 0L) return(upper)
+  .dsomopBigNumeric(noisy)
 }
 
 .dsomopDpSemanticId <- function(policy, semantic) {
