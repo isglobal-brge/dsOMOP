@@ -1,3 +1,18 @@
+# dsOMOP 2.9.1
+
+- New community-tool assign method `omopDpPlanExecuteDS()`: prepares
+  person-local tables for sticky DP releases from the same typed plans and
+  recipes as `omopPlanExecuteDS()`. It runs the unchanged core plan engine and
+  then seals each person-local output with the authenticated DP provenance
+  `omopDpReleaseDS()` requires (canonical plan lineage and resource dataset
+  identity). Ordinary loading with `omopPlanExecuteDS()` still never involves
+  DP. It needs the community tools and an available DP service, creates
+  in-memory tables only, and refuses outputs that are not person-local, with
+  the reason (for example a baseline `age_at_index`, whose protection depends
+  on other persons' ages: use an age at a public reference year instead).
+  Filtering or otherwise manipulating a prepared table drops its provenance,
+  so the release population must be defined in the plan.
+
 # dsOMOP 2.9.0
 
 - Automatic protection for the OHDSI community tools, with nothing to
