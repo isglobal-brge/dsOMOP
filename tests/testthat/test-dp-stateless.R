@@ -150,3 +150,19 @@ test_that("seed-only releases need the resource or a custodial snapshot", {
                                     custodial_snapshot = TRUE),
                "^[0-9a-f]{64}$")
 })
+
+test_that("a clinical table without its identifier does not disable DP", {
+  .stateless_state()
+  handle <- .stateless_handle()
+  on.exit(cleanup_handle(handle))
+  DBI::dbExecute(handle$conn, "CREATE TABLE cost (cost_event_id INTEGER)")
+  key <- as.raw(1:32)
+  version <- .dsomopDpDataVersion(handle, key)
+  expect_match(version, "^[0-9a-f]{64}$")
+  expect_identical(.dsomopDpDataVersion(handle, key), version)
+  DBI::dbExecute(handle$conn, "INSERT INTO cost VALUES (7)")
+  expect_identical(.dsomopDpDataVersion(handle, key), version)
+  DBI::dbExecute(handle$conn, paste(
+    "INSERT INTO person VALUES (900001, 8532, 1990, 1, 1, 8527, NULL)"))
+  expect_false(identical(.dsomopDpDataVersion(handle, key), version))
+})
