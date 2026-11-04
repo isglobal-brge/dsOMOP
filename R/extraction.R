@@ -4452,8 +4452,20 @@
 .computeDerivedColumns <- function(handle, derived_specs,
                                     person_ids = NULL,
                                     cohort_table = NULL) {
-  derived_specs <- .normalizeDerivedColumnSpecs(derived_specs)
-  if (length(derived_specs) == 0L) return(NULL)
+  if (is.null(derived_specs) || length(derived_specs) == 0) return(NULL)
+  # Ordinary correctness: derived columns can never overwrite row identity,
+  # and two derived columns cannot share one output name.
+  derived_names <- tolower(vapply(derived_specs, function(s) {
+    as.character(s$name %||% NA_character_)[[1L]]
+  }, character(1)))
+  if (any(derived_names %in% c("person_id", "subject_id", "row_id",
+                               "cohort_row_id"))) {
+    stop("Derived column names cannot reuse row identity columns.",
+         call. = FALSE)
+  }
+  if (anyDuplicated(derived_names[!is.na(derived_names)])) {
+    stop("Derived column names must be unique.", call. = FALSE)
+  }
 
   bp <- .buildBlueprint(handle)
   kinds <- vapply(derived_specs, function(s) s$kind, character(1))

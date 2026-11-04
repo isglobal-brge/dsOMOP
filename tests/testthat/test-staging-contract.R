@@ -296,7 +296,9 @@ test_that("staged resolver rejects forged, expired, and incompatible descriptors
   expect_error(omopStagedDatasetPath(wrong_origin), "origin")
 
   wrong_kind <- descriptor
-  wrong_kind$source_kind <- "staged_csv"
+  wrong_kind$source_kind <- if (identical(descriptor$source_kind, "staged_csv")) {
+    "staged_parquet"
+  } else "staged_csv"
   expect_error(omopStagedDatasetPath(wrong_kind), "source_kind")
 
   wrong_dataset <- descriptor

@@ -382,7 +382,7 @@ test_that("DATASHIELD and DESCRIPTION publish the same server options", {
   expect_identical(unname(dp_options), sort(c(
     "default.dsomop.dp.domain=\"\"",
     "default.dsomop.dp.enabled=TRUE",
-    "default.dsomop.dp.exclusive=TRUE",
+    "default.dsomop.dp.exclusive=FALSE",
     "default.dsomop.dp.max_contributions=10",
     "default.dsomop.dp.max_levels=1000",
     "default.dsomop.dp.numeric_grid=65535",
@@ -392,4 +392,7 @@ test_that("DATASHIELD and DESCRIPTION publish the same server options", {
     "default.dsomop.dp.release_store_id=\"\"",
     "default.dsomop.dp.snapshot_id=\"\""
   )))
+  # The OHDSI community tools are published enabled.
+  expect_true("default.dsomop.tools.enabled=TRUE" %in%
+                split_options(manifest[1, "Options"]))
 })

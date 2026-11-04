@@ -5,6 +5,55 @@
 # frame (except the capsule itself) to the current privacy domain/snapshot, so a
 # generic assign method cannot copy a valid attribute onto modified data.
 
+.dsomopDpStripProvenance <- function(x) {
+  attr(x, "dsomop_dp_provenance") <- NULL
+  attr(x, .DSOMOP_DP_FILTER_STATE_ATTRIBUTE) <- NULL
+  x
+}
+
+# The core of dsOMOP (plans, recipes, filters, factors, manipulation) never
+# calls DP. Only the community tools' own outputs may carry DP provenance, and
+# DP never decides whether a tool call succeeds: any DP error leaves the
+# result without DP provenance (DP releases then refuse it) and is logged.
+# The staged contract's query digest is a core fingerprint that is not
+# canonical across equivalent plans. DP lineage replaces it with the same
+# canonical DP digest as dsOMOP 2.7.x, so sticky identities are unchanged.
+.dsomopDpPublicOutputContract <- function(plan, output_name, component) {
+  contract <- .stagedSemanticContract(plan, output_name, component)
+  output <- plan$outputs[[output_name]]
+  population_id <- .stagedScalarString(
+    output$population_id %||% "base", "staged output population_id"
+  )
+  contract$query_semantics_sha256 <- .dsomopDpSha256(.dsomopDpCanonicalJson(
+    .dsomopDpLineageValue(list(
+      protocol = "dsomop-staged-query-semantics-v2",
+      population_id = population_id,
+      index_anchor = .dsomopDpPlanCohortSemantic(plan$cohort),
+      population = .dsomopDpPlanPopulationSemantic(plan, population_id),
+      scope = .stagedPlanScopeSemantic(plan),
+      output = .dsomopDpPlanOutputSemantic(output)
+    ))
+  ))
+  contract
+}
+
+# A community tool binds the DP runtime to its own handle only when DP is on;
+# `seal` is evaluated afterwards (lazily).
+.dsomopDpSealToolOutput <- function(handle, seal) {
+  if (isTRUE(tryCatch(.dsomopDpEnabled(), error = function(e) FALSE))) {
+    .dsomopDpEnsureRuntime(handle)
+  }
+  seal
+}
+
+.dsomopDpBestEffort <- function(result, expr, what) {
+  tryCatch(expr, error = function(e) {
+    message("[dsomop-dp] ", what, " kept without DP provenance: ",
+            conditionMessage(e))
+    .dsomopDpStripProvenance(result)
+  })
+}
+
 .DSOMOP_DP_PROVENANCE_PROTOCOL <- "dsomop-dp-person-local-provenance-v2"
 .DSOMOP_DP_LINEAGE_PROTOCOL <- "dsomop-dp-semantic-lineage-v1"
 .DSOMOP_DP_DATASET_PROTOCOL <- "dsomop-dp-dataset-identity-v1"
@@ -438,8 +487,9 @@
   )
   if (!is.list(capsule) || is.null(names(capsule)) ||
       !identical(names(capsule), expected_names)) {
-    stop("The omop.table lacks a valid person-local DP provenance capsule; ",
-         "recreate it through an audited dsOMOP plan or loader.",
+    stop("This table carries no DP provenance. DP releases accept only ",
+         "outputs of the OHDSI community tools; tables loaded through ",
+         "plans, recipes or manipulation never carry DP provenance.",
          call. = FALSE)
   }
   text_fields <- c("protocol", "adjacency", "domain", "snapshot_id",
@@ -1169,7 +1219,7 @@
     index_anchor = .dsomopDpPlanCohortSemantic(plan$cohort),
     population = .dsomopDpPlanPopulationSemantic(plan, population_id),
     output = .dsomopDpPlanOutputSemantic(output),
-    public_output_contract = .stagedSemanticContract(
+    public_output_contract = .dsomopDpPublicOutputContract(
       plan, output_name, component
     ),
     options = list(
@@ -1477,10 +1527,16 @@
     stop("Concept-factor recoding changed rows, identifiers, values, or ",
          "unauthorized column metadata.", call. = FALSE)
   }
-  # Factor-level metadata changes representation semantics. Until that
-  # transformation has one proven canonical identity, keep the recoded table
-  # usable outside DP releases but withdraw authenticated DP provenance.
-  result
+  # Recoding concept identifiers to factors changes only their R type: rows,
+  # identifiers and every value were verified unchanged above, and the DP
+  # primitives read categorical values as text (numeric statistics refuse
+  # factors). The table therefore keeps its DP lineage and release identity;
+  # different level lists cannot be used to draw fresh noise.
+  result <- .dsomopDpSetFilterState(
+    result,
+    .dsomopDpFilterState(source, provenance = provenance, policy = policy)
+  )
+  .dsomopDpSealInheritedLineage(result, provenance, provenance$producer, policy)
 }
 
 .dsomopDpResealBind <- function(result, x, y) {

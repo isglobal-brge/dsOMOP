@@ -7,9 +7,10 @@
 omopDpReleaseDS(x, spec)
 }
 \arguments{
-\item{x}{A server-created, pseudonymous \code{omop.table} carrying an
-authenticated person-local provenance capsule from an audited plan,
-loader, or manipulation path.}
+\item{x}{A server-created, pseudonymous \code{omop.table} produced by an
+OHDSI community tool (for example an analysis-catalog loader) and carrying
+its authenticated person-local provenance capsule. Tables loaded through
+plans, recipes or manipulation never carry DP provenance.}
 
 \item{spec}{Typed DP statistic specification, usually JSON-encoded by
 dsOMOPClient.}
