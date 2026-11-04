@@ -254,6 +254,11 @@
                  method = "radix")
   values <- lapply(stats::setNames(tables, tables), function(table) {
     column <- .DSOMOP_DP_VERSIONED_TABLES[[table]]
+    # A table without its standard identifier adds a constant instead of
+    # disabling DP; it simply does not track reloads.
+    if (!column %in% tolower(.listColumnsRaw(handle, table)$column_name)) {
+      return("-")
+    }
     sql <- .sql_translate(paste0("SELECT MAX(", column, ") AS m FROM ",
                                  .qualifyTable(handle, table)),
                           handle$target_dialect)
