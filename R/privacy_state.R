@@ -1,18 +1,22 @@
-# Sticky differential-privacy state.
+# Sticky differential-privacy state: the secret noise root, nothing else.
 #
-# A persistent custodial root authenticates permanent first-answer bindings.
-# Public request identity selects the response; private content binds only the
-# first release's noise context. Provenance admission still precedes lookup.
+# Every answer is a deterministic function of the root, the canonical
+# question, the protected statistic and a private automatic database version
+# (dsOMOP 2.10.0). Answers are identical after restarts and on every R server
+# that shares the root, and a database reload re-draws every answer at once.
+# No answers are stored. Provenance admission precedes every release.
 
 .DSOMOP_DP_PROTOCOL <- "dsomop-dp-release-v3"
 .DSOMOP_DP_CANONICAL_PROTOCOL <- "dsomop-dp-canonical-json-v1"
 .DSOMOP_DP_RELEASE_PROTOCOL <- "dsomop-dp-semantic-release-v1"
-.DSOMOP_DP_REQUEST_PROTOCOL <- "dsomop-dp-public-request-v1"
 .DSOMOP_DP_MECHANISM <- "dsomop-sticky-discrete-laplace-prf-v2"
 .DSOMOP_DP_SAMPLER <- "dsomop-dp-exact-discrete-laplace-v1"
 .DSOMOP_PRIVACY_GUARANTEE <-
   "sticky_person_bounded_discrete_laplace_per_release_v1"
-.DSOMOP_DP_CONTRACT <- "fixed_per_release_snapshot_first_answer_v1"
+.DSOMOP_DP_CONTRACT <- "fixed_per_release_seed_data_versioned_v1"
+.DSOMOP_DP_BINDING <- "seed_data_versioned_v1"
+.DSOMOP_DP_STATE_ERROR <-
+  "The DP release state is unavailable; contact the data custodian."
 
 .dsomopDpHex <- function(value) {
   if (!is.raw(value)) stop("Cannot encode non-raw DP state.", call. = FALSE)
@@ -208,6 +212,65 @@
   enc2utf8(value)
 }
 
+# Clinical tables whose largest identifier tracks database reloads. The
+# lookups use the primary-key index, so they stay cheap on large databases.
+.DSOMOP_DP_VERSIONED_TABLES <- c(
+  person = "person_id", observation_period = "observation_period_id",
+  visit_occurrence = "visit_occurrence_id", visit_detail = "visit_detail_id",
+  condition_occurrence = "condition_occurrence_id",
+  drug_exposure = "drug_exposure_id",
+  procedure_occurrence = "procedure_occurrence_id",
+  device_exposure = "device_exposure_id", measurement = "measurement_id",
+  observation = "observation_id", note = "note_id", specimen = "specimen_id",
+  condition_era = "condition_era_id", drug_era = "drug_era_id",
+  dose_era = "dose_era_id", payer_plan_period = "payer_plan_period_id",
+  cost = "cost_id", episode = "episode_id"
+)
+
+#' Private automatic database version of the DP answers
+#'
+#' The largest identifier of every present clinical table, keyed with the
+#' protected subkey: a reload changes it, so every answer re-draws at once and
+#' nobody can tell which statistics changed. It is never released. A read
+#' failure stops the release rather than producing a different version. A
+#' custodian who configures \code{dsomop.dp.snapshot_id} declares versions
+#' explicitly, and then no database is read.
+#'
+#' @param handle CDM handle, or NULL.
+#' @param key Protected subkey.
+#' @param custodial_snapshot Logical; the custodian configured the snapshot.
+#' @return Hex version string.
+#' @keywords internal
+.dsomopDpDataVersion <- function(handle, key, custodial_snapshot = FALSE) {
+  if (isTRUE(custodial_snapshot)) {
+    return(.dsomopDpHmac(key, "dsomop-dp-data-version-v1/custodial-snapshot"))
+  }
+  if (is.null(handle)) {
+    stop("DP releases need the connected OMOP resource (or a custodial ",
+         "dsomop.dp.snapshot_id).", call. = FALSE)
+  }
+  present <- tolower(.listTablesRaw(handle, handle$cdm_schema))
+  tables <- sort(intersect(names(.DSOMOP_DP_VERSIONED_TABLES), present),
+                 method = "radix")
+  values <- lapply(stats::setNames(tables, tables), function(table) {
+    column <- .DSOMOP_DP_VERSIONED_TABLES[[table]]
+    # A table without its standard identifier adds a constant instead of
+    # disabling DP; it simply does not track reloads.
+    if (!column %in% tolower(.listColumnsRaw(handle, table)$column_name)) {
+      return("-")
+    }
+    sql <- .sql_translate(paste0("SELECT MAX(", column, ") AS m FROM ",
+                                 .qualifyTable(handle, table)),
+                          handle$target_dialect)
+    value <- .executeQuery(handle, sql)$m[[1L]]
+    if (is.null(value) || is.na(value)) "" else
+      format(value, scientific = FALSE, trim = TRUE)
+  })
+  .dsomopDpHmac(key, .dsomopDpCanonicalJson(list(
+    protocol = "dsomop-dp-data-version-v1", tables = values
+  )))
+}
+
 .dsomopDpEnabled <- function() {
   state <- .dsomopDpState()
   enabled <- .dsomopDpBoolean(.dsomopDpOption("enabled", TRUE), "enabled")
@@ -233,8 +296,10 @@
   paste0("dpk_", substr(.dsomopDpSha256(root), 1L, 40L))
 }
 
+# The root is created on first use and never replaced: losing it re-draws every
+# answer, so a damaged root fails closed. A custodian-supplied root writes
+# nothing and lets several R servers give identical answers.
 .dsomopDpNoiseRoot <- function() {
-  established <- .dsomopDpBindingEstablished()
   resolve <- function() {
     environment <- Sys.getenv("DSOMOP_DP_NOISE_ROOT", unset = "")
     configured <- getOption(
@@ -258,16 +323,32 @@
         provider = "custodial_injected", material_exposed = FALSE
       ))
     }
-    root <- .ensureDsomopSecret(
-      "dp_noise_root", require_existing = established,
-      replace_invalid = !established
-    )
+    # The reason goes to the server log; analysts see one generic error.
+    created <- FALSE
+    root <- tryCatch({
+      path <- .dsomopSecretPath("dp_noise_root")
+      created <- !file.exists(path) && !.dsomopIsSymlink(path)
+      .ensureDsomopSecret(
+        "dp_noise_root", path = path, require_existing = FALSE,
+        replace_invalid = FALSE
+      )
+    }, error = function(e) {
+      message("[dsomop-dp-state] Custodian recovery required: ",
+              conditionMessage(e))
+      stop(structure(list(message = .DSOMOP_DP_STATE_ERROR, call = NULL),
+                     class = c("dsomop_dp_state_error", "error", "condition")))
+    })
+    if (created) {
+      message("[dsomop-dp-state] Custodian: created the DP noise root. Keep ",
+              "the dsOMOP state directory on persistent storage: every DP ",
+              "answer re-draws if the root is lost.")
+    }
     list(
       key = root, key_id = .dsomopDpRootId(root),
       provider = "persistent_file", material_exposed = FALSE
     )
   }
-  if (established) .dsomopDpBindingGuard(resolve()) else resolve()
+  resolve()
 }
 
 .dsomopDpSubkey <- function(root, domain, purpose) {
@@ -373,14 +454,7 @@
     protocol <- if (is.null(metadata)) {
       "dsomop-dp-cdm-snapshot-resource-only-v1"
     } else "dsomop-dp-cdm-snapshot-fallback-v1"
-    # Process-wide, including across DSLite sessions and runtime restarts.
-    if (!isTRUE(.pkg_state$dp_snapshot_fallback_warned)) {
-      .pkg_state$dp_snapshot_fallback_warned <- TRUE
-      warning("DP fallback snapshot cannot track data reloads; the custodian ",
-              "must bump dsomop.dp.privacy_epoch after each reload. ",
-              "Alternatively configure dsomop.dp.domain and ",
-              "dsomop.dp.snapshot_id explicitly.", call. = FALSE)
-    }
+    # Reloads are tracked by the private database version of every answer.
   }
   list(domain = domain,
        snapshot_id = paste0("cdm_", .dsomopDpSha256(.dsomopDpCanonicalJson(list(
@@ -395,13 +469,10 @@
 #' cdm_release_date, cdm_version, vocabulary_version). Explicit values win.
 #' Complete source rows are canonically sorted; incomplete or absent source
 #' metadata falls back to sorted vocabulary versions, then resource identity
-#' alone, with one warning per R session. Explicit domain/snapshot values win.
-#' Bump dsomop.dp.privacy_epoch after each fallback data reload or whenever data
-#' change without metadata changes. All enabled services require a persistent
-#' private DSOMOP_STATE_DIR (or dsomop.state_dir), including injected-root
-#' deployments. First use initializes when the store, configured UUID and local
-#' pin are absent; established state loss fails closed. External UUID pinning is
-#' recommended for stronger loss detection. Ephemeral state is test-only.
+#' alone. Data reloads need no epoch bump: the private database version of
+#' every answer tracks them (\code{.dsomopDpDataVersion}), and a custodial
+#' snapshot_id replaces that automatic version. The noise root is the only
+#' persistent DP state; ephemeral state directories are test-only.
 #' @keywords internal
 .dsomopDpPolicyConfig <- function() {
   state <- .dsomopDpState()
@@ -416,6 +487,7 @@
                             required = FALSE)
   snapshot_id <- .dsomopDpString(.dsomopDpOption("snapshot_id", ""),
                                  "snapshot_id", required = FALSE)
+  custodial_snapshot <- nzchar(snapshot_id)
   if (!nzchar(domain) || !nzchar(snapshot_id)) {
     derived <- .dsomopDpDerivedIdentity(state$dp_handle,
                                         derive_snapshot = !nzchar(snapshot_id))
@@ -438,6 +510,7 @@
     mechanism = .DSOMOP_DP_MECHANISM,
     sampler = .DSOMOP_DP_SAMPLER,
     privacy_contract = .DSOMOP_DP_CONTRACT,
+    custodial_snapshot = custodial_snapshot,
     adjacency = "add_remove_person",
     domain = domain,
     snapshot_id = snapshot_id,
@@ -502,7 +575,6 @@
       stop("DP policy changed during this R session; restart the session after ",
            "changing the snapshot or privacy parameters.", call. = FALSE)
     }
-    .dsomopDpBindingCheck(runtime$policy)
     return(runtime$policy)
   }
 
@@ -517,10 +589,12 @@
                                 "protected-fingerprint/v1"),
     noise = .dsomopDpSubkey(root$key, config$domain, "noise/v1")
   )
-  binding <- .dsomopDpBindingIdentity()
-  config$binding_store_id <- binding$store_id
-  config$binding_state_root <- binding$state_root
-  .dsomopDpBindingCheck(config)
+  # Nothing but the root persists: the private database version is read from
+  # the data once per R session.
+  config$data_version <- .dsomopDpDataVersion(
+    state$dp_handle, config$keys$protected,
+    custodial_snapshot = config$custodial_snapshot
+  )
   state$dp_runtime <- list(
     enabled = TRUE, policy_hash = config$policy_hash, policy = config
   )
@@ -592,30 +666,9 @@
     snapshot_id = snapshot$snapshot_id,
     protected_fingerprint = snapshot$protected_fingerprint,
     privacy_epoch = policy$privacy_epoch,
+    data_version = policy$data_version,
     semantic = semantic
   )))
-}
-
-.dsomopDpRequestId <- function(policy, wrapped_semantic) {
-  .dsomopDpHmac(policy$keys$query, .dsomopDpCanonicalJson(list(
-    protocol = .DSOMOP_DP_REQUEST_PROTOCOL,
-    domain = policy$domain,
-    policy_hash = policy$policy_hash,
-    snapshot_id = .dsomopDpPublicSnapshotId(policy),
-    privacy_epoch = policy$privacy_epoch,
-    semantic = wrapped_semantic
-  )))
-}
-
-# Public worst-case serialized response allowance: fixed metadata, public
-# strings (including escaping), and histogram coordinates. No private count,
-# fingerprint or observed payload size controls capacity admission. The store
-# adds no eviction and never refunds a reservation for a smaller actual answer.
-.dsomopDpResponseReservation <- function(wrapped_semantic) {
-  public_bytes <- nchar(.dsomopDpCanonicalJson(wrapped_semantic), type = "bytes")
-  statistic <- wrapped_semantic$statistic
-  coordinates <- max(1, length(statistic$levels), length(statistic$breaks))
-  8192 + 16384 + 4 * public_bytes + 64 * coordinates
 }
 
 .dsomopDpRelease <- function(policy, semantic, bounded_snapshot,
@@ -630,8 +683,10 @@
     sensitivity = sensitivity,
     statistic = semantic
   )
-  request_id <- .dsomopDpRequestId(policy, semantic)
-  make_fresh <- function() {
+  # Deterministic in the root, the question, the protected statistic and the
+  # private database version: repeating a request returns the same answer
+  # without any stored state.
+  release <- function() {
     semantic_query_id <- .dsomopDpSemanticId(policy, semantic)
     snapshot <- .dsomopDpSnapshotBinding(policy, bounded_snapshot)
     release_id <- .dsomopDpReleaseId(policy, semantic, snapshot)
@@ -672,9 +727,7 @@
       .dsomopDpCanonicalJson(payload), simplifyVector = TRUE
     )
   }
-  .dsomopDpBindingRelease(
-    policy, request_id, .dsomopDpResponseReservation(semantic), make_fresh
-  )
+  release()
 }
 
 .dsomopDpDormantStatus <- function() {
@@ -715,11 +768,11 @@
     max_levels = policy$max_levels,
     max_contributions = policy$max_contributions,
     numeric_grid = policy$numeric_grid,
-    history_dependent = TRUE,
+    history_dependent = FALSE,
     privacy_call_quota = "none",
-    persistent_state = "noise_root_and_release_bindings",
-    release_binding = "snapshot_first_answer_v1",
-    service_capacity = "public_identity_reservations_v1"
+    persistent_state = "noise_root_only",
+    release_binding = .DSOMOP_DP_BINDING,
+    service_capacity = "none"
   )
   if (!isTRUE(initialize)) return(status)
   status$noise_key_id <- policy$noise_root$key_id
@@ -766,4 +819,24 @@
   status <- .dsomopDpBootstrap()
   committed <- TRUE
   invisible(status)
+}
+
+#' Deprecated: dsOMOP stores no DP answers
+#'
+#' dsOMOP 2.7.1 to 2.9.x kept a permanent first-answer store that custodians
+#' could initialize with this function. Since 2.10.0 every DP answer is a
+#' deterministic function of the secret noise root, the question and the data,
+#' so there is no store to initialize. The function only signals that.
+#' Existing \code{release-bindings} files are no longer read.
+#'
+#' @param store_id Ignored.
+#' @return \code{NA_character_}, invisibly.
+#' @export
+omopInitializeReleaseStore <- function(store_id = NULL) {
+  .Deprecated(msg = paste0(
+    "dsOMOP 2.10.0 stores no DP answers: they are deterministic in the ",
+    "noise root, the question and the data, so there is no release store to ",
+    "initialize."
+  ))
+  invisible(NA_character_)
 }
