@@ -1,7 +1,7 @@
 Package: dsOMOP
 Type: Package
 Title: DataSHIELD Server-Side Integration for OMOP CDM Databases
-Version: 2.9.0
+Version: 2.9.1
 Authors@R: c(
     person("David", "Sarrat González", role = c("aut", "cre"), email = "david.sarrat@isglobal.org"),
     person("Xavier", "Escribà-Montagut", role = "aut"),
@@ -126,7 +126,8 @@ AssignMethods:
     omopFilterDS,
     omopSelectDS,
     omopBindRowsDS,
-    omopAnalysisRunAssignDS
+    omopAnalysisRunAssignDS,
+    omopDpPlanExecuteDS
 Options:
     nfilter.subset=3,
     nfilter.tab=3,

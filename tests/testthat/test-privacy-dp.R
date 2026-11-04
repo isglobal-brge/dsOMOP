@@ -964,6 +964,95 @@ test_that("derived-only person-level age plans load without DP provenance", {
     .dp_lineage(.dp_seal_plan(loaded, changed, "ages"))
   ))
 })
+test_that("DP preparation seals plan outputs while plan loading stays DP-free", {
+  .dp_local_state()
+  plan <- list(
+    outputs = list(ages = list(
+      type = "person_level", tables = list(), representation = "features",
+      derived_columns = list(age_at_2025 = list(
+        kind = "age", name = "age_at_2025", reference = "today",
+        reference_date = "2025-07-01"
+      )),
+      population_id = "base", options = list()
+    )),
+    populations = list(base = list(
+      id = "base", label = "All Persons", kind = "criteria"
+    )),
+    options = list(translate_concepts = TRUE, block_sensitive = TRUE,
+                   factor_concepts = TRUE),
+    cohort = NULL, scope = NULL
+  )
+  handle <- create_test_handle()
+  identity <- "test://resource-scoped/dp-prepare"
+  key <- .testPseudonymKey("dp-prepare")
+  resource_id <- substr(
+    as.character(openssl::sha256(charToRaw(identity))), 1L, 32L
+  )
+  pseudonym_environment <- paste(format(key), collapse = "")
+  names(pseudonym_environment) <- paste0("DSOMOP_PSEUDONYM_KEY_", resource_id)
+  withr::local_envvar(c(
+    pseudonym_environment, DSOMOP_PSEUDONYM_PROVIDER = "scoped",
+    DSOMOP_PSEUDONYM_EPOCH = "1", DSOMOP_PSEUDONYM_REQUIRE_EXISTING = "false",
+    DSOMOP_PSEUDONYM_ROOT = "", DSOMOP_PSEUDONYM_KEY = ""
+  ))
+  handle$person_key_identity <- identity
+  handle$person_key_id <- .personKeyId(key)
+  handle$person_key_provider <- "scoped"
+  handle$person_key_epoch <- 1L
+  handle$person_key_require_existing <- FALSE
+  handle$person_key_contract_version <- 1L
+  handle_symbol <- paste0("dp_prepare_", Sys.getpid())
+  .setHandle(handle_symbol, handle)
+  on.exit(.removeHandle(handle_symbol), add = TRUE)
+
+  session <- new.env(parent = environment())
+  session$handle_symbol <- handle_symbol
+  session$plan <- plan
+  eval(quote(omopPlanExecuteDS(handle_symbol, plan, list(ages = "D_ages"))),
+       envir = session)
+  eval(quote(omopDpPlanExecuteDS(handle_symbol, plan, list(ages = "DP_ages"))),
+       envir = session)
+  loaded <- get("D_ages", envir = session, inherits = FALSE)
+  prepared <- get("DP_ages", envir = session, inherits = FALSE)
+  expect_null(attr(loaded, "dsomop_dp_provenance", exact = TRUE))
+  expect_false(is.null(attr(prepared, "dsomop_dp_provenance", exact = TRUE)))
+  # The prepared rows are the loaded rows; only the seal differs.
+  expect_identical(sort(names(prepared)), sort(names(loaded)))
+  expect_identical(nrow(prepared), nrow(loaded))
+  expect_error(omopDpReleaseDS(loaded, list(statistic = "count")),
+               "carries no DP provenance")
+  released <- omopDpReleaseDS(prepared, list(statistic = "count"))
+  expect_identical(released$statistic, "count")
+  expect_identical(omopDpReleaseDS(prepared, list(statistic = "count")),
+                   released)
+
+  # Preparing for DP is a community-tool operation that needs DP.
+  withr::with_options(list(dsomop.tools.enabled = FALSE), expect_error(
+    eval(quote(omopDpPlanExecuteDS(handle_symbol, plan,
+                                   list(ages = "DP_off"))), envir = session),
+    "community tools .* are disabled"))
+  expect_error(
+    eval(quote(omopDpPlanExecuteDS(handle_symbol, plan, list(ages = "DP_st"),
+                                   output_mode = "staged")), envir = session),
+    "in-memory tables only")
+  baseline <- list(
+    cohort = list(type = "spec",
+                  spec = list(type = "condition", concept_set = 201820)),
+    anchor = list(table = "person", id_col = "person_id"),
+    outputs = list(baseline = list(
+      type = "baseline", columns = "gender_concept_id",
+      derived = "age_at_index"
+    )),
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)
+  )
+  session$baseline <- baseline
+  expect_error(
+    eval(quote(omopDpPlanExecuteDS(handle_symbol, baseline,
+                                   list(baseline = "DP_base"))),
+         envir = session),
+    "public reference year")
+})
+
 test_that("derived column lineage uses a closed canonical contract", {
   .dp_local_state()
   semantic_key <- function(specs) {
