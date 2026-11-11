@@ -1,0 +1,19 @@
+function,kind,publisher,owner,status,notes
+omopPlanExecuteDS,assign,.publishOutputs,WS-1,skeleton,plan outputs (memory and staged)
+omopDpPlanExecuteDS,assign,.publishOutputs,WS-1,skeleton,DP plan outputs; seals before commit (design 7.5)
+omopCohortCreateDS,assign,creation gate until the consumer audit passes,WS-1,skeleton,design 1.4
+omopCohortCombineDS,assign,creation gate until the consumer audit passes,WS-1,skeleton,design 1.4
+omopCohortFromTableDS,assign,.publishOutputs,WS-1,skeleton,
+omopMergeDS,assign,.publishOutputs,WS-1,skeleton,
+omopFilterDS,assign,.publishOutputs,WS-1,skeleton,
+omopSelectDS,assign,.publishOutputs,WS-1,skeleton,
+omopBindRowsDS,assign,.publishOutputs,WS-1,skeleton,
+omopMutateDS,assign,.publishOutputs,WS-9,skeleton,new in 2.10.3 (design 2.11)
+omopAnalysisRunAssignDS,assign,.publishOutputs,WS-1,skeleton,
+omopAsFactorColumnsDS,assign,inherits the published frame,WS-1,skeleton,no new person rows
+omopInitDS,assign,none (handle only),WS-1,skeleton,no patient rows
+omopCleanupDS,assign,none,WS-1,skeleton,
+omopPlanStatusDS,aggregate,fixed-schema status object,WS-1,skeleton,new in 2.10.3 (design 7.3)
+omopPlanExplainDS,aggregate,plan-derived; no patient data,WS-2,skeleton,new in 2.10.3 (design 6.15)
+omopStagedRevokeDS,aggregate,manifest rewrite,WS-1,skeleton,new in 2.10.3 (design 7.3)
+omopStagedDatasetPath,return,committed-manifest membership check,WS-1,skeleton,server-side consumer path (design 7.3)

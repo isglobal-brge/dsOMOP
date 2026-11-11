@@ -1,0 +1,10 @@
+table_name,cost_domain_id,key_column,basis
+condition_occurrence,Condition,condition_occurrence_id,OMOP CDM 5.4 cost.cost_domain_id references DOMAIN.domain_id (Field_Level.csv line 315)
+drug_exposure,Drug,drug_exposure_id,OMOP CDM 5.4 cost.cost_domain_id references DOMAIN.domain_id (Field_Level.csv line 315)
+procedure_occurrence,Procedure,procedure_occurrence_id,OMOP CDM 5.4 cost.cost_domain_id references DOMAIN.domain_id (Field_Level.csv line 315)
+device_exposure,Device,device_exposure_id,OMOP CDM 5.4 cost.cost_domain_id references DOMAIN.domain_id (Field_Level.csv line 315)
+measurement,Measurement,measurement_id,OMOP CDM 5.4 cost.cost_domain_id references DOMAIN.domain_id (Field_Level.csv line 315)
+observation,Observation,observation_id,OMOP CDM 5.4 cost.cost_domain_id references DOMAIN.domain_id (Field_Level.csv line 315)
+visit_occurrence,Visit,visit_occurrence_id,OMOP CDM 5.4 cost.cost_domain_id references DOMAIN.domain_id (Field_Level.csv line 315)
+visit_detail,Visit Detail,visit_detail_id,OMOP CDM 5.4 cost.cost_domain_id references DOMAIN.domain_id (Field_Level.csv line 315)
+specimen,Specimen,specimen_id,OMOP CDM 5.4 cost.cost_domain_id references DOMAIN.domain_id (Field_Level.csv line 315)

@@ -1,0 +1,6 @@
+concept_id,concept_name,operator,class,notes
+4172703,=,=,equality,OMOP Meas Value Operator concept; default class for NULL or unknown operators
+4171756,<,<,inequality,left-censored value
+4172704,>,>,inequality,right-censored value
+4171754,<=,<=,inequality,left-censored value
+4171755,>=,>=,inequality,right-censored value

@@ -1,0 +1,431 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://isglobal-brge.github.io/dsOMOP/schema/mutate-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "assign"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "assign": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "expr"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+          },
+          "expr": {
+            "$ref": "#/$defs/expr"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "expr": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "col"
+          ],
+          "properties": {
+            "col": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lit"
+          ],
+          "properties": {
+            "lit": {
+              "type": [
+                "number",
+                "string",
+                "boolean",
+                "null"
+              ]
+            },
+            "as": {
+              "enum": [
+                "numeric",
+                "integer",
+                "text",
+                "date",
+                "boolean"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "args"
+          ],
+          "properties": {
+            "op": {
+              "enum": [
+                "+",
+                "-",
+                "*",
+                "/"
+              ]
+            },
+            "args": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "$ref": "#/$defs/expr"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pred"
+          ],
+          "properties": {
+            "pred": {
+              "$ref": "#/$defs/predicate"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ifelse"
+          ],
+          "properties": {
+            "ifelse": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "test",
+                "yes",
+                "no"
+              ],
+              "properties": {
+                "test": {
+                  "$ref": "#/$defs/predicate"
+                },
+                "yes": {
+                  "$ref": "#/$defs/expr"
+                },
+                "no": {
+                  "$ref": "#/$defs/expr"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "case_when"
+          ],
+          "properties": {
+            "case_when": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cases"
+              ],
+              "properties": {
+                "cases": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "when",
+                      "then"
+                    ],
+                    "properties": {
+                      "when": {
+                        "$ref": "#/$defs/predicate"
+                      },
+                      "then": {
+                        "$ref": "#/$defs/expr"
+                      }
+                    }
+                  }
+                },
+                "else": {
+                  "$ref": "#/$defs/expr"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "coalesce"
+          ],
+          "properties": {
+            "coalesce": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/$defs/expr"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cut"
+          ],
+          "properties": {
+            "cut": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "arg",
+                "breaks"
+              ],
+              "properties": {
+                "arg": {
+                  "$ref": "#/$defs/expr"
+                },
+                "breaks": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 64,
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "right": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "labels": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "predicate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "and"
+          ],
+          "properties": {
+            "and": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/predicate"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "or"
+          ],
+          "properties": {
+            "or": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/predicate"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "not"
+          ],
+          "properties": {
+            "not": {
+              "$ref": "#/$defs/predicate"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/predicate_leaf"
+        }
+      ],
+      "$comment": "copied from plan-v2.json#/$defs/predicate by tools/ws0/gen_schema_artefacts.py; `var` additionally accepts an earlier assigned column name"
+    },
+    "predicate_leaf": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "var",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "var": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            },
+            "op": {
+              "enum": [
+                "==",
+                "!=",
+                "<",
+                "<=",
+                ">",
+                ">="
+              ]
+            },
+            "value": {
+              "$ref": "#/$defs/scalar"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "var",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "var": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            },
+            "op": {
+              "enum": [
+                "in",
+                "not_in"
+              ]
+            },
+            "value": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 10000,
+              "items": {
+                "$ref": "#/$defs/scalar"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "var",
+            "op"
+          ],
+          "properties": {
+            "var": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            },
+            "op": {
+              "enum": [
+                "is_null",
+                "not_null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "var",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "var": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            },
+            "op": {
+              "const": "between"
+            },
+            "value": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lower",
+                "upper"
+              ],
+              "properties": {
+                "lower": {
+                  "$ref": "#/$defs/scalar"
+                },
+                "upper": {
+                  "$ref": "#/$defs/scalar"
+                },
+                "upper_inclusive": {
+                  "type": "boolean",
+                  "default": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "scalar": {
+      "type": [
+        "number",
+        "string",
+        "boolean"
+      ]
+    },
+    "column_name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    }
+  }
+}

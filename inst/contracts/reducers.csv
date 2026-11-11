@@ -1,0 +1,36 @@
+fn,input_roles,ordering_selection,null_missing,empty_result,output_type,suffix,notes
+binary,rows,none,none,0,integer,none,zero-fill; 0/1
+count,rows; distinct in row|day|visit|concept (default row),none,NULL visit keys are not counted for distinct=visit,0,integer,none,zero-fill
+n_distinct,concept column (legacy default distinct concept; distinct may override),none,NULLs ignored,0,integer,none,zero-fill
+first_value,V,first by (start_date; source_ns; event_id); missing=skip drops NULL V before selection (legacy); missing=keep selects the row first,NA when the selected V is NULL,NA,numeric,none,value; unit; operator and date come from the same selected row
+last_value,V,last by (start_date; source_ns; event_id); missing=skip drops NULL V before selection (legacy); missing=keep selects the row first,NA when the selected V is NULL,NA,numeric,none,value; unit; operator and date come from the same selected row
+nth_value,V; n (scalar or vector),nth by order,as first_value,NA,numeric,n = a:b expands to suffixed columns,NA beyond the count
+closest_value,V; A; side,smallest abs(D - A) respecting side; ties by order,as first_value,NA,numeric,none,requires an anchor
+mean,V,none,NULL V ignored,NA,numeric,none,
+min,V,none,NULL V ignored,NA,numeric,none,
+max,V,none,NULL V ignored,NA,numeric,none,
+sum,V,none,NULL V ignored,0,numeric,none,
+sd,V,none,NULL V ignored; needs at least 2 values,NA,numeric,none,
+cv,V,none,NULL V ignored; needs at least 2 values,NA,numeric,none,NA when the mean is 0
+median,V,none,NULL V ignored,NA,numeric,none,type-7 quantile
+quantile,V; p,none,NULL V ignored,NA,numeric,none,type-7 quantile
+mode,concept or value column,smallest value on ties,NULL ignored,NA,same type as the column,none,
+slope,V; D,needs at least 2 distinct D,NULL ignored,NA,numeric,none,per-day slope
+any,predicate (omop_where) over the window rows,none,UNKNOWN kept: TRUE if any row TRUE; FALSE if every row FALSE; NA otherwise,0,integer 0/1 or NA,none,rows are not pre-filtered by the predicate
+all,predicate (omop_where) over the window rows,none,UNKNOWN kept: FALSE if any row FALSE; TRUE if every row TRUE; NA otherwise,NA,integer 0/1 or NA,none,empty window is NA (documented deviation from vacuous truth)
+first_date,D; A,first by order,none,NA,integer days from A,none,
+last_date,D; A,last by order,none,NA,integer days from A,none,
+days_since,D; reference anchor (required),last D <= reference,none,NA,integer,none,independent of the window bounds
+days_until,D; reference anchor (required),first D >= reference,none,NA,integer,none,independent of the window bounds
+time_since,D; reference_date; unit in day|month,legacy fixed date,none,NA,integer,none,v1 semantics
+duration_sum,start/end,none,none,NA,integer,none,legacy end - start per row; overlaps counted twice; not an adherence quantity
+covered_days,interval rows within the window; coverage in recorded|effective_supply (effective_supply only for a stockpiled source); observed_only FALSE|TRUE,union length of the selected relation clipped to the window; with observed_only=TRUE intersected first with the same roster/component-associated recorded observation union used by observed_days,none,0,integer,none,excludes grace and persistence; never summed durations; observed_only=TRUE is the PDC numerator
+supply_days,drug rows with the days_supply role; fills in start_in_window|clipped,none,NULL; non-positive or non-integer supply contributes 0,0,integer,none,MPR numerator; start_in_window sums days_supply of fills starting in the window; clipped counts each fill's supplied days inside the window without unioning
+drug_duration,start/end; agg in mean|sum|max,none,none,NA,numeric,none,legacy
+gap_max,D,sorted distinct D,none,NA when fewer than 2 events,numeric,none,
+gap_mean,D,sorted distinct D,none,NA when fewer than 2 events,numeric,none,
+abnormal_high,V vs normalised range_high,none,NULL ranges ignored,0,integer,none,zero-fill
+abnormal_low,V vs normalised range_low,none,NULL ranges ignored,0,integer,none,zero-fill
+era_count,course rows,none,none,0,integer,none,course envelope
+era_days,course rows,none,none,NA,integer,none,course envelope
+first_era_days,course rows,none,none,NA,integer,none,course envelope

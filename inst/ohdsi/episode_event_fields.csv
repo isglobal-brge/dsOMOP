@@ -1,0 +1,9 @@
+episode_event_field_concept_id,table_name,key_column,concept_name,verification
+1147127,condition_occurrence,condition_occurrence_id,condition_occurrence.condition_occurrence_id,pending: verify against a full OMOP vocabulary (CDM vocabulary; concept_class Field)
+1147094,drug_exposure,drug_exposure_id,drug_exposure.drug_exposure_id,pending: verify against a full OMOP vocabulary (CDM vocabulary; concept_class Field)
+1147082,procedure_occurrence,procedure_occurrence_id,procedure_occurrence.procedure_occurrence_id,pending: verify against a full OMOP vocabulary (CDM vocabulary; concept_class Field)
+1147115,device_exposure,device_exposure_id,device_exposure.device_exposure_id,pending: verify against a full OMOP vocabulary (CDM vocabulary; concept_class Field)
+1147138,measurement,measurement_id,measurement.measurement_id,pending: verify against a full OMOP vocabulary (CDM vocabulary; concept_class Field)
+1147165,observation,observation_id,observation.observation_id,pending: verify against a full OMOP vocabulary (CDM vocabulary; concept_class Field)
+1147332,visit_occurrence,visit_occurrence_id,visit_occurrence.visit_occurrence_id,pending: verify against a full OMOP vocabulary (CDM vocabulary; concept_class Field)
+1147210,specimen,specimen_id,specimen.specimen_id,pending: verify against a full OMOP vocabulary (CDM vocabulary; concept_class Field)
