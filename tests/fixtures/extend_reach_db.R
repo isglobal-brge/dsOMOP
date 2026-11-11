@@ -29,7 +29,9 @@
 #   1013  1014  covariate 4000777 present in exactly these two persons (2019-10-01)
 #   1015  1016  oncology episodes (concept 32531) with episode_event links; one drug
 #         exposure linked to two episodes; specimens; with_defects = TRUE adds a
-#         member row whose person disagrees with the episode (refusal fixture)
+#         member row whose person disagrees with the episode (refusal fixture);
+#         base persons 1:8 also get one episode each (2019-12-01..2020-02-28)
+#         linking their metformin fill of 2020-02-01
 #   1017  cost rows in USD (44818568) on a visit and a drug, one EUR (44818570) row
 #   1018  two inpatient visits each with a respiratory-infection condition on the
 #         visit; ICU visit_detail (32037) under the first visit
@@ -92,12 +94,15 @@ extend_reach_handle <- function(handle, with_defects = FALSE) {
 
   # ---- cohorts --------------------------------------------------------------
   c1 <- c(1001L, 1002L, 1006:1014, 1015L, 1016L, 1017L, 1018L, 1023:1028, 1029L, 1030L)
+  # cohort 1001 (adherence/costs, index 2019-12-31): the three fixture persons, the
+  # cost person and the base metformin users 1:40; cohort 1002 (SCCS, index
+  # 2019-07-01): the four SCCS persons and the base aspirin users 1:30.
   app("cohort", rbind(
     data.frame(cohort_definition_id = 1L, subject_id = c1, cohort_start_date = "2020-01-01",
                cohort_end_date = "2025-12-31", stringsAsFactors = FALSE),
-    data.frame(cohort_definition_id = 1001L, subject_id = c(1003L, 1004L, 1005L),
+    data.frame(cohort_definition_id = 1001L, subject_id = c(1:40, 1003L, 1004L, 1005L, 1017L),
                cohort_start_date = "2019-12-31", cohort_end_date = "2020-12-31", stringsAsFactors = FALSE),
-    data.frame(cohort_definition_id = 1002L, subject_id = 1019:1022,
+    data.frame(cohort_definition_id = 1002L, subject_id = c(1:30, 1019:1022),
                cohort_start_date = "2019-07-01", cohort_end_date = "2020-06-30", stringsAsFactors = FALSE)))
   app("cohort_definition", data.frame(
     cohort_definition_id = c(1001L, 1002L),
@@ -239,15 +244,23 @@ extend_reach_handle <- function(handle, with_defects = FALSE) {
     stringsAsFactors = FALSE))
 
   # ---- oncology episodes ----------------------------------------------------------
+  # episodes 1..3 for the oncology persons; episodes 101..108 for base persons
+  # 1:8, each linking that person's metformin fill of 2020-02-01 (the base
+  # fixture's post-index fill), so an episode-indexed output has >= 5 persons.
+  base_fills <- DBI::dbGetQuery(conn, paste0(
+    "SELECT person_id, drug_exposure_id FROM drug_exposure WHERE drug_concept_id = ", METF,
+    " AND drug_exposure_start_date = '2020-02-01' AND person_id BETWEEN 1 AND 8 ORDER BY person_id"))
   app("episode", data.frame(
-    episode_id = c(1L, 2L, 3L), person_id = c(1015L, 1015L, 1016L), episode_concept_id = EPISODE,
-    episode_start_date = c("2019-03-01", "2019-10-01", "2019-05-01"),
-    episode_end_date = c("2019-09-30", "2020-03-31", "2019-08-31"), stringsAsFactors = FALSE))
+    episode_id = c(1L, 2L, 3L, 100L + base_fills$person_id),
+    person_id = c(1015L, 1015L, 1016L, base_fills$person_id), episode_concept_id = EPISODE,
+    episode_start_date = c("2019-03-01", "2019-10-01", "2019-05-01", rep("2019-12-01", nrow(base_fills))),
+    episode_end_date = c("2019-09-30", "2020-03-31", "2019-08-31", rep("2020-02-28", nrow(base_fills))),
+    stringsAsFactors = FALSE))
   links <- data.frame(
-    episode_id = c(1L, 1L, 1L, 1L, 2L, 2L, 3L),
-    event_id = c(chemo_ids[1:3], proc_1015, chemo_ids[4], chemo_ids[3], chemo_1016),
+    episode_id = c(1L, 1L, 1L, 1L, 2L, 2L, 3L, 100L + base_fills$person_id),
+    event_id = c(chemo_ids[1:3], proc_1015, chemo_ids[4], chemo_ids[3], chemo_1016, base_fills$drug_exposure_id),
     episode_event_field_concept_id = c(FIELD_DRUG, FIELD_DRUG, FIELD_DRUG, FIELD_PROC,
-                                       FIELD_DRUG, FIELD_DRUG, FIELD_DRUG),
+                                       FIELD_DRUG, FIELD_DRUG, FIELD_DRUG, rep(FIELD_DRUG, nrow(base_fills))),
     stringsAsFactors = FALSE)
   if (isTRUE(with_defects)) {
     # a member row whose person disagrees with the episode's person (1016 vs 1015)

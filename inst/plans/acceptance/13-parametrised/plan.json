@@ -1,0 +1,90 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "events": {
+    "dm": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          201820
+        ],
+        "include_descendants": true
+      }
+    }
+  },
+  "populations": {
+    "c1": {
+      "kind": "index",
+      "index": {
+        "source": {
+          "cohort_definition_id": 1
+        },
+        "select": "all",
+        "end": {
+          "strategy": "event_end"
+        }
+      }
+    },
+    "dm2": {
+      "kind": "criteria",
+      "parent": "c1",
+      "where": {
+        "has": {
+          "source": {
+            "event": "dm"
+          },
+          "op": ">=",
+          "n": 2,
+          "window": {
+            "start": -365,
+            "end": 0,
+            "anchor": "index"
+          },
+          "distinct": "day"
+        }
+      }
+    }
+  },
+  "variables": {
+    "dm_days": {
+      "source": {
+        "event": "dm"
+      },
+      "reducer": {
+        "fn": "count",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "distinct": "day"
+      }
+    },
+    "dm_rows": {
+      "source": {
+        "event": "dm"
+      },
+      "reducer": {
+        "fn": "count",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        }
+      }
+    }
+  },
+  "outputs": {
+    "two_days": {
+      "rows": "dm2",
+      "format": "wide",
+      "grain": "episode",
+      "result_symbol": "D_two_days"
+    }
+  }
+}

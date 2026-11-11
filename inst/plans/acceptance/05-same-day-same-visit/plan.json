@@ -1,0 +1,126 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "events": {
+    "mi": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          4329847
+        ],
+        "include_descendants": true
+      }
+    },
+    "pci_index_visit": {
+      "table": "procedure_occurrence",
+      "concept_set": {
+        "concepts": [
+          4283095
+        ],
+        "include_descendants": true
+      },
+      "visit": {
+        "index": true
+      }
+    },
+    "chest_pain_index_visit": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          77670
+        ],
+        "include_descendants": true
+      },
+      "visit": {
+        "index": true
+      }
+    },
+    "inpatient": {
+      "table": "visit_occurrence",
+      "concept_set": {
+        "concepts": [
+          9201
+        ],
+        "include_descendants": false
+      }
+    }
+  },
+  "populations": {
+    "mi_all": {
+      "kind": "index",
+      "index": {
+        "source": {
+          "event": "mi"
+        },
+        "select": "all",
+        "end": {
+          "strategy": "event_end"
+        }
+      },
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      }
+    }
+  },
+  "variables": {
+    "n_same_day_mi": {
+      "source": {
+        "event": "mi"
+      },
+      "reducer": {
+        "fn": "count",
+        "window": {
+          "start": 0,
+          "end": 0,
+          "anchor": "index"
+        }
+      }
+    },
+    "pci_same_visit": {
+      "source": {
+        "event": "pci_index_visit"
+      },
+      "reducer": {
+        "fn": "binary"
+      }
+    },
+    "chest_pain_same_visit": {
+      "source": {
+        "event": "chest_pain_index_visit"
+      },
+      "reducer": {
+        "fn": "binary"
+      }
+    },
+    "inpatient_30": {
+      "source": {
+        "event": "inpatient"
+      },
+      "reducer": {
+        "fn": "count",
+        "window": {
+          "start": 0,
+          "end": 30,
+          "anchor": "index"
+        },
+        "distinct": "visit"
+      }
+    }
+  },
+  "outputs": {
+    "episodes": {
+      "rows": "mi_all",
+      "format": "wide",
+      "grain": "episode",
+      "result_symbol": "D_episodes"
+    }
+  }
+}
