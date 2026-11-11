@@ -3,7 +3,7 @@
 Status: plan validated against plan-v2.json; expected.json computed by tools/ws0/acceptance_expected.R on the extended reach fixture (tests/fixtures/create_reach_db.R + extend_reach_db.R), an independent SQL/base-R computation.
 
 ## Semantics of the expected results
-Rows: cohort-1 episodes with at least one HbA1c row (any unit, any operator) in
+Rows: cohort-1 episodes (unique coverage) with at least one HbA1c row (any unit, any operator) in
 [index-180, index] = [2019-07-05, 2020-01-01]. Normalisation happens before every
 predicate and reducer: `value` = the % value when the unit is 8554, 0.0915 x + 2.15 when
 the unit is 8753 (mmol/mol), NA when the unit is NULL or anything else (unknown =

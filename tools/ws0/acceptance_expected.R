@@ -45,9 +45,14 @@ descendants <- function(ids) {
   unique(c(as.integer(ids), as.integer(rows)))
 }
 idlist <- function(ids) paste(ids, collapse = ",")
-cohort_episodes <- function(cid) {
+cohort_episodes <- function(cid, coverage = "unique") {
   ep <- q(paste0("SELECT subject_id AS person_id, cohort_start_date AS index_date, cohort_end_date AS end_date ",
                  "FROM cohort WHERE cohort_definition_id = ", cid, " ORDER BY subject_id, cohort_start_date, cohort_end_date"))
+  if (identical(coverage, "unique")) {
+    # unique / drop / drop: an index date covered by zero or several periods is dropped
+    keep <- vapply(seq_len(nrow(ep)), function(i) !is.null(covering(ep$person_id[i], ep$index_date[i])), logical(1))
+    ep <- ep[keep, , drop = FALSE]
+  }
   ep
 }
 person_yob <- function(pid) persons$year_of_birth[match(pid, persons$person_id)]
@@ -610,7 +615,7 @@ effective_of <- function(f, cap = 90L) {
 # 15 costs and adherence
 # =============================================================================
 {
-  ep <- cohort_episodes(1001L); metf_ids <- descendants(1503297L)
+  ep <- cohort_episodes(1001L, coverage = "union"); metf_ids <- descendants(1503297L)
   rows <- list()
   for (i in seq_len(nrow(ep))) {
     pid <- ep$person_id[i]; idx <- D(ep$index_date[i])

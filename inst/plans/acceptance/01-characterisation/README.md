@@ -4,7 +4,9 @@ Status: plan validated against plan-v2.json; expected.json computed by tools/ws0
 
 ## Semantics of the expected results
 Rows: every episode of results cohort 1 (index 2020-01-01, end 2025-12-31; the reach
-persons 1..100 plus the extension members of cohort 1). Columns: exact annual age
+persons 1..100 plus the extension members of cohort 1) whose index date lies in exactly
+one observation period (the default unique-coverage policy: person 1001, with two
+covering periods, is dropped from every cohort-1 output). Columns: exact annual age
 (2020 - year_of_birth; NA for a NULL or future birth year), sex (M/F), forty binary
 covariates (any row of the concept, descendants included, with start date in
 [index-365, index] = [2019-01-01, 2020-01-01]; `cond_covar2` is present in exactly

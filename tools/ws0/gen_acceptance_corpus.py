@@ -118,7 +118,9 @@ rec <- omop_recipe(
 plan <- recipe_to_plan(rec)   # equals plan.json after normalisation
 ''', '''
 Rows: every episode of results cohort 1 (index 2020-01-01, end 2025-12-31; the reach
-persons 1..100 plus the extension members of cohort 1). Columns: exact annual age
+persons 1..100 plus the extension members of cohort 1) whose index date lies in exactly
+one observation period (the default unique-coverage policy: person 1001, with two
+covering periods, is dropped from every cohort-1 output). Columns: exact annual age
 (2020 - year_of_birth; NA for a NULL or future birth year), sex (M/F), forty binary
 covariates (any row of the concept, descendants included, with start date in
 [index-365, index] = [2019-01-01, 2020-01-01]; `cond_covar2` is present in exactly
@@ -231,7 +233,7 @@ rec <- omop_recipe(
   outputs = list(omop_output("two_days", rows = "dm2", format = "wide", grain = "episode")))
 plan <- recipe_to_plan(rec)
 ''', '''
-`dm2` inherits the episodes of cohort 1 (parent) and keeps those with diabetes
+`dm2` inherits the episodes of cohort 1 (parent; unique coverage, 1001 dropped) and keeps those with diabetes
 (201820 + descendants) rows on at least two distinct days in [index-365, index].
 Columns: distinct diagnosis days and raw row count in the window. Reach fixture:
 persons 1..25 have rows on 2019-06-01, 2019-06-05 and 2019-06-08 (3 days), 26..50 one
@@ -287,7 +289,7 @@ rec <- omop_recipe(
   outputs = list(omop_output("labs", rows = "with_a1c", format = "wide", grain = "episode")))
 plan <- recipe_to_plan(rec)
 ''', '''
-Rows: cohort-1 episodes with at least one HbA1c row (any unit, any operator) in
+Rows: cohort-1 episodes (unique coverage) with at least one HbA1c row (any unit, any operator) in
 [index-180, index] = [2019-07-05, 2020-01-01]. Normalisation happens before every
 predicate and reducer: `value` = the % value when the unit is 8554, 0.0915 x + 2.15 when
 the unit is 8753 (mmol/mol), NA when the unit is NULL or anything else (unknown =
