@@ -35,6 +35,7 @@ Imports:
     filelock,
     openssl,
     RSQLite,
+    methods,
     stats,
     utils
 Suggests:

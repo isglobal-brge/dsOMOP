@@ -1890,7 +1890,7 @@
   parquet_writer <- NULL
   parquet_sink <- NULL
   on.exit({
-    if (!is.null(rs) && DBI::dbIsValid(rs)) DBI::dbClearResult(rs)
+    if (!is.null(rs) && .dbIsValid(rs)) try(DBI::dbClearResult(rs), silent = TRUE)
     if (!is.null(parquet_writer)) try(parquet_writer$Close(), silent = TRUE)
     if (!is.null(parquet_sink)) try(parquet_sink$close(), silent = TRUE)
     if (!is.null(pending_file) && file.exists(pending_file)) unlink(pending_file)

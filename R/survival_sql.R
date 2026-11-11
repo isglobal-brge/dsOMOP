@@ -951,7 +951,7 @@
   result <- .withDbReconnect(handle, function(conn) {
     machine <- .newMultistateStreamTransformer(compiled, max_rows = max_rows)
     rs <- DBI::dbSendQuery(conn, compiled$sql)
-    on.exit(if (DBI::dbIsValid(rs)) DBI::dbClearResult(rs), add = TRUE)
+    on.exit(if (.dbIsValid(rs)) try(DBI::dbClearResult(rs), silent = TRUE), add = TRUE)
     chunks <- list()
     repeat {
       chunk <- DBI::dbFetch(rs, n = as.integer(chunk_number))

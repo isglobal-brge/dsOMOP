@@ -455,14 +455,17 @@ server process's own privileges.
 
 ### Package installation
 
-If you prefer using a graphical user interface (GUI) provided by your server for package installation, you can easily install the `dsOMOP` package directly from GitHub. Navigate to the package installation section in your server's GUI, and specify the following details:
+If you prefer using a graphical user interface (GUI) provided by your server for package installation, you can easily install the `dsOMOP` package directly from GitHub. On Opal 6, first enable "Allow R packages management" (Administration > General Settings > Configuration > Edit); it is off by default and package installs are refused until it is on. Navigate to the package installation section in your server's GUI, and specify the following details:
 
 - **User/organization:** `isglobal-brge`
 - **Package name:** `dsOMOP`
 - **Git reference:** `main`
 
 The R dependencies (`DBI`, `R6`, `resourcer`, `jsonlite`, `filelock`,
-`openssl`, `RSQLite`) are installed automatically. Built from source, they need
+`openssl`, `RSQLite`) are installed automatically. The database driver is
+separate: PostgreSQL needs `RPostgres` (shipped in the DataSHIELD Rock image)
+or `RPostgreSQL`, MySQL/MariaDB `RMariaDB`, SQL Server, Snowflake and Spark
+`odbc`, DuckDB `duckdb`; install a missing one as an R package on the server. Built from source, they need
 no system libraries beyond the OpenSSL and libcurl headers that Opal/Rock
 images already include for `openssl` and `resourcer`. If the GUI reports
 nothing, the R server log (for Rock, its container log) shows the R output of

@@ -322,6 +322,32 @@
 # does by default, as dsOMOP 1.x did; a resource that names a TLS mode gets
 # exactly that mode.
 
+#' Whether a DBI connection or result is still usable
+#'
+#' \code{DBI::dbIsValid()} for drivers that implement it. RPostgreSQL, the
+#' PostgreSQL driver some DataSHIELD R servers carry instead of RPostgres, does
+#' not: its connections are probed with a trivial query, and its results count
+#' as valid until cleared.
+#' @param x A DBI connection or result.
+#' @return Logical.
+#' @keywords internal
+.dbIsValid <- function(x) {
+  tryCatch(
+    isTRUE(DBI::dbIsValid(x)),
+    error = function(e) {
+      if (!grepl("unable to find an inherited method", conditionMessage(e),
+                 fixed = TRUE)) {
+        stop(e)
+      }
+      if (!methods::is(x, "DBIConnection")) return(TRUE)
+      isTRUE(tryCatch({
+        DBI::dbGetQuery(x, "SELECT 1")
+        TRUE
+      }, error = function(probe) FALSE))
+    }
+  )
+}
+
 #' PostgreSQL sslmode for a resource
 #'
 #' The resource's own mode, or NULL when it sets none: no sslmode then reaches
@@ -933,7 +959,7 @@ OMOPResourceClient <- R6::R6Class(
     #' @description Get or create a DBI connection
     #' @return A DBI connection object
     getConnection = function() {
-      if (is.null(private$.connection) || !DBI::dbIsValid(private$.connection)) {
+      if (is.null(private$.connection) || !.dbIsValid(private$.connection)) {
         private$.connection <- private$connect_dbi()
       }
       private$.connection
