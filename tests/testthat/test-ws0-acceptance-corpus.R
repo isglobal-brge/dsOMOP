@@ -75,6 +75,7 @@ test_that("the design's fixture values are pinned in the expected results", {
   z <- cc[cc$person_id == 1012, ]; expect_identical(nrow(z), 1L); expect_identical(z$is_case, 1L)
   expect_identical(sum(cc$set_id == z$set_id), 1L)                                      # zero-control case kept
   rec <- get("09-recurrent-events", "recurrent")
-  expect_identical(sum(rec$event == 1L), 3L)
-  expect_identical(sum(rec$event == 0L), length(unique(rec$person_id)) - 1L)
+  expect_identical(sum(rec$event == 1L), 5L)                                           # 1027 (3) + 1018 (2)
+  expect_identical(sum(rec$event == 0L), length(unique(rec$person_id)) - 2L)           # one sentinel per episode without events
+  expect_false(1001L %in% rec$person_id)                                              # ambiguous coverage dropped
 })

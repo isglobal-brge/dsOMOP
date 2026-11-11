@@ -1,0 +1,113 @@
+{
+  "recipe": "14-oncology-episodes",
+  "fixture": "reach + extension (build_extended_reach_handle(100))",
+  "nfilter_subset": 5,
+  "outputs": {
+    "episodes": {
+      "name": "episodes",
+      "n_persons": 10,
+      "columns": ["person_id", "index_date", "index_key", "n_members", "n_member_drugs", "first_member_days", "n_specimens"],
+      "rows": [
+        {
+          "person_id": 1,
+          "index_date": "2019-12-01",
+          "index_key": "101",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 2,
+          "index_date": "2019-12-01",
+          "index_key": "102",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 3,
+          "index_date": "2019-12-01",
+          "index_key": "103",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 4,
+          "index_date": "2019-12-01",
+          "index_key": "104",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 5,
+          "index_date": "2019-12-01",
+          "index_key": "105",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 6,
+          "index_date": "2019-12-01",
+          "index_key": "106",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 7,
+          "index_date": "2019-12-01",
+          "index_key": "107",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 8,
+          "index_date": "2019-12-01",
+          "index_key": "108",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 1015,
+          "index_date": "2019-03-01",
+          "index_key": "1",
+          "n_members": 4,
+          "n_member_drugs": 3,
+          "first_member_days": 0,
+          "n_specimens": 2
+        },
+        {
+          "person_id": 1015,
+          "index_date": "2019-10-01",
+          "index_key": "2",
+          "n_members": 2,
+          "n_member_drugs": 2,
+          "first_member_days": -172,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 1016,
+          "index_date": "2019-05-01",
+          "index_key": "3",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 0,
+          "n_specimens": 0
+        }
+      ]
+    }
+  }
+}

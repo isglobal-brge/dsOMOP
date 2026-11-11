@@ -10,5 +10,6 @@ infection (320136) dated in [entry, exit], numbered per episode by date then key
 row (`event = 0`, event_number = last + 1, event_days_from_index = NA) for every
 episode without a retained event, so the dense frame has one row per episode at
 least. Fixture: the base rows of 320136 are dated 2020-04-01 (day 91, outside the
-TAR) so only extension person 1027 (days 9, 19, 45) has events; everyone else gets a
-sentinel; persons divisible by 4 die on 2020-06-15 (after the TAR, no effect).
+TAR) so only extension persons 1027 (days 9, 19, 45) and 1018 (days 1 and 61) have
+events; everyone else gets a sentinel; persons divisible by 4 die on 2020-06-15 (after
+the TAR, no effect).

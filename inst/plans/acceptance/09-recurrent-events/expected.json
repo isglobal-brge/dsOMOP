@@ -1,0 +1,1139 @@
+{
+  "recipe": "09-recurrent-events",
+  "fixture": "reach + extension (build_extended_reach_handle(100))",
+  "nfilter_subset": 5,
+  "outputs": {
+    "recurrent": {
+      "name": "recurrent",
+      "n_persons": 122,
+      "columns": ["person_id", "index_date", "event", "event_number", "event_days_from_index", "entry_days_from_index", "exit_days_from_index"],
+      "rows": [
+        {
+          "person_id": 1,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 2,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 3,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 4,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 5,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 6,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 7,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 8,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 9,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 10,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 11,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 12,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 13,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 14,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 15,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 16,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 17,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 18,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 19,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 20,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 21,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 22,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 23,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 24,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 25,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 26,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 27,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 28,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 29,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 30,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 31,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 32,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 33,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 34,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 35,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 36,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 37,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 38,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 39,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 40,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 41,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 42,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 43,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 44,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 45,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 46,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 47,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 48,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 49,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 50,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 51,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 52,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 53,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 54,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 55,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 56,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 57,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 58,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 59,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 60,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 61,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 62,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 63,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 64,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 65,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 66,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 67,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 68,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 69,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 70,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 71,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 72,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 73,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 74,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 75,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 76,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 77,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 78,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 79,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 80,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 81,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 82,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 83,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 84,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 85,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 86,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 87,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 88,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 89,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 90,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 91,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 92,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 93,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 94,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 95,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 96,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 97,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 98,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 99,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 100,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1002,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1006,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1007,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1008,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1009,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1010,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1011,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": -214
+        },
+        {
+          "person_id": 1012,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1013,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1014,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1015,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1016,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1017,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1018,
+          "index_date": "2020-01-01",
+          "event": 1,
+          "event_number": 1,
+          "event_days_from_index": 1,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1018,
+          "index_date": "2020-01-01",
+          "event": 1,
+          "event_number": 2,
+          "event_days_from_index": 61,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1023,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1024,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1025,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1026,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1027,
+          "index_date": "2020-01-01",
+          "event": 1,
+          "event_number": 1,
+          "event_days_from_index": 9,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1027,
+          "index_date": "2020-01-01",
+          "event": 1,
+          "event_number": 2,
+          "event_days_from_index": 19,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1027,
+          "index_date": "2020-01-01",
+          "event": 1,
+          "event_number": 3,
+          "event_days_from_index": 45,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1028,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1029,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        },
+        {
+          "person_id": 1030,
+          "index_date": "2020-01-01",
+          "event": 0,
+          "event_number": 1,
+          "event_days_from_index": null,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 90
+        }
+      ]
+    }
+  }
+}

@@ -101,6 +101,9 @@ generate_synthetic_cdm <- function(n_persons = 10000L, seed = 20261112L,
   typed_frame <- function(table, values) {
     spec <- fields[fields$table == table, , drop = FALSE]
     n <- if (length(values) > 0L) length(values[[1L]]) else 0L
+    if (nrow(spec) == 0L) {   # a table outside the field metadata (the 5.3 results cohort): keep the given columns
+      return(as.data.frame(values, stringsAsFactors = FALSE))
+    }
     out <- lapply(seq_len(nrow(spec)), function(i) {
       f <- spec$field[i]
       if (!is.null(values[[f]])) return(values[[f]])
@@ -207,7 +210,8 @@ generate_synthetic_cdm <- function(n_persons = 10000L, seed = 20261112L,
   cdm$concept_class <- typed_frame("concept_class", list(
     concept_class_id = "Clinical Finding", concept_class_name = "Clinical Finding", concept_class_concept_id = 1L))
   cdm$cohort_definition <- typed_frame("cohort_definition", list(cohort_definition_id = integer(0)))
-  cdm$cohort <- typed_frame("cohort", list(cohort_definition_id = integer(0)))
+  cdm$cohort <- typed_frame("cohort", list(cohort_definition_id = integer(0), subject_id = integer(0),
+                                           cohort_start_date = character(0), cohort_end_date = character(0)))
 
   if (!is.null(dir)) {
     dir.create(dir, showWarnings = FALSE, recursive = TRUE)

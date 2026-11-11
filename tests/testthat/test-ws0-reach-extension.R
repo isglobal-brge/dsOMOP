@@ -51,7 +51,7 @@ test_that("the extension appends the documented persons and tables without touch
   expect_gte(DBI::dbGetQuery(h$conn, "SELECT COUNT(DISTINCT person_id) AS n FROM episode WHERE episode_concept_id = 32531")$n, 5L)
   cur <- DBI::dbGetQuery(h$conn, "SELECT DISTINCT currency_concept_id FROM cost")$currency_concept_id
   expect_setequal(cur, c(44818568L, 44818570L))
-  expect_identical(DBI::dbGetQuery(h$conn, "SELECT COUNT(*) AS n FROM episode_event ee JOIN episode e ON e.episode_id = ee.episode_id JOIN drug_exposure d ON d.drug_exposure_id = ee.event_id WHERE d.person_id <> e.person_id")$n, 0L)
+  expect_identical(DBI::dbGetQuery(h$conn, "SELECT COUNT(*) AS n FROM episode_event ee JOIN episode e ON e.episode_id = ee.episode_id JOIN drug_exposure d ON d.drug_exposure_id = ee.event_id WHERE ee.episode_event_field_concept_id = 1147094 AND d.person_id <> e.person_id")$n, 0L)
   # every acceptance cohort has at least nfilter.subset = 5 persons
   for (cid in c(1L, 1001L, 1002L)) {
     expect_gte(DBI::dbGetQuery(h$conn, paste0("SELECT COUNT(DISTINCT subject_id) AS n FROM cohort WHERE cohort_definition_id = ", cid))$n, 5L)
@@ -65,7 +65,7 @@ test_that("with_defects adds the person-mismatch link only", {
   source(src, local = TRUE); source(ext, local = TRUE)
   h <- build_extended_reach_handle(100L, with_defects = TRUE)
   on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
-  expect_identical(DBI::dbGetQuery(h$conn, "SELECT COUNT(*) AS n FROM episode_event ee JOIN episode e ON e.episode_id = ee.episode_id JOIN drug_exposure d ON d.drug_exposure_id = ee.event_id WHERE d.person_id <> e.person_id")$n, 1L)
+  expect_identical(DBI::dbGetQuery(h$conn, "SELECT COUNT(*) AS n FROM episode_event ee JOIN episode e ON e.episode_id = ee.episode_id JOIN drug_exposure d ON d.drug_exposure_id = ee.event_id WHERE ee.episode_event_field_concept_id = 1147094 AND d.person_id <> e.person_id")$n, 1L)
 })
 
 test_that("the synthetic CDM generator is deterministic and GiBleed-shaped", {

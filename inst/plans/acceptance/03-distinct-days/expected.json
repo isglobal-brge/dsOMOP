@@ -1,0 +1,170 @@
+{
+  "recipe": "03-distinct-days",
+  "fixture": "reach + extension (build_extended_reach_handle(100))",
+  "nfilter_subset": 5,
+  "outputs": {
+    "two_days": {
+      "name": "two_days",
+      "n_persons": 26,
+      "columns": ["person_id", "index_date", "dm_days", "dm_rows"],
+      "rows": [
+        {
+          "person_id": 1,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 2,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 3,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 4,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 5,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 6,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 7,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 8,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 9,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 10,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 11,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 12,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 13,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 14,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 15,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 16,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 17,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 18,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 19,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 20,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 21,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 22,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 23,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 24,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 25,
+          "index_date": "2020-01-01",
+          "dm_days": 3,
+          "dm_rows": 3
+        },
+        {
+          "person_id": 1008,
+          "index_date": "2020-01-01",
+          "dm_days": 2,
+          "dm_rows": 2
+        }
+      ]
+    }
+  }
+}

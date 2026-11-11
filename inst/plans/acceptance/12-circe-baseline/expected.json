@@ -1,0 +1,448 @@
+{
+  "recipe": "12-circe-baseline",
+  "fixture": "reach + extension (build_extended_reach_handle(100))",
+  "nfilter_subset": 5,
+  "outputs": {
+    "baseline": {
+      "name": "baseline",
+      "n_persons": 62,
+      "columns": ["person_id", "index_date", "age_group", "sex", "prior_obs"],
+      "rows": [
+        {
+          "person_id": 1,
+          "index_date": "2019-06-01",
+          "age_group": "35-39",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 2,
+          "index_date": "2019-06-01",
+          "age_group": "40-44",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 3,
+          "index_date": "2019-06-01",
+          "age_group": "50-54",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 4,
+          "index_date": "2019-06-01",
+          "age_group": "55-59",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 5,
+          "index_date": "2019-06-01",
+          "age_group": "60-64",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 6,
+          "index_date": "2019-06-01",
+          "age_group": "70-74",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 7,
+          "index_date": "2019-06-01",
+          "age_group": "75-79",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 8,
+          "index_date": "2019-06-01",
+          "age_group": "25-29",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 9,
+          "index_date": "2019-06-01",
+          "age_group": "35-39",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 10,
+          "index_date": "2019-06-01",
+          "age_group": "40-44",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 11,
+          "index_date": "2019-06-01",
+          "age_group": "50-54",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 12,
+          "index_date": "2019-06-01",
+          "age_group": "55-59",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 13,
+          "index_date": "2019-06-01",
+          "age_group": "60-64",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 14,
+          "index_date": "2019-06-01",
+          "age_group": "70-74",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 15,
+          "index_date": "2019-06-01",
+          "age_group": "75-79",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 16,
+          "index_date": "2019-06-01",
+          "age_group": "25-29",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 17,
+          "index_date": "2019-06-01",
+          "age_group": "35-39",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 18,
+          "index_date": "2019-06-01",
+          "age_group": "40-44",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 19,
+          "index_date": "2019-06-01",
+          "age_group": "50-54",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 20,
+          "index_date": "2019-06-01",
+          "age_group": "55-59",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 21,
+          "index_date": "2019-06-01",
+          "age_group": "60-64",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 22,
+          "index_date": "2019-06-01",
+          "age_group": "70-74",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 23,
+          "index_date": "2019-06-01",
+          "age_group": "75-79",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 24,
+          "index_date": "2019-06-01",
+          "age_group": "25-29",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 25,
+          "index_date": "2019-06-01",
+          "age_group": "35-39",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 26,
+          "index_date": "2019-06-01",
+          "age_group": "40-44",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 27,
+          "index_date": "2019-06-01",
+          "age_group": "50-54",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 28,
+          "index_date": "2019-06-01",
+          "age_group": "55-59",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 29,
+          "index_date": "2019-06-01",
+          "age_group": "60-64",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 30,
+          "index_date": "2019-06-01",
+          "age_group": "70-74",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 31,
+          "index_date": "2019-06-01",
+          "age_group": "75-79",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 32,
+          "index_date": "2019-06-01",
+          "age_group": "25-29",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 33,
+          "index_date": "2019-06-01",
+          "age_group": "35-39",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 34,
+          "index_date": "2019-06-01",
+          "age_group": "40-44",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 35,
+          "index_date": "2019-06-01",
+          "age_group": "50-54",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 36,
+          "index_date": "2019-06-01",
+          "age_group": "55-59",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 37,
+          "index_date": "2019-06-01",
+          "age_group": "60-64",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 38,
+          "index_date": "2019-06-01",
+          "age_group": "70-74",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 39,
+          "index_date": "2019-06-01",
+          "age_group": "75-79",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 40,
+          "index_date": "2019-06-01",
+          "age_group": "25-29",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 41,
+          "index_date": "2019-06-01",
+          "age_group": "35-39",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 42,
+          "index_date": "2019-06-01",
+          "age_group": "40-44",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 43,
+          "index_date": "2019-06-01",
+          "age_group": "50-54",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 44,
+          "index_date": "2019-06-01",
+          "age_group": "55-59",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 45,
+          "index_date": "2019-06-01",
+          "age_group": "60-64",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 46,
+          "index_date": "2019-06-01",
+          "age_group": "70-74",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 47,
+          "index_date": "2019-06-01",
+          "age_group": "75-79",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 48,
+          "index_date": "2019-06-01",
+          "age_group": "25-29",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 49,
+          "index_date": "2019-06-01",
+          "age_group": "35-39",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 50,
+          "index_date": "2019-06-01",
+          "age_group": "40-44",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 1003,
+          "index_date": "2019-12-31",
+          "age_group": "55-59",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 1004,
+          "index_date": "2019-12-31",
+          "age_group": "55-59",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 1005,
+          "index_date": "2019-12-31",
+          "age_group": "55-59",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 1006,
+          "index_date": "2020-01-01",
+          "age_group": "55-59",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 1008,
+          "index_date": "2018-12-31",
+          "age_group": "50-54",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 1009,
+          "index_date": "2020-01-01",
+          "age_group": null,
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 1010,
+          "index_date": "2020-01-01",
+          "age_group": null,
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 1011,
+          "index_date": "2020-01-01",
+          "age_group": "50-54",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 1012,
+          "index_date": "2019-01-15",
+          "age_group": "85+",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 1013,
+          "index_date": "2019-10-01",
+          "age_group": "45-49",
+          "sex": "M",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 1014,
+          "index_date": "2019-10-01",
+          "age_group": "45-49",
+          "sex": "F",
+          "prior_obs": 366
+        },
+        {
+          "person_id": 1029,
+          "index_date": "2019-03-01",
+          "age_group": "65-69",
+          "sex": "M",
+          "prior_obs": 366
+        }
+      ]
+    }
+  }
+}
