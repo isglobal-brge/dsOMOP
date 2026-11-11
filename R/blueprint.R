@@ -138,17 +138,29 @@
   table_level
 }
 
+#' Normalise a CDM version to the specification it follows
+#'
+#' "v5.4" and "5.4.0" give "5.4", and "v5.3.1" gives "5.3" (Eunomia GiBleed and
+#' OHDSI Broadsea's demo CDM report "v5.3.1"): a patch release keeps its minor
+#' version's tables and fields, which is how the OHDSI tools read it.
+#' @param version Character CDM version string, or NULL.
+#' @return "major.minor", the input without a leading "v" when it holds no such
+#'   number, or NULL.
+#' @keywords internal
+.normalizeCdmVersion <- function(version) {
+  if (is.null(version)) return(NULL)
+  value <- trimws(as.character(version))
+  major_minor <- regmatches(value, regexpr("[0-9]+\\.[0-9]+", value))
+  if (length(major_minor) == 1L) major_minor else sub("^[vV]", "", value)
+}
+
 #' Load CDM spec for a given version using CommonDataModel package
 #'
 #' @param cdm_version Character; CDM version string (e.g. "5.4", "5.3")
 #' @return List with table_level and field_level data.frames, or NULL if unsupported
 #' @keywords internal
 .loadCdmSpec <- function(cdm_version = NULL) {
-  # Normalize version (e.g. "v5.4" -> "5.4", "5.4.0" -> "5.4")
-  if (!is.null(cdm_version)) {
-    cdm_version <- sub("^[vV]", "", trimws(cdm_version))
-    cdm_version <- sub("\\.0$", "", cdm_version)
-  }
+  cdm_version <- .normalizeCdmVersion(cdm_version)
 
   # Try an exact vendored specification first (no Java dependency).  The
   # vendored loader has a useful 5.4 default for an unknown/NULL version, but an
@@ -752,7 +764,7 @@
   conn <- tryCatch(.conn(handle), error = record_failure)
 
   if (!is.null(conn) &&
-      isTRUE(tryCatch(DBI::dbIsValid(conn), error = record_failure)) &&
+      isTRUE(tryCatch(.dbIsValid(conn), error = record_failure)) &&
       length(handle$temp_tables) > 0L) {
     for (tbl in handle$temp_tables) {
       tryCatch(.dropTempTable(handle, tbl), error = record_failure)
@@ -766,7 +778,7 @@
   if (!is.null(handle$resource_client)) {
     tryCatch(handle$resource_client$close(), error = record_failure)
   } else if (!is.null(conn) &&
-             isTRUE(tryCatch(DBI::dbIsValid(conn),
+             isTRUE(tryCatch(.dbIsValid(conn),
                              error = record_failure))) {
     tryCatch(DBI::dbDisconnect(conn), error = record_failure)
   }
@@ -785,7 +797,7 @@
 #' creation time, but that snapshot can go stale when a pooled/expiring
 #' resource connection is closed underneath us. When the handle owns a
 #' \code{resource_client}, defer to \code{resource_client$getConnection()},
-#' which revalidates with \code{DBI::dbIsValid()} and transparently reconnects
+#' which revalidates with \code{.dbIsValid()} and transparently reconnects
 #' if needed. The freshly resolved connection is cached back into
 #' \code{handle$conn} so disclosure helpers that still read the field directly
 #' see the live handle. Falls back to \code{handle$conn} when there is no
@@ -1059,6 +1071,12 @@
   # vocabulary/results must never make a missing CDM table appear present.
   cdm_info <- .detectCDMInfo(handle, db_tables_cdm)
   cdm_version <- cdm_info$cdm_version  # may be NULL
+  # An empty or NA cdm_version tells nothing: infer it from the structure.
+  if (!is.null(cdm_version) &&
+      (length(cdm_version) != 1L || is.na(cdm_version) ||
+       !nzchar(trimws(as.character(cdm_version))))) {
+    cdm_version <- NULL
+  }
 
   # Step 2b: Structural version detection (fallback / cross-validation)
   # Wrapped in tryCatch so structural detection can never crash blueprint build.
@@ -1074,9 +1092,8 @@
             ", v5.3=", struct$evidence_53, ")")
   } else if (!is.null(cdm_version) && !is.null(struct)) {
     # cdm_source is authoritative; structural detection is advisory only
-    normalized <- sub("^[vV]", "", trimws(cdm_version))
-    normalized <- sub("\\.0$", "", normalized)
-    if (normalized != struct$version) {
+    normalized <- .normalizeCdmVersion(cdm_version)
+    if (normalized != struct$version && !is.null(.loadCdmSpec(cdm_version))) {
       warning("cdm_source reports version '", cdm_version,
               "' but table structure suggests '", struct$version,
               "' (evidence: v5.4=", struct$evidence_54,
@@ -1085,8 +1102,19 @@
     }
   }
 
-  # Step 3: Load spec for detected version
+  # Step 3: Load spec for detected version. A version label with no available
+  # specification (an older 5.x, a custom label) is read with the one its
+  # table structure matches, when it matches one.
   spec <- .loadCdmSpec(cdm_version)
+  if (is.null(spec) && !is.null(struct$version)) {
+    spec <- .loadCdmSpec(struct$version)
+    if (!is.null(spec)) {
+      message("cdm_source reports CDM version '", cdm_version, "', which has ",
+              "no available specification; reading the database as ",
+              spec$version, ", which its table structure matches.")
+      cdm_version <- spec$version
+    }
+  }
   has_spec <- !is.null(spec)
   if (!has_spec) {
     stop("No supported OHDSI CDM specification is available for version '",

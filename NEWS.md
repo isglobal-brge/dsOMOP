@@ -1,3 +1,22 @@
+# dsOMOP 2.10.2
+
+- Reads every OMOP CDM version label. `cdm_source.cdm_version` values with a
+  patch number ("v5.3.1", as in Eunomia GiBleed and OHDSI Broadsea's demo CDM,
+  or "5.4.2") use their minor version's specification, as the OHDSI tools read
+  them; 2.10.1 and earlier refused such databases with "No supported OHDSI CDM
+  specification is available for version 'v5.3.1'". A label with no available
+  specification (an older 5.x, a custom label, 6.0 without CommonDataModel) is
+  read with the specification its table structure matches (5.3 or 5.4), and an
+  empty label is inferred from the structure.
+- PostgreSQL through RPostgreSQL works: R servers without RPostgres fell back
+  to RPostgreSQL, which does not implement `DBI::dbIsValid()`, and every OMOP
+  handle failed to initialise and to close. Connections of such drivers are now
+  checked with a trivial query.
+- README: on Opal 6, "Allow R packages management" (Administration > General
+  Settings > Configuration) must be enabled before installing DataSHIELD
+  packages from the GUI. Verified end to end on Opal 6.1.3 with Rock and
+  Eunomia GiBleed.
+
 # dsOMOP 2.10.1
 
 Plug and play on Opal, Armadillo and DSLite: install, create a resource,

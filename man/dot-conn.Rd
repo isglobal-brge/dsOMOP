@@ -17,7 +17,7 @@ The handle caches a connection snapshot in \code{handle$conn} taken at
 creation time, but that snapshot can go stale when a pooled/expiring
 resource connection is closed underneath us. When the handle owns a
 \code{resource_client}, defer to \code{resource_client$getConnection()},
-which revalidates with \code{DBI::dbIsValid()} and transparently reconnects
+which revalidates with \code{.dbIsValid()} and transparently reconnects
 if needed. The freshly resolved connection is cached back into
 \code{handle$conn} so disclosure helpers that still read the field directly
 see the live handle. Falls back to \code{handle$conn} when there is no

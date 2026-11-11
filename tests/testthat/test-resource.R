@@ -1284,3 +1284,27 @@ test_that("a resource that names no CDM schema finds the one holding the CDM", {
   expect_error(.discoverOmopSchemas(handle),
                "several schemas hold OMOP CDM tables \\(demo_cdm, other_cdm\\)")
 })
+
+test_that(".dbIsValid probes connections whose driver lacks dbIsValid (RPostgreSQL)", {
+  conn <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  local_mocked_bindings(
+    dbIsValid = function(dbObj, ...) {
+      stop("unable to find an inherited method for function 'dbIsValid' for ",
+           "signature 'dbObj = \"PostgreSQLConnection\"'")
+    },
+    .package = "DBI"
+  )
+  expect_true(.dbIsValid(conn))
+  DBI::dbDisconnect(conn)
+  expect_false(.dbIsValid(conn))
+  # A result object counts as valid until cleared.
+  expect_true(.dbIsValid(structure(list(), class = "fake_result")))
+})
+
+test_that(".dbIsValid passes other errors on", {
+  conn <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(conn), add = TRUE)
+  local_mocked_bindings(dbIsValid = function(dbObj, ...) stop("boom"),
+                        .package = "DBI")
+  expect_error(.dbIsValid(conn), "boom")
+})
