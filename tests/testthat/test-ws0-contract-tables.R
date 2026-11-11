@@ -60,7 +60,7 @@ test_that("the boundary registry skeleton lists every assign method", {
   if (!"AssignMethods" %in% colnames(desc)) desc <- read.dcf(file.path("..", "..", "DESCRIPTION"))
   skip_if(!"AssignMethods" %in% colnames(desc), "DESCRIPTION without AssignMethods")
   assign_methods <- trimws(strsplit(desc[1, "AssignMethods"], ",")[[1]])
-  reg <- read.csv(.ws0_inst("boundaries.csv"), stringsAsFactors = FALSE)
+  reg <- read.csv(.ws0_inst("boundaries.csv"), stringsAsFactors = FALSE, check.names = FALSE)
   expect_true(all(assign_methods %in% reg[["function"]]))
   expect_true(all(reg$kind %in% c("assign", "aggregate", "return", "staged")))
 })
