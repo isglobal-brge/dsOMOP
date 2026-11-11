@@ -138,17 +138,29 @@
   table_level
 }
 
+#' Normalise a CDM version to the specification it follows
+#'
+#' "v5.4" and "5.4.0" give "5.4", and "v5.3.1" gives "5.3" (Eunomia GiBleed and
+#' OHDSI Broadsea's demo CDM report "v5.3.1"): a patch release keeps its minor
+#' version's tables and fields, which is how the OHDSI tools read it.
+#' @param version Character CDM version string, or NULL.
+#' @return "major.minor", the input without a leading "v" when it holds no such
+#'   number, or NULL.
+#' @keywords internal
+.normalizeCdmVersion <- function(version) {
+  if (is.null(version)) return(NULL)
+  value <- trimws(as.character(version))
+  major_minor <- regmatches(value, regexpr("[0-9]+\\.[0-9]+", value))
+  if (length(major_minor) == 1L) major_minor else sub("^[vV]", "", value)
+}
+
 #' Load CDM spec for a given version using CommonDataModel package
 #'
 #' @param cdm_version Character; CDM version string (e.g. "5.4", "5.3")
 #' @return List with table_level and field_level data.frames, or NULL if unsupported
 #' @keywords internal
 .loadCdmSpec <- function(cdm_version = NULL) {
-  # Normalize version (e.g. "v5.4" -> "5.4", "5.4.0" -> "5.4")
-  if (!is.null(cdm_version)) {
-    cdm_version <- sub("^[vV]", "", trimws(cdm_version))
-    cdm_version <- sub("\\.0$", "", cdm_version)
-  }
+  cdm_version <- .normalizeCdmVersion(cdm_version)
 
   # Try an exact vendored specification first (no Java dependency).  The
   # vendored loader has a useful 5.4 default for an unknown/NULL version, but an
@@ -1074,8 +1086,7 @@
             ", v5.3=", struct$evidence_53, ")")
   } else if (!is.null(cdm_version) && !is.null(struct)) {
     # cdm_source is authoritative; structural detection is advisory only
-    normalized <- sub("^[vV]", "", trimws(cdm_version))
-    normalized <- sub("\\.0$", "", normalized)
+    normalized <- .normalizeCdmVersion(cdm_version)
     if (normalized != struct$version) {
       warning("cdm_source reports version '", cdm_version,
               "' but table structure suggests '", struct$version,
