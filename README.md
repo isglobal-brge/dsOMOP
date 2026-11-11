@@ -488,6 +488,21 @@ You can then install the `dsOMOP` package using the following command:
 dsadmin.install_github_package(o, 'dsOMOP', username='isglobal-brge', ref='main')
 ```
 
+#### Upgrading on Opal
+
+Opal publishes a package's DataSHIELD methods and options in the profile when
+the package is first installed, but not when an installed package is upgraded:
+the profile keeps the previous version's list. After every upgrade of dsOMOP,
+publish its settings again, in the GUI (Administration > DataSHIELD >
+Packages > dsOMOP > Publish) or from the R console:
+```R
+dsadmin.publish_package(o, 'dsOMOP')
+```
+Otherwise analysts get errors such as `No such DataSHIELD 'ASSIGN' method with
+name: omopInitDS`. Analysts can check every server with
+`dsOMOPClient::ds.omop.server.version(conns)`, which compares the version whose
+methods the profile publishes with the version installed.
+
 ## Creating OMOP CDM resources
 
 The resources used by dsOMOP are of the type `omop.dbi.db`, which hold the connection details to OMOP CDM databases. Each declared database engine has its own resource factory: `postgresql`, `mysql`, `mariadb`, `sqlserver`, `synapse`, `pdw`, `oracle`, `redshift`, `bigquery`, `snowflake`, `spark`, `databricks`, `sqlite` or `duckdb`.
@@ -499,24 +514,36 @@ These resources contain the following parameters:
 - `database`: The database name (the BigQuery dataset). For file-based engines
   (SQLite, DuckDB) this is the path to the database file, and `host`/`port` are
   omitted.
-- `cdm_schema` (optional): The schema holding the OMOP CDM tables. Defaults to the engine default (for PostgreSQL, `public`).
-- `vocabulary_schema` (optional): The schema holding the vocabulary tables. Defaults to the CDM schema.
+- `cdm_schema` (optional): The schema holding the OMOP CDM tables. Defaults to
+  the engine default (for PostgreSQL, `public`); when that schema holds no
+  `person` table, the single schema that does is used (OHDSI Broadsea keeps its
+  CDM in `demo_cdm`). When several schemas hold one, the connection stops and
+  lists them: name the CDM schema in the resource.
+- `vocabulary_schema` (optional): The schema holding the vocabulary tables.
+  Defaults to the CDM schema, or to the single schema holding `concept` when
+  the CDM schema has none.
 - `results_schema` (optional): The schema holding cohorts, Achilles and other
   OHDSI result tables. Auto-detection is limited and should be pinned when the
   deployment uses a separate results daimon.
 - `warehouse` / `driver` (backend-specific, optional): Snowflake warehouse or
   an ODBC driver-name override.
+- TLS is optional and never required by default: the DataSHIELD server and
+  the database sit inside the data owner's domain, often on one machine or one
+  Docker network. A resource that leaves its TLS settings empty connects the
+  way the driver does by default.
 - PostgreSQL TLS options `sslmode`, `sslrootcert`, `sslcert` and `sslkey`.
-  When `sslmode` is omitted, remote hosts default to `verify-full`; loopback
-  defaults to `disable`. An explicit site policy may override that choice.
+  Without `sslmode` no mode reaches libpq, whose default (`prefer`, or
+  `PGSSLMODE` when the R server sets it) uses TLS only when the database offers
+  it. Set `require`, `verify-ca` or `verify-full` to enforce it.
 - MySQL/MariaDB TLS options `ssl_required`, `ssl_ca`, `ssl_cert` and `ssl_key`.
-  Remote hosts require encrypted, certificate-verified transport by default;
-  loopback does not. Configure `ssl_ca` when the server CA is not already in
-  the connector trust store. dsOMOP disables RMariaDB option-file groups so a
-  host-level client configuration cannot silently weaken this policy.
-  Explicitly setting `ssl_required=false` for a remote host disables this
-  protection and should be reserved for a deployment-level exception. Required
-  TLS sessions must negotiate TLS 1.2 or TLS 1.3.
+  TLS is required, with a verified server certificate, only when
+  `ssl_required=true` or TLS material is set; configure `ssl_ca` when the
+  server CA is not already in the connector trust store. dsOMOP disables
+  RMariaDB option-file groups so a host-level client configuration cannot
+  change this. Required TLS sessions must negotiate TLS 1.2 or TLS 1.3.
+- SQL Server, Synapse and PDW through Microsoft's ODBC drivers connect with
+  `Encrypt=no` and `TrustServerCertificate=yes`, so Driver 18 does not require
+  TLS either.
 
 Where the backend uses username/password authentication, credentials are not URL
 parameters: they are supplied separately as the resource identity and secret.
@@ -524,6 +551,12 @@ BigQuery and file-backed engines use the service account's configured cloud or
 filesystem identity instead.
 
 To configure a resource for dsOMOP, ensure that you have the above details accurately filled out to establish a successful connection to your OMOP CDM database.
+
+Resources created with the dsOMOP 1.x form (format `omop.cdm.db`, URL
+`postgresql://host:port/db//dsomop::/schema:cdm/vocabulary_schema:vocab`, also
+`mysql://` and `mariadb://`) keep working: dsOMOP reads them as the equivalent
+2.x resource, with the same checks. The form only creates 2.x resources;
+re-create old ones with it whenever convenient.
 
 ### Database support contract
 

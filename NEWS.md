@@ -1,3 +1,36 @@
+# dsOMOP 2.10.1
+
+Plug and play on Opal, Armadillo and DSLite: install, create a resource,
+connect.
+
+- No database connection requires TLS any more. A resource that leaves its
+  TLS settings empty connects the way the driver does by default, as dsOMOP
+  1.x did: PostgreSQL receives no `sslmode` (libpq's "prefer": TLS only when
+  the database offers it), MySQL/MariaDB do not require TLS, and Microsoft's
+  SQL Server ODBC drivers get `Encrypt=no` and `TrustServerCertificate=yes`.
+  2.10.0 required verified TLS (`verify-full`) for every database that was not
+  on localhost, so a database on the same machine or Docker network without
+  TLS (OHDSI Broadsea's atlasdb, a plain postgres container) failed with
+  "server does not support SSL, but SSL was required". A resource that names
+  a TLS mode still gets exactly that mode.
+- Resources created with the dsOMOP 1.x form (format `omop.cdm.db`,
+  `postgresql://host:port/db//dsomop::/schema:cdm/vocabulary_schema:vocab`,
+  also mysql and mariadb) open again: the resolver rewrites their URL into the
+  2.x form and they are validated and connected exactly like 2.x resources.
+  The resource and its pseudonymization identity are unchanged. The resource
+  form still only creates 2.x resources (`omop.dbi.db`).
+- A resource that names no CDM schema uses the engine's default schema when
+  that holds the `person` table, and otherwise the single schema that does
+  (Broadsea keeps its CDM in `demo_cdm`); the vocabulary follows, or the single
+  schema holding `concept`. Several candidates are never guessed between: the
+  error lists them so the data owner can name one.
+- Upgrading on Opal: Opal publishes a package's DataSHIELD methods when it is
+  first installed, not when an installed package is upgraded. After upgrading
+  dsOMOP, publish its settings again (Administration > DataSHIELD > Packages >
+  dsOMOP > Publish) or analysts get "No such DataSHIELD 'ASSIGN' method with
+  name: omopInitDS". dsOMOPClient 2.10.1 reports this case by name
+  (`ds.omop.server.version()`).
+
 # dsOMOP 2.10.0
 
 - Seed-only DP: the first-answer store of 2.7.1 to 2.9.x is removed. Every

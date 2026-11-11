@@ -53,14 +53,14 @@ var dsOMOP = (function () {
   };
   var pgSslMode = {
     key: "sslmode", type: "string", title: "TLS mode (optional)",
-    description: "libpq mode: disable, allow, prefer, require, verify-ca, or verify-full. If omitted, remote hosts use verify-full and loopback uses disable."
+    description: "Leave empty to connect without requiring TLS (it is used only if the database offers it). To enforce it, a libpq mode: require, verify-ca or verify-full; disable turns it off."
   };
   var pgSslRootCert = { key: "sslrootcert", type: "string", title: "TLS CA certificate path (optional)" };
   var pgSslCert = { key: "sslcert", type: "string", title: "TLS client certificate path (optional)" };
   var pgSslKey = { key: "sslkey", type: "string", title: "TLS client key path (optional)" };
   var mariaSslRequired = {
-    key: "ssl_required", type: "boolean", title: "Require authenticated TLS transport",
-    description: "If omitted, authenticated TLS is required for remote hosts and optional only on loopback. Supply ssl_ca when the server CA is not in the connector trust store."
+    key: "ssl_required", type: "boolean", title: "Require authenticated TLS (optional)",
+    description: "Leave unticked to connect without requiring TLS. Tick it to enforce authenticated TLS; supply ssl_ca when the server CA is not in the connector trust store."
   };
   var mariaSslCa = { key: "ssl_ca", type: "string", title: "Trusted TLS CA certificate path (optional)" };
   var mariaSslCert = { key: "ssl_cert", type: "string", title: "TLS client certificate path (optional)" };

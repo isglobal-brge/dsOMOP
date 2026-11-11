@@ -197,21 +197,20 @@ test_that(".parseOmopUrl treats the port as optional", {
   expect_equal(p$database, "omop")
 })
 
-test_that("remote database transport defaults fail secure", {
-  expect_true(.isLoopbackDatabaseHost("localhost"))
-  expect_true(.isLoopbackDatabaseHost("127.0.0.1"))
-  expect_true(.isLoopbackDatabaseHost("::1"))
-  expect_false(.isLoopbackDatabaseHost("db.example.org"))
-
-  expect_equal(.effectivePostgresSslMode(NULL, "db.example.org"),
+test_that("no database requires TLS unless its resource asks for it", {
+  for (host in c("db.example.org", "broadsea-atlasdb", "172.20.0.3",
+                 "127.0.0.1", "localhost")) {
+    expect_null(.effectivePostgresSslMode(NULL, host))
+    expect_false(.effectiveMariaTlsRequired(NULL, host))
+  }
+  expect_equal(.effectivePostgresSslMode("verify-full", "db.example.org"),
                "verify-full")
-  expect_equal(.effectivePostgresSslMode(NULL, "127.0.0.1"), "disable")
-  expect_equal(.effectivePostgresSslMode("require", "127.0.0.1"),
-               "require")
+  expect_equal(.effectivePostgresSslMode("require", "127.0.0.1"), "require")
+  expect_equal(.effectivePostgresSslMode("disable", "db.example.org"),
+               "disable")
 
-  expect_true(.effectiveMariaTlsRequired(NULL, "db.example.org"))
-  expect_false(.effectiveMariaTlsRequired(NULL, "localhost"))
   expect_false(.effectiveMariaTlsRequired(FALSE, "db.example.org"))
+  expect_true(.effectiveMariaTlsRequired(TRUE, "localhost"))
   expect_true(.effectiveMariaTlsRequired(
     FALSE, "localhost", list(ssl_ca = "/srv/ca.pem")
   ))
@@ -1115,4 +1114,173 @@ test_that("dialect aliases resolve correctly", {
 test_that("unsupported DBMS throws error", {
   expect_error(.resolve_target_dialect("mongodb"), "Unsupported DBMS")
   expect_error(.resolve_target_dialect("cassandra"), "Unsupported DBMS")
+})
+
+# --- Plug and play (2.10.1): no TLS requirement, dsOMOP 1.x resources and the
+# CDM schema of a resource that names none ---
+
+test_that("a PostgreSQL resource without TLS settings passes no sslmode", {
+  skip_if_not_installed("RPostgres")
+  seen <- NULL
+  local_mocked_bindings(
+    dbConnect = function(drv, ...) {
+      seen <<- list(...)
+      structure(list(), class = "fake_connection")
+    },
+    .package = "DBI"
+  )
+  local_mocked_bindings(.ensurePostgresUtc = function(connection) connection)
+  open <- function(url) {
+    OMOPResourceClient$new(resourcer::newResource(
+      name = "r", url = url, format = "omop.dbi.db",
+      identity = "omop", secret = "secret"
+    ))$getConnection()
+  }
+
+  open("omop+dbi:postgresql://broadsea-atlasdb:5432/postgres?cdm_schema=demo_cdm")
+  expect_false("sslmode" %in% names(seen))
+  expect_identical(seen$host, "broadsea-atlasdb")
+  expect_identical(seen$dbname, "postgres")
+
+  open("omop+dbi:postgresql://db.example.org:5432/omop?sslmode=verify-full")
+  expect_identical(seen$sslmode, "verify-full")
+})
+
+test_that("Microsoft's SQL Server driver is told not to require TLS", {
+  skip_if_not_installed("odbc")
+  seen <- NULL
+  local_mocked_bindings(
+    dbConnect = function(drv, ...) {
+      seen <<- list(...)
+      structure(list(), class = "fake_connection")
+    },
+    .package = "DBI"
+  )
+  open <- function(url) {
+    OMOPResourceClient$new(resourcer::newResource(
+      name = "r", url = url, format = "omop.dbi.db",
+      identity = "omop", secret = "secret"
+    ))$getConnection()
+  }
+
+  open("omop+dbi:sqlserver://mssql:1433/omop?driver=ODBC%20Driver%2018%20for%20SQL%20Server")
+  expect_identical(seen$Encrypt, "no")
+  expect_identical(seen$TrustServerCertificate, "yes")
+
+  open("omop+dbi:sqlserver://mssql:1433/omop?driver=FreeTDS")
+  expect_false(any(c("Encrypt", "TrustServerCertificate") %in% names(seen)))
+})
+
+test_that("dsOMOP 1.x resource URLs are read as their 2.x equivalents", {
+  url <- .legacyOmopUrl(
+    "postgresql://omopdb:5432/omop//dsomop::/schema:cdm/vocabulary_schema:vocab"
+  )
+  expect_identical(
+    url,
+    "omop+dbi:postgresql://omopdb:5432/omop?cdm_schema=cdm&vocabulary_schema=vocab"
+  )
+  p <- .parseOmopUrl(url)
+  expect_identical(p$dbms, "postgresql")
+  expect_identical(p$host, "omopdb")
+  expect_identical(p$port, 5432L)
+  expect_identical(p$database, "omop")
+  expect_identical(p$cdm_schema, "cdm")
+  expect_identical(p$vocabulary_schema, "vocab")
+  expect_null(p$sslmode)
+
+  p <- .parseOmopUrl(.legacyOmopUrl(
+    "mariadb://maria:3306/omop//dsomop::/vocabulary_schema:vocab"
+  ))
+  expect_identical(p$dbms, "mariadb")
+  expect_null(p$cdm_schema)
+  expect_identical(p$vocabulary_schema, "vocab")
+
+  p <- .parseOmopUrl(.legacyOmopUrl("MySQL://my:3306/omop"))
+  expect_identical(p$dbms, "mysql")
+  expect_null(p$cdm_schema)
+  expect_null(p$vocabulary_schema)
+
+  # A value cannot add options of its own to the 2.x URL.
+  p <- .parseOmopUrl(.legacyOmopUrl(
+    "postgresql://h:5432/omop//dsomop::/schema:cdm&sslmode=require"
+  ))
+  expect_identical(p$cdm_schema, "cdm&sslmode=require")
+  expect_null(p$sslmode)
+
+  expect_error(.legacyOmopUrl("sqlite:///srv/omop.sqlite"), "could not be read")
+  expect_error(.legacyOmopUrl("postgresql://h:5432/"), "could not be read")
+  expect_error(.legacyOmopUrl(""), "could not be read")
+  expect_error(
+    .legacyOmopUrl("postgresql://h:5432/db//dsomop::/schema:a//dsomop::/schema:b"),
+    "more than one"
+  )
+})
+
+test_that("the resolver opens dsOMOP 1.x resources and the 2.x form never writes them", {
+  resolver <- OMOPResourceResolver$new()
+  legacy <- resourcer::newResource(
+    name = "v1",
+    url = "postgresql://omopdb:5432/omop//dsomop::/schema:cdm",
+    format = "omop.cdm.db", identity = "omop", secret = "secret"
+  )
+  expect_true(resolver$isFor(legacy))
+  client <- resolver$newClient(legacy)
+  expect_true(inherits(client, "OMOPResourceClient"))
+  expect_identical(client$getDBMS(), "postgresql")
+  expect_identical(client$getCDMSchema(), "cdm")
+  expect_identical(client$getVocabularySchema(), NULL)
+  # The resource itself, and with it the pseudonymization identity, is unchanged.
+  expect_identical(client$getResource()$url, legacy$url)
+  expect_identical(.resourceIdentity(client), legacy$url)
+
+  expect_false(resolver$isFor(resourcer::newResource(
+    name = "other", url = "postgresql://h:5432/db", format = "csv"
+  )))
+  js <- system.file("resources", "resource.js", package = "dsOMOP")
+  skip_if(!nzchar(js), "resource.js is not installed")
+  expect_false(any(grepl("omop.cdm.db", readLines(js), fixed = TRUE)))
+})
+
+test_that("a resource that names no CDM schema finds the one holding the CDM", {
+  skip_if_not_installed("duckdb")
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  DBI::dbExecute(conn, "CREATE SCHEMA demo_cdm")
+  DBI::dbExecute(conn, "CREATE TABLE demo_cdm.person (person_id INTEGER)")
+  DBI::dbExecute(conn, "CREATE TABLE demo_cdm.concept (concept_id INTEGER)")
+  handle <- new.env(parent = emptyenv())
+  handle$conn <- conn
+  handle$dbms <- "duckdb"
+  handle$target_dialect <- "duckdb"
+  handle$cdm_schema <- "main"
+  handle$vocab_schema <- "main"
+  handle$temp_tables <- character(0)
+  handle$physical_table_names <- list()
+
+  .discoverOmopSchemas(handle)
+  expect_identical(handle$cdm_schema, "demo_cdm")
+  expect_identical(handle$vocab_schema, "demo_cdm")
+
+  # A named vocabulary schema is kept.
+  handle$cdm_schema <- "main"
+  handle$vocab_schema <- "vocab"
+  .discoverOmopSchemas(handle, cdm = TRUE, vocab = FALSE)
+  expect_identical(handle$cdm_schema, "demo_cdm")
+  expect_identical(handle$vocab_schema, "vocab")
+
+  # The default schema wins when it holds the CDM.
+  DBI::dbExecute(conn, "CREATE TABLE main.person (person_id INTEGER)")
+  DBI::dbExecute(conn, "CREATE TABLE main.concept (concept_id INTEGER)")
+  handle$cdm_schema <- "main"
+  handle$vocab_schema <- "main"
+  .discoverOmopSchemas(handle)
+  expect_identical(handle$cdm_schema, "main")
+
+  # Several candidates are never guessed between.
+  DBI::dbExecute(conn, "DROP TABLE main.person")
+  DBI::dbExecute(conn, "CREATE SCHEMA other_cdm")
+  DBI::dbExecute(conn, "CREATE TABLE other_cdm.person (person_id INTEGER)")
+  handle$cdm_schema <- "main"
+  expect_error(.discoverOmopSchemas(handle),
+               "several schemas hold OMOP CDM tables \\(demo_cdm, other_cdm\\)")
 })
