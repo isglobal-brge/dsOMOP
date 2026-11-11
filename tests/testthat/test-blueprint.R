@@ -842,3 +842,27 @@ test_that("CDM patch versions use their minor version's specification", {
   expect_identical(.loadCdmSpec("5.4.2")$version, "5.4")
   expect_null(.loadCdmSpec("6.0"))
 })
+
+test_that("CDM version labels are read whatever their spelling", {
+  # Eunomia GiBleed / OHDSI Broadsea's demo CDM.
+  handle <- create_test_handle_v53()
+  on.exit(cleanup_handle(handle))
+  DBI::dbExecute(handle$conn, "UPDATE cdm_source SET cdm_version = 'v5.3.1'")
+  bp <- .buildBlueprint(handle, force = TRUE)
+  expect_identical(bp$spec_version, "5.3")
+
+  # A label with no specification (an older 5.x, a custom label) is read with
+  # the specification its table structure matches.
+  for (label in c("v5.2", "OMOP CDM", "6.0")) {
+    DBI::dbExecute(handle$conn,
+                   paste0("UPDATE cdm_source SET cdm_version = '", label, "'"))
+    expect_message(bp <- .buildBlueprint(handle, force = TRUE),
+                   "reading the database as 5.3")
+    expect_identical(bp$spec_version, "5.3")
+  }
+
+  # An empty label is inferred from the structure too.
+  DBI::dbExecute(handle$conn, "UPDATE cdm_source SET cdm_version = ''")
+  bp <- .buildBlueprint(handle, force = TRUE)
+  expect_identical(bp$spec_version, "5.3")
+})

@@ -1071,6 +1071,12 @@
   # vocabulary/results must never make a missing CDM table appear present.
   cdm_info <- .detectCDMInfo(handle, db_tables_cdm)
   cdm_version <- cdm_info$cdm_version  # may be NULL
+  # An empty or NA cdm_version tells nothing: infer it from the structure.
+  if (!is.null(cdm_version) &&
+      (length(cdm_version) != 1L || is.na(cdm_version) ||
+       !nzchar(trimws(as.character(cdm_version))))) {
+    cdm_version <- NULL
+  }
 
   # Step 2b: Structural version detection (fallback / cross-validation)
   # Wrapped in tryCatch so structural detection can never crash blueprint build.
@@ -1087,7 +1093,7 @@
   } else if (!is.null(cdm_version) && !is.null(struct)) {
     # cdm_source is authoritative; structural detection is advisory only
     normalized <- .normalizeCdmVersion(cdm_version)
-    if (normalized != struct$version) {
+    if (normalized != struct$version && !is.null(.loadCdmSpec(cdm_version))) {
       warning("cdm_source reports version '", cdm_version,
               "' but table structure suggests '", struct$version,
               "' (evidence: v5.4=", struct$evidence_54,
@@ -1096,8 +1102,19 @@
     }
   }
 
-  # Step 3: Load spec for detected version
+  # Step 3: Load spec for detected version. A version label with no available
+  # specification (an older 5.x, a custom label) is read with the one its
+  # table structure matches, when it matches one.
   spec <- .loadCdmSpec(cdm_version)
+  if (is.null(spec) && !is.null(struct$version)) {
+    spec <- .loadCdmSpec(struct$version)
+    if (!is.null(spec)) {
+      message("cdm_source reports CDM version '", cdm_version, "', which has ",
+              "no available specification; reading the database as ",
+              spec$version, ", which its table structure matches.")
+      cdm_version <- spec$version
+    }
+  }
   has_spec <- !is.null(spec)
   if (!has_spec) {
     stop("No supported OHDSI CDM specification is available for version '",
