@@ -603,7 +603,10 @@
   # Schema resolution (explicit override > URL > DBMS default). The vocabulary
   # schema falls back to the CDM schema, so: neither set -> both default; only
   # CDM set -> both that; only vocab set -> CDM default + vocab apart; both set
-  # -> one each.
+  # -> one each. A schema that nobody named may be replaced by the one that
+  # holds the CDM tables once connected (.discoverOmopSchemas).
+  cdm_named      <- !is.null(cdm_schema %||% parsed$cdm_schema)
+  vocab_named    <- !is.null(vocab_schema %||% parsed$vocabulary_schema)
   cdm_schema     <- cdm_schema     %||% parsed$cdm_schema %||% default_schema
   vocab_schema   <- vocab_schema   %||% parsed$vocabulary_schema %||% cdm_schema
   results_schema <- results_schema %||% parsed$results_schema
@@ -658,6 +661,9 @@
   handle$dbms_version    <- NULL
   handle$physical_table_names <- list()
   .assertAnalyticDbmsSupport(handle, "dsOMOP connection")
+  if (!cdm_named || !vocab_named) {
+    .discoverOmopSchemas(handle, cdm = !cdm_named, vocab = !vocab_named)
+  }
   # Store only the stable, non-secret key locator. Key bytes are resolved from
   # the injected provider or private state file for each operation and are never
   # embedded in a serializable DataSHIELD workspace handle.
@@ -1981,6 +1987,82 @@
   idx <- match(tolower(candidates), tolower(names(result)))
   idx <- idx[!is.na(idx)]
   if (length(idx) == 0L) default else result[[idx[[1]]]]
+}
+
+#' Schemas that hold a table the connection may read
+#'
+#' Used only to find the CDM of a resource that names no schema. Engines without
+#' a schema catalogue query here (SQLite's single namespace, Oracle, BigQuery,
+#' Spark) return none, and so keep their default schema.
+#' @param handle CDM handle
+#' @param table Character; lowercase table name, a constant of this package
+#' @return Character vector of valid schema names
+#' @keywords internal
+.schemasHoldingTable <- function(handle, table) {
+  sql <- switch(handle$target_dialect,
+    postgresql =
+      "SELECT n.nspname AS table_schema
+       FROM pg_catalog.pg_class c
+       INNER JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       WHERE lower(c.relname) = '@table'
+         AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+         AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+         AND pg_catalog.has_schema_privilege(n.oid, 'USAGE')
+         AND pg_catalog.has_table_privilege(c.oid, 'SELECT')",
+    redshift = , `sql server` = , mysql = , duckdb = , snowflake =
+      "SELECT DISTINCT TABLE_SCHEMA AS table_schema
+       FROM INFORMATION_SCHEMA.TABLES WHERE LOWER(TABLE_NAME) = '@table'",
+    NULL
+  )
+  if (is.null(sql)) return(character(0))
+  result <- tryCatch(
+    .metadataQuery(handle, .renderSql(handle, sql, table = table)),
+    error = function(e) NULL
+  )
+  found <- unique(as.character(.metadataResultColumn(result, "table_schema")))
+  found <- found[!is.na(found) & nzchar(found)]
+  Filter(function(schema) {
+    !inherits(tryCatch(.validateSchemaNamespace(handle$dbms, schema, "schema"),
+                       error = identity), "error")
+  }, found)
+}
+
+#' Find the CDM and vocabulary schemas of a resource that names none
+#'
+#' Plug and play (David, 11 Nov 2026): a resource that leaves the CDM schema
+#' empty uses the engine's default schema when that holds the person table,
+#' and otherwise the single schema that does (OHDSI Broadsea keeps its CDM in
+#' demo_cdm). Several candidates are never guessed between: the data owner
+#' names one in the resource. The vocabulary follows the CDM schema, or the
+#' single schema that holds the concept table when the CDM schema has none.
+#' The analyst cannot steer this: it reads only the resource's own connection.
+#' @param handle CDM handle, updated in place
+#' @param cdm Logical; whether the CDM schema was left unnamed
+#' @param vocab Logical; whether the vocabulary schema was left unnamed
+#' @return The handle, invisibly
+#' @keywords internal
+.discoverOmopSchemas <- function(handle, cdm = TRUE, vocab = TRUE) {
+  holds <- function(schema, table) {
+    isTRUE(tryCatch(table %in% .listTablesRaw(handle, schema),
+                    error = function(e) FALSE))
+  }
+  if (cdm && !holds(handle$cdm_schema, "person")) {
+    found <- .schemasHoldingTable(handle, "person")
+    if (length(found) > 1L) {
+      stop("The resource names no CDM schema and several schemas hold OMOP ",
+           "CDM tables (", paste(sort(found), collapse = ", "), "). Set the ",
+           "CDM schema in the resource.", call. = FALSE)
+    }
+    if (length(found) == 1L) {
+      handle$cdm_schema <- found
+      if (vocab) handle$vocab_schema <- found
+    }
+  }
+  if (vocab && !holds(handle$vocab_schema, "concept")) {
+    found <- .schemasHoldingTable(handle, "concept")
+    if (length(found) == 1L) handle$vocab_schema <- found
+  }
+  invisible(handle)
 }
 
 #' List tables in a schema (raw DB query)

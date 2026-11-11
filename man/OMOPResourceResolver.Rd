@@ -11,7 +11,8 @@ OMOP CDM Resource Resolver
 \details{
 A \code{resourcer::ResourceResolver} subclass that creates database
 connections from DataSHIELD resource descriptors pointing to OMOP CDM
-databases. Matches resources whose format is \code{"omop.dbi.db"} and
+databases. Matches resources whose format is \code{"omop.dbi.db"}, or the
+dsOMOP 1.x \code{"omop.cdm.db"} read through \code{.legacyOmopUrl()}, and
 delegates connection setup to \code{\link{OMOPResourceClient}}, which
 supports PostgreSQL, SQLite/DuckDB, MySQL/MariaDB, SQL Server/Synapse/PDW,
 Oracle, Redshift, BigQuery, Snowflake, Spark, and Databricks backends.

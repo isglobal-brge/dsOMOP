@@ -314,25 +314,39 @@
   paste0(endpoint_host, separator, port)
 }
 
-.isLoopbackDatabaseHost <- function(host) {
-  if (is.null(host) || !is.character(host) || length(host) != 1L ||
-      is.na(host)) return(FALSE)
-  value <- tolower(trimws(host))
-  value %in% c("localhost", "::1", "0:0:0:0:0:0:0:1") ||
-    grepl("^127(?:\\.[0-9]{1,3}){3}$", value, perl = TRUE)
+# Transport security is opt-in for every database: dsOMOP never requires TLS
+# on its own. The DataSHIELD server and the database both sit inside the data
+# owner's domain, often on one machine or one Docker network, and most OMOP
+# databases there (OHDSI Broadsea, a plain postgres container) do not offer TLS.
+# A resource that leaves its TLS settings empty connects the way the driver
+# does by default, as dsOMOP 1.x did; a resource that names a TLS mode gets
+# exactly that mode.
+
+#' PostgreSQL sslmode for a resource
+#'
+#' The resource's own mode, or NULL when it sets none: no sslmode then reaches
+#' libpq, whose default ("prefer", or PGSSLMODE when the server sets it) uses
+#' TLS only when the database offers it.
+#' @param mode The resource's sslmode, or NULL.
+#' @param host Unused; kept for callers that pass the host.
+#' @return Character mode or NULL.
+#' @keywords internal
+.effectivePostgresSslMode <- function(mode, host = NULL) {
+  mode
 }
 
-.effectivePostgresSslMode <- function(mode, host) {
-  mode %||% if (.isLoopbackDatabaseHost(host)) "disable" else "verify-full"
-}
-
-.effectiveMariaTlsRequired <- function(required, host, tls_material = list()) {
-  configured <- if (is.null(required)) {
-    !.isLoopbackDatabaseHost(host)
-  } else {
-    isTRUE(required)
-  }
-  configured || any(!vapply(tls_material, is.null, logical(1L)))
+#' Whether a MySQL/MariaDB connection must use authenticated TLS
+#'
+#' Only when the resource asks for it (ssl_required = true) or supplies TLS
+#' material (a CA, client certificate or key, or cipher).
+#' @param required The resource's ssl_required, or NULL.
+#' @param host Unused; kept for callers that pass the host.
+#' @param tls_material List of the resource's TLS settings.
+#' @return Logical.
+#' @keywords internal
+.effectiveMariaTlsRequired <- function(required, host = NULL,
+                                       tls_material = list()) {
+  isTRUE(required) || any(!vapply(tls_material, is.null, logical(1L)))
 }
 
 .mariaTlsClientFlag <- function() {
@@ -640,6 +654,76 @@
   )
 }
 
+# --- dsOMOP 1.x resources (read-only legacy support) ---
+#
+# Resources created with the dsOMOP 1.x form (format "omop.cdm.db") keep
+# working after an upgrade: their URL is rewritten into the 2.x form, then
+# parsed, validated and connected exactly like a 2.x resource. Nothing creates
+# them any more: the 2.x form (inst/resources/resource.js) only writes
+# "omop.dbi.db" (David, 11 Nov 2026: read the old resources, never declare new
+# ones). The 1.x form wrote <driver>://<host>:<port>/<database> for driver
+# mariadb, mysql or postgresql, followed, when a schema was given, by
+# //dsomop:: and /schema:<cdm> and/or /vocabulary_schema:<vocab>; dsOMOP 1.x
+# read each schema with "/schema:([^/]+)" or "/vocabulary_schema:([^/]+)" after
+# //dsomop::, and set no TLS option.
+
+.LEGACY_OMOP_FORMAT <- "omop.cdm.db"
+
+#' Whether a resource format is the dsOMOP 1.x one
+#' @param format The resource's format.
+#' @return Logical.
+#' @keywords internal
+.isLegacyOmopFormat <- function(format) {
+  is.character(format) && length(format) == 1L && !is.na(format) &&
+    identical(tolower(trimws(format)), .LEGACY_OMOP_FORMAT)
+}
+
+#' Rewrite a dsOMOP 1.x resource URL into the 2.x form
+#'
+#' Every part is percent-encoded, so no value can add query options of its own
+#' (TLS, driver) to the 2.x URL.
+#' @param url The 1.x resource URL.
+#' @return The equivalent 2.x URL.
+#' @keywords internal
+.legacyOmopUrl <- function(url) {
+  unreadable <- function(why) {
+    stop("This dsOMOP 1.x resource (format 'omop.cdm.db') could not be read: ",
+         why, ". Re-create it with the dsOMOP 2.x resource form.",
+         call. = FALSE)
+  }
+  if (!is.character(url) || length(url) != 1L || is.na(url) ||
+      !nzchar(trimws(url))) {
+    unreadable("its URL is empty")
+  }
+  parts <- strsplit(trimws(url), "//dsomop::", fixed = TRUE)[[1L]]
+  if (length(parts) > 2L) unreadable("its URL holds more than one //dsomop::")
+  base <- regmatches(parts[[1L]], regexec(
+    "^(postgresql|mysql|mariadb)://([^/:?#@[:space:]]+)(:([0-9]+))?/([^/?#]+)$",
+    parts[[1L]], ignore.case = TRUE
+  ))[[1L]]
+  if (length(base) == 0L) {
+    unreadable(paste0("expected postgresql://, mysql:// or mariadb:// ",
+                      "<host>:<port>/<database>"))
+  }
+  config <- if (length(parts) == 2L) parts[[2L]] else ""
+  setting <- function(key) {
+    m <- regmatches(config, regexec(paste0("/", key, ":([^/]+)"), config))[[1L]]
+    if (length(m) == 2L) m[[2L]] else NULL
+  }
+  enc <- function(x) utils::URLencode(x, reserved = TRUE)
+  query <- c(cdm_schema = setting("schema"),
+             vocabulary_schema = setting("vocabulary_schema"))
+  paste0(
+    "omop+dbi:", tolower(base[[2L]]), "://", enc(base[[3L]]),
+    if (nzchar(base[[5L]])) paste0(":", base[[5L]]) else "",
+    "/", enc(base[[6L]]),
+    if (length(query) > 0L) {
+      paste0("?", paste0(names(query), "=", vapply(query, enc, ""),
+                         collapse = "&"))
+    } else ""
+  )
+}
+
 #' OMOP CDM Resource Client
 #'
 #' R6 class that wraps a DataSHIELD resource pointing to an OMOP CDM database.
@@ -659,7 +743,13 @@ OMOPResourceClient <- R6::R6Class(
     .parsed = NULL,
 
     parse_url = function() {
-      private$.parsed <- .parseOmopUrl(self$getResource()$url)
+      resource <- self$getResource()
+      url <- if (.isLegacyOmopFormat(resource$format)) {
+        .legacyOmopUrl(resource$url)
+      } else {
+        resource$url
+      }
+      private$.parsed <- .parseOmopUrl(url)
     },
 
     #' Create a DBI connection directly from parsed URL parameters
@@ -685,7 +775,9 @@ OMOPResourceClient <- R6::R6Class(
           return(.ensurePostgresUtc(connection))
         }
         if (requireNamespace("RPostgreSQL", quietly = TRUE)) {
-          if (!identical(sslmode, "disable") || any(!vapply(
+          # RPostgreSQL cannot pass TLS settings: it serves resources that set
+          # none (libpq's default) or disable TLS.
+          if (!(is.null(sslmode) || identical(sslmode, "disable")) || any(!vapply(
               list(p$sslrootcert, p$sslcert, p$sslkey),
               is.null, logical(1L)))) {
             stop("Resource-level PostgreSQL TLS options require RPostgres; ",
@@ -722,10 +814,17 @@ OMOPResourceClient <- R6::R6Class(
                       "synapse", "pdw")) {
         if (!requireNamespace("odbc", quietly = TRUE))
           stop("odbc package required for SQL Server connections.", call. = FALSE)
+        driver <- p$driver %||% "ODBC Driver 17 for SQL Server"
+        # Microsoft's ODBC Driver 18 encrypts and validates the server
+        # certificate unless told otherwise; dsOMOP requires neither.
+        microsoft <- grepl("^ODBC Driver [0-9]+ for SQL Server$", driver,
+                           ignore.case = TRUE)
         args <- .compactConnectionArgs(list(
-          driver = p$driver %||% "ODBC Driver 17 for SQL Server",
+          driver = driver,
           server = .hostWithOptionalPort(p$host, p$port, ","),
-          database = p$database, uid = user, pwd = pass))
+          database = p$database, uid = user, pwd = pass,
+          Encrypt = if (microsoft) "no" else NULL,
+          TrustServerCertificate = if (microsoft) "yes" else NULL))
         return(do.call(DBI::dbConnect, c(list(odbc::odbc()), args)))
       }
 
@@ -891,7 +990,8 @@ OMOPResourceClient <- R6::R6Class(
 #'
 #' A \code{resourcer::ResourceResolver} subclass that creates database
 #' connections from DataSHIELD resource descriptors pointing to OMOP CDM
-#' databases. Matches resources whose format is \code{"omop.dbi.db"} and
+#' databases. Matches resources whose format is \code{"omop.dbi.db"}, or the
+#' dsOMOP 1.x \code{"omop.cdm.db"} read through \code{.legacyOmopUrl()}, and
 #' delegates connection setup to \code{\link{OMOPResourceClient}}, which
 #' supports PostgreSQL, SQLite/DuckDB, MySQL/MariaDB, SQL Server/Synapse/PDW,
 #' Oracle, Redshift, BigQuery, Snowflake, Spark, and Databricks backends.
@@ -910,7 +1010,7 @@ OMOPResourceResolver <- R6::R6Class(
       if (!super$isFor(resource)) return(FALSE)
       fmt <- resource$format
       if (is.null(fmt)) return(FALSE)
-      tolower(fmt) == "omop.dbi.db"
+      tolower(fmt) == "omop.dbi.db" || .isLegacyOmopFormat(fmt)
     },
 
     #' @description Create a new client for the given resource
