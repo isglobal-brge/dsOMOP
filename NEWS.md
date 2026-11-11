@@ -1,3 +1,58 @@
+# dsOMOP 2.10.3 (in development)
+
+Recipe language 2.0: a typed plan graph (`plan-v2.json`), publication as the
+only disclosure gate on assignment paths, explicit coverage, eras, anchors,
+matching and adapters. This section is the WS-0 skeleton; each workstream
+fills its entries. Classes follow design-2.10.3 section 5.
+
+## Corrected (results that were wrong and now follow the documented rule)
+
+- (B-8) Before 2.10.3, `parent_id` recorded provenance but did not restrict
+  membership; from 2.10.3 a child population is a subset of its parent, as
+  `print()` has always shown.
+- (A-E1) A specified concept set that resolves to no concept now matches no
+  row (`{concepts = 123, exclude = 123}` yields zero counts); it was treated
+  as unrestricted in feature extraction.
+- (A-E4) Cohort unions keep distinct same-date index events of different
+  sources or keys; they collapsed on (subject, start, end).
+- (A-E2) Set-operation populations carrying `filter_tree` or
+  `cohort_definition_id`, and unknown population kinds, are refused instead of
+  silently treated as criteria populations.
+
+## Newly permitted (previously refused by an intermediate or granularity gate)
+
+- Small private intermediates (populations, set-operation members, candidate
+  rosters) run; only the released object's minimum persons is checked.
+- Windows under 30 days, age ranges under 5 years and off-grid age bands on
+  assignment paths; numeric filter operators; point tables in interval
+  outputs; exact birth components and exact age in assigned tables
+  (`year_of_birth`, `month_of_birth`, `day_of_birth`, `birth_datetime`);
+  aggregate endpoints keep their own controls.
+
+## Newly refused
+
+### Structural
+- Unknown fields anywhere in a plan, mixed population shapes, legacy
+  constructs on the wire, `tie_policy = "error"`.
+
+### Publication
+- Final patient components with fewer than `nfilter.subset` persons,
+  including empty sparse or recurrent components, are refused at
+  publication; safe-result equivalence applies only to results that satisfy
+  the final publication contract.
+
+## Contracts shipped by WS-0
+
+- `inst/schema/plan-v2.json`, `ir-v2.json`, `mutate-v1.json`, the canonical
+  examples, the probe corpus and the semantic-digest vectors;
+  `inst/contracts/reducers.csv`, `column_classes.csv`;
+  `inst/ohdsi/operator_classes.csv`, `episode_event_fields.csv`,
+  `cost_domains.csv`; `inst/boundaries.csv` (skeleton);
+  `inst/plans/acceptance/` (the fifteen acceptance recipes with validated
+  plans and hand-computed expected results); `R/types.R`,
+  `R/json_schema.R`, `R/semantic_digest.R`; the adversarial extension of
+  the reach fixture and the synthetic CDM generator under `tests/fixtures/`.
+
 # dsOMOP 2.10.2
 
 - Reads every OMOP CDM version label. `cdm_source.cdm_version` values with a

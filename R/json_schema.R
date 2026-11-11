@@ -116,7 +116,7 @@
 .jsonSchemaValidate <- function(schema, instance, root = schema, path = "") {
   errors <- character(0)
   ok <- .jsv_node(schema, instance, root, path, function(msg) {
-    errors <<- c(errors, paste0(if (nzchar(path)) path else "/", ": ", msg))
+    errors <<- c(errors, msg)
   })
   list(valid = isTRUE(ok) && length(errors) == 0L, errors = errors)
 }
@@ -140,7 +140,10 @@
          paste(unknown, collapse = ", "), ".", call. = FALSE)
   }
   ok <- TRUE
-  fail <- function(msg) { ok <<- FALSE; report(msg) }
+  fail <- function(msg) {
+    ok <<- FALSE
+    report(paste0(if (nzchar(path)) path else "/", ": ", msg))
+  }
   itype <- .jsonInstanceType(x)
 
   if ("$ref" %in% keys) {
