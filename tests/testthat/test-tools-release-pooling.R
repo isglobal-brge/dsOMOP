@@ -146,15 +146,21 @@ test_that("record-weighted summaries of two live sites pool their components", {
     expect_equal(out$n_persons[[i]], max(0, total("n")))
     R <- max(0, total("r"))
     expect_equal(out$n_records[[i]], R)
-    # The moments are the server's derivation from the pooled R, S and Q.
-    p <- .dsomopReleaseProjectMoments(2 * total("s") / J - R,
-                                      4 * total("q") / J -
-                                        4 * total("s") / J + R, R)
-    expect_equal(out$avg_days[[i]], 10957 / 2 * (1 + p[["S"]] / R),
-                 tolerance = 1e-9)
-    expect_equal(out$stddev_days[[i]], 10957 / 2 *
-                   sqrt(max(0, (p[["Q"]] - p[["S"]]^2 / R) / (R - 1))),
-                 tolerance = 1e-9)
+    # The moments are the server's derivation from the pooled R, S and Q,
+    # shown once the pooled persons and records both reach 2.
+    if (max(0, total("n")) < 2 || R < 2) {
+      expect_true(is.na(out$avg_days[[i]]))
+      expect_true(is.na(out$stddev_days[[i]]))
+    } else {
+      p <- .dsomopReleaseProjectMoments(2 * total("s") / J - R,
+                                        4 * total("q") / J -
+                                          4 * total("s") / J + R, R)
+      expect_equal(out$avg_days[[i]], 10957 / 2 * (1 + p[["S"]] / R),
+                   tolerance = 1e-9)
+      expect_equal(out$stddev_days[[i]], 10957 / 2 *
+                     sqrt(max(0, (p[["Q"]] - p[["S"]]^2 / R) / (R - 1))),
+                   tolerance = 1e-9)
+    }
     expect_identical(out$concept_name[[i]],
                      frames$a$concept_name[frames$a$condition_concept_id ==
                                              out$condition_concept_id[[i]]])
