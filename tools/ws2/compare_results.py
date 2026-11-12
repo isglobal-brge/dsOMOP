@@ -889,6 +889,15 @@ def describe_pair(p, by_block):
                 baseline_id=b["id"], current_id=c["id"])
 
 
+def describe_unmatched(record, by_block):
+    return dict(key=record["_key"], fn=record["fn"], status=effective(record)[0],
+                plan_sha256=record["_hash"], cls=binding(by_block, record["_key"])["label"],
+                record_id=record["id"], occurrence=record["_join"][-1],
+                context_sha256=record["_ctx"],
+                output_mode=(record.get("call") or {}).get("output_mode"),
+                error=effective(record)[1] if effective(record)[0] == "error" else None)
+
+
 def check_canonical_copies():
     """The shared `b10-canonical` block of capture_results.R and its verbatim copies in
     tests/testthat/test-ir-results*.R must be identical (comment lines and indentation aside)."""
@@ -1003,10 +1012,8 @@ def comparison(work, base_label, cur_label, by_block, nondet, title, masked=None
                              bad_lines=[base.bad_lines, cur.bad_lines]),
                 classes=tables, safe_issues=safe_issues, safe_unmatched=unmatched_safe, leaks=leaks,
                 pairs=[describe_pair(p, by_block) for p in joined],
-                baseline_only=[dict(key=r["_key"], fn=r["fn"], status=effective(r)[0], plan_sha256=r["_hash"],
-                                    cls=binding(by_block, r["_key"])["label"]) for r in base_only],
-                current_only=[dict(key=r["_key"], fn=r["fn"], status=effective(r)[0], plan_sha256=r["_hash"],
-                                   cls=binding(by_block, r["_key"])["label"]) for r in cur_only])
+                baseline_only=[describe_unmatched(r, by_block) for r in base_only],
+                current_only=[describe_unmatched(r, by_block) for r in cur_only])
 
 
 def md_table(rows, cols):
