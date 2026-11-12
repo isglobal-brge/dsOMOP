@@ -4,18 +4,25 @@
 \alias{.irPrepare}
 \title{Run the frozen validation sequence (steps 1 to 4)}
 \usage{
-.irPrepare(plan, handle = NULL)
+.irPrepare(plan, handle = NULL, scope_tables = 0L)
 }
 \arguments{
 \item{plan}{Incoming plan (any R or JSON-parsed form).}
 
 \item{handle}{CDM handle for the handle-dependent checks, or NULL to stop
 after the semantic rules (client-side mirrors, explain without a site).}
+
+\item{scope_tables}{Number of workspace scope tables the server resolved
+for this execution (v1; see \code{.irNormalize()}).}
 }
 \value{
-The validated IR (\code{dsomop_ir}).
+The validated IR (\code{dsomop_ir}); NULL for a v1 plan without
+  outputs, which has no IR (amendment A-10: it runs privately on the v1
+  executor and publishes nothing).
 }
 \description{
-Run the frozen validation sequence (steps 1 to 4)
+Validates the plan as it arrived on the wire: server-resolved workspace
+frames are never part of it (they travel in the execution context; a plan
+carrying \code{scope.tables_frames} is refused by the closed envelope).
 }
 \keyword{internal}

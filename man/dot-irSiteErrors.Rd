@@ -14,8 +14,12 @@ list(errors = character() of plan findings, missing_tables =
   on_missing_table = "unavailable").
 }
 \description{
-Role records for every event table (respecting on_missing_table),
-filterable predicate columns, typed value / concept columns, raw columns
-and their classes (section 7.6).
+Role records for every event table (respecting on_missing_table); every
+predicate position -- event and adapter predicates, criteria person
+predicates, reducer predicates -- resolved against its source's columns
+(existence, filterability, the roles the source has, literal types); a
+concept role for \code{concept_col} and a numeric type for an event value
+column; reducer value columns; raw columns and their classes (section
+7.6).
 }
 \keyword{internal}

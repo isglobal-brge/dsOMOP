@@ -2,22 +2,28 @@
 % Please edit documentation in R/ir_v1_lower.R
 \name{.irLowerV1}
 \alias{.irLowerV1}
-\title{Lower a v1 plan to the compatibility IR (design section 5)}
+\title{Lower a v1 plan to the compatibility IR (design section 5, amendment A-10)}
 \usage{
-.irLowerV1(plan)
+.irLowerV1(plan, scope_tables = 0L, validated = FALSE)
 }
 \arguments{
-\item{plan}{v1 plan in parsed JSON form, already through
-\code{.planV1Envelope()}.}
+\item{plan}{v1 plan in parsed JSON form, through \code{.planV1Envelope()}.}
+
+\item{scope_tables}{Number of workspace scope tables the server resolved for
+this execution (they never travel in the plan).}
+
+\item{validated}{TRUE when the caller already ran the closed envelope.}
 }
 \value{
 The lowered IR (before default expansion).
 }
 \description{
 Pure: no database access. Defaults are expanded afterwards by
-\code{.irNormalizeWire()}. The verbatim v1 fields the IR does not express
-exactly are attached as attribute \code{legacy_residue} (a named list keyed
-by IR path, plus \code{names}, the map of v1 identifiers re-encoded to
-valid 2.0 names); nothing is discarded.
+\code{.planNormalizeV2()} (amendment A-11). Every result-affecting v1 field
+is in the returned IR document; the advisory ones are attached as attribute
+\code{legacy_annex} (a named list keyed by IR path). An envelope finding
+(a plan that did not pass \code{.planV1Envelope()}) is carried as the
+\code{v1_envelope_errors} marker, which no IR schema admits, so a direct
+call can never turn an invalid plan into a valid IR.
 }
 \keyword{internal}

@@ -6,9 +6,11 @@
 #   (1) the incoming version's closed envelope and variants are validated
 #       before any normalisation: plan-v2.json for `version: 2`, the corrected
 #       v1 validators (R/ir_v1.R) for a v1 plan (no `version`, or 1);
-#   (2) .irNormalize() lowers a v1 plan (section 5) and expands every default;
-#       it never discards an unknown field, so invalid input cannot become
-#       valid by normalisation;
+#   (2) .irNormalize() lowers a v1 plan (section 5; its result-affecting
+#       legacy semantics become the closed IR-only variants of amendment
+#       A-10) and expands every default through the one frozen normaliser
+#       shared with the client, .planNormalizeV2() (amendment A-11); it never
+#       discards an unknown field, so invalid input cannot become valid;
 #   (3) the IR is validated against ir-v2.json (wire schema plus the closed
 #       compatibility variants only the v1 lowering produces);
 #   (4) .irValidate() applies the semantic rules of section 4.1, then the
@@ -142,6 +144,17 @@
   invisible(TRUE)
 }
 
+#' Step 1: the closed envelope and variants of the plan's own version
+#'
+#' plan-v2.json for a language 2.0 plan; for a v1 plan the closed v1 envelope
+#' with the corrected legacy value validators (\code{.planV1Envelope()}).
+#' @param plan Plan in parsed JSON form.
+#' @keywords internal
+.irValidateEnvelope <- function(plan) {
+  if (identical(.irPlanVersion(plan), 2L)) .irValidateWire(plan) else .planV1Envelope(plan)
+  invisible(TRUE)
+}
+
 #' Step 3: the IR schema (wire schema plus closed compatibility variants)
 #' @keywords internal
 .irValidateSchema <- function(ir) {
@@ -157,80 +170,109 @@
   ir
 }
 
+#' The IR document: the plain list the IR schema, explain and the shared
+#' semantic digest (\code{.planSemanticDigest()}, design 4.4) see
+#' @param ir The IR (\code{dsomop_ir}).
+#' @keywords internal
+.irDocument <- function(ir) unclass(.irStripPrivate(ir))
+
 #' Normalise a plan to the IR (step 2)
 #'
-#' Language 2.0: identity plus every default (\code{.irNormalizeWire()}). A v1
-#' plan: lowered to the compatibility IR (section 5, \code{.irLowerV1()}),
-#' then defaults are expanded the same way, except \code{publish}: a v1 plan
-#' never names publication roots, its roots are the outputs the execution maps
-#' to symbols (\code{out}; unmapped outputs stay private computed inputs, as in
-#' 2.10.2), so the lowered IR carries no \code{publish} and consumers use
+#' Every default is expanded by the one frozen normaliser shared with the
+#' client, \code{.planNormalizeV2()} (\code{R/plan_normalize_v2.R}, amendment
+#' A-11). Language 2.0: \code{.planNormalizeV2(plan)} against plan-v2.json. A
+#' v1 plan: lowered to the compatibility IR (section 5, \code{.irLowerV1()}),
+#' whose result-affecting legacy semantics are closed IR variants of the
+#' document itself (amendment A-10), then normalised by the same function
+#' against ir-v2.json -- except \code{publish}: a v1 plan never names
+#' publication roots, its roots are the outputs the execution maps to symbols
+#' (\code{out}; unmapped outputs stay private computed inputs, as in 2.10.2),
+#' so the lowered IR carries no \code{publish} and consumers use
 #' \code{ir$publish \%||\% names(out)}. Pure: no database access. The
 #' normalised plan is what \code{omopPlanExplainDS} returns.
 #'
 #' @param plan Plan in parsed JSON form (see \code{.irJsonForm()}).
+#' @param scope_tables Number of workspace scope tables the server resolved
+#'   for a v1 execution (endpoint arguments; never carried by the plan).
+#' @param validated TRUE when step 1 (the closed envelope) already ran.
 #' @return The IR, class \code{dsomop_ir}, with attribute \code{source_version}
-#'   (1 or 2) and, for a lowered v1 plan, \code{legacy_residue} (see
-#'   \code{.irLowerV1()}).
+#'   (1 or 2) and, for a lowered v1 plan with advisory fields,
+#'   \code{legacy_annex} (server-private, listed by explain, covered by no
+#'   digest, never read by an execution decision; see \code{.irLowerV1()}).
 #' @keywords internal
-.irNormalize <- function(plan) {
+.irNormalize <- function(plan, scope_tables = 0L, validated = FALSE) {
   version <- .irPlanVersion(plan)
-  residue <- NULL
+  annex <- NULL
   if (identical(version, 2L)) {
-    ir <- .irNormalizeWire(plan, .irSchema("ir-v2"))
+    ir <- .planNormalizeV2(plan)
   } else {
-    lowered <- .irLowerV1(plan)
-    residue <- attr(lowered, "legacy_residue")
-    ir <- .irNormalizeWire(.irStripPrivate(lowered), .irSchema("ir-v2"))
+    lowered <- .irLowerV1(plan, scope_tables = scope_tables, validated = validated)
+    annex <- attr(lowered, "legacy_annex")
+    # a plan that failed the envelope is kept intact (never repaired, never
+    # normalised: the frozen normaliser expects a valid plan) and stays
+    # invalid for every schema
+    ir <- if (!is.null(lowered[["v1_envelope_errors"]])) {
+      .irStripPrivate(lowered)
+    } else {
+      .planNormalizeV2(.irStripPrivate(lowered), .irSchema("ir-v2"))
+    }
     ir["publish"] <- NULL
   }
   structure(ir, class = "dsomop_ir", source_version = version,
-            legacy_residue = residue)
+            legacy_annex = annex)
 }
 
 #' Run the frozen validation sequence (steps 1 to 4)
 #'
+#' Validates the plan as it arrived on the wire: server-resolved workspace
+#' frames are never part of it (they travel in the execution context; a plan
+#' carrying \code{scope.tables_frames} is refused by the closed envelope).
+#'
 #' @param plan Incoming plan (any R or JSON-parsed form).
 #' @param handle CDM handle for the handle-dependent checks, or NULL to stop
 #'   after the semantic rules (client-side mirrors, explain without a site).
-#' @return The validated IR (\code{dsomop_ir}).
+#' @param scope_tables Number of workspace scope tables the server resolved
+#'   for this execution (v1; see \code{.irNormalize()}).
+#' @return The validated IR (\code{dsomop_ir}); NULL for a v1 plan without
+#'   outputs, which has no IR (amendment A-10: it runs privately on the v1
+#'   executor and publishes nothing).
 #' @keywords internal
-.irPrepare <- function(plan, handle = NULL) {
+.irPrepare <- function(plan, handle = NULL, scope_tables = 0L) {
   plan <- .irJsonForm(plan)
   version <- .irPlanVersion(plan)
-  if (identical(version, 2L)) {
-    .irValidateWire(plan)
-  } else {
-    .planV1Envelope(plan)
-    # A v1 plan without outputs computes and releases nothing; it has no
-    # IR (the IR, like the wire schema, needs at least one output). The v1
-    # executor keeps running it as before (populations only).
+  .irValidateEnvelope(plan)
+  if (!identical(version, 2L)) {
     outputs <- plan[["outputs"]]
     if (is.null(outputs) || (is.list(outputs) && length(outputs) == 0L)) {
+      if (!is.null(handle)) .planV1SiteCheck(plan, handle)
       return(invisible(NULL))
     }
   }
-  ir <- .irNormalize(plan)
+  ir <- .irNormalize(plan, scope_tables = scope_tables, validated = TRUE)
   .irValidateSchema(ir)
   .irValidate(ir, handle)
+  if (!is.null(handle) && !identical(version, 2L)) .planV1SiteCheck(plan, handle)
   ir
 }
 
-#' Semantic digest of an IR, binding a lowered plan's legacy residue
+#' The wire part of a server-side execution plan
 #'
-#' For a language 2.0 plan this is exactly \code{.planSemanticDigest(ir)}
-#' (section 4.4, shared with the client, fixed test vectors). A lowered v1
-#' plan also binds its \code{legacy_residue}, so two v1 plans that differ
-#' only in a field the IR cannot express never share a digest.
-#'
-#' @param ir The IR (\code{dsomop_ir}).
-#' @return list(payload, sha256) as \code{.planSemanticDigest()}.
+#' Removes the workspace frames the server injected under
+#' \code{scope$tables_frames} (and the scope object when nothing else is in
+#' it), so validation sees exactly what a client can send.
+#' @param plan Execution plan (R list).
+#' @return list(plan = the wire part, scope_tables = number of frames).
 #' @keywords internal
-.irSemanticDigest <- function(ir) {
-  doc <- unclass(.irStripPrivate(ir))
-  residue <- attr(ir, "legacy_residue")
-  if (is.null(residue)) return(.planSemanticDigest(doc))
-  .planSemanticDigest(list(ir = doc, legacy_residue = residue))
+.planWirePart <- function(plan) {
+  scope <- if (is.list(plan)) plan[["scope"]] else NULL
+  if (!is.list(scope) || is.data.frame(scope) || is.null(scope[["tables_frames"]])) {
+    return(list(plan = plan, scope_tables = 0L))
+  }
+  frames <- scope[["tables_frames"]]
+  n <- if (is.data.frame(frames)) 1L else length(frames)
+  scope[["tables_frames"]] <- NULL
+  if (length(scope)) plan[["scope"]] <- scope else plan[["scope"]] <- NULL
+  list(plan = plan, scope_tables = n)
 }
 
 # --- References and nodes -----------------------------------------------------
@@ -287,12 +329,17 @@
   sort(x, method = "radix")
 }
 
-# Topological order of `names` given deps(name) -> character; ties by name.
+# Topological order of `names` given deps(name) -> character. Every node comes
+# after all of its dependencies; among the nodes that are ready, the lowest
+# priority(name) comes first, then byte order of the name (a tie-breaker
+# only: it never moves a node before a dependency or after a consumer).
 # Returns list(order, cycle = names on a cycle or character(0)).
-.irTopoSort <- function(names, deps) {
+.irTopoSort <- function(names, deps, priority = function(n) 0L) {
   names <- .irSortNames(names)
+  dep_of <- lapply(stats::setNames(names, names), function(n) {
+    .irSortNames(intersect(as.character(deps(n)), names))
+  })
   state <- stats::setNames(rep(0L, length(names)), names)
-  order <- character(0)
   cycle <- character(0)
   visit <- function(n, stack) {
     if (length(cycle)) return(invisible(NULL))
@@ -302,15 +349,22 @@
       return(invisible(NULL))
     }
     state[[n]] <<- 1L
-    for (d in .irSortNames(intersect(as.character(deps(n)), names))) {
-      visit(d, c(stack, n))
-    }
+    for (d in dep_of[[n]]) visit(d, c(stack, n))
     state[[n]] <<- 2L
-    order <<- c(order, n)
     invisible(NULL)
   }
   for (n in names) visit(n, character(0))
-  list(order = order, cycle = cycle)
+  if (length(cycle)) return(list(order = character(0), cycle = cycle))
+  order <- character(0)
+  pending <- names
+  while (length(pending)) {
+    ready <- pending[vapply(pending, function(n) all(dep_of[[n]] %in% order), logical(1))]
+    rank <- vapply(ready, function(n) as.integer(priority(n)), integer(1))
+    pick <- ready[order(rank, ready, method = "radix")][[1L]]
+    order <- c(order, pick)
+    pending <- setdiff(pending, pick)
+  }
+  list(order = order, cycle = character(0))
 }
 
 .irEventDeps <- function(ir, e) {
@@ -421,7 +475,7 @@
   pick <- function(map, keep) {
     map <- map %||% list()
     out <- map[names(map) %in% keep]
-    if (!length(out)) .irEmptyObject() else out
+    if (!length(out)) .pnv2EmptyObject() else out
   }
   sub <- ir
   sub[["concept_sets"]] <- pick(ir[["concept_sets"]], cs_refs)
@@ -439,7 +493,9 @@
 #' Concept sets, events (including adapters) and intervals in reference
 #' order; populations topologically over parent, set-op members and match
 #' cases/controls (never "all indexed populations first"); variables; outputs
-#' with \code{joined} (and \code{dictionary}) after their inputs. Each
+#' topologically over joined inputs and dictionary sources, a \code{joined}
+#' output coming as late as its consumers allow (a tie-breaker among ready
+#' outputs, never a reordering across a dependency). Each
 #' population also lists its \strong{candidate} anchors (those of its own
 #' criteria, resolved against its candidate roster) and its \strong{final}
 #' anchors (those of the variables and outputs over it, resolved against the
@@ -453,22 +509,20 @@
 .irOrder <- function(ir) {
   ev <- .irTopoSort(names(ir[["events"]]), function(e) .irEventDeps(ir, e))
   po <- .irTopoSort(names(ir[["populations"]]), function(p) .irPopulationDeps(ir, p))
-  ou <- .irTopoSort(names(ir[["outputs"]]), function(o) .irOutputDeps(ir, o))
+  joined <- function(o) if (identical(ir[["outputs"]][[o]][["format"]], "joined")) 1L else 0L
+  ou <- .irTopoSort(names(ir[["outputs"]]), function(o) .irOutputDeps(ir, o),
+                    priority = joined)
   if (length(ev[["cycle"]]) || length(po[["cycle"]]) || length(ou[["cycle"]])) {
     .irReject(paste0("reference cycle: ",
                      paste(c(ev[["cycle"]], po[["cycle"]], ou[["cycle"]]), collapse = " -> ")))
   }
-  joined_last <- c(
-    ou[["order"]][!vapply(ou[["order"]], function(o) identical(ir[["outputs"]][[o]][["format"]], "joined"), logical(1))],
-    ou[["order"]][vapply(ou[["order"]], function(o) identical(ir[["outputs"]][[o]][["format"]], "joined"), logical(1))]
-  )
   list(
     concept_sets = .irSortNames(names(ir[["concept_sets"]])),
     events = ev[["order"]],
     intervals = .irSortNames(names(ir[["intervals"]])),
     populations = po[["order"]],
     variables = .irSortNames(names(ir[["variables"]])),
-    outputs = joined_last,
+    outputs = ou[["order"]],
     anchors = .irAnchorInventory(ir)
   )
 }
@@ -503,8 +557,7 @@
     for (o in names(ir[["outputs"]])) {
       out <- ir[["outputs"]][[o]]
       if (!identical(out[["rows"]], p)) next
-      cols <- unlist(out[["columns"]] %||% names(ir[["variables"]]), use.names = FALSE)
-      for (v in intersect(cols, names(ir[["variables"]]))) {
+      for (v in .irOutputVariables(ir, o)) {
         used <- c(used, .irCollectAnchors(ir[["variables"]][[v]]))
       }
       used <- c(used, .irCollectAnchors(out[["options"]]))

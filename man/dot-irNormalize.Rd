@@ -4,23 +4,33 @@
 \alias{.irNormalize}
 \title{Normalise a plan to the IR (step 2)}
 \usage{
-.irNormalize(plan)
+.irNormalize(plan, scope_tables = 0L, validated = FALSE)
 }
 \arguments{
 \item{plan}{Plan in parsed JSON form (see \code{.irJsonForm()}).}
+
+\item{scope_tables}{Number of workspace scope tables the server resolved
+for a v1 execution (endpoint arguments; never carried by the plan).}
+
+\item{validated}{TRUE when step 1 (the closed envelope) already ran.}
 }
 \value{
 The IR, class \code{dsomop_ir}, with attribute \code{source_version}
-  (1 or 2) and, for a lowered v1 plan, \code{legacy_residue} (see
-  \code{.irLowerV1()}).
+  (1 or 2) and, for a lowered v1 plan with advisory fields,
+  \code{legacy_annex} (server-private, listed by explain, covered by no
+  digest, never read by an execution decision; see \code{.irLowerV1()}).
 }
 \description{
-Language 2.0: identity plus every default (\code{.irNormalizeWire()}). A v1
-plan: lowered to the compatibility IR (section 5, \code{.irLowerV1()}),
-then defaults are expanded the same way, except \code{publish}: a v1 plan
-never names publication roots, its roots are the outputs the execution maps
-to symbols (\code{out}; unmapped outputs stay private computed inputs, as in
-2.10.2), so the lowered IR carries no \code{publish} and consumers use
+Every default is expanded by the one frozen normaliser shared with the
+client, \code{.planNormalizeV2()} (\code{R/plan_normalize_v2.R}, amendment
+A-11). Language 2.0: \code{.planNormalizeV2(plan)} against plan-v2.json. A
+v1 plan: lowered to the compatibility IR (section 5, \code{.irLowerV1()}),
+whose result-affecting legacy semantics are closed IR variants of the
+document itself (amendment A-10), then normalised by the same function
+against ir-v2.json -- except \code{publish}: a v1 plan never names
+publication roots, its roots are the outputs the execution maps to symbols
+(\code{out}; unmapped outputs stay private computed inputs, as in 2.10.2),
+so the lowered IR carries no \code{publish} and consumers use
 \code{ir$publish \%||\% names(out)}. Pure: no database access. The
 normalised plan is what \code{omopPlanExplainDS} returns.
 }

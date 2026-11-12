@@ -769,22 +769,17 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   scope <- .omopAnalysisScopeFromDots(scope, list(...))
   combine <- .ds_arg(combine)
   if (is.list(combine)) combine <- combine[[1]]
+  # The fold operator of resolved scope tables is part of the plan the server
+  # validates (and of its IR); the resolved frames themselves are not.
   if (!is.null(scope)) {
     if (is.null(plan$scope)) plan$scope <- list()
-    plan$scope$tables_frames <- scope
     plan$scope$combine <- plan$scope$combine %||% combine
   }
 
-  # Never serialize resolved workspace frames into an audit record. Preserve
-  # the JSON-safe recipe definition, but replace the injected frame payload by
-  # non-sensitive structural metadata.
-  audit_plan <- plan
-  if (is.list(audit_plan$scope) && !is.data.frame(audit_plan$scope)) {
-    audit_plan$scope$tables_frames <- NULL
-  }
+  # Never serialize resolved workspace frames into an audit record.
   .omopAuditLog(
     "omopPlanExecuteDS",
-    list(outputs = names(out), plan = audit_plan,
+    list(outputs = names(out), plan = plan,
          scope_present = !is.null(scope),
          scope_table_count = .omopAnalysisScopeTableCount(scope))
   )
@@ -792,22 +787,41 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   if (!.isScalarString(commit_policy) || !commit_policy %in% c("server", "all_or_none")) {
     stop("commit_policy must be 'server' or 'all_or_none'.", call. = FALSE)
   }
+  # The single frozen validation sequence (design 4.5) runs on the plan as it
+  # arrived -- a plan carrying scope.tables_frames is refused by its closed
+  # envelope -- before the server injects the resolved workspace frames,
+  # before the execution context and the DP seal exist and before any query.
+  validation <- tryCatch(
+    list(ir = .irPrepare(plan, handle,
+                         scope_tables = .omopAnalysisScopeTableCount(scope) %||% 0L),
+         wire = .irJsonForm(plan)),
+    dsomop_plan_rejection = function(e) list(error = e))
+  # Resolved frames are server state: they reach the v1 executors through the
+  # execution plan and the context, never through the client's plan.
+  if (!is.null(scope)) plan$scope$tables_frames <- scope
   ctx <- .planContext(handle, plan, output_mode, target_env)
   on.exit(.planContextClose(ctx), add = TRUE)
+  ctx$validation <- validation[c("ir", "wire")]
+  ctx$scopes <- scope
   ctx$commit_policy <- commit_policy
-  if (!is.null(seal_factory)) ctx$seal <- seal_factory(ctx)
-  outputs <- tryCatch(.planExecute(handle, plan, out, output_mode = output_mode, ctx = ctx),
-    dsomop_plan_rejection = function(e) {
-      if (!e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",
-                         "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
-      # A shared roster/dialect failure can precede individual root execution.
-      # It refuses every requested family without exposing its private details.
-      roots <- as.character(unlist(plan$publish %||% names(out), use.names = FALSE))
-      if (!length(roots)) stop(e)
-      for (root in roots) ctx$rejected[[root]] <- list(code = e$code,
-                                                     message = .publishMessage(e$code))
-      list()
-    })
+  refuse <- function(e) {
+    if (!e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",
+                       "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
+    # A shared roster/dialect failure can precede individual root execution.
+    # It refuses every requested family without exposing its private details.
+    roots <- as.character(unlist(plan$publish %||% names(out), use.names = FALSE))
+    if (!length(roots)) stop(e)
+    for (root in roots) ctx$rejected[[root]] <- list(code = e$code,
+                                                   message = .publishMessage(e$code))
+    list()
+  }
+  outputs <- if (!is.null(validation$error)) {
+    refuse(validation$error)
+  } else {
+    if (!is.null(seal_factory)) ctx$seal <- seal_factory(ctx)
+    tryCatch(.planExecute(handle, plan, out, output_mode = output_mode, ctx = ctx),
+             dsomop_plan_rejection = refuse)
+  }
   .publishOutputs(ctx, outputs, out)
 }
 
