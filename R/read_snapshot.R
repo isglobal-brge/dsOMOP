@@ -290,6 +290,14 @@
 .dsomopSnapshotSqlSources <- function(sql, schema, view = FALSE, sql_mode = "") {
   t <- .dsomopSnapshotSqlTokens(sql, sql_mode)
   n <- nrow(t)
+  if (view) {
+    volatile <- c("RAND", "RANDOM", "UUID", "UUID_SHORT", "SYSDATE", "NOW",
+      "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "CURDATE", "CURTIME",
+      "UTC_DATE", "UTC_TIME", "UTC_TIMESTAMP", "LOCALTIME", "LOCALTIMESTAMP",
+      "LOAD_FILE", "SLEEP", "BENCHMARK", "GET_LOCK", "IS_FREE_LOCK", "IS_USED_LOCK",
+      "RELEASE_LOCK", "RELEASE_ALL_LOCKS", "FOUND_ROWS", "ROW_COUNT", "LAST_INSERT_ID")
+    if (any(t$word %in% volatile)) stop("Volatile or external view inputs cannot be certified.")
+  }
   empty <- data.frame(schema = character(), table = character())
   if (!n) return(empty)
   depth <- integer(n)
@@ -349,7 +357,9 @@
       contexts <- head(contexts, -1L)
     } else if (w == "SELECT") {
       contexts[[k]] <- list(select = TRUE, from = FALSE, expect = FALSE)
-    } else if ((w == "FROM" && state$select) || w %in% c("JOIN", "STRAIGHT_JOIN")) {
+    } else if ((w == "FROM" && state$select) || w %in% c("JOIN", "STRAIGHT_JOIN") ||
+               (w == "TABLE" && (i == 1L || t$syntax[[i - 1L]] == "(" ||
+                  t$word[[i - 1L]] %in% c("UNION", "ALL", "DISTINCT", "AS")))) {
       contexts[[k]]$from <- TRUE; contexts[[k]]$expect <- TRUE
     } else if (w %in% c("WHERE", "GROUP", "HAVING", "ORDER", "LIMIT", "UNION",
                        "EXCEPT", "INTERSECT", "WINDOW", "FOR", "LOCK")) {

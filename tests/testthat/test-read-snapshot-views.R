@@ -198,6 +198,12 @@ for (engine in c("mariadb", "mysql")) local({
     expect_null(h$read_snapshot)
     DBI::dbExecute(f$admin, paste("INSERT INTO", hidden, "VALUES (2)"))
     expect_equal(.executeQuery(h, paste("SELECT COUNT(*) AS n FROM", f$declared))$n, 0)
+    DBI::dbExecute(f$admin, paste("CREATE OR REPLACE SQL SECURITY DEFINER VIEW", f$declared,
+      "AS SELECT * FROM", f$physical, "WHERE RAND() < 0.5"))
+    expect_error(suppressMessages(.dsomopWithReadSnapshot(h,
+      .executeQuery(h, paste("SELECT COUNT(*) AS n FROM", f$declared)))),
+      class = "dsomop_snapshot_unavailable")
+    expect_null(h$read_snapshot)
   })
 
   test_that(paste(dbms, "base tables named VIEW cannot masquerade as views"), {
@@ -239,6 +245,13 @@ test_that("snapshot dependency parser follows scoped relational sources", {
     "SELECT * FROM JSON_TABLE((SELECT j FROM db.person), '$[*]' COLUMNS(id INT PATH '$')) t", "main"),
     data.frame(schema = "db", table = "person"))
   expect_error(.dsomopSnapshotSqlSources("SELECT * FROM other.TABLE_FN()", "main"), "Stored-routine")
+  expect_equal(.dsomopSnapshotSqlSources(
+    "WITH q AS (TABLE external.person) SELECT * FROM q", "main"),
+    data.frame(schema = "external", table = "person"))
+  for (f in c("RAND()", "LOAD_FILE('/unread')", "CURRENT_DATE")) {
+    expect_error(.dsomopSnapshotSqlSources(paste("SELECT * FROM db.person WHERE", f),
+      "main", view = TRUE), "Volatile or external")
+  }
   ambiguous <- paste0("SELECT '", intToUtf8(92L), "' FROM hidden.person # ' FROM safe.person")
   expect_equal(.dsomopSnapshotSqlSources(ambiguous, "main", sql_mode = "NO_BACKSLASH_ESCAPES"),
     data.frame(schema = "hidden", table = "person"))
