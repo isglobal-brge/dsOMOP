@@ -201,9 +201,7 @@
       }
       if (!is.null(out$age_breaks)) {
         age_error <- tryCatch({
-          .computeAgeGroups(
-            2000L, 2020L, age_breaks = out$age_breaks, min_cell = 0L
-          )
+          .bandAges(20L, age_breaks = out$age_breaks)
           NULL
         }, error = function(e) conditionMessage(e))
         if (!is.null(age_error)) {
@@ -3875,7 +3873,9 @@
 
   attr(results, "omop_concept_cols") <- concept_cols_by_output
   if (own_context) {
+    ctx$return_private <- !staged
     status <- .publishOutputs(ctx, results, out_symbols)
+    if (exists(ctx$id, .publicationRegistry, inherits = FALSE)) rm(list = ctx$id, envir = .publicationRegistry)
     if (status$status == "refused") .publishReject(status$rejected[[1L]]$code)
     if (staged) {
       for (root in names(status$published)) for (component in names(status$published[[root]])) {

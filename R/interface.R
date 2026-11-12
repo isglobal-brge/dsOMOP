@@ -752,6 +752,7 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
          "reserved handle names.", call. = FALSE)
   }
   out <- stats::setNames(as.list(symbols), names(out))
+  if (any(!names(out) %in% names(plan$outputs))) stop("Unknown requested plan output.", call. = FALSE)
 
   # Recipe-level scope. omop.table SYMBOL sources are spliced in by name (DSI
   # resolves them to server-side frames) because they cannot cross in the plan
@@ -939,6 +940,7 @@ omopCohortFromTableDS <- function(x, omop_symbol, new_name = NULL) {
   .omopAuditLog("omopCohortFromTableDS",
                 list(n_rows = if (is.data.frame(x)) nrow(x) else NA,
                      new_name = new_name))
+  x <- .publishStandalone(x, handle, caller = "omopCohortFromTableDS", already_tokenized = TRUE)
   result <- .cohortFromTokenFrame(handle, x, new_name = new_name)
   if (!is.character(result) || length(result) != 1L || is.na(result) ||
       !result %in% (handle$temp_tables %||% character(0))) {
@@ -2932,5 +2934,6 @@ omopAsFactorColumnsDS <- function(df, spec) {
   # Core outputs never inherit DP state from their inputs.
   attr(df, "dsomop_dp_provenance") <- NULL
   attr(df, "dsomop_dp_filter_state") <- NULL
+  .publishUpdateOwnedValue(source, df)
   df
 }

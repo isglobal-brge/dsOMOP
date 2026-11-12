@@ -79,6 +79,7 @@
   if (!all(columns %in% names(frame)) || anyNA(frame[columns])) {
     .publishReject("lineage_malformed")
   }
+  if (nrow(frame) == 0L) return(character(0))
   values <- lapply(frame[columns], as.character)
   if (!length(values)) .publishReject("lineage_malformed")
   do.call(paste0, lapply(values, function(x) paste0(nchar(x, type = "bytes"), ":", x)))
@@ -129,6 +130,7 @@
   }
   used <- vapply(ctx$inventory, function(x) x$symbol, "")
   symbol <- requested
+  if (requested %in% names(ctx$rollback) && !requested %in% used) return(requested)
   i <- 1L
   while (exists(symbol, ctx$target_env, inherits = FALSE) || symbol %in% used) {
     symbol <- paste0(requested, ".", i)
@@ -244,16 +246,18 @@
 #' Close private execution state on every exit path
 #' @keywords internal
 .planContextClose <- function(ctx) {
+  on.exit({
+    if (length(ls(ctx$staging_env, all.names = TRUE))) {
+      rm(list = ls(ctx$staging_env, all.names = TRUE), envir = ctx$staging_env)
+    }
+    ctx$closed <- TRUE
+    ctx$rosters <- new.env(parent = emptyenv())
+    ctx$ir <- NULL
+    ctx$seal <- NULL
+    ctx$rollback <- list()
+    if (exists(ctx$id, .planContextRegistry, inherits = FALSE)) rm(list = ctx$id, envir = .planContextRegistry)
+  }, add = TRUE)
   if (!isTRUE(ctx$committed)) .publishAbort(ctx)
-  if (length(ls(ctx$staging_env, all.names = TRUE))) {
-    rm(list = ls(ctx$staging_env, all.names = TRUE), envir = ctx$staging_env)
-  }
-  ctx$closed <- TRUE
-  ctx$rosters <- new.env(parent = emptyenv())
-  ctx$ir <- NULL
-  ctx$seal <- NULL
-  ctx$rollback <- list()
-  if (exists(ctx$id, .planContextRegistry, inherits = FALSE)) rm(list = ctx$id, envir = .planContextRegistry)
   invisible(NULL)
 }
 
@@ -294,7 +298,7 @@
     pc <- ctx$prepared[[id]]$candidate
     entry <- ctx$inventory[[id]]
     # A hook/compiler may have occupied a name since prepare; reserve again.
-    if (exists(entry$symbol, ctx$target_env, inherits = FALSE)) {
+    if (exists(entry$symbol, ctx$target_env, inherits = FALSE) && !entry$symbol %in% names(ctx$rollback)) {
       entry$symbol <- .publishFreshSymbol(ctx, entry$symbol)
       ctx$inventory[[id]] <- entry
     }
@@ -371,6 +375,8 @@
 omopPlanStatusDS <- function(exec_symbol) {
   status <- .publicationStatusObject(exec_symbol, parent.frame())
   .validatePlanStatus(status)
+  ctx <- get(attr(status, "execution_id"), .publicationRegistry, inherits = FALSE)
+  ctx$status_symbol <- .ds_arg(exec_symbol)
   attributes(status) <- list(names = names(status))
   status
 }
@@ -397,7 +403,20 @@ omopPlanStatusDS <- function(exec_symbol) {
 omopStagedRevokeDS <- function(exec_symbol) {
   env <- parent.frame()
   if (is.character(exec_symbol) && length(exec_symbol) == 1L &&
-      !exists(exec_symbol, env, inherits = TRUE)) return(invisible(TRUE))
+      !exists(exec_symbol, env, inherits = TRUE)) {
+    # The client may have deleted this site's status before another site fails.
+    # The server-only association was established by the authenticated reader.
+    ancestors <- list(env)
+    while (!identical(ancestors[[length(ancestors)]], emptyenv())) {
+      ancestors[[length(ancestors) + 1L]] <- parent.env(ancestors[[length(ancestors)]])
+    }
+    for (id in ls(.publicationRegistry, all.names = TRUE)) {
+      ctx <- get(id, .publicationRegistry, inherits = FALSE)
+      if (identical(ctx$status_symbol, exec_symbol) &&
+          any(vapply(ancestors, identical, logical(1), y = ctx$target_env))) .publishAbort(ctx)
+    }
+    return(invisible(TRUE))
+  }
   if (inherits(exec_symbol, "FlowerDatasetDescriptor")) {
     return(.publishRevokeDescriptor(exec_symbol))
   }
@@ -530,7 +549,7 @@ omopStagedRevokeDS <- function(exec_symbol) {
         cc <- intersect(attr(outputs, "omop_concept_cols")[[root]] %||% character(0), names(frame))
         if (length(cc)) attr(frame, "omop_concept_cols") <- cc
       }
-      .publishPrepare(ctx, pc, frame, already_tokenized = descriptor)
+      .publishPrepare(ctx, pc, frame, already_tokenized = descriptor || isTRUE(ctx$return_private))
     }
   }
   .publishCommit(ctx)
@@ -553,10 +572,36 @@ omopStagedRevokeDS <- function(exec_symbol) {
 #' @keywords internal
 .validateStagedManifestMembership <- function(descriptor, directory) {
   manifest <- .readStagingManifest(file.path(directory, "manifest.json"))
+  canonical <- function(x) {
+    x <- unclass(x)
+    if (!is.null(x$metadata$column_types)) x$metadata$column_types <- as.list(x$metadata$column_types)
+    .dsomopDpCanonicalJson(x)
+  }
   same <- vapply(manifest$outputs, function(x) {
-    identical(x$dataset_id, descriptor$dataset_id) &&
-      identical(.dsomopDpCanonicalJson(unclass(x)), .dsomopDpCanonicalJson(unclass(descriptor)))
+    identical(x$dataset_id, descriptor$dataset_id) && identical(canonical(x), canonical(descriptor))
   }, logical(1))
   if (sum(same) != 1L) stop("Staged component is not committed or has been revoked.", call. = FALSE)
   invisible(TRUE)
+}
+
+#' Record an audited in-place factor recode without changing released attributes
+#' @keywords internal
+.publishUpdateOwnedValue <- function(before, after) {
+  for (id in ls(.publicationRegistry, all.names = TRUE)) {
+    ctx <- get(id, .publicationRegistry, inherits = FALSE)
+    if (!isTRUE(ctx$committed)) next
+    for (symbol in names(ctx$published_values)) {
+      if (identical(ctx$published_values[[symbol]], before)) ctx$published_values[[symbol]] <- after
+    }
+  }
+  invisible(after)
+}
+
+#' Authorise one server-side in-place verb destination with a rollback copy
+#' @keywords internal
+.publishAllowReplacement <- function(ctx, symbol) {
+  stopifnot(.isPlanContext(ctx), .isScalarString(symbol))
+  if (!exists(symbol, ctx$target_env, inherits = FALSE)) stop("Replacement target is unavailable.", call. = FALSE)
+  ctx$rollback[[symbol]] <- get(symbol, ctx$target_env, inherits = FALSE)
+  invisible(symbol)
 }
