@@ -91,13 +91,14 @@
     },
     scalar = {
       st <- shape[["type"]]
-      if (st %in% c("integer", "number")) {
+      if (st %in% c("integer", "number", "cohort_id")) {
         # the v1 executors read numbers through as.numeric() / as.integer()
         # (.longitudinalInteger(), the leaf compiler's integer_param(), the
         # window offsets, concept id lists, value_bin bounds): every value
         # they executed is accepted with the meaning they gave it, and the
         # lowering stores the coerced number (A-16, A-19 item 7)
-        coerced <- if (identical(st, "integer")) .v1AsInteger(x) else .v1AsNumber(x)
+        coerced <- switch(st, integer = .v1AsInteger(x), number = .v1AsNumber(x),
+                          cohort_id = .v1AsCohortInteger(x))
         if (is.null(coerced)) {
           add(label, if (identical(st, "integer")) ": must be one integer" else ": must be one finite number")
         } else {
@@ -223,6 +224,16 @@
   if (length(number) != 1L || is.na(number) || !is.finite(number)) NULL else number
 }
 
+# Cohort references and temporary inline-spec ids historically use
+# as.integer() directly, including truncation of a finite fractional number.
+# Other integer fields use .v1AsInteger() and continue to reject fractions.
+.v1AsCohortInteger <- function(x) {
+  number <- .v1AsNumber(x)
+  if (is.null(number)) return(NULL)
+  value <- suppressWarnings(as.integer(number))
+  if (is.na(value)) NULL else value
+}
+
 # Run a legacy validator that stops on its first finding; return the finding
 # as "<path>: <message>" (character(0) when it passes).
 .v1Legacy <- function(path, expr) {
@@ -234,7 +245,28 @@
 
 # --- shared v1 shapes ------------------------------------------------------------
 
-.v1sConceptIds <- function() .v1sArr(.v1sScalar("integer"))
+# These legacy vector positions are flattened by unlist() before numeric
+# conversion. Empty nested arrays contribute no value; objects stay closed.
+.v1sIntegerVector <- function(.check = NULL) {
+  .v1sCustom(function(x, path) {
+    walk <- function(value, p) {
+      if (is.list(value) && is.null(names(value))) {
+        return(unlist(lapply(seq_along(value), function(i) {
+          if (is.null(value[[i]])) paste0(p, "/", i - 1L, ": an array item cannot be null")
+          else walk(value[[i]], paste0(p, "/", i - 1L))
+        }), use.names = FALSE))
+      }
+      if (is.atomic(value) && length(value) != 1L) {
+        return(walk(as.list(value), p))
+      }
+      .v1ShapeErrors(value, .v1sScalar("integer"), p)
+    }
+    errors <- walk(x, path)
+    if (!length(errors) && is.function(.check)) errors <- .check(x, path)
+    errors
+  })
+}
+.v1sConceptIds <- function() .v1sIntegerVector()
 .v1sSafeScope <- function() {
   .v1sObj(table = .v1sScalar("string"), column = .v1sScalar("string"),
           concept_id = .v1sConceptIds(), concept_col = .v1sScalar("string"),
@@ -243,14 +275,14 @@
 
 # A results-cohort id: a positive integer (amendment A-10: 0 is refused).
 .v1sCohortId <- function() {
-  .v1sScalar("integer", .check = function(x, path) {
+  .v1sScalar("cohort_id", .check = function(x, path) {
     if (x < 1) paste0(path, ": a v1 cohort_definition_id must be a positive integer (0 is refused)")
   })
 }
 # The plan cohort's cohort_definition_id: a results-cohort reference (>= 1,
 # A-10) when the cohort is a cohort_table; otherwise the optional identifier
 # of an inline spec, any non-negative integer (A-16).
-.v1sPlanCohortId <- function() .v1sScalar("integer")
+.v1sPlanCohortId <- function() .v1sScalar("cohort_id")
 
 #' Findings of a v1 row filter (the custom DSL of \code{.assertCustomFilterSafe()})
 #'
@@ -598,7 +630,7 @@
       # the executor reads the values (tolower(columns)); names are ignored
       columns = .v1sOneOf(.v1sStrs(), .v1sMap(.v1sStr())),
       derived = .v1sStrs(c("age_at_index", "prior_observation", "future_observation")),
-      age_breaks = .v1sArr(.v1sInt(), .check = function(x, path) {
+      age_breaks = .v1sIntegerVector(.check = function(x, path) {
         .v1Legacy(path, .bandAges(20L, age_breaks = x))
       })),
     survival = out(
@@ -688,7 +720,7 @@
                        spec <- x[["spec"]]
                        c(if (!is.null(id) && identical(.v1Text(x[["type"]]), "cohort_table")) {
                            .v1ShapeErrors(id, .v1sCohortId(), paste0(path, "/cohort_definition_id"))
-                         } else if (!is.null(id) && isTRUE(.v1AsInteger(id) < 0L)) {
+                         } else if (!is.null(id) && isTRUE(.v1AsCohortInteger(id) < 0L)) {
                            paste0(path, "/cohort_definition_id: an inline spec's cohort_definition_id is a non-negative integer")
                          },
                          if (!is.null(spec)) {

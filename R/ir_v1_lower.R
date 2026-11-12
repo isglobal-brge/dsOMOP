@@ -179,10 +179,11 @@
   if (is.null(number)) return(x)
   if (number == round(number) && abs(number) < .Machine$integer.max) as.integer(number) else number
 }
+.v1CohortInteger <- function(x) .v1AsCohortInteger(x) %||% x
 
 .v1IdList <- function(x) {
   if (is.null(x)) return(list())
-  lapply(unname(.v1Items(x)), .v1Int)
+  lapply(unname(as.list(unlist(x, use.names = FALSE))), .v1Int)
 }
 
 # v1 concept set (ids or the {concepts, include_descendants, include_mapped,
@@ -695,7 +696,7 @@
       derived <- tolower(unlist(out[["derived"]] %||% list(), use.names = FALSE))
       if ("age_at_index" %in% derived) {
         age <- list(kind = "age", reference = "index", reference_date = NULL, bands = TRUE)
-        age["age_breaks"] <- list(if (!is.null(out[["age_breaks"]])) lapply(.v1Items(out[["age_breaks"]]), .v1Int))
+        age["age_breaks"] <- list(if (!is.null(out[["age_breaks"]])) .v1IdList(out[["age_breaks"]]))
         columns <- c(columns, list(.v1Column("age_group", list(derived = age))))
       }
       if ("prior_observation" %in% derived) {
@@ -950,7 +951,7 @@
   } else if (!is.null(pop[["index_event"]])) {
     node <- list(kind = "index", index = .v1LowerIndexEvent(st, id, pop[["index_event"]]))
     node["where"] <- list(.v1And(
-      if (!is.null(pop[["cohort_definition_id"]])) list(cohort = list(cohort_definition_id = .v1Int(pop[["cohort_definition_id"]]))),
+      if (!is.null(pop[["cohort_definition_id"]])) list(cohort = list(cohort_definition_id = .v1CohortInteger(pop[["cohort_definition_id"]]))),
       .v1Criteria(pop[["filter_tree"]], st, path)))
     node
   } else if (!identical(pid, "base") && is.null(pop[["filter_tree"]]) &&
@@ -963,7 +964,7 @@
   } else {
     node <- list(kind = "criteria")
     node["where"] <- list(.v1Criteria(pop[["filter_tree"]], st, path))
-    node["cohort_definition_id"] <- list(.v1Int(pop[["cohort_definition_id"]]))
+    node["cohort_definition_id"] <- list(.v1CohortInteger(pop[["cohort_definition_id"]]))
     node["episode_policy"] <- list(if (!is.null(pop[["episode_policy"]])) tolower(.v1Text(pop[["episode_policy"]])))
     # v1 criteria populations are the observation periods of their persons;
     # their windowed leaves anchor on the plan-level index cohort
@@ -1007,7 +1008,7 @@
     # the plan cohort id of an inline spec names its table and fills the
     # cohort_membership id column (A-16): present only when supplied, any
     # non-negative integer, never defaulted
-    if (!is.null(cohort[["cohort_definition_id"]])) ls[["cohort_definition_id"]] <- .v1Int(cohort[["cohort_definition_id"]])
+    if (!is.null(cohort[["cohort_definition_id"]])) ls[["cohort_definition_id"]] <- .v1CohortInteger(cohort[["cohort_definition_id"]])
     if (length(ls) == 0L) ls <- structure(list(), names = character(0))
     node <- list(kind = "index", label = "Base population",
                  index = list(source = list(legacy_spec = ls), select = "all",
@@ -1016,7 +1017,7 @@
     if (!is.null(cohort[["episode_policy"]])) .v1Annex(st, path, unread_episode_policy = cohort[["episode_policy"]])
   } else if (identical(type, "cohort_table") && !is.null(cohort[["cohort_definition_id"]])) {
     node <- list(kind = "index", label = "Base population",
-                 index = list(source = list(cohort_definition_id = .v1Int(cohort[["cohort_definition_id"]])),
+                 index = list(source = list(cohort_definition_id = .v1CohortInteger(cohort[["cohort_definition_id"]])),
                               select = "all", end = list(strategy = "event_end", days = NULL, pad = 0L),
                               restrict_to_observation = FALSE),
                  coverage = list(on_missing = "keep"),
@@ -1151,12 +1152,12 @@
   cohort_sources <- list()
   if (!is.null(scope[["cohort"]])) cohort_sources <- c(cohort_sources, .v1Items(scope[["cohort"]]))
   if (identical(.v1Text(cohort[["type"]]), "cohort_table") && !is.null(cohort[["cohort_definition_id"]])) {
-    cohort_sources <- c(cohort_sources, list(.v1Int(cohort[["cohort_definition_id"]])))
+    cohort_sources <- c(cohort_sources, list(.v1CohortInteger(cohort[["cohort_definition_id"]])))
   }
   # results-cohort ids stay integers, owned cohort temp-table names strings
   cohort_sources <- lapply(cohort_sources, function(s) {
     s <- .v1Scalar(s)
-    if (is.character(s)) s else .v1Int(s)
+    if (is.character(s)) s else .v1CohortInteger(s)
   })
   ir_scope <- list()
   ir_scope["cohort"] <- list(if (length(cohort_sources)) cohort_sources[[1L]])

@@ -147,8 +147,7 @@
 
 # Bounds of a v1 window, as the executor reads them (.temporalOffset).
 .v1Bound <- function(x) {
-  x <- .v1Scalar(x)
-  if (is.numeric(x) && length(x) == 1L && !is.na(x)) as.numeric(x) else NULL
+  .v1AsInteger(x)
 }
 
 #' Cross-field rules of the v1 executors, checked before lowering
