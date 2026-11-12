@@ -11,7 +11,9 @@ Named list of contracts.
 }
 \description{
 C7 contracts over the unscoped CDM population (a public basis), released
-in their original summary schemas. Their frames are shown per server:
-the record-moment components are not pooled by dsOMOPClient 2.10.3.
+in their original summary schemas. dsOMOPClient 2.10.3 pools compatible
+servers by summing the signed N, R, S and Q of each stratum and deriving
+the record-weighted mean and SD once (\code{.omopReleaseRecordPoolingExport}
+carries the display fields); older clients see a not-poolable contract.
 }
 \keyword{internal}

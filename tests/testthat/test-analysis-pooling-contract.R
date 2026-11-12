@@ -119,6 +119,31 @@ test_that("protected releases publish component pooling, not exact contracts", {
     expect_silent(.omopAnalysisValidatePoolingContract(meta$pooling_contract,
                                                        id))
   }
+  # The established contracts travel with the descriptor: standard outputs
+  # of servers without the DP service pool by it, and effect estimates are
+  # meta-analysed per site as in 2.10.2 (post-processing).
+  standard <- withr::with_options(list(dsomop.tools.mode = "standard"), {
+    suppressWarnings(.omopAnalysisRegistry(handle, force = TRUE))
+    lapply(stats::setNames(nm = c("dsomop:incidence.rate",
+                                  "dsomop:cm.effect_estimate",
+                                  "dsomop:cm.interaction_estimate",
+                                  "dsomop:sccs.incidence_rate_ratio")),
+           function(id) .omopAnalysisGet(handle, id)$pooling_contract)
+  })
+  suppressWarnings(.omopAnalysisRegistry(handle, force = TRUE))
+  for (id in names(standard)) {
+    meta <- .omopAnalysisGet(handle, id)
+    expect_identical(meta$release_pooling$standard_contract, standard[[id]],
+                     info = id)
+    if (identical(standard[[id]]$strategy, "effect_estimate")) {
+      expect_identical(meta$release_pooling$effect_estimate, standard[[id]],
+                       info = id)
+    } else {
+      expect_null(meta$release_pooling$effect_estimate, info = id)
+    }
+  }
+  expect_identical(standard[["dsomop:cm.effect_estimate"]]$strategy,
+                   "effect_estimate")
   # Entries without a protected contract keep their exact contract.
   km <- .omopAnalysisGet(handle, "dsomop:cm.kaplan_meier")
   expect_identical(km$pooling_contract$strategy, "kaplan_meier")

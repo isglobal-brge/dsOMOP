@@ -1433,21 +1433,6 @@
   df
 }
 
-#' Pooling contracts of protected releases
-#'
-#' In auto and DP-only modes an entry with a protected release contract
-#' publishes the legacy \code{not_poolable} strategy (so clients older than
-#' 2.10.3 display per-server frames and never pool projected or heuristic
-#' protected values as if they were exact sufficient statistics) and a
-#' separate \code{release_pooling} descriptor: 2.10.3 clients pool the signed,
-#' reconciled components of compatible protected releases and derive views
-#' once. Standard mode keeps the established contract.
-#'
-#' @param entry Catalog entry.
-#' @param contract Its validated legacy pooling contract.
-#' @return The entry with \code{meta$pooling_contract} (and possibly
-#'   \code{meta$release_pooling}) set.
-#' @keywords internal
 #' Stable unavailable status of an always-protected view
 #'
 #' Used when a view that is only ever released from its protected basis (a
@@ -1478,6 +1463,28 @@
   df
 }
 
+#' Pooling contracts of protected releases
+#'
+#' In auto and DP-only modes an entry with a protected release contract
+#' publishes the legacy \code{not_poolable} strategy (so clients older than
+#' 2.10.3 display per-server frames and never pool projected or heuristic
+#' protected values as if they were exact sufficient statistics) and a
+#' separate \code{release_pooling} descriptor: 2.10.3 clients pool the signed,
+#' reconciled components of compatible protected releases and derive views
+#' once (record-weighted summaries: the signed N, R, S and Q per stratum). The
+#' descriptor also carries the entry's established contract
+#' (\code{standard_contract}), by which frames of servers whose DP service is
+#' unavailable (standard outputs with the disclosive fields unavailable) are
+#' pooled with each other, and, for effect estimates, its established
+#' \code{effect_estimate} contract: the pooled effect is the inverse-variance
+#' meta-analysis of the per-site protected estimates (post-processing).
+#' Standard mode keeps the established contract.
+#'
+#' @param entry Catalog entry.
+#' @param contract Its validated legacy pooling contract.
+#' @return The entry with \code{meta$pooling_contract} (and possibly
+#'   \code{meta$release_pooling}) set.
+#' @keywords internal
 .omopToolsReleasePoolingContract <- function(entry, contract) {
   release <- tryCatch(.omopToolsReleaseContract(entry), error = function(e) NULL)
   mode <- tryCatch(.dsomopToolsMode(), error = function(e) "auto")
@@ -1486,28 +1493,15 @@
     entry$meta$pooling_contract <- contract
     return(entry)
   }
-  # Record-weighted components (R/S/Q) are shown per server: the 2.10.3
-  # client pools person-weighted components only.
-  if (isTRUE(release$per_site_only)) {
-    reason <- paste0(
-      "Protected record-weighted release (", release$class, "): its capped ",
-      "record moments are shown per server and are not pooled.")
-    entry$meta$release_pooling <- list(
-      version = 1L, strategy = "per_site_only",
-      protocol = .DSOMOP_RELEASE_PROTOCOL,
-      contract = .DSOMOP_RELEASE_CONTRACT_VERSION,
-      release_contract = release$name, class = release$class,
-      columns = contract$columns, reason = reason)
-    entry$meta$pooling_contract <- .omopPoolingNotPoolable(reason)
-    return(entry)
-  }
-  entry$meta$release_pooling <- list(
-    version = 1L, strategy = "protected_components",
-    protocol = .DSOMOP_RELEASE_PROTOCOL,
-    contract = .DSOMOP_RELEASE_CONTRACT_VERSION,
-    release_contract = release$name, class = release$class,
-    columns = contract$columns
-  )
+  entry$meta$release_pooling <- c(
+    list(version = 1L, strategy = "protected_components",
+         protocol = .DSOMOP_RELEASE_PROTOCOL,
+         contract = .DSOMOP_RELEASE_CONTRACT_VERSION,
+         release_contract = release$name, class = release$class,
+         columns = contract$columns, standard_contract = contract),
+    if (identical(contract$strategy, "effect_estimate")) {
+      list(effect_estimate = contract)
+    })
   entry$meta$pooling_contract <- .omopPoolingNotPoolable(paste0(
     "Protected release (", release$class, "): its values are projected ",
     "noisy components, not exact sufficient statistics. dsOMOPClient >= ",
