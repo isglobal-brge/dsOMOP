@@ -1971,6 +1971,9 @@
                 ]
               },
               "then": {
+                "required": [
+                  "legacy_episodes"
+                ],
                 "properties": {
                   "parent": {
                     "type": "null"
@@ -1980,6 +1983,9 @@
                   },
                   "cohort_definition_id": {
                     "type": "null"
+                  },
+                  "legacy_episodes": {
+                    "const": "observation_periods"
                   }
                 }
               }

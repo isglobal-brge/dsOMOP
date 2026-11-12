@@ -251,8 +251,10 @@ for _branch in D["population"]["oneOf"]:
             "description": "the v1 criteria population without filter_tree, cohort_definition_id or index_event: no person (2.10.2 materialised an empty roster)"}
         _branch.setdefault("allOf", []).append({
             "if": {"required": ["legacy_empty"]},
-            "then": {"properties": {"parent": {"type": "null"}, "where": {"type": "null"},
-                                    "cohort_definition_id": {"type": "null"}}}})
+            "then": {"required": ["legacy_episodes"],
+                     "properties": {"parent": {"type": "null"}, "where": {"type": "null"},
+                                    "cohort_definition_id": {"type": "null"},
+                                    "legacy_episodes": {"const": "observation_periods"}}}})
 D["legacy_spec"]["properties"]["cohort_definition_id"] = {
     "type": "integer", "minimum": 0,
     "description": "the v1 plan cohort's cohort_definition_id of an inline spec (names its temporary cohort, fills the cohort_membership id column); present only when supplied, never defaulted"}
@@ -435,6 +437,10 @@ ir_probe("I60", "scope legacy_cohort_sources with a results-cohort reference of 
 ir_probe("I61", "legacy_empty criteria population in the IR (CR-21)", OK, A, lambda b: b["populations"].__setitem__("nobody", {"kind": "criteria", "legacy_empty": True, "legacy_episodes": "observation_periods"}))
 ir_probe("I62", "legacy_empty beside criteria", R, A, lambda b: b["populations"].__setitem__("nobody", {"kind": "criteria", "legacy_empty": True, "where": {"person": {"var": "gender_concept_id", "op": "==", "value": 8532}}}))
 ir_probe("I63", "legacy_empty false", R, A, lambda b: b["populations"].__setitem__("nobody", {"kind": "criteria", "legacy_empty": False}))
+ir_probe("I64", "legacy_empty requires its observation-period roster", R, A, lambda b: b["populations"].__setitem__("nobody", {"kind": "criteria", "legacy_empty": True}))
+ir_probe("I65", "legacy_empty cannot use cohort rows", R, A, lambda b: b["populations"].__setitem__("nobody", {"kind": "criteria", "legacy_empty": True, "legacy_episodes": "cohort_rows"}))
+ir_probe("I66", "legacy_empty cannot inherit a parent", R, A, lambda b: b["populations"].__setitem__("nobody", {"kind": "criteria", "legacy_empty": True, "legacy_episodes": "observation_periods", "parent": "new_users"}))
+ir_probe("I67", "legacy_empty cannot reference a cohort", R, A, lambda b: b["populations"].__setitem__("nobody", {"kind": "criteria", "legacy_empty": True, "legacy_episodes": "observation_periods", "cohort_definition_id": 1}))
 probe("P63", "temporal source_analyses with a count-only selection (A-14; a wire field, so valid under both schemas)", OK, A, lambda b: _tc(b, {"hba1c": ["count"]}))
 probe("P44", "censor conditioned on an index source (A-7)", OK, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "which": "first_start_after_entry", "when_index_source": ["acei"]}}]))
 probe("P45", "censor when_index_source must be nonempty and unique", R, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "when_index_source": ["acei", "acei"]}}]))
