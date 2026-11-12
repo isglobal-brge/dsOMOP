@@ -144,7 +144,8 @@ test_that("the v1 corpus classes are reviewed per plan instance and keyed by sta
   ie190 <- get("test-plan-index-event.R", "Primary All preserves distinct same-date source events downstream")
   expect_identical(ie190$class, "safe"); expect_match(ie190$rationale, ".ie_resolve")
   so213 <- get("test-recipe-setops.R", "set-op union/intersect/setdiff produce the expected person sets")
-  expect_setequal(sub("^.*#", "", so213$plan_id), c("union", "intersect", "setdiff")); expect_true(all(so213$class == "safe"))
+  # amendment A-19 item 5: the internal unrestricted base is corrected (A-E14); the published outputs are exact-checked
+  expect_setequal(sub("^.*#", "", so213$plan_id), c("union", "intersect", "setdiff")); expect_true(all(so213$class == "corrected"))
   expect_identical(get("test-recipe-circe.R", "recipe_export_circe errors for an unknown population_id", "dsOMOPClient")$class, "unchanged_invalid")
   sl298 <- get("test-survival-longitudinal.R", "multi-state recipes round-trip and preview both components", "dsOMOPClient")
   expect_setequal(sub("^.*#", "", sl298$plan_id), c("1", "2")); expect_setequal(sl298$class, c("safe", "unchanged_invalid"))

@@ -50,9 +50,20 @@ fills its entries. Classes follow design-2.10.3 section 5.
 - (A-9) The plan code no longer claims that windowed population filters
   without a cohort index fall back to the server wall clock: they need an
   explicit `reference_date` and fail closed without one (behaviour unchanged).
-- The `base` population of a multi-population v1 plan, declared without
-  criteria, is every person, as in a single-population plan; without a plan
-  cohort and a scope it restricted its outputs to no person.
+- (A-E14) The unrestricted `base` population of a multi-population v1 plan
+  (declared without criteria) is every person in scope, as in a
+  single-population plan; 2.10.2 resolved it to no person
+  (`.cohortPersonIds(handle, NULL)`), so outputs over it were empty.
+- (F-26) An assigned baseline `age_group` is no longer suppressed per band
+  below `nfilter.tab`: bands are `.bandAges()` of the age at index on the
+  server grid (or the requested `age_breaks`) and the published object is
+  gated as a whole; 2.10.2 returned NA for every band smaller than the
+  threshold.
+- An output whose sources this site cannot serve (`on_missing_table =
+  "unavailable"`) is decided before support (WS-1 review N11): an empty family
+  is reported in `unavailable` only, with no support refusal and no artefact;
+  releasable rows keep the support rule, and a refused root is not also
+  reported unavailable.
 
 ## Newly permitted (previously refused by an intermediate or granularity gate)
 
@@ -117,12 +128,22 @@ fills its entries. Classes follow design-2.10.3 section 5.
   baseline person columns (with the executors' own messages: "Baseline
   person column(s) not found", "Disclosive: ... are blocked"); and the
   session temporary tables the v1 executors need on SQL families without
-  them (`dialect_unsupported`). Typed site checks refuse what 2.10.2 left to
-  SQL coercion: a predicate literal whose type does not match its column (a
-  text literal on a numeric or concept column, a non-ISO date) and a
-  `concept_col` that is not a filterable concept column (2.10.2 accepted any
-  existing column, class-1 columns included). An unknown v1 output type
-  keeps the executor's "Unsupported output type" wording. The plan-declaration error
+  them (`dialect_unsupported`). An unknown v1 output type keeps the
+  executor's "Unsupported output type" wording. v1 plans keep the 2.10.2
+  behaviour of literals and concept columns (A-19 item 7): the values the
+  executors coerced (integer strings for integer fields such as an interval
+  `anchor = "9000"`, concept ids such as `condition_concept_id IN ["201820"]`,
+  numeric strings on numeric columns) are applied through validated
+  compatibility normalisation, and the `concept_col` override executes as
+  2.10.2 did (any column of the table; the override column, when also
+  requested or filtered on, surfaces while the concept set scopes the domain
+  concept column). Only literals 2.10.2 could not compile with one defined
+  result are refused: a number on a text column, a non-numeric string on a
+  numeric or concept column, a non-ISO date. Language 2.0 plans are typed
+  strictly (typed literals, filterable concept columns only).
+- A custom filter on an identifier, blocked or unknown column is refused with
+  its path in non-strict mode too; 2.10.2 dropped it with a warning and
+  returned no output for that root. The plan-declaration error
   of an output that needs a cohort keeps the executor's untyped error.
 - (A-15) A v1 inclusion `occurrence` is the executor's `{type, count}`
   object, its type matched exactly (`at_least`, `at_most`, `exactly`): any
@@ -138,9 +159,6 @@ fills its entries. Classes follow design-2.10.3 section 5.
   dropped silently, and `cohort_start_date`, `cohort_end_date`,
   `observation_period_start_date` and `observation_period_end_date` released
   exact dates outside the absolute-date policy.
-- A v1 criteria population other than `base` without `filter_tree`,
-  `cohort_definition_id` or `index_event` (it resolved to no person) and a
-  difference of a population with itself (always empty) are refused.
 - (A-E2) v1 set-operation populations carrying `filter_tree`,
   `cohort_definition_id`, `index_event` or `episode_policy` are refused (the
   first two were silently ignored), and a population of an unknown `kind` is
@@ -313,11 +331,32 @@ fills its entries. Classes follow design-2.10.3 section 5.
   lowered v1 plan first the v1 executors' own checks, with their messages
   (tables, results cohort, filter trees, custom filters including the raw
   person/death tables of a person_level output, the baseline person-column
-  contract), then the IR's typed checks over the column names the v1
-  executors accept. A v1 event over a present table without an event role
-  (`event_level` over `person`) is a legacy row source; it is never a native
-  event table. A v1 plan-declaration error (an output that needs a cohort)
-  keeps the executor's untyped error.
+  contract, the concept-column contract), then the IR's typed checks over
+  the column names and literals the v1 executors accept. A v1 event over a
+  present table without an event role (`event_level` over `person`) is a
+  legacy row source; it is never a native event table. A v1
+  plan-declaration error (an output that needs a cohort) keeps the
+  executor's untyped error. A reducer over an interval source is typed
+  against the interval's course columns (its dates and group concept; its
+  identity, grouping and record count private; no value, unit or supply
+  role), and a reducer's named value resolves against its source.
+- The closed v1 envelope also closes the positions the executors ignore: an
+  inline `cohort.spec` next to a `filter_tree` (an inline-spec object or the
+  legacy flat array of filter leaves) and the advisory `concept_name`
+  labels; a malformed known object is a typed rejection; the leaf compiler's
+  parameter rules (integer ages and counts, ordered bands, measurement
+  bounds, windows, ISO reference dates) run at step 1 with its messages.
+  Its integer and number fields accept what the executors' coercion accepted
+  and the lowering stores the coerced value. Repeated difference
+  subtrahends, self-differences and bare non-base criteria populations
+  (CR-21 `legacy_empty`) lower faithfully; `value_bin` lowers to one
+  half-open `between` leaf; a lowered v1 plan's trees are capped as written.
+- (A-20(b)) The anchor inventory (`.irOrder()$anchors`) lists every value of
+  a long output's named `options.anchors` map, nested search anchors
+  included, as a final anchor of its population, and the strata-window
+  anchors of a match population as candidate anchors of its controls
+  template; anchors are canonical (omitted and explicit defaults give one
+  identity).
 - (A-11) Every default is expanded by the frozen normaliser shared with
   dsOMOPClient, `.planNormalizeV2()` (`R/plan_normalize_v2.R`), for language
   2.0 plans and lowered v1 plans alike; grain and collapse rules use its
