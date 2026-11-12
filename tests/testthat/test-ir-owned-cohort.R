@@ -76,7 +76,8 @@ test_that("A-25 malformed names fail with a typed field path before database wor
     stop("unexpected result query")
   })
   malformed <- list("", " ", ".cohort", "bad-name", "name;DROP TABLE person", " 1 ",
-                    "+1", "1e0", "1.0", "0", 0L, TRUE, c("a", "b"))
+                    "+1", "1e0", "1.0", "0", 0L, TRUE, FALSE,
+                    list(TRUE), list(FALSE), c("a", "b"))
   for (index in c(FALSE, TRUE)) for (ref in malformed) {
     err <- .a25_error(.irPrepare(.a25_plan(ref, index), h))
     expect_s3_class(err, "dsomop_ir_validation_error")
