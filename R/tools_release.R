@@ -167,16 +167,24 @@
   grid
 }
 
-# Bin labels of a grid, one per bin, in the grid's canonical order.
+# Bin labels of a grid, one per bin, in the grid's canonical order. The last
+# bin is open above. On a scale without a public lower bound the first bin is
+# the explicit underflow bin (-Inf, b2) (N02); on a bounded scale values below
+# the first break are clipped into the first bin.
 .dsomopReleaseBinFrame <- function(grid) {
   breaks <- grid$breaks
   upper <- c(breaks[-1L], NA_real_)
+  lower <- as.numeric(breaks)
+  if (is.null(grid$lower) && length(breaks) > 1L) lower[[1L]] <- -Inf
   fmt <- function(x) format(x, scientific = FALSE, trim = TRUE)
   label <- ifelse(is.na(upper),
                   paste0("[", fmt(breaks), ", Inf)"),
                   paste0("[", fmt(breaks), ", ", fmt(upper), ")"))
+  if (is.infinite(lower[[1L]])) {
+    label[[1L]] <- paste0("(-Inf, ", fmt(upper[[1L]]), ")")
+  }
   data.frame(bin = seq_along(breaks), bin_label = label,
-             bin_lower = as.numeric(breaks), bin_upper = as.numeric(upper),
+             bin_lower = lower, bin_upper = as.numeric(upper),
              stringsAsFactors = FALSE)
 }
 
@@ -708,12 +716,16 @@
   if (!is.finite(total) || total <= 0) return(rep(NA_real_, length(probs)))
   breaks <- grid$breaks
   upper <- c(breaks[-1L], NA_real_)
+  open_below <- is.null(grid$lower) && length(breaks) > 1L
   cdf <- cumsum(counts) / total
   vapply(probs, function(p) {
     bin <- which(cdf >= p - 1e-12)[1L]
     before <- if (bin > 1L) cdf[[bin - 1L]] else 0
     width <- cdf[[bin]] - before
+    # Open tail bins report their finite edge (a censored quantile, never a
+    # pretended extreme).
     if (is.na(upper[[bin]])) return(breaks[[bin]])
+    if (bin == 1L && open_below) return(upper[[1L]])
     fraction <- if (width > 0) (p - before) / width else 0
     breaks[[bin]] + fraction * (upper[[bin]] - breaks[[bin]])
   }, numeric(1L))
@@ -1281,6 +1293,12 @@
     sampler = policy$sampler,
     sticky = TRUE,
     components = components,
+    interval_contract = paste0(
+      "bins [b_i, b_i+1) with an open last bin; the first bin is the open ",
+      "underflow bin on scales without a public lower bound"),
+    quantile_method = paste0(
+      "inverse of the displayed protected histogram's CDF, linear within ",
+      "finite bins; quantiles in an open tail bin report its finite edge"),
     effective_parameters = snap$changes %||% list(),
     privacy_call_quota = "none",
     history_based_admission = FALSE,

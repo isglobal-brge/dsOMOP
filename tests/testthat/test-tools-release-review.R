@@ -263,3 +263,18 @@ test_that("B04: framed identities are injective for delimiters and control chara
   expect_false(identical(.omopReleaseOutcomeKey("201820", "0"),
                          .omopReleaseOutcomeKey("201820", "1")))
 })
+
+test_that("N02: unbounded scales have an explicit underflow bin and censored tail quantiles", {
+  grid <- .dsomopReleaseGrid("signed_125")
+  frame <- .dsomopReleaseBinFrame(grid)
+  expect_identical(frame$bin_lower[[1L]], -Inf)
+  expect_match(frame$bin_label[[1L]], "^\\(-Inf, ")
+  expect_match(frame$bin_label[[nrow(frame)]], ", Inf\\)$")
+  # All mass in the underflow bin: quantiles report its finite edge.
+  counts <- c(10, rep(0, nrow(frame) - 1L))
+  expect_true(all(.dsomopReleaseQuantiles(counts, grid) ==
+                    frame$bin_upper[[1L]]))
+  # A bounded scale keeps its closed first bin.
+  age <- .dsomopReleaseBinFrame(.dsomopReleaseGrid("age_5y"))
+  expect_identical(age$bin_lower[[1L]], 0)
+})
