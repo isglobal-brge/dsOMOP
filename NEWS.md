@@ -323,6 +323,10 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Plan IR, role registry, explain and capabilities (WS-2)
 
+- Legacy event outputs over approved vocabulary and metadata sources retain
+  their 2.10.2 reference-table behavior in memory and staged publication. The
+  executor records the source proof privately; missing patient keys alone do
+  not grant an exemption, and patient-bearing sources retain support checks.
 - `R/ir.R`: `.irPrepare()` (the frozen sequence), `.irNormalize()`,
   `.irValidate()`, `.irOrder()`, `.irNode()`; failures are typed
   `dsomop_plan_rejection` conditions naming fields, outputs and constructs

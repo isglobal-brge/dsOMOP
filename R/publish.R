@@ -20,6 +20,7 @@
   ctx$staging_env <- new.env(parent = emptyenv())
   ctx$rosters <- new.env(parent = emptyenv())
   ctx$inventory <- list()
+  ctx$reference_outputs <- character(0)
   ctx$prepared <- list()
   ctx$rejected <- list()
   ctx$unavailable <- character(0)
@@ -669,7 +670,9 @@ omopStagedRevokeDS <- function(exec_symbol) {
       descriptor <- inherits(frame, "FlowerDatasetDescriptor")
       columns <- if (descriptor) frame$metadata$columns else names(frame)
       reference <- (composite && component %in% references) ||
-        (component == root && identical(ctx$ir$outputs[[root]]$type, "concept_dictionary"))
+        (component == root &&
+           (identical(ctx$ir$outputs[[root]]$type, "concept_dictionary") ||
+              root %in% ctx$reference_outputs))
       key <- intersect(.PERSON_KEY_COLS(), columns)
       lineage <- if (reference) .lineage("reference") else if (length(key)) {
         .lineage("direct", key[[1L]])

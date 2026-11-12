@@ -3571,6 +3571,17 @@
           results[[out_name]] <- result_df
         }
 
+        # Successful extraction proves this output came from a source the SQL
+        # compiler explicitly permits as reference data. Record the proof in
+        # the private context: neither a missing result key nor a client field
+        # can exempt patient output from publication support. Source extensions
+        # carrying patient/episode keys must still use genuine person lineage.
+        source_columns <- bp$columns[[tolower(out$table)]]$column_name
+        if (.referenceTableSource(bp, out$table) &&
+            !any(c(.PERSON_KEY_COLS(), .EPISODE_KEY_COLS(), "set_id") %in% source_columns)) {
+          ctx$reference_outputs <- union(ctx$reference_outputs, out_name)
+        }
+
       } else if (out_type == "baseline") {
         if (!is.null(custom_filters) && length(custom_filters) > 0) {
           stop("baseline does not have one unambiguous event table for ",
