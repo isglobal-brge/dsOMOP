@@ -336,18 +336,20 @@ scope of the gate.
 
 ### Custodian release state and freshness
 
-When `dsomop.dp.domain` / `DSOMOP_DP_DOMAIN` and
-`dsomop.dp.snapshot_id` / `DSOMOP_DP_SNAPSHOT_ID` are unset or have empty
-package defaults, initialization derives them from the connected resource.
-Each explicitly configured value takes precedence. The domain is a SHA-256
+No privacy setting needs configuring. When `dsomop.dp.domain` /
+`DSOMOP_DP_DOMAIN` is unset or has an empty package default, initialization
+derives it from the connected resource; an explicitly configured value takes
+precedence. The public `snapshot_id` status label is derived the same way;
+the deprecated `dsomop.dp.snapshot_id` / `DSOMOP_DP_SNAPSHOT_ID` only replaces
+that label, and nothing depends on it. The domain is a SHA-256
 hash of versioned, canonical database coordinates: normalized DBMS, lowercase
 host, effective port, database (canonical absolute file path for SQLite/DuckDB),
 and effective CDM and vocabulary schemas. Credentials, transport settings,
 resource display names, results schemas and temporary schemas are excluded.
 SQLite's implicit and explicit `main` schema have the same identity.
 
-Snapshot precedence is **explicit configuration → complete `cdm_source` →
-fallback**. The snapshot hashes the resource identity and the source fields
+Label precedence is **explicit configuration → complete `cdm_source` →
+fallback**. The label hashes the resource identity and the source fields
 `cdm_source_name`, `cdm_release_date`, `cdm_version` and `vocabulary_version`,
 converted to text. One complete row retains the `dsomop-dp-cdm-snapshot-v1`
 contract; multiple complete rows are all canonically sorted and hashed under
@@ -359,21 +361,26 @@ canonically sorted `vocabulary_id`/`vocabulary_version` pairs from `vocabulary`
 `dsomop-dp-cdm-snapshot-fallback-v1`. If vocabulary metadata is also unavailable
 or incomplete, resource identity alone is hashed under
 `dsomop-dp-cdm-snapshot-resource-only-v1`. Each explicit identifier wins
-independently, and an explicit snapshot skips metadata derivation.
+independently, and an explicit label skips metadata derivation.
 
-Without an explicit snapshot, protected releases are realised-sticky: a reload
-or in-place edit re-draws exactly the components whose bounded contributions
-changed, with no custodian action, and unchanged components keep their
-answers. A custodian who sets `dsomop.dp.snapshot_id` declares an immutable
-data generation: unscoped questions over public bases are then fixed
-synopses, whose noise depends on the generation and not on the data, so **the
-snapshot must change with every reload or edit** (otherwise the difference of
-two releases reveals the exact change). Bumping `dsomop.dp.privacy_epoch` /
-`DSOMOP_DP_PRIVACY_EPOCH` re-draws every answer; rotating the snapshot re-draws
-every fixed synopsis.
+Unscoped questions over public bases are fixed synopses keyed on an automatic
+data generation: a keyed fingerprint of the exact row count and largest
+identifier of every OMOP clinical table (plus `cdm_source`, the vocabulary
+versions and the concept table), derived on the fly once per R session and
+held in memory only. A reload that adds or removes rows re-draws every fixed
+synopsis at once, with no custodian action. An in-place edit that changes no
+count and no largest identifier, or a change while a session is open, leaves
+the generation unchanged; the components whose bounded contributions changed
+still re-draw (no exact difference is released), but comparing answers can
+show which ones changed. After in-place edits, bump `dsomop.dp.privacy_epoch`
+/ `DSOMOP_DP_PRIVACY_EPOCH` to re-draw every answer. Scoped questions are
+realised-sticky: a reload or edit re-draws exactly the components whose
+bounded contributions changed, and unchanged components keep their answers.
+See [DISCLOSURE_CONTROL.md](DISCLOSURE_CONTROL.md#the-automatic-data-generation-of-the-fixed-synopses).
 
-In-memory databases and unavailable/ambiguous resource coordinates still fail
-closed with instructions to configure both identifiers. Conflicting option and
+Without a configured domain, in-memory databases and unavailable/ambiguous
+resource coordinates still fail closed with instructions to configure the
+domain. Conflicting option and
 environment values still fail closed. No generic shared fallback domain is used.
 Connecting (`omopInitDS()`) never initializes DP; DP binds to the connected
 resource when a community tool first uses it. Policy changes during a session
@@ -395,16 +402,16 @@ log. `DSOMOP_TEST_ALLOW_EPHEMERAL_STATE=1` is for tests only.
 A custodian may instead inject exactly 32 raw CSPRNG bytes or 64 hexadecimal
 characters through `dsomop.dp.noise_root` / `DSOMOP_DP_NOISE_ROOT`; passphrases
 are rejected. Nothing is then written for DP, and R servers given the same
-root, domain, snapshot, epoch and mechanism configuration return the same
-answers on the same data, so replicas of one logical node share nothing else.
+root, domain, epoch and mechanism configuration return the same answers on
+the same data, so replicas of one logical node share nothing else.
 Distinct nodes must use distinct roots and domains; compare public
 noise-domain fingerprints during readiness checks. Root bytes are never put in
 OMOP handles or returned to analysts, and package loading remains key-free.
 Back up the root (or its secret-manager configuration): restoring it restores
 every answer.
 
-The guarantee is conditional: within one root, domain, snapshot and epoch, and
-on unchanged data, a repeated valid question returns the same canonical bytes,
+The guarantee is conditional: within one root, domain and epoch, and on
+unchanged data, a repeated valid question returns the same canonical bytes,
 so repeats add no observation. Different questions, data changes and
 rotations compose; there is no finite lifetime privacy accountant or full
 temporal-transcript DP claim. Administrative timing, validation failures,
@@ -413,8 +420,9 @@ guarantee. Retain the method allowlist, person contribution bounds and reviewed
 output contracts.
 
 Non-secret configuration is available through matching `dsomop.dp.*` options
-and `DSOMOP_DP_*` environment variables, including enablement, domain, public
-snapshot identifier, fixed release epsilon, privacy epoch and the server caps
+and `DSOMOP_DP_*` environment variables, including enablement, domain, the
+deprecated public snapshot label, fixed release epsilon, privacy epoch and the
+server caps
 for levels, contributions and numeric quantization. Explicit option and
 environment values must agree. `omopDpStatusDS()` is suitable as a production
 readiness check after the persistent state volume and final profile have been

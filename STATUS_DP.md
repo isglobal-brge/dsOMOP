@@ -4,16 +4,25 @@ The current server contract is `dsomop-dp-release-v3` /
 `protected_release_fixed_basis_or_realised_v1` with typed payload protocol
 `dsomop-protected-release-v1`, paired with dsOMOPClient 2.10.3. Protected
 releases share canonical components: a fixed synopsis (unscoped question over
-a public basis of a custodian-declared generation, `dsomop.dp.snapshot_id`)
-draws each atom's noise from the corpus, generation, owner, population and
-atom; a realised-sticky release (every other scope; a heuristic disclosure
-control without a joint differential-privacy guarantee) draws each
-component's noise from its owner, coordinate and a secret fingerprint of the
-realised bounded contributions. No key depends on request text, lineage
-cosmetics, earlier questions or a database version, and nothing but the root
-is stored. A reload re-draws exactly the realised components whose
-contributions changed; fixed synopses need a new snapshot for every data
-generation. DP-only mode accepts only fixed synopses.
+a public basis) draws each atom's noise from the corpus, the automatic data
+generation, the privacy epoch, owner, population and atom and the atom's
+contribution fingerprint; a realised-sticky release (every other scope; a
+heuristic disclosure control without a joint differential-privacy guarantee)
+draws each component's noise from its owner, coordinate and a secret
+fingerprint of the realised bounded contributions. The automatic data
+generation is an HMAC under the noise root of the exact row count and largest
+identifier of every OMOP clinical table (plus `cdm_source`, vocabulary
+versions and the concept table), derived on the fly once per R session and
+held in memory only; no custodial setting is needed, and
+`dsomop.dp.snapshot_id` is a deprecated status label that nothing depends on.
+No key depends on request text, lineage cosmetics or earlier questions, and
+nothing but the root is stored. A reload that adds or removes rows re-draws
+every fixed synopsis; a reload or edit re-draws exactly the realised
+components whose contributions changed. In-place edits that change no count
+and no largest identifier, and changes during an open session, are not seen
+by the generation; the affected fixed components still re-draw by their
+fingerprints (DISCLOSURE_CONTROL.md). DP-only mode accepts only fixed
+synopses.
 
 Status declares `history_dependent = FALSE`, `history_based_admission = FALSE`,
 `persistent_state = "noise_root_only"`,
@@ -240,6 +249,9 @@ SQLite initialization test clears that opt-out. Test temporary storage remains
 behind `DSOMOP_TEST_ALLOW_EPHEMERAL_STATE=1`.
 
 ## Derived identity and privacy argument
+
+(Historical, 2.6.x: the derived snapshot described here is the public
+`snapshot_id` label since 2.10.3; it no longer enters any key.)
 
 The enabled default is TRUE in the option reader, DESCRIPTION Options and
 DATASHIELD manifest. Explicit FALSE / `DSOMOP_DP_ENABLED=0`, conflicting-option

@@ -161,7 +161,6 @@ Options:
     default.dsomop.dp.enabled=TRUE,
     default.dsomop.dp.exclusive=FALSE,
     default.dsomop.dp.domain="",
-    default.dsomop.dp.snapshot_id="",
     default.dsomop.dp.release_epsilon=0.1,
     default.dsomop.dp.privacy_epoch=1,
     default.dsomop.dp.max_levels=1000,

@@ -89,32 +89,91 @@ Security release: the P0 fixes of the OHDSI-tools audit.
   diagnostics summary (mixed frames); `incidence.rate`,
   `cm.mdrr`/`cm_result`, `cm.effect_estimate` and the interaction estimate
   (person-time status and time components; Poisson rate ratios derived from
-  them; a Cox hazard ratio has no protected mechanism and is unavailable), and
-  every alias of these entries. Unscoped questions over a public basis are
-  fixed synopses when the custodian declares an immutable generation
-  (`dsomop.dp.snapshot_id`); every other scope is realised-contribution
-  protected.
+  them), and every alias of these entries. Every other scope is
+  realised-contribution protected.
+- Fixed synopses need no custodial configuration: unscoped questions over a
+  public basis are keyed on an automatic data generation, an HMAC under the
+  noise root of the exact row count and largest identifier of every OMOP
+  clinical table (plus `cdm_source`, the vocabulary versions and the concept
+  table), derived on the fly once per R session and held in memory only (no
+  file, table or cache). A reload that adds or removes rows re-draws every
+  fixed synopsis at once; equal data give equal answers in every session and
+  worker sharing the root. Fixed components are also keyed on their
+  contribution fingerprints, so an in-place edit or a change during an open
+  session (which the generation cannot see) re-draws the affected components
+  instead of releasing an exact difference. Status and labels describe the
+  generation (`data_generation`, `data_generation_basis`,
+  `data_generation_residual`), never its value. `dsomop.dp.snapshot_id` is
+  deprecated: it only replaces the public `snapshot_id` status label, and the
+  profile option `default.dsomop.dp.snapshot_id` is removed.
+- CohortMethod Cox effects are grouped-time Cox fits on a protected per-arm
+  histogram of exit-time bin × status (Breslow ties, capped at 3650 days,
+  labelled as such, not the raw Efron estimator); the SCCS incidence rate
+  ratio is estimated from a protected histogram of the q-gridded conditional
+  sufficient statistics (each person's first 10 events); both report standard
+  errors that include the release noise. In standard mode with the DP
+  service, incidence and CohortMethod person-time, rates, MDRRs and effects
+  are filled from the same protected run (mixed frames).
+- Continuous values of `fe.continuous`, target covariates and temporal value
+  distributions are reduced per person within concept × unit (unknown units a
+  separate stratum; only registry-declared conversions); registered
+  concept × unit scales (built-ins and `dsomop.release.measurement_scales`)
+  give bounded moments, other strata a coarse histogram. The outputs gain
+  `unit_concept_id` and `unit_name`.
+- The eight QueryLibrary record summaries release capped record-weighted
+  moments in auto and DP-only modes (K = 10 records per person by date and
+  key; persons, records and lattice sums; days [0, 10957], calendar months
+  [0, 360]; quantity and cost scales through `dsomop.release.quantity_scales`
+  and `dsomop.release.cost_scales`); standard mode is unchanged.
+- The public marginal hierarchy: one canonical parent person total per
+  eligible population, shared by its stratifications; strata are reconciled to
+  it and projected onto its displayed total, so a child request never moves
+  its parent. Person-time components belong to scientific owners (one outcome
+  definition, one time contract), never to labels or spellings. Protected
+  person-time is capped at the 3650-day horizon before event selection.
 - Free numeric parameters of every built-in aggregate entry snap to public
   grids before evaluation (time-at-risk, windows, look-backs, ages, age bands,
   `min_days`, reference year, alpha/power; model feature counts and calibration
-  bins) and the label reports requested and effective values.
+  bins) and the label reports requested and effective values. Day parameters
+  use the clinical grids (anchors 0, 1, 7, 14, 21, 28, 30, 60, 90, 120, 180,
+  270, 365, 545, 730, 1095, 1460, 1825, 3650): standard windows such as
+  [1, 365], look-back 365 and [0, 0] are unchanged.
 - The reviewed QueryLibrary histograms use the public grids of the release
-  layer (durations 0-10957 days in 11 bins, counts per person 0-100+).
+  layer (durations on the clinical duration grid up to 10957 days, counts per
+  person 0-100+); unbounded scales have an explicit underflow bin.
+- Typed releases are views of registered complete public bases (complete
+  categorical domains with Other and Unknown, fixed numeric atoms); the
+  release-person map is sealed with the table, aliases of one eligible
+  population share its person total, and compound identities use injective
+  length-framed encodings.
+- Every protected release carries a public `source$logical_source_id`;
+  realised and mixed releases state no `delta`.
+- Pooling: `release_pooling` descriptors carry the established contract;
+  dsOMOPClient 2.10.3 pools record summaries by their signed components and
+  effect estimates by inverse-variance meta-analysis of the per-site
+  protected estimates.
 
 ## Newly refused or unavailable
 
 - Standard routes (standard mode, or auto mode without the DP service) release
   exact scoped moments and quantiles of per-person distributions as NA
-  (`protected_output_required` / `protected_mechanism_unavailable`), and exact
-  flexible-window person-days, rates, MDRRs and effect estimates/CI/SE as NA.
-  SCCS conditional-Poisson IRR scalars are unavailable on every route.
+  (`protected_output_required` / `protected_mechanism_unavailable`). Exact
+  flexible-window person-days, rates, MDRRs and effect estimates/CI/SE are
+  never released: without the DP service they are NA, with it (also in
+  standard mode) they come from the protected run.
+- The Achilles support of the reader's companion cells is recomputed on every
+  read (no per-handle cache), and private SCCS person support uses
+  `max(nfilter.subset, nfilter.tab)` for every person basis and complement.
+- The long observation-period count is released only from its protected
+  histogram; without the DP service it returns a stable unavailable row.
 - In auto mode the precomputed Achilles distribution reader returns its
   summaries as NA (`protected_basis_unavailable`); the live analyses release
   protected summaries.
 - DP-only mode accepts only fixed-synopsis releases: cohort- or table-scoped
-  protected questions, unscoped ones without a custodial generation, and typed
-  releases other than counts, capped record counts and registered-scale means
-  of unscoped pinned loader tables are refused with a stable message.
+  protected questions, unscoped ones whose data generation cannot be derived,
+  and typed releases other than counts, capped record counts and
+  registered-scale means of unscoped pinned loader tables of a connected
+  database are refused with a stable message.
 - Typed `bounded_mean` needs one registered public scale
   (`public_scale_unavailable` otherwise; custodians can add scales with
   `dsomop.release.public_scales`). Typed counts now use the shared person-total
@@ -125,8 +184,8 @@ Security release: the P0 fixes of the OHDSI-tools audit.
   `dsomop-protected-release-v1` and needs dsOMOPClient 2.10.3. The previous
   per-request semantic identities and the private database version (largest
   clinical primary keys) are removed: realised releases re-draw exactly the
-  components whose contributions changed, and fixed synopses need a new
-  `dsomop.dp.snapshot_id` for every data generation.
+  components whose contributions changed, and fixed synopses follow the
+  automatic data generation.
 - DP status advertises the protected-release contract
   (`privacy_contract = "protected_release_fixed_basis_or_realised_v1"`,
   `history_based_admission = FALSE`); clients older than 2.10.3 refuse typed
