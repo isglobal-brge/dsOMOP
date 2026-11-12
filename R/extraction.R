@@ -1968,10 +1968,14 @@
         as.integer(nrow(chunk))
       )
     } else {
-      utils::write.table(chunk, output_path,
+      # Restrict formatting to the writer; chunk transforms and tokenisation
+      # must continue to see the caller's numeric options.
+      old_options <- options(scipen = 999)
+      tryCatch(utils::write.table(chunk, output_path,
                   sep = ",", row.names = FALSE,
                   col.names = (n_rows == 0L),
-                  append = (n_rows > 0L))
+                  append = (n_rows > 0L)),
+               finally = options(old_options))
     }
 
     n_rows <- n_rows + nrow(chunk)

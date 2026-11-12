@@ -214,13 +214,15 @@
   if (!is.list(contract) || is.null(names(contract)) ||
       anyDuplicated(names(contract)) || !setequal(names(contract), fields) ||
       !identical(contract$contract_version, "dsomop-staged-semantics-v3")) fail()
-  formats <- c("wide", "long", "survival", "intervals", "temporal_covariates",
-               "person_period", "sparse", "membership", "dictionary", "joined")
+  definitions <- .jsonSchemaPackaged("plan-v2")[["$defs"]]
+  formats <- unlist(definitions$output$properties$format$enum, use.names = FALSE)
   if (!.isScalarString(contract$output_type) || !contract$output_type %in% formats ||
       !.isScalarString(contract$output_format)) fail()
   allowed_formats <- switch(contract$output_type,
-    survival = c("survival", "competing_risk", "recurrent_events", "counting_process", "multi_state"),
-    person_period = c("dense", "sparse"), contract$output_type)
+    survival = definitions$options_survival$properties$format$enum,
+    person_period = definitions$options_person_period$properties$representation$enum,
+    contract$output_type)
+  allowed_formats <- unlist(allowed_formats, use.names = FALSE)
   if (!contract$output_format %in% allowed_formats ||
       !.isScalarString(contract$grain) || !contract$grain %in% c("person", "episode", "none") ||
       (!is.null(contract$component) && (!.isScalarString(contract$component) ||

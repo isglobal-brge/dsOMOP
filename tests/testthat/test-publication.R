@@ -45,6 +45,25 @@ test_that("roster lineage counts participants represented by component rows", {
                "set_id is never person lineage")
 })
 
+test_that("numeric roster keys agree with integer and CSV character forms", {
+  numeric <- data.frame(rowId = c(100000, 100001, 999999, 1000000, 1000001))
+  text <- data.frame(rowId = c("100000", "100001", "999999", "1000000", "1000001"))
+  expect_identical(.publishKeys(numeric, "rowId"), .publishKeys(text, "rowId"))
+  expect_identical(.publishKeys(transform(numeric, rowId = as.integer(rowId)), "rowId"),
+                   .publishKeys(text, "rowId"))
+  # One key's fractional digits must not pad another key's decimal form.
+  expect_identical(.publishKeys(data.frame(cohort_row_id = c(100000, 100000.5)), "cohort_row_id"),
+                   .publishKeys(data.frame(cohort_row_id = c("100000", "100000.5")), "cohort_row_id"))
+})
+
+test_that("BIGINT roster keys preserve distinct values above double precision", {
+  skip_if_not_installed("bit64")
+  text <- data.frame(rowId = c("100000", "1000000", "9007199254740992", "9007199254740993"))
+  bigint <- data.frame(rowId = bit64::as.integer64(text$rowId))
+  expect_identical(.publishKeys(bigint, "rowId"), .publishKeys(text, "rowId"))
+  expect_identical(anyDuplicated(.publishKeys(bigint, "rowId")), 0L)
+})
+
 test_that("publication rejects every malformed mapping and locks roster namespaces", {
   scenarios <- list(
     orphan = list(roster = data.frame(rowId = 1:3, person_id = 11:13),

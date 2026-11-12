@@ -76,13 +76,20 @@
   invisible(roster_id)
 }
 
-# Collision-free tuple encoding; no delimiter or floating-point key coercion.
+# Length-prefixed tuples preserve delimiters and integer64 precision. Decimal
+# numeric keys must also agree with their integer and CSV character forms.
 .publishKeys <- function(frame, columns) {
   if (!all(columns %in% names(frame)) || anyNA(frame[columns])) {
     .publishReject("lineage_malformed")
   }
   if (nrow(frame) == 0L) return(character(0))
-  values <- lapply(frame[columns], as.character)
+  values <- lapply(frame[columns], function(x) {
+    if (is.numeric(x) && !inherits(x, "integer64")) {
+      # Format separately so a fractional neighbour cannot add trailing zeros
+      # to an integral key, and never coerce integer64 through a double.
+      vapply(x, format, character(1L), scientific = FALSE, trim = TRUE, digits = 15L)
+    } else as.character(x)
+  })
   if (!length(values)) .publishReject("lineage_malformed")
   do.call(paste0, lapply(values, function(x) paste0(nchar(x, type = "bytes"), ":", x)))
 }
@@ -529,7 +536,7 @@ omopStagedRevokeDS <- function(exec_symbol) {
 #' Convert reviewed legacy executor shapes to declared release candidates
 #' @keywords internal
 .publishOutputs <- function(ctx, outputs, out) {
-  roots <- ctx$ir$publish %||% names(ctx$ir$outputs)
+  roots <- ctx$ir$publish %||% names(out)
   roots <- as.character(unlist(roots, use.names = FALSE))
   if (any(!roots %in% names(ctx$ir$outputs)) || anyDuplicated(roots)) {
     .publishReject("validation_error")

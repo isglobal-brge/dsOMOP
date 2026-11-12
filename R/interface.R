@@ -802,7 +802,7 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
                          "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
       # A shared roster/dialect failure can precede individual root execution.
       # It refuses every requested family without exposing its private details.
-      roots <- as.character(unlist(plan$publish %||% names(plan$outputs), use.names = FALSE))
+      roots <- as.character(unlist(plan$publish %||% names(out), use.names = FALSE))
       if (!length(roots)) stop(e)
       for (root in roots) ctx$rejected[[root]] <- list(code = e$code,
                                                      message = .publishMessage(e$code))

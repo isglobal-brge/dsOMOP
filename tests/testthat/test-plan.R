@@ -1138,7 +1138,9 @@ test_that("streamed event_select keeps an omitted ordering date private", {
     filters = list()
   )), options = list(translate_concepts = FALSE, block_sensitive = TRUE))
 
-  result <- .planExecute(handle, plan, list(), output_mode = "staged")
+  result <- .planExecute(handle, plan,
+                         list(first_condition = "first_condition_df"),
+                         output_mode = "staged")
   descriptor <- result$first_condition
   on.exit(unlink(base, recursive = TRUE), add = TRUE)
   landed <- read_staged_output(descriptor)
