@@ -36,7 +36,7 @@ Data frame (arm, time, event), one row per person (possibly empty).
 \description{
 The R-in-session substrate of a Kaplan-Meier comparison: one row per cohort
 member of one arm, carrying the observed follow-up time and a 0/1 event flag.
-Built with the SAME two-query idiom as \code{\link{.extractSurvival}} (cohort
+Built with the same two-query idiom as the retired v1 survival extractor (cohort
 members + their qualifying outcome events fetched separately, the survival
 fields computed on the R side), restricted to the validated arm cohort:
 \enumerate{
