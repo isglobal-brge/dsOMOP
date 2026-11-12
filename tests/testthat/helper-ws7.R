@@ -308,6 +308,34 @@
                drug_source_value = "WS7", drug_source_concept_id = 0L, stringsAsFactors = FALSE)
   }
   app("drug_exposure", rbind(de(7001L, "2020-01-01", "2020-01-10"), de(7001L, "2020-01-05", "2020-01-15")))
+  # survival scenario (index 2020-01-10, cohort end 2020-06-30; outcomes
+  # a = DX, b = DX2):
+  #   7101 a and b on 02-01, a on 03-01      7102 b on 01-20, a on 02-10
+  #   7103 a on 2019-12-01 (prior outcome)    7104 observation ends 2020-03-31
+  #   7105 periods [2015, 2020-02-29] and [2020-03-10, 2030]; a on 03-05 (in
+  #        the gap) and 03-20                 7106 a on 06-30 (the cohort end)
+  #   7107 a on 2020-08-01 (after the cohort end)
+  sp <- 7101:7107
+  app("person", data.frame(
+    person_id = sp, gender_concept_id = 8507L, year_of_birth = 1970L, month_of_birth = 1L,
+    day_of_birth = 1L, race_concept_id = 8527L, ethnicity_concept_id = 38003564L,
+    location_id = sp, provider_id = sp, care_site_id = sp, person_source_value = paste0("WS7_", sp),
+    gender_source_value = "M", stringsAsFactors = FALSE))
+  app("observation_period", data.frame(
+    observation_period_id = c(710101L, 710201L, 710301L, 710401L, 710501L, 710502L, 710601L, 710701L),
+    person_id = c(7101L, 7102L, 7103L, 7104L, 7105L, 7105L, 7106L, 7107L),
+    observation_period_start_date = c("2015-01-01", "2015-01-01", "2015-01-01", "2015-01-01", "2015-01-01",
+                                      "2020-03-10", "2015-01-01", "2015-01-01"),
+    observation_period_end_date = c("2030-12-31", "2030-12-31", "2030-12-31", "2020-03-31", "2020-02-29",
+                                    "2030-12-31", "2030-12-31", "2030-12-31"),
+    period_type_concept_id = 44814724L, stringsAsFactors = FALSE))
+  app("condition_occurrence", rbind(
+    co(7101L, W$DX, "2020-02-01", NA_integer_), co(7101L, W$DX2, "2020-02-01", NA_integer_),
+    co(7101L, W$DX, "2020-03-01", NA_integer_),
+    co(7102L, W$DX2, "2020-01-20", NA_integer_), co(7102L, W$DX, "2020-02-10", NA_integer_),
+    co(7103L, W$DX, "2019-12-01", NA_integer_),
+    co(7105L, W$DX, "2020-03-05", NA_integer_), co(7105L, W$DX, "2020-03-20", NA_integer_),
+    co(7106L, W$DX, "2020-06-30", NA_integer_), co(7107L, W$DX, "2020-08-01", NA_integer_)))
   concepts <- data.frame(
     concept_id = c(W$LAB, W$DX, W$DX2, W$DRUG),
     concept_name = c("ws7 lab", "ws7 condition", "ws7 condition 2", "ws7 drug"),
@@ -409,7 +437,11 @@
                                                                 end = list(strategy = "event_end")))),
                     populations),
     variables = variables,
-    outputs = list(o = utils::modifyList(list(rows = "t", format = "wide", grain = "episode"), output)))
+    outputs = list(o = local({
+      o <- list(rows = "t", format = "wide", grain = "episode")
+      o[names(output)] <- output
+      o
+    })))
   plan
 }
 

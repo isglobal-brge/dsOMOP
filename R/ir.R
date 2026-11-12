@@ -536,6 +536,11 @@
       a <- x[[key]]
       if (is.list(a) && !is.null(a[["source"]])) out <- c(out, list(a))
     }
+    # the named anchors of a long output (options.anchors.<name>, A-20 (b))
+    named <- x[["anchors"]]
+    if (is.list(named) && !is.null(names(named))) {
+      for (a in named) if (is.list(a) && !is.null(a[["source"]])) out <- c(out, list(a))
+    }
   }
   for (v in x) out <- c(out, .irCollectAnchors(v))
   out

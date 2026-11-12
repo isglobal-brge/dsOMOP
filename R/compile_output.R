@@ -1170,13 +1170,25 @@
 # (binary, count, mean, last, exposed_days).
 .OUTPUT_ANALYSES <- c("binary", "count", "mean", "last", "exposed_days")
 
-# The effective analyses of one source (A-14 source_analyses).
-.outputSourceAnalyses <- function(opts, source_name, kind) {
+# The effective analyses of one source (A-14 source_analyses): exposed days
+# only for interval sources, value analyses (mean, last) only for sources
+# with a value role.
+.outputSourceAnalyses <- function(opts, source_name, kind, has_value = TRUE) {
   analyses <- as.character(unlist(opts[["analyses"]] %||% list("binary"), use.names = FALSE))
   sa <- opts[["source_analyses"]][[source_name]]
   if (!is.null(sa)) analyses <- intersect(analyses, as.character(unlist(sa, use.names = FALSE)))
   if (identical(kind, "event")) analyses <- setdiff(analyses, "exposed_days")
+  if (!isTRUE(has_value)) analyses <- setdiff(analyses, c("mean", "last"))
   analyses
+}
+
+# Does a resolved source carry a value role (an unavailable one counts as
+# having its declared roles)?
+.outputSourceHasValue <- function(ctx, idn) {
+  if (identical(idn$kind, "interval")) return(FALSE)
+  meta <- idn$source$meta
+  if (identical(meta$availability, "unavailable")) return(TRUE)
+  "value" %in% meta$roles
 }
 
 #' The per-plan covariate registry of an output (section 6.12)
@@ -1191,7 +1203,7 @@
   rows <- list()
   for (i in seq_along(srcs)) {
     idn <- .outputSourceIdentities(ctx, srcs[[i]], paste0("/outputs/", name, "/options/sources/", i - 1L))
-    for (a in analyses_of(idn$name, idn$kind)) {
+    for (a in analyses_of(idn$name, idn$kind, .outputSourceHasValue(ctx, idn))) {
       for (cid in idn$ids) {
         rows[[length(rows) + 1L]] <- data.frame(source = idn$name, source_index = i,
                                                 concept_id = cid, analysis = a,
@@ -1374,7 +1386,7 @@
   source_specs <- lapply(seq_along(srcs), function(i) {
     path <- paste0(field, "/sources/", i - 1L)
     idn <- .outputSourceIdentities(ctx, srcs[[i]], path)
-    an <- .outputSourceAnalyses(opts, idn$name, idn$kind)
+    an <- .outputSourceAnalyses(opts, idn$name, idn$kind, .outputSourceHasValue(ctx, idn))
     an <- .OUTPUT_ANALYSES[.OUTPUT_ANALYSES %in% an]
     cf <- carry[[idn$name]]
     if (!is.null(cf) && identical(idn$kind, "interval")) {
@@ -1612,10 +1624,7 @@
   keys <- roster$cohort_row_id
   index <- as.Date(roster$cohort_start_date)
   blocks <- .outputBlocks(ctx, cons, keys, field)
-  analyses_of <- function(src, kind) {
-    an <- .outputSourceAnalyses(opts, src, kind)
-    if (identical(kind, "interval")) an else setdiff(an, "exposed_days")
-  }
+  analyses_of <- function(src, kind, has_value) .outputSourceAnalyses(opts, src, kind, has_value)
   reg <- .outputCovariateRegistry(ctx, node, name, analyses_of)
   srcs <- .outputSources(node)
   out <- list()
@@ -1712,7 +1721,7 @@
   cons <- .reduceConsumer(ctx, name, pop$roster, pop$coverage, grain)
   roster <- .reduceRosterFrame(ctx, pop$roster)
   keys <- roster$cohort_row_id
-  reg <- .outputCovariateRegistry(ctx, node, name, function(src, kind) {
+  reg <- .outputCovariateRegistry(ctx, node, name, function(src, kind, has_value) {
     an <- as.character(unlist(opts[["analyses"]] %||% list("binary"), use.names = FALSE))
     intersect(an, c("binary", "count"))
   })
@@ -1973,7 +1982,7 @@
       rst <- .reduceStream(ctx, cons, rsrc, NULL, .fragmentName("ox", name, paste0("r_", ri), ctx = ctx),
                            extra = rextra)
       rrows <- .reduceFetch(ctx, rst, order = c("row_key", "start_date"), field = paste0(field, "/relations/", rn))
-      frame[[col]] <- .longRelation(rows, rrows, rel, same_source = identical(rsrc$name, rows$source))
+      frame[[col]] <- .longRelation(rows, rrows, rel, same_source = rows$source == rsrc$name)
     }
     dh <- opts[["date_handling"]] %||% list(mode = "relative")
     handled <- .outputDateHandling(frame, columns, idx, dh, name)
@@ -2008,7 +2017,8 @@
 }
 
 # days_to_<relation>: days from each row's start to the first related row in
-# [start + within[1], start + within[2]] of the same roster row.
+# [start + within[1], start + within[2]] of the same roster row; `same_source`
+# marks the rows whose own source is the relation's (self excluded).
 .longRelation <- function(rows, rrows, rel, same_source) {
   within <- as.integer(unlist(rel[["within"]]))
   distinct_by <- rel[["distinct_by"]]
@@ -2022,7 +2032,9 @@
     lo <- rows$start_date[[i]] + within[[1L]]
     hi <- rows$start_date[[i]] + within[[2L]]
     ok <- rrows$start_date[cand] >= lo & rrows$start_date[cand] <= hi
-    if (same_source && exclude_self) ok <- ok & !(as.character(rrows$event_id[cand]) == as.character(rows$event_id[[i]]))
+    if (same_source[[i]] && exclude_self) {
+      ok <- ok & !(as.character(rrows$event_id[cand]) == as.character(rows$event_id[[i]]))
+    }
     if (identical(distinct_by, "concept")) ok <- ok & !is.na(rrows$concept_id[cand]) &
       !(rrows$concept_id[cand] %in% rows$concept_id[[i]])
     if (identical(distinct_by, "visit")) ok <- ok & !is.na(rrows$visit_id[cand]) &
