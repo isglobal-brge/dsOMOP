@@ -122,6 +122,7 @@
 }
 
 .ws7_population <- function(run, pop, frame) {
+  if (is.null(frame)) return(.compilePopulationByName(run$cctx, pop))
   source <- run$cctx$ir$populations[[pop]]$index$source
   if (!identical(names(source), "cohort_definition_id")) {
     stop("Scenario source fixtures require a results-cohort index population.")

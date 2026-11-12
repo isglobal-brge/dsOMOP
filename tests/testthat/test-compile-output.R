@@ -779,7 +779,6 @@ test_that("a single named TAR keeps its declared component name", {
   expect_identical(res$publication_candidates[[1L]]$requested_symbol, "D.short")
 })
 
-# Deliberately equal index dates isolate parent ownership from date selection.
 test_that("person-event long output unions all associated episodes before physical deduplication", {
   plan <- .ws7_scenario_plan(list(), output = list(format = "long", sources = list(list(event = "members")),
     options = list(unit = "event", columns_derived = list("event_number", "days_since_previous"))), events = list(
@@ -787,11 +786,14 @@ test_that("person-event long output unions all associated episodes before physic
       members = list(episode_members = list(episode = list(event = "episodes")))))
   plan$variables <- NULL
   plan$populations$t$index$source <- list(event = "episodes")
-  frame <- data.frame(subject_id = 3301L, cohort_start_date = as.Date("2020-01-01"),
-                      cohort_end_date = as.Date("2020-12-31"), index_source = "episodes",
-                      index_key = c("3301001", "3301002"))
+  # Real episode-source populations retain the two parents and their member
+  # association. Other fixture persons are outside this scenario assertion.
+  execute <- function(handle, p = plan) {
+    f <- .ws7_scenario_run(handle, p, frame = NULL)$compiled$components$o$frame
+    f[as.numeric(f$person_id) == 3301, , drop = FALSE]
+  }
   for (b in names(.ws7_out_backends)) {
-    f <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, plan, frame, population = .ws7_population_double)$compiled$components$o$frame
+    f <- execute(.ws7_out_backends[[b]]$handle)
     # The shared January 1 fill appears once; the distinct January 15 and
     # February 10 fills from the two parents must both survive.
     expect_identical(f$start_date, c(0L, 14L, 40L), info = b)
@@ -800,7 +802,7 @@ test_that("person-event long output unions all associated episodes before physic
     expect_false(any(c("row_id", "cohort_row_id") %in% names(f)), info = b)
     p <- plan
     p$outputs$o$options$temporal <- list(event_select = "last")
-    f <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, p, frame, population = .ws7_population_double)$compiled$components$o$frame
+    f <- execute(.ws7_out_backends[[b]]$handle, p)
     expect_identical(f$start_date, 40L, info = b)
   }
   # Pin the ordering of same-day members whose owning episodes differ. The
@@ -818,10 +820,10 @@ test_that("person-event long output unions all associated episodes before physic
     }
     rows
   })
-  f <- .ws7_scenario_run(.ws7_out_backends$sqlite$handle, plan, frame, population = .ws7_population_double)$compiled$components$o$frame
+  f <- execute(.ws7_out_backends$sqlite$handle)
   expect_identical(f$member_table, c("condition_occurrence", "drug_exposure", "drug_exposure"))
   plan$outputs$o$options$temporal <- list(event_select = "first")
-  f <- .ws7_scenario_run(.ws7_out_backends$sqlite$handle, plan, frame, population = .ws7_population_double)$compiled$components$o$frame
+  f <- execute(.ws7_out_backends$sqlite$handle)
   expect_identical(f$member_table, "condition_occurrence")
 })
 
