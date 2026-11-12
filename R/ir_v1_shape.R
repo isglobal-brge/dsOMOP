@@ -11,9 +11,8 @@
 #   - scalars with a type and, optionally, an enumeration;
 #   - alternatives (the forms a v1 field accepts, such as a concept-id list or
 #     a concept-set object);
-#   - opaque advisory content (documented uses only: the client-side
-#     federation evidence inside `harmonization`, which the server never
-#     reads; it goes to the server-private annex).
+#   - deferred variants (cohort.spec), checked in their owning object's
+#     cross-field check; advisory federation evidence is closed as well.
 # A shape may carry `check`, a function(x, path) returning findings: the value
 # rules of the corrected legacy validators that own that position.
 
@@ -639,7 +638,7 @@
           value_bin = .v1sObj(lower = .v1sNum(), upper = .v1sNum(), safe_scope = .v1sSafeScope(),
                               .required = c("lower", "upper"),
                               .check = function(x, path) {
-                                if (!(x[["lower"]] < x[["upper"]])) {
+                                if (!(.v1AsNumber(x[["lower"]]) < .v1AsNumber(x[["upper"]]))) {
                                   paste0(path, ": value_bin requires finite scalar lower/upper bounds with lower < upper.")
                                 }
                               }),

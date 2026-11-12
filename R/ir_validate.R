@@ -112,10 +112,12 @@
 }
 
 # Typing of one predicate leaf against its column name (dates take ISO
-# strings, concept columns integers) and ordered `between` bounds. A lowered
-# v1 leaf compares a concept column with any number, as 2.10.2 compiled it
-# (an integer string was already normalised by the lowering, A-19 item 7).
+# strings, concept columns integers) and ordered `between` bounds. The v1
+# envelope already runs the historical predicate validator; its admitted
+# literals retain the actual site's legacy SQL comparison semantics (A-19
+# item 7), including the database's own coercions and refusals.
 .irCheckPredicateLeaf <- function(leaf, path, add, legacy = FALSE) {
+  if (legacy) return(invisible(NULL))
   var <- leaf[["var"]]
   op <- leaf[["op"]]
   values <- switch(op,
@@ -130,7 +132,7 @@
     }
   } else if (grepl("_concept_id$", var)) {
     for (v in values) {
-      if (!is.numeric(v) || (!legacy && v != round(v))) {
+      if (!is.numeric(v) || v != round(v)) {
         add(paste0(path, ": concept column '", var, "' compares with integer concept ids only"))
       }
     }
@@ -814,24 +816,16 @@
     NULL)
 }
 
-# One literal against a column type ("unknown": not typed). For a lowered v1
-# plan (legacy = TRUE) the literals the v1 executors compiled with a defined
-# result on every supported database are accepted as 2.10.2 ran them (A-19
-# item 7): any finite number on an integer or numeric column, and a quoted
-# number in decimal notation (which every family converts to the column's
-# type: an integer string on an integer column, a decimal one on a numeric
-# column). A number on a text column (PostgreSQL refused it while running,
-# SQLite compared it as text) and a non-numeric string on a numeric column
-# stay refused.
+# One literal against a column type ("unknown": not typed). The legacy DSL
+# already checks literal shape and predicate safety. Preserve the actual
+# site's historical comparison semantics for v1 (A-19 item 7), rather than
+# requiring a literal to have identical coercion rules across all vendors.
+# Column existence and private-key exclusions are still checked separately.
+# Native v2 literals have the declared type without implicit SQL coercion.
 .irLiteralTypeOk <- function(v, type, legacy = FALSE) {
-  if (legacy && is.character(v) && length(v) == 1L && !is.na(v)) {
-    if (identical(type, "integer")) return(grepl("^\\s*[+-]?[0-9]+\\s*$", v))
-    if (identical(type, "numeric")) {
-      return(grepl("^\\s*[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?\\s*$", v))
-    }
-  }
+  if (legacy) return(is.atomic(v) && length(v) == 1L && !is.na(v))
   switch(type,
-    integer = is.numeric(v) && length(v) == 1L && !is.na(v) && (legacy || v == round(v)),
+    integer = is.numeric(v) && length(v) == 1L && !is.na(v) && v == round(v),
     numeric = is.numeric(v) && length(v) == 1L && !is.na(v),
     date = .irIsoDateOk(v),
     text = is.character(v) && length(v) == 1L,

@@ -934,8 +934,23 @@ test_that("R3: integer-coercible v1 values and literals keep their 2.10.2 meanin
   expect_identical(.planSemanticDigest(.irDocument(.irPrepare(as_text)))$sha256,
                    .planSemanticDigest(.irDocument(.irPrepare(as_int)))$sha256)
   expect_identical(run(as_text, list(e = "rv_t"))$e, run(as_int, list(e = "rv_i"))$e)
-  # a non-numeric string on a concept column stays refused
-  expect_s3_class(.rv_refused(.irPrepare(ev(list("abc")), h)), "dsomop_plan_rejection")
+  # Other DSL-admitted literals keep the actual database's historical
+  # comparison semantics. SQLite coerces decimal/exponent numeric strings;
+  # nonnumeric strings and booleans have no matching fixture concept.
+  expect_identical(run(ev(list("201820.0")), list(e = "rv_decimal"))$e,
+                   run(as_int, list(e = "rv_decimal_control"))$e)
+  expect_identical(run(ev(list("2.0182e5")), list(e = "rv_exponent"))$e,
+                   run(as_int, list(e = "rv_exponent_control"))$e)
+  for (literal in list("abc", TRUE)) {
+    expect_s3_class(.irPrepare(ev(list(literal)), h), "dsomop_ir")
+    expect_identical(nrow(run(ev(list(literal)), list(e = "rv_other_literal"), 0L)$e), 0L)
+  }
+  # Native v2 typing stays strict even on a database with those coercions.
+  native <- .rv_plan_a()
+  for (literal in list("201820.0", TRUE)) {
+    native$events$hba1c$where <- list(var = "measurement_concept_id", op = "in", value = list(literal))
+    expect_s3_class(.rv_refused(.irPrepare(native, h)), "dsomop_plan_rejection")
+  }
   # an integer-coercible interval anchor (A-16 incoming coercion)
   iv <- function(anchor) list(cohort = list(type = "cohort_table", cohort_definition_id = 1L),
     outputs = list(iv = list(type = "intervals_long", tables = "condition_occurrence",
@@ -946,6 +961,46 @@ test_that("R3: integer-coercible v1 values and literals keep their 2.10.2 meanin
                    .planSemanticDigest(.irDocument(.irPrepare(iv(9000L))))$sha256)
   expect_identical(run(iv("9000"), list(iv = "rv_a"), 0L)$iv, run(iv(9000L), list(iv = "rv_b"), 0L)$iv)
   expect_s3_class(.rv_refused(.irPrepare(iv("9000.5"))), "dsomop_ir_validation_error")
+})
+
+test_that("R3: inline-spec value bins compare coerced numeric bounds", {
+  make <- function(lower, upper) list(cohort = list(type = "spec", spec = list(
+    type = "measurement", concept_set = list(3004410L),
+    value_bin = list(lower = lower, upper = upper))), outputs = .rv_v1()$outputs)
+  # Lexicographic ordering reverses this valid numeric bin: "7.5" > "10".
+  expect_identical(.rv_digest(make("7.5", "10")), .rv_digest(make(7.5, 10)))
+  expect_identical(.rv_digest(make("0x1.ep+2", "1e1")), .rv_digest(make(7.5, 10)))
+  expect_s3_class(.rv_refused(.irPrepare(make("10", "7.5"))), "dsomop_plan_rejection")
+})
+
+test_that("A-21: a bare criteria population stays empty through private set operations", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  plan <- list(populations = list(
+    base = list(kind = "criteria"), a = list(kind = "criteria", cohort_definition_id = 1L),
+    nobody = list(kind = "criteria", episode_policy = "last_episode"),
+    joined = list(kind = "setop", setop = list(op = "union", members = list("a", "nobody"))),
+    intersected = list(kind = "setop", setop = list(op = "intersect", members = list("a", "nobody"))),
+    difference = list(kind = "setop", setop = list(op = "setdiff", members = list("a", "nobody")))),
+    outputs = list(p = list(type = "person_level", population_id = "joined",
+                            tables = list(person = list("gender_concept_id")))))
+  ir <- .irPrepare(plan, h)
+  expect_true(ir$populations$nobody$legacy_empty)
+  expect_identical(ir$populations$nobody$legacy_episodes, "observation_periods")
+  expect_null(ir$populations$nobody$episode_policy)
+  expect_identical(attr(ir, "legacy_annex")[["populations/nobody"]]$unread_episode_policy,
+                   "last_episode")
+  withr::with_options(list(nfilter.subset = 3L), {
+    ctx <- .planContext(h, plan)
+    on.exit(.planContextClose(ctx), add = TRUE)
+    populations <- .planResolvePopulations(h, plan, .buildBlueprint(h), ctx = ctx)
+    expect_length(populations$nobody$person_ids, 0L)
+    expect_length(populations$intersected$person_ids, 0L)
+    expect_setequal(populations$joined$person_ids, populations$a$person_ids)
+    expect_setequal(populations$difference$person_ids, populations$a$person_ids)
+    .planContextClose(ctx)
+    expect_gt(nrow(.planExecute(h, plan, list(p = "rv_empty_union"))$p), 0L)
+  })
 })
 
 test_that("R3: the v1 concept_col override executes as 2.10.2 did", {
