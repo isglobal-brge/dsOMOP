@@ -461,7 +461,7 @@ test_that("empty long and person sparse sources retain their typed empty schemas
     for (fmt in c("long", "sparse")) {
       plan <- .ws7_scenario_plan(list(), output = list(format = fmt,
         grain = if (fmt == "sparse") "person" else "episode", sources = list(list(event = "lab")),
-        options = if (fmt == "sparse") list(analyses = list("binary")) else
+        options = if (fmt == "sparse") list(sources = list(list(event = "lab")), analyses = list("binary")) else
           list(columns_derived = list("value"))))
       plan$variables <- NULL
       res <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, plan, .ws7_scenario_frame(7002))
@@ -660,7 +660,7 @@ test_that("a single named TAR keeps its declared component name", {
   plan$outputs$o$options$tar <- NULL
   res <- .ws7_scenario_run(.ws7_out_backends$sqlite$handle, plan, .ws7_sv_frame(c(7101, 7104)))$compiled
   expect_identical(names(res$components), "short")
-  expect_identical(res$candidates[[1L]]$requested_symbol, "D.short")
+  expect_identical(res$publication_candidates[[1L]]$requested_symbol, "D.short")
 })
 
 test_that("person-event long output unions all associated episodes before physical deduplication", {
