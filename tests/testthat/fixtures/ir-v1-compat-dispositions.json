@@ -5,231 +5,231 @@
     "A.version.str": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.1/4.5: numeric version dispatch",
+      "reference": "Endorsed §4.1/4.5: numeric version dispatch",
       "field": "/version",
       "reason": "2.10.2 ignored version; the versioned language requires numeric version 1 or 2 before envelope dispatch. This case is neither a valid numeric v1 version nor a native v2 document."
     },
     "A.version.str_signed": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.1/4.5: numeric version dispatch",
+      "reference": "Endorsed §4.1/4.5: numeric version dispatch",
       "field": "/version",
       "reason": "2.10.2 ignored version; the versioned language requires numeric version 1 or 2 before envelope dispatch. This case is neither a valid numeric v1 version nor a native v2 document."
     },
     "A.version.str_exponent": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.1/4.5: numeric version dispatch",
+      "reference": "Endorsed §4.1/4.5: numeric version dispatch",
       "field": "/version",
       "reason": "2.10.2 ignored version; the versioned language requires numeric version 1 or 2 before envelope dispatch. This case is neither a valid numeric v1 version nor a native v2 document."
     },
     "A.version.str_spaces": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.1/4.5: numeric version dispatch",
+      "reference": "Endorsed §4.1/4.5: numeric version dispatch",
       "field": "/version",
       "reason": "2.10.2 ignored version; the versioned language requires numeric version 1 or 2 before envelope dispatch. This case is neither a valid numeric v1 version nor a native v2 document."
     },
     "A.version.str_hex": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.1/4.5: numeric version dispatch",
+      "reference": "Endorsed §4.1/4.5: numeric version dispatch",
       "field": "/version",
       "reason": "2.10.2 ignored version; the versioned language requires numeric version 1 or 2 before envelope dispatch. This case is neither a valid numeric v1 version nor a native v2 document."
     },
     "A.version.fraction": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.1/4.5: numeric version dispatch",
+      "reference": "Endorsed §4.1/4.5: numeric version dispatch",
       "field": "/version",
       "reason": "2.10.2 ignored version; the versioned language requires numeric version 1 or 2 before envelope dispatch. This case is neither a valid numeric v1 version nor a native v2 document."
     },
     "A.version.str_alpha": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.1/4.5: numeric version dispatch",
+      "reference": "Endorsed §4.1/4.5: numeric version dispatch",
       "field": "/version",
       "reason": "2.10.2 ignored version; the versioned language requires numeric version 1 or 2 before envelope dispatch. This case is neither a valid numeric v1 version nor a native v2 document."
     },
     "A.version.boolean": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.1/4.5: numeric version dispatch",
+      "reference": "Endorsed §4.1/4.5: numeric version dispatch",
       "field": "/version",
       "reason": "2.10.2 ignored version; the versioned language requires numeric version 1 or 2 before envelope dispatch. This case is neither a valid numeric v1 version nor a native v2 document."
     },
     "A.version.empty_array": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.1/4.5: numeric version dispatch",
+      "reference": "Endorsed §4.1/4.5: numeric version dispatch",
       "field": "/version",
       "reason": "2.10.2 ignored version; the versioned language requires numeric version 1 or 2 before envelope dispatch. This case is neither a valid numeric v1 version nor a native v2 document."
     },
     "A.options.min_persons.fraction": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/options/min_persons",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.options.min_persons.str_alpha": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/options/min_persons",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.options.min_persons.empty_array": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/options/min_persons",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.harmonization.version.fraction": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/harmonization/version",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.harmonization.version.str_alpha": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/harmonization/version",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.harmonization.version.empty_array": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/harmonization/version",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.window.start.fraction": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/window/start",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.window.start.str_alpha": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/window/start",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.window.start.empty_array": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/window/start",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.window.end.fraction": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/window/end",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.window.end.str_alpha": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/window/end",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.window.end.empty_array": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/window/end",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.window.at.fraction": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/window/at",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.window.at.str_alpha": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/window/at",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.window.at.empty_array": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/window/at",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.tar.start_offset.fraction": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/tar/start_offset",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.tar.start_offset.str_alpha": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/tar/start_offset",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.tar.start_offset.empty_array": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/tar/start_offset",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.tar.end_offset.fraction": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/tar/end_offset",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.tar.end_offset.str_alpha": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/tar/end_offset",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.tar.end_offset.empty_array": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/tar/end_offset",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.transitions.edges.trans.fraction": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/transitions/edges/0/trans",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.transitions.edges.trans.str_alpha": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/transitions/edges/0/trans",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
     "A.output.options.transitions.edges.trans.empty_array": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: inactive/advisory positions are closed",
+      "reference": "Endorsed §4.5; re-review R1: inactive/advisory positions are closed",
       "field": "/outputs/demo/options/transitions/edges/0/trans",
       "reason": "The historical executor ignored this advisory field. Its closed integer-shaped position admits validated historical integer coercions, but this value has no finite integer interpretation; advisory data do not bypass the incoming shape contract."
     },
@@ -243,56 +243,56 @@
     "F.cohort.spec.private_true": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: close inactive specs and advisory labels",
+      "reference": "Endorsed §4.5; re-review R1: close inactive specs and advisory labels",
       "field": "/cohort/spec",
       "reason": "The old executor ignored the competing spec or advisory label. Unknown nested properties (including null-valued ones), a non-object spec, and a non-string label violate the explicitly reviewed closed envelope."
     },
     "F.cohort.spec.private_null": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: close inactive specs and advisory labels",
+      "reference": "Endorsed §4.5; re-review R1: close inactive specs and advisory labels",
       "field": "/cohort/spec",
       "reason": "The old executor ignored the competing spec or advisory label. Unknown nested properties (including null-valued ones), a non-object spec, and a non-string label violate the explicitly reviewed closed envelope."
     },
     "F.cohort.spec.concept_set_private_null": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: close inactive specs and advisory labels",
+      "reference": "Endorsed §4.5; re-review R1: close inactive specs and advisory labels",
       "field": "/cohort/spec/concept_set",
       "reason": "The old executor ignored the competing spec or advisory label. Unknown nested properties (including null-valued ones), a non-object spec, and a non-string label violate the explicitly reviewed closed envelope."
     },
     "F.has_concept.concept_name.private_null": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: close inactive specs and advisory labels",
+      "reference": "Endorsed §4.5; re-review R1: close inactive specs and advisory labels",
       "field": "/concept_name",
       "reason": "The old executor ignored the competing spec or advisory label. Unknown nested properties (including null-valued ones), a non-object spec, and a non-string label violate the explicitly reviewed closed envelope."
     },
     "F.cohort.spec_true": {
       "classification": "newly_refused_structural",
       "current": "refused",
-      "reference": "Endorsed \u00a74.5; re-review R1: close inactive specs and advisory labels",
+      "reference": "Endorsed §4.5; re-review R1: close inactive specs and advisory labels",
       "field": "/cohort/spec",
       "reason": "The old executor ignored the competing spec or advisory label. Unknown nested properties (including null-valued ones), a non-object spec, and a non-string label violate the explicitly reviewed closed envelope."
     },
     "D.difference.a_a.unused.k3": {
       "classification": "newly_permitted",
       "current": "ok",
-      "reference": "Endorsed \u00a77.1/7.4; A-19 open item (i); A-21",
+      "reference": "Endorsed §7.1/7.4; A-19 open item (i); A-21",
       "result_from": "D.difference.a_a.unused.k0",
       "reason": "The empty intermediate remains private; the nonempty final output meets k=3. Pin its exact result to the independently captured identical plan at k=0, where baseline executed it."
     },
     "D.bare_criteria.unused.k3": {
       "classification": "newly_permitted",
       "current": "ok",
-      "reference": "Endorsed \u00a77.1/7.4; A-19 open item (i); A-21",
+      "reference": "Endorsed §7.1/7.4; A-19 open item (i); A-21",
       "result_from": "D.bare_criteria.unused.k0",
       "reason": "The empty intermediate remains private; the nonempty final output meets k=3. Pin its exact result to the independently captured identical plan at k=0, where baseline executed it."
     },
     "D.bare_criteria.member.k3": {
       "classification": "newly_permitted",
       "current": "ok",
-      "reference": "Endorsed \u00a77.1/7.4; A-19 open item (i); A-21",
+      "reference": "Endorsed §7.1/7.4; A-19 open item (i); A-21",
       "result_from": "D.bare_criteria.member.k0",
       "reason": "The empty intermediate remains private; the nonempty final output meets k=3. Pin its exact result to the independently captured identical plan at k=0, where baseline executed it."
     },
@@ -309,6 +309,83 @@
       "reference": "Legacy baseline cohort declaration check; validation step 4",
       "message": "requires a cohort; no executable cohort source is declared",
       "reason": "The baseline output requires a declared cohort source and execution still refuses it. This declaration is checked in .planV1SiteCheck; .irPrepare without a handle does not run that phase. The fixture plan-stage capture label does not imply a handle-free IR schema refusal."
+    },
+    "A.filter_tree.age_range.min.k3.str": {
+      "classification": "newly_permitted",
+      "current": "ok",
+      "reference": "Endorsed §7.1/7.4 removes assignment filter width gates; A-19 item 7 preserves historical compiler coercions",
+      "result_from": "A.filter_tree.age_range.min.k3.control",
+      "reason": "The former width classifier subtracted an uncoerced string and crashed. The endorsed assignment-filter policy removes that width gate; the historical leaf compiler accepts this integer-coercible bound. Compare the complete result exactly to the independently captured numeric-bound control under the same k=3 options."
+    },
+    "A.filter_tree.age_range.min.k3.str_signed": {
+      "classification": "newly_permitted",
+      "current": "ok",
+      "reference": "Endorsed §7.1/7.4 removes assignment filter width gates; A-19 item 7 preserves historical compiler coercions",
+      "result_from": "A.filter_tree.age_range.min.k3.control",
+      "reason": "The former width classifier subtracted an uncoerced string and crashed. The endorsed assignment-filter policy removes that width gate; the historical leaf compiler accepts this integer-coercible bound. Compare the complete result exactly to the independently captured numeric-bound control under the same k=3 options."
+    },
+    "A.filter_tree.age_range.min.k3.str_exponent": {
+      "classification": "newly_permitted",
+      "current": "ok",
+      "reference": "Endorsed §7.1/7.4 removes assignment filter width gates; A-19 item 7 preserves historical compiler coercions",
+      "result_from": "A.filter_tree.age_range.min.k3.control",
+      "reason": "The former width classifier subtracted an uncoerced string and crashed. The endorsed assignment-filter policy removes that width gate; the historical leaf compiler accepts this integer-coercible bound. Compare the complete result exactly to the independently captured numeric-bound control under the same k=3 options."
+    },
+    "A.filter_tree.age_range.min.k3.str_spaces": {
+      "classification": "newly_permitted",
+      "current": "ok",
+      "reference": "Endorsed §7.1/7.4 removes assignment filter width gates; A-19 item 7 preserves historical compiler coercions",
+      "result_from": "A.filter_tree.age_range.min.k3.control",
+      "reason": "The former width classifier subtracted an uncoerced string and crashed. The endorsed assignment-filter policy removes that width gate; the historical leaf compiler accepts this integer-coercible bound. Compare the complete result exactly to the independently captured numeric-bound control under the same k=3 options."
+    },
+    "A.filter_tree.age_range.min.k3.str_hex": {
+      "classification": "newly_permitted",
+      "current": "ok",
+      "reference": "Endorsed §7.1/7.4 removes assignment filter width gates; A-19 item 7 preserves historical compiler coercions",
+      "result_from": "A.filter_tree.age_range.min.k3.control",
+      "reason": "The former width classifier subtracted an uncoerced string and crashed. The endorsed assignment-filter policy removes that width gate; the historical leaf compiler accepts this integer-coercible bound. Compare the complete result exactly to the independently captured numeric-bound control under the same k=3 options."
+    },
+    "A.filter_tree.age_range.max.k3.str": {
+      "classification": "newly_permitted",
+      "current": "ok",
+      "reference": "Endorsed §7.1/7.4 removes assignment filter width gates; A-19 item 7 preserves historical compiler coercions",
+      "result_from": "A.filter_tree.age_range.max.k3.control",
+      "reason": "The former width classifier subtracted an uncoerced string and crashed. The endorsed assignment-filter policy removes that width gate; the historical leaf compiler accepts this integer-coercible bound. Compare the complete result exactly to the independently captured numeric-bound control under the same k=3 options."
+    },
+    "A.filter_tree.age_range.max.k3.str_signed": {
+      "classification": "newly_permitted",
+      "current": "ok",
+      "reference": "Endorsed §7.1/7.4 removes assignment filter width gates; A-19 item 7 preserves historical compiler coercions",
+      "result_from": "A.filter_tree.age_range.max.k3.control",
+      "reason": "The former width classifier subtracted an uncoerced string and crashed. The endorsed assignment-filter policy removes that width gate; the historical leaf compiler accepts this integer-coercible bound. Compare the complete result exactly to the independently captured numeric-bound control under the same k=3 options."
+    },
+    "A.filter_tree.age_range.max.k3.str_exponent": {
+      "classification": "newly_permitted",
+      "current": "ok",
+      "reference": "Endorsed §7.1/7.4 removes assignment filter width gates; A-19 item 7 preserves historical compiler coercions",
+      "result_from": "A.filter_tree.age_range.max.k3.control",
+      "reason": "The former width classifier subtracted an uncoerced string and crashed. The endorsed assignment-filter policy removes that width gate; the historical leaf compiler accepts this integer-coercible bound. Compare the complete result exactly to the independently captured numeric-bound control under the same k=3 options."
+    },
+    "A.filter_tree.age_range.max.k3.str_spaces": {
+      "classification": "newly_permitted",
+      "current": "ok",
+      "reference": "Endorsed §7.1/7.4 removes assignment filter width gates; A-19 item 7 preserves historical compiler coercions",
+      "result_from": "A.filter_tree.age_range.max.k3.control",
+      "reason": "The former width classifier subtracted an uncoerced string and crashed. The endorsed assignment-filter policy removes that width gate; the historical leaf compiler accepts this integer-coercible bound. Compare the complete result exactly to the independently captured numeric-bound control under the same k=3 options."
+    },
+    "A.filter_tree.age_range.max.k3.str_hex": {
+      "classification": "newly_permitted",
+      "current": "ok",
+      "reference": "Endorsed §7.1/7.4 removes assignment filter width gates; A-19 item 7 preserves historical compiler coercions",
+      "result_from": "A.filter_tree.age_range.max.k3.control",
+      "reason": "The former width classifier subtracted an uncoerced string and crashed. The endorsed assignment-filter policy removes that width gate; the historical leaf compiler accepts this integer-coercible bound. Compare the complete result exactly to the independently captured numeric-bound control under the same k=3 options."
+    },
+    "A.scope.cohort.empty_array": {
+      "classification": "unchanged_invalid",
+      "current": "unchanged_refusal",
+      "reference": "Endorsed §4.5 step 4 legacy context/declaration validation; A-19 item 7 preserves v1 execution refusal",
+      "message": "Output 'demo' (type 'baseline') requires a cohort; no executable cohort source is declared for population 'base'.",
+      "reason": "An empty scope-cohort list declares no executable cohort for the requested legacy baseline output. The handle/context legacy declaration check retains the exact original refusal; a no-handle IR preparation does not run that check."
     }
   }
 }
