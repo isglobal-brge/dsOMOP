@@ -179,7 +179,10 @@ CTEs. The payload stays in the database, preserves BIGINT identities and NULLs,
 and introduces no persistent objects or data-owner settings. Final result
 ordering is preserved outside the lateral query. MariaDB keeps its existing
 CTE path. Consumers use the ordinary fragment builder; they do not construct
-this transport themselves.
+this transport themselves. Preserve the effective-source fragment's private
+`mysql_stockpile_source` attribute when passing registered fragments to the
+builder; copying only the frozen record fields discards this execution
+metadata.
 
 Native end-to-end publication and the integrated v1 result
 reconciliation remain separate WS-6/WS-7 and WS-2c integration checks; WS-5's
