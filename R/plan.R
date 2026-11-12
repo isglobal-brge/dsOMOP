@@ -2468,24 +2468,16 @@
     "op.observation_period_start_date <= t.", start_col, " AND ",
     "op.observation_period_end_date >= t.", start_col
   )
-  # Apply the ordinary DataSHIELD population gate before any data-quality
-  # diagnostic so a rare concept cannot be probed through differing validation
-  # errors. Candidate events outside every observation period are not eligible
-  # index events and therefore do not contribute to this gate.
-
-  coverage_sql <- paste0(
-    "SELECT COUNT(*) AS n FROM (SELECT t.", event_id_col, " FROM ",
-    qualified, " t LEFT JOIN ", op_qualified, " op ON ", op_join,
-    " WHERE t.", start_col, " IS NOT NULL", concept_predicate,
-    " GROUP BY t.person_id, t.", event_id_col,
-    " HAVING COUNT(op.observation_period_id) > 1) dsomop_bad_index_op"
+  # The v1 compatibility default is unique/drop/drop (design 1.3, A-E6).
+  # Keep only candidates with exactly one covering record; an ambiguous
+  # candidate cannot abort unrelated persons or duplicate an index episode.
+  # Coverage is resolved before the existing primary-limit selection.
+  unique_coverage <- paste0(
+    " AND (SELECT COUNT(*) FROM ", op_qualified, " op_cover WHERE ",
+    "op_cover.person_id = t.person_id AND ",
+    "op_cover.observation_period_start_date <= t.", start_col, " AND ",
+    "op_cover.observation_period_end_date >= t.", start_col, ") = 1"
   )
-  coverage <- .executeQuery(handle, coverage_sql)
-  if (nrow(coverage) != 1L || !"n" %in% names(coverage) ||
-      is.na(coverage$n[[1]]) || as.numeric(coverage$n[[1]]) > 0) {
-    stop("Candidate index events cannot have overlapping covering ",
-         "observation_period records.", call. = FALSE)
-  }
 
   cohort_end <- "op.observation_period_end_date"
   if (!is.null(end_strategy)) {
@@ -2509,7 +2501,8 @@
     " AS cohort_start_date, ", cohort_end,
     " AS cohort_end_date, t.", event_id_col, " AS index_event_id"
   )
-  where <- paste0(" WHERE t.", start_col, " IS NOT NULL", concept_predicate)
+  where <- paste0(" WHERE t.", start_col, " IS NOT NULL", concept_predicate,
+                  unique_coverage)
   event_from <- paste0(
     " FROM ", qualified, " t INNER JOIN ", op_qualified, " op ON ", op_join
   )
