@@ -340,9 +340,19 @@ for (engine in c("mariadb", "mysql")) local({
     expect_null(h$read_snapshot)
     expect_length(ctx$compile_temp_tables, 0L)
     expect_length(h$temp_tables, 0L)
+    lateral <- paste("SELECT p.subject_id FROM (SELECT 1 AS seed) x JOIN LATERAL",
+      "(SELECT person_id AS subject_id FROM", f$declared, ") p ON TRUE")
+    if (identical(dbms, "mysql")) {
+      expect_error(.dsomopWithReadSnapshot(h, .executeQuery(h, lateral)),
+        class = "dsomop_snapshot_unavailable")
+      expect_null(h$read_snapshot)
+    }
     # Restoring a certifiable dependency restores both protected routes.
     DBI::dbExecute(f$admin, paste("ALTER TABLE", f$physical, "ENGINE=InnoDB"))
     .dsomopWithReadSnapshot(h, {
+      if (identical(dbms, "mysql")) {
+        expect_identical(as.character(.executeQuery(h, lateral)$subject_id), as.character(1:3))
+      }
       rows <- .matchFetchBounded(ctx, source, "SELECT subject_id FROM snapshot_ws6_source", cap = 10L)
       expect_identical(as.character(rows$subject_id), as.character(1:3))
       frozen <- .populationFreezeFragment(ctx, source)
