@@ -130,7 +130,13 @@ Security release: the P0 fixes of the OHDSI-tools audit.
   them. Standard mode retains its established governance exception.
 - Capped recurrent incidence counts and event-time histograms are restored.
   Event-time 1/30/365-day views share one public hierarchy with a whole-person
-  cap across episodes and bins; first-event requests remain distinct.
+  cap across episodes and bins; first-event requests remain distinct. Recurrent
+  `persons` counts distinct contributors among those same kept occurrences via
+  a complete 998-interval presence vector with sensitivity 3K. Static fractions
+  are N/R .2 each, A/B/C .1 each and P .3; displayed R lies in [N,K N]. The
+  versioned radial projection enforces event/person bounds and interval
+  constraints but can add bias toward its event-mass anchor. Coarse persons
+  select presence coordinates and are never sums of daily person counts.
 - Typed binary pooling validates complete semantic domains and numerator/
   denominator masks. Weighted numeric views project the complete atom basis
   before coarsening on server and client. Catalogue guarantee scopes are checked

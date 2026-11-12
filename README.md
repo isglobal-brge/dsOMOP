@@ -363,6 +363,14 @@ data-enumerated strata use the honestly labelled heuristic route, retain
 weighted histograms without scales, and are unavailable in DP-exclusive mode.
 See [DISCLOSURE_CONTROL.md](DISCLOSURE_CONTROL.md#the-automatic-data-generation-of-the-fixed-synopses).
 
+Protected recurrent event-time views retain both events and distinct contributors
+among the same K=10 kept occurrences. Their complete interval-presence vector has
+sensitivity 3K; static epsilon fractions are N/R .2 each, A/B/C .1 each and P .3.
+Coarse person counts select their own canonical intervals, never sums of daily
+person counts. A versioned radial projection enforces feasible event/person
+bounds and interval relationships; retreat toward its event-mass anchor can add
+bias. First-event requests remain a separate estimand with unchanged allocations.
+
 Without a configured domain, in-memory databases and unavailable/ambiguous
 resource coordinates still fail closed with instructions to configure the
 domain. Conflicting option and

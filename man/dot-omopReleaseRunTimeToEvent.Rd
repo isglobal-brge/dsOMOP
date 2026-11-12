@@ -11,7 +11,8 @@ Honours \code{first_occurrence_only}: 0 (the default) releases the capped
 recurrent estimand, 1 the first event per person (see the module header).
 The output keeps the standard columns: \code{day_offset} (each bin's lower
 edge; \code{-Inf} for the lower tail), \code{num_events} and
-\code{persons} (first events: equal to the events; recurrent events: NA,
-since persons per bin are not additive over the common basis).
+\code{persons} (first events: equal to events; recurrent events: protected
+distinct contributors among the same K-capped occurrences, selected from a
+common interval-presence vector, never summed from finer distinct counts).
 }
 \keyword{internal}

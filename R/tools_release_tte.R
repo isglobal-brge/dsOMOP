@@ -25,6 +25,13 @@
 # scales are sums of displayed nodes, so they never redraw the same events
 # with fresh noise and always add up: a 365-day bin is one A node, a 30-day bin
 # its B atoms, a day its C atom.
+# Recurrent persons use a separate complete vector of canonical interval
+# presence among the same K-capped occurrences (joint sensitivity 3K).
+# Person counts are not additive across time bins. The complete vector is
+# projected once, then each view selects its interval coordinates. R is held
+# in [N,K*N] for displayed N. The radial presence projection enforces bounds,
+# containment and registered partitions; retreat toward its concave event-mass
+# anchor can add bias and is not a Euclidean projection.
 
 .DSOMOP_RELEASE_TTE_BASIS <- "tte-signed-day-basis-v1"
 .DSOMOP_RELEASE_TTE_SPAN <- 3650L
@@ -34,7 +41,7 @@
 # owner; every level is drawn once, so the levels compose).
 .DSOMOP_RELEASE_TTE_FRACTIONS <- list(
   first = list(N = 0.2, A = 0.8 / 3, B = 0.8 / 3, C = 0.8 / 3),
-  recurrent = list(N = 0.2, R = 0.2, A = 0.2, B = 0.2, C = 0.2)
+  recurrent = list(N = 0.2, R = 0.2, A = 0.1, B = 0.1, C = 0.1, P = 0.3)
 )
 
 #' The common signed-day basis of the time-to-event histograms
@@ -146,14 +153,14 @@
   K <- .DSOMOP_RELEASE_MULTI_CAP
   if (isTRUE(recurrent)) {
     id <- paste0("characterization/recurrent-outcome-day-offset/",
-                 .dsomopFrame("v1", outcome_key, K, .DSOMOP_RELEASE_TTE_BASIS))
+                 .dsomopFrame("v2", outcome_key, K, .DSOMOP_RELEASE_TTE_BASIS))
     estimand <- paste0(
       "capped recurrent outcome events by day offset from each cohort ",
       "episode's index: every qualifying event of every episode, each ",
       "person's first ", K, " occurrences (by event date, event key, episode ",
       "start) across all episodes and bins; a view of the common signed-day ",
       "basis ", .DSOMOP_RELEASE_TTE_BASIS, " with explicit tails (-Inf, -3650) ",
-      "and [3650, Inf); persons per bin are not released for this estimand")
+      "and [3650, Inf); persons count distinct contributors among these kept occurrences")
     population <- paste0("characterization/outcome-persons/all-episodes/",
                          outcome_key)
   } else {
@@ -191,7 +198,9 @@
 #'   person for recurrent events, one for first events.
 #' @param scale 1, 30 or 365.
 #' @return List: owner, protection, strata, view (data frame: day_offset,
-#'   events), levels (signed and displayed nodes), export.
+#'   events, persons), levels (signed and displayed nodes), export. Recurrent
+#'   persons count distinct contributors among the same K-capped occurrences
+#'   via a complete interval-presence vector and a feasible radial projection.
 #' @keywords internal
 .dsomopReleaseBuildTte <- function(policy, protection, owner, sub, scale) {
   keys <- .dsomopReleaseKeys(policy)
@@ -228,12 +237,16 @@
     noisy("R", "stratum=root", pid, frac$R, K)
   } else NA_real_
   parent_signed <- if (isTRUE(owner$recurrent)) r_noisy else n_noisy
-  parent_display <- max(0, parent_signed)
+  n_display <- max(0, n_noisy)
+  parent_display <- if (isTRUE(owner$recurrent)) {
+    min(K * n_display, max(n_display, parent_signed))
+  } else n_display
   basis <- .dsomopReleaseTteBasis()
   view <- .dsomopReleaseTteView(basis, as.integer(scale))
   family <- if (isTRUE(owner$recurrent)) "W" else "H"
   levels <- list()
-  for (level in view$levels) {
+  draw_levels <- if (isTRUE(owner$recurrent)) c("A", "B", "C") else view$levels
+  for (level in draw_levels) {
     nodes <- basis[[level]]
     node <- .dsomopReleaseTteNodeOf(sub$v, nodes)
     if (identical(level, "A")) {
@@ -266,6 +279,21 @@
   events <- vapply(seq_along(bins$level), function(i) {
     sum(levels[[bins$level[[i]]]]$display[bins$nodes[[i]]])
   }, numeric(1L))
+  presence <- presence_signed <- presence_shown <- presence_view <- NULL
+  if (isTRUE(owner$recurrent)) {
+    presence <- .dsomopReleaseTtePresenceBasis(basis)
+    intervals <- presence$intervals
+    presence_signed <- vapply(seq_len(nrow(intervals)), function(i) {
+      who <- unique(pid[sub$v >= intervals$lower[[i]] & sub$v < intervals$upper[[i]]])
+      noisy("P", intervals$key[[i]], who, frac$P, 3 * K)
+    }, numeric(1L))
+    presence_events <- vapply(seq_len(nrow(intervals)), function(i) {
+      sum(levels[[intervals$level[[i]]]]$display[presence$nodes[[i]]])
+    }, numeric(1L))
+    presence_shown <- .dsomopReleaseTtePresenceProject(
+      presence_signed, presence_events, n_display, parent_display, K, presence)
+    presence_view <- presence$views[[as.character(as.integer(scale))]]
+  }
   export_levels <- lapply(levels, function(l) {
     list(keys = l$keys, signed = l$signed)
   })
@@ -275,23 +303,28 @@
                  # person histogram reconciled to N; recurrent cells are
                  # weighted (sum to R, not N) and never pooled as h.
                  if (!isTRUE(owner$recurrent)) list(h = levels$A$signed),
-                 list(levels = export_levels))
+                 list(levels = export_levels),
+                 if (isTRUE(owner$recurrent)) list(p = presence_signed))
   list(
     owner = owner, protection = protection,
     strata = data.frame(stratum = "root", n_display = max(0, n_noisy),
                         stringsAsFactors = FALSE),
     view = data.frame(day_offset = bins$day_offset,
-                      events = .dsomopReleaseRound(events)),
+                      events = .dsomopReleaseRound(events),
+                      persons = .dsomopReleaseRound(if (isTRUE(owner$recurrent))
+                        presence_shown[presence_view] else events)),
     export = list(
       protocol = .DSOMOP_RELEASE_PROTOCOL, owner = owner$id,
       population = owner$population, family = "TTE",
       estimand_kind = if (isTRUE(owner$recurrent)) "recurrent" else "first",
-      basis = basis$id, levels = view$levels, cap = K,
-      hierarchy_nodes = lapply(basis[view$levels], function(n) n[c("key", "parent")]),
+      basis = basis$id, levels = draw_levels, cap = K,
+      hierarchy_nodes = lapply(basis[draw_levels], function(n) n[c("key", "parent")]),
       view = bins,
-      display_projection = "tte-hierarchy-simplex-v1",
+      display_projection = if (isTRUE(owner$recurrent))
+        "tte-hierarchy-presence-v1" else "tte-hierarchy-simplex-v1",
+      presence_basis = presence, presence_view = presence_view,
       allocation = frac[c("N", if (isTRUE(owner$recurrent)) "R",
-                          view$levels)],
+                          draw_levels, if (isTRUE(owner$recurrent)) "P")],
       strata_kind = "root",
       cell_keys = if (!isTRUE(owner$recurrent)) levels$A$keys else NULL,
       reconciliation = paste0(
@@ -309,7 +342,8 @@
   o <- built$owner
   K <- max(1L, as.integer(o$cap))
   alloc <- built$export$allocation
-  sens <- lapply(names(alloc), function(f) if (identical(f, "N")) 1 else K)
+  sens <- lapply(names(alloc), function(f) if (identical(f, "N")) 1 else
+    if (identical(f, "P")) 3 * K else K)
   names(sens) <- names(alloc)
   sd <- lapply(names(alloc), function(f) {
     .dsomopReleaseNoiseSd(epsilon * alloc[[f]], sens[[f]])
@@ -326,11 +360,20 @@
        allocation_fraction = alloc,
        allocation_epsilon = lapply(alloc, function(a) a * epsilon),
        sensitivity = sens, noise_sd = sd,
+       presence = if (isTRUE(o$recurrent)) list(
+         estimand = "distinct contributors among the same whole-person K-capped occurrences",
+         basis = "tte-interval-presence-v1", sensitivity = 3 * K,
+         projection = "tte-presence-radial-v1",
+         note = paste0("Complete canonical interval-presence vector; coarse persons are never ",
+                       "sums of fine-bin persons. Feasible radial projection toward a concave ",
+                       "event-mass anchor enforces public bounds and interval constraints; ",
+                       "retreat toward that anchor can add bias. This is not an L2 projection.")),
        views = paste0(
          "time_scale 365: A nodes; 30: 30-day bins [30 j, 30 j + 30) of ",
          "[-3650, 3650) (edge bins 20 days) as sums of B atoms; 1: days of ",
          "[-365, 365) (C atoms) with tails (-Inf, -365) and [365, Inf) as sums ",
-         "of A nodes; every view is a sum of displayed nodes of one draw"))
+         "of A nodes; event views sum displayed nodes of one draw; recurrent persons select ",
+         "canonical interval-presence coordinates and are never added across bins"))
 }
 
 #' Protected run of char.time_to_event
@@ -339,8 +382,9 @@
 #' recurrent estimand, 1 the first event per person (see the module header).
 #' The output keeps the standard columns: \code{day_offset} (each bin's lower
 #' edge; \code{-Inf} for the lower tail), \code{num_events} and
-#' \code{persons} (first events: equal to the events; recurrent events: NA,
-#' since persons per bin are not additive over the common basis).
+#' \code{persons} (first events: equal to events; recurrent events: protected
+#' distinct contributors among the same K-capped occurrences, selected from a
+#' common interval-presence vector, never summed from finer distinct counts).
 #'
 #' @keywords internal
 .omopReleaseRunTimeToEvent <- function(handle, ctx, params, route, snap) {
@@ -397,14 +441,12 @@
                                   scale)
   df <- data.frame(day_offset = as.numeric(built$view$day_offset),
                    num_events = built$view$events,
-                   persons = if (isTRUE(recurrent)) NA_real_ else
-                     built$view$events)
+                   persons = built$view$persons)
   list(df = df, built = list(built),
        extra = list(time_scale = scale,
                     estimand_kind = if (isTRUE(recurrent)) "recurrent" else
                       "first",
-                    persons_unavailable = if (isTRUE(recurrent)) paste0(
-                      "persons per bin are not additive over the common ",
-                      "signed-day basis; first_occurrence_only = 1 releases ",
-                      "persons by first-event offset")))
+                    persons_estimand = if (isTRUE(recurrent))
+                      "distinct contributors among the same K-capped occurrences" else
+                      "one first event per person"))
 }

@@ -240,12 +240,26 @@ disclosive are released from protected components instead of being withheld:
   remain explicit. Unidentifiable or noise-dominated fits carry an unavailable
   reason. Noise uncertainty is deterministic post-processing, not an R RNG or
   call-history input, and provides approximate, not guaranteed, coverage.
+- Crossed C6 age-by-year cells use separate nonnegative transports for E, NE,
+  T and R, preserving both age and year margins and N=E+NE. The bounds
+  T<=3650 N and E<=R<=10 E are enforced at the tree levels, not at crossed cells.
 - Recurrent incidence counts and `char.time_to_event` retain K=10 events or
   occurrences per person. Event-time recurrence caps across all episodes and
   bins before view selection; 1-, 30- and 365-day views share a public signed-day
   hierarchy and explicit tails. `first_occurrence_only=1` remains a distinct
-  first-event estimand. Recurrent per-bin distinct persons are unavailable
-  because distinct people are not additive across those bins.
+  first-event estimand. Recurrent `persons` counts distinct contributors among
+  the same K-capped occurrences, using a separate complete presence vector over
+  998 canonical intervals. Each person occupies at most K bins per scale, so
+  this vector has joint sensitivity 3K. Static reference-epsilon fractions are
+  N .2, R .2, each event level A/B/C .1, and presence P .3 (sum 1); first-event
+  allocations remain N .2 and each event level .8/3. Displayed recurrent R lies
+  in [N,K N]. The versioned radial presence projection enforces event/person
+  bounds, containment and registered partition inequalities. It moves from a
+  feasible concave event-mass anchor toward the bounded noisy vector; retreat
+  toward that anchor can add bias, and it is not an L2 projection. Every view
+  selects canonical presence coordinates: coarse persons are never sums of
+  fine-bin persons. This preserves distinct contributors to the capped
+  substrate, not uncapped legacy presence in bins excluded by the global cap.
 - SCCS uses (person, merged observation-period) strata, a single K=10 cap across
   informative strata, and 36 logit-spaced q points in [0.0001, .99]. Strata with
   q=0/1 are noninformative and excluded before the cap. The signed-cell fit solves

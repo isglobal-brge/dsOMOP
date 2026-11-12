@@ -104,10 +104,14 @@ test_that("without noise the recurrent view is the capped occurrence count", {
     out <- .tte_run(f$handle, f$scope, scale)
     expect_identical(names(out), c("day_offset", "num_events", "persons"))
     expect_equal(out$num_events, .tte_bin_sums(occ$v, out), info = scale)
-    expect_true(all(is.na(out$persons)), info = scale)
+    lower <- out$day_offset; upper <- c(lower[-1L], Inf)
+    person_truth <- vapply(seq_along(lower), function(i) {
+      length(unique(occ$person_id[occ$v >= lower[[i]] & occ$v < upper[[i]]]))
+    }, numeric(1L))
+    expect_equal(out$persons, person_truth, info = scale)
     label <- attr(out, "dsomop_protection")
     expect_identical(label$estimand_kind, "recurrent")
-    expect_match(label$persons_unavailable, "not additive")
+    expect_match(label$persons_estimand, "same K-capped occurrences")
     expect_match(label$estimand, "capped recurrent outcome events")
   }
   # First events: one per person, from the first episode; persons = events.
@@ -202,7 +206,10 @@ test_that("equal occurrence maps replay; the estimands are distinct owners", {
                    "whole_person_occurrences_across_episodes_and_bins")
   expect_equal(lab$sensitivity$A, 10)
   expect_equal(lab$sensitivity$N, 1)
-  expect_identical(names(lab$allocation_fraction), c("N", "R", "A", "B"))
+  expect_identical(names(lab$allocation_fraction), c("N", "R", "A", "B", "C", "P"))
+  expect_equal(sum(unlist(lab$allocation_fraction)), 1)
+  expect_equal(lab$sensitivity$P, 30)
+  expect_match(lab$presence$projection, "radial")
   # The node draws do not depend on the requested scale: the A level of a
   # 1-day request equals the A level of a 30-day request.
   d1 <- .tte_run(f$handle, f$scope, "1")
@@ -210,6 +217,14 @@ test_that("equal occurrence maps replay; the estimands are distinct owners", {
                    ra$components[[1L]]$levels$A)
   expect_identical(attr(d1, "dsomop_release")$owners[[1L]]$components[[1L]]$levels$B,
                    ra$components[[1L]]$levels$B)
+  expect_identical(attr(d1, "dsomop_release")$owners[[1L]]$components[[1L]]$p,
+                   ra$components[[1L]]$p)
+  expect_length(ra$components[[1L]]$p, nrow(ra$presence_basis$intervals))
+  field_names <- function(x) if (is.list(x)) {
+    c(names(x), unlist(lapply(x, field_names), use.names = FALSE))
+  } else character(0)
+  expect_false(any(field_names(attr(d1, "dsomop_release")) %in%
+    c("fingerprint", "tokens", "noise_root", "data_generation", "person_id")))
 })
 
 test_that("standard mode keeps the standard time-to-event histogram", {
@@ -257,15 +272,72 @@ test_that("actual first and recurrent time-to-event frames preserve client pooli
       field <- if (first == "1") "n" else "r"
       total <- max(0, sum(vapply(owners, function(o) o$components[[1]][[field]],
                                  numeric(1))))
+      N <- max(0, sum(vapply(owners, function(o) o$components[[1]]$n, numeric(1))))
+      if (first == "0") total <- min(10 * N, max(N, total))
       expect_equal(sum(pooled$num_events), total, tolerance = 1e-8)
       if (first == "1") expect_equal(pooled$persons, pooled$num_events)
-      else expect_true(all(is.na(pooled$persons)))
+      else {
+        expect_true(all(is.finite(pooled$persons)))
+        expect_true(all(pooled$persons >= pooled$num_events / 10 - 1e-7))
+        expect_true(all(pooled$persons <= pmin(N, pooled$num_events) + 1e-7))
+        expect_true(sum(pooled$persons) >= N - 1e-7)
+        expect_true(sum(pooled$persons) <= 10 * N + 1e-7)
+      }
       pooled
     })
+    if (first == "0") {
+      for (lo in c(-365, 0)) {
+        fine <- views[[1]]$persons[views[[1]]$day_offset >= lo &
+                                    views[[1]]$day_offset < lo + 365]
+        parent <- views[[3]]$persons[views[[3]]$day_offset == lo]
+        expect_true(max(fine) <= parent + 1e-7)
+        expect_true(parent <= sum(fine) + 1e-7)
+        expect_true(sum(fine) <= 10 * parent + 1e-7)
+      }
+    }
     # The central 365-day bin is also the sum of its 365 one-day children.
     expect_equal(sum(views[[1]]$num_events[views[[1]]$day_offset >= 0 &
                                            views[[1]]$day_offset < 365]),
                  views[[3]]$num_events[views[[3]]$day_offset == 0],
                  tolerance = 1e-8)
+  }
+})
+
+test_that("the complete recurrent presence basis has bounded feasible projections", {
+  b <- .dsomopReleaseTtePresenceBasis(.dsomopReleaseTteBasis())
+  expect_equal(nrow(b$intervals), 998L)
+  expect_false(anyDuplicated(b$intervals$key) > 0)
+  person <- c(1L, 1L, 1L, 2L, 2L, 2L, 3L, 3L)
+  value <- c(-370, 0, 1, 0, 40, 400, -20, 3)
+  E <- vapply(seq_len(nrow(b$intervals)), function(i) {
+    sum(value >= b$intervals$lower[[i]] & value < b$intervals$upper[[i]])
+  }, numeric(1L))
+  P <- vapply(seq_len(nrow(b$intervals)), function(i) {
+    length(unique(person[value >= b$intervals$lower[[i]] &
+                           value < b$intervals$upper[[i]]]))
+  }, numeric(1L))
+  project <- function(x) .dsomopReleaseTtePresenceProject(x, E, 3, 8, 10, b)
+  expect_identical(project(P), P)
+  # Distinct persons in a coarse bin are not sums of its daily counts.
+  d <- b$views[["1"]]; y <- b$views[["365"]]
+  parent <- y[b$intervals$lower[y] == 0]
+  kids <- d[b$intervals$lower[d] >= 0 & b$intervals$upper[d] <= 365]
+  expect_lt(P[parent], sum(P[kids]))
+  noisy <- P + 100 * sin(seq_along(P))
+  shown <- project(noisy)
+  expect_identical(project(noisy), shown)
+  expect_equal(project(shown), shown)
+  expect_true(all(shown >= E / 10 - 1e-9 & shown <= pmin(3, E) + 1e-9))
+  expect_true(all(shown[b$contains[, 1]] <= shown[b$contains[, 2]] + 1e-9))
+  for (part in b$partitions) {
+    parent <- if (part$parent == 0L) 3 else shown[[part$parent]]
+    total <- sum(shown[part$children])
+    expect_true(total >= parent - 1e-9 && total <= 10 * parent + 1e-9)
+  }
+  expect_identical(.dsomopReleaseTtePresenceProject(noisy, E * 0, 0, 0, 10, b),
+                   numeric(length(P)))
+  if (requireNamespace("dsOMOPClient", quietly = TRUE)) {
+    cp <- get(".dp_tte_presence_project", asNamespace("dsOMOPClient"))
+    expect_identical(cp(noisy, E, 3, 8, 10, b), shown)
   }
 })

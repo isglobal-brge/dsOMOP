@@ -16,7 +16,13 @@ Realised-sticky releases reuse bounded contribution maps and make no joint DP
 claim. They include data-enumerated record summaries, which now retain weighted
 value H without registered scales. Interaction Cox and capped recurrent outputs
 are restored; public subgroup margins, Cox status parents and typed view masks
-have explicit contracts. DP-exclusive mode accepts only fixed-basis contracts.
+have explicit contracts. Recurrent event-time `persons` is distinct contributors
+among the same K=10 kept occurrences, selected from a complete interval-presence
+vector (sensitivity 3K), never summed from finer person counts. Its static
+fractions are N/R .2 each, A/B/C .1 each and P .3. The versioned radial feasibility
+projection can add bias by retreating toward an event-mass anchor; it is not an
+L2 projection. First-event allocations are unchanged. DP-exclusive mode accepts
+only fixed-basis contracts.
 
 Status declares `history_dependent = FALSE`, `history_based_admission = FALSE`,
 `persistent_state = "noise_root_only"`,

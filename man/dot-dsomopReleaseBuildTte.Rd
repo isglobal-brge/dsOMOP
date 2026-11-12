@@ -20,7 +20,9 @@ person for recurrent events, one for first events.}
 }
 \value{
 List: owner, protection, strata, view (data frame: day_offset,
-  events), levels (signed and displayed nodes), export.
+  events, persons), levels (signed and displayed nodes), export. Recurrent
+  persons count distinct contributors among the same K-capped occurrences
+  via a complete interval-presence vector and a feasible radial projection.
 }
 \description{
 Draws the person total N, for recurrent events the capped occurrence total
