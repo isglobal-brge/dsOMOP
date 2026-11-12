@@ -497,7 +497,7 @@
 # A-21 is the one closed compatibility variant with a native empty relation.
 # Validate it here too: the frozen compiler entry point can be called directly.
 .populationLegacyEmpty <- function(node, name) {
-  if (is.null(node[["legacy_empty"]])) return(FALSE)
+  if (!"legacy_empty" %in% names(node)) return(FALSE)
   allowed <- c("kind", "parent", "where", "cohort_definition_id", "episode_policy",
                "coverage", "label", "legacy_empty", "legacy_episodes")
   absent <- c("parent", "where", "cohort_definition_id")
