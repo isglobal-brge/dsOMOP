@@ -165,9 +165,19 @@
 
 # --- values ----------------------------------------------------------------------
 
+# The executors' integer / number coercion (.v1AsInteger(), .v1AsNumber()) as
+# validated compatibility normalisation: a value the closed envelope accepted
+# lowers to the number 2.10.2 read ("9000" -> 9000L); anything else is kept
+# as it is (and is refused by the IR schema or the envelope).
 .v1Int <- function(x) {
   x <- .v1Scalar(x)
-  if (is.numeric(x) && length(x) == 1L && !is.na(x) && x == round(x)) as.integer(x) else x
+  .v1AsInteger(x) %||% x
+}
+.v1Num <- function(x) {
+  x <- .v1Scalar(x)
+  number <- .v1AsNumber(x)
+  if (is.null(number)) return(x)
+  if (number == round(number) && abs(number) < .Machine$integer.max) as.integer(number) else number
 }
 
 .v1IdList <- function(x) {
@@ -250,20 +260,37 @@
   if (!is.null(x[["safe_scope"]]) && !is.null(st)) {
     .v1Annex(st, path, value_bin_safe_scope = x[["safe_scope"]])
   }
+  # an integer string on a concept column is the concept id every database
+  # compared it as (A-19 item 7: validated compatibility normalisation)
+  literal <- function(v) .v1ConceptLiteral(var, .v1Scalar(v))
   switch(op,
-    value_bin = list(and = list(
-      list(var = var, op = ">=", value = .v1Scalar(x[["value"]][["lower"]])),
-      list(var = var, op = "<", value = .v1Scalar(x[["value"]][["upper"]])))),
+    # the half-open bin [lower, upper) the executor compiles (lower <= x <
+    # upper), one leaf as in v1, so v1 cap accounting holds (re-review R3)
+    value_bin = list(var = var, op = "between",
+                     value = list(lower = .v1Num(x[["value"]][["lower"]]),
+                                  upper = .v1Num(x[["value"]][["upper"]]),
+                                  upper_inclusive = FALSE)),
     between = {
       values <- unlist(x[["value"]], use.names = FALSE)
       list(var = var, op = "between",
-           value = list(lower = if (length(values) >= 1L) values[[1L]],
-                        upper = if (length(values) >= 2L) values[[2L]],
+           value = list(lower = if (length(values) >= 1L) literal(values[[1L]]),
+                        upper = if (length(values) >= 2L) literal(values[[2L]]),
                         upper_inclusive = TRUE))
     },
-    `in` =, not_in = list(var = var, op = op, value = lapply(.v1Items(x[["value"]]), .v1Scalar)),
+    `in` =, not_in = list(var = var, op = op, value = lapply(.v1Items(x[["value"]]), literal)),
     is_null =, not_null = list(var = var, op = op),
-    list(var = var, op = op, value = .v1Scalar(x[["value"]])))
+    list(var = var, op = op, value = literal(x[["value"]])))
+}
+
+# A v1 literal on a *_concept_id column (the executors' concept-column rule):
+# an integer in decimal notation, quoted or not, is that concept id.
+.v1ConceptLiteral <- function(var, v) {
+  if (!grepl("_concept_id$", var) || !is.character(v) || length(v) != 1L || is.na(v) ||
+      !grepl("^\\s*[+-]?[0-9]+\\s*$", v)) {
+    return(v)
+  }
+  number <- as.numeric(v)
+  if (abs(number) <= .Machine$integer.max) as.integer(number) else number
 }
 
 .v1And <- function(...) {
@@ -297,7 +324,7 @@
         }
       }
       multi <- params[[pair[[2L]]]]
-      if (!is.null(multi) && !is.list(multi)) params[[pair[[2L]]]] <- list(.v1Int(multi))
+      if (!is.null(multi)) params[[pair[[2L]]]] <- lapply(.v1Items(multi), .v1Int)
     }
     if (!is.null(params[["groups"]])) {
       params[["groups"]] <- lapply(.v1Items(params[["groups"]]), function(g) trimws(as.character(g)))
@@ -306,6 +333,7 @@
                                          "cohort_definition_id", "concept_id", "visit_concept_id"))) {
       params[[k]] <- .v1Int(params[[k]])
     }
+    for (k in intersect(names(params), c("min_value", "max_value"))) params[[k]] <- .v1Num(params[[k]])
     if (is.list(params[["window"]])) params[["window"]] <- lapply(.v1Compact(params[["window"]]), .v1Int)
     if (length(params) == 0L) params <- structure(list(), names = character(0))
     return(list(legacy = list(type = type, params = params)))
@@ -317,6 +345,18 @@
   out <- list(lapply(.v1Items(x[[group]]), .v1Criteria, st = st, path = path))
   names(out) <- group
   out
+}
+
+# The domain concept column of a CDM table from the packaged role records
+# (handle-free: the lowering is pure), or NULL.
+.v1DomainConceptColumn <- function(table) {
+  table <- tolower(.v1Text(table) %||% "")
+  for (version in rev(.ROLE_VERSIONS)) {
+    rows <- .roleRecordsCsv(version)
+    hit <- rows[["domain_concept_col"]][rows[["table_name"]] == table]
+    if (length(hit) && nzchar(hit[[1L]])) return(hit[[1L]])
+  }
+  NULL
 }
 
 # A synthesised table event; equal definitions share one node.
@@ -570,6 +610,17 @@
       # the executor's precedence (review B3): filters$... over the output fields
       cs <- .v1ConceptSet(filters[["concept_set"]][["ids"]] %||% out[["concept_set"]])
       concept_col <- filters[["concept_col"]] %||% out[["concept_col"]]
+      # the extraction's precedence (.compileSelect()): an override column that
+      # is also requested or filtered on is a surfacing choice -- the concept
+      # set then scopes the table's domain concept column (A-19 item 7)
+      cc <- tolower(.v1Text(concept_col) %||% "")
+      domain <- .v1DomainConceptColumn(out[["table"]])
+      if (nzchar(cc) && !is.null(domain) && !identical(cc, domain) &&
+          (cc %in% tolower(as.character(unlist(out[["columns"]], use.names = FALSE))) ||
+           .filterTreeReferencesColumn(filters[["custom"]], cc))) {
+        .v1Annex(st, path, surfacing_concept_col = cc)
+        concept_col <- NULL
+      }
       visit <- .v1Visit(filters[["visit"]] %||% out[["visit_filter"]])
       if (!is.null(filters[["concept_set"]][["ids"]]) && !is.null(out[["concept_set"]])) {
         .v1Annex(st, path, overridden_concept_set = out[["concept_set"]])
@@ -901,6 +952,13 @@
       if (!is.null(pop[["cohort_definition_id"]])) list(cohort = list(cohort_definition_id = .v1Int(pop[["cohort_definition_id"]]))),
       .v1Criteria(pop[["filter_tree"]], st, path)))
     node
+  } else if (!identical(pid, "base") && is.null(pop[["filter_tree"]]) &&
+             is.null(pop[["cohort_definition_id"]])) {
+    # a non-base v1 criteria population with neither filter_tree nor cohort id
+    # resolves to no person: an empty observation-period roster (CR-21), a
+    # private empty intermediate 2.10.2 executed (re-review R3)
+    if (!is.null(pop[["episode_policy"]])) .v1Annex(st, path, unread_episode_policy = pop[["episode_policy"]])
+    list(kind = "criteria", legacy_episodes = "observation_periods", legacy_empty = TRUE)
   } else {
     node <- list(kind = "criteria")
     node["where"] <- list(.v1Criteria(pop[["filter_tree"]], st, path))

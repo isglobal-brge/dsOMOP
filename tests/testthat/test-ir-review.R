@@ -391,12 +391,15 @@ test_that("B11: a singleton union lowers to its member and returns the member's 
   ir <- .irPrepare(p)
   expect_identical(ir$populations$alias[c("kind", "parent")], list(kind = "criteria", parent = "base"))
   expect_identical(ir$outputs$on_alias$rows, "alias")
-  # direct (the member) versus lowered (the singleton): identical rows
+  # the v1 executor (which runs v1 plans in this release stage) gives the
+  # singleton the member's rows; this asserts the v1 result and, separately,
+  # the lowered IR -- not execution from the IR nodes, which belongs to the
+  # compiler acceptance (re-review R5)
   res <- withr::with_options(list(nfilter.subset = 0L),
                              .planExecute(handle, p, list(on_alias = "rv_alias", on_base = "rv_base")))
   expect_gt(nrow(res$on_alias), 0L)
   expect_identical(res$on_alias, res$on_base)
-  # n-ary differences lower to the v1 left fold; a self-difference is refused
+  # n-ary differences lower to the v1 left fold
   p3 <- list(populations = list(
     a = list(kind = "criteria", cohort_definition_id = 1L),
     b = list(kind = "criteria", filter_tree = list(type = "sex", params = list(value = "F"))),
@@ -407,8 +410,9 @@ test_that("B11: a singleton union lowers to its member and returns the member's 
   fold <- ir3$populations$d$setop$members[[1]]
   expect_identical(ir3$populations[[fold]]$setop, list(op = "setdiff", members = list("a", "b")))
   expect_identical(unlist(ir3$populations$d$setop$members), c(fold, "c"))
+  # a self-difference is the empty set it always was (re-review R3)
   p3$populations$d$setop$members <- list("a", "a")
-  expect_match(conditionMessage(.rv_refused(.irPrepare(p3))), "difference of a population with itself")
+  expect_identical(.irPrepare(p3)$populations$d$setop, list(op = "setdiff", members = list("a", "a")))
 })
 
 # --- the multi-population base is every person (Corrected) ------------------------
@@ -553,9 +557,13 @@ test_that("A-10: a v1 plan without outputs has no IR and publishes nothing", {
 })
 
 # --- A-15 / A-16: the compatibility variants carry the executed semantics -------
-# Direct v1-executor results next to the IR each plan lowers to: a result
+# The v1 executor's results next to the IR each plan lowers to: a result
 # difference is a document (and digest) difference, and the forms the executor
-# treats alike share one normal form and one digest.
+# treats alike share one normal form and one digest. Only the legacy-spec cases
+# execute a lowered node (the adapter .adaptLegacySpec() against .cohortCreate());
+# the others run the v1 plan on the v1 executor, which executes v1 plans in this
+# release stage, and assert the lowering separately -- execution from the IR
+# nodes belongs to the compiler acceptance (re-review R5).
 
 .rv_run <- function(h, plan, name) {
   withr::with_options(list(nfilter.subset = 0L, dsomop.query_strict = TRUE),
@@ -810,4 +818,228 @@ test_that("an output's closure keeps the concept set of a v1 legacy concept scop
   expect_length(scoped, 1L)
   ref <- scoped[[1L]]$legacy_concept_scope$concept_set_ref
   expect_true(ref %in% names(.irOutputClosure(ir, "p")$concept_sets))
+})
+
+# --- re-review R1: inactive and advisory v1 positions are closed; malformed input is typed
+
+test_that("R1: an inactive spec next to a filter_tree is closed, null-valued members included", {
+  plan <- function(spec) list(cohort = list(filter_tree = list(type = "sex", params = list(value = "F")), spec = spec),
+                              outputs = list(p = list(type = "person_level", tables = list(person = list("gender_concept_id")))))
+  forged <- list(
+    private = list(private = TRUE),
+    private_null = { s <- list(); s["private"] <- list(NULL); s },
+    nested_null = list(type = "condition", concept_set = { cs <- list(concepts = list(1L)); cs["private"] <- list(NULL); cs }))
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  for (nm in names(forged)) {
+    err <- .rv_refused(.irPrepare(plan(forged[[nm]])))
+    expect_s3_class(err, "dsomop_ir_validation_error")
+    expect_match(conditionMessage(err), "/cohort/spec", fixed = TRUE, info = nm)
+    expect_s3_class(.rv_refused(.irPrepare(plan(forged[[nm]]), h)), "dsomop_plan_rejection")
+  }
+  # controls: a closed inline spec and the legacy flat array stay accepted (corpus v1-054)
+  expect_s3_class(.irPrepare(plan(list(type = "condition", concept_set = list(201820L)))), "dsomop_ir")
+  expect_s3_class(.irPrepare(plan(list(list(type = "sex", params = list(value = "F")),
+                                       list(type = "age_range", params = list(min = 18L, max = 65L,
+                                                                              reference_date = "2024-07-01"))))),
+                  "dsomop_ir")
+  bad_flat <- plan(list(list(type = "sex", params = list(value = "F", private = 1L))))
+  expect_s3_class(.rv_refused(.irPrepare(bad_flat)), "dsomop_ir_validation_error")
+})
+
+test_that("R1: advisory concept names are labels; malformed objects are typed rejections", {
+  leaf <- function(name) {
+    params <- list(concept_id = 201820L, table = "condition_occurrence")
+    params["concept_name"] <- list(name)
+    list(outputs = list(p = list(type = "person_level", tables = list(person = list("gender_concept_id")))),
+         populations = list(base = list(kind = "criteria", filter_tree = list(type = "has_concept", params = params))))
+  }
+  expect_s3_class(.irPrepare(leaf("Type 2 diabetes")), "dsomop_ir")
+  expect_s3_class(.irPrepare(leaf(list("T2D", "diabetes"))), "dsomop_ir")
+  nested <- list(); nested["private"] <- list(NULL)
+  err <- .rv_refused(.irPrepare(leaf(nested)))
+  expect_match(conditionMessage(err), "/concept_name", fixed = TRUE)
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  expect_s3_class(.rv_refused(.irPrepare(leaf(nested), h)), "dsomop_plan_rejection")
+  # malformed known objects are refused by the envelope, never an R subscript error
+  people <- list(type = "person_level", tables = list(person = list("gender_concept_id")))
+  for (p in list(
+    list(outputs = list(p = c(people, list(filters = TRUE)))),
+    list(populations = list(base = list(kind = "criteria"), s = list(kind = "setop", setop = TRUE)),
+         outputs = list(p = c(people, list(population_id = "s")))))) {
+    err <- tryCatch(.irPrepare(p), error = function(e) e)
+    expect_s3_class(err, "dsomop_plan_rejection")
+  }
+  # step-1 value validation of leaf parameters: a fractional age refused at the envelope
+  age <- list(outputs = list(p = people), populations = list(base = list(kind = "criteria",
+    filter_tree = list(type = "age_range", params = list(min = 18.5, reference_date = "2020-01-01")))))
+  err <- .rv_refused(.irPrepare(age))
+  expect_match(conditionMessage(err), "closed v1 envelope: /populations/base/filter_tree/params: Population filter 'age_range' cannot be compiled: min must be one finite integer >= 0.",
+               fixed = TRUE)
+  # ... while the executor's own coercion of an integer string is kept and normalised
+  age$populations$base$filter_tree$params$min <- "18"
+  ir <- .irPrepare(age)
+  expect_identical(ir$populations$base$where$legacy$params$min, 18L)
+})
+
+# --- re-review R3: v1 compatibility restored --------------------------------------
+
+test_that("R3: repeated subtrahends, self-differences and bare criteria populations execute as in 2.10.2", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  people <- function(pid) list(type = "person_level", population_id = pid,
+                               tables = list(person = list("gender_concept_id")))
+  pops <- function(...) c(list(base = list(kind = "criteria"),
+                               a = list(kind = "criteria", cohort_definition_id = 1L),
+                               b = list(kind = "criteria", filter_tree = list(type = "sex", params = list(value = "F")))),
+                          list(...))
+  run <- function(p, out) withr::with_options(list(nfilter.subset = 0L), .planExecute(h, p, out))
+  # a \ b \ b = a \ b
+  abb <- list(populations = pops(d = list(kind = "setop", setop = list(op = "difference", members = list("a", "b", "b")))),
+              outputs = list(x = people("d")))
+  ab <- abb
+  ab$populations$d$setop$members <- list("a", "b")
+  expect_s3_class(.irPrepare(abb, h), "dsomop_ir")
+  expect_identical(run(abb, list(x = "rv_abb"))$x, run(ab, list(x = "rv_ab"))$x)
+  # an unused self-difference next to a nonempty published output
+  self <- list(populations = pops(e = list(kind = "setop", setop = list(op = "difference", members = list("a", "a")))),
+               outputs = list(x = people("a")))
+  expect_s3_class(.irPrepare(self, h), "dsomop_ir")
+  expect_gt(nrow(run(self, list(x = "rv_self"))$x), 0L)
+  # a bare non-base criteria population: no person (CR-21 legacy_empty)
+  bare <- list(populations = pops(n = list(kind = "criteria")), outputs = list(x = people("a"), y = people("n")))
+  ir <- .irPrepare(bare, h)
+  expect_identical(ir$populations$n$legacy_empty, TRUE)
+  expect_identical(ir$populations$n$legacy_episodes, "observation_periods")
+  res <- run(bare, list(x = "rv_bare_x", y = "rv_bare_y"))
+  expect_gt(nrow(res$x), 0L)
+  expect_identical(nrow(res$y), 0L)
+  # the variant is IR-only
+  wire <- .rv_v2()
+  wire$populations$nobody <- list(kind = "criteria", legacy_empty = TRUE)
+  expect_s3_class(.rv_refused(.irPrepare(wire)), "dsomop_ir_validation_error")
+})
+
+test_that("R3: integer-coercible v1 values and literals keep their 2.10.2 meaning", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  run <- function(p, out, k = 3L) withr::with_options(list(nfilter.subset = k), .planExecute(h, p, out))
+  # concept ids as strings: the same rows as integers, one normal form
+  ev <- function(value) list(outputs = list(e = list(type = "event_level", table = "condition_occurrence",
+    columns = list("person_id", "condition_concept_id"), representation = list(format = "long"),
+    filters = list(custom = list(var = "condition_concept_id", op = "in", value = value)))))
+  as_int <- ev(list(201820L))
+  as_text <- ev(list("201820"))
+  expect_identical(.planSemanticDigest(.irDocument(.irPrepare(as_text)))$sha256,
+                   .planSemanticDigest(.irDocument(.irPrepare(as_int)))$sha256)
+  expect_identical(run(as_text, list(e = "rv_t"))$e, run(as_int, list(e = "rv_i"))$e)
+  # a non-numeric string on a concept column stays refused
+  expect_s3_class(.rv_refused(.irPrepare(ev(list("abc")), h)), "dsomop_plan_rejection")
+  # an integer-coercible interval anchor (A-16 incoming coercion)
+  iv <- function(anchor) list(cohort = list(type = "cohort_table", cohort_definition_id = 1L),
+    outputs = list(iv = list(type = "intervals_long", tables = "condition_occurrence",
+                             window = list(start = -36500L, end = 36500L), event_select = "nearest",
+                             select_n = 1L, anchor = anchor)))
+  expect_identical(.irPrepare(iv("9000"))$outputs$iv$options$legacy_anchor_offset, 9000L)
+  expect_identical(.planSemanticDigest(.irDocument(.irPrepare(iv("9000"))))$sha256,
+                   .planSemanticDigest(.irDocument(.irPrepare(iv(9000L))))$sha256)
+  expect_identical(run(iv("9000"), list(iv = "rv_a"), 0L)$iv, run(iv(9000L), list(iv = "rv_b"), 0L)$iv)
+  expect_s3_class(.rv_refused(.irPrepare(iv("9000.5"))), "dsomop_ir_validation_error")
+})
+
+test_that("R3: the v1 concept_col override executes as 2.10.2 did", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  ev <- function(concept_col, columns) list(outputs = list(e = list(type = "event_level", table = "condition_occurrence",
+    concept_col = concept_col, columns = columns, representation = list(format = "long"),
+    filters = list(concept_set = list(ids = as.list(1:15))))))
+  # a scoping override on a key column: accepted, the ids select on it (2.10.2)
+  scoped <- ev("person_id", list("condition_concept_id"))
+  ir <- .irPrepare(scoped, h)
+  expect_identical(ir$events[[1L]]$concept_col, "person_id")
+  res <- withr::with_options(list(nfilter.subset = 3L), .planExecute(h, scoped, list(e = "rv_cc")))$e
+  expect_gt(nrow(res), 0L)
+  # a surfacing override (the column is requested): the ids scope the domain concept
+  surfacing <- ev("condition_type_concept_id", list("condition_type_concept_id"))
+  ir <- .irPrepare(surfacing)
+  expect_null(ir$events[[1L]]$concept_col)
+  expect_identical(attr(ir, "legacy_annex")[["outputs/e"]][["surfacing_concept_col"]], "condition_type_concept_id")
+  # an unknown override column keeps the executor's refusal, before any query
+  err <- .rv_refused(.irPrepare(ev("no_such_column", list("condition_concept_id")), h))
+  expect_match(conditionMessage(err), "Concept column 'no_such_column' not found in table 'condition_occurrence'.",
+               fixed = TRUE)
+  # native plans keep the strict rule (filterable concept columns only)
+  x <- .rv_plan_a()
+  x$events$hba1c$concept_col <- "person_id"
+  expect_s3_class(.rv_refused(.irPrepare(x, h)), "dsomop_plan_rejection")
+})
+
+test_that("R3: an issued value bin at the depth cap stays one leaf and executable", {
+  wrap <- function(leaf, depth) {
+    for (i in seq_len(depth)) leaf <- list(and = list(leaf))
+    leaf
+  }
+  bin <- list(var = "value_as_number", op = "value_bin", value = list(lower = 1, upper = 2))
+  plan <- list(outputs = list(e = list(type = "event_level", table = "measurement",
+    representation = list(format = "long"), filters = list(custom = wrap(bin, 31L)))))
+  ir <- .irPrepare(plan)
+  leaf <- ir$events[[1L]]$where
+  for (i in seq_len(31L)) leaf <- leaf$and[[1L]]
+  expect_identical(leaf, list(var = "value_as_number", op = "between",
+                              value = list(lower = 1L, upper = 2L, upper_inclusive = FALSE)))
+  # beyond the v1 cap the executors' own validator refuses it at step 1
+  plan$outputs$e$filters$custom <- wrap(bin, 32L)
+  expect_s3_class(.rv_refused(.irPrepare(plan)), "dsomop_ir_validation_error")
+})
+
+# --- A-20(b): named output anchors and matching templates are inventoried -------
+
+test_that("A-20(b): every value of a long output's anchors map is a final anchor, nested search included", {
+  canonical <- function(source, which = "first", search = NULL) {
+    list(source = source, which = which, n = 1L, field = "start", scope = "person", search = search)
+  }
+  long_plan <- function(anchors) {
+    x <- .rv_plan_a()
+    x$outputs$events <- list(rows = "new_users", format = "long", sources = list(list(event = "hba1c")),
+                             options = list(anchors = anchors))
+    x$publish <- NULL
+    x
+  }
+  key <- function(a) .jcsCanonical(a)
+  inventory <- function(x) {
+    vapply(.irOrder(.irPrepare(x))$anchors$final$new_users, key, "")
+  }
+  # omitted and explicit defaults give one canonical anchor
+  omitted <- inventory(long_plan(list(first_fill = list(source = list(event = "metf_rx")))))
+  explicit <- inventory(long_plan(list(first_fill = list(source = list(event = "metf_rx"), which = "first", n = 1L,
+                                                         field = "start", scope = "person", search = NULL))))
+  expect_true(key(canonical(list(event = "metf_rx"))) %in% omitted)
+  expect_identical(sort(omitted), sort(explicit))
+  # two names for one definition are one identity; a nested search anchor is listed too
+  nested <- list(source = list(event = "metf_rx"), which = "last",
+                 search = list(start = -30L, end = 0L, anchor = list(source = list(event = "hba1c"))))
+  got <- inventory(long_plan(list(a = list(source = list(event = "metf_rx")),
+                                  b = list(source = list(event = "metf_rx"), which = "first"),
+                                  c = nested)))
+  expect_identical(sum(got == key(canonical(list(event = "metf_rx")))), 1L)
+  expect_true(key(canonical(list(event = "hba1c"))) %in% got)
+  inner <- .irPrepare(long_plan(list(c = nested)))$outputs$events$options$anchors$c
+  expect_true(key(inner) %in% got)
+  # an anchor the IR does not declare stays outside the inventory (the allocator refuses it)
+  expect_false(key(canonical(list(event = "t2dm_dx"))) %in% got)
+})
+
+test_that("A-20(b): a matching template's candidate anchors include its strata windows", {
+  x <- .rv_example("plan-v2-example-B.json")
+  strata <- list(strata = list(source = list(event = "diabetes"),
+                               window = list(start = NULL, end = -1L, anchor = list(source = list(event = "statin_rx"),
+                                                                                    which = "last"))))
+  x$populations$cc$match$match <- c(x$populations$cc$match$match, list(strata))
+  ir <- .irPrepare(x)
+  template <- ir$populations$cc$match$controls
+  got <- vapply(.irOrder(ir)$anchors$candidate[[template]], .jcsCanonical, "")
+  want <- .jcsCanonical(list(source = list(event = "statin_rx"), which = "last", n = 1L, field = "start",
+                             scope = "person", search = NULL))
+  expect_true(want %in% got)
 })

@@ -134,10 +134,15 @@
 .planV1EnvelopeErrors <- function(plan) {
   if (!.v1IsObject(plan)) return("/: a v1 plan must be a JSON object")
   errors <- .v1ShapeErrors(plan, .v1PlanShape(), "")
-  if (!is.null(plan[["version"]]) && !identical(as.numeric(.v1Scalar(plan[["version"]])), 1)) {
+  if (!is.null(plan[["version"]]) && !identical(.v1AsInteger(plan[["version"]]), 1L)) {
     errors <- c(errors, "/version: a v1 plan carries no version or version 1")
   }
-  unique(c(errors, .v1CrossFieldErrors(plan)))
+  # the cross-field rules read known fields of conforming shapes only: a
+  # malformed shape is already refused (typed), never indexed (re-review R1)
+  if (length(errors)) return(unique(errors))
+  unique(tryCatch(.v1CrossFieldErrors(plan), error = function(e) {
+    paste0("/: the v1 plan is malformed (", conditionMessage(e), ")")
+  }))
 }
 
 # Bounds of a v1 window, as the executor reads them (.temporalOffset).
@@ -192,18 +197,9 @@
           }
         }
       }
-      if (is_setop) {
-        ops <- tolower(.v1Text(compact[["setop"]][["op"]]) %||% "union")
-        members <- vapply(.v1Items(compact[["setop"]][["members"]]), function(m) .v1Text(m) %||% "", "")
-        if (ops %in% c("setdiff", "difference") && anyDuplicated(members)) {
-          add(p, "/setop/members: a difference of a population with itself is always empty")
-        }
-      }
-      if (multi && !is_setop && !identical(pid, "base") && is.null(compact[["filter_tree"]]) &&
-          is.null(compact[["cohort_definition_id"]]) && is.null(compact[["index_event"]])) {
-        add(p, ": a v1 criteria population needs a filter_tree or a cohort_definition_id ",
-            "(without either it resolves to no person)")
-      }
+      # a repeated subtrahend (a minus b minus b = a minus b), a self-difference and a bare
+      # non-base criteria population (both empty) execute as in 2.10.2: private
+      # emptiness is never a structural refusal (re-review R3; design 7.1)
       if (!is.null(compact[["index_event"]]) && !is.null(compact[["episode_policy"]])) {
         add(p, ": Population '", pid, "': episode_policy cannot be combined with index_event; ",
             "primary_limit defines candidate-event selection.")
@@ -358,6 +354,10 @@
           check(specs[[i]][["filter"]], out[["table"]],
                 paste0(p, "/representation/features/", i - 1L, "/filter"))
         }
+        fmt <- tolower(.v1Text(out[["representation"]][["format"]]) %||% "long")
+        errors <- c(errors, .planV1ConceptColErrors(bp, out[["table"]],
+          out[["filters"]][["concept_col"]] %||% out[["concept_col"]],
+          features = identical(fmt, "features"), specs = specs, path = paste0(p, "/concept_col")))
       },
       person_level = {
         tables <- out[["tables"]] %||% list()
@@ -365,6 +365,10 @@
         for (tbl in names(tables)) {
           entry <- tables[[tbl]]
           features <- .v1IsObject(entry) && !is.null(entry[["features"]])
+          if (features) {
+            errors <- c(errors, .planV1ConceptColErrors(bp, tbl, entry[["concept_col"]], features = TRUE,
+              specs = entry[["features"]], path = paste0(p, "/tables/", tbl, "/concept_col")))
+          }
           # every table, raw or features, extracts with its own filters ANDed
           # with the output-level custom filter, validated as one tree
           entry_filters <- if (features) entry[["filters"]]
@@ -399,6 +403,41 @@
       NULL)
   }
   unique(errors)
+}
+
+# The concept-column contract of the v1 extraction, before any query, with its
+# messages: a feature extraction (.extractTable(representation = "features"))
+# scopes on a filterable *_concept_id column (the override or the domain
+# concept column, and every spec's own concept_col); every extraction
+# (.compileSelect()) needs an override column that exists on the table -- any
+# column, as 2.10.2 executed it (A-19 item 7: the v1 concept_col override is
+# preserved; native plans keep the filterable concept columns only).
+.planV1ConceptColErrors <- function(bp, table, concept_col, features = FALSE, specs = NULL, path) {
+  tbl <- tolower(.v1Text(table) %||% "")
+  col_df <- bp[["columns"]][[tbl]]
+  if (!nzchar(tbl) || is.null(col_df)) return(character(0))
+  cc <- .v1Text(concept_col)
+  if (features) {
+    safe <- intersect(.filterableColumns(bp, tbl), grep("_concept_id$", col_df$column_name, value = TRUE))
+    wanted <- c(tolower(cc %||% .getDomainConceptColumn(bp, tbl) %||% character(0)),
+                unlist(lapply(.v1Items(specs), function(sp) {
+                  if (.v1IsObject(sp)) tolower(.v1Text(sp[["concept_col"]]) %||% character(0))
+                }), use.names = FALSE))
+    for (col in unique(wanted)) {
+      if (!col %in% safe) {
+        return(paste0(path, ": Feature concept_col '", col, "' is not a safe concept column on table '",
+                      table, "'."))
+      }
+    }
+  }
+  if (!is.null(cc)) {
+    found <- .v1Legacy(path, .validateIdentifier(cc, "concept column"))
+    if (length(found)) return(found)
+    if (!tolower(cc) %in% col_df$column_name) {
+      return(paste0(path, ": Concept column '", tolower(cc), "' not found in table '", table, "'."))
+    }
+  }
+  character(0)
 }
 
 # The person-column contract of .extractBaseline(), before any query: the

@@ -112,8 +112,10 @@
 }
 
 # Typing of one predicate leaf against its column name (dates take ISO
-# strings, concept columns integers) and ordered `between` bounds.
-.irCheckPredicateLeaf <- function(leaf, path, add) {
+# strings, concept columns integers) and ordered `between` bounds. A lowered
+# v1 leaf compares a concept column with any number, as 2.10.2 compiled it
+# (an integer string was already normalised by the lowering, A-19 item 7).
+.irCheckPredicateLeaf <- function(leaf, path, add, legacy = FALSE) {
   var <- leaf[["var"]]
   op <- leaf[["op"]]
   values <- switch(op,
@@ -128,7 +130,7 @@
     }
   } else if (grepl("_concept_id$", var)) {
     for (v in values) {
-      if (!is.numeric(v) || v != round(v)) {
+      if (!is.numeric(v) || (!legacy && v != round(v))) {
         add(paste0(path, ": concept column '", var, "' compares with integer concept ids only"))
       }
     }
@@ -387,7 +389,6 @@
       if (identical(pop[["setop"]][["op"]], "setdiff") && length(members) != 2L) {
         add(base, "/setop/members: setdiff takes exactly two members")
       }
-      if (anyDuplicated(unlist(members))) add(base, "/setop/members: members must be distinct")
       covs <- unique(vapply(members, function(m) {
         mp <- pops[[m]]
         if (is.list(mp[["coverage"]])) .jcsCanonical(mp[["coverage"]]) else ""
@@ -422,7 +423,7 @@
   # criteria person leaves, reducers) by column name; the site checks type
   # them against the actual columns ---------------------------------------------
   for (pr in .irPredicates(ir)) {
-    .irWalkPredicate(pr[["tree"]], function(l, lp) .irCheckPredicateLeaf(l, paste0(pr[["path"]], lp), add), "")
+    .irWalkPredicate(pr[["tree"]], function(l, lp) .irCheckPredicateLeaf(l, paste0(pr[["path"]], lp), add, legacy), "")
   }
 
   # 5. variables -----------------------------------------------------------------
@@ -602,18 +603,29 @@
   }
 
   # 7. caps --------------------------------------------------------------------
+  # Caps are wire limits on the predicates a client wrote. A lowered v1 plan's
+  # trees were capped as written by the v1 validators the closed envelope runs
+  # (.assertCustomFilterSafe(), .validateCohortFilterTree(), the same server
+  # options); the conjunctions the lowering adds around them are not counted
+  # again (re-review R3: an issued bin at the depth cap stays executable).
   max_depth <- .extractionCap("dsomop.max_filter_depth", 32L)
   max_nodes <- .extractionCap("dsomop.max_filter_nodes", 1024L)
   max_values <- .extractionCap("dsomop.max_filter_values", 10000L)
-  for (t in .irPredicateTrees(ir)) {
+  capped <- if (identical(attr(ir, "source_version"), 1L)) list() else .irPredicateTrees(ir)
+  for (t in capped) {
     st <- .irTreeStats(t[["tree"]])
     if (st[["depth"]] > max_depth) add(t[["path"]], ": predicate depth exceeds the server cap of ", max_depth)
     if (st[["nodes"]] > max_nodes) add(t[["path"]], ": predicate size exceeds the server cap of ", max_nodes)
     if (st[["values"]] > max_values) add(t[["path"]], ": predicate values exceed the server cap of ", max_values)
   }
+  # the node cap counts the nodes a language 2.0 client wrote; the nodes the v1
+  # lowering synthesises (one event and variable per feature, ...) are bounded
+  # by the v1 caps instead (outputs, feature specs, filter complexity)
   n_nodes <- length(cs) + length(ev) + length(iv) + length(pops) + length(vars) + length(outs)
   max_plan_nodes <- .extractionCap("dsomop.max_plan_nodes", 1000L)
-  if (n_nodes > max_plan_nodes) add("/: plan has more nodes than the server cap of ", max_plan_nodes)
+  if (!identical(attr(ir, "source_version"), 1L) && n_nodes > max_plan_nodes) {
+    add("/: plan has more nodes than the server cap of ", max_plan_nodes)
+  }
   if (length(outs) > .extractionCap("dsomop.max_plan_outputs", 100L)) {
     add("/outputs: plan exceeds the server max_plan_outputs cap")
   }
@@ -802,10 +814,24 @@
     NULL)
 }
 
-# One literal against a column type ("unknown": not typed).
-.irLiteralTypeOk <- function(v, type) {
+# One literal against a column type ("unknown": not typed). For a lowered v1
+# plan (legacy = TRUE) the literals the v1 executors compiled with a defined
+# result on every supported database are accepted as 2.10.2 ran them (A-19
+# item 7): any finite number on an integer or numeric column, and a quoted
+# number in decimal notation (which every family converts to the column's
+# type: an integer string on an integer column, a decimal one on a numeric
+# column). A number on a text column (PostgreSQL refused it while running,
+# SQLite compared it as text) and a non-numeric string on a numeric column
+# stay refused.
+.irLiteralTypeOk <- function(v, type, legacy = FALSE) {
+  if (legacy && is.character(v) && length(v) == 1L && !is.na(v)) {
+    if (identical(type, "integer")) return(grepl("^\\s*[+-]?[0-9]+\\s*$", v))
+    if (identical(type, "numeric")) {
+      return(grepl("^\\s*[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?\\s*$", v))
+    }
+  }
   switch(type,
-    integer = is.numeric(v) && length(v) == 1L && !is.na(v) && v == round(v),
+    integer = is.numeric(v) && length(v) == 1L && !is.na(v) && (legacy || v == round(v)),
     numeric = is.numeric(v) && length(v) == 1L && !is.na(v),
     date = .irIsoDateOk(v),
     text = is.character(v) && length(v) == 1L,
@@ -815,7 +841,7 @@
 
 # Site typing of one predicate leaf: the column exists and is filterable for
 # this source, and every literal has the column's type.
-.irCheckSiteLeaf <- function(leaf, cols, path, add) {
+.irCheckSiteLeaf <- function(leaf, cols, path, add, legacy = FALSE) {
   var <- leaf[["var"]]
   hit <- match(var, cols[["name"]])
   if (is.na(hit)) {
@@ -829,7 +855,7 @@
     is_null =, not_null = list(),
     list(leaf[["value"]]))
   for (v in values) {
-    if (!.irLiteralTypeOk(v, type)) {
+    if (!.irLiteralTypeOk(v, type, legacy)) {
       add(path, ": column '", var, "' is of type ", type, "; the literal does not match")
       break
     }
@@ -963,19 +989,12 @@
         site_missing("/visit", "visit_occurrence", node[["on_missing_table"]])
       }
       if (!native) {
+        # the v1 concept_col override is checked with the executors' own rules
+        # (.planV1ConceptColErrors(), A-19 item 7)
         cols <- role[["columns"]]
         col <- function(name) {
           k <- match(name, cols[["column_name"]])
           if (is.na(k) || !isTRUE(cols[["filterable"]][[k]])) NULL else cols[k, , drop = FALSE]
-        }
-        cc <- node[["concept_col"]]
-        if (!is.null(cc)) {
-          r <- col(cc)
-          if (is.null(r)) {
-            add(base, "/concept_col: '", cc, "' is not a filterable column of '", node[["table"]], "'")
-          } else if (!isTRUE(r[["is_concept"]])) {
-            add(base, "/concept_col: '", cc, "' is not a concept column of '", node[["table"]], "'")
-          }
         }
         vc <- node[["value"]][["column"]]
         if (!is.null(vc)) {
@@ -1067,7 +1086,9 @@
       cols <- .irPredicateColumns(ir, handle, bp, context)
     }
     if (is.null(cols)) next
-    .irWalkPredicate(pr[["tree"]], function(l, lp) .irCheckSiteLeaf(l, cols, paste0(pr[["path"]], lp), add), "")
+    .irWalkPredicate(pr[["tree"]], function(l, lp) {
+      .irCheckSiteLeaf(l, cols, paste0(pr[["path"]], lp), add, legacy = !native)
+    }, "")
   }
   for (i in seq_along(vars)) {
     v <- names(vars)[[i]]
