@@ -94,8 +94,9 @@ test_that("WS-5 eras, stockpiles, coverage and anchors execute on the configured
 
 # The number of reference paths from fragment `f` to fragment `target` in the
 # statement that hoists f's closure (each textual reference to a dependency in
-# a body is one path). MySQL opens a TEMPORARY table once per path and refuses
-# a second open in one statement ("Can't reopen table", amendment A-20 (l)).
+# a body is one path). This checks the individual relation structure, not
+# physical opens: a combined consumer can have several paths while MySQL
+# reuses the one non-mergeable effective-source CTE (amendment A-20 (l)).
 .ws5_paths <- function(ctx, f, target) {
   if (identical(f$name, target)) return(1)
   sum(vapply(f$dependencies, function(d) {
@@ -168,8 +169,8 @@ test_that("MySQL 8.4: a stockpile with min_days > 0 reads its session table once
                          window = list(start = 0L, end = 30L, anchor = last_course))
   expect_identical(from_course$value, c(60L, NA))
   # One downstream statement uses the stockpiled course as its anchor and the
-  # same interval's effective rows as its stream. Its shared windowed marks
-  # must be materialised once by MySQL, despite the two consumer branches.
+  # same interval's effective rows as its stream. Its shared effective-source
+  # CTE must be materialised once by MySQL despite the two consumer branches.
   anchored <- .ws5_rv(ctx, "covered_days", cand, "candidate", source = list(interval = "s44"),
                       coverage = "effective_supply",
                       window = list(start = 0L, end = 59L, anchor = last_course))
@@ -188,7 +189,9 @@ test_that("MySQL 8.4: a stockpile with min_days > 0 reads its session table once
                    effective_end = .fragmentColumn("date", FALSE, "end")),
     dependencies = c(iv$course$name, iv$recorded$name, iv$effective$name),
     person_lineage = list(person_col = "person_id", via_roster = NULL), private_columns = "fills")
-  combined <- .executeQuery(h, .buildStatement(ctx, combined_fragment, dialect = h))
+  combined_sql <- .buildStatement(ctx, combined_fragment, dialect = h)
+  expect_identical(lengths(regmatches(combined_sql, gregexpr(tname, combined_sql, fixed = TRUE))), 1L)
+  combined <- .executeQuery(h, combined_sql)
   expect_identical(as.integer(combined$fills), 2L)
   expect_identical(as.character(combined$end_recorded), "2020-02-13")
   expect_identical(as.character(combined$effective_end), "2020-02-29")
