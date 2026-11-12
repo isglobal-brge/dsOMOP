@@ -8,7 +8,7 @@
 }
 \value{
 List: \code{nodes} (per atom, target and comparator frames) and
-  \code{combine} (atom indices per level).
+  \code{combine} (atom indices per level), and \code{keys} (public atom IDs).
 }
 \description{
 The atoms (negative ages, 0, 5, ..., 105, 110 and older, unknown) of each

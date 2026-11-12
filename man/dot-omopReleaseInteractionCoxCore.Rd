@@ -12,7 +12,8 @@
   members,
   tar,
   outcome_key,
-  combine = NULL
+  combine = NULL,
+  family_meta = NULL
 )
 }
 \arguments{
@@ -27,6 +28,10 @@
 \item{members}{Per subgroup list(target, comparator) of person ids.}
 
 \item{tar}{Public window; @param outcome_key Outcome identity.}
+
+\item{combine}{Optional canonical atom indices for each requested view.}
+
+\item{family_meta}{Public family identity, canonical atom keys and view keys.}
 }
 \value{
 List: rr (per subgroup named vectors), reason (per subgroup),

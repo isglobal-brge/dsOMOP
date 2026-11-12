@@ -4,7 +4,7 @@
 \alias{.dsomopReleaseC6Family}
 \title{Reconcile a complete subgroup family to its arms}
 \usage{
-.dsomopReleaseC6Family(parent, nodes, combine = NULL)
+.dsomopReleaseC6Family(parent, nodes, combine = NULL, family_meta = NULL)
 }
 \arguments{
 \item{parent}{C6 built of the two arms.}
@@ -12,6 +12,8 @@
 \item{nodes}{List of C6 builts (same arm strata) of the family's nodes.}
 
 \item{combine}{NULL, or a list of node-index vectors (one per level).}
+
+\item{family_meta}{Public family identity, canonical atom keys and view keys.}
 }
 \value{
 List of C6 builts, one per level, with reconciled strata and export.
