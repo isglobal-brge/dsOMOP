@@ -663,7 +663,7 @@ test_that("a single named TAR keeps its declared component name", {
   expect_identical(res$candidates[[1L]]$requested_symbol, "D.short")
 })
 
-test_that("person event logs union all associated episodes before physical deduplication", {
+test_that("person-event long output unions all associated episodes before physical deduplication", {
   plan <- .ws7_scenario_plan(list(), output = list(format = "long", sources = list(list(event = "members")),
     options = list(unit = "event", columns_derived = list("event_number", "days_since_previous"))), events = list(
       episodes = list(table = "episode", concept_set = list(concepts = list(32531))),
@@ -686,6 +686,26 @@ test_that("person event logs union all associated episodes before physical dedup
     f <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, p, frame)$compiled$components$o$frame
     expect_identical(f$start_date, 40L, info = b)
   }
+  # Pin the ordering of same-day members whose owning episodes differ. The
+  # private stream double puts the later parent's distinct member in a
+  # table that sorts first; the former episode key must not override it.
+  fetch <- .reduceFetch
+  testthat::local_mocked_bindings(.reduceFetch = function(ctx, fragment, ...) {
+    rows <- fetch(ctx, fragment, ...)
+    if (identical(fragment$kind, "stream") &&
+        all(c("parent_event_id", "member_table") %in% names(rows)) && nrow(rows)) {
+      last_id <- rows$event_id[[which.max(.reduceKeyOrder(rows$event_id))]]
+      rows$member_table[rows$event_id %in% last_id] <- "condition_occurrence"
+      rows$start_date <- rep(as.Date("2020-01-01"), nrow(rows))
+      rows$end_date <- rows$start_date
+    }
+    rows
+  })
+  f <- .ws7_scenario_run(.ws7_out_backends$sqlite$handle, plan, frame)$compiled$components$o$frame
+  expect_identical(f$member_table, c("condition_occurrence", "drug_exposure", "drug_exposure"))
+  plan$outputs$o$options$temporal <- list(event_select = "first")
+  f <- .ws7_scenario_run(.ws7_out_backends$sqlite$handle, plan, frame)$compiled$components$o$frame
+  expect_identical(f$member_table, "condition_occurrence")
 })
 
 test_that("adapter ordering and relation self-exclusion keep physical table identity", {

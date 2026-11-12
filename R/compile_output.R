@@ -2084,7 +2084,9 @@
     st <- .reduceStream(ctx, cons, src, NULL, .fragmentName("ox", name, paste0("s_", i), ctx = ctx),
                         extra = extra)
     rows <- .reduceFetch(ctx, st, order = c("row_key", "start_date"), field = path)
-    rows$.source_order <- order(.outputOrderRows(rows, st$ordering))
+    # The physical ordering remains valid when unit = event unions rows
+    # owned by different episodes; the roster key is ordered separately.
+    rows$.source_order <- order(.outputOrderRows(rows, setdiff(st$ordering, "row_key")))
     rows$source <- rep(src$name, nrow(rows))
     if (!"v" %in% names(rows)) rows$v <- rep(NA_real_, nrow(rows))
     if (!"unit_concept_id" %in% names(rows)) rows$unit_concept_id <- rep(NA_integer_, nrow(rows))
