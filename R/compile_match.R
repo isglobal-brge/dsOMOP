@@ -455,7 +455,12 @@
                              "sc.cohort_definition_id = ", .sqlIntegerLiteral(h, as.integer(seed_cohort)),
                              " AND sc.subject_id = p.person_id)"))
   }
-  pairs_q <- paste0("SELECT DISTINCT c.set_rank AS set_rank, c.t AS t, ", .sqlLosslessKey(h, "p.person_id"),
+  # the case's set rank and strata travel with its instantiation rows, so the
+  # pair relation never reads the case roster a second time
+  strata_cols <- if (length(strata_c)) paste0("mt_s_", seq_along(strata_c)) else character(0)
+  carry_q <- c("c.set_rank AS set_rank", "c.t AS t",
+               if (length(strata_c)) paste0("c.s_", seq_along(strata_c), " AS ", strata_cols))
+  pairs_q <- paste0("SELECT DISTINCT ", paste(carry_q, collapse = ", "), ", ", .sqlLosslessKey(h, "p.person_id"),
                     " AS person_id FROM ", f_cases$name, " c INNER JOIN ", op$name,
                     " p ON p.start_date <= c.t AND p.end_date >= c.t WHERE ", paste(conds, collapse = " AND "))
   inst_key <- .sqlLosslessKey(h, .sqlRowNumber(h, character(0), c("q.set_rank", "q.person_id")))
@@ -463,27 +468,30 @@
                       index_source = .compileTextLiteral(tag), source_rank = rank),
                  .populationNulls(h, c("index_key", "index_visit_id", "set_id", "is_case", "sampling_weight",
                                        "op_start", "op_end", "op_component_id", "key_1", "key_2", "key_3")))
+  inst_extra <- c(list(mt_set = col("bigint", FALSE, "private")),
+                  stats::setNames(lapply(strata_cols, function(x) col("bigint", TRUE, "private")), strata_cols))
+  carry_inst <- c("mt_set", strata_cols)
   inst_body <- paste0("SELECT ", inst_key, " AS cand_key, ", paste(.populationSelect("q", inst_over), collapse = ", "),
-                      ", q.set_rank AS mt_set FROM (", pairs_q, ") q")
-  f_raw <- .populationCandidateFragment(ctx, tpl, "raw", inst_body, deps, indexed = TRUE,
-                                        extra = list(mt_set = col("bigint", FALSE, "private")))
+                      ", q.set_rank AS mt_set",
+                      if (length(strata_cols)) paste0(", ", paste(paste0("q.", strata_cols, " AS ", strata_cols), collapse = ", ")),
+                      " FROM (", pairs_q, ") q")
+  f_raw <- .populationCandidateFragment(ctx, tpl, "raw", inst_body, deps, indexed = TRUE, extra = inst_extra)
   cov_t <- .compileCoverage(ctx, tpl, tpl_policy, f_raw, "candidate")
   .coverageAssertUnambiguous(ctx, cov_t, tpl)
   cand_over <- list(op_start = "o.op_start", op_end = "o.op_end", op_component_id = "o.component_id")
   f_cand <- .populationCandidateFragment(
     ctx, tpl, NULL,
     paste0("SELECT r.cand_key AS cand_key, ", paste(.populationSelect("r", cand_over), collapse = ", "),
-           ", r.mt_set AS mt_set FROM ", f_raw$name, " r INNER JOIN ", cov_t$coverage$name,
-           " o ON o.row_key = r.cand_key WHERE o.op_count = 1"),
-    c(f_raw$name, cov_t$coverage$name), indexed = TRUE,
-    extra = list(mt_set = col("bigint", FALSE, "private")))
+           ", ", paste(paste0("r.", carry_inst, " AS ", carry_inst), collapse = ", "), " FROM ", f_raw$name,
+           " r INNER JOIN ", cov_t$coverage$name, " o ON o.row_key = r.cand_key WHERE o.op_count = 1"),
+    c(f_raw$name, cov_t$coverage$name), indexed = TRUE, extra = inst_extra)
   f_crit <- .populationCriteriaFragment(ctx, tpl, controls_template[["where"]], f_cand, f_raw, tpl_policy,
-                                        carry = "mt_set")
+                                        carry = carry_inst)
 
   # 1c. the eligible pair relation -------------------------------------------------------
   state_k <- new.env(parent = emptyenv())
   state_k$joins <- character(0)
-  state_k$deps <- c(f_crit$name, f_cases$name)
+  state_k$deps <- f_crit$name
   state_k$joins[["pk"]] <- paste0("LEFT JOIN ", .populationTable(ctx, "person"),
                                   " pk ON pk.person_id = x.subject_id")
   strata_k <- .matchStrataSql(ctx, spec, "x", "pk", f_cand, "candidate", tpl, state_k, name)
@@ -505,7 +513,7 @@
     state_k$deps <- c(state_k$deps, outcome_fragment$name)
   }
   for (i in seq_along(strata_k)) {
-    a <- paste0("c.s_", i)
+    a <- paste0("x.mt_s_", i)
     b <- .sqlLosslessKey(h, strata_k[[i]])
     where <- c(where, if (identical(spec$missing_strata, "match_missing")) {
       paste0("(", a, " = ", b, " OR (", a, " IS NULL AND ", b, " IS NULL))")
@@ -518,8 +526,8 @@
                     op_component_id = col("bigint", TRUE, "private"))
   pair_body <- paste0("SELECT x.mt_set AS set_rank, x.cand_key AS cand_key, x.subject_id AS subject_id, ",
                       "x.op_start AS op_start, x.op_end AS op_end, x.op_component_id AS op_component_id FROM ",
-                      f_crit$name, " x INNER JOIN ", f_cases$name, " c ON c.set_rank = x.mt_set ",
-                      paste(unname(state_k$joins), collapse = " "), " WHERE ", paste(where, collapse = " AND "))
+                      f_crit$name, " x ", paste(unname(state_k$joins), collapse = " "), " WHERE ",
+                      paste(where, collapse = " AND "))
   f_pairs <- .fragment(.fragmentName("mt", name, "pairs", ctx = ctx), "stream", "episode", pair_body,
                        columns = pair_cols, dependencies = unique(state_k$deps),
                        unique_key = c("set_rank", "subject_id"),

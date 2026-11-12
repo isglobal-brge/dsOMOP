@@ -195,6 +195,87 @@
   invisible(conn)
 }
 
+# Matching scenario rows (persons 7001..7035; outcome OUT 93100001, stratum
+# STR 93100002). Birth years 1900..1925 keep their age bands apart from the
+# reach persons (born 1934..1990). Everyone is observed 2010-01-01..
+# 2030-12-31 unless stated.
+#   cases (first OUT): 7001 M 1913 2020-03-01; 7002 F 1925 2020-03-01;
+#     7003 M 1913 2020-06-01 (a future case for 7001); 7004 M 1913 2020-03-01
+#     (an outcome exactly at 7001's case time); 7005 M 1913 2018-01-01 (and a
+#     second OUT 2021-01-01); 7006 M NULL birth year 2020-03-01; 7007 F 1900
+#     2020-03-01 (a unique age band: no control)
+#   controls: 7010..7024 M 1913 (STR 2019-01-01 for 7010..7012);
+#     7025..7029 F 1925; 7030 M 1913 died 2020-02-01; 7031 M 1913 died
+#     2020-03-01 (alive at t); 7032 M 1913 observed until 2020-02-28;
+#     7033 M NULL birth year; 7034 M 1913 observed from 2019-06-01;
+#     7035 M 1910 (band 22 in 2020, 21 in 2018)
+#   allocation rollback (F, band 23 in 2020 and 2021): cases 8001 born 1904
+#     (OUT 2020-03-01) and 8002 born 1904 (OUT 2021-03-01); controls 8010,
+#     8011 born 1904 and 8012 born 1906 (band 22 in 2020, 23 in 2021)
+.WS6M <- list(OUT = 93100001L, STR = 93100002L)
+
+.ws6_match_rows <- function() {
+  pids <- c(7001:7007, 7010:7035, 8001L, 8002L, 8010:8012)
+  sex <- rep(8507L, length(pids))
+  sex[pids %in% c(7002L, 7007L, 7025:7029, 8001L, 8002L, 8010:8012)] <- 8532L
+  yob <- rep(1913L, length(pids))
+  yob[pids %in% c(7002L, 7025:7029)] <- 1925L
+  yob[pids == 7007L] <- 1900L
+  yob[pids %in% c(7006L, 7033L)] <- NA_integer_
+  yob[pids == 7035L] <- 1910L
+  yob[pids %in% c(8001L, 8002L, 8010L, 8011L)] <- 1904L
+  yob[pids == 8012L] <- 1906L
+  start <- ifelse(pids == 7034L, "2019-06-01", "2010-01-01")
+  end <- ifelse(pids == 7032L, "2020-02-28", "2030-12-31")
+  out <- data.frame(person_id = c(7001L, 7002L, 7003L, 7004L, 7005L, 7005L, 7006L, 7007L, 8001L, 8002L),
+                    date = c("2020-03-01", "2020-03-01", "2020-06-01", "2020-03-01", "2018-01-01",
+                             "2021-01-01", "2020-03-01", "2020-03-01", "2020-03-01", "2021-03-01"),
+                    stringsAsFactors = FALSE)
+  str <- data.frame(person_id = 7010:7012, date = "2019-01-01", stringsAsFactors = FALSE)
+  death <- data.frame(person_id = c(7030L, 7031L), date = c("2020-02-01", "2020-03-01"),
+                      stringsAsFactors = FALSE)
+  list(persons = data.frame(person_id = pids, gender_concept_id = sex, year_of_birth = yob,
+                            start = start, end = end, stringsAsFactors = FALSE),
+       out = out, str = str, death = death)
+}
+
+.ws6_match_extend <- function(conn, reverse = FALSE) {
+  W <- .WS6M
+  x <- .ws6_match_rows()
+  ord <- function(df) if (reverse) df[rev(seq_len(nrow(df))), , drop = FALSE] else df
+  app <- function(name, df) DBI::dbWriteTable(conn, name, ord(df), append = TRUE)
+  p <- x$persons
+  app("person", data.frame(
+    person_id = p$person_id, gender_concept_id = p$gender_concept_id, year_of_birth = p$year_of_birth,
+    month_of_birth = 1L, day_of_birth = 1L, race_concept_id = 8527L, ethnicity_concept_id = 38003564L,
+    location_id = p$person_id, provider_id = p$person_id, care_site_id = p$person_id,
+    person_source_value = paste0("WS6M_", p$person_id), gender_source_value = "U", stringsAsFactors = FALSE))
+  app("observation_period", data.frame(
+    observation_period_id = 700000L + p$person_id, person_id = p$person_id,
+    observation_period_start_date = p$start, observation_period_end_date = p$end,
+    period_type_concept_id = 44814724L, stringsAsFactors = FALSE))
+  rows <- rbind(cbind(x$out, concept = W$OUT), cbind(x$str, concept = W$STR))
+  app("condition_occurrence", data.frame(
+    condition_occurrence_id = 970000L + seq_len(nrow(rows)), person_id = rows$person_id,
+    condition_concept_id = rows$concept, condition_start_date = rows$date, condition_end_date = rows$date,
+    condition_type_concept_id = 44818518L, stop_reason = NA_character_, provider_id = rows$person_id,
+    visit_occurrence_id = NA_integer_, condition_source_value = "WS6M", condition_source_concept_id = 0L,
+    stringsAsFactors = FALSE))
+  app("death", data.frame(
+    person_id = x$death$person_id, death_date = x$death$date, death_type_concept_id = 32817L,
+    cause_concept_id = 0L, cause_source_value = "X", cause_source_concept_id = 0L, stringsAsFactors = FALSE))
+  ids <- unlist(W, use.names = FALSE)
+  DBI::dbWriteTable(conn, "concept", data.frame(
+    concept_id = ids, concept_name = paste("ws6m", names(W)), domain_id = "Condition", vocabulary_id = "SNOMED",
+    concept_class_id = "Clinical Finding", standard_concept = "S", concept_code = paste0("WS6M", seq_along(ids)),
+    valid_start_date = "1970-01-01", valid_end_date = "2099-12-31", invalid_reason = NA_character_,
+    stringsAsFactors = FALSE), append = TRUE)
+  DBI::dbWriteTable(conn, "concept_ancestor", data.frame(
+    ancestor_concept_id = ids, descendant_concept_id = ids, min_levels_of_separation = 0L,
+    max_levels_of_separation = 0L), append = TRUE)
+  invisible(conn)
+}
+
 # Rows of a population's final roster (fixture keys as the oracle writes them).
 .ws6_roster <- function(ctx, pop) {
   res <- .compilePopulationByName(ctx, pop)
