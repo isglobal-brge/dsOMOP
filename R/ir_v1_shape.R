@@ -201,7 +201,7 @@
 
 #' Findings of a v1 row filter (the custom DSL of \code{.assertCustomFilterSafe()})
 #'
-#' Closed at every node on raw member names (and/or groups, leaves
+#' Closed at every node on raw member names (and/or/not groups, leaves
 #' \code{{var, op, value, safe_scope}}, a value_bin operand
 #' \code{{lower, upper}}, a safe scope), then the legacy validator itself
 #' with the filter's own columns as its column list; the site's filterable
@@ -217,9 +217,16 @@
       return(push(p, ": a row filter is an and/or group or a leaf object"))
     }
     keys <- names(node)
-    group <- intersect(keys, c("and", "or"))
+    group <- intersect(keys, c("and", "or", "not"))
     if (length(group)) {
-      if (length(keys) != 1L) return(push(p, ": a filter group carries exactly one of and/or"))
+      if (length(keys) != 1L) return(push(p, ": a filter group carries exactly one of and/or/not"))
+      # NOT (design 6.6): one negated predicate
+      if (identical(group, "not")) {
+        if (!.v1IsObject(node[["not"]]) || length(node[["not"]]) == 0L) {
+          return(push(p, "/not: a NOT group negates one predicate"))
+        }
+        return(walk(node[["not"]], paste0(p, "/not"), depth + 1L))
+      }
       items <- node[[group]]
       if (!is.list(items) || !is.null(names(items)) || !length(items)) {
         return(push(p, "/", group, ": must be a non-empty array of filters"))
@@ -285,6 +292,7 @@
       }
       return(invisible())
     }
+    if ("not" %in% names(node)) walk(node[["not"]], paste0(p, "/not"))
     for (g in intersect(names(node), c("and", "or"))) {
       items <- node[[g]]
       for (i in seq_along(items)) walk(items[[i]], paste0(p, "/", g, "/", i - 1L))

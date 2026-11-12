@@ -35,7 +35,10 @@ fills its entries. Classes follow design-2.10.3 section 5.
   `print()` has always shown.
 - (A-E1) A specified concept set that resolves to no concept now matches no
   row (`{concepts = 123, exclude = 123}` yields zero counts); it was treated
-  as unrestricted in feature extraction.
+  as unrestricted in feature extraction. A v1 feature specification whose
+  declared set resolves to nothing selects no row of the shared stream and
+  counts zero; the language-2.0 concept-set node has the explicit states
+  `all` (no set declared), `set` and `none` (SQL `1 = 0`, never unrestricted).
 - (A-E4) Cohort unions keep distinct same-date index events of different
   sources or keys; they collapsed on (subject, start, end).
 - (A-E3) Index-event concept sets accept `exclude`, resolved by the shared
@@ -71,6 +74,15 @@ fills its entries. Classes follow design-2.10.3 section 5.
   outputs; exact birth components and exact age in assigned tables
   (`year_of_birth`, `month_of_birth`, `day_of_birth`, `birth_datetime`);
   aggregate endpoints keep their own controls.
+- (F-1) A row concept-set filter without a concept column (the
+  table-agnostic `concept_id` sentinel emitted by 2.10.1 clients) matches the
+  table's domain concept column, resolved like the `start_date`/`end_date`
+  sentinels; it was refused as an unknown column.
+- NOT groups (`{"not": ...}`) in v1 row filters and population filter trees,
+  as in the language-2.0 predicate and criteria grammars (design 6.6), with
+  SQL three-valued logic: a negated UNKNOWN stays UNKNOWN and only TRUE rows
+  and persons are kept. The closed v1 envelope, the v1-to-IR lowering and the
+  DP lineage accept them.
 - `omopFilterDS()` no longer applies the `nfilter_levels_max` and
   `nfilter_levels_density` cardinality gates, following the publication-only
   disclosure rule in design section 7.2. Filtered results still need the
@@ -138,6 +150,11 @@ fills its entries. Classes follow design-2.10.3 section 5.
   including empty sparse or recurrent components, are refused at
   publication; safe-result equivalence applies only to results that satisfy
   the final publication contract.
+- The in-memory row-filter mask follows the SQL truth table (design 6.6):
+  `in` / `not_in` over a missing value are UNKNOWN rather than FALSE, `not`
+  keeps UNKNOWN, and a filter column the evaluated rows do not carry is
+  refused instead of matching nothing (the kept rows of 2.10.2 filters are
+  unchanged; only TRUE rows are kept).
 - Manipulation verbs revalidate class-1 sensitive columns in their results.
   If a frame was loaded with `dsomop.allow_sensitive_columns = TRUE` and the
   administrator later disables that option, a verb result retaining blocked
@@ -189,6 +206,45 @@ fills its entries. Classes follow design-2.10.3 section 5.
   A-14 execution plan selection for 2.10.1-style recipes, `source_analyses`
   on temporal and person-period outputs, and the windowed-features corpus row
   reclassified `newly_permitted`.
+
+## Concept sets, events, adapters and predicates (WS-4)
+
+- `R/compile_concept.R`: `.compileConceptSet()` resolves a concept-set node
+  once per plan (memoised on its canonical JSON): concepts, then descendants
+  (`concept_ancestor`), then the `'Maps to'` sources of the set, minus the
+  exclusion; (A-15) an object-valued `exclude` is expanded with its own flags
+  before it is removed, a bare vector still means exact ids. The RxNorm
+  ingredient map of drug concepts (`cs_ingredient_map`) serves eras grouped
+  `by = "ingredient"`.
+- `R/compile_event.R`: one event compiler in three stages: the table's roles
+  from the role registry (the event's own end policy, the original recorded
+  end and supply kept for era overrides and supply reducers, the scoping
+  concept, value/unit/operator/range sources, the visit link, the other
+  filterable columns), unit normalisation (one affine map per source unit
+  applied to the value and the reference ranges; unknown units `missing`
+  (NA, `unit_unknown = 1`) or `exclude`; reviewed inequality operators
+  (`inst/ohdsi/operator_classes.csv`) kept or excluded, NULL and unknown
+  operators counting as equality), then the `where` predicate over the
+  normalised columns. The configured value column and `value` bind to the
+  normalised value; `value_source` / `unit_source` keep the source values.
+  Predicates are typed against the column (ISO dates, integer concept ids,
+  finite numbers, text in equality and IN only) and refuse identifiers,
+  class-1 columns and roles the table lacks. `on_missing_table =
+  "unavailable"` compiles to a typed unavailable source; `"error"` refuses
+  with `unavailable_table`. Visit-type restrictions use the visit link;
+  index-visit events are joined by the consumer.
+- `R/compile_adapters.R`: `episode_members` (rows linked through
+  `episode_event` by the reviewed field mapping of amendment A-4; one row per
+  episode-member link; a member of another person is refused,
+  `adapter_person_mismatch`) and `cost` (cost rows of a table event by the
+  reviewed `cost_domain_id` mapping; one amount field; a source mixing
+  currencies without `currency` is refused, `cost_currency_mixed`); both
+  carry the parent event identity (`parent_source_ns`, `parent_event_id`).
+  These refusals are plan rejections transported as `validation_error`.
+- `R/compile_predicate.R` (the language-2.0 predicate grammar in SQL, with
+  the Kleene `any`/`all` table) and `R/compile_statement.R` (deterministic
+  fragment names, the fragment registry of the execution context and
+  `.buildStatement()`: one WITH chain in dependency order, typed-SQL checked).
 
 ## Plan IR, role registry, explain and capabilities (WS-2)
 

@@ -233,6 +233,9 @@
 .v1Predicate <- function(x, st = NULL, path = NULL) {
   if (is.null(x) || (is.list(x) && length(x) == 0L)) return(NULL)
   x <- .v1Compact(x)
+  if (identical(names(x), "not")) {
+    return(list(not = .v1Predicate(x[["not"]], st = st, path = path)))
+  }
   group <- intersect(names(x), c("and", "or"))
   if (length(group) == 1L && length(x) == 1L) {
     items <- lapply(.v1Items(x[[group]]), .v1Predicate, st = st, path = path)
@@ -306,6 +309,9 @@
     if (is.list(params[["window"]])) params[["window"]] <- lapply(.v1Compact(params[["window"]]), .v1Int)
     if (length(params) == 0L) params <- structure(list(), names = character(0))
     return(list(legacy = list(type = type, params = params)))
+  }
+  if (identical(names(x), "not")) {
+    return(list(not = .v1Criteria(x[["not"]], st = st, path = path)))
   }
   group <- intersect(names(x), c("and", "or"))
   out <- list(lapply(.v1Items(x[[group]]), .v1Criteria, st = st, path = path))
