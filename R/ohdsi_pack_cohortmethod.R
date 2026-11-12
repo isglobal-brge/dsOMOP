@@ -1055,35 +1055,58 @@
   design
 }
 
+# The propensity model's explicit intercept-only release contract. When the
+# response (arm) is admissible but no candidate covariate passes the within-arm
+# admission, the model is the intercept-only propensity model: every score is
+# the target-arm prevalence, the preference score is 0.5 for everyone, and the
+# released aggregates (per-arm bin counts, equipoise, AUC 0.5) carry nothing
+# beyond the banded arm sizes. It is never inferred from a failed admission (an
+# inadmissible arm vector) or from a failed fit: those release no model.
+.DSOMOP_PS_INTERCEPT_ONLY_CONTRACT <- "admitted_when_no_covariate_passes"
+
 #' Fit the in-session propensity model and return per-subject scores
 #'
 #' Fits \code{stats::glm(arm ~ covariates, family = binomial)} on the loaded
 #' design matrix IN THE SERVER-SIDE R SESSION and returns each subject's fitted
 #' propensity score (the predicted probability of being in the target arm).
-#' Covariate columns that are constant across all subjects (no contrast) are
-#' dropped before fitting so the glm is well posed; if NO covariate varies the
-#' model is intercept-only (every score equals the marginal target prevalence,
-#' which still yields a valid — if uninformative — distribution). The returned
-#' vector aligns row-for-row with \code{design}; the fitted model object is NOT
-#' returned (coefficients never leave R).
+#' Covariates are admitted by \code{\link{.omopModelAdmitBinaryDesign}} with the
+#' arm as the response: a covariate needs \code{nfilter.tab} persons with and
+#' without it WITHIN the target arm AND WITHIN the comparator arm (a supported
+#' marginal is not enough; the AUC would otherwise solve a small arm-by-covariate
+#' cell). An inadmissible arm vector (missing values, wrong length, an arm below
+#' \code{nfilter.tab}) stops: no model is released, and in particular no
+#' intercept-only substitute. When the arms are admissible but no covariate
+#' passes, the explicit intercept-only contract applies
+#' (\code{.DSOMOP_PS_INTERCEPT_ONLY_CONTRACT}). The returned vector aligns
+#' row-for-row with \code{design}; the fitted model object is NOT returned
+#' (coefficients never leave R).
 #'
 #' @param design Design matrix from \code{\link{.omopCmPropensityDesign}}.
-#' @return Numeric vector of per-subject propensity scores (length = nrow(design)).
+#' @return Numeric vector of per-subject propensity scores (length =
+#'   nrow(design)) with attribute \code{dsomop_model_admission}.
 #' @keywords internal
 .omopCmPropensityScores <- function(design) {
   cov_cols <- grep("^cov_", names(design), value = TRUE)
-  # Model admission (DataSHIELD glm rules): keep covariates with nfilter.tab
-  # persons with and without them (which also drops constant columns), within
-  # the nfilter.glm dimension cap. Arm sizes are gated by the callers.
-  admitted <- .omopModelAdmitBinaryDesign(design[, cov_cols, drop = FALSE])
+  admitted <- .omopModelAdmitBinaryDesign(design[, cov_cols, drop = FALSE],
+                                          y = design$arm)
+  if (is.null(admitted)) {
+    stop("The propensity model is not admitted: its arms do not meet the ",
+         "disclosure thresholds.", call. = FALSE)
+  }
   varying <- cov_cols[admitted]
   if (length(varying) == 0) {
     fit <- stats::glm(arm ~ 1, data = design, family = stats::binomial())
+    status <- list(status = "intercept_only",
+                   contract = .DSOMOP_PS_INTERCEPT_ONLY_CONTRACT,
+                   n_admitted = 0L)
   } else {
     form <- stats::as.formula(paste("arm ~", paste(varying, collapse = " + ")))
     fit <- stats::glm(form, data = design, family = stats::binomial())
+    status <- list(status = "admitted", n_admitted = length(varying))
   }
-  as.numeric(stats::predict(fit, type = "response"))
+  scores <- as.numeric(stats::predict(fit, type = "response"))
+  attr(scores, "dsomop_model_admission") <- status
+  scores
 }
 
 #' Preference-score transform of a propensity score
@@ -1151,8 +1174,17 @@
     if (is.null(cohorts)) return(data.frame())
 
     domain <- params$domain_code %||% "0"
-    top_k  <- max(as.integer(params$top_k %||% "20"), 1L)
-    n_bins <- max(as.integer(params$n_bins %||% "10"), 2L)
+    # Public release grids (never data-dependent): candidate covariates
+    # 10/20/50/100 (capped by dsomop.max_feature_specs) and histogram bins
+    # 5/10/20, nearest grid value with ties to the smaller one.
+    grid_top_k  <- .omopModelGridParam(params$top_k, "features",
+                                       default = "20", name = "top_k")
+    grid_n_bins <- .omopModelGridParam(params$n_bins, "bins",
+                                       default = "10", name = "n_bins")
+    top_k  <- grid_top_k$effective
+    n_bins <- grid_n_bins$effective
+    effective_params <- .omopModelEffectiveParams(list(
+      top_k = grid_top_k, n_bins = grid_n_bins))
 
     # 1) Covariate universe (top-K prevalent over the pooled pair).
     cov_ids <- .omopCmPropensityCovariates(handle, cohorts$a, cohorts$b,
@@ -1163,10 +1195,17 @@
                                       domain_code = domain)
     if (is.null(design) || nrow(design) == 0) return(data.frame())
 
-    # 3) FIT the propensity glm IN-SESSION; read each subject's score.
+    # 3) FIT the propensity glm IN-SESSION; read each subject's score. An
+    #    unadmitted model (or a failed fit) releases nothing.
     ps <- tryCatch(.omopCmPropensityScores(design),
                    error = function(e) rep(NA_real_, nrow(design)))
-    if (length(ps) != nrow(design) || all(is.na(ps))) return(data.frame())
+    if (length(ps) != nrow(design) || anyNA(ps)) {
+      out <- data.frame()
+      attr(out, "dsomop_effective_params") <- c(
+        effective_params, list(model_admission = "not_admitted"))
+      return(out)
+    }
+    admission <- attr(ps, "dsomop_model_admission", exact = TRUE)
 
     arm  <- design$arm
     prev <- mean(arm == 1L)
@@ -1245,6 +1284,8 @@
     rows$auc       <- as.numeric(auc)
     rows <- rows[order(rows$arm, rows$ps_bin), , drop = FALSE]
     rownames(rows) <- NULL
+    attr(rows, "dsomop_effective_params") <- c(
+      effective_params, list(model_admission = admission$status %||% "admitted"))
     rows
   }
 }
@@ -1279,9 +1320,9 @@
            choices = c("0", "1", "2", "3", "4"),
            description = "Covariate domain (0 condition,1 drug,2 procedure,3 measurement,4 observation)."),
       list(name = "top_k", type = "int", required = FALSE, default = "20",
-           description = "Number of top-prevalence covariates in the propensity model."),
+           description = "Number of top-prevalence covariates in the propensity model. Snapped to the public grid 10, 20, 50, 100 (nearest, ties to the smaller; capped by dsomop.max_feature_specs)."),
       list(name = "n_bins", type = "int", required = FALSE, default = "10",
-           description = "Number of fixed [0,1] preference-score histogram bins.")
+           description = "Number of fixed [0,1] preference-score histogram bins. Snapped to the public grid 5, 10, 20 (nearest, ties to the smaller).")
     ),
     compute = list(
       kind = "r", sql = NULL, fn = .omopCmPropensityFn(),

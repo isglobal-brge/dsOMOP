@@ -15,9 +15,9 @@
 #       unfittable (no-event / single-arm) subgroup rather than inventing a number;
 #   (c) the fn runs over a two-population scope, returns one row per subgroup level
 #       with the documented columns, and bands every per-arm count;
-#   (d) the STRICTEST fail-closed control fires PER ROW: a subgroup whose arm bands
-#       below the subset floor has its estimate + CI NA'd (and the row dropped by
-#       the gate), and the subgroup level count is capped;
+#   (d) the STRICTEST fail-closed control fires: a subgroup level whose arm falls
+#       below the threshold withholds the whole subgroup family (2.10.3), and a
+#       family over the level cap is refused rather than truncated;
 #   (e) a single-arm / un-scoped misuse is rejected / gate-empty.
 # ==============================================================================
 
@@ -211,10 +211,12 @@ test_that("(d) a subgroup arm below the subset floor has NA estimate and is drop
   })
 })
 
-test_that("(d) the in-fn fail-closed NA fires before the gate (raw frame check)", {
-  # Drive the compute fn directly so we see the UN-gated frame: a concept subgroup
-  # whose 'yes' arm is tiny must already carry NA estimate/CI from the in-fn
-  # banded-persons < nfilter.subset check (independent of the gate's row-drop).
+test_that("(d) the in-fn fail-closed decision fires before the gate (raw frame check)", {
+  # Drive the compute fn directly so we see the UN-gated frame: a concept
+  # subgroup whose 'yes' arm is tiny withholds the WHOLE family in-fn (2.10.3):
+  # neither the 2-person 'yes' level nor its 'no' complement is returned, since
+  # 'no' next to the whole-arm estimate would solve 'yes' by subtraction. This
+  # is independent of the gate's row-drop.
   h <- cmix_handle(n_persons = 40)
   on.exit(cleanup_handle(h))
   withr::with_options(cmix_opts(), {
@@ -228,24 +230,21 @@ test_that("(d) the in-fn fail-closed NA fires before the gate (raw frame check)"
                            outcome_concept_id = "4000002",
                            model_type = "poisson"))
     expect_s3_class(raw, "data.frame")
-    yes <- raw[grepl(": yes$", raw$subgroup_label), , drop = FALSE]
-    # The 2-person 'yes' arm: estimate + CI NA'd in-fn (fail-closed), even though
-    # the raw per-arm counts are still present (the gate bands/drops them after).
-    expect_true(nrow(yes) >= 1)
-    expect_true(all(is.na(yes$estimate)))
-    expect_true(all(is.na(yes$ci_lo) & is.na(yes$ci_hi)))
-    expect_true(all(is.na(yes$log_estimate) & is.na(yes$se_log_estimate)))
+    expect_equal(nrow(raw), 0L)
+    expect_identical(attr(raw, "dsomop_release_notes")$subgroup_family,
+                     "withheld")
   })
 })
 
-test_that("(d) subgroup level count is capped at nfilter.levels.max", {
+test_that("(d) a subgroup family over nfilter.levels.max is refused, never truncated", {
   h <- cmix_handle(n_persons = 40)
   on.exit(cleanup_handle(h))
   withr::with_options(list(nfilter.levels.max = 3), {
-    # Many age bands requested, but the cap clamps the level count.
-    subs <- dsOMOP:::.omopCmInteractionSubgroups(
-      h, list(subgroup_kind = "age", age_breaks = "30,40,50,60,70,80,90"))
-    expect_lte(length(subs), 3L)
+    # Many age bands requested: a truncated family would not be a partition of
+    # the arms, so the request is refused before any data is read.
+    expect_error(dsOMOP:::.omopCmInteractionSubgroups(
+      h, list(subgroup_kind = "age", age_breaks = "30,40,50,60,70,80,90")),
+      "more levels than")
   })
 })
 

@@ -5370,6 +5370,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   if (!is.null(tools_route)) {
     return(.dsomopToolsFinalize(handle, df, entry, sanitized))
   }
+  release_meta <- .omopAnalysisRunMetadata(df, entry)
   raw_order <- .omopAnalysisRawOrder(df, entry)
   df <- .omopAnalysisExternalOutputFirewall(
     df, entry, assign = FALSE, phase = "raw"
@@ -5381,5 +5382,22 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     df, entry, assign = FALSE, phase = "final"
   )
   df <- .omopAnalysisNormalizePoolingOutput(df, entry)
-  .dsomopToolsLabel(df, entry, "standard")
+  df <- .dsomopToolsLabel(df, entry, "standard")
+  for (name in names(release_meta)) attr(df, name) <- release_meta[[name]]
+  df
+}
+
+# Public run metadata a built-in entry attaches to its raw frame: the effective
+# (public-grid) parameters it was computed with and its release notes (for
+# example a withheld subgroup family). The gate rebuilds the frame, so the run
+# path carries these attributes to the released frame. External packs cannot
+# set them, and nothing else is carried.
+.omopAnalysisRunMetadata <- function(df, entry) {
+  if (isTRUE(entry$meta$external_pack) || !is.data.frame(df)) return(list())
+  meta <- list()
+  for (name in c("dsomop_effective_params", "dsomop_release_notes")) {
+    value <- attr(df, name, exact = TRUE)
+    if (is.list(value)) meta[[name]] <- value
+  }
+  meta
 }

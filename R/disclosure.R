@@ -300,37 +300,160 @@
 #' The fitted community-tool models (Patient-Level Prediction, the CohortMethod
 #' propensity model) release only aggregates of their predictions, but they
 #' must still satisfy the checks dsBase applies before \code{ds.glm} returns
-#' anything: every binary predictor needs \code{nfilter.tab} persons with AND
-#' without it (a covariate almost everyone has singles out the few who lack
-#' it), and the number of parameters may not exceed \code{nfilter.glm} times
-#' the number of persons (a saturated model reproduces its data). Predictors
-#' are kept in their given order (most prevalent first) until the dimension
-#' cap is reached.
+#' anything, and more: a binary predictor is admitted only when it has
+#' \code{nfilter.tab} persons with AND without it WITHIN EACH class of the
+#' response (outcome / no outcome for PLP, target / comparator arm for the
+#' propensity model). A supported marginal is not enough: a covariate held by
+#' 40 comparator persons but only 2 target persons passes the marginal rule,
+#' and the fitted model's scalars (AUC, mean predicted risk) then solve that
+#' 2-person arm-by-covariate cell exactly. The number of parameters may not
+#' exceed \code{nfilter.glm} times the number of persons (a saturated model
+#' reproduces its data). Predictors are kept in their given order (most
+#' prevalent first, ties by public concept id) until the dimension cap is
+#' reached.
 #'
-#' @param X Numeric 0/1 matrix or data frame of candidate predictors.
-#' @param y Optional 0/1 response; when given, both classes need
-#'   \code{nfilter.tab} persons or the model is not admitted.
-#' @return Integer indices of the admitted columns of \code{X}, or NULL when
-#'   the response is not admissible.
+#' The response is validated before any predictor is inspected: a response that
+#' is missing a value, has the wrong length, is not 0/1, or has a class below
+#' \code{nfilter.tab} persons is not admissible and the function returns NULL.
+#' A NULL is never permission to fit an intercept-only model instead; callers
+#' that release an intercept-only fit must declare it in their own contract
+#' (see \code{\link{.omopCmPropensityScores}}).
+#'
+#' @param X Numeric 0/1 matrix or data frame of candidate predictors (one row
+#'   per person).
+#' @param y Response/arm 0/1 vector aligned with the rows of \code{X}. Model
+#'   releases must supply it. \code{NULL} keeps the legacy marginal-only check,
+#'   which is not a model release contract.
+#' @return Integer indices of the admitted columns of \code{X} (possibly
+#'   empty), or NULL when the response is not admissible.
 #' @keywords internal
 .omopModelAdmitBinaryDesign <- function(X, y = NULL) {
   settings <- .omopDisclosureSettings()
   thr <- settings$nfilter_tab
   n <- NROW(X)
   if (!is.null(y)) {
-    y <- as.integer(y)
-    if (sum(y == 1L, na.rm = TRUE) < thr || sum(y == 0L, na.rm = TRUE) < thr) {
+    y_num <- suppressWarnings(as.numeric(y))
+    if (length(y_num) != n || anyNA(y_num) || any(!y_num %in% c(0, 1))) {
       return(NULL)
     }
+    y <- as.integer(y_num)
+    if (sum(y == 1L) < thr || sum(y == 0L) < thr) return(NULL)
   }
   if (NCOL(X) == 0L || n == 0L) return(integer(0))
   X <- as.matrix(X)
-  present <- colSums(X == 1, na.rm = TRUE)
+  bad <- is.na(X) | !(X == 0 | X == 1)
+  bad[is.na(bad)] <- TRUE
+  valid <- colSums(bad) == 0L
+  is_one <- !bad & X == 1
+  present <- colSums(is_one)
   absent <- n - present
-  admitted <- unname(which(present >= thr & absent >= thr))
+  admissible <- valid & present >= thr & absent >= thr
+  if (!is.null(y)) {
+    # Present and absent cells WITHIN each response class (the 2 x 2 table of
+    # predictor by response), not only the predictor's marginal.
+    for (cls in c(0L, 1L)) {
+      in_cls <- y == cls
+      present_cls <- colSums(is_one[in_cls, , drop = FALSE])
+      absent_cls <- sum(in_cls) - present_cls
+      admissible <- admissible & present_cls >= thr & absent_cls >= thr
+    }
+  }
+  admitted <- unname(which(admissible))
   # Intercept plus predictors must stay within nfilter.glm * n.
   max_predictors <- max(floor(settings$nfilter_glm * n) - 1L, 0L)
   utils::head(admitted, max_predictors)
+}
+
+# Fixed public release grids of the fitted-model parameters (2.10.3 P0 spec,
+# section 6.1). They depend only on server configuration, never on the data or
+# on earlier requests.
+.DSOMOP_MODEL_FEATURE_GRID <- c(10L, 20L, 50L, 100L)
+.DSOMOP_MODEL_BIN_GRID <- c(5L, 10L, 20L)
+
+#' Public release grid of one fitted-model parameter
+#'
+#' \code{"features"} (the number of candidate predictors of an in-session
+#' model: \code{top_k}, \code{max_covariates}) uses the grid 10, 20, 50, 100
+#' intersected with the server-owned maximum number of feature specifications
+#' (\code{dsomop.max_feature_specs}); \code{"bins"} (prediction-score histogram
+#' and calibration bins) uses 5, 10, 20. An empty admissible grid makes the
+#' model contract unavailable.
+#'
+#' @param kind \code{"features"} or \code{"bins"}.
+#' @return Sorted integer grid (possibly empty).
+#' @keywords internal
+.omopModelReleaseGrid <- function(kind = c("features", "bins")) {
+  kind <- match.arg(kind)
+  if (identical(kind, "bins")) return(.DSOMOP_MODEL_BIN_GRID)
+  max_features <- suppressWarnings(as.numeric(
+    .omopDisclosureSettings()$max_feature_specs %||% Inf
+  ))
+  if (length(max_features) != 1L || is.na(max_features)) max_features <- Inf
+  .DSOMOP_MODEL_FEATURE_GRID[.DSOMOP_MODEL_FEATURE_GRID <= max_features]
+}
+
+#' Snap a value to a finite public grid
+#'
+#' \code{snap_G(x) = argmin_g (|x - g|, g)}: the nearest grid value, ties to the
+#' smaller one, with saturation at both ends. Only the request and the public
+#' grid enter; never the data.
+#'
+#' @param x One finite number.
+#' @param grid Non-empty numeric grid.
+#' @return The snapped grid value.
+#' @keywords internal
+.omopSnapToPublicGrid <- function(x, grid) {
+  grid <- sort(unique(as.numeric(grid)), method = "radix")
+  if (length(grid) == 0L) {
+    stop("The public release grid of this parameter is empty.", call. = FALSE)
+  }
+  x <- suppressWarnings(as.numeric(x))
+  if (length(x) != 1L || is.na(x) || !is.finite(x)) {
+    stop("A gridded release parameter must be one finite number.",
+         call. = FALSE)
+  }
+  distance <- abs(grid - x)
+  grid[[order(distance, grid, method = "radix")[[1L]]]]
+}
+
+#' Resolve one fitted-model parameter to its public release grid
+#'
+#' @param value Requested value (sanitized literal or number), or NULL.
+#' @param kind \code{"features"} or \code{"bins"}.
+#' @param default Value used when the request is NULL.
+#' @param name Parameter name, for messages.
+#' @return list(requested, effective, grid); \code{effective} is the integer
+#'   grid value the model is computed with.
+#' @keywords internal
+.omopModelGridParam <- function(value, kind, default, name) {
+  grid <- .omopModelReleaseGrid(kind)
+  if (length(grid) == 0L) {
+    stop("The ", name, " release grid is empty under the server's ",
+         "dsomop.max_feature_specs; this model is unavailable on this server.",
+         call. = FALSE)
+  }
+  requested <- if (is.null(value)) default else value
+  list(
+    requested = as.character(requested),
+    effective = as.integer(.omopSnapToPublicGrid(requested, grid)),
+    grid = as.integer(grid)
+  )
+}
+
+#' Public record of the effective (snapped) model parameters of one run
+#'
+#' Attached to a released frame as the \code{dsomop_effective_params}
+#' attribute so the client sees which public grid value was computed.
+#'
+#' @param params Named list of \code{\link{.omopModelGridParam}} results.
+#' @return list(requested, effective, rule).
+#' @keywords internal
+.omopModelEffectiveParams <- function(params) {
+  list(
+    requested = lapply(params, function(p) p$requested),
+    effective = lapply(params, function(p) p$effective),
+    rule = "nearest_public_grid_value_ties_to_smaller_saturating"
+  )
 }
 
 #' Validate canonical age-group labels against a server age grid
