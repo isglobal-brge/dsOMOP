@@ -830,6 +830,9 @@ test_that("intervals_long ANDs global and source-specific filters", {
 })
 
 test_that("intervals_long rejects requested tables without interval dates", {
+  # Defect A-16 (design 6.2, 6.12): the role registry supplies the interval
+  # roles, so a point-event table is an interval table with end = start
+  # (newly permitted); a table without an event start role is still refused.
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
@@ -841,9 +844,14 @@ test_that("intervals_long rejects requested tables without interval dates", {
   class(plan) <- c("omop_plan", "list")
 
   withr::with_options(list(nfilter.subset = 3, dsomop.query_strict = TRUE), {
-    expect_error(.planExecute(handle, plan, list(iv = "iv_df")),
-                 "no reviewed start/end date pair")
+    df <- .planExecute(handle, plan, list(iv = "iv_df"))$iv
+    expect_true(is.data.frame(df))
+    expect_gt(nrow(df), 0L)
+    expect_identical(unique(df$interval_type), "measurement")
+    expect_identical(df$end_days_from_index, df$start_days_from_index)
   })
+  expect_error(.compileIntervalsLongSql(handle, "dummy_cohort", "concept"),
+               "has no reviewed start date role")
 })
 
 test_that("intervals_long without cohort fails closed", {

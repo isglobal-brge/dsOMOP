@@ -84,6 +84,21 @@ fills its entries. Classes follow design-2.10.3 section 5.
   `nfilter_levels_density` cardinality gates, following the publication-only
   disclosure rule in design section 7.2. Filtered results still need the
   minimum number of distinct persons at publication.
+- (A-E6) Observation-period coverage follows the default policy (`unique`,
+  `on_ambiguous = "drop"`, design sections 1.3 and 6.13) instead of aborting
+  the plan: a v1 index-event candidate whose index date is covered by two
+  observation periods is dropped privately before the primary-limit selection
+  (2.10.2: "Candidate index events cannot have overlapping covering
+  observation_period records"); temporal panels drop, with their events, the
+  episodes without exactly one covering period (2.10.2: "Every cohort episode
+  must have exactly one observation_period covering its index date"); baseline
+  drops an episode covered by several periods and keeps an uncovered episode
+  with NA observation fields. Aggregate endpoints keep their own controls.
+- (A-16) `intervals_long` accepts point-event tables (`measurement`,
+  `observation`, `death`, `specimen`, `note`, CDM 5.3 `procedure_occurrence`):
+  the role registry supplies their start and `end = start` (2.10.2: "has no
+  reviewed start/end date pair"). A table without an event start role is still
+  refused.
 
 ## Newly refused
 
@@ -215,6 +230,45 @@ fills its entries. Classes follow design-2.10.3 section 5.
   the Kleene `any`/`all` table) and `R/compile_statement.R` (deterministic
   fragment names, the fragment registry of the execution context and
   `.buildStatement()`: one WITH chain in dependency order, typed-SQL checked).
+
+## Intervals, anchors and coverage (WS-5)
+
+- `R/compile_interval.R`: eras (`omop_era()`) normalise each source row to a
+  closed recorded interval by the era's own `end`/`fallback` from the event's
+  original recorded-end and supply roles (never its coalesced end; `end =
+  "start"` makes point records, `fallback = "none"` ignores the supply), apply
+  one private data-quality policy (NULL start, end before start, an invalid
+  supply as the only end source), and form courses by gaps and islands with a
+  running maximum of prior ends per (person, group) (a record starts a new era
+  when start > previous maximum end + gap + 1; `persistence` extends course
+  construction only; `min_days` filters by the recorded span). Grouping
+  `by = "event"`, `"concept"` or RxNorm `"ingredient"` (unmapped concepts kept
+  or dropped); era identities are group-qualified (`<group>:<era_no>`). The
+  recorded intervals stay separate from the course: [1,2] + [10,11] with gap 30
+  is one 11-day course and 4 covered days. `stockpile = TRUE` adds an
+  effective-supply relation from a bounded deterministic iterator over the
+  whole recorded history (supply precedence: positive supply, recorded length,
+  one day; carry capped by `dsomop.max_stockpile_days`, default 90); the fills
+  [1,30] and [15,44] cover 44 recorded and 60 effective days. Reducer bases:
+  `covered_days` (union length of the selected relation clipped to the window,
+  optionally intersected with the episode's observed segments, the PDC
+  numerator) and `supply_days` (`start_in_window` or `clipped`).
+- `R/compile_coverage.R`: observation-period coverage per population,
+  `unique`, `earliest` or `union` with `on_ambiguous` (`drop` or the typed
+  `coverage_ambiguous` failure), `on_missing` (`drop` or `keep` with NULL
+  bounds) and `gap`; missing coverage is resolved before ambiguity; under
+  `union` the index must lie inside an actual recorded period (records [1,2]
+  and [10,11] with gap 7 leave an index on day 5 uncovered). Eligibility spans
+  (`opc_<pop>`) and actually observed segments (`seg_<pop>_rec`, associated
+  through the selected component) are separate fragments: a gap allowance
+  satisfies continuity but never adds observed days.
+- `R/compile_anchor.R`: anchors (`index`, `index_end`, `observation_start`,
+  `observation_end`, dates, and source anchors selecting one complete row by
+  `(start_date, source_ns, row key)` with `first`, `last`, `nth`,
+  `latest_end`, `field`, `scope = "episode"` and `search` windows) compiled per
+  roster and phase (candidate or final); windows with independent bounds; a
+  missing required anchor makes a window undefined (criteria UNKNOWN, also for
+  absence and `count == 0`; reducers NA).
 
 ## Plan IR, role registry, explain and capabilities (WS-2)
 

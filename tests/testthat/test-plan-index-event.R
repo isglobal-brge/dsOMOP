@@ -155,6 +155,10 @@ test_that("index events exclude unobserved candidates and reject ambiguous cover
   )
   expect_equal(.ie_rows(h, resolved)$index_event_id, 102L)
 
+  # Defect A-E6 (design 1.3, 6.13): ambiguous coverage follows the default
+  # policy (unique, on_ambiguous = "drop"). A candidate covered by two periods
+  # is dropped privately before the primary-limit selection; the plan no longer
+  # aborts (corpus class newly_permitted).
   DBI::dbExecute(h$conn, "DELETE FROM observation_period")
   DBI::dbExecute(h$conn, paste0(
     "INSERT INTO observation_period ",
@@ -163,10 +167,20 @@ test_that("index events exclude unobserved candidates and reject ambiguous cover
     "(1, 1, '2020-01-01', '2024-12-31', 44814724), ",
     "(2, 1, '2019-01-01', '2021-12-31', 44814724)"
   ))
-  expect_error(
-    withr::with_options(list(nfilter.subset = 0), .ie_resolve(h, "first")),
-    "overlapping covering observation_period"
-  )
+  resolved <- withr::with_options(list(nfilter.subset = 0), .ie_resolve(h, "first"))
+  expect_identical(nrow(.ie_rows(h, resolved)), 0L)
+
+  # Only the candidate inside both periods is ambiguous: the first remaining
+  # candidate (102, covered by period 1 alone) is the index, with its exit at
+  # the end of that period.
+  DBI::dbExecute(h$conn, paste0(
+    "UPDATE observation_period SET observation_period_end_date = '2020-03-31' ",
+    "WHERE observation_period_id = 2"
+  ))
+  resolved <- withr::with_options(list(nfilter.subset = 0), .ie_resolve(h, "first"))
+  rows <- .ie_rows(h, resolved)
+  expect_equal(rows$index_event_id, 102L)
+  expect_equal(rows$cohort_end_date, "2024-12-31")
 })
 
 test_that("unsupported or malformed index end strategies fail closed", {

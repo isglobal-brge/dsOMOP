@@ -5511,10 +5511,14 @@
 
   result <- .executeQuery(handle, sql)
   if (nrow(result) == 0) return(result)
-  if (anyDuplicated(result$cohort_row_id)) {
-    stop("Baseline extraction found multiple matching observation periods for ",
-         "one cohort episode; one-row-per-episode output is ambiguous.",
-         call. = FALSE)
+  # Defect A-E6 (design 1.3, 6.13): an episode whose index is covered by more
+  # than one observation period follows the default coverage policy
+  # (on_ambiguous = "drop") and is dropped privately instead of aborting the
+  # plan; an uncovered episode keeps its row with NA observation fields.
+  ambiguous <- unique(result$cohort_row_id[duplicated(result$cohort_row_id)])
+  if (length(ambiguous) > 0L) {
+    result <- result[!result$cohort_row_id %in% ambiguous, , drop = FALSE]
+    if (nrow(result) == 0) return(result)
   }
 
   # row_id remains the legacy name; cohort_row_id is the explicit, shared
@@ -6200,7 +6204,13 @@
   observation_match <- match(
     events$cohort_row_id, observation_roster$cohort_row_id
   )
-  if (anyNA(observation_match) || any(
+  # Episodes without exactly one covering observation period are not in the
+  # roster (coverage policy unique/drop/drop, defect A-E6): their events are
+  # dropped privately with them.
+  events <- events[!is.na(observation_match), , drop = FALSE]
+  observation_match <- observation_match[!is.na(observation_match)]
+  if (nrow(events) == 0L) return(empty_result)
+  if (any(
     events$person_id != observation_roster$person_id[observation_match]
   )) {
     stop("Temporal events do not match the validated cohort episode roster.",
