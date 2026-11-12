@@ -44,12 +44,12 @@
 +for _i, (_label, _expect, _value) in enumerate(_membership_cases, 111):
 +    ir_probe(f"I{_i:02d}", f"membership {_label} (CR-27)", _expect, _membership_base,
 +             lambda b, value=_value: b["outputs"]["members"]["options"].__setitem__("legacy_cohort_definition_id", value))
-+ir_probe("I120", "membership identifier absent without default (CR-27)", OK,
++probe("P74", "membership identifier absent without default on native wire (CR-27)", OK,
 +         _membership_base, lambda b: None)
 +def _membership_wrong_format(b):
 +    b["outputs"]["members"]["format"] = "wide"
 +    b["outputs"]["members"]["options"]["legacy_cohort_definition_id"] = 1
-+ir_probe("I121", "membership identifier refused on wide output (CR-27)", R,
++ir_probe("I120", "membership identifier refused on wide output (CR-27)", R,
 +         _membership_base, _membership_wrong_format)
 +probe("P73", "membership identifier refused on native wire (CR-27)", R,
 +      _membership_base,
