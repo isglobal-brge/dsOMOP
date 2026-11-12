@@ -600,7 +600,9 @@
     # payload instead of turning nonempty data into an empty stream. The
     # invalid-JSON branch is dynamic, and its message contains no row count.
     payloads <- c(payloads, paste0(
-      "(SELECT CASE WHEN p.n = 0 THEN JSON_ARRAY() ",
+      # DISTINCT over the one-row guard result keeps MySQL from merging the
+      # CASE expression into JSON_TABLE's correlated input (ERROR 1210).
+      "(SELECT DISTINCT CASE WHEN p.n = 0 THEN JSON_ARRAY() ",
       "WHEN p.raw_payload IS NULL OR JSON_LENGTH(p.raw_payload) <> p.n ",
       "THEN CAST(CONCAT('invalid_stockpile_payload', LEFT(CAST(p.n AS CHAR), 0)) AS JSON) ",
       "ELSE p.raw_payload END AS payload FROM ",
