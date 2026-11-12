@@ -174,6 +174,9 @@
 # The baseline result with each reviewed correction applied, checked first
 # against the baseline values it keeps.
 .b10_corrected <- function(pin, want, conn, info) {
+  # the 2.10.2 build itself (compare_results.py validate --side baseline)
+  # predates F-26 and is checked against its own pins unchanged
+  if (!exists(".bandAges", mode = "function")) return(want)
   for (cr in Filter(function(x) identical(x$pin, pin$id), .B10_CORRECTIONS)) {
     k <- match(cr$output, vapply(want$names, as.character, ""))
     item <- want$items[[k]]

@@ -117,8 +117,12 @@ fills its entries. Classes follow design-2.10.3 section 5.
   baseline person columns (with the executors' own messages: "Baseline
   person column(s) not found", "Disclosive: ... are blocked"); and the
   session temporary tables the v1 executors need on SQL families without
-  them (`dialect_unsupported`). An unknown v1 output type keeps the
-  executor's "Unsupported output type" wording. The plan-declaration error
+  them (`dialect_unsupported`). Typed site checks refuse what 2.10.2 left to
+  SQL coercion: a predicate literal whose type does not match its column (a
+  text literal on a numeric or concept column, a non-ISO date) and a
+  `concept_col` that is not a filterable concept column (2.10.2 accepted any
+  existing column, class-1 columns included). An unknown v1 output type
+  keeps the executor's "Unsupported output type" wording. The plan-declaration error
   of an output that needs a cohort keeps the executor's untyped error.
 - (A-15) A v1 inclusion `occurrence` is the executor's `{type, count}`
   object, its type matched exactly (`at_least`, `at_most`, `exactly`): any
