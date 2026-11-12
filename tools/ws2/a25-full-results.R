@@ -11,7 +11,8 @@ for (.a25_expr in .a25_fixture_expressions) {
     eval(.a25_expr)
   }
 }
-stopifnot(all(vapply(.a25_fixture_names, exists, logical(1L), mode = "function")))
+stopifnot(all(vapply(.a25_fixture_names, exists, logical(1L), mode = "function",
+                     envir = environment())))
 
 .a25_capture_all <- function() {
   records <- list()

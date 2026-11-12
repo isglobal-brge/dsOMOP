@@ -1,0 +1,228 @@
+dsOMOP v2.10.2 loaded. OMOP CDM resource resolver registered.
+a25-replay: ...[dsomop-audit] 2026-11-12T14:23:29+0000 method=publication detail={"output":"demo","component":"demo","passed":true}
+[dsomop-audit] 2026-11-12T14:23:29+0000 method=publication detail={"output":"sibling","component":"sibling","passed":true}
+.....[dsomop-audit] 2026-11-12T14:23:29+0000 method=publication detail={"output":"demo","component":"demo","passed":true}
+[dsomop-audit] 2026-11-12T14:23:29+0000 method=publication detail={"output":"sibling","component":"sibling","passed":true}
+.......[dsomop-audit] 2026-11-12T14:23:29+0000 method=publication detail={"output":"demo","component":"demo","passed":true}
+....[dsomop-audit] 2026-11-12T14:23:30+0000 method=publication detail={"output":"demo","component":"demo","passed":true}
+....[dsomop-audit] 2026-11-12T14:23:30+0000 method=publication detail={"output":"demo","component":"demo","passed":true}
+....[dsomop-audit] 2026-11-12T14:23:31+0000 method=publication detail={"output":"demo","component":"demo","passed":true}
+[dsomop-audit] 2026-11-12T14:23:31+0000 method=publication detail={"output":"sibling","component":"sibling","passed":true}
+........[dsomop-audit] 2026-11-12T14:23:32+0000 method=publication detail={"output":"demo","component":"demo","passed":true}
+[dsomop-audit] 2026-11-12T14:23:32+0000 method=publication detail={"output":"sibling","component":"sibling","passed":true}
+........[dsomop-audit] 2026-11-12T14:23:33+0000 method=publication detail={"output":"demo","component":"demo","passed":true}
+[dsomop-audit] 2026-11-12T14:23:33+0000 method=publication detail={"output":"sibling","component":"sibling","passed":true}
+........[dsomop-audit] 2026-11-12T14:23:34+0000 method=publication detail={"output":"demo","component":"demo","passed":true}
+[dsomop-audit] 2026-11-12T14:23:34+0000 method=publication detail={"output":"sibling","component":"sibling","passed":true}
+.................
+A25_FULL_RESULTS list(criteria_local = list(plan = list(populations = list(p = list(
+    id = "p", kind = "criteria", cohort_definition_id = "A25_owned"), 
+    everyone = list(id = "everyone", kind = "criteria", filter_tree = list(
+        or = list(list(type = "sex", params = list(value = "M")), 
+            list(type = "sex", params = list(value = "F")))))), 
+    outputs = list(demo = list(type = "baseline", columns = "gender_concept_id", 
+        population_id = "p"), sibling = list(type = "baseline", 
+        columns = "gender_concept_id", population_id = "everyone")), 
+    options = list(translate_concepts = FALSE, block_sensitive = TRUE)), 
+    validation = list(valid = TRUE, errors = character(0), warnings = character(0)), 
+    result = structure(list(demo = structure(list(row_id = 1:6, 
+        cohort_row_id = 1:6, person_id = c(1L, 3L, 5L, 7L, 9L, 
+        11L), gender_concept_id = c(8507L, 8507L, 8507L, 8507L, 
+        8507L, 8507L)), class = "data.frame", row.names = c(NA, 
+    -6L)), sibling = structure(list(row_id = 1:15, cohort_row_id = 1:15, 
+        person_id = 1:15, gender_concept_id = c(8507L, 8532L, 
+        8507L, 8532L, 8507L, 8532L, 8507L, 8532L, 8507L, 8532L, 
+        8507L, 8532L, 8507L, 8532L, 8507L)), class = "data.frame", row.names = c(NA, 
+    -15L))), omop_concept_cols = list(demo = "gender_concept_id", 
+        sibling = "gender_concept_id"))), criteria_padded = list(
+    plan = list(populations = list(p = list(id = "p", kind = "criteria", 
+        cohort_definition_id = " \tA25_owned \n"), everyone = list(
+        id = "everyone", kind = "criteria", filter_tree = list(
+            or = list(list(type = "sex", params = list(value = "M")), 
+                list(type = "sex", params = list(value = "F")))))), 
+        outputs = list(demo = list(type = "baseline", columns = "gender_concept_id", 
+            population_id = "p"), sibling = list(type = "baseline", 
+            columns = "gender_concept_id", population_id = "everyone")), 
+        options = list(translate_concepts = FALSE, block_sensitive = TRUE)), 
+    validation = list(valid = TRUE, errors = character(0), warnings = character(0)), 
+    result = structure(list(demo = structure(list(row_id = 1:6, 
+        cohort_row_id = 1:6, person_id = c(1L, 3L, 5L, 7L, 9L, 
+        11L), gender_concept_id = c(8507L, 8507L, 8507L, 8507L, 
+        8507L, 8507L)), class = "data.frame", row.names = c(NA, 
+    -6L)), sibling = structure(list(row_id = 1:15, cohort_row_id = 1:15, 
+        person_id = 1:15, gender_concept_id = c(8507L, 8532L, 
+        8507L, 8532L, 8507L, 8532L, 8507L, 8532L, 8507L, 8532L, 
+        8507L, 8532L, 8507L, 8532L, 8507L)), class = "data.frame", row.names = c(NA, 
+    -15L))), omop_concept_cols = list(demo = "gender_concept_id", 
+        sibling = "gender_concept_id"))), numeric_integer_1 = list(
+    plan = list(populations = list(p = list(id = "p", kind = "criteria", 
+        cohort_definition_id = 1L)), outputs = list(demo = list(
+        type = "baseline", columns = "gender_concept_id", population_id = "p")), 
+        options = list(translate_concepts = FALSE, block_sensitive = TRUE)), 
+    validation = list(valid = TRUE, errors = character(0), warnings = character(0)), 
+    result = structure(list(demo = structure(list(row_id = 1:6, 
+        cohort_row_id = 1:6, person_id = c(1L, 3L, 5L, 7L, 9L, 
+        11L), gender_concept_id = c(8507L, 8507L, 8507L, 8507L, 
+        8507L, 8507L)), class = "data.frame", row.names = c(NA, 
+    -6L))), omop_concept_cols = list(demo = "gender_concept_id"))), 
+    numeric_character_1 = list(plan = list(populations = list(
+        p = list(id = "p", kind = "criteria", cohort_definition_id = "1")), 
+        outputs = list(demo = list(type = "baseline", columns = "gender_concept_id", 
+            population_id = "p")), options = list(translate_concepts = FALSE, 
+            block_sensitive = TRUE)), validation = list(valid = TRUE, 
+        errors = character(0), warnings = character(0)), result = structure(list(
+        demo = structure(list(row_id = 1:6, cohort_row_id = 1:6, 
+            person_id = c(1L, 3L, 5L, 7L, 9L, 11L), gender_concept_id = c(8507L, 
+            8507L, 8507L, 8507L, 8507L, 8507L)), class = "data.frame", row.names = c(NA, 
+        -6L))), omop_concept_cols = list(demo = "gender_concept_id"))), 
+    numeric_character_01 = list(plan = list(populations = list(
+        p = list(id = "p", kind = "criteria", cohort_definition_id = "01")), 
+        outputs = list(demo = list(type = "baseline", columns = "gender_concept_id", 
+            population_id = "p")), options = list(translate_concepts = FALSE, 
+            block_sensitive = TRUE)), validation = list(valid = TRUE, 
+        errors = character(0), warnings = character(0)), result = structure(list(
+        demo = structure(list(row_id = 1:6, cohort_row_id = 1:6, 
+            person_id = c(1L, 3L, 5L, 7L, 9L, 11L), gender_concept_id = c(8507L, 
+            8507L, 8507L, 8507L, 8507L, 8507L)), class = "data.frame", row.names = c(NA, 
+        -6L))), omop_concept_cols = list(demo = "gender_concept_id"))), 
+    criteria_scope_first_episode = list(plan = list(populations = list(
+        p = list(id = "p", kind = "criteria", cohort_definition_id = "A25_owned", 
+            filter_tree = list(type = "has_concept", params = list(
+                concept_id = 201820L, table = "condition_occurrence", 
+                min_count = 1L, window = list(start = 0L, end = 30L))), 
+            episode_policy = "first_episode"), everyone = list(
+            id = "everyone", kind = "criteria", filter_tree = list(
+                or = list(list(type = "sex", params = list(value = "M")), 
+                  list(type = "sex", params = list(value = "F")))))), 
+        outputs = list(demo = list(type = "baseline", columns = "gender_concept_id", 
+            population_id = "p"), sibling = list(type = "baseline", 
+            columns = "gender_concept_id", population_id = "everyone")), 
+        options = list(translate_concepts = FALSE, block_sensitive = TRUE), 
+        scope = list(cohort = 10L)), validation = list(valid = TRUE, 
+        errors = character(0), warnings = character(0)), result = structure(list(
+        demo = structure(list(row_id = 1:6, cohort_row_id = 1:6, 
+            person_id = c(1L, 1L, 3L, 3L, 5L, 5L), gender_concept_id = c(8507L, 
+            8507L, 8507L, 8507L, 8507L, 8507L)), class = "data.frame", row.names = c(NA, 
+        -6L)), sibling = structure(list(row_id = 1:24, cohort_row_id = 1:24, 
+            person_id = c(1L, 1L, 2L, 2L, 3L, 3L, 4L, 4L, 5L, 
+            5L, 6L, 6L, 7L, 7L, 8L, 8L, 9L, 9L, 10L, 10L, 11L, 
+            11L, 12L, 12L), gender_concept_id = c(8507L, 8507L, 
+            8532L, 8532L, 8507L, 8507L, 8532L, 8532L, 8507L, 
+            8507L, 8532L, 8532L, 8507L, 8507L, 8532L, 8532L, 
+            8507L, 8507L, 8532L, 8532L, 8507L, 8507L, 8532L, 
+            8532L)), class = "data.frame", row.names = c(NA, 
+        -24L))), omop_concept_cols = list(demo = "gender_concept_id", 
+        sibling = "gender_concept_id")), episodes = structure(list(
+        subject_id = c(1L, 3L, 5L), cohort_start_date = c("2020-01-01", 
+        "2020-01-01", "2020-01-01"), cohort_end_date = c("2024-12-31", 
+        "2024-12-31", "2024-12-31")), class = "data.frame", row.names = c(NA, 
+    -3L))), criteria_scope_last_episode = list(plan = list(populations = list(
+        p = list(id = "p", kind = "criteria", cohort_definition_id = "A25_owned", 
+            filter_tree = list(type = "has_concept", params = list(
+                concept_id = 201820L, table = "condition_occurrence", 
+                min_count = 1L, window = list(start = 0L, end = 30L))), 
+            episode_policy = "last_episode"), everyone = list(
+            id = "everyone", kind = "criteria", filter_tree = list(
+                or = list(list(type = "sex", params = list(value = "M")), 
+                  list(type = "sex", params = list(value = "F")))))), 
+        outputs = list(demo = list(type = "baseline", columns = "gender_concept_id", 
+            population_id = "p"), sibling = list(type = "baseline", 
+            columns = "gender_concept_id", population_id = "everyone")), 
+        options = list(translate_concepts = FALSE, block_sensitive = TRUE), 
+        scope = list(cohort = 10L)), validation = list(valid = TRUE, 
+        errors = character(0), warnings = character(0)), result = structure(list(
+        demo = structure(list(row_id = 1:6, cohort_row_id = 1:6, 
+            person_id = c(7L, 7L, 9L, 9L, 11L, 11L), gender_concept_id = c(8507L, 
+            8507L, 8507L, 8507L, 8507L, 8507L)), class = "data.frame", row.names = c(NA, 
+        -6L)), sibling = structure(list(row_id = 1:24, cohort_row_id = 1:24, 
+            person_id = c(1L, 1L, 2L, 2L, 3L, 3L, 4L, 4L, 5L, 
+            5L, 6L, 6L, 7L, 7L, 8L, 8L, 9L, 9L, 10L, 10L, 11L, 
+            11L, 12L, 12L), gender_concept_id = c(8507L, 8507L, 
+            8532L, 8532L, 8507L, 8507L, 8532L, 8532L, 8507L, 
+            8507L, 8532L, 8532L, 8507L, 8507L, 8532L, 8532L, 
+            8507L, 8507L, 8532L, 8532L, 8507L, 8507L, 8532L, 
+            8532L)), class = "data.frame", row.names = c(NA, 
+        -24L))), omop_concept_cols = list(demo = "gender_concept_id", 
+        sibling = "gender_concept_id")), episodes = structure(list(
+        subject_id = c(7L, 9L, 11L), cohort_start_date = c("2020-01-01", 
+        "2020-01-01", "2020-01-01"), cohort_end_date = c("2024-12-31", 
+        "2024-12-31", "2024-12-31")), class = "data.frame", row.names = c(NA, 
+    -3L))), criteria_scope_any_episode = list(plan = list(populations = list(
+        p = list(id = "p", kind = "criteria", cohort_definition_id = "A25_owned", 
+            filter_tree = list(type = "has_concept", params = list(
+                concept_id = 201820L, table = "condition_occurrence", 
+                min_count = 1L, window = list(start = 0L, end = 30L))), 
+            episode_policy = "any_episode"), everyone = list(
+            id = "everyone", kind = "criteria", filter_tree = list(
+                or = list(list(type = "sex", params = list(value = "M")), 
+                  list(type = "sex", params = list(value = "F")))))), 
+        outputs = list(demo = list(type = "baseline", columns = "gender_concept_id", 
+            population_id = "p"), sibling = list(type = "baseline", 
+            columns = "gender_concept_id", population_id = "everyone")), 
+        options = list(translate_concepts = FALSE, block_sensitive = TRUE), 
+        scope = list(cohort = 10L)), validation = list(valid = TRUE, 
+        errors = character(0), warnings = character(0)), result = structure(list(
+        demo = structure(list(row_id = 1:12, cohort_row_id = 1:12, 
+            person_id = c(1L, 1L, 3L, 3L, 5L, 5L, 7L, 7L, 9L, 
+            9L, 11L, 11L), gender_concept_id = c(8507L, 8507L, 
+            8507L, 8507L, 8507L, 8507L, 8507L, 8507L, 8507L, 
+            8507L, 8507L, 8507L)), class = "data.frame", row.names = c(NA, 
+        -12L)), sibling = structure(list(row_id = 1:24, cohort_row_id = 1:24, 
+            person_id = c(1L, 1L, 2L, 2L, 3L, 3L, 4L, 4L, 5L, 
+            5L, 6L, 6L, 7L, 7L, 8L, 8L, 9L, 9L, 10L, 10L, 11L, 
+            11L, 12L, 12L), gender_concept_id = c(8507L, 8507L, 
+            8532L, 8532L, 8507L, 8507L, 8532L, 8532L, 8507L, 
+            8507L, 8532L, 8532L, 8507L, 8507L, 8532L, 8532L, 
+            8507L, 8507L, 8532L, 8532L, 8507L, 8507L, 8532L, 
+            8532L)), class = "data.frame", row.names = c(NA, 
+        -24L))), omop_concept_cols = list(demo = "gender_concept_id", 
+        sibling = "gender_concept_id")), episodes = structure(list(
+        subject_id = c(1L, 3L, 5L, 7L, 9L, 11L), cohort_start_date = c("2020-01-01", 
+        "2020-01-01", "2020-01-01", "2020-01-01", "2020-01-01", 
+        "2020-01-01"), cohort_end_date = c("2024-12-31", "2024-12-31", 
+        "2024-12-31", "2024-12-31", "2024-12-31", "2024-12-31"
+        )), class = "data.frame", row.names = c(NA, -6L))), index_recurrent = list(
+        plan = list(populations = list(p = list(id = "p", kind = "criteria", 
+            cohort_definition_id = "A25_owned", index_event = list(
+                table = "condition_occurrence", concept_set = 201820L, 
+                primary_limit = "all"), filter_tree = list(type = "has_concept", 
+                params = list(concept_id = 201820L, table = "condition_occurrence", 
+                  min_count = 1L, window = list(start = 0L, end = 30L)))), 
+            everyone = list(id = "everyone", kind = "criteria", 
+                filter_tree = list(or = list(list(type = "sex", 
+                  params = list(value = "M")), list(type = "sex", 
+                  params = list(value = "F")))))), outputs = list(
+            demo = list(type = "baseline", columns = "gender_concept_id", 
+                population_id = "p"), sibling = list(type = "baseline", 
+                columns = "gender_concept_id", population_id = "everyone")), 
+            options = list(translate_concepts = FALSE, block_sensitive = TRUE)), 
+        validation = list(valid = TRUE, errors = character(0), 
+            warnings = character(0)), result = structure(list(
+            demo = structure(list(row_id = 1:12, cohort_row_id = 1:12, 
+                person_id = c(1L, 1L, 3L, 3L, 5L, 5L, 7L, 7L, 
+                9L, 9L, 11L, 11L), gender_concept_id = c(8507L, 
+                8507L, 8507L, 8507L, 8507L, 8507L, 8507L, 8507L, 
+                8507L, 8507L, 8507L, 8507L)), class = "data.frame", row.names = c(NA, 
+            -12L)), sibling = structure(list(row_id = 1:15, cohort_row_id = 1:15, 
+                person_id = 1:15, gender_concept_id = c(8507L, 
+                8532L, 8507L, 8532L, 8507L, 8532L, 8507L, 8532L, 
+                8507L, 8532L, 8507L, 8532L, 8507L, 8532L, 8507L
+                )), class = "data.frame", row.names = c(NA, -15L
+            ))), omop_concept_cols = list(demo = "gender_concept_id", 
+            sibling = "gender_concept_id")), episodes = structure(list(
+            subject_id = c(1L, 1L, 3L, 3L, 5L, 5L, 7L, 7L, 9L, 
+            9L, 11L, 11L), cohort_start_date = c("2021-06-01", 
+            "2022-06-01", "2021-06-01", "2022-06-01", "2021-06-01", 
+            "2022-06-01", "2021-06-01", "2022-06-01", "2021-06-01", 
+            "2022-06-01", "2021-06-01", "2022-06-01"), cohort_end_date = c("2024-12-31", 
+            "2024-12-31", "2024-12-31", "2024-12-31", "2024-12-31", 
+            "2024-12-31", "2024-12-31", "2024-12-31", "2024-12-31", 
+            "2024-12-31", "2024-12-31", "2024-12-31"), index_event_id = c(11L, 
+            12L, 31L, 32L, 51L, 52L, 71L, 72L, 91L, 92L, 111L, 
+            112L)), class = "data.frame", row.names = c(NA, -12L
+        ))))
+
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+RESULT failed: 0 errors: 0 skipped: 0 passed: 68 
