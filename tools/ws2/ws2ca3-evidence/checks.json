@@ -1,0 +1,28 @@
+{
+  "server": {
+    "head": "01e5f531e5589b299bc0cf7af03642612b87bd57",
+    "integration": "c7e541e4bac659cdc32358d14b1b4791c2e4203e",
+    "integration_is_ancestor": true,
+    "diff_check": "passed",
+    "version": "Version: 2.10.2"
+  },
+  "client": {
+    "head": "ed8f1e261e81c0e0a2d8ffc20865821cafd30f56",
+    "integration": "c8b337b77b09d5ed219215ddf205652193354220",
+    "integration_is_ancestor": true,
+    "diff_check": "passed",
+    "version": "Version: 2.10.2"
+  },
+  "pending_patch_applies": true,
+  "pending-b1-implementation.patch": {
+    "path": "tools/ws2/ws2f-evidence/pending-b1-implementation.patch",
+    "sha256": "eaeb4d0e2540f5a82562435925c695d3a1f0313796883c9d782c6db8f4a76d0a"
+  },
+  "pending-b1-tests.R": {
+    "path": "tools/ws2/ws2f-evidence/pending-b1-tests.R",
+    "sha256": "2de0f4887d7f66e5891ca527836e5cd8318a7e875e44399091a839fd3a793ca1"
+  },
+  "tests_run": [],
+  "contract_oracle_run": false,
+  "status": "B1 unresolved; CR-27 endorsements or explicit user waiver required"
+}
