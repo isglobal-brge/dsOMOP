@@ -293,6 +293,17 @@ test_that("omopFilterDS(expr) results pass the final-support boundary", {
   })
 })
 
+test_that("standalone row verbs remain assign methods in both deployment manifests", {
+  verbs <- c("omopMutateDS", "omopFilterDS")
+  for (file in c("DATASHIELD", "DESCRIPTION")) {
+    manifest <- read.dcf(testthat::test_path("..", "..", file))
+    assign_methods <- trimws(strsplit(manifest[1L, "AssignMethods"], ",")[[1L]])
+    aggregate_methods <- trimws(strsplit(manifest[1L, "AggregateMethods"], ",")[[1L]])
+    expect_true(all(verbs %in% assign_methods), info = file)
+    expect_false(any(verbs %in% aggregate_methods), info = file)
+  }
+})
+
 test_that("the capability block advertises the verbs with their own endpoints only", {
   expect_true(all(c("verb.mutate", "verb.filter_expr", "status.accessor") %in%
                     dsOMOP:::.recipeAvailableOperations()))
