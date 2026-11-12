@@ -220,8 +220,8 @@
       add("cand", p, "raw")
       add("cand", p)
       add("cand", p, "crit")
-      add("pop", p, "sel")
     }
+    if (kind %in% c("index", "criteria", "setop")) add("pop", p, "sel")
     if (identical(kind, "setop")) add("pop", p, "all")
     add("pop", p)
   }
@@ -267,7 +267,11 @@
   if (!is.null(cached)) return(cached)
   ir <- ctx[["ir"]]
   tags <- unique(unlist(lapply(names(ir[["populations"]] %||% list()), function(p) {
-    .irIndexSourceTags(ir, p)
+    seed <- ir[["populations"]][[p]][["cohort_definition_id"]]
+    if (is.list(seed)) seed <- unlist(seed)
+    c(.irIndexSourceTags(ir, p),
+      # the episodes of a results-cohort seed are candidates (criteria per episode)
+      if (!is.null(seed)) paste0("cohort:", format(seed, scientific = FALSE)))
   }), use.names = FALSE))
   tags <- .irSortNames(tags)
   ranks <- stats::setNames(seq_along(tags), tags)
@@ -342,7 +346,7 @@
     stop("The plan scope must be resolved by the executor (ctx$scope_persons) before ",
          "populations compile.", call. = FALSE)
   }
-  f <- .fragment(nm, "roster", "person", body,
+  f <- .fragment(nm, "candidates", "person", body,
                  columns = list(person_id = .fragmentColumn("bigint", FALSE, "person_key")),
                  dependencies = deps, unique_key = "person_id",
                  person_lineage = list(person_col = "person_id", via_roster = NULL),
