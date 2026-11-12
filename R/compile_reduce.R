@@ -597,12 +597,17 @@
 }
 
 # Mode with ties resolved to the smallest value (NULLs ignored).
-.reduceMode <- function(v) {
+.reduceMode <- function(v, value_type = NULL) {
   v <- v[!is.na(v)]
   if (!length(v)) return(v[NA_integer_])
   vals <- unique(v)
   counts <- tabulate(match(v, vals), nbins = length(vals))
-  sort(vals[counts == max(counts)], method = "radix")[[1L]]
+  tied <- vals[counts == max(counts)]
+  # A BIGINT stream can arrive as decimal text. Its declared type, rather
+  # than the values another person's rows put in the transport column,
+  # determines numeric ordering; genuine text keeps lexical ordering.
+  ordering <- if (isTRUE(value_type %in% c("integer", "bigint"))) .reduceKeyOrder(tied) else tied
+  tied[[order(ordering, method = "radix")[[1L]]]]
 }
 
 # Per-day least-squares slope of v on dates (>= 2 distinct dates).
@@ -642,9 +647,10 @@
 #' @param anchor Anchor date of the row (Date or NA): the window's anchor for
 #'   first_date, last_date and closest_value; the reference anchor for
 #'   days_since / days_until.
+#' @param value_type Declared value column type, including lossless BIGINT.
 #' @return One value (a vector for nth_value with a vector n).
 #' @keywords internal
-.reduceOne <- function(fn, x, r, anchor = NA) {
+.reduceOne <- function(fn, x, r, anchor = NA, value_type = NULL) {
   d <- x[["start_date"]]
   n <- length(d)
   v <- x[["v"]]
@@ -706,7 +712,7 @@
       as.numeric(stats::quantile(vv, probs = as.numeric(unlist(r[["p"]])), type = 7L,
                                  names = FALSE))
     },
-    mode = .reduceMode(v),
+    mode = .reduceMode(v, value_type),
     slope = .reduceSlope(d, v),
     any = .reduceKleeneAny(as.integer(x[["pred"]])),
     all = .reduceKleeneAll(as.integer(x[["pred"]])),
@@ -787,9 +793,10 @@
 #' @param r Reducer node.
 #' @param ordering Ordering columns of the source.
 #' @param anchors NULL or a Date vector aligned with keys.
+#' @param value_type Declared value column type, including lossless BIGINT.
 #' @return A list of value vectors (one per output column) aligned with keys.
 #' @keywords internal
-.reduceApply <- function(fn, rows, keys, r, ordering, anchors = NULL) {
+.reduceApply <- function(fn, rows, keys, r, ordering, anchors = NULL, value_type = NULL) {
   ord_cols <- c("row_key", intersect(ordering, names(rows)))
   if (nrow(rows)) {
     o <- .reduceOrderRows(rows, ord_cols)
@@ -810,7 +817,7 @@
     ix <- groups[[i]]
     anchor <- if (!is.null(anchors)) anchors[[i]] else NA
     val <- if (!length(ix) && !always) empty else {
-      .reduceOne(fn, lapply(cols, function(col) col[ix]), r, anchor)
+      .reduceOne(fn, lapply(cols, function(col) col[ix]), r, anchor, value_type)
     }
     if (nvec == 1L) out[[1L]][[i]] <- val else for (j in seq_len(nvec)) out[[j]][[i]] <- val[[j]]
   }
@@ -906,13 +913,10 @@
     return(.reduceEraVariable(ctx, node, name, cons, src))
   }
   value_col <- NULL
-  value_type <- if (identical(fn, "mode")) {
-    col <- r[["value"]] %||% "concept_id"
-    (src$fragment$columns[[col]] %||% list(type = "numeric"))$type
-  } else "numeric"
+  value_type <- "numeric"
   needs_value <- fn %in% .REDUCER_VALUE_FNS || identical(fn, "mode") ||
     (identical(fn, "n_distinct") && !is.null(r[["value"]]))
-  if (needs_value && src$available) {
+  if (needs_value) {
     requested <- r[["value"]] %||% if (identical(fn, "mode")) "concept_id" else "value"
     res <- .predicateResolve(src$catalogue, requested, paste0(field, "/value"))
     value_col <- res$column
@@ -961,7 +965,9 @@
   stream <- .reduceStream(ctx, cons, src, window, .reduceName(ctx, cons, "s", name),
                           extra = extra)
   ordering <- .reduceSourceOrdering(src)
-  kernel <- function(rows, keys, anchors = NULL) .reduceApply(fn, rows, keys, r, ordering, anchors)
+  kernel <- function(rows, keys, anchors = NULL) {
+    .reduceApply(fn, rows, keys, r, ordering, anchors, value_type)
+  }
   evaluate <- function() {
     roster <- .reduceRosterFrame(ctx, cons$roster)
     keys <- roster$cohort_row_id
