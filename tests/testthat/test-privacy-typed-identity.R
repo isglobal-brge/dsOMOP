@@ -104,6 +104,19 @@ test_that("B01: a CDM-namespace table shares the automatic person total", {
                    "cdm_person_id_v1")
   typed <- .ti_release(x, statistic = "count")
   expect_identical(typed$components$signed[[1L]], root[[1L]]$n)
+  # Double ids pseudonymized as "1e+05" map to the integer text that the
+  # automatic routes use; other identifier text is kept as it is.
+  policy <- .dsomopDpPolicy()
+  z <- .testPseudonymize(data.frame(person_id = c(1e5, 2e5, 3e5), v = 1))
+  expect_identical(
+    sort(unname(.dsomopDpReleasePersonMap(z, "person_id", key, policy)$map)),
+    sort(.dsomopReleasePersonTokens(.dsomopReleaseKeys(policy), policy,
+                                    c(100000, 200000, 300000))))
+  s <- .testPseudonymize(data.frame(person_id = c("007", "A1"), v = 1))
+  expect_identical(
+    sort(unname(.dsomopDpReleasePersonMap(s, "person_id", key, policy)$map)),
+    sort(.dsomopReleasePersonTokens(.dsomopReleaseKeys(policy), policy,
+                                    c("007", "A1"))))
   # A keyless fixture of the same people is a different (pseudonym)
   # namespace, fixed at sealing.
   y <- .dsomopDpSealPersonLocal(

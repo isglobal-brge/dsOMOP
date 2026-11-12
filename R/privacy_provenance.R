@@ -449,9 +449,12 @@
            "contract.", call. = FALSE)
     }
     ids <- if (length(u)) .unhashPersonKey(u, key) else character(0)
-    numeric_text <- !is.na(suppressWarnings(as.numeric(ids))) &
-      grepl("^-?[0-9.]+(e[+]?[0-9]+)?$", ids)
-    ids[numeric_text] <- sprintf("%.0f", as.numeric(ids[numeric_text]))
+    # Identifiers were stringified with as.character() before encryption, so
+    # large numeric ids may read "1e+05": restore their exact integer text,
+    # the form the automatic routes use.
+    sci <- grepl("e", ids, fixed = TRUE) &
+      !is.na(suppressWarnings(as.numeric(ids)))
+    ids[sci] <- sprintf("%.0f", as.numeric(ids[sci]))
     text <- .dsomopReleasePersonIdText(ids)
     namespace <- "cdm_person_id_v1"
   } else {
