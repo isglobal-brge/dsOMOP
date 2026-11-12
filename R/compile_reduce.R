@@ -1173,7 +1173,7 @@
   if (!src$available) return(.reduceUnavailable(ctx, cons, name, columns))
   window <- r[["window"]]
   stream <- .reduceStream(ctx, cons, src, window, .reduceName(ctx, cons, "s", name), overlap = TRUE)
-  ordering <- .reduceSourceOrdering(src)
+  ordering <- stream$ordering
   kernel <- function(rows, keys, bounds) {
     i <- match(as.character(rows$row_key), as.character(bounds$key))
     lo <- .dayNumber(bounds$lo)[i]
@@ -1199,7 +1199,8 @@
     roster <- .reduceRosterFrame(ctx, cons$roster)
     keys <- roster$cohort_row_id
     got <- .reduceStreamRows(ctx, cons, stream, window, field, overlap = TRUE)
-    vals <- kernel(got$rows, keys, got$bounds)
+    rows <- .reduceTemporal(got$rows, cons$temporal, ordering)
+    vals <- kernel(rows, keys, got$bounds)
     vals[!got$bounds$defined %in% TRUE] <- NA_integer_
     out <- data.frame(row_key = keys, stringsAsFactors = FALSE)
     out[[name]] <- vals
@@ -1724,11 +1725,17 @@
       role <- .roleOf(ctx[["handle"]], "observation_period")
       s <- paste0("o.", role[["start"]])
       e <- paste0("o.", role[["end"]])
-      inside <- if (!is.null(spec$index)) {
+      # Native person rosters also declare the date columns, with NULL
+      # values. Indexed status belongs to the population, not a row's date.
+      indexed <- .pnv2PopulationIndexed(ctx[["ir"]][["populations"]], spec$population)
+      if (indexed && is.null(spec$index)) {
+        stop("Raw observation columns need the indexed roster's index date column.", call. = FALSE)
+      }
+      inside <- if (indexed) {
         paste0(" AND r.", spec$index, " >= ", s, " AND r.", spec$index, " <= ", e)
       } else ""
       policy <- cons$coverage$policy$policy
-      if (!is.null(spec$index) && isTRUE(policy %in% c("unique", "earliest"))) {
+      if (indexed && isTRUE(policy %in% c("unique", "earliest"))) {
         if (is.null(spec$op_component)) {
           stop("Raw observation columns need the indexed roster's selected op_component_id.", call. = FALSE)
         }

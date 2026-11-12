@@ -531,3 +531,65 @@ test_that("mode counts exact numeric values and preserves date and text ties and
   expect_identical(.reduceMode(character(0)), NA_character_)
   expect_identical(.reduceMode(c(NA_real_, NA_real_)), NA_real_)
 })
+
+test_that("era reducers apply temporal selection to each consumer's courses", {
+  h <- .ws4_reach_handle()
+  on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
+  DBI::dbWriteTable(h$conn, "drug_exposure", data.frame(
+    drug_exposure_id = 949001:949003, person_id = 1007L,
+    drug_concept_id = .WS7$DRUG,
+    drug_exposure_start_date = c("2020-01-01", "2020-01-10", "2020-01-25"),
+    drug_exposure_end_date = c("2020-01-03", "2020-01-15", "2020-01-25")), append = TRUE)
+  variables <- lapply(c(n = "era_count", days = "era_days", first = "first_era_days"), function(fn) {
+    list(source = list(interval = "course"),
+         reducer = list(fn = fn, window = list(start = 0L, end = 30L, anchor = "index")))
+  })
+  plan <- .ws7_scenario_plan(variables)
+  plan$intervals <- list(course = list(source = list(event = "drug"), gap = 0L))
+  frame <- .ws7_scenario_frame(c(1007L, 1007L), index = c("2020-01-01", "2020-01-10"))
+  evaluate <- function(temporal = NULL) {
+    p <- plan
+    if (!is.null(temporal)) p$outputs$o$options <- list(temporal = temporal)
+    .ws7_scenario_run(h, p, frame)$frame[c("n", "days", "first")]
+  }
+  expect_equal(evaluate(), data.frame(n = c(3L, 2L), days = c(10L, 7L), first = c(3L, 6L)))
+  expect_equal(evaluate(list(event_select = "first")),
+               data.frame(n = c(1L, 1L), days = c(3L, 6L), first = c(3L, 6L)))
+  expect_equal(evaluate(list(event_select = "last")),
+               data.frame(n = c(1L, 1L), days = c(1L, 1L), first = c(1L, 1L)))
+  expect_equal(evaluate(list(min_gap = 15L)),
+               data.frame(n = c(2L, 2L), days = c(4L, 7L), first = c(3L, 6L)))
+})
+
+test_that("raw observation selection distinguishes unindexed rosters from missing index dates", {
+  h <- .ws4_reach_handle()
+  on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
+  DBI::dbExecute(h$conn, "DELETE FROM observation_period WHERE person_id = 1007")
+  DBI::dbWriteTable(h$conn, "observation_period", data.frame(
+    observation_period_id = c(949101L, 949102L), person_id = 1007L,
+    observation_period_start_date = c("2015-01-01", "2020-01-01"),
+    observation_period_end_date = c("2016-12-31", "2021-12-31"),
+    period_type_concept_id = c(44814724L, 44814725L)), append = TRUE)
+  vars <- list(type = list(raw = list(table = "observation_period", column = "period_type_concept_id")))
+  plan <- .ws7_scenario_plan(vars)
+  plan$options <- list(translate_concepts = FALSE)
+  evaluate <- function(indexed) {
+    p <- plan
+    if (!indexed) {
+      p$populations$t <- list(kind = "criteria")
+      p$outputs$o$grain <- "person"
+    }
+    run <- .ws7_ctx(h, p)
+    on.exit(.ws7_close(run), add = TRUE)
+    # WS6 declares these dates even for an unindexed final person roster.
+    roster <- .ws5_literal_roster(run$cctx, data.frame(
+      cohort_row_id = 1L, subject_id = 1007L,
+      cohort_start_date = as.Date(NA), cohort_end_date = as.Date(NA),
+      index_source = NA_character_, index_key = NA_character_), phase = "final", name = "pop_t")
+    cons <- .reduceConsumer(run$cctx, "o", roster)
+    variable <- .compileVariable(run$cctx, .irNamedNode(run$ir, "variable", "type"), roster, cons)
+    variable$evaluate()$type
+  }
+  expect_identical(evaluate(FALSE), 44814724L)
+  expect_identical(evaluate(TRUE), NA_integer_)
+})
