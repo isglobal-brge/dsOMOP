@@ -28,8 +28,10 @@
     "AS SELECT * FROM", source))
   f$grant_metadata <- function() {
     DBI::dbExecute(f$admin, paste("GRANT SHOW VIEW ON", f$declared, "TO", f$runtime_principal))
-    # REFERENCES exposes table metadata without permitting direct data reads.
-    DBI::dbExecute(f$admin, paste("GRANT REFERENCES ON", f$physical, "TO", f$runtime_principal))
+    # MySQL exposes SHOW CREATE through REFERENCES alone. MariaDB documents
+    # SELECT as necessary for SHOW CREATE; these grants are fixture setup only.
+    privilege <- if (identical(dbms, "mariadb")) "SELECT" else "REFERENCES"
+    DBI::dbExecute(f$admin, paste("GRANT", privilege, "ON", f$physical, "TO", f$runtime_principal))
     if (nested) DBI::dbExecute(f$admin, paste("GRANT SELECT, SHOW VIEW ON", source,
       "TO", f$runtime_principal))
   }
@@ -80,7 +82,11 @@ for (engine in c("mariadb", "mysql")) local({
       "(id INTEGER) ENGINE=MyISAM"))
     DBI::dbExecute(f$admin, paste("CREATE OR REPLACE SQL SECURITY DEFINER VIEW", f$declared,
       "AS SELECT * FROM", paste0(f$external, ".inner_person"), "WITH CASCADED CHECK OPTION"))
-    expect_error(DBI::dbGetQuery(h$conn, paste("SELECT * FROM", f$physical)), "denied")
+    if (identical(dbms, "mysql")) {
+      expect_error(DBI::dbGetQuery(h$conn, paste("SELECT * FROM", f$physical)), "denied")
+    } else {
+      expect_equal(nrow(DBI::dbGetQuery(h$conn, paste("SELECT * FROM", f$physical))), 3L)
+    }
     result <- .dsomopWithReadSnapshot(h, {
       first <- .executeQuery(h, paste("SELECT COUNT(*) AS n FROM", f$declared))$n
       g1 <- .dsomopDpMembershipHash(h, "database")$digest
@@ -219,7 +225,8 @@ for (engine in c("mariadb", "mysql")) local({
     DBI::dbExecute(f$admin, paste("CREATE OR REPLACE VIEW", f$declared,
       "AS SELECT * FROM", bad))
     DBI::dbExecute(f$admin, paste("GRANT SHOW VIEW ON", f$declared, "TO", f$runtime_principal))
-    DBI::dbExecute(f$admin, paste("GRANT REFERENCES ON", bad, "TO", f$runtime_principal))
+    privilege <- if (identical(dbms, "mariadb")) "SELECT" else "REFERENCES"
+    DBI::dbExecute(f$admin, paste("GRANT", privilege, "ON", bad, "TO", f$runtime_principal))
     expect_error(suppressMessages(.dsomopWithReadSnapshot(f$handle,
       .executeQuery(f$handle, paste("SELECT * FROM", f$declared)))),
       class = "dsomop_snapshot_unavailable")
