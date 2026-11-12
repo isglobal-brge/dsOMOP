@@ -19,7 +19,8 @@ An index population's sources (an event or interval name, each of an
 \code{any_of}; \code{"cohort:<id>"} for a results cohort,
 \code{"legacy_spec"} for a legacy spec), a criteria population's parent's
 (or \code{"cohort:<id>"}, or \code{"(persons)"} without either), the
-union over a set operation's members, \code{"match:<pop>"} for a matched
+union over a union's members or the left member for intersect/setdiff,
+\code{"match:<pop>"} for a matched
 population. NULL when the population is unknown or a member cannot be
 resolved: a consumer then needs the rows' own metadata. Tags that are not
 plan names can never equal an adapter's parent namespace.
