@@ -1074,13 +1074,16 @@
   unit_records <- paste0(nchar(tokens, type = "bytes"), ":", tokens, ":1")
 
   noisy <- function(family, coordinate, value, allocation, sensitivity,
-                    map_tokens, contributions, owner_id = owner$id,
+                    map_rows, contributions, owner_id = owner$id,
                     population = owner$population) {
+    if (length(map_rows) != length(contributions) || anyDuplicated(tokens[map_rows])) {
+      stop("A contribution map is internally inconsistent.", call. = FALSE)
+    }
     fp <- if (all(contributions == 1)) {
       .dsomopReleaseFingerprintFramed(keys, owner_id, family, coordinate,
-                                      unit_records[match(map_tokens, tokens)])
+                                      unit_records[map_rows])
     } else .dsomopReleaseFingerprint(keys, owner_id, family, coordinate,
-                                     map_tokens, contributions)
+                                     tokens[map_rows], contributions)
     .dsomopReleaseNoisyComponent(policy, keys, protection, list(
       owner = owner_id, population = population, family = family,
       coordinate = coordinate, value = value, allocation = allocation,
@@ -1104,7 +1107,7 @@
   if (!data_kind) {
     first <- !duplicated(sub$person_id)
     root_noisy <- noisy("N", "stratum=root", n_total, frac$N, cap,
-                        tokens[first], rep(1, sum(first)),
+                        which(first), rep(1, sum(first)),
                         owner_id = .DSOMOP_RELEASE_N_OWNER)
   }
   rows <- vector("list", length(strata_keys))
@@ -1112,11 +1115,11 @@
   for (i in seq_along(strata_keys)) {
     s <- strata_keys[[i]]
     in_s <- sub$stratum == s
-    tok <- tokens[in_s]
+    idx <- which(in_s)
     n_exact <- sum(in_s)
     dist_ok <- if (data_kind) n_exact >= support$dist else parent_dist_ok
     n_noisy <- if (!data_kind && !public_kind) root_noisy else
-      noisy("N", paste0("stratum=", s), n_exact, frac$N, cap, tok,
+      noisy("N", paste0("stratum=", s), n_exact, frac$N, cap, idx,
             rep(1, n_exact), owner_id = .DSOMOP_RELEASE_N_OWNER)
     h_noisy <- rep(NA_real_, length(bin_keys))
     if (has_h && (dist_ok || !data_kind)) {
@@ -1128,7 +1131,7 @@
       h_noisy <- vapply(seq_along(bin_keys), function(b) {
         hit <- members[[b]]
         noisy("H", paste0("stratum=", s, "|cell=", bin_keys[[b]]),
-              length(hit), alloc_h, cap, tok[hit], rep(1, length(hit)))
+              length(hit), alloc_h, cap, idx[hit], rep(1, length(hit)))
       }, numeric(1L))
     }
     s_noisy <- q_noisy <- NA_real_
@@ -1137,9 +1140,9 @@
       s_int <- lattice$s
       q_int <- lattice$q
       s_noisy <- noisy("S", paste0("stratum=", s), sum(s_int), alloc_s,
-                       cap * J, tok, s_int)
+                       cap * J, idx, s_int)
       q_noisy <- noisy("Q", paste0("stratum=", s), sum(q_int), alloc_q,
-                       cap * J, tok, q_int)
+                       cap * J, idx, q_int)
     }
     rows[[i]] <- data.frame(stratum = s, n_noisy = n_noisy,
                             s_noisy = s_noisy, q_noisy = q_noisy,
