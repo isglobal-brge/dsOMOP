@@ -124,7 +124,7 @@ test_that("N3 malformed envelopes precede validation, preview and audit traversa
     for (preview in list(function() .planPreview(handle, plan),
                          function() omopPlanPreviewDS("ws2f_preview", plan))) {
       error <- tryCatch(preview(), error = identity)
-      expect_s3_class(error, "dsomop_plan_rejection", info = name)
+      expect_s3_class(error, "dsomop_plan_rejection")
       expect_identical(error$code, "validation_error", info = name)
     }
   }
