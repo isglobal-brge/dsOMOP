@@ -131,9 +131,19 @@ test_that("a database reload redraws only the components whose people changed", 
   b <- components(before)
   a <- components(after)
   expect_setequal(names(a), names(b))
-  expect_false(identical(a[["gender=8532"]]$n, b[["gender=8532"]]$n))
-  for (s in setdiff(names(b), "gender=8532")) {
-    expect_identical(a[[s]], b[[s]], info = s)
+  # Exported strata are reconciled to the parent person total (which the new
+  # person changes), so every stratum shifts uniformly; the other strata keep
+  # their own draws: their contrasts and their cells' contrasts are unchanged.
+  others <- setdiff(names(b), "gender=8532")
+  expect_false(isTRUE(all.equal(a[["gender=8532"]]$n - a[[others[[1L]]]]$n,
+                                b[["gender=8532"]]$n - b[[others[[1L]]]]$n)))
+  for (k in seq_along(others)[-1L]) {
+    i <- others[[k]]; j <- others[[k - 1L]]
+    expect_equal(a[[i]]$n - a[[j]]$n, b[[i]]$n - b[[j]]$n, tolerance = 1e-9,
+                 info = i)
+  }
+  for (s in others) {
+    expect_equal(diff(a[[s]]$h), diff(b[[s]]$h), tolerance = 1e-9, info = s)
   }
 })
 

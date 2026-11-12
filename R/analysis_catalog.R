@@ -1098,7 +1098,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     "SELECT o.person_id, o.s, o.e, CASE WHEN MAX(o.e) OVER (PARTITION BY ",
     "o.person_id ORDER BY o.s, o.e ROWS BETWEEN UNBOUNDED PRECEDING AND 1 ",
     "PRECEDING) >= o.s THEN 0 ELSE 1 END AS new_island FROM (",
-    "SELECT op.person_id, op.observation_period_start_date AS s, ",
+    # DISTINCT: exact duplicate periods collapse, so the (s, e) window order
+    # has no ties and every engine numbers the islands alike.
+    "SELECT DISTINCT op.person_id, op.observation_period_start_date AS s, ",
     "DATEADD(day, 1, op.observation_period_end_date) AS e FROM ", obs, " op ",
     "WHERE op.observation_period_start_date IS NOT NULL AND ",
     "op.observation_period_end_date IS NOT NULL) o) f) g ",
