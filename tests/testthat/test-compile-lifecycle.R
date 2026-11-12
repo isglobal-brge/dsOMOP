@@ -162,10 +162,12 @@ test_that("native output compilation installs cleanup before creating its child 
     .createTempTable(h, "ws7_native_unregistered", "SELECT 47 AS value")
     stop("child creation failure")
   })
-  expect_true(ctx$closed)
+  expect_true(.isPlanContext(ctx))
+  expect_false(is.null(ctx$ir))
   expect_length(child$compile_temp_tables, 0L)
   expect_setequal(h$temp_tables, pre)
   expect_setequal(.ws5_temp_names(h), pre)
+  .planContextClose(ctx)
 })
 
 test_that("native output cleanup attempts unregistered objects after compiler DROP failure", {
@@ -192,7 +194,7 @@ test_that("native output cleanup attempts unregistered objects after compiler DR
   })
   expect_s3_class(failure, "error")
   expect_match(conditionMessage(failure), "injected native DROP failure")
-  expect_true(ctx$closed)
+  expect_true(.isPlanContext(ctx))
   expect_identical(child$compile_temp_tables, failing)
   expect_false(released %in% .ws5_temp_names(h))
   expect_true(pre %in% .ws5_temp_names(h))

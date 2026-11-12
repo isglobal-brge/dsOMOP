@@ -18,8 +18,10 @@ The compiler uses a private child of the execution context. Its temporary
 tables are registered for cleanup and every fetched stream is bounded by
 `dsomop.max_memory_rows`. An extra row is a non-skippable `validation_error`
 with reason `reducer_row_cap`, never a partial result. Execution cleanup
-preserves caller-owned tables. Compiler failures close both context owners;
-successful compilation keeps the immutable roster registry for publication.
+preserves caller-owned tables. Compiler failures release both owners' tables
+while preserving the IR for typed refusal transport; the execution/publication
+boundary closes the context. Successful compilation keeps the immutable
+roster registry for publication.
 Both compiler and operation-table cleanup are attempted when a DROP fails.
 
 ## Population and variable interfaces

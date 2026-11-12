@@ -2408,17 +2408,18 @@
   before <- unique(handle$temp_tables %||% character(0))
   cctx <- NULL
   compiled <- FALSE
-  # Install cleanup before context creation as well as compilation. On a
-  # compilation failure close both context owners; after success the caller
-  # still needs the roster registry for publication. Attempt operation-table
-  # cleanup even when a compiler DROP fails, and report every failure.
+  # Install cleanup before context creation as well as compilation. Release
+  # compiler tables without closing the execution context: the caller still
+  # needs its IR to turn a typed refusal into publication status. The outer
+  # execution/publication boundary closes that context on every exit.
   on.exit({
     failures <- character(0)
     attempt <- function(expr) tryCatch(expr, error = function(e) {
       failures <<- c(failures, conditionMessage(e))
     })
-    if (!compiled) attempt(.planContextClose(ctx)) else if (is.environment(cctx)) {
-      attempt(.compileReleaseTempTables(cctx))
+    owners <- if (compiled) list(cctx) else list(ctx[["compile_context"]], ctx)
+    for (owner in owners) {
+      if (is.environment(owner)) attempt(.compileReleaseTempTables(owner))
     }
     attempt(.dropTempTablesCreatedSince(handle, before))
     if (length(failures)) stop(paste(unique(failures), collapse = "\n"), call. = FALSE)
