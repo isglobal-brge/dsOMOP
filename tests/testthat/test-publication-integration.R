@@ -136,3 +136,21 @@ test_that("an explicitly empty publication root list publishes nothing", {
   expect_length(ctx$prepared, 0L)
   expect_identical(ls(ctx$target_env), character(0))
 })
+
+test_that("typed failures before root execution use the bounded refusal transport", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .setHandle("publication_shared_failure", handle)
+  on.exit(.removeHandle("publication_shared_failure"), add = TRUE)
+  local_mocked_bindings(.planExecute = function(...) {
+    .publishReject("dialect_unsupported")
+  })
+  target <- new.env(parent = emptyenv())
+  plan <- list(outputs = list(first = list(), second = list()))
+  status <- .omopPlanExecuteDS("publication_shared_failure", plan,
+    list(first = "A", second = "B"), target_env = target)
+  expect_identical(status$status, "refused")
+  expect_identical(names(status$rejected), c("first", "second"))
+  expect_true(all(vapply(status$rejected, function(x) identical(x$code, "dialect_unsupported"), logical(1))))
+  expect_identical(ls(target), character(0))
+})

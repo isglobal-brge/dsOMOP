@@ -796,7 +796,18 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   on.exit(.planContextClose(ctx), add = TRUE)
   ctx$commit_policy <- commit_policy
   if (!is.null(seal_factory)) ctx$seal <- seal_factory(ctx)
-  outputs <- .planExecute(handle, plan, out, output_mode = output_mode, ctx = ctx)
+  outputs <- tryCatch(.planExecute(handle, plan, out, output_mode = output_mode, ctx = ctx),
+    dsomop_plan_rejection = function(e) {
+      if (!e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",
+                         "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
+      # A shared roster/dialect failure can precede individual root execution.
+      # It refuses every requested family without exposing its private details.
+      roots <- as.character(unlist(plan$publish %||% names(plan$outputs), use.names = FALSE))
+      if (!length(roots)) stop(e)
+      for (root in roots) ctx$rejected[[root]] <- list(code = e$code,
+                                                     message = .publishMessage(e$code))
+      list()
+    })
   .publishOutputs(ctx, outputs, out)
 }
 
