@@ -234,19 +234,19 @@
     " AND ", event_date, " >= op.observation_period_start_date",
     " AND ", event_date, " <= op.observation_period_end_date)"
   )
-  select <- c(
-    vapply(names(spec$strata), function(col) {
-      paste0(text_cast(spec$strata[[col]]), " AS ", col)
-    }, character(1L)),
-    "COUNT(DISTINCT d.person_id) AS n_persons"
-  )
+  # Group by the selected text expressions themselves: MySQL's
+  # ONLY_FULL_GROUP_BY does not treat CAST(x) as functionally dependent on x.
+  keys <- vapply(names(spec$strata), function(col) {
+    text_cast(spec$strata[[col]])
+  }, character(1L))
+  select <- c(paste0(keys, " AS ", names(spec$strata)),
+              "COUNT(DISTINCT d.person_id) AS n_persons")
   where <- c(paste0(event_date, " IS NOT NULL"), spec$where, in_period)
   sql <- .sql_translate(paste0(
     "SELECT ", paste(select, collapse = ", "),
     " FROM ", qualified, " d",
     " WHERE ", paste(where, collapse = " AND "),
-    " GROUP BY ", paste(unlist(spec$strata, use.names = FALSE),
-                        collapse = ", ")
+    " GROUP BY ", paste(keys, collapse = ", ")
   ), handle$target_dialect)
 
   result <- tryCatch(.executeQuery(handle, sql), error = function(e) empty)
