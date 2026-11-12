@@ -160,7 +160,7 @@ test_that("start-date nullability follows members and survives every child fragm
           expect_identical(fragment$columns$cohort_start_date$nullable, unname(want[[population]]), info = info)
           expect_identical(fragment$columns$cohort_start_date$type, "date", info = info)
           rows <- .fetchFragment(ctx, fragment)
-          expect_gt(nrow(rows), 0L, info = info)
+          expect_true(nrow(rows) > 0L, info = info)
           expect_identical(anyNA(rows$cohort_start_date), unname(want[[population]]), info = info)
         }
         if (population %in% c("mixed", "reversed", "diff_mixed", "child", "grandchild")) {
@@ -203,7 +203,7 @@ test_that("the closed legacy empty compiles to typed owned memoised empty relati
         expect_identical(fragment$columns$cohort_end_date$type, "date", info = backend)
       }
       tables <- ctx$compile_temp_tables
-      expect_gte(length(tables), 2L, info = backend)
+      expect_true(length(tables) >= 2L, info = backend)
       expect_true(all(tables %in% h$temp_tables), info = backend)
       expect_identical(.compilePopulation(ctx, node), result, info = backend)
       expect_identical(.compilePopulationByName(ctx, "empty"), result, info = backend)
@@ -227,7 +227,7 @@ test_that("closed legacy empty operands obey union intersection and difference i
     tryCatch({
       for (member in c("people", "episodes")) {
         reference <- .ws6_roster(ctx, member)
-        expect_gt(nrow(reference), 0L, info = paste(backend, member))
+        expect_true(nrow(reference) > 0L, info = paste(backend, member))
         for (op in c("union", "intersect", "setdiff")) {
           for (side in c("left", "right")) {
             population <- paste(member, op, side, sep = "_")
@@ -263,7 +263,7 @@ test_that("the legacy empty exception refuses open shapes and remains IR-only", 
       for (field in names(invalid[[variant]])) node[field] <- invalid[[variant]][field]
       if (identical(variant, "null_without_mode")) node$legacy_episodes <- NULL
       expect_error(.compilePopulation(ctx, node), info = variant)
-      expect_length(ctx$compile_temp_tables, 0L, info = variant)
+      expect_equal(length(ctx$compile_temp_tables), 0L, info = variant)
     }, finally = .planContextClose(ctx))
   }
   ctx <- .ws6f_empty_context(.ws6f_pop_backends$sqlite$handle)
