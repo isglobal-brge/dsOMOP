@@ -1089,6 +1089,10 @@ test_that("v1-corpus-classes.csv carries the A-19 dispositions", {
     stats::setNames(rep("unchanged_invalid", 2L), c(
       "dsOMOP:test-filters.R:numeric bins are authenticated to the resource session and scope#supplied_invalid",
       "dsOMOP:test-plan-cohort-filters.R:numeric has_measurement filters require a matching issued bin#supplied_invalid")),
+    stats::setNames(rep(c("publication_refused_unchanged", "newly_permitted"), 2L),
+      paste0(so, rep(c("set-op result below nfilter fails closed (empty intersection)",
+                       "set-op result below nfilter fails closed (tiny non-zero intersection)"), each = 2L),
+             rep(c("#no_private_context", "#private_context"), 2L))),
     # item 8
     stats::setNames(c("unchanged_invalid", "newly_refused_structural"),
                     paste0(oc, "survival custom filter on an identifier column is rejected", c("#strict", "#non_strict")))

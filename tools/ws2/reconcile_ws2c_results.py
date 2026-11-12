@@ -76,6 +76,9 @@ def attribute(record, by_block):
         return select(suffix="#below_k", reason="Original pinned fixture has two event persons at threshold three; admissible variants are the separate A-19 memory/staged evidence")
     if test == "reach SAFETY: narrow age_range blocked while gate is ON":
         return select(suffix="#missing_reference", reason="Original pinned min=121/max=122 plan omits an explicit reference; the valid-reference variant is separately tested")
+    if test in ("set-op result below nfilter fails closed (empty intersection)",
+                "set-op result below nfilter fails closed (tiny non-zero intersection)"):
+        return select(suffix="#no_private_context", reason="The original bare population resolver has no private execution context; context-bearing and plan/public-entry variants are separate open-item-(i) evidence")
     if test == "cohort criteria fail closed instead of becoming unfiltered":
         if status == "ok":
             return dict(disposition="setup_control", plan_ids=[],

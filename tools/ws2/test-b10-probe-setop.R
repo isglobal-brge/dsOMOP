@@ -5,7 +5,8 @@
 # so that the result capture records these calls at the baseline and at the
 # current code. It asserts nothing about the outcome: for the two blocks
 # `dsOMOP:test-recipe-setops.R:set-op result below nfilter fails closed (empty
-# intersection)` / `(tiny non-zero intersection)` (class newly_permitted), it
+# intersection)` / `(tiny non-zero intersection)` (bare helper: unchanged
+# standalone refusal; private plan execution: newly_permitted), it
 # prints one `[b10-probe]` line per call to the suite log naming the outcome,
 # the refusing call chain and the execution context the refusing
 # .cohortCombine() saw (no ctx parameter = 2.10.2, ctx NULL, or a private plan
