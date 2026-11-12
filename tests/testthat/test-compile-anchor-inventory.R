@@ -23,6 +23,7 @@ test_that("named long-output anchors compile after full IR preparation (B5)", {
     ctx <- .planContext(h, ir)
     roster <- .ws5_literal_roster(ctx, data.frame(
       cohort_row_id = c(31L, 92L), subject_id = c(3201L, 3202L),
+      index_source = "(persons)", index_key = c("3201", "3202"),
       cohort_start_date = "2020-01-01", cohort_end_date = "2020-12-31"),
       name = "pop_t", population = "t", phase = "final")
     compiled <- lapply(list(first_a, explicit_a, after_b, first_b), function(anchor) {
@@ -38,6 +39,7 @@ test_that("named long-output anchors compile after full IR preparation (B5)", {
     # The inventory fix never weakens the fail-closed allocator.
     expect_error(.compileAnchor(ctx, list(source = list(event = "a"), which = "last"), roster, "final"),
                  "not declared by the plan's anchor inventory", info = backend)
+    .planContextClose(ctx)
   }
   .ws5_expect_backends(backends, "ws5 named anchor inventory")
 })
