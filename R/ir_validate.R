@@ -59,6 +59,10 @@
   if (pid %in% seen) return(character(0))
   pop <- ir[["populations"]][[pid]]
   if (!is.list(pop)) return(character(0))
+  # The criteria-base parent is a membership seed, not inherited identity:
+  # observation-period episodes carry none of its event/source tags.
+  if (identical(pop[["kind"]], "criteria") &&
+      identical(pop[["legacy_episodes"]], "observation_periods")) return(character(0))
   seen <- c(seen, pid)
   switch(pop[["kind"]] %||% "",
     index = {

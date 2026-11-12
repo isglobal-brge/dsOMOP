@@ -937,7 +937,7 @@
   index
 }
 
-.v1LowerPopulation <- function(st, id, pid, pop, anchored) {
+.v1LowerPopulation <- function(st, id, pid, pop, anchored, plan_base = NULL) {
   pop <- .v1Compact(pop)
   path <- paste0("populations/", id)
   label <- .v1Text(pop[["label"]])
@@ -984,6 +984,11 @@
     list(kind = "criteria", legacy_episodes = "observation_periods", legacy_empty = TRUE)
   } else {
     node <- list(kind = "criteria")
+    # Only the original v1 criteria base intersects its own restrictions with
+    # the plan cohort's person seed. This edge does not inherit the parent's
+    # episodes or change the independent plan/scope anchor of windowed leaves.
+    # In particular, singleton set operations above retain their member parent.
+    if (identical(pid, "base") && !is.null(plan_base)) node[["parent"]] <- plan_base
     node["where"] <- list(.v1Criteria(pop[["filter_tree"]], st, path))
     if (is.null(cohort_name)) {
       node["cohort_definition_id"] <- list(.v1CohortInteger(pop[["cohort_definition_id"]]))
@@ -1164,7 +1169,7 @@
         if (!is.null(label)) st[["populations"]][["base"]][["label"]] <- label
         next
       }
-      .v1LowerPopulation(st, id, pid, pops[[pid]], anchored)
+      .v1LowerPopulation(st, id, pid, pops[[pid]], anchored, plan_base = plan_base)
     }
   } else if (length(pops)) {
     .v1Annex(st, "root", populations_inactive = pops)
