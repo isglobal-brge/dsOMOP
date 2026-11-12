@@ -136,7 +136,8 @@
   }
   repeat {
     sql <- paste0("SELECT TOP ", page,
-      " person_id AS p, 1 AS k FROM ", person,
+      " ", .omopTextCastSql(handle, "person_id", width = 32L),
+      " AS p, 1 AS k FROM ", person,
       " WHERE person_id IS NOT NULL",
       if (!is.null(last)) paste0(" AND person_id > ", last),
       " GROUP BY person_id ORDER BY person_id")
