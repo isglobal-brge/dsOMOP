@@ -643,3 +643,106 @@
     index_visit = FALSE, concept = concept, columns = names(spec)))
   f
 }
+
+# --- Site checks without compilation (for .irValidate, design 6.1) ------------
+
+#' Predicate catalogue of an event source, from metadata only
+#'
+#' The catalogue the compilers use for the event's own \code{where} and for
+#' reducer predicates over its rows, derived from the role registry and the
+#' blueprint without resolving concept sets or reading data.
+#'
+#' @param handle CDM handle.
+#' @param ir The IR.
+#' @param name Event name.
+#' @return A \code{.predicateCatalogue()}, or NULL when the source is not
+#'   available at this site (the caller applies \code{on_missing_table}).
+#' @keywords internal
+.eventSiteCatalogue <- function(handle, ir, name, .stack = character(0)) {
+  if (name %in% .stack) {
+    .irReject(paste0("event reference cycle: ", paste(c(.stack, name), collapse = " -> ")),
+              field = paste0("/events/", name))
+  }
+  node <- .irNamedNode(ir, "event", name)
+  if (!is.null(node[["episode_members"]])) {
+    spec <- node[["episode_members"]]
+    pnode <- .irNode(ir, "event", spec[["episode"]][["event"]])
+    if (!identical(tolower(pnode[["table"]] %||% ""), "episode")) {
+      .irReject("episode_members needs an event over the episode table",
+                field = paste0("/events/", name, "/episode_members/episode"))
+    }
+    fields <- .irEpisodeEventFields()
+    tables <- tolower(as.character(unlist(spec[["tables"]] %||% fields$table_name)))
+    unknown <- setdiff(tables, fields$table_name)
+    if (length(unknown)) {
+      .irReject(paste0("'", unknown[[1L]], "' has no reviewed episode_event field mapping"),
+                field = paste0("/events/", name, "/episode_members/tables"))
+    }
+    records <- Filter(Negate(is.null), lapply(tables, function(t) .roleOf(handle, t)))
+    if (!length(records)) return(NULL)
+    return(.episodeMemberCatalogue(name, .episodeMemberRoles(records)))
+  }
+  if (!is.null(node[["cost"]])) {
+    parent <- node[["cost"]][["event"]][["event"]]
+    pnode <- .irNamedNode(ir, "event", parent)
+    if (is.null(pnode[["table"]])) {
+      .irReject("the cost source must reference a table event",
+                field = paste0("/events/", name, "/cost/event"))
+    }
+    prole <- .roleOf(handle, pnode[["table"]])
+    if (is.null(prole)) return(NULL)
+    roles <- c(if (!is.null(prole[["end"]])) "end_recorded",
+               if (!is.null(prole[["visit_occurrence"]])) "visit")
+    return(.costCatalogue(name, .costRoles(roles)))
+  }
+  role <- .roleOf(handle, node[["table"]])
+  if (is.null(role)) return(NULL)
+  ctx <- new.env(parent = emptyenv())
+  ctx$handle <- handle
+  ctx$ir <- ir
+  ctx$dialect <- .sqlDialectProfile(handle, probe = FALSE)
+  concept <- if (is.null(node[["concept_set"]])) {
+    list(ids = NULL, state = "all")
+  } else list(ids = integer(0), state = "set")
+  .eventCatalogue(.eventPlan(ctx, node, name, role, concept))
+}
+
+#' Handle-dependent findings of one event source, without compiling it
+#'
+#' The same rules the event and adapter compilers apply, from metadata only:
+#' concept columns with a concept role, numeric value columns, unit, operator,
+#' supply and visit roles, and the \code{where} predicate typed against the
+#' normalised columns (design 6.1; WS-2's site checks may call it so the plan
+#' is refused before any query with the compiler's own rules).
+#'
+#' @param handle CDM handle.
+#' @param ir The IR.
+#' @param name Event name.
+#' @param predicates Optional named list path -> extra predicate over the
+#'   event's rows (e.g. a reducer's \code{predicate}).
+#' @return Character vector of findings ("<path>: <reason>"), empty when valid.
+#' @keywords internal
+.eventSiteCheck <- function(handle, ir, name, predicates = list()) {
+  finding <- function(e, default) {
+    paste0(e$field %||% default, ": ", sub("^[a-z_]+: ", "", conditionMessage(e)))
+  }
+  base <- paste0("/events/", name)
+  catalogue <- tryCatch(.eventSiteCatalogue(handle, ir, name),
+                        dsomop_plan_rejection = function(e) finding(e, base))
+  if (is.character(catalogue)) return(catalogue)
+  if (is.null(catalogue)) return(character(0))
+  node <- .irNode(ir, "event", name)
+  where <- node[["where"]] %||% node[["episode_members"]][["where"]] %||% node[["cost"]][["where"]]
+  checks <- c(if (!is.null(where)) list(list(pred = where, path = paste0(base, "/where"))),
+              lapply(names(predicates), function(p) list(pred = predicates[[p]], path = p)))
+  h <- .sqlDialectProfile(handle, probe = FALSE)
+  out <- character(0)
+  for (chk in checks) {
+    msg <- tryCatch({
+      .predicateSql(h, chk$pred, catalogue, "x", chk$path)
+      NULL
+    }, dsomop_plan_rejection = function(e) finding(e, chk$path))
+    out <- c(out, msg)
+  }
+  out
+}

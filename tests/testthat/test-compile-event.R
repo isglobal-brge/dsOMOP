@@ -416,3 +416,37 @@ test_that("the executable WS-4 tests ran on every configured backend", {
   }, "")
   cat("\n[ws4 backends]", paste(runtime, collapse = "; "), "\n")
 })
+
+test_that("site checks apply the compiler's own rules from metadata only (for WS-2's B4)", {
+  h <- .ws4_ev_backends$sqlite$handle
+  plan <- .ws4_plan(events = list(
+    ok = .ws4_hba1c(where = list(var = "value", op = ">=", value = 6.5)),
+    date_concept = list(table = "measurement", concept_col = "measurement_date"),
+    date_value = list(table = "measurement", value = list(column = "measurement_date")),
+    bad_literal = list(table = "measurement", where = list(var = "value_as_number", op = ">", value = "bad")),
+    no_value = list(table = "condition_occurrence", where = list(var = "value", op = ">", value = 1)),
+    members = list(episode_members = list(episode = list(event = "episode"), tables = list("drug_exposure"),
+                                          where = list(var = "value", op = ">", value = 1))),
+    wrong_parent = list(episode_members = list(episode = list(event = "ok"))),
+    episode = list(table = "episode"),
+    m2 = list(episode_members = list(episode = list(event = "episode"),
+                                     where = list(var = "member_table", op = "==", value = "drug_exposure"))),
+    note = list(table = "note", on_missing_table = "unavailable")))
+  ir <- .irNormalize(.irJsonForm(plan))
+  expect_identical(.eventSiteCheck(h, ir, "ok"), character(0))
+  expect_match(.eventSiteCheck(h, ir, "date_concept"), "^/events/date_concept/concept_col: .*not a filterable concept column")
+  expect_match(.eventSiteCheck(h, ir, "date_value"), "^/events/date_value/value/column: ")
+  expect_match(.eventSiteCheck(h, ir, "bad_literal"), "^/events/bad_literal/where/value: .*finite numbers")
+  expect_match(.eventSiteCheck(h, ir, "no_value"), "no value role")
+  expect_match(.eventSiteCheck(h, ir, "members"), "no value role")
+  expect_match(.eventSiteCheck(h, ir, "wrong_parent"), "^/events/wrong_parent/episode_members/episode: ")
+  expect_identical(.eventSiteCheck(h, ir, "m2"), character(0))
+  expect_identical(.eventSiteCheck(h, ir, "note"), character(0))
+  # a reducer predicate over the event's rows is typed against the same catalogue
+  expect_match(.eventSiteCheck(h, ir, "ok", list(`/variables/v/reducer/predicate` =
+                                                   list(var = "made_up", op = ">", value = 1))),
+               "^/variables/v/reducer/predicate/var: .*not a predicate column")
+  # no data was read: the check works without the concept vocabulary
+  local_mocked_bindings(.vocabExpandConceptSet = function(...) stop("vocabulary read"))
+  expect_identical(.eventSiteCheck(h, ir, "ok"), character(0))
+})

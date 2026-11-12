@@ -200,18 +200,8 @@
                      dependencies = ep, unique_key = ukey, person_lineage = lineage,
                      source_identity_columns = identity, private_columns = private,
                      ordering = ordering)
-  roles <- unique(unlist(lapply(members, function(mb) {
-    r <- mb$role
-    c(if (!is.null(r[["value"]])) "value", if (!is.null(r[["unit"]])) "unit",
-      if (!is.null(r[["operator"]])) "operator",
-      if (!is.null(r[["range_low"]])) "range", if (!is.null(r[["supply"]])) "supply",
-      if (!is.null(r[["end"]])) "end_recorded",
-      if (!is.null(r[["domain_concept"]])) "concept",
-      if (!is.null(r[["visit_occurrence"]])) "visit")
-  })))
-  catalogue <- .adapterCatalogue(name, roles, list(
-    member_table = list(type = "text"),
-    episode_concept_id = list(type = "integer", concept = TRUE)))
+  roles <- .episodeMemberRoles(lapply(members, function(mb) mb$role))
+  catalogue <- .episodeMemberCatalogue(name, roles)
   where <- spec[["where"]]
   pred_sql <- if (!is.null(where)) .predicateSql(h, where, catalogue, "x", paste0(base, "/where"))
   body_final <- paste0("SELECT ", paste(paste0("x.", names(spec_cols)), collapse = ", "),
@@ -245,6 +235,38 @@
     fragments = c(src = nm_src, final = nm_final), index_visit = FALSE,
     parent = parent, member_tables = names(members), columns = names(spec_cols)))
   f_final
+}
+
+# Roles some member table carries (a member role absent from every member
+# table is refused in predicates).
+.episodeMemberRoles <- function(role_records) {
+  unique(unlist(lapply(role_records, function(r) {
+    c(if (!is.null(r[["value"]])) "value", if (!is.null(r[["unit"]])) "unit",
+      if (!is.null(r[["operator"]])) "operator",
+      if (!is.null(r[["range_low"]])) "range", if (!is.null(r[["supply"]])) "supply",
+      if (!is.null(r[["end"]])) "end_recorded",
+      if (!is.null(r[["domain_concept"]])) "concept",
+      if (!is.null(r[["visit_occurrence"]])) "visit")
+  })))
+}
+
+.episodeMemberCatalogue <- function(name, roles) {
+  .adapterCatalogue(name, roles, list(
+    member_table = list(type = "text"),
+    episode_concept_id = list(type = "integer", concept = TRUE)))
+}
+
+# Roles of a cost source: the amount value, the parent's concept, recorded end
+# and visit link.
+.costRoles <- function(parent_roles) {
+  c("value", "concept", if ("end_recorded" %in% parent_roles) "end_recorded",
+    if ("visit" %in% parent_roles) "visit")
+}
+
+.costCatalogue <- function(name, roles) {
+  .adapterCatalogue(name, roles, list(
+    currency_concept_id = list(type = "integer", concept = TRUE),
+    cost_type_concept_id = list(type = "integer", concept = TRUE)))
 }
 
 # Predicate catalogue of an adapter source: the event roles some member has,
@@ -393,11 +415,8 @@
                      dependencies = p, unique_key = "event_id", person_lineage = lineage,
                      source_identity_columns = identity, private_columns = private,
                      ordering = .EVENT_ORDERING)
-  roles <- c("value", "concept", if ("end_recorded" %in% pmeta$roles) "end_recorded",
-             if ("visit" %in% pmeta$roles) "visit")
-  catalogue <- .adapterCatalogue(name, roles, list(
-    currency_concept_id = list(type = "integer", concept = TRUE),
-    cost_type_concept_id = list(type = "integer", concept = TRUE)))
+  roles <- .costRoles(pmeta$roles)
+  catalogue <- .costCatalogue(name, roles)
   pred <- spec[["where"]]
   pred_sql <- if (!is.null(pred)) .predicateSql(h, pred, catalogue, "x", paste0(base, "/where"))
   body_final <- paste0("SELECT ", paste(paste0("x.", names(spec_cols)), collapse = ", "),
