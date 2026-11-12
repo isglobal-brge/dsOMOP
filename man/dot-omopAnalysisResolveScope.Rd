@@ -4,7 +4,7 @@
 \alias{.omopAnalysisResolveScope}
 \title{Resolve the scope= argument to a single server-side cohort temp table}
 \usage{
-.omopAnalysisResolveScope(handle, scope = NULL, combine = "union")
+.omopAnalysisResolveScope(handle, scope = NULL, combine = "union", ctx = NULL)
 }
 \arguments{
 \item{handle}{CDM handle.}

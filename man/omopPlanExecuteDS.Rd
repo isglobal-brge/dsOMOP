@@ -11,7 +11,8 @@ omopPlanExecuteDS(
   output_mode = "memory",
   scope = NULL,
   combine = "union",
-  ...
+  ...,
+  commit_policy = "server"
 )
 }
 \arguments{
@@ -36,9 +37,15 @@ independently and contiguously named \code{scope_cohort_1}, ... and
 \code{scope_table_1}, ... without gaps. They are combined internally with
 a literal \code{scope}; no generic aggregate \code{c()} or \code{list()}
 method is required.}
+
+\item{commit_policy}{Character; \code{"server"} applies the server's strict
+mode, while \code{"all_or_none"} refuses the whole execution if any
+final component fails support. This policy cannot relax disclosure gates.}
 }
 \value{
-Invisible TRUE (outputs are assigned into caller's environment)
+A server-authenticated publication status. Outputs are assigned into
+  the caller's environment; the client reads the bounded inventory with
+  \code{\link{omopPlanStatusDS}} before deleting its execution-status symbol.
 }
 \description{
 Runs the extraction plan and assigns each output directly into the

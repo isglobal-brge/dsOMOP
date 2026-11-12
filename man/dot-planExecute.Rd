@@ -4,7 +4,7 @@
 \alias{.planExecute}
 \title{Execute a plan and produce server-side data frames}
 \usage{
-.planExecute(handle, plan, out_symbols, output_mode = "memory")
+.planExecute(handle, plan, out_symbols, output_mode = "memory", ctx = NULL)
 }
 \arguments{
 \item{handle}{CDM handle}

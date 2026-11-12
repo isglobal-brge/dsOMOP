@@ -59,6 +59,8 @@ Suggests:
     survival,
     gnm
 AggregateMethods:
+    omopPlanStatusDS,
+    omopStagedRevokeDS,
     omopPingDS,
     omopGetCapabilitiesDS,
     omopDisclosureSettingsDS,

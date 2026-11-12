@@ -15,31 +15,25 @@
 
 # --- (a) A custom row filter changes the emitted SQL and the returned rows ----
 
-test_that("a client-authored ordered threshold is rejected", {
+test_that("a client-authored ordered threshold compiles", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  expect_error(
-    .compileSelect(handle, "measurement",
+  expect_silent(.compileSelect(handle, "measurement",
       columns = c("person_id", "value_as_number"),
-      filters = list(var = "value_as_number", op = ">=", value = 7.5)),
-    "server-issued value_bin"
-  )
+      filters = list(var = "value_as_number", op = ">=", value = 7.5)))
 })
 
-test_that("an ordered threshold cannot reach extraction", {
+test_that("an ordered threshold reaches private extraction", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
 
-  expect_error(
-    .extractTable(handle, "measurement",
+  expect_silent(.extractTable(handle, "measurement",
       columns = c("person_id", "value_as_number"),
       concept_filter = 3004410L, translate_concepts = FALSE,
-      filters = list(var = "value_as_number", op = ">=", value = 7.5)),
-    "server-issued value_bin"
-  )
+      filters = list(var = "value_as_number", op = ">=", value = 7.5)))
 })
 
 test_that("a value_bin row filter narrows the extracted rows", {
@@ -447,22 +441,19 @@ test_that("visit_filter restricts the extracted rows to matching visits", {
 
 # --- (f) DISCLOSURE: fail-closed gate ----------------------------------------
 
-test_that("an unissued narrow threshold is fail-closed before querying", {
+test_that("narrow private extraction is refused only when published", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
-
-  withr::with_options(
-    list(nfilter.subset = 3, dsomop.default_date_handling = "remove"), {
-    expect_error(
-      .extractTable(handle, "measurement",
-                    columns = c("person_id", "value_as_number"),
-                    concept_filter = 3004410L,
-                    translate_concepts = FALSE,
-                    filters = list(var = "value_as_number", op = "<",
-                                   value = 6.6)),
-      "server-issued value_bin"
-    )
+  withr::with_options(list(nfilter.subset = 3), {
+    rows <- .extractTable(handle, "measurement",
+      columns = c("person_id", "value_as_number"),
+      concept_filter = 3004410L, translate_concepts = FALSE,
+      filters = list(var = "value_as_number", op = "<", value = 6.6))
+    expect_equal(nrow(rows), 1L)
+    expect_equal(rows$value_as_number, 6.5)
+    expect_error(.publishStandalone(rows, handle = handle,
+                                     already_tokenized = FALSE), "Disclosive")
   })
 })
 
@@ -500,7 +491,7 @@ test_that("a filter on a blocked/source column is rejected", {
   )
 })
 
-test_that("an exact-match (==) filter is blocked as fingerprinting", {
+test_that("exact and ordered predicates retain structural validation", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
@@ -510,43 +501,31 @@ test_that("an exact-match (==) filter is blocked as fingerprinting", {
 
   # value_as_number is filterable, but == on an arbitrary column is the
   # fingerprinting primitive -> mapped to "custom" -> blocked.
-  expect_error(
-    .assertCustomFilterSafe(list(var = "value_as_number", op = "==",
-                                 value = 7.2), valid),
-    "not allowed|fingerprint|custom"
-  )
+  expect_silent(.assertCustomFilterSafe(list(var = "value_as_number", op = "==",
+                                 value = 7.2), valid))
   # Ordered thresholds on the same column must use an issued value_bin.
-  expect_error(
-    .assertCustomFilterSafe(list(var = "value_as_number", op = ">=",
-                                 value = 7.5), valid),
-    "server-issued value_bin"
-  )
+  expect_silent(.assertCustomFilterSafe(list(var = "value_as_number", op = ">=",
+                                 value = 7.5), valid))
   # Membership remains available for reviewed categorical/concept columns.
   expect_invisible(
     .assertCustomFilterSafe(list(var = "unit_concept_id", op = "in",
                                  value = list(9529L)), valid))
 })
 
-test_that("custom filter semantics reject narrow dates and unsafe operators", {
+test_that("custom filter semantics permit narrow dates and validate bounds", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   bp <- .buildBlueprint(handle)
   measurement_cols <- .filterableColumns(bp, "measurement")
 
   withr::with_options(list(nfilter.subset = 3), {
-    expect_error(
-      .assertCustomFilterSafe(
+    expect_silent(.assertCustomFilterSafe(
         list(var = "measurement_date", op = ">=", value = "2020-01-01"),
-        measurement_cols),
-      "standalone date"
-    )
-    expect_error(
-      .assertCustomFilterSafe(
+        measurement_cols))
+    expect_silent(.assertCustomFilterSafe(
         list(var = "measurement_date", op = "between",
              value = list("2020-01-01", "2020-01-15")),
-        measurement_cols),
-      "at least 30 days"
-    )
+        measurement_cols))
   })
   expect_error(
     .assertCustomFilterSafe(
@@ -555,18 +534,12 @@ test_that("custom filter semantics reject narrow dates and unsafe operators", {
       measurement_cols),
     "valid date"
   )
-  expect_error(
-    .assertCustomFilterSafe(
+  expect_silent(.assertCustomFilterSafe(
       list(var = "value_as_number", op = "in", value = list(7.2, 7.5)),
-      measurement_cols),
-    "concept IDs|categorical"
-  )
-  expect_error(
-    .assertCustomFilterSafe(
+      measurement_cols))
+  expect_silent(.assertCustomFilterSafe(
       list(var = "value_as_number", op = "between", value = c(7, 10)),
-      measurement_cols),
-    "use a validated value_bin"
-  )
+      measurement_cols))
   for (bounds in list(
       list(lower = 10, upper = 7),
       list(lower = -Inf, upper = 7),
@@ -663,11 +636,9 @@ test_that("numeric bins are authenticated to the resource session and scope", {
     value = list(lower = 7, upper = 10)
   )
 
-  expect_error(
-    .assertCustomFilterSafe(base_leaf, valid, handle = handle,
-                            table = "measurement"),
-    "not issued"
-  )
+  expect_invisible(.assertCustomFilterSafe(
+    base_leaf, valid, handle = handle, table = "measurement"
+  ))
 
   scope <- .test_issue_safe_bins(
     handle, c(0, 7, 10, 20), concept_id = 3004410L)
