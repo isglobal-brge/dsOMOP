@@ -152,7 +152,12 @@
       stop(cleanup_error)
     }
   }, add = TRUE)
-  value <- expr
+  value <- tryCatch(expr, error = function(e) {
+    if (isTRUE(ctx$unavailable)) {
+      .dsomopSnapshotUnavailable(ctx, "source certification failed inside the request")
+    }
+    stop(e)
+  })
   if (!is.null(ctx$conn)) .dsomopSnapshotValidate(ctx)
   if (ctx$transaction) {
     tryCatch(.dsomopSnapshotRollback(ctx), error = function(e) {

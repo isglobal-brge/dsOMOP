@@ -120,6 +120,11 @@ for (engine in c("mariadb", "mysql")) local({
       1
     })), class = "dsomop_snapshot_unavailable")
     expect_null(h$read_snapshot)
+    expect_error(suppressMessages(.dsomopWithReadSnapshot(h, {
+      tryCatch(.executeQuery(h, paste("SELECT COUNT(*) AS n FROM", f$declared)),
+        error = function(e) stop("an inner generation wrapper replaced the condition"))
+    })), class = "dsomop_snapshot_unavailable")
+    expect_null(h$read_snapshot)
     f$grant_metadata()
     # Changing the graph after transaction entry but before first read cannot
     # exploit an entry-only certification (the external table is not declared).
