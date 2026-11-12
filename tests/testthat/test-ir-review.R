@@ -975,6 +975,24 @@ test_that("R3: inline-spec value bins compare coerced numeric bounds", {
   expect_s3_class(.rv_refused(.irPrepare(make("10", "7.5"))), "dsomop_plan_rejection")
 })
 
+test_that("R3: empty legacy feature ID vectors lower to an unrestricted stream", {
+  make <- function(ids) list(outputs = list(p = list(type = "person_level",
+    tables = list(condition_occurrence = list(features = list(
+      n = list(type = "count", name = "n", concept_set = ids)))))))
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  for (ids in list(list(), list(list()))) {
+    ir <- .irPrepare(make(ids), h)
+    event <- ir$events[[1L]]
+    expect_null(event$concept_set)
+    expect_identical(.resolveConceptSetNode(h, event$concept_set)$state, "all")
+  }
+  # A declared concept-set object resolving to nothing retains A-E1's none
+  # semantics; it must never become the unrestricted bare-vector form.
+  ir <- .irPrepare(make(list(concepts = list())), h)
+  expect_identical(.resolveConceptSetNode(h, ir$events[[1L]]$concept_set)$state, "none")
+})
+
 test_that("A-21: a bare criteria population stays empty through private set operations", {
   h <- create_test_handle()
   on.exit(cleanup_handle(h))

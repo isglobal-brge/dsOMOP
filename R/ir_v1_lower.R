@@ -198,7 +198,10 @@
     if (!is.null(x[["exclude"]])) out[["exclude"]] <- .v1IdList(x[["exclude"]])
     return(out)
   }
-  list(concepts = .v1IdList(x))
+  ids <- .v1IdList(x)
+  # A bare empty ID vector is the legacy optional restriction's absence.
+  # An explicit concept-set object above remains a declared empty set (A-E1).
+  if (!length(ids)) NULL else list(concepts = ids)
 }
 
 # The restriction a person_level feature table's own concept_set applies: the
