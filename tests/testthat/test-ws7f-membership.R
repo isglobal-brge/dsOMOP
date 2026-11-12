@@ -112,7 +112,11 @@ withr::defer(.ws4_cleanup(.ws7f_member_dbs), testthat::teardown_env())
 .ws7f_member_compile <- function(handle, plan, supplied, mode = NULL, raw = plan) {
   ir <- .irPrepare(plan, handle)
   ctx <- .planContext(handle, raw, mode %||% "memory")
-  on.exit(.ws7_close(list(ctx = ctx)), add = TRUE)
+  # Closing a committed context deliberately preserves its published files.
+  # This test consumes them immediately, then revokes its own publication
+  # before closing; otherwise its handle retains paths under a previous key
+  # fixture's staging root.
+  on.exit(tryCatch(.publishAbort(ctx), finally = .ws7_close(list(ctx = ctx))), add = TRUE)
   ctx$validation <- list(ir = ir, wire = .irJsonForm(raw))
   cctx <- .compileContext(ctx, ir)
   # Frozen production roster fragments have no live source dependencies.
@@ -196,6 +200,7 @@ test_that("A-26 lowered membership compiler preserves the complete baseline matr
     h <- .ws7f_member_dbs[[vendor]]$handle
     key <- .ws7_keys(list(h))
     before <- h$temp_tables
+    before_staging <- h$staging_dirs %||% character(0)
     male <- .ws7f_member_roster(h)
     on.exit(.ws7_close(male$run), add = TRUE)
     female <- .ws7f_member_roster(h, TRUE)
@@ -223,6 +228,11 @@ test_that("A-26 lowered membership compiler preserves the complete baseline matr
           expect_identical(.irPrepare(plan, h)$outputs$members$grain, "person", info = info)
           frame <- expected$result$members[c("subject_id", "cohort_definition_id")]
           names(frame)[names(frame) == "subject_id"] <- "person_id"
+          # This DuckDB fixture's default DBI connection transports BIGINT
+          # roster person keys as doubles. Preserve that declared native
+          # transport independently of the frozen v1 integer frame.
+          if (identical(h$dbms, "duckdb")) frame$person_id <- as.double(frame$person_id)
+          expect_identical(supplied$roster$person_id, frame$person_id, info = info)
           frame$index_source <- rep("cohort:1", nrow(frame))
           expect_identical(actual$result$frame, frame, info = info)
           expect_identical(actual$result$columns$cohort_definition_id,
@@ -231,6 +241,7 @@ test_that("A-26 lowered membership compiler preserves the complete baseline matr
           published <- .ws7f_member_read(.testPseudonymize(frame, key))
           expect_identical(actual$result$published, published, info = info)
         }
+        expect_setequal(h$staging_dirs %||% character(0), before_staging)
       }
     }
     .ws7_close(female$run)
@@ -249,6 +260,7 @@ test_that("A-26 public memory and staged v1 membership preserve baseline parity 
     .setHandle(symbol, h)
     on.exit(rm(list = paste0("handle_", symbol), envir = .dsomop_env), add = TRUE)
     before <- h$temp_tables
+    before_staging <- h$staging_dirs %||% character(0)
     cases <- .ws7f_member_cases()
     for (name in names(cases)) for (mode in c("memory", "staged")) {
       info <- paste(vendor, name, mode)
@@ -267,6 +279,7 @@ test_that("A-26 public memory and staged v1 membership preserve baseline parity 
         expect_identical(actual$frame, frame, info = info)
       }
       expect_setequal(h$temp_tables, before)
+      expect_setequal(h$staging_dirs %||% character(0), before_staging)
     }
   })
 })
