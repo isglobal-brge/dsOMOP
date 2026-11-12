@@ -89,6 +89,9 @@ The interaction studies in `pre-c8-margin-repair/` precede the numerical repair
 in a860f42 and are retained only for paired comparison. Final interaction
 results are in `interaction-2000-final/` and `interaction-10000-final/`. Each
 final raw row records the executed `R/tools_release_survival.R` SHA-256. The
+full executed R-source and utility-script hashes for those runs are retained
+in `p0r3-final-interaction-source-sha256.txt`. That copy contains the C8 repair;
+its hierarchy source precedes the independent C6 fallback. The
 ordinary Cox and SCCS paths do not call the subgroup matrix display and are
 unaffected by that repair. The C6 transport fallback added in 13bf981 is also
 outside these utility scenarios.
@@ -102,3 +105,7 @@ and 200 uncertainty refits; `margin_initial_error_max_relative` measures just
 the original release's four matrices. Each family diagnostic is repeated on
 its three subgroup rows, so the report helper counts each replicate once.
 Final successful run logs are retained beside their raw results.
+The report also retains per-scenario repair counts and paired point-estimate,
+standard-error, finite-fit, informativeness and coverage changes against the
+pre-repair runs. Refits use a deterministic seed derived from the released
+basis, so even a rounding-scale basis change can change the simulated SE.

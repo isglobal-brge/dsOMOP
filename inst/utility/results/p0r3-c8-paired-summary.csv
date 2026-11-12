@@ -1,0 +1,3 @@
+"scenario","n","fits","max_abs_log_estimate_change","mean_log_estimate_change","max_abs_se_change","mean_se_change","finite_changes","informative_changes","coverage_changes"
+4,2000,300,1.43092000026712e-07,-1.04640998846208e-10,0.077601512902,-0.000502407802186664,0,3,1
+5,10000,300,1.3840800000553e-07,2.99198000042189e-09,0.0107589791635,4.4570625562333e-05,0,0,1
