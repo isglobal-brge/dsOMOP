@@ -103,7 +103,7 @@ test_that("A-25 public adapters preserve owned membership, recurrence and siblin
       result <- .ws7f_owned_run(symbol, plan, mode)
       expect_identical(result$status$status, "ok", info = info)
       expect_true(.validatePlanStatus(unclass(result$status)), info = info)
-      expect_setequal(result$bindings, c("D_owned", "D_sibling"), info = info)
+      expect_setequal(result$bindings, c("D_owned", "D_sibling"))
       frame <- result$frames$D_owned
       sibling <- result$frames$D_sibling
       expect_identical(nrow(frame), if (indexed) 12L else 6L, info = info)
@@ -114,7 +114,7 @@ test_that("A-25 public adapters preserve owned membership, recurrence and siblin
       expect_identical(nrow(sibling), 15L, info = info)
       expect_identical(sort(as.character(sibling$person_id)), sort(tokens(1:15)), info = info)
       expect_identical(DBI::dbReadTable(handle$conn, ref), borrowed, info = info)
-      expect_setequal(handle$temp_tables, registered, info = info)
+      expect_setequal(handle$temp_tables, registered)
       expect_identical(physical(), tables, info = info)
       if (identical(mode, "memory")) memory <- lapply(result$frames, canonical) else
         expect_identical(lapply(result$frames, canonical), memory, info = info)
@@ -130,10 +130,10 @@ test_that("A-25 public adapters preserve owned membership, recurrence and siblin
     result <- .ws7f_owned_run(symbol, .ws7f_owned_plan(ref, indexed), mode)
     expect_identical(result$status$status, "refused", info = info)
     expect_identical(result$status$rejected$owned$code, "insufficient_support", info = info)
-    expect_length(result$status$published, 0L, info = info)
-    expect_length(result$bindings, 0L, info = info)
+    expect_length(result$status$published, 0L)
+    expect_length(result$bindings, 0L)
     expect_identical(DBI::dbReadTable(handle$conn, ref), small, info = info)
-    expect_setequal(handle$temp_tables, registered, info = info)
+    expect_setequal(handle$temp_tables, registered)
     expect_identical(physical(), tables, info = info)
   }
 })
