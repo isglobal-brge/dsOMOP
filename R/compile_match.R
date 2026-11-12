@@ -431,7 +431,8 @@
                                                 " AS s_", seq_along(strata_c)))
   f_cases <- .fragment(.fragmentName("mt", name, "cases", ctx = ctx), "stream", "episode",
                        paste0("SELECT ", paste(case_select, collapse = ", "), " FROM ", cases_roster$name,
-                              " r ", paste(unname(state_c$joins), collapse = " ")),
+                              " r ", paste(unname(state_c$joins), collapse = " "),
+                              " WHERE r.cohort_start_date IS NOT NULL"),
                        columns = case_cols, dependencies = unique(state_c$deps), unique_key = "set_rank",
                        person_lineage = list(person_col = "subject_id", via_roster = NULL),
                        roster_namespace = spec$cases,
@@ -439,6 +440,8 @@
                                            "op_component_id",
                                            if (length(strata_c)) paste0("s_", seq_along(strata_c))))
   .sqlAssertTypedSql(h, f_cases$select_body)
+  # A mixed union may contain unindexed persons. Filter them before ranking
+  # and freezing: only episodes with a defined case time enter the sampler.
   # Both bounded fetches below must use the same case identities and strata
   # even if the underlying CDM changes between statements.
   f_cases <- .populationFreezeFragment(ctx, f_cases)
