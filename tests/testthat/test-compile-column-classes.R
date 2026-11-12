@@ -58,3 +58,19 @@ test_that("class-2 birth components and exact age stay assignable while aggregat
   expect_identical(.bandAges(c(0, 17, 18, 64, 65), c(0L, 18L, 65L)),
                    c("0-17", "0-17", "18-64", "18-64", "65+"))
 })
+
+test_that("person predicates may name birth components (class 2) but never class-1 columns or keys", {
+  h <- .ws4_reach_handle()
+  on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
+  cat_p <- .predicateTableCatalogue(h, "person")
+  sql <- .predicateSql(h, list(and = list(list(var = "year_of_birth", op = ">=", value = 1950),
+                                          list(var = "month_of_birth", op = "in", value = list(6)))),
+                       cat_p, "p")
+  rows <- .executeQuery(h, paste0("SELECT p.person_id FROM person p WHERE ", sql))
+  expect_gt(nrow(rows), 0L)
+  .ws4_expect_rejection(.predicateSql(h, list(var = "person_source_value", op = "==", value = "x"), cat_p, "p"),
+                        pattern = "class-1 column")
+  .ws4_expect_rejection(.predicateSql(h, list(var = "person_id", op = "==", value = 1), cat_p, "p"),
+                        pattern = "never filterable")
+  .ws4_expect_rejection(.predicateTableCatalogue(h, "note"), code = "unavailable_table")
+})

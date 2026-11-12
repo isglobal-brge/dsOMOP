@@ -303,3 +303,42 @@
   if (all(x %in% TRUE)) return(1L)
   NA_integer_
 }
+
+#' Predicate catalogue of a table's own columns
+#'
+#' For predicates over a table outside the event compiler, e.g. the
+#' population leaf \code{omop_person(where)} on \code{person} (design 2.3,
+#' 7.6): every filterable column of the table with its type; identifiers,
+#' class-1 columns and datetime/time columns are refused with a reason. Exact
+#' birth components are class 2 and therefore ordinary predicate columns.
+#'
+#' @param handle CDM handle.
+#' @param table Table name.
+#' @param what Owner label used in rejections.
+#' @return A \code{.predicateCatalogue()}.
+#' @keywords internal
+.predicateTableCatalogue <- function(handle, table, what = paste0("table '", table, "'")) {
+  bp <- .buildBlueprint(handle)
+  table <- tolower(table)
+  col_df <- bp$columns[[table]]
+  if (is.null(col_df) || !nrow(col_df)) {
+    .irReject(paste0("table '", table, "' is not available at this site"),
+              code = "unavailable_table")
+  }
+  filterable <- .filterableColumns(bp, table)
+  columns <- list()
+  refused <- character(0)
+  for (col in col_df$column_name) {
+    type <- .eventColumnType(col_df, col)
+    if (col %in% .identifierColumns()) {
+      refused[[col]] <- "row identifiers are never filterable"
+    } else if (!col %in% filterable) {
+      refused[[col]] <- "a class-1 column is never released or filtered (design 7.6)"
+    } else if (is.null(type)) {
+      refused[[col]] <- "datetime and time columns are not predicate columns"
+    } else {
+      columns[[col]] <- list(type = type, concept = grepl("_concept_id$", col))
+    }
+  }
+  .predicateCatalogue(columns, character(0), refused, what = what)
+}
