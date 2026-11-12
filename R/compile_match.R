@@ -323,7 +323,9 @@
 # roster the alias belongs to (for windows and anchors).
 .matchStrataSql <- function(ctx, spec, alias, person, roster, phase, pop, state, name) {
   h <- .compileDialect(ctx)
-  year <- .sqlYear(h, paste0(alias, ".cohort_start_date"))
+  # a signed year: the MySQL family returns YEAR() unsigned (a future birth year
+  # would overflow the subtraction)
+  year <- .sqlIntegerCast(h, .sqlYear(h, paste0(alias, ".cohort_start_date")))
   out <- character(0)
   for (i in seq_along(spec$match)) {
     s <- spec$match[[i]]
@@ -337,7 +339,7 @@
     } else if (!is.null(s[["age_band"]])) {
       w <- as.integer(unlist(s[["age_band"]]))
       if (length(w) != 1L || is.na(w) || w < 1L) .irReject("age_band is an integer >= 1", field = path)
-      x <- .sqlIntegerCast(h, paste0("(", year, " - ", person, ".year_of_birth)"))
+      x <- paste0("(", year, " - ", .sqlIntegerCast(h, paste0(person, ".year_of_birth")), ")")
       wl <- .sqlIntegerLiteral(h, w)
       # floor division for negative ages too: (x - ((x % w) + w) % w) / w
       out[[i]] <- .sqlIntegerCast(h, paste0("((", x, " - (((", x, ") % ", wl, ") + ", wl, ") % ", wl,

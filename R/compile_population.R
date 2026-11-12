@@ -961,11 +961,11 @@
   year <- if (is.list(ref) && !is.null(ref[["year"]])) {
     .sqlIntegerLiteral(h, as.integer(unlist(ref[["year"]])))
   } else if (identical(unlist(ref), "index")) {
-    .sqlYear(h, "c.cohort_start_date")
+    .sqlIntegerCast(h, .sqlYear(h, "c.cohort_start_date"))
   } else {
     .irReject("an age reference is index or {year}", field = paste0(path, "/reference"))
   }
-  age <- paste0("(", year, " - pp.year_of_birth)")
+  age <- paste0("(", year, " - ", .sqlIntegerCast(h, "pp.year_of_birth"), ")")
   parts <- character(0)
   lo <- leaf[["min"]]
   hi <- leaf[["max"]]
