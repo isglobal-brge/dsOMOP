@@ -1,5 +1,5 @@
 # Runnable on the test pod from the package directory:
-# Rscript inst/benchmarks/p0r3/membership.R [output.csv]
+# Rscript inst/benchmarks/p0r3/membership.R [output.csv] [postgresql,mariadb,mysql,duckdb]
 # Synthetic deterministic IDs 1..10,000,000; no random inputs, no private data.
 # Cold = first digest in a fresh connection after fixture construction; caches
 # are NOT forcibly dropped (shared pod). Warm = next two complete requests.
@@ -11,6 +11,12 @@ ns <- asNamespace('dsOMOP')
 fn <- function(name) get(name, envir = ns)
 args <- commandArgs(TRUE)
 outfile <- if (length(args)) args[[1L]] else 'inst/benchmarks/p0r3/membership-raw.csv'
+dir.create(dirname(outfile), recursive = TRUE, showWarnings = FALSE)
+source_files <- c('R/privacy_generation.R', 'R/read_snapshot.R',
+                  'inst/benchmarks/p0r3/membership.R')
+writeLines(c(paste('Source revision:', Sys.getenv('DSOMOP_BENCHMARK_SOURCE', 'unspecified')),
+  vapply(source_files, function(path) paste(path, digest::digest(file = path, algo = 'sha256')),
+         character(1L))), file.path(dirname(outfile), 'source-checksums.txt'))
 Sys.setenv(DSOMOP_TEST_POSTGRES_HOST = 'omopdb',
            DSOMOP_TEST_MARIADB_HOST = '127.0.0.1',
            DSOMOP_TEST_MYSQL_HOST = '127.0.0.1', DSOMOP_TEST_MYSQL_PORT = '3307')

@@ -1,0 +1,1 @@
+SELECT CAST(p // 10000 AS VARCHAR) AS bucket, CAST(SUM(k) AS VARCHAR) AS n, sha256(string_agg(CAST(p AS VARCHAR) || ':' || CAST(k AS VARCHAR) || chr(10), '' ORDER BY p)) AS digest FROM (SELECT person_id AS p, COUNT(*) AS k FROM main.person WHERE person_id IS NOT NULL GROUP BY person_id) dsomop_membership GROUP BY p // 10000 ORDER BY p // 10000

@@ -1,0 +1,124 @@
+      engine
+1 postgresql
+                                                                                                                                   version
+1 PostgreSQL 14.24 (Ubuntu 14.24-0ubuntu0.22.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+   persons                        cache iteration elapsed_seconds
+1 10000000 cold_connection_first_digest         1          22.598
+  r_user_seconds r_system_seconds   method
+1          0.449            0.001 database
+                                                            digest
+1 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:42:55
+      engine
+1 postgresql
+                                                                                                                                   version
+1 PostgreSQL 14.24 (Ubuntu 14.24-0ubuntu0.22.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+   persons cache iteration elapsed_seconds r_user_seconds r_system_seconds
+1 10000000  warm         2          19.588           0.63            0.002
+    method                                                           digest
+1 database 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:43:16
+      engine
+1 postgresql
+                                                                                                                                   version
+1 PostgreSQL 14.24 (Ubuntu 14.24-0ubuntu0.22.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+   persons cache iteration elapsed_seconds r_user_seconds r_system_seconds
+1 10000000  warm         3          21.793          0.349                0
+    method                                                           digest
+1 database 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:43:40
+NOTICE:  drop cascades to table dsomop_it_636008_9efd21c6_cdm.person
+
+   engine                          version  persons
+1 mariadb 10.6.23-MariaDB-0ubuntu0.22.04.1 10000000
+                         cache iteration elapsed_seconds r_user_seconds
+1 cold_connection_first_digest         1         106.587          0.311
+  r_system_seconds   method
+1            0.004 database
+                                                            digest
+1 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:45:59
+   engine                          version  persons cache iteration
+1 mariadb 10.6.23-MariaDB-0ubuntu0.22.04.1 10000000  warm         2
+  elapsed_seconds r_user_seconds r_system_seconds   method
+1         146.978          0.385            0.001 database
+                                                            digest
+1 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:48:27
+   engine                          version  persons cache iteration
+1 mariadb 10.6.23-MariaDB-0ubuntu0.22.04.1 10000000  warm         3
+  elapsed_seconds r_user_seconds r_system_seconds   method
+1         184.011          0.641            0.012 database
+                                                            digest
+1 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:51:33
+  engine version  persons                        cache iteration
+1  mysql  8.4.11 10000000 cold_connection_first_digest         1
+  elapsed_seconds r_user_seconds r_system_seconds   method
+1          81.802          0.441            0.007 database
+                                                            digest
+1 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:54:39
+  engine version  persons cache iteration elapsed_seconds r_user_seconds
+1  mysql  8.4.11 10000000  warm         2          83.284          0.337
+  r_system_seconds   method
+1            0.005 database
+                                                            digest
+1 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:56:05
+  engine version  persons cache iteration elapsed_seconds r_user_seconds
+1  mysql  8.4.11 10000000  warm         3          68.705          0.355
+  r_system_seconds   method
+1                0 database
+                                                            digest
+1 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:57:16
+duckdb keeps downloaded extensions and secrets in a temporary directory:
+ℹ /tmp/Rtmp1GOUBt/duckdb
+This is removed when the R session ends.
+• Extensions are re-downloaded each session.
+• Secrets are lost.
+ℹ Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+ℹ Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+ℹ See ?duckdb_storage for details and alternatives.
+duckdb keeps downloaded extensions and secrets in a temporary directory:
+ℹ /tmp/Rtmp1GOUBt/duckdb
+This is removed when the R session ends.
+• Extensions are re-downloaded each session.
+• Secrets are lost.
+ℹ Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+ℹ Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+ℹ See ?duckdb_storage for details and alternatives.
+  engine version  persons                        cache iteration
+1 duckdb  v2.0.0 10000000 cold_connection_first_digest         1
+  elapsed_seconds r_user_seconds r_system_seconds   method
+1           7.406          4.824            0.743 database
+                                                            digest
+1 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:57:26
+  engine version  persons cache iteration elapsed_seconds r_user_seconds
+1 duckdb  v2.0.0 10000000  warm         2           7.881           4.75
+  r_system_seconds   method
+1            0.757 database
+                                                            digest
+1 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:57:36
+  engine version  persons cache iteration elapsed_seconds r_user_seconds
+1 duckdb  v2.0.0 10000000  warm         3           8.012          5.557
+  r_system_seconds   method
+1            2.197 database
+                                                            digest
+1 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:57:46
