@@ -4,7 +4,7 @@
 \alias{.dsomopTypedAnalysis}
 \title{Build the components and displayed values of one typed statistic}
 \usage{
-.dsomopTypedAnalysis(input, common, policy, person_tokens, population_base)
+.dsomopTypedAnalysis(input, common, policy, person_tokens, capsule)
 }
 \arguments{
 \item{input}{Validated input (\code{.dsomopDpValidateInput}).}
@@ -13,12 +13,15 @@
 
 \item{policy}{DP policy.}
 
-\item{person_tokens}{Release person token of every row of \code{input$x}.}
+\item{person_tokens}{Sealed release-person token of every row of
+\code{input$x}.}
 
-\item{population}{Fixed-basis population id (lineage plus eligibility).}
+\item{capsule}{Verified provenance capsule (lineage, public metadata).}
 }
 \value{
-List: components, display function, payload fields, owner label.
+List: components (the complete basis), view (indices of the
+  displayed cells into the basis cells, or NULL), display function, owner
+  and family.
 }
 \description{
 Build the components and displayed values of one typed statistic

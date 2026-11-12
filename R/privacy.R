@@ -381,19 +381,29 @@
       common$value_type <- "number"
     }
   }
+  # The registered complete public basis of a categorical variable (public
+  # metadata: the capsule's declared domains, custodian options, built-ins).
+  capsule <- attr(x, "dsomop_dp_provenance", exact = TRUE)
+  domain_of <- function() {
+    domain <- .dsomopTypedDomain(capsule, variable)
+    if (length(domain) > policy$max_levels) {
+      stop("The registered public domain of '", variable, "' exceeds the ",
+           "server-owned level cap.", call. = FALSE)
+    }
+    domain
+  }
   if (statistic == "categorical_histogram") {
     levels <- .dsomopDpSpecAtomic(spec$levels, "levels")
     if (length(levels) < 1L || length(levels) > policy$max_levels) {
       stop("Categorical DP levels exceed the server-owned level cap.",
            call. = FALSE)
     }
-    levels <- enc2utf8(as.character(levels))
-    if (any(!nzchar(levels)) || any(nchar(levels, type = "bytes") > 256L) ||
-        anyDuplicated(levels)) {
-      stop("Categorical DP levels must be unique, non-empty public labels.",
-           call. = FALSE)
-    }
-    levels <- sort(levels, method = "radix")
+    domain <- domain_of()
+    # Requested levels are a view of the complete registered domain:
+    # duplicates and order are normalized, invalid labels refused publicly.
+    levels <- .dsomopTypedDomainView(levels, domain, variable,
+                                     "categorical DP levels")
+    common$domain <- domain
     reducer <- common$reducer
     if (!reducer %in% c(
       "presence", "mode", "first", "last", "records", "any"
@@ -412,6 +422,8 @@
     }
     common$levels <- levels
     common$reducer <- reducer
+    # A per-person cap only matters for multi-label and record reducers.
+    if (!reducer %in% c("presence", "records")) common$max_contributions <- 1L
   } else if (statistic == "bounded_record_count") {
     if (!identical(common$reducer, "records")) {
       stop("bounded_record_count requires reducer='records'.", call. = FALSE)
@@ -427,19 +439,21 @@
       stop("bounded_distinct uses server-owned canonical value ordering, not ",
            "order_by.", call. = FALSE)
     }
-    levels <- .dsomopDpSpecAtomic(spec$levels, "levels")
-    if (length(levels) < 1L || length(levels) > policy$max_levels) {
-      stop("bounded_distinct levels exceed the server-owned level cap.",
-           call. = FALSE)
+    # A distinct-label cardinality is over the fixed complete domain U: its
+    # levels may only restate U, never select a sub-domain (B05).
+    domain <- domain_of()
+    levels <- .dsomopDpSpecAtomic(spec$levels, "levels", required = FALSE)
+    if (!is.null(levels)) {
+      levels <- .dsomopTypedDomainView(levels, domain, variable,
+                                       "bounded_distinct levels")
+      if (!identical(levels, domain)) {
+        stop("bounded_distinct counts distinct labels over the complete ",
+             "registered public domain of '", variable, "'; its levels may ",
+             "only restate that domain.", call. = FALSE)
+      }
     }
-    levels <- enc2utf8(as.character(levels))
-    if (any(!nzchar(levels)) || any(nchar(levels, type = "bytes") > 256L) ||
-        anyDuplicated(levels)) {
-      stop("bounded_distinct levels must be unique, non-empty public labels.",
-           call. = FALSE)
-    }
-    levels <- sort(levels, method = "radix")
-    common$levels <- levels
+    common$domain <- domain
+    common$levels <- domain
   } else if (statistic == "numeric_histogram") {
     breaks <- .dsomopDpBreaks(spec$breaks, common$value_type, policy)
     reducer <- common$reducer
@@ -455,6 +469,7 @@
     }
     common$breaks <- breaks
     common$reducer <- reducer
+    if (!identical(reducer, "records")) common$max_contributions <- 1L
   } else if (statistic == "bounded_mean") {
     if (!identical(common$value_type, "number")) {
       stop("bounded_mean currently requires a numeric column.", call. = FALSE)
@@ -480,6 +495,7 @@
     common$upper <- upper
     common$span <- span
     common$reducer <- reducer
+    common$max_contributions <- 1L
   } else if (statistic == "binary_rate") {
     positive <- .dsomopDpSpecAtomic(spec$positive, "positive")
     positive <- sort(unique(enc2utf8(as.character(positive))), method = "radix")
@@ -490,6 +506,10 @@
            "server-owned level cap.",
            call. = FALSE)
     }
+    domain <- domain_of()
+    positive <- .dsomopTypedDomainView(positive, domain, variable,
+                                       "binary_rate positive values")
+    common$domain <- domain
     reducer <- common$reducer
     if (!reducer %in% c("any", "all", "first", "last")) {
       stop("Unsupported binary-rate longitudinal reducer.", call. = FALSE)
@@ -506,8 +526,16 @@
       stop("binary_rate denominator must be all_persons or nonmissing.",
            call. = FALSE)
     }
+    if (reducer %in% c("any", "all") &&
+        length(domain) > .DSOMOP_TYPED_MAX_PATTERN_DOMAIN) {
+      stop("public_domain_too_large: an any/all binary rate needs the ",
+           "complete label-set basis of '", variable, "', available for ",
+           "registered domains of at most ", .DSOMOP_TYPED_MAX_PATTERN_DOMAIN,
+           " labels; use reducer first or last.", call. = FALSE)
+    }
     common$positive <- positive
     common$denominator <- denominator_contract
+    common$max_contributions <- 1L
   }
   if (statistic %in% c("categorical_histogram", "numeric_histogram",
                        "bounded_mean", "binary_rate") &&
@@ -642,13 +670,17 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
           envir = env)
 
   dataset_identity <- .dsomopDpDatasetIdentity(handle)
+  # The key that produced the outputs' person tokens: sealing reverses them
+  # once into the table's fixed release-person map (B01).
+  person_key <- .personKey(handle)
   seal <- function(symbol, output_name, component = NULL) {
     if (!exists(symbol, envir = env, inherits = FALSE)) return(FALSE)
     value <- get(symbol, envir = env, inherits = FALSE)
     if (!is.data.frame(value)) return(FALSE)
     sealed <- .dsomopDpSealPlanOutput(
       value, decoded_plan, output_name,
-      dataset_identity = dataset_identity, component = component
+      dataset_identity = dataset_identity, component = component,
+      person_key = person_key
     )
     assign(symbol, sealed, envir = env)
     !is.null(attr(sealed, "dsomop_dp_provenance", exact = TRUE))
