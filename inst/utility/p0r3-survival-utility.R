@@ -115,8 +115,8 @@ main <- function() {
         scenario = j, model = scenario$model, n = n, replicate = r,
         seed = seed, epsilon = p$release_epsilon, truth_log = beta,
         shared_empty_event_atoms = shared_empty), estimates)
-      if (r %% 10L == 0L) cat("scenario", j, scenario$model, "n", n,
-                               "replicate", r, "of", replicates, "\n")
+      cat("scenario", j, scenario$model, "n", n,
+          "replicate", r, "of", replicates, "\n")
     }
   }
   raw <- do.call(rbind, result)

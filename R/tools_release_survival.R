@@ -61,8 +61,10 @@
 
 # Public seed text of a simulation: the displayed values it perturbs.
 .dsomopReleaseSimSeed <- function(label, values) {
-  .dsomopFrame("dsomop-release-simulation/v1", label,
-               signif(as.numeric(values), 12))
+  # Hash the complete public state once. Repeating a many-kilobyte framed
+  # state for every counter would allocate gigabytes for a full C8 family.
+  as.character(openssl::sha256(.dsomopFrame(
+    "dsomop-release-simulation/v2", label, signif(as.numeric(values), 12))))
 }
 
 # --- C8: grouped-time Cox from the canonical exit-time x status basis ----------
