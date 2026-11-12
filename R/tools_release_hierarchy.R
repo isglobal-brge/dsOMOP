@@ -204,10 +204,10 @@
   y <- suppressWarnings(as.integer(year))
   data.frame(
     gender = .omopReleaseGenderKey(gender),
-    age5 = ifelse(is.na(a) | a < 0L, "age5=unknown",
-                  paste0("age5=", pmin((a %/% 5L) * 5L, 110L))),
-    year = ifelse(is.na(y) | y > year_max, "year=unknown",
-                  ifelse(y < 1970L, "year=before_1970", paste0("year=", y))),
+    age5 = as.character(ifelse(is.na(a) | a < 0L, "age5=unknown",
+                  paste0("age5=", pmin((a %/% 5L) * 5L, 110L)))),
+    year = as.character(ifelse(is.na(y) | y > year_max, "year=unknown",
+                  ifelse(y < 1970L, "year=before_1970", paste0("year=", y)))),
     stringsAsFactors = FALSE)
 }
 
@@ -631,6 +631,8 @@
         if (!usable[[i]]) return(rep(NA_real_, 5L))
         .dsomopReleaseQuantiles(D[i, ], owner$grid)
       })
+      child$quantile_bounds <- .dsomopReleaseQuantileBoundsList(
+        child$bins, owner$grid, q, st$stratum)
       for (k in seq_along(c("p10", "p25", "median", "p75", "p90"))) {
         col <- c("p10", "p25", "median", "p75", "p90")[[k]]
         st[[col]] <- .dsomopReleaseRound(vapply(q, `[[`, numeric(1L), k))
