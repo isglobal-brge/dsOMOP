@@ -544,6 +544,8 @@
 #' @return Invisibly TRUE.
 #' @keywords internal
 .planV1SiteCheck <- function(plan, handle) {
+  # Also covers output-less plans, which have no lowered IR (A-10).
+  .planV1CohortPreflight(plan, handle)
   findings <- .planV1SiteFindings(plan, handle)
   if (length(findings[["declaration"]])) {
     # untyped, as .planExecute() raises it (never a transported refusal); the
@@ -557,6 +559,25 @@
   if (length(findings[["missing_tables"]])) {
     .irRejectAll("plan needs tables this site does not provide",
                  findings[["missing_tables"]], code = "unavailable_table")
+  }
+  invisible(TRUE)
+}
+
+# Registry-only A-25 checks, also used before .planValidate's supplemental
+# legacy diagnostics. Other malformed population shapes belong to the closed
+# envelope; avoid interpreting them here or changing their diagnostics.
+.planV1CohortPreflight <- function(plan, handle) {
+  populations <- if (is.list(plan)) plan[["populations"]] else NULL
+  if (!is.list(populations)) return(invisible(TRUE))
+  for (p in names(populations)) {
+    pop <- populations[[p]]
+    if (!is.list(pop)) next
+    ref <- pop[["cohort_definition_id"]]
+    if (is.null(ref)) next
+    path <- paste0("/populations/", p, "/cohort_definition_id")
+    errors <- .v1ShapeErrors(ref, .v1sResolvedCohort(allow_name = TRUE), path)
+    if (length(errors)) .irRejectAll("invalid population cohort reference", errors)
+    .irCheckOwnedCohort(handle, .v1PopulationCohortName(ref), path)
   }
   invisible(TRUE)
 }

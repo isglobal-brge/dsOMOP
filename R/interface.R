@@ -818,7 +818,11 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   # validated, normalised IR of a language 2.0 plan; for a v1 plan, which the
   # v1 executors and the legacy publication and DP contracts read in its own
   # fields, the execution plan (its validated IR is ctx$validation$ir).
-  ctx <- .planContext(handle, .planContextIr(validation, plan), output_mode, target_env)
+  # An already-refused plan needs only a status context. Passing no handle
+  # avoids the constructor's dialect probes before that refusal is reported.
+  ctx <- .planContext(if (is.null(validation$error)) handle else NULL,
+                      .planContextIr(validation, plan), output_mode, target_env)
+  ctx$handle <- handle
   on.exit(.planContextClose(ctx), add = TRUE)
   ctx$validation <- validation[c("ir", "wire")]
   ctx$scopes <- scope
@@ -1701,6 +1705,10 @@ omopCdmVersionDS <- function(omop_symbol) {
 omopPlanPreviewDS <- function(omop_symbol, plan) {
   handle <- .getHandle(omop_symbol)
   plan <- .ds_arg(plan)
+  # Audit extraction reads output fields too: it must follow the same closed
+  # envelope as validation and preview, before any metadata or result query.
+  plan <- .irJsonForm(plan)
+  .irValidateEnvelope(plan)
   # Preview is the cheapest, most-repeated data-touching op and is the primary
   # differencing signal, so the data controller must be able to see the
   # sequence of preview calls (banding alone cannot stop iterative probing).

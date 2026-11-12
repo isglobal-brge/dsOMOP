@@ -255,6 +255,22 @@ for _branch in D["population"]["oneOf"]:
                      "properties": {"parent": {"type": "null"}, "where": {"type": "null"},
                                     "cohort_definition_id": {"type": "null"},
                                     "legacy_episodes": {"const": "observation_periods"}}}})
+# A-25 (CR-25): historical handle-owned cohort names narrow only their declaring
+# population. This is a closed IR-only reference, never a native name or ID.
+for _branch in D["population"]["oneOf"]:
+    _kind = _branch["properties"]["kind"].get("const")
+    if _kind in ("criteria", "index"):
+        _branch["properties"]["legacy_cohort_table"] = {
+            "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]*$",
+            "description": "the canonical historical cohort identifier owned by the handle; preserves case, dots and underscores without a length cap (A-25)"}
+        _named_requirements = {
+            "not": {"required": ["legacy_empty"]},
+            "properties": {"cohort_definition_id": {"type": "null"}}}
+        if _kind == "criteria":
+            _named_requirements["required"] = ["legacy_episodes"]
+            _named_requirements["properties"]["legacy_episodes"] = {"const": "observation_periods"}
+        _branch.setdefault("allOf", []).append({
+            "if": {"required": ["legacy_cohort_table"]}, "then": _named_requirements})
 D["legacy_spec"]["properties"]["cohort_definition_id"] = {
     "type": "integer", "minimum": 0,
     "description": "the v1 plan cohort's cohort_definition_id of an inline spec (names its temporary cohort, fills the cohort_membership id column); present only when supplied, never defaulted"}
@@ -443,6 +459,65 @@ ir_probe("I66", "legacy_empty cannot inherit a parent", R, A, lambda b: b["popul
 ir_probe("I67", "legacy_empty cannot reference a cohort", R, A, lambda b: b["populations"].__setitem__("nobody", {"kind": "criteria", "legacy_empty": True, "legacy_episodes": "observation_periods", "cohort_definition_id": 1}))
 ir_probe("I_A21_kind", "legacy_empty cannot mark an index population", R, A, lambda b: b["populations"]["new_users"].update({"legacy_empty": True, "legacy_episodes": "observation_periods"}))
 ir_probe("I_A21_named_cohort", "legacy_empty excludes legacy_cohort_table (A-25)", R, A, lambda b: b["populations"].__setitem__("nobody", {"kind": "criteria", "legacy_empty": True, "legacy_episodes": "observation_periods", "legacy_cohort_table": "owned_cohort"}))
+# A-25: compact complete documents keep the named-reference boundary explicit.
+_named_base = {"version": 2, "meta": copy.deepcopy(A["meta"]),
+               "events": {"events": {"table": "condition_occurrence"}},
+               "populations": {}, "outputs": {"result": {"rows": "named", "format": "wide"}}}
+def _named_population(kind="criteria", **extra):
+    pop = {"kind": kind, "legacy_cohort_table": "_Owned.Cohort_1"}
+    if kind == "criteria":
+        pop["legacy_episodes"] = "observation_periods"
+    elif kind == "index":
+        pop["index"] = {"source": {"event": "events"}, "select": "all"}
+    pop.update(extra)
+    return pop
+
+_named_cases = [
+    ("criteria reference preserves case, dots and underscores", OK, _named_population()),
+    ("index reference preserves recurrent event selection", OK, _named_population("index")),
+    ("criteria reference has no native name length cap", OK, _named_population(legacy_cohort_table="_" + "Cohort_" * 24)),
+    ("index reference has no native name length cap", OK, _named_population("index", legacy_cohort_table="_" + "Cohort_" * 24)),
+    ("criteria reference permits a null numeric reference", OK, _named_population(cohort_definition_id=None)),
+    ("criteria reference preserves its episode policy and scope anchor", OK, _named_population(episode_policy="all_episodes", legacy_index_anchor="scope_cohort")),
+    ("index reference preserves historical cohort-row episodes", OK, _named_population("index", legacy_episodes="cohort_rows", legacy_index_anchor="scope_cohort")),
+]
+for _kind in ("criteria", "index"):
+    for _label, _value in (("null", None), ("numeric", 1), ("object", {}), ("array", ["owned"]),
+                           ("empty", ""), ("whitespace-padded", " owned "), ("malformed", "bad-name"),
+                           ("digit-only", "1"), ("padded digit-only", " 1 "), ("signed numeric", "+1"),
+                           ("exponent numeric", "1e0"), ("decimal numeric", "1.0")):
+        _named_cases.append((f"{_kind} reference refuses {_label}", R,
+                             _named_population(_kind, legacy_cohort_table=_value)))
+    _named_cases.extend([
+        (f"{_kind} reference conflicts with a numeric population reference", R, _named_population(_kind, cohort_definition_id=1)),
+        (f"{_kind} reference conflicts with legacy_empty", R, _named_population(_kind, legacy_empty=True)),
+    ])
+_missing_episodes = _named_population(); _missing_episodes.pop("legacy_episodes")
+_named_cases.extend([
+    ("criteria reference requires legacy_episodes", R, _missing_episodes),
+    ("criteria reference refuses cohort-row episodes", R, _named_population(legacy_episodes="cohort_rows")),
+    ("criteria reference refuses null legacy_episodes", R, _named_population(legacy_episodes=None)),
+    ("index reference refuses episode_policy", R, _named_population("index", episode_policy="first_episode")),
+    ("index reference refuses even null episode_policy", R, _named_population("index", episode_policy=None)),
+    ("setop reference refuses the compatibility property", R, _named_population("setop", setop={"op": "union", "members": ["a", "b"]})),
+    ("match reference refuses the compatibility property", R, _named_population("match", match={"cases": "a", "controls": "b", "outcome": {"event": "events"}})),
+    ("legacy numeric cohort leaf still refuses names", R, {"kind": "criteria", "where": {"legacy": {"type": "cohort", "params": {"cohort_definition_id": "owned"}}}}),
+])
+for _i, (_label, _expect, _population) in enumerate(_named_cases, 68):
+    ir_probe(f"I{_i:02d}", f"{_label} (A-25)", _expect, _named_base,
+             lambda b, pop=_population: b["populations"].__setitem__("named", pop))
+
+# Native probes isolate each unchanged boundary: no other legacy field is used.
+_native_named_cases = [
+    ("criteria legacy_cohort_table", {"kind": "criteria", "legacy_cohort_table": "owned"}),
+    ("index legacy_cohort_table", {"kind": "index", "index": {"source": {"event": "events"}}, "legacy_cohort_table": "owned"}),
+    ("named population cohort_definition_id", {"kind": "criteria", "cohort_definition_id": "owned"}),
+    ("named native cohort criterion", {"kind": "criteria", "where": {"cohort": {"cohort_definition_id": "owned"}}}),
+    ("named index cohort source", {"kind": "index", "index": {"source": {"cohort_definition_id": "owned"}}}),
+]
+for _i, (_label, _population) in enumerate(_native_named_cases, 68):
+    probe(f"P{_i:02d}", f"{_label} refused on the wire (A-25)", R, _named_base,
+          lambda b, pop=_population: b["populations"].__setitem__("named", pop))
 probe("P63", "temporal source_analyses with a count-only selection (A-14; a wire field, so valid under both schemas)", OK, A, lambda b: _tc(b, {"hba1c": ["count"]}))
 probe("P44", "censor conditioned on an index source (A-7)", OK, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "which": "first_start_after_entry", "when_index_source": ["acei"]}}]))
 probe("P45", "censor when_index_source must be nonempty and unique", R, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "when_index_source": ["acei", "acei"]}}]))

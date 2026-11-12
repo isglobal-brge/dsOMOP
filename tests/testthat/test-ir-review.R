@@ -903,7 +903,7 @@ test_that("R1: advisory concept names are labels; malformed objects are typed re
   age <- list(outputs = list(p = people), populations = list(base = list(kind = "criteria",
     filter_tree = list(type = "age_range", params = list(min = 18.5, reference_date = "2020-01-01")))))
   err <- .rv_refused(.irPrepare(age))
-  expect_match(conditionMessage(err), "closed v1 envelope: /populations/base/filter_tree/params: Population filter 'age_range' cannot be compiled: min must be one finite integer >= 0.",
+  expect_match(conditionMessage(err), "closed v1 envelope: /populations/base/filter_tree/params: Population 'base' filter_tree: Population filter 'age_range' cannot be compiled: min must be one finite integer >= 0.",
                fixed = TRUE)
   # ... while the executor's own coercion of an integer string is kept and normalised
   age$populations$base$filter_tree$params$min <- "18"

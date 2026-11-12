@@ -1,0 +1,60 @@
+--- a/R/ir_v1_lower.R
++++ b/R/ir_v1_lower.R
+@@ -803,6 +803,12 @@
+     cohort_membership = {
+       node[["format"]] <- "membership"
+       node[["options"]] <- list(date_handling = .v1DateHandling(out[["date_handling"]]))
++      # CR-27: the executor labels membership with the root cohort ID, even
++      # when this output selects another population. Absence is not zero.
++      membership_id <- st[["plan"]][["cohort"]][["cohort_definition_id"]]
++      if (!is.null(membership_id)) {
++        node[["options"]][["legacy_cohort_definition_id"]] <- .v1CohortInteger(membership_id)
++      }
+     },
+     concept_dictionary = {
+       node[["format"]] <- "dictionary"
+--- a/tools/ws0/gen_schema_artefacts.py
++++ b/tools/ws0/gen_schema_artefacts.py
+@@ -272,6 +272,11 @@
+             _named_requirements["properties"]["legacy_episodes"] = {"const": "observation_periods"}
+         _branch.setdefault("allOf", []).append({
+             "if": {"required": ["legacy_cohort_table"]}, "then": _named_requirements})
++# CR-27: the effective root cohort ID labels every v1 membership output;
++# it never selects population membership and has no absent-value default.
++D["options_membership"]["properties"]["legacy_cohort_definition_id"] = {
++    "type": "integer", "minimum": 0,
++    "description": "effective historical root cohort identifier used in the released membership column, independent of the output population; present only when supplied, never defaulted"}
+ D["legacy_spec"]["properties"]["cohort_definition_id"] = {
+     "type": "integer", "minimum": 0,
+     "description": "the v1 plan cohort's cohort_definition_id of an inline spec (names its temporary cohort, fills the cohort_membership id column); present only when supplied, never defaulted"}
+@@ -506,6 +511,30 @@
+     ir_probe(f"I{_i:02d}", f"{_label} (A-25)", _expect, _named_base,
+              lambda b, pop=_population: b["populations"].__setitem__("named", pop))
+ 
++# CR-27: an isolated membership output proves both the closed IR option
++# and native-wire refusal; no other compatibility field masks the boundary.
++_membership_base = {"version": 2, "meta": copy.deepcopy(A["meta"]),
++                    "populations": {"p": {"kind": "criteria"}},
++                    "outputs": {"members": {"rows": "p", "format": "membership", "options": {}}}}
++_membership_cases = [("positive identifier", OK, 1), ("zero identifier", OK, 0),
++                     ("null identifier", R, None), ("negative identifier", R, -1),
++                     ("fractional identifier", R, 1.5), ("string identifier", R, "1"),
++                     ("boolean identifier", R, True), ("array identifier", R, [1]),
++                     ("object identifier", R, {"value": 1})]
++for _i, (_label, _expect, _value) in enumerate(_membership_cases, 111):
++    ir_probe(f"I{_i:02d}", f"membership {_label} (CR-27)", _expect, _membership_base,
++             lambda b, value=_value: b["outputs"]["members"]["options"].__setitem__("legacy_cohort_definition_id", value))
++probe("P74", "membership identifier absent without default on native wire (CR-27)", OK,
++         _membership_base, lambda b: None)
++def _membership_wrong_format(b):
++    b["outputs"]["members"]["format"] = "wide"
++    b["outputs"]["members"]["options"]["legacy_cohort_definition_id"] = 1
++ir_probe("I120", "membership identifier refused on wide output (CR-27)", R,
++         _membership_base, _membership_wrong_format)
++probe("P73", "membership identifier refused on native wire (CR-27)", R,
++      _membership_base,
++      lambda b: b["outputs"]["members"]["options"].__setitem__("legacy_cohort_definition_id", 1))
++
+ # Native probes isolate each unchanged boundary: no other legacy field is used.
+ _native_named_cases = [
+     ("criteria legacy_cohort_table", {"kind": "criteria", "legacy_cohort_table": "owned"}),

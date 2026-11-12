@@ -107,6 +107,9 @@
   p <- populations[[id]]
   if (!is.list(p) || is.null(id) || id %in% seen) return(FALSE)
   kind <- p$kind
+  # A legacy criteria base's parent supplies persons only. Its fresh OP rows
+  # do not inherit the parent's index episodes (unlike a singleton set-op).
+  if (identical(kind, "criteria") && identical(p$legacy_episodes, "observation_periods")) return(FALSE)
   if (identical(kind, "index") || identical(kind, "match")) return(TRUE)
   seen <- c(seen, id)
   if (identical(kind, "setop")) {

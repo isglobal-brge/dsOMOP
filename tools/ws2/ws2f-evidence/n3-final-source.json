@@ -1,0 +1,16 @@
+{
+  "server_commit": "35318226db115acc548a7cb92dd334ce381f5dac",
+  "client_commit": "b69ed1c9845c691c0d49b5ac89c2f865959e3cd7",
+  "changed_files_sha256": {
+    "R/plan.R": "6e265ed439074b0f4396a66906222b8e1656aee721662bcce331e533013750e5",
+    "R/interface.R": "2baf90d1adf9146fd226d38bb2a602261ef5ee78679504d31ce5153bd62f5498",
+    "tests/testthat/test-ws2f-validation.R": "2c464d86c0911977d1a2e15a04d53f85014f91ba38e119259766fd54b776e6db"
+  },
+  "filter": "ws2f-validation|ir-owned-cohort|output-contracts|plan$|plan-cohort-filters|ir-review$",
+  "environment": {
+    "DSOMOP_TEST_POSTGRES_HOST": "omopdb",
+    "DSOMOP_TEST_MARIADB_HOST": "127.0.0.1",
+    "DSOMOP_TEST_MYSQL_HOST": "127.0.0.1",
+    "DSOMOP_TEST_MYSQL_PORT": "3307"
+  }
+}

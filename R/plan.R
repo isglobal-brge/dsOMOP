@@ -98,18 +98,48 @@
 #' @return List with validation results
 #' @keywords internal
 .planValidate <- function(handle, plan) {
-  legacy <- .planLegacyFindings(handle, plan)
+  wire <- .planWirePart(plan)
+  # Every traversal, including supplemental v1 diagnostics, follows the
+  # incoming version's closed envelope. Malformed inputs need no site work.
+  envelope_error <- tryCatch({
+    json <- .irJsonForm(wire[["plan"]])
+    .irValidateEnvelope(json)
+    version <- .irPlanVersion(json)
+    if (!identical(version, 2L)) .planV1CohortPreflight(json, handle)
+    NULL
+  }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e))
+  if (!is.null(envelope_error)) {
+    return(list(valid = FALSE, errors = envelope_error, warnings = character(0),
+                available_tables = character(0)))
+  }
+  legacy <- if (!identical(version, 2L)) {
+    legacy_plan <- json
+    if (wire[["scope_tables"]] > 0L) {
+      # Resolved frames are server context, not wire fields. Supplemental
+      # declaration checks still need to know that they supply the cohort.
+      legacy_plan$scope <- legacy_plan$scope %||% list()
+      legacy_plan$scope$tables_frames <- plan[["scope"]][["tables_frames"]]
+    }
+    .planLegacyFindings(handle, legacy_plan)
+  } else {
+    list(errors = character(0), missing_tables = character(0),
+         warnings = character(0), available_tables = character(0))
+  }
   # The frozen validation sequence (design-2.10.3 section 4.5) -- closed
   # envelope, normalisation, ir-v2.json, semantic and site rules, dialect
   # preflight -- reported here as validation errors, raised as typed
   # rejections at execution.
-  wire <- .planWirePart(plan)
   ir_error <- tryCatch({
     .irPrepare(wire[["plan"]], handle = handle, scope_tables = wire[["scope_tables"]])
     NULL
   }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e),
-  # the v1 plan-declaration errors are among the legacy findings already
+  # Declaration diagnostics above include the resolved server-side scope;
+  # the wire-only preparation cannot observe those frames itself.
   dsomop_v1_declaration_error = function(e) NULL)
+  if (identical(version, 2L) && is.null(ir_error)) {
+    bp <- .buildBlueprint(handle)
+    legacy[["available_tables"]] <- bp$tables$table_name[bp$tables$present_in_db]
+  }
   errors <- unique(c(legacy[["errors"]], legacy[["missing_tables"]], ir_error))
   list(
     valid = length(errors) == 0,
@@ -396,8 +426,36 @@
 #'   estimates for the executed output.
 #' @keywords internal
 .planPreview <- function(handle, plan) {
-  bp <- .buildBlueprint(handle)
+  wire <- .planWirePart(plan)
+  json <- .irJsonForm(wire[["plan"]])
+  .irValidateEnvelope(json)
   validation <- .planValidate(handle, plan)
+  # Traverse the same object whose shapes were checked: in-process named
+  # atomic vectors represent JSON objects, too. Keep scope_tables separately.
+  plan <- json
+  native <- identical(.irPlanVersion(json), 2L)
+  settings <- .omopDisclosureSettings()
+  if (native) {
+    ir <- .irPrepare(json, handle, scope_tables = wire[["scope_tables"]])
+    # Native formats have their own option contracts. Report their prepared
+    # declarations without applying the v1 table and survival projections.
+    outputs <- lapply(ir[["outputs"]], function(node) list(
+      type = node[["format"]], rows = node[["rows"]], grain = node[["grain"]],
+      columns = as.character(unlist(node[["columns"]], use.names = FALSE)),
+      columns_complete = FALSE,
+      columns_unavailable_reason = paste0(
+        "only declared variable columns are listed; output keys and generated ",
+        "columns are resolved at execution"),
+      sources = node[["sources"]], options = node[["options"]],
+      n_persons = NA_real_, n_persons_available = FALSE,
+      n_persons_unavailable_reason = "native output populations are not executed by preview",
+      n_persons_banded = FALSE, band_width = settings$nfilter_band,
+      disclosive = NA
+    ))
+    return(list(validation = validation, outputs = outputs,
+                band_width = settings$nfilter_band))
+  }
+  bp <- .buildBlueprint(handle)
   cohort_errors <- validation$errors[grepl(
     "no executable cohort source|Plan cohort cannot execute",
     validation$errors
@@ -406,7 +464,6 @@
     stop("Plan preview rejected: ", paste(cohort_errors, collapse = " "),
          call. = FALSE)
   }
-  settings <- .omopDisclosureSettings()
 
   # Disclosure note (differencing defence):
   # The per-output n_persons counts below are the most-repeated, lowest-cost
@@ -428,7 +485,8 @@
   # unrestricted output.  Scoped/filtered counts are reported as unavailable
   # instead of presenting the source-table population as if it described the
   # requested output.
-  plan_is_scoped <- !is.null(plan$cohort) || !is.null(plan$scope) ||
+  plan_is_scoped <- wire[["scope_tables"]] > 0L ||
+    !is.null(plan$cohort) || !is.null(plan$scope) ||
     .planHasMultiPopulation(plan)
   preview_person_count <- function(tbl_row, col_df, restricted,
                                    unavailable_reason) {

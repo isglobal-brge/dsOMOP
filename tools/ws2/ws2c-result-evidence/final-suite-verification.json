@@ -1,0 +1,73 @@
+{
+  "tested_date_utc": "2026-11-12",
+  "filter": "",
+  "runner": "/workspace/dsomop/tools/rtest.sh",
+  "timeout_seconds": 10800,
+  "matching_sibling_installed_for_each_full_suite": true,
+  "packages": {
+    "dsOMOP": {
+      "tested_commit": "9b3cb5df1e579038118b1ed4718e219c872d0f47",
+      "R_tree": "739831363264a462cf6e5161399f106ceb25bd56",
+      "runtime_test_contract_files_verified": 424,
+      "source_mismatches": []
+    },
+    "dsOMOPClient": {
+      "tested_commit": "5a53401af29f5184ac001165be698383f1705293",
+      "R_tree": "2dabab3a55a447957ba33c6afb375e91f8a9ed9a",
+      "runtime_test_contract_files_verified": 123,
+      "source_mismatches": []
+    }
+  },
+  "results": {
+    "server": {
+      "passed": 45412,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 11,
+      "warnings": 0
+    },
+    "client": {
+      "passed": 4902,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 7,
+      "warnings": 4
+    }
+  },
+  "logs": {
+    "server": {
+      "path": "tools/ws2/artifacts/root-full-server-v4.log",
+      "sha256": "fa48ab8a72ad70e52586dbe3733400a8357047546d5da7dbec19b21d7193ad46"
+    },
+    "client": {
+      "path": "tools/ws2/artifacts/root-full-client-v4.log",
+      "sha256": "e685ade781d11b8f9f38cb44ac4e405a4610200c751fdbb751097cd5b4c38c90"
+    }
+  },
+  "passive_diagnostic_reporter": {
+    "file": "helper-zz-ws2-live-failures.R",
+    "sha256": "82485f63059e803d339e7d2fa499cb69a312ada926795058abf9d34888451111",
+    "purpose": "Passive reporter emits failures immediately; no test selection or result changes."
+  },
+  "vendor_environment": {
+    "DSOMOP_TEST_POSTGRES_HOST": "omopdb",
+    "DSOMOP_TEST_MARIADB_HOST": "127.0.0.1",
+    "DSOMOP_TEST_MYSQL_HOST": "127.0.0.1",
+    "DSOMOP_TEST_MYSQL_PORT": "3307"
+  },
+  "vendor_test_skips": 0,
+  "server_skip_reasons": {
+    "CommonDataModel_not_installed": 2,
+    "SqlRender_cannot_load": 4,
+    "Arrow_unavailable": 2,
+    "Node_unavailable": 1,
+    "macOS_only": 1,
+    "Python_unavailable_on_pod": 1
+  },
+  "client_skip_reasons": {
+    "ggplot2_not_installed": 7
+  },
+  "client_warning_reason": "Four existing adapter-refusal cleanup warnings: dsOexec object not found.",
+  "compatibility_cases_executed": 1156,
+  "unresolved_boundary": "CR-25: historically valid population-local handle-owned cohort names are still refused; required frozen-interface review is pending. This case is outside the frozen fixtures and is not waived by passing suites."
+}

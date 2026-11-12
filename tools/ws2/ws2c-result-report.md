@@ -25,9 +25,9 @@ newly refused, or otherwise waived by this report.
 The pristine 2.10.2 baseline is pinned at server
 `30b7905617dbe3de5d06699c324095635c68011f` and client
 `7eb2f6c8c2b49e5492e1f778916b84319626341d`. The final result snapshots use server
-`8871d8e116423452fb288d6a57ed2e22e9c10289` and client
+`9b3cb5df1e579038118b1ed4718e219c872d0f47` and client
 `5a53401af29f5184ac001165be698383f1705293`; their R source trees are respectively
-`839aacd630b60dd7e400b0693a0cedffe2fe8999` and
+`739831363264a462cf6e5161399f106ceb25bd56` and
 `2dabab3a55a447957ba33c6afb375e91f8a9ed9a`. Subsequent reporting and probe
 commits do not change those sources; the parent job report records the final
 full-suite commits and any subsequent production change.
@@ -35,16 +35,20 @@ full-suite commits and any subsequent production change.
 The final source includes `be967404bf42ad0f039275d431129946a0cb1777`, which
 restores legitimate v1 vocabulary/metadata reference publication using private
 executor proofs, and `8871d8e`, which prevents those proofs when an effective
-visit filter makes the output patient-dependent. The latter has 77 passing
-reference regression checks, including both visit-filter spellings and their
-precedence. The staged reference regression uses supported CSV fallback because
+visit filter makes the output patient-dependent. The final `9b3cb5d` guard
+uses the compiler's effective concept-scope column as well: hidden private-key
+or blocked extension selectors cannot acquire a reference exemption. Standard
+metadata columns, admissible extension columns and ordinary patient-source
+legacy overrides remain supported. The final focused reference regression
+suite passes 169 checks without failures, errors or skips. The staged reference
+regression uses supported CSV fallback because
 Arrow is absent; it is not Parquet evidence. Earlier captures at `dc07756`
 and full-server snapshot
 `8602ffc` were stopped and are not final acceptance evidence. The replacement
-current/hybrid captures include both reference-proof fixes; the parent report
+current/hybrid captures include all reference-proof fixes; the parent report
 identifies the matching complete-suite run. Complete captures at `6571ecd`
-were clean after per-call reconciliation, but precede the visit-dependency guard
-and are retained only as superseded diagnostics.
+and `8871d8e` were clean after per-call reconciliation, but precede the final
+reference-dependency guards and are retained only as superseded diagnostics.
 
 Two complete baseline server/client suite runs produced 330 top-level records
 and 383 records including nested diagnostics, independently in each run. There
@@ -150,26 +154,28 @@ The audit corrected five specific misunderstandings in existing classifications:
   context and retain the standalone cohort-combination support gate. Separate
   context-bearing and plan/public-entry probes demonstrate newly permitted
   private execution; both meanings now have explicit subrows.
-* The public common age-grid execution is genuinely safe: its original
+* The public common age-grid execution is safe: its original
   `nfilter.tab=1` result already contains all six bands. Pin `r005` verifies the
   entire result, including those bands; it is not silently corrected.
 
 ## Captured outcome reconciliation
 
-The final capture labels are `ws2c-final3-current` and `ws2c-final3-hybrid`; the
+The final capture labels are `ws2c-final4-current` and `ws2c-final4-hybrid`; the
 pristine comparison labels are `ws2c-b18-a-reviewed` and `ws2c-b18-b`.
 At the scoped snapshot, current tests pass 4,085 assertions with zero failures or
 errors and three dependency skips. The hybrid historical tests record 3,948
 passes, 24 failed assertions and nine errors, with the same three skips. These
-are not reported as a green historical suite. Each final run has one fewer
-passing assertion than its superseded `6571ecd` capture. The entire decrease
-is in unchanged `test-privacy-dp.R`, whose bounded-mean and binary-rate checks
-assert bounds only when the random-noise result is non-NULL. Aggregate logs
-do not retain which conditional branch was omitted. All 590 matched-pair
-outcomes and compared-payload hashes, all A-19 evidence rows, and all
-open-item-(i) probe traces agree across the two source snapshots. The 27
-affected historical blocks
-expect removed width/equality gates, old private support gates, the old
+are not reported as a green historical suite. The superseded `6571ecd` and
+`8871d8e` captures differ by one passing
+assertion per run, entirely in unchanged `test-privacy-dp.R`. Its bounded-mean
+and binary-rate checks assert bounds only when the random-noise result is
+non-NULL. Aggregate logs do not retain which conditional branch was omitted.
+The snapshot-check history retains those exact totals and separately verifies
+matched-pair outcomes and compared-payload hashes, A-19 evidence rows, and
+open-item-(i) probe traces across the captured source revisions. All 590 matched
+pair outcomes and compared-result hashes, all 23 A-19 evidence rows per run, and
+the probe traces agree between `8871d8e` and final `9b3cb5d`; their assertion
+totals also agree. The 27 affected historical blocks expect removed width/equality gates, old private support gates, the old
 FALSE-versus-UNKNOWN intermediate date mask, old observation-period overlap
 refusal, old diagnostics/status shapes, unrequested staged output, or release
 of the under-supported recurrent component. Original assertion changes are
@@ -305,11 +311,23 @@ same-literal `.tab0` baseline control. The dedicated metadata test verifies
 that only `nfilter.tab` differs, both independent baseline captures succeeded,
 and plan hashes and output shapes match. The independent age/base-`cut` oracle
 in `test-ir-results.R` supplies the semantic check without using production
-banding code. A bounded run at reference-proof commit `be96740`, before the final
-visit-filter guard, passed all 6,913 checks for these eight cases, 21 reference-output cases and their metadata
-guards; the full compatibility suite remains part of the full server run.
+banding code. A bounded run at reference-proof commit `be96740`, before the
+visit-filter and effective-column guards, passed all 6,913 checks for these eight cases, 21 reference-output cases and their metadata
+guards. The final full server suite then passed the complete 1,156-case
+compatibility replay on `9b3cb5d`.
 
 ## Validation and durable evidence
+
+Both full current suites pass on the final production sources: server 45,412
+assertions with 11 skips and client 4,902 assertions with seven skips, with zero
+failures or errors. All enabled PostgreSQL, MariaDB and MySQL integration tests
+run without skips. The server skips comprise missing CommonDataModel, SqlRender,
+Arrow, Node and Python dependencies plus one macOS-only check; the client skips
+require ggplot2. The client emits four existing adapter-cleanup warnings.
+The [full-suite verification](ws2c-result-evidence/final-suite-verification.json)
+records source hashes, complete-run options, exact totals, log hashes and the
+547 runtime/test/contract files verified against the tested snapshots. These
+passes do not waive the separate CR-25 compatibility gap.
 
 The two pristine baseline runs pass server 14,003/14,002 assertions respectively
 with 14 skips each, and client 4,156 assertions with seven skips each; all have

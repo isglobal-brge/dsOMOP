@@ -292,12 +292,18 @@
 # separate, broader .v1sCohortId() coercions.
 .v1sResolvedCohort <- function(allow_name = FALSE) {
   .v1sCustom(function(x, path) {
+    # Match the executor's dispatch BEFORE unwrapping: an array containing an
+    # ID is sent to its name branch, where it is not a valid identifier.
+    numeric_id <- is.numeric(x) ||
+      (is.character(x) && length(x) == 1L && !is.na(x) &&
+       grepl("^[0-9]+$", x))
+    if (numeric_id) return(.v1ShapeErrors(x, .v1sCohortId(), path))
     value <- .v1Scalar(x)
-    if (is.character(value) && length(value) == 1L && !is.na(value) &&
-        !grepl("^[0-9]+$", value)) {
-      errors <- .v1Legacy(path, .validateIdentifier(value, "cohort"))
-      if (length(errors) || isTRUE(allow_name)) return(errors)
+    if (!is.character(value) || length(value) != 1L || is.na(value)) {
+      return(paste0(path, ": a resolved cohort reference must be a numeric ID or identifier string"))
     }
+    errors <- .v1Legacy(path, .validateIdentifier(value, "cohort"))
+    if (length(errors) || isTRUE(allow_name)) return(errors)
     .v1ShapeErrors(x, .v1sCohortId(), path)
   })
 }
@@ -552,7 +558,15 @@
 .v1sStrs <- function(enum = NULL) .v1sArr(.v1sStr(enum))
 .v1sWindow <- function() .v1sObj(start = .v1sInt(), end = .v1sInt())
 .v1sRowFilter <- function() .v1sCustom(.v1RowFilterErrors)
-.v1sFilterTree <- function() .v1sCustom(.v1FilterTreeErrors)
+.v1sFilterTree <- function() .v1sCustom(function(x, path) {
+  errors <- .v1FilterTreeErrors(x, path)
+  context <- if (startsWith(path, "/populations/")) {
+    name <- sub("/filter_tree$", "", substring(path, nchar("/populations/") + 1L))
+    paste0("Population '", name, "' filter_tree")
+  } else "Plan cohort filter_tree"
+  # Keep the historical diagnostic label as well as the precise wire path.
+  sub(": ", paste0(": ", context, ": "), errors, fixed = TRUE)
+})
 .v1sConceptSet <- function() {
   .v1sOneOf(.v1sObj(concepts = .v1sConceptIds(), include_descendants = .v1sBool(),
                     include_mapped = .v1sBool(), exclude = .v1sConceptIds()),
@@ -649,7 +663,9 @@
       columns = .v1sOneOf(.v1sStrs(), .v1sMap(.v1sStr())),
       derived = .v1sStrs(c("age_at_index", "prior_observation", "future_observation")),
       age_breaks = .v1sIntegerVector(.check = function(x, path) {
-        .v1Legacy(path, .bandAges(20L, age_breaks = x))
+        errors <- .v1Legacy(path, .bandAges(20L, age_breaks = x))
+        sub(paste0(path, ": "), paste0(path, ": invalid age_breaks: "),
+            errors, fixed = TRUE)
       })),
     survival = out(
       outcome = .v1sOutcome(), outcomes = .v1sMap(.v1sOutcome()),
@@ -714,7 +730,7 @@
   if (!is.null(cached)) return(cached)
   population <- .v1sObj(
     id = .v1sStr(), label = .v1sStr(), kind = .v1sStr(c("criteria", "setop")),
-    filter_tree = .v1sFilterTree(), cohort_definition_id = .v1sResolvedCohort(),
+    filter_tree = .v1sFilterTree(), cohort_definition_id = .v1sResolvedCohort(allow_name = TRUE),
     episode_policy = .v1sStr(.V1_EPISODE_POLICIES),
     index_event = .v1sObj(table = .v1sStr(), concept_set = .v1sConceptSet(),
                           primary_limit = .v1sStr(c("first", "last", "all")),

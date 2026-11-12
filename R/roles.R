@@ -203,7 +203,7 @@
   }
   concept_role <- field("concept_role")
   cdm_type <- field("cdm_datatype")
-  data_type <- field("data_type")
+  data_type <- field("db_datatype")
   data.frame(
     column_name = have,
     is_date = as.logical(col_df[["is_date"]] %||% grepl("_date$|_datetime$", have)),

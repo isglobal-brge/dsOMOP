@@ -181,6 +181,15 @@
 }
 .v1CohortInteger <- function(x) .v1AsCohortInteger(x) %||% x
 
+# A-25 keeps the resolver's dispatch order: only RAW digit strings are IDs.
+# Identifier whitespace is trimmed after that decision, without native-name
+# encoding, case folding or a length cap. The envelope has checked the syntax.
+.v1PopulationCohortName <- function(x) {
+  x <- .v1Scalar(x)
+  if (is.character(x) && length(x) == 1L && !is.na(x) &&
+      !grepl("^[0-9]+$", x)) .validateIdentifier(x, "cohort") else NULL
+}
+
 .v1IdList <- function(x) {
   if (is.null(x)) return(list())
   lapply(unname(as.list(unlist(x, use.names = FALSE))), .v1Int)
@@ -622,6 +631,7 @@
       # the executor's precedence (review B3): filters$... over the output fields
       cs <- .v1ConceptSet(filters[["concept_set"]][["ids"]] %||% out[["concept_set"]])
       concept_col <- filters[["concept_col"]] %||% out[["concept_col"]]
+      projected_concept <- NULL
       # the extraction's precedence (.compileSelect()): an override column that
       # is also requested or filtered on is a surfacing choice -- the concept
       # set then scopes the table's domain concept column (A-19 item 7)
@@ -631,6 +641,11 @@
           (cc %in% tolower(as.character(unlist(out[["columns"]], use.names = FALSE))) ||
            .filterTreeReferencesColumn(filters[["custom"]], cc))) {
         .v1Annex(st, path, surfacing_concept_col = cc)
+        # With an active concept filter .compileSelect() projects both its
+        # domain filter column and the surfacing override, even when the
+        # override appears only in the custom predicate. Keep that effective
+        # projection in the IR after clearing the event's scoping override.
+        if (!is.null(cs)) projected_concept <- cc
         concept_col <- NULL
       }
       visit <- .v1Visit(filters[["visit"]] %||% out[["visit_filter"]])
@@ -657,7 +672,8 @@
       lt <- .v1LegacyTemporal(temporal)
       if (!is.null(lt)) node[["legacy_temporal"]] <- lt
       if (!is.null(out[["columns"]])) {
-        node[["legacy_columns"]] <- as.list(unique(tolower(vapply(.v1Items(out[["columns"]]), function(x) as.character(.v1Scalar(x)), ""))))
+        node[["legacy_columns"]] <- as.list(unique(c(projected_concept,
+          tolower(vapply(.v1Items(out[["columns"]]), function(x) as.character(.v1Scalar(x)), "")))))
       }
       stream_event <- function() {
         .v1Event(st, paste0("ev_", name), out[["table"]], concept_set = cs, where = where,
@@ -928,7 +944,7 @@
   index
 }
 
-.v1LowerPopulation <- function(st, id, pid, pop, anchored) {
+.v1LowerPopulation <- function(st, id, pid, pop, anchored, plan_base = NULL) {
   pop <- .v1Compact(pop)
   path <- paste0("populations/", id)
   label <- .v1Text(pop[["label"]])
@@ -936,6 +952,7 @@
   if (!is.null(pop[["filters"]])) .v1Annex(st, path, filters = pop[["filters"]])
   pop_name <- function(m) st[["population_names"]][[m]] %||% m
   kind <- tolower(.v1Text(pop[["kind"]]) %||% "criteria")
+  cohort_name <- .v1PopulationCohortName(pop[["cohort_definition_id"]])
   node <- if (identical(kind, "setop") || !is.null(pop[["setop"]])) {
     op <- tolower(.v1Text(pop[["setop"]][["op"]]) %||% "union")
     if (identical(op, "difference")) op <- "setdiff"
@@ -961,8 +978,9 @@
   } else if (!is.null(pop[["index_event"]])) {
     node <- list(kind = "index", index = .v1LowerIndexEvent(st, id, pop[["index_event"]]))
     node["where"] <- list(.v1And(
-      if (!is.null(pop[["cohort_definition_id"]])) list(cohort = list(cohort_definition_id = .v1CohortInteger(pop[["cohort_definition_id"]]))),
+      if (is.null(cohort_name) && !is.null(pop[["cohort_definition_id"]])) list(cohort = list(cohort_definition_id = .v1CohortInteger(pop[["cohort_definition_id"]]))),
       .v1Criteria(pop[["filter_tree"]], st, path)))
+    if (!is.null(cohort_name)) node[["legacy_cohort_table"]] <- cohort_name
     node
   } else if (!identical(pid, "base") && is.null(pop[["filter_tree"]]) &&
              is.null(pop[["cohort_definition_id"]])) {
@@ -972,8 +990,17 @@
     list(kind = "criteria", legacy_episodes = "observation_periods", legacy_empty = TRUE)
   } else {
     node <- list(kind = "criteria")
+    # Only the original v1 criteria base intersects its own restrictions with
+    # the plan cohort's person seed. This edge does not inherit the parent's
+    # episodes or change the independent plan/scope anchor of windowed leaves.
+    # In particular, singleton set operations above retain their member parent.
+    if (identical(pid, "base") && !is.null(plan_base)) node[["parent"]] <- plan_base
     node["where"] <- list(.v1Criteria(pop[["filter_tree"]], st, path))
-    node["cohort_definition_id"] <- list(.v1CohortInteger(pop[["cohort_definition_id"]]))
+    if (is.null(cohort_name)) {
+      node["cohort_definition_id"] <- list(.v1CohortInteger(pop[["cohort_definition_id"]]))
+    } else {
+      node[["legacy_cohort_table"]] <- cohort_name
+    }
     node["episode_policy"] <- list(if (!is.null(pop[["episode_policy"]])) tolower(.v1Text(pop[["episode_policy"]])))
     # v1 criteria populations are the observation periods of their persons;
     # their windowed leaves anchor on the plan-level index cohort
@@ -1148,7 +1175,7 @@
         if (!is.null(label)) st[["populations"]][["base"]][["label"]] <- label
         next
       }
-      .v1LowerPopulation(st, id, pid, pops[[pid]], anchored)
+      .v1LowerPopulation(st, id, pid, pops[[pid]], anchored, plan_base = plan_base)
     }
   } else if (length(pops)) {
     .v1Annex(st, "root", populations_inactive = pops)

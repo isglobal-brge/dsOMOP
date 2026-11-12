@@ -1,0 +1,18 @@
+{
+  "completed_utc": "2026-11-12T17:14:44.300926+00:00",
+  "deleted": [
+    {
+      "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/ws2f-client-complete/dsOMOP",
+      "file_count": 1364,
+      "total_file_bytes": 16162102,
+      "source_manifest_identical": true
+    },
+    {
+      "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/ws2f-client-complete/dsOMOPClient",
+      "file_count": 1172,
+      "total_file_bytes": 11563062,
+      "source_manifest_identical": true
+    }
+  ],
+  "total_deleted_file_bytes": 27725164
+}
