@@ -4,10 +4,6 @@
     "INSERT INTO condition_occurrence (condition_occurrence_id, person_id, ",
     "condition_concept_id, condition_start_date, condition_end_date, condition_type_concept_id) ",
     "VALUES (777777, 1016, 990001, '2019-06-01', '2019-06-01', 44818518)"))
-  # Invalid cross-person link: neither person nor parent association may use it.
-  DBI::dbExecute(conn, paste0(
-    "INSERT INTO episode_event (episode_id, event_id, episode_event_field_concept_id) ",
-    "SELECT 2, drug_exposure_id, 1147094 FROM drug_exposure WHERE person_id = 1016"))
 })
 withr::defer(.ws4_cleanup(.ws6m_backends), testthat::teardown_env())
 
@@ -41,7 +37,7 @@ withr::defer(.ws4_cleanup(.ws6m_backends), testthat::teardown_env())
   if (mode %in% c("event_anchor", "interval_anchor")) {
     source <- if (mode == "event_anchor") list(event = "members") else list(interval = "courses")
     # Fifth physical event/course is October 1. The shared April event must
-    # not count twice and the invalid cross-person May member must not count.
+    # not count twice.
     anchor <- list(source = source, which = "nth", n = 5L)
     p$populations$tpl$where <- .ws6m_has(1L, window = list(start = 0L, end = 0L, anchor = anchor))
   }
@@ -161,4 +157,21 @@ test_that("controls templates cannot also be ordinary populations", {
   p <- .ws6m_plan()
   p$outputs$o_tpl <- list(rows = "tpl", format = "wide")
   expect_error(.irPrepare(p), "cannot also be used as an ordinary population")
+})
+
+test_that("templates still reject cross-person episode member links", {
+  backends <- .ws6_backends(extend = function(conn) {
+    DBI::dbExecute(conn, paste0(
+      "INSERT INTO episode_event (episode_id, event_id, episode_event_field_concept_id) ",
+      "SELECT 2, drug_exposure_id, 1147094 FROM drug_exposure WHERE person_id = 1016"))
+  })
+  on.exit(.ws4_cleanup(backends), add = TRUE)
+  for (backend in names(backends)) {
+    h <- backends[[backend]]$handle
+    ctx <- .ws4_ctx(h, .ws6m_plan())
+    tryCatch({
+      expect_error(.compilePopulationByName(ctx, "matched"), "adapter_person_mismatch")
+    }, finally = .planContextClose(ctx))
+    expect_length(h$temp_tables, 0L)
+  }
 })
