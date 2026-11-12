@@ -39,6 +39,9 @@ fills its entries. Classes follow design-2.10.3 section 5.
   `origin_source`/`origin_key` through parents, set operations and matched
   cases. Person-scoped adapter criteria count each physical event once;
   visit-qualified era identities remain distinct when dates coincide.
+- (A-20) Matching strata support explicit source anchors and nested search
+  windows on both final case rows and controls instantiated at each case
+  time. Missing anchors follow the selected `missing_strata` policy.
 - (A-E10; WS-6) `set_id` and `cohort_row_id` are reviewed analytic keys and
   survive identifier handling. Each matched row retains its own person's
   lineage. Matching excludes same-time outcomes, uses the complete bounded

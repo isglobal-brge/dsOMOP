@@ -44,6 +44,10 @@ Rosters follow the WS-5/A-20 contract in
 `cohort_row_id`, person lineage, lossless origin and visit metadata and the
 selected `op_component_id`, associated with the original coverage object.
 Candidate and final row keys are never interchangeable.
+Matching strata source/search anchors are declared for the cases population's
+final roster and the controls template's candidate roster. The shared window
+resolver evaluates each side's person at the case time; missing anchors use
+the declared `missing_strata` policy.
 
 `.compileVariable(ctx, node, roster, anchors)` receives the output's
 `.reduceConsumer()` record in `anchors`. It returns the stream, pure reducer,
