@@ -154,6 +154,10 @@ test_that("the v1 corpus classes are reviewed per plan instance and keyed by sta
   co303 <- get("test-cohort.R", "cohort criteria fail closed instead of becoming unfiltered")
   expect_setequal(sub("^.*#", "", co303$plan_id), c("1", "2")); expect_setequal(co303$class, c("unchanged_invalid", "newly_permitted"))
   expect_identical(get("test-analysis-ports-1bc.R", "(d) a two-population port fails closed when either arm < nfilter")$class, "publication_refused_unchanged")
+  # third re-review: a block whose only error expectations are expect_error(..., NA) asserts successes, never a refusal
+  expect_identical(get("test-analysis-ports.R", "TAR diagnostics use synthesized cohort ends for point events")$class, "safe")
+  cw222 <- get("test-extraction.R", "calendar windows reject injection, invalid dates, and reversed ranges")
+  expect_setequal(sub("^.*#", "", cw222$plan_id), c("1", "2")); expect_setequal(cw222$class, c("unchanged_invalid", "newly_permitted"))
   expect_identical(get("test-recipe-circe.R", "numeric measurement bounds fail closed on Circe export", "dsOMOPClient")$class, "newly_permitted")
   # a block that builds no plan is only ever non_plan, and every non_plan row says so
   expect_true(all(grepl("^no plan|^gate:", cls$rationale[cls$class == "non_plan"])))
