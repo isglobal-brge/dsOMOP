@@ -516,3 +516,44 @@ test_that("matching insertion failures clean up immediately and retain failed DR
     expect_length(ctx$compile_temp_tables, 0L)
   }
 })
+
+test_that("case ranks and strata stay fixed when source rows change between the two bounded fetches", {
+  h <- .ws4_reach_handle()
+  on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
+  .ws6_match_extend(h$conn)
+  h$blueprint <- NULL
+  h$role_registry <- NULL
+  plan <- .ws6_m_plan(.ws6_m_variants["default"])
+  ctx <- .ws4_ctx(h, plan)
+  on.exit(.planContextClose(ctx), add = TRUE)
+  fetch <- .matchFetchBounded
+  realised_cases <- NULL
+  testthat::local_mocked_bindings(.matchFetchBounded = function(ctx, final, select, ...) {
+    rows <- fetch(ctx, final, select, ...)
+    if ("case_row_id" %in% names(final$columns)) {
+      realised_cases <<- rows
+      # This changes the first-eligible case, its rank and its age/sex strata
+      # under a fresh compilation. The already realised cases remain fixed.
+      DBI::dbExecute(h$conn, paste0(
+        "UPDATE condition_occurrence SET condition_start_date = '2017-01-01', ",
+        "condition_end_date = '2017-01-01' WHERE condition_occurrence_id = 970001"))
+      DBI::dbExecute(h$conn, "UPDATE person SET gender_concept_id = 8532, year_of_birth = 1925 WHERE person_id = 7001")
+    }
+    rows
+  })
+  res <- .compilePopulationByName(ctx, "default")
+  expect_s3_class(realised_cases, "data.frame")
+  fc <- .fragmentGet(ctx, .fragmentName("mt", "default", "cases", ctx = ctx))
+  after <- .fetchFragment(ctx, fc, "set_rank")
+  expect_identical(as.character(after$subject_id), realised_cases$subject_id[order(as.numeric(realised_cases$set_rank))])
+  expect_identical(as.character(after$t), realised_cases$t[order(as.numeric(realised_cases$set_rank))])
+  original <- after[after$subject_id == 7001, , drop = FALSE]
+  expect_identical(as.character(original$t), "2020-03-01")
+  expect_identical(as.numeric(original$s_1), 8507)
+  expect_identical(as.numeric(original$s_2), 21)
+  r <- .fetchFragment(ctx, res$roster, "cohort_row_id")
+  matched <- r[r$is_case == 1, , drop = FALSE]
+  matched <- matched[order(as.numeric(matched$set_id)), , drop = FALSE]
+  expect_identical(as.character(matched$subject_id), as.character(after$subject_id))
+  expect_identical(as.character(matched$cohort_start_date), as.character(after$t))
+})

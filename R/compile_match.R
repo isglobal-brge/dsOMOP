@@ -439,6 +439,9 @@
                                            "op_component_id",
                                            if (length(strata_c)) paste0("s_", seq_along(strata_c))))
   .sqlAssertTypedSql(h, f_cases$select_body)
+  # Both bounded fetches below must use the same case identities and strata
+  # even if the underlying CDM changes between statements.
+  f_cases <- .populationFreezeFragment(ctx, f_cases)
   .fragmentRegister(ctx, f_cases)
 
   # 1b. the template instantiated at each case time (A-20 c) --------------------------
