@@ -313,3 +313,284 @@ test_that("standard mode takes the masked person-time block from the protected c
   expect_identical(attr(off, "dsomop_protection")$masked_reason,
                    "protected_output_required")
 })
+
+# --- Round 3: canonical exit basis, structural mask, family hierarchy --------
+
+test_that("the canonical exit basis and its structural masks are public and stable", {
+  g <- .dsomopReleaseExitGrid()
+  expect_identical(g$id, "exit-days-clinical-v2")
+  expect_identical(g$breaks, .dsomopReleaseDayGrid())
+  coords <- .dsomopReleaseExitCoordinates()
+  expect_length(coords, 3L * length(g$breaks))
+  expect_false(any(grepl("max=", coords)))
+  w <- function(start, end, a = "start", b = "start") {
+    .dsomopReleaseExitMask(list(start = start, end = end, anchor_start = a,
+                                anchor_end = b))
+  }
+  m <- w(0L, 365L)
+  lower <- g$breaks
+  # The release basis and its projection are independent of the window.
+  expect_false(any(m[lower < 1, ]))
+  expect_true(all(m[lower >= 1, ]))
+  expect_identical(w(0L, 90L), w(0L, 120L))
+  expect_identical(w(-30L, 365L), m)
+  expect_identical(w(0L, 30L, "start", "end"), m)
+  expect_identical(w(0L, 5000L), m)
+  # The per-person normalization keeps every exit inside its mask.
+  ex <- data.frame(time = c(0, 400, 200, 366, 366),
+                   status = c("event", "event", "admin_censored", "censored",
+                              "admin_censored"), stringsAsFactors = FALSE)
+  nx <- .dsomopReleaseExitNormalize(ex, list(start = 0L, end = 365L,
+                                             anchor_start = "start",
+                                             anchor_end = "start"))
+  expect_identical(nx$time, c(1, 366, 200, 366, 366))
+  expect_identical(nx$status, c("event", "event", "censored",
+                                "admin_censored", "admin_censored"))
+})
+
+test_that("two-way reconciliation and display keep both parents", {
+  Y <- matrix(c(5, -2, 7, 1, 3, 0), nrow = 2)
+  r <- c(10, 4); cc <- c(3, 6, 5)
+  X <- .dsomopReleaseTwoWay(Y, r, cc)
+  expect_equal(rowSums(X), r, tolerance = 1e-12)
+  expect_equal(colSums(X), cc, tolerance = 1e-12)
+  # The additive adjustment is the least-squares projection: Y - X is of the
+  # form a_i + b_j.
+  A <- Y - X
+  expect_equal(A[1, ] - A[2, ], rep(A[1, 1] - A[2, 1], 3), tolerance = 1e-12)
+  D <- .dsomopReleaseTwoWayDisplay(X, c(8, 3), c(2, 5, 4))
+  expect_true(all(D >= 0))
+  expect_equal(rowSums(D), c(8, 3), tolerance = 1e-9)
+  expect_equal(colSums(D), c(2, 5, 4), tolerance = 1e-6)
+  b <- .dsomopReleaseBoxSimplex(c(5, -1, 9), 7, c(4, 4, 4))
+  expect_equal(sum(b), 7, tolerance = 1e-12)
+  expect_true(all(b >= 0 & b <= 4))
+  expect_equal(.dsomopReleaseBoxSimplex(c(1, 2), 10, c(3, 3)), c(3, 3))
+})
+
+.family_handle <- function(n = 400, seed = 3) {
+  h <- create_test_handle(n_persons = n)
+  DBI::dbExecute(h$conn, "DELETE FROM observation_period")
+  DBI::dbWriteTable(h$conn, "observation_period", data.frame(
+    observation_period_id = seq_len(n), person_id = seq_len(n),
+    observation_period_start_date = "2015-01-01",
+    observation_period_end_date = c(rep("2024-12-31", n - 40),
+                                    rep("2020-04-15", 40)),
+    period_type_concept_id = 44814724L), append = TRUE)
+  # Some persons of unknown gender complete the sex family.
+  DBI::dbExecute(h$conn, paste0("UPDATE person SET gender_concept_id = 0 ",
+                                "WHERE person_id % 9 = 0"))
+  DBI::dbExecute(h$conn, "DELETE FROM condition_occurrence")
+  half <- n / 2
+  .release_dated_cohort(h, "fam_t", seq_len(half), "2020-01-01", "2023-12-31")
+  .release_dated_cohort(h, "fam_c", half + seq_len(half), "2020-01-01",
+                        "2023-12-31")
+  set.seed(seed)
+  for (p in seq_len(n)) {
+    rate <- if (p <= half) 0.45 else 0.25
+    if (stats::runif(1) < rate) {
+      .release_add_condition(h, p, 4000002L, format(
+        as.Date("2020-01-01") + sample.int(300L, 1L)))
+    }
+  }
+  # A covariate for concept-defined subgroups.
+  .release_add_condition(h, seq(1, n, by = 3), 317009L, "2019-06-01")
+  .buildBlueprint(h, force = TRUE)
+  h
+}
+
+.family_params <- function(model = "cox", kind = "sex", ...) {
+  utils::modifyList(list(outcome_concept_id = "4000002", model_type = model,
+                         tar_start_offset = "0", tar_end_offset = "365",
+                         tar_anchor_start = "start", tar_anchor_end = "start",
+                         subgroup_kind = kind), list(...))
+}
+
+test_that("interaction families hang under their arms: signed and displayed margins", {
+  .release_state()
+  h <- .family_handle()
+  on.exit(cleanup_handle(h), add = TRUE)
+  scope <- list("fam_t", "fam_c")
+  for (model in c("poisson", "cox")) {
+    overall <- .release_run(h, "dsomop:cm.interaction_estimate",
+                            .family_params(model, "overall"), scope)
+    sex <- .release_run(h, "dsomop:cm.interaction_estimate",
+                        .family_params(model, "sex"), scope)
+    expect_identical(nrow(sex), 3L)
+    for (col in c("target_persons", "comparator_persons", "target_outcomes",
+                  "comparator_outcomes", "target_person_days",
+                  "comparator_person_days")) {
+      expect_equal(sum(sex[[col]]), overall[[col]][[1L]], tolerance = 1e-6,
+                   info = paste(model, col))
+    }
+    ow <- attr(sex, "dsomop_release")$owners
+    arm <- ow[[1L]]
+    subs <- ow[2:4]
+    for (j in 1:2) {
+      a <- arm$components[[j]]
+      s <- lapply(subs, function(o) o$components[[j]])
+      expect_equal(sum(vapply(s, `[[`, numeric(1L), "n")), a$n,
+                   tolerance = 1e-9)
+      expect_equal(Reduce(`+`, lapply(s, `[[`, "status")), a$status,
+                   tolerance = 1e-9)
+      expect_equal(sum(vapply(s, `[[`, numeric(1L), "time")), a$time,
+                   tolerance = 1e-6)
+      for (x in s) expect_equal(sum(x$status), x$n, tolerance = 1e-9)
+    }
+    if (identical(model, "cox")) {
+      c8_arm <- ow[[5L]]
+      c8_subs <- ow[6:8]
+      expect_identical(c8_arm$family, "C8")
+      event <- c8_arm$status_of_cell == "event"
+      for (j in 1:2) {
+        cell_sum <- Reduce(`+`, lapply(c8_subs, function(o) {
+          o$components[[j]]$h
+        }))
+        expect_equal(cell_sum, c8_arm$components[[j]]$h, tolerance = 1e-9)
+        for (i in 1:3) {
+          comp <- c8_subs[[i]]$components[[j]]
+          expect_equal(sum(comp$h[event]), comp$status[[1L]],
+                       tolerance = 1e-9)
+          expect_equal(sum(comp$h[!event]), comp$status[[2L]],
+                       tolerance = 1e-9)
+          # The subgroup's C8 status parent is its reconciled C6 status.
+          expect_equal(comp$status, subs[[i]]$components[[j]]$status,
+                       tolerance = 1e-9)
+        }
+      }
+    }
+  }
+})
+
+test_that("interaction Cox subgroups equal coxph (Breslow) on public bins without noise", {
+  skip_if_not_installed("survival")
+  .release_state()
+  # Zero release noise; a high calibration keeps the uncertainty simulation
+  # (which perturbs the displayed values) informative at this small size.
+  withr::local_options(list(dsomop.dp.release_epsilon = 8))
+  .release_restart()
+  h <- .family_handle()
+  on.exit(cleanup_handle(h), add = TRUE)
+  scope <- list("fam_t", "fam_c")
+  # The DP runtime (and its sampler self-test) starts before the noise is
+  # replaced by zeros for this sufficiency check.
+  expect_true(suppressMessages(.dsomopToolsDpReady(h))$ready)
+  local_mocked_bindings(.dsomopDpDiscreteLaplace = function(...) {
+    .dsomopBigInteger(0L)
+  })
+  out <- .release_run(h, "dsomop:cm.interaction_estimate",
+                      .family_params("cox", "concept",
+                                     subgroup_concept_id = "317009",
+                                     subgroup_domain_code = "0"), scope)
+  expect_identical(nrow(out), 2L)
+  tar <- list(start = 0L, end = 365L, anchor_start = "start",
+              anchor_end = "start")
+  src <- .omopOutcomeSource(h, "4000002", "0")
+  grid <- .dsomopReleaseExitGrid()
+  arm_data <- function(cohort, arm) {
+    d <- .omopCmEffectArmData(h, cohort, arm, src, tar, horizon = 3650)$data
+    d$bin <- .dsomopReleaseBinIndex(d$tar_days, grid)
+    d
+  }
+  d <- rbind(arm_data("fam_t", 1L), arm_data("fam_c", 0L))
+  has <- DBI::dbGetQuery(h$conn, paste0(
+    "SELECT DISTINCT person_id FROM condition_occurrence WHERE ",
+    "condition_concept_id = 317009"))$person_id
+  d$yes <- d$person_id %in% as.character(has)
+  for (i in 1:2) {
+    sub <- d[d$yes == (i == 1L), ]
+    ref <- survival::coxph(survival::Surv(bin, event) ~ arm, data = sub,
+                           ties = "breslow")
+    expect_equal(out$log_estimate[[i]], unname(stats::coef(ref)[[1L]]),
+                 tolerance = 1e-6, info = out$subgroup_label[[i]])
+  }
+})
+
+test_that("interaction Cox reuses components across labels and keeps windows' atoms", {
+  .release_state()
+  h <- .family_handle()
+  on.exit(cleanup_handle(h), add = TRUE)
+  scope <- list("fam_t", "fam_c")
+  # Another concept selecting exactly the same people: a label alias.
+  .release_add_condition(h, seq(1, 400, by = 3), 201820L, "2019-06-01")
+  .buildBlueprint(h, force = TRUE)
+  run <- function(concept, end = "365") {
+    .release_run(h, "dsomop:cm.interaction_estimate",
+                 .family_params("cox", "concept",
+                                subgroup_concept_id = concept,
+                                subgroup_domain_code = "0",
+                                tar_end_offset = end), scope)
+  }
+  a <- run("317009"); b <- run("201820")
+  for (f in c("estimate", "se_log_estimate", "target_persons",
+              "target_outcomes")) {
+    expect_identical(a[[f]], b[[f]], info = f)
+  }
+  expect_identical(attr(a, "dsomop_release")$owners,
+                   attr(b, "dsomop_release")$owners)
+})
+
+test_that("near-zero subgroup events give a stable unavailable Cox estimate", {
+  .release_state()
+  h <- .family_handle()
+  on.exit(cleanup_handle(h), add = TRUE)
+  # No outcomes at all among persons with the covariate.
+  DBI::dbExecute(h$conn, paste0(
+    "DELETE FROM condition_occurrence WHERE condition_concept_id = 4000002 ",
+    "AND person_id IN (SELECT person_id FROM condition_occurrence WHERE ",
+    "condition_concept_id = 317009)"))
+  out <- .release_run(h, "dsomop:cm.interaction_estimate",
+                      .family_params("cox", "concept",
+                                     subgroup_concept_id = "317009",
+                                     subgroup_domain_code = "0"),
+                      list("fam_t", "fam_c"))
+  if (nrow(out)) {
+    expect_identical(nrow(out), 2L)
+    label <- attr(out, "dsomop_protection")
+    yes <- grepl(": yes$", out$subgroup_label)
+    if (!is.finite(out$estimate[yes])) {
+      expect_match(label$unavailable_reason, "unavailable for")
+    }
+    expect_true(all(c("estimate", "ci_lo", "ci_hi") %in% names(out)))
+  }
+})
+
+test_that("the ordinary protected Cox equals coxph (Breslow) on public bins without noise; the horizon caps exits", {
+  skip_if_not_installed("survival")
+  .release_state()
+  withr::local_options(list(dsomop.dp.release_epsilon = 8))
+  .release_restart()
+  h <- .family_handle()
+  on.exit(cleanup_handle(h), add = TRUE)
+  # Observation long beyond the horizon for half of the persons.
+  DBI::dbExecute(h$conn, paste0("UPDATE observation_period SET ",
+                                "observation_period_end_date = '2035-12-31' ",
+                                "WHERE person_id % 2 = 0"))
+  expect_true(suppressMessages(.dsomopToolsDpReady(h))$ready)
+  local_mocked_bindings(.dsomopDpDiscreteLaplace = function(...) {
+    .dsomopBigInteger(0L)
+  })
+  params <- list(outcome_concept_id = "4000002", model_type = "cox",
+                 tar_start_offset = "0", tar_end_offset = "5000",
+                 tar_anchor_start = "start", tar_anchor_end = "start")
+  out <- .release_run(h, "dsomop:cm.effect_estimate", params,
+                      list("fam_t", "fam_c"))
+  tar <- list(start = 0L, end = 5000L, anchor_start = "start",
+              anchor_end = "start")
+  src <- .omopOutcomeSource(h, "4000002", "0")
+  grid <- .dsomopReleaseExitGrid()
+  d <- rbind(
+    .omopCmEffectArmData(h, "fam_t", 1L, src, tar, horizon = 3650)$data,
+    .omopCmEffectArmData(h, "fam_c", 0L, src, tar, horizon = 3650)$data)
+  expect_lte(max(d$tar_days), 3650)
+  expect_true(any(d$tar_days == 3650))
+  d$bin <- .dsomopReleaseBinIndex(d$tar_days, grid)
+  ref <- survival::coxph(survival::Surv(bin, event) ~ arm, data = d,
+                         ties = "breslow")
+  expect_equal(out$log_estimate[[1L]], unname(stats::coef(ref)[[1L]]),
+               tolerance = 1e-6)
+  # Administrative exits at the horizon are in the last canonical interval.
+  owners <- attr(out, "dsomop_release")$owners
+  expect_true("stratum=root|cell=exit-days-clinical-v2:[3650, Inf)|status=admin_censored" %in%
+                owners[[2L]]$cell_keys)
+})

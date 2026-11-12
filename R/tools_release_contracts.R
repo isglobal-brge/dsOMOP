@@ -1164,8 +1164,11 @@
 }
 
 # CohortMethod interaction: the complete subgroup family is admitted as one
-# decision on its exact support (the standard family rule), then every level's
-# arm components are protected and the Poisson rate ratio derived from them.
+# decision on its exact support (the standard family rule); then every level's
+# arm components are protected within the declared hierarchy (subgroups are a
+# public partition of each arm: their person totals, status and time are
+# reconciled to the arm's, never moving it) and the Poisson rate ratio or the
+# grouped-time Cox hazard ratio is derived from them.
 .omopReleaseInteractionRun <- function(handle, ctx, params, route, snap) {
   cohorts <- .omopTwoPopCohorts(handle, ctx)
   if (is.null(cohorts)) return(list(df = data.frame(), built = list()))
@@ -1177,10 +1180,13 @@
     anchor_end = params$tar_anchor_end %||% "end")
   out_src <- .omopOutcomeSource(handle, params$outcome_concept_id,
                                 params$outcome_domain_code %||% "0")
+  outcome_key <- .omopReleaseOutcomeKey(params$outcome_concept_id,
+                                        params$outcome_domain_code %||% "0")
+  horizon <- .DSOMOP_RELEASE_TIME_CAP
   subgroups <- .omopCmInteractionSubgroups(handle, params)
   frame_of <- function(cohort, predicate) {
     fr <- .omopCmSubgroupSubjectFrame(handle, cohort, out_src, tar, predicate,
-                                      horizon = .DSOMOP_RELEASE_TIME_CAP)
+                                      horizon = horizon)
     list(frame = fr, persons = nrow(fr),
          outcomes = sum(fr$events, na.rm = TRUE),
          outcome_persons = sum(fr$events > 0, na.rm = TRUE),
@@ -1207,56 +1213,86 @@
   # The subgroup label and predicate are presentation: membership enters
   # through the realised maps, so equal memberships share their components
   # with each other and with the overall arms (B06).
-  node_owner <- function(label) {
-    c(list(id = "cohortmethod/interaction-first-outcome-person-time/v2",
-           population = "c6/persons-at-risk/v1",
-           strata = .omopReleaseArmStrata(), cap = 1L,
-           estimand = paste0(
-             "per arm within subgroup '", label, "': persons, ",
-             "persons with a first outcome and observed ",
-             "person-days, each person's observed window capped at ",
-             .DSOMOP_RELEASE_TIME_CAP, " days for both events and time")),
-      .omopReleaseC6Owners(.omopReleaseOutcomeKey(
-        params$outcome_concept_id,
-        params$outcome_domain_code %||% "0"), "full"))
+  c6_owner <- function(label) c(
+    list(id = "cohortmethod/interaction-first-outcome-person-time/v2",
+         population = "c6/persons-at-risk/v1",
+         strata = .omopReleaseArmStrata(), cap = 1L,
+         estimand = paste0(
+           "per arm within subgroup '", label, "': persons, persons with a ",
+           "first outcome and observed person-days, each person's observed ",
+           "window capped at ", horizon, " days for both events and time")),
+    .omopReleaseC6Owners(outcome_key, "full"))
+  arm_c6 <- .dsomopReleaseBuildC6(route$policy, route$protection,
+                                  c6_owner("overall"),
+                                  rbind(to_sub(arms$target, "arm=target"),
+                                        to_sub(arms$comparator,
+                                               "arm=comparator")))
+  overall_only <- length(subgroups) == 1L && is.null(subgroups[[1L]]$predicate)
+  # Age families are always drawn on the same five-year atoms. Requested
+  # breaks combine those atoms after the complete family is reconciled.
+  age_atoms <- if (!overall_only && identical(
+    tolower(params$subgroup_kind %||% "concept"), "age")) {
+    .omopCmInteractionAgeAtoms(handle, cohorts, tar, arms, level_counts, params)
+  } else NULL
+  node_counts <- if (is.null(age_atoms)) level_counts else age_atoms$nodes
+  combine <- if (is.null(age_atoms)) NULL else age_atoms$combine
+  node_c6 <- if (overall_only) list(arm_c6) else {
+    lapply(node_counts, function(lv) {
+      .dsomopReleaseBuildC6(route$policy, route$protection,
+                            c6_owner("canonical family atom"),
+                            rbind(to_sub(lv$target, "arm=target"),
+                                  to_sub(lv$comparator, "arm=comparator")))
+    })
   }
-  node_built <- function(lv, label) {
-    .dsomopReleaseBuildC6(route$policy, route$protection, node_owner(label),
-                          rbind(to_sub(lv$target, "arm=target"),
-                                to_sub(lv$comparator, "arm=comparator")))
+  sub_c6 <- if (overall_only) node_c6 else {
+    .dsomopReleaseC6Family(arm_c6, node_c6, combine = combine)
   }
-  # The family is a complete partition of each arm: its nodes are reconciled
-  # to the arms' own components (B03), the overall subgroup itself.
-  arm_built <- node_built(arms, "overall")
-  family_builts <- if (length(subgroups) == 1L &&
-                       is.null(subgroups[[1L]]$predicate)) {
-    list(arm_built)
-  } else if (identical(tolower(params$subgroup_kind %||% "concept"), "age")) {
-    atoms <- .omopCmInteractionAgeAtoms(handle, cohorts, tar, arms,
-                                        level_counts, params)
-    .dsomopReleaseC6Family(
-      arm_built, lapply(atoms$nodes, function(lv) node_built(lv, "age atom")),
-      combine = atoms$combine)
-  } else {
-    .dsomopReleaseC6Family(arm_built, lapply(seq_along(subgroups), function(i) {
-      node_built(level_counts[[i]], subgroups[[i]]$label)
-    }))
+  family_kind <- if (is.null(age_atoms)) {
+    tolower(params$subgroup_kind %||% "concept")
+  } else "age5"
+  if (!overall_only) {
+    for (i in seq_along(sub_c6)) {
+      sub_c6[[i]]$label_component <- .dsomopReleaseFamilyLabel(
+        sub_c6[[i]], route$policy$release_epsilon, family_kind, "C6")
+    }
   }
-  built_all <- list()
+  cox <- NULL
+  if (!identical(model_type, "poisson")) {
+    exits <- rbind(
+      .omopReleaseCoxExits(handle, cohorts$a, "arm=target", out_src, tar,
+                           horizon),
+      .omopReleaseCoxExits(handle, cohorts$b, "arm=comparator", out_src, tar,
+                           horizon))
+    if (overall_only) {
+      # The overall subgroup is the arm itself: the ordinary protected Cox
+      # route (same atoms, parents, fit and uncertainty).
+      one <- .omopReleaseGroupedCoxCore(route, exits, arm_c6, tar,
+                                        outcome_key)
+      cox <- list(rr = list(one$rr), reason = list(one$reason),
+                  built = list(one$built))
+    } else {
+      members <- lapply(node_counts, function(lv) list(
+        target = lv$target$frame$person_id %||% character(0),
+        comparator = lv$comparator$frame$person_id %||% character(0)))
+      cox <- .omopReleaseInteractionCoxCore(route, exits, arm_c6, node_c6,
+                                            members, tar, outcome_key, combine)
+      for (i in seq_along(cox$built)[-1L]) {
+        cox$built[[i]]$label_component <- .dsomopReleaseFamilyLabel(
+          cox$built[[i]], route$policy$release_epsilon, family_kind, "C8")
+      }
+    }
+  }
+  na_rr <- c(estimate = NA_real_, ci_lo = NA_real_, ci_hi = NA_real_,
+             log_estimate = NA_real_, se_log_estimate = NA_real_)
   rows <- lapply(seq_along(subgroups), function(i) {
-    sg <- subgroups[[i]]
-    built <- family_builts[[i]]
-    built$owner$estimand <- node_owner(sg$label)$estimand
-    built_all[[length(built_all) + 1L]] <<- built
-    st <- built$strata
+    st <- sub_c6[[i]]$strata
     t_row <- st[st$stratum == "arm=target", , drop = FALSE]
     c_row <- st[st$stratum == "arm=comparator", , drop = FALSE]
     rr <- if (identical(model_type, "poisson")) {
-      .dsomopReleaseRateRatio(t_row, c_row, built$noise_sd, floor)
-    } else c(estimate = NA_real_, ci_lo = NA_real_, ci_hi = NA_real_,
-             log_estimate = NA_real_, se_log_estimate = NA_real_)
+      .dsomopReleaseRateRatio(t_row, c_row, sub_c6[[i]]$noise_sd, floor)
+    } else cox$rr[[i]] %||% na_rr
     data.frame(
-      subgroup_label = sg$label, model_type = model_type,
+      subgroup_label = subgroups[[i]]$label, model_type = model_type,
       target_persons = t_row$n_display, comparator_persons = c_row$n_display,
       target_outcomes = t_row$events_display,
       comparator_outcomes = c_row$events_display,
@@ -1268,12 +1304,31 @@
   })
   df <- do.call(rbind, rows)
   rownames(df) <- NULL
-  # The arms' own components (the family's parent) are part of the release.
-  if (!identical(family_builts[[1L]], arm_built)) {
-    built_all[[length(built_all) + 1L]] <- arm_built
+  built <- c(if (!overall_only) sub_c6, list(arm_c6),
+             if (!is.null(cox)) {
+               lapply(cox$built, function(b) b[c("owner", "export", "label_component")])
+             })
+  extra <- list(subgroup_family = "released",
+                hierarchy = if (overall_only) "overall_arm" else paste0(
+                  "subgroups are a public partition of each arm: their ",
+                  "person totals, status and time are reconciled to the ",
+                  "arm's components, which they never move"))
+  if (!identical(model_type, "poisson")) {
+    extra$estimand <- paste0(
+      "grouped-time Cox (Breslow ties) per subgroup on the canonical public ",
+      "exit basis, capped at ", horizon, " days; subgroup exit cells ",
+      "reconciled to the subgroup status totals and the arm's cells; not ",
+      "the raw Efron/continuous estimator")
+    bad <- which(!vapply(cox$reason, is.null, logical(1L)))
+    if (length(bad)) {
+      extra$unavailable_reason <- paste0(
+        "The protected grouped-time Cox hazard ratio is unavailable for ",
+        paste0("'", vapply(subgroups[bad], `[[`, character(1L), "label"),
+               "' (", vapply(cox$reason[bad], as.character, character(1L)),
+               ")", collapse = ", "), ".")
+    }
   }
-  list(df = df, built = built_all,
-       extra = list(subgroup_family = "released"))
+  list(df = df, built = built, extra = extra)
 }
 
 #' Five-year age atoms of an interaction age family

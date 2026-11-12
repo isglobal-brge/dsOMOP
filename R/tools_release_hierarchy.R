@@ -752,3 +752,29 @@
         "sums of one level's nodes"),
       components = components))
 }
+
+# Public allocation union for a complete family: its atoms form one vector
+# (sensitivity one), in addition to the parent vector. A coarse age view
+# reports the same atom allocation. Repeated rows do not spend it again.
+.dsomopReleaseFamilyLabel <- function(built, e, family_kind, kind) {
+  o <- built$owner
+  frac <- .DSOMOP_RELEASE_FRACTIONS
+  tag <- paste0("family:", family_kind)
+  alloc <- if (identical(kind, "C6")) {
+    stats::setNames(list(frac$N, frac$C6$status, frac$C6$time),
+                    paste0(c("N_strata:", "status:", "time:"), tag))
+  } else stats::setNames(list(.DSOMOP_RELEASE_SURVIVAL_FRACTIONS$C8),
+                         paste0("H:", tag))
+  sens <- lapply(names(alloc), function(n) {
+    if (startsWith(n, "time:")) .DSOMOP_RELEASE_TIME_CAP else 1
+  })
+  names(sens) <- names(alloc)
+  list(owner = o$id, population = o$population, estimand = o$estimand,
+       family = kind, hierarchy = tag, contribution_cap = 1L,
+       allocation_fraction = alloc,
+       allocation_epsilon = lapply(alloc, function(a) a * e),
+       sensitivity = sens,
+       noise_sd = stats::setNames(lapply(names(alloc), function(n) {
+         .dsomopReleaseNoiseSd(e * alloc[[n]], sens[[n]])
+       }), names(alloc)))
+}

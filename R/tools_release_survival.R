@@ -65,104 +65,224 @@
                signif(as.numeric(values), 12))
 }
 
-# --- C8: grouped-time Cox from a public exit-time x status basis ---------------
-
-#' Public exit-time bins of the protected survival basis
-#'
-#' The clinical day grid L within [0, 3650]; when both window anchors are the
-#' same, exits cannot exceed the public window length, so the bins beyond it
-#' are structurally empty and omitted (a function of public parameters only).
-#'
-#' @param max_exit Public maximum exit in days, or NULL.
-#' @return Grid list (id, breaks, unit).
-#' @keywords internal
-.dsomopReleaseExitGrid <- function(max_exit = NULL) {
-  L <- .dsomopReleaseDayGrid()
-  if (!is.null(max_exit) && is.finite(max_exit)) {
-    L <- L[L < max(1, max_exit)]
-  }
-  list(id = paste0("exit-days-clinical-v1/max=",
-                   if (is.null(max_exit)) "3650" else max_exit),
-       breaks = L, lower = 0, upper = 3650, unit = "days")
-}
+# --- C8: grouped-time Cox from the canonical exit-time x status basis ----------
 
 .DSOMOP_RELEASE_EXIT_STATUSES <- c("event", "censored", "admin_censored")
 
-#' Build the protected C8 exit-time x status histogram of the two arms
+#' Canonical public exit-time bins of the protected survival basis
 #'
-#' One atom per person (arms are disjoint), so the vector has L1 sensitivity
-#' 1; cells are the H family at 0.8 of the reference calibration. Each arm's
-#' signed cells are reconciled to its shared person total (the C6 N component
-#' of the same people) and displayed by projection onto its displayed total.
+#' One versioned basis for every request (dsOMOP 2.10.3, review R06): the
+#' clinical day grid L within [0, 3650], the last interval [3650, Inf) holding
+#' exits at the horizon. Interval identities never depend on the requested
+#' window, its spelling, scope labels or the observed exits, so equal bounded
+#' exit/status maps always reach the same atoms.
 #'
-#' @param policy DP policy.
-#' @param protection Route.
-#' @param owner_id Scientific owner of the exit histogram.
-#' @param sub Data frame: person_id, stratum ("arm=target"/"arm=comparator"),
-#'   exit (days at risk, >= 1), status (one of the public statuses).
-#' @param n_signed,n_display Named per-arm signed and displayed person totals.
-#' @param grid Exit grid.
-#' @return List: cells (per arm displayed matrix bins x statuses), export,
-#'   noise_sd, allocation.
+#' @return Grid list (id, breaks, lower, upper, unit).
 #' @keywords internal
-.dsomopReleaseBuildC8 <- function(policy, protection, owner_id, sub, n_signed,
-                                  n_display, grid) {
+.dsomopReleaseExitGrid <- function() {
+  list(id = "exit-days-clinical-v2", breaks = .dsomopReleaseDayGrid(),
+       lower = 0, upper = .DSOMOP_RELEASE_TIME_CAP, unit = "days")
+}
+
+#' Fixed structural mask of the complete canonical exit basis
+#'
+#' Exits below one day are structurally impossible. Every remaining interval
+#' and censoring cause is drawn, reconciled and displayed for every window.
+#' A request-dependent mask would change the projection even when all actual
+#' contribution maps are identical, creating another estimate of the same
+#' atoms. Shorter windows affect per-person exits in the substrate only.
+#'
+#' @param tar Public request window (does not select release coordinates).
+#' @param horizon Public horizon (the versioned basis uses 3650 days).
+#' @return Logical matrix bins x statuses (TRUE: feasible).
+#' @keywords internal
+.dsomopReleaseExitMask <- function(tar, horizon = .DSOMOP_RELEASE_TIME_CAP) {
+  grid <- .dsomopReleaseExitGrid()
+  feasible <- grid$breaks >= 1 & grid$breaks <= .DSOMOP_RELEASE_TIME_CAP
+  m <- cbind(event = feasible, censored = feasible,
+             admin_censored = feasible)
+  rownames(m) <- .dsomopReleaseBinKeys(grid)
+  m
+}
+
+# Canonical coordinates of every cell of the basis (bin-major, then status).
+.dsomopReleaseExitCoordinates <- function() {
+  keys <- .dsomopReleaseBinKeys(.dsomopReleaseExitGrid())
+  statuses <- .DSOMOP_RELEASE_EXIT_STATUSES
+  paste0("stratum=root|cell=", rep(keys, each = length(statuses)),
+         "|status=", rep(statuses, times = length(keys)))
+}
+
+#' Display of one arm's exit cells under its status parents
+#'
+#' Event cells are projected onto the simplex of the displayed C6 event
+#' parent, censored and administratively censored cells jointly onto the
+#' displayed no-event parent (displayed persons minus displayed events); the
+#' projection is invariant to a uniform shift within a group, so it equals
+#' the projection of the reconciled signed cells. Masked cells are zero.
+#'
+#' @param event,nonevent Raw (or signed) values of the feasible event and
+#'   non-event cells, in canonical order.
+#' @param events_display,n_display Displayed C6 parents of the arm.
+#' @param mask Feasibility matrix.
+#' @return Displayed bins x statuses matrix.
+#' @keywords internal
+.dsomopReleaseC8Display <- function(event, nonevent, events_display,
+                                    n_display, mask) {
+  e_disp <- max(0, events_display)
+  ne_disp <- max(0, n_display - e_disp)
+  feasible <- as.vector(t(mask))
+  status <- rep(colnames(mask), times = nrow(mask))
+  values <- numeric(length(feasible))
+  is_event <- feasible & status == "event"
+  is_non <- feasible & status != "event"
+  values[is_event] <- .dsomopReleaseSimplex(event, e_disp)
+  values[is_non] <- .dsomopReleaseSimplex(nonevent, ne_disp)
+  matrix(values, nrow = nrow(mask), byrow = TRUE, dimnames = dimnames(mask))
+}
+
+#' Draw the raw protected exit cells of one owner's strata
+#'
+#' One atom per person and stratum (arms are disjoint), L1 sensitivity 1 at
+#' 0.8 of the reference calibration, keyed on the canonical coordinate and the
+#' contribution fingerprint of the people in the cell. Only the cells of the
+#' request's view are drawn: a masked cell never influences the view, and a
+#' shared cell reaches the same atom whatever the window.
+#'
+#' @param policy,protection Route.
+#' @param owner_id Scientific owner of the exit histogram.
+#' @param sub Data frame: person_id, stratum, exit, status.
+#' @param strata Stratum keys to draw.
+#' @param mask Feasibility matrix.
+#' @return Named list per stratum: list(event, nonevent) raw feasible values.
+#' @keywords internal
+.dsomopReleaseDrawC8 <- function(policy, protection, owner_id, sub, strata,
+                                 mask) {
   keys <- .dsomopReleaseKeys(policy)
   statuses <- .DSOMOP_RELEASE_EXIT_STATUSES
-  bin_keys <- .dsomopReleaseBinKeys(grid)
-  nb <- length(bin_keys)
+  grid <- .dsomopReleaseExitGrid()
+  nb <- length(grid$breaks)
   alloc <- .DSOMOP_RELEASE_SURVIVAL_FRACTIONS$C8
+  coords <- .dsomopReleaseExitCoordinates()
+  feasible <- as.vector(t(mask))
+  status_of <- rep(statuses, times = nb)
   sub <- sub[!is.na(sub$person_id), , drop = FALSE]
   sub$person_id <- .dsomopReleasePersonIdText(sub$person_id)
   if (anyDuplicated(paste(sub$person_id, sub$stratum, sep = "\u001f"))) {
-    stop("A survival substrate lists one person twice in one arm.",
+    stop("A survival substrate lists one person twice in one stratum.",
          call. = FALSE)
   }
   tokens <- if (nrow(sub)) .dsomopReleasePersonTokens(keys, policy,
                                                       sub$person_id) else
     character(0)
-  coords <- paste0("stratum=root|cell=", rep(bin_keys, each = length(statuses)),
-                   "|status=", rep(statuses, times = nb))
-  arms <- c("arm=target", "arm=comparator")
-  cells <- list(); export <- list()
-  for (s in arms) {
+  out <- list()
+  for (s in strata) {
     in_s <- which(sub$stratum == s)
     b <- .dsomopReleaseBinIndex(as.numeric(sub$exit[in_s]), grid)
-    b <- pmin(pmax(b, 1L), nb)
     st <- match(sub$status[in_s], statuses)
-    if (anyNA(st)) stop("A survival substrate has an unknown status.",
-                        call. = FALSE)
+    if (anyNA(st) || anyNA(b)) {
+      stop("A survival substrate has an unknown status or exit.",
+           call. = FALSE)
+    }
     cell <- (b - 1L) * length(statuses) + st
+    if (any(!feasible[cell])) {
+      stop("A survival substrate falls outside its public structural mask.",
+           call. = FALSE)
+    }
     tok <- tokens[in_s]
-    rows_at <- split(seq_along(cell), factor(cell,
-                                             levels = seq_along(coords)))
-    raw <- vapply(seq_along(coords), function(k) {
+    rows_at <- split(seq_along(cell), factor(cell, levels = seq_along(coords)))
+    raw <- rep(NA_real_, length(coords))
+    for (k in which(feasible)) {
       hit <- rows_at[[k]]
       fp <- .dsomopReleaseFingerprint(keys, owner_id, "H", coords[[k]],
                                       tok[hit], rep(1, length(hit)))
-      .dsomopReleaseNoisyComponent(policy, keys, protection, list(
+      raw[[k]] <- .dsomopReleaseNoisyComponent(policy, keys, protection, list(
         owner = owner_id, population = "c6/persons-at-risk/v1", family = "H",
         coordinate = coords[[k]], value = length(hit), allocation = alloc,
         sensitivity = 1, fingerprint = fp))
-    }, numeric(1L))
-    signed <- raw + (n_signed[[s]] - sum(raw)) / length(raw)
-    shown <- .dsomopReleaseSimplex(raw, max(0, n_display[[s]]))
-    cells[[s]] <- matrix(shown, nrow = nb, byrow = TRUE,
-                         dimnames = list(bin_keys, statuses))
-    export[[length(export) + 1L]] <- list(stratum = s, n = n_signed[[s]],
+    }
+    out[[s]] <- list(event = raw[feasible & status_of == "event"],
+                     nonevent = raw[feasible & status_of != "event"])
+  }
+  out
+}
+
+# The C6 status parents of each arm: signed (reconciled to the signed person
+# total, as exported) and displayed.
+.dsomopReleaseC6Parents <- function(c6) {
+  st <- c6$strata
+  comps <- c6$export$components
+  status <- stats::setNames(lapply(comps, `[[`, "status"),
+                            vapply(comps, `[[`, character(1L), "stratum"))
+  stats::setNames(lapply(seq_len(nrow(st)), function(i) {
+    s <- st$stratum[[i]]
+    list(n_signed = st$n_signed[[i]], status_signed = status[[s]],
+         n_display = st$n_display[[i]],
+         events_display = st$events_display[[i]])
+  }), st$stratum)
+}
+
+#' Build the protected C8 exit-time x status cells of two arms
+#'
+#' Signed event cells are reconciled (uniform shift, the least-squares
+#' projection) to the C6 signed event parent of the same arm, censored and
+#' administratively censored cells jointly to the C6 signed no-event parent;
+#' the parents are never moved. Displayed cells are projected onto the
+#' already displayed C6 parents (\code{.dsomopReleaseC8Display}).
+#'
+#' @param policy,protection Route.
+#' @param owner_id Scientific owner.
+#' @param sub Data frame: person_id, stratum, exit, status.
+#' @param parents Per stratum C6 parents (\code{.dsomopReleaseC6Parents}).
+#' @param mask Feasibility matrix (\code{.dsomopReleaseExitMask}).
+#' @return List: cells (displayed matrix per stratum), raw, signed, export,
+#'   allocation, noise_sd, mask.
+#' @keywords internal
+.dsomopReleaseBuildC8 <- function(policy, protection, owner_id, sub, parents,
+                                  mask) {
+  strata <- names(parents)
+  raw <- .dsomopReleaseDrawC8(policy, protection, owner_id, sub, strata, mask)
+  feasible <- as.vector(t(mask))
+  status_of <- rep(colnames(mask), times = nrow(mask))
+  coords <- .dsomopReleaseExitCoordinates()[feasible]
+  is_event <- status_of[feasible] == "event"
+  cells <- list(); export <- list()
+  for (s in strata) {
+    p <- parents[[s]]
+    r <- raw[[s]]
+    signed <- numeric(length(coords))
+    signed[is_event] <- r$event + (p$status_signed[[1L]] - sum(r$event)) /
+      max(1L, length(r$event))
+    signed[!is_event] <- r$nonevent + (p$status_signed[[2L]] -
+                                         sum(r$nonevent)) /
+      max(1L, length(r$nonevent))
+    cells[[s]] <- .dsomopReleaseC8Display(r$event, r$nonevent,
+                                          p$events_display, p$n_display, mask)
+    export[[length(export) + 1L]] <- list(stratum = s, n = p$n_signed,
+                                          status = p$status_signed,
                                           h = signed)
   }
   e <- policy$release_epsilon
-  list(cells = cells, coordinates = coords, grid = grid,
-       allocation = alloc,
+  alloc <- .DSOMOP_RELEASE_SURVIVAL_FRACTIONS$C8
+  grid <- .dsomopReleaseExitGrid()
+  list(cells = cells, raw = raw, coordinates = coords, grid = grid,
+       mask = mask, allocation = alloc,
        noise_sd = .dsomopReleaseNoiseSd(e * alloc, 1),
        export = list(protocol = .DSOMOP_RELEASE_PROTOCOL, owner = owner_id,
                      population = "c6/persons-at-risk/v1", family = "C8",
                      grid = grid$id, breaks = grid$breaks,
-                     statuses = statuses, strata_kind = "independent",
+                     statuses = .DSOMOP_RELEASE_EXIT_STATUSES,
+                     strata_kind = "independent",
                      cell_keys = coords, cap = 1L,
+                     status_of_cell = status_of[feasible],
+                     structural_mask = paste0(
+                       "only exits below one day are structural zeros; every ",
+                       "window uses the same complete horizon basis"),
                      allocation = list(H = alloc),
-                     reconciliation = "exit_cells_sum_to_arm_N",
+                     reconciliation = paste0(
+                       "event_cells_sum_to_C6_signed_event_parent_",
+                       "censored_and_admin_cells_sum_to_C6_signed_no_event_",
+                       "parent"),
                      components = export))
 }
 
@@ -213,26 +333,45 @@
 #'
 #' Perturbs the displayed protected values with draws of their public noise
 #' law (per-value calibrations), passes them through the release's own
-#' post-processing (\code{refit}: projection and fit; or clipping at zero
-#' first when \code{clip}) and returns the SD of the finite estimates (NA
-#' unless at least half the replicates are finite). Pure post-processing,
-#' deterministic in the displayed values.
+#' post-processing (\code{refit}: reconciliation, projection and fit; or
+#' clipping at zero first when \code{clip}) and returns the SD of the finite
+#' estimates (NA unless at least half the replicates are finite). Pure
+#' post-processing, deterministic in the displayed values. Every simulated
+#' component gets an independent draw: equal-map components that share one
+#' sticky draw in the mechanism (for example a cell that is empty in both
+#' arms) are treated as independent, so the result is an approximation.
 #'
 #' @keywords internal
 .dsomopReleaseSimSd <- function(label, values, epsilon, sensitivity, refit,
                                 replicates = .DSOMOP_RELEASE_SIM_REPLICATES,
                                 clip = TRUE) {
+  sims <- .dsomopReleaseSimEstimates(label, values, epsilon, sensitivity,
+                                     refit, replicates = replicates,
+                                     clip = clip)
+  if (is.null(dim(sims))) sims <- matrix(sims, ncol = 1L)
+  apply(sims, 2L, function(est) {
+    ok <- is.finite(est)
+    if (sum(ok) < replicates / 2) return(NA_real_)
+    stats::sd(est[ok])
+  })
+}
+
+# Replicated estimates of the noise-law simulation (one row per replicate,
+# one column per estimate returned by refit).
+.dsomopReleaseSimEstimates <- function(label, values, epsilon, sensitivity,
+                                       refit,
+                                       replicates =
+                                         .DSOMOP_RELEASE_SIM_REPLICATES,
+                                       clip = TRUE) {
   seed <- .dsomopReleaseSimSeed(label, values)
   n <- length(values)
   noise <- .dsomopReleaseSimNoise(seed, n * replicates, rep_len(epsilon, n),
                                   rep_len(sensitivity, n))
-  est <- vapply(seq_len(replicates), function(r) {
+  est <- lapply(seq_len(replicates), function(r) {
     v <- values + noise[(r - 1L) * n + seq_len(n)]
-    refit(if (clip) pmax(0, v) else v)
-  }, numeric(1L))
-  ok <- is.finite(est)
-  if (sum(ok) < replicates / 2) return(NA_real_)
-  stats::sd(est[ok])
+    as.numeric(refit(if (clip) pmax(0, v) else v))
+  })
+  do.call(rbind, est)
 }
 
 #' Per-person exits and censoring causes of the two arms (protected horizon)
@@ -276,14 +415,80 @@
              stringsAsFactors = FALSE)
 }
 
+# Grouped Cox fit from two displayed arms.
+.dsomopReleaseCoxArmsFit <- function(target, comparator) {
+  .dsomopReleaseGroupedCoxFit(.dsomopReleaseCoxRiskSets(target, comparator))
+}
+
+#' Release-pipeline simulation of the two-arm grouped Cox estimator
+#'
+#' Rebuilds the release's display from simulated raw components, exactly as
+#' the release does: per arm the displayed person total \code{max(0, N)}, the
+#' displayed events from the C6 status pair projected onto it, then the exit
+#' cells projected onto the displayed status parents
+#' (\code{.dsomopReleaseC8Display}); then the grouped Breslow fit.
+#'
+#' @param arms Per arm list(n, e, ne, event, nonevent) of raw values.
+#' @param mask Feasibility matrix.
+#' @return Named list per arm of displayed matrices, plus \code{beta}.
+#' @keywords internal
+.omopReleaseCoxPipeline <- function(arms, mask) {
+  disp <- lapply(arms, function(a) {
+    n_disp <- .dsomopReleaseRound(max(0, a$n))
+    e_disp <- .dsomopReleaseRound(.dsomopReleaseSimplex(c(a$e, a$ne),
+                                                        n_disp)[[1L]])
+    .dsomopReleaseC8Display(a$event, a$nonevent, e_disp, n_disp, mask)
+  })
+  list(cells = disp, beta = .dsomopReleaseCoxArmsFit(
+    disp[["arm=target"]], disp[["arm=comparator"]])[["beta"]])
+}
+
+# Public displayed values of one arm in the order the simulation perturbs
+# them, and their calibrations (N 0.2e, status pair 0.3e, cells 0.8e; all
+# sensitivity 1 for these person-partitioned components).
+.omopReleaseCoxSimValues <- function(parents, cells, mask, e) {
+  feasible <- as.vector(t(mask))
+  status_of <- rep(colnames(mask), times = nrow(mask))
+  frac <- .DSOMOP_RELEASE_FRACTIONS
+  vals <- list(); eps <- list()
+  for (s in names(parents)) {
+    p <- parents[[s]]
+    flat <- as.vector(t(cells[[s]]))
+    ev <- flat[feasible & status_of == "event"]
+    ne <- flat[feasible & status_of != "event"]
+    vals[[s]] <- c(p$n_display, p$events_display,
+                   p$n_display - p$events_display, ev, ne)
+    eps[[s]] <- c(e * frac$N, rep(e * frac$C6$status, 2L),
+                  rep(e * .DSOMOP_RELEASE_SURVIVAL_FRACTIONS$C8,
+                      length(ev) + length(ne)))
+    attr(vals[[s]], "sizes") <- c(length(ev), length(ne))
+  }
+  list(values = vals, epsilon = eps)
+}
+
+# Inverse of .omopReleaseCoxSimValues: raw arm components from a vector.
+.omopReleaseCoxSimArms <- function(v, sizes, strata) {
+  out <- list(); at <- 0L
+  for (s in strata) {
+    ne_e <- sizes[[s]][[1L]]; ne_n <- sizes[[s]][[2L]]
+    x <- v[at + seq_len(3L + ne_e + ne_n)]
+    at <- at + 3L + ne_e + ne_n
+    out[[s]] <- list(n = x[[1L]], e = x[[2L]], ne = x[[3L]],
+                     event = x[3L + seq_len(ne_e)],
+                     nonevent = x[3L + ne_e + seq_len(ne_n)])
+  }
+  out
+}
+
 #' Protected grouped-time Cox hazard ratio of two arms
 #'
 #' @param handle,cohorts,out_src,tar,outcome_key Request pieces.
 #' @param route Protected route.
-#' @param c6 The C6 build of the same arms (person totals shared).
-#' @param sub_c6 Its substrate (time to first outcome).
+#' @param c6 The C6 build of the same arms (person totals and status
+#'   parents shared).
+#' @param arm_data Per arm first-outcome data (\code{.omopCmEffectArmData}).
 #' @return List: rr (estimate, ci_lo, ci_hi, log_estimate, se_log_estimate),
-#'   built (the C8 build as a release-owner list), note.
+#'   built (the C8 build as a release-owner list), reason.
 #' @keywords internal
 .omopReleaseGroupedCox <- function(handle, cohorts, out_src, tar, outcome_key,
                                    route, c6, arm_data = list()) {
@@ -293,14 +498,26 @@
                          horizon, arm_data$target),
     .omopReleaseCoxExits(handle, cohorts$b, "arm=comparator", out_src, tar,
                          horizon, arm_data$comparator))
-  same_anchor <- identical(tar$anchor_start, tar$anchor_end)
-  max_exit <- if (same_anchor) {
-    min(horizon, as.integer(tar$end) - as.integer(tar$start) + 1L)
-  } else NULL
-  grid <- .dsomopReleaseExitGrid(max_exit)
-  st <- c6$strata
-  n_signed <- stats::setNames(st$n_signed, st$stratum)
-  n_display <- stats::setNames(st$n_display, st$stratum)
+  .omopReleaseGroupedCoxCore(route, exits, c6, tar, outcome_key)
+}
+
+#' Core of the protected grouped Cox release (substrate in hand)
+#'
+#' Shared by the SQL route and the utility study: the C8 build under the C6
+#' parents, the fit on displayed cells and the release-pipeline simulation
+#' of its noise SD.
+#'
+#' @param route Protected route (policy, protection).
+#' @param exits Data frame: person_id, stratum, time, status.
+#' @param c6 C6 build of the same arms.
+#' @param tar Public window (for the structural mask).
+#' @param outcome_key Canonical outcome identity.
+#' @return List: rr, built, reason, cells.
+#' @keywords internal
+.omopReleaseGroupedCoxCore <- function(route, exits, c6, tar, outcome_key) {
+  mask <- .dsomopReleaseExitMask(tar)
+  exits <- .dsomopReleaseExitNormalize(exits, tar)
+  parents <- .dsomopReleaseC6Parents(c6)
   owner_id <- paste0("c8/first-outcome-exit-status/", outcome_key)
   c8 <- .dsomopReleaseBuildC8(route$policy, route$protection, owner_id,
                               data.frame(person_id = exits$person_id,
@@ -308,35 +525,27 @@
                                          exit = exits$time,
                                          status = exits$status,
                                          stringsAsFactors = FALSE),
-                              n_signed, n_display, grid)
+                              parents, mask)
   target <- c8$cells[["arm=target"]]
   comparator <- c8$cells[["arm=comparator"]]
-  fit <- .dsomopReleaseGroupedCoxFit(.dsomopReleaseCoxRiskSets(target,
-                                                               comparator))
+  fit <- .dsomopReleaseCoxArmsFit(target, comparator)
   na_rr <- c(estimate = NA_real_, ci_lo = NA_real_, ci_hi = NA_real_,
              log_estimate = NA_real_, se_log_estimate = NA_real_)
   rr <- na_rr
   reason <- attr(fit, "reason")
   if (is.finite(fit[["beta"]])) {
-    nc <- length(target)
-    values <- c(as.vector(t(target)), as.vector(t(comparator)),
-                n_display[["arm=target"]], n_display[["arm=comparator"]])
     e <- route$policy$release_epsilon
-    # Each simulated arm is projected onto its simulated person total, as
-    # released.
+    sim <- .omopReleaseCoxSimValues(parents, c8$cells, mask, e)
+    strata <- names(parents)
+    sizes <- lapply(sim$values, attr, "sizes")
+    values <- unlist(lapply(sim$values, as.numeric), use.names = FALSE)
     refit <- function(v) {
-      arm <- function(cells, n) {
-        matrix(.dsomopReleaseSimplex(cells, max(0, n)), ncol = 3L,
-               byrow = TRUE, dimnames = dimnames(target))
-      }
-      tm <- arm(v[seq_len(nc)], v[[2L * nc + 1L]])
-      cm <- arm(v[nc + seq_len(nc)], v[[2L * nc + 2L]])
-      .dsomopReleaseGroupedCoxFit(.dsomopReleaseCoxRiskSets(tm, cm))[["beta"]]
+      .omopReleaseCoxPipeline(.omopReleaseCoxSimArms(v, sizes, strata),
+                              mask)$beta
     }
-    sim_sd <- .dsomopReleaseSimSd(
-      "grouped-cox/v2", values,
-      c(rep(e * .DSOMOP_RELEASE_SURVIVAL_FRACTIONS$C8, 2L * nc),
-        rep(e * .DSOMOP_RELEASE_FRACTIONS$N, 2L)), 1, refit, clip = FALSE)
+    sim_sd <- .dsomopReleaseSimSd("grouped-cox/v3", values,
+                                  unlist(sim$epsilon, use.names = FALSE), 1,
+                                  refit, clip = FALSE)
     se <- if (is.finite(sim_sd)) sqrt(fit[["se_model"]]^2 + sim_sd^2) else
       NA_real_
     if (is.finite(se)) {
@@ -349,16 +558,479 @@
     } else reason <- "noise_dominated"
   }
   # Labelled as an H-family owner of the same eligible population (its person
-  # totals are the C6 components, counted once in the label's union).
+  # totals and status parents are the C6 components, counted once in the
+  # label's union).
   built <- list(owner = list(id = owner_id, family = "H", cap = 1L,
                              population = "c6/persons-at-risk/v1",
-                             grid = list(id = grid$id), bounds = NULL,
+                             grid = list(id = c8$grid$id), bounds = NULL,
                              estimand = paste0(
                                "exit-time bin x status (event, censored, ",
-                               "administratively censored) per arm, capped ",
-                               "at ", .DSOMOP_RELEASE_TIME_CAP, " days")),
+                               "administratively censored) per arm on the ",
+                               "canonical basis ", c8$grid$id, ", capped at ",
+                               .DSOMOP_RELEASE_TIME_CAP, " days; cells ",
+                               "reconciled to the arm's C6 event and ",
+                               "no-event parents")),
                 export = c8$export, c8 = c8)
-  list(rr = rr, built = built, reason = reason)
+  list(rr = rr, built = built, reason = reason, cells = c8$cells)
+}
+
+#' Normalize per-person exits onto the public structural mask
+#'
+#' A deterministic per-person rule from public parameters only, so no data
+#' choice decides the mask: exits are at least one day and at most the
+#' public maximum; with equal anchors and a window starting at or after its
+#' anchor, an administratively censored exit before the window's end is a
+#' censoring and a censored exit at the end is administrative.
+#'
+#' @param exits Data frame with time and status.
+#' @param tar Public window.
+#' @param horizon Public horizon.
+#' @return The normalized frame.
+#' @keywords internal
+.dsomopReleaseExitNormalize <- function(exits, tar,
+                                        horizon = .DSOMOP_RELEASE_TIME_CAP) {
+  if (!nrow(exits)) return(exits)
+  same <- identical(tar$anchor_start %||% "start", tar$anchor_end %||% "end")
+  start <- as.integer(tar$start %||% 0L)
+  end <- as.integer(tar$end %||% 0L)
+  mx <- max(1L, if (same) min(horizon, end - start + 1L) else horizon)
+  t <- suppressWarnings(as.numeric(exits$time))
+  t[!is.finite(t)] <- 1
+  exits$time <- pmin(pmax(floor(t), 1), mx)
+  if (same && start >= 0L) {
+    st <- exits$status
+    st[st == "admin_censored" & exits$time < mx] <- "censored"
+    st[st == "censored" & exits$time >= mx] <- "admin_censored"
+    exits$status <- st
+  }
+  exits
+}
+
+# --- Hierarchical reconciliation helpers ---------------------------------------
+
+#' Projection onto a box-constrained simplex
+#'
+#' \code{argmin ||x - y||} subject to \code{0 <= x <= upper} and
+#' \code{sum(x) = total}: \code{x = clip(y + lambda, 0, upper)} with the
+#' unique \code{lambda} found on the piecewise-linear sum (exact breakpoints).
+#'
+#' @param y Values; @param total Target total; @param upper Upper bounds.
+#' @return Projected values.
+#' @keywords internal
+.dsomopReleaseBoxSimplex <- function(y, total, upper) {
+  y <- as.numeric(y)
+  u <- pmax(0, as.numeric(rep_len(upper, length(y))))
+  n <- length(y)
+  if (n == 0L) return(numeric(0))
+  total <- max(0, as.numeric(total))
+  if (total <= 0) return(rep(0, n))
+  if (total >= sum(u)) return(u)
+  g <- function(l) sum(pmin(pmax(y + l, 0), u))
+  bp <- sort(unique(c(-y, u - y)))
+  vals <- vapply(bp, g, numeric(1L))
+  j <- which(vals >= total)[[1L]]
+  l <- if (j == 1L) bp[[1L]] else {
+    l0 <- bp[[j - 1L]]; l1 <- bp[[j]]; g0 <- vals[[j - 1L]]; g1 <- vals[[j]]
+    if (g1 > g0) l0 + (total - g0) * (l1 - l0) / (g1 - g0) else l1
+  }
+  pmin(pmax(y + l, 0), u)
+}
+
+#' Least-squares reconciliation of a table to fixed row and column parents
+#'
+#' The minimum-norm additive adjustment \code{X = Y + a 1' + 1 b'} with
+#' \code{rowSums(X) = r} and \code{colSums(X) = c} (which need equal totals):
+#' \code{X = Y + R/m (rows) + C/k (columns) - D/(k m)}.
+#'
+#' @param Y k x m matrix; @param r Row parents; @param c Column parents.
+#' @return Reconciled matrix.
+#' @keywords internal
+.dsomopReleaseTwoWay <- function(Y, r, c) {
+  Y <- as.matrix(Y)
+  k <- nrow(Y); m <- ncol(Y)
+  if (k == 0L || m == 0L) return(Y)
+  R <- as.numeric(r) - rowSums(Y)
+  C <- as.numeric(c) - colSums(Y)
+  D <- sum(as.numeric(r)) - sum(Y)
+  Y + outer(R / m, rep(1, m)) + outer(rep(1, k), C / k) - D / (m * k)
+}
+
+#' Non-negative display of a table under fixed displayed row and column parents
+#'
+#' Iterative proportional fitting of the positive part of the reconciled
+#' table (a fixed floor keeps every cell positive) to the displayed parents,
+#' ending on the rows so each row equals its displayed parent exactly; the
+#' columns match theirs to the fitting tolerance. Deterministic.
+#'
+#' @param X Reconciled (signed) k x m table.
+#' @param r Displayed row parents; @param c Displayed column parents.
+#' @return Displayed matrix.
+#' @keywords internal
+.dsomopReleaseTwoWayDisplay <- function(X, r, c, iterations = 2000L,
+                                        tol = 1e-10) {
+  X <- as.matrix(X)
+  k <- nrow(X); m <- ncol(X)
+  out <- matrix(0, k, m, dimnames = dimnames(X))
+  if (k == 0L || m == 0L) return(out)
+  r <- pmax(0, as.numeric(r)); c <- pmax(0, as.numeric(c))
+  if (sum(r) <= 0 || sum(c) <= 0) return(out)
+  c <- c * sum(r) / sum(c)
+  Z <- pmax(X, 0) + 1e-9 * max(1, sum(r)) / (k * m)
+  Z[r == 0, ] <- 0
+  Z[, c == 0] <- 0
+  scale_rows <- function(Z) {
+    rs <- rowSums(Z)
+    Z * ifelse(rs > 0, r / rs, 0)
+  }
+  for (it in seq_len(iterations)) {
+    Z <- scale_rows(Z)
+    cs <- colSums(Z)
+    Z <- sweep(Z, 2L, ifelse(cs > 0, c / cs, 0), `*`)
+    if (max(abs(rowSums(Z) - r)) <= tol * max(1, sum(r))) break
+  }
+  Z <- scale_rows(Z)
+  dimnames(Z) <- dimnames(X)
+  Z
+}
+
+#' Display pipeline of a complete subgroup family under its arm (Cox)
+#'
+#' Within each arm: the arm's displayed person total and C6 status (as the C6
+#' build displays independent arms) and its exit cells under those parents;
+#' the subgroups' person totals reconciled to the arm (a public partition),
+#' their status to both their person totals and the arm's status (two-way),
+#' their exit cells to both their status totals and the arm's cells
+#' (two-way); displayed values are projected top-down onto the displayed
+#' parents. Used by the release (raw draws) and by its noise simulation
+#' (simulated raw values), so both follow one rule.
+#'
+#' @param arm Per arm list(n, e, ne, event, nonevent) of raw values.
+#' @param subs Per subgroup, per arm the same raw values.
+#' @param mask Feasibility matrix.
+#' @return List: arm (per arm displays), subgroups (per subgroup per arm:
+#'   n, events, signed status, cells), beta (per subgroup).
+#' @keywords internal
+.omopReleaseInteractionCoxPipeline <- function(arm, subs, mask,
+                                                combine = NULL) {
+  feasible <- as.vector(t(mask))
+  status_of <- rep(colnames(mask), times = nrow(mask))
+  is_event <- status_of[feasible] == "event"
+  k <- length(subs)
+  fam <- .omopReleaseFamilyC6(arm, subs)
+  sub_out <- lapply(seq_len(k), function(i) list())
+  arm_out <- list()
+  for (a in names(arm)) {
+    x <- arm[[a]]
+    p <- fam$arm[[a]]
+    ev_sig <- x$event + (p$status_signed[[1L]] - sum(x$event)) /
+      max(1L, length(x$event))
+    ne_sig <- x$nonevent + (p$status_signed[[2L]] - sum(x$nonevent)) /
+      max(1L, length(x$nonevent))
+    disp <- .dsomopReleaseC8Display(x$event, x$nonevent, p$events_display,
+                                    p$n_display, mask)
+    flat <- as.vector(t(disp))
+    ev_disp <- flat[feasible & status_of == "event"]
+    ne_disp <- flat[feasible & status_of != "event"]
+    arm_out[[a]] <- c(p, list(cells = disp))
+    sv <- lapply(fam$subgroups, `[[`, a)
+    st <- do.call(rbind, lapply(sv, `[[`, "status_signed"))
+    es_disp <- vapply(sv, `[[`, numeric(1L), "events_display")
+    ns_disp <- vapply(sv, `[[`, numeric(1L), "n_display")
+    # Exit cells: rows = the subgroups' status totals, columns = the arm's
+    # cells of the same status group (both parents fixed).
+    YE <- do.call(rbind, lapply(subs, function(s) s[[a]]$event))
+    YN <- do.call(rbind, lapply(subs, function(s) s[[a]]$nonevent))
+    XE <- .dsomopReleaseTwoWay(YE, st[, 1L], ev_sig)
+    XN <- .dsomopReleaseTwoWay(YN, st[, 2L], ne_sig)
+    DE <- .dsomopReleaseTwoWayDisplay(XE, es_disp, ev_disp)
+    DN <- .dsomopReleaseTwoWayDisplay(XN, pmax(0, ns_disp - es_disp), ne_disp)
+    for (i in seq_len(k)) {
+      values <- numeric(length(feasible))
+      values[feasible & status_of == "event"] <- DE[i, ]
+      values[feasible & status_of != "event"] <- DN[i, ]
+      h <- numeric(length(is_event))
+      h[is_event] <- XE[i, ]
+      h[!is_event] <- XN[i, ]
+      sub_out[[i]][[a]] <- c(sv[[i]], list(
+        h = h, cells = matrix(values, nrow = nrow(mask), byrow = TRUE,
+                              dimnames = dimnames(mask))))
+    }
+  }
+  if (!is.null(combine)) {
+    sub_out <- lapply(combine, function(idx) {
+      stats::setNames(lapply(names(arm), function(a) {
+        parts <- lapply(sub_out[idx], `[[`, a)
+        fields <- names(parts[[1L]])
+        stats::setNames(lapply(fields, function(f) {
+          Reduce(`+`, lapply(parts, `[[`, f))
+        }), fields)
+      }), names(arm))
+    })
+  }
+  beta <- vapply(sub_out, function(s) {
+    .dsomopReleaseCoxArmsFit(s[["arm=target"]]$cells,
+                             s[["arm=comparator"]]$cells)[["beta"]]
+  }, numeric(1L))
+  list(arm = arm_out, subgroups = sub_out, beta = beta)
+}
+
+#' Person-time hierarchy of a complete subgroup family under its arms (C6)
+#'
+#' Per arm, from raw components: the arm's displays (as the C6 build displays
+#' independent arms), the subgroups' person totals reconciled to the arm's
+#' total (a public partition; displayed by projection onto the arm's
+#' displayed total), their status reconciled two-way to their own totals and
+#' to the arm's status pair (displayed by the box-constrained projection that
+#' keeps both displayed margins) and their observed time reconciled to the
+#' arm's time (displayed within [0, persons x T] summing to the arm's
+#' displayed time). A child never moves its parent.
+#'
+#' @param arm Per arm list(n, e, ne, t) raw values.
+#' @param subs Per subgroup, per arm the same raw values.
+#' @return List: arm (per arm displays and signed parents), subgroups (per
+#'   subgroup per arm signed and displayed values).
+#' @keywords internal
+.omopReleaseFamilyC6 <- function(arm, subs) {
+  T_cap <- .DSOMOP_RELEASE_TIME_CAP
+  k <- length(subs)
+  arm_out <- list(); sub_out <- lapply(seq_len(k), function(i) list())
+  for (a in names(arm)) {
+    x <- arm[[a]]
+    n_sig <- x$n
+    st_sig <- c(x$e, x$ne) + (n_sig - x$e - x$ne) / 2
+    n_disp <- max(0, x$n)
+    e_disp <- .dsomopReleaseSimplex(c(x$e, x$ne), n_disp)[[1L]]
+    t_sig <- x$t %||% NA_real_
+    t_disp <- if (is.finite(t_sig)) min(max(t_sig, 0), n_disp * T_cap) else
+      NA_real_
+    arm_out[[a]] <- list(n_signed = n_sig, status_signed = st_sig,
+                         n_display = n_disp, events_display = e_disp,
+                         time_signed = t_sig, time_display = t_disp)
+    ns <- vapply(subs, function(s) s[[a]]$n, numeric(1L))
+    ns_sig <- ns + (n_sig - sum(ns)) / k
+    ns_disp <- .dsomopReleaseSimplex(ns, n_disp)
+    Y <- do.call(rbind, lapply(subs, function(s) c(s[[a]]$e, s[[a]]$ne)))
+    X <- .dsomopReleaseTwoWay(Y, ns_sig, st_sig)
+    es_disp <- .dsomopReleaseBoxSimplex((X[, 1L] + ns_disp - X[, 2L]) / 2,
+                                        e_disp, ns_disp)
+    ts <- vapply(subs, function(s) s[[a]]$t %||% NA_real_, numeric(1L))
+    has_t <- all(is.finite(ts)) && is.finite(t_sig)
+    ts_sig <- if (has_t) ts + (t_sig - sum(ts)) / k else rep(NA_real_, k)
+    ts_disp <- if (has_t) {
+      .dsomopReleaseBoxSimplex(ts_sig, t_disp, ns_disp * T_cap)
+    } else rep(NA_real_, k)
+    for (i in seq_len(k)) {
+      sub_out[[i]][[a]] <- list(
+        n_signed = ns_sig[[i]], n_display = ns_disp[[i]],
+        status_signed = as.numeric(X[i, ]), events_display = es_disp[[i]],
+        time_signed = ts_sig[[i]], time_display = ts_disp[[i]])
+    }
+  }
+  list(arm = arm_out, subgroups = sub_out)
+}
+
+# Raw C6 components of the strata of a C6 build (independent arms).
+.omopReleaseC6Raw <- function(c6) {
+  st <- c6$strata
+  stats::setNames(lapply(seq_len(nrow(st)), function(i) {
+    list(n = st$n_noisy[[i]], e = st$event_noisy[[i]],
+         ne = st$no_event_noisy[[i]], t = st$time_noisy[[i]])
+  }), st$stratum)
+}
+
+#' Rewrite a subgroup C6 build with its reconciled family values
+#'
+#' @param built C6 build of one subgroup.
+#' @param fam Its per-arm values from \code{.omopReleaseFamilyC6}.
+#' @return The build with reconciled displayed strata and signed export.
+#' @keywords internal
+.omopReleaseFamilyC6Apply <- function(built, fam) {
+  st <- built$strata
+  for (j in seq_len(nrow(st))) {
+    v <- fam[[st$stratum[[j]]]]
+    st$n_signed[[j]] <- v$n_signed
+    st$n_display[[j]] <- .dsomopReleaseRound(v$n_display)
+    st$events_display[[j]] <- .dsomopReleaseRound(v$events_display)
+    st$time_display[[j]] <- .dsomopReleaseRound(v$time_display)
+  }
+  built$strata <- st
+  built$export$components <- lapply(built$export$components, function(comp) {
+    v <- fam[[comp$stratum]]
+    comp$n <- v$n_signed
+    comp$status <- v$status_signed
+    comp$time <- v$time_signed
+    comp
+  })
+  built$export$reconciliation <- paste0(
+    "subgroup_N_sum_to_arm_N_status_two_way_to_subgroup_N_and_arm_status_",
+    "time_sum_to_arm_time")
+  built$export$parent <- "arm"
+  built
+}
+
+#' Protected grouped-time Cox fits of a complete subgroup family
+#'
+#' The arm's exit cells (the ordinary C8 atoms of the same arms) and every
+#' subgroup's exit cells on the canonical basis (one atom per person across
+#' the family: sensitivity 1), reconciled within the declared hierarchy
+#' (\code{.omopReleaseInteractionCoxPipeline}); each subgroup's grouped
+#' Breslow fit uses only its displayed protected cells, and its noise SD comes
+#' from the release-pipeline simulation of the whole family.
+#'
+#' @param route Protected route.
+#' @param exits Arm exits (person_id, stratum, time, status).
+#' @param arm_c6 C6 build of the arms.
+#' @param sub_c6 C6 builds of the subgroups (raw draws).
+#' @param members Per subgroup list(target, comparator) of person ids.
+#' @param tar Public window; @param outcome_key Outcome identity.
+#' @return List: rr (per subgroup named vectors), reason (per subgroup),
+#'   built (C8 owner lists: arm, then subgroups), family (the pipeline).
+#' @keywords internal
+.omopReleaseInteractionCoxCore <- function(route, exits, arm_c6, sub_c6,
+                                           members, tar, outcome_key,
+                                           combine = NULL) {
+  policy <- route$policy
+  mask <- .dsomopReleaseExitMask(tar)
+  exits <- .dsomopReleaseExitNormalize(exits, tar)
+  owner_id <- paste0("c8/first-outcome-exit-status/", outcome_key)
+  arms <- c("arm=target", "arm=comparator")
+  sub_df <- data.frame(person_id = .dsomopReleasePersonIdText(exits$person_id),
+                       stratum = exits$stratum, exit = exits$time,
+                       status = exits$status, stringsAsFactors = FALSE)
+  raw8 <- .dsomopReleaseDrawC8(policy, route$protection, owner_id, sub_df,
+                               arms, mask)
+  raw6 <- .omopReleaseC6Raw(arm_c6)
+  arm <- stats::setNames(lapply(arms, function(a) c(raw6[[a]], raw8[[a]])),
+                         arms)
+  subs <- lapply(seq_along(members), function(i) {
+    m <- members[[i]]
+    keep <- (sub_df$stratum == "arm=target" &
+               sub_df$person_id %in% m$target) |
+      (sub_df$stratum == "arm=comparator" &
+         sub_df$person_id %in% m$comparator)
+    r8 <- .dsomopReleaseDrawC8(policy, route$protection, owner_id,
+                               sub_df[keep, , drop = FALSE], arms, mask)
+    r6 <- .omopReleaseC6Raw(sub_c6[[i]])
+    stats::setNames(lapply(arms, function(a) c(r6[[a]], r8[[a]])), arms)
+  })
+  pipe <- .omopReleaseInteractionCoxPipeline(arm, subs, mask, combine)
+  k_atoms <- length(subs)
+  k <- length(pipe$subgroups)
+  fits <- lapply(pipe$subgroups, function(s) {
+    .dsomopReleaseCoxArmsFit(s[["arm=target"]]$cells,
+                             s[["arm=comparator"]]$cells)
+  })
+  e <- policy$release_epsilon
+  frac <- .DSOMOP_RELEASE_FRACTIONS
+  feasible <- as.vector(t(mask))
+  status_of <- rep(colnames(mask), times = nrow(mask))
+  flat_parts <- function(d) {
+    flat <- as.vector(t(d$cells))
+    c(d$n_display, d$events_display, d$n_display - d$events_display,
+      flat[feasible & status_of == "event"],
+      flat[feasible & status_of != "event"])
+  }
+  b_e <- sum(feasible & status_of == "event")
+  b_n <- sum(feasible & status_of != "event")
+  width <- 3L + b_e + b_n
+  sim_pipe <- if (is.null(combine)) pipe else
+    .omopReleaseInteractionCoxPipeline(arm, subs, mask)
+  values <- c(unlist(lapply(arms, function(a) flat_parts(sim_pipe$arm[[a]]))),
+              unlist(lapply(sim_pipe$subgroups, function(s) {
+                unlist(lapply(arms, function(a) flat_parts(s[[a]])))
+              })))
+  eps_block <- c(e * frac$N, rep(e * frac$C6$status, 2L),
+                 rep(e * .DSOMOP_RELEASE_SURVIVAL_FRACTIONS$C8, b_e + b_n))
+  epsilon <- rep(eps_block, times = 2L * (1L + k_atoms))
+  unpack <- function(x) list(n = x[[1L]], e = x[[2L]], ne = x[[3L]],
+                             event = x[3L + seq_len(b_e)],
+                             nonevent = x[3L + b_e + seq_len(b_n)])
+  refit <- function(v) {
+    block <- function(j) v[(j - 1L) * width + seq_len(width)]
+    arm_s <- stats::setNames(lapply(1:2, function(j) unpack(block(j))), arms)
+    subs_s <- lapply(seq_len(k_atoms), function(i) {
+      stats::setNames(lapply(1:2, function(j) {
+        unpack(block(2L + (i - 1L) * 2L + j))
+      }), arms)
+    })
+    .omopReleaseInteractionCoxPipeline(arm_s, subs_s, mask, combine)$beta
+  }
+  any_fit <- any(vapply(fits, function(f) is.finite(f[["beta"]]),
+                        logical(1L)))
+  sim_sd <- if (any_fit) {
+    .dsomopReleaseSimSd("interaction-grouped-cox/v1", values, epsilon, 1,
+                        refit, clip = FALSE)
+  } else rep(NA_real_, k)
+  na_rr <- c(estimate = NA_real_, ci_lo = NA_real_, ci_hi = NA_real_,
+             log_estimate = NA_real_, se_log_estimate = NA_real_)
+  rr <- vector("list", k); reason <- vector("list", k)
+  for (i in seq_len(k)) {
+    f <- fits[[i]]
+    rr[[i]] <- na_rr
+    reason[i] <- list(attr(f, "reason"))
+    if (!is.finite(f[["beta"]])) next
+    se <- if (is.finite(sim_sd[[i]])) sqrt(f[["se_model"]]^2 +
+                                             sim_sd[[i]]^2) else NA_real_
+    if (!is.finite(se)) {
+      reason[[i]] <- "noise_dominated"
+      next
+    }
+    b <- f[["beta"]]
+    out <- c(estimate = exp(b), ci_lo = exp(b - 1.96 * se),
+             ci_hi = exp(b + 1.96 * se), log_estimate = b,
+             se_log_estimate = se)
+    rr[[i]] <- stats::setNames(.dsomopReleaseRound(out), names(out))
+    reason[i] <- list(NULL)
+  }
+  coords <- .dsomopReleaseExitCoordinates()[feasible]
+  is_event <- status_of[feasible] == "event"
+  grid <- .dsomopReleaseExitGrid()
+  arm_export <- lapply(arms, function(a) {
+    p <- pipe$arm[[a]]
+    x <- arm[[a]]
+    h <- numeric(length(is_event))
+    h[is_event] <- x$event + (p$status_signed[[1L]] - sum(x$event)) /
+      max(1L, length(x$event))
+    h[!is_event] <- x$nonevent + (p$status_signed[[2L]] - sum(x$nonevent)) /
+      max(1L, length(x$nonevent))
+    list(stratum = a, n = p$n_signed, status = p$status_signed, h = h)
+  })
+  export_of <- function(components, reconciliation, parent = NULL) {
+    c(list(protocol = .DSOMOP_RELEASE_PROTOCOL, owner = owner_id,
+           population = "c6/persons-at-risk/v1", family = "C8",
+           grid = grid$id, breaks = grid$breaks,
+           statuses = .DSOMOP_RELEASE_EXIT_STATUSES,
+           strata_kind = "independent", cell_keys = coords, cap = 1L,
+           status_of_cell = status_of[feasible],
+           allocation = list(H = .DSOMOP_RELEASE_SURVIVAL_FRACTIONS$C8),
+           reconciliation = reconciliation),
+      if (!is.null(parent)) list(parent = parent),
+      list(components = components))
+  }
+  owner_of <- function(estimand) {
+    list(id = owner_id, family = "H", cap = 1L,
+         population = "c6/persons-at-risk/v1", grid = list(id = grid$id),
+         bounds = NULL, estimand = estimand)
+  }
+  built <- c(list(list(
+    owner = owner_of(paste0("exit-time bin x status per arm on the ",
+                            "canonical basis ", grid$id)),
+    export = export_of(arm_export, paste0(
+      "event_cells_sum_to_C6_signed_event_parent_censored_and_admin_",
+      "cells_sum_to_C6_signed_no_event_parent")))),
+    lapply(seq_len(k), function(i) {
+      comps <- lapply(arms, function(a) {
+        v <- pipe$subgroups[[i]][[a]]
+        list(stratum = a, n = v$n_signed, status = v$status_signed, h = v$h)
+      })
+      list(owner = owner_of(paste0(
+        "exit-time bin x status per arm within a subgroup of the family on ",
+        "the canonical basis ", grid$id)),
+        export = export_of(comps, paste0(
+          "subgroup_cells_two_way_to_subgroup_status_and_arm_cells"),
+          parent = "arm"))
+    }))
+  list(rr = rr, reason = reason, built = built, family = pipe)
 }
 
 # --- Conditional SCCS IRR from the q x exposed-status event histogram --------
@@ -368,9 +1040,14 @@
 #' 36 points evenly spaced on the logit scale from 0.0001 to 0.99 (3
 #' significant digits): a short window over a long observation (q of a few
 #' per thousand) keeps its exposure fraction, and few cells lie where cases
-#' are rare. A uniform 0.01 grid clamps every q below 0.015 to 0.01 (a
+#' are rare. A uniform 0.01 grid would clamp every q below 0.015 to 0.01 (a
 #' zero-noise log-IRR bias of about -0.6 for a 7-day window over 1-10 years
-#' of observation) and spreads the noise over 198 cells.
+#' of observation) and spread the noise over 198 cells. Snapping q to the
+#' nearest grid point changes the estimand: for a homogeneous q inside the
+#' grid range the noise-free log-IRR shifts by \code{logit(q) -
+#' logit(q_grid)}, at most half the logit spacing (about 0.2); heterogeneous
+#' q within a cell partly cancel. Strata outside the grid range are excluded,
+#' never clamped (\code{.omopReleaseSccsCases}).
 #'
 #' @return Increasing numeric vector.
 #' @keywords internal
@@ -395,9 +1072,17 @@
 #' (person, coalesced observation island) with an outcome record in it; its
 #' \code{q} is the window's overlap with the island over the island's length
 #' (half-open day counts), so distinct periods keep distinct exposure
-#' fractions. Strata with \code{q} 0 or 1 carry no within-person contrast and
-#' are dropped before the cap; the person's remaining records share the one
-#' cap of K events. Islands are disjoint, so a record is one event.
+#' fractions. Strata whose \code{q} lies outside the public grid range
+#' [0.0001, 0.99] are excluded before the cap: at \code{q} 0 or 1 they carry
+#' no within-person contrast, and near the boundary their conditional
+#' information (proportional to \code{q (1 - q)}) is negligible, while
+#' clamping them to the grid's end would misstate their exposure fraction and
+#' bias the estimate (a homogeneous \code{q = 0.999} clamped to 0.99 shifts the
+#' noise-free log-IRR by about +2.3). The selection depends only on the
+#' exposure and observation geometry, never on event timing, so the
+#' conditional likelihood of the remaining strata is unchanged. The person's
+#' remaining records share the one cap of K events. Islands are disjoint, so
+#' a record is one event.
 #'
 #' @return Data frame: person_id, stratum, q, n_exposed, n_unexposed (one row
 #'   per informative stratum; a person may have several).
@@ -456,7 +1141,9 @@
   raw$exposed <- as.integer(num(raw$exposed) > 0)
   raw$day_offset <- num(raw$day_offset)
   raw$concept_id <- num(raw$concept_id)
-  raw <- raw[is.finite(raw$q) & raw$q > 0 & raw$q < 1 &
+  q_range <- range(.dsomopReleaseSccsQGrid())
+  raw <- raw[is.finite(raw$q) & raw$q >= q_range[[1L]] &
+               raw$q <= q_range[[2L]] &
                !duplicated(paste(raw$person_id, raw$event_id,
                                  sep = "\u001f")), , drop = FALSE]
   if (!nrow(raw)) return(empty)
@@ -485,32 +1172,95 @@
   grid[findInterval(z, mids, left.open = TRUE) + 1L]
 }
 
-#' Score root of the q-grouped conditional SCCS likelihood
+#' Estimating-equation root of the q-grouped conditional SCCS score
 #'
-#' \code{l(b) = b E - sum_q M_q log(1 - q + q e^b)}: its score
-#' \code{E - sum_q M_q q e^b / (1 - q + q e^b)} is linear in the cells, so on
-#' the signed (unclipped) protected cells it is unbiased in the noise; with
-#' non-negative cells its root is the maximum likelihood estimate. Returns
-#' the root with its observed information, or NA when the score has no root
-#' in [-10, 10] or the information is not positive (not identifiable).
+#' \code{U(b) = E - sum_q M_q q e^b / (1 - q + q e^b)}, the score of the
+#' conditional likelihood \code{l(b) = b E - sum_q M_q log(1 - q + q e^b)}.
+#' \code{U} is linear in the cells, so on the signed (unclipped) protected
+#' cells it is unbiased in the release noise (its root need not be). With
+#' non-negative cells \code{U} is strictly decreasing and its root is the
+#' maximum-likelihood estimate; with signed cells it can be non-monotone.
+#' Root selection: interval bounds for the score and its derivative certify
+#' all of [-10, 10]; monotone intervals locate and refine each root. A
+#' numerically unresolved interval gives \code{uncertified_root}. A root is
+#' admissible when the information
+#' \code{sum_q M_q w_q(b)} (the negative score slope) is positive and
+#' \code{|b| <= 9.9}. Exactly one admissible root is returned with its
+#' information; otherwise a stable NA with reason \code{"no_root"} (no sign
+#' change), \code{"multiple_roots"} (more than one admissible root),
+#' \code{"nonpositive_information"} (only roots where the score increases)
+#' or \code{"boundary"} (only roots beyond 9.9).
 #'
 #' @param q Grid points; @param m Events per point; @param e Exposed events.
+#' @return c(beta, se_model) with attribute \code{reason} when NA.
 #' @keywords internal
 .dsomopReleaseSccsFit <- function(q, m, e) {
-  na <- structure(c(beta = NA_real_, se_model = NA_real_),
-                  reason = "not_identifiable")
+  na <- function(reason) structure(c(beta = NA_real_, se_model = NA_real_),
+                                   reason = reason)
   keep <- is.finite(q) & is.finite(m)
   q <- q[keep]; m <- m[keep]
-  if (!length(q) || !is.finite(e)) return(na)
+  if (!length(q) || !is.finite(e) || all(m == 0)) {
+    return(na("not_identifiable"))
+  }
   score <- function(b) e - sum(m * q * exp(b) / (1 - q + q * exp(b)))
-  lo <- score(-10); hi <- score(10)
-  if (!is.finite(lo) || !is.finite(hi) || lo <= 0 || hi >= 0) return(na)
-  b <- stats::uniroot(score, c(-10, 10), tol = 1e-10)$root
-  if (!is.finite(b) || abs(b) > 9.9) return(na)
-  w <- q * (1 - q) * exp(b) / (1 - q + q * exp(b))^2
-  info <- sum(m * w)
-  if (!is.finite(info) || info <= 0) return(na)
-  c(beta = b, se_model = 1 / sqrt(info))
+  info <- function(b) sum(m * q * (1 - q) * exp(b) / (1 - q + q * exp(b))^2)
+  # Interval bounds certify every part of the parameter range: endpoint
+  # signs alone (or a finite grid alone) can miss pairs of nearby roots of
+  # the signed score. p(b) is monotone; p(1-p) is unimodal with peak 1/4.
+  log_odds <- stats::qlogis(q)
+  roots <- numeric(0)
+  uncertain <- FALSE
+  visited <- 0L
+  visit <- function(lo, hi, depth = 0L) {
+    if (uncertain) return(invisible(NULL))
+    visited <<- visited + 1L
+    if (visited > 8192L) {
+      uncertain <<- TRUE
+      return(invisible(NULL))
+    }
+    pl <- stats::plogis(log_odds + lo)
+    ph <- stats::plogis(log_odds + hi)
+    ul <- e - sum(ifelse(m >= 0, m * ph, m * pl))
+    uh <- e - sum(ifelse(m >= 0, m * pl, m * ph))
+    if (ul > 0 || uh < 0) return(invisible(NULL))
+    wl <- pl * (1 - pl); wh <- ph * (1 - ph)
+    wmin <- pmin(wl, wh)
+    wmax <- pmax(wl, wh)
+    wmax[log_odds + lo <= 0 & log_odds + hi >= 0] <- 0.25
+    il <- sum(ifelse(m >= 0, m * wmin, m * wmax))
+    ih <- sum(ifelse(m >= 0, m * wmax, m * wmin))
+    sl <- score(lo); sh <- score(hi)
+    if (il > 0 || ih < 0) {
+      # Strictly monotone on this complete interval: at most one root.
+      if (sl == 0) roots <<- c(roots, lo)
+      if (sh == 0) roots <<- c(roots, hi)
+      if (sl * sh < 0) roots <<- c(roots, stats::uniroot(
+        score, c(lo, hi), tol = 1e-12)$root)
+      return(invisible(NULL))
+    }
+    if (depth >= 32L || hi - lo < 1e-8) {
+      uncertain <<- TRUE
+      return(invisible(NULL))
+    }
+    mid <- (lo + hi) / 2
+    visit(lo, mid, depth + 1L)
+    visit(mid, hi, depth + 1L)
+    invisible(NULL)
+  }
+  visit(-10, 10)
+  if (uncertain) return(na("uncertified_root"))
+  roots <- sort(unique(roots))
+  if (length(roots) > 1L) roots <- roots[c(TRUE, diff(roots) > 1e-8)]
+  if (!length(roots)) return(na("no_root"))
+  inf <- vapply(roots, info, numeric(1L))
+  ok <- is.finite(inf) & inf > 0 & abs(roots) <= 9.9
+  if (sum(ok) > 1L) return(na("multiple_roots"))
+  if (sum(ok) == 0L) {
+    return(na(if (any(is.finite(inf) & inf > 0)) "boundary" else
+      "nonpositive_information"))
+  }
+  b <- roots[ok]
+  c(beta = b, se_model = 1 / sqrt(inf[ok]))
 }
 
 #' Protected release of the live SCCS incidence-rate ratio
@@ -529,6 +1279,31 @@
   window <- max(as.integer(params$window %||% "30"), 0L)
   K <- .DSOMOP_RELEASE_SCCS_CAP
   cases <- .omopReleaseSccsCases(handle, ctx, exp_src, out_src, window, K)
+  owner_id <- paste0("sccs/q-exposed-status-events/K=", K, "/",
+                     .dsomopFrame(
+                       .omopReleaseOutcomeKey(params$exposure_concept_id,
+                                              params$exposure_domain_code %||%
+                                                "1"),
+                       .omopReleaseOutcomeKey(params$outcome_concept_id,
+                                              params$outcome_domain_code %||%
+                                                "0")))
+  .omopReleaseSccsCore(route, cases, owner_id, K)
+}
+
+#' Core of the protected SCCS release (case strata in hand)
+#'
+#' Shared by the SQL route and the utility study: the case-total and
+#' weighted q x exposed-status components, the estimating-equation fit and
+#' the release-pipeline simulation of its noise SD.
+#'
+#' @param route Protected route.
+#' @param cases Case strata (\code{.omopReleaseSccsCases}).
+#' @param owner_id Scientific owner.
+#' @param K Event cap.
+#' @return List: df, built, extra.
+#' @keywords internal
+.omopReleaseSccsCore <- function(route, cases, owner_id,
+                                 K = .DSOMOP_RELEASE_SCCS_CAP) {
   policy <- route$policy
   keys <- .dsomopReleaseKeys(policy)
   protection <- route$protection
@@ -538,14 +1313,6 @@
   tokens <- .dsomopReleasePersonTokens(keys, policy, cases$person_id)
   person_tokens <- tokens[match(persons, cases$person_id)]
   frac <- .DSOMOP_RELEASE_SURVIVAL_FRACTIONS$SCCS
-  owner_id <- paste0("sccs/q-exposed-status-events/K=", K, "/",
-                     .dsomopFrame(
-                       .omopReleaseOutcomeKey(params$exposure_concept_id,
-                                              params$exposure_domain_code %||%
-                                                "1"),
-                       .omopReleaseOutcomeKey(params$outcome_concept_id,
-                                              params$outcome_domain_code %||%
-                                                "0")))
   noisy <- function(owner, family, coordinate, value, allocation, sensitivity,
                     tok, contributions) {
     fp <- .dsomopReleaseFingerprint(keys, owner, family, coordinate, tok,
@@ -617,11 +1384,14 @@
     log_irr = rr[["log_irr"]], se_log_irr = rr[["se_log_irr"]],
     stringsAsFactors = FALSE)
   estimand <- paste0("event-capped (K=", K, "), q-gridded conditional SCCS ",
-                     "IRR: per case and observation period the exposed ",
-                     "fraction of observed time on a public logit-spaced ",
-                     "grid of ", length(grid), " points in [0.0001, 0.99] ",
-                     "and at most ", K, " events per person (first by ",
-                     "date); the score root on the signed protected cells")
+                     "IRR: one stratum per case and merged observation ",
+                     "period (island), its exposed fraction of observed time ",
+                     "snapped to a public logit-spaced grid of ", length(grid),
+                     " points in [0.0001, 0.99] (strata outside that range ",
+                     "excluded), at most ", K, " events per person (first by ",
+                     "date); the estimating-equation root of the conditional ",
+                     "score on the signed protected cells (not the exact ",
+                     "per-person fit)")
   built <- list(owner = list(id = owner_id, family = "SCCS", cap = K,
                              population = "sccs/cases/v1",
                              estimand = estimand),
