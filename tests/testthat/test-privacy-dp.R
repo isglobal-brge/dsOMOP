@@ -1051,6 +1051,10 @@ test_that("DP preparation seals plan outputs while plan loading stays DP-free", 
   expect_length(empty_status$published, 0L)
   expect_length(empty_status$rejected, 0L)
   expect_setequal(ls(session, all.names = TRUE), c(symbols_before, "empty_status"))
+  expect_error(eval(quote(omopDpPlanExecuteDS(
+    handle_symbol, empty_plan, list(visits_out = "DP_unrequested")
+  )), envir = session), "out must be empty when publish = \\[\\]")
+  expect_false(exists("DP_unrequested", session, inherits = FALSE))
   session$empty_plan$variables$n_visits$source$event <- "undeclared"
   expect_error(eval(quote(omopDpPlanExecuteDS(
     handle_symbol, empty_plan, "B64:e30"

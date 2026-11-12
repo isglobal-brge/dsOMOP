@@ -750,6 +750,9 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
     (identical(plan[["version"]], 2L) || identical(plan[["version"]], 2)) &&
     !is.null(plan[["publish"]]) && is.null(names(plan[["publish"]])) &&
     length(plan[["publish"]]) == 0L
+  if (no_roots && length(out) > 0L) {
+    stop("out must be empty when publish = [].", call. = FALSE)
+  }
   if ((length(out) == 0L && !no_roots) ||
       (length(out) > 0L && (is.null(names(out)) || any(!nzchar(names(out))) ||
                             anyDuplicated(names(out))))) {

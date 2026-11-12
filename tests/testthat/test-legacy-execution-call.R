@@ -95,6 +95,9 @@ test_that("publish = [] completes real validation and empty publication (A-22)",
   staging <- handle$staging_dirs
   for (mode in c("memory", "staged")) {
     target <- new.env(parent = environment())
+    target$existing <- data.frame(value = 1:2)
+    target$.existing_private <- list(value = "preserve")
+    existing <- as.list(target, all.names = TRUE)
     # Use the exported endpoint and transport; no executor or validator mock.
     call <- as.call(list(as.name("omopPlanExecuteDS"), "no_roots",
                         .legacy_ds_encode(plan), "B64:e30", mode))
@@ -103,13 +106,15 @@ test_that("publish = [] completes real validation and empty publication (A-22)",
     expect_identical(status$status, "ok")
     expect_length(status$published, 0L)
     expect_length(status$rejected, 0L)
-    expect_identical(ls(target, all.names = TRUE), "exec")
+    expect_setequal(ls(target, all.names = TRUE), c(names(existing), "exec"))
+    expect_identical(mget(names(existing), target, inherits = FALSE), existing)
     expect_identical(DBI::dbListTables(handle$conn), tables)
     expect_identical(handle$temp_tables, character(0))
     expect_identical(handle$staging_dirs, staging)
     expect_identical(ls(.planContextRegistry, all.names = TRUE), contexts)
     expect_true(eval(quote(omopStagedRevokeDS("exec")), target))
-    expect_identical(ls(target, all.names = TRUE), character(0))
+    expect_setequal(ls(target, all.names = TRUE), names(existing))
+    expect_identical(mget(names(existing), target, inherits = FALSE), existing)
   }
 })
 
@@ -132,6 +137,22 @@ test_that("an empty out mapping requires an explicitly empty v2 root array", {
                                   target_env = target),
                "out must have unique, non-empty output names")
   expect_identical(ls(target, all.names = TRUE), character(0))
+})
+
+test_that("empty publication roots reject a nonempty out mapping at entry", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .setHandle("nonempty_mapping", handle)
+  on.exit(.removeHandle("nonempty_mapping"), add = TRUE)
+  target <- new.env(parent = environment())
+  target$existing <- data.frame(value = 1:2)
+  call <- as.call(list(as.name("omopPlanExecuteDS"), "nonempty_mapping",
+                      .legacy_ds_encode(.empty_roots_plan()),
+                      .legacy_ds_encode(list(visits_out = "D_rejected"))))
+  expect_error(eval(call, target), "out must be empty when publish = \\[\\]")
+  expect_identical(ls(target, all.names = TRUE), "existing")
+  expect_identical(target$existing, data.frame(value = 1:2))
+  expect_identical(handle$temp_tables, character(0))
 })
 
 test_that("empty roots do not bypass invalid unused declarations or site rules", {
