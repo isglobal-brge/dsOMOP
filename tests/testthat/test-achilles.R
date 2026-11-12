@@ -811,7 +811,7 @@ test_that("B07: a refresh that drops a cell below the floor withholds it at once
   withr::local_options(list(nfilter.tab = 3, nfilter.subset = 3,
                             dsomop.nfilter.band = 5))
   h <- .b07_handle(1:3)
-  on.exit(cleanup_handle(h))
+  on.exit(cleanup_handle(h), add = TRUE)
   before <- .achillesGetResults(h, 420L)
   expect_equal(before$count_value[before$stratum_1 == "202006"], 15)
   # The review's probe: person 3's records go and the stored count follows,
@@ -834,7 +834,7 @@ test_that("B07: no refresh is needed: decreases and increases apply on the next 
   withr::local_options(list(nfilter.tab = 3, nfilter.subset = 3,
                             dsomop.nfilter.band = 5))
   h <- .b07_handle(1:2)
-  on.exit(cleanup_handle(h))
+  on.exit(cleanup_handle(h), add = TRUE)
   # Two people: withheld on this handle and on a copy.
   expect_equal(nrow(.achillesGetResults(h, 420L)), 0L)
   h2 <- .b07_copy(h)

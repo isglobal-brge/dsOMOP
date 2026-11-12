@@ -330,7 +330,7 @@ test_that("G-04: cm_result effect statistics need both arms' bases", {
   expect_identical(is.finite(gated$se_log_rr), is.finite(gated$rr))
 
   h <- create_test_handle()
-  on.exit(cleanup_handle(h))
+  on.exit(cleanup_handle(h), add = TRUE)
   .buildBlueprint(h)
   r <- .ohdsiGetResults(h, "cm_result")
   expect_equal(nrow(r), 4L)
@@ -346,7 +346,7 @@ test_that("G-04: cm_result effect statistics need both arms' bases", {
 test_that("G-04: plp_performances scalars need both outcome classes", {
   withr::local_options(ss_opts())
   h <- create_test_handle()
-  on.exit(cleanup_handle(h))
+  on.exit(cleanup_handle(h), add = TRUE)
   # Row 1: 150 outcomes in a population of 152 -> 2 non-outcome persons.
   DBI::dbExecute(h$conn, paste(
     "UPDATE plp_performances SET population_size = 152",
@@ -440,7 +440,7 @@ test_that("B08: the private gate fails missing, non-finite and negative bases", 
 test_that("B08: plp_performances needs both outcome classes at the tabular floor", {
   withr::local_options(ss_opts(nfilter.subset = 1, nfilter.tab = 3))
   h <- create_test_handle()
-  on.exit(cleanup_handle(h))
+  on.exit(cleanup_handle(h), add = TRUE)
   # Row 1: 150 outcomes in a population of 152 -> 2 non-outcome persons, a
   # private person complement that passed nfilter.subset = 1 before.
   DBI::dbExecute(h$conn, paste(
