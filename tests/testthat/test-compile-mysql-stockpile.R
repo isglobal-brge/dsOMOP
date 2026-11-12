@@ -74,7 +74,8 @@ test_that("MySQL stockpile payloads preserve exact values, ordering, empty sourc
   expect_identical(rows$label, c("b", paste0("a'\\é", strrep("z", 2048))))
   expect_identical(as.numeric(rows$concept_id), c(42, NA_real_))
   # A failed aggregate or a short payload cannot silently become zero rows.
-  aggregate <- "JSON_ARRAYAGG(JSON_ARRAY(event_id, start_date, label, concept_id))"
+  aggregate <- paste0("JSON_ARRAYAGG(JSON_ARRAY(event_id, start_date, ",
+                       "CAST(label AS CHAR CHARACTER SET utf8mb4), concept_id))")
   failed_sql <- sub(aggregate, "NULL", sql, fixed = TRUE)
   expect_error(.executeQuery(h, failed_sql), "JSON|json")
   short_sql <- sub(aggregate, "JSON_ARRAY()", sql, fixed = TRUE)

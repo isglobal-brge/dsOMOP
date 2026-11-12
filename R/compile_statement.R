@@ -595,6 +595,14 @@
       stop("Aliases of one MySQL stockpile table must share its column contract.", call. = FALSE)
     }
     alias <- .mysqlLocalSqlName(paste0("dsomop_payload_", k), original_sql)
+    # MySQL encodes binary string expressions as opaque base64 JSON values.
+    # Honour the fragment's text contract even if CTAS inferred a BLOB from
+    # CONCAT/CHAR, so the typed decoder receives the original UTF-8 string.
+    encoded <- vapply(cols, function(column) {
+      if (identical(f$columns[[column]]$type, "text")) {
+        paste0("CAST(", column, " AS CHAR CHARACTER SET utf8mb4)")
+      } else column
+    }, "")
     # JSON_ARRAYAGG returns SQL NULL for an empty input and can also return
     # NULL on error. Count in the same scan and reject a failed/truncated
     # payload instead of turning nonempty data into an empty stream. The
@@ -606,7 +614,7 @@
       "WHEN p.raw_payload IS NULL OR JSON_LENGTH(p.raw_payload) <> p.n ",
       "THEN CAST(CONCAT('invalid_stockpile_payload', LEFT(CAST(p.n AS CHAR), 0)) AS JSON) ",
       "ELSE p.raw_payload END AS payload FROM ",
-      "(SELECT JSON_ARRAYAGG(JSON_ARRAY(", paste(cols, collapse = ", "),
+      "(SELECT JSON_ARRAYAGG(JSON_ARRAY(", paste(encoded, collapse = ", "),
       ")) AS raw_payload, COUNT(*) AS n FROM ", table, ") p) ", alias))
     typed <- vapply(seq_along(cols), function(i) {
       paste0(cols[[i]], " ", sql_types[[f$columns[[cols[[i]]]]$type]], " PATH '$[", i - 1L,
