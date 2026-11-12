@@ -54,7 +54,8 @@ test_that("gaps and islands use the running maximum of prior ends; adjacency mer
   for (b in names(.ws5_iv_backends)) {
     h <- .ws5_iv_backends[[b]]$handle
     ctx <- .ws5_iv_ctx(h, list(era0 = list(source = list(event = "drug"), gap = 0),
-                               era1 = list(source = list(event = "drug"), gap = 1)))
+                               era1 = list(source = list(event = "drug"), gap = 1),
+                               maxgap = list(source = list(event = "drug"), gap = .Machine$integer.max)))
     # nested: [01-20, 01-25] starts after the nested record's end (01-10) but
     # inside the running maximum (01-31): one era, never three
     nested <- .ws5_course(ctx, "era0", 3002)
@@ -69,6 +70,8 @@ test_that("gaps and islands use the running maximum of prior ends; adjacency mer
     expect_identical(adj0$era_key, c("1:1", "1:2"), info = b)
     adj1 <- .ws5_course(ctx, "era1", 3003)
     expect_identical(nrow(adj1), 1L, info = b)
+    expect_no_warning(maxgap <- .ws5_course(ctx, "maxgap", 3003))
+    expect_identical(nrow(maxgap), 1L, info = b)
     # a one-day record is a one-day era
     one <- .ws5_course(ctx, "era0", 3004)
     expect_identical(c(one$start_date, one$end_date), c("2020-03-01", "2020-03-01"), info = b)
@@ -304,6 +307,18 @@ test_that("stockpile materialisation refuses dates and supplies outside its supp
   DBI::dbExecute(h$conn, "UPDATE drug_exposure SET days_supply = 2147483648 WHERE drug_exposure_id = 939091")
   expect_no_warning(e <- compile())
   expect_match(conditionMessage(e), "supported integer range")
+})
+
+test_that("supply kernels treat non-finite supply as invalid and reject unrepresentable totals", {
+  windows <- data.frame(key = 1L, lo = as.Date(NA), hi = as.Date(NA))
+  fills <- data.frame(key = 1L, start = as.Date("2020-01-01"), supply = c(Inf, -Inf, NaN))
+  for (policy in c("start_in_window", "clipped")) {
+    expect_no_warning(value <- .supplyDays(fills, windows, policy))
+    expect_identical(value, 0L)
+  }
+  fills$supply <- c(.Machine$integer.max, 1, 0)
+  expect_no_warning(.ws4_expect_rejection(.supplyDays(fills, windows),
+                                          pattern = "supported integer range"))
 })
 
 test_that("covered_days, supply_days and observed days over rosters and windows", {
@@ -642,7 +657,7 @@ test_that("index-visit stockpiles partition carry and courses before consumer wi
   ctx <- .ws5_iv_ctx(h, list(s = list(source = list(event = "drug"), stockpile = TRUE)),
     events = list(drug = list(table = "drug_exposure", visit = list(index = TRUE))),
     populations = list(t = list(kind = "criteria")))
-  on.exit(.planContextClose(ctx), add = TRUE)
+  on.exit(.planContextClose(ctx), add = TRUE, after = FALSE)
   cand <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:3, subject_id = 1007,
     index_visit_id = c(700701, 700702, NA),
     cohort_start_date = "2019-12-31", cohort_end_date = "2020-12-31"))

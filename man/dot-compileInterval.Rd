@@ -4,7 +4,12 @@
 \alias{.compileInterval}
 \title{Compile an interval (frozen compiler signature, section 6)}
 \usage{
-.compileInterval(ctx, node, event_fragment)
+.compileInterval(
+  ctx,
+  node,
+  event_fragment,
+  association = c("person", "parent")
+)
 }
 \arguments{
 \item{ctx}{Execution context (environment with \code{handle}, \code{ir},
@@ -14,6 +19,11 @@
 "name")}.}
 
 \item{event_fragment}{The compiled source event (\code{ev_<source>}).}
+
+\item{association}{\code{"person"} (default: person-indexed consumers) or
+\code{"parent"} (episode-indexed consumers of an adapter source: one
+relation per parent, A-20 item 6). An optional argument after the frozen
+ones; the default keeps the frozen behaviour.}
 }
 \value{
 \code{list(course, recorded, effective)}: the course fragment
@@ -22,9 +32,14 @@
   group and era_no) and, only for \code{stockpile = TRUE}, the effective
   supply relation \code{iv_<name>_eff} (NULL otherwise). Intermediate
   fragments (\code{iv_<name>_norm}, \code{iv_<name>_mk}, ...) are registered
-  in the context; \code{.intervalMeta(ctx, name)} describes them.
+  in the context; \code{.intervalMeta(ctx, name, association)} describes
+  them.
 }
 \description{
-Compile an interval (frozen compiler signature, section 6)
+Pipeline: \code{norm} (normalised recorded rows) -> [\code{effsrc}: the
+stockpiled effective rows, a session table] -> \code{mk} (gaps and islands)
+-> [\code{ek}: the retained flag of \code{min_days}] -> the course, the
+recorded relation and the effective relation, each reading the one marks
+path once.
 }
 \keyword{internal}

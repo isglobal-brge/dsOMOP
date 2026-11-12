@@ -351,8 +351,13 @@
                      order = n("n", c("start_date", order)), frame = "preceding")
   inner <- paste0("SELECT ", paste(n("n", columns), collapse = ", "), ", ", prev,
                   " AS prev_max_end FROM ", from, " n")
-  flag <- paste0("CASE WHEN y.prev_max_end IS NULL OR y.start_date > ",
-                 .sqlDateAddDays(h, "y.prev_max_end", gap + 1L), " THEN 1 ELSE 0 END")
+  # Use a difference for extreme gaps: adding one to the largest accepted
+  # integer overflows R, and adding that many days can overflow SQL DATE.
+  separated <- if (gap == .Machine$integer.max) {
+    paste0(.sqlDateDiffDays(h, "y.prev_max_end", "y.start_date"), " > ",
+           .sqlIntegerLiteral(h, as.numeric(gap) + 1))
+  } else paste0("y.start_date > ", .sqlDateAddDays(h, "y.prev_max_end", gap + 1L))
+  flag <- paste0("CASE WHEN y.prev_max_end IS NULL OR ", separated, " THEN 1 ELSE 0 END")
   middle <- paste0("SELECT ", paste(n("y", c(columns, "prev_max_end")), collapse = ", "),
                    ", ", flag, " AS new_era FROM (", inner, ") y")
   era <- .sqlIntegerCast(h, .sqlWindow(h, "SUM(x.new_era)", partition = n("x", partition),
@@ -1064,7 +1069,7 @@
     s <- .dayNumber(fills$start)
     rec <- .dayNumber(fills$end_recorded %||% rep(NA, nrow(fills)))
     supply <- suppressWarnings(as.numeric(fills$supply))
-    valid <- !is.na(supply) & supply >= 1 & supply == floor(supply)
+    valid <- !is.na(supply) & is.finite(supply) & supply >= 1 & supply == floor(supply)
     quality <- !is.na(i) & !is.na(s) & (is.na(rec) | rec >= s)
     contribution <- if (identical(policy, "start_in_window")) {
       inside <- (is.na(lo) | s >= lo) & (is.na(hi) | s <= hi)
@@ -1077,6 +1082,9 @@
     }
     contribution[is.na(contribution)] <- 0
     sums <- tapply(contribution[!is.na(i)], i[!is.na(i)], sum)
+    if (any(!is.finite(sums) | sums > .Machine$integer.max)) {
+      .compileReject("supplied days exceed the supported integer range", field = "/reducer")
+    }
     out[as.integer(names(sums))] <- as.integer(sums)
   }
   out[!as.logical(defined) | is.na(defined)] <- NA_integer_

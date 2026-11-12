@@ -4,16 +4,20 @@
 \alias{.intervalMeta}
 \title{Metadata of a compiled interval}
 \usage{
-.intervalMeta(ctx, name)
+.intervalMeta(ctx, name, association = "person")
 }
 \arguments{
 \item{ctx}{Execution context.}
 
 \item{name}{Interval name.}
+
+\item{association}{\code{"person"} (default) or \code{"parent"} (the
+per-parent relation of an adapter source, A-20 item 6).}
 }
 \value{
-list(name, spec, source, availability, fragments = c(norm, marks,
-  course, recorded[, effective]), temp_table), or NULL when not compiled.
+list(name, spec, source, association, availability, fragments =
+  c(norm, marks[, kept], course, recorded[, effective, effective_source]),
+  temp_table), or NULL when not compiled.
 }
 \description{
 Metadata of a compiled interval

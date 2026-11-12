@@ -4,7 +4,7 @@
 \alias{.coverageCoveredKeys}
 \title{Row keys of a roster that have a coverage component}
 \usage{
-.coverageCoveredKeys(ctx, cov, roster_fragment, phase)
+.coverageCoveredKeys(ctx, cov, roster_fragment, phase, field = "/reducer")
 }
 \arguments{
 \item{ctx}{Execution context.}
@@ -14,9 +14,13 @@
 \item{roster_fragment}{Roster or candidates fragment.}
 
 \item{phase}{\code{"candidate"} or \code{"final"}.}
+
+\item{field}{JSON path of the consumer (the bounded fetch's rejection).}
 }
 \value{
-Vector of row keys.
+Vector of row keys (a private fetch of at most
+  \code{dsomop.max_memory_rows} rows; one more is the typed rejection
+  \code{reducer_row_cap}, A-20 (j)).
 }
 \description{
 Rows retained without coverage (\code{on_missing = "keep"}) have none:

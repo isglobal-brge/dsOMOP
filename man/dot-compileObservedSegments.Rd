@@ -20,7 +20,9 @@
 }
 \value{
 Fragment with \code{row_key}, \code{person_id}, \code{start_date},
-  \code{end_date} (one row per observed segment of each roster row).
+  \code{end_date}: one row per distinct observed segment of each roster row
+  (two observation-period records with the same dates in one component are
+  one segment; consumers take the union of overlapping segments).
 }
 \description{
 The recorded observation periods of the row's selected coverage component
