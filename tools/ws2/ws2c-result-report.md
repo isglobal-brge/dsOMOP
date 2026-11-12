@@ -311,8 +311,8 @@ same-literal `.tab0` baseline control. The dedicated metadata test verifies
 that only `nfilter.tab` differs, both independent baseline captures succeeded,
 and plan hashes and output shapes match. The independent age/base-`cut` oracle
 in `test-ir-results.R` supplies the semantic check without using production
-banding code. A bounded run at reference-proof commit `be96740`, before the final
-visit-filter guard, passed all 6,913 checks for these eight cases, 21 reference-output cases and their metadata
+banding code. A bounded run at reference-proof commit `be96740`, before the
+visit-filter and effective-column guards, passed all 6,913 checks for these eight cases, 21 reference-output cases and their metadata
 guards; the full compatibility suite remains part of the full server run.
 
 ## Validation and durable evidence
