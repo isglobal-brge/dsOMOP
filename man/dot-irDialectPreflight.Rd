@@ -20,11 +20,13 @@ session_tables = ...)} (\code{R/sql_expr.R}): once per output, over the
 part of the plan the output depends on (\code{.irOutputClosure()}), so that
 the typed \code{dialect_unsupported} rejection names the output, then once
 for the whole plan, which refuses whatever no single output accounts for.
-The database is probed once. A plan with populations is taken to reuse a
-roster in more than one statement (session temp tables), the conservative
-reading until the compilers decide where rosters are materialised (design
-section 6.4). A lowered v1 plan is executed by the v1 executors in this
-release stage and needs exactly what they need, so no typed construct is
-required of it (v1 temp tables keep their own refusal).
+The database is probed once. A native plan with populations is taken to
+reuse a roster in more than one statement (session temp tables), the
+conservative reading until the compilers decide where rosters are
+materialised (design section 6.4). A lowered v1 plan is executed by the v1
+executors in this release stage and needs exactly what they need: no typed
+construct (their SQL is the legacy translator's), and session temp tables
+whenever they materialise a cohort, a population or a scope
+(\code{.irV1NeedsSessionTables()}).
 }
 \keyword{internal}

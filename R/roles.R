@@ -165,16 +165,58 @@
   if (any(vapply(record[.ROLE_REQUIRED], is.null, logical(1)))) return(NULL)
   # The packaged role columns plus every concept and filterable column the
   # site actually has, with its type and assignment class (section 7.6).
-  record[["columns"]] <- data.frame(
+  record[["columns"]] <- .roleColumnFrame(col_df, .filterableColumns(bp, table))
+  structure(record, class = "dsomop_role_record")
+}
+
+#' Value type of a blueprint column
+#'
+#' From the CDM specification datatype when the blueprint has one (the
+#' physical type otherwise): \code{"date"}, \code{"integer"} (concept ids
+#' included), \code{"numeric"}, \code{"text"}, \code{"boolean"} or
+#' \code{"unknown"} (no type information: literal typing is skipped).
+#' @keywords internal
+.roleValueType <- function(column, cdm_datatype = NULL, data_type = NULL) {
+  pick <- function(x) if (is.character(x) && length(x) == 1L && !is.na(x) && nzchar(x)) tolower(x) else ""
+  t <- pick(cdm_datatype)
+  if (!nzchar(t)) t <- pick(data_type)
+  if (grepl("_date$|_datetime$", column) || grepl("^(date|datetime|timestamp)", t)) return("date")
+  if (grepl("_concept_id$", column) || grepl("int", t)) return("integer")
+  if (grepl("float|double|numeric|decimal|real|number", t)) return("numeric")
+  if (grepl("char|text|string|clob", t)) return("text")
+  if (grepl("bool", t)) return("boolean")
+  "unknown"
+}
+
+#' Typed column frame of one blueprint table (role records, site checks)
+#'
+#' @param col_df The blueprint's column frame of the table.
+#' @param filterable The table's filterable columns (\code{.filterableColumns()}).
+#' @return data.frame(column_name, is_date, concept_role, is_concept,
+#'   value_type, filterable, assignment_class).
+#' @keywords internal
+.roleColumnFrame <- function(col_df, filterable) {
+  have <- as.character(col_df[["column_name"]])
+  field <- function(name) {
+    x <- col_df[[name]]
+    if (is.null(x)) rep(NA_character_, length(have)) else as.character(x)
+  }
+  concept_role <- field("concept_role")
+  cdm_type <- field("cdm_datatype")
+  data_type <- field("data_type")
+  data.frame(
     column_name = have,
-    is_date = as.logical(col_df[["is_date"]]),
-    concept_role = as.character(col_df[["concept_role"]]),
-    filterable = have %in% .filterableColumns(bp, table),
-    assignment_class = vapply(have, .roleColumnClass, integer(1),
-                              col_df = col_df),
+    is_date = as.logical(col_df[["is_date"]] %||% grepl("_date$|_datetime$", have)),
+    concept_role = concept_role,
+    is_concept = grepl("_concept_id$", have) |
+      (!is.na(concept_role) & nzchar(concept_role) & concept_role != "non_concept"),
+    value_type = vapply(seq_along(have), function(i) {
+      .roleValueType(have[[i]], cdm_type[[i]], data_type[[i]])
+    }, ""),
+    filterable = have %in% filterable,
+    assignment_class = vapply(have, .roleColumnClass, integer(1), col_df = col_df),
     stringsAsFactors = FALSE, row.names = NULL
   )
-  structure(record, class = "dsomop_role_record")
 }
 
 #' The role registry of a handle (built once per blueprint)

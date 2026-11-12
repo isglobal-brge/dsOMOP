@@ -6,7 +6,14 @@
 \usage{
 .planV1EnvelopeErrors(plan)
 }
+\arguments{
+\item{plan}{v1 plan in parsed JSON form.}
+}
 \description{
-Findings of the closed v1 envelope (empty when valid)
+The closed shape of every position (\code{.v1PlanShape()}: raw member
+names before any null compaction, nested variants, scalar types and
+enumerations, the corrected legacy value validators at the positions they
+own) and the cross-field rules of the v1 executors
+(\code{.v1CrossFieldErrors()}).
 }
 \keyword{internal}

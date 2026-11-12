@@ -15,6 +15,7 @@
 List with validation results
 }
 \description{
-Validate a plan against the handle's schema
+The v1 executors' own checks (\code{.planLegacyFindings()}) plus the frozen
+validation sequence on the plan's wire part, exactly as execution runs it.
 }
 \keyword{internal}

@@ -7,8 +7,11 @@
 # ir-v1-corpus.json and writes tests/testthat/fixtures/ir-v1-golden.json: per
 # plan the outcome ("ir", "no_ir" for a v1 plan without outputs, or
 # "refused" with the typed rejection message), and for "ir" the normalised IR
-# document, its legacy residue and its semantic digest. Review the diff of the
-# golden file whenever the lowering changes; test-ir-corpus.R pins it.
+# document, its semantic digest (.planSemanticDigest) and its advisory annex.
+# These are regression snapshots of the implementation, not result evidence
+# (test-ir-results.R compares results with the 2.10.2 baseline). Review the
+# diff of the golden file whenever the lowering changes; test-ir-corpus.R pins
+# it.
 args <- commandArgs(TRUE)
 pkg <- if (length(args)) args[[1L]] else "."
 suppressMessages(pkgload::load_all(pkg, quiet = TRUE, export_all = TRUE, helpers = FALSE))
@@ -16,12 +19,16 @@ fixtures <- file.path(pkg, "tests", "testthat", "fixtures")
 corpus <- jsonlite::fromJSON(file.path(fixtures, "ir-v1-corpus.json"), simplifyVector = FALSE)
 golden <- lapply(corpus, function(rec) {
   res <- tryCatch({
-    ir <- .irPrepare(rec$plan, handle = NULL)
+    # captured execution plans may carry server-injected frames: validate the
+    # wire part, as .planExecute() does
+    wire <- .planWirePart(rec$plan)
+    ir <- .irPrepare(wire$plan, handle = NULL, scope_tables = wire$scope_tables)
     if (is.null(ir)) {
       list(outcome = "no_ir")
     } else {
-      list(outcome = "ir", digest = .irSemanticDigest(ir)$sha256,
-           ir = unclass(.irStripPrivate(ir)), residue = attr(ir, "legacy_residue"))
+      doc <- .irDocument(ir)
+      list(outcome = "ir", digest = .planSemanticDigest(doc)$sha256,
+           ir = doc, annex = attr(ir, "legacy_annex"))
     }
   }, dsomop_plan_rejection = function(e) list(outcome = "refused", message = conditionMessage(e)))
   c(list(id = rec$id), res)

@@ -106,6 +106,36 @@
   .irSortNames(tables)
 }
 
+# Reducers whose result preserves an event date (relative to an anchor or a
+# reference, so an exact date wherever that anchor is known): class 2.
+.IR_DATE_REDUCERS <- c("first_date", "last_date", "days_since", "days_until", "time_since")
+# Reducers returning one observed value of their value column: that column's
+# class.
+.IR_VALUE_REDUCERS <- c("first_value", "last_value", "nth_value", "closest_value",
+                        "mode", "min", "max")
+
+#' Assignment class of a reducer variable (section 7.6)
+#'
+#' From the reducer's result type: an exact-date-preserving reducer is class
+#' 2; a reducer returning an observed value takes its value column's class
+#' (a physical column of the source table; the normalised \code{value} is
+#' class 3); counts, flags and statistics are class 3.
+#' @keywords internal
+.irReducerClass <- function(ir, def, bp) {
+  r <- def[["reducer"]]
+  fn <- r[["fn"]] %||% ""
+  if (fn %in% .IR_DATE_REDUCERS) return(2L)
+  if (fn %in% .IR_VALUE_REDUCERS) {
+    value <- r[["value"]]
+    src <- ir[["events"]][[def[["source"]][["event"]] %||% ""]]
+    table <- src[["table"]]
+    if (is.character(value) && !identical(value, "value") && is.character(table)) {
+      return(.roleColumnClass(value, bp[["columns"]][[table]]))
+    }
+  }
+  3L
+}
+
 # Columns each output projects, with their assignment class (section 7.6).
 .irOutputColumnClasses <- function(ir, handle) {
   bp <- if (!is.null(handle)) tryCatch(.buildBlueprint(handle), error = function(e) NULL)
@@ -124,7 +154,8 @@
         cls <- if (kind %in% c("age", "birth_year_band")) 2L else 3L
         cols[[v]] <- list(source = paste0("derived:", kind), class = cls)
       } else if (!is.null(def[["reducer"]])) {
-        cols[[v]] <- list(source = paste0("reducer:", def[["reducer"]][["fn"]]), class = 3L)
+        cols[[v]] <- list(source = paste0("reducer:", def[["reducer"]][["fn"]]),
+                          class = .irReducerClass(ir, def, bp))
       } else if (!is.null(def[["population_column"]])) {
         cols[[v]] <- list(source = paste0("population:", def[["population_column"]][["name"]]), class = 3L)
       }
@@ -206,9 +237,12 @@
 #'
 #' @param ir The IR (through steps 1 to 3 and the semantic rules).
 #' @param handle CDM handle, or NULL for a site-free explanation.
+#' @param v1_plan For a lowered v1 IR, the v1 plan it was lowered from: its
+#'   executors' site findings (\code{.planV1SiteFindings()}) come first in
+#'   \code{site_findings}, as execution checks them first.
 #' @return Named list (see Details).
 #' @keywords internal
-.irExplain <- function(ir, handle = NULL) {
+.irExplain <- function(ir, handle = NULL, v1_plan = NULL) {
   report <- .irValidate(ir, NULL)
   site_findings <- character(0)
   unavailable <- character(0)
@@ -216,9 +250,14 @@
   roles <- list()
   dialect <- list(status = "not_checked")
   if (!is.null(handle)) {
+    if (!is.null(v1_plan)) {
+      legacy <- tryCatch(.planV1SiteFindings(v1_plan, handle),
+                         error = function(e) list(errors = conditionMessage(e)))
+      site_findings <- c(legacy[["declaration"]], legacy[["errors"]], legacy[["missing_tables"]])
+    }
     site <- tryCatch(.irSiteErrors(ir, handle),
                      error = function(e) list(errors = conditionMessage(e), unavailable = character(0)))
-    site_findings <- c(site[["errors"]], site[["missing_tables"]])
+    site_findings <- c(site_findings, site[["errors"]], site[["missing_tables"]])
     unavailable <- site[["unavailable"]]
     unavailable_outputs <- .irUnavailableOutputs(ir, unavailable)
     for (t in .irTablesUsed(ir)) {
@@ -237,8 +276,8 @@
   list(
     language_version = .IR_LANGUAGE_VERSION,
     source_version = attr(ir, "source_version"),
-    plan = unclass(.irStripPrivate(ir)),
-    semantic_digest = .irSemanticDigest(ir)[["sha256"]],
+    plan = .irDocument(ir),
+    semantic_digest = .planSemanticDigest(.irDocument(ir))[["sha256"]],
     operations = report[["operations"]],
     publish = ir[["publish"]],
     defaults = .irEffectiveDefaults(ir),
@@ -248,7 +287,7 @@
     unavailable = unavailable,
     unavailable_outputs = unavailable_outputs,
     dialect = dialect,
-    legacy_residue = attr(ir, "legacy_residue"),
+    legacy_annex = attr(ir, "legacy_annex"),
     order = .irOrder(ir)[c("concept_sets", "events", "intervals",
                            "populations", "variables", "outputs")]
   )
@@ -276,8 +315,9 @@
 #'   2), \code{plan} (the normalised plan), \code{semantic_digest},
 #'   \code{operations}, \code{publish}, \code{defaults}, \code{roles},
 #'   \code{column_classes}, \code{site_findings}, \code{unavailable},
-#'   \code{dialect}, \code{legacy_residue} (v1 fields the IR keeps outside its
-#'   document) and \code{order}.
+#'   \code{unavailable_outputs}, \code{dialect}, \code{legacy_annex} (the
+#'   advisory v1 fields kept outside the IR document, covered by no digest;
+#'   amendment A-10) and \code{order}.
 #' @examples
 #' \dontrun{
 #' omopPlanExplainDS("omop", plan)
@@ -288,12 +328,8 @@ omopPlanExplainDS <- function(omop_symbol, plan) {
   plan <- .ds_arg(plan)
   .omopAuditLog("omopPlanExplainDS", list(plan = .irJsonForm(plan)))
   json <- .irJsonForm(plan)
-  if (identical(.irPlanVersion(json), 2L)) {
-    .irValidateWire(json)
-  } else {
-    .planV1Envelope(json)
-  }
+  .irValidateEnvelope(json)
   ir <- .irNormalize(json)
   .irValidateSchema(ir)
-  .irExplain(ir, handle)
+  .irExplain(ir, handle, v1_plan = if (!identical(attr(ir, "source_version"), 2L)) json)
 }

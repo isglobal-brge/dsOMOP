@@ -48,7 +48,7 @@ test_that("explain returns the normalised v2 plan with defaults visible", {
   expect_false(grepl("SELECT ", jsonlite::toJSON(out, auto_unbox = TRUE), fixed = TRUE))
 })
 
-test_that("explain reports the lowering of a v1 plan and its legacy residue", {
+test_that("explain reports the lowering of a v1 plan and its advisory annex", {
   symbol <- .explain_handle()
   v1 <- list(
     cohort = list(type = "cohort_table", cohort_definition_id = 1L),
@@ -61,7 +61,8 @@ test_that("explain reports the lowering of a v1 plan and its legacy residue", {
   expect_identical(out$source_version, 1L)
   expect_identical(out$plan$scope$cohort, 1L)
   expect_identical(out$plan$outputs$demo$grain, "episode")
-  expect_identical(unlist(out$legacy_residue[["outputs/labs"]]$columns), "measurement_date")
+  expect_identical(unlist(out$plan$outputs$labs$legacy_columns), "measurement_date")
+  expect_true(is.list(out$legacy_annex) || is.null(out$legacy_annex))
   expect_identical(out$column_classes$demo$year_of_birth$class, 2L)
   expect_identical(out$plan$outputs$labs$options$date_handling$mode, "remove")
 })
@@ -180,18 +181,24 @@ test_that("the dialect preflight names the output that needs a missing construct
   testthat::local_mocked_bindings(
     .sqlHelperAvailable = function(h, construct) construct != "session_table",
     .irOutputClosure = function(ir, o) {
-      ir$populations <- .irEmptyObject()
+      ir$populations <- .pnv2EmptyObject()
       ir
     })
   err <- tryCatch(.irDialectPreflight(a, "postgresql"),
                   dsomop_dialect_unsupported = function(e) e)
   expect_identical(err$construct, "session_table")
   expect_null(err$output)
-  # a lowered v1 plan needs only what the v1 executors need
+  # a lowered v1 plan needs exactly what the v1 executors need: session
+  # tables for its cohort (refused on SQL Server), nothing for a plan over the
+  # implicit all-persons base (review B5)
   v1 <- .irPrepare(list(cohort = list(type = "cohort_table", cohort_definition_id = 1L),
                         outputs = list(demo = list(type = "baseline",
                                                    columns = list("gender_concept_id")))))
-  expect_s3_class(.irDialectPreflight(v1, "sql server"), "dsomop_sql_dialect")
+  err <- tryCatch(.irDialectPreflight(v1, "sql server"), dsomop_dialect_unsupported = function(e) e)
+  expect_identical(err$construct, "session_table")
+  plain <- .irPrepare(list(outputs = list(p = list(type = "person_level",
+                                                   tables = list(person = list("gender_concept_id"))))))
+  expect_s3_class(.irDialectPreflight(plain, "sql server"), "dsomop_sql_dialect")
 })
 
 test_that("explain reports the dialect preflight outcome with the output", {

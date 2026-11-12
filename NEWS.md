@@ -50,6 +50,9 @@ fills its entries. Classes follow design-2.10.3 section 5.
 - (A-9) The plan code no longer claims that windowed population filters
   without a cohort index fall back to the server wall clock: they need an
   explicit `reference_date` and fail closed without one (behaviour unchanged).
+- The `base` population of a multi-population v1 plan, declared without
+  criteria, is every person, as in a single-population plan; without a plan
+  cohort and a scope it restricted its outputs to no person.
 
 ## Newly permitted (previously refused by an intermediate or granularity gate)
 
@@ -111,14 +114,56 @@ fills its entries. Classes follow design-2.10.3 section 5.
   unknown field at the root, in an output (including `concept_dictionary` and
   `cohort_membership` outputs) or in any nested object is refused with the
   field's path; `already_gated` was accepted at the root and in a dictionary
-  output. A null-valued field still counts as absent.
+  output. A null-valued known field still counts as absent; an unknown member
+  is refused even when its value is null. Every nested object is closed
+  (output `options`, visit filters, concept-set objects of survival outcomes,
+  `value_bin` operands, safe scopes, inclusion criteria, ...).
+- v1 plans are refused before any query, with the typed codes the status
+  transports, for what the v1 executors refused only while running: invalid
+  temporal specs, filter trees, custom filters, index end strategies,
+  multi-state graphs, interval windows and selections, survival censoring and
+  TAR, date handling and person_period grain; person_level raw tables other
+  than person/death and feature time windows there; event_level
+  wide/features/sparse grain and index-window couplings; set-op members
+  declared after the set operation; `episode_policy` with `index_event`;
+  tables, results-cohort tables and custom-filter columns this site does not
+  provide (`unavailable_table`, `validation_error`), the custom filter of a
+  person_level output over its raw person/death tables, unknown or blocked
+  baseline person columns (with the executors' own messages: "Baseline
+  person column(s) not found", "Disclosive: ... are blocked"); and the
+  session temporary tables the v1 executors need on SQL families without
+  them (`dialect_unsupported`). Typed site checks refuse what 2.10.2 left to
+  SQL coercion: a predicate literal whose type does not match its column (a
+  text literal on a numeric or concept column, a non-ISO date) and a
+  `concept_col` that is not a filterable concept column (2.10.2 accepted any
+  existing column, class-1 columns included). An unknown v1 output type
+  keeps the executor's "Unsupported output type" wording. The plan-declaration error
+  of an output that needs a cohort keeps the executor's untyped error.
+- (A-15) A v1 inclusion `occurrence` is the executor's `{type, count}`
+  object, its type matched exactly (`at_least`, `at_most`, `exactly`): any
+  other member or type is refused at validation, where 2.10.2 refused it
+  only while running.
+- (A-10) A v1 results-cohort `cohort_definition_id` of 0 is refused, naming
+  the field; the optional identifier of an inline cohort spec may be 0
+  (A-16).
+- A plan cannot carry resolved workspace frames: `scope.tables_frames` is
+  refused; scope tables come only from the endpoint's scope arguments.
+- A v1 baseline `derived` value other than `age_at_index`,
+  `prior_observation` or `future_observation` is refused: unknown names were
+  dropped silently, and `cohort_start_date`, `cohort_end_date`,
+  `observation_period_start_date` and `observation_period_end_date` released
+  exact dates outside the absolute-date policy.
+- A v1 criteria population other than `base` without `filter_tree`,
+  `cohort_definition_id` or `index_event` (it resolved to no person) and a
+  difference of a population with itself (always empty) are refused.
 - (A-E2) v1 set-operation populations carrying `filter_tree`,
   `cohort_definition_id`, `index_event` or `episode_policy` are refused (the
   first two were silently ignored), and a population of an unknown `kind` is
   refused instead of being read as a criteria population.
 - A v1 output targeting a population the multi-population plan does not
-  declare, and a dictionary whose `source_outputs` name missing outputs, are
-  refused at validation (the output was skipped with a warning).
+  declare (`base` included), and a dictionary whose `source_outputs` name
+  missing outputs, are refused at validation (the output was skipped with a
+  warning).
 - A plan `version` other than none, 1 or 2 is refused. Language 2.0 plans are
   validated and explained (`omopPlanExplainDS`) but not executed by this build
   until the 2.0 compilers are installed; `recipe_language.operations` is empty
@@ -145,18 +190,6 @@ fills its entries. Classes follow design-2.10.3 section 5.
   administrator later disables that option, a verb result retaining blocked
   columns is now refused (design section 7.6).
 
-## Upgrading clients and servers
-
-- Pair dsOMOP 2.10.3 with dsOMOPClient 2.10.3 for the publication-status
-  protocol. The new client requires `omopPlanStatusDS` and
-  `omopStagedRevokeDS`; a 2.10.1 server lacks them.
-  `ds.omop.server.version()` reports missing methods. After upgrading an
-  Opal server, publish dsOMOP's settings again so the profile exposes them.
-- A 2.10.1 client against a 2.10.3 server still fails closed on a strict
-  publication refusal: no output is published. The assign call now returns
-  status `refused`, so the old client reports that requested outputs did not
-  materialize instead of receiving the previous constant `Disclosive` error.
-
 ### Dialect
 - A v2 plan that needs an SQL construct the server's database family cannot
   run is refused at preflight, before any query, with the typed
@@ -168,6 +201,18 @@ fills its entries. Classes follow design-2.10.3 section 5.
   package version); MySQL below 8.0 and MariaDB below 10.2. The SQL SHA-256
   push-down is never required: matching computes its order in R where the
   family lacks it, as on SQLite.
+
+## Upgrading clients and servers
+
+- Pair dsOMOP 2.10.3 with dsOMOPClient 2.10.3 for the publication-status
+  protocol. The new client requires `omopPlanStatusDS` and
+  `omopStagedRevokeDS`; a 2.10.1 server lacks them.
+  `ds.omop.server.version()` reports missing methods. After upgrading an
+  Opal server, publish dsOMOP's settings again so the profile exposes them.
+- A 2.10.1 client against a 2.10.3 server still fails closed on a strict
+  publication refusal: no output is published. The assign call now returns
+  status `refused`, so the old client reports that requested outputs did not
+  materialize instead of receiving the previous constant `Disclosive` error.
 
 ## Design amendments applied by WS-0 (design/2.10.3/amendments.md)
 
@@ -313,32 +358,70 @@ fills its entries. Classes follow design-2.10.3 section 5.
   (preflight, naming the output). Sources served under
   `on_missing_table = "unavailable"` are reported with the outputs that read
   them, never refused. `omopPlanPreviewDS()` and `ds.omop.plan.validate()`
-  report the same findings in `validation$errors`.
-- v1 plans lower to the compatibility IR of design section 5 (legacy leaves,
-  `legacy_spec`, `legacy_end_strategy`, `legacy_cohort_end_cap`,
-  `legacy_composite`, `legacy_covariate_ids`, `legacy_all_time_conditions`).
-  v1 semantics the frozen IR cannot express are kept verbatim in a
-  server-private `legacy_residue` (change request CR-10), bound by the plan's
-  semantic digest; nothing is discarded. v1 plans keep running on the v1
-  executors in this release stage. A lowered v1 plan names no publication
-  roots: they are the outputs the execution maps to symbols, as in 2.10.2.
-- `R/ir_defaults.R`: the normaliser shared with dsOMOPClient (byte-identical):
-  the schema defaults and the semantic defaults of change request CR-11,
-  expanded exactly once and nothing else added. Leaving the semantic
-  defaults of the canonical example A implicit gives the same normal form,
-  and the server's normal form gives the same digest as the client's
-  `.planNormalizeV2()` on the shipped examples, acceptance recipes and valid
-  probes.
-- `R/roles.R`: `.roleOf(handle, table)`, the role registry of design 6.2.
+  report the same findings in `validation$errors`. Native and lowered v1
+  plans pass every stage, the site checks and the dialect preflight
+  included. Each plan meets the site rules of the engine that executes it: a
+  native plan the compilers' own metadata rules (WS-4's `.eventSiteCheck()`
+  for every event and adapter source with the reducer predicates over its
+  rows, `.predicateTableCatalogue()` for criteria person predicates); a
+  lowered v1 plan first the v1 executors' own checks, with their messages
+  (tables, results cohort, filter trees, custom filters including the raw
+  person/death tables of a person_level output, the baseline person-column
+  contract), then the IR's typed checks over the column names the v1
+  executors accept. A v1 event over a present table without an event role
+  (`event_level` over `person`) is a legacy row source; it is never a native
+  event table. A v1 plan-declaration error (an output that needs a cohort)
+  keeps the executor's untyped error.
+- (A-11) Every default is expanded by the frozen normaliser shared with
+  dsOMOPClient, `.planNormalizeV2()` (`R/plan_normalize_v2.R`), for language
+  2.0 plans and lowered v1 plans alike; grain and collapse rules use its
+  indexedness rule (`intersect`/`setdiff` follow their first member). WS-2's
+  interim `R/ir_defaults.R` is removed from both packages.
+- (A-10) v1 plans lower to the compatibility IR of design section 5 with
+  every result-affecting v1 field in the IR document: the legacy variants of
+  section 4.5 plus `legacy_columns`, `legacy_temporal`,
+  `legacy_automatic_features`, `legacy_single_outcome`, `legacy_states` /
+  `legacy_state_step`, `legacy_episodes` / `legacy_index_anchor`,
+  `legacy_containing_period`, `legacy_names` and `legacy_concept_scope`, and
+  amendments A-15 (the inline-spec occurrence: the effective `{type, count}`
+  object, the type matched exactly as the executor does) and A-16
+  (`legacy_raw_filter`; `legacy_anchor_offset` only for a non-zero offset
+  under `event_select = "nearest"`, other offsets advisory; the inline-spec
+  `cohort_definition_id >= 0` as supplied, passed to `.cohortCreate()` as
+  `cohort_id` by the legacy-spec adapter; `scope.legacy_cohort_sources` with
+  the materialised `combine` and `scope.cohort` as its first source; the
+  sparse automatic builder). One shared `.planSemanticDigest()` binds them; advisory
+  v1 fields go to a server-private annex that explain lists
+  (`legacy_annex`) and no digest covers. The `legacy_residue` attribute and
+  `.irSemanticDigest()` are retired. v1 plans keep running on the v1
+  executors in this release stage; a lowered v1 plan names no publication
+  roots (they are the outputs the execution maps, as in 2.10.2).
+- Validation runs on the plan as it arrived, before the server injects the
+  resolved scope frames and before the execution context and the DP seal
+  exist. The context of a language 2.0 plan carries its validated,
+  normalised IR (`ctx$ir`, read by the native publication and DP
+  contracts); a v1 plan's carries the plan its executors and the legacy
+  publication contracts read, with the lowered IR in `ctx$validation`; the
+  resolved frames are `ctx$scopes`.
+- `R/roles.R`: `.roleOf(handle, table)`, the role registry of design 6.2;
+  role records keep each column's value type for typed site checks.
 - New aggregate method `omopPlanExplainDS(omop_symbol, plan)`: the normalised
-  plan, role records, column classes, effective defaults, publication roots
-  and the dialect preflight; no counts, no SQL.
+  plan, role records, column classes (exact-date-preserving reducers are
+  class 2), effective defaults, publication roots, the advisory annex and
+  the dialect preflight; no counts, no SQL.
 - (A-E7) `omopGetCapabilitiesDS()` reports `recipe_language`: version 2,
   semantic version 2.0.0, the schema id, the operations and reducers this
   server executes and the dialect block. New option
   `dsomop.recipe_operations_disabled` (none by default) withdraws operations.
-- `tests/testthat/fixtures/ir-v1-corpus.json` / `ir-v1-golden.json`: every
-  distinct v1 plan of the 2.10.x suites and its normalised IR.
+- `tests/testthat/fixtures/ir-v1-corpus.json`: every distinct v1 plan of the
+  pinned 2.10.2 suites, bound to its frozen corpus class; `ir-v1-golden.json`
+  pins their normalised IR documents as regression snapshots.
+  `ir-v1-results.json` pins the 2.10.2 results of the safe-class plans the
+  baseline suite executed on the default fixture; `test-ir-results.R`
+  re-executes them with this code and requires identical results, except
+  the two reviewed F-26 age-band corrections, checked against the design's
+  rule (`tools/ws2/capture_results.R` and `compare_results.py` capture and
+  compare every suite call against the baseline).
 
 ## Contracts shipped by WS-0
 

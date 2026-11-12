@@ -18,7 +18,9 @@ list(concept_sets, events, intervals, populations, variables,
 Concept sets, events (including adapters) and intervals in reference
 order; populations topologically over parent, set-op members and match
 cases/controls (never "all indexed populations first"); variables; outputs
-with \code{joined} (and \code{dictionary}) after their inputs. Each
+topologically over joined inputs and dictionary sources, a \code{joined}
+output coming as late as its consumers allow (a tie-breaker among ready
+outputs, never a reordering across a dependency). Each
 population also lists its \strong{candidate} anchors (those of its own
 criteria, resolved against its candidate roster) and its \strong{final}
 anchors (those of the variables and outputs over it, resolved against the

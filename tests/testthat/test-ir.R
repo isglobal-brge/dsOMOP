@@ -78,8 +78,8 @@ test_that("absent and explicit defaults normalise identically (one digest)", {
   b <- .ir_json("examples", "plan-v2-example-B.json")
   ir <- .irNormalize(b)
   explicit <- .irNormalize(unclass(.irStripPrivate(ir)))
-  expect_identical(.irSemanticDigest(ir)$sha256, .irSemanticDigest(explicit)$sha256)
-  expect_identical(.irSemanticDigest(ir)$sha256,
+  expect_identical(.planSemanticDigest(.irDocument(ir))$sha256, .planSemanticDigest(.irDocument(explicit))$sha256)
+  expect_identical(.planSemanticDigest(.irDocument(ir))$sha256,
                    .planSemanticDigest(unclass(.irStripPrivate(ir)))$sha256)
   # an absent publish is every output in declaration order; a given one is kept
   b$outputs <- c(list(zeta = b$outputs$cc_table), b$outputs)
@@ -101,8 +101,8 @@ test_that("the semantic defaults of the canonical example A are the normaliser's
   implicit$outputs$baseline$grain <- NULL
   implicit$outputs$tte$grain <- NULL
   implicit$outputs$tte$options$event_order <- NULL
-  expect_identical(.irSemanticDigest(.irNormalize(implicit))$sha256,
-                   .irSemanticDigest(.irNormalize(a))$sha256)
+  expect_identical(.planSemanticDigest(.irDocument(.irNormalize(implicit)))$sha256,
+                   .planSemanticDigest(.irDocument(.irNormalize(a)))$sha256)
   ir <- .irNormalize(implicit)
   expect_identical(unlist(ir$outputs$baseline$columns), c("age", "sex", "hba1c_base"))
   expect_identical(unlist(ir$publish), c("baseline", "tte"))
@@ -125,12 +125,41 @@ test_that("survival format defaults follow the format matrix", {
   expect_identical(ir$outputs$tte$options$outcome_mode, "named")
 })
 
-test_that("the shared normaliser never inserts IR-only legacy fields", {
-  b <- .ir_json("examples", "plan-v2-example-B.json")
-  wire <- .irNormalizeWire(b, .irSchema("plan-v2"))
-  ir <- .irNormalizeWire(b, .irSchema("ir-v2"))
-  expect_identical(.jcsCanonical(wire), .jcsCanonical(ir))
-  expect_false(grepl("legacy_", .jcsCanonical(ir), fixed = TRUE))
+test_that("A-11: the v2 normal form is the frozen .planNormalizeV2(), pinned by WS-0", {
+  sha <- function(s) paste(as.character(openssl::sha256(charToRaw(enc2utf8(s)))), collapse = "")
+  vectors <- .ir_json("normalized-vectors.json")$vectors
+  expect_gte(length(vectors), 17L)
+  for (v in vectors) {
+    plan <- jsonlite::fromJSON(.ir_schema_file(v$source), simplifyVector = FALSE)
+    ir <- .irNormalize(plan)
+    doc <- .irDocument(ir)
+    expect_identical(.jcsCanonical(doc), .jcsCanonical(.planNormalizeV2(plan)), info = v$label)
+    expect_identical(sha(.jcsCanonical(doc)), v$normalized_sha256, info = v$label)
+    expect_identical(.planSemanticDigest(doc)$sha256, v$digest_sha256, info = v$label)
+    pinned <- .ir_json("normalized", paste0(v$label, ".json"))
+    expect_identical(.jcsCanonical(doc), .jcsCanonical(pinned), info = v$label)
+    # idempotent, and never an IR-only legacy field in a native plan
+    expect_identical(.jcsCanonical(.irDocument(.irNormalize(doc))), .jcsCanonical(doc), info = v$label)
+    expect_false(grepl("\"legacy_", .jcsCanonical(doc), fixed = TRUE), info = v$label)
+  }
+})
+
+test_that("A-11: server and client give every valid wire probe one normal form and digest", {
+  probes <- Filter(function(p) identical(p$expect, "valid") && identical(p$schema, "plan-v2"),
+                   .ir_probes("plan-v2-probes.json"))
+  expect_gt(length(probes), 10L)
+  client <- if (requireNamespace("dsOMOPClient", quietly = TRUE)) {
+    get0(".planNormalizeV2", envir = asNamespace("dsOMOPClient"), inherits = FALSE)
+  }
+  for (p in probes) {
+    doc <- .irDocument(.irNormalize(p$instance))
+    expect_identical(.jcsCanonical(doc), .jcsCanonical(.planNormalizeV2(p$instance)), info = p$id)
+    if (is.function(client)) {
+      expect_identical(.planSemanticDigest(doc)$sha256,
+                       .planSemanticDigest(client(p$instance))$sha256, info = p$id)
+    }
+  }
+  if (!is.function(client)) skip("dsOMOPClient with .planNormalizeV2() is not installed")
 })
 
 # --- the frozen sequence -----------------------------------------------------------
@@ -456,8 +485,10 @@ test_that("v1 filter trees lower to legacy criteria leaves", {
   expect_identical(unlist(leaf$params$concept_ids), c(201820L, 201826L))
   expect_null(leaf$params$concept_name)
   expect_identical(ir$populations$base$episode_policy, "any_episode")
-  residue <- attr(ir, "legacy_residue")
-  expect_identical(unlist(residue[["populations/base"]]$concept_names), "Diabetes")
+  # the concept_name label is advisory: the annex, never the document
+  annex <- attr(ir, "legacy_annex")
+  expect_identical(unlist(annex[["populations/base"]]$concept_names), "Diabetes")
+  expect_identical(ir$populations$base$legacy_episodes, "observation_periods")
   # a flat legacy array is an implicit AND
   ir <- .irPrepare(list(cohort = list(type = "spec", filter_tree = list(list(type = "sex", params = list(value = "M")))),
                         outputs = list(p = list(type = "person_level", tables = list(person = list("gender_concept_id"))))))
@@ -481,6 +512,10 @@ test_that("v1 populations keep their ids: criteria, set-ops and index events", {
   expect_identical(ir$populations$a$kind, "criteria")
   expect_identical(ir$populations$a$cohort_definition_id, 4L)
   expect_identical(ir$populations$a$episode_policy, "first_episode")
+  # v1 criteria populations are their persons' observation periods; with no
+  # plan cohort and no scope their windowed leaves have no index to anchor on
+  expect_identical(ir$populations$a$legacy_episodes, "observation_periods")
+  expect_null(ir$populations$a$legacy_index_anchor)
   idx <- ir$populations$idx
   expect_identical(idx$kind, "index")
   expect_identical(idx$index$select, "last")
@@ -493,7 +528,8 @@ test_that("v1 populations keep their ids: criteria, set-ops and index events", {
 
 test_that("A-E2: set-op shape exclusivity and unknown kinds are refused", {
   setop <- list(id = "s", kind = "setop", setop = list(op = "union", members = list("a", "b")))
-  base <- list(a = list(id = "a", kind = "criteria"), b = list(id = "b", kind = "criteria"))
+  base <- list(a = list(id = "a", kind = "criteria", filter_tree = list(type = "sex", params = list(value = "F"))),
+               b = list(id = "b", kind = "criteria", cohort_definition_id = 2L))
   outputs <- list(x = list(type = "person_level", tables = list(person = list("gender_concept_id"))))
   for (field in c("filter_tree", "cohort_definition_id")) {
     bad <- setop
@@ -503,8 +539,9 @@ test_that("A-E2: set-op shape exclusivity and unknown kinds are refused", {
   }
   err <- .ir_rejection(.irPrepare(list(populations = c(base, list(s = list(id = "s", kind = "cohort"))),
                                        outputs = outputs)))
-  expect_match(conditionMessage(err), "unknown population kind")
+  expect_match(conditionMessage(err), "/populations/s/kind: must be one of criteria, setop", fixed = TRUE)
   # an absent kind is a criteria population, as in v1
+  outputs$x$population_id <- "k"
   ir <- .irPrepare(list(populations = c(base, list(k = list(id = "k", filter_tree = list(type = "sex", params = list(value = "F"))))),
                         outputs = outputs))
   expect_identical(ir$populations$k$kind, "criteria")
@@ -530,6 +567,10 @@ test_that("v1 person_level lowers to raw, feature and derived variables", {
   ev <- ir$events[[v$source$event]]
   expect_identical(ev$table, "measurement")
   expect_identical(ev$where, list(var = "unit_concept_id", op = "in", value = list(8554L)))
+  # the table's concept_set restricts the stream the spec selects within:
+  # their intersection (A-10 legacy_concept_scope, interned and resolvable)
+  scope <- ev$legacy_concept_scope$concept_set_ref
+  expect_identical(unlist(ir$concept_sets[[scope]]$concepts), 3004410L)
   expect_identical(ir$variables$age$derived$reference, "index")
   expect_identical(ir$variables$cci$derived$legacy_all_time_conditions, TRUE)
 })
@@ -545,17 +586,19 @@ test_that("v1 event_level outputs lower to long, wide and sparse", {
                         outputs = list(e = long)))
   o <- ir$outputs$e
   expect_identical(o$format, "long")
-  expect_identical(o$options$temporal$event_select, "first")
   expect_identical(o$options$date_handling$mode, "relative")
   ev <- ir$events[[o$sources[[1]]$event]]
   expect_identical(ev$where, list(var = "condition_type_concept_id", op = "==", value = 32020L))
-  residue <- attr(ir, "legacy_residue")[["outputs/e"]]
-  expect_identical(unlist(residue$columns), c("condition_concept_id", "condition_start_date"))
-  expect_false(is.null(residue$temporal$index_window))
-  # sparse
+  # A-10: the projection and the temporal policy are in the IR document
+  expect_identical(unlist(o$legacy_columns), c("condition_concept_id", "condition_start_date"))
+  expect_identical(o$legacy_temporal, list(index_window = list(start = -30L, end = 0L),
+                                           event_select = list(order = "first", n = 1L, by = "grain")))
+  expect_null(o$options$temporal)
+  # sparse: the legacy automatic sparse builder
   ir <- .irPrepare(list(outputs = list(s = list(type = "event_level", table = "drug_exposure",
                                                 representation = list(format = "sparse")))))
   expect_identical(ir$outputs$s$format, "sparse")
+  expect_identical(ir$outputs$s$legacy_automatic_features$format, "sparse")
   # value_bin row filters lower to and[>=, <]
   vb <- list(var = "value_as_number", op = "value_bin", value = list(lower = 5, upper = 7),
              safe_scope = list(table = "measurement", column = "value_as_number", n_bins = 4L))
@@ -576,7 +619,7 @@ test_that("v1 survival lowers with the legacy cohort-end cap", {
   expect_identical(unlist(opts$censor), "observation_end")
   expect_identical(opts$tar, list(start = 0L, end = 730L, anchor = "index"))
   expect_named(opts$outcomes, "outcome")
-  expect_identical(attr(ir, "legacy_residue")[["outputs/tte"]]$legacy_single_outcome, TRUE)
+  expect_identical(opts$legacy_single_outcome, TRUE)
   # named outcomes keep death by default and every censoring flag
   surv <- list(type = "survival", format = "competing_risk",
                outcomes = list(mi = list(table = "condition_occurrence", concept_set = list(1L)),
@@ -601,7 +644,9 @@ test_that("v1 survival lowers with the legacy cohort-end cap", {
   opts <- ir$outputs$ms$options
   expect_identical(opts$transitions, list(list(from = "index", to = "ill"), list(from = "ill", to = "dead")))
   expect_null(opts$state_step)
-  expect_identical(attr(ir, "legacy_residue")[["outputs/ms"]]$state_step, 0.01)
+  expect_identical(opts$legacy_state_step, 0.01)
+  expect_identical(unlist(opts$legacy_states), c("index", "ill", "dead"))
+  expect_identical(unlist(opts$state_hierarchy), c("index", "ill", "dead"))
 })
 
 test_that("v1 intervals, temporal covariates and person periods lower to their formats", {
@@ -633,7 +678,7 @@ test_that("v1 dictionaries list their source outputs explicitly", {
                         outputs = list(demo = list(type = "baseline"),
                                        dict = list(type = "concept_dictionary"))))
   expect_identical(unlist(ir$outputs$dict$options$source_outputs), "demo")
-  expect_identical(attr(ir, "legacy_residue")[["outputs/dict"]]$source_outputs, "all")
+  expect_identical(attr(ir, "legacy_annex")[["outputs/dict"]]$source_outputs, "all")
 })
 
 test_that("v1 names that are not 2.0 names are re-encoded injectively", {
@@ -641,7 +686,7 @@ test_that("v1 names that are not 2.0 names are re-encoded injectively", {
                                                          tables = list(person = list("gender_concept_id"))))))
   key <- names(ir$outputs)
   expect_match(key, "^my_output_[0-9a-f]{10}$")
-  expect_identical(attr(ir, "legacy_residue")$names$outputs[[key]], "my.output")
+  expect_identical(ir$legacy_names$outputs[[key]], "my.output")
 })
 
 test_that("a v1 plan without outputs has no IR and is still accepted", {
@@ -660,17 +705,34 @@ test_that("a lowered v1 plan names no publication roots: they are the mapped out
   expect_true(.jsonSchemaValidate(.irSchema("ir-v2"), unclass(.irStripPrivate(ir)))$valid)
 })
 
-test_that("the residue is bound by the IR digest", {
+test_that("A-10: v1 semantics are in the document the one digest binds; the annex is not", {
+  digest <- function(p) .planSemanticDigest(.irDocument(.irPrepare(p)))$sha256
   p1 <- list(cohort = list(type = "cohort_table", cohort_definition_id = 1L),
              outputs = list(e = list(type = "event_level", table = "measurement",
                                      columns = list("measurement_concept_id"))))
   p2 <- p1
   p2$outputs$e$columns <- list("measurement_date")
-  d1 <- .irSemanticDigest(.irPrepare(p1))$sha256
-  d2 <- .irSemanticDigest(.irPrepare(p2))$sha256
-  expect_false(identical(d1, d2))
-  expect_identical(.jcsCanonical(.irStripPrivate(.irPrepare(p1))),
-                   .jcsCanonical(.irStripPrivate(.irPrepare(p2))))
+  expect_false(identical(digest(p1), digest(p2)))
+  # an advisory field changes the annex only
+  p3 <- p1
+  p3$anchor <- list(table = "person", id_col = "person_id")
+  expect_identical(digest(p3), digest(p1))
+  expect_false(is.null(attr(.irPrepare(p3), "legacy_annex")$root$anchor))
+  # omitted and explicitly supplied compatibility defaults normalise alike
+  t1 <- list(cohort = list(type = "cohort_table", cohort_definition_id = 1L),
+             outputs = list(e = list(type = "event_level", table = "measurement",
+                                     temporal = list(index_window = list(start = -30L, end = 0L),
+                                                     event_select = list(order = "last"),
+                                                     min_gap = 7L),
+                                     representation = list(format = "long"))))
+  t2 <- t1
+  t2$outputs$e$temporal$event_select <- list(order = "last", n = 1L, by = "grain")
+  t2$outputs$e$temporal$min_gap <- list(days = 7L, by = "concept", keep = "first")
+  expect_identical(digest(t1), digest(t2))
+  expect_identical(.irPrepare(t1)$outputs$e$legacy_temporal$min_gap,
+                   list(days = 7L, by = "concept", keep = "first"))
+  t2$outputs$e$temporal$min_gap$keep <- "last"
+  expect_false(identical(digest(t1), digest(t2)))
 })
 
 test_that("plans built as R lists and plans parsed from JSON give one IR", {
@@ -681,21 +743,24 @@ test_that("plans built as R lists and plans parsed from JSON give one IR", {
     list(cohort = list(type = "cohort_table", cohort_definition_id = 1L),
          outputs = list(demo = list(type = "baseline", columns = list(sex = "gender_concept_id"),
                                     derived = "age_at_index"))), auto_unbox = TRUE)), simplifyVector = FALSE)
-  expect_identical(.irSemanticDigest(.irPrepare(r_plan))$sha256,
-                   .irSemanticDigest(.irPrepare(json_plan))$sha256)
-  expect_identical(.irPrepare(r_plan)$variables$sex$raw$column, "gender_concept_id")
+  expect_identical(.planSemanticDigest(.irDocument(.irPrepare(r_plan)))$sha256,
+                   .planSemanticDigest(.irDocument(.irPrepare(json_plan)))$sha256)
+  # baseline reads column values only: the name of an alias map is ignored
+  expect_identical(.irPrepare(r_plan)$variables$gender_concept_id$raw$column, "gender_concept_id")
 })
 
-test_that("the shared normaliser and role tables are vendored byte-identically", {
+test_that("the role tables are vendored byte-identically", {
   tp <- testthat::test_path()
   client_root <- Find(dir.exists, file.path(tp, "..", "..", "..", "dsOMOPClient"))
   server_root <- file.path(tp, "..", "..")
-  skip_if(is.null(client_root) || !file.exists(file.path(client_root, "R", "ir_defaults.R")),
-          "sibling dsOMOPClient source tree (with R/ir_defaults.R) not reachable")
+  skip_if(is.null(client_root) || !file.exists(file.path(client_root, "inst", "ohdsi", "roles-5.4.csv")),
+          "sibling dsOMOPClient source tree not reachable")
   sha <- function(f) paste(as.character(openssl::sha256(file(f))), collapse = "")
-  for (f in c("R/ir_defaults.R", "inst/ohdsi/roles-5.3.csv", "inst/ohdsi/roles-5.4.csv")) {
+  for (f in c("inst/ohdsi/roles-5.3.csv", "inst/ohdsi/roles-5.4.csv")) {
     expect_identical(sha(file.path(client_root, f)), sha(file.path(server_root, f)), info = f)
   }
+  # A-11: the server's normaliser is the vendored WS-0 artefact itself
+  expect_false(file.exists(file.path(server_root, "R", "ir_defaults.R")))
 })
 
 test_that("the legacy-spec adapter wraps the unchanged .cohortCreate rows as a roster", {

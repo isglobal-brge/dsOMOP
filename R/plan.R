@@ -90,13 +90,49 @@
 
 #' Validate a plan against the handle's schema
 #'
+#' The v1 executors' own checks (\code{.planLegacyFindings()}) plus the frozen
+#' validation sequence on the plan's wire part, exactly as execution runs it.
+#'
 #' @param handle CDM handle
 #' @param plan List; the extraction plan
 #' @return List with validation results
 #' @keywords internal
 .planValidate <- function(handle, plan) {
+  legacy <- .planLegacyFindings(handle, plan)
+  # The frozen validation sequence (design-2.10.3 section 4.5) -- closed
+  # envelope, normalisation, ir-v2.json, semantic and site rules, dialect
+  # preflight -- reported here as validation errors, raised as typed
+  # rejections at execution.
+  wire <- .planWirePart(plan)
+  ir_error <- tryCatch({
+    .irPrepare(wire[["plan"]], handle = handle, scope_tables = wire[["scope_tables"]])
+    NULL
+  }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e),
+  # the v1 plan-declaration errors are among the legacy findings already
+  dsomop_v1_declaration_error = function(e) NULL)
+  errors <- unique(c(legacy[["errors"]], legacy[["missing_tables"]], ir_error))
+  list(
+    valid = length(errors) == 0,
+    errors = errors,
+    warnings = legacy[["warnings"]],
+    available_tables = legacy[["available_tables"]]
+  )
+}
+
+#' The v1 executors' checks of a plan against a site
+#'
+#' The checks the v1 executors make while they run, collected before any
+#' query: tables and the results cohort table the plan needs
+#' (\code{missing_tables}), and the legacy shape rules (\code{errors}).
+#'
+#' @param handle CDM handle
+#' @param plan List; the v1 plan
+#' @return list(errors, missing_tables, warnings, available_tables)
+#' @keywords internal
+.planLegacyFindings <- function(handle, plan) {
   bp <- .buildBlueprint(handle)
   errors <- character(0)
+  missing_tables <- character(0)
   warnings <- character(0)
 
   present_tables <- bp$tables$table_name[bp$tables$present_in_db]
@@ -105,7 +141,7 @@
     if (!is.null(plan$cohort$cohort_definition_id)) {
       results_tables <- .listTablesRaw(handle, .effectiveResultsSchema(handle))
       if (!"cohort" %in% results_tables) {
-        errors <- c(errors,
+        missing_tables <- c(missing_tables,
           "Plan cohort cannot execute: results cohort table not found.")
       }
     }
@@ -153,7 +189,7 @@
       for (tbl_name in names(out$tables)) {
         tbl_lower <- tolower(tbl_name)
         if (!tbl_lower %in% present_tables) {
-          errors <- c(errors,
+          missing_tables <- c(missing_tables,
             paste0("Output '", out_name, "': table '", tbl_name, "' not found."))
           next
         }
@@ -173,7 +209,7 @@
     if (out_type == "event_level") {
       tbl_name <- tolower(out$table %||% "")
       if (!tbl_name %in% present_tables) {
-        errors <- c(errors,
+        missing_tables <- c(missing_tables,
           paste0("Output '", out_name, "': table '", tbl_name, "' not found."))
       } else {
         avail_cols <- bp$columns[[tbl_name]]$column_name
@@ -191,7 +227,7 @@
 
     if (out_type == "baseline") {
       if (!"person" %in% present_tables) {
-        errors <- c(errors,
+        missing_tables <- c(missing_tables,
           paste0("Output '", out_name, "': person table not found."))
       }
       if (!"observation_period" %in% present_tables) {
@@ -227,7 +263,7 @@
             survival_outcomes[[outcome_name]]$table %||% ""
           )
           if (!nzchar(outcome_tbl) || !outcome_tbl %in% present_tables) {
-            errors <- c(errors, paste0(
+            missing_tables <- c(missing_tables, paste0(
               "Output '", out_name, "': outcome '", outcome_name,
               "' table '", outcome_tbl, "' not found."
             ))
@@ -265,14 +301,14 @@
       }
       if (!identical(censoring$observation_period_end, FALSE) &&
           !"observation_period" %in% present_tables) {
-        errors <- c(errors, paste0(
+        missing_tables <- c(missing_tables, paste0(
           "Output '", out_name,
           "': observation-period censoring requires observation_period."
         ))
       }
       if (!identical(censoring$death, FALSE) &&
           !"death" %in% present_tables) {
-        errors <- c(errors, paste0(
+        missing_tables <- c(missing_tables, paste0(
           "Output '", out_name, "': death censoring requires death."
         ))
       }
@@ -294,7 +330,7 @@
       interval_tables <- out$tables %||% character(0)
       for (itbl in interval_tables) {
         if (!tolower(itbl) %in% present_tables) {
-          errors <- c(errors,
+          missing_tables <- c(missing_tables,
             paste0("Output '", out_name,
                    "': interval table '", itbl, "' not found."))
         }
@@ -328,7 +364,7 @@
     if (out_type %in% c("temporal_covariates", "person_period")) {
       tc_table <- tolower(out$table %||% "")
       if (tc_table != "" && !tc_table %in% present_tables) {
-        errors <- c(errors,
+        missing_tables <- c(missing_tables,
           paste0("Output '", out_name,
                  "': table '", tc_table, "' not found."))
       }
@@ -346,21 +382,8 @@
     }
   }
 
-  # The closed envelope, normalisation, ir-v2.json and the semantic rules of
-  # the frozen validation sequence (design-2.10.3 section 4.5); reported here
-  # as validation errors, raised as typed rejections at execution.
-  ir_error <- tryCatch({
-    .irPrepare(plan, handle = NULL)
-    NULL
-  }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e))
-  errors <- c(errors, ir_error)
-
-  list(
-    valid = length(errors) == 0,
-    errors = errors,
-    warnings = warnings,
-    available_tables = present_tables
-  )
+  list(errors = unique(errors), missing_tables = unique(missing_tables),
+       warnings = warnings, available_tables = present_tables)
 }
 
 #' Preview resolvable plan projections (safe aggregate)
@@ -2756,9 +2779,12 @@
 
     if (is_base && !has_filter_tree && !has_own_cohort) {
       # Base population with no extra criteria: reuse the plan-level cohort.
+      # Without one it is every person, as in a single-population plan (an
+      # empty id set would restrict its outputs to nobody).
+      unrestricted <- is.null(base_cohort_table) && is.null(base_person_ids)
       resolved[[pid]] <- list(
         cohort_table = base_cohort_table,
-        person_ids = base_person_ids %||%
+        person_ids = if (unrestricted) NULL else base_person_ids %||%
           .cohortPersonIds(handle, base_cohort_table))
       next
     }
@@ -2873,6 +2899,26 @@
   resolved
 }
 
+#' The plan an execution context carries
+#'
+#' Validation runs before the context exists (design 4.5, WS-1): a language
+#' 2.0 plan's context carries its validated, normalised IR, which the native
+#' publication and DP contracts read (\code{.dsomopDpIsV2()}); a v1 plan's
+#' carries the execution plan, which its v1 executors and the legacy
+#' publication and DP contracts read in their own fields (the lowered IR is
+#' \code{ctx$validation$ir}). A refused plan keeps the plan as it arrived:
+#' only its refusal is published.
+#'
+#' @param validation list(ir, wire) from the validation sequence, or
+#'   list(error) when it refused the plan.
+#' @param plan The execution plan.
+#' @return The IR or the plan.
+#' @keywords internal
+.planContextIr <- function(validation, plan) {
+  ir <- validation[["ir"]]
+  if (!is.null(ir) && identical(attr(ir, "source_version"), 2L)) ir else plan
+}
+
 #' Execute a plan and produce server-side data frames
 #'
 #' Processes all outputs defined in the plan: builds a cohort (if specified),
@@ -2886,18 +2932,9 @@
 #' @return Named list of data frames or staged dataset descriptors.
 #' @keywords internal
 .planExecute <- function(handle, plan, out_symbols, output_mode = "memory", ctx = NULL) {
-  own_context <- is.null(ctx)
-  if (own_context) {
-    ctx <- .planContext(handle, plan, output_mode)
-    on.exit(.planContextClose(ctx), add = TRUE)
+  if (!is.null(ctx) && !.isPlanContext(ctx)) {
+    stop("Invalid plan execution context.", call. = FALSE)
   }
-  if (!.isPlanContext(ctx)) stop("Invalid plan execution context.", call. = FALSE)
-
-  temp_tables_before <- unique(handle$temp_tables %||% character(0))
-  on.exit(
-    .dropTempTablesCreatedSince(handle, temp_tables_before),
-    add = TRUE
-  )
   outputs <- plan$outputs %||% list()
   max_plan_outputs <- .extractionCap("dsomop.max_plan_outputs", 100L)
   if (length(outputs) > max_plan_outputs) {
@@ -2905,9 +2942,29 @@
          max_plan_outputs, ".", call. = FALSE)
   }
   # The single frozen validation sequence (design-2.10.3 section 4.5): closed
-  # envelope by version, normalisation, ir-v2.json, semantic rules -- before
-  # any query. A v1 plan then runs on the v1 executors below, unchanged.
-  ir <- .irPrepare(plan, handle)
+  # envelope by version, normalisation, ir-v2.json, semantic and site rules,
+  # dialect preflight -- on the plan's wire part (server-resolved workspace
+  # frames are not part of it), before the execution context is created and
+  # before any query. A context created by omopPlanExecuteDS carries the IR it
+  # validated for exactly this plan; anything else is validated here. A v1
+  # plan then runs on the v1 executors below, unchanged.
+  wire <- .planWirePart(plan)
+  validated <- if (!is.null(ctx)) ctx[["validation"]]
+  ir <- if (!is.null(validated) &&
+            identical(validated[["wire"]], .irJsonForm(wire[["plan"]]))) {
+    validated[["ir"]]
+  } else {
+    .irPrepare(wire[["plan"]], handle, scope_tables = wire[["scope_tables"]])
+  }
+  # the context exists only after validation (WS-1): created here when the
+  # caller brought none
+  own_context <- is.null(ctx)
+  if (own_context) {
+    validated <- list(ir = ir, wire = .irJsonForm(wire[["plan"]]))
+    ctx <- .planContext(handle, .planContextIr(validated, plan), output_mode)
+    ctx$validation <- validated
+    on.exit(.planContextClose(ctx), add = TRUE)
+  }
   if (identical(attr(ir, "source_version"), 2L)) {
     # The event stage of language-2.0 execution (design 6.1, WS-4): the event
     # sources of the requested roots compile in the private context, so the
@@ -2918,6 +2975,12 @@
     .irReject(paste0("this server validates language 2.0 plans but does not ",
                      "execute them yet; use omopPlanExplainDS"))
   }
+
+  temp_tables_before <- unique(handle$temp_tables %||% character(0))
+  on.exit(
+    .dropTempTablesCreatedSince(handle, temp_tables_before),
+    add = TRUE
+  )
   bp <- .buildBlueprint(handle)
 
   staged <- identical(output_mode, "staged")

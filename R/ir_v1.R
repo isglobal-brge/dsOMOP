@@ -129,313 +129,362 @@
 }
 
 #' Findings of the closed v1 envelope (empty when valid)
+#'
+#' The closed shape of every position (\code{.v1PlanShape()}: raw member
+#' names before any null compaction, nested variants, scalar types and
+#' enumerations, the corrected legacy value validators at the positions they
+#' own) and the cross-field rules of the v1 executors
+#' (\code{.v1CrossFieldErrors()}).
+#' @param plan v1 plan in parsed JSON form.
 #' @keywords internal
 .planV1EnvelopeErrors <- function(plan) {
+  if (!.v1IsObject(plan)) return("/: a v1 plan must be a JSON object")
+  errors <- .v1ShapeErrors(plan, .v1PlanShape(), "")
+  if (!is.null(plan[["version"]]) && !identical(as.numeric(.v1Scalar(plan[["version"]])), 1)) {
+    errors <- c(errors, "/version: a v1 plan carries no version or version 1")
+  }
+  unique(c(errors, .v1CrossFieldErrors(plan)))
+}
+
+# Bounds of a v1 window, as the executor reads them (.temporalOffset).
+.v1Bound <- function(x) {
+  x <- .v1Scalar(x)
+  if (is.numeric(x) && length(x) == 1L && !is.na(x)) as.numeric(x) else NULL
+}
+
+#' Cross-field rules of the v1 executors, checked before lowering
+#'
+#' Each rule is one the unchanged v1 executors enforce while running (their
+#' messages are kept), plus the shape exclusivity of defect A-E2: set-op
+#' populations carry no filter_tree, cohort_definition_id, index_event or
+#' episode_policy and declare their members first; an index-event population
+#' carries no episode_policy; a multi-population plan's outputs target
+#' declared populations; person_level raw tables are person/death only, custom
+#' filters need a source table and feature specs take no time window;
+#' event_level wide/features/sparse couple temporal$index_window with an
+#' episode grain and feature windows nest in it; survival outcome lists,
+#' multi-state graphs, interval windows/selections/source filters and
+#' person_period grain/time origin follow their legacy normalisers.
+#' @param plan v1 plan in parsed JSON form.
+#' @keywords internal
+.v1CrossFieldErrors <- function(plan) {
   errors <- character(0)
   add <- function(...) errors <<- c(errors, paste0(...))
-  closed <- function(x, allowed, path) {
-    if (is.null(x)) return(invisible(FALSE))
-    if (!.v1IsObject(x)) {
-      add(path, ": must be an object")
-      return(invisible(FALSE))
-    }
-    present <- names(.v1Compact(x))
-    unknown <- setdiff(present, allowed)
-    if (length(unknown)) {
-      add(path, ": unknown field(s) ", paste(unknown, collapse = ", "))
-    }
-    invisible(TRUE)
-  }
-  concept_set <- function(x, path) {
-    if (.v1IsObject(x) && length(x) > 0L) {
-      closed(x, .V1_CONCEPT_SET_FIELDS, path)
-      if (.v1IsObject(x[["exclude"]]) && length(x[["exclude"]]) > 0L) {
-        add(path, "/exclude: a v1 exclusion is a list of concept ids")
-      }
-    }
-  }
-  row_filter <- function(x, path, depth = 1L) {
-    if (is.null(x) || (is.list(x) && length(x) == 0L)) return(invisible())
-    if (depth > 64L) return(add(path, ": filter nesting is too deep"))
-    if (!.v1IsObject(x)) return(add(path, ": a row filter is an and/or group or a leaf object"))
-    keys <- names(.v1Compact(x))
-    group <- intersect(keys, c("and", "or", "not"))
-    if (length(group)) {
-      if (length(keys) != 1L || length(group) != 1L) {
-        return(add(path, ": a filter group carries exactly one of and/or/not"))
-      }
-      # NOT in the row grammar (design 6.6): one negated predicate.
-      if (identical(group, "not")) {
-        if (!.v1IsObject(x[["not"]]) || length(x[["not"]]) == 0L) {
-          return(add(path, "/not: a NOT group negates one predicate"))
+  legacy <- function(path, expr) errors <<- c(errors, .v1Legacy(path, expr))
+  pops <- if (.v1IsObject(plan[["populations"]])) plan[["populations"]] else list()
+  outputs <- if (.v1IsObject(plan[["outputs"]])) plan[["outputs"]] else list()
+  multi <- isTRUE(tryCatch(.planHasMultiPopulation(plan), error = function(e) FALSE))
+
+  declared <- character(0)
+  for (pid in names(pops)) {
+    pop <- pops[[pid]]
+    p <- paste0("/populations/", pid)
+    if (.v1IsObject(pop)) {
+      compact <- .v1Compact(pop)
+      is_setop <- identical(tolower(.v1Text(compact[["kind"]]) %||% ""), "setop") ||
+        !is.null(compact[["setop"]])
+      if (is_setop) {
+        for (field in intersect(names(compact), c("filter_tree", "cohort_definition_id",
+                                                  "index_event", "episode_policy"))) {
+          add(p, ": Set-operation populations cannot declare ", field, ".")
         }
-        return(row_filter(x[["not"]], paste0(path, "/not"), depth + 1L))
+        members <- vapply(.v1Items(compact[["setop"]][["members"]]), function(m) .v1Text(m) %||% "", "")
+        if (!length(members)) add(p, "/setop/members: a set operation needs at least one member")
+        for (m in members) {
+          if (!m %in% names(pops)) {
+            add(p, "/setop/members: dangling population '", m, "'")
+          } else if (!m %in% declared) {
+            add(p, "/setop/members: set-op member '", m, "' is not defined before it (declare members first).")
+          }
+        }
       }
-      items <- .v1Items(x[[group]])
-      for (i in seq_along(items)) row_filter(items[[i]], paste0(path, "/", group, "/", i - 1L), depth + 1L)
-      return(invisible())
-    }
-    unknown <- setdiff(keys, c("var", "op", "value", "safe_scope"))
-    if (length(unknown)) add(path, ": unknown filter field(s) ", paste(unknown, collapse = ", "))
-    if (is.list(x[["safe_scope"]]) && length(x[["safe_scope"]]) > 0L) {
-      closed(x[["safe_scope"]], c("table", "column", "concept_id", "concept_col", "n_bins"),
-             paste0(path, "/safe_scope"))
-    }
-  }
-  filter_tree <- function(x, path, depth = 1L) {
-    if (is.null(x)) return(invisible())
-    if (depth > 64L) return(add(path, ": filter nesting is too deep"))
-    if (!is.list(x) || length(x) == 0L) return(add(path, ": population filter nodes must be non-empty lists"))
-    if (is.null(names(x))) {
-      for (i in seq_along(x)) filter_tree(x[[i]], paste0(path, "/", i - 1L), depth + 1L)
-      return(invisible())
-    }
-    keys <- names(x)
-    if ("type" %in% keys) {
-      if (!setequal(keys, c("type", "params")) && !identical(keys, "type")) {
-        add(path, ": a population filter leaf carries only type and params")
+      if (is_setop) {
+        ops <- tolower(.v1Text(compact[["setop"]][["op"]]) %||% "union")
+        members <- vapply(.v1Items(compact[["setop"]][["members"]]), function(m) .v1Text(m) %||% "", "")
+        if (ops %in% c("setdiff", "difference") && anyDuplicated(members)) {
+          add(p, "/setop/members: a difference of a population with itself is always empty")
+        }
       }
-      type <- tolower(.v1Text(x[["type"]]) %||% "")
-      if (!type %in% .cohortFilterTypes()) {
-        return(add(path, ": unknown population filter type"))
+      if (multi && !is_setop && !identical(pid, "base") && is.null(compact[["filter_tree"]]) &&
+          is.null(compact[["cohort_definition_id"]]) && is.null(compact[["index_event"]])) {
+        add(p, ": a v1 criteria population needs a filter_tree or a cohort_definition_id ",
+            "(without either it resolves to no person)")
       }
-      params <- .v1Compact(x[["params"]] %||% list())
-      if (!.v1IsObject(params)) return(add(path, "/params: must be an object"))
-      unknown <- setdiff(names(params), .cohortFilterParamNames(type))
-      if (length(unknown)) {
-        add(path, "/params: population filter '", type, "' has unknown parameter(s) ",
-            paste(unknown, collapse = ", "))
+      if (!is.null(compact[["index_event"]]) && !is.null(compact[["episode_policy"]])) {
+        add(p, ": Population '", pid, "': episode_policy cannot be combined with index_event; ",
+            "primary_limit defines candidate-event selection.")
       }
-      if (is.list(params[["window"]]) && length(params[["window"]]) > 0L) {
-        closed(params[["window"]], c("start", "end"), paste0(path, "/params/window"))
-      }
-      if (is.list(params[["safe_scope"]]) && length(params[["safe_scope"]]) > 0L) {
-        closed(params[["safe_scope"]], c("table", "column", "concept_id", "concept_col", "n_bins"),
-               paste0(path, "/params/safe_scope"))
-      }
-      return(invisible())
     }
-    group <- intersect(keys, c("and", "or", "not"))
-    if (length(group) != 1L || length(keys) != 1L) {
-      return(add(path, ": unknown or malformed population filter specification"))
-    }
-    # NOT in the population grammar (design 6.6): one negated filter.
-    if (identical(group, "not")) {
-      if (!is.list(x[["not"]]) || length(x[["not"]]) == 0L) {
-        return(add(path, "/not: a NOT group negates one filter"))
-      }
-      return(filter_tree(x[["not"]], paste0(path, "/not"), depth + 1L))
-    }
-    items <- .v1Items(x[[group]])
-    for (i in seq_along(items)) filter_tree(items[[i]], paste0(path, "/", group, "/", i - 1L), depth + 1L)
-  }
-  temporal <- function(x, path) {
-    if (!closed(x, .V1_TEMPORAL_FIELDS, path)) return(invisible())
-    closed(x[["index_window"]], c("start", "end"), paste0(path, "/index_window"))
-    closed(x[["calendar"]], c("start", "end"), paste0(path, "/calendar"))
-    closed(x[["event_select"]], c("order", "n", "by"), paste0(path, "/event_select"))
-    if (.v1IsObject(x[["min_gap"]]) && length(x[["min_gap"]]) > 0L) {
-      closed(x[["min_gap"]], c("days", "by", "keep"), paste0(path, "/min_gap"))
-    }
-  }
-  date_handling <- function(x, path) {
-    if (.v1IsObject(x) && length(x) > 0L) {
-      closed(x, c("mode", "reference", "bin_width", "date_columns"), path)
-    }
-  }
-  feature_specs <- function(x, path) {
-    if (is.null(x)) return(invisible())
-    if (!is.list(x)) return(add(path, ": feature specifications are a list"))
-    nm <- names(x)
-    for (i in seq_along(x)) {
-      key <- if (is.null(nm) || !nzchar(nm[[i]])) as.character(i - 1L) else nm[[i]]
-      spec <- x[[i]]
-      p <- paste0(path, "/", key)
-      if (!closed(spec, .V1_FEATURE_FIELDS, p)) next
-      concept_set(spec[["concept_set"]], paste0(p, "/concept_set"))
-      row_filter(spec[["filter"]], paste0(p, "/filter"))
-      closed(spec[["time_window"]], c("start", "end"), paste0(p, "/time_window"))
-    }
+    declared <- c(declared, pid)
   }
 
-  if (!.v1IsObject(plan)) return("/: a v1 plan must be a JSON object")
-  closed(plan, .V1_ROOT_FIELDS, "")
-  if (!is.null(plan[["version"]]) && !identical(as.numeric(.v1Scalar(plan[["version"]])), 1)) {
-    add("/version: a v1 plan carries no version or version 1")
-  }
-  closed(plan[["options"]], .V1_OPTION_FIELDS, "/options")
-  closed(plan[["anchor"]], c("table", "id_col"), "/anchor")
-  if (!is.null(plan[["scope"]]) && .v1IsObject(plan[["scope"]])) {
-    closed(plan[["scope"]], .V1_SCOPE_FIELDS, "/scope")
-  }
-  if (!is.null(plan[["harmonization"]]) && !.v1IsObject(plan[["harmonization"]])) {
-    add("/harmonization: must be an object")
-  }
-
-  cohort <- plan[["cohort"]]
-  if (closed(cohort, .V1_COHORT_FIELDS, "/cohort")) {
-    filter_tree(cohort[["filter_tree"]], "/cohort/filter_tree")
-    spec <- cohort[["spec"]]
-    if (.v1IsObject(spec) && length(spec) > 0L && is.null(cohort[["filter_tree"]])) {
-      closed(spec, .V1_SPEC_FIELDS, "/cohort/spec")
-      if (!is.null(spec[["value_threshold"]])) {
-        add("/cohort/spec/value_threshold: Disclosive: value_threshold is no longer executable. ",
-            "Use a server-issued value_bin from ds.omop.safe.filter.value().")
+  for (name in names(outputs)) {
+    out <- outputs[[name]]
+    if (!.v1IsObject(out)) next
+    p <- paste0("/outputs/", name)
+    type <- .v1Text(out[["type"]]) %||% "event_level"
+    if (multi) {
+      pid <- .v1Text(out[["population_id"]]) %||% "base"
+      if (!pid %in% names(pops)) {
+        add(p, "/population_id: the multi-population plan declares no population '", pid, "'")
       }
-      concept_set(spec[["concept_set"]], "/cohort/spec/concept_set")
-      if (is.list(spec[["value_bin"]]) && length(spec[["value_bin"]]) > 0L) {
-        closed(spec[["value_bin"]], c("lower", "upper", "safe_scope"), "/cohort/spec/value_bin")
-        closed(spec[["value_bin"]][["safe_scope"]], c("table", "column", "concept_id", "concept_col", "n_bins"),
-               "/cohort/spec/value_bin/safe_scope")
+    }
+    if (identical(type, "person_level")) {
+      tables <- out[["tables"]] %||% list()
+      if (!is.null(out[["filters"]][["custom"]]) && !length(tables)) {
+        add(p, ": person_level custom filters require at least one source table.")
       }
-      crits <- spec[["inclusion_criteria"]]
-      if (is.list(crits)) {
-        cn <- names(crits)
-        for (i in seq_along(crits)) {
-          key <- if (is.null(cn) || !nzchar(cn[[i]])) as.character(i - 1L) else cn[[i]]
-          p <- paste0("/cohort/spec/inclusion_criteria/", key)
-          crit <- crits[[i]]
-          if (!closed(crit, .V1_INCLUSION_FIELDS, p)) next
-          concept_set(crit[["concept_set"]], paste0(p, "/concept_set"))
-          if (closed(crit[["temporal"]], c("index_window", "calendar"), paste0(p, "/temporal"))) {
-            closed(crit[["temporal"]][["index_window"]], c("start", "end"), paste0(p, "/temporal/index_window"))
-            closed(crit[["temporal"]][["calendar"]], c("start", "end"), paste0(p, "/temporal/calendar"))
+      is_feature <- vapply(tables, function(en) .v1IsObject(en) && !is.null(en[["features"]]), logical(1))
+      raw <- setdiff(names(tables)[!is_feature], c("person", "death"))
+      if (length(raw)) {
+        add(p, "/tables: person_level raw table(s) do not guarantee one row per person: ",
+            paste(raw, collapse = ", "), ". Aggregate them as features or request an event_level output.")
+      }
+      for (tb in names(tables)[is_feature]) {
+        specs <- tables[[tb]][["features"]]
+        for (i in seq_along(specs)) {
+          if (.v1IsObject(specs[[i]]) && !is.null(specs[[i]][["time_window"]])) {
+            add(p, "/tables/", tb, "/features/", i - 1L, "/time_window: Feature time_window requires temporal$index_window.")
           }
-          closed(crit[["occurrence"]], c("min", "max"), paste0(p, "/occurrence"))
         }
       }
     }
-  }
-
-  pops <- plan[["populations"]]
-  if (!is.null(pops) && !(is.list(pops) && length(pops) == 0L)) {
-    if (!.v1IsObject(pops)) {
-      add("/populations: must be an object keyed by population id")
-    } else {
-      for (pid in names(pops)) {
-        pop <- pops[[pid]]
-        p <- paste0("/populations/", pid)
-        if (!closed(pop, .V1_POPULATION_FIELDS, p)) next
-        pop <- .v1Compact(pop)
-        kind <- .v1Text(pop[["kind"]])
-        if (!is.null(pop[["kind"]]) && (is.null(kind) || !tolower(kind) %in% c("criteria", "setop"))) {
-          add(p, "/kind: unknown population kind (criteria or setop)")
+    if (identical(type, "event_level")) {
+      rep <- if (.v1IsObject(out[["representation"]])) out[["representation"]] else list()
+      fmt <- tolower(.v1Text(rep[["format"]]) %||% "long")
+      grain <- tolower(.v1Text(rep[["grain"]]) %||% "person")
+      iw <- if (.v1IsObject(out[["temporal"]])) out[["temporal"]][["index_window"]] else NULL
+      has_iw <- !is.null(iw)
+      if (identical(fmt, "features")) {
+        if (has_iw && !identical(grain, "episode")) {
+          add(p, ": features with temporal$index_window require grain='episode' so recurrent cohort entries are not collapsed by person.")
         }
-        is_setop <- identical(tolower(kind %||% ""), "setop") || !is.null(pop[["setop"]])
-        if (is_setop) {
-          misplaced <- intersect(names(pop), c("filter_tree", "cohort_definition_id",
-                                               "index_event", "episode_policy"))
-          for (field in misplaced) {
-            add(p, ": Set-operation populations cannot declare ", field, ".")
+        if (!has_iw && identical(grain, "episode")) {
+          add(p, ": grain='episode' requires temporal$index_window so every event has an explicit episode-relative scope.")
+        }
+        specs <- rep[["features"]] %||% list()
+        for (i in seq_along(specs)) {
+          tw <- if (.v1IsObject(specs[[i]])) specs[[i]][["time_window"]] else NULL
+          if (is.null(tw)) next
+          sp <- paste0(p, "/representation/features/", i - 1L, "/time_window")
+          if (!has_iw) {
+            add(sp, ": Feature time_window requires temporal$index_window.")
+            next
           }
-          closed(pop[["setop"]], c("op", "members"), paste0(p, "/setop"))
+          ws <- .v1Bound(tw[["start"]]); we <- .v1Bound(tw[["end"]])
+          os <- .v1Bound(iw[["start"]]); oe <- .v1Bound(iw[["end"]])
+          if (!is.null(ws) && !is.null(we) && ws > we) add(sp, ": time_window start must not be after end.")
+          if ((!is.null(os) && (is.null(ws) || ws < os)) || (!is.null(oe) && (is.null(we) || we > oe))) {
+            add(sp, ": time_window must be contained in temporal$index_window.")
+          }
         }
-        filter_tree(pop[["filter_tree"]], paste0(p, "/filter_tree"))
-        ie <- pop[["index_event"]]
-        if (closed(ie, c("table", "concept_set", "primary_limit", "end_strategy"),
-                   paste0(p, "/index_event"))) {
-          concept_set(ie[["concept_set"]], paste0(p, "/index_event/concept_set"))
+      }
+      if (fmt %in% c("wide", "sparse")) {
+        if (has_iw && !identical(grain, "episode")) {
+          add(p, ": ", fmt, " with temporal$index_window requires grain='episode' so recurrent cohort entries are not collapsed by person.")
+        }
+        if (!has_iw && identical(grain, "episode")) {
+          add(p, ": ", fmt, " grain='episode' requires temporal$index_window.")
         }
       }
     }
-  }
-
-  outputs <- plan[["outputs"]]
-  if (!is.null(outputs) && !(is.list(outputs) && length(outputs) == 0L)) {
-    if (!.v1IsObject(outputs)) {
-      add("/outputs: must be an object keyed by output name")
-    } else {
-      for (name in names(outputs)) {
-        out <- outputs[[name]]
-        p <- paste0("/outputs/", name)
-        if (!.v1IsObject(out)) {
-          add(p, ": must be an object")
-          next
-        }
-        type <- .v1Text(out[["type"]]) %||% "event_level"
-        fields <- .V1_OUTPUT_FIELDS[[type]]
-        if (is.null(fields)) {
-          # The v1 executor names an unsupported type itself; the envelope
-          # only keeps every field closed.
-          fields <- unique(unlist(.V1_OUTPUT_FIELDS, use.names = FALSE))
-        }
-        closed(out, c(.V1_OUTPUT_COMMON, fields), p)
-        out <- .v1Compact(out)
-        f <- out[["filters"]]
-        if (.v1IsObject(f) && length(f) > 0L) {
-          closed(f, .V1_OUTPUT_FILTER_FIELDS, paste0(p, "/filters"))
-          if (.v1IsObject(f[["concept_set"]]) && length(f[["concept_set"]]) > 0L) {
-            closed(f[["concept_set"]], "ids", paste0(p, "/filters/concept_set"))
-            concept_set(f[["concept_set"]][["ids"]], paste0(p, "/filters/concept_set/ids"))
-          }
-          closed(f[["time_window"]], c("date_column", "start_date", "end_date"),
-                 paste0(p, "/filters/time_window"))
-          row_filter(f[["custom"]], paste0(p, "/filters/custom"))
-          closed(f[["visit"]], c("concept_ids", "visit_concept_id"), paste0(p, "/filters/visit"))
-        }
-        concept_set(out[["concept_set"]], paste0(p, "/concept_set"))
-        if (.v1IsObject(out[["visit_filter"]]) && length(out[["visit_filter"]]) > 0L) {
-          closed(out[["visit_filter"]], c("concept_ids", "visit_concept_id"), paste0(p, "/visit_filter"))
-        }
-        if (!is.null(out[["temporal"]])) temporal(out[["temporal"]], paste0(p, "/temporal"))
-        date_handling(out[["date_handling"]], paste0(p, "/date_handling"))
-        rep <- out[["representation"]]
-        if (identical(type, "event_level") && .v1IsObject(rep) && length(rep) > 0L) {
-          closed(rep, c("format", "features", "grain"), paste0(p, "/representation"))
-          feature_specs(rep[["features"]], paste0(p, "/representation/features"))
-        }
-        if (identical(type, "person_level") && .v1IsObject(out[["tables"]])) {
-          for (tbl in names(out[["tables"]])) {
-            entry <- out[["tables"]][[tbl]]
-            if (.v1IsObject(entry) && length(entry) > 0L && !is.null(entry[["features"]])) {
-              closed(entry, c("features", "concept_set", "filters", "concept_col", "visit"),
-                     paste0(p, "/tables/", tbl))
-              feature_specs(entry[["features"]], paste0(p, "/tables/", tbl, "/features"))
-              concept_set(entry[["concept_set"]], paste0(p, "/tables/", tbl, "/concept_set"))
-              row_filter(entry[["filters"]], paste0(p, "/tables/", tbl, "/filters"))
-            }
-          }
-        }
-        if (identical(type, "person_level")) {
-          dc <- out[["derived_columns"]]
-          for (i in seq_along(dc %||% list())) {
-            key <- if (is.null(names(dc)) || !nzchar(names(dc)[[i]])) as.character(i - 1L) else names(dc)[[i]]
-            closed(dc[[i]], .V1_DERIVED_FIELDS, paste0(p, "/derived_columns/", key))
-          }
-        }
-        if (identical(type, "survival")) {
-          outcomes <- out[["outcomes"]]
-          if (.v1IsObject(outcomes)) {
-            for (o in names(outcomes)) {
-              closed(outcomes[[o]], .V1_OUTCOME_FIELDS, paste0(p, "/outcomes/", o))
-              row_filter(outcomes[[o]][["filters"]], paste0(p, "/outcomes/", o, "/filters"))
-            }
-          }
-          if (!is.null(out[["outcome"]])) closed(out[["outcome"]], .V1_OUTCOME_FIELDS, paste0(p, "/outcome"))
-          closed(out[["tar"]], c("start_offset", "end_offset"), paste0(p, "/tar"))
-          closed(out[["censoring"]], c("cohort_end", "observation_period_end", "death", "admin_date"),
-                 paste0(p, "/censoring"))
-        }
-        if (identical(type, "baseline") && !is.null(out[["age_breaks"]]) &&
-            (!is.numeric(unlist(out[["age_breaks"]], use.names = FALSE)) ||
-             !.irAgeGridValid(out[["age_breaks"]]))) {
-          add(p, "/age_breaks: invalid age_breaks: at least two strictly increasing ",
-              "integers starting at 0 are required")
-        }
-        if (identical(type, "intervals_long")) {
-          sf <- out[["source_filters"]]
-          if (.v1IsObject(sf)) {
-            for (tbl in names(sf)) row_filter(sf[[tbl]], paste0(p, "/source_filters/", tbl))
-          }
-          if (.v1IsObject(out[["window"]]) && length(out[["window"]]) > 0L) {
-            closed(out[["window"]], c("start", "end", "at"), paste0(p, "/window"))
-          }
-        }
-        if (type %in% c("temporal_covariates", "person_period")) {
-          concept_set(out[["concept_set"]], paste0(p, "/concept_set"))
-        }
+    if (identical(type, "survival")) {
+      outcomes <- out[["outcomes"]] %||% if (!is.null(out[["outcome"]])) list(outcome = out[["outcome"]])
+      if (!is.list(outcomes) || !length(outcomes) || is.null(names(outcomes)) ||
+          any(!nzchar(names(outcomes))) || anyDuplicated(names(outcomes))) {
+        add(p, ": outcomes must be a non-empty named list.")
+      } else if (identical(tolower(.v1Text(out[["format"]]) %||% "survival"), "multi_state")) {
+        legacy(paste0(p, ": invalid multi-state graph"), .normalizeMultistateSpec(
+          lapply(names(outcomes), function(n) list(name = n)),
+          transitions = out[["transitions"]], initial_state = .v1Text(out[["initial_state"]]),
+          state_hierarchy = out[["state_hierarchy"]], state_step = .v1Scalar(out[["state_step"]])))
       }
+    }
+    if (identical(type, "intervals_long")) {
+      tables <- vapply(.v1Items(out[["tables"]]), function(t) .v1Text(t) %||% "", "")
+      legacy(p, .normalizeLongitudinalWindow(out[["window"]], .v1Text(out[["interval_match"]]) %||% "overlaps"))
+      legacy(p, .normalizeLongitudinalSelection(.v1Text(out[["event_select"]]) %||% "all",
+                                                .v1Scalar(out[["select_n"]]) %||% 1L,
+                                                .v1Text(out[["select_by"]]) %||% "episode_source",
+                                                .v1Scalar(out[["anchor"]]) %||% 0L))
+      if (!is.null(out[["source_filters"]])) {
+        for (t in tables) legacy(paste0(p, "/source_filters"), .longitudinalSourceFilter(out[["source_filters"]], t, tables))
+      }
+    }
+    if (identical(type, "person_period") &&
+        (!identical(tolower(.v1Text(out[["grain"]]) %||% ""), "episode") ||
+         !identical(tolower(.v1Text(out[["time_origin"]]) %||% ""), "index"))) {
+      add(p, ": person_period requires grain='episode' and time_origin='index'.")
     }
   }
   errors
+}
+
+# --- step 4 for a v1 plan: the site requirements of its executors ------------------
+
+#' The column and custom-filter checks the v1 executors make against the site
+#'
+#' Every custom filter position, checked by \code{.assertCustomFilterSafe()}
+#' with the table's filterable columns, the handle and the table, exactly as
+#' the executor calls it (event and feature streams after the legacy
+#' start/end date sentinel resolution, \code{.resolveFilterDateColumns()};
+#' survival outcome filters as \code{.compileLongitudinalSurvivalSql()};
+#' interval source filters as their stream extraction), and the person
+#' columns of a baseline output with the rules and messages of
+#' \code{.extractBaseline()} (unknown and blocked columns), which the
+#' executor would otherwise only meet after materialising the cohort.
+#'
+#' @param plan v1 plan (parsed JSON form, through the closed envelope).
+#' @param handle CDM handle.
+#' @return Character vector of findings.
+#' @keywords internal
+.planV1FilterSiteErrors <- function(plan, handle) {
+  bp <- .buildBlueprint(handle)
+  errors <- character(0)
+  check <- function(filter, table, path, resolve_dates = TRUE) {
+    if (is.null(filter) || (is.list(filter) && length(filter) == 0L)) return(invisible())
+    tbl <- tolower(.v1Text(table) %||% "")
+    if (!nzchar(tbl) || is.null(bp[["columns"]][[tbl]])) return(invisible())
+    if (resolve_dates) filter <- .resolveFilterDateColumns(filter, bp, tbl)
+    errors <<- c(errors, .v1Legacy(path, .assertCustomFilterSafe(
+      filter, .filterableColumns(bp, tbl), handle = handle, table = tbl)))
+  }
+  outputs <- if (.v1IsObject(plan[["outputs"]])) plan[["outputs"]] else list()
+  for (name in names(outputs)) {
+    out <- outputs[[name]]
+    if (!.v1IsObject(out)) next
+    p <- paste0("/outputs/", name)
+    type <- .v1Text(out[["type"]]) %||% "event_level"
+    custom <- out[["filters"]][["custom"]]
+    switch(type,
+      event_level = {
+        check(custom, out[["table"]], paste0(p, "/filters/custom"))
+        specs <- out[["representation"]][["features"]]
+        for (i in seq_along(specs %||% list())) {
+          check(specs[[i]][["filter"]], out[["table"]],
+                paste0(p, "/representation/features/", i - 1L, "/filter"))
+        }
+      },
+      person_level = {
+        tables <- out[["tables"]] %||% list()
+        has_custom <- !is.null(custom) && length(custom) > 0L
+        for (tbl in names(tables)) {
+          entry <- tables[[tbl]]
+          features <- .v1IsObject(entry) && !is.null(entry[["features"]])
+          # every table, raw or features, extracts with its own filters ANDed
+          # with the output-level custom filter, validated as one tree
+          entry_filters <- if (features) entry[["filters"]]
+          has_entry <- !is.null(entry_filters) && length(entry_filters) > 0L
+          table_filters <- if (!has_custom) entry_filters else if (!has_entry) custom else
+            list(and = list(entry_filters, custom))
+          check(table_filters, tbl, paste0(p, if (has_custom) "/filters/custom" else
+            paste0("/tables/", tbl, "/filters")))
+          if (!features) next
+          specs <- entry[["features"]]
+          for (i in seq_along(specs)) {
+            check(specs[[i]][["filter"]], tbl, paste0(p, "/tables/", tbl, "/features/", i - 1L, "/filter"))
+          }
+        }
+      },
+      survival = {
+        outcomes <- out[["outcomes"]] %||% list(outcome = out[["outcome"]])
+        for (o in names(outcomes)) {
+          oc <- outcomes[[o]]
+          if (!.v1IsObject(oc)) next
+          check(oc[["filters"]], oc[["table"]], paste0(p, "/outcomes/", o, "/filters"), resolve_dates = FALSE)
+          check(custom, oc[["table"]], paste0(p, "/filters/custom"), resolve_dates = FALSE)
+        }
+      },
+      intervals_long = {
+        sf <- out[["source_filters"]] %||% list()
+        for (tbl in names(sf)) check(sf[[tbl]], tbl, paste0(p, "/source_filters/", tbl))
+      },
+      baseline = {
+        errors <- c(errors, .v1Legacy(paste0(p, "/columns"), .planV1BaselineColumns(out, bp)))
+      },
+      NULL)
+  }
+  unique(errors)
+}
+
+# The person-column contract of .extractBaseline(), before any query: the
+# same requested set (default gender and race; year_of_birth added for
+# age_at_index), the same unknown-column and blocklist refusals and messages.
+.planV1BaselineColumns <- function(out, bp) {
+  person_cols <- bp[["columns"]][["person"]]
+  if (is.null(person_cols)) {
+    stop("Person columns are unavailable for baseline extraction.", call. = FALSE)
+  }
+  spec <- .colSpec(out[["columns"]])
+  derived <- tolower(as.character(unlist(out[["derived"]], use.names = FALSE)))
+  requested <- if (is.null(spec[["source"]])) {
+    c("gender_concept_id", "race_concept_id")
+  } else tolower(spec[["source"]])
+  columns <- unique(c(requested, if ("age_at_index" %in% derived) "year_of_birth"))
+  missing <- setdiff(columns, person_cols[["column_name"]])
+  if (length(missing)) {
+    stop("Baseline person column(s) not found: ", paste(missing, collapse = ", "), ".", call. = FALSE)
+  }
+  blocked <- person_cols[["column_name"]][vapply(person_cols[["column_name"]],
+    .assignmentBlockedColumn, logical(1L), col_df = person_cols)]
+  requested_blocked <- intersect(requested, blocked)
+  if (length(requested_blocked)) {
+    stop("Disclosive: baseline person column(s) '", paste(requested_blocked, collapse = "', '"),
+         "' are blocked.", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+#' The site findings of the v1 executors
+#'
+#' What the executors of a v1 plan would check while running, from metadata
+#' only: the plan-declaration rules of \code{.planExecute()}
+#' (\code{.planRequiredCohortErrors()}: an output type that needs a cohort),
+#' the tables, the results cohort table, the filter trees and age breaks
+#' (\code{.planLegacyFindings()}), the custom filters and the baseline person
+#' columns (\code{.planV1FilterSiteErrors()}).
+#'
+#' @param plan v1 plan (parsed JSON form, through the closed envelope).
+#' @param handle CDM handle.
+#' @return list(declaration, errors, missing_tables), character vectors.
+#' @keywords internal
+.planV1SiteFindings <- function(plan, handle) {
+  legacy <- .planLegacyFindings(handle, plan)
+  declaration <- .planRequiredCohortErrors(plan)
+  list(declaration = declaration,
+       errors = c(setdiff(legacy[["errors"]], declaration), .planV1FilterSiteErrors(plan, handle)),
+       missing_tables = legacy[["missing_tables"]])
+}
+
+#' The site requirements of the v1 executors, checked before any query
+#'
+#' Step 4 for a v1 plan, before the IR's own site checks
+#' (\code{.irValidate()}): the findings of \code{.planV1SiteFindings()}. A
+#' plan-declaration error keeps the untyped error the 2.10.2 executor raised
+#' before any query (its message and its transport are unchanged; condition
+#' class \code{dsomop_v1_declaration_error}); the
+#' other findings are refused with the typed codes the publication status
+#' transports (\code{validation_error}, then \code{unavailable_table} for
+#' absent tables).
+#'
+#' @param plan v1 plan (parsed JSON form, through the closed envelope).
+#' @param handle CDM handle.
+#' @return Invisibly TRUE.
+#' @keywords internal
+.planV1SiteCheck <- function(plan, handle) {
+  findings <- .planV1SiteFindings(plan, handle)
+  if (length(findings[["declaration"]])) {
+    # untyped, as .planExecute() raises it (never a transported refusal); the
+    # condition class only lets .planValidate() report it as a finding
+    stop(structure(class = c("dsomop_v1_declaration_error", "error", "condition"),
+                   list(message = paste(findings[["declaration"]], collapse = " "), call = NULL)))
+  }
+  if (length(findings[["errors"]])) {
+    .irRejectAll("v1 plan fails the site checks of its executors", findings[["errors"]])
+  }
+  if (length(findings[["missing_tables"]])) {
+    .irRejectAll("plan needs tables this site does not provide",
+                 findings[["missing_tables"]], code = "unavailable_table")
+  }
+  invisible(TRUE)
 }

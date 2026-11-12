@@ -16,8 +16,9 @@ Named list: \code{language_version}, \code{source_version} (1 or
   2), \code{plan} (the normalised plan), \code{semantic_digest},
   \code{operations}, \code{publish}, \code{defaults}, \code{roles},
   \code{column_classes}, \code{site_findings}, \code{unavailable},
-  \code{dialect}, \code{legacy_residue} (v1 fields the IR keeps outside its
-  document) and \code{order}.
+  \code{unavailable_outputs}, \code{dialect}, \code{legacy_annex} (the
+  advisory v1 fields kept outside the IR document, covered by no digest;
+  amendment A-10) and \code{order}.
 }
 \description{
 Runs the plan through the single validation sequence of the 2.10.3 recipe

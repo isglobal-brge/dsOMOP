@@ -39,8 +39,10 @@
   if (!is.null(spec[["inclusion_criteria"]])) {
     out[["inclusion_criteria"]] <- spec[["inclusion_criteria"]]
   }
+  # the inline spec's identifier is not a spec field: .adaptLegacySpec()
+  # passes it to .cohortCreate() as cohort_id (A-16)
   extra <- setdiff(names(spec), c("type", "concept_set", "value_bin",
-                                  "inclusion_criteria"))
+                                  "inclusion_criteria", "cohort_definition_id"))
   if (length(extra)) out[extra] <- spec[extra]
   out
 }
@@ -66,6 +68,11 @@
     ctx
   }
   args <- list(handle, .legacySpecCohortSpec(spec), mode = "temporary")
+  # A-16: the v1 plan cohort's identifier names the temporary cohort and
+  # fills its cohort_definition_id column, exactly as the v1 executor passes it
+  if (!is.null(spec[["cohort_definition_id"]])) {
+    args[["cohort_id"]] <- as.integer(unlist(spec[["cohort_definition_id"]]))
+  }
   if ("ctx" %in% names(formals(.cohortCreate)) && !identical(ctx, handle)) {
     args[["ctx"]] <- ctx
   }

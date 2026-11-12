@@ -14,8 +14,28 @@ list(errors = character() of plan findings, missing_tables =
   on_missing_table = "unavailable").
 }
 \description{
-Role records for every event table (respecting on_missing_table),
-filterable predicate columns, typed value / concept columns, raw columns
-and their classes (section 7.6).
+Role records for every event table (respecting on_missing_table); every
+predicate position -- event and adapter predicates, criteria person
+predicates, reducer predicates -- resolved against its source's columns
+(existence, filterability, the roles the source has, literal types); a
+concept role for \code{concept_col} and a numeric type for an event value
+column; reducer value columns; raw columns and their classes (section
+7.6).
+}
+\details{
+Each IR is checked with the rules of the engine that executes it. A native
+plan meets the compilers' own metadata rules: WS-4's
+\code{.eventSiteCheck()} for every event and adapter source that this site
+serves (its concept, value, unit, supply and visit roles, its
+\code{where} and the reducer predicates over its rows, typed against the
+normalised columns) and \code{.predicateTableCatalogue()} /
+\code{.predicateSql()} for criteria person predicates. A lowered v1 plan
+runs on the v1 executors, whose own site requirements
+\code{.planV1SiteCheck()} checks first; here its predicates are typed
+against the columns the v1 executors accept (the role aliases and the
+table's filterable physical columns), and an event over a table with no
+event role record that is present at the site is a legacy row source (the
+v1 executors read its rows directly: \code{event_level} over
+\code{person}, for instance) whose predicates are the executors' to check.
 }
 \keyword{internal}
