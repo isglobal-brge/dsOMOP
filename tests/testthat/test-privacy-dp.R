@@ -2850,13 +2850,25 @@ test_that("all seven primitives are byte-deterministic and data edits re-draw th
                           version = 3L), first_bytes)
 })
 
-test_that("data and epoch changes redraw; lineage and snapshot cosmetics do not", {
+test_that("data and epoch changes re-key; lineage and snapshot cosmetics do not", {
   .dp_local_state(noise_root = as.raw(0:31))
+  # Observe the actual sampler input without replacing its draw. Distinct
+  # discrete-Laplace draws may coincide, so unequal released values are not
+  # a valid assertion that an epoch or contribution map changed the key.
+  sampler <- .dsomopDpDiscreteLaplace
+  last_context <- NULL
+  testthat::local_mocked_bindings(
+    .dsomopDpDiscreteLaplace = function(key, context, coordinate, epsilon,
+                                       sensitivity) {
+      last_context <<- context
+      sampler(key, context, coordinate, epsilon, sensitivity)
+    }, .package = "dsOMOP")
   count <- list(statistic = "count")
   release <- function(changed_persons = 0L,
                       producer = "test/primitive-matrix") {
     input <- .dp_primitive_input(changed_persons, producer = producer)
-    suppressMessages(omopDpReleaseDS(input, count))$components$signed
+    out <- suppressMessages(omopDpReleaseDS(input, count))
+    list(signed = out$components$signed, context = last_context)
   }
   dataset <- .release_session_dataset()
   fixed <- function() {
@@ -2866,7 +2878,7 @@ test_that("data and epoch changes redraw; lineage and snapshot cosmetics do not"
       data_generation = .release_loader_generation())
     out <- suppressMessages(omopDpReleaseDS(input, count))
     expect_identical(out$protection, "fixed_synopsis")
-    out$components$signed
+    list(signed = out$components$signed, context = last_context)
   }
   first <- release()
   first_fixed <- fixed()
@@ -2874,7 +2886,8 @@ test_that("data and epoch changes redraw; lineage and snapshot cosmetics do not"
   expect_identical(release(), first)
   expect_identical(fixed(), first_fixed)
   # A changed realised person set is another contribution map.
-  expect_false(identical(release(64L), first))
+  expect_false(identical(.dsomopDpCanonicalJson(release(64L)$context),
+                         .dsomopDpCanonicalJson(first$context)))
   # Another lineage selecting the same people is the same canonical component
   # (dsOMOP 2.10.3, G-09).
   expect_identical(release(producer = "test/independent-public-request"),
@@ -2885,13 +2898,24 @@ test_that("data and epoch changes redraw; lineage and snapshot cosmetics do not"
   .dp_restart_runtime()
   expect_identical(release(), first)
   expect_identical(fixed(), first_fixed)
-  # Rotation of the privacy epoch is a public custodian decision that
-  # redraws every component, even with unchanged data.
+  # Rotation of the privacy epoch re-keys every component, even with
+  # unchanged data. The signed values can still coincide by chance.
   options(dsomop.dp.snapshot_id = "etl-2026-08-01",
           dsomop.dp.privacy_epoch = 2L)
   .dp_restart_runtime()
-  expect_false(identical(release(), first))
-  expect_false(identical(fixed(), first_fixed))
+  rotated <- release()
+  rotated_fixed <- fixed()
+  expect_false(identical(.dsomopDpCanonicalJson(rotated$context),
+                         .dsomopDpCanonicalJson(first$context)))
+  expect_false(identical(.dsomopDpCanonicalJson(rotated_fixed$context),
+                         .dsomopDpCanonicalJson(first_fixed$context)))
+  expect_equal(rotated$context$profile$privacy_epoch, 2)
+  expect_equal(rotated_fixed$context$profile$privacy_epoch, 2)
+  expect_equal(rotated_fixed$context$generation$epoch, 2)
+  message("[typed-epoch] fixed signed counts: ", first_fixed$signed,
+          " -> ", rotated_fixed$signed, "; sampler context changed: ",
+          !identical(.dsomopDpCanonicalJson(rotated_fixed$context),
+                     .dsomopDpCanonicalJson(first_fixed$context)))
   # The original configuration recomputes the original answers.
   options(dsomop.dp.privacy_epoch = 1L)
   .dp_restart_runtime()
