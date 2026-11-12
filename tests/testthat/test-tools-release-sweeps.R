@@ -245,3 +245,34 @@ test_that("SCCS window sweeps never reach exact conditional-Poisson scalars", {
     cleanup_handle(h)
   }
 })
+
+test_that("the protected Poisson rate ratio is post-processing of the displayed arms", {
+  .release_state()
+  # A large reference epsilon keeps this small fixture's arms supported.
+  withr::local_options(list(dsomop.dp.release_epsilon = 8))
+  .release_restart()
+  h <- .sweep_cm_handle()
+  on.exit(cleanup_handle(h), add = TRUE)
+  params <- list(outcome_concept_id = "4000002", model_type = "poisson",
+                 tar_start_offset = "0", tar_end_offset = "365",
+                 tar_anchor_start = "start", tar_anchor_end = "start")
+  r <- .release_run(h, "dsomop:cm.effect_estimate", params,
+                    scope = list("sw_t", "sw_c"))
+  expect_identical(attr(r, "dsomop_protection")$protection, "realised_sticky")
+  t <- r[r$arm == "target", ]
+  c <- r[r$arm == "comparator", ]
+  expect_true(all(is.finite(c(r$estimate, r$ci_lo, r$ci_hi, r$log_estimate,
+                              r$se_log_estimate))))
+  expect_equal(t$estimate, (t$outcomes / t$person_days) /
+                 (c$outcomes / c$person_days), tolerance = 1e-9)
+  expect_equal(log(t$estimate), t$log_estimate, tolerance = 1e-9)
+  expect_true(t$ci_lo < t$estimate && t$estimate < t$ci_hi)
+  expect_identical(c$estimate, t$estimate)
+  # A Cox hazard ratio has no protected mechanism: unavailable, not relabelled.
+  params$model_type <- "cox"
+  cox <- .release_run(h, "dsomop:cm.effect_estimate", params,
+                      scope = list("sw_t", "sw_c"))
+  expect_true(all(is.na(cox[, c("estimate", "ci_lo", "ci_hi", "log_estimate",
+                                "se_log_estimate")])))
+  expect_identical(cox$persons, r$persons)
+})
