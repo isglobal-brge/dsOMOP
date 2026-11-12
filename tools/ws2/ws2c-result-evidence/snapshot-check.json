@@ -1,0 +1,76 @@
+{
+  "superseded_server_commit": "6571ecd9190e960254e703cf14b688288d754ec2",
+  "final_server_commit": "8871d8e116423452fb288d6a57ed2e22e9c10289",
+  "final_server_R_tree": "839aacd630b60dd7e400b0693a0cedffe2fe8999",
+  "client_commit": "5a53401af29f5184ac001165be698383f1705293",
+  "client_R_tree": "2dabab3a55a447957ba33c6afb375e91f8a9ed9a",
+  "superseded_report_sha256": "ddc3a57827066c88adf0caea2670d2d2d1facff4a8f8d959ee32edfaf5ba76c2",
+  "final_report_sha256": "93f11012748bcd4f6b5c7724dbd2137f96cb6bf11cb3dbb9074eb37240788046",
+  "checks": [
+    {
+      "superseded_label": "ws2c-final2-current",
+      "final_label": "ws2c-final3-current",
+      "matched_pairs": 290,
+      "same_baseline_record_ids": true,
+      "outcome_or_compared_payload_hash_changes": [],
+      "a19_evidence_identical": true,
+      "open_i_probe_traces_identical": true,
+      "final_records": {
+        "baseline_top": 330,
+        "current_top": 372,
+        "baseline_calls": 383,
+        "current_calls": 457,
+        "joined": 290,
+        "baseline_only": 11,
+        "current_only": 51,
+        "capture_errors": [
+          0,
+          0
+        ],
+        "bad_lines": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "superseded_label": "ws2c-final2-hybrid",
+      "final_label": "ws2c-final3-hybrid",
+      "matched_pairs": 300,
+      "same_baseline_record_ids": true,
+      "outcome_or_compared_payload_hash_changes": [],
+      "a19_evidence_identical": true,
+      "open_i_probe_traces_identical": true,
+      "final_records": {
+        "baseline_top": 330,
+        "current_top": 361,
+        "baseline_calls": 383,
+        "current_calls": 434,
+        "joined": 300,
+        "baseline_only": 1,
+        "current_only": 30,
+        "capture_errors": [
+          0,
+          0
+        ],
+        "bad_lines": [
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "assertion_count_variation": {
+    "file": "test-privacy-dp.R",
+    "current_passed": [
+      4086,
+      4085
+    ],
+    "hybrid_passed": [
+      3949,
+      3948
+    ],
+    "source_unchanged": true,
+    "explanation": "Bounded-mean and binary-rate bound assertions are conditional on non-NULL random-noise results; aggregate runner logs do not identify which branch was omitted. All matched captured outcomes and hashes are unchanged."
+  }
+}

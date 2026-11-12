@@ -708,6 +708,29 @@
        table %in% c("cdm_source", "metadata", "cohort_definition", "achilles_analysis"))
 }
 
+# Resolve both the surfaced concept column and the column constrained by a
+# concept set. The executor's reference proof must use the compiler's same
+# precedence: a requested or independently filtered override surfaces values,
+# while the set continues to constrain the source's domain concept column.
+.conceptScopeColumns <- function(blueprint, table, concept_col = NULL,
+                                 columns = NULL, filters = NULL) {
+  table_lower <- tolower(table)
+  domain <- .getDomainConceptColumn(blueprint, table_lower)
+  if (is.null(concept_col)) {
+    concept_col <- domain
+  } else {
+    concept_col <- tolower(.validateIdentifier(concept_col, "concept column"))
+    if (!concept_col %in% blueprint$columns[[table_lower]]$column_name) {
+      stop("Concept column '", concept_col, "' not found in table '", table,
+           "'.", call. = FALSE)
+    }
+  }
+  surfacing <- !is.null(domain) && !identical(concept_col, domain) &&
+    ((!is.null(columns) && tolower(concept_col) %in% tolower(columns)) ||
+       (!is.null(filters) && .filterTreeReferencesColumn(filters, concept_col)))
+  list(column = concept_col, filter_column = if (surfacing) domain else concept_col)
+}
+
 #' Compile a SQL SELECT for a table extraction
 #'
 #' @param handle CDM handle
@@ -758,20 +781,8 @@
     stop("No columns found for table '", table, "'.", call. = FALSE)
   }
 
-  # Concept scoping column: the domain concept by default, but a caller may
-  # override it to surface/aggregate by another concept column on the same table
-  # (e.g. unit_concept_id, *_type_concept_id, value_as_concept_id) for
-  # unit-harmonization extraction or value-by-unit/type distributions.
-  domain_concept_col <- .getDomainConceptColumn(bp, table_lower)
-  if (is.null(concept_col)) {
-    concept_col <- domain_concept_col
-  } else {
-    concept_col <- tolower(.validateIdentifier(concept_col, "concept column"))
-    if (!concept_col %in% col_df$column_name) {
-      stop("Concept column '", concept_col, "' not found in table '", table,
-           "'.", call. = FALSE)
-    }
-  }
+  concept_scope <- .conceptScopeColumns(bp, table, concept_col, columns, filters)
+  concept_col <- concept_scope$column
   has_concept_col <- !is.null(concept_col) && concept_col %in% col_df$column_name
   has_person_id <- "person_id" %in% col_df$column_name
   is_safe_non_person <- .referenceTableSource(bp, table_lower)
@@ -781,22 +792,7 @@
          "person disclosure gate are required.", call. = FALSE)
   }
 
-  # Which column does the concept_set (concept_id list) match on? Normally the
-  # concept_col, so a caller can scope the set against an alternate concept column
-  # (e.g. concept_filter = 9529 with concept_col = unit_concept_id selects rows in
-  # that unit). BUT when the override column is a SURFACING choice — it is also a
-  # requested output column OR a custom filter independently scopes it — the
-  # concept_set values are DOMAIN concepts (e.g. glucose 3004501 surfaced by
-  # unit/route, with a unit/route filter): matching a domain concept on, say,
-  # route_concept_id would select nothing, so the set matches on the domain
-  # concept column instead. The override column is still selected/filtered. With
-  # no surfacing signal (concept_col is the genuine scoping column) this is a
-  # no-op, preserving the concept_col-as-scope contract.
-  surfacing_override <- !is.null(domain_concept_col) &&
-    !identical(concept_col, domain_concept_col) &&
-    ((!is.null(columns) && tolower(concept_col) %in% tolower(columns)) ||
-     (!is.null(filters) && .filterTreeReferencesColumn(filters, concept_col)))
-  concept_filter_col <- if (surfacing_override) domain_concept_col else concept_col
+  concept_filter_col <- concept_scope$filter_column
   has_concept_filter_col <- !is.null(concept_filter_col) &&
     concept_filter_col %in% col_df$column_name
 
