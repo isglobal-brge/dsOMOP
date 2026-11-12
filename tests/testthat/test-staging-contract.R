@@ -239,6 +239,8 @@ test_that("staged descriptors publish and validate token compatibility", {
   expect_identical(descriptor$metadata$pseudonymization$key_id,
                    contract$key_id)
   expect_identical(descriptor$metadata$pseudonymization$epoch, 3L)
+  expect_error(omopStagedDatasetPath(descriptor), "manifest")
+  .writeStagingManifest(directory, list(analysis = descriptor))
   expect_identical(
     omopStagedDatasetPath(
       descriptor, expected_key_id = contract$key_id, expected_epoch = 3L
@@ -268,6 +270,9 @@ test_that("staged resolver rejects forged, expired, and incompatible descriptors
     semantic_contract = test_staged_semantics(),
     bundle_contract = test_staged_bundle("protected", token)
   )
+
+  expect_error(omopStagedDatasetPath(descriptor), "manifest")
+  .writeStagingManifest(directory, list(protected = descriptor))
 
   expect_error(
     omopStagedDatasetPath(
@@ -426,6 +431,12 @@ test_that("component siblings share an output bundle without sharing shape", {
     person_ref$metadata$bundle_contract,
     temporal$metadata$bundle_contract
   )
+  expect_error(omopStagedDatasetPath(person_ref), "manifest")
+  expect_error(omopStagedDatasetPath(temporal), "manifest")
+  .writeStagingManifest(directory, list(
+    trajectory.personRef = person_ref,
+    trajectory.temporalCovariates = temporal
+  ))
   expect_silent(omopStagedDatasetPath(
     person_ref, expected_bundle_contract = bundle
   ))
@@ -467,6 +478,7 @@ test_that("staging manifest v2 round-trips complete descriptors", {
     bundle_contract = .stagedBundleContract(plan, "analysis", token)
   )
 
+  expect_error(omopStagedDatasetPath(descriptor), "manifest")
   path <- .writeStagingManifest(directory, list(analysis = descriptor))
   parsed <- .readStagingManifest(path)
   restored <- parsed$outputs$analysis
@@ -514,6 +526,9 @@ test_that("different staged pseudonym roots cannot be joined as compatible", {
   )
   expected <- first$metadata$pseudonymization$key_id
 
+  expect_error(omopStagedDatasetPath(first), "manifest")
+  expect_error(omopStagedDatasetPath(second), "manifest")
+  .writeStagingManifest(directory, list(first = first, second = second))
   expect_silent(omopStagedDatasetPath(first, expected_key_id = expected))
   expect_error(
     omopStagedDatasetPath(second, expected_key_id = expected),
@@ -550,4 +565,94 @@ test_that("person-bearing staging refuses unscoped legacy keys", {
     ),
     "resource-scoped pseudonymization provider"
   )
+})
+
+
+test_that("only exact uniquely committed staged descriptors are readable", {
+  base <- tempfile("dsomop_staging_membership_")
+  withr::local_options(list(dsstaging.base_dir = base))
+  on.exit(unlink(base, recursive = TRUE), add = TRUE)
+  token <- .generateStagingToken()
+  directory <- .createStagingDir(token)
+  key <- openssl::rand_bytes(32L)
+  make_descriptor <- function(name) {
+    .stageDataFrame(
+      data.frame(person_id = 1:3, value = c(2, 4, 8)),
+      name, directory, token, key,
+      pseudonymization = .testPublicPseudonymization(key),
+      semantic_contract = test_staged_semantics(output_name = name),
+      bundle_contract = test_staged_bundle(name, token)
+    )
+  }
+  first <- make_descriptor("first")
+  second <- make_descriptor("second")
+  expect_error(omopStagedDatasetPath(first), "manifest")
+  expect_error(omopStagedDatasetPath(second), "manifest")
+
+  .writeStagingManifest(directory, list(first = first))
+  expect_identical(omopStagedDatasetPath(first), normalizePath(first$metadata$file))
+  # A descriptor with valid ownership, files and contracts is still private
+  # when the committed manifest names only its sibling.
+  expect_error(omopStagedDatasetPath(second), "not committed or has been revoked")
+
+  forged_columns <- first
+  forged_columns$metadata$columns <- setdiff(first$metadata$columns, "person_id")
+  expect_error(omopStagedDatasetPath(forged_columns),
+               "not committed or has been revoked")
+  forged_path <- first
+  forged_path$metadata$file <- second$metadata$file
+  expect_error(omopStagedDatasetPath(forged_path),
+               "not committed or has been revoked")
+  forged_expiry <- first
+  forged_expiry$expires_at <- format(Sys.time() + 48 * 3600,
+                                    "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC")
+  expect_error(omopStagedDatasetPath(forged_expiry),
+               "not committed or has been revoked")
+
+  # Membership must be unique, not merely present somewhere in the manifest.
+  .writeStagingManifest(directory, list(first = first, duplicate = first))
+  expect_error(omopStagedDatasetPath(first), "not committed or has been revoked")
+  .writeStagingManifest(directory, list(first = first, second = second))
+  expect_silent(omopStagedDatasetPath(first))
+  expect_silent(omopStagedDatasetPath(second))
+})
+
+test_that("revoking a staged component removes its manifest entry and file", {
+  base <- tempfile("dsomop_staging_revocation_")
+  withr::local_options(list(dsstaging.base_dir = base))
+  on.exit(unlink(base, recursive = TRUE), add = TRUE)
+  token <- .generateStagingToken()
+  directory <- .createStagingDir(token)
+  key <- openssl::rand_bytes(32L)
+  make_descriptor <- function(name) {
+    .stageDataFrame(
+      data.frame(person_id = 1:3, value = c(2, 4, 8)),
+      name, directory, token, key,
+      pseudonymization = .testPublicPseudonymization(key),
+      semantic_contract = test_staged_semantics(output_name = name),
+      bundle_contract = test_staged_bundle(name, token)
+    )
+  }
+  first <- make_descriptor("first")
+  second <- make_descriptor("second")
+  manifest <- .writeStagingManifest(directory, list(first = first, second = second))
+  original <- readBin(first$metadata$file, "raw", n = file.info(first$metadata$file)$size)
+  expect_true(omopStagedRevokeDS(first))
+  expect_false(file.exists(first$metadata$file))
+  expect_named(.readStagingManifest(manifest)$outputs, "second")
+  expect_error(omopStagedDatasetPath(first), "unavailable")
+  expect_silent(omopStagedDatasetPath(second))
+
+  # A leftover/recreated private file cannot restore a revoked capability.
+  writeBin(original, first$metadata$file)
+  Sys.chmod(first$metadata$file, mode = "0600")
+  expect_true(file.exists(first$metadata$file))
+  expect_error(omopStagedDatasetPath(first), "not committed or has been revoked")
+  expect_error(omopStagedRevokeDS(first), "not committed or has been revoked")
+  expect_named(.readStagingManifest(manifest)$outputs, "second")
+
+  expect_true(omopStagedRevokeDS(second))
+  expect_false(file.exists(second$metadata$file))
+  expect_length(.readStagingManifest(manifest)$outputs, 0L)
+  expect_error(omopStagedDatasetPath(second), "unavailable")
 })
