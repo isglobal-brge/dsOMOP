@@ -807,7 +807,18 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   # v1 executors and the legacy publication and DP contracts read in its own
   # fields, the execution plan (its validated IR is ctx$validation$ir).
   ctx <- .planContext(handle, .planContextIr(validation, plan), output_mode, target_env)
-  on.exit(.planContextClose(ctx), add = TRUE)
+  if (.dsomopReadSnapshotActive(handle)) {
+    # Publication remains provisional until the outer request validates and
+    # rolls back its read snapshot. A late failure must revoke assigned rows
+    # as well as the publication status, including already sealed DP rows.
+    snapshot <- handle$read_snapshot
+    snapshot$finalizers[[length(snapshot$finalizers) + 1L]] <- function(success) {
+      on.exit(.planContextClose(ctx), add = TRUE)
+      if (!isTRUE(success)) .publishAbort(ctx)
+    }
+  } else {
+    on.exit(.planContextClose(ctx), add = TRUE)
+  }
   ctx$validation <- validation[c("ir", "wire")]
   ctx$scopes <- scope
   ctx$commit_policy <- commit_policy
