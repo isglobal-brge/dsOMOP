@@ -14,7 +14,7 @@
 \value{
 list(name, phase, key, key_type, person, person_type, index,
   index_end, op_start, op_end, op_component, population, namespace,
-  index_visit, index_source, index_key, index_sources).
+  index_visit, index_source, index_key, index_sources, origin_source, origin_key).
 }
 \description{
 Candidates (\code{cand_<pop>}) are keyed by the private \code{cand_key};

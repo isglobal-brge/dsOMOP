@@ -198,18 +198,8 @@
           }
         }
       }
-      if (is_setop) {
-        ops <- tolower(.v1Text(compact[["setop"]][["op"]]) %||% "union")
-        members <- vapply(.v1Items(compact[["setop"]][["members"]]), function(m) .v1Text(m) %||% "", "")
-        if (ops %in% c("setdiff", "difference") && anyDuplicated(members)) {
-          add(p, "/setop/members: a difference of a population with itself is always empty")
-        }
-      }
-      if (multi && !is_setop && !identical(pid, "base") && is.null(compact[["filter_tree"]]) &&
-          is.null(compact[["cohort_definition_id"]]) && is.null(compact[["index_event"]])) {
-        add(p, ": a v1 criteria population needs a filter_tree or a cohort_definition_id ",
-            "(without either it resolves to no person)")
-      }
+      # A-21 preserves repeated subtrahends, self-differences and bare non-base
+      # criteria populations: private emptiness is not a structural refusal.
       if (!is.null(compact[["index_event"]]) && !is.null(compact[["episode_policy"]])) {
         add(p, ": Population '", pid, "': episode_policy cannot be combined with index_event; ",
             "primary_limit defines candidate-event selection.")

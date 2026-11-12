@@ -15,8 +15,9 @@ register for that plan. WS-4: \code{ev} (table events: stages
 \code{src}, \code{norm} and the final fragment; adapters: \code{src} and
 the final fragment) and \code{map} (vocabulary maps). WS-5: \code{iv}
 (intervals), \code{op} / \code{opc} / \code{seg} (coverage) and
-\code{anc} (anchors). Later compilers add their families here (e.g.
-populations, output rosters); a fragment family without a generator cannot
-be named.
+\code{anc} (anchors). WS-6: \code{cand} / \code{pop} / \code{scope}
+(populations) and \code{mt} (matching). Later compilers add their
+families here (e.g. output rosters); a fragment family without a
+generator cannot be named.
 }
 \keyword{internal}

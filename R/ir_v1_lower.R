@@ -901,6 +901,12 @@
       if (!is.null(pop[["cohort_definition_id"]])) list(cohort = list(cohort_definition_id = .v1Int(pop[["cohort_definition_id"]]))),
       .v1Criteria(pop[["filter_tree"]], st, path)))
     node
+  } else if (!identical(pid, "base") && is.null(pop[["filter_tree"]]) &&
+             is.null(pop[["cohort_definition_id"]])) {
+    # A-21: a bare non-base v1 criteria population denotes no person, with
+    # an empty observation-period roster. Its episode policy is advisory.
+    if (!is.null(pop[["episode_policy"]])) .v1Annex(st, path, unread_episode_policy = pop[["episode_policy"]])
+    list(kind = "criteria", legacy_episodes = "observation_periods", legacy_empty = TRUE)
   } else {
     node <- list(kind = "criteria")
     node["where"] <- list(.v1Criteria(pop[["filter_tree"]], st, path))
