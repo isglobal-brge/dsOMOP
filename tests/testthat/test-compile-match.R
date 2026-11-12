@@ -320,6 +320,9 @@ test_that("the matching order computed in SQL equals the R order byte for byte",
     }
     pairs <- .fragmentGet(ctx, .fragmentName("mt", "default", "pairs", ctx = ctx))
     cases <- .fragmentGet(ctx, .fragmentName("mt", "default", "cases", ctx = ctx))
+    # The main probe reads both snapshots. Raw template materialisation cuts
+    # the old transitive cases dependency, so declare this extra probe read.
+    pairs$dependencies <- unique(c(pairs$dependencies, cases$name))
     sql <- .buildStatement(ctx, pairs, select = paste0(
       "SELECT ", txt("c.subject_id"), " AS case_id, ", .sqlDateText(h, "c.t"), " AS t, ",
       .sqlDateText(h, "c.case_end"), " AS case_end, c.index_source AS src, c.index_key AS k, ",
