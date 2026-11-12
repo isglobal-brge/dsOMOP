@@ -139,12 +139,16 @@ test_that("R10 all nested Achilles endpoints export final histogram companions",
   .release_state()
   h <- create_test_handle(n_persons = 2000)
   on.exit(cleanup_handle(h), add = TRUE)
+  # Give UNKNOWN a real supported population; its availability must not
+  # depend on an empty stratum happening to receive positive noise.
+  DBI::dbExecute(h$conn, paste0("UPDATE person SET gender_concept_id = 0 ",
+                                "WHERE person_id % 5 = 0"))
   for (id in paste0("dsomop:achilles.", c(102, 104, 106, 107))) {
     out <- .r10_server_run(h, id)
     qi <- .r10_check(out, id, .r10_client_run(out, id))
     expect_gt(nrow(qi), 0L)
-    # The original witness has a supported UNKNOWN gender and unavailable
-    # age-decile strata. These assertions prevent vacuous regression coverage.
+    # Assert supported UNKNOWN gender and unavailable age-decile strata so
+    # the regression's coverage cannot become vacuous.
     if (endsWith(id, ".104")) expect_true("gender=0" %in% qi$stratum)
     if (endsWith(id, ".107")) {
       expect_lt(length(unique(qi$stratum)), 13L)
