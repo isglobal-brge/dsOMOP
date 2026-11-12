@@ -212,7 +212,15 @@
     list(id = "dsomop:fe.continuous", scope = cohorts$target),
     list(id = "dsomop:cohortdx.time_distribution", scope = cohorts$target),
     list(id = "dsomop:char.time_to_event", scope = cohorts$target,
-         params = list(outcome_concept_id = "201820"))
+         params = list(outcome_concept_id = "201820")),
+    # Grouped-time Cox exits/censoring and the SCCS case substrate
+    # (tools_release_survival.R).
+    list(id = "dsomop:cm.effect_estimate", scope = arms,
+         params = c(list(outcome_concept_id = "201820",
+                         model_type = "cox"), tar(730))),
+    list(id = "dsomop:sccs.incidence_rate_ratio",
+         params = list(exposure_concept_id = "1503297",
+                       outcome_concept_id = "201820", window = "30"))
   )
 }
 

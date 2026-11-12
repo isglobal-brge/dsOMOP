@@ -5554,8 +5554,31 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   out <- .dsomopToolsLabel(df, entry,
                            release_route$protection %||% "standard")
   for (name in names(release_meta)) attr(out, name) <- release_meta[[name]]
-  .omopToolsReleaseStandardLabel(out, release_contract, release_route,
-                                 !is.null(scope), snap)
+  out <- .omopToolsReleaseStandardLabel(out, release_contract, release_route,
+                                        !is.null(scope), snap)
+  # Standard mode with the DP service: the masked person-time block of the
+  # C6/C9 entries comes from their protected components (a labelled mixed
+  # frame; tools_release_survival.R).
+  if (isTRUE(release_contract$compat) &&
+      identical(release_route$protection, "standard") &&
+      identical(release_route$mode, "standard")) {
+    ready <- .dsomopToolsDpReady(handle)
+    if (isTRUE(ready$ready)) {
+      compat_ctx <- list(
+        analysis_id = entry$meta$analysis_id,
+        table_name = entry$meta$table_name,
+        tool_id = entry$meta$tool_id,
+        scoped_cohort = scoped,
+        person_set_sql = if (!is.null(scoped)) {
+          paste0("(SELECT subject_id FROM ", scoped, ")")
+        } else NULL,
+        scoped_cohorts = scoped_pair,
+        entry = entry)
+      out <- .omopToolsReleaseCompat(handle, compat_ctx, sanitized, out,
+                                     release_contract, ready$policy, snap)
+    }
+  }
+  out
 }
 
 # Public run metadata a built-in entry attaches to its raw frame: the effective
