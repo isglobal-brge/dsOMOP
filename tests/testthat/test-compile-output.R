@@ -435,3 +435,172 @@ test_that("joined: cardinality failures are typed join_cardinality refusals nami
   co <- .planCompileOutputs(run$cctx, list(j = "J"), populations = list(t = pop))
   expect_identical(nrow(co$j$components$j$frame), 5L)
 })
+
+test_that("covariate identities are shared across outputs regardless of source order", {
+  plan <- .ws7_scenario_plan(list(), output = list(format = "sparse", options = list(
+    sources = list(list(event = "lab")), analyses = list("count"))))
+  plan$variables <- NULL
+  plan$outputs$second <- list(rows = "t", format = "sparse", grain = "episode", options = list(
+    sources = list(list(event = "dx"), list(event = "lab")), analyses = list("count", "binary")))
+  for (b in names(.ws7_out_backends)) {
+    run <- .ws7_ctx(.ws7_out_backends[[b]]$handle, plan)
+    pop <- .ws7_population(run, "t", .ws7_scenario_frame(c(7001, 7002)), cap_end = FALSE)
+    co <- .planCompileOutputs(run$cctx, populations = list(t = pop))
+    one <- co$o$components$covariateRef$frame
+    two <- co$second$components$covariateRef$frame
+    shared <- two$source == "lab" & two$analysis == "count"
+    expect_identical(two$covariate_id[shared], one$covariate_id, info = b)
+    expect_identical(sort(unique(c(one$covariate_id, two$covariate_id))), 1:6, info = b)
+    expect_false(anyDuplicated(two[c("source", "concept_id", "analysis")]) > 0L, info = b)
+    .ws7_close(run)
+  }
+})
+
+test_that("empty long and person sparse sources retain their typed empty schemas", {
+  for (b in names(.ws7_out_backends)) {
+    for (fmt in c("long", "sparse")) {
+      plan <- .ws7_scenario_plan(list(), output = list(format = fmt,
+        grain = if (fmt == "sparse") "person" else "episode", sources = list(list(event = "lab"))))
+      plan$variables <- NULL
+      res <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, plan, .ws7_scenario_frame(7002))
+      expect_identical(nrow(res$compiled$components$o$frame), 0L, info = paste(b, fmt))
+      expect_identical(res$compiled$status, "ok", info = paste(b, fmt))
+      expect_true("person_id" %in% names(res$compiled$components$o$frame), info = paste(b, fmt))
+    }
+  }
+})
+
+test_that("interval ends_in includes a record starting before the requested window", {
+  plan <- .ws7_scenario_plan(list(), output = list(format = "intervals", options = list(
+    sources = list(list(event = "drug")), window = list(start = 0L, end = 0L, anchor = "index"),
+    interval_match = "ends_in")))
+  plan$variables <- NULL
+  for (b in names(.ws7_out_backends)) {
+    f <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, plan, .ws7_scenario_frame(7001))$frame
+    expect_identical(f$start_days_from_index, -9L, info = b)
+    expect_identical(f$end_days_from_index, 0L, info = b)
+  }
+})
+
+test_that("long applies date handling to broadcast dates and refuses column collisions", {
+  vars <- list(op_date = list(raw = list(table = "observation_period",
+                                        column = "observation_period_start_date")))
+  plan <- .ws7_scenario_plan(vars, output = list(format = "long", sources = list(list(event = "lab")),
+                                                columns = list("op_date")))
+  for (b in names(.ws7_out_backends)) {
+    f <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, plan, .ws7_scenario_frame(7001))$frame
+    expect_identical(unique(f$op_date), as.integer(as.Date("2015-01-01") - as.Date("2020-01-10")), info = b)
+    p <- plan
+    p$outputs$o$options <- list(date_handling = list(mode = "remove"))
+    f <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, p, .ws7_scenario_frame(7001))$frame
+    expect_false("op_date" %in% names(f), info = b)
+  }
+  plan$variables <- list(concept_id = list(source = list(event = "lab"),
+                                          reducer = list(fn = "count"), broadcast = TRUE))
+  plan$outputs$o$columns <- list("concept_id")
+  .ws4_expect_rejection(.ws7_scenario_run(.ws7_out_backends$sqlite$handle, plan, .ws7_scenario_frame(7001)),
+                        pattern = "duplicates an output column")
+})
+
+test_that("panels seed both window edges and event boundaries add only the event date", {
+  plan <- .ws7_scenario_plan(list(), output = list(format = "person_period", options = list(
+    sources = list(list(event = "lab")), bins = list(width = 100L),
+    window = list(start = 0L, end = 20L, anchor = "index"),
+    partition = list(boundaries = list(list(event = "lab"))), analyses = list("mean"))))
+  plan$variables <- NULL
+  for (b in names(.ws7_out_backends)) {
+    f <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, plan, .ws7_scenario_frame(c(7001, 7002)))$frame
+    r <- .ws7_rows(f, 7001)
+    expect_identical(r$period_start_days, c(0L, 10L), info = b)
+    expect_identical(r$period_end_days, c(9L, 20L), info = b)
+    expect_identical(r$days, c(10L, 11L), info = b)
+    expect_identical(r$lab_mean, c(3, 9), info = b)
+    empty <- .ws7_rows(f, 7002)
+    expect_identical(empty$days, 21L, info = b)
+    expect_true(is.na(empty$lab_mean), info = b)
+    sparse <- plan
+    sparse$outputs$o$options$representation <- "sparse"
+    sf <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, sparse, .ws7_scenario_frame(c(7001, 7002)))$frame
+    expect_identical(sf$period_start_days, c(0L, 10L), info = b)
+    expect_identical(sf$lab_mean, c(3, 9), info = b)
+    expect_identical(unique(sf$pid), 7001, info = b)
+  }
+})
+
+test_that("sparse panels retain exposure-only periods and dense unavailable columns remain NA", {
+  plan <- .ws7_scenario_plan(list(), output = list(format = "person_period", options = list(
+    representation = "sparse", bins = list(width = 5L), window = list(start = 0L, end = 9L, anchor = "index"),
+    exposures = list(rx = list(interval = "rx")))))
+  plan$variables <- NULL
+  plan$intervals <- list(rx = list(source = list(event = "drug"), gap = 0L))
+  for (b in names(.ws7_out_backends)) {
+    f <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, plan, .ws7_scenario_frame(c(7001, 7002)))$frame
+    expect_identical(f$exposed_rx, c(5L, 1L), info = b)
+    expect_identical(f$active_rx, c(1L, 1L), info = b)
+    expect_identical(unique(f$pid), 7001, info = b)
+  }
+  plan$events$notes <- list(table = "note", concept_set = list(concepts = list(.WS7$LAB)),
+                            on_missing_table = "unavailable")
+  plan$outputs$o$options <- list(sources = list(list(event = "notes")), bins = list(width = 5L),
+    window = list(start = 0L, end = 9L, anchor = "index"), analyses = list("binary", "count", "mean", "last"))
+  res <- .ws7_scenario_run(.ws7_out_backends$sqlite$handle, plan, .ws7_scenario_frame(7002))
+  expect_identical(nrow(res$frame), 2L)
+  expect_identical(res$compiled$status, "unavailable")
+  expect_true(all(is.na(res$frame[c("notes_binary", "notes_count", "notes_mean", "notes_last")])))
+})
+
+test_that("temporal exposed days exclude tolerated observation gaps", {
+  plan <- .ws7_scenario_plan(list(), output = list(format = "temporal_covariates", options = list(
+    sources = list(list(interval = "rx")), bin_width = 41L,
+    window = list(start = 50L, end = 90L, anchor = "index"), analyses = list("exposed_days"))))
+  plan$variables <- NULL
+  plan$intervals <- list(rx = list(source = list(event = "dx"), gap = 30L, persistence = 20L))
+  plan$populations$t$coverage <- list(policy = "union", on_missing = "drop", on_ambiguous = "drop", gap = 30L)
+  for (b in names(.ws7_out_backends)) {
+    f <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, plan, .ws7_scenario_frame(7105))$frame
+    # The course is March 5..April 9; March 5..9 are unobserved.
+    expect_identical(f$covariate_value, 31, info = b)
+  }
+})
+
+test_that("output row caps apply before constructing large period and reference grids", {
+  withr::local_options(list(dsomop.max_memory_rows = 10L))
+  plan <- .ws7_scenario_plan(list(), output = list(format = "temporal_covariates", options = list(
+    sources = list(list(event = "lab")), bin_width = 1L,
+    window = list(start = 0L, end = 1000000L, anchor = "index"))))
+  plan$variables <- NULL
+  err <- tryCatch(.ws7_scenario_run(.ws7_out_backends$sqlite$handle, plan, .ws7_scenario_frame(7002)),
+                   dsomop_plan_rejection = function(e) e)
+  expect_s3_class(err, "dsomop_plan_rejection")
+  expect_identical(err$code, "validation_error")
+  expect_identical(err$reason, "reducer_row_cap")
+  err <- tryCatch(.panelPeriods(as.Date("2000-01-01"), as.Date("2030-01-01"),
+    data.frame(start = as.Date("2000-01-01"), end = as.Date("2030-01-01")),
+    list(width = 1L), list(), as.Date(character(0))), dsomop_plan_rejection = function(e) e)
+  expect_identical(err$reason, "reducer_row_cap")
+})
+
+test_that("survival tie keys remain distinct beyond the exact-double range", {
+  ev <- list(a = data.frame(row_key = "1", start_date = as.Date(c("2020-01-10", "2020-01-10")),
+                            source_ns = "event:a", event_id = c("9007199254740993", "9007199254740992")))
+  got <- .survivalEpisodeEvents(ev, "a", "1")
+  expect_identical(got$key, c("9007199254740992", "9007199254740993"))
+})
+
+test_that("joined inputs must retain the consumer roster namespace", {
+  plan <- .ws7_scenario_plan(list(n = list(source = list(event = "lab"), reducer = list(fn = "count"))),
+                             output = list(columns = list("n")))
+  plan$outputs$other <- plan$outputs$o
+  plan$outputs$j <- list(rows = "t", format = "joined", grain = "episode", options = list(
+    from = list(list(output = "o"), list(output = "other"))))
+  plan$publish <- list("o", "other")
+  run <- .ws7_ctx(.ws7_out_backends$sqlite$handle, plan)
+  on.exit(.ws7_close(run), add = TRUE)
+  pop <- .ws7_population(run, "t", .ws7_scenario_frame(7001), cap_end = FALSE)
+  co <- .planCompileOutputs(run$cctx, populations = list(t = pop))
+  co$o$components$o$fragment$roster_namespace <- "another_population"
+  node <- .irNamedNode(run$cctx$ir, "output", "j")
+  .ws4_expect_rejection(.compileOutput(run$cctx, node, list(population = pop, outputs = co,
+                                                          symbol = "J", mode = "memory")),
+                        pattern = "different grain or roster namespace")
+})

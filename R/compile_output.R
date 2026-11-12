@@ -214,6 +214,7 @@
 #' @keywords internal
 .outputComponent <- function(inputs, output, component, frame, columns, cons = NULL,
                              grain = "episode", status = "ok") {
+  .outputRowCap(nrow(frame), output)
   if (!grepl(.NAME_PATTERN, component)) {
     .irReject(paste0("component name '", component, "' exceeds the name grammar"),
               field = paste0("/outputs/", output))
@@ -244,6 +245,10 @@
 .outputCompiled <- function(output, parts, status = "ok") {
   comps <- lapply(parts, function(p) p$component)
   names(comps) <- vapply(parts, function(p) p$candidate$component, "")
+  if (anyDuplicated(names(comps))) {
+    .irReject(paste0("output '", output, "' uses a reserved companion component name"),
+              field = paste0("/outputs/", output))
+  }
   refs <- names(comps)[vapply(parts, function(p) identical(p$candidate$grain, "none"), logical(1))]
   .compiledOutput(output, comps, lapply(unname(parts), function(p) p$candidate),
                   reference_components = refs, status = status)
@@ -263,7 +268,7 @@
 
 # Bound the number of rows an R-assembled component may hold.
 .outputRowCap <- function(n, output) {
-  if (n > .reduceRowCap()) {
+  if (length(n) != 1L || !is.finite(n) || n > .reduceRowCap()) {
     .compileReject("an output component exceeds the server in-memory row cap (dsomop.max_memory_rows)",
                    reason = "reducer_row_cap", field = paste0("/outputs/", output))
   }
@@ -513,6 +518,8 @@
   how <- opts[["how"]] %||% "inner"
   cardinality <- opts[["cardinality"]] %||% "one_to_one"
   keys <- if (identical(grain, "person")) "person_id" else c("person_id", "cohort_row_id")
+  pop <- inputs$population
+  cons <- .reduceConsumer(ctx, name, pop$roster, pop$coverage, grain)
   frames <- list()
   cols <- list()
   status <- "ok"
@@ -528,6 +535,12 @@
     }
     if (!all(keys %in% names(part$frame)) || comp %in% co$reference_components) {
       .irReject(paste0("joined input '", o, "/", comp, "' does not carry the ", grain, " key"),
+                field = paste0("/outputs/", name, "/options/from"))
+    }
+    if (!identical(part$fragment$grain, grain) ||
+        (identical(grain, "episode") &&
+         !identical(part$fragment$roster_namespace, cons$spec$namespace %||% cons$population))) {
+      .irReject(paste0("joined input '", o, "/", comp, "' has a different grain or roster namespace"),
                 field = paste0("/outputs/", name, "/options/from"))
     }
     if (identical(co$status, "unavailable")) status <- "unavailable"
@@ -563,8 +576,6 @@
     left_cols <- c(left_cols, cols[[i]][extra])
   }
   .outputRowCap(nrow(left), name)
-  pop <- inputs$population
-  cons <- .reduceConsumer(ctx, name, pop$roster, pop$coverage, grain)
   part <- .outputComponent(inputs, name, name, left, left_cols, cons, grain = grain, status = status)
   .outputCompiled(name, list(part), status = status)
 }
@@ -737,7 +748,7 @@
 # event is not a new event), and same-day priority.
 .survivalRetained <- function(rows, keys, entry, exit, blocks, washout, censor_wins) {
   if (!nrow(rows)) return(rows[0, , drop = FALSE])
-  o <- order(as.character(rows$row_key), rows$start_date, rows$event_id, method = "radix")
+  o <- .reduceOrderRows(rows, c("row_key", "start_date", "source_ns", "event_id"))
   rows <- rows[o, , drop = FALSE]
   keep <- rep(FALSE, nrow(rows))
   at <- match(as.character(rows$row_key), as.character(keys))
@@ -998,15 +1009,16 @@
     ix <- which(as.character(ev$row_key) == as.character(key))
     if (!length(ix)) return(NULL)
     data.frame(outcome = outcome_names[[p]], priority = p, date = ev$start_date[ix],
-               key = as.numeric(ev$event_id[ix]), stringsAsFactors = FALSE)
+               source = as.character(ev$source_ns[ix] %||% rep("", length(ix))),
+               key = as.character(ev$event_id[ix]), stringsAsFactors = FALSE)
   })
   parts <- Filter(Negate(is.null), parts)
   if (!length(parts)) {
     return(data.frame(outcome = character(0), priority = integer(0), date = as.Date(character(0)),
-                      key = numeric(0), stringsAsFactors = FALSE))
+                      source = character(0), key = character(0), stringsAsFactors = FALSE))
   }
   x <- do.call(rbind, parts)
-  x[order(x$date, x$priority, x$key), , drop = FALSE]
+  x[order(x$date, x$priority, x$source, .reduceKeyOrder(x$key), method = "radix"), , drop = FALSE]
 }
 
 # Emit the component frames of one TAR.
@@ -1031,7 +1043,8 @@
     entry_d <- days(entry[[i]], i)
     if (nrow(ev)) {
       pick <- if (identical(order_mode, "last")) {
-        ev[order(-as.numeric(ev$date), ev$priority, -ev$key), , drop = FALSE][1L, ]
+        ev[order(-as.numeric(ev$date), ev$priority, -.reduceKeyOrder(ev$source),
+                 -.reduceKeyOrder(ev$key), method = "radix"), , drop = FALSE][1L, ]
       } else ev[1L, ]
       exit_d <- days(pick$date, i)
       cbind(ident(i), data.frame(outcome_name = outcome_label %||% pick$outcome, event = 1L,
@@ -1281,16 +1294,53 @@
 #' The per-plan covariate registry of an output (section 6.12)
 #'
 #' A dense integer \code{covariate_id} for every \code{(source, concept_id,
-#' analysis)} tuple of the output's effective analyses, in source
-#' declaration order, identity order and the output's analysis order --
-#' never the v1 arithmetic \code{conceptId * 1000 + analysisId}.
+#' analysis)} tuple across the plan's required sparse and temporal outputs.
+#' Output declaration order, source order, identity order and analysis order
+#' determine the first occurrence of a tuple; later consumers reuse its ID.
+#' Each reference companion contains the tuples that its output uses.
 #' @keywords internal
 .outputCovariateRegistry <- function(ctx, node, name, analyses_of) {
+  reg <- .outputCovariateRows(ctx, node, name, analyses_of)
+  memo <- .compileMemo(ctx, "output_covariates")
+  if (!exists("registry", envir = memo, inherits = FALSE)) {
+    ir <- ctx[["ir"]]
+    roots <- as.character(unlist(ir[["publish"]] %||% names(ir[["outputs"]]), use.names = FALSE))
+    needed <- .irReach(roots, function(o) .irOutputDeps(ir, o), names(ir[["outputs"]]))
+    all <- list()
+    for (o in intersect(names(ir[["outputs"]]), needed)) {
+      other <- ir[["outputs"]][[o]]
+      fmt <- other[["format"]]
+      if (!fmt %in% c("sparse", "temporal_covariates")) next
+      opts <- other[["options"]] %||% list()
+      if (isTRUE(unlist(opts[["legacy_covariate_ids"]]))) next
+      analyses <- if (identical(fmt, "sparse")) {
+        function(src, kind, has_value) intersect(
+          as.character(unlist(opts[["analyses"]] %||% list("binary"), use.names = FALSE)),
+          c("binary", "count"))
+      } else function(src, kind, has_value) .outputSourceAnalyses(opts, src, kind, has_value)
+      rows <- .outputCovariateRows(ctx, other, o, analyses)
+      all[[length(all) + 1L]] <- rows[c("source", "concept_id", "analysis")]
+    }
+    # Standalone compiler callers may supply a node outside publish roots.
+    all[[length(all) + 1L]] <- reg[c("source", "concept_id", "analysis")]
+    tuples <- unique(do.call(rbind, all))
+    .outputRowCap(nrow(tuples), name)
+    assign("registry", tuples, envir = memo)
+  }
+  tuples <- get("registry", envir = memo, inherits = FALSE)
+  key <- function(x) paste(x$source, x$concept_id, x$analysis, sep = "\r")
+  reg$covariate_id <- match(key(reg), key(tuples))
+  reg
+}
+
+# Local tuples retain source_index for dispatch; IDs are allocated once above.
+.outputCovariateRows <- function(ctx, node, name, analyses_of) {
   srcs <- .outputSources(node)
   rows <- list()
   for (i in seq_along(srcs)) {
     idn <- .outputSourceIdentities(ctx, srcs[[i]], paste0("/outputs/", name, "/options/sources/", i - 1L))
     for (a in analyses_of(idn$name, idn$kind, .outputSourceHasValue(ctx, idn))) {
+      .outputRowCap(length(rows) + length(idn$ids), name)
       for (cid in idn$ids) {
         rows[[length(rows) + 1L]] <- data.frame(source = idn$name, source_index = i,
                                                 concept_id = cid, analysis = a,
@@ -1301,7 +1351,6 @@
   reg <- if (length(rows)) do.call(rbind, rows) else
     data.frame(source = character(0), source_index = integer(0), concept_id = integer(0),
                analysis = character(0), stringsAsFactors = FALSE)
-  reg$covariate_id <- seq_len(nrow(reg))
   reg
 }
 
@@ -1336,7 +1385,7 @@
   if (!"v" %in% names(rows)) rows$v <- rep(NA_real_, nrow(rows))
   if (!"concept_id" %in% names(rows)) rows$concept_id <- rep(NA_integer_, nrow(rows))
   ord <- c("row_key", intersect(.reduceSourceOrdering(src), names(rows)))
-  if (nrow(rows)) rows <- rows[do.call(order, c(unname(as.list(rows[ord])), list(method = "radix"))), , drop = FALSE]
+  if (nrow(rows)) rows <- rows[.reduceOrderRows(rows, ord), , drop = FALSE]
   rows
 }
 
@@ -1356,6 +1405,10 @@
   y0 <- as.integer(format(from, "%Y"))
   m0 <- as.integer(format(from, "%m"))
   y1 <- as.integer(format(to, "%Y"))
+  steps <- switch(unit, year = y1 - y0 + 1,
+                  month = (y1 - y0) * 12 + as.integer(format(to, "%m")) - m0 + 1,
+                  quarter = ((y1 - y0) * 12 + as.integer(format(to, "%m")) - m0) %/% 3 + 2)
+  .outputRowCap(steps, "person_period")
   out <- switch(unit,
     year = as.Date(sprintf("%04d-01-01", seq.int(y0, y1))),
     month = {
@@ -1380,12 +1433,14 @@
 #' of every boundary event, calendar firsts and, with age bands, every
 #' 1 January; closed periods \code{[b_i, b_{i+1} - 1]} kept when observed.
 #' @keywords internal
-.panelPeriods <- function(L, U, blocks, bins, partition, boundary_dates) {
+.panelPeriods <- function(L, U, blocks, bins, partition, boundary_dates, output = "person_period") {
   if (is.na(L) || is.na(U) || L > U) return(data.frame(start = as.Date(character(0)), end = as.Date(character(0))))
   b <- c(L, U + 1L, blocks$start, blocks$end + 1L, boundary_dates)
   if (!is.null(bins[["width"]])) {
-    w <- as.integer(unlist(bins[["width"]]))
-    b <- c(b, L + w * seq.int(0L, as.integer(U - L) %/% w + 1L))
+    w <- as.numeric(unlist(bins[["width"]]))
+    nb <- as.numeric(U - L) %/% w + 1
+    .outputRowCap(nb, output)
+    b <- c(b, L + w * seq.int(0, nb))
   } else if (!is.null(bins[["calendar"]])) {
     b <- c(b, .panelCalendarFirsts(L, U, as.character(unlist(bins[["calendar"]]))))
   }
@@ -1451,7 +1506,9 @@
   bnds <- .irItems(opts[["partition"]][["boundaries"]])
   boundary_rows <- lapply(seq_along(bnds), function(bi) {
     src <- .reduceSource(ctx, bnds[[bi]])
-    .outputSourceRows(ctx, cons, src, window, ox("z", bi), paste0(field, "/partition/boundaries/", bi - 1L))
+    rows <- .outputSourceRows(ctx, cons, src, window, ox("z", bi), paste0(field, "/partition/boundaries/", bi - 1L))
+    if (!is.null(rows)) attr(rows, "boundary_kind") <- src$kind
+    rows
   })
   # exposures (courses) and outcomes
   ex_names <- names(opts[["exposures"]] %||% list())
@@ -1499,12 +1556,15 @@
     groups <- .reduceGroups(rows$row_key, keys)
     for (i in seq_len(n)) {
       ix <- groups[[i]]
-      if (length(ix)) boundary_dates[[i]] <- c(boundary_dates[[i]], rows$start_date[ix], rows$end_date[ix] + 1L)
+      if (length(ix)) {
+        boundary_dates[[i]] <- c(boundary_dates[[i]], rows$start_date[ix],
+          if (identical(attr(rows, "boundary_kind"), "interval")) rows$end_date[ix] + 1L)
+      }
     }
   }
   periods <- lapply(seq_len(n), function(i) {
     .panelPeriods(L[[i]], U[[i]], blocks[[i]], opts[["bins"]] %||% list(width = 30L),
-                  opts[["partition"]] %||% list(), boundary_dates[[i]])
+                  opts[["partition"]] %||% list(), boundary_dates[[i]], output = name)
   })
   np <- vapply(periods, nrow, integer(1))
   .outputRowCap(sum(np), name)
@@ -1555,7 +1615,7 @@
   }
   total <- nrow(frame)
   event_any <- rep(FALSE, total)
-  unavailable <- FALSE
+  unavailable <- any(vapply(boundary_rows, is.null, logical(1)))
   for (x in ex_names) {
     rows <- exposures[[x]]
     if (is.null(rows)) {
@@ -1574,6 +1634,7 @@
       }
       frame[[paste0("exposed_", x)]] <- exp_days
       frame[[paste0("active_", x)]] <- act
+      event_any <- event_any | exp_days > 0L
     }
     columns[[paste0("exposed_", x)]] <- int()
     columns[[paste0("active_", x)]] <- int()
@@ -1600,6 +1661,7 @@
       sel <- if (is.null(rows)) NULL else if (is.na(cid)) rows else rows[rows$concept_id %in% cid, , drop = FALSE]
       p <- if (is.null(sel)) integer(0) else period_of(sel)
       inside <- !is.na(p)
+      if (!is.null(sel)) event_any <- event_any | tabulate(p[inside], nbins = total) > 0L
       for (a in sp$analyses) {
         col <- paste0(stem, "_", a)
         values <- if (is.null(sel)) {
@@ -1629,7 +1691,7 @@
             if (!length(ix)) 0L else .panelUnionDays(sel$start_date[ix], sel$end_date[ix], ps[[r]], pe[[r]])
           }, integer(1)))
         if (is.null(sel)) unavailable <- TRUE
-        if (!is.null(sel) && a %in% c("binary", "count")) event_any <- event_any | (values %in% 1L | values > 0L)
+        if (!is.null(sel) && identical(a, "exposed_days")) event_any <- event_any | values > 0L
         frame[[col]] <- if (a %in% c("mean", "last")) as.numeric(values) else as.integer(values)
         columns[[col]] <- if (a %in% c("mean", "last")) .fragmentColumn("numeric", TRUE, "measure") else int()
       }
@@ -1698,10 +1760,11 @@
   we <- sides$upper$offset
   if (we < ws) .irReject("the window end precedes its start", field = paste0(field, "/window"))
   width <- as.integer(unlist(opts[["bin_width"]] %||% 30L))
-  nbins <- as.integer((we - ws) %/% width) + 1L
-  time_ref <- data.frame(time_id = seq_len(nbins), start_day = as.integer(ws + width * (seq_len(nbins) - 1L)),
+  nbins <- (as.numeric(we) - as.numeric(ws)) %/% width + 1
+  .outputRowCap(nbins, name)
+  time_ref <- data.frame(time_id = seq_len(nbins), start_day = as.integer(ws + as.numeric(width) * (seq_len(nbins) - 1L)),
                          stringsAsFactors = FALSE)
-  time_ref$end_day <- as.integer(pmin(time_ref$start_day + width - 1L, we))
+  time_ref$end_day <- as.integer(pmin(as.numeric(time_ref$start_day) + width - 1, we))
   pop <- inputs$population
   cons <- .reduceConsumer(ctx, name, pop$roster, pop$coverage, "episode")
   if (is.null(cons$coverage)) {
@@ -1738,11 +1801,16 @@
       if (identical(a, "exposed_days")) {
         cells <- list()
         for (e in unique(at)) {
-          ix <- which(at == e)
+          ix <- which(at == e & (is.na(cid) | rows$concept_id %in% cid))
           for (t in seq_len(nbins)) {
             lo <- index[[e]] + time_ref$start_day[[t]]
             hi <- index[[e]] + time_ref$end_day[[t]]
-            dd <- .panelUnionDays(rows$start_date[ix], rows$end_date[ix], lo, hi)
+            observed <- blocks[[e]]
+            dd <- sum(vapply(seq_len(nrow(observed)), function(j) {
+              start <- max(lo, observed$start[[j]])
+              end <- min(hi, observed$end[[j]])
+              if (start > end) 0L else .panelUnionDays(rows$start_date[ix], rows$end_date[ix], start, end)
+            }, integer(1)))
             if (dd > 0L) cells[[length(cells) + 1L]] <- c(e, t, dd)
           }
         }
@@ -1834,7 +1902,7 @@
   }
   cov <- if (length(out)) do.call(rbind, out) else
     data.frame(ep = integer(0), covariate_id = integer(0), covariate_value = numeric(0))
-  if (identical(grain, "person")) {
+  if (identical(grain, "person") && nrow(cov)) {
     persons <- as.character(roster$person_id)
     cov$person <- persons[cov$ep]
     first_ep <- match(unique(persons), persons)
@@ -1951,7 +2019,7 @@
     st <- .reduceStream(ctx, cons, src, NULL, .fragmentName("ox", name, paste0("s_", i), ctx = ctx),
                         extra = extra)
     rows <- .reduceFetch(ctx, st, order = c("row_key", "start_date"), field = path)
-    rows$source <- src$name
+    rows$source <- rep(src$name, nrow(rows))
     if (!"v" %in% names(rows)) rows$v <- rep(NA_real_, nrow(rows))
     if (!"unit_concept_id" %in% names(rows)) rows$unit_concept_id <- rep(NA_integer_, nrow(rows))
     if (!"concept_id" %in% names(rows)) rows$concept_id <- rep(NA_integer_, nrow(rows))
@@ -1962,6 +2030,7 @@
   }
   keep_cols <- c("row_key", "person_id", "start_date", "end_date", "event_id", "source_ns", "source",
                  "v", "unit_concept_id", "concept_id", "visit_id", "visit_type", "member_table", others)
+  .outputRowCap(sum(vapply(all_rows, nrow, integer(1))), name)
   rows <- if (length(all_rows)) do.call(rbind, lapply(all_rows, function(r) r[keep_cols])) else NULL
   if (is.null(rows)) {
     rows <- data.frame(row_key = keys[0], person_id = roster$person_id[0], start_date = as.Date(character(0)),
@@ -1978,8 +2047,7 @@
     rows <- rows[as.character(rows$row_key) %in% as.character(keys[first]), , drop = FALSE]
     rows <- rows[!duplicated(paste(rows$person_id, rows$source_ns, rows$member_table, rows$event_id)), , drop = FALSE]
   }
-  o <- order(as.character(rows$person_id), as.numeric(rows$row_key), rows$start_date, rows$source_ns,
-             rows$member_table, as.numeric(rows$event_id), method = "radix")
+  o <- .reduceOrderRows(rows, c("person_id", "row_key", "start_date", "source_ns", "member_table", "event_id"))
   rows <- rows[o, , drop = FALSE]
   rows <- .reduceTemporal(rows, opts[["temporal"]], c("start_date", "source_ns", "member_table", "event_id"))
   .outputRowCap(nrow(rows), name)
@@ -2015,7 +2083,6 @@
     columns <- c(ident_cols, list(concept_id = .fragmentColumn("integer", TRUE, "concept"),
                                   start_date = .fragmentColumn("date", TRUE, "start"),
                                   end_date = .fragmentColumn("date", TRUE, "end")))
-    src_cols <- if (length(all_rows)) NULL else NULL
     for (oc in others) {
       frame[[oc]] <- rows[[oc]]
       type <- all_rows[[1L]][[oc]]
@@ -2069,12 +2136,10 @@
       rst <- .reduceStream(ctx, cons, rsrc, NULL, .fragmentName("ox", name, paste0("r_", ri), ctx = ctx),
                            extra = rextra)
       rrows <- .reduceFetch(ctx, rst, order = c("row_key", "start_date"), field = paste0(field, "/relations/", rn))
+      if (!"concept_id" %in% names(rrows)) rrows$concept_id <- rep(NA_integer_, nrow(rrows))
+      if (!"visit_id" %in% names(rrows)) rrows$visit_id <- rep(NA_character_, nrow(rrows))
       frame[[col]] <- .longRelation(rows, rrows, rel, same_source = rows$source == rsrc$name)
     }
-    dh <- opts[["date_handling"]] %||% list(mode = "relative")
-    handled <- .outputDateHandling(frame, columns, idx, dh, name)
-    frame <- handled$frame
-    columns <- handled$columns
   }
   # broadcast reducer columns joined on the roster key
   vars <- .irOutputVariables(ir, name)
@@ -2090,12 +2155,21 @@
       vals <- rec$evaluate()
       vat <- match(as.character(rows$row_key), as.character(vals$row_key))
       for (cn in names(rec$columns)) {
+        if (cn %in% names(columns)) {
+          .irReject(paste0("broadcast variable column '", cn, "' duplicates an output column"),
+                    field = paste0("/outputs/", name, "/columns"))
+        }
         frame[[cn]] <- vals[[cn]][vat]
         columns[[cn]] <- rec$columns[[cn]]
       }
       if (!isTRUE(rec$available)) unavailable <- TRUE
     }
   }
+  # Broadcast raw variables may themselves be dates; apply the policy only
+  # after every released column has been assembled.
+  handled <- .outputDateHandling(frame, columns, idx, opts[["date_handling"]] %||% list(mode = "relative"), name)
+  frame <- handled$frame
+  columns <- handled$columns
   .outputCheckNames(setdiff(names(columns), c("row_id", "cohort_row_id", "person_id")), name, grain)
   status <- if (unavailable) "unavailable" else "ok"
   part <- .outputComponent(inputs, name, name, frame, columns, cons,
@@ -2173,7 +2247,7 @@
     } else list()
     st <- .reduceStream(ctx, cons, src, if (identical(match_mode, "active_at")) NULL else window,
                         .fragmentName("ox", name, paste0("s_", i), ctx = ctx), extra = extra,
-                        overlap = identical(match_mode, "overlaps"))
+                        overlap = match_mode %in% c("overlaps", "ends_in"))
     rows <- .reduceFetch(ctx, st, order = c("row_key", "start_date"), field = paste0(field, "/sources/", i - 1L))
     if (!"concept_id" %in% names(rows)) rows$concept_id <- rep(NA_integer_, nrow(rows))
     if (!nrow(rows)) next
@@ -2196,11 +2270,11 @@
     if (!identical(select, "all")) {
       g <- paste(rows$row_key, if (by_concept) rows$concept_id else "")
       o <- switch(select,
-        first = order(g, rows$start_date, rows$end_date, as.numeric(rows$event_id), method = "radix"),
-        last = order(g, -as.numeric(rows$start_date), -as.numeric(rows$end_date), -as.numeric(rows$event_id),
+        first = order(g, rows$start_date, rows$end_date, .reduceKeyOrder(rows$event_id), method = "radix"),
+        last = order(g, -as.numeric(rows$start_date), -as.numeric(rows$end_date), -.reduceKeyOrder(rows$event_id),
                      method = "radix"),
         nearest = order(g, abs(as.numeric(rows$start_date - rows$anchor)), rows$start_date,
-                        as.numeric(rows$event_id), method = "radix"))
+                        .reduceKeyOrder(rows$event_id), method = "radix"))
       rows <- rows[o, , drop = FALSE]
       rank <- stats::ave(seq_len(nrow(rows)), g[o], FUN = seq_along)
       rows <- rows[rank <= n_sel, , drop = FALSE]
@@ -2215,8 +2289,8 @@
   at <- match(as.character(rows$row_key), as.character(keys))
   rows$start_days <- as.integer(rows$start_date - index[at])
   rows$end_days <- as.integer(rows$end_date - index[at])
-  o <- order(as.numeric(rows$row_key), rows$source, rows$start_days, rows$end_days, rows$concept_id,
-             as.numeric(rows$event_id), method = "radix")
+  o <- order(.reduceKeyOrder(rows$row_key), rows$source, rows$start_days, rows$end_days, rows$concept_id,
+             .reduceKeyOrder(rows$event_id), method = "radix")
   rows <- rows[o, , drop = FALSE]
   .outputRowCap(nrow(rows), name)
   frame <- data.frame(row_id = rows$row_key, cohort_row_id = rows$row_key, person_id = rows$person_id,
@@ -2254,12 +2328,26 @@
 .planExecuteNative <- function(ctx, ir, out_symbols, own_context = FALSE) {
   handle <- ctx$handle
   before <- unique(handle$temp_tables %||% character(0))
-  cctx <- .compileContext(ctx, ir)
+  cctx <- NULL
+  compiled <- FALSE
+  # Install cleanup before context creation as well as compilation. On a
+  # compilation failure close both context owners; after success the caller
+  # still needs the roster registry for publication. Attempt operation-table
+  # cleanup even when a compiler DROP fails, and report every failure.
   on.exit({
-    .compileReleaseTempTables(cctx)
-    .dropTempTablesCreatedSince(handle, before)
+    failures <- character(0)
+    attempt <- function(expr) tryCatch(expr, error = function(e) {
+      failures <<- c(failures, conditionMessage(e))
+    })
+    if (!compiled) attempt(.planContextClose(ctx)) else if (is.environment(cctx)) {
+      attempt(.compileReleaseTempTables(cctx))
+    }
+    attempt(.dropTempTablesCreatedSince(handle, before))
+    if (length(failures)) stop(paste(unique(failures), collapse = "\n"), call. = FALSE)
   }, add = TRUE)
+  cctx <- .compileContext(ctx, ir)
   outputs <- .planCompileOutputs(cctx, out_symbols)
+  compiled <- TRUE
   if (!own_context) return(outputs)
   status <- .publishOutputs(ctx, outputs, out_symbols)
   if (exists(ctx$id, .publicationRegistry, inherits = FALSE)) rm(list = ctx$id, envir = .publicationRegistry)
