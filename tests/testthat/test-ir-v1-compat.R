@@ -118,9 +118,29 @@
   as.character(jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", na = "null",
                                 digits = NA, force = TRUE))
 }
+.compat_has_temporal_object <- function(x) {
+  if (inherits(x, "Date") || inherits(x, "POSIXt")) return(TRUE)
+  if (is.list(x) && any(vapply(x, .compat_has_temporal_object, logical(1)))) return(TRUE)
+  a <- attributes(x)
+  !is.null(a) && any(vapply(a, .compat_has_temporal_object, logical(1)))
+}
 .compat_sha <- function(x) {
+  # This immutable capture used format-only temporal encoding. Its 17-digit
+  # numeric comparison is exact only for the types actually represented: a
+  # Date/POSIX result requires an independent numeric-payload recapture.
+  if (.compat_has_temporal_object(x)) {
+    stop("Compatibility result contains Date/POSIX objects; exact numeric-payload baseline recapture required.",
+         call. = FALSE)
+  }
   unclass(as.character(openssl::sha256(charToRaw(enc2utf8(.compat_json(.b10_canon(x, 17L)))))))
 }
+
+test_that("compatibility hashes never silently discard temporal numeric payloads", {
+  expect_error(.compat_sha(as.Date("2020-01-01")), "exact numeric-payload baseline recapture", fixed = TRUE)
+  expect_error(.compat_sha(list(t = as.POSIXct("2020-01-01", tz = "UTC"))),
+               "exact numeric-payload baseline recapture", fixed = TRUE)
+  expect_silent(.compat_sha(list(date_text = "2020-01-01")))
+})
 
 # Rebuild an R value from its canonical form (the option state).
 .compat_decode <- function(n) {
