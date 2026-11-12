@@ -790,7 +790,7 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   )
   commit_policy <- .ds_arg(commit_policy)
   if (!.isScalarString(commit_policy) || !commit_policy %in% c("server", "all_or_none")) {
-    stop("Invalid publication commit policy.", call. = FALSE)
+    stop("commit_policy must be 'server' or 'all_or_none'.", call. = FALSE)
   }
   ctx <- .planContext(handle, plan, output_mode, target_env)
   on.exit(.planContextClose(ctx), add = TRUE)

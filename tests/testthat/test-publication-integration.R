@@ -142,8 +142,15 @@ test_that("typed failures before root execution use the bounded refusal transpor
   on.exit(cleanup_handle(handle), add = TRUE)
   .setHandle("publication_shared_failure", handle)
   on.exit(.removeHandle("publication_shared_failure"), add = TRUE)
-  local_mocked_bindings(.planExecute = function(...) {
-    .publishReject("dialect_unsupported")
+  local_mocked_bindings(.planExecute = function(handle, plan, out_symbols, output_mode, ctx) {
+    expect_s3_class(ctx$dialect, "dsomop_sql_dialect")
+    expect_identical(ctx$dialect$family, "sqlite")
+    expect_true(ctx$dialect$probed)
+    expect_true(ctx$dialect$window_frames)
+    expect_identical(ctx$dialect, handle$sql_dialect_profile)
+    # SQLite has no SQL SHA-256. Use WS-3's actual preflight condition to
+    # verify that shared dialect failures enter the bounded status transport.
+    .sqlDialectPreflight(ctx, "sha256_sql")
   })
   target <- new.env(parent = emptyenv())
   plan <- list(outputs = list(first = list(), second = list()))
@@ -152,5 +159,7 @@ test_that("typed failures before root execution use the bounded refusal transpor
   expect_identical(status$status, "refused")
   expect_identical(names(status$rejected), c("first", "second"))
   expect_true(all(vapply(status$rejected, function(x) identical(x$code, "dialect_unsupported"), logical(1))))
+  expect_true(all(vapply(status$rejected, function(x) identical(
+    x$message, "Publication refused: dialect_unsupported."), logical(1))))
   expect_identical(ls(target), character(0))
 })

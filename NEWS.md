@@ -18,6 +18,10 @@ fills its entries. Classes follow design-2.10.3 section 5.
   Strict/non-strict behavior and small-site skipping are decided before commit.
 - DP preparation follows the full normalized graph and authenticated scopes;
   matching taints descendants and sealing completes before publication.
+- Publication contexts carry the probed SQL dialect profile. Native compiled
+  statements pass the typed SQL check before execution, and shared dialect
+  refusals use the bounded publication status transport. Invalid publication
+  policy errors name the `commit_policy` argument.
 
 - (B-8) Before 2.10.3, `parent_id` recorded provenance but did not restrict
   membership; from 2.10.3 a child population is a subset of its parent, as

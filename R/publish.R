@@ -31,7 +31,7 @@
   ctx$commit_policy <- "server"
   ctx$seal <- NULL
   ctx$already_tokenized <- FALSE
-  ctx$dialect <- if (!is.null(handle) && exists(".sqlDialectProfile", mode = "function")) {
+  ctx$dialect <- if (!is.null(handle)) {
     .sqlDialectProfile(handle, probe = TRUE)
   } else NULL
   assign(ctx$id, ctx, .planContextRegistry)

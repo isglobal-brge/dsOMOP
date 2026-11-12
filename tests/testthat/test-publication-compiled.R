@@ -43,7 +43,7 @@
     "FROM person WHERE person_id <= 5 ORDER BY person_id"
   )
   columns <- if (roster) {
-    list(rowId = .fragmentColumn("integer", FALSE, "analytic_key"))
+    list(rowId = .fragmentColumn("integer", FALSE, "episode_key"))
   } else list(person_id = .fragmentColumn("integer", FALSE, "person_key"))
   columns$value <- .fragmentColumn("numeric")
   columns$raw_source <- .fragmentColumn("text", role = "private")
@@ -84,6 +84,22 @@ test_that("compiled memory frames and statements enforce the declared component 
   ))
   expect_error(.publishCompiled(ctx, compiled), "validation_error")
   expect_identical(ls(ctx$target_env), character(0))
+})
+
+test_that("compiled SQL is checked before memory or staged execution", {
+  local_mocked_bindings(
+    .executeQuery = function(...) stop("Unexpected SQL execution"),
+    .executeQueryToParquet = function(...) stop("Unexpected SQL execution"))
+  for (mode in c("memory", "staged")) {
+    ctx <- .publication_compiled_context(mode = mode)
+    compiled <- .publication_compiled_output(mode = mode, statement = paste(
+      "SELECT person_id, DATEADD(day, person_id, '2020-01-01') AS value,",
+      "'private' AS raw_source FROM person"
+    ))
+    expect_error(.publishCompiled(ctx, compiled), "contains an OHDSI DATEADD/")
+    expect_length(ctx$prepared, 0L)
+    expect_identical(ls(ctx$target_env), character(0))
+  }
 })
 
 test_that("compiled staged SQL streams once and counts the actual stored chunks", {

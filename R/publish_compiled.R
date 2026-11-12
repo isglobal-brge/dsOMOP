@@ -93,6 +93,7 @@
   }
   for (candidate in compiled$publication_candidates) {
     component <- compiled$components[[candidate$component]]
+    if (is.null(component$frame)) .sqlAssertTypedSql(ctx, component$statement)
     if (!identical(ctx$output_mode, "staged")) {
       frame <- component$frame
       if (is.null(frame)) frame <- .executeQuery(ctx$handle, component$statement)

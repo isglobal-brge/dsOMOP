@@ -1254,8 +1254,7 @@
     fail("params cannot contain duplicate names.")
   }
 
-  # Pre-execution granularity gate: blocks fingerprinting filters (e.g.
-  # age_range narrower than the disclosure minimum) before any SQL runs.
+  # Assignment filters keep structural validation; their width is unrestricted.
   .validateFilter(ftype, params)
 
   if (ftype == "sex") {
