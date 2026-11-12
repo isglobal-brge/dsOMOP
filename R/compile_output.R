@@ -748,7 +748,7 @@
 # event is not a new event), and same-day priority.
 .survivalRetained <- function(rows, keys, entry, exit, blocks, washout, censor_wins) {
   if (!nrow(rows)) return(rows[0, , drop = FALSE])
-  o <- .reduceOrderRows(rows, c("row_key", "start_date", "source_ns", "event_id"))
+  o <- .outputOrderRows(rows)
   rows <- rows[o, , drop = FALSE]
   keep <- rep(FALSE, nrow(rows))
   at <- match(as.character(rows$row_key), as.character(keys))
@@ -765,7 +765,17 @@
     observed <- vapply(d, function(x) any(b$start <= x & b$end >= x), logical(1))
     keep[ix] <- new & inside & observed
   }
-  rows[keep, , drop = FALSE]
+  out <- rows[keep, , drop = FALSE]
+  attr(out, "source_ordering") <- attr(rows, "source_ordering", exact = TRUE)
+  out
+}
+
+# Preserve each stream's declared tie-breakers, including adapter member
+# tables and parent/course identity, through private R assembly.
+.outputOrderRows <- function(rows, ordering = NULL) {
+  columns <- ordering %||% attr(rows, "source_ordering", exact = TRUE) %||%
+    c("row_key", "start_date", "source_ns", "member_table", "event_id", "parent_event_id")
+  .reduceOrderRows(rows, intersect(columns, names(rows)))
 }
 
 #' Compile a survival output (section 6.12; amendments A-5, A-7; defects
@@ -848,7 +858,7 @@
     }
     st <- .reduceStream(ctx, cons, src, sp$search, .fragmentName("ox", name, paste0("c_", ci), ctx = ctx))
     got <- .reduceStreamRows(ctx, cons, st, sp$search, paste0(field, "/censor/", ci - 1L))
-    got$rows
+    got$rows[.outputOrderRows(got$rows, st$ordering), , drop = FALSE]
   })
   censor_wins <- identical(opts[["same_day_priority"]] %||% "event", "censor")
   gap_reenter <- identical(fmt, "counting_process") &&
@@ -913,6 +923,7 @@
                   end = .reduceWindowSides(tar)$upper, anchor = "index")
       st <- .reduceStream(ctx, cons, src, win, .fragmentName("ox", name, paste0("k_", ti, "_", ki), ctx = ctx))
       events[[k]] <- .reduceStreamRows(ctx, cons, st, win, paste0(field, "/outcomes/", k))$rows
+      attr(events[[k]], "source_ordering") <- st$ordering
     }
     # prior outcome: any declared outcome in [entry - lookback, entry)
     if (!identical(prior_action, "ignore")) {
@@ -935,7 +946,7 @@
       .survivalRetained(events[[k]], keys, entry, exit, blocks, washout, censor_wins)
     })
     names(retained) <- outcome_names
-    family <- .survivalFamily(fmt, opts, t, name, length(tars) > 1L)
+    family <- .survivalFamily(fmt, opts, t, name, length(opts[["tars"]] %||% list()) > 0L)
     rows <- .survivalEmit(fmt, opts, keys, roster, index, entry, exit, eligible, retained,
                           outcome_names, blocks, gap_reenter)
     for (part_name in names(rows)) {
@@ -954,14 +965,59 @@
   .outputCompiled(name, parts, status = status)
 }
 
-# Component names of one TAR's family.
+# Allocate generated component names together, preserving declared TAR names
+# and ordinary readable names. Hash only overlength/colliding generated names;
+# collision probing also covers an adversarial user TAR matching a hash name.
+.outputAllocateComponents <- function(readable, identities, fixed = rep(FALSE, length(readable))) {
+  out <- rep(NA_character_, length(readable))
+  out[fixed] <- readable[fixed]
+  repeated <- duplicated(readable) | duplicated(readable, fromLast = TRUE)
+  plain <- !fixed & !repeated & nchar(readable) <= 64L & grepl(.NAME_PATTERN, readable)
+  out[plain] <- readable[plain]
+  used <- out[!is.na(out)]
+  for (i in order(identities, method = "radix")) {
+    if (!is.na(out[[i]])) next
+    hash <- .fragmentHash(identities[[i]])
+    probe <- 1L
+    repeat {
+      tail <- paste0("_", hash, if (probe > 1L) paste0("_", probe))
+      candidate <- paste0(substr(readable[[i]], 1L, 64L - nchar(tail)), tail)
+      if (!candidate %in% used) break
+      probe <- probe + 1L
+    }
+    out[[i]] <- candidate
+    used <- c(used, candidate)
+  }
+  if (anyDuplicated(out) || any(!grepl(.NAME_PATTERN, out))) {
+    stop("Output component allocation failed its distinctness check.", call. = FALSE)
+  }
+  out
+}
+
+# Component names of one TAR's family, allocated against all sibling TARs.
 .survivalFamily <- function(fmt, opts, tar, output, multi) {
-  base <- if (multi) tar else output
-  switch(fmt,
-    recurrent_events = list(events = if (multi) paste0(tar, "_events") else "events",
-                            risk_sets = if (multi) paste0(tar, "_risk_sets") else "risk_sets"),
-    multi_state = list(msdata = base, transition_ref = "transitionRef"),
-    list(primary = base))
+  tars <- if (multi) .outputSortedNames(opts[["tars"]]) else tar
+  part_names <- switch(fmt, recurrent_events = c("events", "risk_sets"),
+                       multi_state = "msdata", "primary")
+  readable <- identities <- character(0)
+  fixed <- logical(0)
+  for (t in tars) for (p in part_names) {
+    readable <- c(readable, if (identical(fmt, "recurrent_events")) {
+      if (multi) paste0(t, "_", p) else p
+    } else if (multi) t else output)
+    identities <- c(identities, .jcsCanonical(list(output, t, p)))
+    fixed <- c(fixed, !identical(fmt, "recurrent_events"))
+  }
+  if (identical(fmt, "multi_state")) {
+    readable <- c(readable, "transitionRef")
+    identities <- c(identities, .jcsCanonical(list(output, "", "transition_ref")))
+    fixed <- c(fixed, FALSE)
+  }
+  allocated <- .outputAllocateComponents(readable, identities, fixed)
+  pick <- vapply(part_names, function(p) .jcsCanonical(list(output, tar, p)), "")
+  out <- as.list(stats::setNames(allocated[match(pick, identities)], part_names))
+  if (identical(fmt, "multi_state")) out$transition_ref <- tail(allocated, 1L)
+  out
 }
 
 # Declared columns of a survival component (A-5; v1 shapes for the counting
@@ -1008,17 +1064,18 @@
     if (!nrow(ev)) return(NULL)
     ix <- which(as.character(ev$row_key) == as.character(key))
     if (!length(ix)) return(NULL)
+    ix <- ix[.outputOrderRows(ev[ix, , drop = FALSE], attr(ev, "source_ordering", exact = TRUE))]
     data.frame(outcome = outcome_names[[p]], priority = p, date = ev$start_date[ix],
                source = as.character(ev$source_ns[ix] %||% rep("", length(ix))),
-               key = as.character(ev$event_id[ix]), stringsAsFactors = FALSE)
+               key = as.character(ev$event_id[ix]), source_order = seq_along(ix), stringsAsFactors = FALSE)
   })
   parts <- Filter(Negate(is.null), parts)
   if (!length(parts)) {
     return(data.frame(outcome = character(0), priority = integer(0), date = as.Date(character(0)),
-                      source = character(0), key = character(0), stringsAsFactors = FALSE))
+                      source = character(0), key = character(0), source_order = integer(0), stringsAsFactors = FALSE))
   }
   x <- do.call(rbind, parts)
-  x[order(x$date, x$priority, x$source, .reduceKeyOrder(x$key), method = "radix"), , drop = FALSE]
+  x[order(x$date, x$priority, x$source_order, method = "radix"), , drop = FALSE]
 }
 
 # Emit the component frames of one TAR.
@@ -1043,8 +1100,7 @@
     entry_d <- days(entry[[i]], i)
     if (nrow(ev)) {
       pick <- if (identical(order_mode, "last")) {
-        ev[order(-as.numeric(ev$date), ev$priority, -.reduceKeyOrder(ev$source),
-                 -.reduceKeyOrder(ev$key), method = "radix"), , drop = FALSE][1L, ]
+        ev[order(-as.numeric(ev$date), ev$priority, -ev$source_order, method = "radix"), , drop = FALSE][1L, ]
       } else ev[1L, ]
       exit_d <- days(pick$date, i)
       cbind(ident(i), data.frame(outcome_name = outcome_label %||% pick$outcome, event = 1L,
@@ -1287,7 +1343,16 @@
 .outputSourceHasValue <- function(ctx, idn) {
   if (identical(idn$kind, "interval")) return(FALSE)
   meta <- idn$source$meta
-  if (identical(meta$availability, "unavailable")) return(TRUE)
+  if (identical(meta$availability, "unavailable")) {
+    node <- ctx[["ir"]][["events"]][[idn$name]]
+    if (!is.null(node[["value"]][["column"]])) return(TRUE)
+    # Missing physical tables have no available roles. Infer only the
+    # declared numeric role from the packaged CDM map, never invent a value
+    # role for conditions, notes or another nonmeasurement source.
+    version <- .roleRegistry(ctx[["handle"]])$cdm_version
+    rows <- .roleRecordsCsv(version)
+    return(!is.null(rows) && any(rows$table_name == node[["table"]] & nzchar(rows$value_col)))
+  }
   "value" %in% meta$roles
 }
 
@@ -1339,8 +1404,9 @@
   rows <- list()
   for (i in seq_along(srcs)) {
     idn <- .outputSourceIdentities(ctx, srcs[[i]], paste0("/outputs/", name, "/options/sources/", i - 1L))
-    for (a in analyses_of(idn$name, idn$kind, .outputSourceHasValue(ctx, idn))) {
-      .outputRowCap(length(rows) + length(idn$ids), name)
+    analyses <- analyses_of(idn$name, idn$kind, .outputSourceHasValue(ctx, idn))
+    .outputRowCap(length(rows) + as.numeric(length(idn$ids)) * length(analyses), name)
+    for (a in analyses) {
       for (cid in idn$ids) {
         rows[[length(rows) + 1L]] <- data.frame(source = idn$name, source_index = i,
                                                 concept_id = cid, analysis = a,
@@ -1384,8 +1450,7 @@
   rows <- got$rows
   if (!"v" %in% names(rows)) rows$v <- rep(NA_real_, nrow(rows))
   if (!"concept_id" %in% names(rows)) rows$concept_id <- rep(NA_integer_, nrow(rows))
-  ord <- c("row_key", intersect(.reduceSourceOrdering(src), names(rows)))
-  if (nrow(rows)) rows <- rows[.reduceOrderRows(rows, ord), , drop = FALSE]
+  if (nrow(rows)) rows <- rows[.outputOrderRows(rows, st$ordering), , drop = FALSE]
   rows
 }
 
@@ -2019,6 +2084,7 @@
     st <- .reduceStream(ctx, cons, src, NULL, .fragmentName("ox", name, paste0("s_", i), ctx = ctx),
                         extra = extra)
     rows <- .reduceFetch(ctx, st, order = c("row_key", "start_date"), field = path)
+    rows$.source_order <- order(.outputOrderRows(rows, st$ordering))
     rows$source <- rep(src$name, nrow(rows))
     if (!"v" %in% names(rows)) rows$v <- rep(NA_real_, nrow(rows))
     if (!"unit_concept_id" %in% names(rows)) rows$unit_concept_id <- rep(NA_integer_, nrow(rows))
@@ -2028,8 +2094,8 @@
     if (!"member_table" %in% names(rows)) rows$member_table <- rep("", nrow(rows))
     all_rows[[length(all_rows) + 1L]] <- rows
   }
-  keep_cols <- c("row_key", "person_id", "start_date", "end_date", "event_id", "source_ns", "source",
-                 "v", "unit_concept_id", "concept_id", "visit_id", "visit_type", "member_table", others)
+  keep_cols <- unique(c("row_key", "person_id", "start_date", "end_date", "event_id", "source_ns", "source",
+                 "v", "unit_concept_id", "concept_id", "visit_id", "visit_type", "member_table", ".source_order", others))
   .outputRowCap(sum(vapply(all_rows, nrow, integer(1))), name)
   rows <- if (length(all_rows)) do.call(rbind, lapply(all_rows, function(r) r[keep_cols])) else NULL
   if (is.null(rows)) {
@@ -2037,23 +2103,30 @@
                        end_date = as.Date(character(0)), event_id = numeric(0), source_ns = character(0),
                        source = character(0), v = numeric(0), unit_concept_id = integer(0),
                        concept_id = integer(0), visit_id = numeric(0), visit_type = integer(0),
-                       member_table = character(0), stringsAsFactors = FALSE)
+                       member_table = character(0), .source_order = integer(0), stringsAsFactors = FALSE)
     for (o in others) rows[[o]] <- vector(mode = "logical", length = 0L)
   }
   if (per_event) {
-    # each physical event once per person, attributed to the person's first
-    # episode (its index for relative projections)
-    first <- !duplicated(as.character(roster$person_id))
-    rows <- rows[as.character(rows$row_key) %in% as.character(keys[first]), , drop = FALSE]
+    # Union the scoped events of every visit/parent; attribute each physical
+    # event to its first associated episode for index-relative projections.
+    rows <- rows[.reduceOrderRows(rows, c("person_id", "row_key", ".source_order")), , drop = FALSE]
     rows <- rows[!duplicated(paste(rows$person_id, rows$source_ns, rows$member_table, rows$event_id)), , drop = FALSE]
   }
-  o <- .reduceOrderRows(rows, c("person_id", "row_key", "start_date", "source_ns", "member_table", "event_id"))
+  o <- .reduceOrderRows(rows, c("person_id", if (!per_event) "row_key", "start_date", "source_ns", ".source_order"))
   rows <- rows[o, , drop = FALSE]
-  rows <- .reduceTemporal(rows, opts[["temporal"]], c("start_date", "source_ns", "member_table", "event_id"))
+  if (per_event) {
+    rows$.owner_row_key <- rows$row_key
+    rows$row_key <- rows$person_id
+  }
+  rows <- .reduceTemporal(rows, opts[["temporal"]], c("start_date", "source_ns", ".source_order"))
+  if (per_event) {
+    rows$row_key <- rows$.owner_row_key
+    rows$.owner_row_key <- NULL
+  }
   .outputRowCap(nrow(rows), name)
   at <- match(as.character(rows$row_key), as.character(keys))
   idx <- index[at]
-  grp <- as.character(rows$row_key)
+  grp <- as.character(if (per_event) rows$person_id else rows$row_key)
   event_number <- as.integer(stats::ave(seq_len(nrow(rows)), grp, FUN = seq_along))
   int <- function() .fragmentColumn("integer", TRUE, "measure")
   ident_cols <- if (per_event) {
@@ -2194,11 +2267,15 @@
     hi <- rows$start_date[[i]] + within[[2L]]
     ok <- rrows$start_date[cand] >= lo & rrows$start_date[cand] <= hi
     if (same_source[[i]] && exclude_self) {
-      ok <- ok & !(as.character(rrows$event_id[cand]) == as.character(rows$event_id[[i]]))
+      same <- as.character(rrows$event_id[cand]) == as.character(rows$event_id[[i]])
+      for (col in intersect(c("source_ns", "member_table"), intersect(names(rows), names(rrows)))) {
+        same <- same & as.character(rrows[[col]][cand]) == as.character(rows[[col]][[i]])
+      }
+      ok <- ok & !same
     }
-    if (identical(distinct_by, "concept")) ok <- ok & !is.na(rrows$concept_id[cand]) &
+    if (identical(distinct_by, "concept")) ok <- ok & !is.na(rows$concept_id[[i]]) & !is.na(rrows$concept_id[cand]) &
       !(rrows$concept_id[cand] %in% rows$concept_id[[i]])
-    if (identical(distinct_by, "visit")) ok <- ok & !is.na(rrows$visit_id[cand]) &
+    if (identical(distinct_by, "visit")) ok <- ok & !is.na(rows$visit_id[[i]]) & !is.na(rrows$visit_id[cand]) &
       !(as.character(rrows$visit_id[cand]) %in% as.character(rows$visit_id[[i]]))
     ok[is.na(ok)] <- FALSE
     if (any(ok)) out[[i]] <- as.integer(min(rrows$start_date[cand][ok]) - rows$start_date[[i]])
@@ -2249,6 +2326,7 @@
                         .fragmentName("ox", name, paste0("s_", i), ctx = ctx), extra = extra,
                         overlap = match_mode %in% c("overlaps", "ends_in"))
     rows <- .reduceFetch(ctx, st, order = c("row_key", "start_date"), field = paste0(field, "/sources/", i - 1L))
+    rows$.source_order <- order(.outputOrderRows(rows, st$ordering))
     if (!"concept_id" %in% names(rows)) rows$concept_id <- rep(NA_integer_, nrow(rows))
     if (!nrow(rows)) next
     rows$end_date[is.na(rows$end_date)] <- rows$start_date[is.na(rows$end_date)]
@@ -2270,27 +2348,25 @@
     if (!identical(select, "all")) {
       g <- paste(rows$row_key, if (by_concept) rows$concept_id else "")
       o <- switch(select,
-        first = order(g, rows$start_date, rows$end_date, .reduceKeyOrder(rows$event_id), method = "radix"),
-        last = order(g, -as.numeric(rows$start_date), -as.numeric(rows$end_date), -.reduceKeyOrder(rows$event_id),
-                     method = "radix"),
+        first = order(g, rows$.source_order, method = "radix"),
+        last = order(g, -rows$.source_order, method = "radix"),
         nearest = order(g, abs(as.numeric(rows$start_date - rows$anchor)), rows$start_date,
-                        .reduceKeyOrder(rows$event_id), method = "radix"))
+                        rows$.source_order, method = "radix"))
       rows <- rows[o, , drop = FALSE]
       rank <- stats::ave(seq_len(nrow(rows)), g[o], FUN = seq_along)
       rows <- rows[rank <= n_sel, , drop = FALSE]
     }
     parts[[length(parts) + 1L]] <- rows[c("row_key", "person_id", "source", "concept_id", "start_date",
-                                          "end_date", "event_id")]
+                                          "end_date", "event_id", ".source_order")]
   }
   rows <- if (length(parts)) do.call(rbind, parts) else
     data.frame(row_key = keys[0], person_id = roster$person_id[0], source = character(0),
                concept_id = integer(0), start_date = as.Date(character(0)), end_date = as.Date(character(0)),
-               event_id = numeric(0), stringsAsFactors = FALSE)
+               event_id = numeric(0), .source_order = integer(0), stringsAsFactors = FALSE)
   at <- match(as.character(rows$row_key), as.character(keys))
   rows$start_days <- as.integer(rows$start_date - index[at])
   rows$end_days <- as.integer(rows$end_date - index[at])
-  o <- order(.reduceKeyOrder(rows$row_key), rows$source, rows$start_days, rows$end_days, rows$concept_id,
-             .reduceKeyOrder(rows$event_id), method = "radix")
+  o <- order(.reduceKeyOrder(rows$row_key), rows$source, rows$.source_order, method = "radix")
   rows <- rows[o, , drop = FALSE]
   .outputRowCap(nrow(rows), name)
   frame <- data.frame(row_id = rows$row_key, cohort_row_id = rows$row_key, person_id = rows$person_id,

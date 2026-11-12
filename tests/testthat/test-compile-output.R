@@ -460,7 +460,9 @@ test_that("empty long and person sparse sources retain their typed empty schemas
   for (b in names(.ws7_out_backends)) {
     for (fmt in c("long", "sparse")) {
       plan <- .ws7_scenario_plan(list(), output = list(format = fmt,
-        grain = if (fmt == "sparse") "person" else "episode", sources = list(list(event = "lab"))))
+        grain = if (fmt == "sparse") "person" else "episode", sources = list(list(event = "lab")),
+        options = if (fmt == "sparse") list(analyses = list("binary")) else
+          list(columns_derived = list("value"))))
       plan$variables <- NULL
       res <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, plan, .ws7_scenario_frame(7002))
       expect_identical(nrow(res$compiled$components$o$frame), 0L, info = paste(b, fmt))
@@ -546,7 +548,8 @@ test_that("sparse panels retain exposure-only periods and dense unavailable colu
   res <- .ws7_scenario_run(.ws7_out_backends$sqlite$handle, plan, .ws7_scenario_frame(7002))
   expect_identical(nrow(res$frame), 2L)
   expect_identical(res$compiled$status, "unavailable")
-  expect_true(all(is.na(res$frame[c("notes_binary", "notes_count", "notes_mean", "notes_last")])))
+  expect_true(all(is.na(res$frame[c("notes_binary", "notes_count")])))
+  expect_false(any(c("notes_mean", "notes_last") %in% names(res$frame)))
 })
 
 test_that("temporal exposed days exclude tolerated observation gaps", {
@@ -603,4 +606,103 @@ test_that("joined inputs must retain the consumer roster namespace", {
   .ws4_expect_rejection(.compileOutput(run$cctx, node, list(population = pop, outputs = co,
                                                           symbol = "J", mode = "memory")),
                         pattern = "different grain or roster namespace")
+})
+
+test_that("unavailable sources retain the declared value-role schema", {
+  plan <- .ws7_scenario_plan(list(), output = list(format = "person_period", options = list(
+    sources = list(list(event = "dx"), list(event = "lab")), bins = list(width = 20L),
+    window = list(start = -10L, end = 9L, anchor = "index"), analyses = list("count", "mean", "last"))))
+  plan$variables <- NULL
+  plan$events$lab$value <- NULL
+  h <- .ws7_out_backends$sqlite$handle
+  expected <- .ws7_scenario_run(h, plan, .ws7_scenario_frame(7001))$compiled$components$o$frame
+  run <- .ws7_ctx(h, plan)
+  on.exit(.ws7_close(run), add = TRUE)
+  # Unavailable fragments deliberately have no physically available roles.
+  .eventUnavailable(run$cctx, "dx", "condition_occurrence")
+  .eventUnavailable(run$cctx, "lab", "measurement")
+  pop <- .ws7_population(run, "t", .ws7_scenario_frame(7001), cap_end = FALSE)
+  actual <- .planCompileOutputs(run$cctx, populations = list(t = pop))$o
+  expect_identical(names(actual$components$o$frame), names(expected))
+  expect_identical(actual$status, "unavailable")
+  features <- c(paste0("dx_", c(.WS7$DX, .WS7$DX2), "_count"), "lab_count", "lab_mean", "lab_last")
+  expect_true(all(is.na(actual$components$o$frame[features])))
+})
+
+test_that("named TAR components survive maximal names and generated-name collisions", {
+  tar_a <- paste(rep("a", 64L), collapse = "")
+  tar_b <- paste0(substr(tar_a, 1L, 63L), "b")
+  tars <- stats::setNames(rep(list(list(start = 1L, end = 90L, anchor = "index")), 2L), c(tar_a, tar_b))
+  plan <- .ws7_sv_plan(list(format = "recurrent_events", event_order = "all", complete = TRUE, tars = tars))
+  plan$outputs$o$options$tar <- NULL
+  res <- .ws7_scenario_run(.ws7_out_backends$sqlite$handle, plan, .ws7_sv_frame(c(7101, 7104)))$compiled
+  expect_identical(length(res$components), 4L)
+  expect_true(all(nchar(names(res$components)) <= 64L))
+  expect_identical(anyDuplicated(names(res$components)), 0L)
+  expect_true(all(vapply(res$components, function(p) nrow(p$frame) >= 2L, logical(1))))
+  # A hash collision must not overwrite a sibling component.
+  testthat::local_mocked_bindings(.fragmentHash = function(key) "0000000000")
+  a <- .survivalFamily("recurrent_events", plan$outputs$o$options, tar_a, "o", TRUE)
+  b <- .survivalFamily("recurrent_events", plan$outputs$o$options, tar_b, "o", TRUE)
+  allocated <- unlist(c(a, b), use.names = FALSE)
+  expect_identical(anyDuplicated(allocated), 0L)
+  expect_true(all(nchar(allocated) <= 64L))
+  expect_identical(a, .survivalFamily("recurrent_events", plan$outputs$o$options, tar_a, "o", TRUE))
+  # User TAR names are preserved; a colliding generated reference is renamed.
+  opts <- list(tars = list(transitionRef = list(start = 1L, end = 90L)))
+  family <- .survivalFamily("multi_state", opts, "transitionRef", "o", TRUE)
+  expect_identical(family$msdata, "transitionRef")
+  expect_false(identical(family$transition_ref, "transitionRef"))
+})
+
+test_that("a single named TAR keeps its declared component name", {
+  plan <- .ws7_sv_plan(list(tars = list(short = list(start = 1L, end = 30L, anchor = "index"))))
+  plan$outputs$o$options$tar <- NULL
+  res <- .ws7_scenario_run(.ws7_out_backends$sqlite$handle, plan, .ws7_sv_frame(c(7101, 7104)))$compiled
+  expect_identical(names(res$components), "short")
+  expect_identical(res$candidates[[1L]]$requested_symbol, "D.short")
+})
+
+test_that("person event logs union all associated episodes before physical deduplication", {
+  plan <- .ws7_scenario_plan(list(), output = list(format = "long", sources = list(list(event = "members")),
+    options = list(unit = "event", columns_derived = list("event_number", "days_since_previous"))), events = list(
+      episodes = list(table = "episode", concept_set = list(concepts = list(32531))),
+      members = list(episode_members = list(episode = list(event = "episodes")))))
+  plan$variables <- NULL
+  plan$populations$t$index$source <- list(event = "episodes")
+  frame <- data.frame(subject_id = 3301L, cohort_start_date = as.Date("2020-01-01"),
+                      cohort_end_date = as.Date("2020-12-31"), index_source = "episodes",
+                      index_key = c("3301001", "3301002"))
+  for (b in names(.ws7_out_backends)) {
+    f <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, plan, frame)$compiled$components$o$frame
+    # The shared January 1 fill appears once; the distinct January 15 and
+    # February 10 fills from the two parents must both survive.
+    expect_identical(f$start_date, c(0L, 14L, 40L), info = b)
+    expect_identical(f$event_number, 1:3, info = b)
+    expect_identical(f$days_since_previous, c(NA_integer_, 14L, 26L), info = b)
+    expect_false(any(c("row_id", "cohort_row_id") %in% names(f)), info = b)
+    p <- plan
+    p$outputs$o$options$temporal <- list(event_select = "last")
+    f <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, p, frame)$compiled$components$o$frame
+    expect_identical(f$start_date, 40L, info = b)
+  }
+})
+
+test_that("adapter ordering and relation self-exclusion keep physical table identity", {
+  rows <- data.frame(row_key = "1", source_ns = "members",
+    start_date = as.Date(c("2020-01-10", "2020-01-10")), end_date = as.Date(c("2020-01-10", "2020-01-10")),
+    member_table = c("drug_exposure", "condition_occurrence"), event_id = c("1", "99"),
+    parent_event_id = "5", concept_id = c(2L, 3L), visit_id = c(NA_character_, "2"))
+  attr(rows, "source_ordering") <- c("row_key", "start_date", "source_ns", "member_table", "event_id", "parent_event_id")
+  got <- .survivalEpisodeEvents(list(a = rows), "a", "1")
+  expect_identical(got$key, c("99", "1"))
+  # Equal event IDs in different physical tables are not the same event.
+  rows$event_id <- "1"
+  rel <- list(within = list(0L, 0L), exclude_self = TRUE)
+  expect_identical(.longRelation(rows[1L, ], rows, rel, TRUE), 0L)
+  rel$distinct_by <- "visit"
+  expect_identical(.longRelation(rows[1L, ], rows, rel, TRUE), NA_integer_)
+  rows$concept_id[[1L]] <- NA_integer_
+  rel$distinct_by <- "concept"
+  expect_identical(.longRelation(rows[1L, ], rows, rel, TRUE), NA_integer_)
 })
