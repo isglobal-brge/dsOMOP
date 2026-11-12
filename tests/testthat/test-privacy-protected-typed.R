@@ -276,3 +276,25 @@ test_that("typed releases are history-free and carry no secrets", {
   expect_false(any(c("seed", "fingerprint", "token", "remaining_epsilon",
                      "spent_epsilon") %in% names(first)))
 })
+
+test_that("after 0, 1 and 10,000 earlier calls the answer and status are unchanged", {
+  .release_state()
+  x <- .typed_table(n = 9)
+  first <- .typed_release(x, statistic = "count")
+  status <- omopDpStatusDS()
+  expect_identical(.typed_release(x, statistic = "count"), first)
+  # 10,000 repeated questions (about 10 ms each), then distinct ones.
+  elapsed <- system.time({
+    for (i in seq_len(10000L)) .typed_release(x, statistic = "count")
+    for (k in rep(1:3, 20L)) {
+      .typed_release(x, statistic = "bounded_record_count",
+                     reducer = "records", max_contributions = k)
+    }
+  })[["elapsed"]]
+  message("[typed-history] 10060 calls in ", round(elapsed, 1), " s")
+  expect_identical(.typed_release(x, statistic = "count"), first)
+  # A worker restart replays as well, and the status is the same.
+  .release_restart()
+  expect_identical(.typed_release(x, statistic = "count"), first)
+  expect_identical(omopDpStatusDS(), status)
+})

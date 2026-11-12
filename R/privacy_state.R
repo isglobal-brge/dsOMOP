@@ -439,10 +439,11 @@
     if (!nzchar(domain)) domain <- derived$domain
     if (!nzchar(snapshot_id)) snapshot_id <- derived$snapshot_id
   }
-  if (!grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", domain)) {
+  if (!grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\\z", domain, perl = TRUE)) {
     stop("dsomop.dp.domain contains unsupported characters.", call. = FALSE)
   }
-  if (!grepl("^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,255}$", snapshot_id)) {
+  if (!grepl("^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,255}\\z", snapshot_id,
+             perl = TRUE)) {
     stop("dsomop.dp.snapshot_id contains unsupported characters.",
          call. = FALSE)
   }

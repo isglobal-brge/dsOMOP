@@ -34,7 +34,8 @@
                       getOption("default.dsomop.release.public_scales", NULL))
   if (!is.null(custom)) {
     if (!is.list(custom) || is.null(names(custom)) || anyNA(names(custom)) ||
-        any(!grepl("^[a-z][a-z0-9_]{0,63}$", names(custom)))) {
+        any(!grepl("^[a-z][a-z0-9_]{0,63}\\z", names(custom),
+                   perl = TRUE))) {
       stop("dsomop.release.public_scales must be a named list of bounds.",
            call. = FALSE)
     }

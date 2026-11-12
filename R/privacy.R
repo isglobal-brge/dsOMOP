@@ -343,7 +343,8 @@
       spec$population_id, "population_id"
     )
     if (!is.character(population_id) ||
-        !grepl("^[A-Za-z0-9][A-Za-z0-9._:@+/-]{0,255}$", population_id)) {
+        !grepl("^[A-Za-z0-9][A-Za-z0-9._:@+/-]{0,255}\\z", population_id,
+               perl = TRUE)) {
       stop("DP population_id must be one valid public compatibility label.",
            call. = FALSE)
     }
