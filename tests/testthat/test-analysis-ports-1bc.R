@@ -289,12 +289,12 @@ test_that("(b) plp.covariate_summary splits prevalence by an outcome concept set
   })
 })
 
-test_that("(b) cohort_overlap counts both / A-only / B-only / either", {
+test_that("(b) cohort_overlap counts the disjoint regions both / A-only / B-only", {
   h <- p1bc_handle()
   on.exit(cleanup_handle(h))
   withr::with_options(p1bc_opts(), {
     # diabetes = {1,3,5,7,9,11} (6); COPD = {5,7,9,13} (4).
-    # both = {5,7,9} = 3; a_only = {1,3,11} = 3; b_only = {13} = 1; either = 7.
+    # both = {5,7,9} = 3; a_only = {1,3,11} = 3; b_only = {13} = 1.
     a <- p1bc_diabetes(h, id = 1L)
     b <- p1bc_copd(h, id = 2L)
     df <- .omopAnalysisRun(h, "dsomop:cohortdx.cohort_overlap",
@@ -302,8 +302,10 @@ test_that("(b) cohort_overlap counts both / A-only / B-only / either", {
     expect_true(all(c("category", "n") %in% names(df)))
     # Long format: each surviving region is suppressed + banded independently.
     expect_true(all(df$n %% 5 == 0 | is.na(df$n)))
-    got <- stats::setNames(df$n, df$category)
-    expect_equal(unname(got[["either"]]), 5)        # 7 persons -> banded to 5
+    # Only the three disjoint regions: the redundant union is never released
+    # (union - a_only - b_only would pin a suppressed 'both').
+    expect_true(all(df$category %in% c("both", "a_only", "b_only")))
+    expect_false("either" %in% df$category)
     expect_false("b_only" %in% df$category)         # 1 person -> dropped
   })
 })

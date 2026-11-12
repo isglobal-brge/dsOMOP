@@ -360,15 +360,21 @@ test_that("model admission follows the DataSHIELD glm rules", {
 })
 
 test_that("CohortMethod outcome releases need distinct outcome persons", {
-  withr::local_options(list(nfilter.tab = 3))
+  withr::local_options(list(nfilter.tab = 3, nfilter.subset = 3,
+                            dsomop.nfilter.band = 5))
   expect_identical(.omopCmOutcomeSupported(c(0, 2, 3, NA)),
                    c(FALSE, FALSE, TRUE, FALSE))
-  expect_true(is.na(.omopCmSupportedOutcomes(
-    list(outcomes = 100, outcome_persons = 1),
-    list(outcomes = 0, outcome_persons = 1))))
-  expect_equal(.omopCmSupportedOutcomes(
-    list(outcomes = 10, outcome_persons = 2),
-    list(outcomes = 4, outcome_persons = 1)), 14)
+  arm <- function(outcomes, outcome_persons, persons = 100,
+                  person_days = 1000) {
+    list(persons = persons, person_days = person_days, outcomes = outcomes,
+         outcome_persons = outcome_persons)
+  }
+  expect_true(is.na(.omopCmSupportedOutcomes(arm(100, 1), arm(0, 1))))
+  # Each arm needs its own outcome persons: a supported total of 3 outcome
+  # persons split 2 + 1 is not enough.
+  expect_true(is.na(.omopCmSupportedOutcomes(arm(10, 2), arm(4, 1))))
+  # Released total = band(13) + band(7) = 10 + 5, never band(20).
+  expect_equal(.omopCmSupportedOutcomes(arm(13, 13), arm(7, 7)), 15)
 })
 
 test_that("discovery releases reviewed capabilities, not occupancy", {
