@@ -84,7 +84,7 @@
       "Number of patients with at least 1 Visit",
       "Number of persons with at least one device, by device_concept_id",
       "Number of device records, by device_concept_id",
-      "Number of device records by device start month",
+      "Number of persons by device exposure start month, by device_concept_id",
       "Distribution of age by device_concept_id"
     ),
     domain = c(
@@ -123,7 +123,7 @@
       "measurement_concept_id", "measurement_concept_id", NA,
       "measurement_concept_id", "measurement_concept_id", "calendar month",
       NA, NA, NA, NA, "device_concept_id", "device_concept_id",
-      "calendar month", "device_concept_id"
+      "device_concept_id", "device_concept_id"
     ),
     stratum_2_name = c(
       NA, NA, NA, NA, NA, "gender_concept_id", "ethnicity_concept_id", NA,
@@ -133,8 +133,8 @@
       "gender_concept_id", NA, NA, NA, "calendar month", NA,
       "gender_concept_id", NA, NA, NA, NA, NA, NA, "calendar month", NA,
       "gender_concept_id", NA, NA, NA, "calendar month", NA,
-      "gender_concept_id", "unit_concept_id", NA, NA, NA, NA, NA, NA, NA, NA,
-      "gender_concept_id"
+      "gender_concept_id", "unit_concept_id", NA, NA, NA, NA, NA, NA, NA,
+      "calendar month", "gender_concept_id"
     ),
     result_table = c(
       "achilles_results", "achilles_results", "achilles_results",
@@ -172,7 +172,7 @@
       "dist", "dist", "dist", "dist", "dist", "record", "person", "record",
       "person", "dist", "dist", "record", "person", "record", "person",
       "dist", "dist", "record", "record", "person", "person", "person",
-      "person", "person", "record", "record", "dist"
+      "person", "person", "record", "person", "dist"
     ),
     stringsAsFactors = FALSE
   )
@@ -233,6 +233,10 @@
     stop("At least one reviewed Achilles distribution is required.",
          call. = FALSE)
   }
+  # 506 (age at death by gender) stays refused: upstream computes it over death
+  # rows, and an imported summary cannot establish that each person contributes
+  # one death. A precomputed row cannot prove its own reducer; only a live port
+  # with a verified one-death-per-person reducer may serve that estimand.
   one_per_person <- c(
     103L, 104L, 105L, 106L, 107L,
     203L, 206L, 403L, 406L, 603L, 606L,
