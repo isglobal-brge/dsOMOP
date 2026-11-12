@@ -2,7 +2,7 @@
 import copy
 import unittest
 
-from compare_results import diff_nodes
+from compare_results import diff_nodes, result_differences
 
 
 class CanonicalEqualityTest(unittest.TestCase):
@@ -28,6 +28,15 @@ class CanonicalEqualityTest(unittest.TestCase):
         diff_nodes(baseline, current, "result", differences)
         self.assertTrue(differences)
         self.assertEqual(differences[0]["aspect"], "canonical_payload")
+
+    def test_same_linkage_with_changed_raw_pseudonyms_is_different(self):
+        baseline = dict(fn=".planExecute", result={"kind": "null"},
+                        volatile={"raw_token_sha256": "baseline-key"})
+        current = dict(baseline, volatile={"raw_token_sha256": "different-key"})
+        differences = result_differences(baseline, current)
+        self.assertEqual(differences[0]["aspect"], "raw_person_tokens")
+        # DP masking must never mask changed pseudonym values.
+        self.assertTrue(result_differences(baseline, current, mask_dp=True))
 
     def test_equal_complete_canonical_forms_are_identical(self):
         node = dict(kind="list", **{"class": ["list"]},

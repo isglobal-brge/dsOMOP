@@ -578,12 +578,27 @@ def norm_msg(m):
     return re.sub(r"(/[^/<>\s]*?)[0-9a-f]{10,}(?=/|\b)", r"\1<rand>", m)
 
 
+def result_differences(a, b, mask_dp=False):
+    """Complete result values plus the raw pseudonym hash, not linkage alone."""
+    left, right = result_node(a), result_node(b)
+    if mask_dp:
+        left, right = mask_keyed_dp(left), mask_keyed_dp(right)
+    differences = []
+    diff_nodes(left, right, "result", differences)
+    field = "assigned_volatile" if a["fn"] in ASSIGN_FNS else "volatile"
+    raw_a = (a.get(field) or {}).get("raw_token_sha256")
+    raw_b = (b.get(field) or {}).get("raw_token_sha256")
+    if raw_a != raw_b:
+        differences.append(dict(path="result", aspect="raw_person_tokens",
+                                detail="raw person-token SHA256 differs: %s -> %s" % (raw_a, raw_b)))
+    return differences
+
+
 def compare_pair(b, c):
     (sb, mb, _), (sc, mc, _) = effective(b), effective(c)
     rec = dict(outcome=None, diffs=[], notes=[])
     if sb == "ok" and sc == "ok":
-        sub = []
-        diff_nodes(result_node(b), result_node(c), "result", sub)
+        sub = result_differences(b, c)
         rec["diffs"] = sub
         rec["outcome"] = "identical" if not sub else "different"
         st = _list_get(c.get("result") or {}, "status")
@@ -723,11 +738,9 @@ def determinism(a, b, masked=None):
             bad[k] = "outcome %s / %s" % (effective(ra)[0], effective(rb)[0])
             continue
         if ra["outcome"]["status"] == "ok":
-            sub = []
-            diff_nodes(result_node(ra), result_node(rb), "result", sub)
+            sub = result_differences(ra, rb)
             if sub and masked is not None:
-                rest = []
-                diff_nodes(mask_keyed_dp(result_node(ra)), mask_keyed_dp(result_node(rb)), "result", rest)
+                rest = result_differences(ra, rb, mask_dp=True)
                 if not rest:
                     masked[k] = "; ".join("%s %s" % (d["path"], d["aspect"]) for d in sub)
                     continue
