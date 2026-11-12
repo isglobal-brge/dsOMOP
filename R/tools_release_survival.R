@@ -283,6 +283,7 @@
                      strata_kind = "independent",
                      cell_keys = coords, cap = 1L,
                      status_of_cell = status_of[feasible],
+                     display_projection = "c8-status-parent-simplex-v1",
                      structural_mask = paste0(
                        "only exits below one day are structural zeros; every ",
                        "window uses the same complete horizon basis"),
@@ -907,12 +908,14 @@
 #' @param sub_c6 C6 builds of the subgroups (raw draws).
 #' @param members Per subgroup list(target, comparator) of person ids.
 #' @param tar Public window; @param outcome_key Outcome identity.
+#' @param combine Optional canonical atom indices for each requested view.
+#' @param family_meta Public family identity, canonical atom keys and view keys.
 #' @return List: rr (per subgroup named vectors), reason (per subgroup),
 #'   built (C8 owner lists: arm, then subgroups), family (the pipeline).
 #' @keywords internal
 .omopReleaseInteractionCoxCore <- function(route, exits, arm_c6, sub_c6,
                                            members, tar, outcome_key,
-                                           combine = NULL) {
+                                           combine = NULL, family_meta = NULL) {
   policy <- route$policy
   mask <- .dsomopReleaseExitMask(tar)
   exits <- .dsomopReleaseExitNormalize(exits, tar)
@@ -1019,6 +1022,12 @@
       max(1L, length(x$nonevent))
     list(stratum = a, n = p$n_signed, status = p$status_signed, h = h)
   })
+  family_basis <- .dsomopReleaseFamilyBasis(arm_export,
+    lapply(sim_pipe$subgroups, function(s) lapply(arms, function(a) {
+      v <- s[[a]]
+      list(stratum = a, n = v$n_signed, status = v$status_signed, h = v$h)
+    })), combine, family_meta, "finite-ipf-feasible-repair-v1")
+  family_basis$status_of_cell <- status_of[feasible]
   export_of <- function(components, reconciliation, parent = NULL) {
     c(list(protocol = .DSOMOP_RELEASE_PROTOCOL, owner = owner_id,
            population = "c6/persons-at-risk/v1", family = "C8",
@@ -1026,6 +1035,7 @@
            statuses = .DSOMOP_RELEASE_EXIT_STATUSES,
            strata_kind = "independent", cell_keys = coords, cap = 1L,
            status_of_cell = status_of[feasible],
+           display_projection = "c8-status-parent-simplex-v1",
            allocation = list(H = .DSOMOP_RELEASE_SURVIVAL_FRACTIONS$C8),
            reconciliation = reconciliation),
       if (!is.null(parent)) list(parent = parent),
@@ -1047,12 +1057,13 @@
         v <- pipe$subgroups[[i]][[a]]
         list(stratum = a, n = v$n_signed, status = v$status_signed, h = v$h)
       })
+      ex <- export_of(comps, paste0(
+        "subgroup_cells_two_way_to_subgroup_status_and_arm_cells"), parent = "arm")
+      ex$family_basis <- c(family_basis, list(view_index = i))
       list(owner = owner_of(paste0(
         "exit-time bin x status per arm within a subgroup of the family on ",
         "the canonical basis ", grid$id)),
-        export = export_of(comps, paste0(
-          "subgroup_cells_two_way_to_subgroup_status_and_arm_cells"),
-          parent = "arm"))
+        export = ex)
     }))
   list(rr = rr, reason = reason, built = built, family = pipe)
 }

@@ -109,3 +109,9 @@ The report also retains per-scenario repair counts and paired point-estimate,
 standard-error, finite-fit, informativeness and coverage changes against the
 pre-repair runs. Refits use a deterministic seed derived from the released
 basis, so even a rounding-scale basis change can change the simulated SE.
+
+The subsequent interaction pooling fix exports the complete signed canonical
+family and its public view map. It changes the payload after fitting; it does
+not change the server's draws, projections, estimates or uncertainty inputs.
+The retained final source hashes identify the estimator revision used by the
+100-replicate study, before that export-only addition.

@@ -1236,6 +1236,19 @@
   } else NULL
   node_counts <- if (is.null(age_atoms)) level_counts else age_atoms$nodes
   combine <- if (is.null(age_atoms)) NULL else age_atoms$combine
+  kind <- tolower(params$subgroup_kind %||% "concept")
+  atom_keys <- if (!is.null(age_atoms)) paste0("age5=", age_atoms$keys) else {
+    switch(kind, sex = c("gender=8507", "gender=8532", "gender=other-or-unknown"),
+           concept = c("concept=present", "concept=absent"), overall = "all")
+  }
+  family_meta <- list(
+    family_id = if (identical(kind, "concept")) {
+      list(kind = kind, concept_id = as.character(params$subgroup_concept_id),
+           domain_code = as.character(params$subgroup_domain_code %||% "0"))
+    } else list(kind = if (identical(kind, "age")) "age5" else kind),
+    atom_keys = atom_keys,
+    view_keys = if (is.null(age_atoms)) atom_keys else
+      vapply(subgroups, `[[`, character(1L), "label"))
   node_c6 <- if (overall_only) list(arm_c6) else {
     lapply(node_counts, function(lv) {
       .dsomopReleaseBuildC6(route$policy, route$protection,
@@ -1245,7 +1258,8 @@
     })
   }
   sub_c6 <- if (overall_only) node_c6 else {
-    .dsomopReleaseC6Family(arm_c6, node_c6, combine = combine)
+    .dsomopReleaseC6Family(arm_c6, node_c6, combine = combine,
+                           family_meta = family_meta)
   }
   family_kind <- if (is.null(age_atoms)) {
     tolower(params$subgroup_kind %||% "concept")
@@ -1275,7 +1289,8 @@
         target = lv$target$frame$person_id %||% character(0),
         comparator = lv$comparator$frame$person_id %||% character(0)))
       cox <- .omopReleaseInteractionCoxCore(route, exits, arm_c6, node_c6,
-                                            members, tar, outcome_key, combine)
+                                            members, tar, outcome_key, combine,
+                                            family_meta = family_meta)
       for (i in seq_along(cox$built)[-1L]) {
         cox$built[[i]]$label_component <- .dsomopReleaseFamilyLabel(
           cox$built[[i]], route$policy$release_epsilon, family_kind, "C8")
@@ -1339,7 +1354,7 @@
 #' of atoms, checked against the level's own member set.
 #'
 #' @return List: \code{nodes} (per atom, target and comparator frames) and
-#'   \code{combine} (atom indices per level).
+#'   \code{combine} (atom indices per level), and \code{keys} (public atom IDs).
 #' @keywords internal
 .omopCmInteractionAgeAtoms <- function(handle, cohorts, tar, arms,
                                        level_counts, params) {
@@ -1402,7 +1417,7 @@
       }
     }
   }
-  list(nodes = nodes, combine = combine)
+  list(nodes = nodes, combine = combine, keys = atom_keys)
 }
 
 # --- C7/C8: native distributions -----------------------------------------------

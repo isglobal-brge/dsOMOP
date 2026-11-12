@@ -685,9 +685,11 @@
 #' @param parent C6 built of the two arms.
 #' @param nodes List of C6 builts (same arm strata) of the family's nodes.
 #' @param combine NULL, or a list of node-index vectors (one per level).
+#' @param family_meta Public family identity, canonical atom keys and view keys.
 #' @return List of C6 builts, one per level, with reconciled strata and export.
 #' @keywords internal
-.dsomopReleaseC6Family <- function(parent, nodes, combine = NULL) {
+.dsomopReleaseC6Family <- function(parent, nodes, combine = NULL,
+                                   family_meta = NULL) {
   arms <- parent$strata$stratum
   pexp <- parent$export$components
   for (a in seq_along(arms)) {
@@ -721,8 +723,10 @@
       "subgroup nodes reconciled per arm to the arms' components ",
       "(uniform shifts; status two-way; displayed bounded simplex)")
   }
-  if (is.null(combine)) return(nodes)
-  lapply(combine, function(idx) {
+  basis <- .dsomopReleaseFamilyBasis(parent$export$components,
+    lapply(nodes, function(b) b$export$components), combine, family_meta,
+    "bounded-simplex-v1")
+  out <- if (is.null(combine)) nodes else lapply(combine, function(idx) {
     out <- nodes[[idx[[1L]]]]
     for (a in seq_along(arms)) {
       i <- which(out$strata$stratum == arms[[a]])
@@ -744,6 +748,28 @@
     out$export$atoms <- length(idx)
     out
   })
+  for (i in seq_along(out)) {
+    out[[i]]$export$family_basis <- c(basis, list(view_index = i))
+  }
+  out
+}
+
+# Complete signed interaction atoms are retained before view coarsening.
+# These public names identify the same partition across sites; no membership
+# identifiers or raw sufficient statistics are exported.
+.dsomopReleaseFamilyBasis <- function(arms, atoms, combine, meta, projection) {
+  keys <- meta$atom_keys %||% paste0("atom=", seq_along(atoms))
+  views <- combine %||% lapply(seq_along(atoms), function(i) i)
+  view_keys <- meta$view_keys %||% paste0("view=", seq_along(views))
+  stopifnot(length(keys) == length(atoms), !anyDuplicated(keys),
+            length(view_keys) == length(views), !anyDuplicated(view_keys),
+            identical(sort(as.integer(unlist(views))), seq_along(atoms)))
+  named <- function(x) stats::setNames(x, vapply(x, `[[`, character(1L), "stratum"))
+  list(version = "interaction-family-v1", projection = projection,
+       family_id = meta$family_id %||% list(kind = "explicit-partition", atoms = keys),
+       horizon_days = .DSOMOP_RELEASE_TIME_CAP,
+       arms = named(arms), atoms = stats::setNames(lapply(atoms, named), keys),
+       view_of_atoms = stats::setNames(lapply(views, as.integer), view_keys))
 }
 
 #' Export and built object of a person-time tree view
