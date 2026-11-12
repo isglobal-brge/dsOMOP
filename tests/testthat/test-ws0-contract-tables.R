@@ -96,7 +96,7 @@ test_that("reviewed concepts, operator classes and adapter mappings carry verifi
   expect_true(all(c("cost_event_id", "cost_domain_id", "currency_concept_id") %in% fields$cdmFieldName[fields$cdmTableName == "cost"]))
   # the discriminator keeps a colliding visit-occurrence / visit-detail key apart
   expect_false(identical(cd$cost_domain_id[cd$table_name == "visit_occurrence"], cd$cost_domain_id[cd$table_name == "visit_detail"]))
-  prov <- jsonlite::fromJSON(.ws0_inst("ohdsi", "provenance", "ohdsi-webapi-concepts.json"), simplifyVector = FALSE)
+  prov <- jsonlite::fromJSON(.ws0_inst("contracts", "ohdsi-webapi-concepts.json"), simplifyVector = FALSE)
   expect_identical(prov$snapshot_version, "v5.0 27-FEB-25")
   expect_false("Visit Detail" %in% unlist(prov$domains)); expect_true("Visit" %in% unlist(prov$domains))
 })
