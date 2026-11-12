@@ -905,14 +905,19 @@
     f <- srcs[[j]]
     branch <- assoc$branches[[j]]
     from <- f$name
+    branch_conds <- conds
     # Adapter links remain intact in the shared relation. A person consumer
     # counts each physical event once, before applying its window/criterion.
     if (identical(src_kind, "event") && identical(branch, "person") && !is.null(assoc$parent)) {
-      columns <- setdiff(names(f$columns), .ADAPTER_PARENT_COLUMNS)
+      columns <- setdiff(names(f$columns), c(.ADAPTER_PARENT_COLUMNS, "episode_id", "episode_concept_id"))
+      # Presence of a parent attribute is evaluated on the link before the
+      # physical-event projection, so it cannot reintroduce duplicate links.
+      present <- if (!is.null(nonmissing)) paste0(" WHERE d.", column, " IS NOT NULL")
+      if (!is.null(nonmissing)) branch_conds <- setdiff(branch_conds, paste0("e.", column, " IS NOT NULL"))
       from <- paste0("(SELECT DISTINCT ", paste(paste0("d.", columns), collapse = ", "),
-                     " FROM ", f$name, " d)")
+                     " FROM ", f$name, " d", present, ")")
     }
-    on <- c(.consumerJoinSql(h, assoc, branch, "e", alias), conds)
+    on <- c(.consumerJoinSql(h, assoc, branch, "e", alias), branch_conds)
     from <- paste0(" FROM ", from, " e WHERE ")
     list(exists = paste0("EXISTS (SELECT 1", from,
                         paste(c(on, if (!is.null(distinct_col)) paste0(distinct_col, " IS NOT NULL")),

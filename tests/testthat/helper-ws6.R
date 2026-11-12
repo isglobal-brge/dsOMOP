@@ -308,6 +308,7 @@
   plan <- list(version = 2L,
                meta = list(language_version = "2.0", semantic_version = "2.0.0", generated_by = "ws6-test"),
                events = events, populations = pops, outputs = outputs)
+  if (!length(events)) plan$events <- NULL
   if (length(intervals)) plan$intervals <- intervals
   if (!is.null(scope)) plan$scope <- scope
   plan
