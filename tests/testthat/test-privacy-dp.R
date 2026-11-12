@@ -1039,6 +1039,29 @@ test_that("DP preparation seals plan outputs while plan loading stays DP-free", 
                                    list(baseline = "DP_base"))),
          envir = session),
     "public reference year")
+  expect_false(exists("DP_base", envir = session, inherits = FALSE))
+
+  # The second component's seal fails after the first has been sealed privately.
+  # Neither component may become visible, and preceding successful executions
+  # remain owned by their original transactions.
+  two_outputs <- plan
+  two_outputs$outputs$ages_again <- plan$outputs$ages
+  session$two_outputs <- two_outputs
+  original_seal <- .dsomopDpSealPlanOutput
+  sealed_components <- 0L
+  local_mocked_bindings(.dsomopDpSealPlanOutput = function(...) {
+    sealed_components <<- sealed_components + 1L
+    if (sealed_components == 2L) stop("injected second DP seal failure")
+    original_seal(...)
+  })
+  expect_error(eval(quote(omopDpPlanExecuteDS(
+    handle_symbol, two_outputs,
+    list(ages = "DP_failed_first", ages_again = "DP_failed_second")
+  )), envir = session), "injected second DP seal failure")
+  expect_identical(sealed_components, 2L)
+  expect_false(exists("DP_failed_first", envir = session, inherits = FALSE))
+  expect_false(exists("DP_failed_second", envir = session, inherits = FALSE))
+  expect_identical(get("DP_ages", session), prepared)
 })
 
 test_that("derived column lineage uses a closed canonical contract", {
