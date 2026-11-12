@@ -63,16 +63,18 @@
 #' \code{src}, \code{norm} and the final fragment; adapters: \code{src} and
 #' the final fragment) and \code{map} (vocabulary maps). WS-5: \code{iv}
 #' (intervals), \code{op} / \code{opc} / \code{seg} (coverage) and
-#' \code{anc} (anchors). Later compilers add their families here (e.g.
-#' populations, output rosters); a fragment family without a generator cannot
-#' be named.
+#' \code{anc} (anchors). WS-6: \code{cand} / \code{pop} / \code{scope}
+#' (populations) and \code{mt} (matching). Later compilers add their
+#' families here (e.g. output rosters); a fragment family without a
+#' generator cannot be named.
 #'
 #' @return Named list of functions(ir) -> list of identities.
 #' @keywords internal
 .fragmentIdentityGenerators <- function() {
   list(ev = .eventFragmentIdentities, map = .mapFragmentIdentities,
        iv = .intervalFragmentIdentities, coverage = .coverageFragmentIdentities,
-       anc = .anchorFragmentIdentities)
+       anc = .anchorFragmentIdentities, population = .populationFragmentIdentities,
+       match = .matchFragmentIdentities)
 }
 
 #' Identities of the event and adapter fragments of a plan
