@@ -430,6 +430,19 @@
   .outputRowCap(nrow(roster), name)
   frame <- .outputIdentity(roster)
   columns <- .outputIdentityColumns(cons)
+  opts <- node[["options"]] %||% list()
+  if ("legacy_cohort_definition_id" %in% names(opts) ||
+      identical(attr(ctx[["ir"]], "source_version", exact = TRUE), 1L)) {
+    # A-26: the root label is independent of this output's roster. Presence
+    # distinguishes integer NA (explicit null) from the historical missing-ID
+    # failure. Raw v1 input is used only to replay coercion diagnostics.
+    execution <- ctx[["execution"]]
+    raw <- execution[["validation"]][["wire"]][["cohort"]][["cohort_definition_id"]] %||%
+      execution[["ir"]][["cohort"]][["cohort_definition_id"]]
+    label <- if (nrow(frame)) .v1MembershipLabel(opts, raw) else integer(0)
+    frame$cohort_definition_id <- as.integer(label)
+    columns$cohort_definition_id <- .fragmentColumn("integer", TRUE, "measure")
+  }
   for (col in c("cohort_start_date", "cohort_end_date")) {
     frame[[col]] <- if (col %in% names(roster)) roster[[col]] else as.Date(rep(NA_character_, nrow(roster)))
     columns[[col]] <- .fragmentColumn("date", TRUE, if (identical(col, "cohort_start_date")) "start" else "end")

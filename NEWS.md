@@ -29,7 +29,9 @@ fills its entries. Classes follow design-2.10.3 section 5.
   independently of the population supplying the rows. Signed identifiers,
   zero and historical coercions are preserved; a supplied value coerced to
   integer NA remains distinct from an absent identifier. The compatibility
-  option is refused on the native wire and on other output formats.
+  option is refused on the native wire and on other output formats. The
+  membership compiler consumes this label without changing population
+  selection, and retains absent versus explicit-null compatibility behavior.
 - (WS-2f review B2–B3, N1–N3) A v1 criteria `base` explicitly depends on
   its plan cohort's person seed while retaining fresh observation-period
   episodes and independent filter anchors. Malformed numeric cohort arrays
