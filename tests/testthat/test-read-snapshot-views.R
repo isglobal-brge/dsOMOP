@@ -178,6 +178,8 @@ for (engine in c("mariadb", "mysql")) local({
     .dsomopWithReadSnapshot(h, {
       quoted <- paste0('"', f$schemas[["cdm"]], '"."person"')
       expect_equal(.executeQuery(h, paste("SELECT COUNT(*) AS n FROM", quoted))$n, 3)
+      expect_equal(.executeQuery(h, paste("SELECT COUNT(*) AS n FROM", quoted,
+        "p CROSS JOIN JSON_TABLE('[1]', '$[*]' COLUMNS(k INTEGER PATH '$')) j"))$n, 3)
     })
     expect_error(suppressMessages(.dsomopWithReadSnapshot(h,
       .executeStatement(h, paste("USE", f$external)))), "read snapshot was lost")

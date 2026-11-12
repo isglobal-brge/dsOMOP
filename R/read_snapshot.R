@@ -409,7 +409,8 @@
     for (i in seq_len(n - 1L)) {
       if (!t$id[[i]] || t$syntax[[i + 1L]] != "(" || i %in% declarations || target(i)) next
       # A derived-table alias can carry a column-name list.
-      if (i > 1L && t$syntax[[i - 1L]] == ")") next
+      if ((i > 1L && t$syntax[[i - 1L]] == ")") ||
+          (i > 2L && t$word[[i - 1L]] == "AS" && t$syntax[[i - 2L]] == ")")) next
       call <- toupper(t$value[[i]])
       if (!call %in% allowed ||
           (view && call == "UNIX_TIMESTAMP" && i + 2L <= n && t$syntax[[i + 2L]] == ")")) {
