@@ -270,6 +270,9 @@ test_that("standard mode takes the masked person-time block from the protected c
                            scope = scope)
   auto_inc <- .release_run(h, "dsomop:incidence.rate", params,
                            scope = "surv_t")
+  by_gender <- c(params, list(strat_by_gender = "1"))
+  auto_gender <- .release_run(h, "dsomop:incidence.rate", by_gender,
+                              scope = "surv_t")
   withr::local_options(list(dsomop.tools.mode = "standard"))
   suppressWarnings(.omopAnalysisRegistry(h, force = TRUE))
   std_mdrr <- .release_run(h, "dsomop:cm.mdrr", params, scope = scope)
@@ -291,6 +294,13 @@ test_that("standard mode takes the masked person-time block from the protected c
                           scope = "surv_t")
   expect_equal(std_inc$person_days, auto_inc$person_days, tolerance = 1e-9)
   expect_equal(std_inc$rate, auto_inc$rate, tolerance = 1e-9)
+  # Stratified rows match the protected strata by their public labels.
+  std_gender <- .release_run(h, "dsomop:incidence.rate", by_gender,
+                             scope = "surv_t")
+  hit <- match(std_gender$stratum, auto_gender$stratum)
+  expect_true(any(!is.na(hit)))
+  expect_equal(std_gender$person_days[!is.na(hit)],
+               auto_gender$person_days[hit[!is.na(hit)]], tolerance = 1e-9)
   diag <- .release_run(h, "dsomop:cm.diagnostics_summary", params,
                        scope = scope)
   expect_equal(diag$mdrr, auto_mdrr$mdrr[[1L]], tolerance = 1e-9)
