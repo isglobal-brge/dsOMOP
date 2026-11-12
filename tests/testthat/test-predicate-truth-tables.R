@@ -150,6 +150,17 @@ test_that("a missing column is refused by the R mask and by both validators, nev
                                                      value = list(lower = 5, upper = 1)),
                                       .ws4_tt_catalogue, "t"),
                         pattern = "ordered")
+  # text literals never carry quotes, backslashes or control characters, so
+  # one quoting is safe in every family (MySQL, BigQuery, Spark read escapes)
+  for (bad in c("a'b", "a\\", "a\nb")) {
+    for (family in c("mysql", "bigquery", "postgresql")) {
+      .ws4_expect_rejection(.predicateSql(family, list(var = "s", op = "==", value = bad),
+                                          .ws4_tt_catalogue, "t"),
+                            pattern = "without quotes, backslashes")
+    }
+  }
+  expect_identical(.predicateSql("mysql", list(var = "s", op = "in", value = list("a", "b c")),
+                                 .ws4_tt_catalogue, "t"), "(t.s IN ('a', 'b c'))")
 })
 
 test_that("any / all over a window follow the Kleene table; an empty window is 0 / NA", {

@@ -97,3 +97,29 @@ test_that("the CDM column list is derived from the vendored OHDSI field metadata
   sha <- function(f) paste(as.character(openssl::sha256(file(f))), collapse = "")
   expect_identical(sha(file.path(client_root, "inst", "ohdsi", "cdm_columns.csv")), sha(path))
 })
+
+test_that("F-26: an assigned object that qualifies keeps a one-person age band", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  cohort <- .resolveCohortTable(handle, 1L)
+  ages <- .executeQuery(handle, paste0(
+    "SELECT c.subject_id, c.cohort_start_date, p.year_of_birth FROM ", cohort,
+    " c JOIN person p ON p.person_id = c.subject_id"))
+  ages$age <- as.integer(substr(as.character(ages$cohort_start_date), 1L, 4L)) - ages$year_of_birth
+  lone <- as.integer(names(which(table(ages$age) == 1L)))
+  skip_if(!length(lone), "the test cohort has no unique age")
+  a <- lone[[1L]]
+  withr::with_options(list(nfilter.subset = 3L, nfilter.tab = 100L), {
+    out <- .extractBaseline(handle, cohort, columns = "gender_concept_id",
+                            derived = "age_at_index", age_breaks = c(0L, a, a + 1L),
+                            translate_concepts = FALSE)
+    band <- paste0(a, "-", a)
+    expect_identical(sum(out$age_group == band, na.rm = TRUE), 1L)
+    published <- .publishStandalone(.testPseudonymize(out), already_tokenized = TRUE)
+    expect_identical(sum(published$age_group == band, na.rm = TRUE), 1L)
+  })
+  # aggregate age grouping keeps its own coarsening rule
+  withr::with_options(list(nfilter.tab = 100L), {
+    expect_error(.computeAgeGroups(2000, 2023, age_breaks = c(0, 18, 19, 40)), "coarsening")
+  })
+})

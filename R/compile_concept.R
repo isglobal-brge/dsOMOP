@@ -55,9 +55,19 @@
   } else if (!descendants && !mapped) {
     base
   } else {
-    .vocabExpandConceptSet(handle, list(concepts = base,
-                                        include_descendants = descendants,
-                                        include_mapped = mapped))
+    bp <- .buildBlueprint(handle)
+    present <- bp$tables$table_name[bp$tables$present_in_db]
+    needed <- c(if (descendants) "concept_ancestor", if (mapped) "concept_relationship")
+    lacking <- setdiff(needed, present)
+    if (length(lacking)) {
+      .irReject(paste0("concept-set expansion needs the vocabulary table ", lacking[[1L]]),
+                code = "unavailable_table", field = path)
+    }
+    tryCatch(
+      .vocabExpandConceptSet(handle, list(concepts = base,
+                                          include_descendants = descendants,
+                                          include_mapped = mapped)),
+      error = function(e) .irReject(conditionMessage(e), field = path))
   }
   excl <- node[["exclude"]]
   excluded <- if (is.null(excl)) {

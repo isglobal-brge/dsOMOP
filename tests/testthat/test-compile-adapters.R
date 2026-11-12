@@ -178,3 +178,31 @@ test_that("cost sources reference a table event with a reviewed cost-domain mapp
   expect_identical(domains$cost_domain_id[domains$table_name == "visit_occurrence"], "Visit")
   expect_identical(domains$cost_domain_id[domains$table_name == "drug_exposure"], "Drug")
 })
+
+test_that("compiled adapter SQL renders for every dialect family", {
+  bp <- .buildBlueprint(.ws4_ad_backends$sqlite$handle)
+  events <- c(.ws4_onc_events(), .ws4_cost_events()[c("visits", "visit_cost")])
+  plan <- .ws4_plan(events = events)
+  dbms <- c(postgresql = "postgresql", sqlite = "sqlite", duckdb = "duckdb", mysql = "mysql",
+            sqlserver = "sql server", oracle = "oracle", redshift = "redshift", bigquery = "bigquery",
+            snowflake = "snowflake", spark = "spark")
+  # the data checks (person agreement) need a site; the rendering does not
+  local_mocked_bindings(.adapterCount = function(ctx, final, select) 0)
+  expect_snapshot({
+    for (family in names(dbms)) {
+      fh <- new.env(parent = emptyenv())
+      fh$dbms <- dbms[[family]]
+      fh$target_dialect <- .resolve_target_dialect(dbms[[family]])
+      fh$blueprint <- bp
+      fh$cdm_schema <- if (identical(family, "sqlite")) NULL else "cdm"
+      fh$vocab_schema <- fh$cdm_schema
+      fh$results_schema <- NULL
+      fh$temp_tables <- character(0)
+      ctx <- .ws4_ctx(fh, plan)
+      cat("--", family, "\n")
+      for (e in c("member_procs", "visit_cost")) {
+        cat(.buildStatement(ctx, .compileEventByName(ctx, e), dialect = ctx), "\n")
+      }
+    }
+  })
+})

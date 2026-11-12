@@ -83,6 +83,20 @@ test_that("malformed concept-set nodes are typed refusals", {
   .ws4_expect_rejection(.resolveConceptSetNode(h, list(concepts = list(1), include_mapped = "yes")))
 })
 
+test_that("expansion over a missing vocabulary table is a typed unavailable_table refusal", {
+  h <- .ws4_reach_handle()
+  on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
+  DBI::dbExecute(h$conn, "DROP TABLE concept_relationship")
+  h$blueprint <- NULL
+  .ws4_expect_rejection(.resolveConceptSetNode(h, list(concepts = list(201820), include_mapped = TRUE)),
+                        code = "unavailable_table", pattern = "concept_relationship")
+  # no expansion requested: no vocabulary table needed
+  expect_identical(.resolveConceptSetNode(h, list(concepts = list(201820)))$ids, 201820L)
+  withr::local_options(dsomop.max_filter_values = 2L)
+  .ws4_expect_rejection(.resolveConceptSetNode(h, list(concepts = list(201820), include_descendants = TRUE)),
+                        pattern = "max_filter_values")
+})
+
 test_that("concept sets are memoised per plan on the canonical JSON of the node", {
   h <- .ws4_cs_backends$sqlite$handle
   plan <- .ws4_plan(

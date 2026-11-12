@@ -134,7 +134,13 @@
       bad("is a text column: only equality and IN predicates apply")
     }
     if (!is.character(value)) bad("is a text column and compares with strings only")
-    return(paste0("'", gsub("'", "''", enc2utf8(value), fixed = TRUE), "'"))
+    # Quote and backslash escaping differs between SQL families (MySQL,
+    # BigQuery and Spark read backslash escapes): text literals may not carry
+    # either, nor control characters, so one quoting is safe everywhere.
+    if (grepl("['\\\\]|[[:cntrl:]]", value)) {
+      bad("compares with text literals without quotes, backslashes or control characters")
+    }
+    return(paste0("'", enc2utf8(value), "'"))
   }
   bad(paste0("has an unsupported predicate type '", type, "'"))
 }
