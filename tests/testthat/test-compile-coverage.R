@@ -131,6 +131,28 @@ test_that("eligibility spans versus actually observed segments: a gap never adds
   }
 })
 
+test_that("rows kept without coverage have no observed days (NA, never 0)", {
+  for (b in names(.ws5_cov_backends)) {
+    h <- .ws5_cov_backends[[b]]$handle
+    ctx <- .ws5_cov_ctx(h)
+    cand <- .ws5_candidates(ctx)
+    cov <- .compileCoverage(ctx, "k", list(policy = "unique", on_missing = "keep"), cand, "candidate")
+    roster <- .ws5_roster(ctx, cand, cov, pop = "k")
+    r <- .ws5_rows(ctx, roster, "cohort_row_id")
+    expect_true(all(c(3, 4) %in% r$cohort_row_id), info = b)
+    expect_true(all(is.na(r$op_end[r$cohort_row_id %in% c(3, 4)])), info = b)
+    w <- list(start = -30L, end = 30L, anchor = "index")
+    od <- .intervalReducerValues(ctx, "observed_days", roster, "final", window = w, cov = cov)
+    val <- function(v, k) v$value[as.numeric(v$row_key) == k]
+    expect_true(is.na(val(od, 3)) && is.na(val(od, 4)), info = b)
+    expect_identical(val(od, 5), 61L, info = b)
+    # the same holds through the coverage of the candidates themselves
+    oc <- .intervalReducerValues(ctx, "observed_days", cand, "candidate", window = w, cov = cov)
+    expect_true(is.na(val(oc, 1)) && is.na(val(oc, 4)), info = b)
+    expect_identical(val(oc, 5), 61L, info = b)
+  }
+})
+
 test_that("coverage policies are validated; the observation table is required", {
   expect_identical(.coveragePolicy(NULL), list(policy = "unique", on_ambiguous = "drop",
                                                on_missing = "drop", gap = 0L))

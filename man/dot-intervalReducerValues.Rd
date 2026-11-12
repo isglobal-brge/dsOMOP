@@ -51,6 +51,8 @@ The executable base of \code{covered_days} (union of the selected relation
 clipped to the window, optionally intersected with the row's observed
 segments), \code{supply_days} (both fill policies) and the derived
 \code{observed_days(window)}. Every roster row gets a value: 0 without
-rows, NA when the window's required anchor is missing.
+rows, NA when the window's required anchor is missing; observation-dependent
+values (observed days, \code{observed_only = TRUE}) are NA for a row kept
+without a coverage component (\code{on_missing = "keep"}).
 }
 \keyword{internal}

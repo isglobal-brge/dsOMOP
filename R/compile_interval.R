@@ -918,7 +918,9 @@
 #' clipped to the window, optionally intersected with the row's observed
 #' segments), \code{supply_days} (both fill policies) and the derived
 #' \code{observed_days(window)}. Every roster row gets a value: 0 without
-#' rows, NA when the window's required anchor is missing.
+#' rows, NA when the window's required anchor is missing; observation-dependent
+#' values (observed days, \code{observed_only = TRUE}) are NA for a row kept
+#' without a coverage component (\code{on_missing = "keep"}).
 #'
 #' @param ctx Execution context.
 #' @param fn \code{"covered_days"}, \code{"supply_days"} or
@@ -955,6 +957,10 @@
     o <- .fetchFragment(ctx, seg, order = c("row_key", "start_date"))
     observed <- data.frame(key = o$row_key, start = o$start_date, end = o$end_date,
                            stringsAsFactors = FALSE)
+    # A row without a coverage component (kept under on_missing = "keep") has
+    # no observation: its observation-dependent values are NA, never 0.
+    covered <- .coverageCoveredKeys(ctx, cov, roster_fragment, phase)
+    windows$defined <- windows$defined & as.character(windows$key) %in% as.character(covered)
   }
   value <- switch(fn,
     observed_days = .observedDays(observed, windows),

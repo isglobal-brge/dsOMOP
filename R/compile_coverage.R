@@ -332,13 +332,14 @@
 #' @param cov The result of \code{.compileCoverage()}.
 #' @param roster_fragment Roster or candidates fragment.
 #' @param phase \code{"candidate"} or \code{"final"}.
-#' @param name Optional fragment name (default \code{seg_<pop>_row}).
+#' @param name Optional fragment name (default \code{seg_<coverage>_<roster>_row}).
 #' @return Fragment with \code{row_key}, \code{person_id}, \code{start_date},
 #'   \code{end_date} (one row per observed segment of each roster row).
 #' @keywords internal
 .compileObservedSegments <- function(ctx, cov, roster_fragment, phase, name = NULL) {
   spec <- .rosterSpec(roster_fragment, phase)
-  name <- name %||% .fragmentName("seg", spec$population, paste0("row_", substr(phase, 1L, 4L)))
+  name <- name %||% .fragmentName("seg", paste0(sub("^opc_", "", cov$coverage$name), "_", spec$name),
+                                  "row")
   existing <- .fragmentGet(ctx, name)
   if (!is.null(existing)) return(existing)
   h <- .compileDialect(ctx)
@@ -373,4 +374,33 @@
                  ordering = c("row_key", "start_date", "end_date"))
   .sqlAssertTypedSql(h, f$select_body)
   .fragmentRegister(ctx, f)
+}
+
+#' Row keys of a roster that have a coverage component
+#'
+#' Rows retained without coverage (\code{on_missing = "keep"}) have none:
+#' observation-dependent consumers (observed days, \code{covered_days(
+#' observed_only = TRUE)}) give them NA, never 0.
+#'
+#' @param ctx Execution context.
+#' @param cov The result of \code{.compileCoverage()}.
+#' @param roster_fragment Roster or candidates fragment.
+#' @param phase \code{"candidate"} or \code{"final"}.
+#' @return Vector of row keys.
+#' @keywords internal
+.coverageCoveredKeys <- function(ctx, cov, roster_fragment, phase) {
+  spec <- .rosterSpec(roster_fragment, phase)
+  select <- if (!is.null(spec$op_component)) {
+    paste0("SELECT r.", spec$key, " AS row_key FROM ", spec$name, " r WHERE r.",
+           spec$op_component, " IS NOT NULL")
+  } else {
+    if (!spec$name %in% cov$coverage$dependencies) {
+      stop("The roster carries no op_component_id and the coverage was compiled for another roster.",
+           call. = FALSE)
+    }
+    paste0("SELECT o.row_key AS row_key FROM ", cov$coverage$name, " o WHERE o.op_count = 1")
+  }
+  final <- if (!is.null(spec$op_component)) roster_fragment else cov$coverage
+  sql <- .buildStatement(ctx, final, select = select, dialect = .compileDialect(ctx))
+  .executeQuery(ctx[["handle"]], sql)$row_key
 }
