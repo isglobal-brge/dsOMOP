@@ -2128,7 +2128,7 @@ test_that("public status and release identify the exact sampler", {
     "guarantee_scope", "noise_reference_epsilon", "mechanism_epsilon",
     "api_transcript_epsilon", "adjacency", "mechanism", "sampler",
     "sticky", "allocation", "sensitivity", "noise_sd", "privacy_call_quota",
-    "history_based_admission", "source", "noisy_count", "components"
+    "history_based_admission", "source", "noisy_count", "components", "read_snapshot"
   ))
   expect_identical(value$protocol, "dsomop-protected-release-v1")
   expect_identical(value$protection, "realised_sticky")
@@ -2517,7 +2517,8 @@ test_that("derived identifiers respect partial overrides and conflicts", {
   .dsomopDpEnsureRuntime(handle)
   expect_identical(.dsomopDpPolicy()$domain, "dsomop-dp-test")
   expect_identical(.dsomopDpPolicy()$snapshot_id,
-                   .dsomopDpDerivedIdentity(handle)$snapshot_id)
+                   paste0("cdm_", .dsomopDpSha256(.dsomopFrame(
+                     "dsomop-dp-snapshot-label-v2", "dsomop-dp-test"))))
   withr::with_envvar(c(DSOMOP_DP_DOMAIN = "conflict"), {
     expect_error(.dsomopDpPolicy(), "Conflicting DP option")
   })
@@ -2526,7 +2527,8 @@ test_that("derived identifiers respect partial overrides and conflicts", {
   withr::with_envvar(c(DSOMOP_DP_SNAPSHOT_ID = "conflict"), {
     expect_no_error(policy <- .dsomopDpPolicy())
     expect_identical(policy$snapshot_id,
-                     .dsomopDpDerivedIdentity(handle)$snapshot_id)
+                     paste0("cdm_", .dsomopDpSha256(.dsomopFrame(
+                     "dsomop-dp-snapshot-label-v2", "dsomop-dp-test"))))
   })
   withr::with_options(list(dsomop.dp.snapshot_id = "not a label!"), {
     expect_no_error(.dsomopDpPolicy())
@@ -2664,7 +2666,7 @@ test_that("fallback sorts vocabulary pairs across resources and restarts", {
   DBI::dbExecute(handles[[2]]$conn, "UPDATE vocabulary SET vocabulary_version = 'next'")
   expect_no_error(after <- .dsomopDpPolicy())
   expect_identical(after$policy_hash, before$policy_hash)
-  expect_false(identical(after$snapshot_id, before$snapshot_id))
+  expect_identical(after$snapshot_id, before$snapshot_id)
 })
 
 test_that("empty incomplete and blank source metadata use resource-only fallback without vocabulary", {

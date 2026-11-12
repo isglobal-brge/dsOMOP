@@ -417,9 +417,8 @@
 #'
 #' A missing domain is the SHA-256 fingerprint of the canonical resource
 #' coordinates. The public \code{snapshot_id} is display metadata only, for
-#' clients that print it (the SHA-256 of the resource identity and the
-#' cdm_source metadata: cdm_source_name, cdm_release_date, cdm_version,
-#' vocabulary_version, with the documented fallbacks): since dsOMOP 2.10.3 it
+#' clients that print it (derived from the canonical privacy domain without
+#' any metadata database read): since dsOMOP 2.10.3 it
 #' enters no key, policy hash, provenance check, route or admission. The
 #' deprecated \code{dsomop.dp.snapshot_id} option only replaces that label.
 #' Fixed synopses are keyed on the per-request person-membership generation
@@ -449,17 +448,13 @@
     snapshot_id <- ""
   }
   if (!nzchar(domain)) {
-    derived <- .dsomopDpDerivedIdentity(state$dp_handle,
-                                        derive_snapshot = TRUE)
-    domain <- derived$domain
-    if (!nzchar(snapshot_id)) snapshot_id <- derived$snapshot_id
-  } else if (!nzchar(snapshot_id)) {
-    # The label never blocks the service: without derivable resource
-    # coordinates it is the fingerprint of the custodial domain.
-    derived <- tryCatch(.dsomopDpDerivedIdentity(state$dp_handle),
-                        error = function(e) NULL)
-    snapshot_id <- derived$snapshot_id %||% paste0("cdm_", .dsomopDpSha256(
-      .dsomopFrame("dsomop-dp-snapshot-label-v1", domain)))
+    domain <- .dsomopDpDerivedIdentity(state$dp_handle, derive_snapshot = FALSE)$domain
+  }
+  # No metadata queries may be selected or skipped by a display option.
+  # Even a swallowed metadata error can abort a transaction on some engines.
+  if (!nzchar(snapshot_id)) {
+    snapshot_id <- paste0("cdm_", .dsomopDpSha256(
+      .dsomopFrame("dsomop-dp-snapshot-label-v2", domain)))
   }
   if (!grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\\z", domain, perl = TRUE)) {
     stop("dsomop.dp.domain contains unsupported characters.", call. = FALSE)

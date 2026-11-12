@@ -188,7 +188,7 @@
         "SET SESSION group_concat_max_len = ", as.character(old))), silent = TRUE), add = TRUE)
     }
     result <- DBI::dbSendQuery(conn, sql)
-    on.exit(DBI::dbClearResult(result), add = TRUE)
+    on.exit(DBI::dbClearResult(result), add = TRUE, after = FALSE)
     repeat {
       rows <- DBI::dbFetch(result, n = 1000L)
       if (!nrow(rows)) break
@@ -232,7 +232,7 @@
              hash$digest)))
     }, error = function(e) {
       message("[dsomop-dp-generation] The data generation of this request ",
-              "could not be read: ", conditionMessage(e))
+              "could not be read (database or digest failure).")
       stop(structure(
         list(message = .DSOMOP_DP_GENERATION_ERROR, call = NULL),
         class = c("dsomop_generation_error", "error", "condition")))

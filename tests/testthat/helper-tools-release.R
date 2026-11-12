@@ -45,6 +45,7 @@
   h$person_key_identity <- "dsomop-test-session"
   key <- "handle_dsomop_test_session"
   assign(key, h, envir = .dsomop_env)
+  .pkg_state$dp_handle <- h
   withr::defer({
     if (exists(key, envir = .dsomop_env, inherits = FALSE)) {
       rm(list = key, envir = .dsomop_env)

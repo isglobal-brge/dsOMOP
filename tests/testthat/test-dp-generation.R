@@ -228,13 +228,16 @@ test_that("a failed generation read fails only that request", {
   fail <- TRUE
   original <- .dsomopDpMembershipHash
   local_mocked_bindings(.dsomopDpMembershipHash = function(handle, ...) {
-    if (fail) stop("simulated read failure")
+    if (fail) stop("simulated read failure WHERE person_id > 987654321")
     original(handle, ...)
   })
   err <- tryCatch(suppressMessages(.gen_release(h)),
                   error = function(e) conditionMessage(e))
   expect_match(err, "could not be prepared for this request")
   expect_false(grepl("simulated", err, fixed = TRUE))
+  messages <- capture.output(tryCatch(.gen_release(h), error = function(e) NULL),
+                              type = "message")
+  expect_false(any(grepl("987654321|WHERE person_id", messages)))
   # No silent route change and no negative cache: the next request answers
   # the same fixed synopsis.
   fail <- FALSE
@@ -370,4 +373,22 @@ test_that("a pinned loader table carries its request's generation", {
   # A fresh load of the changed database is another generation.
   fresh <- attr(load(), "dsomop_dp_provenance")
   expect_false(identical(fresh$data_generation, capsule$data_generation))
+})
+
+
+test_that("snapshot label options cannot select database metadata reads", {
+  .release_state(snapshot_id = "")
+  h <- create_test_handle(n_persons = 30)
+  on.exit(cleanup_handle(h), add = TRUE)
+  .pkg_state$dp_handle <- h
+  # A read of metadata would abort some engines, even when caught. Policy
+  # must derive its display label without touching any table.
+  local_mocked_bindings(.listTablesRaw = function(...) stop("metadata probe forbidden"))
+  policy <- .dsomopDpPolicy()
+  for (label in list("", "display-only", "malformed label!")) {
+    withr::with_options(list(dsomop.dp.snapshot_id = label), {
+      current <- .dsomopDpPolicy()
+      expect_identical(current$policy_hash, policy$policy_hash)
+    })
+  }
 })

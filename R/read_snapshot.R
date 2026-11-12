@@ -19,8 +19,12 @@
 #     Statements that would commit implicitly are refused.
 #   * DuckDB and SQLite: an explicit transaction (DuckDB has no savepoints: a
 #     failing statement aborts its transaction, and the request then fails).
-#   * Every other engine: no snapshot is opened (none is available without a
-#     database option); labels report read_snapshot = "not_isolated".
+#   * SQL Server: SERIALIZABLE, with range locks; Oracle: SERIALIZABLE,
+#     refusing implicit-commit DDL; Redshift: its native transaction snapshot.
+#     These adapters require no database option; vendor execution remains an
+#     explicit deployment check when those services are unavailable.
+#   * Engines without a native adapter: no snapshot is opened; the connection
+#     is still pinned and labels report read_snapshot = "not_isolated".
 #
 # The physical connection is pinned for the whole request; a lost connection
 # never resumes a single statement on a new snapshot: the request fails with
@@ -33,7 +37,10 @@
   mysql = "consistent_snapshot_transaction",
   mariadb = "consistent_snapshot_transaction",
   duckdb = "snapshot_transaction",
-  sqlite = "serializable_transaction"
+  sqlite = "serializable_transaction",
+  sqlserver = "sqlserver_serializable_transaction",
+  oracle = "oracle_serializable_transaction",
+  redshift = "redshift_snapshot_transaction"
 )
 
 .DSOMOP_READ_SNAPSHOT_ERROR <- paste0(
@@ -118,13 +125,18 @@
     if (ctx$transaction) {
       try(.dsomopSnapshotRollback(ctx), silent = TRUE)
     }
-    if (!is.null(ctx$prior_isolation)) {
-      try(DBI::dbExecute(ctx$conn, paste0(
-        "SET SESSION TRANSACTION ISOLATION LEVEL ", ctx$prior_isolation)), silent = TRUE)
+    if (!is.null(ctx$restore_isolation_sql)) {
+      try(DBI::dbExecute(ctx$conn, ctx$restore_isolation_sql), silent = TRUE)
     }
   }, add = TRUE)
   value <- expr
   if (!is.null(ctx$conn)) .dsomopSnapshotValidate(ctx)
+  if (ctx$transaction) {
+    tryCatch(.dsomopSnapshotRollback(ctx), error = function(e) {
+      .dsomopSnapshotLost("the request snapshot could not be rolled back")
+    })
+    ctx$transaction <- FALSE
+  }
   value
 }
 
@@ -151,7 +163,7 @@
         if (!prior %in% c("READ UNCOMMITTED", "READ COMMITTED", "REPEATABLE READ", "SERIALIZABLE")) {
           stop("Unknown connection isolation level.")
         }
-        ctx$prior_isolation <- prior
+        ctx$restore_isolation_sql <- paste0("SET SESSION TRANSACTION ISOLATION LEVEL ", prior)
         DBI::dbExecute(conn,
                        "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ")
         # RMariaDB commits after every statement unless it opened the
@@ -161,6 +173,25 @@
         DBI::dbExecute(conn, "START TRANSACTION WITH CONSISTENT SNAPSHOT")
         DBI::dbExecute(conn, "SAVEPOINT dsomop_request_snapshot")
       },
+      sqlserver_serializable_transaction = {
+        prior <- as.integer(DBI::dbGetQuery(conn, paste(
+          "SELECT transaction_isolation_level AS isolation FROM sys.dm_exec_sessions",
+          "WHERE session_id = @@SPID"))[[1L]][[1L]])
+        levels <- c("READ UNCOMMITTED", "READ COMMITTED", "REPEATABLE READ", "SERIALIZABLE", "SNAPSHOT")
+        if (is.na(prior) || !prior %in% seq_along(levels)) stop("Unknown connection isolation level.")
+        ctx$restore_isolation_sql <- paste0("SET TRANSACTION ISOLATION LEVEL ", levels[[prior]])
+        DBI::dbBegin(conn)
+        DBI::dbExecute(conn, "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+        DBI::dbExecute(conn, "SAVE TRANSACTION dsomop_request_snapshot")
+      },
+      oracle_serializable_transaction = {
+        DBI::dbBegin(conn)
+        DBI::dbExecute(conn, "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+        DBI::dbExecute(conn, "SAVEPOINT dsomop_request_snapshot")
+      },
+      # Redshift uses native transaction-wide SNAPSHOT or SERIALIZABLE
+      # isolation, both sufficient here; no database option needs changing.
+      redshift_snapshot_transaction = DBI::dbBegin(conn),
       snapshot_transaction = DBI::dbBegin(conn),
       serializable_transaction = {
         DBI::dbBegin(conn)
@@ -171,16 +202,15 @@
     )
   }, error = function(e) {
     try(DBI::dbRollback(conn), silent = TRUE)
-    .dsomopSnapshotLost(paste0("the request snapshot could not be opened: ",
-                               conditionMessage(e)))
+    .dsomopSnapshotLost("the request snapshot could not be opened")
   })
   invisible(TRUE)
 }
 
 .dsomopSnapshotValidate <- function(ctx) {
   conn <- ctx$conn
-  if (isTRUE(ctx$aborted)) {
-    .dsomopSnapshotLost("a statement aborted the request snapshot")
+  if (isTRUE(ctx$aborted) || !isTRUE(tryCatch(.dbIsValid(conn), error = function(e) FALSE))) {
+    .dsomopSnapshotLost("a statement or connection loss aborted the request snapshot")
   }
   if (identical(ctx$kind, "repeatable_read_transaction")) {
     token <- tryCatch(DBI::dbGetQuery(conn, paste(
@@ -193,6 +223,14 @@
   if (identical(ctx$kind, "consistent_snapshot_transaction")) {
     tryCatch(DBI::dbExecute(conn, "ROLLBACK TO SAVEPOINT dsomop_request_snapshot"),
              error = function(e) .dsomopSnapshotLost("the request transaction ended"))
+  }
+  rollback_to <- switch(ctx$kind,
+    sqlserver_serializable_transaction = "ROLLBACK TRANSACTION dsomop_request_snapshot",
+    oracle_serializable_transaction = "ROLLBACK TO dsomop_request_snapshot", NULL)
+  if (!is.null(rollback_to)) {
+    tryCatch(DBI::dbExecute(conn, rollback_to), error = function(e) {
+      .dsomopSnapshotLost("the request transaction ended")
+    })
   }
   invisible(TRUE)
 }
@@ -244,11 +282,14 @@
     grepl("^(CREATE|DROP|ALTER|RENAME|TRUNCATE|LOCK|UNLOCK|GRANT|REVOKE|ANALYZE|OPTIMIZE|REPAIR|FLUSH|INSTALL|UNINSTALL|LOAD)\\b",
           text, perl = TRUE) &&
     !grepl("^(CREATE|DROP)\\s+TEMPORARY\\s+TABLE\\b", text, perl = TRUE)
+  implicit <- implicit ||
+    (identical(handle$read_snapshot$kind, "oracle_serializable_transaction") &&
+       grepl("^(CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COMMENT|ANALYZE)\\b", text, perl = TRUE)) ||
+    (identical(handle$read_snapshot$kind, "redshift_snapshot_transaction") &&
+       grepl("^(TRUNCATE|VACUUM)\\b", text, perl = TRUE))
   if (control || implicit) {
     handle$read_snapshot$aborted <- TRUE
-    .dsomopSnapshotLost(paste0("a statement that would end the request ",
-                               "snapshot was refused: ",
-                               substr(text, 1L, 40L)))
+    .dsomopSnapshotLost("a statement that would end the request snapshot was refused")
   }
   invisible(TRUE)
 }
@@ -274,8 +315,7 @@
   failed <- function(e) {
     if (.isConnectionError(e)) {
       ctx$aborted <- TRUE
-      .dsomopSnapshotLost(paste0("the connection failed inside the request ",
-                                 "snapshot: ", conditionMessage(e)))
+      .dsomopSnapshotLost("the connection failed inside the request snapshot")
     }
     stop(e)
   }
@@ -298,7 +338,7 @@
     }))
   }
   tryCatch(fn(conn), error = function(e) {
-    if (identical(ctx$kind, "snapshot_transaction")) {
+    if (ctx$kind %in% c("snapshot_transaction", "redshift_snapshot_transaction")) {
       # DuckDB aborts its transaction on a failing statement: record it, so
       # the request fails instead of continuing on another snapshot.
       alive <- tryCatch({

@@ -95,3 +95,32 @@ test_that("DuckDB membership and read snapshot are consistent", {
   })
   expect_null(h$read_snapshot)
 })
+
+test_that("option-free native adapters use serializable or native transactions", {
+  statements <- character()
+  testthat::local_mocked_bindings(
+    dbBegin = function(conn, ...) { statements <<- c(statements, "BEGIN"); TRUE },
+    dbRollback = function(conn, ...) { statements <<- c(statements, "ROLLBACK"); TRUE },
+    dbExecute = function(conn, statement, ...) { statements <<- c(statements, statement); 0L },
+    dbGetQuery = function(conn, statement, ...) data.frame(isolation = 2L),
+    .package = "DBI")
+  local_mocked_bindings(.dbIsValid = function(conn) TRUE)
+  for (dbms in c("sqlserver", "oracle", "redshift")) {
+    statements <- character()
+    h <- new.env(parent = emptyenv()); h$dbms <- dbms
+    ctx <- new.env(parent = emptyenv())
+    ctx$conn <- "structural-test"; ctx$dbms <- dbms
+    ctx$kind <- .dsomopReadSnapshotKind(h); ctx$aborted <- FALSE
+    .dsomopSnapshotBegin(ctx)
+    .dsomopSnapshotValidate(ctx)
+    .dsomopSnapshotRollback(ctx)
+    expect_identical(statements[[1L]], "BEGIN")
+    expect_identical(tail(statements, 1L), "ROLLBACK")
+    expect_false(any(grepl("ALTER DATABASE|ALLOW_SNAPSHOT|COMMIT", statements)))
+    if (dbms != "redshift") expect_true("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE" %in% statements)
+    h$read_snapshot <- ctx
+    dangerous <- if (dbms == "oracle") "CREATE TABLE x (i INTEGER)" else "COMMIT"
+    expect_error(suppressMessages(.dsomopSnapshotGuard(h, dangerous)), "read snapshot was lost")
+    expect_true(ctx$aborted)
+  }
+})
