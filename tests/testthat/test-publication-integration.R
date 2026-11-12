@@ -30,6 +30,35 @@ test_that("public plans transport authenticated inventories and revoke after sta
   expect_identical(target$D, "user-owned")
 })
 
+test_that("v1 partial out publishes only the requested output", {
+  skip_if_not_installed("dsOMOPClient")
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .setLegacyTestPersonKey(handle, "publication-partial-out", .local_envir = environment())
+  .setHandle("publication_partial_out", handle)
+  on.exit(.removeHandle("publication_partial_out"), add = TRUE)
+  target <- new.env(parent = environment())
+  plan <- list(version = 1L, outputs = list(
+    conditions = list(type = "event_level", table = "condition_occurrence",
+      columns = c("person_id", "condition_concept_id"), representation = list(format = "long")),
+    other = list(type = "event_level", table = "person",
+      columns = c("person_id", "gender_concept_id"), representation = list(format = "long"))
+  ), options = list(translate_concepts = FALSE, block_sensitive = TRUE))
+  out <- c(conditions = "cond_df")
+  withr::local_options(list(nfilter.subset = 3L))
+  execution <- evalq(omopPlanExecuteDS("publication_partial_out", plan, out), target)
+  expect_identical(ls(target), "cond_df")
+  expect_identical(execution$status, "ok")
+  expect_identical(names(execution$published), "conditions")
+  expect_identical(execution$published$conditions$conditions$symbol, "cond_df")
+  expect_true(nrow(target$cond_df) > 0L)
+  target$exec <- execution
+  status <- evalq(omopPlanStatusDS("exec"), target)
+  expect_silent(dsOMOPClient:::.plan_validate_status(status, roots = names(out)))
+  expect_true(evalq(omopStagedRevokeDS("exec"), target))
+  expect_identical(ls(target), character(0))
+})
+
 test_that("federation rollback removes reviewed factor recodes and preserves replacements", {
   ctx <- .publication_test_context(target = new.env(parent = environment()))
   frame <- data.frame(person_id = 1:6, gender_concept_id = rep(c(1L, 2L), each = 3L))
@@ -161,5 +190,12 @@ test_that("typed failures before root execution use the bounded refusal transpor
   expect_true(all(vapply(status$rejected, function(x) identical(x$code, "dialect_unsupported"), logical(1))))
   expect_true(all(vapply(status$rejected, function(x) identical(
     x$message, "Publication refused: dialect_unsupported."), logical(1))))
+  expect_identical(ls(target), character(0))
+  partial <- .omopPlanExecuteDS("publication_shared_failure", plan,
+    c(first = "A"), target_env = target)
+  expect_identical(partial$status, "refused")
+  expect_identical(names(partial$rejected), "first")
+  expect_identical(partial$rejected$first, status$rejected$first)
+  expect_length(partial$published, 0L)
   expect_identical(ls(target), character(0))
 })

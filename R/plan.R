@@ -2066,7 +2066,11 @@
   } else {
     old_umask <- Sys.umask("0077")
     on.exit(Sys.umask(old_umask), add = TRUE)
-    utils::write.csv(df, output_path, row.names = FALSE)
+    # CSV is read as characters for lossless lineage checks. Keep numeric keys
+    # in the same decimal form as integer and BIGINT keys, regardless of scipen.
+    old_options <- options(scipen = 999)
+    tryCatch(utils::write.csv(df, output_path, row.names = FALSE),
+             finally = options(old_options))
   }
   if (existing_bytes + file.info(output_path)$size > max_bytes) {
     unlink(output_path)

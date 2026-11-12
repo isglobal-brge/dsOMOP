@@ -42,6 +42,14 @@ test_that("every registered assign method has an audited release boundary", {
   assign_methods <- trimws(strsplit(methods[1L, "AssignMethods"], ",")[[1L]])
   expect_false(anyDuplicated(registry[["function"]]) > 0L)
   expect_setequal(setdiff(assign_methods, registry[["function"]]), character(0))
+  pending <- registry[["function"]] %in% c("omopMutateDS", "omopPlanExplainDS")
+  expect_true(all(registry$status[pending] == "skeleton"))
+  expect_true(all(registry$status[!pending] == "implemented"))
+  for (note in registry$notes[!pending]) {
+    covering_test <- regmatches(note, regexpr("test-[A-Za-z0-9-]+\\.R", note))
+    expect_length(covering_test, 1L)
+    expect_true(file.exists(testthat::test_path(covering_test)))
+  }
   functions <- .boundaryAuditSources()
   for (method in assign_methods) {
     row <- registry[registry[["function"]] == method, , drop = FALSE]

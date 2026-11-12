@@ -173,6 +173,69 @@ test_that("compiled staged frames and origin-qualified roster streams agree with
   }
 })
 
+test_that("CSV staged roster keys match decimal doubles from frames and SQL", {
+  local_mocked_bindings(.arrowAvailable = function() FALSE)
+  withr::local_options(list(scipen = 0))
+  scipen <- getOption("scipen")
+  for (source in c("frame", "statement")) {
+    ctx <- .publication_compiled_context(threshold = 5L)
+    ctx$failure_hook <- function(step) {
+      if (step == "chunk") expect_identical(getOption("scipen"), scipen)
+    }
+    keys <- c(100000, 100001, 999999, 1000000, 1000001)
+    roster <- data.frame(rowId = keys, person_id = 101:105)
+    .planRegisterRoster(ctx, "base", roster)
+    compiled <- .publication_compiled_output(roster = TRUE,
+      statement = paste("SELECT CAST(CASE person_id",
+        "WHEN 1 THEN 100000 WHEN 2 THEN 100001 WHEN 3 THEN 999999",
+        "WHEN 4 THEN 1000000 ELSE 1000001 END AS REAL) AS rowId,",
+        "person_id * 1.0 AS value, 'private' AS raw_source",
+        "FROM person WHERE person_id <= 5 ORDER BY person_id"),
+      frame = if (source == "frame") data.frame(rowId = keys, value = 1:5,
+                                                raw_source = "private") else NULL)
+    .publishCompiled(ctx, compiled)
+    expect_identical(getOption("scipen"), scipen)
+    descriptor <- get("out/out", ctx$staging_env)
+    expect_identical(descriptor$metadata$format, "csv")
+    rows <- NULL
+    .publishReadChunks(descriptor, function(chunk) rows <<- rbind(rows, chunk))
+    expect_identical(rows$rowId, c("100000", "100001", "999999", "1000000", "1000001"))
+    expect_true(ctx$prepared[["out/out"]]$passed)
+    status <- .publishCommit(ctx)
+    expect_identical(status$status, "ok")
+    expect_silent(omopStagedDatasetPath(get(status$published$out$out$symbol, ctx$target_env)))
+  }
+})
+
+test_that("DuckDB BIGINT roster keys retain lineage through CSV staging", {
+  skip_if_not_installed("duckdb")
+  local_mocked_bindings(.arrowAvailable = function() FALSE)
+  withr::local_options(list(scipen = 0))
+  scipen <- getOption("scipen")
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  ctx <- .publication_compiled_context(threshold = 3L)
+  frame <- DBI::dbGetQuery(con, paste(
+    "SELECT CAST(key AS BIGINT) AS rowId, CAST(1 AS DOUBLE) AS value,",
+    "'private' AS raw_source FROM (VALUES (100000), (1000000), (3000000000)) AS t(key)",
+    "ORDER BY key"))
+  roster <- data.frame(rowId = frame$rowId, person_id = 101:103)
+  .planRegisterRoster(ctx, "base", roster)
+  compiled <- .publication_compiled_output(roster = TRUE, frame = frame)
+  compiled$components$out$fragment$columns$rowId$type <- "bigint"
+  .publishCompiled(ctx, compiled)
+  expect_identical(getOption("scipen"), scipen)
+  descriptor <- get("out/out", ctx$staging_env)
+  expect_identical(descriptor$metadata$format, "csv")
+  rows <- NULL
+  .publishReadChunks(descriptor, function(chunk) rows <<- rbind(rows, chunk))
+  expect_identical(rows$rowId, c("100000", "1000000", "3000000000"))
+  expect_true(ctx$prepared[["out/out"]]$passed)
+  status <- .publishCommit(ctx)
+  expect_identical(status$status, "ok")
+  expect_silent(omopStagedDatasetPath(get(status$published$out$out$symbol, ctx$target_env)))
+})
+
 test_that("compiled staged composite keys count their own distinct stored tokens", {
   ctx <- .publication_compiled_context(threshold = 5L)
   ctx$ir$outputs$out$grain <- "episode"
@@ -303,4 +366,32 @@ test_that("native staged semantics bind dynamic components without legacy relabe
   contracts <- .publicationStagedContracts(ctx, "out")
   expect_identical(contracts$semantic, .stagedSemanticContract(legacy, "out"))
   expect_identical(contracts$bundle, .stagedBundleContract(legacy, "out", ctx$staging_token))
+})
+
+test_that("native staged format validation follows the packaged schema enums", {
+  ctx <- .publication_compiled_context()
+  contract <- .publicationStagedContracts(ctx, "out")$semantic
+  schema <- .jsonSchemaPackaged("plan-v2")
+  # Narrow each enum independently: a stale native-protocol enumeration would
+  # continue accepting the removed values. Keep one permitted control each.
+  schema[["$defs"]]$output$properties$format$enum <- list("long", "survival", "person_period")
+  schema[["$defs"]]$options_survival$properties$format$enum <- list("survival")
+  schema[["$defs"]]$options_person_period$properties$representation$enum <- list("sparse")
+  local_mocked_bindings(.jsonSchemaPackaged = function(name) {
+    expect_identical(name, "plan-v2")
+    schema
+  })
+  expect_error(.publicationValidateNativeSemantic(contract), "Invalid native")
+  contract$output_type <- contract$output_format <- "long"
+  expect_silent(.publicationValidateNativeSemantic(contract))
+  contract$output_type <- "survival"
+  contract$output_format <- "recurrent_events"
+  expect_error(.publicationValidateNativeSemantic(contract), "Invalid native")
+  contract$output_format <- "survival"
+  expect_silent(.publicationValidateNativeSemantic(contract))
+  contract$output_type <- "person_period"
+  contract$output_format <- "dense"
+  expect_error(.publicationValidateNativeSemantic(contract), "Invalid native")
+  contract$output_format <- "sparse"
+  expect_silent(.publicationValidateNativeSemantic(contract))
 })
