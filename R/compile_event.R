@@ -478,9 +478,9 @@
   role <- plan$role
   name <- plan$name
   table <- plan$table
-  nm_src <- .fragmentName("ev", name, "src")
-  nm_norm <- .fragmentName("ev", name, "norm")
-  nm_final <- .fragmentName("ev", name)
+  nm_src <- .fragmentName("ev", name, "src", ctx = ctx)
+  nm_norm <- .fragmentName("ev", name, "norm", ctx = ctx)
+  nm_final <- .fragmentName("ev", name, ctx = ctx)
   t <- function(col) paste0("t.", col)
   tnull <- function(type) .compileTypedNull(h, type)
 
@@ -615,32 +615,39 @@
 }
 
 # The zero-row fragment of an event source this site cannot serve under
-# on_missing_table = "unavailable" (also used by the adapters).
+# on_missing_table = "unavailable" (also used by the adapters). It keeps the
+# source kind's declared columns, unique key, source identity, ordering and
+# private columns (.eventKindContract(), amendment A-17); an adapter's
+# parent_source_ns is fixed by its declaration.
 .eventUnavailable <- function(ctx, name, table, kind = "table", concept = NULL,
-                              extra = list()) {
+                              parent = NULL) {
   h <- .compileDialect(ctx)
-  nm_final <- .fragmentName("ev", name)
-  spec <- c(.eventColumnSpec("integer")[c(.EVENT_SRC_COLUMNS, .EVENT_NORM_COLUMNS)], extra)
+  contract <- .eventKindContract(kind)
+  nm_final <- .fragmentName("ev", name, ctx = ctx)
+  spec <- c(.eventColumnSpec("integer")[c(.EVENT_SRC_COLUMNS, .EVENT_NORM_COLUMNS)],
+            contract$extra)
   types <- vapply(spec, function(c) c$type, "")
   nulls <- vapply(names(spec), function(col) {
     if (identical(col, "source_ns")) return(.compileTextLiteral(name))
+    if (identical(col, "parent_source_ns") && !is.null(parent)) {
+      return(.compileTextLiteral(parent))
+    }
     if (identical(col, "unit_unknown")) return(.sqlIntegerLiteral(h, 0L))
     .compileTypedNull(h, types[[col]])
   }, "")
   body <- paste0("SELECT ", paste(paste0(nulls, " AS ", names(spec)), collapse = ", "),
                  .compileNoTableFrom(h), " WHERE 1 = 0")
-  private <- intersect(c(.EVENT_PRIVATE_COLUMNS, names(extra)[vapply(extra, function(c) identical(c$role, "origin_identity"), logical(1))]),
-                       names(spec))
-  f <- .fragment(nm_final, "event", "row", body, spec, unique_key = "event_id",
+  f <- .fragment(nm_final, "event", "row", body, spec, unique_key = contract$unique_key,
                  person_lineage = list(person_col = "person_id", via_roster = NULL),
-                 source_identity_columns = c("source_ns", "event_id"),
-                 private_columns = private, availability = "unavailable",
-                 ordering = .EVENT_ORDERING)
+                 source_identity_columns = contract$identity,
+                 private_columns = contract$private, availability = "unavailable",
+                 ordering = contract$ordering)
+  .sqlAssertTypedSql(h, f$select_body)
   .fragmentRegister(ctx, f)
   .eventMetaSet(ctx, name, list(
     name = name, kind = kind, table = table, availability = "unavailable",
     roles = character(0), catalogue = NULL, fragments = c(final = nm_final),
-    index_visit = FALSE, concept = concept, columns = names(spec)))
+    index_visit = FALSE, concept = concept, parent = parent, columns = names(spec)))
   f
 }
 
@@ -745,4 +752,29 @@
     out <- c(out, msg)
   }
   out
+}
+
+#' Compile the event sources of a set of outputs (the plan's source stage)
+#'
+#' Design 6.1 orders a plan's evaluation concept sets, events (adapters
+#' included), intervals, populations, variables, outputs. This is the event
+#' stage: every event the outputs read (their dependency closures), with its
+#' concept set and adapter parents, compiled in the plan order inside the
+#' private compilation context. The data-dependent adapter refusals of
+#' section 11 (\code{adapter_person_mismatch}, \code{cost_currency_mixed},
+#' amendment A-18) surface here, before any output is materialised.
+#'
+#' @param cctx Compilation context (\code{.compileContext()}).
+#' @param outputs Names of the outputs to compute.
+#' @return The names of the compiled events, invisibly.
+#' @keywords internal
+.planCompileSources <- function(cctx, outputs) {
+  ir <- cctx[["ir"]]
+  outputs <- intersect(as.character(outputs), names(ir[["outputs"]] %||% list()))
+  events <- unique(unlist(lapply(outputs, function(o) {
+    names(.irOutputClosure(ir, o)[["events"]] %||% list())
+  }), use.names = FALSE))
+  events <- intersect(.irOrder(ir)[["events"]], events)
+  for (e in events) .compileEventByName(cctx, e)
+  invisible(events)
 }

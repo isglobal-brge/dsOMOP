@@ -132,6 +132,23 @@ test_that("a site without episode_event or cost yields the declared unavailable 
   expect_true(all(c("parent_source_ns", "parent_event_id") %in% names(.fragmentGet(ctx, "ev_c_unavail")$columns)))
   .ws4_expect_rejection(.compileEventByName(ctx, "m_error"), code = "unavailable_table")
   .ws4_expect_rejection(.compileEventByName(ctx, "c_error"), code = "unavailable_table")
+  # A-17: an unavailable adapter keeps the available adapter's declared columns,
+  # unique key, source identity, ordering and private columns
+  full <- .ws4_ad_backends$sqlite$handle
+  ok_events <- events
+  ok_events$c_unavail$cost$currency <- 44818668
+  ok_ctx <- .ws4_ctx(full, .ws4_plan(events = ok_events))
+  contract <- function(f) f[c("columns", "unique_key", "source_identity_columns",
+                              "private_columns", "ordering", "person_lineage", "kind", "grain")]
+  for (e in c("m_unavail", "c_unavail")) {
+    gone <- .compileEventByName(ctx, e)
+    have <- .compileEventByName(ok_ctx, e)
+    expect_identical(contract(gone), contract(have), info = e)
+    expect_identical(gone$availability, "unavailable")
+    expect_identical(have$availability, "available")
+  }
+  # the declared parent namespace is carried even with zero rows
+  expect_match(.fragmentGet(ctx, "ev_m_unavail")$select_body, "'episodes' AS parent_source_ns", fixed = TRUE)
 })
 
 test_that("costs: one row per cost row of the event, one declared field, one currency", {

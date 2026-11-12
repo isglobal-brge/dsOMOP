@@ -39,6 +39,45 @@
        parent_event_id = .fragmentColumn("bigint", FALSE, "origin_identity"))
 }
 
+#' Column, identity, ordering and private-column contract of a source kind
+#'
+#' Amendment A-17 (design 6.6): one contract per source kind, shared by the
+#' available fragment and the zero-row unavailable fragment, so consumers see
+#' the same columns, unique key, source identity, tie-breakers and private
+#' columns whether or not the site can serve the source. Adapters expose the
+#' core source and normalised columns followed by their explicitly listed
+#' adapter columns only.
+#'
+#' @param kind \code{"table"}, \code{"episode_members"} or \code{"cost"}.
+#' @return list(extra (named list of adapter columns), unique_key, identity,
+#'   private, ordering).
+#' @keywords internal
+.eventKindContract <- function(kind) {
+  switch(kind,
+    table = list(
+      extra = list(), unique_key = "event_id",
+      identity = c("source_ns", "event_id"),
+      private = .EVENT_PRIVATE_COLUMNS, ordering = .EVENT_ORDERING),
+    episode_members = list(
+      extra = c(list(member_table = .fragmentColumn("text", FALSE, "origin_identity"),
+                     episode_id = .fragmentColumn("bigint", FALSE, "origin_identity"),
+                     episode_concept_id = .fragmentColumn("integer", TRUE, "concept")),
+                .adapterParentSpec()),
+      unique_key = c("parent_source_ns", "parent_event_id", "member_table", "event_id"),
+      identity = c("source_ns", "parent_source_ns", "parent_event_id", "member_table", "event_id"),
+      private = c(.EVENT_PRIVATE_COLUMNS, "episode_id", .ADAPTER_PARENT_COLUMNS),
+      ordering = c("start_date", "source_ns", "member_table", "event_id", "parent_event_id")),
+    cost = list(
+      extra = c(list(currency_concept_id = .fragmentColumn("integer", TRUE, "unit"),
+                     cost_type_concept_id = .fragmentColumn("integer", TRUE, "concept")),
+                .adapterParentSpec()),
+      unique_key = "event_id",
+      identity = c("source_ns", "event_id", .ADAPTER_PARENT_COLUMNS),
+      private = c(.EVENT_PRIVATE_COLUMNS, .ADAPTER_PARENT_COLUMNS),
+      ordering = .EVENT_ORDERING),
+    stop("Unknown event source kind '", kind, "'.", call. = FALSE))
+}
+
 .adapterQualified <- function(handle, bp, table) {
   .qualifyTable(handle, table, .resolveTableSchema(
     handle, table, bp$tables$schema_category[bp$tables$table_name == table][1L]))
@@ -90,12 +129,10 @@
               field = paste0(base, "/episode"))
   }
   mode <- spec[["on_missing_table"]] %||% "error"
-  extra <- c(list(member_table = .fragmentColumn("text", FALSE, "origin_identity"),
-                  episode_id = .fragmentColumn("bigint", FALSE, "origin_identity"),
-                  episode_concept_id = .fragmentColumn("integer", TRUE, "concept")),
-             .adapterParentSpec())
+  contract <- .eventKindContract("episode_members")
+  extra <- contract$extra
   unavailable <- function() {
-    .eventUnavailable(ctx, name, "episode_event", kind = "episode_members", extra = extra)
+    .eventUnavailable(ctx, name, "episode_event", kind = "episode_members", parent = parent)
   }
   if (identical(pmeta$availability, "unavailable")) return(unavailable())
   bp <- .buildBlueprint(handle)
@@ -170,7 +207,7 @@
       unit_unknown = .sqlIntegerLiteral(h, 0L),
       member_table = .compileTextLiteral(mb$table),
       episode_id = "ep.event_id", episode_concept_id = "ep.concept_id",
-      parent_source_ns = "ep.source_ns", parent_event_id = "ep.event_id")
+      parent_source_ns = .compileTextLiteral(parent), parent_event_id = "ep.event_id")
     paste0("SELECT ", paste(paste0(cols, " AS ", names(cols)), collapse = ", "),
            " FROM ", ep, " ep INNER JOIN ", ee, " ee ON ee.episode_id = ep.event_id",
            " AND ee.episode_event_field_concept_id = ", .sqlIntegerLiteral(h, mb$field),
@@ -178,18 +215,19 @@
            role[["event_key"]], " = ee.event_id AND m.", role[["person"]], " = ep.person_id")
   }, "")
   spec_cols <- c(.eventColumnSpec("integer")[c(.EVENT_SRC_COLUMNS, .EVENT_NORM_COLUMNS)], extra)
-  nm_src <- .fragmentName("ev", name, "src")
-  nm_final <- .fragmentName("ev", name)
-  private <- c(.EVENT_PRIVATE_COLUMNS, "episode_id", .ADAPTER_PARENT_COLUMNS)
-  identity <- c("source_ns", "parent_source_ns", "parent_event_id", "member_table", "event_id")
-  ordering <- c("start_date", "source_ns", "member_table", "event_id", "parent_event_id")
-  ukey <- c("parent_source_ns", "parent_event_id", "member_table", "event_id")
+  nm_src <- .fragmentName("ev", name, "src", ctx = ctx)
+  nm_final <- .fragmentName("ev", name, ctx = ctx)
+  private <- contract$private
+  identity <- contract$identity
+  ordering <- contract$ordering
+  ukey <- contract$unique_key
   lineage <- list(person_col = "person_id", via_roster = NULL)
   body_src <- if (length(selects)) {
     paste(selects, collapse = " UNION ALL ")
   } else {
     nulls <- vapply(names(spec_cols), function(col) {
       if (identical(col, "source_ns")) return(.compileTextLiteral(name))
+      if (identical(col, "parent_source_ns")) return(.compileTextLiteral(parent))
       if (identical(col, "unit_unknown")) return(.sqlIntegerLiteral(h, 0L))
       tnull(spec_cols[[col]]$type)
     }, "")
@@ -346,10 +384,9 @@
     .irReject("unknown cost amount field", field = paste0(base, "/field"))
   }
   mode <- spec[["on_missing_table"]] %||% "error"
-  extra <- c(list(currency_concept_id = .fragmentColumn("integer", TRUE, "unit"),
-                  cost_type_concept_id = .fragmentColumn("integer", TRUE, "concept")),
-             .adapterParentSpec())
-  unavailable <- function() .eventUnavailable(ctx, name, "cost", kind = "cost", extra = extra)
+  contract <- .eventKindContract("cost")
+  extra <- contract$extra
+  unavailable <- function() .eventUnavailable(ctx, name, "cost", kind = "cost", parent = parent)
   if (identical(pmeta$availability, "unavailable")) return(unavailable())
   bp <- .buildBlueprint(handle)
   if (!.adapterTablePresent(bp, "cost")) {
@@ -396,7 +433,7 @@
     unit_unknown = .sqlIntegerLiteral(h, 0L),
     currency_concept_id = "c.currency_concept_id",
     cost_type_concept_id = "c.cost_type_concept_id",
-    parent_source_ns = "p.source_ns", parent_event_id = "p.event_id")
+    parent_source_ns = .compileTextLiteral(parent), parent_event_id = "p.event_id")
   where <- c(if (!is.null(currency)) paste0("c.currency_concept_id = ", .sqlIntegerLiteral(h, currency)),
              if (!is.null(cost_type)) .sqlIdInPredicate("c.cost_type_concept_id", cost_type))
   body_src <- paste0(
@@ -406,15 +443,15 @@
     .compileTextLiteral(row$cost_domain_id[[1L]]),
     if (length(where)) paste0(" WHERE ", paste(where, collapse = " AND ")))
   spec_cols <- c(.eventColumnSpec("integer")[c(.EVENT_SRC_COLUMNS, .EVENT_NORM_COLUMNS)], extra)
-  nm_src <- .fragmentName("ev", name, "src")
-  nm_final <- .fragmentName("ev", name)
-  private <- c(.EVENT_PRIVATE_COLUMNS, .ADAPTER_PARENT_COLUMNS)
-  identity <- c("source_ns", "event_id", .ADAPTER_PARENT_COLUMNS)
+  nm_src <- .fragmentName("ev", name, "src", ctx = ctx)
+  nm_final <- .fragmentName("ev", name, ctx = ctx)
+  private <- contract$private
+  identity <- contract$identity
   lineage <- list(person_col = "person_id", via_roster = NULL)
   f_src <- .fragment(nm_src, "event", "row", body_src, spec_cols,
-                     dependencies = p, unique_key = "event_id", person_lineage = lineage,
+                     dependencies = p, unique_key = contract$unique_key, person_lineage = lineage,
                      source_identity_columns = identity, private_columns = private,
-                     ordering = .EVENT_ORDERING)
+                     ordering = contract$ordering)
   roles <- .costRoles(pmeta$roles)
   catalogue <- .costCatalogue(name, roles)
   pred <- spec[["where"]]
@@ -422,9 +459,9 @@
   body_final <- paste0("SELECT ", paste(paste0("x.", names(spec_cols)), collapse = ", "),
                        " FROM ", nm_src, " x", if (!is.null(pred_sql)) paste0(" WHERE ", pred_sql))
   f_final <- .fragment(nm_final, "event", "row", body_final, spec_cols,
-                       dependencies = nm_src, unique_key = "event_id", person_lineage = lineage,
+                       dependencies = nm_src, unique_key = contract$unique_key, person_lineage = lineage,
                        source_identity_columns = identity, private_columns = private,
-                       ordering = .EVENT_ORDERING)
+                       ordering = contract$ordering)
   for (f in list(f_src, f_final)) {
     .sqlAssertTypedSql(h, f$select_body)
     .fragmentRegister(ctx, f)
