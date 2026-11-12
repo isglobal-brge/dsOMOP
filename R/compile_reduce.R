@@ -624,6 +624,16 @@
   as.integer((b$year - a$year) * 12L + (b$mon - a$mon) - as.integer(b$mday < a$mday))
 }
 
+# Integer-valued accumulated durations must not silently become NA when
+# their sum exceeds R's declared integer output range (as for supply_days).
+.reduceIntegerTotal <- function(x, field = "/reducer") {
+  total <- sum(as.numeric(x))
+  if (!is.finite(total) || abs(total) > .Machine$integer.max) {
+    .compileReject("a reducer duration exceeds the supported integer range", field = field)
+  }
+  as.integer(total)
+}
+
 #' Apply one reducer to the ordered rows of one roster row
 #'
 #' @param fn Reducer name.
@@ -725,9 +735,9 @@
         as.integer(ref - latest)
     },
     duration_sum = {
-      dur <- as.integer(x[["end_date"]] - d)
+      dur <- as.numeric(x[["end_date"]] - d)
       dur <- dur[!is.na(dur)]
-      if (length(dur)) as.integer(sum(dur)) else NA_integer_
+      if (length(dur)) .reduceIntegerTotal(dur) else NA_integer_
     },
     drug_duration = {
       dur <- as.numeric(x[["end_date"]] - d)
@@ -1183,8 +1193,8 @@
       ix <- o[groups[[k]]]
       switch(fn,
         era_count = length(ix),
-        era_days = if (length(ix)) as.integer(sum(len[ix])) else NA_integer_,
-        first_era_days = if (length(ix)) as.integer(len[ix[[1L]]]) else NA_integer_)
+        era_days = if (length(ix)) .reduceIntegerTotal(len[ix], field) else NA_integer_,
+        first_era_days = if (length(ix)) .reduceIntegerTotal(len[ix[[1L]]], field) else NA_integer_)
     }, integer(1))
   }
   evaluate <- function() {

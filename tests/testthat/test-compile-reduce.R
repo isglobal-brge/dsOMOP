@@ -488,3 +488,32 @@ test_that("raw observation columns follow the complete selected unique or earlie
   expect_identical(out$end, rep(NA_integer_, 2L))
   expect_identical(out$type, rep(NA_integer_, 2L))
 })
+
+test_that("integer duration kernels admit the maximum result and privately refuse overflow", {
+  limit <- .Machine$integer.max
+  start <- as.Date(c("2000-01-01", "2000-01-01"))
+  duration <- function(lengths) .reduceOne("duration_sum", list(start_date = start,
+                                                               end_date = start + lengths), list())
+  expect_identical(duration(c(limit - 1, 1)), limit)
+  err <- tryCatch(duration(c(limit, 1)), dsomop_plan_rejection = identity)
+  expect_s3_class(err, "dsomop_plan_rejection")
+  expect_identical(err$code, "validation_error")
+  expect_identical(err$reason, "validation_error")
+  expect_false(any(c("rows", "count", "data", "condition") %in% names(err)))
+  plan <- .ws7_scenario_plan(list(total = list(source = list(interval = "course"),
+                                               reducer = list(fn = "era_days"))))
+  plan$intervals <- list(course = list(source = list(event = "drug")))
+  run <- .ws7_ctx(.ws7_red_backends$sqlite$handle, plan)
+  on.exit(.ws7_close(run), add = TRUE)
+  roster <- .ws5_literal_roster(run$cctx, data.frame(cohort_row_id = 1, subject_id = 7001L,
+    cohort_start_date = "2000-01-01", cohort_end_date = "2020-12-31"), phase = "final", name = "pop_t")
+  cons <- .reduceConsumer(run$cctx, "o", roster)
+  variable <- .compileVariable(run$cctx, .irNamedNode(run$ir, "variable", "total"), roster, cons)
+  bounds <- data.frame(key = 1, lo = as.Date(NA), hi = as.Date(NA), defined = TRUE)
+  courses <- function(lengths) data.frame(row_key = 1, start_date = start, end_date = start + lengths - 1)
+  expect_identical(variable$reducer(courses(c(limit - 1, 1)), 1, bounds), limit)
+  overflow <- tryCatch(variable$reducer(courses(c(limit, 1)), 1, bounds), dsomop_plan_rejection = identity)
+  expect_s3_class(overflow, "dsomop_plan_rejection")
+  expect_identical(overflow$reason, "validation_error")
+  expect_identical(overflow$field, "/variables/total/reducer")
+})
