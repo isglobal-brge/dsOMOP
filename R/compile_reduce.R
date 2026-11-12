@@ -1719,7 +1719,17 @@
       inside <- if (!is.null(spec$index)) {
         paste0(" AND r.", spec$index, " >= ", s, " AND r.", spec$index, " <= ", e)
       } else ""
-      rn <- .sqlRowNumber(h, "r.cohort_row_id", c(s, paste0("o.", role[["event_key"]])))
+      policy <- cons$coverage$policy$policy
+      if (!is.null(spec$index) && isTRUE(policy %in% c("unique", "earliest"))) {
+        if (is.null(spec$op_component)) {
+          stop("Raw observation columns need the indexed roster's selected op_component_id.", call. = FALSE)
+        }
+        # These policies select one complete record; its component is its
+        # period key. A kept row without a component has no selected record.
+        inside <- paste0(inside, " AND ", .sqlLosslessKey(h, paste0("o.", role[["event_key"]])),
+                         " = r.", spec$op_component)
+      }
+      rn <- .sqlRowNumber(h, paste0("r.", spec$key), c(s, e, paste0("o.", role[["event_key"]])))
       paste0("SELECT y.row_key AS row_key, y.value AS value FROM (SELECT r.", spec$key,
              " AS row_key, o.", column, " AS value, ", rn, " AS dsomop_rn FROM ", spec$name,
              " r LEFT JOIN ", qualified, " o ON o.", role[["person"]], " = r.", spec$person, inside,

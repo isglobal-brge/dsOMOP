@@ -452,3 +452,39 @@ test_that("death-derived values distinguish an available empty table from an una
   expect_identical(unavailable$compiled$status, "unavailable")
   for (col in c("dead", "soon", "days")) expect_identical(unavailable$frame[[col]], NA_integer_)
 })
+
+test_that("raw observation columns follow the complete selected unique or earliest record", {
+  h <- .ws4_reach_handle()
+  on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
+  DBI::dbExecute(h$conn, "DELETE FROM observation_period WHERE person_id IN (1007, 1008)")
+  DBI::dbWriteTable(h$conn, "observation_period", data.frame(
+    observation_period_id = c(939501L, 939502L), person_id = 1007L,
+    observation_period_start_date = "2015-01-01",
+    observation_period_end_date = c("2030-12-31", "2020-06-30"),
+    period_type_concept_id = c(44814724L, 44814725L)), append = TRUE)
+  vars <- list(end = list(raw = list(table = "observation_period", column = "observation_period_end_date")),
+               type = list(raw = list(table = "observation_period", column = "period_type_concept_id")))
+  plan <- .ws7_scenario_plan(vars)
+  plan$options <- list(translate_concepts = FALSE)
+  plan$populations$t$coverage <- list(policy = "earliest", on_missing = "keep")
+  frame <- .ws7_scenario_frame(c(1007L, 1008L), index = "2020-01-01")
+  earliest <- .ws7_scenario_run(h, plan, frame)$frame
+  expect_identical(earliest$end, c(181L, NA_integer_))
+  expect_identical(earliest$type, c(44814725L, NA_integer_))
+  plan$populations$t$coverage$policy <- "unique"
+  unique <- .ws7_scenario_run(h, plan, frame)$frame
+  expect_identical(unique$pid, 1008)
+  expect_identical(unique$end, NA_integer_)
+  DBI::dbExecute(h$conn, "DELETE FROM observation_period WHERE observation_period_id = 939501")
+  selected <- .ws7_scenario_run(h, plan, frame)$frame
+  expect_identical(selected$end, c(181L, NA_integer_))
+  # The final roster's component is authoritative even when the raw table
+  # contains a period at that index: a retained row may lack a component.
+  run <- .ws7_ctx(h, plan)
+  on.exit(.ws7_close(run), add = TRUE, after = FALSE)
+  pop <- .ws7_population(run, "t", frame, cap_end = FALSE)
+  DBI::dbExecute(h$conn, paste0("UPDATE ", pop$temp_table, " SET op_component_id = NULL"))
+  out <- .planCompileOutputs(run$cctx, list(o = "D"), populations = list(t = pop))$o$components$o$frame
+  expect_identical(out$end, rep(NA_integer_, 2L))
+  expect_identical(out$type, rep(NA_integer_, 2L))
+})
