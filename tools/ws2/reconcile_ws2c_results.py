@@ -133,7 +133,7 @@ def main():
                                 **attribution))
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "call-dispositions.csv"), "w", encoding="utf-8", newline="") as target:
-        writer = csv.DictWriter(target, fieldnames=list(results[0]))
+        writer = csv.DictWriter(target, fieldnames=list(results[0]), lineterminator="\n")
         writer.writeheader()
         for result in results:
             writer.writerow(dict(result, plan_ids=" | ".join(result["plan_ids"])))
