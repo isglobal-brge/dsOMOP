@@ -34,6 +34,25 @@ main <- function() {
     testthat::local_mocked_bindings(.dsomopDpDiscreteLaplace = law_sampler,
                                     .package = "dsOMOP")
   }
+  # Retain executable provenance and measure the pre-repair residual without
+  # changing the production projection. Calls 1:4 are the released two-arm
+  # family; later calls are the 200 uncertainty refits.
+  source_sha256 <- as.character(openssl::sha256(readBin(
+    "R/tools_release_survival.R", "raw",
+    n = file.info("R/tools_release_survival.R")$size)))
+  margin_diag <- list(calls = 0L, nonzero = 0L, material = 0L,
+                      max_relative = 0, initial_max_relative = 0)
+  repair_columns <- .dsomopReleaseRepairColumns
+  testthat::local_mocked_bindings(.dsomopReleaseRepairColumns = function(Z, target) {
+    relative <- max(abs(colSums(Z) - target)) / max(1, sum(target))
+    margin_diag$calls <<- margin_diag$calls + 1L
+    margin_diag$nonzero <<- margin_diag$nonzero + as.integer(relative > 0)
+    margin_diag$material <<- margin_diag$material + as.integer(relative > 1e-8)
+    margin_diag$max_relative <<- max(margin_diag$max_relative, relative)
+    if (margin_diag$calls <= 4L) margin_diag$initial_max_relative <<-
+      max(margin_diag$initial_max_relative, relative)
+    repair_columns(Z, target)
+  }, .package = "dsOMOP")
   scenarios <- data.frame(
     model = c(rep("cox", 3), rep("interaction_cox", 2), rep("sccs", 3),
               "cox", "cox", "sccs", "sccs"),
@@ -55,6 +74,8 @@ main <- function() {
     scenario <- scenarios[j, ]
     for (r in seq_len(replicates)) {
       started <- proc.time()[["elapsed"]]
+      margin_diag <- list(calls = 0L, nonzero = 0L, material = 0L,
+                          max_relative = 0, initial_max_relative = 0)
       seed <- 2026111200L + j * 10000L + r
       set.seed(seed)
       p <- policy
@@ -165,7 +186,13 @@ main <- function() {
         target_censoring = target_censoring, comparator_censoring = comparator_censoring,
         periods_per_person = scenario$periods_per_person,
         eligible_persons = eligible_persons, excluded_strata_fraction = excluded_strata,
-        max_events_per_person = max_events_person), estimates)
+        max_events_per_person = max_events_person,
+        survival_source_sha256 = source_sha256,
+        margin_projection_calls = margin_diag$calls,
+        margin_repairs_nonzero = margin_diag$nonzero,
+        margin_repairs_above_1e_minus8_relative = margin_diag$material,
+        margin_error_max_relative = margin_diag$max_relative,
+        margin_initial_error_max_relative = margin_diag$initial_max_relative), estimates)
       cat("scenario", j, scenario$model, "n", n,
           "replicate", r, "of", replicates, "seconds",
           round(proc.time()[["elapsed"]] - started, 3), "\n")
