@@ -105,6 +105,18 @@
   # Exact equal totals (both margins are displays of one parent).
   cols <- if (sum(cols) > 0) cols * (total / sum(cols)) else
     rep(total / length(cols), length(cols))
+  # Zero-margin rows/columns are fixed at zero. Removing them is the exact
+  # same Euclidean problem and avoids slow alternating-projection tails on
+  # sparse public age/year domains.
+  live_rows <- rows > 0
+  live_cols <- cols > 0
+  if (!all(live_rows) || !all(live_cols)) {
+    out <- Y * 0
+    out[live_rows, live_cols] <- .dsomopReleaseTransport(
+      Y[live_rows, live_cols, drop = FALSE], rows[live_rows], cols[live_cols],
+      tol = tol, max_iter = max_iter)
+    return(out)
+  }
   scale <- max(1, total)
   X <- Y
   P <- Y * 0
@@ -118,6 +130,9 @@
       max(abs(Xn - X)) <= tol * scale
     X <- Xn
     if (done) break
+  }
+  if (max(abs(rowSums(X) - rows), abs(colSums(X) - cols)) > 1e-8 * scale) {
+    stop("Canonical hierarchy projection did not converge.", call. = FALSE)
   }
   X
 }
@@ -499,7 +514,12 @@
                       unname(sums), stringsAsFactors = FALSE,
                       row.names = NULL)
   names(cells) <- c("key", "label", cols)
-  list(cells = cells, level = level)
+  list(cells = cells, level = level,
+       view = list(by_gender = by_gender, by_age = by_age, by_year = by_year,
+                   band = as.integer(band),
+                   view_of_nodes = stats::setNames(lapply(keys, function(k) {
+                     which(view_key == k)
+                   }), keys)))
 }
 
 #' Public label component of a person-time tree view
@@ -627,6 +647,7 @@
   child$strata <- st
   child$export$components <- comps
   child$export$parent_owner <- parent$owner$id
+  child$export$parent_basis <- parent$export
   child$export$reconciliation <- paste0(
     "strata_N_sum_to_root_N; cells two-way reconciled to strata N and the ",
     "root owner's cells; moment sums to the root owner's")
@@ -741,9 +762,14 @@
       root = if (stratified) list(n = root$N_s[[1L]]) else NULL,
       horizon_days = .DSOMOP_RELEASE_TIME_CAP, cap = 1L,
       recurrent_cap = tree$recurrent_cap,
-      hierarchy = list(version = .DSOMOP_RELEASE_C6_TREE_VERSION,
-                       levels = label$levels, view_level = view$level,
-                       display = .DSOMOP_RELEASE_TRANSPORT_VERSION),
+      hierarchy = c(list(version = .DSOMOP_RELEASE_C6_TREE_VERSION,
+                         levels = label$levels, view_level = view$level,
+                         display = .DSOMOP_RELEASE_TRANSPORT_VERSION,
+                         horizon_days = .DSOMOP_RELEASE_TIME_CAP,
+                         recurrent_cap = tree$recurrent_cap), view$view),
+      hierarchy_nodes = lapply(tree$nodes, function(nodes) {
+        nodes[c("key", "parent", "N_s", "E_s", "NE_s", "T_s", "R_s")]
+      }),
       allocation = label$allocation_fraction,
       reconciliation = paste0(
         "one canonical tree root -> gender -> {age5, year} -> age5 x year: ",

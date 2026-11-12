@@ -325,3 +325,34 @@ test_that("R06/R07: equal maps under another window, label or alias reuse the sa
     expect_identical(alias$estimate, x90$estimate)
   }
 })
+
+test_that("signed SCCS root certification refuses unresolved and degenerate scores", {
+  # Exact cancellation makes the entire range roots, not an identifiable fit.
+  z <- .dsomopReleaseSccsFit(c(0.5, 0.5), c(100, -100), 0)
+  expect_true(is.na(z[["beta"]]))
+  expect_identical(attr(z, "reason"), "uncertified_root")
+  expect_identical(attr(.dsomopReleaseSccsFit(c(0.1, 0.9), c(0, 0), 0),
+                       "reason"), "not_identifiable")
+})
+
+test_that("C8 allocation includes parent and complete subgroup vectors", {
+  .release_state()
+  h <- .astra_same_exit_fixture()
+  on.exit(cleanup_handle(h), add = TRUE)
+  x <- .release_run(h, "dsomop:cm.interaction_estimate", list(
+    outcome_concept_id = "4000002", model_type = "cox", subgroup_kind = "sex",
+    tar_start_offset = "0", tar_end_offset = "90",
+    tar_anchor_start = "start", tar_anchor_end = "start"),
+    list("astra_cox_t", "astra_cox_c"))
+  components <- attr(x, "dsomop_protection")$components
+  # One C6 vector and one C8 vector at each hierarchy level, not one draw
+  # counted per requested displayed row and not one allocation for both.
+  family6 <- Filter(function(c) identical(c$family, "C6") &&
+                      identical(c$hierarchy, "family:sex"), components)
+  family8 <- Filter(function(c) identical(c$family, "C8") &&
+                      identical(c$hierarchy, "family:sex"), components)
+  expect_length(family6, 3L)
+  expect_length(family8, 3L)
+  expect_equal(sum(unlist(family6[[1L]]$allocation_epsilon)), 0.1)
+  expect_equal(sum(unlist(family8[[1L]]$allocation_epsilon)), 0.08)
+})
