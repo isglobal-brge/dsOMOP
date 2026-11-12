@@ -467,6 +467,7 @@
 #'   eligible pair relation).
 #' @keywords internal
 .compilePopulation <- function(ctx, node, deps = list()) {
+  assign("population_snapshots", TRUE, envir = ctx)
   name <- .compileNodeName(node, "population")
   existing <- .populationMetaGet(ctx, name)
   if (!is.null(existing)) return(existing)

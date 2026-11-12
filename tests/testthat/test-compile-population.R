@@ -5,7 +5,7 @@
 # op_end, coverage policies at the population level, the criteria leaves
 # with three-valued logic and the consumer associations, criteria, seeded and
 # child populations, set operations on full origin identity, the plan scope
-# and the semantic rules of CR-21 -- on every backend available, over the
+# and the population semantic rules -- on every backend available, over the
 # scenario rows of helper-ws6.R (persons 6001..6019).
 
 .ws6_pop_backends <- .ws6_backends(extend = .ws6_population_extend)
@@ -425,7 +425,7 @@ test_that("rosters are deterministic: cohort_row_id is the typed chronological r
   expect_identical(a$cohort_row_id[o], as.numeric(seq_len(nrow(a))))
 })
 
-test_that("semantic rules of populations (CR-21) refuse before any query", {
+test_that("semantic rules of populations refuse before any query", {
   ev <- .ws6_ev()
   refuse <- function(plan, pattern) {
     err <- tryCatch(.irPrepare(plan), dsomop_plan_rejection = function(e) e)
