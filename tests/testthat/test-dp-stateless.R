@@ -49,7 +49,6 @@
 .stateless_restart <- function() {
   .pkg_state$dp_status <- NULL
   .pkg_state$dp_runtime <- NULL
-  .pkg_state$dp_generations <- NULL
   .pkg_state$dp_handle <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
 }

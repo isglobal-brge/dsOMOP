@@ -9,7 +9,6 @@
 .pkg_state$resolver <- NULL
 .pkg_state$dp_status <- NULL
 .pkg_state$dp_runtime <- NULL
-.pkg_state$dp_generations <- NULL
 .pkg_state$dp_bootstrap_in_progress <- FALSE
 
 # Session-level handle storage
@@ -67,7 +66,6 @@
   .pkg_state$dp_sessions <- NULL
   .pkg_state$dp_handle <- NULL
   .pkg_state$dp_runtime <- NULL
-  .pkg_state$dp_generations <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
   .pkg_state$dp_status <- .dsomopDpDormantStatus()
 

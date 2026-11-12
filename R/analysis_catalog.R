@@ -5298,6 +5298,11 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       effective_params = effective_params,
       dataset_identity = .dsomopDpDatasetIdentity(handle),
       person_key = .personKey(handle),
+      # Read only for a fixed-capable pinned loader, in this snapshot.
+      generation = function() {
+        .dsomopDpDataGeneration(handle, .dsomopDpPolicy())$id
+      },
+      read_snapshot = .dsomopReadSnapshotLabel(handle),
       public_config = list(
         target_dialect = handle$target_dialect,
         schemas = list(
@@ -5343,6 +5348,19 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 .omopAnalysisRun <- function(handle, name, params = list(), scope = NULL,
                              combine = "union", assign = FALSE,
                              assign_date_handling = NULL) {
+  # One read snapshot for the whole run (dsOMOP 2.10.3, review R03): support,
+  # owners, overlays and the fixed-synopsis generation read one data state.
+  if (!.dsomopReadSnapshotActive(handle)) {
+    out <- .dsomopWithReadSnapshot(handle, .omopAnalysisRun(
+      handle, name, params = params, scope = scope, combine = combine,
+      assign = assign, assign_date_handling = assign_date_handling))
+    label <- attr(out, "dsomop_protection", exact = TRUE)
+    if (is.list(label)) {
+      label$read_snapshot <- .dsomopReadSnapshotKind(handle)
+      attr(out, "dsomop_protection") <- label
+    }
+    return(out)
+  }
   temp_tables_before <- unique(handle$temp_tables %||% character(0))
   on.exit(
     .dropTempTablesCreatedSince(handle, temp_tables_before),

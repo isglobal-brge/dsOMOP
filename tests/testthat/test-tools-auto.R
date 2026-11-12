@@ -38,7 +38,6 @@
   }, envir = .local_envir)
   .pkg_state$dp_status <- NULL
   .pkg_state$dp_runtime <- NULL
-  .pkg_state$dp_generations <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
   state
 }

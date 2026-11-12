@@ -676,28 +676,44 @@
   list(components = comps, display = display, owner = owner, family = "M")
 }
 
-#' Automatic data generation of a typed table's source database
+# Matching connected source, never another handle's generation. Source
+# matching uses only authenticated corpus coordinates, not the display label.
+.dsomopTypedSourceHandle <- function(capsule, policy) {
+  handles <- list(.dsomopDpState()$dp_handle)
+  for (frame in rev(sys.frames())) {
+    keys <- grep("^\\.dsomop_handle_", ls(frame, all.names = TRUE), value = TRUE)
+    handles <- c(handles, lapply(keys, get, envir = frame, inherits = FALSE))
+  }
+  keys <- grep("^handle_", ls(.dsomop_env, all.names = TRUE), value = TRUE)
+  handles <- c(handles, lapply(keys, get, envir = .dsomop_env, inherits = FALSE))
+  for (handle in Filter(is.environment, unique(handles))) {
+    id <- tryCatch(.dsomopDpDatasetId(policy, .dsomopDpDatasetIdentity(handle)),
+                   error = function(e) NULL)
+    if (identical(id, capsule$dataset_id)) return(handle)
+  }
+  NULL
+}
+
+#' Current source generation of a typed table
 #'
-#' The generation (\code{.dsomopDpDataGeneration}) of the session handle whose
-#' keyed dataset identity is the one sealed in the table's provenance capsule;
-#' unavailable when no connected handle of this session is that dataset, so a
-#' table can never borrow another database's generation.
-#'
-#' @param capsule The table's verified provenance capsule.
+#' Recomputed within this release's request snapshot. A fixed release requires
+#' the live source to match the sealed origin membership. An offline restored
+#' table, an older capsule or a changed source has realised protection only;
+#' it cannot borrow a generation from another source or an earlier request.
+#' @param capsule Authenticated provenance capsule.
 #' @param policy DP policy.
-#' @return List: \code{available}, \code{id} (internal only).
+#' @return List: available, id (internal only).
 #' @keywords internal
 .dsomopTypedDataGeneration <- function(capsule, policy) {
-  target <- capsule$dataset_id
-  if (is.character(target) && length(target) == 1L && !is.na(target)) {
-    for (handle in .dsomopDpSessionHandles()) {
-      id <- tryCatch(
-        .dsomopDpDatasetId(policy, .dsomopDpDatasetIdentity(handle)),
-        error = function(e) NULL)
-      if (identical(id, target)) return(.dsomopDpDataGeneration(handle, policy))
-    }
+  handle <- .dsomopTypedSourceHandle(capsule, policy)
+  if (is.null(handle) || is.null(capsule$data_generation)) {
+    return(list(available = FALSE, id = NA_character_))
   }
-  list(available = FALSE, id = NA_character_)
+  current <- .dsomopDpDataGeneration(handle, policy)
+  if (!identical(current$id, capsule$data_generation)) {
+    return(list(available = FALSE, id = NA_character_))
+  }
+  current
 }
 
 #' Run one typed protected release
@@ -713,12 +729,18 @@
   input <- .dsomopDpValidateInput(x, policy)
   common$order_value <- .dsomopDpOrderVector(input$x, common$order_by)
   capsule <- attr(x, "dsomop_dp_provenance", exact = TRUE)
+  candidate <- common$statistic %in% c("count", "bounded_record_count", "bounded_mean") &&
+    startsWith(capsule$producer %||% "", "query/") && !is.null(capsule$data_generation)
+  handle <- if (candidate) .dsomopTypedSourceHandle(capsule, policy) else NULL
+  if (!is.null(handle) && !.dsomopReadSnapshotActive(handle)) {
+    return(.dsomopWithReadSnapshot(handle, .dsomopTypedRelease(x, spec, policy)))
+  }
   # The release-person map sealed with the table (B01): no handle, key cache
   # or earlier operation can choose another person namespace.
   person_tokens <- .dsomopDpSealedReleaseTokens(x, input$token)
   # Fixed basis only for statistics whose basis does not depend on analyst
-  # choices, over an unscoped pinned loader table, keyed on the automatic data
-  # generation of the session's connected database.
+  # choices, over an unscoped pinned loader table, keyed on the
+  # person-membership generation re-read inside this release request.
   fixed_capable <- common$statistic %in% c("count", "bounded_record_count",
                                            "bounded_mean") &&
     startsWith(capsule$producer %||% "", "query/")
@@ -732,8 +754,9 @@
     stop("This typed release has no fixed-synopsis protection: DP-only mode ",
          "(dsomop.tools.mode = \"dp\" or dsomop.dp.exclusive = TRUE) accepts ",
          "typed counts, capped record counts and registered-scale bounded ",
-         "means of unscoped pinned loader tables, keyed on the automatic data ",
-         "generation of the connected database. In auto mode the same ",
+         "means of unscoped pinned loader tables, keyed on the person-",
+         "membership generation re-read from the matching connected source and ",
+         "matching the sealed table origin. In auto mode the same ",
          "release uses heuristic realised-contribution protection.",
          call. = FALSE)
   }
@@ -798,10 +821,11 @@
     api_transcript_epsilon = NA_real_
   ),
   # A pure-DP delta is claimed only for the declared fixed vector (B14),
-  # keyed on the automatic data generation (never its value).
+  # keyed on the person-membership generation (never its value).
   if (fixed) list(delta = 0,
                   data_generation = .DSOMOP_DP_GENERATION_SOURCE,
                   data_generation_residual = .DSOMOP_DP_GENERATION_RESIDUAL),
+  list(read_snapshot = capsule$read_snapshot %||% "not_recorded"),
   list(
     adjacency = policy$adjacency,
     mechanism = policy$mechanism,

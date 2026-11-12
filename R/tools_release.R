@@ -1156,12 +1156,13 @@
 #'   \item \code{standard} mode: the established standard output, with the
 #'     contract's demonstrated-disclosive fields unavailable.
 #'   \item \code{auto} mode: \code{fixed_synopsis} for an unscoped question
-#'     over the contract's public basis, keyed on the automatic data
-#'     generation of the connected database (\code{.dsomopDpDataGeneration};
-#'     no custodial configuration); otherwise, or when that generation cannot
-#'     be derived in this session, \code{realised_sticky}. Without the DP
-#'     service, the standard output with the disclosive fields unavailable
-#'     (\code{standard_fallback}).
+#'     over the contract's public basis, keyed on the person-membership
+#'     generation read inside this request's snapshot
+#'     (\code{.dsomopDpDataGeneration}; no custodial configuration, nothing
+#'     cached); \code{realised_sticky} for every scoped question. A failed
+#'     generation read fails this request only (one stable error), never a
+#'     silent change of route. Without the DP service, the standard output
+#'     with the disclosive fields unavailable (\code{standard_fallback}).
 #'   \item \code{dp} mode: only \code{fixed_synopsis}; anything else is a
 #'     stable unsupported-mechanism refusal.
 #' }
@@ -1201,6 +1202,9 @@
                 reason = ready$reason))
   }
   policy <- ready$policy
+  # The route is a static capability of the contract and the scope; the
+  # generation of a fixed route is read now, inside the request's snapshot
+  # (a read failure stops this request).
   generation <- if (!isTRUE(scoped) && isTRUE(contract$fixed_basis)) {
     .dsomopDpDataGeneration(handle, policy)
   } else NULL
@@ -1218,8 +1222,9 @@
 .dsomopDpOnlyRefusal <- function() {
   stop("This release has no fixed-synopsis protection: DP-only mode ",
        "(dsomop.tools.mode = \"dp\" or dsomop.dp.exclusive = TRUE) accepts ",
-       "only unscoped questions over a public basis, keyed on the automatic ",
-       "data generation of the connected database. In auto mode the same ",
+       "only unscoped questions over a public basis, keyed on the ",
+       "person-membership generation of the connected database. In auto mode ",
+       "the same ",
        "question is answered with heuristic realised-contribution ",
        "protection.", call. = FALSE)
 }

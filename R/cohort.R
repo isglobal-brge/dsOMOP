@@ -351,6 +351,12 @@
     # Persistent replacement must be all-or-nothing.  In particular, never
     # reconnect between DELETE and INSERT: a reconnect would leave the old
     # cohort deleted outside the transaction that protects its replacement.
+    # A persistent write never runs inside a request's read snapshot, whose
+    # transaction it would end (read_snapshot.R).
+    if (.dsomopReadSnapshotActive(handle)) {
+      stop("A persistent cohort cannot be written inside a read-only ",
+           "release request.", call. = FALSE)
+    }
     conn <- .conn(handle)
     tryCatch(
       DBI::dbWithTransaction(conn, {

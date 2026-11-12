@@ -15,7 +15,8 @@
 .typed_table <- function(n = 60, producer = "test/fixture", extra = NULL,
                          reverse = FALSE, key = NULL,
                          domains = list(category = c("a", "b", "c")),
-                         dataset_identity = .typed_dataset) {
+                         dataset_identity = .typed_dataset,
+                         data_generation = NULL) {
   set.seed(42)
   person <- rep(seq_len(n), times = rep_len(c(1L, 2L, 3L), n))
   value <- data.frame(
@@ -31,7 +32,8 @@
   value <- .testPseudonymize(value)
   .dsomopDpSealPersonLocal(value, producer = producer,
                            dataset_identity = dataset_identity,
-                           person_key = key, domains = domains)
+                           person_key = key, domains = domains,
+                           data_generation = data_generation)
 }
 
 .typed_release <- function(x, ...) {
@@ -403,11 +405,12 @@ test_that("a changed contribution redraws only its own components", {
 test_that("DP-only mode accepts only fixed-synopsis typed releases", {
   .release_state(mode = "dp")
   dataset <- .release_session_dataset()
-  plan <- .typed_table(dataset_identity = dataset)
+  plan <- .typed_table(data_generation = .release_loader_generation())
   expect_error(.typed_release(plan, statistic = "count"),
                "no fixed-synopsis protection")
   loader <- .typed_table(producer = "query/measurement.load/0123456789abcdef",
-                         dataset_identity = dataset)
+                         dataset_identity = dataset,
+                         data_generation = .release_loader_generation())
   out <- .typed_release(loader, statistic = "count")
   expect_identical(out$protection, "fixed_synopsis")
   expect_equal(out$mechanism_epsilon, 0.02)
@@ -418,29 +421,32 @@ test_that("DP-only mode accepts only fixed-synopsis typed releases", {
                               variable = "category", reducer = "distinct",
                               max_contributions = 2),
                "no fixed-synopsis protection")
-  # A loader table of a database this session is not connected to has no
-  # data generation, so it is not a fixed basis (no custodial setting needed
-  # or consulted).
-  foreign <- .typed_table(producer = "query/measurement.load/0123456789abcdef")
-  expect_error(.typed_release(foreign, statistic = "count"),
+  # A loader table sealed without a generation (its loader request could not
+  # read it, or an older capsule) is not a fixed basis; no custodial setting
+  # is needed or consulted.
+  unsealed <- .typed_table(producer = "query/measurement.load/0123456789abcdef")
+  expect_error(.typed_release(unsealed, statistic = "count"),
                "no fixed-synopsis protection")
   .release_state(mode = "dp", snapshot_id = "")
   dataset <- .release_session_dataset()
   loader <- .typed_table(producer = "query/measurement.load/0123456789abcdef",
-                         dataset_identity = dataset)
+                         dataset_identity = dataset,
+                         data_generation = .release_loader_generation())
   expect_identical(.typed_release(loader, statistic = "count")$protection,
                    "fixed_synopsis")
 })
 
 test_that("heuristic payloads claim no delta; fixed ones claim delta 0 (B14)", {
   .release_state()
-  x <- .typed_table()
+  dataset <- .release_session_dataset()
+  x <- .typed_table(dataset_identity = dataset)
   realised <- .typed_release(x, statistic = "count")
   expect_false("delta" %in% names(realised))
   expect_true(is.na(realised$mechanism_epsilon))
   expect_true(is.na(realised$api_transcript_epsilon))
   loader <- .typed_table(producer = "query/measurement.load/0123456789abcdef",
-                         dataset_identity = .release_session_dataset())
+                         dataset_identity = dataset,
+                         data_generation = .release_loader_generation())
   fixed <- .typed_release(loader, statistic = "count")
   expect_identical(fixed$delta, 0)
   expect_true(is.finite(fixed$mechanism_epsilon))

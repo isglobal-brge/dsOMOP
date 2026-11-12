@@ -569,26 +569,6 @@
   if (length(handles) == 1L) handles[[1L]] else NULL
 }
 
-# Every OMOP handle of this DataSHIELD session: the DP service's bound handle,
-# the callers' frames and the package's handle registry (unique).
-.dsomopDpSessionHandles <- function() {
-  handles <- list()
-  bound <- .dsomopDpState()$dp_handle
-  if (is.environment(bound)) handles[[1L]] <- bound
-  for (frame in rev(sys.frames())) {
-    keys <- grep("^\\.dsomop_handle_", ls(frame, all.names = TRUE),
-                 value = TRUE)
-    for (key in keys) {
-      handles[[length(handles) + 1L]] <- get(key, envir = frame,
-                                             inherits = FALSE)
-    }
-  }
-  keys <- grep("^handle_", ls(.dsomop_env, all.names = TRUE), value = TRUE)
-  handles <- c(handles, lapply(keys, get, envir = .dsomop_env,
-                               inherits = FALSE))
-  Filter(is.environment, unique(handles))
-}
-
 #' Sticky privacy-noise service status (Aggregate)
 #'
 #' Returns the public protected-release contract (dsOMOP 2.10.3): the
@@ -604,12 +584,14 @@
 #' DP serves only the OHDSI community tools, so the status requires them to be
 #' enabled (\code{dsomop.tools.enabled}). It derives the service identity from
 #' the session's connected OMOP resource when no explicit
-#' \code{dsomop.dp.domain} is configured. The public \code{snapshot_id} is a
-#' display label only (the deprecated \code{dsomop.dp.snapshot_id} option
-#' replaces it); fixed synopses are keyed on the automatic data generation,
-#' described by \code{data_generation}, \code{data_generation_basis} and
-#' \code{data_generation_residual} (what it cannot see). The generation itself
-#' is never returned.
+#' \code{dsomop.dp.domain} is configured. The public \code{snapshot_id} is
+#' display metadata only (the deprecated \code{dsomop.dp.snapshot_id} option
+#' replaces it; it enters no hash, provenance check or admission); fixed
+#' synopses are keyed on the person-membership generation read inside each
+#' request's snapshot, described by \code{data_generation},
+#' \code{data_generation_basis} and \code{data_generation_residual} (what it
+#' cannot see); \code{read_snapshot} is the read consistency of this server's
+#' requests. The generation itself is never returned.
 #'
 #' @return Public DP service status, including the custodial \code{exclusive}
 #'   flag (default FALSE) and \code{tools_mode}, the effective protection mode
@@ -637,6 +619,8 @@ omopDpStatusDS <- function() {
   status$person_local_provenance_required <- TRUE
   status$provenance_protocol <- .DSOMOP_DP_PROVENANCE_PROTOCOL
   status$ohdsi_querylibrary <- .dsomopDpQueryLibraryStatus()
+  # Read consistency of this server's requests (read_snapshot.R).
+  status$read_snapshot <- .dsomopReadSnapshotKind(state$dp_handle)
   state$dp_status <- status
   status
 }
@@ -667,6 +651,17 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
          "(output_mode = 'memory').", call. = FALSE)
   }
   handle <- .getHandle(omop_symbol)
+  # The caller's environment receives the sealed outputs.
+  env <- parent.frame()
+  extra <- list(...)
+  # The plan's reads and the sealing share one request snapshot.
+  .dsomopWithReadSnapshot(handle, .dsomopDpPlanExecuteSealed(
+    handle, omop_symbol, plan, out, scope, combine, extra, env))
+}
+
+# The body of omopDpPlanExecuteDS, inside its request snapshot.
+.dsomopDpPlanExecuteSealed <- function(handle, omop_symbol, plan, out, scope,
+                                       combine, extra, env) {
   ready <- .dsomopToolsDpReady(handle)
   if (!isTRUE(ready$ready)) {
     stop("Preparing a table for DP releases needs the differential-privacy ",
@@ -674,7 +669,6 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
   }
   decoded_plan <- .ds_arg(plan)
   decoded_out <- .ds_arg(out)
-  extra <- list(...)
   scope_value <- .omopAnalysisScopeFromDots(.ds_arg(scope), extra)
   if (!is.null(scope_value)) {
     combine_value <- .ds_arg(combine)
@@ -689,7 +683,6 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
 
   # The core plan engine assigns its outputs into its caller's environment:
   # call it as if from that environment, then seal what it created there.
-  env <- parent.frame()
   do.call(omopPlanExecuteDS,
           c(list(omop_symbol, plan, out, "memory", scope, combine), extra),
           envir = env)
@@ -705,7 +698,8 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
     sealed <- .dsomopDpSealPlanOutput(
       value, decoded_plan, output_name,
       dataset_identity = dataset_identity, component = component,
-      person_key = person_key
+      person_key = person_key,
+      read_snapshot = .dsomopReadSnapshotLabel(handle)
     )
     assign(symbol, sealed, envir = env)
     !is.null(attr(sealed, "dsomop_dp_provenance", exact = TRUE))
@@ -748,9 +742,9 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
 #' fingerprints, person tokens or data-derived details). The answer is a
 #' deterministic function of the secret noise root and either a fixed public
 #' basis (counts, capped record counts and registered-scale bounded means of
-#' unscoped pinned loader tables, keyed on the automatic data generation of the
-#' connected database: \code{protection = "fixed_synopsis"}) or the realised
-#' bounded
+#' unscoped pinned loader tables, keyed on the person-membership generation
+#' sealed with the table by its loader request:
+#' \code{protection = "fixed_synopsis"}) or the realised bounded
 #' contributions of the people each component contains
 #' (\code{protection = "realised_sticky"}, a heuristic disclosure control
 #' without a joint differential-privacy guarantee). Equivalent requests, dummy

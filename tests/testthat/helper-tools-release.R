@@ -39,8 +39,7 @@
 }
 
 # A connected test CDM registered as this session's OMOP handle for the
-# calling test only. Returns the dataset identity a sealed fixture must carry
-# for its source database (and automatic data generation) to be this handle.
+# calling test only. Returns the dataset identity of that handle.
 .release_session_dataset <- function(.local_envir = parent.frame()) {
   h <- create_test_handle(n_persons = 5)
   h$person_key_identity <- "dsomop-test-session"
@@ -56,8 +55,16 @@
   .dsomopDpDatasetIdentity(h)
 }
 
-# Make the automatic data generation underivable for the calling test: the
-# realised route then answers unscoped questions and DP-only mode refuses.
+# Current source generation for a pinned loader fixture. The caller registers
+# the matching source with .release_session_dataset before sealing its table.
+.release_loader_generation <- function(label = "fixture") {
+  handle <- .dsomopDpState()$dp_handle %||% .dsomopDpSessionHandle()
+  .dsomopWithReadSnapshot(handle, .dsomopDpDataGeneration(
+    handle, .dsomopDpPolicy())$id)
+}
+
+# Test device: answer unscoped fixed-basis questions on the realised route
+# (production computes the generation in every fixed request, or fails it).
 .release_without_generation <- function(.local_envir = parent.frame()) {
   testthat::local_mocked_bindings(
     .dsomopDpDataGeneration = function(handle, policy) {
@@ -68,7 +75,6 @@
 .release_restart <- function() {
   .pkg_state$dp_status <- NULL
   .pkg_state$dp_runtime <- NULL
-  .pkg_state$dp_generations <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
   invisible(NULL)
 }

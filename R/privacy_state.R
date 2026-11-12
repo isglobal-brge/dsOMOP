@@ -325,8 +325,8 @@
 .dsomopDpDerivedIdentity <- function(handle, derive_snapshot = TRUE) {
   unavailable <- function() {
     stop("Cannot derive DP identity from the connected resource; ",
-         "configure dsomop.dp.domain and dsomop.dp.snapshot_id explicitly ",
-         "or provide unambiguous persistent resource coordinates.", call. = FALSE)
+         "configure dsomop.dp.domain explicitly or provide unambiguous ",
+         "persistent resource coordinates.", call. = FALSE)
   }
   if (is.null(handle)) unavailable()
   # Only database coordinates are admitted; URL credentials, user names and
@@ -368,6 +368,13 @@
   domain <- paste0("resource_", resource_id)
   if (!derive_snapshot) return(list(domain = domain))
   read_rows <- function(table, fields) {
+    # Presence through the catalogue first: a failing SELECT would abort the
+    # request's read snapshot on PostgreSQL and DuckDB (read_snapshot.R).
+    schema <- if (table == "vocabulary") handle$vocab_schema %||%
+      handle$cdm_schema else handle$cdm_schema
+    if (!table %in% tolower(.listTablesRaw(handle, schema))) {
+      stop("Missing metadata table")
+    }
     sql <- .renderSql(handle, "SELECT * FROM @qualified",
                       qualified = .qualifyTable(handle, table, schema =
                         if (table == "vocabulary") handle$vocab_schema else NULL))
@@ -398,213 +405,27 @@
     protocol <- if (is.null(metadata)) {
       "dsomop-dp-cdm-snapshot-resource-only-v1"
     } else "dsomop-dp-cdm-snapshot-fallback-v1"
-    # Reloads are tracked by the private database version of every answer.
   }
+  # A display label only (dsOMOP 2.10.3): no key, hash or admission reads it.
   list(domain = domain,
        snapshot_id = paste0("cdm_", .dsomopDpSha256(.dsomopDpCanonicalJson(list(
          protocol = protocol, resource = resource_id, metadata = metadata
        )))))
 }
 
-# --- Automatic data generation of the fixed synopses (dsOMOP 2.10.3) ----------
-
-# OMOP clinical tables of the CDM schema whose exact row count and largest
-# identifier make up the automatic data generation. NA: the table has no single
-# identifier column, so its exact row count alone enters.
-.DSOMOP_DP_GENERATION_TABLES <- c(
-  person = "person_id", observation_period = "observation_period_id",
-  visit_occurrence = "visit_occurrence_id", visit_detail = "visit_detail_id",
-  condition_occurrence = "condition_occurrence_id",
-  drug_exposure = "drug_exposure_id",
-  procedure_occurrence = "procedure_occurrence_id",
-  device_exposure = "device_exposure_id", measurement = "measurement_id",
-  observation = "observation_id", death = "person_id", note = "note_id",
-  note_nlp = "note_nlp_id", specimen = "specimen_id",
-  fact_relationship = NA_character_, location = "location_id",
-  care_site = "care_site_id", provider = "provider_id",
-  payer_plan_period = "payer_plan_period_id", cost = "cost_id",
-  drug_era = "drug_era_id", dose_era = "dose_era_id",
-  condition_era = "condition_era_id", episode = "episode_id",
-  episode_event = "episode_id", metadata = "metadata_id",
-  cdm_source = NA_character_
-)
-
-# Public description of the automatic generation and of what it cannot see
-# (status and fixed-synopsis labels).
-.DSOMOP_DP_GENERATION_SOURCE <- "automatic_session_fingerprint"
-.DSOMOP_DP_GENERATION_BASIS <- paste0(
-  "HMAC under the noise root of the exact row count and largest identifier ",
-  "of every present OMOP clinical table, the cdm_source rows, the vocabulary ",
-  "versions and the concept table's row count and largest identifier; ",
-  "derived once per R session from the connected database, held in memory ",
-  "only and never released")
-.DSOMOP_DP_GENERATION_RESIDUAL <- paste0(
-  "An in-place edit that changes no row count and no largest identifier of ",
-  "these tables, and a data change made while an R session is open, leave ",
-  "that session's generation unchanged. The fixed-synopsis components whose ",
-  "bounded contributions changed still redraw one by one (their noise is ",
-  "keyed on the realised contributions too), so no exact difference is ",
-  "released, but comparing answers from before and after such an edit can ",
-  "show which components changed (not by how much). Custodians who edit data ",
-  "in place can redraw every fixed synopsis by changing ",
-  "dsomop.dp.privacy_epoch.")
-
-# Exact canonical text of one aggregate or metadata value (integer,
-# integer64, double or text); NULL aggregates of empty tables are "". An
-# aggregate (exact = TRUE) must be an exact integer; a metadata double keeps
-# all 17 significant digits.
-.dsomopDpGenerationText <- function(x, exact = TRUE) {
-  if (length(x) != 1L) stop("A generation aggregate is malformed.")
-  if (inherits(x, "integer64")) return(as.character(x))
-  if (is.na(x)) return("")
-  if (is.integer(x)) return(format(x, scientific = FALSE, trim = TRUE))
-  if (is.numeric(x)) {
-    if (!isTRUE(exact)) return(sprintf("%.17g", x))
-    if (!is.finite(x) || x != floor(x)) {
-      stop("A generation aggregate is not an exact integer.")
-    }
-    return(sprintf("%.0f", x))
-  }
-  if (inherits(x, "Date")) return(format(x, "%Y-%m-%d"))
-  if (inherits(x, "POSIXt")) {
-    return(format(x, "%Y-%m-%dT%H:%M:%OS6", tz = "UTC"))
-  }
-  enc2utf8(as.character(x))
-}
-
-#' Read the exact data-state snapshot of the automatic generation
-#'
-#' Per clinical table of \code{.DSOMOP_DP_GENERATION_TABLES}: presence, the
-#' exact \code{COUNT(*)} and the \code{MAX()} of its identifier (when the
-#' column exists); the complete \code{cdm_source} rows; the vocabulary versions
-#' and the \code{concept} count and largest identifier of the vocabulary
-#' schema. Every value is exact text, so equal data give equal snapshots on
-#' every driver and worker. Errors propagate (the caller makes the generation
-#' unavailable): there is no partial or fallback snapshot.
-#'
-#' @param handle CDM handle.
-#' @return List of exact character values (never released).
-#' @keywords internal
-.dsomopDpGenerationSnapshot <- function(handle) {
-  count_max <- function(table, column, schema = NULL) {
-    columns <- tolower(.listColumnsRaw(handle, table, schema = schema)$column_name)
-    use_max <- !is.na(column) && column %in% columns
-    sql <- paste0("SELECT COUNT(*) AS n",
-                  if (use_max) paste0(", MAX(", column, ") AS m"),
-                  " FROM ", .qualifyTable(handle, table, schema = schema))
-    row <- .executeQuery(handle, .sql_translate(sql, handle$target_dialect))
-    if (nrow(row) != 1L) stop("A generation aggregate is malformed.")
-    list(n = .dsomopDpGenerationText(row$n[[1L]]),
-         max = if (use_max) .dsomopDpGenerationText(row$m[[1L]]) else NULL)
-  }
-  rows_of <- function(table, schema = NULL) {
-    rows <- .executeQuery(handle, .sql_translate(
-      paste0("SELECT * FROM ", .qualifyTable(handle, table, schema = schema)),
-      handle$target_dialect))
-    if (!nrow(rows)) return(character(0))
-    fields <- sort(names(rows), method = "radix")
-    text <- vapply(seq_len(nrow(rows)), function(i) {
-      .dsomopFrame(stats::setNames(lapply(fields, function(f) {
-        .dsomopDpGenerationText(rows[[f]][[i]], exact = FALSE)
-      }), fields))
-    }, character(1L))
-    sort(text, method = "radix")
-  }
-  present <- unique(tolower(.listTablesRaw(handle, handle$cdm_schema)))
-  tables <- lapply(names(.DSOMOP_DP_GENERATION_TABLES), function(table) {
-    if (!table %in% present) return(list(present = FALSE))
-    c(list(present = TRUE),
-      count_max(table, .DSOMOP_DP_GENERATION_TABLES[[table]]),
-      if (identical(table, "cdm_source")) list(rows = rows_of(table)))
-  })
-  names(tables) <- names(.DSOMOP_DP_GENERATION_TABLES)
-  vocab_schema <- handle$vocab_schema %||% handle$cdm_schema
-  vocab_present <- unique(tolower(.listTablesRaw(handle, vocab_schema)))
-  vocabulary <- list(
-    vocabulary = if ("vocabulary" %in% vocab_present) {
-      rows <- .executeQuery(handle, .sql_translate(paste0(
-        "SELECT vocabulary_id, vocabulary_version FROM ",
-        .qualifyTable(handle, "vocabulary", schema = vocab_schema)),
-        handle$target_dialect))
-      sort(vapply(seq_len(nrow(rows)), function(i) {
-        .dsomopFrame(
-          .dsomopDpGenerationText(rows$vocabulary_id[[i]], exact = FALSE),
-          .dsomopDpGenerationText(rows$vocabulary_version[[i]], exact = FALSE))
-      }, character(1L)), method = "radix")
-    } else NULL,
-    concept = if ("concept" %in% vocab_present) {
-      count_max("concept", "concept_id", schema = vocab_schema)
-    } else NULL
-  )
-  list(tables = tables, vocabulary = vocabulary)
-}
-
-#' Automatic data generation of the fixed synopses
-#'
-#' A keyed fingerprint of the connected CDM's data state
-#' (\code{.dsomopDpGenerationSnapshot}), \code{HMAC(K_generation,
-#' frame(protocol, snapshot))} with a subkey of the noise root, so it needs no
-#' custodial configuration. It is derived on the fly the first time an R
-#' session needs it for a handle and held in that session's memory only: never
-#' written to disk, a table or a cache file, and never released in payloads,
-#' labels, errors, status or logs. Equal data give the same generation in
-#' every session and on every R server sharing the noise root; a reload that
-#' adds or removes rows of any clinical table changes it, and with it the noise
-#' of every fixed synopsis. Any read failure makes the generation unavailable
-#' for that session (the fixed route is then not used, and DP-only mode
-#' refuses); there is no partial or fallback value, so a transient error can
-#' never yield a second generation of the same data. What it cannot see is
-#' \code{.DSOMOP_DP_GENERATION_RESIDUAL}.
-#'
-#' @param handle CDM handle (the request's).
-#' @param policy DP policy (noise root and corpus).
-#' @return List: \code{available}, \code{id} (64 hex; internal only).
-#' @keywords internal
-.dsomopDpDataGeneration <- function(handle, policy) {
-  state <- .dsomopDpState()
-  key_id <- policy$noise_root$key_id %||% ""
-  cache <- state$dp_generations %||% list()
-  for (entry in cache) {
-    if (identical(entry$handle, handle) && identical(entry$key_id, key_id) &&
-        identical(entry$domain, policy$domain)) {
-      return(entry$value)
-    }
-  }
-  value <- tryCatch({
-    if (!is.environment(handle)) stop("No connected OMOP resource.")
-    root <- policy$noise_root$key
-    if (!is.raw(root) || length(root) != 32L) stop("No noise root.")
-    snapshot <- .dsomopDpGenerationSnapshot(handle)
-    key <- .dsomopDpSubkey(root, policy$domain, "data-generation/v1")
-    list(available = TRUE,
-         id = .dsomopDpHmac(key, .dsomopFrame(
-           "dsomop-data-generation-v1", snapshot$tables,
-           snapshot$vocabulary)))
-  }, error = function(e) {
-    message("[dsomop-dp-generation] The automatic data generation could not ",
-            "be derived; this R session releases no fixed synopses: ",
-            conditionMessage(e))
-    list(available = FALSE, id = NA_character_)
-  })
-  # Session memory only; a handful of handles per session at most.
-  state$dp_generations <- utils::tail(c(cache, list(list(
-    handle = handle, key_id = key_id, domain = policy$domain,
-    value = value))), 16L)
-  value
-}
-
 #' Resolve the server-owned DP release policy
 #'
 #' A missing domain is the SHA-256 fingerprint of the canonical resource
-#' coordinates. The public \code{snapshot_id} is only a display label for
-#' clients (the SHA-256 of the resource identity and the cdm_source metadata:
-#' cdm_source_name, cdm_release_date, cdm_version, vocabulary_version, with the
-#' documented fallbacks); since dsOMOP 2.10.3 no key, route or admission
-#' depends on it. The deprecated \code{dsomop.dp.snapshot_id} option only
-#' replaces that label. Fixed synopses are keyed on the automatic data
-#' generation instead (\code{.dsomopDpDataGeneration}), which needs no
-#' configuration. The noise root is the only persistent DP state; ephemeral
-#' state directories are test-only.
+#' coordinates. The public \code{snapshot_id} is display metadata only, for
+#' clients that print it (the SHA-256 of the resource identity and the
+#' cdm_source metadata: cdm_source_name, cdm_release_date, cdm_version,
+#' vocabulary_version, with the documented fallbacks): since dsOMOP 2.10.3 it
+#' enters no key, policy hash, provenance check, route or admission. The
+#' deprecated \code{dsomop.dp.snapshot_id} option only replaces that label.
+#' Fixed synopses are keyed on the per-request person-membership generation
+#' (\code{.dsomopDpDataGeneration}), which needs no configuration. The noise
+#' root is the only persistent DP state; ephemeral state directories are
+#' test-only.
 #' @keywords internal
 .dsomopDpPolicyConfig <- function() {
   state <- .dsomopDpState()
@@ -617,12 +438,19 @@
   }
   domain <- .dsomopDpString(.dsomopDpOption("domain", ""), "domain",
                             required = FALSE)
-  # Deprecated: a display label only (dsOMOP 2.10.3).
-  snapshot_id <- .dsomopDpString(.dsomopDpOption("snapshot_id", ""),
-                                 "snapshot_id", required = FALSE)
+  # Deprecated: a display label only (dsOMOP 2.10.3). A malformed custodial
+  # label is ignored rather than refused, so it can never block the service.
+  snapshot_id <- tryCatch(.dsomopDpString(.dsomopDpOption("snapshot_id", ""),
+                                          "snapshot_id", required = FALSE),
+                          error = function(e) "")
+  if (nzchar(snapshot_id) &&
+      !grepl("^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,255}\\z", snapshot_id,
+             perl = TRUE)) {
+    snapshot_id <- ""
+  }
   if (!nzchar(domain)) {
     derived <- .dsomopDpDerivedIdentity(state$dp_handle,
-                                        derive_snapshot = !nzchar(snapshot_id))
+                                        derive_snapshot = TRUE)
     domain <- derived$domain
     if (!nzchar(snapshot_id)) snapshot_id <- derived$snapshot_id
   } else if (!nzchar(snapshot_id)) {
@@ -635,11 +463,6 @@
   }
   if (!grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\\z", domain, perl = TRUE)) {
     stop("dsomop.dp.domain contains unsupported characters.", call. = FALSE)
-  }
-  if (!grepl("^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,255}\\z", snapshot_id,
-             perl = TRUE)) {
-    stop("dsomop.dp.snapshot_id contains unsupported characters.",
-         call. = FALSE)
   }
   policy <- list(
     enabled = TRUE,
@@ -684,7 +507,8 @@
     privacy_contract = policy$privacy_contract,
     adjacency = policy$adjacency,
     domain = policy$domain,
-    snapshot_id = policy$snapshot_id,
+    # The snapshot label is display metadata: it never enters the hash, so
+    # changing or emptying it can change no admission (review R01).
     release_epsilon = policy$release_epsilon,
     release_delta = policy$release_delta,
     privacy_epoch = policy$privacy_epoch,
@@ -712,17 +536,23 @@
   if (is.list(runtime)) {
     if (!identical(runtime$policy_hash, config$policy_hash)) {
       stop("DP policy changed during this R session; restart the session after ",
-           "changing the snapshot or privacy parameters.", call. = FALSE)
+           "changing the privacy domain, epoch, calibration or caps.",
+           call. = FALSE)
     }
-    return(runtime$policy)
+    policy <- runtime$policy
+    # The display label follows the current configuration; nothing else
+    # reads it.
+    policy$snapshot_id <- config$snapshot_id
+    return(policy)
   }
 
   root <- .dsomopDpNoiseRoot()
   config$noise_root <- root
   # The provenance MAC key; the release keys (person tokens, contribution
   # fingerprints, noise) are derived per use in tools_release.R. Nothing but
-  # the root persists: the automatic data generation of the fixed synopses is
-  # derived per R session and held in memory (.dsomopDpDataGeneration).
+  # the root persists: the person-membership generation of the fixed
+  # synopses is recomputed inside each request's read snapshot and never
+  # retained (privacy_generation.R).
   config$keys <- list(
     provenance = .dsomopDpSubkey(root$key, config$domain,
                                  "person-local-provenance/v1")

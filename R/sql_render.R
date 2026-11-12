@@ -731,6 +731,13 @@
   rendered <- .sql_render(sql, ...)
   translated <- .sql_translate(rendered, handle$target_dialect)
   statements <- .sql_split(translated)
+  if (.dsomopReadSnapshotActive(handle) && !is.null(handle$read_snapshot$conn)) {
+    for (stmt in statements) {
+      .dsomopSnapshotGuard(handle, stmt)
+      .dsomopSnapshotRun(handle, function(conn) DBI::dbExecute(conn, stmt))
+    }
+    return(invisible(NULL))
+  }
   conn <- .conn(handle)
   for (stmt in statements) {
     DBI::dbExecute(conn, stmt)

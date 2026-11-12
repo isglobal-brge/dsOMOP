@@ -50,7 +50,6 @@
   }, envir = .local_envir)
   .pkg_state$dp_status <- NULL
   .pkg_state$dp_runtime <- NULL
-  .pkg_state$dp_generations <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
   # A running server: the noise root already exists.
   if (!identical(enabled, FALSE) && is.null(noise_root)) {
@@ -73,7 +72,6 @@
 .dp_restart_runtime <- function() {
   .pkg_state$dp_status <- NULL
   .pkg_state$dp_runtime <- NULL
-  .pkg_state$dp_generations <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
   invisible(NULL)
 }
@@ -101,7 +99,8 @@
 }
 
 .dp_test_table <- function(reverse_rows = FALSE, producer = "test/fixture",
-                           dataset_identity = .dp_dataset_identity()) {
+                           dataset_identity = .dp_dataset_identity(),
+                           data_generation = NULL) {
   value <- data.frame(
     person_id = c(1, 1, 1, 2, 2, 3, 3),
     category = c("c", "a", "b", "a", "c", "b", "b"),
@@ -117,7 +116,8 @@
   value <- .testPseudonymize(value)
   if (.dsomopDpEnabled()) {
     value <- .dp_seal(value, producer = producer, domains = .dp_domains,
-                      dataset_identity = dataset_identity)
+                      dataset_identity = dataset_identity,
+                      data_generation = data_generation)
   }
   value
 }
@@ -2490,8 +2490,10 @@ test_that("derived resource policies separate keys and reject live changes", {
     expect_false(identical(.dsomopReleaseKeys(policy)[[key]],
                            .dsomopReleaseKeys(other)[[key]]), info = key)
   }
+  # A changed source label is display metadata only (review R01): no policy
+  # change, no refusal.
   DBI::dbExecute(second$conn, "UPDATE cdm_source SET vocabulary_version = 'next'")
-  expect_error(.dsomopDpPolicy(), "policy changed")
+  expect_identical(.dsomopDpPolicy()$policy_hash, other$policy_hash)
 })
 
 test_that("explicit identifiers take precedence over fallback metadata", {
@@ -2519,8 +2521,15 @@ test_that("derived identifiers respect partial overrides and conflicts", {
   withr::with_envvar(c(DSOMOP_DP_DOMAIN = "conflict"), {
     expect_error(.dsomopDpPolicy(), "Conflicting DP option")
   })
+  # A conflicting or malformed label is ignored (display metadata only): it
+  # can never refuse the service (review R01).
   withr::with_envvar(c(DSOMOP_DP_SNAPSHOT_ID = "conflict"), {
-    expect_error(.dsomopDpPolicy(), "Conflicting DP option")
+    expect_no_error(policy <- .dsomopDpPolicy())
+    expect_identical(policy$snapshot_id,
+                     .dsomopDpDerivedIdentity(handle)$snapshot_id)
+  })
+  withr::with_options(list(dsomop.dp.snapshot_id = "not a label!"), {
+    expect_no_error(.dsomopDpPolicy())
   })
 })
 
@@ -2649,8 +2658,13 @@ test_that("fallback sorts vocabulary pairs across resources and restarts", {
   .dp_restart_runtime()
   expect_silent(.dsomopDpEnsureRuntime(handles[[2]]))
   expect_false(identical(.dsomopDpPolicy()$snapshot_id, first$snapshot_id))
+  # The label is display metadata (dsOMOP 2.10.3, review R01): a changed
+  # derived label within a session changes no policy and no admission.
+  before <- .dsomopDpPolicy()
   DBI::dbExecute(handles[[2]]$conn, "UPDATE vocabulary SET vocabulary_version = 'next'")
-  expect_error(.dsomopDpPolicy(), "policy changed")
+  expect_no_error(after <- .dsomopDpPolicy())
+  expect_identical(after$policy_hash, before$policy_hash)
+  expect_false(identical(after$snapshot_id, before$snapshot_id))
 })
 
 test_that("empty incomplete and blank source metadata use resource-only fallback without vocabulary", {
@@ -2671,7 +2685,7 @@ test_that("empty incomplete and blank source metadata use resource-only fallback
   expect_silent(.dsomopDpEnsureRuntime(handle))
   expect_identical(.dsomopDpPolicy()$snapshot_id, "etl-2026-08-01")
   handle$resource_client$getParsed <- function() list(dbms = "sqlite", database = ":memory:")
-  expect_error(.dsomopDpDerivedIdentity(handle), "dsomop.dp.domain and dsomop.dp.snapshot_id")
+  expect_error(.dsomopDpDerivedIdentity(handle), "configure dsomop.dp.domain")
 })
 
 test_that("DP status reports configured exclusivity in enabled and disabled modes", {
@@ -2729,10 +2743,12 @@ test_that("exclusive mode keeps only the fixed-synopsis typed releases", {
   expect_true(all(vapply(standard_mode, `[[`, character(1L), "protection") ==
                     "realised_sticky"))
   # Counts, capped record counts and registered-scale means of an unscoped
-  # pinned loader table of a connected database are fixed synopses (keyed on
-  # its automatic data generation).
+  # pinned loader table are fixed synopses (keyed on the person-membership
+  # generation its loader request sealed with it).
+  dataset <- .release_session_dataset()
   loader <- .dp_test_table(producer = "query/measurement.load/0123456789abcdef",
-                           dataset_identity = .release_session_dataset())
+                           dataset_identity = dataset,
+                           data_generation = .release_loader_generation())
   fixed <- release_all(loader, c(1L, 2L, 6L))
   expect_true(all(vapply(fixed, `[[`, character(1L), "protection") ==
                     "fixed_synopsis"))
@@ -2773,7 +2789,8 @@ test_that("exclusive mode keeps only the fixed-synopsis typed releases", {
 
 .dp_primitive_input <- function(changed_persons = 0L, reverse = FALSE,
                                    producer = "test/primitive-matrix",
-                                   dataset_identity = .dp_dataset_identity()) {
+                                   dataset_identity = .dp_dataset_identity(),
+                                   data_generation = NULL) {
   raw <- data.frame(
     person_id = 1:8, category = rep(c("a", "b"), 4L),
     measurement = 1:8, flag = rep(c("yes", "no"), 4L),
@@ -2787,7 +2804,8 @@ test_that("exclusive mode keeps only the fixed-synopsis typed releases", {
   ))
   if (reverse) raw <- raw[rev(seq_len(nrow(raw))), , drop = FALSE]
   .dp_seal(.testPseudonymize(raw), producer = producer, domains = .dp_domains,
-           dataset_identity = dataset_identity)
+           dataset_identity = dataset_identity,
+           data_generation = data_generation)
 }
 
 test_that("all seven primitives are byte-deterministic and data edits re-draw them", {
@@ -2832,17 +2850,18 @@ test_that("all seven primitives are byte-deterministic and data edits re-draw th
 
 test_that("data and epoch changes redraw; lineage and snapshot cosmetics do not", {
   .dp_local_state(noise_root = as.raw(0:31))
-  dataset <- .release_session_dataset()
   count <- list(statistic = "count")
   release <- function(changed_persons = 0L,
                       producer = "test/primitive-matrix") {
     input <- .dp_primitive_input(changed_persons, producer = producer)
     suppressMessages(omopDpReleaseDS(input, count))$components$signed
   }
+  dataset <- .release_session_dataset()
   fixed <- function() {
     input <- .dp_primitive_input(
+      dataset_identity = dataset,
       producer = "query/measurement.load/0123456789abcdef",
-      dataset_identity = dataset)
+      data_generation = .release_loader_generation())
     out <- suppressMessages(omopDpReleaseDS(input, count))
     expect_identical(out$protection, "fixed_synopsis")
     out$components$signed
@@ -2859,7 +2878,7 @@ test_that("data and epoch changes redraw; lineage and snapshot cosmetics do not"
   expect_identical(release(producer = "test/independent-public-request"),
                    first)
   # The deprecated snapshot label keys nothing (dsOMOP 2.10.3): fixed
-  # synopses use the automatic data generation of the connected database.
+  # synopses use the person-membership generation sealed with the table.
   options(dsomop.dp.snapshot_id = "etl-2026-08-02")
   .dp_restart_runtime()
   expect_identical(release(), first)
