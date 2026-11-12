@@ -293,6 +293,9 @@
 .v1sResolvedCohort <- function(allow_name = FALSE) {
   .v1sCustom(function(x, path) {
     value <- .v1Scalar(x)
+    if (!is.numeric(value) && !is.character(value)) {
+      return(paste0(path, ": a resolved cohort reference must be a numeric ID or identifier string"))
+    }
     if (is.character(value) && length(value) == 1L && !is.na(value) &&
         !grepl("^[0-9]+$", value)) {
       errors <- .v1Legacy(path, .validateIdentifier(value, "cohort"))
