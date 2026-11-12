@@ -326,7 +326,7 @@ for (engine in c("mariadb", "mysql")) local({
     h <- f$handle
     ctx <- .ws4_ctx(h, .ws6_plan(populations = list(p = list(kind = "criteria"))))
     on.exit(.planContextClose(ctx), add = TRUE, after = FALSE)
-    source <- .fragment("snapshot_ws6_source", "roster", "person",
+    source <- .fragment("snapshot_ws6_source", "candidates", "person",
       paste("SELECT person_id AS subject_id FROM", f$declared),
       columns = list(subject_id = .fragmentColumn("bigint", FALSE, "person_key")),
       unique_key = "subject_id", person_lineage = list(person_col = "subject_id", via_roster = NULL))
