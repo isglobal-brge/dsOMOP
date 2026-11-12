@@ -190,15 +190,15 @@ test_that("auto mode without DP releases the same tables under the standard gate
   }
 })
 
-test_that("auto mode with DP releases complete protected histograms", {
+test_that("auto mode distinguishes public histograms from enumerated record strata", {
   .tools_dp_state()
   h <- tools_handle()
   on.exit(cleanup_handle(h), add = TRUE)
   withr::local_options(list(dsomop.tools.mode = "auto"))
   out <- tools_run(h, "condition.duration_stats", list(concept_id = 201820))
   label <- attr(out, "dsomop_protection")
-  # The test service declares a custodial snapshot: an unscoped question over
-  # a public basis is a fixed synopsis.
+  # An unscoped question over a complete public basis is a fixed synopsis,
+  # keyed on the person-membership generation read inside this request.
   expect_identical(label$protection, "fixed_synopsis")
   expect_identical(label$guarantee_scope,
                    "fixed_vector_before_exact_support_gate")
@@ -240,12 +240,17 @@ test_that("auto mode with DP releases complete protected histograms", {
   by_gender <- tools_run(h, "observation_period.length_by_gender")
   expect_equal(nrow(by_gender), nrow(.dsomopToolsGenders()) *
                  length(.DSOMOP_TOOLS_DAY_BREAKS))
-  # Record-weighted summaries are capped record moments on public scales
-  # (tools_release_records.R), not standard statistics.
+  # Record summaries enumerate supported CDM strata. Public value scales do
+  # not make that stratum domain complete: these protected summaries use the
+  # realised-sticky route and make no fixed-vector DP claim.
   for (id in .tools_summary_ids) {
     res <- tools_run(h, id, .tools_params[[id]] %||% list())
-    expect_identical(attr(res, "dsomop_protection")$protection,
-                     "fixed_synopsis", info = id)
+    summary_label <- attr(res, "dsomop_protection")
+    expect_identical(summary_label$protection, "realised_sticky", info = id)
+    expect_identical(summary_label$guarantee_scope,
+                     "heuristic_realised_contribution_reuse", info = id)
+    expect_true(is.na(summary_label$mechanism_epsilon), info = id)
+    expect_true(is.na(summary_label$api_transcript_epsilon), info = id)
   }
 })
 
@@ -319,7 +324,7 @@ test_that("standard mode answers the original summaries under the gate", {
   expect_equal(nrow(top), 1L)
 })
 
-test_that("DP-only mode refuses standard statistics and keeps DP questions", {
+test_that("DP-only mode keeps public histograms and refuses enumerated record strata", {
   .tools_dp_state()
   h <- tools_handle()
   on.exit(cleanup_handle(h), add = TRUE)
@@ -327,9 +332,10 @@ test_that("DP-only mode refuses standard statistics and keeps DP questions", {
   out <- tools_run(h, "condition.duration_stats", list(concept_id = 201820))
   expect_identical(attr(out, "dsomop_protection")$protection,
                    "fixed_synopsis")
-  value <- tools_run(h, "measurement.value_stats", list(concept_id = 3025315))
-  expect_identical(attr(value, "dsomop_protection")$protection,
-                   "fixed_synopsis")
+  for (id in .tools_summary_ids) {
+    expect_error(tools_run(h, id, .tools_params[[id]] %||% list()),
+                 "no fixed-synopsis protection", info = id)
+  }
   expect_error(tools_run(h, "demo.person_count_by_gender"),
                "DP-only mode")
   expect_error(.dsomopRequireCommunityTool(), "DP-only mode")
