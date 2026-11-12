@@ -4,7 +4,7 @@
 \alias{.omopObservedTarSql}
 \title{Observed time-at-risk window of each person's canonical first episode}
 \usage{
-.omopObservedTarSql(handle, cohort, tar)
+.omopObservedTarSql(handle, cohort, tar, horizon = NULL)
 }
 \arguments{
 \item{handle}{CDM handle.}
@@ -13,6 +13,12 @@
 
 \item{tar}{List with \code{start}, \code{end} (integer day offsets) and
 \code{anchor_start}, \code{anchor_end} ("start" or "end").}
+
+\item{horizon}{Protected releases pass their public contribution horizon
+in days (\code{.DSOMOP_RELEASE_TIME_CAP}): the window becomes
+\code{[tar_lo, min(tar_hi, tar_lo + horizon))}, so event eligibility and
+person-time share the same bounded interval. \code{NULL} (internal
+in-session fits) keeps the whole observed window.}
 }
 \value{
 SQL for a derived table (subject_id, cohort_start_date,

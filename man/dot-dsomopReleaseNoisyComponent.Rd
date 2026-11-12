@@ -7,7 +7,7 @@
 .dsomopReleaseNoisyComponent(policy, keys, protection, component)
 }
 \arguments{
-\item{policy}{DP policy.}
+\item{policy}{DP policy (with \code{data_generation} on the fixed route).}
 
 \item{keys}{Release keys.}
 
@@ -22,8 +22,15 @@ Numeric signed noisy value.
 \description{
 Exact integer addition of the discrete-Laplace noise; no clipping (the
 signed component is kept for pooling and projected only for display).
-\code{fixed_synopsis} keys the noise on (corpus, custodial generation,
-owner, population, family, coordinate); \code{realised_sticky} keys it on
-the owner, family, coordinate and the secret contribution fingerprint.
+\code{fixed_synopsis} keys the noise on (corpus, automatic data generation,
+privacy epoch, owner, population, family, coordinate, profile) and on the
+secret fingerprint of the component's realised bounded contributions: the
+generation redraws every fixed synopsis at once when rows are added or
+removed, and the fingerprint redraws a component whose contributions
+changed although the generation did not (an in-place edit, or a change
+while the session is open), so a component's noise is never reused for
+different contributions. \code{realised_sticky} keys it on the owner,
+family, coordinate and the contribution fingerprint, never on the data
+generation.
 }
 \keyword{internal}

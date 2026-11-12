@@ -19,9 +19,12 @@ List with \code{effective} (sanitized-form parameters) and
 Applies the public quantizer of every classified parameter before the
 final aggregate is evaluated and before its identity is formed, so a request
 evaluates exactly the effective estimand it reports. Closed integer windows
-\code{[a, b]} are treated as half-open \code{[a, b + 1)} and snapped
-outward (\code{floor_G(a)}, \code{ceil_G(b + 1)}); scalar thresholds snap to
-the nearest grid point (ties to the smaller one) with endpoint saturation.
+\code{[a, b]} snap outward to \code{[floor_G(a), ceil_G(b)]} on the signed
+clinical grid G (and are converted once to the half-open
+\code{[a, b + 1)} in SQL), so common clinical windows such as
+\code{[1, 365]} or \code{[0, 0]} are unchanged; scalar durations snap to the
+nearest point of the duration grids (ties to the smaller one) with endpoint
+saturation.
 Discrete, display and released-value thresholds are unchanged. The returned
 \code{changes} name every parameter whose effective value differs from the
 request, with the requested and effective values.

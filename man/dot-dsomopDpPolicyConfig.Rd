@@ -7,15 +7,15 @@
 .dsomopDpPolicyConfig()
 }
 \description{
-Missing domain and snapshot_id values are SHA-256 fingerprints of canonical
-resource coordinates and cdm_source metadata (cdm_source_name,
-cdm_release_date, cdm_version, vocabulary_version). Explicit values win.
-Complete source rows are canonically sorted; incomplete or absent source
-metadata falls back to sorted vocabulary versions, then resource identity
-alone. Without a custodial snapshot_id the releases are realised-sticky:
-a reload redraws exactly the components whose bounded contributions
-changed (dsOMOP 2.10.3); a fixed-synopsis release needs the custodian's
-snapshot_id, which must change with every data generation. The noise root
-is the only persistent DP state; ephemeral state directories are test-only.
+A missing domain is the SHA-256 fingerprint of the canonical resource
+coordinates. The public \code{snapshot_id} is only a display label for
+clients (the SHA-256 of the resource identity and the cdm_source metadata:
+cdm_source_name, cdm_release_date, cdm_version, vocabulary_version, with the
+documented fallbacks); since dsOMOP 2.10.3 no key, route or admission
+depends on it. The deprecated \code{dsomop.dp.snapshot_id} option only
+replaces that label. Fixed synopses are keyed on the automatic data
+generation instead (\code{.dsomopDpDataGeneration}), which needs no
+configuration. The noise root is the only persistent DP state; ephemeral
+state directories are test-only.
 }
 \keyword{internal}

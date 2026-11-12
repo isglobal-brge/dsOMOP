@@ -11,7 +11,8 @@
   tar_start,
   tar_end,
   anchor_start = "start",
-  anchor_end = "end"
+  anchor_end = "end",
+  horizon = NULL
 )
 }
 \arguments{
@@ -24,6 +25,9 @@
 \item{tar_start, tar_end}{Integer TAR offsets.}
 
 \item{anchor_start, anchor_end}{Either `"start"` or `"end"`.}
+
+\item{horizon}{Public contribution horizon in days of protected releases
+(NULL: the whole observed window).}
 }
 \value{
 SQL for a derived person-level outcome substrate.

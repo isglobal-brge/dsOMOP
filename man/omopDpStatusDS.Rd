@@ -28,5 +28,10 @@ accountant, budget or call quota: \code{privacy_call_quota = "none"} and
 DP serves only the OHDSI community tools, so the status requires them to be
 enabled (\code{dsomop.tools.enabled}). It derives the service identity from
 the session's connected OMOP resource when no explicit
-\code{dsomop.dp.domain}/\code{dsomop.dp.snapshot_id} are configured.
+\code{dsomop.dp.domain} is configured. The public \code{snapshot_id} is a
+display label only (the deprecated \code{dsomop.dp.snapshot_id} option
+replaces it); fixed synopses are keyed on the automatic data generation,
+described by \code{data_generation}, \code{data_generation_basis} and
+\code{data_generation_residual} (what it cannot see). The generation itself
+is never returned.
 }
