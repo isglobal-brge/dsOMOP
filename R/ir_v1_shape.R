@@ -285,6 +285,23 @@
 # of an inline spec, any non-negative integer (A-16).
 .v1sPlanCohortId <- function() .v1sScalar("cohort_id")
 
+# .resolveCohortTable() dispatches only numeric values and digit-only strings
+# as ids. Other strings are cohort-table names, so coercing "+1" or "1e0"
+# here would hide the malformed identifier the historical executor refused.
+# The root cohort/spec identifier uses as.integer() directly and keeps its
+# separate, broader .v1sCohortId() coercions.
+.v1sResolvedCohort <- function(allow_name = FALSE) {
+  .v1sCustom(function(x, path) {
+    value <- .v1Scalar(x)
+    if (is.character(value) && length(value) == 1L && !is.na(value) &&
+        !grepl("^[0-9]+$", value)) {
+      errors <- .v1Legacy(path, .validateIdentifier(value, "cohort"))
+      if (length(errors) || isTRUE(allow_name)) return(errors)
+    }
+    .v1ShapeErrors(x, .v1sCohortId(), path)
+  })
+}
+
 #' Findings of a v1 row filter (the custom DSL of \code{.assertCustomFilterSafe()})
 #'
 #' Closed at every node on raw member names (and/or/not groups, leaves
@@ -697,7 +714,7 @@
   if (!is.null(cached)) return(cached)
   population <- .v1sObj(
     id = .v1sStr(), label = .v1sStr(), kind = .v1sStr(c("criteria", "setop")),
-    filter_tree = .v1sFilterTree(), cohort_definition_id = .v1sCohortId(),
+    filter_tree = .v1sFilterTree(), cohort_definition_id = .v1sResolvedCohort(),
     episode_policy = .v1sStr(.V1_EPISODE_POLICIES),
     index_event = .v1sObj(table = .v1sStr(), concept_set = .v1sConceptSet(),
                           primary_limit = .v1sStr(c("first", "last", "all")),
@@ -739,7 +756,7 @@
                       factor_concepts = .v1sBool(), min_persons = .v1sInt()),
     populations = .v1sMap(population),
     # resolved workspace frames are server state and never part of a plan
-    scope = .v1sObj(cohort = .v1sOneOf(.v1sCohortId(), .v1sStr(), .v1sArr(.v1sOneOf(.v1sCohortId(), .v1sStr()))),
+    scope = .v1sObj(cohort = .v1sOneOf(.v1sResolvedCohort(TRUE), .v1sArr(.v1sResolvedCohort(TRUE))),
                     tables = .v1sStrs(), combine = .v1sStr(c("union", "intersect"))),
     # client-side federation evidence (never read by the server; annex),
     # closed on the shapes dsOMOPClient writes (.plan_dependency_manifest(),

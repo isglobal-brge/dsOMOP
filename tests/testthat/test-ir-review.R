@@ -180,6 +180,27 @@ test_that("B5: the v1 site requirements of the executors are checked before exec
 
 # --- B6: criterion-specific union coverage ------------------------------------
 
+test_that("v1 cohort references follow the actual field's historical dispatch", {
+  for (value in c("+1", "1e0", " 1 ", "0x1")) {
+    root <- list(cohort = list(type = "cohort_table", cohort_definition_id = value))
+    expect_length(.planV1EnvelopeErrors(root), 0L)
+    for (plan in list(
+      list(populations = list(p = list(cohort_definition_id = value))),
+      list(scope = list(cohort = value)),
+      list(scope = list(cohort = list(value))))) {
+      err <- .rv_refused(.planV1Envelope(plan))
+      expect_s3_class(err, "dsomop_plan_rejection")
+      expect_identical(err$code, "validation_error")
+      expect_match(conditionMessage(err), "Invalid cohort name", fixed = TRUE)
+    }
+  }
+  for (value in list(1, 1.5, "1")) {
+    expect_length(.planV1EnvelopeErrors(list(populations = list(p = list(cohort_definition_id = value)))), 0L)
+    expect_length(.planV1EnvelopeErrors(list(scope = list(cohort = value))), 0L)
+  }
+  expect_length(.planV1EnvelopeErrors(list(scope = list(cohort = "temporary_cohort"))), 0L)
+})
+
 test_that("B6: an observed() gap requests union coverage and its window frames", {
   x <- .rv_plan_a()
   x$intervals <- NULL
