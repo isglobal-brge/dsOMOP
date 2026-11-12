@@ -4294,6 +4294,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     pack_contract_version = e$meta$pack_contract_version,
     output_contract = e$meta$output_contract,
     pooling_contract = e$meta$pooling_contract,
+    # Protected releases (tools_release.R): how 2.10.3 clients pool their
+    # signed components. NULL for every other entry and in standard mode.
+    release_pooling = e$meta$release_pooling,
     # Inert client-side plot recipe (type + a deparsed function(df, params) string).
     # The server NEVER evaluates this; the client renders it locally on the
     # already-gated aggregate. NULL for analyses without a plot.
@@ -5213,16 +5216,40 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
   sanitized <- .omopAnalysisSanitizeParams(entry, params)
 
-  # Protection route of the community tools (tools_auto.R). Reviewed questions
-  # choose DP, the standard gate or a refusal from the custodial mode; every
-  # other aggregate output is a standard statistic, refused only in DP-only
-  # mode.
+  # Public quantization of free numeric parameters (tools_release.R): every
+  # aggregate request evaluates, and reports, the effective estimand on the
+  # public grids. Assign loaders keep their exact operational parameters.
+  snap <- list(effective = sanitized, changes = list())
+  release_contract <- NULL
+  if (!assign) {
+    snap <- .omopToolsSnapReleaseParams(entry, sanitized)
+    sanitized <- snap$effective
+    release_contract <- .omopToolsReleaseContract(entry)
+  }
+
+  # Protection route of the community tools. Entries with a reviewed release
+  # contract (tools_release_contracts.R) choose the fixed-synopsis or
+  # realised-contribution protected route, or the standard route with the
+  # demonstrated-disclosive fields unavailable; reviewed QueryLibrary
+  # summaries keep their standard route; every other aggregate output is a
+  # standard statistic, refused only in DP-only mode.
   tools_route <- NULL
+  release_route <- NULL
   if (identical(entry$meta$adapter, "tools_auto")) {
     tools_route <- .dsomopToolsRoute(handle, entry)
+    if (!is.null(release_contract)) {
+      release_route <- .omopToolsReleaseRoute(handle, release_contract,
+                                              scoped = FALSE)
+      tools_route$protection <- release_route$protection
+    }
+  } else if (!is.null(release_contract)) {
+    release_route <- .omopToolsReleaseRoute(handle, release_contract,
+                                            scoped = !is.null(scope))
   } else if (!assign) {
     .dsomopRequireStandardStatistics()
   }
+  release_protected <- !is.null(release_route) &&
+    release_route$protection %in% .DSOMOP_RELEASE_PROTECTED
 
   kind <- entry$compute$kind %||% "sql"
 
@@ -5294,6 +5321,25 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     } else {
       scoped <- .omopAnalysisResolveScope(handle, scope, combine)
     }
+  }
+
+  # Protected route: the contract computes person-level bounded contributions
+  # and releases protected components; the exact summary is never built.
+  if (release_protected) {
+    ctx <- list(
+      analysis_id = entry$meta$analysis_id,
+      table_name = entry$meta$table_name,
+      tool_id = entry$meta$tool_id,
+      scoped_cohort = scoped,
+      person_set_sql = if (!is.null(scoped)) {
+        paste0("(SELECT subject_id FROM ", scoped, ")")
+      } else NULL,
+      scoped_cohorts = scoped_pair,
+      entry = entry,
+      release_route = release_route
+    )
+    return(.omopToolsReleaseRun(handle, ctx, sanitized, release_contract,
+                                release_route, snap, entry))
   }
 
   if (identical(kind, "sql") || identical(kind, "sql+r")) {
@@ -5368,7 +5414,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     ))
   }
   if (!is.null(tools_route)) {
-    return(.dsomopToolsFinalize(handle, df, entry, sanitized))
+    out <- .dsomopToolsFinalize(handle, df, entry, sanitized)
+    return(.omopToolsReleaseStandardLabel(out, release_contract,
+                                          release_route, FALSE, snap))
   }
   raw_order <- .omopAnalysisRawOrder(df, entry)
   df <- .omopAnalysisExternalOutputFirewall(
@@ -5381,5 +5429,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     df, entry, assign = FALSE, phase = "final"
   )
   df <- .omopAnalysisNormalizePoolingOutput(df, entry)
-  .dsomopToolsLabel(df, entry, "standard")
+  out <- .dsomopToolsLabel(df, entry,
+                           release_route$protection %||% "standard")
+  .omopToolsReleaseStandardLabel(out, release_contract, release_route,
+                                 !is.null(scope), snap)
 }

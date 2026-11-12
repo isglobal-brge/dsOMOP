@@ -34,9 +34,12 @@
                             "bigquery", "snowflake", "spark", "sqlite",
                             "duckdb", "mysql")
 .DSOMOP_TOOLS_ADAPTER_VERSION <- 1L
-.DSOMOP_TOOLS_DAY_BREAKS <- c(0, 30, 90, 180, 365, 730, 1825, 3650, 7300)
+# The public release grids of tools_release.R (.dsomopReleaseGrid): durations,
+# days supply and counts per person.
+.DSOMOP_TOOLS_DAY_BREAKS <- c(0, 30, 90, 180, 365, 730, 1095, 1825, 3650,
+                              7300, 10957)
 .DSOMOP_TOOLS_SUPPLY_BREAKS <- c(0, 7, 14, 30, 60, 90, 180, 365)
-.DSOMOP_TOOLS_COUNT_BREAKS <- c(1, 2, 3, 4, 5, 10, 20, 50)
+.DSOMOP_TOOLS_COUNT_BREAKS <- c(0:20, 25, 30, 40, 50, 75, 100)
 .DSOMOP_TOOLS_FIRST_BIRTH_YEAR <- 1900L
 .DSOMOP_TOOLS_AGE_GROUPS <- c("0-9", "10-19", "20-29", "30-39", "40-49",
                               "50-59", "60-69", "70-79", "80-89", "90+",
@@ -469,11 +472,11 @@
 #'
 #' @param handle CDM handle.
 #' @param entry Catalog entry (adapter "tools_auto").
-#' @return List with protection ("dp", "standard_fallback" or "standard"),
-#'   shape, mode and, for DP, the policy.
+#' @return List with protection ("standard", or "pending_release_route" for
+#'   histogram/partition shapes whose release contract decides), shape and
+#'   mode.
 #' @keywords internal
 .dsomopToolsRoute <- function(handle, entry) {
-  spec <- entry$meta$tools_spec
   mode <- .dsomopToolsMode()
   if (!identical(mode, entry$meta$tools_mode)) {
     stop("dsomop.tools.mode changed during this R session; restart the ",
@@ -493,17 +496,9 @@
   if (identical(mode, "standard")) {
     return(c(route, list(protection = "standard")))
   }
-  ready <- .dsomopToolsDpReady(handle)
-  if (isTRUE(ready$ready)) {
-    return(c(route, list(protection = "dp", policy = ready$policy)))
-  }
-  if (identical(mode, "dp")) {
-    stop("The data custodian has set the community tools to DP-only mode, ",
-         "but the differential-privacy service is not available on this ",
-         "server.", call. = FALSE)
-  }
-  c(route, list(protection = "standard_fallback",
-                fallback_reason = ready$reason))
+  # Histogram and partition shapes: the protected release route of their
+  # contract decides (tools_release.R, .omopToolsReleaseRoute).
+  c(route, list(protection = "pending_release_route"))
 }
 
 # --- Compute ---------------------------------------------------------------------
@@ -642,7 +637,21 @@
   list(cells = cells, counts = as.numeric(counts))
 }
 
+# The fixed custodial reference year of the birth-year basis
+# (dsomop.dp.reference_year); the current calendar year when unset. A new
+# reference year is a new basis (a new disclosure, once a year by default).
 .dsomopToolsReferenceYear <- function() {
+  configured <- getOption("dsomop.dp.reference_year",
+                          getOption("default.dsomop.dp.reference_year", NULL))
+  if (!is.null(configured)) {
+    year <- suppressWarnings(as.numeric(configured))
+    if (length(year) != 1L || is.na(year) || year != floor(year) ||
+        year < 1900 || year > 2200) {
+      stop("dsomop.dp.reference_year must be one calendar year.",
+           call. = FALSE)
+    }
+    return(as.integer(year))
+  }
   as.integer(format(Sys.Date(), "%Y"))
 }
 
@@ -812,68 +821,13 @@
                 check.names = FALSE)
 }
 
-# Canonical public identity of a DP release: the question, its public
-# parameters and cells, the reducer and the adapter version. Output names,
-# ordering and the caller never enter it.
-.dsomopToolsSemantic <- function(entry, spec, concept_id, cells, extra) {
-  cell_keys <- vapply(seq_len(nrow(cells)), function(i) {
-    paste(vapply(cells[i, , drop = FALSE], function(x) {
-      if (is.na(x)) "NA" else as.character(x)
-    }, character(1L)), collapse = "|")
-  }, character(1L))
-  list(
-    statistic = paste0("tools_person_", spec$kind),
-    adapter = "tools_auto",
-    adapter_version = .DSOMOP_TOOLS_ADAPTER_VERSION,
-    question = entry$meta$query_id,
-    population = list(table = spec$table %||% "person",
-                      filters = spec$where %||% character(0),
-                      concept_column = spec$concept_col %||% "",
-                      concept_id = if (is.null(concept_id)) "" else
-                        as.character(concept_id)),
-    reducer = spec$reducer %||% "partition",
-    valid_min = spec$valid_min %||% "",
-    breaks = spec$breaks %||% numeric(0),
-    strata = spec$strata %||% spec$partition %||% "",
-    reference_year = extra$reference_year %||% "",
-    interval_contract = "left_closed_right_open_last_open",
-    levels = cell_keys,
-    unit = "distinct_person"
-  )
-}
-
-.dsomopToolsDpRelease <- function(handle, entry, policy, concept_id,
-                                  cells, counts, extra = list()) {
-  spec <- entry$meta$tools_spec
-  semantic <- .dsomopToolsSemantic(entry, spec, concept_id, cells, extra)
-  release <- .dsomopDpRelease(
-    policy = policy, semantic = semantic,
-    bounded_snapshot = list(counts = as.numeric(counts)),
-    sensitivity = list(l1 = 1, unit = "person"),
-    payload_fn = function(epsilon, policy, release_context) {
-      noisy <- vapply(seq_along(counts), function(i) {
-        .dsomopDpNoisyInteger(counts[[i]], policy, release_context,
-                              sprintf("tools-cell-%08d", i), epsilon, 1)
-      }, numeric(1L))
-      list(statistic = semantic$statistic, counts = as.numeric(noisy))
-    }
-  )
-  noisy <- as.numeric(release$counts)
-  if (length(noisy) != length(counts) || anyNA(noisy)) {
-    stop("The DP release does not match its public cells.", call. = FALSE)
-  }
-  list(counts = noisy, epsilon = as.numeric(release$epsilon),
-       delta = as.numeric(release$delta %||% 0),
-       mechanism = as.character(release$mechanism %||% policy$mechanism))
-}
-
 #' Compute one run of a reviewed question
 #'
 #' @param handle CDM handle.
 #' @param ctx Run-path context; \code{ctx$tools_route} and \code{ctx$entry}.
 #' @param params Sanitized parameters.
 #' @return Data frame of the route's shape, with attribute
-#'   \code{dsomop_tools_protection} ("dp", "standard_fallback" or "standard").
+#'   \code{dsomop_tools_protection} ("standard_fallback" or "standard").
 #' @keywords internal
 .dsomopToolsAutoCompute <- function(handle, ctx, params) {
   entry <- ctx$entry
@@ -896,34 +850,17 @@
   } else {
     .dsomopToolsPartitionCells(handle, spec)
   }
+  # Protected releases never reach this exact path: they are computed by the
+  # release contract from person-level contributions. This is the standard
+  # fallback (auto mode without the DP service) and its standard gate.
   cells <- built$cells
-  dp <- NULL
-  if (identical(protection, "dp")) {
-    dp <- tryCatch(
-      .dsomopToolsDpRelease(handle, entry, route$policy, concept_id, cells,
-                            built$counts, built$extra %||% list()),
-      error = function(e) {
-        if (identical(route$mode, "dp")) stop(e)
-        message("[dsomop-tools] DP release unavailable, using the standard ",
-                "gate: ", conditionMessage(e))
-        NULL
-      }
-    )
-    if (is.null(dp)) protection <- "standard_fallback"
+  cells$n_persons <- built$counts
+  if (identical(shape, "partition")) {
+    # Standard partitions release populated cells only, as the template did.
+    cells <- cells[cells$n_persons > 0, , drop = FALSE]
+    rownames(cells) <- NULL
   }
-  if (identical(protection, "dp")) {
-    cells$n_persons <- dp$counts
-    attr(cells, "dsomop_tools_protection") <- "dp"
-    attr(cells, "dsomop_tools_dp") <- dp
-  } else {
-    cells$n_persons <- built$counts
-    if (identical(shape, "partition")) {
-      # Standard partitions release populated cells only, as the template did.
-      cells <- cells[cells$n_persons > 0, , drop = FALSE]
-      rownames(cells) <- NULL
-    }
-    attr(cells, "dsomop_tools_protection") <- protection
-  }
+  attr(cells, "dsomop_tools_protection") <- protection
   attr(cells, "dsomop_tools_extra") <- built$extra %||% list()
   cells
 }
@@ -941,8 +878,9 @@
 #'
 #' @param df Released data frame.
 #' @param entry Catalog entry.
-#' @param protection "dp", "standard_fallback" or "standard".
-#' @param dp DP release metadata (DP only).
+#' @param protection "standard_fallback", "standard" (or a protected route
+#'   label set by a release contract).
+#' @param dp Unused; kept for signature compatibility.
 #' @param extra Public extras (e.g. reference year).
 #' @return \code{df} with attribute \code{dsomop_protection}.
 #' @keywords internal
@@ -959,20 +897,7 @@
       label$reference_year <- extra$reference_year
     }
   }
-  if (identical(protection, "dp")) {
-    label$mechanism <- dp$mechanism
-    label$epsilon <- dp$epsilon
-    label$delta <- dp$delta
-    label$sensitivity <- 1
-    label$adjacency <- "add_remove_person"
-    label$sticky <- TRUE
-    label$noise_sd <- .dsomopToolsNoiseSd(dp$epsilon, 1)
-    label$note <- paste0(
-      "Differential privacy: every count carries random noise (SD about ",
-      format(round(label$noise_sd, 1), nsmall = 1), " persons); a repeated ",
-      "request returns the same answer. Each person is counted once."
-    )
-  } else if (identical(protection, "standard_fallback")) {
+  if (identical(protection, "standard_fallback")) {
     label$note <- paste0(
       "Standard DataSHIELD disclosure controls (the differential-privacy ",
       "service is not available on this server): small cells are removed ",
@@ -990,12 +915,12 @@
 
 # --- Finalize ------------------------------------------------------------------------
 
-#' Release one run of a reviewed question
+#' Release one standard-route run of a reviewed question
 #'
-#' DP outputs are complete noisy tables of a public domain: the standard gate's
-#' suppression and banding do not apply to them. Every other output (standard
-#' summaries, standard partitions and the standard fallback of auto mode) goes
-#' through the unified gate. A missing protection marker means the gate.
+#' Protected histograms and partitions are released by their contract
+#' (tools_release.R) and never reach this function. Standard summaries,
+#' standard partitions and the standard fallback of auto mode go through the
+#' unified gate.
 #'
 #' @param handle CDM handle.
 #' @param df Computed frame.
@@ -1005,18 +930,12 @@
 #' @keywords internal
 .dsomopToolsFinalize <- function(handle, df, entry, sanitized) {
   protection <- attr(df, "dsomop_tools_protection", exact = TRUE)
-  dp <- attr(df, "dsomop_tools_dp", exact = TRUE)
   extra <- attr(df, "dsomop_tools_extra", exact = TRUE) %||% list()
-  if (identical(protection, "dp") && is.list(dp)) {
-    attributes(df) <- attributes(df)[c("names", "row.names", "class")]
-  } else {
-    if (!identical(protection, "standard_fallback")) protection <- "standard"
-    df <- .omopAnalysisGate(handle, df, entry)
-    df <- .dsomopToolsOrder(df, entry, sanitized)
-    dp <- NULL
-  }
+  if (!identical(protection, "standard_fallback")) protection <- "standard"
+  df <- .omopAnalysisGate(handle, df, entry)
+  df <- .dsomopToolsOrder(df, entry, sanitized)
   df <- .omopAnalysisNormalizePoolingOutput(df, entry)
-  .dsomopToolsLabel(df, entry, protection, dp, extra)
+  .dsomopToolsLabel(df, entry, protection, NULL, extra)
 }
 
 # Standard outputs are ordered from released values and public keys only.

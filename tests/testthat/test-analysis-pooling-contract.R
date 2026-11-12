@@ -136,7 +136,14 @@ test_that("every QueryLibrary DBMS subset carries its declared exact schema", {
         } else {
           as.character(queries[[entry$meta$query_id]]$outputs$field)
         }
-        expect_identical(names(entry$meta$pooling_contract$columns), expected,
+        # Protected releases (auto mode) publish not_poolable for older
+        # clients and their closed schema in release_pooling.
+        columns <- if (!is.null(entry$meta$release_pooling)) {
+          expect_identical(entry$meta$pooling_contract$strategy,
+                           "not_poolable", info = entry$name)
+          entry$meta$release_pooling$columns
+        } else entry$meta$pooling_contract$columns
+        expect_identical(names(columns), expected,
                          info = paste(dialect, entry$name))
         seen <- union(seen, entry$meta$query_id)
       }

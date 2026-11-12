@@ -845,8 +845,8 @@
       stop("Aggregate analysis '", id,
            "' has no typed pooling contract.", call. = FALSE)
     }
-    entry$meta$pooling_contract <-
-      .omopAnalysisValidatePoolingContract(contract, id)
+    contract <- .omopAnalysisValidatePoolingContract(contract, id)
+    entry <- .omopToolsReleasePoolingContract(entry, contract)
     entries[[id]] <- entry
   }
   for (id in names(entries)) {
@@ -859,6 +859,7 @@
            "'.", call. = FALSE)
     }
     entry$meta$pooling_contract <- entries[[target]]$meta$pooling_contract
+    entry$meta$release_pooling <- entries[[target]]$meta$release_pooling
     entries[[id]] <- entry
   }
   for (id in names(entries)) {
