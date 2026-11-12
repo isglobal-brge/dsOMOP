@@ -85,9 +85,11 @@
   stopifnot(.isPlanContext(ctx))
   .assertCompiledOutput(compiled)
   for (candidate in compiled$publication_candidates) {
-    component <- compiled$components[[candidate$component]]
     id <- paste(candidate$output, candidate$component, sep = "/")
     ctx$publication_shapes[[id]] <- candidate$grain
+  }
+  for (candidate in compiled$publication_candidates) {
+    component <- compiled$components[[candidate$component]]
     if (!identical(ctx$output_mode, "staged")) {
       frame <- component$frame
       if (is.null(frame)) frame <- .executeQuery(ctx$handle, component$statement)
@@ -165,7 +167,11 @@
       list(mode = "relative", reference = "index"))
   }
   settings <- .omopDisclosureSettings()
-  root_grain <- if (identical(type, "dictionary")) "none" else output$grain %||% "episode"
+  root_id <- paste(root, root, sep = "/")
+  primary <- ctx$prepared[[root_id]]$candidate
+  root_grain <- if (identical(type, "dictionary")) "none" else {
+    ctx$publication_shapes[[root_id]] %||% primary$grain %||% output$grain %||% "episode"
+  }
   base <- list(
     contract_version = "dsomop-staged-semantics-v3",
     output_type = type, output_format = format, component = NULL,
@@ -178,7 +184,8 @@
     datetime_timezone = settings$datetime_timezone, week_start = settings$week_start
   )
   semantic <- base
-  semantic$component <- component
+  # Preserve the required explicit NULL field for the primary component.
+  semantic["component"] <- list(component)
   id <- paste(root, component %||% root, sep = "/")
   candidate <- ctx$prepared[[id]]$candidate
   grain <- ctx$publication_shapes[[id]] %||% candidate$grain

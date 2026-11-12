@@ -157,6 +157,60 @@ test_that("compiled staged frames and origin-qualified roster streams agree with
   }
 })
 
+test_that("compiled staged composite keys count their own distinct stored tokens", {
+  ctx <- .publication_compiled_context(threshold = 5L)
+  ctx$ir$outputs$out$grain <- "episode"
+  roster <- data.frame(person_id = 1:5, cohort_row_id = 1L)
+  .planRegisterRoster(ctx, "episodes", roster)
+  frame <- transform(roster, value = seq_len(5L), raw_source = "private")
+  fragment <- .fragment("result", "result", "episode", "SELECT 1",
+    list(person_id = .fragmentColumn("integer", FALSE, "person_key"),
+         cohort_row_id = .fragmentColumn("integer", FALSE, "episode_key"),
+         value = .fragmentColumn("numeric"),
+         raw_source = .fragmentColumn("text", role = "private")),
+    person_lineage = list(person_col = "person_id", via_roster = "episodes"),
+    roster_namespace = "episodes", private_columns = "raw_source")
+  candidate <- .publicationCandidate("out", "out", "staged",
+    .lineage("roster", c("person_id", "cohort_row_id"), "episodes",
+             c("person_id", "cohort_row_id"), "person_id"),
+    private_columns = "raw_source", requested_path = "D.parquet", grain = "episode")
+  compiled <- .compiledOutput("out", list(out = list(frame = frame, fragment = fragment)),
+                              list(candidate))
+  .publishCompiled(ctx, compiled)
+  expect_identical(get("episodes", ctx$rosters), roster)
+  expect_true(ctx$prepared[["out/out"]]$passed)
+  descriptor <- get("out/out", ctx$staging_env)
+  rows <- NULL
+  .publishReadChunks(descriptor, function(chunk) rows <<- rbind(rows, chunk))
+  expect_identical(as.character(rows$cohort_row_id), rep("1", 5L))
+  expect_identical(as.character(rows$person_id),
+                   .hashPersonKey(roster$person_id, .personKey(ctx$handle)))
+  expect_identical(.publishCommit(ctx)$status, "ok")
+
+  ctx <- .publication_compiled_context(threshold = 3L)
+  compiled <- .publication_compiled_output(statement = paste(
+    "SELECT ((person_id - 1) % 2) + 1 AS person_id, person_id * 1.0 AS value,",
+    "'private' AS raw_source FROM person WHERE person_id <= 5 ORDER BY person_id"
+  ))
+  .publishCompiled(ctx, compiled)
+  expect_false(ctx$prepared[["out/out"]]$passed)
+  status <- .publishCommit(ctx)
+  expect_identical(status$status, "refused")
+  expect_identical(status$rejected$out$code, "insufficient_support")
+  expect_identical(ls(ctx$target_env), character(0))
+  expect_false(dir.exists(ctx$staging_dir))
+})
+
+test_that("compiled outputs must belong to the selected publication root", {
+  ctx <- .publication_compiled_context(mode = "memory")
+  compiled <- .publication_compiled_output(mode = "memory")
+  ctx$ir$outputs$public <- ctx$ir$outputs$out
+  ctx$ir$publish <- list("public")
+  expect_error(.publishOutputs(ctx, list(public = compiled), list(public = "D")),
+               "validation_error")
+  expect_identical(ls(ctx$target_env), character(0))
+})
+
 test_that("late malformed rows and chunk failures cannot publish staged components", {
   for (failure in c("orphan", "chunk")) {
     ctx <- .publication_compiled_context(threshold = 3L)
@@ -209,6 +263,13 @@ test_that("native staged semantics bind dynamic components without legacy relabe
   contracts <- .publicationStagedContracts(ctx, "out")
   expect_identical(contracts$semantic$output_type, "person_period")
   expect_identical(contracts$semantic$output_format, "dense")
+  expect_true("component" %in% names(contracts$semantic))
+  expect_null(contracts$semantic$component)
+  ctx$publication_shapes[["out/out"]] <- "person"
+  primary <- .publicationStagedContracts(ctx, "out")
+  companion <- .publicationStagedContracts(ctx, "out", "custom_tar")
+  expect_identical(primary$bundle, companion$bundle)
+  expect_identical(primary$bundle$semantic_contract$grain, "person")
   legacy <- list(outputs = list(out = list(type = "event_level",
                                            representation = list(format = "long"))))
   ctx$ir <- legacy
