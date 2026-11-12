@@ -1,0 +1,4 @@
+PASS: R syntax, YAML, v1 performance preflight, both matching reference seeds, vignette chunks
+dsOMOP v2.10.2 loaded. OMOP CDM resource resolver registered.
+[dsomop-audit] 2026-11-12T18:34:44+0000 method=publication detail={"output":"result","component":"result","passed":true}
+PASS: installed aggregate-policy probes, including external birth-column admission
