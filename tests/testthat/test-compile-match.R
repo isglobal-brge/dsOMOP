@@ -299,7 +299,7 @@ test_that("seed sensitivity and seed, order and dialect reproducibility", {
   shuffled$blueprint <- NULL
   shuffled$role_registry <- NULL
   ctx3 <- .ws4_ctx(shuffled, plan)
-  on.exit(.compileReleaseTempTables(ctx3), add = TRUE)
+  on.exit(.compileReleaseTempTables(ctx3), add = TRUE, after = FALSE)
   expect_identical(.ws6_roster(ctx3, "default"), d)
 })
 
@@ -537,7 +537,7 @@ test_that("case ranks and strata stay fixed when source rows change between the 
   h$role_registry <- NULL
   plan <- .ws6_m_plan(.ws6_m_variants["default"])
   ctx <- .ws4_ctx(h, plan)
-  on.exit(.planContextClose(ctx), add = TRUE)
+  on.exit(.planContextClose(ctx), add = TRUE, after = FALSE)
   fetch <- .matchFetchBounded
   realised_cases <- NULL
   testthat::local_mocked_bindings(.matchFetchBounded = function(ctx, final, select, ...) {
