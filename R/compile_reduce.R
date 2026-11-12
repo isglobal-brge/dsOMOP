@@ -916,8 +916,12 @@
   value_type <- "numeric"
   needs_value <- fn %in% .REDUCER_VALUE_FNS || identical(fn, "mode") ||
     (identical(fn, "n_distinct") && !is.null(r[["value"]]))
-  if (needs_value) {
-    requested <- r[["value"]] %||% if (identical(fn, "mode")) "concept_id" else "value"
+  requested <- r[["value"]] %||% if (identical(fn, "mode")) "concept_id" else "value"
+  declared <- tolower(requested) %in% c(names(src$catalogue$columns), names(src$catalogue$aliases),
+                                       names(src$catalogue$refused))
+  # Unavailable extension fields may have no packaged declaration. Preserve
+  # their existing all-NA fallback; recognized aliases must use their types.
+  if (needs_value && (src$available || declared)) {
     res <- .predicateResolve(src$catalogue, requested, paste0(field, "/value"))
     value_col <- res$column
     value_type <- if (res$type %in% c("integer", "bigint")) res$type else

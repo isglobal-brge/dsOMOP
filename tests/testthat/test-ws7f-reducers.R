@@ -106,3 +106,24 @@ test_that("unavailable raw mode aliases preserve declared types and date policie
     }
   }
 })
+
+test_that("unavailable extension fallback preserves known date and blocked column contracts", {
+  withr::local_options(list(dsomop.allowed_cdm_extensions = list(note = "astra_amount")))
+  h <- .ws4_reach_handle()
+  on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
+  .ws7_extend(h$conn)
+  plan <- .ws7_scenario_plan(list(
+    amount = list(source = list(event = "notes"), reducer = list(fn = "mode", value = "astra_amount")),
+    day = list(source = list(event = "notes"), reducer = list(fn = "mode", value = "note_date"))),
+    events = list(notes = list(table = "note", on_missing_table = "unavailable")))
+  got <- .ws7_scenario_run(h, plan)$frame
+  expect_type(got$amount, "double")
+  expect_true(all(is.na(got$amount)))
+  expect_type(got$day, "integer")
+  expect_true(all(is.na(got$day)))
+  for (column in c("note_text", "person_id")) {
+    refused <- plan
+    refused$variables$amount$reducer$value <- column
+    .ws4_expect_rejection(.ws7_scenario_run(h, refused), pattern = "never")
+  }
+})

@@ -652,7 +652,8 @@
       if (!is.null(node[["value"]][["column"]])) role$value_col <- tolower(node[["value"]][["column"]])
       for (key in names(bindings)) {
         raw <- role[[key]][[1L]]
-        if (nzchar(raw) && raw %in% col_df$column_name && !raw %in% names(columns)) {
+        if (nzchar(raw) && raw %in% col_df$column_name && !raw %in% names(columns) &&
+            !.assignmentBlockedColumn(raw, col_df)) {
           aliases[[raw]] <- bindings[[key]]
         }
       }
