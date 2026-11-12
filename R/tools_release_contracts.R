@@ -20,6 +20,7 @@
 .omopReleaseGenderKey <- function(gender_concept_id) {
   genders <- .dsomopToolsGenders()$gender_concept_id
   g <- suppressWarnings(as.integer(gender_concept_id))
+  if (!length(g)) return(character(0))
   g[is.na(g) | !g %in% genders] <- 0L
   paste0("gender=", g)
 }
