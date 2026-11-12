@@ -4,7 +4,7 @@
 \alias{.reduceApply}
 \title{Apply a reducer to every roster key}
 \usage{
-.reduceApply(fn, rows, keys, r, ordering, anchors = NULL)
+.reduceApply(fn, rows, keys, r, ordering, anchors = NULL, value_type = NULL)
 }
 \arguments{
 \item{fn}{Reducer name.}
@@ -19,6 +19,8 @@ columns, in byte order).}
 \item{ordering}{Ordering columns of the source.}
 
 \item{anchors}{NULL or a Date vector aligned with keys.}
+
+\item{value_type}{Declared value column type, including lossless BIGINT.}
 }
 \value{
 A list of value vectors (one per output column) aligned with keys.

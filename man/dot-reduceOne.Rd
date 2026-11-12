@@ -4,7 +4,7 @@
 \alias{.reduceOne}
 \title{Apply one reducer to the ordered rows of one roster row}
 \usage{
-.reduceOne(fn, x, r, anchor = NA)
+.reduceOne(fn, x, r, anchor = NA, value_type = NULL)
 }
 \arguments{
 \item{fn}{Reducer name.}
@@ -18,6 +18,8 @@
 \item{anchor}{Anchor date of the row (Date or NA): the window's anchor for
 first_date, last_date and closest_value; the reference anchor for
 days_since / days_until.}
+
+\item{value_type}{Declared value column type, including lossless BIGINT.}
 }
 \value{
 One value (a vector for nth_value with a vector n).

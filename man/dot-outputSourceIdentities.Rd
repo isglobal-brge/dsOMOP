@@ -21,7 +21,8 @@ list(name, kind, ids (integer, or NA for a combined identity),
 From the plan and the vocabulary, never from the clinical rows at a site:
 an event source's resolved concept set, the declared concepts first in
 declaration order, then the other resolved concepts ascending; an interval
-source is one combined identity (NA). An unrestricted or adapter source has
-no reviewed identity set and is refused for identity-keyed outputs.
+source is one combined identity (NA). A cost source inherits its table
+parent's identities while retaining its own stream. Unrestricted sources
+and other adapters have no reviewed identity set for identity-keyed outputs.
 }
 \keyword{internal}
