@@ -666,9 +666,11 @@
 #' Non-negative display of a table under fixed displayed row and column parents
 #'
 #' Iterative proportional fitting of the positive part of the reconciled
-#' table (a fixed floor keeps every cell positive) to the displayed parents,
-#' ending on the rows so each row equals its displayed parent exactly; the
-#' columns match theirs to the fitting tolerance. Deterministic.
+#' table (a fixed floor keeps every cell positive) to the displayed parents.
+#' A final nonnegative mass transfer from surplus columns to deficit columns
+#' preserves each row and fixes both margins even if IPF reaches its iteration
+#' limit. This is a deterministic feasible display, not a claim of an exact
+#' KL or Euclidean minimizer after the finite iteration cap.
 #'
 #' @param X Reconciled (signed) k x m table.
 #' @param r Displayed row parents; @param c Displayed column parents.
@@ -696,9 +698,23 @@
     Z <- sweep(Z, 2L, ifelse(cs > 0, c / cs, 0), `*`)
     if (max(abs(rowSums(Z) - r)) <= tol * max(1, sum(r))) break
   }
-  Z <- scale_rows(Z)
+  Z <- .dsomopReleaseRepairColumns(scale_rows(Z), c)
   dimnames(Z) <- dimnames(X)
   Z
+}
+
+# Repair column margins without changing nonnegative row margins. Remove a
+# surplus column's mass proportionally within that column, then distribute
+# each row's removed mass over the column deficits in their fixed proportions.
+# No row loses more mass than it contains, and every change is post-processing.
+.dsomopReleaseRepairColumns <- function(Z, target) {
+  current <- colSums(Z)
+  surplus <- pmax(current - target, 0)
+  deficit <- pmax(target - current, 0)
+  if (sum(surplus) <= 0 || sum(deficit) <= 0) return(Z)
+  fraction <- ifelse(current > 0, pmin(surplus / current, 1), 0)
+  removed <- sweep(Z, 2L, fraction, `*`)
+  Z - removed + outer(rowSums(removed), deficit / sum(deficit))
 }
 
 #' Display pipeline of a complete subgroup family under its arm (Cox)
