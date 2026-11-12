@@ -606,7 +606,7 @@ probes the runtime window-frame support. MySQL requires ≥8.0 and MariaDB ≥10
 the release CI targets PostgreSQL 16, MySQL 8.4 and MariaDB 11.4. The development
 test pod uses PostgreSQL 14, MySQL 8.4.11 and MariaDB 10.6; passing there does
 not replace the release CI matrix. DuckDB execution is optional when installed.
-The Opal harness pins 6.1.3 and 5.7.5, uses Rock with R ≥4.2, and records actual
+The Opal harness pins 6.1.3 and 5.7.6, uses Rock with R ≥4.2, and records actual
 Opal/R/database/driver versions in its artifacts. Neither matrix entry is
 reported as passing before its run completes.
 
