@@ -439,6 +439,9 @@ def diff_nodes(a, b, path, out):
                                                              _short((b or {}).get("kind") if isinstance(b, dict) else b, 60)),
                         baseline=_short(a, 300), current=_short(b, 300)))
         return
+    # Classification must never call unequal canonical trees identical, even
+    # when a new payload field is absent from the human-readable diff below.
+    before = len(out)
     k = a["kind"]
     if k == "data.frame":
         if a.get("class") != b.get("class"):
@@ -455,7 +458,7 @@ def diff_nodes(a, b, path, out):
             if _col_type(ca[n]) != _col_type(cb[n]):
                 out.append(dict(path=path + "." + n, aspect="types",
                                 detail="%s -> %s" % (_short(_col_type(ca[n]), 120), _short(_col_type(cb[n]), 120))))
-            for f in ("names", "attrs"):
+            for f in ("names", "attrs", "numeric_payload"):
                 if ca[n].get(f) != cb[n].get(f):
                     out.append(dict(path=path + "." + n, aspect="column_" + f,
                                     detail="%s -> %s" % (_short(ca[n].get(f), 100), _short(cb[n].get(f), 100))))
@@ -482,6 +485,9 @@ def diff_nodes(a, b, path, out):
                             detail="%s -> %s" % (_short(a.get("row_names"), 80), _short(b.get("row_names"), 80))))
         if a.get("attrs") != b.get("attrs"):
             diff_attrs(a.get("attrs"), b.get("attrs"), path, out)
+        if len(out) == before:
+            out.append(dict(path=path, aspect="canonical_payload",
+                            detail="complete canonical forms differ beyond the displayed fields"))
         return
     if k == "list":
         if a.get("class") != b.get("class"):
@@ -497,6 +503,9 @@ def diff_nodes(a, b, path, out):
                 diff_nodes(item, ib[n], path + "." + n, out)
         if a.get("attrs") != b.get("attrs"):
             diff_attrs(a.get("attrs"), b.get("attrs"), path, out)
+        if len(out) == before:
+            out.append(dict(path=path, aspect="canonical_payload",
+                            detail="complete canonical forms differ beyond the displayed fields"))
         return
     aspect = "value"
     if path.endswith(".descriptor") or ".descriptor." in path:
