@@ -431,3 +431,24 @@ test_that("cost reducer consumers bind both the parent origin and inherited inde
   expect_identical(got$total, c(100, 0, 100, 0))
   expect_identical(got$course, c(1L, 0L, 1L, 0L))
 })
+
+test_that("death-derived values distinguish an available empty table from an unavailable table", {
+  h <- .ws4_reach_handle()
+  on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
+  DBI::dbExecute(h$conn, "DELETE FROM death")
+  plan <- .ws7_scenario_plan(list(dead = list(derived = list(kind = "died")),
+                                  soon = list(derived = list(kind = "died", before = 30L)),
+                                  days = list(derived = list(kind = "days_to_death"))))
+  frame <- .ws7_scenario_frame(1007L, index = "2020-01-01")
+  available <- .ws7_scenario_run(h, plan, frame)
+  expect_identical(available$compiled$status, "ok")
+  expect_identical(available$frame$dead, 0L)
+  expect_identical(available$frame$soon, 0L)
+  expect_identical(available$frame$days, NA_integer_)
+  DBI::dbExecute(h$conn, "DROP TABLE death")
+  h$blueprint <- NULL
+  h$role_registry <- NULL
+  unavailable <- .ws7_scenario_run(h, plan, frame)
+  expect_identical(unavailable$compiled$status, "unavailable")
+  for (col in c("dead", "soon", "days")) expect_identical(unavailable$frame[[col]], NA_integer_)
+})

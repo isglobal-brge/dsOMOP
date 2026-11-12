@@ -1336,6 +1336,10 @@
   d <- node[["derived"]]
   kind <- d[["kind"]]
   field <- paste0("/variables/", name, "/derived")
+  if (kind %in% c("died", "days_to_death") && is.null(.roleOf(ctx[["handle"]], "death"))) {
+    columns <- stats::setNames(list(.fragmentColumn("integer", TRUE, "measure")), name)
+    return(.reduceUnavailable(ctx, cons, name, columns))
+  }
   one <- function(type, fun) {
     columns <- stats::setNames(list(.fragmentColumn(type, TRUE, "measure")), name)
     list(stream = NULL, reducer = NULL, declared_empty_value = NA, columns = columns,
