@@ -12,12 +12,14 @@
 #     ONLY, so the request's temporary tables still work). Every statement runs
 #     under a SAVEPOINT, so a deliberately failing probe rolls back to it
 #     instead of aborting the snapshot.
-#   * MySQL and MariaDB: REPEATABLE READ with START TRANSACTION WITH CONSISTENT
-#     SNAPSHOT. Visible source base tables must use InnoDB; unsupported engines
-#     fail closed. InnoDB evaluates the SELECT of CREATE TABLE ... SELECT as a
+#   * MySQL and MariaDB: InnoDB sources use REPEATABLE READ with START
+#     TRANSACTION WITH CONSISTENT SNAPSHOT. InnoDB evaluates the SELECT of
+#     CREATE TABLE ... SELECT as a
 #     locking read of the latest committed rows, not of the snapshot, so inside
 #     a snapshot a temporary table is filled from a consistent read through R.
-#     Statements that would commit implicitly are refused.
+#     Nontransactional source tables and statements that would commit
+#     implicitly are refused. Source engines are checked before and after
+#     each request to detect a concurrent engine change before first read.
 #   * DuckDB and SQLite: an explicit transaction (DuckDB has no savepoints: a
 #     failing statement aborts its transaction, and the request then fails).
 #   * SQL Server: SERIALIZABLE, with range locks; Oracle: SERIALIZABLE,
@@ -159,20 +161,7 @@
           "SELECT CAST(transaction_timestamp() AS TEXT) AS t"))$t[[1L]]
       },
       consistent_snapshot_transaction = {
-        schemas <- ctx$schemas
-        schemas <- schemas[!is.na(schemas) & nzchar(schemas)]
-        if (length(schemas)) {
-          schema_sql <- paste(DBI::dbQuoteString(conn, schemas), collapse = ", ")
-          nontransactional <- DBI::dbGetQuery(conn, paste0(
-            "SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema IN (",
-            schema_sql, ") AND table_type = 'BASE TABLE' AND UPPER(engine) <> 'INNODB'"))$n[[1L]]
-          if (as.numeric(nontransactional) > 0) {
-            stop(structure(list(message = paste0(
-              "This source contains nontransactional tables and cannot provide ",
-              "a request-consistent read snapshot; no result was released."), call = NULL),
-              class = c("dsomop_snapshot_unavailable", "error", "condition")))
-          }
-        }
+        .dsomopSnapshotAssertTransactional(ctx)
         # The session isolation applies to the consistent-snapshot
         # transaction below (a session setting, never a database option).
         variable <- if (identical(ctx$dbms, "mariadb")) "tx_isolation" else "transaction_isolation"
@@ -229,6 +218,44 @@
   invisible(TRUE)
 }
 
+# Capability check repeated at entry and final validation, never cached.
+# A table read holds its metadata lock until rollback; rechecking catches an
+# engine change between the entry check and that table's first read.
+.dsomopSnapshotAssertTransactional <- function(ctx, current = FALSE) {
+  schemas <- ctx$schemas
+  schemas <- schemas[!is.na(schemas) & nzchar(schemas)]
+  if (!length(schemas)) return(invisible(TRUE))
+  engines <- tryCatch({
+    schema_sql <- paste(DBI::dbQuoteString(ctx$conn, schemas), collapse = ", ")
+    tables <- DBI::dbGetQuery(ctx$conn, paste0(
+      "SELECT table_schema, table_name, engine FROM information_schema.tables ",
+      "WHERE table_schema IN (", schema_sql, ") AND table_type = 'BASE TABLE'"))
+    names(tables) <- tolower(names(tables))
+    engines <- as.character(tables$engine)
+    if (current && identical(ctx$dbms, "mysql")) {
+      # MySQL's INFORMATION_SCHEMA reads the transaction's old dictionary.
+      # SHOW CREATE TABLE uses the current definition, including its engine.
+      engines <- vapply(seq_len(nrow(tables)), function(i) {
+        table <- paste(DBI::dbQuoteIdentifier(ctx$conn, tables$table_schema[[i]]),
+                       DBI::dbQuoteIdentifier(ctx$conn, tables$table_name[[i]]), sep = ".")
+        ddl <- DBI::dbGetQuery(ctx$conn, paste("SHOW CREATE TABLE", table))[[2L]][[1L]]
+        match <- regmatches(ddl, regexec("(?m)^\\)\\s+ENGINE\\s*=\\s*([A-Za-z0-9_]+)\\b", ddl, perl = TRUE))[[1L]]
+        if (length(match) != 2L) stop("Source engine capability was invalid.")
+        match[[2L]]
+      }, character(1L))
+    }
+    if (anyNA(engines) || any(!nzchar(engines))) stop("Source engine capability was invalid.")
+    toupper(engines)
+  }, error = function(e) .dsomopSnapshotLost("source engine capability could not be read"))
+  if (any(engines != "INNODB")) {
+    stop(structure(list(message = paste0(
+      "This source contains nontransactional tables and cannot provide ",
+      "a request-consistent read snapshot; no result was released."), call = NULL),
+      class = c("dsomop_snapshot_unavailable", "error", "condition")))
+  }
+  invisible(TRUE)
+}
+
 .dsomopSnapshotValidate <- function(ctx) {
   conn <- ctx$conn
   if (isTRUE(ctx$aborted) || !isTRUE(tryCatch(.dbIsValid(conn), error = function(e) FALSE))) {
@@ -243,6 +270,7 @@
     }
   }
   if (identical(ctx$kind, "consistent_snapshot_transaction")) {
+    .dsomopSnapshotAssertTransactional(ctx, current = TRUE)
     tryCatch(DBI::dbExecute(conn, "ROLLBACK TO SAVEPOINT dsomop_request_snapshot"),
              error = function(e) .dsomopSnapshotLost("the request transaction ended"))
   }

@@ -137,5 +137,16 @@ for (engine in c("mysql", "mariadb")) local({
     expect_error(suppressMessages(.dsomopWithReadSnapshot(fixture$handle, 1)),
                   "nontransactional tables")
     expect_null(fixture$handle$read_snapshot)
+    # The engine can also change after entry but before the first read.
+    DBI::dbExecute(fixture$admin, paste0("ALTER TABLE ",
+      .qualifyTable(fixture$handle, "person"), " ENGINE = InnoDB"))
+    expect_error(suppressMessages(.dsomopWithReadSnapshot(fixture$handle, {
+      DBI::dbExecute(fixture$admin, paste0("ALTER TABLE ",
+        .qualifyTable(fixture$handle, "person"), " ENGINE = MyISAM"))
+      tryCatch(.executeQuery(fixture$handle, paste0("SELECT COUNT(*) AS n FROM ",
+        .qualifyTable(fixture$handle, "person"))), error = function(e) NULL)
+      1
+    })), "nontransactional tables")
+    expect_null(fixture$handle$read_snapshot)
   })
 })
