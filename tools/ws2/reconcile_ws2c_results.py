@@ -16,13 +16,30 @@ import os
 import compare_results as capture
 
 
+# Reviewed pinned test bodies with a direct accepted/refusing call split.
+ACCEPTED_REFUSED_BLOCKS = {
+    "dsOMOP:test-analysis-ports-1bc.R:(b) the SMD ports are fixture-limited on small cohorts",
+    "dsOMOP:test-blueprint.R:untyped extension identifiers are denied independently of PII access",
+    "dsOMOP:test-cohort.R:identical cohort inputs preserve set semantics and lifecycle",
+    "dsOMOP:test-extraction.R:feature-level time windows use days_from_index or fail explicitly",
+    "dsOMOP:test-feature-semantics.R:first and latest values use OMOP date and primary-key ordering",
+    "dsOMOP:test-feature-semantics.R:time_since supports a fixed reference without collapsing episodes",
+    "dsOMOP:test-feature-semantics.R:unscoped and alternate-concept features keep independent scopes",
+    "dsOMOP:test-feature-semantics.R:episode feature windows are contained and keep empty episodes",
+    "dsOMOP:test-output-contracts.R:cohort_membership absolute dates require explicit authorization",
+    "dsOMOP:test-privacy-dp.R:derived-only person-level age plans load without DP provenance",
+    "dsOMOP:test-recipe-reach.R:reach SAFETY: gate fires on tiny intersection when re-enabled",
+    "dsOMOP:test-recipe-setops.R:scope via omop.table frame narrows every population (end-to-end)",
+}
+
+
 def attribute(record, by_block):
     key = record["_key"]
     rows = by_block.get(key, [])
     classes = {row["class"] for row in rows}
     status, error, _ = capture.effective(record)
     error = error or ""
-    test = key.split(":", 2)[2]
+    test = key.split(":", 2)[-1]
 
     def select(cls=None, suffix=None, reason=""):
         selected = [row for row in rows if
@@ -80,7 +97,8 @@ def attribute(record, by_block):
     if classes == {"safe", "newly_permitted"} and test == "index events exclude unobserved candidates and reject ambiguous coverage":
         return select(cls="newly_permitted" if status == "error" else "safe",
                       reason="Second recorded fixture adds overlapping observation periods; first has unambiguous coverage")
-    if classes in ({"safe", "unchanged_invalid"}, {"safe", "publication_refused_unchanged"}):
+    if key in ACCEPTED_REFUSED_BLOCKS and classes in (
+            {"safe", "unchanged_invalid"}, {"safe", "publication_refused_unchanged"}):
         cls = "safe" if status == "ok" else next(c for c in classes if c != "safe")
         return select(cls=cls, reason="The pinned test's accepted and refusing calls map to its separate accepted/refusal subrows")
     raise ValueError("Mixed block needs explicit call attribution: " + key)
