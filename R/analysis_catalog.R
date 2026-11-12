@@ -2139,13 +2139,17 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
 #' Per-covariate continuous statistics over the scoped cohort (continuous kernel)
 #'
-#' Pulls one numeric value per (covariate, person) into R and summarises each
-#' covariate into a dist row: \code{count_value} (persons contributing),
-#' min/max (stripped by the gate), avg/sd, and p10/p25/median/p75/p90 (masked by
-#' the gate below nfilter_dist). snake_case column names so the gate's dist
-#' branch handles them. \code{value_kind} selects the value: \code{"value"}
-#' (measurement \code{value_as_number}, requires a measurement/observation
-#' domain) or \code{"count"} (per-person record count of the concept).
+#' Pulls one numeric value per (covariate, unit, person) into R and summarises
+#' each covariate x unit into a dist row: \code{count_value} (persons
+#' contributing), min/max (stripped by the gate), avg/sd, and
+#' p10/p25/median/p75/p90 (masked by the gate below nfilter_dist). snake_case
+#' column names so the gate's dist branch handles them. \code{value_kind}
+#' selects the value: \code{"value"} (measurement \code{value_as_number},
+#' requires a measurement/observation domain; values of one concept in
+#' different or unknown units are separate rows and are never averaged
+#' together, after the public unit conversions of the measurement scale
+#' registry) or \code{"count"} (per-person record count of the concept; no
+#' unit).
 #'
 #' @param handle CDM handle.
 #' @param ctx Run-path ctx (carries \code{scoped_cohort}).
@@ -2165,18 +2169,24 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 
   .omopDiagAssertPersons(handle, ctx, src$table, "e", src$person_col)
 
-  if (identical(value_kind, "value") && !is.na(src$value_col)) {
-    # One numeric value per (covariate, person): the per-person mean of the
-    # concept's measurements, so each person contributes one value to the
-    # per-covariate distribution (a distinct-person basis for count_value).
+  with_unit <- identical(value_kind, "value") && !is.na(src$value_col)
+  if (with_unit) {
+    # One numeric value per (covariate, unit, person): the per-person mean of
+    # the concept's measurements in that unit, so each person contributes one
+    # value to each covariate x unit distribution.
+    conv <- .omopReleaseUnitConversionSql(
+      src, .dsomopReleaseMeasurementScales(),
+      has_unit = .omopReleaseHasUnit(handle, src))
     per_person <- paste0(
-      "SELECT e.", src$concept_col, " AS covariate_id, e.", src$person_col,
-      " AS person_id, AVG(CAST(e.", src$value_col, " AS FLOAT)) AS v ",
+      "SELECT e.", src$concept_col, " AS covariate_id, ", conv$unit,
+      " AS unit_concept_id, e.", src$person_col,
+      " AS person_id, AVG(", conv$value, ") AS v ",
       "FROM ", src$table, " e ",
       "INNER JOIN (SELECT DISTINCT subject_id FROM ", cohort,
       ") c ON c.subject_id = e.", src$person_col,
       " WHERE e.", src$value_col, " IS NOT NULL",
-      " GROUP BY e.", src$concept_col, ", e.", src$person_col)
+      " GROUP BY e.", src$concept_col, ", ", conv$unit, ", e.",
+      src$person_col)
   } else {
     # Per-person record count of each concept (a count distribution).
     per_person <- paste0(
@@ -2189,9 +2199,12 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   }
   vsql <- .sql_translate(paste0(
     "SELECT pp.covariate_id, cc.concept_name AS covariate_name, ",
+    if (with_unit) "pp.unit_concept_id, uu.concept_name AS unit_name, " else "",
     "pp.person_id, pp.v ",
     "FROM (", per_person, ") pp",
-    " LEFT JOIN ", concept, " cc ON cc.concept_id = pp.covariate_id"),
+    " LEFT JOIN ", concept, " cc ON cc.concept_id = pp.covariate_id",
+    if (with_unit) paste0(" LEFT JOIN ", concept,
+                          " uu ON uu.concept_id = pp.unit_concept_id") else ""),
     handle$target_dialect)
   raw <- .executeQuery(handle, vsql)
   if (!is.data.frame(raw) || nrow(raw) == 0) return(data.frame())
@@ -2199,14 +2212,25 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   raw$v <- suppressWarnings(as.numeric(raw$v))
   raw <- raw[!is.na(raw$v), , drop = FALSE]
   if (nrow(raw) == 0) return(data.frame())
+  if (!with_unit) {
+    raw$unit_concept_id <- NA_real_
+    raw$unit_name <- NA_character_
+  } else {
+    raw$unit_concept_id <- suppressWarnings(as.numeric(raw$unit_concept_id))
+    raw$unit_concept_id[is.na(raw$unit_concept_id)] <- 0
+    raw$unit_name <- ifelse(raw$unit_concept_id == 0, "unknown",
+                            as.character(raw$unit_name))
+  }
 
-  parts <- split(raw, raw$covariate_id)
+  parts <- split(raw, paste(raw$covariate_id, raw$unit_concept_id))
   rows <- lapply(parts, function(p) {
     v  <- p$v
     qs <- stats::quantile(v, c(.10, .25, .5, .75, .90), names = FALSE, type = 7)
     data.frame(
       covariate_id   = p$covariate_id[1],
       covariate_name = p$covariate_name[1],
+      unit_concept_id = p$unit_concept_id[1],
+      unit_name      = p$unit_name[1],
       count_value    = length(v),
       n_persons      = length(unique(as.character(p$person_id))),
       min_value      = min(v),   # stripped by the gate
@@ -2218,8 +2242,12 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       stringsAsFactors = FALSE)
   })
   out <- do.call(rbind, rows)
-  .omopBandedTopN(out, support_cols = "n_persons", top_n = top_n,
-                  key_cols = "covariate_id")
+  out$unit_order <- ifelse(is.na(out$unit_concept_id), -1,
+                           out$unit_concept_id)
+  out <- .omopBandedTopN(out, support_cols = "n_persons", top_n = top_n,
+                         key_cols = c("covariate_id", "unit_order"))
+  out$unit_order <- NULL
+  out
 }
 
 #' Demographic prevalence rows (gender / age-group / race / ethnicity)
@@ -2529,10 +2557,18 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     out$metric <- metric
     if (!"covariate_id" %in% names(out)) out$covariate_id <- NA_integer_
     if (!"covariate_name" %in% names(out)) out$covariate_name <- metric
-    out[, c("metric", "covariate_id", "covariate_name", "count_value",
-            "n_persons", "min_value", "max_value", "avg_value",
-            "stdev_value", "p10_value", "p25_value", "median_value",
-            "p75_value", "p90_value"), drop = FALSE]
+    # Values are per concept x unit; age and time in cohort carry their
+    # public unit name only.
+    if (!"unit_concept_id" %in% names(out)) out$unit_concept_id <- NA_real_
+    if (!"unit_name" %in% names(out)) {
+      out$unit_name <- switch(metric, age = "years", time_in_cohort = "days",
+                              NA_character_)
+    }
+    out[, c("metric", "covariate_id", "covariate_name", "unit_concept_id",
+            "unit_name", "count_value", "n_persons", "min_value",
+            "max_value", "avg_value", "stdev_value", "p10_value",
+            "p25_value", "median_value", "p75_value", "p90_value"),
+        drop = FALSE]
   }
 
   .omopAnalysisEntry(
@@ -2810,6 +2846,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
         bin_out <- data.frame(
           kind = "binary", covariate_id = bin$covariate_id,
           covariate_name = as.character(bin$covariate_name),
+          unit_concept_id = NA_real_, unit_name = NA_character_,
           sum_value = bin$sum_value, average = bin$average,
           count_value = NA_real_, avg_value = NA_real_, stdev_value = NA_real_,
           p10_value = NA_real_, p25_value = NA_real_, median_value = NA_real_,
@@ -2826,6 +2863,8 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       cont_out <- data.frame(
           kind = "continuous", covariate_id = cont$covariate_id,
           covariate_name = as.character(cont$covariate_name),
+          unit_concept_id = cont$unit_concept_id,
+          unit_name = as.character(cont$unit_name),
           # sum_value is the UNIFIED person-basis column the single gate keys on
           # (see fe.table1): for a continuous covariate it IS the contributing-
           # person count_value, so a binary and a continuous row both carry a

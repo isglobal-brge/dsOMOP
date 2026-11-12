@@ -15,9 +15,11 @@
 #               discrete-Laplace noise (epsilon-DP, sensitivity 1 person).
 #               When the DP service is disabled or unavailable, the same table
 #               is released under the standard DataSHIELD gate instead, so the
-#               question always gets an answer. Questions without a public
-#               scale (measurement values, quantities, costs and all-concept
-#               summaries) use the standard person-supported summary.
+#               question always gets an answer. Record-weighted summaries
+#               (durations, measurement values, quantities and costs) release
+#               capped record-weighted moments on public scales
+#               (tools_release_records.R); without a registered scale their
+#               moments are unavailable.
 #   "standard"  The original summaries (counts, means, SDs) under the standard
 #               DataSHIELD gate only; no DP.
 #   "dp"        Differential privacy only. Questions without a DP release are
@@ -113,8 +115,10 @@
 #' One record per template id. \code{kind} is "histogram" (one value per
 #' person over fixed public bins; DP in auto/dp mode, the original summary in
 #' standard mode), "partition" (persons counted in a complete public domain of
-#' cells; DP in auto/dp mode) or "summary" (no public scale; the standard
-#' person-supported summary in auto/standard mode, refused in dp mode).
+#' cells; DP in auto/dp mode) or "summary" (record-weighted statistics in the
+#' original summary schema: capped record-weighted moments on public scales in
+#' auto/dp mode, see tools_release_records.R; the original summary in
+#' standard mode).
 #' \code{person.load} stays blocked: it is not an aggregate question.
 #'
 #' @return Named list of question specs.
@@ -474,8 +478,8 @@
 #' @param handle CDM handle.
 #' @param entry Catalog entry (adapter "tools_auto").
 #' @return List with protection ("standard", or "pending_release_route" for
-#'   histogram/partition shapes whose release contract decides), shape and
-#'   mode.
+#'   histogram/partition shapes and record-weighted summaries whose release
+#'   contract decides), shape and mode.
 #' @keywords internal
 .dsomopToolsRoute <- function(handle, entry) {
   mode <- .dsomopToolsMode()
@@ -485,6 +489,13 @@
   }
   shape <- entry$meta$tools_shape
   route <- list(mode = mode, shape = shape)
+  # Record-weighted summaries with a release contract (capped record moments,
+  # tools_release_records.R) take their protected route in auto and DP-only
+  # modes.
+  if (identical(shape, "summary") && !identical(mode, "standard") &&
+      isTRUE(.omopToolsReleaseContract(entry)$summary_shape)) {
+    return(c(route, list(protection = "pending_release_route")))
+  }
   if (identical(shape, "summary")) {
     if (identical(mode, "dp")) {
       stop("This question has no differential-privacy release, and the data ",
@@ -843,7 +854,11 @@
   protection <- route$protection
   if (identical(shape, "summary")) {
     out <- .dsomopToolsSummary(handle, spec, concept_id)
-    attr(out, "dsomop_tools_protection") <- "standard"
+    # The standard summary is the fallback of a protected record-weighted
+    # summary in auto mode without the DP service.
+    attr(out, "dsomop_tools_protection") <-
+      if (identical(protection, "standard_fallback")) "standard_fallback" else
+        "standard"
     return(out)
   }
   built <- if (identical(shape, "histogram")) {

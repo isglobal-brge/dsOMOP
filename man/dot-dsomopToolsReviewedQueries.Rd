@@ -13,8 +13,10 @@ Named list of question specs.
 One record per template id. \code{kind} is "histogram" (one value per
 person over fixed public bins; DP in auto/dp mode, the original summary in
 standard mode), "partition" (persons counted in a complete public domain of
-cells; DP in auto/dp mode) or "summary" (no public scale; the standard
-person-supported summary in auto/standard mode, refused in dp mode).
+cells; DP in auto/dp mode) or "summary" (record-weighted statistics in the
+original summary schema: capped record-weighted moments on public scales in
+auto/dp mode, see tools_release_records.R; the original summary in
+standard mode).
 \code{person.load} stays blocked: it is not an aggregate question.
 }
 \keyword{internal}
