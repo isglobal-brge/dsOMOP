@@ -4,7 +4,12 @@
 \alias{omopDpStatusDS}
 \title{Sticky privacy-noise service status (Aggregate)}
 \usage{
-omopDpStatusDS()
+omopDpStatusDS(client_contract = NULL)
+}
+\arguments{
+\item{client_contract}{The client's protected-release payload protocol
+(\code{"dsomop-protected-release-v1"}), or a list of protocols. Absent
+for clients older than dsOMOPClient 2.10.3.}
 }
 \value{
 Public DP service status, including the custodial \code{exclusive}
@@ -34,4 +39,12 @@ replaces it); fixed synopses are keyed on the automatic data generation,
 described by \code{data_generation}, \code{data_generation_basis} and
 \code{data_generation_residual} (what it cannot see). The generation itself
 is never returned.
+}
+\details{
+The caller declares the protected-release payload protocol it implements
+(\code{client_contract}, sent by dsOMOPClient 2.10.3 and later). Clients of
+dsOMOP 2.10.2 and earlier call without it; they cannot validate or pool the
+protected components, so the call is refused with an explicit upgrade
+message (R08) instead of a status they would reject with an opaque contract
+error. Their per-server analysis catalogue results are unaffected.
 }

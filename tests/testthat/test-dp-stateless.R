@@ -78,7 +78,7 @@ test_that("the DP service reports the stateless protected-release contract", {
   handle <- .stateless_handle()
   on.exit(cleanup_handle(handle), add = TRUE)
   .dsomopDpEnsureRuntime(handle)
-  status <- omopDpStatusDS()
+  status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
   expect_identical(status$release_binding,
                    "fixed_basis_or_realised_contributions_v1")
   expect_identical(status$persistent_state, "noise_root_only")

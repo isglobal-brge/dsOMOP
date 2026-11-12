@@ -593,6 +593,16 @@
 #' cannot see); \code{read_snapshot} is the read consistency of this server's
 #' requests. The generation itself is never returned.
 #'
+#' The caller declares the protected-release payload protocol it implements
+#' (\code{client_contract}, sent by dsOMOPClient 2.10.3 and later). Clients of
+#' dsOMOP 2.10.2 and earlier call without it; they cannot validate or pool the
+#' protected components, so the call is refused with an explicit upgrade
+#' message (R08) instead of a status they would reject with an opaque contract
+#' error. Their per-server analysis catalogue results are unaffected.
+#'
+#' @param client_contract The client's protected-release payload protocol
+#'   (\code{"dsomop-protected-release-v1"}), or a list of protocols. Absent
+#'   for clients older than dsOMOPClient 2.10.3.
 #' @return Public DP service status, including the custodial \code{exclusive}
 #'   flag (default FALSE) and \code{tools_mode}, the effective protection mode
 #'   of the OHDSI community tools (\code{"auto"} by default, \code{"standard"}
@@ -600,8 +610,9 @@
 #'   \code{"dp"}). The core (loading tables, filters, factors, dsOMOP's own
 #'   exploration) never depends on either.
 #' @export
-omopDpStatusDS <- function() {
+omopDpStatusDS <- function(client_contract = NULL) {
   .dsomopRequireCommunityTool(dp_routes = TRUE)
+  .dsomopDpRequireCurrentClient(client_contract)
   state <- .dsomopDpState()
   .dsomopDpEnsureRuntime(.dsomopDpSessionHandle())
   status <- .dsomopDpPublicStatus(initialize = TRUE)
@@ -623,6 +634,32 @@ omopDpStatusDS <- function() {
   status$read_snapshot <- .dsomopReadSnapshotKind(state$dp_handle)
   state$dp_status <- status
   status
+}
+
+#' Refuse DP status calls from clients older than dsOMOPClient 2.10.3
+#'
+#' Clients of dsOMOP 2.10.2 and earlier do not declare the protected-release
+#' payload protocol; the status they would receive describes a contract they
+#' reject with an opaque field error. This refusal tells the analyst what to
+#' do. It depends only on the call's public argument.
+#'
+#' @param client_contract The caller's declared protocol(s), possibly
+#'   DataSHIELD-encoded.
+#' @return Invisible TRUE for a current client.
+#' @keywords internal
+.dsomopDpRequireCurrentClient <- function(client_contract) {
+  declared <- tryCatch(unlist(.ds_arg(client_contract), use.names = FALSE),
+                       error = function(e) NULL)
+  if (is.character(declared) && .DSOMOP_RELEASE_PROTOCOL %in% declared) {
+    return(invisible(TRUE))
+  }
+  stop("This server runs dsOMOP ", utils::packageVersion("dsOMOP"), ", whose ",
+       "DP releases are protected components (contract ",
+       .DSOMOP_RELEASE_PROTOCOL, ") that dsOMOPClient 2.10.2 and older cannot ",
+       "validate or pool. Upgrade dsOMOPClient to 2.10.3 or later to use ",
+       "ds.omop.dp.status() and ds.omop.dp.release() on this server; with an ",
+       "older client the analysis catalogue keeps returning per-server ",
+       "results, without pooling of protected results.", call. = FALSE)
 }
 
 #' Prepare person-local tables for differential-privacy releases (Assign)

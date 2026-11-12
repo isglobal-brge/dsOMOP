@@ -55,7 +55,7 @@ test_that("fixed synopses need no custodial configuration", {
   expect_identical(label$delta, 0)
   generation <- .gen_id(h)
   expect_match(generation, "^[0-9a-f]{64}$")
-  status <- suppressMessages(omopDpStatusDS())
+  status <- suppressMessages(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL))
   expect_identical(status$data_generation, "person_membership_digest")
   expect_match(status$data_generation_basis, "person_id")
   expect_match(status$snapshot_id, "^cdm_[0-9a-f]{64}$")

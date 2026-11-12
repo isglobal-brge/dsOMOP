@@ -484,7 +484,7 @@ test_that("after 0, 1 and 10,000 earlier calls the answer and status are unchang
   .release_state()
   x <- .typed_table(n = 9)
   first <- .typed_release(x, statistic = "count")
-  status <- omopDpStatusDS()
+  status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
   expect_identical(.typed_release(x, statistic = "count"), first)
   # 10,000 repeated questions (about 10 ms each), then distinct ones.
   elapsed <- system.time({
@@ -499,5 +499,5 @@ test_that("after 0, 1 and 10,000 earlier calls the answer and status are unchang
   # A worker restart replays as well, and the status is the same.
   .release_restart()
   expect_identical(.typed_release(x, statistic = "count"), first)
-  expect_identical(omopDpStatusDS(), status)
+  expect_identical(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL), status)
 })

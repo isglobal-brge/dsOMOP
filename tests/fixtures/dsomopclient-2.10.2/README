@@ -1,0 +1,4 @@
+Verbatim R/session.R and R/privacy.R of the released dsOMOPClient 2.10.2
+(git 7eb2f6c of isglobal-brge/dsOMOPClient). test-privacy-typed-views.R
+sources them to show what a 2.10.2 client prints when it calls this
+server's omopDpStatusDS (re-review R08). Do not edit.

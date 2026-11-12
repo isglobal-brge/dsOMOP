@@ -1638,10 +1638,10 @@ test_that("same root semantic query and snapshot replay across runtime reset", {
   )
 
   first <- omopDpReleaseDS(table, spec)
-  first_status <- omopDpStatusDS()
+  first_status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
   .dp_restart_runtime()
   second <- omopDpReleaseDS(table, spec)
-  second_status <- omopDpStatusDS()
+  second_status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
 
   expect_identical(second, first)
   expect_identical(second_status$noise_key_id, first_status$noise_key_id)
@@ -2094,7 +2094,7 @@ test_that("public DP requirements reject before private admission or release", {
 
 test_that("public status and release identify the exact sampler", {
   .dp_local_state(noise_root = as.raw(0:31), release_epsilon = 0.25)
-  status <- omopDpStatusDS()
+  status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
 
   expect_true(status$enabled)
   expect_true(status$ready)
@@ -2149,7 +2149,7 @@ test_that("public status and release identify the exact sampler", {
 test_that("new public identities store nothing and have no privacy call quota", {
   skip_on_os("windows")
   state <- .dp_local_state()
-  expect_true(omopDpStatusDS()$ready)
+  expect_true(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$ready)
   raw <- .testPseudonymize(data.frame(
     person_id = 1:8, value = seq_len(8), stringsAsFactors = FALSE
   ))
@@ -2166,7 +2166,7 @@ test_that("new public identities store nothing and have no privacy call quota", 
   # (dsOMOP 2.10.3, G-09): no fresh draws from lineage cosmetics.
   expect_length(unique(lapply(values, `[[`, "noisy_count")), 1L)
   expect_identical(.dp_state_files(state), .dp_root_files)
-  status <- omopDpStatusDS()
+  status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
   expect_identical(status$privacy_call_quota, "none")
   expect_false(status$history_dependent)
 })
@@ -2174,7 +2174,7 @@ test_that("new public identities store nothing and have no privacy call quota", 
 test_that("a corrupt root fails closed and only a missing root is created", {
   skip_on_os("windows")
   state <- .dp_local_state()
-  first <- omopDpStatusDS()
+  first <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
   root_path <- file.path(state, "secrets", "dp_noise_root")
   original <- readBin(root_path, "raw", n = 32L)
 
@@ -2183,7 +2183,7 @@ test_that("a corrupt root fails closed and only a missing root is created", {
   Sys.chmod(root_path, mode = "0600")
   .dp_restart_runtime()
   expect_message(
-    expect_error(omopDpStatusDS(), .DSOMOP_DP_STATE_ERROR, fixed = TRUE),
+    expect_error(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL), .DSOMOP_DP_STATE_ERROR, fixed = TRUE),
     "exactly 32 raw bytes"
   )
   expect_identical(readBin(root_path, "raw", n = 32L), as.raw(1:3))
@@ -2191,13 +2191,13 @@ test_that("a corrupt root fails closed and only a missing root is created", {
   writeBin(original, root_path)
   Sys.chmod(root_path, mode = "0600")
   .dp_restart_runtime()
-  expect_identical(omopDpStatusDS()$noise_key_id, first$noise_key_id)
+  expect_identical(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$noise_key_id, first$noise_key_id)
 
   # A state directory without a root is a new service: its first use creates
   # one and tells the custodian.
   expect_identical(unlink(root_path, force = TRUE), 0L)
   .dp_restart_runtime()
-  expect_message(status <- omopDpStatusDS(), "created the DP noise root")
+  expect_message(status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL), "created the DP noise root")
   expect_false(identical(status$noise_key_id, first$noise_key_id))
   expect_true(file.exists(root_path))
 })
@@ -2205,7 +2205,7 @@ test_that("a corrupt root fails closed and only a missing root is created", {
 test_that("symbolic-link root substitution fails closed", {
   skip_on_os("windows")
   state <- .dp_local_state()
-  expect_true(omopDpStatusDS()$ready)
+  expect_true(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$ready)
   root_path <- file.path(state, "secrets", "dp_noise_root")
   target <- file.path(state, "attacker-controlled-key")
   writeBin(as.raw(0:31), target)
@@ -2215,7 +2215,7 @@ test_that("symbolic-link root substitution fails closed", {
   .dp_restart_runtime()
 
   expect_message(
-    expect_error(omopDpStatusDS(), .DSOMOP_DP_STATE_ERROR, fixed = TRUE),
+    expect_error(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL), .DSOMOP_DP_STATE_ERROR, fixed = TRUE),
     "must not be a symbolic link"
   )
   expect_identical(readBin(target, what = "raw", n = 32L), as.raw(0:31))
@@ -2224,14 +2224,14 @@ test_that("symbolic-link root substitution fails closed", {
 test_that("unsafe root permissions fail closed", {
   skip_on_os("windows")
   state <- .dp_local_state()
-  expect_true(omopDpStatusDS()$ready)
+  expect_true(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$ready)
   root_path <- file.path(state, "secrets", "dp_noise_root")
   Sys.chmod(root_path, mode = "0644")
   on.exit(try(Sys.chmod(root_path, mode = "0600"), silent = TRUE), add = TRUE)
   .dp_restart_runtime()
 
   expect_message(
-    expect_error(omopDpStatusDS(), .DSOMOP_DP_STATE_ERROR, fixed = TRUE),
+    expect_error(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL), .DSOMOP_DP_STATE_ERROR, fixed = TRUE),
     "mode 0600"
   )
   expect_identical(file.info(root_path)$size, 32)
@@ -2240,7 +2240,7 @@ test_that("unsafe root permissions fail closed", {
 test_that("an injected root writes no DP state and answers survive restarts", {
   skip_on_os("windows")
   state <- .dp_local_state(noise_root = as.raw(0:31))
-  status <- omopDpStatusDS()
+  status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
   value <- omopDpReleaseDS(
     .dp_test_table(), list(statistic = "count", population_id = "cohort-a")
   )
@@ -2251,7 +2251,7 @@ test_that("an injected root writes no DP state and answers survive restarts", {
   expect_length(.dp_state_files(state), 0L)
 
   .dp_restart_runtime()
-  expect_identical(omopDpStatusDS()$noise_key_id, status$noise_key_id)
+  expect_identical(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$noise_key_id, status$noise_key_id)
   expect_length(.dp_state_files(state), 0L)
   # The display name is not part of the question.
   expect_identical(omopDpReleaseDS(.dp_test_table(), list(statistic = "count")),
@@ -2260,11 +2260,11 @@ test_that("an injected root writes no DP state and answers survive restarts", {
 
 test_that("noise-domain identity detects one root across semantic domains", {
   .dp_local_state(noise_root = as.raw(0:31))
-  first <- omopDpStatusDS()
+  first <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
 
   options(dsomop.dp.domain = "dsomop-dp-other-domain")
   .dp_restart_runtime()
-  second <- omopDpStatusDS()
+  second <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
 
   expect_identical(second$noise_key_id, first$noise_key_id)
   expect_identical(second$noise_domain_id, first$noise_domain_id)
@@ -2276,11 +2276,11 @@ test_that("a replaced injected root re-draws answers and the original restores t
   table <- .dp_test_table()
   spec <- list(statistic = "count", population_id = "cohort-a")
   first_value <- omopDpReleaseDS(table, spec)
-  first_status <- omopDpStatusDS()
+  first_status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
 
   options(dsomop.dp.noise_root = as.raw(32:63))
   .dp_restart_runtime()
-  expect_false(identical(omopDpStatusDS()$noise_key_id,
+  expect_false(identical(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$noise_key_id,
                          first_status$noise_key_id))
   # Provenance is keyed by the root as well: old capsules are not admitted.
   expect_error(omopDpReleaseDS(table, spec), "provenance MAC does not match")
@@ -2288,7 +2288,7 @@ test_that("a replaced injected root re-draws answers and the original restores t
 
   options(dsomop.dp.noise_root = as.raw(0:31))
   .dp_restart_runtime()
-  expect_identical(omopDpStatusDS()$noise_key_id, first_status$noise_key_id)
+  expect_identical(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$noise_key_id, first_status$noise_key_id)
   expect_identical(omopDpReleaseDS(table, spec), first_value)
 })
 
@@ -2389,13 +2389,13 @@ test_that("image load is key-free and first service use is complete", {
   expect_null(.pkg_state$dp_runtime)
 
   withr::local_options(list(dsomop.dp.enabled = TRUE))
-  expect_message(first <- omopDpStatusDS(), "created the DP noise root")
+  expect_message(first <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL), "created the DP noise root")
   expect_true(file.exists(root_path))
   expect_true(first$ready)
   expect_match(first$noise_domain_id, "^dpn_[0-9a-f]{40}$")
 
   .dp_restart_runtime()
-  expect_silent(restarted <- omopDpStatusDS())
+  expect_silent(restarted <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL))
   expect_identical(restarted$noise_domain_id, first$noise_domain_id)
   expect_identical(restarted$noise_key_id, first$noise_key_id)
 })
@@ -2404,7 +2404,7 @@ test_that("concurrent runtime use converges on the provisioned noise identity", 
   skip_on_os("windows")
   state <- .dp_local_state()
   statuses <- parallel::mclapply(
-    seq_len(4L), function(unused) omopDpStatusDS(),
+    seq_len(4L), function(unused) omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL),
     mc.cores = 2L, mc.preschedule = FALSE
   )
 
@@ -2417,7 +2417,7 @@ test_that("concurrent runtime use converges on the provisioned noise identity", 
     file.path(state, "secrets", "dp_noise_root")
   )$size, 32)
 
-  parent <- omopDpStatusDS()
+  parent <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
   expect_identical(parent$noise_domain_id, identities[[1L]])
 })
 
@@ -2433,7 +2433,7 @@ test_that("the central policy guard initializes status and empty nodes differ", 
   expect_true(file.exists(root_path))
 
   second_state <- .dp_local_state()
-  second_id <- omopDpStatusDS()$noise_domain_id
+  second_id <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$noise_domain_id
   expect_false(identical(second_id, first_id))
 })
 
@@ -2602,8 +2602,8 @@ test_that("default-on initialization derives identity from a real SQLite resourc
   # Connecting never initializes DP; a community tool binds it when used.
   expect_null(.pkg_state$dp_runtime)
   .dsomopDpEnsureRuntime(handle)
-  expect_true(omopDpStatusDS()$enabled)
-  expect_true(omopDpStatusDS()$ready)
+  expect_true(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$enabled)
+  expect_true(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$ready)
   expect_match(.dsomopDpPolicy()$domain, "^resource_")
   expect_gt(nrow(omopQueryLibraryStickyCatalogDS()), 0L)
 })
@@ -2695,11 +2695,11 @@ test_that("DP status reports configured exclusivity in enabled and disabled mode
       dsomop.dp.exclusive = NULL,
       default.dsomop.dp.exclusive = NULL
     ))
-    expect_identical(omopDpStatusDS()$exclusive, FALSE)
+    expect_identical(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$exclusive, FALSE)
 
     for (exclusive in c(TRUE, FALSE)) {
       withr::with_options(list(dsomop.dp.exclusive = exclusive), {
-        status <- omopDpStatusDS()
+        status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
         expect_identical(status$enabled, enabled)
         expect_identical(status$exclusive, exclusive)
         expect_identical(.pkg_state$dp_status$exclusive, exclusive)
@@ -2739,7 +2739,7 @@ test_that("exclusive mode keeps only the fixed-synopsis typed releases", {
   }
   standard_mode <- release_all(input)
   expect_setequal(vapply(standard_mode, `[[`, character(1L), "statistic"),
-                  omopDpStatusDS()$supported_statistics)
+                  omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$supported_statistics)
   expect_true(all(vapply(standard_mode, `[[`, character(1L), "protection") ==
                     "realised_sticky"))
   # Counts, capped record counts and registered-scale means of an unscoped
@@ -2754,7 +2754,7 @@ test_that("exclusive mode keeps only the fixed-synopsis typed releases", {
                     "fixed_synopsis"))
 
   withr::with_options(list(dsomop.dp.exclusive = TRUE), {
-    expect_true(omopDpStatusDS()$exclusive)
+    expect_true(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$exclusive)
     expect_error(omopAchillesResultsDS("unused", 1L), "DP-only mode")
     # A heuristic realised release is never called DP: refused statically.
     for (spec in specs) {
@@ -2765,7 +2765,7 @@ test_that("exclusive mode keeps only the fixed-synopsis typed releases", {
     # DP input can also be prepared after the exclusive gate is activated.
     expect_identical(.dp_test_table(), input)
   })
-  expect_false(omopDpStatusDS()$exclusive)
+  expect_false(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$exclusive)
   expect_identical(release_all(input), standard_mode)
 })
 
