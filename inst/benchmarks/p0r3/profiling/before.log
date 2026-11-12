@@ -1,0 +1,36 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+profiling: ................................................................................................[dsomop-read-snapshot] the request snapshot could not be opened
+1....................................................................
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Error ('test-profiling.R:720:5'): public profilers reject identifiers and 
+<dsomop_snapshot_lost/error/condition>
+Error: The database could not be read consistently for this request (its connection or read snapshot was lost); no result was released. Retry the request.
+Backtrace:
+     ▆
+  1. ├─testthat::expect_error(call(), "Identifier column.*not permitted for profiling") at test-profiling.R:736:5
+  2. │ └─testthat:::expect_condition_matching_(...)
+  3. │   └─testthat:::quasi_capture(...)
+  4. │     ├─testthat (local) .capture(...)
+  5. │     │ └─base::withCallingHandlers(...)
+  6. │     └─rlang::eval_bare(quo_get_expr(.quo), quo_get_env(.quo))
+  7. └─dsOMOP (local) call()
+  8.   └─dsOMOP::omopColumnStatsDS(symbol, "person", "person_id") at test-profiling.R:720:5
+  9.     └─dsOMOP:::.dsomopWithReadSnapshot(...) at dsOMOP/R/interface.R:1303:3
+ 10.       └─dsOMOP:::.dsomopSnapshotBegin(ctx) at dsOMOP/R/read_snapshot.R:126:5
+ 11.         └─base::tryCatch(...) at dsOMOP/R/read_snapshot.R:152:3
+ 12.           └─base (local) tryCatchList(expr, classes, parentenv, handlers)
+ 13.             └─base (local) tryCatchOne(expr, names, parentenv, handlers[[1L]])
+ 14.               └─value[[3L]](cond)
+ 15.                 └─dsOMOP:::.dsomopSnapshotLost("the request snapshot could not be opened") at dsOMOP/R/read_snapshot.R:216:5
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+             file blocks failed errors
+ test-profiling.R      1      0      1
+
+FAILING TESTS
+test-profiling.R | public profilers reject identifiers and sensitive values before SQL | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 1 skipped: 0 passed: 164 
