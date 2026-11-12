@@ -391,8 +391,8 @@
 .mysqlStockpileSource <- function(fragment, table, dialect) {
   if (identical(.sqlDialectProfile(dialect, probe = TRUE)$engine, "mysql")) {
     types <- vapply(fragment$columns, function(column) column$type, "")
-    if (!all(types %in% c("integer", "bigint", "date", "text", "boolean"))) {
-      stop("A MySQL stockpile payload needs exact integer, date, text or boolean columns.", call. = FALSE)
+    if (!all(types %in% c("integer", "bigint", "numeric", "date", "text", "boolean"))) {
+      stop("A MySQL private payload needs integer, numeric, date, text or boolean columns.", call. = FALSE)
     }
     attr(fragment, "mysql_stockpile_source") <- list(table = table)
   }
@@ -586,7 +586,7 @@
   replacements <- list()
   original_sql <- paste(c(main, vapply(all, function(f) paste(f$name, f$select_body), "")), collapse = " ")
   result_alias <- .mysqlLocalSqlName("dsomop_result", original_sql)
-  sql_types <- c(integer = "INT", bigint = "BIGINT", date = "DATE",
+  sql_types <- c(integer = "INT", bigint = "BIGINT", numeric = "DOUBLE", date = "DATE",
                  text = "LONGTEXT", boolean = "BOOLEAN")
   for (k in seq_along(tables)) {
     table <- tables[[k]]
