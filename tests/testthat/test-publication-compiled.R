@@ -395,3 +395,176 @@ test_that("native staged format validation follows the packaged schema enums", {
   contract$output_format <- "sparse"
   expect_silent(.publicationValidateNativeSemantic(contract))
 })
+
+# --- N11: availability before support (WS-2 re-review R4, design 7.3) ----------
+
+.publication_status_disjoint <- function(status, info = NULL) {
+  expect_length(intersect(names(status$published), names(status$rejected)), 0L)
+  expect_length(intersect(names(status$rejected), status$unavailable), 0L)
+  expect_true(.validatePlanStatus(status))
+}
+
+# A two-component family (components "risk" and "events") of root "out".
+.publication_compiled_family <- function(mode, risk_where, events_where) {
+  part <- function(component, where) {
+    statement <- paste("SELECT person_id, person_id * 1.0 AS value FROM person WHERE", where,
+                       "ORDER BY person_id")
+    columns <- list(person_id = .fragmentColumn("integer", FALSE, "person_key"),
+                    value = .fragmentColumn("numeric"))
+    list(component = list(statement = statement,
+                          fragment = .fragment(component, "result", "person", statement, columns,
+                                               person_lineage = list(person_col = "person_id", via_roster = NULL))),
+         candidate = .publicationCandidate("out", component, if (mode == "staged") "staged" else "frame",
+                                           .lineage("direct", "person_id"), grain = "person",
+                                           requested_symbol = if (mode == "memory") paste0("D_", component),
+                                           requested_path = if (mode == "staged") paste0("D_", component, ".parquet")))
+  }
+  risk <- part("risk", risk_where)
+  events <- part("events", events_where)
+  .compiledOutput("out", list(risk = risk$component, events = events$component),
+                  list(risk$candidate, events$candidate))
+}
+
+test_that("an unavailable empty family is unavailable only: no support refusal, no artefact", {
+  none <- paste("SELECT person_id, person_id * 1.0 AS value, 'private' AS raw_source",
+                "FROM person WHERE person_id < 0")
+  for (mode in c("memory", "staged")) {
+    ctx <- .publication_compiled_context(mode = mode)
+    compiled <- .publication_compiled_output(mode = mode, statement = none)
+    compiled$status <- "unavailable"
+    .publishCompiled(ctx, compiled)
+    status <- .publishCommit(ctx)
+    expect_identical(status$status, "ok", info = mode)
+    expect_identical(status$unavailable, "out", info = mode)
+    expect_length(status$rejected, 0L)
+    expect_length(status$published, 0L)
+    expect_identical(ls(ctx$target_env), character(0))
+    if (identical(mode, "staged")) expect_false(dir.exists(ctx$staging_dir))
+    .publication_status_disjoint(status, mode)
+  }
+  # the same empty family of an available root is the ordinary support refusal
+  for (mode in c("memory", "staged")) {
+    ctx <- .publication_compiled_context(mode = mode)
+    .publishCompiled(ctx, .publication_compiled_output(mode = mode, statement = none))
+    status <- .publishCommit(ctx)
+    expect_identical(status$status, "refused", info = mode)
+    expect_identical(status$rejected$out$code, "insufficient_support")
+    expect_length(status$unavailable, 0L)
+    expect_identical(ls(ctx$target_env), character(0))
+  }
+})
+
+test_that("an unavailable root with releasable rows keeps the support rule", {
+  for (mode in c("memory", "staged")) {
+    # at or above k: published, still reported unavailable
+    ctx <- .publication_compiled_context(mode = mode)
+    compiled <- .publication_compiled_output(mode = mode)
+    compiled$status <- "unavailable"
+    .publishCompiled(ctx, compiled)
+    status <- .publishCommit(ctx)
+    expect_identical(status$status, "ok", info = mode)
+    expect_identical(names(status$published), "out")
+    expect_identical(status$unavailable, "out")
+    .publication_status_disjoint(status, mode)
+    # below k: the support refusal, and the root is not also reported unavailable
+    ctx <- .publication_compiled_context(mode = mode)
+    compiled <- .publication_compiled_output(mode = mode, statement = paste(
+      "SELECT person_id, person_id * 1.0 AS value, 'private' AS raw_source",
+      "FROM person WHERE person_id <= 2 ORDER BY person_id"))
+    compiled$status <- "unavailable"
+    .publishCompiled(ctx, compiled)
+    status <- .publishCommit(ctx)
+    expect_identical(status$status, "refused", info = mode)
+    expect_identical(status$rejected$out$code, "insufficient_support")
+    expect_identical(status$unavailable, character(0))
+    expect_identical(ls(ctx$target_env), character(0))
+    .publication_status_disjoint(status, mode)
+  }
+})
+
+test_that("a composite unavailable family is decided as one: an empty component withholds it", {
+  for (mode in c("memory", "staged")) {
+    # an empty events component of an unavailable root is never published as "no events"
+    ctx <- .publication_compiled_context(mode = mode)
+    compiled <- .publication_compiled_family(mode, "person_id <= 5", "person_id < 0")
+    compiled$status <- "unavailable"
+    .publishCompiled(ctx, compiled)
+    status <- .publishCommit(ctx)
+    expect_identical(status$status, "ok", info = mode)
+    expect_length(status$published, 0L)
+    expect_length(status$rejected, 0L)
+    expect_identical(status$unavailable, "out")
+    expect_identical(ls(ctx$target_env), character(0))
+    .publication_status_disjoint(status, mode)
+    # every component releasable: both published, root reported unavailable
+    ctx <- .publication_compiled_context(mode = mode)
+    compiled <- .publication_compiled_family(mode, "person_id <= 5", "person_id <= 4")
+    compiled$status <- "unavailable"
+    .publishCompiled(ctx, compiled)
+    status <- .publishCommit(ctx)
+    expect_identical(status$status, "ok", info = mode)
+    expect_setequal(names(status$published$out), c("risk", "events"))
+    expect_identical(status$unavailable, "out")
+    .publication_status_disjoint(status, mode)
+    # one component below k: the family is refused, not reported unavailable
+    ctx <- .publication_compiled_context(mode = mode)
+    compiled <- .publication_compiled_family(mode, "person_id <= 5", "person_id <= 2")
+    compiled$status <- "unavailable"
+    .publishCompiled(ctx, compiled)
+    status <- .publishCommit(ctx)
+    expect_identical(status$status, "refused", info = mode)
+    expect_identical(status$rejected$out$code, "insufficient_support")
+    expect_identical(status$unavailable, character(0))
+    expect_identical(ls(ctx$target_env), character(0))
+    .publication_status_disjoint(status, mode)
+  }
+  # an available composite with an empty component is refused as before
+  ctx <- .publication_compiled_context(mode = "memory")
+  .publishCompiled(ctx, .publication_compiled_family("memory", "person_id <= 5", "person_id < 0"))
+  status <- .publishCommit(ctx)
+  expect_identical(status$rejected$out$code, "insufficient_support")
+  expect_length(status$unavailable, 0L)
+})
+
+test_that("unavailable empty components override earlier support only, withholding reference companions", {
+  for (mode in c("memory", "staged")) for (reverse in c(FALSE, TRUE)) {
+    ctx <- .publication_compiled_context(mode = mode)
+    compiled <- .publication_compiled_family(mode, "person_id <= 2", "person_id < 0")
+    # Candidates may report availability individually. The first available
+    # component records insufficient support before the empty unavailable one.
+    compiled$publication_candidates[[2L]]$status <- "unavailable"
+    compiled$components$dictionary <- list(
+      frame = data.frame(concept_id = 201820L),
+      fragment = .fragment("dictionary", "result", "none", "SELECT 201820 AS concept_id",
+        list(concept_id = .fragmentColumn("integer")),
+        person_lineage = list(person_col = NULL, via_roster = NULL)))
+    compiled$reference_components <- "dictionary"
+    compiled$publication_candidates[[3L]] <- .publicationCandidate("out", "dictionary",
+      if (mode == "staged") "staged" else "frame", .lineage("reference"), grain = "none",
+      requested_symbol = if (mode == "memory") "D_dictionary",
+      requested_path = if (mode == "staged") "D_dictionary.parquet")
+    if (reverse) compiled$publication_candidates <- rev(compiled$publication_candidates)
+    .publishCompiled(ctx, compiled)
+    expect_identical(ctx$rejected$out$code, "insufficient_support")
+    status <- .publishCommit(ctx)
+    expect_identical(status$status, "ok", info = mode)
+    expect_identical(status$unavailable, "out")
+    expect_length(status$published, 0L)
+    expect_length(status$rejected, 0L)
+    expect_length(ctx$inventory, 0L)
+    expect_identical(ls(ctx$target_env), character(0))
+    if (mode == "staged") expect_false(dir.exists(ctx$staging_dir))
+    .publication_status_disjoint(status)
+  }
+  # A genuine validation failure must never disappear behind availability.
+  ctx <- .publication_compiled_context(mode = "memory")
+  compiled <- .publication_compiled_family("memory", "person_id <= 2", "person_id < 0")
+  compiled$publication_candidates[[2L]]$status <- "unavailable"
+  .publishCompiled(ctx, compiled)
+  ctx$rejected$out <- list(code = "validation_error", message = .publishMessage("validation_error"))
+  status <- .publishCommit(ctx)
+  expect_identical(status$status, "refused")
+  expect_identical(status$rejected$out$code, "validation_error")
+  expect_length(status$unavailable, 0L)
+  expect_length(status$published, 0L)
+})

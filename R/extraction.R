@@ -697,6 +697,17 @@
   as.character(DBI::dbQuoteLiteral(conn, x))
 }
 
+# The closed reference-source allowlist used by extraction and by the legacy
+# executor's private publication proof. A projected frame without person keys
+# is never sufficient evidence on its own.
+.referenceTableSource <- function(blueprint, table) {
+  table <- tolower(table)
+  source <- blueprint$tables[blueprint$tables$table_name == table, , drop = FALSE]
+  nrow(source) == 1L && isTRUE(source$present_in_db[[1L]]) &&
+    (identical(source$schema_category[[1L]], "Vocabulary") ||
+       table %in% c("cdm_source", "metadata", "cohort_definition", "achilles_analysis"))
+}
+
 #' Compile a SQL SELECT for a table extraction
 #'
 #' @param handle CDM handle
@@ -763,11 +774,7 @@
   }
   has_concept_col <- !is.null(concept_col) && concept_col %in% col_df$column_name
   has_person_id <- "person_id" %in% col_df$column_name
-  safe_non_person_tables <- c(
-    "cdm_source", "metadata", "cohort_definition", "achilles_analysis"
-  )
-  is_safe_non_person <- identical(tbl_row$schema_category[1], "Vocabulary") ||
-    table_lower %in% safe_non_person_tables
+  is_safe_non_person <- .referenceTableSource(bp, table_lower)
   if (!has_person_id && !is_safe_non_person) {
     stop("Row-level extraction of non-person-keyed table '", table,
          "' is not permitted. A declared person join path and a distinct-",

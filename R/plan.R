@@ -2468,18 +2468,15 @@
     "op.observation_period_start_date <= t.", start_col, " AND ",
     "op.observation_period_end_date >= t.", start_col
   )
-  # Coverage policy (design 1.3 and 6.13; defect A-E6): the lowered default is
-  # unique with on_missing = "drop" and on_ambiguous = "drop". A candidate
-  # outside every observation period is not an eligible index event (the inner
-  # join), and a candidate whose index is covered by more than one period is
-  # dropped privately -- it no longer aborts the plan. Both happen before the
-  # primary-limit selection, as uncovered candidates always did.
+  # The v1 compatibility default is unique/drop/drop (design 1.3, A-E6).
+  # Keep only candidates with exactly one covering record; an ambiguous
+  # candidate cannot abort unrelated persons or duplicate an index episode.
+  # Coverage is resolved before the existing primary-limit selection.
   unique_coverage <- paste0(
-    " AND NOT EXISTS (SELECT 1 FROM ", op_qualified, " op2 WHERE ",
-    "op2.person_id = t.person_id AND ",
-    "op2.observation_period_start_date <= t.", start_col, " AND ",
-    "op2.observation_period_end_date >= t.", start_col, " AND ",
-    "op2.observation_period_id <> op.observation_period_id)"
+    " AND (SELECT COUNT(*) FROM ", op_qualified, " op_cover WHERE ",
+    "op_cover.person_id = t.person_id AND ",
+    "op_cover.observation_period_start_date <= t.", start_col, " AND ",
+    "op_cover.observation_period_end_date >= t.", start_col, ") = 1"
   )
 
   cohort_end <- "op.observation_period_end_date"
@@ -3577,6 +3574,19 @@
           )
 
           results[[out_name]] <- result_df
+        }
+
+        # Successful extraction proves this output came from a source the SQL
+        # compiler explicitly permits as reference data. Record the proof in
+        # the private context: neither a missing result key nor a client field
+        # can exempt patient output from publication support. Source extensions
+        # carrying patient/episode keys must still use genuine person lineage.
+        # A visit filter reads patient visits through an EXISTS, even when an
+        # extension's visit key is omitted from the reference projection.
+        source_columns <- bp$columns[[tolower(out$table)]]$column_name
+        if (is.null(visit_filter) && .referenceTableSource(bp, out$table) &&
+            !any(c(.PERSON_KEY_COLS(), .EPISODE_KEY_COLS(), "set_id") %in% source_columns)) {
+          ctx$reference_outputs <- union(ctx$reference_outputs, out_name)
         }
 
       } else if (out_type == "baseline") {

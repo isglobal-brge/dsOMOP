@@ -599,14 +599,14 @@ test_that("v1 event_level outputs lower to long, wide and sparse", {
                                                 representation = list(format = "sparse")))))
   expect_identical(ir$outputs$s$format, "sparse")
   expect_identical(ir$outputs$s$legacy_automatic_features$format, "sparse")
-  # value_bin row filters lower to and[>=, <]
+  # value_bin row filters lower to one half-open between leaf (lower <= x < upper)
   vb <- list(var = "value_as_number", op = "value_bin", value = list(lower = 5, upper = 7),
              safe_scope = list(table = "measurement", column = "value_as_number", n_bins = 4L))
   ir <- .irPrepare(list(outputs = list(e = list(type = "event_level", table = "measurement",
                                                 filters = list(custom = vb)))))
   ev <- ir$events[[ir$outputs$e$sources[[1]]$event]]
-  expect_identical(ev$where, list(and = list(list(var = "value_as_number", op = ">=", value = 5L),
-                                             list(var = "value_as_number", op = "<", value = 7L))))
+  expect_identical(ev$where, list(var = "value_as_number", op = "between",
+                                  value = list(lower = 5L, upper = 7L, upper_inclusive = FALSE)))
 })
 
 test_that("v1 survival lowers with the legacy cohort-end cap", {

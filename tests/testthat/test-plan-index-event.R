@@ -143,7 +143,7 @@ test_that("OHDSI DateOffset selects index start or physical event end", {
   }
 })
 
-test_that("index events exclude unobserved candidates and reject ambiguous coverage", {
+test_that("index events drop unobserved and ambiguously covered candidates", {
   h <- .ie_handle()
   on.exit(cleanup_handle(h))
   DBI::dbExecute(h$conn, paste0(
@@ -167,20 +167,35 @@ test_that("index events exclude unobserved candidates and reject ambiguous cover
     "(1, 1, '2020-01-01', '2024-12-31', 44814724), ",
     "(2, 1, '2019-01-01', '2021-12-31', 44814724)"
   ))
-  resolved <- withr::with_options(list(nfilter.subset = 0), .ie_resolve(h, "first"))
-  expect_identical(nrow(.ie_rows(h, resolved)), 0L)
+  withr::with_options(list(nfilter.subset = 3), {
+    resolved <- .ie_resolve(h, "first")
+    rows <- .ie_rows(h, resolved)
+    expect_equal(nrow(rows), 0L)
+    expect_length(resolved$person_ids, 0L)
+    expect_error(.publishStandalone(rows, handle = h,
+                                    caller = "index-event-coverage-test",
+                                    already_tokenized = FALSE),
+                 "insufficient individuals")
+  })
+})
 
-  # Only the candidate inside both periods is ambiguous: the first remaining
-  # candidate (102, covered by period 1 alone) is the index, with its exit at
-  # the end of that period.
+test_that("ambiguous early index candidates do not hide later unique coverage", {
+  h <- .ie_handle()
+  on.exit(cleanup_handle(h))
   DBI::dbExecute(h$conn, paste0(
-    "UPDATE observation_period SET observation_period_end_date = '2020-03-31' ",
-    "WHERE observation_period_id = 2"
+    "INSERT INTO observation_period ",
+    "(observation_period_id, person_id, observation_period_start_date, ",
+    "observation_period_end_date, period_type_concept_id) VALUES ",
+    "(2, 1, '2020-01-01', '2020-02-01', 44814724)"
   ))
-  resolved <- withr::with_options(list(nfilter.subset = 0), .ie_resolve(h, "first"))
-  rows <- .ie_rows(h, resolved)
-  expect_equal(rows$index_event_id, 102L)
-  expect_equal(rows$cohort_end_date, "2024-12-31")
+  withr::with_options(list(nfilter.subset = 3), {
+    for (limit in c("first", "last", "all")) {
+      rows <- .ie_rows(h, .ie_resolve(h, limit))
+      expect_equal(rows$index_event_id, 102L, info = limit)
+      expect_equal(rows$cohort_start_date, "2020-07-01", info = limit)
+      expect_equal(rows$cohort_end_date, "2024-12-31", info = limit)
+    }
+  })
 })
 
 test_that("unsupported or malformed index end strategies fail closed", {

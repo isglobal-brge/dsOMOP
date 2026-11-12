@@ -8,8 +8,10 @@
 }
 \description{
 The legacy validator \code{.validateCohortFilterTree()} (closed leaves,
-known types and parameters, the complexity caps) plus the closure of the
-nested parameter objects (\code{window}, \code{safe_scope}) and amendment
-A-10's refusal of a \code{cohort_definition_id} of 0.
+known types and parameters, the complexity caps), the closure of the
+nested parameter objects (\code{window}, \code{safe_scope}), the
+advisory \code{concept_name} label typed, amendment A-10's refusal of a
+\code{cohort_definition_id} of 0, and the parameter rules the leaf
+compiler applies without a site (\code{.v1FilterLeafErrors()}).
 }
 \keyword{internal}

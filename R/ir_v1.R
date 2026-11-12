@@ -1,33 +1,27 @@
 # Module: v1 plans -- closed envelope and lowering to the compatibility IR
-# (design-2.10.3 sections 4.5 and 5).
+# (design-2.10.3 sections 4.5 and 5; amendments A-10, A-15, A-16, A-19).
 #
-# A v1 plan (no `version`, or `version: 1`) is first validated by the
-# corrected v1 validator (.planV1Envelope, step 1 of the frozen sequence):
-# the existing v1 shape rules reused with exactly the enumerated 2.10.3
-# corrections --
-#   (a) unknown-field rejection at the root, in every output object and in
-#       every nested object (the 2.10.1 validators accepted, e.g.,
-#       `already_gated` at the root and in a concept_dictionary output);
-#   (b) assignment grid-shape validation of a baseline `age_breaks` (at least
-#       two strictly increasing integers starting at 0), replacing the
-#       .computeAgeGroups(min_cell = 0) call whose on-grid rule rejected an
-#       off-grid grid such as c(0, 18, 19, 65); .computeAgeGroups itself is
-#       unchanged for aggregate callers;
-#   (c) the width/grid gates deleted in section 7.4 are not applied here;
-# plus the shape exclusivity of defect A-E2 (a set-op population carries no
+# A v1 plan (no `version`, or `version: 1`) is first validated by the closed
+# v1 envelope (.planV1Envelope, step 1 of the frozen sequence): every object
+# is closed on its raw member names before null compaction, at every nesting
+# level, inactive and advisory positions included (R/ir_v1_shape.R); the
+# executors' own value validators and coercion rules run on the fields they
+# read (.v1CrossFieldErrors), so a value 2.10.2 executed is accepted with
+# the same meaning and a value it refused is refused, typed, before any query;
+# the shape exclusivity of defect A-E2 holds (a set-op population carries no
 # filter_tree, cohort_definition_id, index_event or episode_policy, and an
-# unknown population kind is refused instead of being read as criteria).
-# Value-level checks of known fields stay with the v1 executors, which still
-# run v1 plans in this release stage, so their messages and per-output
-# behaviour are unchanged. A null-valued field is absent, as it always was
-# for v1 (R lists cannot tell the two apart).
+# unknown population kind is refused). A null-valued known field is absent,
+# as it always was for v1.
 #
-# .irLowerV1() then maps the plan onto language 2.0 nodes plus the closed
-# compatibility variants of ir-v2.json (section 5). Whatever v1 states and
-# the frozen IR cannot express exactly is NOT discarded: it is kept verbatim
-# in the server-private attribute `legacy_residue` of the IR (keyed by IR
-# path), which the v1 adapters read, explain reports and .irSemanticDigest()
-# binds. Change request CR-10 proposes closed IR variants for it.
+# .irLowerV1() (R/ir_v1_lower.R) then maps the plan onto language 2.0 nodes
+# plus the closed IR-only compatibility variants of ir-v2.json: every
+# result-affecting v1 field is in the IR document, under the one
+# .planSemanticDigest(); advisory fields go to the server-private
+# `legacy_annex` attribute, which explain lists and no digest covers. The
+# historical literal coercions (integer-coercible concept ids and integer
+# fields) are applied there as validated compatibility normalisation (A-19
+# item 7). v1 plans still run on the v1 executors in this release stage; their
+# site requirements are checked before any query (.planV1SiteCheck).
 
 # --- shared helpers -------------------------------------------------------------
 
@@ -139,17 +133,23 @@
 #' @keywords internal
 .planV1EnvelopeErrors <- function(plan) {
   if (!.v1IsObject(plan)) return("/: a v1 plan must be a JSON object")
-  errors <- .v1ShapeErrors(plan, .v1PlanShape(), "")
-  if (!is.null(plan[["version"]]) && !identical(as.numeric(.v1Scalar(plan[["version"]])), 1)) {
+  errors <- tryCatch(.v1ShapeErrors(plan, .v1PlanShape(), ""), error = function(e) {
+    paste0("/: the v1 plan has a malformed value (", conditionMessage(e), ")")
+  })
+  if (!is.null(plan[["version"]]) && !identical(.v1AsInteger(plan[["version"]]), 1L)) {
     errors <- c(errors, "/version: a v1 plan carries no version or version 1")
   }
-  unique(c(errors, .v1CrossFieldErrors(plan)))
+  # the cross-field rules read known fields of conforming shapes only: a
+  # malformed shape is already refused (typed), never indexed (re-review R1)
+  if (length(errors)) return(unique(errors))
+  unique(tryCatch(.v1CrossFieldErrors(plan), error = function(e) {
+    paste0("/: the v1 plan is malformed (", conditionMessage(e), ")")
+  }))
 }
 
 # Bounds of a v1 window, as the executor reads them (.temporalOffset).
 .v1Bound <- function(x) {
-  x <- .v1Scalar(x)
-  if (is.numeric(x) && length(x) == 1L && !is.na(x)) as.numeric(x) else NULL
+  .v1AsInteger(x)
 }
 
 #' Cross-field rules of the v1 executors, checked before lowering
@@ -198,18 +198,9 @@
           }
         }
       }
-      if (is_setop) {
-        ops <- tolower(.v1Text(compact[["setop"]][["op"]]) %||% "union")
-        members <- vapply(.v1Items(compact[["setop"]][["members"]]), function(m) .v1Text(m) %||% "", "")
-        if (ops %in% c("setdiff", "difference") && anyDuplicated(members)) {
-          add(p, "/setop/members: a difference of a population with itself is always empty")
-        }
-      }
-      if (multi && !is_setop && !identical(pid, "base") && is.null(compact[["filter_tree"]]) &&
-          is.null(compact[["cohort_definition_id"]]) && is.null(compact[["index_event"]])) {
-        add(p, ": a v1 criteria population needs a filter_tree or a cohort_definition_id ",
-            "(without either it resolves to no person)")
-      }
+      # a repeated subtrahend (a minus b minus b = a minus b), a self-difference and a bare
+      # non-base criteria population (both empty) execute as in 2.10.2: private
+      # emptiness is never a structural refusal (re-review R3; design 7.1)
       if (!is.null(compact[["index_event"]]) && !is.null(compact[["episode_policy"]])) {
         add(p, ": Population '", pid, "': episode_policy cannot be combined with index_event; ",
             "primary_limit defines candidate-event selection.")
@@ -250,6 +241,24 @@
       }
     }
     if (identical(type, "event_level")) {
+      # The event executor passes the effective output-level restriction to
+      # .compileSelect(), which requires at least one ID. An empty inner
+      # feature-spec set has different historical semantics and is not this
+      # restriction. Honour filters.concept_set.ids precedence before checking.
+      concept_ids <- out[["filters"]][["concept_set"]][["ids"]]
+      concept_path <- paste0(p, "/filters/concept_set/ids")
+      if (is.null(concept_ids)) {
+        concept_ids <- out[["concept_set"]]
+        concept_path <- paste0(p, "/concept_set")
+      }
+      if (!is.null(concept_ids)) {
+        if (is.list(concept_ids) && !is.null(concept_ids[["concepts"]])) {
+          concept_ids <- concept_ids[["concepts"]]
+        }
+        if (!length(unlist(concept_ids, use.names = FALSE))) {
+          add(concept_path, ": concept_filter must contain one or more finite integer concept IDs.")
+        }
+      }
       rep <- if (.v1IsObject(out[["representation"]])) out[["representation"]] else list()
       fmt <- tolower(.v1Text(rep[["format"]]) %||% "long")
       grain <- tolower(.v1Text(rep[["grain"]]) %||% "person")
@@ -311,6 +320,27 @@
         for (t in tables) legacy(paste0(p, "/source_filters"), .longitudinalSourceFilter(out[["source_filters"]], t, tables))
       }
     }
+    if (type %in% c("temporal_covariates", "person_period")) {
+      # The temporal executors compare their coerced integer settings, including
+      # the omitted defaults; TRUE is day 1, not an exempt logical value.
+      window_start <- .v1AsInteger(out[["window_start"]] %||% -365L)
+      window_end <- .v1AsInteger(out[["window_end"]] %||% 0L)
+      if (!is.null(window_start) && !is.null(window_end) && window_start > window_end) {
+        add(p, "/window_start: window_start must not be after window_end.")
+      }
+      # .normalizeTemporalSqlConcepts() refuses a declared empty restriction.
+      # Only syntactic emptiness is decided here; vocabulary-dependent
+      # resolution and an absent (unrestricted) filter remain executor work.
+      concept_ids <- out[["concept_set"]]
+      if (!is.null(concept_ids)) {
+        if (is.list(concept_ids) && !is.null(concept_ids[["concepts"]])) {
+          concept_ids <- concept_ids[["concepts"]]
+        }
+        if (!length(unlist(concept_ids, use.names = FALSE))) {
+          add(p, "/concept_set: concept_filter must contain finite non-negative integer concept IDs.")
+        }
+      }
+    }
     if (identical(type, "person_period") &&
         (!identical(tolower(.v1Text(out[["grain"]]) %||% ""), "episode") ||
          !identical(tolower(.v1Text(out[["time_origin"]]) %||% ""), "index"))) {
@@ -364,6 +394,10 @@
           check(specs[[i]][["filter"]], out[["table"]],
                 paste0(p, "/representation/features/", i - 1L, "/filter"))
         }
+        fmt <- tolower(.v1Text(out[["representation"]][["format"]]) %||% "long")
+        errors <- c(errors, .planV1ConceptColErrors(bp, out[["table"]],
+          out[["filters"]][["concept_col"]] %||% out[["concept_col"]],
+          features = identical(fmt, "features"), specs = specs, path = paste0(p, "/concept_col")))
       },
       person_level = {
         tables <- out[["tables"]] %||% list()
@@ -371,6 +405,10 @@
         for (tbl in names(tables)) {
           entry <- tables[[tbl]]
           features <- .v1IsObject(entry) && !is.null(entry[["features"]])
+          if (features) {
+            errors <- c(errors, .planV1ConceptColErrors(bp, tbl, entry[["concept_col"]], features = TRUE,
+              specs = entry[["features"]], path = paste0(p, "/tables/", tbl, "/concept_col")))
+          }
           # every table, raw or features, extracts with its own filters ANDed
           # with the output-level custom filter, validated as one tree
           entry_filters <- if (features) entry[["filters"]]
@@ -405,6 +443,41 @@
       NULL)
   }
   unique(errors)
+}
+
+# The concept-column contract of the v1 extraction, before any query, with its
+# messages: a feature extraction (.extractTable(representation = "features"))
+# scopes on a filterable *_concept_id column (the override or the domain
+# concept column, and every spec's own concept_col); every extraction
+# (.compileSelect()) needs an override column that exists on the table -- any
+# column, as 2.10.2 executed it (A-19 item 7: the v1 concept_col override is
+# preserved; native plans keep the filterable concept columns only).
+.planV1ConceptColErrors <- function(bp, table, concept_col, features = FALSE, specs = NULL, path) {
+  tbl <- tolower(.v1Text(table) %||% "")
+  col_df <- bp[["columns"]][[tbl]]
+  if (!nzchar(tbl) || is.null(col_df)) return(character(0))
+  cc <- .v1Text(concept_col)
+  if (features) {
+    safe <- intersect(.filterableColumns(bp, tbl), grep("_concept_id$", col_df$column_name, value = TRUE))
+    wanted <- c(tolower(cc %||% .getDomainConceptColumn(bp, tbl) %||% character(0)),
+                unlist(lapply(.v1Items(specs), function(sp) {
+                  if (.v1IsObject(sp)) tolower(.v1Text(sp[["concept_col"]]) %||% character(0))
+                }), use.names = FALSE))
+    for (col in unique(wanted)) {
+      if (!col %in% safe) {
+        return(paste0(path, ": Feature concept_col '", col, "' is not a safe concept column on table '",
+                      table, "'."))
+      }
+    }
+  }
+  if (!is.null(cc)) {
+    found <- .v1Legacy(path, .validateIdentifier(cc, "concept column"))
+    if (length(found)) return(found)
+    if (!tolower(cc) %in% col_df$column_name) {
+      return(paste0(path, ": Concept column '", tolower(cc), "' not found in table '", table, "'."))
+    }
+  }
+  character(0)
 }
 
 # The person-column contract of .extractBaseline(), before any query: the
