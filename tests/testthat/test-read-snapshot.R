@@ -134,7 +134,9 @@ for (engine in c("mysql", "mariadb")) local({
     on.exit(fixture$cleanup(), add = TRUE)
     DBI::dbExecute(fixture$admin, paste0("ALTER TABLE ",
       .qualifyTable(fixture$handle, "person"), " ENGINE = MyISAM"))
-    expect_error(suppressMessages(.dsomopWithReadSnapshot(fixture$handle, 1)),
+    expect_error(suppressMessages(.dsomopWithReadSnapshot(fixture$handle,
+      .executeQuery(fixture$handle, paste("SELECT COUNT(*) AS n FROM",
+        .qualifyTable(fixture$handle, "person"))))),
                   "nontransactional tables")
     expect_null(fixture$handle$read_snapshot)
     # The engine can also change after entry but before the first read.

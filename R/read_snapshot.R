@@ -18,8 +18,9 @@
 #     locking read of the latest committed rows, not of the snapshot, so inside
 #     a snapshot a temporary table is filled from a consistent read through R.
 #     Nontransactional source tables and statements that would commit
-#     implicitly are refused. Source engines are checked before and after
-#     each request to detect a concurrent engine change before first read.
+#     implicitly are refused. Actual source graphs (including cross-schema
+#     nested/definer views) are certified under transaction metadata locks,
+#     with current definitions and engines rechecked before release.
 #   * DuckDB and SQLite: an explicit transaction (DuckDB has no savepoints: a
 #     failing statement aborts its transaction, and the request then fails).
 #   * SQL Server: SERIALIZABLE, with range locks; Oracle: SERIALIZABLE,
@@ -116,6 +117,10 @@
   ctx$dbms <- tryCatch(.normalizeDBMS(handle$dbms), error = function(e) "")
   ctx$schemas <- unique(c(handle$cdm_schema, handle$vocab_schema, handle$results_schema))
   ctx$memo <- new.env(parent = emptyenv())
+  ctx$sources <- new.env(parent = emptyenv())
+  ctx$unavailable <- FALSE
+  ctx$finalizers <- list()
+  success <- FALSE
   ctx$savepoints <- 0L
   ctx$aborted <- FALSE
   ctx$conn <- .conn(handle)
@@ -134,6 +139,18 @@
     if (!is.null(ctx$restore_isolation_sql)) {
       try(DBI::dbExecute(ctx$conn, ctx$restore_isolation_sql), silent = TRUE)
     }
+    cleanup_error <- NULL
+    for (finalizer in ctx$finalizers) {
+      tryCatch(finalizer(success), error = function(e) {
+        if (is.null(cleanup_error)) cleanup_error <<- e
+      })
+    }
+    if (!is.null(cleanup_error)) {
+      if (success) {
+        for (finalizer in ctx$finalizers) try(finalizer(FALSE), silent = TRUE)
+      }
+      stop(cleanup_error)
+    }
   }, add = TRUE)
   value <- expr
   if (!is.null(ctx$conn)) .dsomopSnapshotValidate(ctx)
@@ -142,6 +159,12 @@
       .dsomopSnapshotLost("the request snapshot could not be rolled back")
     })
     ctx$transaction <- FALSE
+  }
+  success <- TRUE
+  label <- attr(value, "dsomop_protection", exact = TRUE)
+  if (is.list(label)) {
+    label$read_snapshot <- ctx$kind
+    attr(value, "dsomop_protection") <- label
   }
   value
 }
@@ -161,7 +184,9 @@
           "SELECT CAST(transaction_timestamp() AS TEXT) AS t"))$t[[1L]]
       },
       consistent_snapshot_transaction = {
-        .dsomopSnapshotAssertTransactional(ctx)
+        session <- DBI::dbGetQuery(conn, "SELECT DATABASE() AS db, @@session.sql_mode AS sql_mode")
+        ctx$default_schema <- session[[1L]][[1L]]
+        ctx$sql_mode <- session[[2L]][[1L]]
         # The session isolation applies to the consistent-snapshot
         # transaction below (a session setting, never a database option).
         variable <- if (identical(ctx$dbms, "mariadb")) "tx_isolation" else "transaction_isolation"
@@ -218,41 +243,225 @@
   invisible(TRUE)
 }
 
-# Capability check repeated at entry and final validation, never cached.
-# A table read holds its metadata lock until rollback; rechecking catches an
-# engine change between the entry check and that table's first read.
-.dsomopSnapshotAssertTransactional <- function(ctx, current = FALSE) {
-  schemas <- ctx$schemas
-  schemas <- schemas[!is.na(schemas) & nzchar(schemas)]
-  if (!length(schemas)) return(invisible(TRUE))
-  engines <- tryCatch({
-    schema_sql <- paste(DBI::dbQuoteString(ctx$conn, schemas), collapse = ", ")
-    tables <- DBI::dbGetQuery(ctx$conn, paste0(
-      "SELECT table_schema, table_name, engine FROM information_schema.tables ",
-      "WHERE table_schema IN (", schema_sql, ") AND table_type = 'BASE TABLE'"))
-    names(tables) <- tolower(names(tables))
-    engines <- as.character(tables$engine)
-    if (current && identical(ctx$dbms, "mysql")) {
-      # MySQL's INFORMATION_SCHEMA reads the transaction's old dictionary.
-      # SHOW CREATE TABLE uses the current definition, including its engine.
-      engines <- vapply(seq_len(nrow(tables)), function(i) {
-        table <- paste(DBI::dbQuoteIdentifier(ctx$conn, tables$table_schema[[i]]),
-                       DBI::dbQuoteIdentifier(ctx$conn, tables$table_name[[i]]), sep = ".")
-        ddl <- DBI::dbGetQuery(ctx$conn, paste("SHOW CREATE TABLE", table))[[2L]][[1L]]
-        match <- regmatches(ddl, regexec("(?m)^\\)\\s+ENGINE\\s*=\\s*([A-Za-z0-9_]+)\\b", ddl, perl = TRUE))[[1L]]
-        if (length(match) != 2L) stop("Source engine capability was invalid.")
-        match[[2L]]
-      }, character(1L))
-    }
-    if (anyNA(engines) || any(!nzchar(engines))) stop("Source engine capability was invalid.")
-    toupper(engines)
-  }, error = function(e) .dsomopSnapshotLost("source engine capability could not be read"))
-  if (any(engines != "INNODB")) {
-    stop(structure(list(message = paste0(
-      "This source contains nontransactional tables and cannot provide ",
-      "a request-consistent read snapshot; no result was released."), call = NULL),
-      class = c("dsomop_snapshot_unavailable", "error", "condition")))
+# A capability refusal is request-wide, even if a caller catches the first
+# error while probing a source. Metadata is never cached across requests.
+.dsomopSnapshotUnavailable <- function(ctx, reason) {
+  ctx$unavailable <- TRUE
+  message("[dsomop-read-snapshot] ", reason)
+  stop(structure(list(message = paste0(
+    "This source has nontransactional tables or unverifiable dependencies and ",
+    "cannot provide a request-consistent read snapshot; no result was released."),
+    call = NULL), class = c("dsomop_snapshot_unavailable", "error", "condition")))
+}
+
+# Tokenize server-normalized view definitions and our generated read SQL.
+# Strings and quoted identifiers remain opaque; executable comments and
+# ambiguous quoting cannot hide a dependency. No regex is applied to strings.
+.dsomopSnapshotSqlTokens <- function(sql, sql_mode = "") {
+  modes <- strsplit(toupper(sql_mode), ",", fixed = TRUE)[[1L]]
+  no_escape <- "NO_BACKSLASH_ESCAPES" %in% modes
+  ansi <- "ANSI_QUOTES" %in% modes
+  single <- if (no_escape) "'(?:''|[^'])*'" else "'(?:''|\\\\.|[^'\\\\])*'"
+  double <- if (no_escape || ansi) '\"(?:\"\"|[^\"])*\"' else '\"(?:\"\"|\\\\.|[^\"\\\\])*\"'
+  pattern <- paste0("(?s)\\s+|--(?=\\s|$)[^\\r\\n]*|#[^\\r\\n]*|/\\*.*?\\*/|",
+    single, "|`(?:``|[^`])*`|", double, "|[A-Za-z_][A-Za-z_0-9$]*|[0-9]+|.")
+  tokens <- regmatches(sql, gregexpr(pattern, sql, perl = TRUE))[[1L]]
+  if (any(grepl("^/\\*(?:!|[Mm]!)", tokens, perl = TRUE))) {
+    stop("Executable SQL comments cannot certify source dependencies.")
   }
+  tokens <- tokens[!grepl("^(?:\\s|--|#|/\\*)", tokens, perl = TRUE)]
+  if (any(tokens %in% c("'", "`", '"'))) stop("Unterminated SQL quoting.")
+  quoted <- startsWith(tokens, "`") | (ansi & startsWith(tokens, '"'))
+  string <- startsWith(tokens, "'") | (!ansi & startsWith(tokens, '"'))
+  id <- quoted | grepl("^[A-Za-z_][A-Za-z_0-9$]*$", tokens)
+  value <- tokens
+  value[quoted] <- substring(value[quoted], 2L, nchar(value[quoted]) - 1L)
+  value[quoted] <- gsub("``", "`", value[quoted], fixed = TRUE)
+  value[quoted] <- gsub('""', '"', value[quoted], fixed = TRUE)
+  word <- ifelse(id & !quoted, toupper(value), "")
+  syntax <- ifelse(!id & !string, value, "")
+  data.frame(value = value, word = word, id = id, syntax = syntax, stringsAsFactors = FALSE)
+}
+
+# Enumerate relational references, including comma/parenthesized joins,
+# subqueries, UNION arms and CTEs. CTE bindings apply only within their SQL
+# scope; only an unqualified reference can resolve to one. In a server view,
+# stored routines are schema-qualified and cannot be certified as tables.
+.dsomopSnapshotSqlSources <- function(sql, schema, view = FALSE, sql_mode = "") {
+  t <- .dsomopSnapshotSqlTokens(sql, sql_mode)
+  n <- nrow(t)
+  empty <- data.frame(schema = character(), table = character())
+  if (!n) return(empty)
+  depth <- integer(n)
+  parents <- integer()
+  closing <- rep.int(n + 1L, n)
+  for (i in seq_len(n)) {
+    depth[[i]] <- length(parents)
+    if (t$syntax[[i]] == "(") parents <- c(parents, i)
+    if (t$syntax[[i]] == ")") {
+      if (!length(parents)) stop("Unbalanced source SQL.")
+      closing[[tail(parents, 1L)]] <- i
+      parents <- head(parents, -1L)
+      depth[[i]] <- length(parents)
+    }
+  }
+  if (length(parents)) stop("Unbalanced source SQL.")
+  if (n > 2L) {
+    for (i in seq_len(n - 2L)) {
+      if (t$syntax[[i]] == "." && t$id[[i + 1L]] && t$syntax[[i + 2L]] == "(") {
+        stop("Stored-routine source dependencies cannot be certified.")
+      }
+    }
+  }
+  ctes <- list()
+  for (w in which(t$word == "WITH")) {
+    j <- w + 1L
+    if (j <= n && t$word[[j]] %in% c("CHECK", "LOCAL", "CASCADED", "ROLLUP")) next
+    recursive <- j <= n && t$word[[j]] == "RECURSIVE"
+    if (recursive) j <- j + 1L
+    end <- which(seq_len(n) > w & depth < depth[[w]])
+    end <- if (length(end)) end[[1L]] else n + 1L
+    repeat {
+      if (j > n || !t$id[[j]]) stop("Unverifiable CTE source.")
+      name <- t$value[[j]]; j <- j + 1L
+      if (j <= n && t$syntax[[j]] == "(") j <- closing[[j]] + 1L
+      if (j + 1L > n || t$word[[j]] != "AS" || t$syntax[[j + 1L]] != "(") {
+        stop("Unverifiable CTE source.")
+      }
+      ctes[[length(ctes) + 1L]] <- list(name = name, start = if (recursive) j + 1L else closing[[j + 1L]], end = end)
+      j <- closing[[j + 1L]] + 1L
+      if (j > n || t$syntax[[j]] != ",") break
+      j <- j + 1L
+    }
+  }
+  contexts <- list(list(select = FALSE, from = FALSE, expect = FALSE))
+  out <- list()
+  i <- 1L
+  while (i <= n) {
+    k <- length(contexts); state <- contexts[[k]]
+    v <- t$value[[i]]; w <- t$word[[i]]; op <- t$syntax[[i]]
+    if (op == "(") {
+      # A parenthesized table group inherits FROM, a function does not.
+      contexts[[k]]$expect <- FALSE
+      contexts[[k + 1L]] <- list(select = FALSE, from = state$expect,
+                                 expect = state$expect)
+    } else if (op == ")") {
+      contexts <- head(contexts, -1L)
+    } else if (w == "SELECT") {
+      contexts[[k]] <- list(select = TRUE, from = FALSE, expect = FALSE)
+    } else if ((w == "FROM" && state$select) || w %in% c("JOIN", "STRAIGHT_JOIN")) {
+      contexts[[k]]$from <- TRUE; contexts[[k]]$expect <- TRUE
+    } else if (w %in% c("WHERE", "GROUP", "HAVING", "ORDER", "LIMIT", "UNION",
+                       "EXCEPT", "INTERSECT", "WINDOW", "FOR", "LOCK")) {
+      contexts[[k]]$from <- FALSE; contexts[[k]]$expect <- FALSE
+    } else if (op == "," && state$from) {
+      contexts[[k]]$expect <- TRUE
+    } else if (state$expect) {
+      if (!t$id[[i]]) stop("Unverifiable relational source.")
+      parts <- v
+      while (i + 2L <= n && t$syntax[[i + 1L]] == "." && t$id[[i + 2L]]) {
+        parts <- c(parts, t$value[[i + 2L]]); i <- i + 2L
+      }
+      if (i < n && t$syntax[[i + 1L]] == "(") stop("Unverifiable table-valued source.")
+      virtual <- length(parts) == 1L && identical(w, "DUAL")
+      local <- length(parts) == 1L && any(vapply(ctes, function(cte) {
+        identical(tolower(parts[[1L]]), tolower(cte$name)) && i > cte$start && i < cte$end
+      }, logical(1L)))
+      if (!local && !virtual) {
+        if (length(parts) > 2L) stop("Unverifiable qualified source.")
+        out[[length(out) + 1L]] <- c(if (length(parts) == 1L) schema else parts[[1L]], tail(parts, 1L))
+      }
+      contexts[[k]]$expect <- FALSE
+    }
+    i <- i + 1L
+  }
+  if (!length(out)) return(empty)
+  out <- as.data.frame(do.call(rbind, out), stringsAsFactors = FALSE)
+  names(out) <- c("schema", "table")
+  unique(out)
+}
+
+.dsomopSnapshotSourceDefinition <- function(ctx, schema, table) {
+  qualified <- paste(DBI::dbQuoteIdentifier(ctx$conn, schema),
+                     DBI::dbQuoteIdentifier(ctx$conn, table), sep = ".")
+  # SHOW reads current metadata even when MySQL INFORMATION_SCHEMA sees the
+  # dictionary as it stood at START TRANSACTION.
+  definition <- DBI::dbGetQuery(ctx$conn, paste("SHOW CREATE TABLE", qualified))
+  if (nrow(definition) != 1L || ncol(definition) < 2L ||
+      is.na(definition[[2L]][[1L]])) stop("Missing source definition.")
+  ddl <- definition[[2L]][[1L]]
+  if (identical(tolower(names(definition)[[2L]]), "create view")) {
+    sources <- .dsomopSnapshotSqlSources(ddl, schema, view = TRUE, sql_mode = ctx$sql_mode)
+    return(list(schema = schema, table = table, view = TRUE, ddl = ddl, sources = sources))
+  }
+  engine <- regmatches(ddl, regexec("(?m)^\\)\\s+ENGINE\\s*=\\s*([A-Za-z0-9_]+)\\b", ddl, perl = TRUE))[[1L]]
+  if (length(engine) != 2L || toupper(engine[[2L]]) != "INNODB") {
+    stop("Nontransactional or unverifiable source engine.")
+  }
+  list(schema = schema, table = table, view = FALSE, engine = toupper(engine[[2L]]))
+}
+
+.dsomopSnapshotCertifySource <- function(ctx, schema, table, path = character()) {
+  key <- paste0(nchar(schema), ":", schema, nchar(table), ":", table)
+  if (key %in% path) stop("Cyclic view dependencies.")
+  if (exists(key, ctx$sources, inherits = FALSE)) return(invisible(TRUE))
+  definition <- .dsomopSnapshotSourceDefinition(ctx, schema, table)
+  if (definition$view) {
+    for (i in seq_len(nrow(definition$sources))) {
+      .dsomopSnapshotCertifySource(ctx, definition$sources$schema[[i]],
+        definition$sources$table[[i]], c(path, key))
+    }
+  }
+  assign(key, definition, ctx$sources)
+  invisible(TRUE)
+}
+
+.dsomopSnapshotReadSql <- function(handle, sql) {
+  if (!.dsomopReadSnapshotActive(handle) ||
+      !identical(handle$read_snapshot$kind, "consistent_snapshot_transaction")) return(invisible(TRUE))
+  ctx <- handle$read_snapshot
+  if (isTRUE(ctx$unavailable)) .dsomopSnapshotUnavailable(ctx, "a source was not certifiable")
+  tryCatch({
+    .dsomopSnapshotGuard(handle, sql)
+    .dsomopSnapshotAssertSession(ctx)
+    sources <- .dsomopSnapshotSqlSources(sql, ctx$default_schema, sql_mode = ctx$sql_mode)
+    for (i in seq_len(nrow(sources))) {
+      schema <- sources$schema[[i]]; table <- sources$table[[i]]
+      if (tolower(schema) %in% c("information_schema", "performance_schema")) next
+      if (identical(schema, ctx$default_schema) && table %in% (handle$temp_tables %||% character())) next
+      key <- paste0(nchar(schema), ":", schema, nchar(table), ":", table)
+      if (exists(key, ctx$sources, inherits = FALSE)) next
+      qualified <- paste(DBI::dbQuoteIdentifier(ctx$conn, schema),
+                         DBI::dbQuoteIdentifier(ctx$conn, table), sep = ".")
+      # This reads no rows, but pins the source and its transitive metadata
+      # until rollback. A concurrent engine/view replacement cannot race the
+      # subsequent certification or the request's source reads.
+      DBI::dbGetQuery(ctx$conn, paste("SELECT 1 FROM", qualified, "LIMIT 0"))
+      .dsomopSnapshotCertifySource(ctx, schema, table)
+    }
+  }, error = function(e) .dsomopSnapshotUnavailable(ctx, conditionMessage(e)))
+  invisible(TRUE)
+}
+
+.dsomopSnapshotAssertSession <- function(ctx) {
+  session <- DBI::dbGetQuery(ctx$conn, "SELECT DATABASE() AS db, @@session.sql_mode AS sql_mode")
+  if (!identical(session[[1L]][[1L]], ctx$default_schema) ||
+      !identical(session[[2L]][[1L]], ctx$sql_mode)) {
+    stop("The source namespace or SQL interpretation changed during the request.")
+  }
+  invisible(TRUE)
+}
+
+.dsomopSnapshotValidateSources <- function(ctx) {
+  if (isTRUE(ctx$unavailable)) .dsomopSnapshotUnavailable(ctx, "a source was not certifiable")
+  tryCatch({
+    .dsomopSnapshotAssertSession(ctx)
+    for (key in ls(ctx$sources, all.names = TRUE)) {
+      prior <- get(key, ctx$sources, inherits = FALSE)
+      current <- .dsomopSnapshotSourceDefinition(ctx, prior$schema, prior$table)
+      if (!identical(prior, current)) stop("Source dependencies changed during the request.")
+    }
+  }, error = function(e) .dsomopSnapshotUnavailable(ctx, conditionMessage(e)))
   invisible(TRUE)
 }
 
@@ -270,7 +479,7 @@
     }
   }
   if (identical(ctx$kind, "consistent_snapshot_transaction")) {
-    .dsomopSnapshotAssertTransactional(ctx, current = TRUE)
+    .dsomopSnapshotValidateSources(ctx)
     tryCatch(DBI::dbExecute(conn, "ROLLBACK TO SAVEPOINT dsomop_request_snapshot"),
              error = function(e) .dsomopSnapshotLost("the request transaction ended"))
   }
@@ -337,7 +546,9 @@
        grepl("^(CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COMMENT|ANALYZE)\\b", text, perl = TRUE)) ||
     (identical(handle$read_snapshot$kind, "redshift_snapshot_transaction") &&
        grepl("^(TRUNCATE|VACUUM)\\b", text, perl = TRUE))
-  if (control || implicit) {
+  syntax_change <- identical(handle$read_snapshot$kind, "consistent_snapshot_transaction") &&
+    grepl("^(USE|SET(?:\\s+(?:SESSION|LOCAL))?\\s+(?:SQL_MODE|NAMES|CHARACTER\\s+SET))\\b", text, perl = TRUE)
+  if (control || implicit || syntax_change) {
     handle$read_snapshot$aborted <- TRUE
     .dsomopSnapshotLost("a statement that would end the request snapshot was refused")
   }
@@ -447,6 +658,7 @@
 #' @return Invisible NULL.
 #' @keywords internal
 .dsomopSnapshotMaterializeTemp <- function(handle, name, select_sql) {
+  .dsomopSnapshotReadSql(handle, select_sql)
   rows <- .dsomopSnapshotRun(handle, function(conn) {
     DBI::dbGetQuery(conn, select_sql)
   })

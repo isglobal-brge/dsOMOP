@@ -88,14 +88,20 @@ handles/history, membership replacement, transient failure recovery, label
 independence, and fixed-loader live-source generation matching. Final combined
 server/client suite evidence is maintained by the coordinating session.
 
-MySQL and MariaDB's coherent capability is limited to visible InnoDB base tables
-in the declared CDM, vocabulary and results namespaces. A nontransactional
-source is refused, and a metadata failure ends the request. MySQL's final
-`SHOW CREATE TABLE` checks observe current engine definitions because its
-`INFORMATION_SCHEMA` can still show the transaction's old dictionary. This
-inspection does not traverse views into undeclared namespaces; isolation of
-those external view dependencies is an unresolved capability residual, and no
-universal view-isolation claim is made. Other engines without a native adapter retain the declared `not_isolated` residual.
+The round-3 MySQL/MariaDB implementation checked only visible base tables in
+its declared namespaces; the independent review's external-view witness
+invalidated that capability boundary. R09 supersedes it: each actual source is
+now pinned with transaction metadata locks, and current `SHOW CREATE` metadata
+certifies its transitive base-table dependencies, including nested/definer views
+across schemas. Every dependency must be InnoDB and verifiable; hidden metadata,
+stored routines and nontransactional dependencies refuse the whole request.
+Current definitions and engines are revalidated before publication, and the
+public label carries the capability actually established in the request.
+Unrelated unread objects do not block a safe source. Certification is local to
+the request and adds no owner configuration or persistent cache. The old logs
+above remain evidence for their recorded revisions; new regression and full
+suite results are recorded in the round-4 developer report. Engines without a
+native adapter retain the declared `not_isolated` residual.
 
 The generation detects changes to the person-ID set, not every clinical edit.
 Contribution fingerprints still change keys for affected bounded components;

@@ -5351,11 +5351,6 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     out <- .dsomopWithReadSnapshot(handle, .omopAnalysisRun(
       handle, name, params = params, scope = scope, combine = combine,
       assign = assign, assign_date_handling = assign_date_handling))
-    label <- attr(out, "dsomop_protection", exact = TRUE)
-    if (is.list(label)) {
-      label$read_snapshot <- .dsomopReadSnapshotKind(handle)
-      attr(out, "dsomop_protection") <- label
-    }
     return(out)
   }
   temp_tables_before <- unique(handle$temp_tables %||% character(0))

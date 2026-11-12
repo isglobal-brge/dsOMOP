@@ -776,6 +776,7 @@
 #' @return data.frame (lower-case names, integer64 coerced as .executeQuery()).
 #' @keywords internal
 .fetchBounded <- function(handle, sql, cap, reject) {
+  .dsomopSnapshotReadSql(handle, sql)
   rows <- .withDbReconnect(handle, function(conn) {
     res <- DBI::dbSendQuery(conn, sql)
     on.exit(DBI::dbClearResult(res), add = TRUE)
