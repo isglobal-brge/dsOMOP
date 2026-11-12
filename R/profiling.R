@@ -1338,7 +1338,7 @@
     if (!is.list(window)) {
       stop("window must be a list with optional start/end dates.", call. = FALSE)
     }
-    window <- .validateDateBounds(window$start, window$end,
+    window <- .validateAggregateDateBounds(window$start, window$end,
                                   "profiling window")
     date_col <- .getDateColumn(bp, table)
     if (!is.null(date_col)) {
@@ -1637,7 +1637,7 @@
     if (!is.list(window)) {
       stop("window must be a list with optional start/end dates.", call. = FALSE)
     }
-    window <- .validateDateBounds(window$start, window$end,
+    window <- .validateAggregateDateBounds(window$start, window$end,
                                   "profiling window")
     date_col <- .getDateColumn(bp, table)
     if (!is.null(date_col)) {
@@ -1797,7 +1797,7 @@
     if (!is.list(window)) {
       stop("window must be a list with optional start/end dates.", call. = FALSE)
     }
-    window <- .validateDateBounds(window$start, window$end,
+    window <- .validateAggregateDateBounds(window$start, window$end,
                                   "profiling window")
     date_col <- .getDateColumn(bp, table)
     if (!is.null(date_col)) {
@@ -2028,7 +2028,7 @@
     if (!is.list(window)) {
       stop("window must be a list with optional start/end dates.", call. = FALSE)
     }
-    window <- .validateDateBounds(window$start, window$end,
+    window <- .validateAggregateDateBounds(window$start, window$end,
                                   "profiling window")
     date_col <- .getDateColumn(bp, table)
     if (!is.null(date_col)) {
@@ -2224,7 +2224,7 @@
       stop("Date-count windows require both start and end dates.",
            call. = FALSE)
     }
-    window <- .validateDateBounds(window$start, window$end,
+    window <- .validateAggregateDateBounds(window$start, window$end,
                                   "profiling window")
     if (!is.null(window$start)) {
       where_parts <- c(where_parts,
@@ -3141,4 +3141,25 @@
     }
   }
   labs
+}
+
+#' Preserve the aggregate date-window disclosure policy
+#'
+#' Assignment predicates use only structural date validation. Profiling retains
+#' its controller-owned minimum width in addition to its count/suppression gates.
+#' @param start,end Optional ISO date bounds.
+#' @param context Label used in structural errors.
+#' @return Validated date bounds.
+#' @keywords internal
+.validateAggregateDateBounds <- function(start = NULL, end = NULL, context) {
+  bounds <- .validateDateBounds(start, end, context)
+  if (!is.null(bounds$start) && !is.null(bounds$end)) {
+    settings <- .omopDisclosureSettings()
+    width <- as.numeric(bounds$end - bounds$start) + 1
+    if (settings$nfilter_subset > 0 && width < settings$nfilter_date_range) {
+      stop(context, " must span at least ", settings$nfilter_date_range,
+           " days while disclosure filtering is enabled.", call. = FALSE)
+    }
+  }
+  bounds
 }
