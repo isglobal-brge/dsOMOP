@@ -356,3 +356,18 @@ for (engine in c("mariadb", "mysql")) local({
     expect_length(h$temp_tables, 0L)
   })
 })
+
+
+test_that("snapshot source certification descends into MySQL lateral population reads", {
+  expect_equal(.dsomopSnapshotSqlSources(paste(
+    "SELECT * FROM db.outer_source a JOIN LATERAL (",
+    "WITH q AS (SELECT * FROM hidden.inner_source)",
+    "SELECT * FROM q JOIN hidden.second_source s ON 1=1) b ON TRUE"), "main"),
+    data.frame(schema = c("db", "hidden", "hidden"),
+      table = c("outer_source", "inner_source", "second_source")))
+  expect_equal(.dsomopSnapshotSqlSources(
+    "SELECT * FROM LATERAL (SELECT * FROM hidden.inner_source) q", "main"),
+    data.frame(schema = "hidden", table = "inner_source"))
+  expect_error(.dsomopSnapshotSqlSources("SELECT `LATERAL`() FROM db.person", "main"),
+    "unknown or stateful")
+})

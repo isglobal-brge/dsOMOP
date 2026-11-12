@@ -408,6 +408,11 @@
     declarations <- vapply(ctes, `[[`, integer(1L), "declaration")
     for (i in seq_len(n - 1L)) {
       if (!t$id[[i]] || t$syntax[[i + 1L]] != "(" || i %in% declarations || target(i)) next
+      # LATERAL introduces a derived SELECT/WITH after a relational keyword.
+      # It is syntax here, not an admitted scalar or table-valued routine.
+      if (t$word[[i]] == "LATERAL" && i > 1L && i + 2L <= n &&
+          (t$word[[i - 1L]] %in% c("FROM", "JOIN", "STRAIGHT_JOIN") ||
+           t$syntax[[i - 1L]] == ",") && t$word[[i + 2L]] %in% c("SELECT", "WITH")) next
       # A derived-table alias can carry a column-name list.
       if ((i > 1L && t$syntax[[i - 1L]] == ")") ||
           (i > 2L && t$word[[i - 1L]] == "AS" && t$syntax[[i - 2L]] == ")")) next
@@ -442,6 +447,9 @@
       contexts[[k]]$from <- FALSE; contexts[[k]]$expect <- FALSE
     } else if (op == "," && state$from) {
       contexts[[k]]$expect <- TRUE
+    } else if (state$expect && w == "LATERAL" && i + 2L <= n &&
+               t$syntax[[i + 1L]] == "(" && t$word[[i + 2L]] %in% c("SELECT", "WITH")) {
+      # The next parenthesis opens the derived query; scan all its sources.
     } else if (state$expect) {
       if (!t$id[[i]]) stop("Unverifiable relational source.")
       parts <- v
