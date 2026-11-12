@@ -5,6 +5,8 @@
   config <- .dsomopVendorTestConfig(dbms)
   skip_if(is.null(config), "Vendor host not configured")
   f <- .dsomopVendorCreateFixture(config)
+  prepared <- FALSE
+  on.exit(if (!prepared) f$cleanup(), add = TRUE)
   f$external <- paste0(f$schemas[["cdm"]], "_external")
   f$declared <- .qualifyTable(f$handle, "person")
   f$physical <- paste0(f$external, ".person")
@@ -35,6 +37,7 @@
     if (nested) DBI::dbExecute(f$admin, paste("GRANT SELECT, SHOW VIEW ON", source,
       "TO", f$runtime_principal))
   }
+  prepared <- TRUE
   f
 }
 
@@ -271,6 +274,11 @@ test_that("snapshot dependency parser follows scoped relational sources", {
   expect_equal(.dsomopSnapshotSqlSources(paste(
     "WITH q(id) AS (SELECT CAST(COALESCE(id, 0) AS SIGNED) FROM db.person)",
     "SELECT SUM(ABS(id)) OVER () FROM q WHERE id IN (1, 2)"), "main", view = TRUE),
+    data.frame(schema = "db", table = "person"))
+  expect_error(.dsomopSnapshotSqlSources("SELECT hidden_udf()", "main"), "unknown or stateful")
+  expect_equal(.dsomopSnapshotSqlSources("SELECT NOW(), COUNT(*) FROM db.person", "main"),
+    data.frame(schema = "db", table = "person"))
+  expect_equal(.dsomopSnapshotSqlSources("INSERT INTO db.target(id) SELECT id FROM db.person", "main"),
     data.frame(schema = "db", table = "person"))
   ambiguous <- paste0("SELECT '", intToUtf8(92L), "' FROM hidden.person # ' FROM safe.person")
   expect_equal(.dsomopSnapshotSqlSources(ambiguous, "main", sql_mode = "NO_BACKSLASH_ESCAPES"),

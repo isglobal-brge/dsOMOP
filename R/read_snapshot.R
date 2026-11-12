@@ -326,7 +326,16 @@
   "UNION", "WITH", "FROM", "WHERE", "HAVING", "BY", "COLUMNS", "CHECK",
   "TINYINT", "SMALLINT", "MEDIUMINT", "INT", "INTEGER", "BIGINT", "DECIMAL", "DEC",
   "FIXED", "NUMERIC", "FLOAT", "DOUBLE", "REAL", "VARCHAR", "NCHAR", "NVARCHAR",
-  "BINARY", "VARBINARY", "BIT", "DATETIME")
+  "BINARY", "VARBINARY", "BIT", "DATETIME", "AND", "OR", "XOR", "IS", "LIKE",
+  "REGEXP", "RLIKE", "BETWEEN", "DISTINCT", "LIMIT", "OFFSET", "ORDER", "GROUP",
+  "WINDOW", "INDEX", "KEY", "INTERVAL", "GROUPING")
+
+.DSOMOP_SNAPSHOT_GENERATED_CALLS <- c(.DSOMOP_SNAPSHOT_VIEW_CALLS,
+  "RAND", "UUID", "UUID_SHORT", "NOW", "SYSDATE", "CURRENT_TIMESTAMP",
+  "CURRENT_DATE", "CURRENT_TIME", "CURDATE", "CURTIME", "UTC_DATE", "UTC_TIME",
+  "UTC_TIMESTAMP", "LOCALTIME", "LOCALTIMESTAMP", "DATABASE", "SCHEMA", "VERSION",
+  "USER", "CURRENT_USER", "SYSTEM_USER", "SESSION_USER", "CONNECTION_ID",
+  "FOUND_ROWS", "ROW_COUNT", "LAST_INSERT_ID")
 
 # Enumerate relational references, including comma/parenthesized joins,
 # subqueries, UNION arms and CTEs. CTE bindings apply only within their SQL
@@ -359,9 +368,15 @@
     }
   }
   if (length(parents)) stop("Unbalanced source SQL.")
+  target <- function(position) {
+    begin <- position
+    while (begin > 2L && t$syntax[[begin - 1L]] == "." && t$id[[begin - 2L]]) begin <- begin - 2L
+    begin > 1L && t$word[[begin - 1L]] %in% c("TABLE", "INTO") &&
+      t$word[[1L]] %in% c("CREATE", "INSERT", "REPLACE", "ALTER")
+  }
   if (n > 2L) {
     for (i in seq_len(n - 2L)) {
-      if (t$syntax[[i]] == "." && t$id[[i + 1L]] && t$syntax[[i + 2L]] == "(") {
+      if (t$syntax[[i]] == "." && t$id[[i + 1L]] && t$syntax[[i + 2L]] == "(" && !target(i + 1L)) {
         stop("Stored-routine source dependencies cannot be certified.")
       }
     }
@@ -388,14 +403,17 @@
       j <- j + 1L
     }
   }
-  if (view && n > 1L) {
+  if (n > 1L) {
+    allowed <- if (view) .DSOMOP_SNAPSHOT_VIEW_CALLS else .DSOMOP_SNAPSHOT_GENERATED_CALLS
     declarations <- vapply(ctes, `[[`, integer(1L), "declaration")
     for (i in seq_len(n - 1L)) {
-      if (!t$id[[i]] || t$syntax[[i + 1L]] != "(" || i %in% declarations) next
+      if (!t$id[[i]] || t$syntax[[i + 1L]] != "(" || i %in% declarations || target(i)) next
+      # A derived-table alias can carry a column-name list.
+      if (i > 1L && t$syntax[[i - 1L]] == ")") next
       call <- toupper(t$value[[i]])
-      if (!call %in% .DSOMOP_SNAPSHOT_VIEW_CALLS ||
-          (call == "UNIX_TIMESTAMP" && i + 2L <= n && t$syntax[[i + 2L]] == ")")) {
-        stop("An unknown or stateful view function cannot be certified.")
+      if (!call %in% allowed ||
+          (view && call == "UNIX_TIMESTAMP" && i + 2L <= n && t$syntax[[i + 2L]] == ")")) {
+        stop("An unknown or stateful source function cannot be certified.")
       }
     }
   }
