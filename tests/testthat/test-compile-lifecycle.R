@@ -17,7 +17,7 @@ test_that("native execution registers operation cleanup before compilation", {
   pre <- .createTempTable(h, "ws5_native_preexisting", "SELECT 17 AS value")
   p <- .ws5_lifecycle_plan()
   for (supplied_context in c(FALSE, TRUE)) {
-    for (failure in c("error", "rejection", "unsupported")) {
+    for (failure in c("error", "rejection", "validation")) {
       ctx <- if (supplied_context) .ws4_ctx(h, p) else NULL
       compile <- NULL
       compile_sources <- function(cctx, ...) {
@@ -30,7 +30,9 @@ test_that("native execution registers operation cleanup before compilation", {
         if (failure == "rejection") {
           .compileReject("downstream compile refusal", reason = "reducer_row_cap")
         }
-        invisible(NULL)
+        # Inject a validation refusal explicitly; do not depend on a later
+        # compiler being absent once the native population stage is merged.
+        .irReject("downstream validation refusal")
       }
       testthat::with_mocked_bindings({
         error <- tryCatch(.planExecute(h, p, list(o = "out"), ctx = ctx), error = identity)
