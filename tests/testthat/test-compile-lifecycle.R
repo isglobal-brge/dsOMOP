@@ -178,7 +178,9 @@ test_that("native output cleanup attempts unregistered objects after compiler DR
   failing <- NULL
   released <- NULL
   testthat::with_mocked_bindings({
-    expect_error(.planExecuteNative(ctx, ctx$ir, list(o = "out")), "injected native DROP failure")
+    # Capture after unwinding: the original compile error is followed by a
+    # cleanup error, so an expectation's calling handler would see both.
+    failure <- tryCatch(.planExecuteNative(ctx, ctx$ir, list(o = "out")), error = identity)
   }, .planCompileOutputs = function(cctx, ...) {
     .compileIntervalByName(cctx, "i")
     failing <<- cctx$compile_temp_tables
@@ -188,6 +190,8 @@ test_that("native output cleanup attempts unregistered objects after compiler DR
     if (name %in% failing) stop("injected native DROP failure")
     drop(handle, name)
   })
+  expect_s3_class(failure, "error")
+  expect_match(conditionMessage(failure), "injected native DROP failure")
   expect_true(ctx$closed)
   expect_identical(child$compile_temp_tables, failing)
   expect_false(released %in% .ws5_temp_names(h))
