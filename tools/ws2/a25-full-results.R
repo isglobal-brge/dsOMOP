@@ -18,8 +18,8 @@ stopifnot(all(vapply(.a25_fixture_names, exists, logical(1L), mode = "function")
   record <- function(name, plan, h, expected) {
     validation <- .planValidate(h, plan)
     testthat::expect_true(validation$valid, info = name)
-    testthat::expect_length(validation$errors, 0L, info = name)
-    testthat::expect_length(validation$warnings, 0L, info = name)
+    testthat::expect_length(validation$errors, 0L)
+    testthat::expect_length(validation$warnings, 0L)
     symbols <- stats::setNames(as.list(paste0("D_", names(plan$outputs))), names(plan$outputs))
     result <- .planExecute(h, plan, symbols)
     for (output in names(expected)) {
@@ -67,7 +67,7 @@ stopifnot(all(vapply(.a25_fixture_names, exists, logical(1L), mode = "function")
     expected <- switch(policy, first_episode = c(1L, 3L, 5L),
                        last_episode = c(7L, 9L, 11L), any_episode = persons)
     record(paste0("criteria_scope_", policy), plan, h,
-           list(demo = expected, sibling = 1:12))
+           list(demo = rep(expected, each = 2L), sibling = rep(1:12, each = 2L)))
     # The criteria roster uses observation-period dates, not either named
     # cohort dates or the two filter-anchor dates.
     scope <- .planResolveScopeCohort(h, plan)

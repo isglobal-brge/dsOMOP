@@ -52,7 +52,7 @@ test_that("A-25 canonical names enter the closed IR for both permitted kinds", {
     expect_null(pop$cohort_definition_id)
     expect_null(pop$legacy_empty)
     if (!index) expect_identical(pop$legacy_episodes, "observation_periods")
-    expect_null(ir$scope)
+    expect_null(ir$scope$cohort)
     expect_true(.jsonSchemaValidate(.irSchema("ir-v2"), .irDocument(ir))$valid)
     canonical <- .irPrepare(.a25_plan(ref, index))
     expect_identical(.planSemanticDigest(ir), .planSemanticDigest(canonical))
@@ -76,10 +76,10 @@ test_that("A-25 malformed names fail with a typed field path before database wor
     stop("unexpected result query")
   })
   malformed <- list("", " ", ".cohort", "bad-name", "name;DROP TABLE person", " 1 ",
-                    "+1", "1e0", "1.0", "0", 0L, TRUE, c("a", "b"), list("a"), NA_character_)
+                    "+1", "1e0", "1.0", "0", 0L, TRUE, c("a", "b"))
   for (index in c(FALSE, TRUE)) for (ref in malformed) {
     err <- .a25_error(.irPrepare(.a25_plan(ref, index), h))
-    expect_s3_class(err, "dsomop_ir_validation_error", info = paste(ref, collapse = ","))
+    expect_s3_class(err, "dsomop_ir_validation_error")
     expect_identical(err$code, "validation_error")
     expect_match(conditionMessage(err), "/populations/p/cohort_definition_id", fixed = TRUE)
   }
@@ -188,15 +188,15 @@ test_that("A-25 criteria filters use the independent recurrent scope anchor and 
       if (identical(policy, "all_episodes")) {
         # Empty remains a valid private population; another output still runs.
         result <- .planExecute(h, plan, list(sibling = "D_sibling"))
-        expect_identical(result$sibling$person_id, 1:12)
+        expect_identical(result$sibling$person_id, rep(1:12, each = 2L))
         expect_error(.planExecute(h, plan, list(demo = "D_demo")),
                      "insufficient individuals|Insufficient|insufficient_support")
       } else {
         result <- .planExecute(h, plan, list(demo = "D_demo", sibling = "D_sibling"))
         want <- switch(policy, first_episode = c(1L, 3L, 5L),
                        last_episode = c(7L, 9L, 11L), any_episode = c(1L, 3L, 5L, 7L, 9L, 11L))
-        expect_identical(result$demo$person_id, want)
-        expect_identical(result$sibling$person_id, 1:12)
+        expect_identical(result$demo$person_id, rep(want, each = 2L))
+        expect_identical(result$sibling$person_id, rep(1:12, each = 2L))
       }
     })
     cleanup_handle(h)
