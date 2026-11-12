@@ -56,13 +56,15 @@ withr::defer(.ws4_cleanup(.ws7_pub_backends), testthat::teardown_env())
 }
 
 # Values comparable across memory and staged materialisations.
-.ws7_canon <- function(df) {
+.ws7_canon <- function(df, prototype = df) {
   df <- as.data.frame(df, stringsAsFactors = FALSE)
   attributes(df)[setdiff(names(attributes(df)), c("names", "row.names", "class"))] <- NULL
   class(df) <- "data.frame"
   for (c in names(df)) {
     x <- df[[c]]
-    x <- if (is.numeric(x)) format(x, digits = 17, trim = TRUE, scientific = FALSE) else as.character(x)
+    x <- if (is.numeric(prototype[[c]])) {
+      format(as.numeric(x), digits = 17, trim = TRUE, scientific = FALSE)
+    } else as.character(x)
     x[is.na(df[[c]])] <- NA_character_
     df[[c]] <- x
   }
@@ -85,7 +87,7 @@ test_that("every native format publishes the same rows in memory and staged mode
     for (root in names(mem$values)) {
       expect_identical(names(mem$values[[root]]), names(stg$values[[root]]), info = paste(b, root))
       for (comp in names(mem$values[[root]])) {
-        expect_identical(.ws7_canon(mem$values[[root]][[comp]]), .ws7_canon(stg$values[[root]][[comp]]),
+        expect_identical(.ws7_canon(mem$values[[root]][[comp]]), .ws7_canon(stg$values[[root]][[comp]], mem$values[[root]][[comp]]),
                          info = paste(b, root, comp))
       }
     }
