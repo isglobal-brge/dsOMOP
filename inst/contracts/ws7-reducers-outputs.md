@@ -15,14 +15,16 @@ inventories. The retired `.extractSurvival()` and `.extractIntervalsLongLegacy()
 are not active adapter entry points.
 
 The compiler uses a private child of the execution context. Its temporary
-tables are registered for cleanup and every fetched stream is bounded by
-`dsomop.max_memory_rows`. An extra row is a non-skippable `validation_error`
+tables are registered for cleanup. WS-7 reducer/output realizations are
+bounded by `dsomop.max_memory_rows`. An extra row is a non-skippable `validation_error`
 with reason `reducer_row_cap`, never a partial result. Execution cleanup
 preserves caller-owned tables. Compiler failures release both owners' tables
 while preserving the IR for typed refusal transport; the execution/publication
 boundary closes the context. Successful compilation keeps the immutable
 roster registry for publication.
 Both compiler and operation-table cleanup are attempted when a DROP fails.
+WS-6 matching has its separate `match_candidates_exceeded` refusal; private
+database snapshots are not WS-7 R realizations.
 
 ## Population and variable interfaces
 
@@ -37,7 +39,8 @@ do not enter the live covariate registry. Joined inputs remain execution
 dependencies.
 
 Rosters follow the WS-5/A-20 contract in
-`ws5-interval-anchor-coverage.md`: explicit population namespace,
+`ws5-interval-anchor-coverage.md` and WS-6
+`ws6-populations-matching.md`: explicit population namespace,
 `cohort_row_id`, person lineage, lossless origin and visit metadata and the
 selected `op_component_id`, associated with the original coverage object.
 Candidate and final row keys are never interchangeable.
@@ -59,8 +62,9 @@ Coverage uses the selected recorded/effective relation explicitly. Observation
 eligibility envelopes never replace actual recorded observed segments.
 Temporal output selection also applies to era course reducers. Raw
 observation columns use structural population indexing: the selected
-unique/earliest record for indexed rosters and first-record ordering for
-unindexed rosters.
+record under unique/earliest coverage policies for indexed rosters.
+Unindexed rosters and union-policy raw projections retain first-record
+ordering; raw projections do not invent a combined observation-period row.
 
 ## Publication and documentation
 
@@ -94,8 +98,13 @@ same bounded private materialization as memory output before publication;
 staging does not remove the reducer memory cap.
 
 The executable tests cover reducers, each output format, private publication
-families, lifecycle failures and WS-0 acceptance rows. Public client recipe
-acceptance must additionally run with the real WS-6 population compiler and
-the WS-8/WS-9 client APIs; roster-double results alone do not establish that
-integration gate. The final job report records the exact tested commits and
-results, including any outstanding integration gate.
+families, lifecycle failures and WS-0 acceptance rows. The public client
+`test-ws7-client-acceptance.R` gate executes all fifteen frozen recipes through
+the real WS-6 compiler and WS-8/WS-9 APIs, on SQLite and PostgreSQL, in memory
+and staged modes, with publicly verified k=5. Set
+`DSOMOP_TEST_WS7_ACCEPTANCE_REQUIRED=true` to fail missing prerequisites.
+It checks exact row cardinality and independent episode identities, oracle
+numeric values at tolerance 1e-9, and memory/staged parity with only fractional
+CSV rounding allowed at relative 1e-14. Text, identifiers, integers and NA
+positions remain exact. The separate safe-v1 baseline replay retains its
+byte-identity checks. The final job report records tested commits and results.
