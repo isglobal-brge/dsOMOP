@@ -240,13 +240,20 @@ test_that("index-relative eligibility filters episodes after the primary limit",
   }
 })
 
-test_that("index-event populations remain subject to the disclosure gate", {
+test_that("private index episodes resolve but publication counts genuine persons", {
   h <- .ie_handle()
   on.exit(cleanup_handle(h))
-  expect_error(
-    withr::with_options(list(nfilter.subset = 2), .ie_resolve(h, "all")),
-    "insufficient individuals"
-  )
+  withr::with_options(list(nfilter.subset = 2), {
+    resolved <- .ie_resolve(h, "all")
+    rows <- .ie_rows(h, resolved)
+    expect_equal(rows$index_event_id, c(101L, 102L))
+    expect_length(unique(rows$subject_id), 1L)
+    # Two private episodes still represent one person at the release boundary.
+    expect_error(.publishStandalone(rows, handle = h,
+                                    caller = "index-event-test",
+                                    already_tokenized = FALSE),
+                 "insufficient individuals")
+  })
 })
 
 test_that("person scope preserves index-event episode dates and recurrence", {

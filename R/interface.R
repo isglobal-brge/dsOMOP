@@ -55,7 +55,7 @@
 #' @param cohort_table The legacy \code{cohort_table} argument (or NULL).
 #' @return Character cohort temp table name, or NULL.
 #' @keywords internal
-.resolveCohortArg <- function(handle, cohort = NULL, cohort_table = NULL) {
+.resolveCohortArg <- function(handle, cohort = NULL, cohort_table = NULL, ctx = NULL) {
   cohort <- .ds_arg(cohort)
   cohort_table <- .ds_arg(cohort_table)
   # A list-wrapped scalar (from JSON transport) collapses to its first element.
@@ -64,7 +64,7 @@
     cohort_table <- if (length(cohort_table)) cohort_table[[1]] else NULL
   }
   scope <- cohort %||% cohort_table
-  .resolveCohortTable(handle, scope)
+  .resolveCohortTable(handle, scope, ctx = ctx)
 }
 
 # --- Handle management ---
@@ -162,7 +162,7 @@
 #' Cohort-episode keys retained for longitudinal joins but never filterable
 #' @keywords internal
 .EPISODE_KEY_COLS <- function() {
-  c("cohort_row_id", "row_id", "rowid", "rowId")
+  c("cohort_row_id", "row_id", "rowid", "rowId", "set_id")
 }
 
 #' OMOP CDM row-level identifier columns
@@ -702,7 +702,12 @@ omopInitDS <- function(resource_symbol,
 #'   \code{scope_table_1}, ... without gaps. They are combined internally with
 #'   a literal \code{scope}; no generic aggregate \code{c()} or \code{list()}
 #'   method is required.
-#' @return Invisible TRUE (outputs are assigned into caller's environment)
+#' @param commit_policy Character; \code{"server"} applies the server's strict
+#'   mode, while \code{"all_or_none"} refuses the whole execution if any
+#'   final component fails support. This policy cannot relax disclosure gates.
+#' @return A server-authenticated publication status. Outputs are assigned into
+#'   the caller's environment; the client reads the bounded inventory with
+#'   \code{\link{omopPlanStatusDS}} before deleting its execution-status symbol.
 #' @examples
 #' \dontrun{
 #' omopPlanExecuteDS("omop", plan, out = c(cohort = "my_cohort"))
@@ -712,7 +717,17 @@ omopInitDS <- function(resource_symbol,
 #' @export
 omopPlanExecuteDS <- function(omop_symbol, plan, out,
                                output_mode = "memory",
-                               scope = NULL, combine = "union", ...) {
+                               scope = NULL, combine = "union", ...,
+                               commit_policy = "server") {
+  .omopPlanExecuteDS(omop_symbol, plan, out, output_mode, scope, combine, ...,
+                     target_env = parent.frame(), commit_policy = commit_policy)
+}
+
+#' Execute a plan with a server-only publication/sealing context
+#' @keywords internal
+.omopPlanExecuteDS <- function(omop_symbol, plan, out, output_mode = "memory",
+                               scope = NULL, combine = "union", ...,
+                               target_env, commit_policy = "server", seal_factory = NULL) {
   handle <- .getHandle(omop_symbol)
   plan <- .ds_arg(plan)
   out <- .ds_arg(out)
@@ -741,16 +756,8 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
     stop("Output symbols must be unique and cannot target OMOP resources or ",
          "reserved handle names.", call. = FALSE)
   }
-  expanded <- unlist(lapply(symbols, function(sym) paste0(
-    sym, c("", ".covariates", ".covariateRef", ".temporalCovariates",
-           ".timeRef", ".personRef", ".personPeriods", ".events",
-           ".riskSets", ".msdata", ".transitionRef")
-  )), use.names = FALSE)
-  if (anyDuplicated(expanded)) {
-    stop("Output symbols collide after sparse/temporal suffix expansion.",
-         call. = FALSE)
-  }
   out <- stats::setNames(as.list(symbols), names(out))
+  if (any(!names(out) %in% names(plan$outputs))) stop("Unknown requested plan output.", call. = FALSE)
 
   # Recipe-level scope. omop.table SYMBOL sources are spliced in by name (DSI
   # resolves them to server-side frames) because they cannot cross in the plan
@@ -781,104 +788,27 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
          scope_present = !is.null(scope),
          scope_table_count = .omopAnalysisScopeTableCount(scope))
   )
-  outputs <- .planExecute(handle, plan, out, output_mode = output_mode)
-
-  # Validate that requested outputs were produced
-  missing <- setdiff(names(out), names(outputs))
-  if (length(missing) > 0) {
-    warning("Plan did not produce outputs: ",
-            paste(missing, collapse = ", "), call. = FALSE)
+  commit_policy <- .ds_arg(commit_policy)
+  if (!.isScalarString(commit_policy) || !commit_policy %in% c("server", "all_or_none")) {
+    stop("commit_policy must be 'server' or 'all_or_none'.", call. = FALSE)
   }
-
-  assign_env <- parent.frame()
-  concept_cols <- attr(outputs, "omop_concept_cols") %||% list()
-  person_key <- .personKey(handle)
-  pseudonymization <- .personKeyPublicContract(handle)
-
-  for (nm in names(out)) {
-    sym <- out[[nm]]
-    result <- outputs[[nm]]
-    if (is.null(result)) next
-
-    # Staged descriptors: assign directly (no data to strip)
-    if (inherits(result, "FlowerDatasetDescriptor")) {
-      assign(sym, result, envir = assign_env)
-      next
-    }
-
-    # Pseudonymize person/subject keys (per-resource reversible token, kept under
-    # their original names so joins/set-ops and the output contract still work)
-    # and drop every other row-level identifier, before data enters the
-    # DataSHIELD environment. Output gating (cell/subset suppression by dsBase
-    # and dsOMOP nfilter) remains the authoritative disclosure barrier.
-    result <- .pseudonymizeIdentifiers(
-      result, person_key, pseudonymization = pseudonymization
-    )
-
-    # Multi-state outputs carry an expanded transition risk set and a public
-    # graph dictionary. Keep both as first-class tables/descriptors because
-    # data-frame attributes do not survive Parquet interchange.
-    if (is.list(result) && !is.data.frame(result) &&
-        all(c("msdata", "transition_ref") %in% names(result))) {
-      msdata <- result$msdata
-      transition_ref <- result$transition_ref
-      assign(paste0(sym, ".msdata"), msdata, envir = assign_env)
-      assign(paste0(sym, ".transitionRef"), transition_ref,
-             envir = assign_env)
-
-    # Recurrent-event outputs have an event stream and a separate episode risk
-    # set. Keep both as first-class protected tables (or staged descriptors).
-    } else if (is.list(result) && !is.data.frame(result) &&
-        all(c("events", "risk_sets") %in% names(result))) {
-      events <- result$events
-      risk_sets <- result$risk_sets
-      assign(paste0(sym, ".events"), events, envir = assign_env)
-      assign(paste0(sym, ".riskSets"), risk_sets, envir = assign_env)
-
-    # Temporal covariates: split into four symbols, preserving the explicit
-    # cohort-episode -> pseudonymous-person map needed by longitudinal models.
-    } else if (is.list(result) && !is.data.frame(result) &&
-        "temporalCovariates" %in% names(result)) {
-      if (!is.null(result$personPeriods)) {
-        assign(paste0(sym, ".personPeriods"),
-               result$personPeriods, envir = assign_env)
-      }
-      assign(paste0(sym, ".temporalCovariates"),
-             result$temporalCovariates, envir = assign_env)
-      assign(paste0(sym, ".covariateRef"),
-             result$covariateRef, envir = assign_env)
-      assign(paste0(sym, ".timeRef"),
-             result$timeRef, envir = assign_env)
-      if (!is.null(result$personRef)) {
-        assign(paste0(sym, ".personRef"),
-               result$personRef, envir = assign_env)
-      }
-    # Sparse outputs: split list into data-frame symbols, including the
-    # complete row-to-pseudonymous-person map.
-    } else if (is.list(result) && !is.data.frame(result) &&
-        all(c("covariates", "covariateRef") %in% names(result))) {
-      assign(paste0(sym, ".covariates"),
-             result$covariates, envir = assign_env)
-      assign(paste0(sym, ".covariateRef"),
-             result$covariateRef, envir = assign_env)
-      if (!is.null(result$personRef)) {
-        assign(paste0(sym, ".personRef"),
-               result$personRef, envir = assign_env)
-      }
-    } else {
-      # Tag the concept-id columns by their landed (possibly renamed) names so
-      # the factor harmonization layer recognises them post-rename. Stamped
-      # here, after identifier stripping ([ drops frame attributes), as the
-      # last step before the symbol is created.
-      cc <- intersect(as.character(concept_cols[[nm]]), names(result))
-      if (length(cc) > 0L) {
-        attr(result, "omop_concept_cols") <- cc
-      }
-      assign(sym, result, envir = assign_env)
-    }
-  }
-
-  invisible(TRUE)
+  ctx <- .planContext(handle, plan, output_mode, target_env)
+  on.exit(.planContextClose(ctx), add = TRUE)
+  ctx$commit_policy <- commit_policy
+  if (!is.null(seal_factory)) ctx$seal <- seal_factory(ctx)
+  outputs <- tryCatch(.planExecute(handle, plan, out, output_mode = output_mode, ctx = ctx),
+    dsomop_plan_rejection = function(e) {
+      if (!e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",
+                         "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
+      # A shared roster/dialect failure can precede individual root execution.
+      # It refuses every requested family without exposing its private details.
+      roots <- as.character(unlist(plan$publish %||% names(out), use.names = FALSE))
+      if (!length(roots)) stop(e)
+      for (root in roots) ctx$rejected[[root]] <- list(code = e$code,
+                                                     message = .publishMessage(e$code))
+      list()
+    })
+  .publishOutputs(ctx, outputs, out)
 }
 
 #' Create a cohort (Assign)
@@ -1026,6 +956,7 @@ omopCohortFromTableDS <- function(x, omop_symbol, new_name = NULL) {
   .omopAuditLog("omopCohortFromTableDS",
                 list(n_rows = if (is.data.frame(x)) nrow(x) else NA,
                      new_name = new_name))
+  x <- .publishStandalone(x, handle, caller = "omopCohortFromTableDS", already_tokenized = TRUE)
   result <- .cohortFromTokenFrame(handle, x, new_name = new_name)
   if (!is.character(result) || length(result) != 1L || is.na(result) ||
       !result %in% (handle$temp_tables %||% character(0))) {
@@ -3019,5 +2950,6 @@ omopAsFactorColumnsDS <- function(df, spec) {
   # Core outputs never inherit DP state from their inputs.
   attr(df, "dsomop_dp_provenance") <- NULL
   attr(df, "dsomop_dp_filter_state") <- NULL
+  .publishUpdateOwnedValue(source, df)
   df
 }

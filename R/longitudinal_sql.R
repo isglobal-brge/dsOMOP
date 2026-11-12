@@ -286,13 +286,6 @@
     if (length(predicates) > 0L) {
       source <- paste0(source, " AND ", paste(predicates, collapse = " AND "))
     }
-    .assertMinPersons(
-      handle = handle,
-      sql = paste0(
-        "SELECT COUNT(DISTINCT subject_id) AS n_persons FROM (",
-        source, ") AS scoped_intervals"
-      )
-    )
     sources[[table]] <- source
   }
 

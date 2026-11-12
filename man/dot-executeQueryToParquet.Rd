@@ -9,7 +9,8 @@
   sql,
   output_path,
   chunk_size = 50000L,
-  chunk_fn = NULL
+  chunk_fn = NULL,
+  ctx = NULL
 )
 }
 \arguments{

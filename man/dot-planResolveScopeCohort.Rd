@@ -4,7 +4,7 @@
 \alias{.planResolveScopeCohort}
 \title{Resolve the recipe-level scope into ONE folded, re-gated cohort temp table}
 \usage{
-.planResolveScopeCohort(handle, plan)
+.planResolveScopeCohort(handle, plan, ctx = NULL)
 }
 \arguments{
 \item{handle}{CDM handle}

@@ -4,7 +4,7 @@
 \alias{.cohortFromTokenFrame}
 \title{Materialize a cohort from the DISTINCT person tokens of a workspace omop.table}
 \usage{
-.cohortFromTokenFrame(handle, x, new_name = NULL)
+.cohortFromTokenFrame(handle, x, new_name = NULL, ctx = NULL)
 }
 \arguments{
 \item{handle}{CDM handle (provides the server-side person-key provider and the
@@ -17,6 +17,8 @@ symbol by DataSHIELD).}
 random name is generated. The client passes a deterministic name so the
 returned handle points at a table it can name in later \code{cohort=} calls
 (mirrors \code{.cohortCombine}).}
+
+\item{ctx}{Server-created private execution context, or NULL for standalone use.}
 }
 \value{
 Character; the cohort temp table name.

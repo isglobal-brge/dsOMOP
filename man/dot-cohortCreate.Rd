@@ -10,7 +10,8 @@
   mode = "temporary",
   cohort_id = NULL,
   name = NULL,
-  overwrite = FALSE
+  overwrite = FALSE,
+  ctx = NULL
 )
 }
 \arguments{
@@ -27,6 +28,8 @@ This function currently writes cohort rows only and does not create or
 update a \code{cohort_definition} record.}
 
 \item{overwrite}{Logical; overwrite existing cohort}
+
+\item{ctx}{Server-created private execution context, or NULL for standalone use.}
 }
 \value{
 Character; temp table name or confirmation message

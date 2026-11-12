@@ -7,6 +7,29 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- Publication validates one genuine person per final row through direct keys or
+  an immutable roster. Composite families commit together; support is counted
+  on the materialized component, including streamed staged files.
+- Without an explicit `publish`, only outputs named in `out` are released;
+  other computed outputs remain private. For example,
+  `out = c(conditions = "cond_df")` publishes only `cond_df`, preserving the
+  2.10.2 behavior and agreeing with client status validation.
+- Roster keys use the same decimal representation for doubles, integers,
+  BIGINT values and CSV-staged characters. Large keys such as `100000` no
+  longer cause a false `lineage_malformed` refusal through scientific notation.
+- Output names come from the committed inventory and never overwrite occupied
+  symbols. Tokenization, DP sealing, assignments and manifest publication share
+  verified rollback; staged readers require exact committed membership.
+- `omopPlanStatusDS()` transports bounded execution status before client cleanup;
+  `omopStagedRevokeDS()` revokes execution-owned symbols and staged files.
+  Strict/non-strict behavior and small-site skipping are decided before commit.
+- DP preparation follows the full normalized graph and authenticated scopes;
+  matching taints descendants and sealing completes before publication.
+- Publication contexts carry the probed SQL dialect profile. Native compiled
+  statements pass the typed SQL check before execution, and shared dialect
+  refusals use the bounded publication status transport. Invalid publication
+  policy errors name the `commit_policy` argument.
+
 - (B-8) Before 2.10.3, `parent_id` recorded provenance but did not restrict
   membership; from 2.10.3 a child population is a subset of its parent, as
   `print()` has always shown.
@@ -28,6 +51,10 @@ fills its entries. Classes follow design-2.10.3 section 5.
   outputs; exact birth components and exact age in assigned tables
   (`year_of_birth`, `month_of_birth`, `day_of_birth`, `birth_datetime`);
   aggregate endpoints keep their own controls.
+- `omopFilterDS()` no longer applies the `nfilter_levels_max` and
+  `nfilter_levels_density` cardinality gates, following the publication-only
+  disclosure rule in design section 7.2. Filtered results still need the
+  minimum number of distinct persons at publication.
 
 ## Newly refused
 
@@ -36,10 +63,29 @@ fills its entries. Classes follow design-2.10.3 section 5.
   constructs on the wire, `tie_policy = "error"`.
 
 ### Publication
+- Orphan, conflicting or nonunique roster mappings fail closed. A set identifier
+  alone is never person lineage; reference companions cannot escape a refused
+  patient family. Uncommitted, altered and revoked staged descriptors are refused.
 - Final patient components with fewer than `nfilter.subset` persons,
   including empty sparse or recurrent components, are refused at
   publication; safe-result equivalence applies only to results that satisfy
   the final publication contract.
+- Manipulation verbs revalidate class-1 sensitive columns in their results.
+  If a frame was loaded with `dsomop.allow_sensitive_columns = TRUE` and the
+  administrator later disables that option, a verb result retaining blocked
+  columns is now refused (design section 7.6).
+
+## Upgrading clients and servers
+
+- Pair dsOMOP 2.10.3 with dsOMOPClient 2.10.3 for the publication-status
+  protocol. The new client requires `omopPlanStatusDS` and
+  `omopStagedRevokeDS`; a 2.10.1 server lacks them.
+  `ds.omop.server.version()` reports missing methods. After upgrading an
+  Opal server, publish dsOMOP's settings again so the profile exposes them.
+- A 2.10.1 client against a 2.10.3 server still fails closed on a strict
+  publication refusal: no output is published. The assign call now returns
+  status `refused`, so the old client reports that requested outputs did not
+  materialize instead of receiving the previous constant `Disclosive` error.
 
 ## Design amendments applied by WS-0 (design/2.10.3/amendments.md)
 
@@ -69,7 +115,8 @@ fills its entries. Classes follow design-2.10.3 section 5.
   examples, the probe corpus and the semantic-digest vectors;
   `inst/contracts/reducers.csv`, `column_classes.csv`;
   `inst/ohdsi/operator_classes.csv`, `episode_event_fields.csv`,
-  `cost_domains.csv`; `inst/boundaries.csv` (skeleton);
+  `cost_domains.csv`; `inst/boundaries.csv` (audited WS-1 publication boundaries;
+  WS-2/WS-9 entries remain pending);
   `inst/plans/acceptance/` (the fifteen acceptance recipes with validated
   plans and hand-computed expected results); `R/types.R`,
   `R/json_schema.R`, `R/semantic_digest.R`; the adversarial extension of

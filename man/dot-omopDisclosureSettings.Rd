@@ -67,12 +67,12 @@ direct option -> \code{default.*} prefix -> hardcoded fallback.
     banding does not provide cumulative privacy guarantees. See
     \code{\link{.bandCount}}.}
   \item{\code{nfilter_age_range} (default 5)}{Minimum inclusive width, in
-    years, accepted for age-range and closed age-group filters while
-    disclosure filtering is enabled. Controlled by
+    years, for aggregate age-grid policy. Declared for compatibility and
+    inert on assignment predicates. Controlled by
     \code{dsomop.nfilter.age_range}.}
   \item{\code{nfilter_date_range} (default 30)}{Minimum inclusive width, in
-    calendar days, accepted for bounded date filters while disclosure
-    filtering is enabled. Controlled by
+    calendar days, retained for compatibility with aggregate policy. Inert
+    on assignment predicates. Controlled by
     \code{dsomop.nfilter.date_range}.}
   \item{\code{max_feature_specs} (default 1000),
     \code{max_pivot_concepts} (default 1000),

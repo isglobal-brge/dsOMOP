@@ -1239,6 +1239,7 @@
       is_untyped_identifier = logical(nrow(db_cols)),
       is_sensitive  = logical(nrow(db_cols)),
       is_blocked   = logical(nrow(db_cols)),
+      is_quasi_identifier = logical(nrow(db_cols)),
       stringsAsFactors = FALSE
     )
 
@@ -1285,6 +1286,11 @@
       col_df$is_sensitive[j] <- .detectSensitiveColumns(col_name)
       col_df$is_blocked[j] <- col_df$is_sensitive[j] ||
         col_df$is_untyped_identifier[j]
+      # Informational assignment classification; aggregate flags above retain
+      # their existing policy, including refusal of exact birth components.
+      col_df$is_quasi_identifier[j] <-
+        .assignmentQuasiIdentifier(col_name) &&
+        !.assignmentBlockedColumn(col_name, col_df[j, , drop = FALSE])
     }
 
     columns[[tbl_name]] <- col_df
