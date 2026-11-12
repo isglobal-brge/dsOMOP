@@ -316,11 +316,11 @@ by default (`dsomop.dp.enabled`); custodians can opt out with
 and environment settings must agree. Since dsOMOP 2.8.0 the custodial option
 `dsomop.dp.exclusive` defaults to `FALSE` (profile fallback
 `default.dsomop.dp.exclusive = FALSE`) and, when a custodian sets it, applies
-only to the community-tool endpoints: with DP enabled they then refuse with a
-message directing analysts to `omopDpReleaseDS` (`ds.omop.dp.release` on the
-client). dsOMOP 2.7.x applied this gate to its own standard statistics too;
-2.8.0 does not. Analysts cannot set this policy or bypass the noise through a
-client option. `omopDpStatusDS()` reports the configured `exclusive` flag; the
+only to the community-tool endpoints. With DP enabled, exclusive mode admits
+registered fixed-synopsis catalogue/query routes and eligible typed releases;
+it refuses standard, realised-only and unsupported tool routes. dsOMOP's own
+standard statistics retain their separate controls. Analysts cannot set this
+policy or bypass the noise through a client option. `omopDpStatusDS()` reports the configured `exclusive` flag; the
 flag is read on each request and does not change the DP mechanism, policy
 hash, sticky noise, or release identity.
 

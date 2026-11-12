@@ -327,7 +327,8 @@ that basis, never a mechanism input, and levels outside it are refused
 whatever the data hold. Numeric variables use a fixed atom basis (a
 registered scale's grid, otherwise the universal signed nice-number grid;
 dates on fixed year/month atoms): requested breaks snap to atom boundaries,
-every displayed bin is a sum of signed atoms and the payload reports the
+the complete signed basis is projected before each displayed bin sums its
+projected atoms. Signed atoms remain the pooling inputs; the payload reports
 `basis_id`, `view_of_basis` and the effective breaks. Irrelevant contribution
 caps are normalised (a count's cap is 1). Typed bounded means need one
 registered public scale (current-client status `public_scales`; custodian
