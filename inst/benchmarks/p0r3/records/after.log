@@ -1,0 +1,33 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+tools-release-records: .............................................................................................................................................................................................................................................................................................................................duckdb keeps downloaded extensions and secrets in a temporary directory:
+i /tmp/RtmprPbXy0/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+................................NOTICE:  drop cascades to table dsomop_it_775773_b4bf6c4b_results.achilles_results
+
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to table dsomop_it_775773_b4bf6c4b_vocab.concept
+drop cascades to table dsomop_it_775773_b4bf6c4b_vocab.concept_ancestor
+
+NOTICE:  drop cascades to 11 other objects
+DETAIL:  drop cascades to table dsomop_it_775773_b4bf6c4b_cdm.cdm_source
+drop cascades to table dsomop_it_775773_b4bf6c4b_cdm.person
+drop cascades to table dsomop_it_775773_b4bf6c4b_cdm.observation_period
+drop cascades to table dsomop_it_775773_b4bf6c4b_cdm.condition_occurrence
+drop cascades to table dsomop_it_775773_b4bf6c4b_cdm.drug_exposure
+drop cascades to table dsomop_it_775773_b4bf6c4b_cdm.procedure_occurrence
+drop cascades to table dsomop_it_775773_b4bf6c4b_cdm.measurement
+drop cascades to table dsomop_it_775773_b4bf6c4b_cdm.observation
+drop cascades to table dsomop_it_775773_b4bf6c4b_cdm.visit_occurrence
+drop cascades to table dsomop_it_775773_b4bf6c4b_cdm.device_exposure
+drop cascades to table dsomop_it_775773_b4bf6c4b_cdm.death
+
+................................
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+RESULT failed: 0 errors: 0 skipped: 0 passed: 381 
