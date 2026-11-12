@@ -562,10 +562,12 @@
   if (!is.list(node)) return(FALSE)
   fields <- names(node)
   if (!is.null(fields) && "type" %in% fields) {
-    return(
-      is.character(node$type) && length(node$type) == 1L &&
-        !is.na(node$type) && !identical(tolower(node$type), "cohort")
-    )
+    return(is.character(node$type) && length(node$type) == 1L &&
+      !is.na(node$type) && tolower(node$type) %in% c(
+        "sex", "age_range", "age_group", "has_concept", "not_has_concept",
+        "concept_count", "prior_observation", "followup", "visit_count",
+        "has_measurement", "missing_measurement"
+      ))
   }
   if (!is.null(fields)) {
     groups <- intersect(fields, c("and", "or"))
@@ -612,6 +614,7 @@
     population <- populations[[id]]
     if (!is.list(population)) next
     kind <- tolower(population$kind %||% "criteria")
+    if (!kind %in% c("criteria", "setop", "index")) next
     if (identical(kind, "setop") || !is.null(population$setop)) {
       members <- as.character(unlist(
         population$setop$members %||% character(0), use.names = FALSE
@@ -637,17 +640,16 @@
 }
 
 .dsomopDpPlanOutputPersonLocal <- function(plan, output_name, policy) {
+  if (.dsomopDpIsV2(plan)) {
+    return(isTRUE(.dsomopDpIrLocality(plan, policy)[[output_name]]))
+  }
   if (!is.list(plan) || !is.list(plan$outputs) ||
       is.null(plan$outputs[[output_name]])) {
     return(FALSE)
   }
   out <- plan$outputs[[output_name]]
-  scope <- plan$scope
-  scope_source <- if (is.list(scope) && !is.data.frame(scope) &&
-      !.is_omop.table(scope)) {
-    scope$tables_frames %||% scope$cohort
-  } else scope
-  if (!.dsomopDpScopePersonLocal(scope_source, policy)) return(FALSE)
+  authenticated <- .dsomopDpAuthenticatedScope(plan, policy)
+  if (!isTRUE(authenticated$local)) return(FALSE)
   # A plan-level persistent cohort is folded into the global scope and therefore
   # taints every population. A filter/spec cohort affects the base branch.
   if (is.list(plan$cohort) &&
@@ -1193,6 +1195,9 @@
 
 .dsomopDpPlanLineageSemantic <- function(plan, output_name, policy,
                                          component = NULL) {
+  if (.dsomopDpIsV2(plan)) {
+    return(.dsomopDpIrLineageSemantic(plan, output_name, policy, component))
+  }
   output <- plan$outputs[[output_name]]
   population_id <- output$population_id %||% "base"
   scope <- plan$scope
@@ -1231,12 +1236,34 @@
 
 .dsomopDpSealPlanOutput <- function(x, plan, output_name,
                                     dataset_identity = NULL,
-                                    component = NULL) {
+                                    component = NULL, scopes = NULL) {
   attr(x, "dsomop_dp_provenance") <- NULL
   if (!.dsomopDpEnabled() || !is.data.frame(x) || !.is_omop.table(x)) {
     return(x)
   }
   policy <- .dsomopDpPolicy()
+  if (.dsomopDpIsV2(plan)) {
+    if (!isTRUE(.dsomopDpIrLocality(plan, policy, scopes)[[output_name]])) {
+      return(x)
+    }
+    lineage <- .dsomopDpIrLineageSemantic(
+      plan, output_name, policy, component, scopes
+    )
+    dataset_id <- .dsomopDpDatasetId(policy, dataset_identity)
+    if (is.null(dataset_id)) return(x)
+    episode_domain <- if ("cohort_row_id" %in% names(x)) {
+      .dsomopDpLineageId(policy, dataset_id, list(
+        kind = "plan_episode_domain", semantic_digest = lineage$semantic_digest,
+        scope = lineage$scope, population = lineage$population
+      ))
+    } else NULL
+    return(.dsomopDpSealPersonLocal(
+      x, producer = paste("plan", "v2", plan$outputs[[output_name]]$format,
+                          component %||% "primary", sep = "/"),
+      episode_domain = episode_domain, lineage = lineage, policy = policy,
+      dataset_id = dataset_id
+    ))
+  }
   if (!.dsomopDpPlanOutputPersonLocal(plan, output_name, policy)) return(x)
   out <- plan$outputs[[output_name]]
   type <- tolower(out$type %||% "event_level")
