@@ -188,13 +188,22 @@ test_that("baseline coverage: unique values exact, uncovered NA, ambiguous dropp
   expect_identical(p3$prior_observation, as.integer(as.Date("2020-01-10") - as.Date(op3$s)))
   expect_identical(p3$future_observation, as.integer(as.Date(op3$e) - as.Date("2020-01-10")))
   expect_identical(as.integer(p3$gender_concept_id), as.integer(person$gender_concept_id[person$person_id == 3]))
-  # the final publication support gate still applies to what remains
-  plan <- list(cohort = list(type = "cohort_table", cohort_definition_id = 1),
-               outputs = list(demo = list(type = "baseline", columns = "gender_concept_id")),
+  # Publish exactly the same three-case fixture. Its three input persons must
+  # not satisfy a threshold of three after the ambiguous episode is dropped.
+  DBI::dbExecute(handle$conn, paste(
+    "INSERT INTO cohort (cohort_definition_id, subject_id, cohort_start_date, cohort_end_date)",
+    "SELECT 991, subject_id, cohort_start_date, cohort_end_date FROM ae6_cohort"))
+  plan <- list(cohort = list(type = "cohort_table", cohort_definition_id = 991),
+               outputs = list(demo = list(type = "baseline", columns = "gender_concept_id",
+                 derived = c("age_at_index", "prior_observation", "future_observation"))),
                options = list(translate_concepts = FALSE, block_sensitive = TRUE))
   class(plan) <- c("omop_plan", "list")
-  withr::with_options(list(nfilter.subset = 6L), {
+  withr::with_options(list(nfilter.subset = 3L), {
     expect_error(.planExecute(handle, plan, list(demo = "demo_df")), "insufficient individuals")
+  })
+  withr::with_options(list(nfilter.subset = 2L), {
+    published <- .planExecute(handle, plan, list(demo = "demo_df"))$demo
+    expect_equal(published[, names(out)], out)
   })
 })
 

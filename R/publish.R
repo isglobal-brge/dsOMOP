@@ -317,17 +317,21 @@
   # compilation child: released on every exit path (success, rejection,
   # error); a table that cannot be dropped stays registered for a retry and
   # its aggregated cleanup error is raised once the context is closed.
-  cleanup <- NULL
+  failures <- character(0)
   for (owner in list(ctx[["compile_context"]], ctx)) {
     if (!is.environment(owner)) next
     failure <- tryCatch({
       .compileReleaseTempTables(owner)
       NULL
     }, error = function(e) e)
-    cleanup <- cleanup %||% failure
+    if (!is.null(failure)) failures <- c(failures, conditionMessage(failure))
   }
-  if (!isTRUE(ctx$committed)) .publishAbort(ctx)
-  if (!is.null(cleanup)) stop(cleanup)
+  if (!isTRUE(ctx$committed)) {
+    tryCatch(.publishAbort(ctx), error = function(e) {
+      failures <<- c(failures, conditionMessage(e))
+    })
+  }
+  if (length(failures)) stop(paste(unique(failures), collapse = "\n"), call. = FALSE)
   invisible(NULL)
 }
 
