@@ -505,7 +505,7 @@
 }
 
 # A language-2.0 plan over the scenario: events lab, dx (two concepts), drug,
-# the index population `t` (rows from a double), one wide output.
+# the source-cohort index population `t`, one wide output.
 .ws7_scenario_plan <- function(variables, output = list(), events = list(), populations = list()) {
   W <- .WS7
   plan <- list(

@@ -587,14 +587,19 @@ test_that("raw observation selection distinguishes unindexed rosters from missin
     }
     run <- .ws7_ctx(h, p)
     on.exit(.ws7_close(run), add = TRUE)
-    # WS6 declares these dates even for an unindexed final person roster.
-    roster <- .ws5_literal_roster(run$cctx, data.frame(
-      cohort_row_id = 1L, subject_id = 1007L,
-      cohort_start_date = as.Date(NA), cohort_end_date = as.Date(NA),
-      index_source = NA_character_, index_key = NA_character_), phase = "final", name = "pop_t")
+    # The valid unindexed control uses WS6's real person roster. Only the
+    # indexed-but-NULL-date fault requires an injected impossible roster.
+    roster <- if (!indexed) .compilePopulationByName(run$cctx, "t")$roster else
+      .ws5_literal_roster(run$cctx, data.frame(
+        cohort_row_id = 1L, subject_id = 1007L,
+        cohort_start_date = as.Date(NA), cohort_end_date = as.Date(NA),
+        index_source = NA_character_, index_key = NA_character_), phase = "final", name = "pop_t")
     cons <- .reduceConsumer(run$cctx, "o", roster)
     variable <- .compileVariable(run$cctx, .irNamedNode(run$ir, "variable", "type"), roster, cons)
-    variable$evaluate()$type
+    rows <- .reduceRosterFrame(run$cctx, roster)
+    result <- variable$evaluate()
+    key <- rows$cohort_row_id[as.character(rows$subject_id) == "1007"]
+    result$type[match(as.character(key), as.character(result$row_key))]
   }
   expect_identical(evaluate(FALSE), 44814724L)
   expect_identical(evaluate(TRUE), NA_integer_)
