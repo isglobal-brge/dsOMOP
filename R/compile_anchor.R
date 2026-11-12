@@ -76,7 +76,7 @@
 #' @param phase \code{"candidate"} or \code{"final"}.
 #' @return list(name, phase, key, key_type, person, person_type, index,
 #'   index_end, op_start, op_end, op_component, population, namespace,
-#'   index_visit, index_source, index_key, index_sources).
+#'   index_visit, index_source, index_key, index_sources, origin_source, origin_key).
 #' @keywords internal
 .rosterSpec <- function(roster_fragment, phase) {
   .assertFragment(roster_fragment)
@@ -111,7 +111,8 @@
        op_component = has("op_component_id"), population = population,
        namespace = if (!candidate) roster_fragment$roster_namespace,
        index_visit = has("index_visit_id"), index_source = has("index_source"),
-       index_key = has("index_key"), index_sources = sources)
+       index_key = has("index_key"), index_sources = sources,
+       origin_source = has("origin_source"), origin_key = has("origin_key"))
 }
 
 #' The possible index_source values of a population's rows (from the IR)
@@ -120,7 +121,8 @@
 #' \code{any_of}; \code{"cohort:<id>"} for a results cohort,
 #' \code{"legacy_spec"} for a legacy spec), a criteria population's parent's
 #' (or \code{"cohort:<id>"}, or \code{"(persons)"} without either), the
-#' union over a set operation's members, \code{"match:<pop>"} for a matched
+#' union over a union's members or the left member for intersect/setdiff,
+#' \code{"match:<pop>"} for a matched
 #' population. NULL when the population is unknown or a member cannot be
 #' resolved: a consumer then needs the rows' own metadata. Tags that are not
 #' plan names can never equal an adapter's parent namespace.
@@ -167,11 +169,37 @@
     },
     setop = {
       members <- unlist(p[["setop"]][["members"]])
+      # Intersection and difference retain only the left member's origins.
+      # Right operands restrict persons, never consumer associations.
+      if (!identical(p[["setop"]][["op"]], "union")) members <- head(members, 1L)
       parts <- lapply(members, function(m) .irPopulationIndexSources(ir, m, seen))
       if (!length(parts) || any(vapply(parts, is.null, logical(1)))) NULL else unique(unlist(parts))
     },
     match = paste0("match:", pop),
     NULL)
+}
+
+# Possible original associations, including member-indexed and matched rows.
+# A match introduces a new immutable index identity but its cases retain their
+# original consumer association; controls are person-indexed at the case time.
+.irPopulationAssociationSources <- function(ir, pop, seen = character(0)) {
+  if (pop %in% seen) return(NULL)
+  # A-20(c): matching instantiates controls per (case row, person). A
+  # template's parent restricts persons, never the candidate's association.
+  # Semantic validation forbids using a controls template as an ordinary roster.
+  if (pop %in% .populationUses(ir)$templates) return("(persons)")
+  tags <- .irPopulationIndexSources(ir, pop)
+  if (is.null(tags)) return(NULL)
+  unique(unlist(lapply(tags, function(tag) {
+    if (startsWith(tag, "match:")) {
+      m <- substring(tag, 7L)
+      c(tag, .irPopulationAssociationSources(ir, ir$populations[[m]]$match$cases, c(seen, pop)))
+    } else {
+      parent <- ir$events[[tag]]$episode_members$episode$event %||%
+        ir$events[[tag]]$cost$event$event
+      if (!is.null(parent)) unlist(parent) else tag
+    }
+  }), use.names = FALSE))
 }
 
 #' The consumer association of a source for a roster (A-20 (a), item 6; B3)
@@ -190,6 +218,10 @@
 #'     per-parent relation) and through the \code{"person"} branch for the
 #'     other rows; the roster must carry \code{index_source} and
 #'     \code{index_key}.
+#' Native population rosters additionally retain \code{origin_source} and
+#' \code{origin_key}: adapter indices carry their parent origin, and matched
+#' cases keep their original association separately from the new immutable
+#' matching index identity. Those columns take precedence when present.
 #' Missing metadata fails closed, never broadening to person scope.
 #'
 #' @param ctx Execution context.
@@ -226,6 +258,11 @@
   }
   if (!is.null(out$parent)) {
     sources <- spec$index_sources %||% .irPopulationIndexSources(ctx[["ir"]], spec$population)
+    # Population derivations can carry an explicit original association
+    # independently of their new index identity (notably matched cases).
+    if (!is.null(spec$origin_source) && !is.null(spec$origin_key)) {
+      sources <- .irPopulationAssociationSources(ctx[["ir"]], spec$population)
+    }
     if (is.null(sources) || out$parent %in% sources) {
       if (is.null(spec$index_source) || is.null(spec$index_key)) {
         stop("The roster '", spec$name, "' carries no index_source/index_key: the members of ",
@@ -252,14 +289,21 @@
   col <- function(a, x) paste0(a, ".", x)
   on <- paste0(col(i, "person_id"), " = ", col(r, spec$person))
   if (isTRUE(assoc$visit)) on <- c(on, paste0(col(i, "visit_id"), " = ", col(r, spec$index_visit)))
+  origin <- function(original, index) {
+    if (is.null(original)) col(r, index) else
+      paste0("COALESCE(", col(r, original), ", ", col(r, index), ")")
+  }
+  # Source namespaces are byte-exact plan names, even on case-insensitive
+  # MySQL/MariaDB databases. Integer key text has one canonical decimal form.
+  namespace <- function(x) if (identical(.sqlFamily(h), "mysql")) paste0("BINARY ", x) else x
   if (identical(branch, "parent")) {
-    on <- c(on, paste0(col(i, "parent_source_ns"), " = ", col(r, spec$index_source)),
-            paste0(.sqlLosslessKeyText(h, col(i, "parent_event_id")), " = ", col(r, spec$index_key)))
+    on <- c(on, paste0(namespace(col(i, "parent_source_ns")), " = ", namespace(origin(spec$origin_source, spec$index_source))),
+            paste0(.sqlLosslessKeyText(h, col(i, "parent_event_id")), " = ", origin(spec$origin_key, spec$index_key)))
   } else if ("parent" %in% assoc$branches) {
-    src <- col(r, spec$index_source)
+    src <- origin(spec$origin_source, spec$index_source)
     # A missing origin cannot establish a person association when an episode
     # parent is possible. SQL NULL therefore matches neither branch.
-    on <- c(on, paste0(src, " <> ", .compileTextLiteral(assoc$parent)))
+    on <- c(on, paste0(namespace(src), " <> ", namespace(.compileTextLiteral(assoc$parent))))
   }
   on
 }

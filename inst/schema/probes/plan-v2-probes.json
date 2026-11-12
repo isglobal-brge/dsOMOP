@@ -28172,7 +28172,7 @@
   },
   {
     "id": "I61",
-    "label": "legacy_empty criteria population in the IR (CR-21)",
+    "label": "legacy_empty criteria population in the IR (A-21)",
     "schema": "ir-v2",
     "expect": "valid",
     "instance": {
@@ -28611,6 +28611,7 @@
         "nobody": {
           "kind": "criteria",
           "legacy_empty": true,
+          "legacy_episodes": "observation_periods",
           "where": {
             "person": {
               "var": "gender_concept_id",
@@ -28888,7 +28889,8 @@
         },
         "nobody": {
           "kind": "criteria",
-          "legacy_empty": false
+          "legacy_empty": false,
+          "legacy_episodes": "observation_periods"
         }
       },
       "variables": {
@@ -31797,6 +31799,548 @@
           "format": "wide"
         }
       }
+    }
+  },
+  {
+    "id": "I_A21_kind",
+    "label": "legacy_empty cannot mark an index population",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true
+      },
+      "concept_sets": {
+        "t2dm": {
+          "concepts": [
+            201826
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        },
+        "metformin": {
+          "concepts": [
+            1503297
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        },
+        "mi": {
+          "concepts": [
+            4329847
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        }
+      },
+      "events": {
+        "hba1c": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3004410
+            ]
+          },
+          "value": {
+            "column": "value_as_number"
+          },
+          "unit": {
+            "target": 8554,
+            "convert": {
+              "8753": {
+                "factor": 0.0915,
+                "offset": 2.15
+              }
+            },
+            "unknown": "missing",
+            "censored": "keep"
+          },
+          "where": {
+            "var": "value",
+            "op": "not_null"
+          }
+        },
+        "metf_rx": {
+          "table": "drug_exposure",
+          "concept_set": "metformin",
+          "end": {
+            "fallback": "days_supply"
+          }
+        },
+        "t2dm_dx": {
+          "table": "condition_occurrence",
+          "concept_set": "t2dm"
+        },
+        "mi": {
+          "table": "condition_occurrence",
+          "concept_set": "mi"
+        }
+      },
+      "intervals": {
+        "metf_era": {
+          "source": {
+            "event": "metf_rx"
+          },
+          "gap": 30,
+          "persistence": 0,
+          "min_days": 0,
+          "by": "event",
+          "unmapped": "own_concept",
+          "end": "recorded_end",
+          "fallback": "days_supply",
+          "stockpile": false
+        }
+      },
+      "populations": {
+        "new_users": {
+          "kind": "index",
+          "label": "Metformin new users",
+          "index": {
+            "source": {
+              "interval": "metf_era"
+            },
+            "select": "first_eligible",
+            "n": 1,
+            "offset": 0,
+            "end": {
+              "strategy": "interval_end",
+              "days": null,
+              "pad": 0
+            },
+            "restrict_to_observation": true
+          },
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          },
+          "where": {
+            "and": [
+              {
+                "observed": {
+                  "before": 365,
+                  "after": null,
+                  "gap": null
+                }
+              },
+              {
+                "has": {
+                  "source": {
+                    "event": "metf_rx"
+                  },
+                  "op": "==",
+                  "n": 0,
+                  "window": {
+                    "start": -365,
+                    "end": -1,
+                    "anchor": "index"
+                  }
+                }
+              },
+              {
+                "has": {
+                  "source": {
+                    "event": "t2dm_dx"
+                  },
+                  "op": ">=",
+                  "n": 1,
+                  "window": {
+                    "start": null,
+                    "end": 0,
+                    "anchor": "index"
+                  }
+                }
+              }
+            ]
+          },
+          "legacy_empty": true,
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "variables": {
+        "age": {
+          "derived": {
+            "kind": "age",
+            "reference": "index",
+            "reference_date": null,
+            "bands": false,
+            "age_breaks": null
+          }
+        },
+        "sex": {
+          "derived": {
+            "kind": "sex_mf"
+          }
+        },
+        "hba1c_base": {
+          "source": {
+            "event": "hba1c"
+          },
+          "reducer": {
+            "fn": "closest_value",
+            "value": "value",
+            "side": "before",
+            "window": {
+              "start": -180,
+              "end": 0,
+              "anchor": "index"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "baseline": {
+          "rows": "new_users",
+          "grain": "episode",
+          "format": "wide",
+          "columns": [
+            "age",
+            "sex",
+            "hba1c_base"
+          ],
+          "options": {
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": "D_baseline"
+        },
+        "tte": {
+          "rows": "new_users",
+          "grain": "episode",
+          "format": "survival",
+          "result_symbol": "D_tte",
+          "options": {
+            "outcomes": {
+              "mi": {
+                "event": "mi"
+              }
+            },
+            "tars": {
+              "itt": {
+                "start": 1,
+                "end": null,
+                "anchor": "index"
+              },
+              "on_treatment": {
+                "start": {
+                  "anchor": "index",
+                  "offset": 1
+                },
+                "end": {
+                  "anchor": "index_end",
+                  "offset": 30
+                },
+                "anchor": "index"
+              }
+            },
+            "censor": [
+              "observation_end",
+              "death"
+            ],
+            "prior_outcome": {
+              "lookback": 365,
+              "action": "exclude"
+            },
+            "format": "survival",
+            "event_order": "first",
+            "tie_policy": "priority"
+          }
+        }
+      },
+      "publish": [
+        "baseline",
+        "tte"
+      ]
+    }
+  },
+  {
+    "id": "I_A21_named_cohort",
+    "label": "legacy_empty excludes legacy_cohort_table (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true,
+        "factor_concepts": true
+      },
+      "concept_sets": {
+        "t2dm": {
+          "concepts": [
+            201826
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        },
+        "metformin": {
+          "concepts": [
+            1503297
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        },
+        "mi": {
+          "concepts": [
+            4329847
+          ],
+          "include_descendants": true,
+          "include_mapped": false,
+          "exclude": null
+        }
+      },
+      "events": {
+        "hba1c": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3004410
+            ]
+          },
+          "value": {
+            "column": "value_as_number"
+          },
+          "unit": {
+            "target": 8554,
+            "convert": {
+              "8753": {
+                "factor": 0.0915,
+                "offset": 2.15
+              }
+            },
+            "unknown": "missing",
+            "censored": "keep"
+          },
+          "where": {
+            "var": "value",
+            "op": "not_null"
+          }
+        },
+        "metf_rx": {
+          "table": "drug_exposure",
+          "concept_set": "metformin",
+          "end": {
+            "fallback": "days_supply"
+          }
+        },
+        "t2dm_dx": {
+          "table": "condition_occurrence",
+          "concept_set": "t2dm"
+        },
+        "mi": {
+          "table": "condition_occurrence",
+          "concept_set": "mi"
+        }
+      },
+      "intervals": {
+        "metf_era": {
+          "source": {
+            "event": "metf_rx"
+          },
+          "gap": 30,
+          "persistence": 0,
+          "min_days": 0,
+          "by": "event",
+          "unmapped": "own_concept",
+          "end": "recorded_end",
+          "fallback": "days_supply",
+          "stockpile": false
+        }
+      },
+      "populations": {
+        "new_users": {
+          "kind": "index",
+          "label": "Metformin new users",
+          "index": {
+            "source": {
+              "interval": "metf_era"
+            },
+            "select": "first_eligible",
+            "n": 1,
+            "offset": 0,
+            "end": {
+              "strategy": "interval_end",
+              "days": null,
+              "pad": 0
+            },
+            "restrict_to_observation": true
+          },
+          "coverage": {
+            "policy": "unique",
+            "on_ambiguous": "drop",
+            "on_missing": "drop",
+            "gap": 0
+          },
+          "where": {
+            "and": [
+              {
+                "observed": {
+                  "before": 365,
+                  "after": null,
+                  "gap": null
+                }
+              },
+              {
+                "has": {
+                  "source": {
+                    "event": "metf_rx"
+                  },
+                  "op": "==",
+                  "n": 0,
+                  "window": {
+                    "start": -365,
+                    "end": -1,
+                    "anchor": "index"
+                  }
+                }
+              },
+              {
+                "has": {
+                  "source": {
+                    "event": "t2dm_dx"
+                  },
+                  "op": ">=",
+                  "n": 1,
+                  "window": {
+                    "start": null,
+                    "end": 0,
+                    "anchor": "index"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "nobody": {
+          "kind": "criteria",
+          "legacy_empty": true,
+          "legacy_episodes": "observation_periods",
+          "legacy_cohort_table": "owned_cohort"
+        }
+      },
+      "variables": {
+        "age": {
+          "derived": {
+            "kind": "age",
+            "reference": "index",
+            "reference_date": null,
+            "bands": false,
+            "age_breaks": null
+          }
+        },
+        "sex": {
+          "derived": {
+            "kind": "sex_mf"
+          }
+        },
+        "hba1c_base": {
+          "source": {
+            "event": "hba1c"
+          },
+          "reducer": {
+            "fn": "closest_value",
+            "value": "value",
+            "side": "before",
+            "window": {
+              "start": -180,
+              "end": 0,
+              "anchor": "index"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "baseline": {
+          "rows": "new_users",
+          "grain": "episode",
+          "format": "wide",
+          "columns": [
+            "age",
+            "sex",
+            "hba1c_base"
+          ],
+          "options": {
+            "date_handling": {
+              "mode": "relative",
+              "reference": "index",
+              "bin_width": null,
+              "date_columns": null
+            }
+          },
+          "result_symbol": "D_baseline"
+        },
+        "tte": {
+          "rows": "new_users",
+          "grain": "episode",
+          "format": "survival",
+          "result_symbol": "D_tte",
+          "options": {
+            "outcomes": {
+              "mi": {
+                "event": "mi"
+              }
+            },
+            "tars": {
+              "itt": {
+                "start": 1,
+                "end": null,
+                "anchor": "index"
+              },
+              "on_treatment": {
+                "start": {
+                  "anchor": "index",
+                  "offset": 1
+                },
+                "end": {
+                  "anchor": "index_end",
+                  "offset": 30
+                },
+                "anchor": "index"
+              }
+            },
+            "censor": [
+              "observation_end",
+              "death"
+            ],
+            "prior_outcome": {
+              "lookback": 365,
+              "action": "exclude"
+            },
+            "format": "survival",
+            "event_order": "first",
+            "tie_policy": "priority"
+          }
+        }
+      },
+      "publish": [
+        "baseline",
+        "tte"
+      ]
     }
   },
   {
@@ -37545,7 +38089,8 @@
         },
         "nobody": {
           "kind": "criteria",
-          "legacy_empty": true
+          "legacy_empty": true,
+          "legacy_episodes": "observation_periods"
         }
       },
       "variables": {

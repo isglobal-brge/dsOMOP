@@ -198,9 +198,8 @@
           }
         }
       }
-      # a repeated subtrahend (a minus b minus b = a minus b), a self-difference and a bare
-      # non-base criteria population (both empty) execute as in 2.10.2: private
-      # emptiness is never a structural refusal (re-review R3; design 7.1)
+      # A-21 preserves repeated subtrahends, self-differences and bare non-base
+      # criteria populations: private emptiness is not a structural refusal.
       if (!is.null(compact[["index_event"]]) && !is.null(compact[["episode_policy"]])) {
         add(p, ": Population '", pid, "': episode_policy cannot be combined with index_event; ",
             "primary_limit defines candidate-event selection.")

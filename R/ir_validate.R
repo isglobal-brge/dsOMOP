@@ -406,6 +406,8 @@
       if (identical(pop[["setop"]][["op"]], "setdiff") && length(members) != 2L) {
         add(base, "/setop/members: setdiff takes exactly two members")
       }
+      # A-21: self-difference and repeated subtrahends are valid private
+      # populations. Membership need not be distinct for any set operation.
       covs <- unique(vapply(members, function(m) {
         mp <- pops[[m]]
         if (is.list(mp[["coverage"]])) .jcsCanonical(mp[["coverage"]]) else ""
@@ -435,6 +437,9 @@
       }
     }, "")
   }
+  # language 2.0 population rules of WS-6 (sections 6.9/6.10, A-20): matching templates and
+  # their coverage, strata windows, episode_policy
+  if (!legacy) errors <- c(errors, .irPopulationSemanticErrors(ir))
 
   # 4. predicate typing at every predicate position (events, adapters,
   # criteria person leaves, reducers) by column name; the site checks type

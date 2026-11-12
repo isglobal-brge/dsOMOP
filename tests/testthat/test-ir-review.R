@@ -287,10 +287,15 @@ test_that("B9: an age-at-case-time criterion is valid in a controls template", {
 
 test_that("A-11: intersect/setdiff take their first member's indexedness", {
   b <- .rv_example("plan-v2-example-B.json")
-  b$populations$mixed <- list(kind = "setop", setop = list(op = "intersect", members = list("eligible", "cases")))
+  # The matching template keeps its own candidate/coverage identity (A-20).
+  # Use an ordinary person population to isolate the indexedness rule.
+  b$populations$people_seed <- list(kind = "criteria")
+  b$populations$mixed <- list(kind = "setop", setop = list(op = "intersect", members = list("people_seed", "cases")))
   b$outputs$people <- list(rows = "mixed", format = "wide", columns = list("age"))
   ir <- .irPrepare(b)
   expect_identical(ir$outputs$people$grain, "person")
+  b$populations$mixed$setop$op <- "setdiff"
+  expect_identical(.irPrepare(b)$outputs$people$grain, "person")
   b$populations$mixed$setop$op <- "union"
   expect_identical(.irPrepare(b)$outputs$people$grain, "episode")
 })
@@ -420,7 +425,7 @@ test_that("B11: a singleton union lowers to its member and returns the member's 
                              .planExecute(handle, p, list(on_alias = "rv_alias", on_base = "rv_base")))
   expect_gt(nrow(res$on_alias), 0L)
   expect_identical(res$on_alias, res$on_base)
-  # n-ary differences lower to the v1 left fold
+  # A-21: n-ary differences lower to the v1 left fold; self-difference is empty.
   p3 <- list(populations = list(
     a = list(kind = "criteria", cohort_definition_id = 1L),
     b = list(kind = "criteria", filter_tree = list(type = "sex", params = list(value = "F"))),
@@ -433,7 +438,9 @@ test_that("B11: a singleton union lowers to its member and returns the member's 
   expect_identical(unlist(ir3$populations$d$setop$members), c(fold, "c"))
   # a self-difference is the empty set it always was (re-review R3)
   p3$populations$d$setop$members <- list("a", "a")
-  expect_identical(.irPrepare(p3)$populations$d$setop, list(op = "setdiff", members = list("a", "a")))
+  self <- .irPrepare(p3)
+  expect_identical(self$populations$d$setop,
+                   list(op = "setdiff", members = list("a", "a")))
 })
 
 # --- the multi-population base is every person (Corrected) ------------------------
