@@ -180,7 +180,7 @@ test_that("maintainer headline query: declarative recipe compiles AND executes",
                                         population_id = "final"))
 
   # (a) COMPILES: recipe_to_plan serializes every population + stamps the output.
-  plan <- dsOMOPClient::recipe_to_plan(recipe)
+  plan <- dsOMOPClient::recipe_to_plan(recipe, version = 1)
   expect_s3_class(plan, "omop_plan")
   expect_setequal(names(plan$populations),
                   c("base", "A", "B", "union_AB", "hasMeasZ", "final"))

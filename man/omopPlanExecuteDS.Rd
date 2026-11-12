@@ -20,7 +20,11 @@ omopPlanExecuteDS(
 
 \item{plan}{List; the extraction plan}
 
-\item{out}{Named character vector; output_name -> symbol_name mapping}
+\item{out}{Named character vector; output_name -> symbol_name mapping.
+A language-2 plan with an explicit empty \code{publish} array accepts an
+empty mapping (transported as the JSON object \code{\{\}}). Full plan
+validation still runs; no output is materialized or assigned, and the
+publication status is \code{ok} with empty inventories.}
 
 \item{output_mode}{Character; "memory" (default) or "staged"}
 

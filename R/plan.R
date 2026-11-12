@@ -2974,6 +2974,8 @@
     add = TRUE
   )
   if (identical(attr(ir, "source_version"), 2L)) {
+    # A-22: fully validate empty roots, then perform no compilation.
+    if (!length(ir$publish)) return(list())
     # Language-2.0 execution (design 6.1): the event sources of the requested
     # roots compile first in the private context, so the data-dependent adapter
     # refusals of section 11 are raised, with their reason (A-18), before any

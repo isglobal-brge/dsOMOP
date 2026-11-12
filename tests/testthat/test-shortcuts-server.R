@@ -77,7 +77,7 @@ test_that("cleanup: a recipe population filter compiles to filter_tree-only and 
       cl$omop_filter_has_concept(201820, "condition_occurrence"))),
     variables = cl$omop_variable_age(),
     outputs = cl$omop_output(name = "o", type = "wide"))
-  plan <- cl$recipe_to_plan(recipe)
+  plan <- cl$recipe_to_plan(recipe, version = 1)
 
   # The plan carries ONLY filter_tree (the dual-emission flat spec is gone).
   expect_null(plan$cohort$spec)
@@ -105,7 +105,7 @@ test_that("cleanup: a filter_group tree compiles to filter_tree-only and execute
         operator = "OR"))),
     variables = cl$omop_variable_age(),
     outputs = cl$omop_output(name = "o", type = "wide"))
-  plan <- cl$recipe_to_plan(recipe)
+  plan <- cl$recipe_to_plan(recipe, version = 1)
   expect_null(plan$cohort$spec)
   expect_true("or" %in% names(plan$cohort$filter_tree))
 
@@ -130,7 +130,7 @@ test_that("cleanup: the gate still FAIL-CLOSES on a sub-threshold filter_tree po
       cl$omop_filter_has_concept(317009, "condition_occurrence"))),
     variables = cl$omop_variable_age(),
     outputs = cl$omop_output(name = "o", type = "wide"))
-  plan <- cl$recipe_to_plan(recipe)
+  plan <- cl$recipe_to_plan(recipe, version = 1)
   expect_null(plan$cohort$spec)
 
   h <- shc_handle(); on.exit(cleanup_handle(h))

@@ -1016,7 +1016,51 @@ test_that("DP preparation seals plan outputs while plan loading stays DP-free", 
   expect_identical(omopDpReleaseDS(prepared, list(statistic = "count")),
                    released)
 
-  # The client includes commit_policy in every execution call. It is an
+  # dsOMOPClient 2.10.2 sends the DP preparation positionally and without
+  # commit_policy (WS-8 review B1): the documented default "server" applies
+  # and the output is sealed as from a current client.
+  legacy_call <- .legacy_execution_call("omopDpPlanExecuteDS", handle_symbol, plan,
+                                        c(ages = "DP_legacy"))
+  expect_null(as.list(legacy_call)$commit_policy)
+  legacy_status <- eval(legacy_call, envir = session)
+  expect_identical(legacy_status$status, "ok")
+  legacy_prepared <- get("DP_legacy", envir = session, inherits = FALSE)
+  expect_false(is.null(attr(legacy_prepared, "dsomop_dp_provenance", exact = TRUE)))
+  expect_silent(.dsomopDpVerifyPersonLocal(legacy_prepared))
+  expect_identical(nrow(legacy_prepared), nrow(loaded))
+
+  # A-22: empty native roots also pass the real DP entry point, validation,
+  # locality/seal setup and authenticated publication without creating a table.
+  session$empty_plan <- list(
+    version = 2L,
+    meta = list(language_version = "2.0", semantic_version = "2.0.0",
+                generated_by = "ws8-empty-dp-test"),
+    events = list(visits = list(table = "visit_occurrence")),
+    populations = list(all = list(kind = "criteria")),
+    variables = list(n_visits = list(source = list(event = "visits"),
+                                     reducer = list(fn = "count"))),
+    outputs = list(visits_out = list(rows = "all", format = "wide",
+                                     columns = list("n_visits"))),
+    publish = list())
+  symbols_before <- ls(session, all.names = TRUE)
+  session$empty_status <- eval(quote(omopDpPlanExecuteDS(
+    handle_symbol, empty_plan, "B64:e30"
+  )), envir = session)
+  empty_status <- eval(quote(omopPlanStatusDS("empty_status")), envir = session)
+  expect_identical(empty_status$status, "ok")
+  expect_length(empty_status$published, 0L)
+  expect_length(empty_status$rejected, 0L)
+  expect_setequal(ls(session, all.names = TRUE), c(symbols_before, "empty_status"))
+  expect_error(eval(quote(omopDpPlanExecuteDS(
+    handle_symbol, empty_plan, list(visits_out = "DP_unrequested")
+  )), envir = session), "out must be empty when publish = \\[\\]")
+  expect_false(exists("DP_unrequested", session, inherits = FALSE))
+  session$empty_plan$variables$n_visits$source$event <- "undeclared"
+  expect_error(eval(quote(omopDpPlanExecuteDS(
+    handle_symbol, empty_plan, "B64:e30"
+  )), envir = session), "semantic rules", class = "dsomop_plan_rejection")
+
+  # The current publication protocol includes commit_policy. It is an
   # explicit publication policy, never a named scope input from `...`.
   all_or_none <- eval(quote(omopDpPlanExecuteDS(
     handle_symbol, plan, list(ages = "DP_all_or_none"), commit_policy = "all_or_none"
