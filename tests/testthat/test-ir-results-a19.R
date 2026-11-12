@@ -1085,6 +1085,7 @@ test_that("v1-corpus-classes.csv carries the A-19 dispositions", {
     stats::setNames(c("unchanged_invalid", "newly_permitted"),
                    paste0("dsOMOP:test-recipe-reach.R:reach SAFETY: narrow age_range blocked while gate is ON",
                           c("#missing_reference", "#explicit_reference"))),
+    stats::setNames("unchanged_invalid", "dsOMOP:test-cohort.R:legacy or forged cohort numeric thresholds fail closed#2"),
     # item 8
     stats::setNames(c("unchanged_invalid", "newly_refused_structural"),
                     paste0(oc, "survival custom filter on an identifier column is rejected", c("#strict", "#non_strict")))
