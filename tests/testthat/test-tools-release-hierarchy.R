@@ -215,6 +215,8 @@ test_that("incidence outcomes are the capped recurrent events (first 10 per pers
   # Exact capped count of the window: min(events, 10) per person.
   exact <- vapply(seq_len(60L), function(p) min(1L + p %% 14L, 10L),
                   numeric(1L))
+  # Bootstrap the exact sampler before replacing its draws for sufficiency.
+  expect_true(suppressMessages(.dsomopToolsDpReady(h))$ready)
   zero <- function(...) .dsomopBigInteger(0L)
   testthat::local_mocked_bindings(.dsomopDpDiscreteLaplace = zero)
   all <- .h_run(h)

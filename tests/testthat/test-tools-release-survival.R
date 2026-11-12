@@ -594,3 +594,16 @@ test_that("the ordinary protected Cox equals coxph (Breslow) on public bins with
   expect_true("stratum=root|cell=exit-days-clinical-v2:[3650, Inf)|status=admin_censored" %in%
                 owners[[2L]]$cell_keys)
 })
+
+test_that("large protected simulation states use a bounded public stream seed", {
+  seed <- .dsomopReleaseSimSeed("full-C8-family", seq_len(10000L))
+  expect_identical(nchar(seed), 64L)
+  expect_match(seed, "^[0-9a-f]{64}$")
+  expect_false(identical(seed, .dsomopReleaseSimSeed(
+    "full-C8-family", c(seq_len(9999L), -1L))))
+  set.seed(34)
+  before <- .Random.seed
+  expect_identical(.dsomopReleaseSimUniform(seed, 19L)[seq_len(11L)],
+                   .dsomopReleaseSimUniform(seed, 11L))
+  expect_identical(.Random.seed, before)
+})

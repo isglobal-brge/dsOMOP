@@ -1,17 +1,24 @@
 #!/usr/bin/env Rscript
 # Run from the dsOMOP source root on the R test pod:
-# Rscript inst/utility/p0r3-survival-utility.R [replicates=100] [output-directory=inst/utility/results]
-# Uses the production crypto, complete-basis projection and 200-refit SE.
+# Rscript inst/utility/p0r3-survival-utility.R [replicates=100] [output-directory=inst/utility/results] [sampler=law|crypto]
+# Uses production contribution fingerprints, HMAC contexts, complete-basis
+# projection and 200-refit SE. Default law mode samples the calibrated
+# discrete-Laplace law using two inverse-geometric draws (28-bit uniforms),
+# preserving exactly the same equal-context correlations. Optional crypto
+# mode uses the production arbitrary-precision CKS sampler and is much slower.
+# Law mode is a utility study, not a validation of exact privacy arithmetic.
 # Seed 2026111200 + scenario*10000 + replicate determines synthetic sampling;
 # each replicate has an independent synthetic corpus identity (same fixed
-# test root), so its actual sticky noise includes equal-map correlations.
+# test root), so its sticky noise includes equal-map correlations.
 # Informative = finite 95% CI whose upper/lower ratio is <= 4. Coverage is
 # reported both conditional on finite intervals and over all replicates.
 # Bias/RMSE use the log-HR/log-IRR scale, conditional on finite estimates.
 args <- commandArgs(TRUE)
 replicates <- if (length(args)) as.integer(args[[1L]]) else 100L
 outdir <- if (length(args) >= 2L) args[[2L]] else "inst/utility/results"
-stopifnot(is.finite(replicates), replicates > 0)
+sampler <- if (length(args) >= 3L) args[[3L]] else "law"
+selected <- if (length(args) >= 4L) as.integer(strsplit(args[[4L]], ",")[[1L]]) else 1:8
+stopifnot(is.finite(replicates), replicates > 0, sampler %in% c("law", "crypto"))
 pkgload::load_all(".", quiet = TRUE, export_all = TRUE)
 source("tests/testthat/helper-db.R")
 source("tests/testthat/helper-tools-release.R")
@@ -22,6 +29,11 @@ main <- function() {
   on.exit(cleanup_handle(h), add = TRUE)
   policy <- suppressMessages(.dsomopToolsDpReady(h))$policy
   stopifnot(identical(policy$release_epsilon, 0.1))
+  # Bootstrap/self-tests above always use the exact production sampler.
+  if (identical(sampler, "law")) {
+    testthat::local_mocked_bindings(.dsomopDpDiscreteLaplace = law_sampler,
+                                    .package = "dsOMOP")
+  }
   scenarios <- data.frame(
     model = c(rep("cox", 3), rep("interaction_cox", 2), rep("sccs", 3)),
     n = c(500L, 2000L, 10000L, 2000L, 10000L, 500L, 2000L, 10000L),
@@ -35,9 +47,10 @@ main <- function() {
                   estimand = "synthetic first-outcome arms"),
              .omopReleaseC6Owners(outcome_key, "to_first"))
   result <- list()
-  for (j in seq_len(nrow(scenarios))) {
+  for (j in intersect(seq_len(nrow(scenarios)), selected)) {
     scenario <- scenarios[j, ]
     for (r in seq_len(replicates)) {
+      started <- proc.time()[["elapsed"]]
       seed <- 2026111200L + j * 10000L + r
       set.seed(seed)
       p <- policy
@@ -113,10 +126,11 @@ main <- function() {
       estimates$covered <- with(estimates, finite & lo <= exp(beta) & hi >= exp(beta))
       result[[length(result) + 1L]] <- cbind(data.frame(
         scenario = j, model = scenario$model, n = n, replicate = r,
-        seed = seed, epsilon = p$release_epsilon, truth_log = beta,
+        seed = seed, sampler = sampler, epsilon = p$release_epsilon, truth_log = beta,
         shared_empty_event_atoms = shared_empty), estimates)
       cat("scenario", j, scenario$model, "n", n,
-          "replicate", r, "of", replicates, "\n")
+          "replicate", r, "of", replicates, "seconds",
+          round(proc.time()[["elapsed"]] - started, 3), "\n")
     }
   }
   raw <- do.call(rbind, result)
@@ -124,7 +138,7 @@ main <- function() {
   summary <- do.call(rbind, lapply(groups, function(d) {
     ok <- d$finite
     error <- d$log_estimate[ok] - d$truth_log[ok]
-    data.frame(scenario = d$scenario[[1]], model = d$model[[1]], n = d$n[[1]],
+    data.frame(scenario = d$scenario[[1]], model = d$model[[1]], sampler = sampler, n = d$n[[1]],
       level = d$level[[1]], replicates = nrow(d), finite = sum(ok),
       informative = sum(d$informative), finite_rate = mean(ok),
       informative_rate = mean(d$informative),
@@ -140,5 +154,10 @@ main <- function() {
   write.csv(summary, file.path(outdir, "p0r3-survival-summary.csv"), row.names = FALSE)
   capture.output(sessionInfo(), file = file.path(outdir, "p0r3-survival-session.txt"))
   print(summary, row.names = FALSE)
+}
+law_sampler <- function(key, context, coordinate, epsilon, sensitivity) {
+  seed <- .dsomopDpHmac(key, .dsomopDpCanonicalJson(list(
+    context = context, coordinate = coordinate)))
+  .dsomopBigInteger(.dsomopReleaseSimNoise(seed, 1L, epsilon, sensitivity))
 }
 main()

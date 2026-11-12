@@ -40,8 +40,13 @@
 #' @keywords internal
 .dsomopReleaseSimUniform <- function(seed, n) {
   if (n <= 0L) return(numeric(0))
-  h <- as.character(openssl::sha256(paste0(seed, ":", seq_len(n))))
-  (strtoi(substr(h, 1L, 7L), 16L) + 0.5) / 2^28
+  # Eight disjoint 28-bit uniforms per 256-bit digest; do not discard 228
+  # bits and repeat the expensive hash for every simulated coordinate.
+  blocks <- ceiling(n / 8L)
+  h <- as.character(openssl::sha256(paste0(seed, ":", seq_len(blocks))))
+  starts <- rep(seq.int(1L, 50L, by = 7L), times = blocks)
+  words <- substring(rep(h, each = 8L), starts, starts + 6L)
+  ((strtoi(words, 16L) + 0.5) / 2^28)[seq_len(n)]
 }
 
 #' Discrete-Laplace draws of the public noise law (simulation only)
