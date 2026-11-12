@@ -8,7 +8,7 @@
 # to end through the public client API (test-ws7-client-acceptance in the
 # client).
 
-.ws7_acc_backends <- .ws7_backends()
+.ws7_acc_backends <- .ws7_acceptance_backends()
 withr::defer(.ws4_cleanup(.ws7_acc_backends), testthat::teardown_env())
 
 # Run one recipe on every backend: build the roster doubles, compile the
@@ -18,13 +18,13 @@ withr::defer(.ws4_cleanup(.ws7_acc_backends), testthat::teardown_env())
   for (b in names(.ws7_acc_backends)) {
     h <- .ws7_acc_backends[[b]]$handle
     local({
-    run <- .ws7_ctx(h, plan)
-    on.exit(.ws7_close(run), add = TRUE)
-    pops <- populations(run, h)
-    out <- stats::setNames(as.list(paste0("D_", names(run$ir$outputs))), names(run$ir$outputs))
-    compiled <- .planCompileOutputs(run$cctx, out, populations = pops)
-    rosters <- lapply(pops, function(p) .reduceRosterFrame(run$cctx, p$roster))
-    check(compiled, rosters, b)
+      run <- .ws7_ctx(h, plan)
+      on.exit(.ws7_close(run), add = TRUE)
+      pops <- populations(run, h)
+      out <- stats::setNames(as.list(paste0("D_", names(run$ir$outputs))), names(run$ir$outputs))
+      compiled <- .planCompileOutputs(run$cctx, out, populations = pops)
+      rosters <- lapply(pops, function(p) .reduceRosterFrame(run$cctx, p$roster))
+      check(compiled, rosters, b)
     })
   }
 }

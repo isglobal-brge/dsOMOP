@@ -11,6 +11,39 @@
 
 .ws7_backends <- function() .ws5_backends()
 
+# The acceptance oracle was frozen on the WS-0 reach fixture. WS-5 scenario
+# rows must not enter these populations (notably its extra oncology episodes
+# and matching candidates). Reuse the unextended WS-4 fixtures, adding MySQL
+# with the same loader because WS-4 predates that vendor test connection.
+.ws7_acceptance_backends <- function() {
+  out <- .ws4_backends()
+  config <- .dsomopVendorTestConfig("mysql")
+  if (is.null(config) || !requireNamespace("RMariaDB", quietly = TRUE)) return(out)
+  conn <- tryCatch(DBI::dbConnect(RMariaDB::MariaDB(), host = config$host, port = config$port,
+                                  dbname = config$database, user = config$admin_user,
+                                  password = config$admin_password), error = function(e) NULL)
+  if (is.null(conn)) return(out)
+  db <- .ws4_namespace("ws7_acceptance")
+  ok <- tryCatch({
+    .ensureMariaSession(conn, require_tls = FALSE)
+    DBI::dbExecute(conn, paste0("CREATE DATABASE ", db))
+    .ws4_copy_tables(out$sqlite$handle$conn, conn, db)
+    TRUE
+  }, error = function(e) FALSE)
+  if (!ok) {
+    try(DBI::dbExecute(conn, paste0("DROP DATABASE IF EXISTS ", db)), silent = TRUE)
+    DBI::dbDisconnect(conn)
+    return(out)
+  }
+  h <- .ws4_handle_on(conn, "mysql", "mysql", db)
+  h$person_key <- out$sqlite$handle$person_key
+  out$mysql <- list(handle = h, cleanup = function() {
+    DBI::dbExecute(conn, paste0("DROP DATABASE IF EXISTS ", db))
+    DBI::dbDisconnect(conn)
+  })
+  out
+}
+
 # A scoped pseudonymisation key and staging directory for real publication of
 # the compiled outputs (memory and staged), as test-publication-compiled.R.
 .ws7_keys <- function(handles, .local_envir = parent.frame()) {
