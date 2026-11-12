@@ -241,6 +241,24 @@
       }
     }
     if (identical(type, "event_level")) {
+      # The event executor passes the effective output-level restriction to
+      # .compileSelect(), which requires at least one ID. An empty inner
+      # feature-spec set has different historical semantics and is not this
+      # restriction. Honour filters.concept_set.ids precedence before checking.
+      concept_ids <- out[["filters"]][["concept_set"]][["ids"]]
+      concept_path <- paste0(p, "/filters/concept_set/ids")
+      if (is.null(concept_ids)) {
+        concept_ids <- out[["concept_set"]]
+        concept_path <- paste0(p, "/concept_set")
+      }
+      if (!is.null(concept_ids)) {
+        if (is.list(concept_ids) && !is.null(concept_ids[["concepts"]])) {
+          concept_ids <- concept_ids[["concepts"]]
+        }
+        if (!length(unlist(concept_ids, use.names = FALSE))) {
+          add(concept_path, ": concept_filter must contain one or more finite integer concept IDs.")
+        }
+      }
       rep <- if (.v1IsObject(out[["representation"]])) out[["representation"]] else list()
       fmt <- tolower(.v1Text(rep[["format"]]) %||% "long")
       grain <- tolower(.v1Text(rep[["grain"]]) %||% "person")
@@ -300,6 +318,27 @@
                                                 .v1Scalar(out[["anchor"]]) %||% 0L))
       if (!is.null(out[["source_filters"]])) {
         for (t in tables) legacy(paste0(p, "/source_filters"), .longitudinalSourceFilter(out[["source_filters"]], t, tables))
+      }
+    }
+    if (type %in% c("temporal_covariates", "person_period")) {
+      # The temporal executors compare their coerced integer settings, including
+      # the omitted defaults; TRUE is day 1, not an exempt logical value.
+      window_start <- .v1AsInteger(out[["window_start"]] %||% -365L)
+      window_end <- .v1AsInteger(out[["window_end"]] %||% 0L)
+      if (!is.null(window_start) && !is.null(window_end) && window_start > window_end) {
+        add(p, "/window_start: window_start must not be after window_end.")
+      }
+      # .normalizeTemporalSqlConcepts() refuses a declared empty restriction.
+      # Only syntactic emptiness is decided here; vocabulary-dependent
+      # resolution and an absent (unrestricted) filter remain executor work.
+      concept_ids <- out[["concept_set"]]
+      if (!is.null(concept_ids)) {
+        if (is.list(concept_ids) && !is.null(concept_ids[["concepts"]])) {
+          concept_ids <- concept_ids[["concepts"]]
+        }
+        if (!length(unlist(concept_ids, use.names = FALSE))) {
+          add(p, "/concept_set: concept_filter must contain finite non-negative integer concept IDs.")
+        }
       }
     }
     if (identical(type, "person_period") &&
