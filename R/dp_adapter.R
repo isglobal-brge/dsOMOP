@@ -19,7 +19,9 @@
     # remains tainted even when authenticated tables are supplied as well.
     if (!is.null(scope$cohort)) return(list(local = FALSE))
     frames <- scopes %||% scope$tables_frames
-    requested <- scope$tables %||% character(0)
+    # Exact lookup: `$tables` partially matches the server-only tables_frames
+    # when a legacy plan has no declared symbol list.
+    requested <- scope[["tables"]] %||% character(0)
     if (length(requested) > 0L) {
       frame_list <- if (.is_omop.table(frames)) list(frames) else frames
       if (!is.list(frame_list) || is.data.frame(frame_list) ||
