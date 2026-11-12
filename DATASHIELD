@@ -40,6 +40,7 @@ AggregateMethods:
   omopCdmSourceDS,
   omopCdmVersionDS,
   omopPlanPreviewDS,
+  omopPlanExplainDS,
   omopCohortListDS,
   omopCohortGetDefinitionDS,
   omopConceptPrevalenceDS,

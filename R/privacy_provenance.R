@@ -306,6 +306,10 @@
     stop("DP filter lineage requires a non-empty filter tree.", call. = FALSE)
   }
   fields <- names(node)
+  if (identical(fields, "not")) {
+    # NOT is not associative with AND/OR: keep it as its own lineage node.
+    return(list(not = .dsomopDpNormalizeFilterTree(node$not)))
+  }
   groups <- intersect(fields %||% character(0), c("and", "or"))
   if (length(groups) == 1L && length(fields) == 1L) {
     children <- node[[groups[[1L]]]]
@@ -571,6 +575,11 @@
       ))
   }
   if (!is.null(fields)) {
+    # NOT of person-local predicates is person-local.
+    if (identical(fields, "not")) {
+      return(is.list(node$not) && length(node$not) > 0L &&
+               .dsomopDpFilterTreePersonLocal(node$not))
+    }
     groups <- intersect(fields, c("and", "or"))
     if (length(groups) != 1L || length(fields) != 1L) return(FALSE)
     children <- node[[groups[[1L]]]]

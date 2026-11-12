@@ -90,13 +90,49 @@
 
 #' Validate a plan against the handle's schema
 #'
+#' The v1 executors' own checks (\code{.planLegacyFindings()}) plus the frozen
+#' validation sequence on the plan's wire part, exactly as execution runs it.
+#'
 #' @param handle CDM handle
 #' @param plan List; the extraction plan
 #' @return List with validation results
 #' @keywords internal
 .planValidate <- function(handle, plan) {
+  legacy <- .planLegacyFindings(handle, plan)
+  # The frozen validation sequence (design-2.10.3 section 4.5) -- closed
+  # envelope, normalisation, ir-v2.json, semantic and site rules, dialect
+  # preflight -- reported here as validation errors, raised as typed
+  # rejections at execution.
+  wire <- .planWirePart(plan)
+  ir_error <- tryCatch({
+    .irPrepare(wire[["plan"]], handle = handle, scope_tables = wire[["scope_tables"]])
+    NULL
+  }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e),
+  # the v1 plan-declaration errors are among the legacy findings already
+  dsomop_v1_declaration_error = function(e) NULL)
+  errors <- unique(c(legacy[["errors"]], legacy[["missing_tables"]], ir_error))
+  list(
+    valid = length(errors) == 0,
+    errors = errors,
+    warnings = legacy[["warnings"]],
+    available_tables = legacy[["available_tables"]]
+  )
+}
+
+#' The v1 executors' checks of a plan against a site
+#'
+#' The checks the v1 executors make while they run, collected before any
+#' query: tables and the results cohort table the plan needs
+#' (\code{missing_tables}), and the legacy shape rules (\code{errors}).
+#'
+#' @param handle CDM handle
+#' @param plan List; the v1 plan
+#' @return list(errors, missing_tables, warnings, available_tables)
+#' @keywords internal
+.planLegacyFindings <- function(handle, plan) {
   bp <- .buildBlueprint(handle)
   errors <- character(0)
+  missing_tables <- character(0)
   warnings <- character(0)
 
   present_tables <- bp$tables$table_name[bp$tables$present_in_db]
@@ -105,7 +141,7 @@
     if (!is.null(plan$cohort$cohort_definition_id)) {
       results_tables <- .listTablesRaw(handle, .effectiveResultsSchema(handle))
       if (!"cohort" %in% results_tables) {
-        errors <- c(errors,
+        missing_tables <- c(missing_tables,
           "Plan cohort cannot execute: results cohort table not found.")
       }
     }
@@ -153,7 +189,7 @@
       for (tbl_name in names(out$tables)) {
         tbl_lower <- tolower(tbl_name)
         if (!tbl_lower %in% present_tables) {
-          errors <- c(errors,
+          missing_tables <- c(missing_tables,
             paste0("Output '", out_name, "': table '", tbl_name, "' not found."))
           next
         }
@@ -173,7 +209,7 @@
     if (out_type == "event_level") {
       tbl_name <- tolower(out$table %||% "")
       if (!tbl_name %in% present_tables) {
-        errors <- c(errors,
+        missing_tables <- c(missing_tables,
           paste0("Output '", out_name, "': table '", tbl_name, "' not found."))
       } else {
         avail_cols <- bp$columns[[tbl_name]]$column_name
@@ -191,7 +227,7 @@
 
     if (out_type == "baseline") {
       if (!"person" %in% present_tables) {
-        errors <- c(errors,
+        missing_tables <- c(missing_tables,
           paste0("Output '", out_name, "': person table not found."))
       }
       if (!"observation_period" %in% present_tables) {
@@ -227,7 +263,7 @@
             survival_outcomes[[outcome_name]]$table %||% ""
           )
           if (!nzchar(outcome_tbl) || !outcome_tbl %in% present_tables) {
-            errors <- c(errors, paste0(
+            missing_tables <- c(missing_tables, paste0(
               "Output '", out_name, "': outcome '", outcome_name,
               "' table '", outcome_tbl, "' not found."
             ))
@@ -265,14 +301,14 @@
       }
       if (!identical(censoring$observation_period_end, FALSE) &&
           !"observation_period" %in% present_tables) {
-        errors <- c(errors, paste0(
+        missing_tables <- c(missing_tables, paste0(
           "Output '", out_name,
           "': observation-period censoring requires observation_period."
         ))
       }
       if (!identical(censoring$death, FALSE) &&
           !"death" %in% present_tables) {
-        errors <- c(errors, paste0(
+        missing_tables <- c(missing_tables, paste0(
           "Output '", out_name, "': death censoring requires death."
         ))
       }
@@ -294,7 +330,7 @@
       interval_tables <- out$tables %||% character(0)
       for (itbl in interval_tables) {
         if (!tolower(itbl) %in% present_tables) {
-          errors <- c(errors,
+          missing_tables <- c(missing_tables,
             paste0("Output '", out_name,
                    "': interval table '", itbl, "' not found."))
         }
@@ -328,7 +364,7 @@
     if (out_type %in% c("temporal_covariates", "person_period")) {
       tc_table <- tolower(out$table %||% "")
       if (tc_table != "" && !tc_table %in% present_tables) {
-        errors <- c(errors,
+        missing_tables <- c(missing_tables,
           paste0("Output '", out_name,
                  "': table '", tc_table, "' not found."))
       }
@@ -346,12 +382,8 @@
     }
   }
 
-  list(
-    valid = length(errors) == 0,
-    errors = errors,
-    warnings = warnings,
-    available_tables = present_tables
-  )
+  list(errors = unique(errors), missing_tables = unique(missing_tables),
+       warnings = warnings, available_tables = present_tables)
 }
 
 #' Preview resolvable plan projections (safe aggregate)
@@ -817,11 +849,22 @@
     return(invisible(TRUE))
   }
 
-  group_keys <- intersect(node_names %||% character(0), c("and", "or"))
+  group_keys <- intersect(node_names %||% character(0), c("and", "or", "not"))
   if (length(group_keys) > 0L) {
     if (length(group_keys) != 1L || length(node_names) != 1L) {
-      stop("Population filter nodes cannot mix AND/OR groups with each other ",
-           "or with leaf fields.", call. = FALSE)
+      stop("Population filter nodes cannot mix AND/OR/NOT groups with each ",
+           "other or with leaf fields.", call. = FALSE)
+    }
+    # NOT (design-2.10.3 section 6.6): one negated filter; SQL three-valued
+    # logic keeps an UNKNOWN child UNKNOWN, so only TRUE survives.
+    if (identical(group_keys, "not")) {
+      child <- node$not
+      if (!is.list(child) || length(child) == 0L) {
+        stop("Population filter NOT group must contain one filter.",
+             call. = FALSE)
+      }
+      .validateCohortFilterTree(child, .depth = .depth + 1L, .state = .state)
+      return(invisible(TRUE))
     }
     children <- node[[group_keys]]
     if (!is.list(children) || length(children) == 0L) {
@@ -893,6 +936,8 @@
     node$and
   } else if ("or" %in% names(node)) {
     node$or
+  } else if ("not" %in% names(node)) {
+    list(node$not)
   } else {
     unname(node)
   }
@@ -1090,12 +1135,29 @@
                                     index_anchor = index_anchor))
   }
 
-  group_keys <- intersect(node_names %||% character(0), c("and", "or"))
+  group_keys <- intersect(node_names %||% character(0), c("and", "or", "not"))
   if (length(group_keys) > 0L) {
     if (length(group_keys) != 1L || length(node_names) != 1L) {
-      stop("Population filter nodes cannot mix AND/OR groups with each other ",
-           "or with leaf fields.", call. = FALSE)
+      stop("Population filter nodes cannot mix AND/OR/NOT groups with each ",
+           "other or with leaf fields.", call. = FALSE)
     }
+  }
+
+  if (identical(group_keys, "not")) {
+    if (!is.list(node$not) || length(node$not) == 0) {
+      stop("Population filter NOT group must contain one filter.",
+           call. = FALSE)
+    }
+    part <- .compileCohortFilterWhere(handle, node$not, bp, person_cols,
+                                      index_anchor = index_anchor,
+                                      .depth = .depth + 1L, .state = .state)
+    if (!nzchar(part)) {
+      stop("A population filter in the NOT group compiled to no predicate.",
+           call. = FALSE)
+    }
+    # Native three-valued logic: NOT UNKNOWN stays UNKNOWN (design 6.6); the
+    # child is parenthesised whatever its own shape.
+    return(paste0("(NOT (", part, "))"))
   }
 
   if (identical(group_keys, "and")) {
@@ -2301,17 +2363,16 @@
     stop("Unknown index_event field(s): ", paste(unknown, collapse = ", "),
          ".", call. = FALSE)
   }
-  allowed_tables <- c(
-    "condition_occurrence", "drug_exposure", "measurement", "observation",
-    "procedure_occurrence", "device_exposure", "visit_occurrence"
-  )
+  # Defect B-20: an index event may come from any table with an event role
+  # record (design-2.10.3 section 6.2) instead of a fixed allowlist.
   table <- index_event$table
   if (!is.character(table) || length(table) != 1L || is.na(table) ||
-      !tolower(table) %in% allowed_tables) {
-    stop("index_event table is outside the executable Circe table allowlist.",
-         call. = FALSE)
+      is.null(.roleOf(handle, table))) {
+    stop("index_event table has no event role record in the role registry ",
+         "of this CDM.", call. = FALSE)
   }
   table <- tolower(table)
+  role <- .roleOf(handle, table)
   primary_limit <- index_event$primary_limit %||% "first"
   if (!is.character(primary_limit) || length(primary_limit) != 1L ||
       is.na(primary_limit) ||
@@ -2330,10 +2391,9 @@
          call. = FALSE)
   }
   cols <- bp$columns[[table]]$column_name %||% character(0)
-  start_col <- .getDateColumn(bp, table)
-  pair <- .getDatePair(bp, table)
-  end_col <- pair$end %||% start_col
-  event_id_col <- .eventPrimaryKeyColumn(bp, table)
+  start_col <- role$start
+  end_col <- role$end %||% start_col
+  event_id_col <- role$event_key
   required <- c("person_id", start_col, end_col, event_id_col)
   if (any(vapply(list(start_col, end_col, event_id_col), is.null,
                  logical(1))) || any(!required %in% cols)) {
@@ -2359,14 +2419,17 @@
   if (!is.null(index_event$concept_set)) {
     cs <- index_event$concept_set
     if (is.list(cs) && !is.null(cs$concepts)) {
+      # Defect A-E3: index events accept `exclude` like every other concept
+      # set (one shared resolver, .resolveConceptSet()).
       unknown_cs <- setdiff(names(cs),
                             c("concepts", "include_descendants",
-                              "include_mapped"))
+                              "include_mapped", "exclude"))
       if (length(unknown_cs) > 0L) {
         stop("Unknown index-event concept-set field(s): ",
              paste(unknown_cs, collapse = ", "), ".", call. = FALSE)
       }
       .conceptIdList(cs$concepts)
+      .conceptIdList(cs$exclude)
       for (flag in c("include_descendants", "include_mapped")) {
         if (!is.null(cs[[flag]]) &&
             (!is.logical(cs[[flag]]) || length(cs[[flag]]) != 1L ||
@@ -2388,7 +2451,7 @@
     if (length(concept_ids) == 0L) {
       stop("index_event concept_set resolved to no concepts.", call. = FALSE)
     }
-    concept_col <- .getDomainConceptColumn(bp, table)
+    concept_col <- role$domain_concept %||% .getDomainConceptColumn(bp, table)
     if (is.null(concept_col) || !concept_col %in% cols) {
       stop("index_event table '", table,
            "' has no authorized domain concept column.", call. = FALSE)
@@ -2720,9 +2783,12 @@
 
     if (is_base && !has_filter_tree && !has_own_cohort) {
       # Base population with no extra criteria: reuse the plan-level cohort.
+      # Without one it is every person, as in a single-population plan (an
+      # empty id set would restrict its outputs to nobody).
+      unrestricted <- is.null(base_cohort_table) && is.null(base_person_ids)
       resolved[[pid]] <- list(
         cohort_table = base_cohort_table,
-        person_ids = base_person_ids %||%
+        person_ids = if (unrestricted) NULL else base_person_ids %||%
           .cohortPersonIds(handle, base_cohort_table))
       next
     }
@@ -2750,8 +2816,8 @@
     if (has_filter_tree) {
       # Anchor windowed concept filters in this population to the plan-level
       # cohort's index date (e.g. cohort=313217L). Without a plan cohort there is
-      # nothing to anchor to, so windows fall back to the wall-clock date inside
-      # .windowPredicateSql.
+      # no index: .windowPredicateSql then requires the filter's explicit
+      # reference_date and fails closed without one (never the wall clock).
       filter_ids <- .buildCohortFromFilters(handle, pop$filter_tree,
         index_cohort_table = index_cohort_table,
         episode_policy = pop$episode_policy)
@@ -2837,6 +2903,26 @@
   resolved
 }
 
+#' The plan an execution context carries
+#'
+#' Validation runs before the context exists (design 4.5, WS-1): a language
+#' 2.0 plan's context carries its validated, normalised IR, which the native
+#' publication and DP contracts read (\code{.dsomopDpIsV2()}); a v1 plan's
+#' carries the execution plan, which its v1 executors and the legacy
+#' publication and DP contracts read in their own fields (the lowered IR is
+#' \code{ctx$validation$ir}). A refused plan keeps the plan as it arrived:
+#' only its refusal is published.
+#'
+#' @param validation list(ir, wire) from the validation sequence, or
+#'   list(error) when it refused the plan.
+#' @param plan The execution plan.
+#' @return The IR or the plan.
+#' @keywords internal
+.planContextIr <- function(validation, plan) {
+  ir <- validation[["ir"]]
+  if (!is.null(ir) && identical(attr(ir, "source_version"), 2L)) ir else plan
+}
+
 #' Execute a plan and produce server-side data frames
 #'
 #' Processes all outputs defined in the plan: builds a cohort (if specified),
@@ -2850,24 +2936,55 @@
 #' @return Named list of data frames or staged dataset descriptors.
 #' @keywords internal
 .planExecute <- function(handle, plan, out_symbols, output_mode = "memory", ctx = NULL) {
-  own_context <- is.null(ctx)
-  if (own_context) {
-    ctx <- .planContext(handle, plan, output_mode)
-    on.exit(.planContextClose(ctx), add = TRUE)
+  if (!is.null(ctx) && !.isPlanContext(ctx)) {
+    stop("Invalid plan execution context.", call. = FALSE)
   }
-  if (!.isPlanContext(ctx)) stop("Invalid plan execution context.", call. = FALSE)
-
-  temp_tables_before <- unique(handle$temp_tables %||% character(0))
-  on.exit(
-    .dropTempTablesCreatedSince(handle, temp_tables_before),
-    add = TRUE
-  )
   outputs <- plan$outputs %||% list()
   max_plan_outputs <- .extractionCap("dsomop.max_plan_outputs", 100L)
   if (length(outputs) > max_plan_outputs) {
     stop("Plan exceeds the server max_plan_outputs cap of ",
          max_plan_outputs, ".", call. = FALSE)
   }
+  # The single frozen validation sequence (design-2.10.3 section 4.5): closed
+  # envelope by version, normalisation, ir-v2.json, semantic and site rules,
+  # dialect preflight -- on the plan's wire part (server-resolved workspace
+  # frames are not part of it), before the execution context is created and
+  # before any query. A context created by omopPlanExecuteDS carries the IR it
+  # validated for exactly this plan; anything else is validated here. A v1
+  # plan then runs on the v1 executors below, unchanged.
+  wire <- .planWirePart(plan)
+  validated <- if (!is.null(ctx)) ctx[["validation"]]
+  ir <- if (!is.null(validated) &&
+            identical(validated[["wire"]], .irJsonForm(wire[["plan"]]))) {
+    validated[["ir"]]
+  } else {
+    .irPrepare(wire[["plan"]], handle, scope_tables = wire[["scope_tables"]])
+  }
+  # the context exists only after validation (WS-1): created here when the
+  # caller brought none
+  own_context <- is.null(ctx)
+  if (own_context) {
+    validated <- list(ir = ir, wire = .irJsonForm(wire[["plan"]]))
+    ctx <- .planContext(handle, .planContextIr(validated, plan), output_mode)
+    ctx$validation <- validated
+    on.exit(.planContextClose(ctx), add = TRUE)
+  }
+  if (identical(attr(ir, "source_version"), 2L)) {
+    # The event stage of language-2.0 execution (design 6.1, WS-4): the event
+    # sources of the requested roots compile in the private context, so the
+    # data-dependent adapter refusals of section 11 are raised, with their
+    # reason (A-18), before any output is materialised. The later stages
+    # (intervals, populations, variables, outputs) replace the refusal below.
+    .planCompileSources(.compileContext(ctx, ir), names(out_symbols))
+    .irReject(paste0("this server validates language 2.0 plans but does not ",
+                     "execute them yet; use omopPlanExplainDS"))
+  }
+
+  temp_tables_before <- unique(handle$temp_tables %||% character(0))
+  on.exit(
+    .dropTempTablesCreatedSince(handle, temp_tables_before),
+    add = TRUE
+  )
   bp <- .buildBlueprint(handle)
 
   staged <- identical(output_mode, "staged")
@@ -3722,7 +3839,7 @@
       if (!inherits(e, "dsomop_plan_rejection") ||
           !e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",
                          "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
-      ctx$rejected[[out_name]] <- list(code = e$code, message = .publishMessage(e$code))
+      ctx$rejected[[out_name]] <- .rejectionEntry(e)
       results[[out_name]] <<- NULL
     })
   }
@@ -3755,7 +3872,7 @@
       if (!inherits(e, "dsomop_plan_rejection") ||
           !e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",
                          "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
-      ctx$rejected[[out_name]] <- list(code = e$code, message = .publishMessage(e$code))
+      ctx$rejected[[out_name]] <- .rejectionEntry(e)
       results[[out_name]] <<- NULL
     })
   }

@@ -1,0 +1,373 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "events": {
+    "hba1c": {
+      "table": "measurement",
+      "concept_set": {
+        "concepts": [
+          3004410
+        ],
+        "include_descendants": false,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "value": {
+        "column": "value_as_number"
+      },
+      "unit": {
+        "target": 8554,
+        "convert": {
+          "8753": {
+            "factor": 0.0915,
+            "offset": 2.15
+          }
+        },
+        "unknown": "missing",
+        "censored": "keep"
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "hba1c_ge65": {
+      "table": "measurement",
+      "concept_set": {
+        "concepts": [
+          3004410
+        ],
+        "include_descendants": false,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "value": {
+        "column": "value_as_number"
+      },
+      "unit": {
+        "target": 8554,
+        "convert": {
+          "8753": {
+            "factor": 0.0915,
+            "offset": 2.15
+          }
+        },
+        "unknown": "missing",
+        "censored": "keep"
+      },
+      "where": {
+        "var": "value",
+        "op": ">=",
+        "value": 6.5
+      },
+      "concept_col": null,
+      "visit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "hba1c_uncensored": {
+      "table": "measurement",
+      "concept_set": {
+        "concepts": [
+          3004410
+        ],
+        "include_descendants": false,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "value": {
+        "column": "value_as_number"
+      },
+      "unit": {
+        "target": 8554,
+        "convert": {
+          "8753": {
+            "factor": 0.0915,
+            "offset": 2.15
+          }
+        },
+        "unknown": "missing",
+        "censored": "exclude"
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "hba1c_known_unit": {
+      "table": "measurement",
+      "concept_set": {
+        "concepts": [
+          3004410
+        ],
+        "include_descendants": false,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "value": {
+        "column": "value_as_number"
+      },
+      "unit": {
+        "target": 8554,
+        "convert": {
+          "8753": {
+            "factor": 0.0915,
+            "offset": 2.15
+          }
+        },
+        "unknown": "exclude",
+        "censored": "keep"
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "end": null,
+      "on_missing_table": "error"
+    }
+  },
+  "populations": {
+    "c1": {
+      "kind": "index",
+      "index": {
+        "source": {
+          "cohort_definition_id": 1
+        },
+        "select": "all",
+        "end": {
+          "strategy": "event_end",
+          "days": null,
+          "pad": 0
+        },
+        "n": 1,
+        "offset": 0,
+        "restrict_to_observation": true
+      },
+      "parent": null,
+      "where": null,
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      }
+    },
+    "with_a1c": {
+      "kind": "criteria",
+      "parent": "c1",
+      "where": {
+        "has": {
+          "source": {
+            "event": "hba1c"
+          },
+          "op": ">=",
+          "n": 1,
+          "window": {
+            "start": -180,
+            "end": 0,
+            "anchor": "index"
+          },
+          "nonmissing": null,
+          "distinct": "row"
+        }
+      },
+      "cohort_definition_id": null,
+      "episode_policy": null,
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      }
+    }
+  },
+  "variables": {
+    "a1c_closest": {
+      "source": {
+        "event": "hba1c"
+      },
+      "reducer": {
+        "fn": "closest_value",
+        "value": "value",
+        "window": {
+          "start": -180,
+          "end": 0,
+          "anchor": "index"
+        },
+        "side": "before",
+        "which": null,
+        "n": 1,
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "a1c_n_ge65": {
+      "source": {
+        "event": "hba1c_ge65"
+      },
+      "reducer": {
+        "fn": "count",
+        "window": {
+          "start": -180,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "a1c_n_uncensored": {
+      "source": {
+        "event": "hba1c_uncensored"
+      },
+      "reducer": {
+        "fn": "count",
+        "window": {
+          "start": -180,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "a1c_n_known_unit": {
+      "source": {
+        "event": "hba1c_known_unit"
+      },
+      "reducer": {
+        "fn": "count",
+        "window": {
+          "start": -180,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "a1c_max": {
+      "source": {
+        "event": "hba1c"
+      },
+      "reducer": {
+        "fn": "max",
+        "value": "value",
+        "window": {
+          "start": -180,
+          "end": 0,
+          "anchor": "index"
+        },
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    }
+  },
+  "outputs": {
+    "labs": {
+      "rows": "with_a1c",
+      "format": "wide",
+      "grain": "episode",
+      "result_symbol": "D_labs",
+      "collapse": null,
+      "columns": [
+        "a1c_closest",
+        "a1c_n_ge65",
+        "a1c_n_uncensored",
+        "a1c_n_known_unit",
+        "a1c_max"
+      ],
+      "sources": [],
+      "options": {
+        "date_handling": {
+          "mode": "relative",
+          "reference": "index",
+          "bin_width": null,
+          "date_columns": null
+        },
+        "time_window": null
+      }
+    }
+  },
+  "options": {
+    "translate_concepts": true,
+    "block_sensitive": true,
+    "factor_concepts": true
+  },
+  "concept_sets": {},
+  "intervals": {},
+  "publish": [
+    "labs"
+  ]
+}

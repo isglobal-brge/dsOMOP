@@ -119,6 +119,11 @@ test_that("baseline accepts any structurally valid declared age grid", {
   expect_true(validation$valid)
   off_grid <- .planExecute(handle, plan, list(demo = "demo_offgrid"))$demo
   expect_true(all(off_grid$age_group %in% c("0-17", "18-39", "40+")))
+  # a grid that does not start at 0 is structurally invalid (design 4.5 b)
+  plan$outputs$demo$age_breaks <- c(5L, 18L)
+  validation <- .planValidate(handle, plan)
+  expect_false(validation$valid)
+  expect_match(validation$errors, "invalid age_breaks", all = FALSE)
 })
 
 test_that("baseline without cohort fails closed", {

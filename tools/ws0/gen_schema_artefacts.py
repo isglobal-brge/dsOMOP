@@ -32,6 +32,14 @@ censor_obj["properties"]["censor"]["properties"]["when_index_source"] = {
     "oneOf": [{"type": "null"},
               {"type": "array", "minItems": 1, "uniqueItems": True, "items": {"type": "string", "minLength": 1, "maxLength": 64}}],
     "default": None}
+#   A-14 (CR-14) per-source analysis selection for temporal_covariates / person_period
+for _opt in ("options_temporal", "options_person_period"):
+    plan["$defs"][_opt]["properties"]["source_analyses"] = {
+        "type": "object", "default": {},
+        "description": "Per-source analysis selection: resolved source name -> nonempty unique subset of analyses; an omitted source inherits the output's analyses (A-14)",
+        "propertyNames": {"$ref": "#/$defs/name"},
+        "additionalProperties": {"type": "array", "minItems": 1, "uniqueItems": True,
+                                 "items": {"enum": ["binary", "count", "mean", "last", "exposed_days"]}}}
 mutate = by_id["https://isglobal-brge.github.io/dsOMOP/schema/mutate-v1.json"]
 examples = [b for b in blocks if b.get("version") == 2]
 assert len(examples) == 2, "expected the two canonical examples"
@@ -44,7 +52,7 @@ def dump(obj, path):
         f.write("\n")
 
 # --------------------------------------------------------------------------
-# 1. wire schema, verbatim
+# 1. wire schema (section 4.1 plus the amendments above)
 # --------------------------------------------------------------------------
 dump(plan, os.path.join(OUT, "plan-v2.json"))
 
@@ -125,8 +133,14 @@ D["legacy_inclusion_criterion"] = {
                      "properties": {"index_window": {"$ref": "#/$defs/legacy_window"},
                                     "calendar": {"type": "object", "additionalProperties": False,
                                                  "properties": {"start": {"$ref": "#/$defs/date"}, "end": {"$ref": "#/$defs/date"}}}}},
+        # A-15: the historical .applyInclusionCriteria() contract (S/R/cohort.R):
+        # type at_least | at_most | exactly (default at_least), count a
+        # non-negative integer (default 1); the lowering writes the effective
+        # object, so an omitted occurrence is {at_least, 1}
         "occurrence": {"type": "object", "additionalProperties": False,
-                       "properties": {"min": {"type": "integer", "minimum": 0}, "max": {"type": "integer", "minimum": 0}}}
+                       "default": {"type": "at_least", "count": 1},
+                       "properties": {"type": {"enum": ["at_least", "at_most", "exactly"], "default": "at_least"},
+                                      "count": {"type": "integer", "minimum": 0, "default": 1}}}
     }
 }
 D["legacy_spec"] = {
@@ -161,6 +175,83 @@ D["output"]["properties"]["legacy_split"] = {"type": "boolean", "default": False
 score_variant = [v for v in D["variable"]["oneOf"][1]["properties"]["derived"]["oneOf"]
                  if "charlson" in v["properties"]["kind"].get("enum", [])][0]
 score_variant["properties"]["legacy_all_time_conditions"] = {"type": "boolean", "default": False}
+
+# A-10 (CR-10): closed IR-only variants carrying v1 semantics the wire cannot express
+D["output"]["properties"]["legacy_columns"] = {
+    "type": "array", "uniqueItems": True, "items": {"$ref": "#/$defs/column_name"},
+    "description": "v1 event_level projection; absent = default projection, [] = explicitly empty (mandatory identity/concept columns still added)"}
+D["legacy_temporal_window"] = {
+    "type": "object", "additionalProperties": False, "required": ["start", "end"],
+    "properties": {"start": {"oneOf": [{"type": "null"}, {"type": "integer"}]},
+                   "end": {"oneOf": [{"type": "null"}, {"type": "integer"}]}},
+    "anyOf": [{"properties": {"start": {"type": "integer"}}}, {"properties": {"end": {"type": "integer"}}}]}
+D["legacy_temporal"] = {
+    "type": "object", "additionalProperties": False, "minProperties": 1,
+    "properties": {
+        "index_window": {"$ref": "#/$defs/legacy_temporal_window"},
+        "event_select": {"type": "object", "additionalProperties": False, "required": ["order", "n", "by"],
+                         "properties": {"order": {"enum": ["first", "last"]}, "n": {"type": "integer", "minimum": 1},
+                                        "by": {"enum": ["grain", "concept"]}}},
+        "min_gap": {"type": "object", "additionalProperties": False, "required": ["days", "by", "keep"],
+                    "properties": {"days": {"type": "integer", "minimum": 1}, "by": {"enum": ["grain", "concept"]},
+                                   "keep": {"enum": ["first", "last"]}}}}}
+D["output"]["properties"]["legacy_temporal"] = {"$ref": "#/$defs/legacy_temporal"}
+D["output"]["properties"]["legacy_automatic_features"] = {
+    "type": "object", "additionalProperties": False, "required": ["format", "source"],
+    "properties": {"format": {"enum": ["wide", "features", "sparse"]},
+                   "source": {"type": "object", "additionalProperties": False, "required": ["event"],
+                              "properties": {"event": {"$ref": "#/$defs/name"}}}}}
+D["options_survival"]["properties"]["legacy_single_outcome"] = {"const": True}
+D["options_survival"]["properties"]["legacy_states"] = {"type": "array", "minItems": 1, "uniqueItems": True, "items": {"$ref": "#/$defs/name"}}
+D["options_survival"]["properties"]["legacy_state_step"] = {"type": "number", "exclusiveMinimum": 0,
+    "description": "effective validated v1 state step (default 0.01 day); at most nine decimals and effective_step * (states - 1) < 1 day are semantic checks; mutually exclusive with state_step"}
+D["options_survival"].setdefault("allOf", []).append({"not": {"required": ["state_step", "legacy_state_step"]}})
+for _branch in D["population"]["oneOf"]:
+    if _branch["properties"]["kind"].get("const") in ("index", "criteria"):
+        _branch["properties"]["legacy_episodes"] = {"enum": ["cohort_rows", "observation_periods"]}
+        _branch["properties"]["legacy_index_anchor"] = {"const": "scope_cohort"}
+_observed = [b for b in D["variable"]["oneOf"][1]["properties"]["derived"]["oneOf"] if b["properties"]["kind"].get("const") == "observed_days"][0]
+_observed["properties"]["legacy_containing_period"] = {"const": True}
+_observed.setdefault("allOf", []).append({"if": {"required": ["legacy_containing_period"]}, "then": {"properties": {"window": {"oneOf": [
+    {"type": "object", "required": ["start", "end"], "properties": {"start": {"type": "null"}, "end": {"const": -1}, "anchor": {"const": "index"}}},
+    {"type": "object", "required": ["start", "end"], "properties": {"start": {"const": 1}, "end": {"type": "null"}, "anchor": {"const": "index"}}}]}}}})
+_name_map = {"type": "object", "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"}, "additionalProperties": {"type": "string", "minLength": 1}}
+_column_map = {"type": "object", "propertyNames": {"pattern": "^[a-z][a-z0-9_]{0,63}$"}, "additionalProperties": {"type": "string", "minLength": 1}}
+_by_output = lambda inner: {"type": "object", "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"}, "additionalProperties": inner}
+ir["properties"]["legacy_names"] = {
+    "type": "object", "additionalProperties": False, "minProperties": 1,
+    "properties": {"outputs": _name_map, "populations": _name_map,
+                   "outcomes": _by_output(_name_map), "states": _by_output(_name_map), "columns": _by_output(_column_map)},
+    "description": "original v1 names of re-encoded identifiers, keyed by IR name (outcomes/states/columns first by IR output name)"}
+D["event_table"]["properties"]["legacy_concept_scope"] = {
+    "type": "object", "additionalProperties": False, "required": ["concept_set_ref"],
+    "properties": {"concept_set_ref": {"$ref": "#/$defs/name"}},
+    "description": "the v1 output-level concept set that also restricts this event (intersection with the event's own concept set)"}
+
+# A-16 (CR-16): v1 semantics the A-10 variants still miss -- IR-only, closed,
+# produced only by the v1 lowering (legacy_automatic_features above also admits
+# the legacy sparse builder)
+D["output"]["properties"]["legacy_raw_filter"] = {
+    "$ref": "#/$defs/predicate",
+    "description": "the v1 person_level output-level custom filter, ANDed into every raw person/death table of the output before the outer merge"}
+D["options_intervals"]["properties"]["legacy_anchor_offset"] = {
+    "type": "integer", "not": {"const": 0},
+    "description": "the v1 intervals_long anchor as a non-zero day offset from the index (either sign), present only with event_select = nearest, which orders by ABS(start_days_from_index - offset); omitted and zero offsets lower to anchor index with this field absent"}
+D["options_intervals"]["allOf"] = [
+    {"if": {"required": ["legacy_anchor_offset"]},
+     "then": {"required": ["event_select"], "properties": {"event_select": {"const": "nearest"}}}}]
+D["legacy_spec"]["properties"]["cohort_definition_id"] = {
+    "type": "integer", "minimum": 0,
+    "description": "the v1 plan cohort's cohort_definition_id of an inline spec (names its temporary cohort, fills the cohort_membership id column); present only when supplied, never defaulted"}
+_scope = ir["properties"]["scope"]
+_scope_source = copy.deepcopy([b for b in _scope["properties"]["cohort"]["oneOf"] if b != {"type": "null"}])
+_scope["properties"]["legacy_cohort_sources"] = {
+    "type": "array", "minItems": 2, "items": {"oneOf": _scope_source},
+    "description": "every cohort source v1 folds into the one scope cohort with the materialised scope.combine, in fold order; scope.cohort is the first entry (checked by the IR validator)"}
+_scope["allOf"] = [
+    {"if": {"required": ["legacy_cohort_sources"]},
+     "then": {"required": ["cohort", "combine"], "properties": {"cohort": {"not": {"type": "null"}}}}}]
+
 dump(ir, os.path.join(OUT, "ir-v2.json"))
 
 # --------------------------------------------------------------------------
@@ -241,11 +332,18 @@ probe("P42", "wire plan carrying a legacy_split flag", R, A, lambda b: b["output
 # IR probes: the same compatibility variants are valid under ir-v2.json
 def ir_probe(pid, label, expect, base, mutator):
     probe(pid, label, expect, base, mutator, schema="ir-v2")
+# shared probe helpers (A-10 / A-14 instances)
+_LT = {"index_window": {"start": -365, "end": None}, "event_select": {"order": "first", "n": 1, "by": "grain"}, "min_gap": {"days": 30, "by": "concept", "keep": "first"}}
+def _long(b, **extra):
+    b["outputs"]["events"] = dict({"rows": "new_users", "format": "long", "sources": [{"event": "hba1c"}], "options": {}}, **extra)
+def _tc(b, source_analyses):
+    b["outputs"]["tc"] = {"rows": "new_users", "format": "temporal_covariates", "sources": [{"event": "hba1c"}],
+                          "options": {"sources": [{"event": "hba1c"}], "analyses": ["binary", "count"], "source_analyses": source_analyses}}
 ir_probe("I01", "legacy sex leaf in the IR", OK, A, lambda b: b["populations"]["new_users"]["where"]["and"].append({"legacy": {"type": "sex", "params": {"value": "F"}}}))
 ir_probe("I02", "legacy has_concept leaf with window in the IR", OK, A, lambda b: b["populations"]["new_users"]["where"]["and"].append({"legacy": {"type": "has_concept", "params": {"concept_ids": [201820], "table": "condition_occurrence", "window": {"start": -365, "end": 0}, "min_count": 1}}}))
 ir_probe("I03", "legacy leaf with an unknown param", R, A, lambda b: b["populations"]["new_users"]["where"]["and"].append({"legacy": {"type": "sex", "params": {"value": "F", "already_gated": True}}}))
 ir_probe("I04", "legacy leaf with an unknown type", R, A, lambda b: b["populations"]["new_users"]["where"]["and"].append({"legacy": {"type": "condition", "params": {}}}))
-ir_probe("I05", "legacy_spec source in the IR", OK, A, lambda b: b["populations"]["new_users"]["index"].__setitem__("source", {"legacy_spec": {"type": "drug", "concept_set": {"concepts": [1503297], "include_descendants": True}, "inclusion_criteria": {"dm": {"table": "condition_occurrence", "concept_set": {"concepts": [201820]}, "temporal": {"index_window": {"start": -365, "end": 0}}, "occurrence": {"min": 1}}}}}))
+ir_probe("I05", "legacy_spec source in the IR", OK, A, lambda b: b["populations"]["new_users"]["index"].__setitem__("source", {"legacy_spec": {"type": "drug", "concept_set": {"concepts": [1503297], "include_descendants": True}, "inclusion_criteria": {"dm": {"table": "condition_occurrence", "concept_set": {"concepts": [201820]}, "temporal": {"index_window": {"start": -365, "end": 0}}, "occurrence": {"type": "at_least", "count": 1}}}}}))
 ir_probe("I06", "legacy_spec with value_threshold (not executable since 2.9)", R, A, lambda b: b["populations"]["new_users"]["index"].__setitem__("source", {"legacy_spec": {"type": "measurement", "value_threshold": {"op": ">", "value": 7}}}))
 ir_probe("I07", "legacy_end_strategy DateOffset in the IR", OK, A, lambda b: b["populations"]["new_users"]["index"].__setitem__("legacy_end_strategy", {"DateOffset": {"DateField": "EndDate", "Offset": 30}}))
 ir_probe("I08", "legacy_cohort_end_cap in the IR", OK, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("legacy_cohort_end_cap", True))
@@ -265,9 +363,84 @@ ir_probe("I15", "legacy_spec value_bin scope missing required fields", R, A, lam
     {"legacy_spec": {"type": "measurement", "value_bin": {"lower": 6.5, "upper": 7.5, "safe_scope": {"concept_id": 3004410}}}}))
 ir_probe("I16", "lowered v1 score with legacy_all_time_conditions in the IR", OK, A, lambda b: b["variables"].__setitem__("cci", {"derived": {"kind": "charlson", "legacy_all_time_conditions": True}}))
 probe("P43", "legacy_all_time_conditions refused on the wire", R, A, lambda b: b["variables"].__setitem__("cci", {"derived": {"kind": "charlson", "legacy_all_time_conditions": True}}))
+# ... and accepted (or refused when malformed) in the IR (A-10)
+ir_probe("I17", "legacy_columns projection in the IR", OK, A, lambda b: b["outputs"]["baseline"].__setitem__("legacy_columns", ["person_id", "value_as_number"]))
+ir_probe("I18", "legacy_columns explicitly empty in the IR", OK, A, lambda b: b["outputs"]["baseline"].__setitem__("legacy_columns", []))
+ir_probe("I19", "legacy_columns with a duplicate", R, A, lambda b: b["outputs"]["baseline"].__setitem__("legacy_columns", ["person_id", "person_id"]))
+ir_probe("I20", "legacy_temporal with open-ended window, selection and gap in the IR", OK, A, lambda b: _long(b, legacy_temporal=_LT))
+ir_probe("I21", "legacy_temporal event_select order all", R, A, lambda b: _long(b, legacy_temporal={"event_select": {"order": "all", "n": 1, "by": "grain"}}))
+ir_probe("I22", "legacy_temporal window with no integer bound", R, A, lambda b: _long(b, legacy_temporal={"index_window": {"start": None, "end": None}}))
+ir_probe("I23", "legacy_temporal empty object", R, A, lambda b: _long(b, legacy_temporal={}))
+ir_probe("I24", "legacy_automatic_features object in the IR", OK, A, lambda b: b["outputs"]["baseline"].__setitem__("legacy_automatic_features", {"format": "wide", "source": {"event": "hba1c"}}))
+ir_probe("I25", "legacy_automatic_features as a boolean", R, A, lambda b: b["outputs"]["baseline"].__setitem__("legacy_automatic_features", True))
+ir_probe("I26", "legacy_single_outcome in the IR", OK, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("legacy_single_outcome", True))
+ir_probe("I27", "legacy_single_outcome false", R, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("legacy_single_outcome", False))
+ir_probe("I28", "legacy_states with the effective legacy state step in the IR", OK, A, lambda b: b["outputs"]["tte"]["options"].update({"legacy_states": ["index", "mi"], "legacy_state_step": 0.01}))
+ir_probe("I29", "legacy_state_step beside state_step", R, A, lambda b: b["outputs"]["tte"]["options"].update({"legacy_state_step": 0.01, "state_step": 1}))
+ir_probe("I30", "legacy_state_step zero", R, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("legacy_state_step", 0))
+ir_probe("I31", "legacy_states empty", R, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("legacy_states", []))
+ir_probe("I32", "legacy_episodes and legacy_index_anchor in the IR", OK, A, lambda b: b["populations"]["new_users"].update({"legacy_episodes": "cohort_rows", "legacy_index_anchor": "scope_cohort"}))
+ir_probe("I33", "legacy_episodes with an unknown value", R, A, lambda b: b["populations"]["new_users"].__setitem__("legacy_episodes", "rows"))
+ir_probe("I34", "legacy_containing_period prior observation in the IR", OK, A, lambda b: b["variables"].__setitem__("po", {"derived": {"kind": "observed_days", "window": {"start": None, "end": -1, "anchor": "index"}, "legacy_containing_period": True}}))
+ir_probe("I35", "legacy_containing_period future observation in the IR", OK, A, lambda b: b["variables"].__setitem__("fo", {"derived": {"kind": "observed_days", "window": {"start": 1, "end": None, "anchor": "index"}, "legacy_containing_period": True}}))
+ir_probe("I36", "legacy_containing_period with an ordinary window", R, A, lambda b: b["variables"].__setitem__("po", {"derived": {"kind": "observed_days", "window": {"start": -365, "end": 0, "anchor": "index"}, "legacy_containing_period": True}}))
+ir_probe("I37", "legacy_names for an output and a column in the IR", OK, A, lambda b: b.__setitem__("legacy_names", {"outputs": {"baseline": "my.output"}, "columns": {"baseline": {"hba1c_base": "hba1c-base"}}}))
+ir_probe("I38", "legacy_names with an unknown map", R, A, lambda b: b.__setitem__("legacy_names", {"other": {"a": "b"}}))
+ir_probe("I39", "legacy_concept_scope in the IR", OK, A, lambda b: b["events"]["hba1c"].__setitem__("legacy_concept_scope", {"concept_set_ref": "t2dm"}))
+ir_probe("I40", "legacy_concept_scope with an extra field", R, A, lambda b: b["events"]["hba1c"].__setitem__("legacy_concept_scope", {"concept_set_ref": "t2dm", "extra": 1}))
+# A-15: the legacy inclusion occurrence is the historical {type, count} object
+def _legacy_spec(**fields):
+    def edit(b):
+        b["populations"]["new_users"]["index"]["source"] = {"legacy_spec": dict({"type": "drug", "concept_set": {"concepts": [1503297]}}, **fields)}
+    return edit
+def _legacy_spec_occ(occurrence):
+    return _legacy_spec(inclusion_criteria={"dm": {"table": "condition_occurrence", "concept_set": {"concepts": [201820]}, "occurrence": occurrence}})
+ir_probe("I41", "legacy_spec occurrence in the min/max form the executor never accepted (A-15)", R, A, _legacy_spec_occ({"min": 1}))
+ir_probe("I42", "legacy_spec occurrence exactly 0 in the IR (A-15)", OK, A, _legacy_spec_occ({"type": "exactly", "count": 0}))
+ir_probe("I43", "legacy_spec occurrence with an unknown type (A-15)", R, A, _legacy_spec_occ({"type": "more_than", "count": 1}))
+# A-16 variants in the IR (accepted, or refused when malformed)
+def _iv(b, **opts):
+    b["outputs"]["iv"] = {"rows": "new_users", "format": "intervals", "options": dict({"sources": [{"event": "hba1c"}]}, **opts)}
+ir_probe("I44", "legacy_raw_filter on an output in the IR (A-16)", OK, A, lambda b: b["outputs"]["baseline"].__setitem__("legacy_raw_filter", {"var": "gender_concept_id", "op": "==", "value": 8507}))
+ir_probe("I45", "legacy_raw_filter that is not a predicate", R, A, lambda b: b["outputs"]["baseline"].__setitem__("legacy_raw_filter", {"private": True}))
+ir_probe("I46", "legacy_anchor_offset with event_select nearest in the IR (A-16)", OK, A, lambda b: _iv(b, event_select="nearest", legacy_anchor_offset=30))
+ir_probe("I47", "legacy_anchor_offset that is not an integer", R, A, lambda b: _iv(b, event_select="nearest", legacy_anchor_offset=1.5))
+ir_probe("I48", "legacy_spec cohort_definition_id in the IR (A-16)", OK, A, _legacy_spec(cohort_definition_id=7))
+ir_probe("I49", "legacy_spec cohort_definition_id zero: a supplied v1 inline id, admitted as supplied (A-16)", OK, A, _legacy_spec(cohort_definition_id=0))
+ir_probe("I50", "scope legacy_cohort_sources with the materialised combine in the IR (A-16)", OK, A, lambda b: b.__setitem__("scope", {"cohort": 3, "tables": [], "combine": "union", "legacy_cohort_sources": [3, 5]}))
+ir_probe("I51", "scope legacy_cohort_sources with one source", R, A, lambda b: b.__setitem__("scope", {"cohort": 3, "combine": "union", "legacy_cohort_sources": [3]}))
+ir_probe("I52", "legacy_automatic_features for the legacy sparse builder in the IR (A-16)", OK, A, lambda b: b["outputs"]["baseline"].__setitem__("legacy_automatic_features", {"format": "sparse", "source": {"event": "hba1c"}}))
+ir_probe("I53", "legacy_anchor_offset of the other sign in the IR (A-16)", OK, A, lambda b: _iv(b, event_select="nearest", legacy_anchor_offset=-14))
+ir_probe("I54", "legacy_anchor_offset zero: lowers to anchor index with the field absent", R, A, lambda b: _iv(b, event_select="nearest", legacy_anchor_offset=0))
+ir_probe("I55", "legacy_anchor_offset with a non-nearest selection", R, A, lambda b: _iv(b, event_select="first", legacy_anchor_offset=30))
+ir_probe("I56", "legacy_anchor_offset without the materialised event_select", R, A, lambda b: _iv(b, legacy_anchor_offset=30))
+ir_probe("I57", "legacy_spec cohort_definition_id negative", R, A, _legacy_spec(cohort_definition_id=-1))
+ir_probe("I58", "scope legacy_cohort_sources without the materialised combine", R, A, lambda b: b.__setitem__("scope", {"cohort": 3, "legacy_cohort_sources": [3, 5]}))
+ir_probe("I59", "scope legacy_cohort_sources with a null scope cohort", R, A, lambda b: b.__setitem__("scope", {"cohort": None, "combine": "union", "legacy_cohort_sources": [3, 5]}))
+ir_probe("I60", "scope legacy_cohort_sources with a results-cohort reference of zero", R, A, lambda b: b.__setitem__("scope", {"cohort": 3, "combine": "intersect", "legacy_cohort_sources": [3, {"type": "cohort_table", "cohort_definition_id": 0}]}))
+probe("P63", "temporal source_analyses with a count-only selection (A-14; a wire field, so valid under both schemas)", OK, A, lambda b: _tc(b, {"hba1c": ["count"]}))
 probe("P44", "censor conditioned on an index source (A-7)", OK, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "which": "first_start_after_entry", "when_index_source": ["acei"]}}]))
 probe("P45", "censor when_index_source must be nonempty and unique", R, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "when_index_source": ["acei", "acei"]}}]))
 probe("P46", "censor when_index_source empty array refused", R, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "when_index_source": []}}]))
+# A-14: per-source analyses on the wire
+probe("P50", "temporal source_analyses selecting one analysis for one source (A-14)", OK, A, lambda b: _tc(b, {"hba1c": ["binary"]}))
+probe("P51", "temporal source_analyses with an unknown analysis", R, A, lambda b: _tc(b, {"hba1c": ["bogus"]}))
+probe("P52", "temporal source_analyses with an empty selection", R, A, lambda b: _tc(b, {"hba1c": []}))
+probe("P53", "temporal source_analyses keyed outside the name grammar", R, A, lambda b: _tc(b, {"9x": ["binary"]}))
+# A-10: every IR-only variant is refused on the wire ...
+probe("P54", "legacy_columns on the wire", R, A, lambda b: b["outputs"]["baseline"].__setitem__("legacy_columns", ["person_id"]))
+probe("P55", "legacy_temporal on the wire", R, A, lambda b: _long(b, legacy_temporal=_LT))
+probe("P56", "legacy_automatic_features on the wire", R, A, lambda b: b["outputs"]["baseline"].__setitem__("legacy_automatic_features", {"format": "wide", "source": {"event": "hba1c"}}))
+probe("P57", "legacy_single_outcome on the wire", R, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("legacy_single_outcome", True))
+probe("P58", "legacy_states and legacy_state_step on the wire", R, A, lambda b: b["outputs"]["tte"]["options"].update({"legacy_states": ["index", "mi"], "legacy_state_step": 0.01}))
+probe("P59", "legacy_episodes on the wire", R, A, lambda b: b["populations"]["new_users"].update({"legacy_episodes": "cohort_rows", "legacy_index_anchor": "scope_cohort"}))
+probe("P60", "legacy_containing_period on the wire", R, A, lambda b: b["variables"].__setitem__("po", {"derived": {"kind": "observed_days", "window": {"start": None, "end": -1, "anchor": "index"}, "legacy_containing_period": True}}))
+probe("P61", "legacy_names on the wire", R, A, lambda b: b.__setitem__("legacy_names", {"outputs": {"baseline": "my.output"}}))
+probe("P62", "legacy_concept_scope on the wire", R, A, lambda b: b["events"]["hba1c"].__setitem__("legacy_concept_scope", {"concept_set_ref": "t2dm"}))
+# A-16: refused on the wire
+probe("P64", "legacy_raw_filter on the wire", R, A, lambda b: b["outputs"]["baseline"].__setitem__("legacy_raw_filter", {"var": "gender_concept_id", "op": "==", "value": 8507}))
+probe("P65", "legacy_anchor_offset on the wire", R, A, lambda b: _iv(b, event_select="nearest", legacy_anchor_offset=30))
+probe("P66", "scope legacy_cohort_sources on the wire", R, A, lambda b: b.__setitem__("scope", {"cohort": 3, "combine": "union", "legacy_cohort_sources": [3, 5]}))
 # input-level probes carried as JSON TEXT (a conforming JSON document cannot hold
 # Infinity, and duplicate members are only visible to a parser): the R validator
 # parses `instance_text` with jsonlite (1e400 -> Inf; duplicate names kept) and
@@ -390,6 +563,32 @@ dump({"canonicalisation": "RFC 8785 (JSON Canonicalization Scheme) of the normal
       "vectors": vectors}, os.path.join(OUT, "digest-vectors.json"))
 
 # --------------------------------------------------------------------------
+# 6b. normalised fixtures (A-11): the normal form of A, B and the acceptance plans,
+#     pinned as documents, normalised-document hashes and semantic digests
+# --------------------------------------------------------------------------
+from normalize_reference import normalize   # shared with check_contracts.py
+norm_fixtures = [("plan-v2-example-A", "examples/plan-v2-example-A.json", A),
+                 ("plan-v2-example-B", "examples/plan-v2-example-B.json", B)]
+acceptance_dir = os.path.join(os.path.dirname(OUT), "plans", "acceptance")
+if os.path.isdir(acceptance_dir):
+    for d in sorted(os.listdir(acceptance_dir)):
+        path = os.path.join(acceptance_dir, d, "plan.json")
+        if os.path.exists(path):
+            norm_fixtures.append(("acceptance-" + d, os.path.relpath(path, OUT), json.load(open(path))))
+norm_vectors = []
+for label, source, obj in norm_fixtures:
+    n = normalize(obj, plan)
+    assert normalize(n, plan) == n, label
+    dump(n, os.path.join(OUT, "normalized", label + ".json"))
+    norm_vectors.append({"label": label, "source": source,
+                         "normalized_sha256": hashlib.sha256(jcs(n).encode("utf-8")).hexdigest(),
+                         "digest_sha256": digest(n)[1]})
+assert len(norm_vectors) >= 2
+dump({"rule": "amendment A-11: schema defaults in the matching branch, then options/registries {}, publish = output names, population coverage (options.coverage or unique/drop/drop/0; on_missing keep when restrict_to_observation is false), grain (episode for an indexed rows population: index or match, criteria inheriting from its parent, union with any indexed member, intersect/setdiff inheriting from the first member), wide columns = every variable, survival event_order (first for survival/competing_risk, all otherwise) and outcome_mode (composite for survival, named otherwise); nothing else added or removed; idempotent",
+      "note": "raw canonicalisation vectors (digest-vectors.json) are serializer tests of the unnormalised instances; these are the normalised-IR digests the federation signature and the DP capsule bind",
+      "vectors": norm_vectors}, os.path.join(OUT, "normalized-vectors.json"))
+
+# --------------------------------------------------------------------------
 # 7. validate everything with jsonschema (2020-12) and write SHA256SUMS
 # --------------------------------------------------------------------------
 from jsonschema import Draft202012Validator
@@ -404,6 +603,9 @@ for p in probes + mprobes:
         bad.append(p["id"])
 assert not bad, "probe verdict mismatch: %s" % bad
 assert validators["ir-v2"].is_valid(A) and validators["ir-v2"].is_valid(B)
+for label, _, obj in norm_fixtures:
+    n = normalize(obj, plan)
+    assert validators["plan-v2"].is_valid(n) and validators["ir-v2"].is_valid(n), "normalised %s does not validate" % label
 print("validated %d plan/ir probes and %d mutate probes" % (len(probes), len(mprobes)))
 
 sums = []

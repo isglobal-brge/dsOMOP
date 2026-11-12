@@ -1,0 +1,125 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "concept_sets": {
+    "type_2_diabetes": {
+      "concepts": [
+        201820
+      ],
+      "include_descendants": true,
+      "include_mapped": false,
+      "exclude": null
+    }
+  },
+  "events": {
+    "type_2_diabetes_dx": {
+      "table": "condition_occurrence",
+      "concept_set": "type_2_diabetes",
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    }
+  },
+  "populations": {
+    "t2dm_first": {
+      "kind": "index",
+      "label": "Type 2 diabetes (Circe)",
+      "index": {
+        "source": {
+          "event": "type_2_diabetes_dx"
+        },
+        "select": "first_eligible",
+        "n": 1,
+        "offset": 0,
+        "end": {
+          "strategy": "observation_end",
+          "days": null,
+          "pad": 0
+        },
+        "restrict_to_observation": true
+      },
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      },
+      "where": {
+        "observed": {
+          "before": 365,
+          "after": 0,
+          "gap": null
+        }
+      },
+      "parent": null
+    }
+  },
+  "variables": {
+    "age_group": {
+      "derived": {
+        "kind": "age",
+        "reference": "index",
+        "bands": true,
+        "reference_date": null,
+        "age_breaks": null
+      }
+    },
+    "sex": {
+      "derived": {
+        "kind": "sex_mf"
+      }
+    },
+    "prior_obs": {
+      "derived": {
+        "kind": "observed_days",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        }
+      }
+    }
+  },
+  "outputs": {
+    "baseline": {
+      "rows": "t2dm_first",
+      "format": "wide",
+      "grain": "episode",
+      "result_symbol": "D_baseline",
+      "collapse": null,
+      "columns": [
+        "age_group",
+        "sex",
+        "prior_obs"
+      ],
+      "sources": [],
+      "options": {
+        "date_handling": {
+          "mode": "relative",
+          "reference": "index",
+          "bin_width": null,
+          "date_columns": null
+        },
+        "time_window": null
+      }
+    }
+  },
+  "options": {
+    "translate_concepts": true,
+    "block_sensitive": true,
+    "factor_concepts": true
+  },
+  "intervals": {},
+  "publish": [
+    "baseline"
+  ]
+}
