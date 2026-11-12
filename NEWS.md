@@ -74,7 +74,9 @@ Security release: the P0 fixes of the OHDSI-tools audit.
   periods, half-open windows): outcomes outside observation no longer count and
   person-days count whole days of `[start, end + 1)`.
 - MariaDB servers with a distribution suffix in their version (for example
-  Ubuntu's `10.6.23-MariaDB-0ubuntu0.22.04.1`) are recognized.
+  Ubuntu's `10.6.23-MariaDB-0ubuntu0.22.04.1`) are recognized. Before, the
+  last dotted number (`0.22.04`) was read as the server version, so every
+  connection to such a server was refused as older than MariaDB 10.2.
 
 ## Newly protected (auto mode)
 
