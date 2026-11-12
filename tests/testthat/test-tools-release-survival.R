@@ -561,8 +561,19 @@ test_that("interaction Cox reuses components across labels and keeps windows' at
               "target_outcomes")) {
     expect_identical(a[[f]], b[[f]], info = f)
   }
-  expect_identical(attr(a, "dsomop_release")$owners,
-                   attr(b, "dsomop_release")$owners)
+  oa <- attr(a, "dsomop_release")$owners
+  ob <- attr(b, "dsomop_release")$owners
+  # The pooling schema names the public partition, so different requested
+  # concepts must remain distinguishable across sites even when their
+  # realised maps coincide here. All signed atoms and model outputs replay.
+  for (i in seq_along(oa)) {
+    if (is.null(oa[[i]]$family_basis)) next
+    expect_identical(oa[[i]]$family_basis$family_id$concept_id, "317009")
+    expect_identical(ob[[i]]$family_basis$family_id$concept_id, "201820")
+    oa[[i]]$family_basis$family_id$concept_id <- NULL
+    ob[[i]]$family_basis$family_id$concept_id <- NULL
+  }
+  expect_identical(oa, ob)
 })
 
 test_that("near-zero subgroup events give a stable unavailable Cox estimate", {
