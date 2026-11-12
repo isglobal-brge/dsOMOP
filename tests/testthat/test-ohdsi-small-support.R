@@ -177,6 +177,31 @@ test_that("G-04: exposed and unexposed event floors gate the IRR family", {
   })
 })
 
+test_that("G-04: unrelated extra upstream counts neither leak nor unlock", {
+  # Current upstream schemas carry more counts (eras, days, observation
+  # periods). They are not public columns and cannot stand in for the
+  # exposed-case person basis.
+  h <- ss_sccs_handle()
+  on.exit(cleanup_handle(h))
+  DBI::dbExecute(h$conn,
+                 "ALTER TABLE sccs_result ADD COLUMN covariate_eras INTEGER")
+  DBI::dbExecute(h$conn,
+                 "ALTER TABLE sccs_result ADD COLUMN covariate_days INTEGER")
+  DBI::dbExecute(h$conn, paste(
+    "ALTER TABLE sccs_result ADD COLUMN outcome_observation_periods INTEGER"))
+  DBI::dbExecute(h$conn, paste(
+    "UPDATE sccs_result SET covariate_eras = 40, covariate_days = 1200,",
+    "outcome_observation_periods = 20"))
+  .buildBlueprint(h, force = TRUE)
+  withr::with_options(ss_opts(), {
+    r <- .ohdsiGetResults(h, "sccs_result")
+    expect_equal(nrow(r), 4L)
+    expect_identical(ss_finite_stats(r), 0L)
+    expect_false(any(c("covariate_eras", "covariate_days",
+                       "outcome_observation_periods") %in% names(r)))
+  })
+})
+
 test_that("G-04: prefixed physical SCCS tables use the same statistic gate", {
   h <- ss_sccs_handle()
   on.exit(cleanup_handle(h))
@@ -552,6 +577,10 @@ test_that("G-05: each arm's bases are checked separately", {
                             stats$outcomes))))
   }
   expect_true(is.na(.omopCmReleasedMdrr(arm(), arm(outcome_persons = 2))))
+  expect_true(is.na(.omopCmReleasedMdrr(arm(), arm(outcomes = 1,
+                                                   outcome_persons = 1))))
+  expect_true(is.na(.omopCmReleasedMdrr(arm(), arm(outcomes = 0,
+                                                   outcome_persons = 0))))
   expect_true(is.na(.omopCmReleasedMdrr(arm(persons = 1), arm())))
   expect_equal(.omopCmReleasedMdrr(arm(), arm(outcomes = 7, outcome_persons = 7)),
                ss_mdrr_formula(15, 145900, 145900))
