@@ -50,6 +50,11 @@ fills its entries. Classes follow design-2.10.3 section 5.
 - (A-9) The plan code no longer claims that windowed population filters
   without a cohort index fall back to the server wall clock: they need an
   explicit `reference_date` and fail closed without one (behaviour unchanged).
+- (A-E6) Legacy index-event candidates with zero or multiple covering
+  observation periods are dropped under the default `unique/drop/drop`
+  policy. An ambiguous private candidate no longer aborts the whole plan;
+  the remaining candidates participate in primary selection and final
+  published outputs still pass the support gate.
 - (A-E14) The unrestricted `base` population of a multi-population v1 plan
   (declared without criteria) is every person in scope, as in a
   single-population plan; 2.10.2 resolved it to no person
