@@ -16,14 +16,93 @@
 # J K each). The capped record-weighted mean and SD are post-processing of R,
 # S and Q only; N is never the record denominator. Without a public scale
 # (quantities, costs and measurements whose concept x unit or currency is not
-# registered) only N and R are released and the moments are unavailable.
+# registered) the moments are unavailable and the stratum releases instead a
+# weighted value histogram H of the same kept records on the public signed
+# 1-2-5 grid (explicit underflow and overflow tails; sensitivity K), whose
+# cells are reconciled to the stratum's protected record total R (never to
+# the person total N) and give interval quantiles (review section 6, R07).
+#
+# Candidate strata have public meanings: every concept identifier
+# (with an explicit unknown-concept cell), concept x unit or concept x
+# currency (unknown units or currencies their own cell), or the calendar
+# start years 1900 to the reference year with explicit before-1900 and
+# after-reference-year tails and an unknown-year cell. The exact
+# distinct-person support floor chooses the displayed cells (an exact gate
+# outside any joint privacy guarantee).
 
 # Static allocations of the reference epsilon: N belongs to the shared
-# eligible-person owner, R, S and Q to the record-moment owner.
+# eligible-person owner, R, S, Q and H to the record-moment owner. A stratum
+# draws either the moments S and Q (registered scale) or the value histogram H
+# (no registered scale), never both, and every person keeps at most K records
+# across all strata, so S, Q and H share one whole-person record budget: their
+# joint privacy loss is max(S + Q, H), and H takes the moments' share.
 .DSOMOP_RELEASE_RECORD_FRACTIONS <- list(
-  mean_sd = list(N = 0.2, R = 0.3, S = 0.3, Q = 0.2),
-  mean = list(N = 0.2, R = 0.4, S = 0.4)
+  mean_sd = list(N = 0.2, R = 0.3, S = 0.3, Q = 0.2, H = 0.5),
+  mean = list(N = 0.2, R = 0.4, S = 0.4, H = 0.4)
 )
+
+# The versioned value histogram of strata without a registered scale and the
+# versioned display projection of record releases (dsOMOPClient applies the
+# same projection to pooled components).
+.DSOMOP_RELEASE_RECORD_HISTOGRAM <- "record-value-histogram-v1"
+.DSOMOP_RELEASE_RECORD_DISPLAY <- "record-display-v1"
+
+# The public scale-free grid of the record value histograms.
+.dsomopReleaseRecordValueGrid <- function() .dsomopReleaseGrid("signed_125")
+
+#' Displayed persons and records of one record stratum
+#'
+#' The versioned display projection \code{record-display-v1}: persons are
+#' \code{max(0, N)}; records are held inside their feasible range for the
+#' displayed persons, \code{[N, K N]} (every displayed person has at least one
+#' and at most K kept records), before the moments and the value histogram are
+#' projected onto them. The signed components are never changed.
+#'
+#' @param n Signed noisy person total.
+#' @param r Signed noisy record total (NA when not drawn).
+#' @param K Whole-person record cap.
+#' @return Named numeric: \code{n}, \code{r}.
+#' @keywords internal
+.dsomopReleaseRecordDisplay <- function(n, r, K) {
+  n_display <- pmax(0, n)
+  r_display <- ifelse(is.na(r), NA_real_,
+                      pmin(K * n_display, pmax(n_display, r)))
+  list(n = n_display, r = r_display)
+}
+
+#' Declared public stratum domain of a record summary
+#'
+#' @param kind Strata kind ("concept", "concept_unit", "concept_currency",
+#'   "year").
+#' @param year Public reference year (the end of the start-year domain).
+#' @return List: kind, cells, unknown and tails (public metadata).
+#' @keywords internal
+.omopReleaseRecordDomain <- function(kind, year = .dsomopToolsReferenceYear()) {
+  concept <- paste0("every integer concept identifier of the question's ",
+                    "domain (the public OMOP vocabulary)")
+  switch(kind,
+    concept = list(kind = "concept", cells = concept,
+                   unknown = "concept=unknown (records without a concept)",
+                   tails = character(0)),
+    concept_unit = list(
+      kind = "concept x unit",
+      cells = paste0(concept, " x every unit concept identifier"),
+      unknown = "unit=unknown (NULL or 0 units); concept=unknown",
+      tails = character(0)),
+    concept_currency = list(
+      kind = "concept x currency",
+      cells = paste0(concept, " x every currency concept identifier"),
+      unknown = "currency=unknown (NULL or 0 currencies); concept=unknown",
+      tails = character(0)),
+    year = list(
+      kind = "start year",
+      cells = paste0("calendar years 1900 to ", year),
+      unknown = "year=unknown (no start year)",
+      tails = c("year=before-1900 (displayed as start_year 1899)",
+                paste0("year=after-", year, " (displayed as start_year ",
+                       year + 1L, ")"))),
+    stop("Unknown record strata kind.", call. = FALSE))
+}
 
 # The public calendar-month duration grid; values above 360 months are its
 # declared tail (clipped to 360 for the moments).
@@ -245,13 +324,22 @@
   unit[is.na(unit)] <- 0
   year <- suppressWarnings(as.numeric(raw$year_id %||%
                                         rep(NA_real_, nrow(raw))))
+  # The public start-year domain: 1900 to the reference year, explicit tails
+  # before and after it (displayed as 1899 and the year after) and an unknown
+  # cell, so no displayed year is a private out-of-range value.
+  ref <- .dsomopToolsReferenceYear()
+  year_key <- ifelse(is.na(year), "unknown",
+                     ifelse(year < 1900, "before-1900",
+                            ifelse(year > ref, paste0("after-", ref),
+                                   .omopReleaseRecordNumberText(year))))
+  year <- ifelse(is.na(year), NA_real_, pmin(pmax(year, 1899), ref + 1))
   stratum <- switch(kind,
     concept = paste0("concept=", .omopReleaseRecordNumberText(concept)),
     concept_unit = .omopReleaseUnitKey(concept, unit),
     concept_currency = paste0(
       "concept=", .omopReleaseRecordNumberText(concept), "|currency=",
       ifelse(unit == 0, "unknown", .omopReleaseRecordNumberText(unit))),
-    year = paste0("year=", .omopReleaseRecordNumberText(year)))
+    year = paste0("year=", year_key))
   if (identical(kind, "concept_unit")) {
     stratum[is.na(concept)] <- paste0("concept=unknown|unit=",
                                       sub("^.*\\|unit=", "",
@@ -276,29 +364,39 @@
 #' @param scale_of Function from a stratum key to its public scale or NULL.
 #' @param with_sd Whether the question displays an SD (draws Q).
 #' @param record_order Public record order (for the label).
+#' @param domain Declared public stratum domain
+#'   (\code{.omopReleaseRecordDomain}), or NULL.
 #' @keywords internal
 .dsomopReleaseRecordOwner <- function(id, estimand, scale_of, with_sd = TRUE,
-                                      record_order = character(0)) {
+                                      record_order = character(0),
+                                      domain = NULL) {
   list(id = id, population = id, family = "RM",
        strata = list(kind = "data"), cap = .DSOMOP_RELEASE_MULTI_CAP,
        scale_of = scale_of,
        allocation = if (isTRUE(with_sd)) .DSOMOP_RELEASE_RECORD_FRACTIONS$mean_sd
          else .DSOMOP_RELEASE_RECORD_FRACTIONS$mean,
        record_order = record_order, grid = NULL, bounds = NULL,
+       domain = domain, value_grid = .dsomopReleaseRecordValueGrid(),
        estimand = estimand)
 }
 
 #' Build, noise and display capped record-weighted components
 #'
 #' Per released stratum: the eligible-person total N (shared person-count
-#' owner, sensitivity K), the capped record count R (sensitivity K) and, on a
-#' public scale and with enough distinct persons, the normalized lattice sums
-#' S and Q of the records (sensitivity J K each). Displayed persons and
-#' records are \code{max(0, .)} of N and R; the mean and SD are the
-#' projection of (S, Q) onto their feasible set for the displayed R, never
-#' using N. Strata need the exact support floor of distinct persons, and
-#' moments \code{nfilter.dist} distinct persons (exact support gates outside
-#' the fixed-vector guarantee, as for every protected owner).
+#' owner, sensitivity K), the capped record count R (sensitivity K) and, with
+#' enough distinct persons, either the normalized lattice sums S and Q of the
+#' records on the stratum's registered public scale (sensitivity J K each) or,
+#' without a registered scale, the weighted value histogram H of the same
+#' records on the public signed 1-2-5 grid (sensitivity K; tails explicit).
+#' Displayed values follow the versioned projection
+#' \code{.DSOMOP_RELEASE_RECORD_DISPLAY}: persons \code{max(0, N)}, records
+#' held in \code{[N, K N]} (\code{.dsomopReleaseRecordDisplay}); the mean and
+#' SD are the projection of (S, Q) onto their feasible set for the displayed
+#' records, never using N; H cells are reconciled (signed) to the stratum's
+#' signed R and projected (displayed) onto its displayed R, and give interval
+#' quantiles. Strata need the exact support floor of distinct persons, and
+#' moments and histograms \code{nfilter.dist} distinct persons (exact support
+#' gates outside the fixed-vector guarantee, as for every protected owner).
 #'
 #' @param policy DP policy.
 #' @param protection "fixed_synopsis" or "realised_sticky".
@@ -308,7 +406,8 @@
 #' @param data_strata_keys Strata to release, or NULL for every supported one.
 #' @param n_only Draw only the person totals (a first ranking pass; the noise
 #'   is deterministic, so the full pass reproduces them).
-#' @return List: owner, protection, strata (displayed results), export.
+#' @return List: owner, protection, strata (displayed results), hist
+#'   (displayed value histograms and quantile intervals by stratum), export.
 #' @keywords internal
 .dsomopReleaseBuildRecordMoments <- function(policy, protection, owner, sub,
                                              data_strata_keys = NULL,
@@ -318,6 +417,8 @@
   J <- .DSOMOP_RELEASE_LATTICE
   K <- max(1L, as.integer(owner$cap))
   frac <- owner$allocation
+  value_grid <- owner$value_grid %||% .dsomopReleaseRecordValueGrid()
+  value_keys <- .dsomopReleaseBinKeys(value_grid)
   if (!is.data.frame(sub) ||
       !all(c("person_id", "stratum", "v") %in% names(sub))) {
     stop("A protected record substrate lacks its columns.", call. = FALSE)
@@ -358,6 +459,7 @@
       sensitivity = sensitivity, fingerprint = fp))
   }
   rows <- vector("list", length(strata_keys))
+  h_noisy <- vector("list", length(strata_keys))
   for (i in seq_along(strata_keys)) {
     s <- strata_keys[[i]]
     in_s <- which(sub$stratum == s)
@@ -385,11 +487,21 @@
         if (!is.null(frac$Q)) {
           q_noisy <- noisy("Q", coordinate, sum(q_p), frac$Q, J * K, tok, q_p)
         }
+      } else if (is.null(scale) && dist_ok && !is.null(frac$H)) {
+        # No registered scale: the weighted value histogram of the same kept
+        # records (each record one unit in its public value cell).
+        cell <- .dsomopReleaseBinIndex(sub$v[in_s], value_grid)
+        h_noisy[[i]] <- vapply(seq_along(value_keys), function(b) {
+          w <- tabulate(idx[cell == b], n_exact)
+          hit <- which(w > 0)
+          noisy("H", paste0("stratum=", s, "|cell=", value_keys[[b]]),
+                sum(w), frac$H, K, tok[hit], w[hit])
+        }, numeric(1L))
       }
     }
     rows[[i]] <- data.frame(
       stratum = s, n_noisy = n_noisy, r_noisy = r_noisy, s_noisy = s_noisy,
-      q_noisy = q_noisy, dist_ok = dist_ok,
+      q_noisy = q_noisy, dist_ok = dist_ok, h_drawn = !is.null(h_noisy[[i]]),
       scale_id = scale$id %||% NA_character_,
       lower = scale$lower %||% NA_real_, upper = scale$upper %||% NA_real_,
       stringsAsFactors = FALSE)
@@ -397,13 +509,14 @@
   strata <- if (length(rows)) do.call(rbind, rows) else
     data.frame(stratum = character(0), n_noisy = numeric(0), r_noisy = numeric(0),
                s_noisy = numeric(0), q_noisy = numeric(0),
-               dist_ok = logical(0), scale_id = character(0),
-               lower = numeric(0), upper = numeric(0),
+               dist_ok = logical(0), h_drawn = logical(0),
+               scale_id = character(0), lower = numeric(0), upper = numeric(0),
                stringsAsFactors = FALSE)
   strata$stratum_order <- suppressWarnings(as.numeric(
     sub$stratum_order[match(strata$stratum, sub$stratum)]))
-  strata$n_display <- pmax(0, strata$n_noisy)
-  strata$r_display <- pmax(0, strata$r_noisy)
+  shown <- .dsomopReleaseRecordDisplay(strata$n_noisy, strata$r_noisy, K)
+  strata$n_display <- shown$n
+  strata$r_display <- shown$r
   strata$mean <- NA_real_
   strata$sd <- NA_real_
   usable <- strata$dist_ok & is.finite(strata$s_noisy) &
@@ -426,6 +539,28 @@
       strata$mean[[i]] <- L + (U - L) * min(R, max(0, Su0)) / R
     }
   }
+  # Value histograms: signed cells reconciled to the signed record total R,
+  # displayed cells projected onto the displayed records; interval quantiles
+  # (N02) from the displayed cells.
+  bin_frame <- .dsomopReleaseBinFrame(value_grid)
+  h_signed <- vector("list", nrow(strata))
+  hist <- list()
+  for (i in which(strata$h_drawn)) {
+    h <- h_noisy[[i]]
+    h_signed[[i]] <- h + (strata$r_noisy[[i]] - sum(h)) / length(h)
+    display <- .dsomopReleaseSimplex(h, strata$r_display[[i]])
+    quantiles <- if (strata$n_display[[i]] >= max(2, support$dist) &&
+                     strata$r_display[[i]] > 0) {
+      .dsomopReleaseQuantileBounds(display, value_grid)
+    } else NULL
+    hist[[strata$stratum[[i]]]] <- list(
+      bins = data.frame(bin = bin_frame$bin, bin_label = bin_frame$bin_label,
+                        bin_lower = bin_frame$bin_lower,
+                        bin_upper = bin_frame$bin_upper,
+                        records = .dsomopReleaseRound(display),
+                        stringsAsFactors = FALSE),
+      quantiles = quantiles)
+  }
   for (col in c("n_display", "r_display", "mean", "sd")) {
     strata[[col]] <- .dsomopReleaseRound(strata[[col]])
   }
@@ -435,30 +570,40 @@
          r = if (isTRUE(n_only)) NULL else strata$r_noisy[[i]],
          s = if (is.finite(strata$s_noisy[[i]])) strata$s_noisy[[i]] else NULL,
          q = if (is.finite(strata$q_noisy[[i]])) strata$q_noisy[[i]] else NULL,
+         h = h_signed[[i]],
          scale = if (has_scale) strata$scale_id[[i]] else NULL,
          bounds = if (has_scale) c(strata$lower[[i]], strata$upper[[i]]) else
            NULL)
   })
+  any_h <- any(strata$h_drawn)
   list(
-    owner = owner, protection = protection, strata = strata,
+    owner = owner, protection = protection, strata = strata, hist = hist,
     root_n = NA_real_, bins = list(), bin_keys = character(0),
-    export = list(
+    export = c(list(
       protocol = .DSOMOP_RELEASE_PROTOCOL, owner = owner$id,
       population = owner$population, family = "RM", weighting = "record",
       strata_kind = "data", cap = K, cap_scope = "whole_person_records",
       record_order = owner$record_order, lattice = J,
       normalization = "unit_interval", allocation = frac,
-      components = export)
+      display_projection = .DSOMOP_RELEASE_RECORD_DISPLAY,
+      distribution_floor = max(2, support$dist)),
+      if (any_h) list(
+        value_histogram = .DSOMOP_RELEASE_RECORD_HISTOGRAM,
+        value_grid = value_grid$id, value_breaks = value_grid$breaks,
+        value_cell_keys = value_keys,
+        value_reconciliation = "cells_sum_to_signed_record_total_R"),
+      list(components = export))
   )
 }
 
 #' Exact capped record components of one owner (private; sensitivity checks)
 #'
-#' The same whole-person cap check, scales, clipping and lattice as the
-#' builder, without noise. Never released.
+#' The same whole-person cap check, scales, clipping, lattice and value cells
+#' as the builder, without noise. Never released.
 #' @keywords internal
 .dsomopReleaseRecordExactComponents <- function(owner, sub) {
   J <- .DSOMOP_RELEASE_LATTICE
+  value_grid <- owner$value_grid %||% .dsomopReleaseRecordValueGrid()
   sub$v <- suppressWarnings(as.numeric(sub$v))
   sub <- sub[!is.na(sub$person_id) & !is.na(sub$stratum) & is.finite(sub$v),
              , drop = FALSE]
@@ -470,15 +615,26 @@
     m <- if (!is.null(scale)) {
       u <- (pmin(scale$upper, pmax(scale$lower, sub$v[in_s])) - scale$lower) /
         (scale$upper - scale$lower)
-      list(s = sum(round(J * u)), q = sum(round(J * u * u)))
-    } else list(s = 0, q = 0)
+      list(s = sum(round(J * u)), q = sum(round(J * u * u)), h = NULL)
+    } else {
+      cell <- .dsomopReleaseBinIndex(sub$v[in_s], value_grid)
+      list(s = 0, q = 0,
+           h = tabulate(cell, length(value_grid$breaks)))
+    }
     list(n = length(unique(sub$person_id[in_s])), r = sum(in_s), s = m$s,
-         q = m$q)
+         q = m$q, h = m$h)
   })
   stats::setNames(out, keys)
 }
 
 #' Public label component of a record-moment owner
+#'
+#' Reports the allocations, sensitivities and noise scales of the component
+#' families actually drawn (no S or Q when no stratum has a registered scale,
+#' no H when every stratum has one), the union epsilon of the owner (N + R +
+#' max(S + Q, H): moments and the value histogram share the whole-person
+#' record cap), the declared public stratum domain, the display projection
+#' and, for strata without a registered scale, the value histogram grid.
 #'
 #' @param built Output of \code{.dsomopReleaseBuildRecordMoments}.
 #' @param epsilon Reference epsilon.
@@ -487,7 +643,13 @@
   o <- built$owner
   K <- max(1L, as.integer(o$cap))
   J <- .DSOMOP_RELEASE_LATTICE
-  alloc <- o$allocation
+  st <- built$strata
+  drawn <- c("N",
+             if (any(is.finite(st$r_noisy))) "R",
+             if (any(is.finite(st$s_noisy))) "S",
+             if (any(is.finite(st$q_noisy))) "Q",
+             if (any(st$h_drawn %||% FALSE)) "H")
+  alloc <- o$allocation[intersect(names(o$allocation), drawn)]
   sens <- lapply(names(alloc), function(f) if (f %in% c("S", "Q")) J * K else K)
   names(sens) <- names(alloc)
   sd <- lapply(names(alloc), function(f) {
@@ -495,11 +657,14 @@
     if (f %in% c("S", "Q")) s / J else s
   })
   names(sd) <- names(alloc)
-  st <- built$strata
   scaled <- !is.na(st$scale_id)
   scales <- unique(lapply(which(scaled), function(i) {
     list(id = st$scale_id[[i]], lower = st$lower[[i]], upper = st$upper[[i]])
   }))
+  moments <- sum(unlist(alloc[intersect(c("S", "Q"), names(alloc))]))
+  values <- max(moments, alloc$H %||% 0)
+  union <- c(alloc[intersect(c("N", "R"), names(alloc))],
+             if (values > 0) list(record_values = values))
   out <- list(owner = o$id, estimand = o$estimand, family = "RM",
               population = o$population, weighting = "record",
               record_order = o$record_order, contribution_cap = K,
@@ -509,10 +674,35 @@
                                      "round(J u^2), J = ", J),
               scales = scales, allocation_fraction = alloc,
               allocation_epsilon = lapply(alloc, function(a) a * epsilon),
-              sensitivity = sens, noise_sd = sd)
+              sensitivity = sens, noise_sd = sd,
+              union_epsilon = lapply(union, function(a) a * epsilon),
+              joint_cap = paste0(
+                "S and Q (strata with a registered scale) and the value ",
+                "histogram H (strata without one) share the whole-person cap ",
+                "of ", K, " records: a record enters either the moments or ",
+                "the histogram, so their joint privacy loss is max(S + Q, H)"),
+              display_projection = paste0(
+                .DSOMOP_RELEASE_RECORD_DISPLAY, ": persons max(0, N); records ",
+                "held in [N, ", K, " N] for the displayed persons; moments ",
+                "projected for the displayed records; histogram cells ",
+                "projected onto the displayed records"),
+              public_domain = o$domain)
   if (any(!scaled)) {
     out$moments_unavailable <- list(reason = "public_scale_unavailable",
                                     strata = st$stratum[!scaled])
+  }
+  if (any(st$h_drawn %||% FALSE)) {
+    grid <- o$value_grid %||% .dsomopReleaseRecordValueGrid()
+    out$value_histogram <- list(
+      version = .DSOMOP_RELEASE_RECORD_HISTOGRAM, grid = grid$id,
+      strata = st$stratum[st$h_drawn],
+      cells = paste0("[b_i, b_i+1) on the public signed 1-2-5 grid; ",
+                     "(-Inf, ", grid$breaks[[2L]], ") and [",
+                     grid$breaks[[length(grid$breaks)]],
+                     ", Inf) are the explicit underflow and overflow tails"),
+      reconciliation = paste0("signed cells sum to the signed capped record ",
+                              "total R; displayed cells to the displayed ",
+                              "records (never to the person total N)"))
   }
   out
 }
@@ -659,9 +849,11 @@
         "",
       if (plan$scale %in% c("quantity", "measurement", "cost")) paste0(
         "; strata without a registered public scale have unavailable ",
-        "moments") else ""),
+        "moments and release a weighted value histogram of the same kept ",
+        "records on the public signed 1-2-5 grid (interval quantiles in the ",
+        "label)") else ""),
     scale_of = scale_of, with_sd = !is.null(s$sd_col),
-    record_order = order_cols)
+    record_order = order_cols, domain = .omopReleaseRecordDomain(kind))
   keys <- NULL
   if (isTRUE(s$top_n)) {
     p <- Filter(function(x) identical(x$name, "top_n"), entry$params)
@@ -682,26 +874,80 @@
                                             data_strata_keys = keys)
   df <- .omopReleaseRecordRows(handle, built, sub, spec, kind)
   built$export <- .omopReleaseRecordPoolingExport(built, df, sub, s)
+  views <- .omopReleaseRecordHistogramViews(built, df, s)
   attr(df, "dsomop_record_strata") <- NULL
   list(df = df, built = list(built),
-       extra = list(weighting = "record", record_cap = K,
-                    record_order = order_cols))
+       extra = c(list(weighting = "record", record_cap = K,
+                      record_order = order_cols,
+                      public_domain = .omopReleaseRecordDomain(kind),
+                      displayed_strata = paste0(
+                        "data-enumerated strata whose exact distinct-",
+                        "person support reaches the floor (an exact gate ",
+                        "on a data-enumerated realised-sticky route)")),
+                 views))
+}
+
+#' Companion value-histogram views of a record summary
+#'
+#' The summary schemas have no histogram columns, so the displayed value
+#' histograms of the strata without a registered scale and their interval
+#' quantiles (N02) travel in the public label: \code{value_histograms} (one
+#' row per displayed stratum and public value cell: the stratum's displayed
+#' key and label values, the cell interval and the displayed records) and
+#' \code{value_quantiles} (p10 to p90 with each quantile's cell interval and
+#' open/censored flags). Everything is post-processing of the displayed
+#' protected cells.
+#'
+#' @param built Output of \code{.dsomopReleaseBuildRecordMoments}.
+#' @param df Displayed frame with attribute \code{dsomop_record_strata}.
+#' @param summary The question's summary spec.
+#' @return List with \code{value_histograms} and \code{value_quantiles}, or
+#'   an empty list.
+#' @keywords internal
+.omopReleaseRecordHistogramViews <- function(built, df, summary) {
+  hist <- built$hist %||% list()
+  shown <- attr(df, "dsomop_record_strata", exact = TRUE) %||% character(0)
+  keep <- intersect(shown, names(hist))
+  if (!length(keep)) return(list())
+  stats_cols <- c("n_persons", summary$n_col, summary$mean_col,
+                  summary$sd_col)
+  key_cols <- setdiff(names(df), stats_cols)
+  key_of <- function(stratum) {
+    row <- df[match(stratum, shown), key_cols, drop = FALSE]
+    rownames(row) <- NULL
+    row
+  }
+  frames <- lapply(keep, function(k) {
+    b <- hist[[k]]$bins
+    cbind(key_of(k)[rep(1L, nrow(b)), , drop = FALSE], b, row.names = NULL)
+  })
+  quantiles <- lapply(keep, function(k) {
+    q <- hist[[k]]$quantiles
+    if (is.null(q)) return(NULL)
+    cbind(key_of(k)[rep(1L, nrow(q)), , drop = FALSE], q, row.names = NULL)
+  })
+  quantiles <- Filter(Negate(is.null), quantiles)
+  list(value_histograms = do.call(rbind, frames),
+       value_quantiles = if (length(quantiles)) do.call(rbind, quantiles))
 }
 
 #' Release contracts of the record-weighted QueryLibrary summaries
 #'
-#' C7 contracts over the unscoped CDM population (a public basis), released
+#' C7 contracts over data-enumerated supported CDM strata, released
 #' in their original summary schemas. dsOMOPClient 2.10.3 pools compatible
-#' servers by summing the signed N, R, S and Q of each stratum and deriving
+#' servers by summing the signed N, R, S, Q and H of each stratum and deriving
 #' the record-weighted mean and SD once (\code{.omopReleaseRecordPoolingExport}
 #' carries the display fields); older clients see a not-poolable contract.
+#' Public stratum descriptions do not materialize the complete domain: these
+#' contracts use realised-sticky protection even for an unscoped request, and
+#' DP-exclusive mode refuses them without a fixed-public-basis claim.
 #'
 #' @return Named list of contracts.
 #' @keywords internal
 .omopReleaseRecordSummaryContracts <- function() {
   ids <- paste0("dsomop:", names(.DSOMOP_RELEASE_RECORD_SUMMARIES))
   stats::setNames(lapply(ids, function(id) {
-    list(class = "C7", run = .omopReleaseRunRecordSummary, fixed_basis = TRUE,
+    list(class = "C7", run = .omopReleaseRunRecordSummary, fixed_basis = FALSE,
          masked_scoped = character(0), masked_always = character(0),
          summary_shape = TRUE)
   }), ids)

@@ -12,6 +12,11 @@
 \item{epsilon}{Reference epsilon.}
 }
 \description{
-Public label component of a record-moment owner
+Reports the allocations, sensitivities and noise scales of the component
+families actually drawn (no S or Q when no stratum has a registered scale,
+no H when every stratum has one), the union epsilon of the owner (N + R +
+max(S + Q, H): moments and the value histogram share the whole-person
+record cap), the declared public stratum domain, the display projection
+and, for strata without a registered scale, the value histogram grid.
 }
 \keyword{internal}

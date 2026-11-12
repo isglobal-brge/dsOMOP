@@ -7,7 +7,7 @@
 .dsomopReleaseRecordExactComponents(owner, sub)
 }
 \description{
-The same whole-person cap check, scales, clipping and lattice as the
-builder, without noise. Never released.
+The same whole-person cap check, scales, clipping, lattice and value cells
+as the builder, without noise. Never released.
 }
 \keyword{internal}

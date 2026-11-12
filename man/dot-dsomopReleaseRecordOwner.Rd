@@ -9,7 +9,8 @@
   estimand,
   scale_of,
   with_sd = TRUE,
-  record_order = character(0)
+  record_order = character(0),
+  domain = NULL
 )
 }
 \arguments{
@@ -22,6 +23,9 @@
 \item{with_sd}{Whether the question displays an SD (draws Q).}
 
 \item{record_order}{Public record order (for the label).}
+
+\item{domain}{Declared public stratum domain
+(\code{.omopReleaseRecordDomain}), or NULL.}
 }
 \description{
 The owner of a capped record-moment release

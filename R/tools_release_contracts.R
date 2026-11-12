@@ -323,6 +323,19 @@
     owner <- .omopReleaseFirstObsOwner(value_kind, strata)
     sub <- .omopReleaseFirstObsSubstrate(handle, ctx, value_kind, strata)
     built <- .dsomopReleaseBuild(route$policy, route$protection, owner, sub)
+    builts <- list(built)
+    if (!identical(strata, "root")) {
+      # The gender / age-decile strata are children of the root release of
+      # the same population (B03): their cells and moment sums reconcile to
+      # the root owner's, drawn exactly as a root request draws them.
+      root_sub <- sub
+      root_sub$stratum <- rep("root", nrow(root_sub))
+      root_built <- .dsomopReleaseBuild(
+        route$policy, route$protection,
+        .omopReleaseFirstObsOwner(value_kind, "root"), root_sub)
+      built <- .dsomopReleaseNestUnderRoot(built, root_built)
+      builts <- list(built, root_built)
+    }
     st <- built$strata
     labels <- owner$strata$labels
     if (identical(view, "bands")) {
@@ -354,7 +367,7 @@
       }
     }
     rownames(df) <- NULL
-    list(df = df, built = list(built))
+    list(df = df, built = builts)
   }
 }
 
@@ -882,26 +895,17 @@
 
 # --- C6: incidence and CohortMethod person-time ------------------------------------
 
-# Public product strata (e.g. gender x age band x calendar year).
-.omopReleaseProductStrata <- function(dims) {
-  if (length(dims) == 0L) {
-    return(list(kind = "public", keys = "all",
-                labels = data.frame(stratum = "all", label = "all",
-                                    stringsAsFactors = FALSE)))
-  }
-  grid <- expand.grid(lapply(dims, function(d) seq_along(d$keys)),
-                      KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
-  keys <- apply(grid, 1L, function(idx) paste(vapply(seq_along(dims), function(j) {
-    dims[[j]]$keys[[idx[[j]]]]
-  }, character(1L)), collapse = "|"))
-  labels <- apply(grid, 1L, function(idx) paste(vapply(seq_along(dims), function(j) {
-    dims[[j]]$labels[[idx[[j]]]]
-  }, character(1L)), collapse = "|"))
-  list(kind = "public", keys = unname(keys),
-       labels = data.frame(stratum = unname(keys), label = unname(labels),
-                           stringsAsFactors = FALSE))
-}
-
+#' Protected incidence: one canonical person-time tree per population
+#'
+#' Every stratification (gender, age band, calendar year and their crossings)
+#' is a view of one tree (\code{.dsomopReleaseBuildC6Tree}): persons at risk,
+#' persons with a first outcome and observed person-days (each person's
+#' window capped at the 3650-day horizon for events and time), plus the
+#' capped recurrent outcome count (first 10 qualifying events per person, its
+#' own estimand) in \code{outcomes}. Gender, age and year margins of every
+#' view agree with every other view of the same cohort, signed and displayed.
+#'
+#' @keywords internal
 .omopReleaseIncidenceRun <- function(handle, ctx, params, route, snap) {
   if (is.null(ctx$scoped_cohort)) {
     return(list(df = data.frame(), built = list()))
@@ -919,6 +923,7 @@
   by_gender <- identical(params$strat_by_gender %||% "0", "1")
   by_year <- identical(params$strat_by_year %||% "0", "1")
   band <- as.integer(params$age_band_years %||% "10")
+  if (is.na(band) || !band %in% c(5L, 10L, 20L)) band <- 10L
   out_src <- .omopOutcomeSource(handle, params$outcome_concept_id,
                                 params$domain_code %||% "0")
   substrate <- .omopPersonOutcomeSubstrateSql(
@@ -930,78 +935,51 @@
   age_days <- .omopDateDiffDays(handle, anchor, "p.birth_dt")
   sql <- .sql_translate(paste0(
     "SELECT c.subject_id AS person_id, c.person_days AS t, ",
-    "c.person_outcomes AS e, p.gender_concept_id AS gender, ",
+    "c.person_outcomes AS e, c.outcomes AS r, ",
+    "p.gender_concept_id AS gender, ",
     .omopFloorDivideSql(age_days, 365L), " AS age, ",
     .omopYearExpr(handle, anchor), " AS yr FROM ", substrate, " c ",
     "INNER JOIN ", person, " p ON p.person_id = c.subject_id"),
     handle$target_dialect)
   raw <- .omopReleaseFetch(handle, gsub("p.birth_dt", birth_dt, sql,
                                         fixed = TRUE))
-  year_max <- .dsomopToolsReferenceYear()
-  dims <- list()
-  if (by_gender) {
-    genders <- .dsomopToolsGenders()
-    dims$gender <- list(keys = paste0("gender=", genders$gender_concept_id),
-                        labels = genders$gender_name)
-  }
-  bands <- seq.int(0L, 110L, by = band)
-  if (by_age) {
-    dims$age <- list(keys = c(paste0("age=", bands), "age=unknown"),
-                     labels = c(as.character(bands), "unknown"))
-  }
-  years <- seq.int(1970L, year_max)
-  if (by_year) {
-    dims$year <- list(keys = c("year=before_1970", paste0("year=", years),
-                               "year=unknown"),
-                      labels = c("before 1970", as.character(years),
-                                 "unknown"))
-  }
-  strata <- .omopReleaseProductStrata(dims)
-  stratum_of <- function(r) {
-    parts <- character(0)
-    if (by_gender) parts <- c(parts, .omopReleaseGenderKey(r$gender))
-    if (by_age) {
-      a <- suppressWarnings(as.integer(r$age))
-      parts <- c(parts, ifelse(is.na(a) | a < 0L, "age=unknown",
-                               paste0("age=", pmin((a %/% band) * band,
-                                                   max(bands)))))
-    }
-    if (by_year) {
-      y <- suppressWarnings(as.integer(r$yr))
-      parts <- c(parts, ifelse(is.na(y) | y > year_max, "year=unknown",
-                               ifelse(y < 1970L, "year=before_1970",
-                                      paste0("year=", y))))
-    }
-    if (length(parts) == 0L) return(rep("all", nrow(r)))
-    do.call(paste, c(as.list(data.frame(matrix(parts, nrow = nrow(r)),
-                                        stringsAsFactors = FALSE)), sep = "|"))
-  }
-  sub <- if (nrow(raw)) data.frame(
-    person_id = raw$person_id, stratum = stratum_of(raw),
+  tree_keys <- .dsomopReleaseC6TreeKeys(raw$gender, raw$age, raw$yr)
+  # The first K qualifying events of each person (one whole-person cap; each
+  # person belongs to exactly one node of every level).
+  sub <- data.frame(
+    person_id = raw$person_id %||% character(0),
+    gender = tree_keys$gender, age5 = tree_keys$age5, year = tree_keys$year,
     event = suppressWarnings(as.numeric(raw$e)),
     time = suppressWarnings(as.numeric(raw$t)),
-    stringsAsFactors = FALSE) else
-    data.frame(person_id = character(0), stratum = character(0),
-               event = numeric(0), time = numeric(0))
+    recurrent = pmin(.DSOMOP_RELEASE_RECURRENT_CAP,
+                     suppressWarnings(as.numeric(raw$r))),
+    stringsAsFactors = FALSE)
+  outcome_key <- .omopReleaseOutcomeKey(params$outcome_concept_id,
+                                        params$domain_code %||% "0")
   owner <- c(list(
-    id = "incidence/first-outcome-person-time/v2",
-    population = "c6/persons-at-risk/v1", strata = strata, cap = 1L,
+    id = "incidence/first-outcome-person-time/tree/v1",
+    population = "c6/persons-at-risk/v1", cap = 1L,
+    recurrent_owner = paste0("c6/capped-recurrent-outcomes/K=",
+                             .DSOMOP_RELEASE_RECURRENT_CAP, "/", outcome_key),
     estimand = paste0("persons at risk, persons with a first outcome and ",
                       "observed person-days, each person's observed window ",
                       "capped at ", .DSOMOP_RELEASE_TIME_CAP,
-                      " days for both events and time")),
-    .omopReleaseC6Owners(.omopReleaseOutcomeKey(
-      params$outcome_concept_id, params$domain_code %||% "0"), "full"))
-  built <- .dsomopReleaseBuildC6(route$policy, route$protection, owner, sub)
-  st <- built$strata
-  lab <- strata$labels[match(st$stratum, strata$labels$stratum), ,
-                       drop = FALSE]
-  persons <- st$n_display
-  events <- st$events_display
-  time <- st$time_display
+                      " days for both events and time; outcomes: capped ",
+                      "recurrent outcome events (first ",
+                      .DSOMOP_RELEASE_RECURRENT_CAP, " per person)")),
+    .omopReleaseC6Owners(outcome_key, "full"))
+  tree <- .dsomopReleaseBuildC6Tree(
+    route$policy, route$protection, owner, sub,
+    levels = .dsomopReleaseC6TreeLevels(by_gender, by_age, by_year))
+  view <- .dsomopReleaseC6TreeView(tree, by_gender, by_age, by_year, band)
+  built <- .dsomopReleaseC6TreeBuilt(tree, view, route$policy)
+  cells <- view$cells
+  persons <- .dsomopReleaseRound(cells$N_d)
+  events <- .dsomopReleaseRound(cells$E_d)
+  time <- .dsomopReleaseRound(cells$T_d)
   df <- data.frame(
-    stratum = lab$label, persons_at_risk = persons, person_days = time,
-    outcomes = NA_real_, person_outcomes = events,
+    stratum = cells$label, persons_at_risk = persons, person_days = time,
+    outcomes = .dsomopReleaseRound(cells$R_d), person_outcomes = events,
     proportion = .dsomopReleaseRound(ifelse(persons > 0, events / persons,
                                             NA_real_)),
     rate = .dsomopReleaseRound(ifelse(time > 0, events / time, NA_real_)),
@@ -1221,33 +1199,54 @@
                 extra = list(subgroup_family = "withheld")))
   }
   floor <- .dsomopReleaseSupport()$floor
+  to_sub <- function(fr, label) data.frame(
+    person_id = fr$frame$person_id %||% character(0),
+    stratum = rep(label, nrow(fr$frame)),
+    event = as.numeric(fr$frame$events > 0),
+    time = as.numeric(fr$frame$person_days), stringsAsFactors = FALSE)
+  # The subgroup label and predicate are presentation: membership enters
+  # through the realised maps, so equal memberships share their components
+  # with each other and with the overall arms (B06).
+  node_owner <- function(label) {
+    c(list(id = "cohortmethod/interaction-first-outcome-person-time/v2",
+           population = "c6/persons-at-risk/v1",
+           strata = .omopReleaseArmStrata(), cap = 1L,
+           estimand = paste0(
+             "per arm within subgroup '", label, "': persons, ",
+             "persons with a first outcome and observed ",
+             "person-days, each person's observed window capped at ",
+             .DSOMOP_RELEASE_TIME_CAP, " days for both events and time")),
+      .omopReleaseC6Owners(.omopReleaseOutcomeKey(
+        params$outcome_concept_id,
+        params$outcome_domain_code %||% "0"), "full"))
+  }
+  node_built <- function(lv, label) {
+    .dsomopReleaseBuildC6(route$policy, route$protection, node_owner(label),
+                          rbind(to_sub(lv$target, "arm=target"),
+                                to_sub(lv$comparator, "arm=comparator")))
+  }
+  # The family is a complete partition of each arm: its nodes are reconciled
+  # to the arms' own components (B03), the overall subgroup itself.
+  arm_built <- node_built(arms, "overall")
+  family_builts <- if (length(subgroups) == 1L &&
+                       is.null(subgroups[[1L]]$predicate)) {
+    list(arm_built)
+  } else if (identical(tolower(params$subgroup_kind %||% "concept"), "age")) {
+    atoms <- .omopCmInteractionAgeAtoms(handle, cohorts, tar, arms,
+                                        level_counts, params)
+    .dsomopReleaseC6Family(
+      arm_built, lapply(atoms$nodes, function(lv) node_built(lv, "age atom")),
+      combine = atoms$combine)
+  } else {
+    .dsomopReleaseC6Family(arm_built, lapply(seq_along(subgroups), function(i) {
+      node_built(level_counts[[i]], subgroups[[i]]$label)
+    }))
+  }
   built_all <- list()
   rows <- lapply(seq_along(subgroups), function(i) {
     sg <- subgroups[[i]]
-    lv <- level_counts[[i]]
-    to_sub <- function(fr, label) data.frame(
-      person_id = fr$frame$person_id %||% character(0),
-      stratum = rep(label, nrow(fr$frame)),
-      event = as.numeric(fr$frame$events > 0),
-      time = as.numeric(fr$frame$person_days), stringsAsFactors = FALSE)
-    sub <- rbind(to_sub(lv$target, "arm=target"),
-                 to_sub(lv$comparator, "arm=comparator"))
-    # The subgroup label and predicate are presentation: membership enters
-    # through the realised maps, so equal memberships share their components
-    # with each other and with the overall arms (B06).
-    owner <- c(list(id = "cohortmethod/interaction-first-outcome-person-time/v2",
-                    population = "c6/persons-at-risk/v1",
-                    strata = .omopReleaseArmStrata(), cap = 1L,
-                    estimand = paste0(
-                      "per arm within subgroup '", sg$label, "': persons, ",
-                      "persons with a first outcome and observed ",
-                      "person-days, each person's observed window capped at ",
-                      .DSOMOP_RELEASE_TIME_CAP,
-                      " days for both events and time")),
-               .omopReleaseC6Owners(.omopReleaseOutcomeKey(
-                 params$outcome_concept_id,
-                 params$outcome_domain_code %||% "0"), "full"))
-    built <- .dsomopReleaseBuildC6(route$policy, route$protection, owner, sub)
+    built <- family_builts[[i]]
+    built$owner$estimand <- node_owner(sg$label)$estimand
     built_all[[length(built_all) + 1L]] <<- built
     st <- built$strata
     t_row <- st[st$stratum == "arm=target", , drop = FALSE]
@@ -1269,8 +1268,86 @@
   })
   df <- do.call(rbind, rows)
   rownames(df) <- NULL
+  # The arms' own components (the family's parent) are part of the release.
+  if (!identical(family_builts[[1L]], arm_built)) {
+    built_all[[length(built_all) + 1L]] <- arm_built
+  }
   list(df = df, built = built_all,
        extra = list(subgroup_family = "released"))
+}
+
+#' Five-year age atoms of an interaction age family
+#'
+#' The atoms (negative ages, 0, 5, ..., 105, 110 and older, unknown) of each
+#' arm, from the age at the canonical first index used by the family's own
+#' predicates; every level of a family with public 5-year breaks is a union
+#' of atoms, checked against the level's own member set.
+#'
+#' @return List: \code{nodes} (per atom, target and comparator frames) and
+#'   \code{combine} (atom indices per level).
+#' @keywords internal
+.omopCmInteractionAgeAtoms <- function(handle, cohorts, tar, arms,
+                                       level_counts, params) {
+  atom_keys <- c("neg", as.character(seq.int(0L, 110L, by = 5L)), "unknown")
+  atom_age <- c(-Inf, seq.int(0L, 110L, by = 5L), NA)
+  ages <- function(cohort) {
+    observed <- .omopObservedTarSql(handle, cohort, tar,
+                                    horizon = .DSOMOP_RELEASE_TIME_CAP)
+    age_at <- .omopDateDiffDays(handle, "coh.cohort_start_date", "p.birth_dt")
+    sql <- .omopCmSpliceBirthDate(handle, .sql_translate(paste0(
+      "SELECT coh.subject_id AS subject_id, MIN(",
+      .omopFloorDivideSql(age_at, 365L), ") AS age FROM ", observed,
+      " coh LEFT JOIN ", .qualifyTable(handle, "person"),
+      " p ON p.person_id = coh.subject_id GROUP BY coh.subject_id"),
+      handle$target_dialect))
+    res <- .executeQuery(handle, sql)
+    a <- suppressWarnings(as.integer(res$age))
+    key <- ifelse(is.na(a), "unknown", ifelse(a < 0L, "neg",
+                  as.character(pmin((a %/% 5L) * 5L, 110L))))
+    stats::setNames(key, .dsomopReleasePersonIdText(res$subject_id))
+  }
+  atom_of <- list(target = ages(cohorts$a), comparator = ages(cohorts$b))
+  split_arm <- function(arm, k) {
+    fr <- arms[[arm]]$frame
+    keep <- unname(atom_of[[arm]][fr$person_id]) %in% k
+    keep[is.na(keep)] <- FALSE
+    list(frame = fr[keep, , drop = FALSE])
+  }
+  nodes <- lapply(atom_keys, function(k) {
+    list(target = split_arm("target", k),
+         comparator = split_arm("comparator", k))
+  })
+  # The family's public breaks (snapped to the 5-year grid inside (0, 110)):
+  # levels <lo, [a, b), >= hi and unknown, in the order of
+  # .omopCmInteractionSubgroups.
+  breaks <- suppressWarnings(as.integer(strsplit(
+    as.character(params$age_breaks %||% ""), ",", fixed = TRUE)[[1L]]))
+  breaks <- sort(unique(breaks[!is.na(breaks)]))
+  bounds <- c(-Inf, breaks, Inf)
+  combine <- lapply(seq_len(length(bounds) - 1L), function(j) {
+    which(!is.na(atom_age) & atom_age >= bounds[[j]] &
+            atom_age < bounds[[j + 1L]])
+  })
+  combine[[length(combine) + 1L]] <- which(atom_keys == "unknown")
+  if (length(combine) != length(level_counts) ||
+      any(breaks %% 5L != 0L)) {
+    stop("An interaction age family is not a union of public age atoms.",
+         call. = FALSE)
+  }
+  # Every level is exactly the union of its atoms, in both arms.
+  for (i in seq_along(combine)) {
+    for (arm in c("target", "comparator")) {
+      ids <- level_counts[[i]][[arm]]$frame$person_id
+      all_ids <- arms[[arm]]$frame$person_id
+      union_ids <- all_ids[unname(atom_of[[arm]][all_ids]) %in%
+                             atom_keys[combine[[i]]]]
+      if (!setequal(ids, union_ids)) {
+        stop("An interaction age level is not a union of public age atoms.",
+             call. = FALSE)
+      }
+    }
+  }
+  list(nodes = nodes, combine = combine)
 }
 
 # --- C7/C8: native distributions -----------------------------------------------
@@ -1705,54 +1782,6 @@
   rows <- .omopReleaseConceptRows(built, raw)
   rows$n_persons <- NULL
   list(df = rows, built = list(built))
-}
-
-# C8: the first outcome event per person relative to the canonical index, on a
-# public signed grid whose bin width is the requested time scale (edge bins
-# hold every earlier or later first event).
-.omopReleaseRunTimeToEvent <- function(handle, ctx, params, route, snap) {
-  if (is.null(ctx$scoped_cohort)) return(list(df = data.frame(), built = list()))
-  cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
-  out_src <- .omopOutcomeSource(handle, params$outcome_concept_id,
-                                params$domain_code %||% "0")
-  if (is.null(out_src)) return(list(df = data.frame(), built = list()))
-  scale <- as.integer(params$time_scale %||% "1")
-  if (!scale %in% c(1L, 30L, 365L)) scale <- 1L
-  .omopDiagAssertPersons(handle, ctx, out_src$table, "o", out_src$person_col,
-                         where_sql = paste0("o.", out_src$concept_col,
-                                            " IN (", out_src$id_list, ")"))
-  first <- .omopFirstCohortEpisodeSql(handle, cohort)
-  offset <- .omopDateDiffDays(handle, paste0("MIN(o.", out_src$date_col, ")"),
-                              "c.cohort_start_date")
-  raw <- .omopReleaseFetch(handle, paste0(
-    "SELECT c.subject_id AS person_id, ", offset, " AS v FROM ", first,
-    " c INNER JOIN ", out_src$table, " o ON o.", out_src$person_col,
-    " = c.subject_id AND o.", out_src$concept_col, " IN (", out_src$id_list,
-    ") GROUP BY c.subject_id, c.cohort_start_date"))
-  span <- if (scale == 1L) 365L else 3650L
-  breaks <- seq.int(-span, span - scale, by = scale)
-  grid <- list(id = paste0("signed-day-offset-", scale, "d-", span, "-v1"),
-               breaks = breaks, lower = NULL, upper = NULL, unit = "days")
-  owner <- .dsomopReleaseOwner(
-    id = paste0("characterization/first-outcome-day-offset/", .dsomopFrame(
-      "v1", .omopReleaseOutcomeKey(params$outcome_concept_id,
-                                   params$domain_code %||% "0"),
-      as.integer(scale))),
-    family = "H", grid = grid,
-    estimand = paste0("day offset of each person's first outcome event from ",
-                      "the cohort index, in ", scale, "-day bins over [",
-                      -span, ", ", span, ") (edge bins hold earlier and ",
-                      "later events)"))
-  sub <- data.frame(person_id = raw$person_id %||% character(0),
-                    stratum = rep("root", nrow(raw)),
-                    v = suppressWarnings(as.numeric(raw$v)),
-                    stringsAsFactors = FALSE)
-  built <- .dsomopReleaseBuild(route$policy, route$protection, owner, sub)
-  counts <- built$bins[["root"]]
-  df <- data.frame(day_offset = as.numeric(breaks),
-                   num_events = .dsomopReleaseRound(counts),
-                   persons = .dsomopReleaseRound(counts))
-  list(df = df, built = list(built))
 }
 
 # --- Mixed frames: protected distribution rows over standard binary rows -------

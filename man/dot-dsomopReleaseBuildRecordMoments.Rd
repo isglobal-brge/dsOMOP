@@ -29,17 +29,24 @@ K rows per person (the caller's whole-person cap).}
 is deterministic, so the full pass reproduces them).}
 }
 \value{
-List: owner, protection, strata (displayed results), export.
+List: owner, protection, strata (displayed results), hist
+  (displayed value histograms and quantile intervals by stratum), export.
 }
 \description{
 Per released stratum: the eligible-person total N (shared person-count
-owner, sensitivity K), the capped record count R (sensitivity K) and, on a
-public scale and with enough distinct persons, the normalized lattice sums
-S and Q of the records (sensitivity J K each). Displayed persons and
-records are \code{max(0, .)} of N and R; the mean and SD are the
-projection of (S, Q) onto their feasible set for the displayed R, never
-using N. Strata need the exact support floor of distinct persons, and
-moments \code{nfilter.dist} distinct persons (exact support gates outside
-the fixed-vector guarantee, as for every protected owner).
+owner, sensitivity K), the capped record count R (sensitivity K) and, with
+enough distinct persons, either the normalized lattice sums S and Q of the
+records on the stratum's registered public scale (sensitivity J K each) or,
+without a registered scale, the weighted value histogram H of the same
+records on the public signed 1-2-5 grid (sensitivity K; tails explicit).
+Displayed values follow the versioned projection
+\code{.DSOMOP_RELEASE_RECORD_DISPLAY}: persons \code{max(0, N)}, records
+held in \code{[N, K N]} (\code{.dsomopReleaseRecordDisplay}); the mean and
+SD are the projection of (S, Q) onto their feasible set for the displayed
+records, never using N; H cells are reconciled (signed) to the stratum's
+signed R and projected (displayed) onto its displayed R, and give interval
+quantiles. Strata need the exact support floor of distinct persons, and
+moments and histograms \code{nfilter.dist} distinct persons (exact support
+gates outside the fixed-vector guarantee, as for every protected owner).
 }
 \keyword{internal}

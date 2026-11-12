@@ -144,11 +144,13 @@ test_that("record-weighted summaries of two live sites pool their components", {
     })
     total <- function(f) sum(vapply(comps, function(c) c[[f]], numeric(1L)))
     expect_equal(out$n_persons[[i]], max(0, total("n")))
-    R <- max(0, total("r"))
+    N <- max(0, total("n"))
+    R <- min(10 * N, max(N, total("r")))
     expect_equal(out$n_records[[i]], R)
     # The moments are the server's derivation from the pooled R, S and Q,
-    # shown once the pooled persons and records both reach 2.
-    if (max(0, total("n")) < 2 || R < 2) {
+    # shown once pooled persons reach the public distribution floor (10)
+    # and records reach 2.
+    if (max(0, total("n")) < 10 || R < 2) {
       expect_true(is.na(out$avg_days[[i]]))
       expect_true(is.na(out$stddev_days[[i]]))
     } else {
@@ -273,4 +275,37 @@ test_that("standard-mode mixed frames of live sites are labelled when pooled", {
                frames$a$person_days + frames$b$person_days)
   expect_match(cl$.analysis_mixed_pool_warnings(frames),
                "person_days.*not exact sums")
+})
+
+
+test_that("one-site record histogram pooling replays its server display", {
+  skip_if_not(.pool_client_ready(), "working-tree dsOMOPClient not loadable")
+  cl <- asNamespace("dsOMOPClient")
+  .release_state()
+  h <- create_test_handle(n_persons = 2000)
+  on.exit(cleanup_handle(h), add = TRUE)
+  DBI::dbExecute(h$conn, "DELETE FROM measurement")
+  DBI::dbWriteTable(h$conn, "measurement", data.frame(
+    measurement_id = 1:4000, person_id = rep(1:2000, each = 2),
+    measurement_concept_id = 3004410L, measurement_date = "2021-01-01",
+    measurement_type_concept_id = 44818518L,
+    value_as_number = rep(c(10, 50), 2000),
+    value_as_concept_id = NA_integer_, unit_concept_id = 999001L,
+    range_low = NA_real_, range_high = NA_real_,
+    visit_occurrence_id = NA_integer_), append = TRUE)
+  id <- "dsomop:measurement.value_stats"
+  frame <- .release_run(h, id, list(concept_id = "3004410"))
+  rp <- .omopAnalysisGet(h, id)$release_pooling
+  pooled <- cl$.pool_protected_analysis(list(site = frame), rp)$result
+  expect_equal(.release_values(pooled), .release_values(frame), tolerance=1e-6)
+  # Additional label/payload fields are protected post-processing only.
+  hist <- attr(pooled, "value_histograms")
+  expect_true(is.data.frame(hist))
+  expect_equal(sum(hist$records), frame$n_values, tolerance=1e-6)
+  expect_true(all(hist$records >= 0))
+  expected <- attr(frame, "dsomop_protection")$value_histograms
+  expect_equal(hist$records, expected$records, tolerance=1e-6)
+  expect_equal(attr(pooled, "value_quantiles")$value,
+               attr(frame, "dsomop_protection")$value_quantiles$value,
+               tolerance=1e-6)
 })

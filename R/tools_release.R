@@ -754,6 +754,72 @@
   }, numeric(1L))
 }
 
+#' Public interval and flags of every protected quantile (N02)
+#'
+#' For each quantile of a displayed protected histogram: its value (as
+#' \code{.dsomopReleaseQuantiles}), the public bin interval
+#' \code{[bin_lower, bin_upper)} that contains it, and flags: \code{open_lower}
+#' (the explicit underflow bin of a scale without a public lower bound),
+#' \code{open_upper} (the open last bin) and \code{censored} (the quantile lies
+#' in an open tail bin, so its value is that bin's finite edge, not an
+#' estimate). Post-processing of the displayed cells only: no new noise.
+#'
+#' @param counts Displayed (nonnegative) histogram cells.
+#' @param grid The histogram's public grid.
+#' @param probs Quantile probabilities.
+#' @return Data frame: prob, value, bin_lower, bin_upper, open_lower,
+#'   open_upper, censored (one row per probability; NA when the histogram is
+#'   empty).
+#' @keywords internal
+.dsomopReleaseQuantileBounds <- function(counts, grid,
+                                         probs = c(0.1, 0.25, 0.5, 0.75,
+                                                   0.9)) {
+  probs <- round(probs, 2)
+  counts <- as.numeric(counts)
+  total <- sum(counts)
+  if (!is.finite(total) || total <= 0) {
+    na <- rep(NA_real_, length(probs))
+    return(data.frame(prob = probs, value = na, bin_lower = na,
+                      bin_upper = na, open_lower = NA, open_upper = NA,
+                      censored = NA))
+  }
+  frame <- .dsomopReleaseBinFrame(grid)
+  cdf <- cumsum(counts) / total
+  bins <- vapply(probs, function(p) which(cdf >= p - 1e-12)[1L], integer(1L))
+  lower <- frame$bin_lower[bins]
+  upper <- frame$bin_upper[bins]
+  open_upper <- is.na(upper)
+  open_lower <- is.infinite(lower)
+  data.frame(prob = probs,
+             value = .dsomopReleaseRound(.dsomopReleaseQuantiles(counts, grid,
+                                                                 probs)),
+             bin_lower = lower, bin_upper = ifelse(open_upper, Inf, upper),
+             open_lower = open_lower, open_upper = open_upper,
+             censored = open_lower | open_upper)
+}
+
+# Quantile intervals of every stratum of one build (NULL where the quantiles
+# are unavailable).
+.dsomopReleaseQuantileBoundsList <- function(display_bins, grid, quantiles,
+                                             keys) {
+  out <- lapply(seq_along(display_bins), function(i) {
+    if (is.null(grid) || all(is.na(quantiles[[i]]))) return(NULL)
+    .dsomopReleaseQuantileBounds(display_bins[[i]], grid)
+  })
+  stats::setNames(out, keys)
+}
+
+# One long public frame of the quantile intervals of a build's strata (label).
+.dsomopReleaseQuantileIntervalFrame <- function(bounds) {
+  bounds <- Filter(Negate(is.null), bounds %||% list())
+  if (!length(bounds)) return(NULL)
+  out <- do.call(rbind, lapply(names(bounds), function(k) {
+    cbind(data.frame(stratum = k, stringsAsFactors = FALSE), bounds[[k]])
+  }))
+  rownames(out) <- NULL
+  out
+}
+
 # --- Owners, components and displayed views ----------------------------------
 
 #' Declare one protected component owner
@@ -1103,6 +1169,8 @@
   strata$median <- vapply(quantiles, `[[`, numeric(1L), 3L)
   strata$p75 <- vapply(quantiles, `[[`, numeric(1L), 4L)
   strata$p90 <- vapply(quantiles, `[[`, numeric(1L), 5L)
+  quantile_bounds <- .dsomopReleaseQuantileBoundsList(
+    display_bins, owner$grid, quantiles, strata_keys)
   for (col in c("n_display", "mean", "sd", "p10", "p25", "median", "p75",
                 "p90")) {
     strata[[col]] <- .dsomopReleaseRound(strata[[col]])
@@ -1123,7 +1191,7 @@
   })
   list(
     owner = owner, protection = protection, strata = strata,
-    root_n = root_noisy,
+    root_n = root_noisy, quantile_bounds = quantile_bounds,
     bins = stats::setNames(display_bins, strata_keys), bin_keys = bin_keys,
     export = list(
       protocol = .DSOMOP_RELEASE_PROTOCOL, owner = owner$id,
@@ -1249,9 +1317,14 @@
   e <- policy$release_epsilon
   owners <- lapply(built_list, function(b) b$owner)
   components <- lapply(built_list, function(b) {
+    # A builder may state its own component union (the canonical person-time
+    # tree of tools_release_hierarchy.R).
+    if (!is.null(b$label_component)) return(b$label_component)
     o <- b$owner
-    # Capped record-weighted moments (tools_release_records.R).
+    # Capped record-weighted moments (tools_release_records.R) and the
+    # time-to-event basis views (tools_release_tte.R).
     if (identical(o$family, "RM")) return(.dsomopReleaseRecordLabel(b, e))
+    if (identical(o$family, "TTE")) return(.dsomopReleaseTteLabel(b, e))
     cap <- max(1L, o$cap)
     frac <- .DSOMOP_RELEASE_FRACTIONS
     # A public partition owns its parent total and its strata totals.
@@ -1298,7 +1371,9 @@
          bounds = o$bounds %||% NA_real_, contribution_cap = cap,
          allocation_fraction = alloc,
          allocation_epsilon = lapply(alloc, function(a) a * e),
-         sensitivity = sens, noise_sd = sd)
+         sensitivity = sens, noise_sd = sd,
+         quantile_intervals = .dsomopReleaseQuantileIntervalFrame(
+           b$quantile_bounds))
   })
   fixed <- identical(route$protection, "fixed_synopsis")
   # The union of the owned components: a person total shared by several
@@ -1306,13 +1381,16 @@
   union_keys <- character(0)
   union_eps <- numeric(0)
   for (c in components) {
-    for (f in names(c$allocation_epsilon)) {
-      key <- if (f %in% c("N", "N_strata")) {
+    # An owner whose families share one contribution bound states its own
+    # union (record moments and value histograms: max(S + Q, H)).
+    eps <- c$union_epsilon %||% c$allocation_epsilon
+    for (f in names(eps)) {
+      key <- if (grepl("^N(_strata(:.*)?)?$", f)) {
         paste(f, c$population %||% c$owner, sep = "\u001f")
       } else paste(c$owner, f, sep = "\u001f")
       if (!key %in% union_keys) {
         union_keys <- c(union_keys, key)
-        union_eps <- c(union_eps, c$allocation_epsilon[[f]])
+        union_eps <- c(union_eps, eps[[f]])
       }
     }
   }
@@ -1337,7 +1415,9 @@
       "underflow bin on scales without a public lower bound"),
     quantile_method = paste0(
       "inverse of the displayed protected histogram's CDF, linear within ",
-      "finite bins; quantiles in an open tail bin report its finite edge"),
+      "finite bins; quantiles in an open tail bin report its finite edge ",
+      "(censored); each owner's quantile_intervals give every quantile's ",
+      "bin interval and open/censored flags"),
     effective_parameters = snap$changes %||% list(),
     privacy_call_quota = "none",
     history_based_admission = FALSE,

@@ -102,9 +102,9 @@ test_that("duration summaries release capped record-weighted moments", {
                                  "stddev_days"))
   expect_gt(nrow(out), 0L)
   label <- attr(out, "dsomop_protection")
-  # Unscoped, over the CDM population, with a custodial snapshot.
-  expect_identical(label$protection, "fixed_synopsis")
-  expect_equal(label$mechanism_epsilon, 0.1)
+  # Observed supported strata remain data-enumerated even when unscoped.
+  expect_identical(label$protection, "realised_sticky")
+  expect_true(is.na(label$mechanism_epsilon))
   expect_identical(label$privacy_call_quota, "none")
   expect_false(label$history_based_admission)
   expect_match(label$estimand, "capped record-weighted mean and SD")
@@ -133,7 +133,8 @@ test_that("duration summaries release capped record-weighted moments", {
     row <- out[paste0("concept=", out$condition_concept_id) == c$stratum, ]
     expect_equal(nrow(row), 1L)
     expect_equal(row$n_persons, max(0, c$n))
-    expect_equal(row$n_records, max(0, c$r))
+    # record-display-v1: records held in [N, K N] for the displayed persons.
+    expect_equal(row$n_records, min(10 * max(0, c$n), max(max(0, c$n), c$r)))
     if (!is.na(row$avg_days)) {
       R <- row$n_records
       Su <- c$s / 65535
@@ -171,7 +172,7 @@ test_that("duration summaries release capped record-weighted moments", {
     res <- .records_run(h, id, if (identical(id, "drug_era.length_stats"))
       list(top_n = 5) else list())
     expect_identical(attr(res, "dsomop_protection")$protection,
-                     "fixed_synopsis", info = id)
+                     "realised_sticky", info = id)
     expect_identical(names(res),
                      .omopAnalysisResolve(h, paste0("dsomop:", id))$meta$output_fields,
                      info = id)
@@ -273,7 +274,8 @@ test_that("only registered scales give quantity, value and cost moments", {
     any(vapply(.records_owner(df)$components, function(c) !is.null(c$s),
                logical(1L)))
   }
-  # Drug quantity: no built-in scale, so protected counts only.
+  # Drug quantity: no built-in scale, so protected counts and the weighted
+  # value histogram (no moments).
   qty <- .records_run(h, "drug.quantity_stats", list(concept_id = 1124300))
   expect_identical(names(qty), c("drug_concept_id", "concept_name",
                                  "n_persons", "n_records", "avg_quantity",
@@ -370,18 +372,13 @@ test_that("standard mode and auto without DP keep the standard summaries", {
   }
 })
 
-test_that("DP-only mode answers them only with fixed synopses", {
+test_that("DP-only mode refuses data-enumerated record strata", {
   .release_state(mode = "dp")
   h <- .records_handle()
   on.exit(cleanup_handle(h), add = TRUE)
   suppressWarnings(.omopAnalysisRegistry(h, force = TRUE))
-  out <- .records_run(h, "drug_era.length_stats", list(top_n = 1))
-  expect_identical(attr(out, "dsomop_protection")$protection,
-                   "fixed_synopsis")
-  expect_lte(nrow(out), 1L)
-  expect_identical(.release_values(.records_run(h, "drug_era.length_stats",
-                                                list(top_n = 1))),
-                   .release_values(out))
+  expect_error(.records_run(h, "drug_era.length_stats", list(top_n = 1)),
+               "no fixed-synopsis protection")
 })
 
 test_that("without a data generation they are heuristic or refused", {
@@ -559,7 +556,7 @@ test_that("without noise the record moments are the record-weighted mean and SD"
   reference <- .records_sqlite_answers()
   for (i in seq_along(reference)) {
     info <- paste(label, reference[[i]]$id)
-    expect_identical(answers[[i]]$protection, "fixed_synopsis", info = info)
+    expect_identical(answers[[i]]$protection, "realised_sticky", info = info)
     expect_gt(nrow(reference[[i]]$values), 0L, label = info)
     expect_equal(answers[[i]]$values, reference[[i]]$values,
                  tolerance = 1e-9, info = info)
@@ -570,7 +567,7 @@ test_that("record summaries run on SQLite and DuckDB with equal answers", {
   .release_state()
   reference <- .records_sqlite_answers()
   expect_true(all(vapply(reference, `[[`, character(1L), "protection") ==
-                    "fixed_synopsis"))
+                    "realised_sticky"))
   value <- reference[[3L]]$values
   # The live fixture records three HbA1c values without a unit: their own
   # stratum, never merged with percent.
