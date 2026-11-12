@@ -45,7 +45,8 @@
 # .compileIngredientMap() (a drug concept with two ingredients contributes to
 # both), unmapped concepts kept as their own group or dropped (`unmapped`).
 # A row without a concept cannot be grouped by concept or ingredient and is
-# not part of such an era. `min_days` keeps eras whose recorded span
+# not part of such an era. Over an adapter source (episode members, costs) each
+# physical event is one record: the parent link is not part of its identity. `min_days` keeps eras whose recorded span
 # (first start .. last recorded end, persistence excluded) has at least that
 # many days; the recorded and effective relations keep only rows of kept eras.
 #
