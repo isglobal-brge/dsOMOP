@@ -1,7 +1,8 @@
 # Stateless protection (dsOMOP 2.10.0, contract of 2.10.3): every answer is a
-# deterministic function of the secret root, the canonical component and,
-# without a custodial snapshot, the realised bounded contributions of that
-# component. Only the root persists; nothing depends on earlier questions.
+# deterministic function of the secret root, the canonical component, its
+# realised bounded contributions and, for a fixed synopsis, the automatic data
+# generation derived in memory per R session (test-dp-generation.R). Only the
+# root persists; nothing depends on earlier questions.
 
 .stateless_environment <- c(
   "DSOMOP_DP_ENABLED", "DSOMOP_DP_DOMAIN", "DSOMOP_DP_SNAPSHOT_ID",
@@ -48,6 +49,7 @@
 .stateless_restart <- function() {
   .pkg_state$dp_status <- NULL
   .pkg_state$dp_runtime <- NULL
+  .pkg_state$dp_generations <- NULL
   .pkg_state$dp_handle <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
 }
@@ -96,9 +98,10 @@ test_that("answers are deterministic across restarts and only the root persists"
   handle <- .stateless_handle()
   on.exit(cleanup_handle(handle), add = TRUE)
   first <- .stateless_release(handle)
-  # No custodial snapshot: the heuristic realised-contribution route.
+  # No custodial configuration: the automatic data generation keys the fixed
+  # synopsis, and it is derived again after the restart.
   expect_identical(attr(first, "dsomop_protection")$protection,
-                   "realised_sticky")
+                   "fixed_synopsis")
   .stateless_restart()
   second <- .stateless_release(handle)
   expect_identical(second$n_persons, first$n_persons)
@@ -108,8 +111,11 @@ test_that("answers are deterministic across restarts and only the root persists"
   expect_false(dir.exists(file.path(state, "release-bindings")))
 })
 
-test_that("a database reload redraws only the components whose people changed", {
+test_that("a database reload redraws only the realised components whose people changed", {
   .stateless_state()
+  # The realised route (here: no data generation); a fixed synopsis redraws
+  # every component on a reload instead (test-dp-generation.R).
+  .release_without_generation()
   handle <- .stateless_handle()
   on.exit(cleanup_handle(handle), add = TRUE)
   before <- .stateless_release(handle)
@@ -171,17 +177,21 @@ test_that("a custodian-supplied root leaves no state on disk", {
   expect_length(list.files(state, recursive = TRUE, all.files = TRUE), 0L)
 })
 
-test_that("seed-only releases need the resource or a custodial snapshot", {
+test_that("seed-only releases need the resource or a custodial domain", {
   .stateless_state()
   # Without custodial identifiers the DP identity comes from the connected
-  # resource; nothing else (no database version) is read for any key.
+  # resource; the 2.10.0 MAX(id) database version is gone (fixed synopses use
+  # the automatic generation of exact counts and identifiers instead).
   expect_error(.dsomopDpDerivedIdentity(NULL), "Cannot derive DP identity")
   expect_false(exists(".dsomopDpDataVersion", envir = asNamespace("dsOMOP"),
                       inherits = FALSE))
 })
 
-test_that("irrelevant tables and rows never redraw a release", {
+test_that("irrelevant tables and rows never redraw a realised release", {
   .stateless_state()
+  # A fixed synopsis redraws when any clinical table gains or loses rows
+  # (test-dp-generation.R); the realised route keys on contributions only.
+  .release_without_generation()
   handle <- .stateless_handle()
   on.exit(cleanup_handle(handle), add = TRUE)
   # A clinical table without its standard identifier is simply irrelevant.

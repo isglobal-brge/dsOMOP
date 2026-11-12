@@ -138,10 +138,8 @@
                                              levels = seq_along(coords)))
     raw <- vapply(seq_along(coords), function(k) {
       hit <- rows_at[[k]]
-      fp <- if (identical(protection, "realised_sticky")) {
-        .dsomopReleaseFingerprint(keys, owner_id, "H", coords[[k]], tok[hit],
-                                  rep(1, length(hit)))
-      } else NULL
+      fp <- .dsomopReleaseFingerprint(keys, owner_id, "H", coords[[k]],
+                                      tok[hit], rep(1, length(hit)))
       .dsomopReleaseNoisyComponent(policy, keys, protection, list(
         owner = owner_id, population = "c6/persons-at-risk/v1", family = "H",
         coordinate = coords[[k]], value = length(hit), allocation = alloc,
@@ -550,10 +548,8 @@
                                                 "0")))
   noisy <- function(owner, family, coordinate, value, allocation, sensitivity,
                     tok, contributions) {
-    fp <- if (identical(protection, "realised_sticky")) {
-      .dsomopReleaseFingerprint(keys, owner, family, coordinate, tok,
-                                contributions)
-    } else NULL
+    fp <- .dsomopReleaseFingerprint(keys, owner, family, coordinate, tok,
+                                    contributions)
     .dsomopReleaseNoisyComponent(policy, keys, protection, list(
       owner = owner, population = "sccs/cases/v1", family = family,
       coordinate = coordinate, value = value, allocation = allocation,

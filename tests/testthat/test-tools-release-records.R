@@ -365,8 +365,9 @@ test_that("DP-only mode answers them only with fixed synopses", {
                    .release_values(out))
 })
 
-test_that("without a custodial generation they are heuristic or refused", {
+test_that("without a data generation they are heuristic or refused", {
   .release_state(snapshot_id = NULL)
+  .release_without_generation()
   h <- .records_handle(derived = TRUE)
   on.exit(cleanup_handle(h), add = TRUE)
   suppressWarnings(.omopAnalysisRegistry(h, force = TRUE))

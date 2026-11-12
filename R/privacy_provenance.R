@@ -63,7 +63,7 @@
 .DSOMOP_DP_RELEASE_IDENTITY_ERROR <- paste0(
   "This table's protected-release person identity is missing or invalid; ",
   "prepare the table again with this dsOMOP version.")
-.DSOMOP_DP_LINEAGE_PROTOCOL <- "dsomop-dp-semantic-lineage-v1"
+.DSOMOP_DP_LINEAGE_PROTOCOL <- "dsomop-dp-semantic-lineage-v2"
 .DSOMOP_DP_DATASET_PROTOCOL <- "dsomop-dp-dataset-identity-v1"
 .DSOMOP_DP_FRAME_DIGEST_PROTOCOL <- "dsomop-dp-frame-digest-chunked-v1"
 .DSOMOP_DP_FRAME_DIGEST_CHUNK_ROWS <- 8192L
@@ -260,11 +260,12 @@
 
 .dsomopDpLineageId <- function(policy, dataset_id, semantic) {
   normalized <- .dsomopDpLineageValue(semantic)
+  # The public snapshot label is a display value only (dsOMOP 2.10.3): no
+  # lineage, population or noise key depends on it.
   .dsomopDpHmac(policy$keys$provenance, .dsomopDpCanonicalJson(list(
     protocol = .DSOMOP_DP_LINEAGE_PROTOCOL,
     adjacency = policy$adjacency,
     domain = policy$domain,
-    snapshot_id = policy$snapshot_id,
     privacy_epoch = policy$privacy_epoch,
     dataset_id = dataset_id,
     semantic = normalized

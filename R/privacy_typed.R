@@ -3,10 +3,11 @@
 # The typed channel releases one bounded statistic of a sealed person-local
 # table through the same protected-release mechanism as the automatic routes
 # (tools_release.R): canonical component owners, public bases, and noise keyed
-# either on a fixed public basis (unscoped pinned loader tables of a
-# custodian-declared generation, for statistics whose basis does not depend on
-# analyst choices) or on secret fingerprints of the realised bounded
-# contributions. There is no budget, quota or history-dependent admission.
+# either on a fixed public basis (unscoped pinned loader tables, keyed on the
+# automatic data generation of the connected database, for statistics whose
+# basis does not depend on analyst choices) or on secret fingerprints of the
+# realised bounded contributions. There is no budget, quota or
+# history-dependent admission.
 #
 # Every typed statistic is a view of one registered complete public basis:
 #
@@ -270,10 +271,8 @@
 .dsomopTypedDraw <- function(policy, protection, components) {
   keys <- .dsomopReleaseKeys(policy)
   vapply(components, function(c) {
-    fp <- if (identical(protection, "realised_sticky")) {
-      .dsomopReleaseFingerprint(keys, c$owner, c$family, c$coordinate,
-                                c$tokens, c$contributions)
-    } else NULL
+    fp <- .dsomopReleaseFingerprint(keys, c$owner, c$family, c$coordinate,
+                                    c$tokens, c$contributions)
     .dsomopReleaseNoisyComponent(policy, keys, protection, list(
       owner = c$owner, population = c$population, family = c$family,
       coordinate = c$coordinate, value = c$value, allocation = c$allocation,
@@ -677,6 +676,30 @@
   list(components = comps, display = display, owner = owner, family = "M")
 }
 
+#' Automatic data generation of a typed table's source database
+#'
+#' The generation (\code{.dsomopDpDataGeneration}) of the session handle whose
+#' keyed dataset identity is the one sealed in the table's provenance capsule;
+#' unavailable when no connected handle of this session is that dataset, so a
+#' table can never borrow another database's generation.
+#'
+#' @param capsule The table's verified provenance capsule.
+#' @param policy DP policy.
+#' @return List: \code{available}, \code{id} (internal only).
+#' @keywords internal
+.dsomopTypedDataGeneration <- function(capsule, policy) {
+  target <- capsule$dataset_id
+  if (is.character(target) && length(target) == 1L && !is.na(target)) {
+    for (handle in .dsomopDpSessionHandles()) {
+      id <- tryCatch(
+        .dsomopDpDatasetId(policy, .dsomopDpDatasetIdentity(handle)),
+        error = function(e) NULL)
+      if (identical(id, target)) return(.dsomopDpDataGeneration(handle, policy))
+    }
+  }
+  list(available = FALSE, id = NA_character_)
+}
+
 #' Run one typed protected release
 #'
 #' @param x Sealed omop.table.
@@ -694,19 +717,25 @@
   # or earlier operation can choose another person namespace.
   person_tokens <- .dsomopDpSealedReleaseTokens(x, input$token)
   # Fixed basis only for statistics whose basis does not depend on analyst
-  # choices, over an unscoped pinned loader table of a custodial generation.
+  # choices, over an unscoped pinned loader table, keyed on the automatic data
+  # generation of the session's connected database.
   fixed_capable <- common$statistic %in% c("count", "bounded_record_count",
                                            "bounded_mean") &&
-    startsWith(capsule$producer %||% "", "query/") &&
-    isTRUE(policy$custodial_snapshot)
+    startsWith(capsule$producer %||% "", "query/")
+  if (fixed_capable) {
+    generation <- .dsomopTypedDataGeneration(capsule, policy)
+    fixed_capable <- isTRUE(generation$available)
+    if (fixed_capable) policy$data_generation <- generation$id
+  }
   mode <- .dsomopToolsMode()
   if (identical(mode, "dp") && !fixed_capable) {
     stop("This typed release has no fixed-synopsis protection: DP-only mode ",
          "(dsomop.tools.mode = \"dp\" or dsomop.dp.exclusive = TRUE) accepts ",
          "typed counts, capped record counts and registered-scale bounded ",
-         "means of unscoped pinned loader tables of a custodian-declared data ",
-         "generation. In auto mode the same release uses heuristic ",
-         "realised-contribution protection.", call. = FALSE)
+         "means of unscoped pinned loader tables, keyed on the automatic data ",
+         "generation of the connected database. In auto mode the same ",
+         "release uses heuristic realised-contribution protection.",
+         call. = FALSE)
   }
   protection <- if (fixed_capable) "fixed_synopsis" else "realised_sticky"
   analysis <- .dsomopTypedAnalysis(input, common, policy, person_tokens,
@@ -768,8 +797,11 @@
     mechanism_epsilon = if (fixed) vector_epsilon else NA_real_,
     api_transcript_epsilon = NA_real_
   ),
-  # A pure-DP delta is claimed only for the declared fixed vector (B14).
-  if (fixed) list(delta = 0),
+  # A pure-DP delta is claimed only for the declared fixed vector (B14),
+  # keyed on the automatic data generation (never its value).
+  if (fixed) list(delta = 0,
+                  data_generation = .DSOMOP_DP_GENERATION_SOURCE,
+                  data_generation_residual = .DSOMOP_DP_GENERATION_RESIDUAL),
   list(
     adjacency = policy$adjacency,
     mechanism = policy$mechanism,

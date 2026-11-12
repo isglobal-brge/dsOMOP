@@ -38,9 +38,37 @@
   state
 }
 
+# A connected test CDM registered as this session's OMOP handle for the
+# calling test only. Returns the dataset identity a sealed fixture must carry
+# for its source database (and automatic data generation) to be this handle.
+.release_session_dataset <- function(.local_envir = parent.frame()) {
+  h <- create_test_handle(n_persons = 5)
+  h$person_key_identity <- "dsomop-test-session"
+  key <- "handle_dsomop_test_session"
+  assign(key, h, envir = .dsomop_env)
+  withr::defer({
+    if (exists(key, envir = .dsomop_env, inherits = FALSE)) {
+      rm(list = key, envir = .dsomop_env)
+    }
+    if (identical(.pkg_state$dp_handle, h)) .pkg_state$dp_handle <- NULL
+    cleanup_handle(h)
+  }, envir = .local_envir)
+  .dsomopDpDatasetIdentity(h)
+}
+
+# Make the automatic data generation underivable for the calling test: the
+# realised route then answers unscoped questions and DP-only mode refuses.
+.release_without_generation <- function(.local_envir = parent.frame()) {
+  testthat::local_mocked_bindings(
+    .dsomopDpDataGeneration = function(handle, policy) {
+      list(available = FALSE, id = NA_character_)
+    }, .env = .local_envir)
+}
+
 .release_restart <- function() {
   .pkg_state$dp_status <- NULL
   .pkg_state$dp_runtime <- NULL
+  .pkg_state$dp_generations <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
   invisible(NULL)
 }

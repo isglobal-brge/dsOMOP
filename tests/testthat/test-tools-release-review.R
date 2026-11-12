@@ -15,6 +15,7 @@ test_that("B03: a public gender decomposition reconciles to the canonical root N
       h <- create_test_handle(n_persons = 2000L)
     } else {
       .release_state(snapshot_id = NULL)
+      .release_without_generation()
       h <- .release_derived_handle(n_persons = 2000L)
     }
     a <- .release_run(h, "dsomop:achilles.103")

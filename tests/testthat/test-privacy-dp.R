@@ -50,6 +50,7 @@
   }, envir = .local_envir)
   .pkg_state$dp_status <- NULL
   .pkg_state$dp_runtime <- NULL
+  .pkg_state$dp_generations <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
   # A running server: the noise root already exists.
   if (!identical(enabled, FALSE) && is.null(noise_root)) {
@@ -72,6 +73,7 @@
 .dp_restart_runtime <- function() {
   .pkg_state$dp_status <- NULL
   .pkg_state$dp_runtime <- NULL
+  .pkg_state$dp_generations <- NULL
   .pkg_state$dp_bootstrap_in_progress <- FALSE
   invisible(NULL)
 }
@@ -98,7 +100,8 @@
   .dp_capsule(x)$lineage_id
 }
 
-.dp_test_table <- function(reverse_rows = FALSE, producer = "test/fixture") {
+.dp_test_table <- function(reverse_rows = FALSE, producer = "test/fixture",
+                           dataset_identity = .dp_dataset_identity()) {
   value <- data.frame(
     person_id = c(1, 1, 1, 2, 2, 3, 3),
     category = c("c", "a", "b", "a", "c", "b", "b"),
@@ -113,7 +116,8 @@
   if (reverse_rows) value <- value[rev(seq_len(nrow(value))), , drop = FALSE]
   value <- .testPseudonymize(value)
   if (.dsomopDpEnabled()) {
-    value <- .dp_seal(value, producer = producer, domains = .dp_domains)
+    value <- .dp_seal(value, producer = producer, domains = .dp_domains,
+                      dataset_identity = dataset_identity)
   }
   value
 }
@@ -2725,8 +2729,10 @@ test_that("exclusive mode keeps only the fixed-synopsis typed releases", {
   expect_true(all(vapply(standard_mode, `[[`, character(1L), "protection") ==
                     "realised_sticky"))
   # Counts, capped record counts and registered-scale means of an unscoped
-  # pinned loader table of the custodian's generation are fixed synopses.
-  loader <- .dp_test_table(producer = "query/measurement.load/0123456789abcdef")
+  # pinned loader table of a connected database are fixed synopses (keyed on
+  # its automatic data generation).
+  loader <- .dp_test_table(producer = "query/measurement.load/0123456789abcdef",
+                           dataset_identity = .release_session_dataset())
   fixed <- release_all(loader, c(1L, 2L, 6L))
   expect_true(all(vapply(fixed, `[[`, character(1L), "protection") ==
                     "fixed_synopsis"))
@@ -2766,7 +2772,8 @@ test_that("exclusive mode keeps only the fixed-synopsis typed releases", {
 )
 
 .dp_primitive_input <- function(changed_persons = 0L, reverse = FALSE,
-                                   producer = "test/primitive-matrix") {
+                                   producer = "test/primitive-matrix",
+                                   dataset_identity = .dp_dataset_identity()) {
   raw <- data.frame(
     person_id = 1:8, category = rep(c("a", "b"), 4L),
     measurement = 1:8, flag = rep(c("yes", "no"), 4L),
@@ -2779,7 +2786,8 @@ test_that("exclusive mode keeps only the fixed-synopsis typed releases", {
     flag = rep("yes", changed_persons), stringsAsFactors = FALSE
   ))
   if (reverse) raw <- raw[rev(seq_len(nrow(raw))), , drop = FALSE]
-  .dp_seal(.testPseudonymize(raw), producer = producer, domains = .dp_domains)
+  .dp_seal(.testPseudonymize(raw), producer = producer, domains = .dp_domains,
+           dataset_identity = dataset_identity)
 }
 
 test_that("all seven primitives are byte-deterministic and data edits re-draw them", {
@@ -2824,6 +2832,7 @@ test_that("all seven primitives are byte-deterministic and data edits re-draw th
 
 test_that("data and epoch changes redraw; lineage and snapshot cosmetics do not", {
   .dp_local_state(noise_root = as.raw(0:31))
+  dataset <- .release_session_dataset()
   count <- list(statistic = "count")
   release <- function(changed_persons = 0L,
                       producer = "test/primitive-matrix") {
@@ -2832,7 +2841,8 @@ test_that("data and epoch changes redraw; lineage and snapshot cosmetics do not"
   }
   fixed <- function() {
     input <- .dp_primitive_input(
-      producer = "query/measurement.load/0123456789abcdef")
+      producer = "query/measurement.load/0123456789abcdef",
+      dataset_identity = dataset)
     out <- suppressMessages(omopDpReleaseDS(input, count))
     expect_identical(out$protection, "fixed_synopsis")
     out$components$signed
@@ -2848,11 +2858,12 @@ test_that("data and epoch changes redraw; lineage and snapshot cosmetics do not"
   # (dsOMOP 2.10.3, G-09).
   expect_identical(release(producer = "test/independent-public-request"),
                    first)
-  # The custodial generation keys fixed synopses only.
+  # The deprecated snapshot label keys nothing (dsOMOP 2.10.3): fixed
+  # synopses use the automatic data generation of the connected database.
   options(dsomop.dp.snapshot_id = "etl-2026-08-02")
   .dp_restart_runtime()
   expect_identical(release(), first)
-  expect_false(identical(fixed(), first_fixed))
+  expect_identical(fixed(), first_fixed)
   # Rotation of the privacy epoch is a public custodian decision that
   # redraws every component, even with unchanged data.
   options(dsomop.dp.snapshot_id = "etl-2026-08-01",

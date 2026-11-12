@@ -132,13 +132,13 @@ test_that("B01: a CDM-namespace table shares the automatic person total", {
 
 # --- B02 ----------------------------------------------------------------------------
 
-.ti_loader_table <- function(n = 2000L) {
+.ti_loader_table <- function(n = 2000L, dataset_identity = .ti_dataset) {
   d <- data.frame(person_id = seq_len(n), age = rep(50, n), day = seq_len(n))
   x <- .testPseudonymize(d)
   q <- .ql_load_queries()[["measurement.load"]]
   .dsomopDpSealAnalysisAssign(x, list(
     meta = list(adapter = "query", query_id = "measurement.load"),
-    compute = list(sql = q$sql)), dataset_identity = .ti_dataset)
+    compute = list(sql = q$sql)), dataset_identity = dataset_identity)
 }
 
 test_that("B02: fixed loader aliases share their person total", {
@@ -148,7 +148,7 @@ test_that("B02: fixed loader aliases share their person total", {
   # the declared nonmissing population of its variable, a different public
   # eligibility, so it shares N only on the realised route (equal maps).
   .release_state()
-  x <- .ti_loader_table()
+  x <- .ti_loader_table(dataset_identity = .release_session_dataset())
   a <- .ti_release(x, statistic = "count")
   b <- .ti_release(x, statistic = "bounded_record_count", reducer = "records",
                    max_contributions = 1)

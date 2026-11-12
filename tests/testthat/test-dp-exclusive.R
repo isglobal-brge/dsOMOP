@@ -34,6 +34,7 @@
   withr::defer(.pkg_state$dp_runtime <- previous_runtime,
               envir = .local_envir)
   .pkg_state$dp_runtime <- NULL
+  .pkg_state$dp_generations <- NULL
 }
 
 # Poison every supplied argument. A policy rejection must happen before a

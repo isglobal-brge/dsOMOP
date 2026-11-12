@@ -15,9 +15,13 @@
 #   * public quantization: free numeric parameters snap to fixed public grids,
 #     so nearby requests share one effective estimand and one noise draw;
 #   * fixed public basis ("fixed_synopsis"): an unscoped question over a
-#     public atom basis of an immutable, custodian-declared data generation
-#     draws its noise from (corpus, generation, owner, atom) only, so every
-#     view is post-processing of one protected vector;
+#     public atom basis draws its noise from (corpus, automatic data
+#     generation, owner, atom) and the component's contribution fingerprint,
+#     so every view is post-processing of one protected vector per data
+#     state; the generation is a keyed fingerprint of the connected
+#     database's per-table row counts and largest identifiers, derived per R
+#     session and held in memory (privacy_state.R), so it needs no custodial
+#     configuration and redraws everything when rows are added or removed;
 #   * realised contributions ("realised_sticky"): any other supported scope
 #     keys each component's noise on a secret fingerprint of the bounded
 #     contributions of the people it contains, so different formulations of
@@ -579,11 +583,18 @@
 #'
 #' Exact integer addition of the discrete-Laplace noise; no clipping (the
 #' signed component is kept for pooling and projected only for display).
-#' \code{fixed_synopsis} keys the noise on (corpus, custodial generation,
-#' owner, population, family, coordinate); \code{realised_sticky} keys it on
-#' the owner, family, coordinate and the secret contribution fingerprint.
+#' \code{fixed_synopsis} keys the noise on (corpus, automatic data generation,
+#' privacy epoch, owner, population, family, coordinate, profile) and on the
+#' secret fingerprint of the component's realised bounded contributions: the
+#' generation redraws every fixed synopsis at once when rows are added or
+#' removed, and the fingerprint redraws a component whose contributions
+#' changed although the generation did not (an in-place edit, or a change
+#' while the session is open), so a component's noise is never reused for
+#' different contributions. \code{realised_sticky} keys it on the owner,
+#' family, coordinate and the contribution fingerprint, never on the data
+#' generation.
 #'
-#' @param policy DP policy.
+#' @param policy DP policy (with \code{data_generation} on the fixed route).
 #' @param keys Release keys.
 #' @param protection "fixed_synopsis" or "realised_sticky".
 #' @param component List(owner, population, family, coordinate, value,
@@ -596,23 +607,28 @@
       value != floor(value) || abs(value) > 2^53 - 1) {
     stop("A protected component is not exactly representable.", call. = FALSE)
   }
+  if (!is.character(component$fingerprint) ||
+      length(component$fingerprint) != 1L ||
+      !grepl("^[0-9a-f]{64}$", component$fingerprint)) {
+    stop("A protected component lacks its contribution fingerprint.",
+         call. = FALSE)
+  }
   epsilon <- policy$release_epsilon * component$allocation
   profile <- .dsomopReleaseProfile(policy, component$allocation,
                                    component$sensitivity)
   context <- if (identical(protection, "fixed_synopsis")) {
-    list(protocol = "dsomop-fixed-basis-v1", corpus = policy$domain,
-         generation = list(snapshot = policy$snapshot_id,
-                           epoch = policy$privacy_epoch),
-         owner = component$owner, population = component$population,
-         family = component$family, coordinate = component$coordinate,
-         profile = profile)
-  } else if (identical(protection, "realised_sticky")) {
-    if (!is.character(component$fingerprint) ||
-        length(component$fingerprint) != 1L ||
-        !grepl("^[0-9a-f]{64}$", component$fingerprint)) {
-      stop("A realised component lacks its contribution fingerprint.",
+    generation <- policy$data_generation
+    if (!is.character(generation) || length(generation) != 1L ||
+        !grepl("^[0-9a-f]{64}$", generation)) {
+      stop("A fixed-synopsis component lacks its data generation.",
            call. = FALSE)
     }
+    list(protocol = "dsomop-fixed-basis-v2", corpus = policy$domain,
+         generation = list(data = generation, epoch = policy$privacy_epoch),
+         owner = component$owner, population = component$population,
+         family = component$family, coordinate = component$coordinate,
+         profile = profile, contributions = component$fingerprint)
+  } else if (identical(protection, "realised_sticky")) {
     list(protocol = "dsomop-realised-sticky-v1", corpus = policy$domain,
          owner = component$owner, family = component$family,
          coordinate = component$coordinate, profile = profile,
@@ -975,10 +991,8 @@
   noisy <- function(family, coordinate, value, allocation, sensitivity,
                     map_tokens, contributions, owner_id = owner$id,
                     population = owner$population) {
-    fp <- if (identical(protection, "realised_sticky")) {
-      .dsomopReleaseFingerprint(keys, owner_id, family, coordinate,
-                                map_tokens, contributions)
-    } else NULL
+    fp <- .dsomopReleaseFingerprint(keys, owner_id, family, coordinate,
+                                    map_tokens, contributions)
     .dsomopReleaseNoisyComponent(policy, keys, protection, list(
       owner = owner_id, population = population, family = family,
       coordinate = coordinate, value = value, allocation = allocation,
@@ -1142,10 +1156,12 @@
 #'   \item \code{standard} mode: the established standard output, with the
 #'     contract's demonstrated-disclosive fields unavailable.
 #'   \item \code{auto} mode: \code{fixed_synopsis} for an unscoped question
-#'     over the contract's public basis when the custodian declares an
-#'     immutable data generation (\code{dsomop.dp.snapshot_id}); otherwise
-#'     \code{realised_sticky}. Without the DP service, the standard output with
-#'     the disclosive fields unavailable (\code{standard_fallback}).
+#'     over the contract's public basis, keyed on the automatic data
+#'     generation of the connected database (\code{.dsomopDpDataGeneration};
+#'     no custodial configuration); otherwise, or when that generation cannot
+#'     be derived in this session, \code{realised_sticky}. Without the DP
+#'     service, the standard output with the disclosive fields unavailable
+#'     (\code{standard_fallback}).
 #'   \item \code{dp} mode: only \code{fixed_synopsis}; anything else is a
 #'     stable unsupported-mechanism refusal.
 #' }
@@ -1185,18 +1201,27 @@
                 reason = ready$reason))
   }
   policy <- ready$policy
-  fixed <- !isTRUE(scoped) && isTRUE(contract$fixed_basis) &&
-    isTRUE(policy$custodial_snapshot)
+  generation <- if (!isTRUE(scoped) && isTRUE(contract$fixed_basis)) {
+    .dsomopDpDataGeneration(handle, policy)
+  } else NULL
+  fixed <- isTRUE(generation$available)
   if (identical(mode, "dp") && !fixed) {
-    stop("This release has no fixed-synopsis protection: DP-only mode ",
-         "(dsomop.tools.mode = \"dp\" or dsomop.dp.exclusive = TRUE) accepts ",
-         "only unscoped questions over a public basis of a custodian-declared ",
-         "data generation (dsomop.dp.snapshot_id). In auto mode the same ",
-         "question is answered with heuristic realised-contribution ",
-         "protection.", call. = FALSE)
+    .dsomopDpOnlyRefusal()
   }
+  if (fixed) policy$data_generation <- generation$id
   list(protection = if (fixed) "fixed_synopsis" else "realised_sticky",
        mode = mode, policy = policy)
+}
+
+# The stable refusal of DP-only mode for a release without fixed-synopsis
+# protection (the same text whatever the reason, so it reveals nothing).
+.dsomopDpOnlyRefusal <- function() {
+  stop("This release has no fixed-synopsis protection: DP-only mode ",
+       "(dsomop.tools.mode = \"dp\" or dsomop.dp.exclusive = TRUE) accepts ",
+       "only unscoped questions over a public basis, keyed on the automatic ",
+       "data generation of the connected database. In auto mode the same ",
+       "question is answered with heuristic realised-contribution ",
+       "protection.", call. = FALSE)
 }
 
 #' Public protection label of a protected release
@@ -1314,7 +1339,8 @@
     note = if (fixed) paste0(
       "Fixed-synopsis protection: every value is post-processing of one ",
       "protected vector of this data generation (discrete-Laplace noise, ",
-      "reference epsilon ", e, " split across its components). Exact ",
+      "reference epsilon ", e, " split across its components; the ",
+      "generation is derived automatically from the database). Exact ",
       "support gates and other enabled methods are outside this guarantee."
     ) else paste0(
       "Heuristic realised-contribution protection: discrete-Laplace noise ",
@@ -1325,7 +1351,12 @@
   )
   # delta = 0 belongs to the declared fixed vector only; a heuristic
   # realised or mixed release states no delta at all (B14).
-  if (fixed) label$delta <- 0
+  if (fixed) {
+    label$delta <- 0
+    # The automatic data generation (never its value) and what it cannot see.
+    label$data_generation <- .DSOMOP_DP_GENERATION_SOURCE
+    label$data_generation_residual <- .DSOMOP_DP_GENERATION_RESIDUAL
+  }
   label$source <- list(logical_source_id =
                          .dsomopReleaseLogicalSourceId(policy))
   if (length(owners) == 1L) {
@@ -1548,10 +1579,8 @@
   time_owner <- owner$time_owner %||% owner$id
   noisy <- function(family, coordinate, value, allocation, sensitivity,
                     map_tokens, contributions, owner_id) {
-    fp <- if (identical(protection, "realised_sticky")) {
-      .dsomopReleaseFingerprint(keys, owner_id, family, coordinate,
-                                map_tokens, contributions)
-    } else NULL
+    fp <- .dsomopReleaseFingerprint(keys, owner_id, family, coordinate,
+                                    map_tokens, contributions)
     .dsomopReleaseNoisyComponent(policy, keys, protection, list(
       owner = owner_id, population = owner$population, family = family,
       coordinate = coordinate, value = value, allocation = allocation,

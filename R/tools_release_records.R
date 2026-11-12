@@ -350,10 +350,8 @@
                                    na.last = TRUE)]
   noisy <- function(family, coordinate, value, allocation, sensitivity,
                     map_tokens, contributions, owner_id = owner$id) {
-    fp <- if (identical(protection, "realised_sticky")) {
-      .dsomopReleaseFingerprint(keys, owner_id, family, coordinate,
-                                map_tokens, contributions)
-    } else NULL
+    fp <- .dsomopReleaseFingerprint(keys, owner_id, family, coordinate,
+                                    map_tokens, contributions)
     .dsomopReleaseNoisyComponent(policy, keys, protection, list(
       owner = owner_id, population = owner$population, family = family,
       coordinate = coordinate, value = value, allocation = allocation,

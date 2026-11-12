@@ -1,14 +1,15 @@
 # dsOMOP 2.10.3: the noise of a protected component is keyed by its corpus,
-# fixed profile, owner, family and coordinate, plus the custodial generation
-# and population (fixed synopsis) or the secret fingerprint of the realised
-# bounded contributions (realised sticky). Nothing else (request text,
-# lineage cosmetics, a database version) enters the key. A small reference
-# epsilon makes chance coincidences of two draws negligible.
+# fixed profile, owner, family, coordinate and the secret fingerprint of its
+# realised bounded contributions, plus the automatic data generation and the
+# population for a fixed synopsis. Nothing else (request text, lineage
+# cosmetics, the snapshot label) enters the key. A small reference epsilon
+# makes chance coincidences of two draws negligible.
 
 .identity_policy <- function(...) {
   utils::modifyList(list(
     noise_root = list(key = as.raw(0:31)), domain = "test-domain",
     snapshot_id = "snapshot-1", privacy_epoch = 1,
+    data_generation = strrep("1", 64L),
     release_epsilon = 0.001, mechanism = .DSOMOP_DP_MECHANISM,
     sampler = .DSOMOP_DP_SAMPLER
   ), list(...))
@@ -31,16 +32,22 @@
 test_that("fixed-synopsis noise binds the corpus, generation, owner and coordinate", {
   first <- .identity_draw("fixed_synopsis")
   expect_identical(.identity_draw("fixed_synopsis"), first)
-  changed_policy <- list(domain = "other-domain", snapshot_id = "snapshot-2",
+  changed_policy <- list(domain = "other-domain",
+                         data_generation = strrep("2", 64L),
                          privacy_epoch = 2)
   for (field in names(changed_policy)) {
     policy <- do.call(.identity_policy, changed_policy[field])
     expect_false(identical(.identity_draw("fixed_synopsis", policy), first),
                  info = field)
   }
+  # The deprecated snapshot label keys nothing.
+  expect_identical(.identity_draw("fixed_synopsis",
+                                  .identity_policy(snapshot_id = "snapshot-2")),
+                   first)
   changed <- list(owner = "test/other-owner/v1", population = "population-2",
                   family = "W", coordinate = "stratum=root|cell=b",
-                  allocation = 0.4, sensitivity = 2)
+                  allocation = 0.4, sensitivity = 2,
+                  fingerprint = strrep("cd", 32L))
   for (field in names(changed)) {
     component <- do.call(.identity_component, changed[field])
     draw <- .identity_draw("fixed_synopsis", component = component)
@@ -50,10 +57,14 @@ test_that("fixed-synopsis noise binds the corpus, generation, owner and coordina
   expect_identical(.identity_draw("fixed_synopsis",
                                   component = .identity_component(value = 101)),
                    first + 1)
-  # A realised fingerprint is no part of the fixed key.
-  expect_identical(.identity_draw("fixed_synopsis", component =
-                                    .identity_component(fingerprint = NULL)),
-                   first)
+  # Both routes need the contribution fingerprint, and the fixed route its
+  # data generation.
+  expect_error(.identity_draw("fixed_synopsis", component =
+                                .identity_component(fingerprint = NULL)),
+               "contribution fingerprint")
+  expect_error(.identity_draw("fixed_synopsis",
+                              .identity_policy(data_generation = NULL)),
+               "data generation")
   other_root <- .identity_policy(noise_root = list(key = as.raw(32:63)))
   expect_false(identical(.identity_draw("fixed_synopsis", other_root), first))
 })
@@ -61,11 +72,13 @@ test_that("fixed-synopsis noise binds the corpus, generation, owner and coordina
 test_that("realised-sticky noise binds the contribution fingerprint, not the population or generation", {
   first <- .identity_draw("realised_sticky")
   expect_identical(.identity_draw("realised_sticky"), first)
-  # Neither the custodial generation nor the population (lineage) re-seeds a
-  # realised component.
+  # Neither the data generation, the snapshot label nor the population
+  # (lineage) re-seeds a realised component.
   expect_identical(.identity_draw("realised_sticky",
                                   .identity_policy(snapshot_id = "snapshot-2")),
                    first)
+  expect_identical(.identity_draw("realised_sticky", .identity_policy(
+    data_generation = strrep("2", 64L))), first)
   expect_identical(.identity_draw("realised_sticky", component =
                                     .identity_component(population = "p-2")),
                    first)

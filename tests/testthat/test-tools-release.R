@@ -264,8 +264,9 @@ test_that("unscoped public-basis questions are fixed synopses; scopes are realis
                "no fixed-synopsis protection")
 })
 
-test_that("without a custodial generation unscoped questions are realised", {
+test_that("without a data generation unscoped questions are realised", {
   .release_state(snapshot_id = "")
+  .release_without_generation()
   h <- .release_derived_handle(60)
   on.exit(cleanup_handle(h), add = TRUE)
   out <- .release_run(h, "dsomop:achilles.105")
