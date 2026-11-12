@@ -1886,8 +1886,34 @@
             },
             "legacy_index_anchor": {
               "const": "scope_cohort"
+            },
+            "legacy_cohort_table": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_.]*$",
+              "description": "the canonical historical cohort identifier owned by the handle; preserves case, dots and underscores without a length cap (A-25)"
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "legacy_cohort_table"
+                ]
+              },
+              "then": {
+                "not": {
+                  "required": [
+                    "legacy_empty"
+                  ]
+                },
+                "properties": {
+                  "cohort_definition_id": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          ]
         },
         {
           "type": "object",
@@ -1961,6 +1987,11 @@
             "legacy_empty": {
               "const": true,
               "description": "the v1 criteria population without filter_tree, cohort_definition_id or index_event: no person (2.10.2 materialised an empty roster)"
+            },
+            "legacy_cohort_table": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_.]*$",
+              "description": "the canonical historical cohort identifier owned by the handle; preserves case, dots and underscores without a length cap (A-25)"
             }
           },
           "allOf": [
@@ -1974,6 +2005,11 @@
                 "required": [
                   "legacy_episodes"
                 ],
+                "not": {
+                  "required": [
+                    "legacy_cohort_table"
+                  ]
+                },
                 "properties": {
                   "parent": {
                     "type": "null"
@@ -1988,6 +2024,31 @@
                     "const": "observation_periods"
                   }
                 }
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "legacy_cohort_table"
+                ]
+              },
+              "then": {
+                "not": {
+                  "required": [
+                    "legacy_empty"
+                  ]
+                },
+                "properties": {
+                  "cohort_definition_id": {
+                    "type": "null"
+                  },
+                  "legacy_episodes": {
+                    "const": "observation_periods"
+                  }
+                },
+                "required": [
+                  "legacy_episodes"
+                ]
               }
             }
           ]

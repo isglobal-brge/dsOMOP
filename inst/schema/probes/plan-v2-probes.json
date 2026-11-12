@@ -30081,6 +30081,1725 @@
     }
   },
   {
+    "id": "I68",
+    "label": "criteria reference preserves case, dots and underscores (A-25)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I69",
+    "label": "index reference preserves recurrent event selection (A-25)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I70",
+    "label": "criteria reference has no native name length cap (A-25)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I71",
+    "label": "index reference has no native name length cap (A-25)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_Cohort_",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I72",
+    "label": "criteria reference permits a null numeric reference (A-25)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "legacy_episodes": "observation_periods",
+          "cohort_definition_id": null
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I73",
+    "label": "criteria reference preserves its episode policy and scope anchor (A-25)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "legacy_episodes": "observation_periods",
+          "episode_policy": "all_episodes",
+          "legacy_index_anchor": "scope_cohort"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I74",
+    "label": "index reference preserves historical cohort-row episodes (A-25)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          },
+          "legacy_episodes": "cohort_rows",
+          "legacy_index_anchor": "scope_cohort"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I75",
+    "label": "criteria reference refuses null (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": null,
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I76",
+    "label": "criteria reference refuses numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": 1,
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I77",
+    "label": "criteria reference refuses object (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": {},
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I78",
+    "label": "criteria reference refuses array (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": [
+            "owned"
+          ],
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I79",
+    "label": "criteria reference refuses empty (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I80",
+    "label": "criteria reference refuses whitespace-padded (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": " owned ",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I81",
+    "label": "criteria reference refuses malformed (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "bad-name",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I82",
+    "label": "criteria reference refuses digit-only (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "1",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I83",
+    "label": "criteria reference refuses padded digit-only (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": " 1 ",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I84",
+    "label": "criteria reference refuses signed numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "+1",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I85",
+    "label": "criteria reference refuses exponent numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "1e0",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I86",
+    "label": "criteria reference refuses decimal numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "1.0",
+          "legacy_episodes": "observation_periods"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I87",
+    "label": "criteria reference conflicts with a numeric population reference (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "legacy_episodes": "observation_periods",
+          "cohort_definition_id": 1
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I88",
+    "label": "criteria reference conflicts with legacy_empty (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "legacy_episodes": "observation_periods",
+          "legacy_empty": true
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I89",
+    "label": "index reference refuses null (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": null,
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I90",
+    "label": "index reference refuses numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": 1,
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I91",
+    "label": "index reference refuses object (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": {},
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I92",
+    "label": "index reference refuses array (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": [
+            "owned"
+          ],
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I93",
+    "label": "index reference refuses empty (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I94",
+    "label": "index reference refuses whitespace-padded (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": " owned ",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I95",
+    "label": "index reference refuses malformed (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "bad-name",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I96",
+    "label": "index reference refuses digit-only (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I97",
+    "label": "index reference refuses padded digit-only (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": " 1 ",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I98",
+    "label": "index reference refuses signed numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "+1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I99",
+    "label": "index reference refuses exponent numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "1e0",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I100",
+    "label": "index reference refuses decimal numeric (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "1.0",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I101",
+    "label": "index reference conflicts with a numeric population reference (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          },
+          "cohort_definition_id": 1
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I102",
+    "label": "index reference conflicts with legacy_empty (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          },
+          "legacy_empty": true
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I103",
+    "label": "criteria reference requires legacy_episodes (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I104",
+    "label": "criteria reference refuses cohort-row episodes (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "legacy_episodes": "cohort_rows"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I105",
+    "label": "criteria reference refuses null legacy_episodes (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "legacy_episodes": null
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I106",
+    "label": "index reference refuses episode_policy (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          },
+          "episode_policy": "first_episode"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I107",
+    "label": "index reference refuses even null episode_policy (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "index": {
+            "source": {
+              "event": "events"
+            },
+            "select": "all"
+          },
+          "episode_policy": null
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I108",
+    "label": "setop reference refuses the compatibility property (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "setop",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "setop": {
+            "op": "union",
+            "members": [
+              "a",
+              "b"
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I109",
+    "label": "match reference refuses the compatibility property (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "match",
+          "legacy_cohort_table": "_Owned.Cohort_1",
+          "match": {
+            "cases": "a",
+            "controls": "b",
+            "outcome": {
+              "event": "events"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "I110",
+    "label": "legacy numeric cohort leaf still refuses names (A-25)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "where": {
+            "legacy": {
+              "type": "cohort",
+              "params": {
+                "cohort_definition_id": "owned"
+              }
+            }
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "P68",
+    "label": "criteria legacy_cohort_table refused on the wire (A-25)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "legacy_cohort_table": "owned"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "P69",
+    "label": "index legacy_cohort_table refused on the wire (A-25)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "index": {
+            "source": {
+              "event": "events"
+            }
+          },
+          "legacy_cohort_table": "owned"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "P70",
+    "label": "named population cohort_definition_id refused on the wire (A-25)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "cohort_definition_id": "owned"
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "P71",
+    "label": "named native cohort criterion refused on the wire (A-25)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "criteria",
+          "where": {
+            "cohort": {
+              "cohort_definition_id": "owned"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "P72",
+    "label": "named index cohort source refused on the wire (A-25)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "events": {
+        "events": {
+          "table": "condition_occurrence"
+        }
+      },
+      "populations": {
+        "named": {
+          "kind": "index",
+          "index": {
+            "source": {
+              "cohort_definition_id": "owned"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "rows": "named",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
     "id": "P63",
     "label": "temporal source_analyses with a count-only selection (A-14; a wire field, so valid under both schemas)",
     "schema": "plan-v2",
