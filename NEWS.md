@@ -51,6 +51,18 @@ fills its entries. Classes follow design-2.10.3 section 5.
   A-5 native survival / recurrent component schemas, A-6 one identifier grammar
   in the mutation AST, A-7 `omop_censor(when_index_source =)`.
 
+### Dialect
+- A v2 plan that needs an SQL construct the server's database family cannot
+  run is refused at preflight, before any query, with the typed
+  `dialect_unsupported` rejection naming the output and the construct:
+  session temporary tables for a roster reused by several statements on SQL
+  Server/Synapse/PDW, Oracle, Redshift, BigQuery, Snowflake and
+  Spark/Databricks; window functions on a SQLite runtime that cannot execute
+  the 1-PRECEDING frame (the runtime is probed, never inferred from the
+  package version); MySQL below 8.0 and MariaDB below 10.2. The SQL SHA-256
+  push-down is never required: matching computes its order in R where the
+  family lacks it, as on SQLite.
+
 ## Contracts shipped by WS-0
 
 - `inst/schema/plan-v2.json`, `ir-v2.json`, `mutate-v1.json`, the canonical
@@ -61,7 +73,54 @@ fills its entries. Classes follow design-2.10.3 section 5.
   `inst/plans/acceptance/` (the fifteen acceptance recipes with validated
   plans and hand-computed expected results); `R/types.R`,
   `R/json_schema.R`, `R/semantic_digest.R`; the adversarial extension of
-  the reach fixture and the synthetic CDM generator under `tests/fixtures/`.
+  the reach fixture and the synthetic CDM generator under `tests/fixtures/`
+  (PostgreSQL loads with typed dates through `conn`/`schema`).
+- `inst/plans/acceptance/score-reference.json`: paired v1/v2 Charlson, CHADS2
+  and CHA2DS2-VASc expectations with fixed and index-resolved reference dates
+  (CR-2 / A-2); `tests/testthat/fixtures/v1-corpus-classes.csv`: one explicit
+  reviewed disposition per test block of both 2.10.2 suites (helper-built
+  plans included, mixed blocks split; `tools/ws0/corpus_decisions.csv`), keyed
+  by `package:file:<test description>` against the pinned 2.10.2 commits of
+  `tools/ws0/corpus_baseline.json` (CR-7): live test edits never move or break
+  the corpus; a reclassification is a decisions-file change.
+- Semantic digest: the ECMAScript shortest round-trip decimal is found for
+  every finite double (powers of two have asymmetric rounding intervals;
+  `2^-24` serialises as `5.960464477539063e-8`), checked against the Python
+  reference on 11,045 doubles including every power of two and its neighbours.
+- `R/types.R`: roster-mode publication candidates must agree with the
+  fragment's declared person lineage and key roles; the roster fragment name
+  (`person_lineage$via_roster`) and the roster namespace (`lineage$roster_id`)
+  stay distinct.
+
+## SQL dialect layer
+
+- (A-E8) New SQL never relies on regex translation of `DATEADD`/`DATEDIFF`,
+  which handles only literal offsets and identifier operands and passes
+  column or arithmetic forms through untranslated (SQLite then fails on
+  `DATEADD(day, t.days_supply - 1, t.start)`). The typed helpers of
+  `R/sql_expr.R` (`.sqlDateAddDays`, `.sqlDateDiffDays`, `.sqlYear`,
+  `.sqlMonthKey`, `.sqlCalendarFloor`, `.sqlCalendarAdvance`, `.sqlMakeDate`,
+  `.sqlDateLiteral`, `.sqlIntegerLiteral`, `.sqlLeast`, `.sqlGreatest`,
+  `.sqlNullsLast`, `.sqlRowNumber`, `.sqlLosslessKey`, `.sqlSha256Hex`, with
+  `.sqlWindow`, `.sqlMonth`, `.sqlDateText` and `.sqlLosslessKeyText`)
+  accept expressions as operands and have one semantics in every family:
+  NULL-ignoring `LEAST`/`GREATEST`, NULL (never an error or a normalised
+  date) for invalid date components, explicit window frames only. The
+  built-in translator leaves their output unchanged, and
+  `.sqlAssertTypedSql()` refuses the OHDSI spellings in new statements. The
+  v1 SQL paths, their helpers and the translator are unchanged.
+- Required support (design section 9): executable on PostgreSQL, SQLite,
+  DuckDB, MySQL >= 8.0 and MariaDB >= 10.2; SQL Server/Synapse/PDW, Oracle,
+  Redshift, BigQuery, Snowflake and Spark/Databricks are implemented and
+  verified by rendered-SQL snapshots (SQL contract only). The dialect profile
+  (`.sqlDialectProfile()`) gives the capability `dialect` block its family,
+  temporary materialisation, SHA-256 and window-frame availability and the
+  runtime version, and records the driver for the conformance report.
+- MariaDB servers whose version string carries a distribution suffix, such as
+  Ubuntu 22.04's `10.6.23-MariaDB-0ubuntu0.22.04.1`, are no longer refused
+  as below MariaDB 10.2: the version tagged `-MariaDB` is read instead of the
+  last dotted number (`0.22.04`). This affected every MariaDB connection and
+  the longitudinal SQL floor.
 
 # dsOMOP 2.10.2
 

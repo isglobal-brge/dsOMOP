@@ -111,40 +111,70 @@ test_that("the boundary registry skeleton lists every assign method", {
   expect_true(all(reg$kind %in% c("assign", "aggregate", "return", "staged")))
 })
 
-test_that("the v1 corpus classes are reviewed per plan instance", {
+test_that("the v1 corpus classes are reviewed per plan instance and keyed by stable identifiers (CR-7)", {
   cls <- read.csv(testthat::test_path("fixtures", "v1-corpus-classes.csv"), stringsAsFactors = FALSE)
-  expect_true(all(c("plan_id", "package", "file", "line", "test", "class", "review", "prior_behaviour", "intended_behaviour", "rationale") %in% names(cls)))
+  expect_true(all(c("plan_id", "package", "file", "test", "baseline_line", "class", "review", "prior_behaviour", "intended_behaviour", "rationale") %in% names(cls)))
   expect_true(all(cls$class %in% c("safe", "corrected", "newly_permitted", "newly_refused_structural", "newly_refused_publication",
                                    "publication_refused_unchanged", "unchanged_invalid", "non_plan")))
   expect_true(all(cls$review == "reviewed"))
   expect_false(anyDuplicated(cls$plan_id) > 0)
+  # stable keys: package:file:<test_that description>[@k][#sub-row]; baseline_line is informational (pinned 2.10.2 commits,
+  # tools/ws0/corpus_baseline.json): editing a live test never changes this fixture, a reclassification edits corpus_decisions.csv
+  expect_true(all(grepl("^dsOMOP(Client)?:test-[A-Za-z0-9-]+\\.R:.+", cls$plan_id)))
+  expect_true(all(startsWith(cls$plan_id, paste0(cls$package, ":", cls$file, ":", cls$test))))
+  expect_true(all(cls$baseline_line == as.integer(cls$baseline_line) & cls$baseline_line >= 1L))
   expect_gte(nrow(cls), 1300L)
   expect_gte(sum(cls$class != "non_plan"), 580L)
   expect_true(all(nzchar(cls$rationale)))
+  get <- function(file, test, pkg = "dsOMOP") cls[cls$package == pkg & cls$file == file & cls$test == test, ]
   # the boundary examples of the review
-  get <- function(file, line, pkg = "dsOMOP") cls[cls$package == pkg & cls$file == file & cls$line == line, ]
-  expect_true(all(get("test-recipe-reach.R", 257)$class == "unchanged_invalid"))
-  expect_true(all(get("test-manipulate.R", 216)$class == "publication_refused_unchanged"))
-  expect_true(all(get("test-manipulate.R", 229)$class == "publication_refused_unchanged"))
-  expect_true(all(get("test-manipulate.R", 208)$class == "newly_permitted"))
-  expect_true(all(get("test-cohort.R", 512)$class == "publication_refused_unchanged"))
-  for (ln in c(247, 268, 672)) expect_true("newly_permitted" %in% get("test-recipe-setops.R", ln)$class, info = ln)
-  oc72 <- get("test-output-contracts.R", 72); expect_true(all(c("newly_permitted", "unchanged_invalid") %in% oc72$class))
-  oc99 <- get("test-output-contracts.R", 99); expect_true(all(c("safe", "newly_permitted") %in% oc99$class))
-  expect_true(all(get("test-plan-dsl.R", 884, "dsOMOPClient")$class == "unchanged_invalid"))
-  expect_true(all(get("test-filters.R", 18)$class == "newly_permitted"))
+  expect_true(all(get("test-recipe-reach.R", "reach C: blocked value_source is rejected at compile")$class == "unchanged_invalid"))
+  expect_true(all(get("test-manipulate.R", "omopMergeDS fails closed when the join yields too few persons")$class == "publication_refused_unchanged"))
+  expect_true(all(get("test-manipulate.R", "omopBindRowsDS of a table with ITSELF is blocked (doubling bypass)")$class == "publication_refused_unchanged"))
+  expect_true(all(get("test-manipulate.R", "omopFilterDS rejects arbitrary numeric thresholds")$class == "newly_permitted"))
+  expect_setequal(get("test-cohort.R", "identical cohort inputs preserve set semantics and lifecycle")$class, c("safe", "publication_refused_unchanged"))
+  for (nm in c("set-op result below nfilter fails closed (empty intersection)", "set-op result below nfilter fails closed (tiny non-zero intersection)",
+               "a too-small criteria population fails closed before any output")) {
+    expect_true("newly_permitted" %in% get("test-recipe-setops.R", nm)$class, info = nm)
+  }
+  oc72 <- get("test-output-contracts.R", "baseline rejects blocked and unknown person columns"); expect_true(all(c("newly_permitted", "unchanged_invalid") %in% oc72$class))
+  oc99 <- get("test-output-contracts.R", "baseline accepts only a public common age-grid coarsening"); expect_true(all(c("safe", "newly_permitted") %in% oc99$class))
+  expect_true(all(get("test-filters.R", "a client-authored ordered threshold is rejected")$class == "newly_permitted"))
+  # re-review B7: helper-built plans are inventoried and classified; mixed blocks are split
+  ie190 <- get("test-plan-index-event.R", "Primary All preserves distinct same-date source events downstream")
+  expect_identical(ie190$class, "safe"); expect_match(ie190$rationale, ".ie_resolve")
+  so213 <- get("test-recipe-setops.R", "set-op union/intersect/setdiff produce the expected person sets")
+  expect_setequal(sub("^.*#", "", so213$plan_id), c("union", "intersect", "setdiff")); expect_true(all(so213$class == "safe"))
+  expect_identical(get("test-recipe-circe.R", "recipe_export_circe errors for an unknown population_id", "dsOMOPClient")$class, "unchanged_invalid")
+  sl298 <- get("test-survival-longitudinal.R", "multi-state recipes round-trip and preview both components", "dsOMOPClient")
+  expect_setequal(sub("^.*#", "", sl298$plan_id), c("1", "2")); expect_setequal(sl298$class, c("safe", "unchanged_invalid"))
+  # second re-review: refusals are never certified as successful plans
+  expect_identical(get("test-plan-dsl.R", "YAML plan loading never evaluates !expr tags", "dsOMOPClient")$class, "unchanged_invalid")
+  expect_identical(get("test-recipe-lint.R", "no_compile: output targets an undeclared population", "dsOMOPClient")$class, "unchanged_invalid")
+  co303 <- get("test-cohort.R", "cohort criteria fail closed instead of becoming unfiltered")
+  expect_setequal(sub("^.*#", "", co303$plan_id), c("1", "2")); expect_setequal(co303$class, c("unchanged_invalid", "newly_permitted"))
+  expect_identical(get("test-analysis-ports-1bc.R", "(d) a two-population port fails closed when either arm < nfilter")$class, "publication_refused_unchanged")
+  # third re-review: a block whose only error expectations are expect_error(..., NA) asserts successes, never a refusal
+  expect_identical(get("test-analysis-ports.R", "TAR diagnostics use synthesized cohort ends for point events")$class, "safe")
+  cw222 <- get("test-extraction.R", "calendar windows reject injection, invalid dates, and reversed ranges")
+  expect_setequal(sub("^.*#", "", cw222$plan_id), c("1", "2")); expect_setequal(cw222$class, c("unchanged_invalid", "newly_permitted"))
+  expect_identical(get("test-recipe-circe.R", "numeric measurement bounds fail closed on Circe export", "dsOMOPClient")$class, "newly_permitted")
+  # a block that builds no plan is only ever non_plan, and every non_plan row says so
+  expect_true(all(grepl("^no plan|^gate:", cls$rationale[cls$class == "non_plan"])))
+  expect_true(all(get("test-plan-dsl.R", "omop.date_handling builds correct spec", "dsOMOPClient")$class == "non_plan"))
+  # the gate-helper blocks the design names carry their own dispositions
+  expect_true(all(get("test-disclosure.R", "age_group filter enforces the 5-year minimum band width")$class == "newly_permitted"))
+  expect_setequal(get("test-disclosure.R", "age grid is public, configurable, and only permits coarsening")$class, c("safe", "unchanged_invalid"))
+  expect_true(all(get("test-phase1-leak-gates.R", "resolveConceptScopeColumn rejects leak vectors, accepts true concepts")$class == "unchanged_invalid"))
+  expect_true("newly_permitted" %in% get("test-filters.R", "an exact-match (==) filter is blocked as fingerprinting")$class)
+  expect_true("newly_permitted" %in% get("test-extraction.R", "date widths are inclusive and use the server policy")$class)
   # inventory completeness: every plan-building suite of both packages is covered
   for (f in c("test-phase-e-ergonomics.R", "test-staged-harmonization-regression.R", "test-factor-harmonization-client.R", "test-dp-prepare.R")) {
     expect_true(f %in% cls$file[cls$package == "dsOMOPClient"], info = f)
   }
-  for (f in c("test-factor-harmonization.R", "test-privacy-dp.R", "test-staging-contract.R", "test-phase1-leak-gates.R", "test-disclosure.R")) {
+  for (f in c("test-factor-harmonization.R", "test-privacy-dp.R", "test-staging-contract.R", "test-phase1-leak-gates.R", "test-disclosure.R", "test-phase-b.R")) {
     expect_true(f %in% cls$file[cls$package == "dsOMOP"], info = f)
   }
-  srv <- cls[cls$package == "dsOMOP", ]
-  for (f in unique(srv$file)) {
-    path <- testthat::test_path(f)
-    skip_if(!file.exists(path), paste("suite file not found:", f))
-    lines <- readLines(path, warn = FALSE)
-    for (ln in unique(srv$line[srv$file == f])) expect_true(grepl("^\\s*test_that\\(", lines[ln]), info = paste(f, ln))
-  }
+  # the baseline anchoring itself (pinned commits, strict join) is verified by tools/ws0/review_corpus_classes.py --check,
+  # which tools/ws0/check_contracts.py runs; this suite only reads the frozen fixture
 })

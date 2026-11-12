@@ -46,3 +46,50 @@ test_that("the extended reach fixture loads into PostgreSQL with the same scenar
   bp <- dsOMOP:::.buildBlueprint(pgh)
   expect_true(all(c("person", "cost", "episode_event") %in% bp$tables$table_name[bp$tables$present_in_db]))
 })
+
+
+test_that("the synthetic GiBleed-shaped CDM loads into PostgreSQL with typed dates and identical cardinalities", {
+  skip_if_not_installed("RSQLite"); skip_if_not_installed("RPostgres")
+  pg <- .ws0_pg_connect()
+  skip_if(is.null(pg), "PostgreSQL test host not reachable")
+  on.exit(DBI::dbDisconnect(pg), add = TRUE)
+  source(.ws0_fixture_file("generate_synthetic_cdm.R"), local = TRUE)
+  csv <- Find(file.exists, c(system.file("ohdsi", "OMOP_CDMv5.3_Field_Level.csv", package = "dsOMOP"),
+                             "inst/ohdsi/OMOP_CDMv5.3_Field_Level.csv", "../../inst/ohdsi/OMOP_CDMv5.3_Field_Level.csv"))
+  n <- as.integer(Sys.getenv("DSOMOP_TEST_SYNTHETIC_N", "500"))
+  schema <- paste0("ws0_synth_", as.integer(Sys.getpid()) %% 10000L)
+  DBI::dbExecute(pg, "SET client_min_messages TO WARNING")
+  if (as.integer(DBI::dbGetQuery(pg, paste0("SELECT COUNT(*) AS n FROM information_schema.schemata WHERE schema_name = '", schema, "'"))$n) > 0L) {
+    DBI::dbExecute(pg, paste0("DROP SCHEMA ", schema, " CASCADE"))
+  }
+  DBI::dbExecute(pg, paste0("CREATE SCHEMA ", schema))
+  on.exit(try(DBI::dbExecute(pg, paste0("DROP SCHEMA ", schema, " CASCADE")), silent = TRUE), add = TRUE)
+  cdm <- generate_synthetic_cdm(n, field_level_csv = csv, conn = pg, schema = schema)
+  lite <- DBI::dbConnect(RSQLite::SQLite(), ":memory:"); on.exit(DBI::dbDisconnect(lite), add = TRUE)
+  generate_synthetic_cdm(n, field_level_csv = csv, conn = lite)
+  # every table loaded with the full CDM 5.3 column list; dates typed on PostgreSQL
+  expect_identical(nrow(cdm$person), n)
+  cols <- DBI::dbGetQuery(pg, paste0("SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema = '", schema, "'"))
+  for (tbl in names(cdm)) {
+    expect_setequal(cols$column_name[cols$table_name == tbl], names(cdm[[tbl]]))
+  }
+  expect_identical(cols$data_type[cols$table_name == "condition_occurrence" & cols$column_name == "condition_start_date"], "date")
+  expect_identical(cols$data_type[cols$table_name == "drug_exposure" & cols$column_name == "drug_exposure_end_date"], "date")
+  # cardinalities and typed-date scenarios: in-memory frames == PostgreSQL == SQLite
+  sig_pg <- synthetic_cdm_signature(pg, schema = schema)
+  sig_lite <- synthetic_cdm_signature(lite)
+  expect_identical(sig_pg$counts, vapply(names(sig_pg$counts), function(t) nrow(cdm[[t]]), integer(1)))
+  expect_identical(sig_pg$counts, sig_lite$counts)
+  expect_identical(sig_pg$scenarios, sig_lite$scenarios)
+  expect_identical(sig_pg$scenarios$persons_dead, sum(!is.na(cdm$death$person_id)))
+  expect_identical(sig_pg$scenarios$cdm_version, "v5.3.1")
+  # a date comparison that needs real DATE columns on PostgreSQL
+  n_bad <- DBI::dbGetQuery(pg, paste0("SELECT COUNT(*) AS n FROM ", schema, ".drug_exposure WHERE drug_exposure_end_date < drug_exposure_start_date"))$n
+  expect_identical(as.integer(n_bad), 0L)
+  # the blueprint discovers the synthetic schema and its CDM version
+  h <- new.env(parent = emptyenv()); h$conn <- pg; h$dbms <- "postgresql"; h$target_dialect <- "postgresql"
+  h$cdm_schema <- schema; h$vocab_schema <- schema; h$results_schema <- schema; h$temp_schema <- NULL
+  h$resource_client <- NULL; h$config <- list(); h$blueprint <- NULL; h$temp_tables <- character(0); h$person_key <- as.raw(1:16)
+  bp <- dsOMOP:::.buildBlueprint(h)
+  expect_true(all(c("person", "drug_era", "cdm_source") %in% bp$tables$table_name[bp$tables$present_in_db]))
+})
