@@ -1308,8 +1308,9 @@
 #' From the plan and the vocabulary, never from the clinical rows at a site:
 #' an event source's resolved concept set, the declared concepts first in
 #' declaration order, then the other resolved concepts ascending; an interval
-#' source is one combined identity (NA). An unrestricted or adapter source has
-#' no reviewed identity set and is refused for identity-keyed outputs.
+#' source is one combined identity (NA). A cost source inherits its table
+#' parent's identities while retaining its own stream. Unrestricted sources
+#' and other adapters have no reviewed identity set for identity-keyed outputs.
 #'
 #' @param ctx Compilation context.
 #' @param src A typed source reference.
@@ -1322,6 +1323,10 @@
   if (identical(s$kind, "interval")) return(list(name = s$name, kind = "interval", ids = NA_integer_,
                                                  source = s))
   node <- ctx[["ir"]][["events"]][[s$name]]
+  if (!is.null(node[["cost"]])) {
+    parent <- .outputSourceIdentities(ctx, node[["cost"]][["event"]], path)
+    return(list(name = s$name, kind = "event", ids = parent$ids, source = s))
+  }
   if (is.null(node[["table"]])) {
     .irReject(paste0("source '", s$name, "' (an adapter) has no reviewed concept identity set for ",
                      "identity-keyed columns"), field = path)
@@ -1364,6 +1369,7 @@
   meta <- idn$source$meta
   if (identical(meta$availability, "unavailable")) {
     node <- ctx[["ir"]][["events"]][[idn$name]]
+    if (!is.null(node[["cost"]])) return(TRUE)
     if (!is.null(node[["value"]][["column"]])) return(TRUE)
     # Missing physical tables have no available roles. Infer only the
     # declared numeric role from the packaged CDM map, never invent a value
@@ -1563,6 +1569,50 @@
   if (is.null(cons$coverage)) {
     .irReject("a person_period output needs a population with observation coverage", field = field)
   }
+  # Resolve every column identity before reading patient rows. Keep the
+  # prospective names as a vector: named assignments would hide collisions.
+  carry <- opts[["carry_forward"]] %||% list()
+  srcs <- c(.irItems(node[["sources"]]), .irItems(opts[["sources"]]))
+  source_specs <- lapply(seq_along(srcs), function(i) {
+    path <- paste0(field, "/sources/", i - 1L)
+    idn <- .outputSourceIdentities(ctx, srcs[[i]], path)
+    an <- .outputSourceAnalyses(opts, idn$name, idn$kind, .outputSourceHasValue(ctx, idn))
+    an <- .OUTPUT_ANALYSES[.OUTPUT_ANALYSES %in% an]
+    cf <- carry[[idn$name]]
+    if (!is.null(cf) && identical(idn$kind, "interval")) {
+      .irReject(paste0("carry_forward of interval source '", idn$name, "' has no value"), field = path)
+    }
+    stems <- if (length(idn$ids) == 1L) idn$name else paste0(idn$name, "_", idn$ids)
+    if (!length(idn$ids)) stems <- character(0)
+    cols <- unlist(lapply(stems, function(stem) {
+      c(if (length(an)) paste0(stem, "_", an), if (!is.null(cf)) paste0(stem, "_carry"))
+    }), use.names = FALSE)
+    list(idn = idn, analyses = an, carry = cf, columns = cols)
+  })
+  source_names <- vapply(source_specs, function(s) s$idn$name, "")
+  if (anyDuplicated(source_names)) {
+    .irReject(paste0("source name '", source_names[duplicated(source_names)][[1L]],
+                     "' is ambiguous in this output"), field = paste0(field, "/sources"))
+  }
+  carry_names <- names(carry)[!names(carry) %in% source_names]
+  if (length(carry_names)) {
+    .irReject(paste0("carry_forward key '", carry_names[[1L]], "' names no source of this output"),
+              field = paste0(field, "/carry_forward"))
+  }
+  ex_names <- names(opts[["exposures"]] %||% list())
+  out_names <- names(opts[["outcomes"]] %||% list())
+  exposure_sources <- lapply(ex_names, function(x) .reduceSource(ctx, opts[["exposures"]][[x]]))
+  outcome_sources <- lapply(out_names, function(x) .reduceSource(ctx, opts[["outcomes"]][[x]]))
+  identities <- names(.outputIdentityColumns(cons))
+  inventory <- c(identities, "period_start_days", "period_end_days", "days",
+    if (!is.null(opts[["partition"]][["age_bands"]])) c("age", "age_band"),
+    if (identical(opts[["bins"]][["calendar"]], "year") ||
+        identical(opts[["partition"]][["calendar"]], "year")) "calendar_year",
+    if (identical(opts[["partition"]][["calendar"]], "month")) "calendar_month",
+    unlist(lapply(ex_names, function(x) c(paste0("exposed_", x), paste0("active_", x))), use.names = FALSE),
+    if (length(out_names)) paste0("n_", out_names),
+    unlist(lapply(source_specs, function(s) s$columns), use.names = FALSE))
+  .outputCheckNames(inventory[-seq_along(identities)], name, "episode")
   dense <- identical(opts[["representation"]] %||% "dense", "dense")
   roster <- .reduceRosterFrame(ctx, pop$roster)
   keys <- roster$cohort_row_id
@@ -1579,7 +1629,6 @@
   U[!W$defined | is.na(roster$op_end)] <- NA
   # the stream window: the requested window, extended back by the longest
   # carry-forward lookback
-  carry <- opts[["carry_forward"]] %||% list()
   look <- max(c(0L, vapply(carry, function(c) as.integer(unlist(c[["lookback"]])), integer(1))))
   sides <- .reduceWindowSides(window)
   stream_window <- if (is.null(window)) NULL else list(
@@ -1595,40 +1644,28 @@
     rows
   })
   # exposures (courses) and outcomes
-  ex_names <- names(opts[["exposures"]] %||% list())
   sorted_ex <- .outputSortedNames(opts[["exposures"]])
-  exposures <- lapply(ex_names, function(x) {
-    src <- .reduceSource(ctx, opts[["exposures"]][[x]])
+  exposures <- lapply(seq_along(ex_names), function(i) {
+    x <- ex_names[[i]]
+    src <- exposure_sources[[i]]
     .outputSourceRows(ctx, cons, src, window, ox("x", match(x, sorted_ex)), paste0(field, "/exposures/", x))
   })
   names(exposures) <- ex_names
-  out_names <- names(opts[["outcomes"]] %||% list())
   sorted_out <- .outputSortedNames(opts[["outcomes"]])
-  outcomes <- lapply(out_names, function(k) {
-    src <- .reduceSource(ctx, opts[["outcomes"]][[k]])
+  outcomes <- lapply(seq_along(out_names), function(i) {
+    k <- out_names[[i]]
+    src <- outcome_sources[[i]]
     .outputSourceRows(ctx, cons, src, window, ox("y", match(k, sorted_out)), paste0(field, "/outcomes/", k))
   })
   names(outcomes) <- out_names
-  # sources with identities, analyses and carry-forward
-  srcs <- .outputSources(node)
-  source_specs <- lapply(seq_along(srcs), function(i) {
+  # Fetch only after the complete column inventory has passed validation.
+  source_specs <- lapply(seq_along(source_specs), function(i) {
     path <- paste0(field, "/sources/", i - 1L)
-    idn <- .outputSourceIdentities(ctx, srcs[[i]], path)
-    an <- .outputSourceAnalyses(opts, idn$name, idn$kind, .outputSourceHasValue(ctx, idn))
-    an <- .OUTPUT_ANALYSES[.OUTPUT_ANALYSES %in% an]
-    cf <- carry[[idn$name]]
-    if (!is.null(cf) && identical(idn$kind, "interval")) {
-      .irReject(paste0("carry_forward of interval source '", idn$name, "' has no value"), field = path)
-    }
-    rows <- .outputSourceRows(ctx, cons, idn$source, if (is.null(cf)) window else stream_window,
-                              ox("s", i), path)
-    list(idn = idn, analyses = an, carry = cf, rows = rows)
+    sp <- source_specs[[i]]
+    sp$rows <- .outputSourceRows(ctx, cons, sp$idn$source, if (is.null(sp$carry)) window else stream_window,
+                                ox("s", i), path)
+    sp
   })
-  carry_names <- setdiff(names(carry), vapply(source_specs, function(s) s$idn$name, ""))
-  if (length(carry_names)) {
-    .irReject(paste0("carry_forward key '", carry_names[[1L]], "' names no source of this output"),
-              field = paste0(field, "/carry_forward"))
-  }
   # periods
   person_yob <- if (!is.null(opts[["partition"]][["age_bands"]])) {
     p <- .reducePersonFrame(ctx, cons)
@@ -1806,7 +1843,6 @@
       }
     }
   }
-  .outputCheckNames(setdiff(names(columns), c("row_id", "cohort_row_id", "person_id")), name, "episode")
   if (!dense) frame <- frame[event_any, , drop = FALSE]
   status <- if (unavailable) "unavailable" else "ok"
   part <- .outputComponent(inputs, name, name, frame, columns, cons, grain = "episode", status = status)
@@ -1944,6 +1980,23 @@
 
 # --- sparse --------------------------------------------------------------------------------------------
 
+# Select from the complete roster, including episodes without sparse cells.
+# Roster keys encode chronological episode order and may be lossless BIGINTs.
+.outputSparseCollapse <- function(cov, roster, collapse) {
+  if (!nrow(cov)) return(cov)
+  persons <- as.character(roster$person_id)
+  groups <- split(seq_len(nrow(roster)), factor(persons, levels = unique(persons)))
+  pick <- vapply(groups, function(ix) {
+    ix <- ix[order(.reduceKeyOrder(roster$cohort_row_id[ix]), method = "radix")]
+    if (identical(collapse, "last_episode")) ix[[length(ix)]] else ix[[1L]]
+  }, integer(1))
+  if (!identical(collapse, "any")) return(cov[cov$ep %in% pick, , drop = FALSE])
+  cov$person <- persons[cov$ep]
+  agg <- stats::aggregate(covariate_value ~ person + covariate_id, data = cov, FUN = max)
+  data.frame(ep = unname(pick[match(agg$person, unique(persons))]), covariate_id = agg$covariate_id,
+             covariate_value = agg$covariate_value)
+}
+
 #' Compile a sparse output (section 6.12; defect B-22)
 #'
 #' Per episode (or person) and registry covariate -- \code{(source, concept
@@ -1987,13 +2040,8 @@
   }
   cov <- if (length(out)) do.call(rbind, out) else
     data.frame(ep = integer(0), covariate_id = integer(0), covariate_value = numeric(0))
-  if (identical(grain, "person") && nrow(cov)) {
-    persons <- as.character(roster$person_id)
-    cov$person <- persons[cov$ep]
-    first_ep <- match(unique(persons), persons)
-    agg <- stats::aggregate(covariate_value ~ person + covariate_id, data = cov, FUN = max)
-    cov <- data.frame(ep = first_ep[match(agg$person, unique(persons))], covariate_id = agg$covariate_id,
-                      covariate_value = agg$covariate_value)
+  if (identical(grain, "person")) {
+    cov <- .outputSparseCollapse(cov, roster, node[["collapse"]] %||% "first_episode")
   }
   cov <- cov[order(cov$ep, cov$covariate_id), , drop = FALSE]
   .outputRowCap(nrow(cov), name)
