@@ -12,7 +12,8 @@
 #   K = 10 events per person; one weighted histogram H(q, exposed status)
 #   with whole-person sensitivity K. The conditional likelihood depends on
 #   the data only through M_q and E; the estimate is the root of its score
-#   on the signed protected cells (unbiased in the noise).
+#   on the signed protected cells. The score is linear and unbiased in the
+#   release noise; its selected root need not be unbiased.
 # * Standard-route person-time: in standard mode with the DP service, the
 #   person-time block of the C6 entries (person-days, rates, MDRR, effects)
 #   comes from the same protected components as in auto mode, in a labelled
