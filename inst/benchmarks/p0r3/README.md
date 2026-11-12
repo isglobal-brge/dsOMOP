@@ -65,9 +65,12 @@ is not the final-source performance result.
 
 `snapshot-focused.log` records 56 passing assertions and zero failures, errors,
 or skips on final runtime revision `2ac52c8`. These include PostgreSQL, MariaDB,
-MySQL, DuckDB and SQLite execution, independent-connection writes, exact signed
-64-bit identifiers, duplicate membership, native/streaming equivalence,
-rollback, connection loss, and a concurrent InnoDB-to-MyISAM change. The SQL
+MySQL, DuckDB and SQLite execution; independent-connection writes and
+temporary materialization on PostgreSQL/MariaDB/MySQL; exact signed 64-bit
+identifiers, duplicate membership and native/streaming equivalence; SQLite
+rollback and injected connection-loss/commit guards; and a concurrent
+InnoDB-to-MyISAM change. Connection loss was injected through the connection
+validity check, not a network or server disconnect. The SQL
 Server, Oracle and Redshift adapters have structural SQL tests only; those
 services were unavailable for execution.
 
