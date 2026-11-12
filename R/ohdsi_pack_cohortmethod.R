@@ -1285,7 +1285,9 @@
     rows <- rows[order(rows$arm, rows$ps_bin), , drop = FALSE]
     rownames(rows) <- NULL
     attr(rows, "dsomop_effective_params") <- c(
-      effective_params, list(model_admission = admission$status %||% "admitted"))
+      effective_params,
+      list(model_admission = if (identical(admission$status, "intercept_only"))
+        "intercept_only" else "admitted"))
     rows
   }
 }

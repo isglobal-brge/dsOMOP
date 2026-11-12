@@ -215,7 +215,7 @@ test_that("exp2: 1-2 outcomes cannot be recovered from the calibration mean", {
       expect_true(is.na(dia$events_per_variable), info = info)
       expect_identical(
         attr(cal, "dsomop_effective_params")$model_admission,
-        "response_not_admissible", info = info)
+        "not_admitted", info = info)
       # The baseline attack: mean_predicted * n is an exact integer.
       if (nrow(cal) == 1L && is.finite(cal$mean_predicted)) {
         fail("a single calibration bin released its mean predicted risk")
@@ -245,7 +245,7 @@ test_that("exp8: PLP AUC and mean risk no longer solve a 2-person case cell", {
     expect_true(all(is.na(perf$value)))
     expect_equal(nrow(cal), 0L)
     meta <- attr(perf, "dsomop_effective_params")
-    expect_identical(meta$model_admission, "no_admissible_predictor")
+    expect_identical(meta$model_admission, "not_admitted")
     expect_identical(meta$requested$max_covariates, "1")
     expect_identical(meta$effective$max_covariates, 10L)
     # The audit's brute force has no AUC to fit.

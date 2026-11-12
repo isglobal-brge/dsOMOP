@@ -527,10 +527,14 @@
 
 # Record the effective (gridded) model parameters and the admission status of a
 # PLP run on its raw output frame; the run path carries the attribute through
-# the gate to the released frame.
+# the gate to the released frame. Only the coarse status leaves the server
+# ("admitted" or "not_admitted"); the internal reason (inadmissible outcome
+# classes, no admissible predictor, failed fit) is a data-dependent detail.
 .omopPlpAnnotate <- function(df, m) {
+  status <- if (identical(m$admission, "admitted")) "admitted" else
+    "not_admitted"
   attr(df, "dsomop_effective_params") <- c(
-    m$effective_params, list(model_admission = m$admission)
+    m$effective_params, list(model_admission = status)
   )
   df
 }
@@ -724,7 +728,7 @@
     br <- stats::quantile(m$risk, probs = seq(0, 1, length.out = n_bins + 1L),
                           names = FALSE, type = 7)
     br <- unique(br)
-    if (length(br) < 2L) return(data.frame())
+    if (length(br) < 2L) return(.omopPlpAnnotate(data.frame(), m))
     bin <- findInterval(m$risk, br, rightmost.closed = TRUE, all.inside = TRUE)
 
     parts <- lapply(sort(unique(bin)), function(b) {
