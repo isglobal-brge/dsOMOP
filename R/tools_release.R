@@ -49,6 +49,73 @@
   realised_sticky = "heuristic_realised_contribution_reuse"
 )
 
+# --- Injective identity encoding --------------------------------------------------
+
+#' Injective, byte-length-framed encoding of a compound identity
+#'
+#' Every argument is typed and length-prefixed (and every character element
+#' is prefixed by its UTF-8 byte length), so no choice of labels -- delimiters,
+#' colons, newlines, U+001F or other control characters -- can make two
+#' different tuples encode alike. Use it for every identity built from more
+#' than one value (populations, realised map keys, coordinates with labels).
+#' Order is significant; callers sort set-valued inputs canonically first.
+#'
+#' @param ... Values: NULL, character, factor, logical, numeric or lists.
+#' @return One character string.
+#' @keywords internal
+.dsomopFrame <- function(...) {
+  encode <- function(v) {
+    if (is.null(v)) return("N;")
+    if (is.list(v)) {
+      inner <- vapply(v, encode, character(1L))
+      keys <- names(v)
+      if (!is.null(keys)) {
+        inner <- paste0(vapply(as.list(keys), encode, character(1L)), inner)
+        return(paste0("D", length(v), "{", paste(inner, collapse = ""), "}"))
+      }
+      return(paste0("L", length(v), "{", paste(inner, collapse = ""), "}"))
+    }
+    if (is.factor(v)) v <- as.character(v)
+    if (inherits(v, "integer64")) v <- as.character(v)
+    if (is.character(v)) {
+      v <- enc2utf8(v)
+      el <- ifelse(is.na(v), "a;",
+                   paste0("s", nchar(v, type = "bytes"), ":", v))
+      return(paste0("C", length(v), "{", paste(el, collapse = ""), "}"))
+    }
+    if (is.logical(v)) {
+      el <- ifelse(is.na(v), "a;", ifelse(v, "t;", "f;"))
+      return(paste0("B", length(v), "{", paste(el, collapse = ""), "}"))
+    }
+    if (is.numeric(v)) {
+      txt <- sprintf("%.17g", v)
+      el <- ifelse(is.na(v), "a;",
+                   paste0("n", nchar(txt, type = "bytes"), ":", txt))
+      return(paste0("R", length(v), "{", paste(el, collapse = ""), "}"))
+    }
+    stop("An identity element has an unsupported type.", call. = FALSE)
+  }
+  paste(vapply(list(...), encode, character(1L)), collapse = "")
+}
+
+#' Public opaque identifier of one logical release source
+#'
+#' Derived from the public noise-key fingerprint and the public corpus domain
+#' (both already in the DP status), so two connections to one logical node
+#' carry the same identifier and a client can refuse to pool them twice. It
+#' contains no private corpus material, fingerprint or person data.
+#'
+#' @param policy DP policy.
+#' @return \code{"dsl_"} followed by 40 hexadecimal characters.
+#' @keywords internal
+.dsomopReleaseLogicalSourceId <- function(policy) {
+  paste0("dsl_", substr(.dsomopDpSha256(.dsomopDpCanonicalJson(list(
+    protocol = "dsomop-logical-source-v1",
+    noise_key_id = policy$noise_root$key_id %||% "",
+    domain = policy$domain %||% ""
+  ))), 1L, 40L))
+}
+
 # --- Public grids ---------------------------------------------------------------
 
 #' Public, versioned release grids
