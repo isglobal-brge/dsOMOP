@@ -7,6 +7,15 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- (A-20; WS-5 review B1–B4, B6–B7, N1–N2) Era `min_days` uses the
+  normalised recorded span even when stockpiling; persistence and carry do
+  not satisfy the threshold. Direct-event coverage applies the interval
+  quality policy, unavailable reducers return NA, and visit/episode
+  associations restrict anchors and streams before interval construction.
+  Private fetches are bounded, compiler temporary tables follow execution
+  context cleanup, and duplicate observed periods preserve segment keys.
+  The compiler handoff is recorded in
+  `inst/contracts/ws5-interval-anchor-coverage.md`.
 - Publication validates one genuine person per final row through direct keys or
   an immutable roster. Composite families commit together; support is counted
   on the materialized component, including streamed staged files.
