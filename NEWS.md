@@ -2,6 +2,14 @@
 
 Security release: the P0 fixes of the OHDSI-tools audit.
 
+- Corrected DP-only admission for analysis assign loaders: private server-side
+  preparation can now create the sealed inputs needed by fixed typed releases.
+  The tools-disabled gate, publication controls and final protected-release
+  checks still apply; no administrator setup is needed.
+- Large fixed histograms avoid repeated whole-population cell scans and factor
+  construction during fingerprint chunking. The signed components, byte framing,
+  noise and per-request generation are unchanged; no answer cache is added.
+
 - Protected OHDSI-tool outputs now share canonical components across
   equivalent automatic/typed analyses, public-grid views, statistic aliases and
   validated lineage/rename variants. Complete registered domains and common

@@ -538,7 +538,7 @@
   if (anyDuplicated(tokens)) {
     stop("A contribution map lists one person twice.", call. = FALSE)
   }
-  digests <- character(0)
+  records <- character(0)
   if (length(tokens) > 0L) {
     order <- order(tokens, method = "radix")
     tok <- enc2utf8(as.character(tokens[order]))
@@ -546,8 +546,19 @@
     # characters a token holds.
     records <- paste0(nchar(tok, type = "bytes"), ":", tok, ":",
                       .dsomopReleaseIntegerString(contributions[order]))
-    chunks <- split(records, ceiling(seq_along(records) / 10000L))
-    digests <- vapply(chunks, function(chunk) {
+  }
+  .dsomopReleaseFingerprintFramed(keys, owner, family, coordinate, records)
+}
+
+# Hash already validated, token-sorted, byte-framed contribution records.
+# Builders may reuse the framing within a request; no fingerprint or map is
+# retained across requests and the chunk boundaries remain mechanism-owned.
+.dsomopReleaseFingerprintFramed <- function(keys, owner, family, coordinate, records) {
+  digests <- character(0)
+  if (length(records)) {
+    starts <- seq.int(1L, length(records), by = 10000L)
+    digests <- vapply(starts, function(start) {
+      chunk <- records[seq.int(start, min(start + 9999L, length(records)))]
       .dsomopDpHmac(keys$fingerprint, paste(
         c("dsomop-contribution-chunk-v2", length(chunk), chunk),
         collapse = "\n"))
@@ -555,7 +566,7 @@
   }
   .dsomopDpHmac(keys$fingerprint, .dsomopDpCanonicalJson(list(
     protocol = "dsomop-contributions-v1", owner = owner, family = family,
-    coordinate = coordinate, n = length(tokens),
+    coordinate = coordinate, n = length(records),
     chunks = paste(digests, collapse = ",")
   )))
 }
@@ -899,17 +910,17 @@
 #' @keywords internal
 .dsomopReleaseCapSubstrate <- function(sub, owner) {
   if (nrow(sub) == 0L) return(sub)
+  if (!identical(owner$strata$kind, "data") && !anyDuplicated(sub$person_id)) {
+    return(sub)
+  }
   key <- paste(sub$person_id, sub$stratum, sep = "\u001f")
   if (anyDuplicated(key)) {
     stop("A protected substrate lists one person twice in one stratum.",
          call. = FALSE)
   }
   if (!identical(owner$strata$kind, "data")) {
-    if (anyDuplicated(sub$person_id)) {
-      stop("A protected partition lists one person in two strata.",
-           call. = FALSE)
-    }
-    return(sub)
+    stop("A protected partition lists one person in two strata.",
+         call. = FALSE)
   }
   order_value <- suppressWarnings(as.numeric(sub$stratum_order %||%
                                                rep(NA_real_, nrow(sub))))
@@ -1054,11 +1065,22 @@
   bin_keys <- if (is_cell) owner$cells else if (has_h)
     .dsomopReleaseBinKeys(owner$grid) else character(0)
 
+  # Sort once so every subset used for a count or histogram has canonical
+  # token order. Frame unit contributions once instead of rebuilding the same
+  # million strings for root, stratum and histogram maps.
+  token_order <- order(tokens, method = "radix")
+  tokens <- tokens[token_order]
+  sub <- sub[token_order, , drop = FALSE]
+  unit_records <- paste0(nchar(tokens, type = "bytes"), ":", tokens, ":1")
+
   noisy <- function(family, coordinate, value, allocation, sensitivity,
                     map_tokens, contributions, owner_id = owner$id,
                     population = owner$population) {
-    fp <- .dsomopReleaseFingerprint(keys, owner_id, family, coordinate,
-                                    map_tokens, contributions)
+    fp <- if (all(contributions == 1)) {
+      .dsomopReleaseFingerprintFramed(keys, owner_id, family, coordinate,
+                                      unit_records[match(map_tokens, tokens)])
+    } else .dsomopReleaseFingerprint(keys, owner_id, family, coordinate,
+                                     map_tokens, contributions)
     .dsomopReleaseNoisyComponent(policy, keys, protection, list(
       owner = owner_id, population = population, family = family,
       coordinate = coordinate, value = value, allocation = allocation,
@@ -1100,8 +1122,11 @@
     if (has_h && (dist_ok || !data_kind)) {
       cell <- if (is_cell) match(sub$cell[in_s], owner$cells) else
         .dsomopReleaseBinIndex(sub$v[in_s], owner$grid)
+      # Index each record once, retaining empty public cells. Re-scanning
+      # the complete person vector for every cell is avoidable linear work.
+      members <- split(seq_along(cell), factor(cell, levels = seq_along(bin_keys)))
       h_noisy <- vapply(seq_along(bin_keys), function(b) {
-        hit <- which(cell == b)
+        hit <- members[[b]]
         noisy("H", paste0("stratum=", s, "|cell=", bin_keys[[b]]),
               length(hit), alloc_h, cap, tok[hit], rep(1, length(hit)))
       }, numeric(1L))

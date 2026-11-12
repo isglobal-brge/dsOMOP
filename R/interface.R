@@ -2855,7 +2855,9 @@ omopAnalysisRunDS <- function(omop_symbol, name, params = list(),
 omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
                                     scope = NULL, combine = "union",
                                     date_handling = NULL, ...) {
-  .dsomopRequireCommunityTool()
+  # Assignment prepares private server-side inputs; only final statistics
+  # select a standard or protected release route. Keep the tools-off gate.
+  .dsomopRequireCommunityTool(dp_routes = TRUE)
   handle <- .getHandle(omop_symbol)
   name <- .ds_arg(name)
   if (is.list(name)) name <- name[[1]]
