@@ -1132,8 +1132,9 @@
       stop("A population filter in the NOT group compiled to no predicate.",
            call. = FALSE)
     }
-    # Native three-valued logic: NOT UNKNOWN stays UNKNOWN (design 6.6).
-    return(paste0("(NOT ", part, ")"))
+    # Native three-valued logic: NOT UNKNOWN stays UNKNOWN (design 6.6); the
+    # child is parenthesised whatever its own shape.
+    return(paste0("(NOT (", part, "))"))
   }
 
   if (identical(group_keys, "and")) {

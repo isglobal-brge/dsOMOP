@@ -1625,8 +1625,10 @@
     if (is.null(part) || !nzchar(part)) {
       stop("Custom filter NOT group compiled to no predicate.", call. = FALSE)
     }
-    # Native three-valued logic: NOT UNKNOWN is UNKNOWN (design 6.6).
-    return(paste0("(NOT ", part, ")"))
+    # Native three-valued logic: NOT UNKNOWN is UNKNOWN (design 6.6). The
+    # child is parenthesised: a leaf such as a date BETWEEN compiles to a bare
+    # conjunction.
+    return(paste0("(NOT (", part, "))"))
   }
 
   if ("and" %in% names(filter)) {
