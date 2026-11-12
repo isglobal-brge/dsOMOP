@@ -13,11 +13,18 @@ Returns the number of distinct persons whose observation period length is at
 least a given number of days. Useful for assessing the size of the cohort with
 sufficient follow-up time.
 
+Aggregate release (dsOMOP 2.10.3): `min_days` snaps to the nearest point of the
+public duration grid (0, 30, 90, 180, 365, 730, 1095, 1825, 3650, 7300 and
+10957 days; ties to the smaller, out-of-range values saturate). In auto mode
+the answer is the tail sum of the one protected histogram of each person's
+longest observation period on that grid. The protection label reports the
+requested and effective threshold.
+
 ## Input
 
 | Parameter | Example | Mandatory | Notes |
 |-----------|---------|-----------|-------|
-| min_days | 365 | No | Minimum observation period length in days (default 365) |
+| min_days | 365 | No | Minimum observation period length in days (default 365); snapped to the public duration grid in aggregate releases |
 
 ## Output
 
