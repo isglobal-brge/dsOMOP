@@ -400,15 +400,11 @@
           closed(out[["censoring"]], c("cohort_end", "observation_period_end", "death", "admin_date"),
                  paste0(p, "/censoring"))
         }
-        if (identical(type, "baseline") && !is.null(out[["age_breaks"]])) {
-          breaks <- unlist(out[["age_breaks"]], use.names = FALSE)
-          ok <- is.numeric(breaks) && length(breaks) >= 2L && !anyNA(breaks) &&
-            all(is.finite(breaks)) && all(breaks == round(breaks)) &&
-            breaks[[1L]] == 0 && all(diff(breaks) > 0)
-          if (!ok) {
-            add(p, "/age_breaks: invalid age_breaks: at least two strictly increasing ",
-                "integers starting at 0 are required")
-          }
+        if (identical(type, "baseline") && !is.null(out[["age_breaks"]]) &&
+            (!is.numeric(unlist(out[["age_breaks"]], use.names = FALSE)) ||
+             !.irAgeGridValid(out[["age_breaks"]]))) {
+          add(p, "/age_breaks: invalid age_breaks: at least two strictly increasing ",
+              "integers starting at 0 are required")
         }
         if (identical(type, "intervals_long")) {
           sf <- out[["source_filters"]]

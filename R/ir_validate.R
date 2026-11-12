@@ -22,6 +22,17 @@
 
 .irItems <- function(x) if (is.null(x)) list() else .jsonArrayItems(x)
 
+# The assignment age-grid shape (design 4.5 b: at least two strictly
+# increasing integers starting at 0), decided by the one rule the executors
+# and .planValidate() use, .bandAges() in R/assignment_policy.R.
+.irAgeGridValid <- function(breaks) {
+  if (is.null(breaks)) return(FALSE)
+  tryCatch({
+    .bandAges(20L, age_breaks = breaks)
+    TRUE
+  }, error = function(e) FALSE)
+}
+
 # Index-source tags a population's episodes carry (section 6.9; A-1, A-7).
 .irIndexSourceTags <- function(ir, pid, seen = character(0)) {
   if (pid %in% seen) return(character(0))
@@ -325,11 +336,9 @@
       }
     }
     d <- node[["derived"]]
-    if (is.list(d) && identical(d[["kind"]], "age") && !is.null(d[["age_breaks"]])) {
-      b <- unlist(d[["age_breaks"]])
-      if (length(b) < 2L || b[[1L]] != 0 || any(diff(b) <= 0)) {
-        add(base, "/derived/age_breaks: age_breaks must be at least two strictly increasing integers starting at 0")
-      }
+    if (is.list(d) && identical(d[["kind"]], "age") && !is.null(d[["age_breaks"]]) &&
+        !.irAgeGridValid(d[["age_breaks"]])) {
+      add(base, "/derived/age_breaks: age_breaks must be at least two strictly increasing integers starting at 0")
     }
   }
 
