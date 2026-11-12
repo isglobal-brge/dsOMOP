@@ -36,6 +36,7 @@ test_that("aliases inherit the target pooling contract byte-for-byte", {
 })
 
 test_that("metadata exposes inert pooling semantics without compute internals", {
+  withr::local_options(list(dsomop.tools.mode = "standard"))
   handle <- pooling_contract_handle()
   on.exit(cleanup_handle(handle))
   meta <- .omopAnalysisGet(handle, "dsomop:incidence.rate")
@@ -47,6 +48,8 @@ test_that("metadata exposes inert pooling semantics without compute internals", 
 })
 
 test_that("representative contracts encode exact sufficient statistics", {
+  # Standard mode keeps the exact-statistic contracts (masked fields are NA).
+  withr::local_options(list(dsomop.tools.mode = "standard"))
   handle <- pooling_contract_handle()
   on.exit(cleanup_handle(handle))
 
@@ -95,6 +98,38 @@ test_that("representative contracts encode exact sufficient statistics", {
   )$pooling_contract
   expect_identical(treated$columns$treatment_concept_id$role, "key")
   expect_identical(treated$columns$treatment$role, "label")
+})
+
+test_that("protected releases publish component pooling, not exact contracts", {
+  # dsOMOP 2.10.3: in auto mode a protected entry's values are projected noisy
+  # components; the legacy exact-statistic contract is not_poolable (old
+  # clients display, never pool) and release_pooling describes the signed
+  # components that dsOMOPClient >= 2.10.3 pools.
+  withr::local_options(list(dsomop.tools.mode = "auto"))
+  handle <- pooling_contract_handle()
+  on.exit(cleanup_handle(handle))
+  for (id in c("dsomop:incidence.rate", "dsomop:cm.effect_estimate",
+               "dsomop:cm.mdrr", "dsomop:achilles.103")) {
+    meta <- .omopAnalysisGet(handle, id)
+    expect_identical(meta$pooling_contract$strategy, "not_poolable", info = id)
+    expect_identical(meta$release_pooling$strategy, "protected_components",
+                     info = id)
+    expect_identical(meta$release_pooling$protocol,
+                     "dsomop-protected-release-v1", info = id)
+    expect_silent(.omopAnalysisValidatePoolingContract(meta$pooling_contract,
+                                                       id))
+  }
+  # Entries without a protected contract keep their exact contract.
+  km <- .omopAnalysisGet(handle, "dsomop:cm.kaplan_meier")
+  expect_identical(km$pooling_contract$strategy, "kaplan_meier")
+  expect_null(km$release_pooling)
+  # The legacy OHDSI name and its canonical twin share one protected class
+  # and column contract (and one owner, so their components are the same).
+  alias <- .omopAnalysisGet(handle, "dsomop:ohdsi.cohort_method.cm_result")
+  target <- .omopAnalysisGet(handle, "dsomop:cm.mdrr")
+  expect_identical(alias$release_pooling$class, target$release_pooling$class)
+  expect_identical(alias$release_pooling$columns,
+                   target$release_pooling$columns)
 })
 
 test_that("effect and Kaplan-Meier contracts reject unsafe column roles", {

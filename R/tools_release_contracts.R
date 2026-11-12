@@ -727,10 +727,21 @@
                           masked_always = c("irr", "ci_lo", "ci_hi",
                                             "log_irr", "se_log_irr"))
   }
+  # Mixed frames: safe binary prevalence rows (or standard summary scalars)
+  # keep their established controls; their protected fields are overlaid with
+  # the protected components of their owners.
+  mixed <- function(overlay, masked_scoped = dist,
+                    masked_always = character(0)) {
+    c(contract("mixed", NULL, fixed_basis = FALSE,
+               masked_scoped = masked_scoped, masked_always = masked_always),
+      list(mixed = TRUE, overlay = overlay))
+  }
+  # The diagnostics summary's MDRR is the cm.mdrr view of the same protected
+  # arm components (G-05); its other scalars stay standard.
   for (id in c("dsomop:cm.diagnostics_summary",
                "dsomop:ohdsi.cohort_method.cm_diagnostics_summary")) {
-    out[[id]] <- contract("C9", NULL, fixed_basis = FALSE,
-                          masked_always = "mdrr")
+    out[[id]] <- mixed(.omopReleaseOverlayCmDiagnostics,
+                       masked_scoped = character(0), masked_always = "mdrr")
   }
   out[["dsomop:fe.continuous"]] <- contract(
     "C7", .omopReleaseRunFeContinuous, fixed_basis = FALSE,
@@ -751,12 +762,6 @@
     masked_scoped = dist)
   out[["dsomop:char.time_to_event"]] <- contract(
     "C8", .omopReleaseRunTimeToEvent, fixed_basis = FALSE)
-  # Mixed frames: safe binary prevalence rows keep their established controls;
-  # their distribution rows are overlaid with protected components.
-  mixed <- function(overlay) {
-    c(contract("mixed", NULL, fixed_basis = FALSE, masked_scoped = dist),
-      list(mixed = TRUE, overlay = overlay))
-  }
   out[["dsomop:fe.table1"]] <- mixed(.omopReleaseOverlayTable1)
   out[["dsomop:char.target_covariates"]] <-
     mixed(.omopReleaseOverlayTargetCovariates)
@@ -971,6 +976,23 @@
                            stringsAsFactors = FALSE))
 }
 
+# The CohortMethod MDRR formula applied to displayed protected components
+# (no banding or support re-test of already protected values).
+.omopReleaseMdrr <- function(outcomes, target_days, comparator_days,
+                             alpha = 0.05, power = 0.8, two_sided = TRUE) {
+  if (!is.finite(alpha) || alpha <= 0 || alpha >= 1) alpha <- 0.05
+  if (!is.finite(power) || power <= 0 || power >= 1) power <- 0.8
+  D <- as.numeric(outcomes)
+  td <- as.numeric(target_days)
+  cd <- as.numeric(comparator_days)
+  if (!all(is.finite(c(D, td, cd))) || D <= 0 || td <= 0 || cd <= 0) {
+    return(NA_real_)
+  }
+  p <- td / (td + cd)
+  z_alpha <- stats::qnorm(1 - (if (isTRUE(two_sided)) alpha / 2 else alpha))
+  exp((z_alpha + stats::qnorm(power)) * sqrt(1 / (D * p * (1 - p))))
+}
+
 .omopReleaseCmArmsRun <- function(view) {
   force(view)
   function(handle, ctx, params, route, snap) {
@@ -1040,7 +1062,7 @@
       two_sided <- !identical(params$two_sided %||% "1", "0")
       ok <- t_row$n_display >= floor && c_row$n_display >= floor &&
         t_row$time_display > 0 && c_row$time_display > 0
-      mdrr <- if (isTRUE(ok)) .dsomopReleaseRound(.omopCmMdrr(
+      mdrr <- if (isTRUE(ok)) .dsomopReleaseRound(.omopReleaseMdrr(
         t_row$events_display + c_row$events_display, t_row$time_display,
         c_row$time_display, alpha = alpha, power = power,
         two_sided = two_sided)) else NA_real_
@@ -1683,6 +1705,22 @@
   list(df = df, built = list(b))
 }
 
+# The diagnostics summary's MDRR from the protected arm components of cm.mdrr
+# (same owner, same effective parameters, hence the same draws).
+.omopReleaseOverlayCmDiagnostics <- function(handle, ctx, params, route, snap,
+                                             df) {
+  if (!is.data.frame(df) || nrow(df) == 0L || !"mdrr" %in% names(df)) {
+    return(list(df = df, built = list()))
+  }
+  arms <- .omopReleaseCmArmsRun("mdrr")(handle, ctx, params, route, snap)
+  mdrr <- if (is.data.frame(arms$df) && nrow(arms$df) > 0L) {
+    as.numeric(arms$df$mdrr[[1L]])
+  } else NA_real_
+  df$mdrr <- rep(mdrr, nrow(df))
+  list(df = df, built = arms$built,
+       blocks = list(summary = "standard", mdrr = route$protection))
+}
+
 #' Overlay the protected distribution rows of a mixed frame
 #'
 #' The frame's binary prevalence rows were released under their established
@@ -1697,7 +1735,8 @@
   out <- result$df
   label <- .omopToolsReleaseLabel(route, result$built, contract, snap, list(
     protection = "mixed",
-    blocks = list(binary = "standard", distribution = route$protection)))
+    blocks = result$blocks %||%
+      list(binary = "standard", distribution = route$protection)))
   attr(out, "dsomop_protection") <- label
   attr(out, "dsomop_release") <- list(
     protocol = .DSOMOP_RELEASE_PROTOCOL,

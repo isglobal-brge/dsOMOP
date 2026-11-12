@@ -2237,7 +2237,43 @@ omopAchillesDistributionDS <- function(omop_symbol, analysis_ids) {
   handle <- .getHandle(omop_symbol)
   analysis_ids <- .ds_arg(analysis_ids)
   if (is.list(analysis_ids)) analysis_ids <- as.integer(unlist(analysis_ids))
-  .achillesGetDistributions(handle, analysis_ids)
+  .achillesReleaseDistributions(.achillesGetDistributions(handle, analysis_ids))
+}
+
+#' Release precomputed Achilles distributions under the tools mode
+#'
+#' An imported exact distribution (mean, SD, percentiles) carries no
+#' person-level input from which protected components could be rebuilt, and
+#' arbitrary small noise must not be added to it without a verified
+#' contribution contract. In auto mode its summary fields are therefore
+#' unavailable (\code{protected_basis_unavailable}); the live
+#' \code{dsomop:achilles.<id>} analyses release protected components of the
+#' same estimands. Standard mode keeps the established whole-database
+#' summaries (these readers are never scoped); DP-only mode refuses the reader
+#' before it runs.
+#'
+#' @param df Frame from \code{.achillesGetDistributions}.
+#' @return \code{df}, possibly masked, with a \code{dsomop_protection} label.
+#' @keywords internal
+.achillesReleaseDistributions <- function(df) {
+  mode <- .dsomopToolsMode()
+  fields <- intersect(c("avg_value", "stdev_value", "median_value",
+                        "p10_value", "p25_value", "p75_value", "p90_value"),
+                      names(df))
+  label <- list(protection = "standard", mode = mode,
+                privacy_call_quota = "none",
+                history_based_admission = FALSE)
+  if (identical(mode, "auto") && length(fields)) {
+    if (nrow(df) > 0L) for (f in fields) df[[f]] <- rep(NA_real_, nrow(df))
+    label$masked_fields <- fields
+    label$masked_reason <- "protected_basis_unavailable"
+    label$note <- paste0(
+      "Imported exact distributions have no person-level basis for ",
+      "protected components; the live dsomop:achilles.<id> analyses release ",
+      "protected summaries of the same estimands.")
+  }
+  attr(df, "dsomop_protection") <- label
+  df
 }
 
 #' Get Achilles analysis catalog (Aggregate)

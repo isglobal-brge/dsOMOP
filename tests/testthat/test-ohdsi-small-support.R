@@ -529,32 +529,78 @@ test_that("G-05: supported 13 + 7 uses the released 10 + 5, not band(20)", {
   h <- ss_mdrr_handle(1:13, 150:156)
   on.exit(cleanup_handle(h))
   withr::with_options(ss_opts(), {
+    # Standard route (no protected mechanism on this server): the arm counts
+    # keep their bands; person-time and the MDRR derived from it are
+    # unavailable (dsOMOP 2.10.3, G-02: TAR sweeps of exact person-time
+    # recover arm sizes and event days).
     r <- .omopAnalysisRun(h, "dsomop:cm.mdrr", ss_mdrr_params,
                           scope = list("ss_m_t", "ss_m_c"))
     expect_setequal(r$arm, c("target", "comparator"))
     t <- r[r$arm == "target", ]
     c <- r[r$arm == "comparator", ]
     expect_equal(c(t$outcomes, c$outcomes), c(10, 5))
-    expect_true(all(r$person_days %% 5 == 0))
-    expected <- ss_mdrr_formula(t$outcomes + c$outcomes, t$person_days,
-                                c$person_days)
-    expect_equal(t$mdrr, expected)
-    expect_equal(c$mdrr, expected)
-    # Not the MDRR of the banded raw total (20), whose carry bit leaks.
-    expect_false(isTRUE(all.equal(
-      t$mdrr, ss_mdrr_formula(20, t$person_days, c$person_days))))
-    # The exact inverse recovers only the released total outcomes.
-    K <- ((stats::qnorm(0.975) + stats::qnorm(0.8)) / log(t$mdrr))^2
-    p <- t$person_days / (t$person_days + c$person_days)
-    expect_equal(K / (p * (1 - p)), t$outcomes + c$outcomes)
-    # The legacy alias and the diagnostics summary share the value.
-    alias <- .omopAnalysisRun(h, "dsomop:ohdsi.cohort_method.cm_result",
-                              ss_mdrr_params, scope = list("ss_m_t", "ss_m_c"))
-    expect_equal(unique(alias$mdrr), expected)
+    expect_true(all(is.na(r$person_days)))
+    expect_true(all(is.na(r$mdrr)))
+    expect_true(all(c("person_days", "mdrr") %in%
+                      attr(r, "dsomop_protection")$masked_fields))
     diag <- .omopAnalysisRun(h, "dsomop:cm.diagnostics_summary",
                              ss_mdrr_params, scope = list("ss_m_t", "ss_m_c"))
-    expect_equal(diag$mdrr, expected)
+    expect_true(is.na(diag$mdrr))
+    # The standard kernel, wherever time is released, uses the released
+    # 10 + 5 (not the band of the raw total 20, whose carry bit leaks).
+    arm <- function(o) list(persons = 100, person_days = 145900, outcomes = o,
+                            outcome_persons = o)
+    expect_equal(.omopCmReleasedMdrr(arm(13), arm(7)),
+                 ss_mdrr_formula(15, 145900, 145900))
+    expect_false(isTRUE(all.equal(.omopCmReleasedMdrr(arm(13), arm(7)),
+                                  ss_mdrr_formula(20, 145900, 145900))))
   })
+  # Protected route: the MDRR is post-processing of the displayed protected
+  # arm components only, shared by the alias and the diagnostics summary.
+  # At the reference epsilon 0.1 the noisy time of 100-person arms is often
+  # clipped to 0 (SD about 103,000 days for T = 3650): the MDRR is then NA, or
+  # else exactly the formula of the displayed values.
+  .release_state()
+  withr::local_options(ss_opts())
+  run <- function(id) suppressWarnings(.omopAnalysisRun(
+    h, id, ss_mdrr_params, scope = list("ss_m_t", "ss_m_c")))
+  displayed_mdrr <- function(r) {
+    t <- r[r$arm == "target", ]
+    c <- r[r$arm == "comparator", ]
+    if (t$person_days > 0 && c$person_days > 0) {
+      ss_mdrr_formula(t$outcomes + c$outcomes, t$person_days, c$person_days)
+    } else NA_real_
+  }
+  r <- run("dsomop:cm.mdrr")
+  expect_identical(attr(r, "dsomop_protection")$protection, "realised_sticky")
+  if (!all(is.na(r$mdrr))) {
+    expect_equal(unique(r$mdrr), displayed_mdrr(r), tolerance = 1e-9)
+  }
+  # A larger reference epsilon makes this small fixture's MDRR available.
+  withr::local_options(list(dsomop.dp.release_epsilon = 8))
+  .release_restart()
+  r <- run("dsomop:cm.mdrr")
+  t <- r[r$arm == "target", ]
+  c <- r[r$arm == "comparator", ]
+  expect_true(all(c(t$person_days, c$person_days) > 0))
+  expected <- displayed_mdrr(r)
+  expect_equal(t$mdrr, expected, tolerance = 1e-9)
+  expect_equal(c$mdrr, expected, tolerance = 1e-9)
+  # The exact inverse recovers only the displayed (noisy) total outcomes.
+  K <- ((stats::qnorm(0.975) + stats::qnorm(0.8)) / log(t$mdrr))^2
+  p <- t$person_days / (t$person_days + c$person_days)
+  expect_equal(K / (p * (1 - p)), t$outcomes + c$outcomes, tolerance = 1e-6)
+  alias <- suppressWarnings(.omopAnalysisRun(
+    h, "dsomop:ohdsi.cohort_method.cm_result", ss_mdrr_params,
+    scope = list("ss_m_t", "ss_m_c")))
+  expect_equal(unique(alias$mdrr), t$mdrr)
+  diag <- suppressWarnings(.omopAnalysisRun(
+    h, "dsomop:cm.diagnostics_summary", ss_mdrr_params,
+    scope = list("ss_m_t", "ss_m_c")))
+  expect_equal(diag$mdrr, t$mdrr)
+  label <- attr(diag, "dsomop_protection")
+  expect_identical(label$protection, "mixed")
+  expect_identical(label$blocks$mdrr, "realised_sticky")
 })
 
 test_that("G-05: each arm's bases are checked separately", {
