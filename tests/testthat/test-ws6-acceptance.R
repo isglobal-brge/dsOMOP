@@ -8,12 +8,25 @@
 
 .ws6_acc_backends <- .ws6_backends()
 withr::defer(.ws4_cleanup(.ws6_acc_backends), testthat::teardown_env())
+.ws6_acc_reference <- new.env(parent = emptyenv())
 
 # Roster of one acceptance population on one backend.
 .ws6_acc_roster <- function(h, recipe, pop) {
   ctx <- .ws4_ctx(h, .ws5_acceptance_plan(recipe))
   on.exit(.compileReleaseTempTables(ctx), add = TRUE)
-  .ws6_roster(ctx, pop)
+  got <- .ws6_roster(ctx, pop)
+  # Every recipe's complete projected roster must agree, including its
+  # deterministic row numbers, origin keys, ends and coverage, not only the
+  # episode keys pinned by the output-level oracle. SQLite is the reference
+  # because .ws6_backends() always lists it first.
+  key <- paste(recipe, pop, sep = "/")
+  if (exists(key, envir = .ws6_acc_reference, inherits = FALSE)) {
+    expect_identical(got, get(key, envir = .ws6_acc_reference),
+                     info = paste(key, .sqlFamily(h)))
+  } else {
+    assign(key, got, envir = .ws6_acc_reference)
+  }
+  got
 }
 
 # Exact and subset comparisons against an oracle output.
@@ -133,8 +146,42 @@ test_that("recipe 10: the matched roster reproduces the oracle sampler exactly",
     expect_true(all(r$index_source == "match:cc"), info = b)
     expect_true(all(grepl("\\|(case|control)$", r$index_key)), info = b)
     expect_identical(r$index_date, r$end_date, info = b)
+    # A-E10: the reviewed analytic keys survive the identifier pass exactly,
+    # with protected metadata, while person identifiers become tokens.
+    frame <- r[c("cohort_row_id", "person_id", "set_id", "is_case", "w")]
+    published <- .testPseudonymize(frame)
+    for (key in c("cohort_row_id", "set_id")) {
+      expect_identical(published[[key]], frame[[key]], info = paste(b, key))
+      expect_true(key %in% attr(published, "dsomop_protected"), info = paste(b, key))
+    }
+    expect_false(any(published$person_id %in% as.character(frame$person_id)), info = b)
     # identical rosters (cohort_row_id, identities, coverage) on every backend
     if (is.null(ref)) ref <- r else expect_identical(r, ref, info = b)
   }
   .ws5_expect_backends(.ws6_acc_backends, "WS-6 acceptance")
+})
+
+test_that("the published matching vectors reproduce in every SQL hash implementation", {
+  vectors <- jsonlite::fromJSON(testthat::test_path("fixtures", "match-vectors.json"),
+                                simplifyVector = FALSE)$vectors
+  for (b in names(.ws6_acc_backends)) {
+    h <- .ws6_acc_backends[[b]]$handle
+    literal <- function(x) {
+      if (is.null(x)) .compileTypedNull(h, "text") else
+        as.character(DBI::dbQuoteString(h$conn, as.character(x)))
+    }
+    for (i in seq_along(vectors)) {
+      x <- vectors[[i]]
+      hash <- .matchHashSql(h, x$seed, x$namespace, literal(x$subject_id),
+                            literal(x$cohort_start_date), literal(x$cohort_end_date),
+                            literal(x$index_source), literal(x$index_key), literal(x$control))
+      if (is.null(hash)) {
+        expect_identical(b, "sqlite")
+        next
+      }
+      got <- .executeQuery(h, paste0("SELECT ", hash, " AS match_hash"))
+      expect_identical(tolower(as.character(got$match_hash)), x$sha256,
+                       info = paste(b, "published vector", i))
+    }
+  }
 })
