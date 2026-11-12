@@ -40,7 +40,7 @@ test_that("WS-5 eras, stockpiles, coverage and anchors execute on the configured
                          u = cr(policy = "unique"), g7 = cr(policy = "union", gap = 7L),
                          ue = cr(policy = "unique", on_ambiguous = "error"),
                          cv = cr(policy = "union", gap = 30L))))
-    on.exit(.compileReleaseTempTables(ctx), add = TRUE)
+    .ws5_release(ctx)
     course <- function(i, p) {
       r <- .ws5_rows(ctx, .compileIntervalByName(ctx, i)$course, c("person_id", "group_id", "start_date"))
       r[r$person_id == p, , drop = FALSE]
@@ -77,7 +77,7 @@ test_that("WS-5 eras, stockpiles, coverage and anchors execute on the configured
     ad <- .ws5_rows(ctx, f, "row_key")
     expect_identical(ad$anchor_date[ad$row_key == 6], "2020-03-20", info = b)
     expect_false(7 %in% ad$row_key)
-    v <- .intervalReducerValues(ctx, "covered_days", cand, "candidate", source = list(event = "bb"),
+    v <- .ws5_rv(ctx, "covered_days", cand, "candidate", source = list(event = "bb"),
                                 window = list(start = 0L, end = 40L, anchor = first_a))
     expect_identical(v$value[v$row_key == 6], 1L, info = b)
     expect_true(is.na(v$value[v$row_key == 7]), info = b)
@@ -85,9 +85,104 @@ test_that("WS-5 eras, stockpiles, coverage and anchors execute on the configured
     cov <- pcov("cv")
     roster <- .ws5_roster(ctx, cand, cov, pop = "cv")
     w10 <- list(start = 1L, end = 10L, anchor = "index")
-    pdc <- .intervalReducerValues(ctx, "covered_days", roster, "final", source = list(interval = "stock"),
+    pdc <- .ws5_rv(ctx, "covered_days", roster, "final", source = list(interval = "stock"),
                                   window = w10, coverage = "effective_supply", observed_only = TRUE, cov = cov)
-    od <- .intervalReducerValues(ctx, "observed_days", roster, "final", window = w10, cov = cov)
+    od <- .ws5_rv(ctx, "observed_days", roster, "final", window = w10, cov = cov)
     expect_identical(c(pdc$value[pdc$row_key == 10], od$value[od$row_key == 10]), c(4L, 4L), info = b)
   }
+})
+
+# The number of reference paths from fragment `f` to fragment `target` in the
+# statement that hoists f's closure (each textual reference to a dependency in
+# a body is one path). MySQL opens a TEMPORARY table once per path and refuses
+# a second open in one statement ("Can't reopen table", amendment A-20 (l)).
+.ws5_paths <- function(ctx, f, target) {
+  if (identical(f$name, target)) return(1)
+  sum(vapply(f$dependencies, function(d) {
+    k <- lengths(regmatches(f$select_body, gregexpr(paste0("\\b", d, "\\b"), f$select_body)))
+    k * .ws5_paths(ctx, .fragmentGet(ctx, d), target)
+  }, numeric(1)))
+}
+
+test_that("MySQL 8.4: a stockpile with min_days > 0 reads its session table once per statement (A-20 (l))", {
+  skip_if(!nzchar(Sys.getenv("DSOMOP_TEST_MYSQL_HOST")),
+          "set DSOMOP_TEST_MYSQL_HOST (and DSOMOP_TEST_MYSQL_PORT) to run the live MySQL case")
+  bk <- .ws5_backends(vendors = "mysql")
+  on.exit(.ws4_cleanup(bk), add = TRUE)
+  expect_true("mysql" %in% names(bk))
+  h <- bk$mysql$handle
+  runtime <- .sqlDialectProfile(h, probe = TRUE)$runtime %||% ""
+  cat("\n[ws5 mysql]", runtime, "\n")
+  # MySQL evidence, not MariaDB (which reopens temporary tables)
+  expect_match(runtime, "MySQL")
+  last_course <- list(source = list(interval = "s44"), which = "last")
+  ctx <- .ws4_ctx(h, .ws5_plan(
+    events = list(metf = list(table = "drug_exposure", concept_set = list(concepts = list(1503297)),
+                              end = list(fallback = "days_supply"))),
+    intervals = list(s44 = list(source = list(event = "metf"), gap = 30, stockpile = TRUE, min_days = 44,
+                                persistence = 30),
+                     s45 = list(source = list(event = "metf"), gap = 30, stockpile = TRUE, min_days = 45)),
+    populations = list(t = .ws5_anchor_population(list(last_course), source = "metf"),
+                       cv = list(kind = "criteria", coverage = list(policy = "union", gap = 30L)))))
+  closed <- FALSE
+  on.exit(if (!closed) .planContextClose(ctx), add = TRUE)
+  iv <- .compileIntervalByName(ctx, "s44")
+  tname <- .intervalMeta(ctx, "s44")$temp_table
+  expect_true(.isScalarString(tname))
+  # every relation reaches the session table through exactly one reference
+  src <- .intervalMeta(ctx, "s44")$fragments[["effective_source"]]
+  for (rel in c("course", "recorded", "effective")) {
+    expect_identical(.ws5_paths(ctx, iv[[rel]], src), 1, info = rel)
+  }
+  rows <- function(f, order) {
+    r <- .ws5_rows(ctx, f, order)
+    r[r$person_id == 1004, , drop = FALSE]
+  }
+  # course, recorded and effective relations, each fetched in its own statement
+  course <- rows(iv$course, c("person_id", "start_date"))
+  expect_identical(c(course$start_date, course$end_date, course$end_recorded),
+                   c("2020-01-01", "2020-03-30", "2020-02-13"))
+  expect_identical(rows(iv$recorded, c("person_id", "start_date"))$end_date, c("2020-01-30", "2020-02-13"))
+  eff <- rows(iv$effective, c("person_id", "start_date"))
+  expect_identical(c(eff$end_date, eff$norm_end), c("2020-01-30", "2020-02-29", "2020-01-30", "2020-02-13"))
+  # min_days = 45 drops the era from all three relations
+  s45 <- .compileIntervalByName(ctx, "s45")
+  expect_identical(vapply(s45, function(f) nrow(rows(f, "person_id")), integer(1)),
+                   c(course = 0L, recorded = 0L, effective = 0L))
+  # downstream consumers reusing them: covered days of the effective and the
+  # recorded relation, a window anchored on the stockpiled course, and the PDC
+  # pair over a union-coverage roster
+  cand <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:2, subject_id = c(1004, 3202),
+                                              cohort_start_date = "2019-12-31", cohort_end_date = "2020-12-31"))
+  w90 <- list(start = 1L, end = 90L, anchor = "index")
+  cov_rec <- .ws5_rv(ctx, "covered_days", cand, "candidate", source = list(interval = "s44"), window = w90)
+  cov_eff <- .ws5_rv(ctx, "covered_days", cand, "candidate", source = list(interval = "s44"), window = w90,
+                     coverage = "effective_supply")
+  expect_identical(c(cov_rec$value, cov_eff$value), c(44L, 0L, 60L, 0L))
+  anc <- .compileAnchor(ctx, last_course, cand, "candidate")
+  expect_identical(.ws5_paths(ctx, anc, src), 1)
+  a <- .ws5_rows(ctx, anc, "row_key")
+  expect_identical(paste(a$row_key, a$anchor_date), "1 2020-01-01")
+  from_course <- .ws5_rv(ctx, "supply_days", cand, "candidate", source = list(event = "metf"),
+                         window = list(start = 0L, end = 30L, anchor = last_course))
+  expect_identical(from_course$value, c(60L, NA))
+  # 1004: effective [01-01, 02-29] inside one period; 1003: its one fill is a
+  # 10-day era that min_days = 44 drops, observed 01-01..01-02 and 01-09..01-10
+  ccand <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:2, subject_id = c(1004, 1003),
+                                               cohort_start_date = "2019-12-31", cohort_end_date = "2020-12-31"),
+                               name = "cand_cv", population = "cv")
+  cov <- .compileCoverage(ctx, "cv", ctx$ir$populations$cv$coverage, ccand, "candidate")
+  roster <- .ws5_roster(ctx, ccand, cov, pop = "cv")
+  w10 <- list(start = 1L, end = 10L, anchor = "index")
+  pdc <- .ws5_rv(ctx, "covered_days", roster, "final", source = list(interval = "s44"), window = w10,
+                 coverage = "effective_supply", observed_only = TRUE, cov = cov)
+  od <- .ws5_rv(ctx, "observed_days", roster, "final", window = w10, cov = cov)
+  expect_identical(pdc$value[order(pdc$row_key)], c(10L, 0L))
+  expect_identical(od$value[order(od$row_key)], c(10L, 4L))
+  # cleanup: closing the context drops the session table (A-20 (k))
+  .planContextClose(ctx)
+  closed <- TRUE
+  expect_length(ctx$compile_temp_tables, 0L)
+  expect_false(tname %in% h$temp_tables)
+  expect_error(DBI::dbGetQuery(h$conn, paste0("SELECT 1 FROM ", tname, " LIMIT 1")), "exist")
 })

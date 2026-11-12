@@ -313,7 +313,21 @@
     ctx$rollback <- list()
     if (exists(ctx$id, .planContextRegistry, inherits = FALSE)) rm(list = ctx$id, envir = .planContextRegistry)
   }, add = TRUE)
+  # Compiler-owned session tables (A-20 (k)) of the context and of its
+  # compilation child: released on every exit path (success, rejection,
+  # error); a table that cannot be dropped stays registered for a retry and
+  # its aggregated cleanup error is raised once the context is closed.
+  cleanup <- NULL
+  for (owner in list(ctx[["compile_context"]], ctx)) {
+    if (!is.environment(owner)) next
+    failure <- tryCatch({
+      .compileReleaseTempTables(owner)
+      NULL
+    }, error = function(e) e)
+    cleanup <- cleanup %||% failure
+  }
   if (!isTRUE(ctx$committed)) .publishAbort(ctx)
+  if (!is.null(cleanup)) stop(cleanup)
   invisible(NULL)
 }
 

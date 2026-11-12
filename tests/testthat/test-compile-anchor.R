@@ -177,7 +177,7 @@ test_that("a missing anchor makes windows undefined: UNKNOWN for has, has_not an
     # the unguarded absence leaf would wrongly be TRUE
     expect_identical(.windowGuardSql(list(defined = NULL), "x"), "x")
     # reducers over an undefined window are NA
-    v <- .intervalReducerValues(ctx, "covered_days", cand, "candidate", source = list(event = "b"),
+    v <- .ws5_rv(ctx, "covered_days", cand, "candidate", source = list(event = "b"),
                                 window = list(start = 0L, end = 40L,
                                               anchor = list(source = list(event = "a"), which = "first")))
     expect_identical(v$value[as.numeric(v$row_key) == 6], 1L, info = b)
@@ -250,6 +250,142 @@ test_that("anchor fragments are named by the IR anchor inventory", {
   .ws4_expect_rejection(.compileWindow(ctx, list(start = 1.5), cand, "candidate"), pattern = "integer")
 })
 
+# --- consumer association (A-20 (a), item 6; Astra's WS-5 review B3) ----------------------
+
+test_that("index-visit sources join the roster's index visit, in streams and anchors (B3)", {
+  for (b in names(.ws5_an_backends)) {
+    h <- .ws5_an_backends[[b]]$handle
+    first_proc <- list(source = list(event = "proc"), which = "first")
+    ctx <- .ws4_ctx(h, .ws5_plan(
+      events = list(vis = list(table = "visit_occurrence"),
+                    proc = list(table = "procedure_occurrence", concept_set = list(concepts = list(4283095)),
+                                visit = list(index = TRUE))),
+      populations = list(t = c(.ws5_anchor_population(list(first_proc), source = "proc")[c("where")],
+                               list(kind = "index", index = list(source = list(event = "vis"), select = "all"))))))
+    # two candidates of person 1007, indexed by its visits 700701 (the PCI of
+    # 2020-01-02 belongs to it) and 700702; a NULL index visit matches nothing
+    cand <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:3, subject_id = 1007, cohort_start_date = "2020-01-01",
+                                                cohort_end_date = "2020-12-31", index_visit_id = c(700701, 700702, NA),
+                                                index_source = "vis", index_key = c("700701", "700702", NA)))
+    v <- .ws5_rv(ctx, "covered_days", cand, "candidate", source = list(event = "proc"))
+    expect_identical(v$value, c(1L, 0L, 0L), info = b)
+    a <- .ws5_rows(ctx, .compileAnchor(ctx, first_proc, cand, "candidate"), "row_key")
+    expect_identical(a$row_key, 1, info = b)
+    expect_identical(a$anchor_date, "2020-01-02", info = b)
+    # a roster without index_visit_id cannot scope an index-visit source
+    bare <- .ws5_literal_roster(ctx, data.frame(cand_key = 1L, subject_id = 1007, cohort_start_date = "2020-01-01",
+                                                cohort_end_date = "2020-12-31"), name = "cand_bare")
+    expect_error(.ws5_rv(ctx, "covered_days", bare, "candidate", source = list(event = "proc")),
+                 "carries no index_visit_id")
+  }
+  # an interval cannot be built over an index-visit source
+  h <- .ws5_an_backends$sqlite$handle
+  ctx <- .ws4_ctx(h, .ws5_plan(
+    events = list(proc = list(table = "procedure_occurrence", visit = list(index = TRUE))),
+    intervals = list(pi = list(source = list(event = "proc")))))
+  .ws4_expect_rejection(.compileIntervalByName(ctx, "pi"), pattern = "index visit")
+})
+
+test_that("episode-indexed anchors bind the member's parent episode and person (B3, A-20 item 6)", {
+  for (b in names(.ws5_an_backends)) {
+    h <- .ws5_an_backends[[b]]$handle
+    first_m <- list(source = list(event = "members"), which = "first")
+    last_m <- list(source = list(event = "members"), which = "last")
+    last_c <- list(source = list(interval = "mc"), which = "last")
+    anchors <- list(first_m, last_m, last_c)
+    pop <- function(index) c(.ws5_anchor_population(anchors, source = "members")["where"],
+                             list(kind = "index", index = list(source = index, select = "all")))
+    ctx <- .ws4_ctx(h, .ws5_plan(
+      events = list(episodes = list(table = "episode", concept_set = list(concepts = list(32531))),
+                    members = list(episode_members = list(episode = list(event = "episodes"))),
+                    drug = .ws5_drug_event()),
+      intervals = list(mc = list(source = list(event = "members"), gap = 0)),
+      populations = list(t = pop(list(event = "episodes")), t2 = pop(list(event = "episodes")),
+                         t3 = pop(list(event = "episodes")),
+                         mx = pop(list(any_of = list(list(event = "episodes"), list(event = "drug")))),
+                         pp = .ws5_anchor_population(anchors, source = "members"))))
+    .ws5_release(ctx)
+    ep <- .ws5_literal_roster(ctx, data.frame(
+      cand_key = 1:4, subject_id = c(1015, 1015, 3301, 3301), cohort_start_date = "2019-01-01",
+      cohort_end_date = "2020-12-31", index_source = "episodes",
+      index_key = c("1", "2", "3301001", "3301002")))
+    got <- function(anchor, roster, phase = "candidate") {
+      r <- .ws5_rows(ctx, .compileAnchor(ctx, anchor, roster, phase), "row_key")
+      stats::setNames(r$anchor_date, r$row_key)
+    }
+    # 1015: episode 1 links 03-01, 03-05 (procedure), 03-22, 04-12; episode 2
+    # links 04-12 (shared) and 10-01; 3301: E1 F1, F2; E2 F1, F3
+    expect_identical(got(first_m, ep), c(`1` = "2019-03-01", `2` = "2019-04-12", `3` = "2020-01-01",
+                                         `4` = "2020-01-01"), info = b)
+    expect_identical(got(last_m, ep), c(`1` = "2019-04-12", `2` = "2019-10-01", `3` = "2020-01-15",
+                                        `4` = "2020-02-10"), info = b)
+    # per-parent courses: E2's two eras at gap 0, the last one starts 02-10
+    expect_identical(unname(got(last_c, ep)[c("3", "4")]), c("2020-01-01", "2020-02-10"), info = b)
+    # a person-indexed roster sees the person's members; a mixed one per row
+    pp <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:2, subject_id = c(1015, 3301),
+                                              cohort_start_date = "2019-01-01", cohort_end_date = "2020-12-31"),
+                              name = "cand_pp", population = "pp")
+    expect_identical(unname(got(first_m, pp)), c("2019-03-01", "2020-01-01"), info = b)
+    expect_identical(unname(got(last_m, pp)), c("2019-10-01", "2020-02-10"), info = b)
+    expect_identical(unname(got(last_c, pp)), c("2019-10-01", "2020-01-01"), info = b)
+    mx <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:2, subject_id = 1015, cohort_start_date = "2019-01-01",
+                                              cohort_end_date = "2020-12-31", index_source = c("episodes", "drug"),
+                                              index_key = c("2", "939999")),
+                              name = "cand_mx", population = "mx")
+    expect_identical(unname(got(first_m, mx)), c("2019-04-12", "2019-03-01"), info = b)
+    expect_identical(unname(got(last_m, mx)), c("2019-10-01", "2019-10-01"), info = b)
+    # the person must agree: an origin of another person's episode matches nothing
+    other <- .ws5_literal_roster(ctx, data.frame(cand_key = 1L, subject_id = 1016, cohort_start_date = "2019-01-01",
+                                                 cohort_end_date = "2020-12-31", index_source = "episodes",
+                                                 index_key = "1"), name = "cand_other", population = "t2")
+    expect_length(got(first_m, other), 0L)
+    # missing association metadata fails closed (never broadened to the person)
+    bare <- .ws5_literal_roster(ctx, data.frame(cand_key = 1L, subject_id = 1015, cohort_start_date = "2019-01-01",
+                                                cohort_end_date = "2020-12-31"), name = "cand_bare", population = "t3")
+    expect_error(.compileAnchor(ctx, first_m, bare, "candidate"), "index_source/index_key")
+  }
+})
+
+test_that("rosters name their population explicitly; no name-derived fallback (A-20 (a))", {
+  h <- .ws5_an_backends$sqlite$handle
+  ctx <- .ws5_an_ctx(h)
+  rows <- data.frame(cand_key = 1L, subject_id = 3201, cohort_start_date = "2020-01-01",
+                     cohort_end_date = "2020-12-31")
+  cand <- .ws5_literal_roster(ctx, rows, name = "cand_t")
+  expect_identical(.rosterSpec(cand, "candidate")$population, "t")
+  anon <- cand
+  attr(anon, "population") <- NULL
+  expect_error(.rosterSpec(anon, "candidate"), "names its population")
+  # a final roster names it through roster_namespace
+  fin <- .ws5_literal_roster(ctx, data.frame(cohort_row_id = 1L, subject_id = 3201, cohort_start_date = "2020-01-01",
+                                             cohort_end_date = "2020-12-31", index_source = "a", index_key = "1"),
+                             name = "pop_t", population = "t", phase = "final")
+  expect_identical(.rosterSpec(fin, "final")$population, "t")
+  fin$roster_namespace <- NULL
+  expect_error(.rosterSpec(fin, "final"), "roster_namespace")
+  # an allocated, collision-disambiguated name is never reversed: the anchor of
+  # population "t" compiles against a candidates fragment of any name
+  odd <- .ws5_literal_roster(ctx, rows, name = "cand_t_1a2b3c4d5e", population = "t")
+  expect_s3_class(.compileAnchor(ctx, .ws5_an_set()$first_a, odd, "candidate"), "dsomop_fragment")
+  # the possible origins of a population's rows (index source tags)
+  ir <- list(populations = list(
+    i = list(kind = "index", index = list(source = list(event = "e"))),
+    a = list(kind = "index", index = list(source = list(any_of = list(list(event = "e"), list(interval = "v"))))),
+    c = list(kind = "criteria", parent = "i"), n = list(kind = "criteria"),
+    k = list(kind = "criteria", cohort_definition_id = 7),
+    s = list(kind = "setop", setop = list(op = "union", members = list("i", "k"))),
+    m = list(kind = "match", match = list(cases = "i", controls = "n"))))
+  src <- function(p) .irPopulationIndexSources(ir, p)
+  expect_identical(src("i"), "e")
+  expect_identical(src("a"), c("e", "v"))
+  expect_identical(src("c"), "e")
+  expect_identical(src("n"), "(persons)")
+  expect_identical(src("k"), "cohort:7")
+  expect_identical(src("s"), c("e", "cohort:7"))
+  expect_identical(src("m"), "match:m")
+  expect_null(src("unknown"))
+})
+
 test_that("compiled anchor and window SQL renders for every dialect family", {
   bp <- .buildBlueprint(.ws5_an_backends$sqlite$handle)
   dbms <- c(postgresql = "postgresql", sqlite = "sqlite", duckdb = "duckdb", mysql = "mysql",
@@ -274,6 +410,7 @@ test_that("compiled anchor and window SQL renders for every dialect family", {
                                        cohort_end_date = .fragmentColumn("date", TRUE, "end")),
                         unique_key = "cand_key", person_lineage = list(person_col = "subject_id", via_roster = NULL),
                         private_columns = "cand_key")
+      attr(cand, "population") <- "t"
       .fragmentRegister(ctx, cand)
       cat("--", family, "\n")
       anc <- list(source = list(event = "b"), which = "last", field = "end",

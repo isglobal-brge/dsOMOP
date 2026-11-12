@@ -26,6 +26,20 @@
 # which makes every window that requires it undefined: the window predicate is
 # UNKNOWN, a criterion over it is UNKNOWN (guard: .windowGuardSql()), a reducer
 # NA.
+#
+# The roster contract (A-20 (a)): a roster or candidates fragment names its
+# population explicitly (attr(f, "population") for candidates,
+# roster_namespace for final rosters), its row key, and, where a consumer
+# needs them, index_visit_id and the lossless index_source / index_key of its
+# origin (design 6.9). One consumer-association resolver
+# (.consumerAssociation()) serves streams and anchors: an index-visit event
+# joins source.visit_id = roster.index_visit_id (a NULL visit matches nothing);
+# an episode-indexed consumer of an adapter source (roster index_source = the
+# adapter's parent namespace) joins the parent identity (parent_source_ns,
+# parent_event_id) to the row's origin and the person, reading the per-parent
+# interval relation for an interval; other rows keep the person association.
+# Missing association metadata fails closed; it never broadens to person
+# scope.
 
 .ANCHOR_BUILTINS <- c(index = "cohort_start_date", index_end = "cohort_end_date",
                       observation_start = "op_start", observation_end = "op_end")
@@ -48,13 +62,21 @@
 #' final rosters (\code{pop_<id>}) by \code{cohort_row_id}. Both carry the
 #' person column of their lineage (\code{subject_id} or \code{person_id}) and,
 #' where the population has them, \code{cohort_start_date} (the index after
-#' offsets), \code{cohort_end_date}, \code{op_start}, \code{op_end} and the
-#' private \code{op_component_id} of the selected coverage component.
+#' offsets), \code{cohort_end_date}, \code{op_start}, \code{op_end}, the
+#' private \code{op_component_id} of the selected coverage component,
+#' \code{index_visit_id} and the origin \code{index_source} /
+#' \code{index_key} (design 6.9). The population is named explicitly --
+#' \code{attr(f, "population")} for candidates, \code{roster_namespace} for
+#' final rosters -- and never derived from the fragment name, which an
+#' allocated identifier cannot be reversed to (A-20 (a)); a roster may declare
+#' the possible \code{index_source} values of its rows as \code{attr(f,
+#' "index_sources")}.
 #'
 #' @param roster_fragment A roster or candidates fragment.
 #' @param phase \code{"candidate"} or \code{"final"}.
-#' @return list(name, key, key_type, person, person_type, index, index_end,
-#'   op_start, op_end, op_component, population, namespace).
+#' @return list(name, phase, key, key_type, person, person_type, index,
+#'   index_end, op_start, op_end, op_component, population, namespace,
+#'   index_visit, index_source, index_key, index_sources).
 #' @keywords internal
 .rosterSpec <- function(roster_fragment, phase) {
   .assertFragment(roster_fragment)
@@ -70,14 +92,201 @@
     stop("A roster fragment needs a person column.", call. = FALSE)
   }
   has <- function(col) if (col %in% names(cols)) col
-  population <- attr(roster_fragment, "population", exact = TRUE) %||%
-    roster_fragment$roster_namespace %||% sub("^(cand|pop)_", "", roster_fragment$name)
+  candidate <- identical(phase, "candidate")
+  population <- if (candidate) attr(roster_fragment, "population", exact = TRUE) else
+    roster_fragment$roster_namespace
+  if (!.isScalarString(population)) {
+    stop("A ", phase, " roster fragment names its population (",
+         if (candidate) "attr(f, \"population\")" else "roster_namespace",
+         "); it is never derived from the fragment name (A-20 (a)).", call. = FALSE)
+  }
+  sources <- attr(roster_fragment, "index_sources", exact = TRUE)
+  if (!is.null(sources) && (!is.character(sources) || !length(sources) || anyNA(sources))) {
+    stop("attr(f, \"index_sources\") is a non-empty character vector.", call. = FALSE)
+  }
   list(name = roster_fragment$name, phase = phase, key = key, key_type = cols[[key]]$type,
        person = person, person_type = cols[[person]]$type,
        index = has("cohort_start_date"), index_end = has("cohort_end_date"),
        op_start = has("op_start"), op_end = has("op_end"),
        op_component = has("op_component_id"), population = population,
-       namespace = if (identical(phase, "final")) roster_fragment$roster_namespace)
+       namespace = if (!candidate) roster_fragment$roster_namespace,
+       index_visit = has("index_visit_id"), index_source = has("index_source"),
+       index_key = has("index_key"), index_sources = sources)
+}
+
+#' The possible index_source values of a population's rows (from the IR)
+#'
+#' An index population's sources (an event or interval name, each of an
+#' \code{any_of}; \code{"cohort:<id>"} for a results cohort,
+#' \code{"legacy_spec"} for a legacy spec), a criteria population's parent's
+#' (or \code{"cohort:<id>"}, or \code{"(persons)"} without either), the
+#' union over a set operation's members, \code{"match:<pop>"} for a matched
+#' population. NULL when the population is unknown or a member cannot be
+#' resolved: a consumer then needs the rows' own metadata. Tags that are not
+#' plan names can never equal an adapter's parent namespace.
+#'
+#' @param ir Normalised IR.
+#' @param pop Population id.
+#' @return Character vector or NULL.
+#' @keywords internal
+.irPopulationIndexSources <- function(ir, pop, seen = character(0)) {
+  pops <- if (is.list(ir)) ir[["populations"]] else NULL
+  p <- if (.isScalarString(pop) && is.list(pops)) pops[[pop]]
+  if (!is.list(p) || pop %in% seen) return(NULL)
+  seen <- c(seen, pop)
+  scalar <- function(x) if (is.list(x) && length(x) == 1L && is.null(names(x))) x[[1L]] else x
+  of_source <- function(src) {
+    if (!is.list(src) || !length(src)) return(NULL)
+    if (!is.null(src[["any_of"]])) {
+      parts <- lapply(src[["any_of"]], of_source)
+      if (any(vapply(parts, is.null, logical(1)))) return(NULL)
+      return(unique(unlist(parts)))
+    }
+    if (length(src) == 1L && names(src) %in% c("event", "interval")) {
+      ref <- unlist(src[[1L]])
+      return(if (.isScalarString(ref)) ref)
+    }
+    if (!is.null(src[["cohort_definition_id"]])) {
+      return(paste0("cohort:", format(unlist(src[["cohort_definition_id"]]), scientific = FALSE)))
+    }
+    if (!is.null(src[["legacy_spec"]])) return("legacy_spec")
+    NULL
+  }
+  kind <- scalar(p[["kind"]])
+  if (!.isScalarString(kind)) return(NULL)
+  switch(kind,
+    index = of_source(p[["index"]][["source"]]),
+    criteria = {
+      parent <- scalar(p[["parent"]])
+      cohort <- scalar(p[["cohort_definition_id"]])
+      if (.isScalarString(parent)) {
+        .irPopulationIndexSources(ir, parent, seen)
+      } else if (is.numeric(cohort) && length(cohort) == 1L) {
+        paste0("cohort:", format(cohort, scientific = FALSE))
+      } else "(persons)"
+    },
+    setop = {
+      members <- unlist(p[["setop"]][["members"]])
+      parts <- lapply(members, function(m) .irPopulationIndexSources(ir, m, seen))
+      if (!length(parts) || any(vapply(parts, is.null, logical(1)))) NULL else unique(unlist(parts))
+    },
+    match = paste0("match:", pop),
+    NULL)
+}
+
+#' The consumer association of a source for a roster (A-20 (a), item 6; B3)
+#'
+#' One resolver for streams and anchors (and later consumers): the source's
+#' base event (an interval's source) decides
+#'   - the index visit: an event restricted by \code{visit = {index: true}}
+#'     joins \code{source.visit_id = roster.index_visit_id} (the roster must
+#'     carry \code{index_visit_id}; an interval over such an event is refused);
+#'   - the episode parent: an adapter source whose parent namespace can be the
+#'     roster's \code{index_source} (\code{attr(roster, "index_sources")}, else
+#'     \code{.irPopulationIndexSources()}, else unknown) is read through the
+#'     \code{"parent"} branch for the rows indexed by that parent (the parent
+#'     identity bound to the row's origin and the person; an interval's
+#'     per-parent relation) and through the \code{"person"} branch for the
+#'     other rows; the roster must carry \code{index_source} and
+#'     \code{index_key}.
+#' Missing metadata fails closed, never broadening to person scope.
+#'
+#' @param ctx Execution context.
+#' @param source Typed source reference \code{list(event = )} or
+#'   \code{list(interval = )}.
+#' @param roster_fragment Roster or candidates fragment.
+#' @param phase \code{"candidate"} or \code{"final"}.
+#' @param path JSON path used in rejections.
+#' @return list(spec (\code{.rosterSpec()}), kind, ref, base, visit (logical),
+#'   parent (namespace or NULL), availability, branches (\code{"person"},
+#'   \code{"parent"} or both)).
+#' @keywords internal
+.consumerAssociation <- function(ctx, source, roster_fragment, phase, path = "/source") {
+  spec <- .rosterSpec(roster_fragment, phase)
+  if (!is.list(source) || length(source) != 1L || !names(source) %in% c("event", "interval")) {
+    .irReject("a source is {event: <name>} or {interval: <name>}", field = path)
+  }
+  kind <- names(source)[[1L]]
+  ref <- unlist(source[[1L]])
+  if (!.isScalarString(ref)) .irReject("a source names one node", field = path)
+  base <- if (identical(kind, "interval")) {
+    .intervalSpec(.irNamedNode(ctx[["ir"]], "interval", ref), ref)$source
+  } else ref
+  .compileEventByName(ctx, base)
+  emeta <- .eventMeta(ctx, base)
+  out <- list(spec = spec, kind = kind, ref = ref, base = base,
+              visit = isTRUE(emeta$index_visit), parent = emeta$parent,
+              availability = emeta$availability, branches = "person")
+  if (out$visit) {
+    if (identical(kind, "interval")) {
+      .irReject(paste0("interval '", ref, "': its source is restricted to the index visit"),
+                field = path)
+    }
+    if (is.null(spec$index_visit)) {
+      stop("The roster '", spec$name, "' carries no index_visit_id: the index-visit source '",
+           base, "' cannot be scoped to its rows (fail closed).", call. = FALSE)
+    }
+  }
+  if (!is.null(out$parent)) {
+    sources <- spec$index_sources %||% .irPopulationIndexSources(ctx[["ir"]], spec$population)
+    if (is.null(sources) || out$parent %in% sources) {
+      if (is.null(spec$index_source) || is.null(spec$index_key)) {
+        stop("The roster '", spec$name, "' carries no index_source/index_key: the members of ",
+             "'", base, "' cannot be bound to an episode-indexed row (fail closed).", call. = FALSE)
+      }
+      out$branches <- if (!is.null(sources) && all(sources == out$parent)) "parent" else
+        c("parent", "person")
+    }
+  }
+  out
+}
+
+#' Join conditions of one consumer-association branch
+#'
+#' @param h Handle, context, profile or dialect name.
+#' @param assoc The association (\code{.consumerAssociation()}).
+#' @param branch \code{"person"} or \code{"parent"}.
+#' @param i SQL alias of the source relation.
+#' @param r SQL alias of the roster.
+#' @return Character vector of SQL predicates (ANDed by the caller).
+#' @keywords internal
+.consumerJoinSql <- function(h, assoc, branch, i = "i", r = "r") {
+  spec <- assoc$spec
+  col <- function(a, x) paste0(a, ".", x)
+  on <- paste0(col(i, "person_id"), " = ", col(r, spec$person))
+  if (isTRUE(assoc$visit)) on <- c(on, paste0(col(i, "visit_id"), " = ", col(r, spec$index_visit)))
+  if (identical(branch, "parent")) {
+    on <- c(on, paste0(col(i, "parent_source_ns"), " = ", col(r, spec$index_source)),
+            paste0(.sqlLosslessKeyText(h, col(i, "parent_event_id")), " = ", col(r, spec$index_key)))
+  } else if ("parent" %in% assoc$branches) {
+    src <- col(r, spec$index_source)
+    on <- c(on, paste0("(", src, " IS NULL OR ", src, " <> ", .compileTextLiteral(assoc$parent), ")"))
+  }
+  on
+}
+
+#' The relation one consumer-association branch reads
+#'
+#' An event source: its event fragment (the branch's join binds the parent);
+#' an interval: the branch's relation (\code{"parent"}: the per-parent
+#' relation of an adapter source, A-20 item 6) -- its course
+#' (\code{use = "course"}) or its recorded / effective rows.
+#'
+#' @param ctx Execution context.
+#' @param assoc The association (\code{.consumerAssociation()}).
+#' @param branch \code{"person"} or \code{"parent"}.
+#' @param use \code{"rows"} or \code{"course"}.
+#' @param coverage \code{"recorded"} or \code{"effective_supply"} (rows).
+#' @param path JSON path used in rejections.
+#' @return The fragment.
+#' @keywords internal
+.consumerRelation <- function(ctx, assoc, branch, use = "rows", coverage = "recorded",
+                              path = "/coverage") {
+  if (identical(assoc$kind, "event") || identical(use, "rows")) {
+    return(.intervalRelation(ctx, stats::setNames(list(assoc$ref), assoc$kind), coverage,
+                             path = path, association = branch))
+  }
+  .compileIntervalByName(ctx, assoc$ref, association = branch)$course
 }
 
 #' Classify and validate one anchor (defaults applied)
@@ -141,12 +350,6 @@
   if (is.list(search) && !length(search)) search <- NULL
   list(kind = "source", source_kind = names(src)[[1L]], source = ref, which = which,
        n = as.integer(n), field = field, scope = scope, search = search)
-}
-
-# The fragment a source anchor selects rows from.
-.anchorSourceFragment <- function(ctx, a) {
-  if (identical(a$source_kind, "event")) return(.compileEventByName(ctx, a$source))
-  .compileIntervalByName(ctx, a$source)$course
 }
 
 # Canonical form of an anchor (defaults applied, nested search windows
@@ -257,17 +460,15 @@
   existing <- .fragmentGet(ctx, name)
   if (!is.null(existing)) return(existing)
   r <- function(col) paste0("r.", col)
-  deps <- spec$name
-  src <- .anchorSourceFragment(ctx, a)
-  deps <- c(deps, src$name)
+  # the consumer association (index visit, episode parent, person; B3)
+  assoc <- .consumerAssociation(ctx, stats::setNames(list(a$source), a$source_kind),
+                                roster_fragment, phase, path = "/anchor/source")
+  srcs <- lapply(assoc$branches, function(b) .consumerRelation(ctx, assoc, b, use = "course"))
+  deps <- unique(c(spec$name, vapply(srcs, function(x) x$name, "")))
+  src <- srcs[[1L]]
   order <- unique(c(src$ordering, src$unique_key))
   order <- c("start_date", setdiff(order, c("start_date", "end_date")))
-  order_items <- switch(a$which,
-    first = , nth = paste0("e.", order),
-    last = paste0("e.", order, " DESC"),
-    latest_end = c("e.end_date DESC", paste0("e.", order, " DESC")))
-  rn <- .sqlRowNumber(h, r(spec$key), order_items)
-  on <- c(paste0("e.person_id = ", r(spec$person)), "e.start_date IS NOT NULL")
+  on <- "e.start_date IS NOT NULL"
   if (identical(a$field, "end")) on <- c(on, "e.end_date IS NOT NULL")
   joins <- character(0)
   if (!is.null(a$search)) {
@@ -287,10 +488,35 @@
     on <- c(on, paste0("e.start_date >= ", r(spec$op_start)), paste0("e.start_date <= ", r(spec$op_end)))
   }
   field <- if (identical(a$field, "end")) "e.end_date" else "e.start_date"
-  inner <- paste0("SELECT ", r(spec$key), " AS row_key, ", r(spec$person), " AS person_id, ",
-                  field, " AS anchor_date, ", rn, " AS rn FROM ", spec$name, " r",
-                  if (length(joins)) paste0(" ", paste(unname(joins), collapse = " ")),
-                  " INNER JOIN ", src$name, " e ON ", paste(on, collapse = " AND "))
+  joined <- if (length(joins)) paste0(" ", paste(unname(joins), collapse = " ")) else ""
+  rank <- function(alias, cols) {
+    switch(a$which,
+      first = , nth = paste0(alias, ".", cols),
+      last = paste0(alias, ".", cols, " DESC"),
+      latest_end = c(paste0(alias, ".", cols[[length(cols)]], " DESC"),
+                     paste0(alias, ".", cols[-length(cols)], " DESC")))
+  }
+  ranked_cols <- if (identical(a$which, "latest_end")) c(order, "end_date") else order
+  branch_on <- function(b) paste(c(.consumerJoinSql(h, assoc, b, "e", "r"), on), collapse = " AND ")
+  inner <- if (length(srcs) == 1L) {
+    rn <- .sqlRowNumber(h, r(spec$key), rank("e", ranked_cols))
+    paste0("SELECT ", r(spec$key), " AS row_key, ", r(spec$person), " AS person_id, ",
+           field, " AS anchor_date, ", rn, " AS rn FROM ", spec$name, " r", joined,
+           " INNER JOIN ", src$name, " e ON ", branch_on(assoc$branches[[1L]]))
+  } else {
+    # rows indexed by the adapter's parent and the other rows read different
+    # relations; each roster row matches one branch, ranked over the union
+    oc <- paste0("o_", seq_along(ranked_cols))
+    parts <- vapply(seq_along(srcs), function(k) {
+      paste0("SELECT ", r(spec$key), " AS row_key, ", r(spec$person), " AS person_id, ",
+             field, " AS anchor_date, ", paste(paste0("e.", ranked_cols, " AS ", oc), collapse = ", "),
+             " FROM ", spec$name, " r", joined, " INNER JOIN ", srcs[[k]]$name, " e ON ",
+             branch_on(assoc$branches[[k]]))
+    }, "")
+    rn <- .sqlRowNumber(h, "y.row_key", rank("y", oc))
+    paste0("SELECT y.row_key AS row_key, y.person_id AS person_id, y.anchor_date AS anchor_date, ",
+           rn, " AS rn FROM (", paste(parts, collapse = " UNION ALL "), ") y")
+  }
   body <- paste0("SELECT x.row_key AS row_key, x.person_id AS person_id, x.anchor_date AS anchor_date FROM (",
                  inner, ") x WHERE x.rn = ", .sqlIntegerLiteral(h, if (identical(a$which, "nth")) a$n else 1L))
   f <- .fragment(name, "anchor", "episode", body,
