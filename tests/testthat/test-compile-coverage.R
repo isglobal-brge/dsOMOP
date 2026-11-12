@@ -226,6 +226,10 @@ test_that("observed segments are distinct; malformed periods never cover (A-20 (
     v <- .ws5_rows(ctx, f, c("row_key", "start_date"))
     expect_identical(anyDuplicated(v[f$unique_key]), 0L, info = b)
     expect_identical(nrow(v[v$row_key == 5, ]), 1L, info = b)
+    candidate_segments <- .compileObservedSegments(ctx, cov, cand, "candidate")
+    candidate_rows <- .ws5_rows(ctx, candidate_segments, c("row_key", "start_date"))
+    expect_identical(anyDuplicated(candidate_rows[candidate_segments$unique_key]), 0L, info = b)
+    expect_identical(nrow(candidate_rows[candidate_rows$row_key == 5, ]), 1L, info = b)
     # the malformed records never enter the component or the count
     un <- .ws5_opc(ctx, cov)
     expect_identical(c(un$op_start[un$row_key == 5], un$op_end[un$row_key == 5]),
@@ -239,6 +243,37 @@ test_that("observed segments are distinct; malformed periods never cover (A-20 (
     od <- .ws5_rv(ctx, "observed_days", roster, "final", window = list(start = -30L, end = 30L, anchor = "index"),
                   cov = cov)
     expect_identical(od$value[as.numeric(od$row_key) == 5], 61L, info = b)
+  }
+})
+
+test_that("observed-segment and covered-key realisations enforce the reducer cap (B6)", {
+  h <- .ws5_cov_backends$sqlite$handle
+  ctx <- .ws5_cov_ctx(h)
+  cand <- .ws5_literal_roster(ctx, data.frame(cand_key = 1L, subject_id = 1003,
+    cohort_start_date = "2020-01-01", cohort_end_date = "2020-12-31"))
+  cov <- .ws5_cov(ctx, "g7", cand)
+  roster <- .ws5_roster(ctx, cand, cov, pop = "g7")
+  value <- function() .ws5_rv(ctx, "observed_days", roster, "final",
+    window = list(start = 0L, end = 9L, anchor = "index"), cov = cov)$value
+  withr::with_options(list(dsomop.max_memory_rows = 2), expect_identical(value(), 4L))
+  # One roster row fits; its two recorded segments exceed the cap.
+  error <- withr::with_options(list(dsomop.max_memory_rows = 1), tryCatch(value(), error = identity))
+  expect_s3_class(error, "dsomop_plan_rejection")
+  expect_identical(error$reason, "reducer_row_cap")
+
+  ctx <- .ws5_cov_ctx(h)
+  cand <- .ws5_candidates(ctx)
+  cov <- .ws5_cov(ctx, "g7", cand)
+  roster <- .ws5_roster(ctx, cand, cov, pop = "g7")
+  for (phase in c("candidate", "final")) {
+    r <- if (phase == "candidate") cand else roster
+    keys <- function() .coverageCoveredKeys(ctx, cov, r, phase)
+    n <- length(keys())
+    expect_gt(n, 1L)
+    withr::with_options(list(dsomop.max_memory_rows = n), expect_length(keys(), n))
+    error <- withr::with_options(list(dsomop.max_memory_rows = n - 1L), tryCatch(keys(), error = identity))
+    expect_s3_class(error, "dsomop_plan_rejection")
+    expect_identical(error$reason, "reducer_row_cap")
   }
 })
 
