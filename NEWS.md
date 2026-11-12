@@ -357,9 +357,18 @@ fills its entries. Classes follow design-2.10.3 section 5.
   `legacy_concept_scope`); A-11 the pinned v2 normal form
   (`R/plan_normalize_v2.R`, vendored byte-identically, with the normalised
   fixtures of `inst/schema/normalized/`); A-12/A-13 client signature lines;
-  A-14 execution plan selection for 2.10.1-style recipes, `source_analyses`
-  on temporal and person-period outputs, and the windowed-features corpus row
-  reclassified `newly_permitted`.
+  A-14 execution plan selection for 2.10.1-style recipes and `source_analyses`
+  on temporal and person-period outputs. A-24 corrects the exact frozen
+  windowed-features corpus row `#1` to `unchanged_invalid`: its implicit
+  `base` is unindexed. Neither compatibility, the features preset nor root
+  cohort scope supplies an index. Its explicit v1 omitted-grain refusal
+  permits attempted native rendering, which refuses the unindexed fixture
+  before assignment. The separate indexed, per-variable-window variant
+  defaults to episode grain and passes server semantic validation; the
+  execution regression exercises native compiler integration. Explicit
+  incompatible grain and the corresponding `wide` grain refusal remain
+  ordinary v1 refusals; explicit episode grain retains v1 selection when
+  the complete recipe is v1-expressible.
 - A-15 the `legacy_spec` inclusion `occurrence` is the executor's historical
   `{type: at_least | at_most | exactly, count >= 0}` object (defaults
   `at_least`, 1), not `{min, max}`; A-16 five further IR-only variants carry

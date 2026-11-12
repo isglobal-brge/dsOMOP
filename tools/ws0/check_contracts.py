@@ -226,6 +226,9 @@ if C:
     fixture = os.path.join(S, "tests", "testthat", "fixtures", "v1-corpus-classes.csv")
     check(os.path.exists(fixture) and open(fixture, encoding="utf-8").read() == rcc.to_csv_text(rows),
           "tests/testthat/fixtures/v1-corpus-classes.csv is not the join of corpus_decisions.csv with the live inventory")
+    client_fixture = os.path.join(C, "tests", "testthat", "fixtures", "v1-corpus-classes.csv")
+    check(os.path.exists(client_fixture) and open(client_fixture, encoding="utf-8").read() == rcc.to_csv_text(rows),
+          "client v1-corpus-classes.csv differs from the regenerated corpus (A-24)")
 
 # --- checksums ----------------------------------------------------------------------
 def check_sums(dirname, label):

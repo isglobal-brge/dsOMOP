@@ -47,6 +47,12 @@ needs the git history of both packages; `check_contracts.py` runs it in `--check
 mode when both package paths are given). The pins are never moved; a future
 corpus for another baseline is a new pin file and a new decisions file.
 
+A-24 also vendors the regenerated `tests/testthat/fixtures/v1-corpus-classes.csv`
+at the same path in dsOMOPClient; copy the generator output byte-for-byte.
+`check_contracts.py` checks both copies against the strict join when both
+package paths are supplied. The schema `SHA256SUMS` manifests cover only
+`inst/schema/`; a corpus-only reclassification does not change those hashes.
+
 Class conventions for blocks that assert refusals: an aggregate k-gate refusal
 asserted on a successfully created standalone cohort is
 `publication_refused_unchanged`; an aggregate argument refusal is
