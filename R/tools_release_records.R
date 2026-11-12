@@ -534,12 +534,17 @@
                          trim = TRUE))
 }
 
-# The displayed rows in the question's closed schema.
+# The displayed rows in the question's closed schema; attribute
+# "dsomop_record_strata" names the stratum of each row (removed by the run).
 .omopReleaseRecordRows <- function(handle, built, sub, spec, kind) {
   s <- spec$summary
   cols <- s$cols
   st <- built$strata
-  if (!nrow(st)) return(.dsomopToolsEmptyFrame(cols))
+  if (!nrow(st)) {
+    df <- .dsomopToolsEmptyFrame(cols)
+    attr(df, "dsomop_record_strata") <- character(0)
+    return(df)
+  }
   at <- match(st$stratum, sub$stratum)
   concept <- sub$concept_id[at]
   unit <- sub$unit_id[at]
@@ -575,7 +580,54 @@
   }
   df <- df[ord, , drop = FALSE]
   rownames(df) <- NULL
+  attr(df, "dsomop_record_strata") <- st$stratum[ord]
   df
+}
+
+#' Public pooling fields of a record-moment export
+#'
+#' Adds what dsOMOPClient needs to pool the record components of compatible
+#' servers and to show the pooled strata in the question's own schema: the
+#' columns holding the persons (N), the capped records (R) and the moments,
+#' the public display order and, per released stratum, its displayed key and
+#' label values (its displayed row without the statistics) and its public
+#' ordering values. Everything added is already displayed; nothing private
+#' (support, tokens, fingerprints) is exported.
+#'
+#' @param built Output of \code{.dsomopReleaseBuildRecordMoments}.
+#' @param df Displayed frame with attribute \code{dsomop_record_strata}.
+#' @param sub The record substrate (public unit ids of the strata).
+#' @param summary The question's summary spec.
+#' @return The export with \code{display} and per-component \code{display},
+#'   \code{order_value} and \code{order_unit}.
+#' @keywords internal
+.omopReleaseRecordPoolingExport <- function(built, df, sub, summary) {
+  export <- built$export
+  absent <- function(x) if (is.null(x)) NA_character_ else x
+  stats_cols <- c("n_persons", summary$n_col, summary$mean_col,
+                  summary$sd_col)
+  shown <- attr(df, "dsomop_record_strata", exact = TRUE) %||% character(0)
+  display_cols <- setdiff(names(df), stats_cols)
+  export$display <- list(
+    columns = names(df), persons = "n_persons",
+    records = absent(summary$n_col), mean = absent(summary$mean_col),
+    sd = absent(summary$sd_col),
+    order = if (identical(summary$order, "n_persons")) "n_persons" else
+      "stratum")
+  st <- built$strata
+  unit <- suppressWarnings(as.numeric(sub$unit_id[match(st$stratum,
+                                                        sub$stratum)]))
+  unit[is.na(unit)] <- 0
+  export$components <- lapply(seq_along(export$components), function(i) {
+    comp <- export$components[[i]]
+    row <- match(comp$stratum, shown)
+    comp$display <- if (is.na(row)) NULL else
+      lapply(df[row, display_cols, drop = FALSE], function(x) x[[1L]])
+    comp$order_value <- as.numeric(st$stratum_order[[i]])
+    comp$order_unit <- unit[[i]]
+    comp
+  })
+  export
 }
 
 #' Protected run of one record-weighted QueryLibrary summary
@@ -630,8 +682,10 @@
   built <- .dsomopReleaseBuildRecordMoments(route$policy, route$protection,
                                             owner, sub,
                                             data_strata_keys = keys)
-  list(df = .omopReleaseRecordRows(handle, built, sub, spec, kind),
-       built = list(built),
+  df <- .omopReleaseRecordRows(handle, built, sub, spec, kind)
+  built$export <- .omopReleaseRecordPoolingExport(built, df, sub, s)
+  attr(df, "dsomop_record_strata") <- NULL
+  list(df = df, built = list(built),
        extra = list(weighting = "record", record_cap = K,
                     record_order = order_cols))
 }
@@ -639,8 +693,10 @@
 #' Release contracts of the record-weighted QueryLibrary summaries
 #'
 #' C7 contracts over the unscoped CDM population (a public basis), released
-#' in their original summary schemas. Their frames are shown per server:
-#' the record-moment components are not pooled by dsOMOPClient 2.10.3.
+#' in their original summary schemas. dsOMOPClient 2.10.3 pools compatible
+#' servers by summing the signed N, R, S and Q of each stratum and deriving
+#' the record-weighted mean and SD once (\code{.omopReleaseRecordPoolingExport}
+#' carries the display fields); older clients see a not-poolable contract.
 #'
 #' @return Named list of contracts.
 #' @keywords internal
@@ -649,6 +705,6 @@
   stats::setNames(lapply(ids, function(id) {
     list(class = "C7", run = .omopReleaseRunRecordSummary, fixed_basis = TRUE,
          masked_scoped = character(0), masked_always = character(0),
-         summary_shape = TRUE, per_site_only = TRUE)
+         summary_shape = TRUE)
   }), ids)
 }

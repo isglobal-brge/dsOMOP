@@ -69,14 +69,17 @@ test_that("record-weighted summaries resolve protected per-server contracts", {
     entry <- registry[[paste0("dsomop:", qid)]]
     contract <- .omopToolsReleaseContract(entry)
     expect_identical(contract$class, "C7", info = qid)
-    expect_true(isTRUE(contract$per_site_only), info = qid)
+    expect_null(contract$per_site_only, info = qid)
     expect_identical(entry$meta$tools_shape, "summary", info = qid)
-    # Record moments are shown per server: never pooled as person-weighted
-    # components, and older clients see a not-poolable contract.
-    expect_identical(entry$meta$release_pooling$strategy, "per_site_only",
-                     info = qid)
-    expect_identical(names(entry$meta$release_pooling$columns),
-                     entry$meta$output_fields, info = qid)
+    # dsOMOPClient 2.10.3 pools the record components (N, R, S, Q per
+    # stratum); older clients see a not-poolable contract. Servers without
+    # the DP service pool their standard summaries by the established one.
+    rp <- entry$meta$release_pooling
+    expect_identical(rp$strategy, "protected_components", info = qid)
+    expect_identical(names(rp$columns), entry$meta$output_fields, info = qid)
+    expect_identical(rp$standard_contract$strategy, "tabular", info = qid)
+    expect_identical(rp$standard_contract$columns, rp$columns, info = qid)
+    expect_null(rp$effect_estimate, info = qid)
     expect_identical(entry$meta$pooling_contract$strategy, "not_poolable",
                      info = qid)
   }
@@ -145,6 +148,22 @@ test_that("duration summaries release capped record-weighted moments", {
   }
   # Displayed by released persons, then the public concept id.
   expect_false(is.unsorted(-out$n_persons))
+  # The pooling fields: column roles, display order and, per stratum, its
+  # displayed key and label values and public ordering values (nothing that
+  # is not displayed).
+  expect_identical(owner$display, list(
+    columns = names(out), persons = "n_persons", records = "n_records",
+    mean = "avg_days", sd = "stddev_days", order = "n_persons"))
+  for (c in owner$components) {
+    row <- out[paste0("concept=", out$condition_concept_id) == c$stratum, ]
+    expect_identical(names(c$display), c("condition_concept_id",
+                                         "concept_name"))
+    expect_equal(c$display$condition_concept_id, row$condition_concept_id)
+    expect_identical(c$display$concept_name, row$concept_name)
+    expect_equal(c$order_value, row$condition_concept_id)
+    expect_equal(c$order_unit, 0)
+  }
+  expect_null(attr(out, "dsomop_record_strata"))
   again <- .records_run(h, "condition_era.length_stats")
   expect_identical(.release_values(again), .release_values(out))
   for (id in c("drug_era.length_stats", "observation_period.length_stats",

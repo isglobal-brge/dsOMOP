@@ -22,6 +22,13 @@ publishes the legacy \code{not_poolable} strategy (so clients older than
 protected values as if they were exact sufficient statistics) and a
 separate \code{release_pooling} descriptor: 2.10.3 clients pool the signed,
 reconciled components of compatible protected releases and derive views
-once. Standard mode keeps the established contract.
+once (record-weighted summaries: the signed N, R, S and Q per stratum). The
+descriptor also carries the entry's established contract
+(\code{standard_contract}), by which frames of servers whose DP service is
+unavailable (standard outputs with the disclosive fields unavailable) are
+pooled with each other, and, for effect estimates, its established
+\code{effect_estimate} contract: the pooled effect is the inverse-variance
+meta-analysis of the per-site protected estimates (post-processing).
+Standard mode keeps the established contract.
 }
 \keyword{internal}
