@@ -709,9 +709,21 @@
     # resolved workspace frames are server state and never part of a plan
     scope = .v1sObj(cohort = .v1sOneOf(.v1sCohortId(), .v1sStr(), .v1sArr(.v1sOneOf(.v1sCohortId(), .v1sStr()))),
                     tables = .v1sStrs(), combine = .v1sStr(c("union", "intersect"))),
-    # client-side federation evidence (never read by the server; annex)
-    harmonization = .v1sObj(version = .v1sScalar("integer"), mode = .v1sStr(), strict = .v1sBool(),
-                            manifest = .v1sOpaque(), schema = .v1sOpaque(), plan_signature = .v1sStr()))
+    # client-side federation evidence (never read by the server; annex),
+    # closed on the shapes dsOMOPClient writes (.plan_dependency_manifest(),
+    # .plan_schema_snapshot(), .plan_semantic_snapshot())
+    harmonization = .v1sObj(
+      version = .v1sScalar("integer"), mode = .v1sStr(), strict = .v1sBool(),
+      manifest = .v1sObj(tables = .v1sMap(.v1sStrs()), reasons = .v1sMap(.v1sStrs()),
+                         needs_vocabulary_identity = .v1sBool(), issues = .v1sStrs(),
+                         cohort_required = .v1sStrs()),
+      schema = .v1sObj(servers = .v1sStrs(), tables = .v1sStrs(),
+                       requirements = .v1sMap(.v1sStrs()), present = .v1sMap(.v1sBool()),
+                       columns = .v1sMap(.v1sOneOf(.v1sStrs(), .v1sMap(.v1sOneOf(.v1sStr(), .v1sStrs())))),
+                       types = .v1sMap(.v1sOneOf(.v1sStrs(), .v1sMap(.v1sStr()))),
+                       semantic_versions = .v1sMap(.v1sObj(cdm_version = .v1sStr(), spec_version = .v1sStr(),
+                                                           vocabulary_version = .v1sStr()))),
+      plan_signature = .v1sStr()))
   assign("v1_plan_shape", shape, envir = .irCache)
   shape
 }

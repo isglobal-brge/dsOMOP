@@ -1081,3 +1081,23 @@ test_that("A-19 (i): an empty or tiny private intersection resolves privately; o
     cleanup_handle(h)
   }
 })
+
+test_that("R1: the advisory harmonization block is closed on the shapes the client writes", {
+  base <- list(outputs = list(p = list(type = "person_level", tables = list(person = list("gender_concept_id")))))
+  ok <- base
+  ok$harmonization <- list(version = 1L, mode = "intersection", strict = TRUE,
+    manifest = list(tables = list(person = list("gender_concept_id")), reasons = list(person = list("output p")),
+                    needs_vocabulary_identity = FALSE, issues = list(), cohort_required = list()),
+    schema = list(servers = list("a", "b"), tables = list("person"), present = list(person = TRUE),
+                  columns = list(person = list("gender_concept_id")),
+                  types = list(person = list(gender_concept_id = "numeric"))),
+    plan_signature = "sig")
+  expect_s3_class(.irPrepare(ok), "dsomop_ir")
+  for (forge in list(function(h) { h$manifest$private <- TRUE; h },
+                     function(h) { h$schema$private <- list(a = 1L); h },
+                     function(h) { h$manifest$tables$person <- list(list(private = TRUE)); h })) {
+    bad <- ok
+    bad$harmonization <- forge(bad$harmonization)
+    expect_s3_class(.rv_refused(.irPrepare(bad)), "dsomop_ir_validation_error")
+  }
+})
