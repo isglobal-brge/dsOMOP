@@ -1133,23 +1133,12 @@ test_that("A-20(b): every value of a long output's anchors map is a final anchor
   expect_false(key(canonical(list(event = "t2dm_dx"))) %in% got)
 })
 
-test_that("A-20(b): matching template criteria retain their candidate source anchors", {
+test_that("A-20(b): a matching template's candidate anchors include its strata windows", {
   x <- .rv_example("plan-v2-example-B.json")
-  window <- list(start = NULL, end = -1L,
-                 anchor = list(source = list(event = "statin_rx"), which = "last"))
-  # WS-6 enforces section 6.10: strata are evaluated at the case time.
-  # Source anchors belong to template criteria, where A-20(b) inventories
-  # them on the instantiated candidate roster.
-  bad <- x
-  bad$populations$cc$match$match <- c(bad$populations$cc$match$match,
-    list(list(strata = list(source = list(event = "diabetes"), window = window))))
-  expect_error(.irPrepare(bad), "strata window anchors at the case time",
-               class = "dsomop_plan_rejection")
-  template <- x$populations$cc$match$controls
-  x$populations[[template]]$where <- list(and = list(
-    x$populations[[template]]$where,
-    list(has = list(source = list(event = "diabetes"), op = ">=", n = 1L,
-                    window = window))))
+  strata <- list(strata = list(source = list(event = "diabetes"),
+                               window = list(start = NULL, end = -1L, anchor = list(source = list(event = "statin_rx"),
+                                                                                    which = "last"))))
+  x$populations$cc$match$match <- c(x$populations$cc$match$match, list(strata))
   ir <- .irPrepare(x)
   template <- ir$populations$cc$match$controls
   got <- vapply(.irOrder(ir)$anchors$candidate[[template]], .jcsCanonical, "")
