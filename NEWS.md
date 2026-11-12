@@ -7,6 +7,12 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- (A-25) Historical v1 population references to handle-owned cohort names
+  retain their population-local person scope, independent filter anchoring
+  and recurrent index episodes. Canonical names are carried in the closed
+  IR, explain and semantic digest; ownership is checked from the handle's
+  registry before queries. Native v2 cohort types remain strict, and named
+  ownership grants neither DP locality nor exemption from final support.
 - Publication validates one genuine person per final row through direct keys or
   an immutable roster. Composite families commit together; support is counted
   on the materialized component, including streamed staged files.

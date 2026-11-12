@@ -545,6 +545,12 @@
 #' @return Invisibly TRUE.
 #' @keywords internal
 .planV1SiteCheck <- function(plan, handle) {
+  # Also covers output-less plans, which have no lowered IR (A-10).
+  for (p in names(plan[["populations"]])) {
+    .irCheckOwnedCohort(handle,
+                       .v1PopulationCohortName(plan[["populations"]][[p]][["cohort_definition_id"]]),
+                       paste0("/populations/", p, "/cohort_definition_id"))
+  }
   findings <- .planV1SiteFindings(plan, handle)
   if (length(findings[["declaration"]])) {
     # untyped, as .planExecute() raises it (never a transported refusal); the

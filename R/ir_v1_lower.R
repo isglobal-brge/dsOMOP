@@ -181,6 +181,15 @@
 }
 .v1CohortInteger <- function(x) .v1AsCohortInteger(x) %||% x
 
+# A-25 keeps the resolver's dispatch order: only RAW digit strings are IDs.
+# Identifier whitespace is trimmed after that decision, without native-name
+# encoding, case folding or a length cap. The envelope has checked the syntax.
+.v1PopulationCohortName <- function(x) {
+  x <- .v1Scalar(x)
+  if (is.character(x) && length(x) == 1L && !is.na(x) &&
+      !grepl("^[0-9]+$", x)) .validateIdentifier(x, "cohort") else NULL
+}
+
 .v1IdList <- function(x) {
   if (is.null(x)) return(list())
   lapply(unname(as.list(unlist(x, use.names = FALSE))), .v1Int)
@@ -936,6 +945,7 @@
   if (!is.null(pop[["filters"]])) .v1Annex(st, path, filters = pop[["filters"]])
   pop_name <- function(m) st[["population_names"]][[m]] %||% m
   kind <- tolower(.v1Text(pop[["kind"]]) %||% "criteria")
+  cohort_name <- .v1PopulationCohortName(pop[["cohort_definition_id"]])
   node <- if (identical(kind, "setop") || !is.null(pop[["setop"]])) {
     op <- tolower(.v1Text(pop[["setop"]][["op"]]) %||% "union")
     if (identical(op, "difference")) op <- "setdiff"
@@ -961,8 +971,9 @@
   } else if (!is.null(pop[["index_event"]])) {
     node <- list(kind = "index", index = .v1LowerIndexEvent(st, id, pop[["index_event"]]))
     node["where"] <- list(.v1And(
-      if (!is.null(pop[["cohort_definition_id"]])) list(cohort = list(cohort_definition_id = .v1CohortInteger(pop[["cohort_definition_id"]]))),
+      if (is.null(cohort_name) && !is.null(pop[["cohort_definition_id"]])) list(cohort = list(cohort_definition_id = .v1CohortInteger(pop[["cohort_definition_id"]]))),
       .v1Criteria(pop[["filter_tree"]], st, path)))
+    if (!is.null(cohort_name)) node[["legacy_cohort_table"]] <- cohort_name
     node
   } else if (!identical(pid, "base") && is.null(pop[["filter_tree"]]) &&
              is.null(pop[["cohort_definition_id"]])) {
@@ -974,7 +985,11 @@
   } else {
     node <- list(kind = "criteria")
     node["where"] <- list(.v1Criteria(pop[["filter_tree"]], st, path))
-    node["cohort_definition_id"] <- list(.v1CohortInteger(pop[["cohort_definition_id"]]))
+    if (is.null(cohort_name)) {
+      node["cohort_definition_id"] <- list(.v1CohortInteger(pop[["cohort_definition_id"]]))
+    } else {
+      node[["legacy_cohort_table"]] <- cohort_name
+    }
     node["episode_policy"] <- list(if (!is.null(pop[["episode_policy"]])) tolower(.v1Text(pop[["episode_policy"]])))
     # v1 criteria populations are the observation periods of their persons;
     # their windowed leaves anchor on the plan-level index cohort

@@ -25,6 +25,17 @@
 
 .irItems <- function(x) if (is.null(x)) list() else .jsonArrayItems(x)
 
+# A-25 ownership is a registry-only preflight, before even site metadata is
+# built. A named input is borrowed, never registered as execution-owned, and
+# membership says nothing about its support or authenticated DP lineage.
+.irCheckOwnedCohort <- function(handle, name, path) {
+  if (!is.null(name) && !name %in% (handle$temp_tables %||% character(0))) {
+    .irReject("named cohort reference must belong to this handle", field = path,
+              errors = paste0(path, ": named cohort reference must belong to this handle"))
+  }
+  invisible(TRUE)
+}
+
 # Does a node contain a negation (an object whose only key is `not`)?
 .irHasNot <- function(x) {
   if (!is.list(x)) return(FALSE)
@@ -1259,6 +1270,10 @@
                  unavailable_outputs = character(0),
                  site_findings = character(0), dialect = NULL)
   if (is.null(handle)) return(invisible(report))
+  for (p in names(ir[["populations"]])) {
+    .irCheckOwnedCohort(handle, ir[["populations"]][[p]][["legacy_cohort_table"]],
+                       paste0("/populations/", p, "/legacy_cohort_table"))
+  }
   if (!is.null(v1_plan)) .planV1SiteCheck(v1_plan, handle)
   site <- .irSiteErrors(ir, handle)
   report[["unavailable"]] <- site[["unavailable"]]

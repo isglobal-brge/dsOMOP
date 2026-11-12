@@ -714,7 +714,7 @@
   if (!is.null(cached)) return(cached)
   population <- .v1sObj(
     id = .v1sStr(), label = .v1sStr(), kind = .v1sStr(c("criteria", "setop")),
-    filter_tree = .v1sFilterTree(), cohort_definition_id = .v1sResolvedCohort(),
+    filter_tree = .v1sFilterTree(), cohort_definition_id = .v1sResolvedCohort(allow_name = TRUE),
     episode_policy = .v1sStr(.V1_EPISODE_POLICIES),
     index_event = .v1sObj(table = .v1sStr(), concept_set = .v1sConceptSet(),
                           primary_limit = .v1sStr(c("first", "last", "all")),

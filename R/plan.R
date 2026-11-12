@@ -98,7 +98,6 @@
 #' @return List with validation results
 #' @keywords internal
 .planValidate <- function(handle, plan) {
-  legacy <- .planLegacyFindings(handle, plan)
   # The frozen validation sequence (design-2.10.3 section 4.5) -- closed
   # envelope, normalisation, ir-v2.json, semantic and site rules, dialect
   # preflight -- reported here as validation errors, raised as typed
@@ -110,6 +109,13 @@
   }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e),
   # the v1 plan-declaration errors are among the legacy findings already
   dsomop_v1_declaration_error = function(e) NULL)
+  # In particular, malformed/unowned A-25 names must fail before legacy
+  # findings discover database metadata. Once the frozen sequence succeeds,
+  # retain the executor's supplemental findings and advisory warnings.
+  legacy <- if (is.null(ir_error)) .planLegacyFindings(handle, plan) else {
+    list(errors = character(0), missing_tables = character(0),
+         warnings = character(0), available_tables = character(0))
+  }
   errors <- unique(c(legacy[["errors"]], legacy[["missing_tables"]], ir_error))
   list(
     valid = length(errors) == 0,
