@@ -1,27 +1,164 @@
-# Differential-privacy release channel
+# Disclosure control of the OHDSI community tools
 
-Since dsOMOP 2.8.0, differential privacy (DP) concerns only the integrated
-OHDSI community tools: Achilles results, OHDSI results tables, the analysis
-catalog and the query library. dsOMOP's core (connecting, loading tables
-through plans and recipes, filters, concept factors, merges and row binding,
-cohorts and dsOMOP's own exploration statistics) works exactly as it did
-before DP was added, under the standard DataSHIELD disclosure controls
-(`nfilter.*`) only. It never initializes, consults or depends on DP, and its
-tables never carry DP provenance.
+dsOMOP's differential-privacy machinery concerns only the integrated OHDSI
+community tools: Achilles results, OHDSI results tables, the analysis catalog,
+the query library and the typed release channel. dsOMOP's core (connecting,
+loading tables through plans and recipes, filters, concept factors, merges and
+row binding, cohorts and dsOMOP's own exploration statistics) works under the
+standard DataSHIELD disclosure controls (`nfilter.*`) only and never depends on
+the protected-release mechanism. Core plan outputs carry verified DP provenance
+only after the approved preparation path (`omopDpPlanExecuteDS`, which seals
+person-local plan outputs); ordinary loading (`omopPlanExecuteDS`, recipes)
+does not.
 
 The community tools are enabled by default (`dsomop.tools.enabled`, profile
 fallback `default.dsomop.tools.enabled = TRUE`); custodians can disable them
-with `dsomop.tools.enabled = FALSE`. The DP release
-channel is enabled by default since dsOMOP 2.6.0; custodians can opt out with
-`options(dsomop.dp.enabled = FALSE)` or `DSOMOP_DP_ENABLED=0`. Explicit option
-and environment settings must agree. The custodial option
-`dsomop.dp.exclusive` defaults to `FALSE` since 2.8.0 (it defaulted to `TRUE`
-in 2.7.x and then covered dsOMOP's own statistics too). When a custodian sets
-it and DP is enabled, the community-tool endpoints release results only
-through the typed DP channel. Analysts cannot set this policy or bypass the
-noise through a client option. `omopDpStatusDS()` reports the configured
-`exclusive` flag; the flag is read on each request and does not change the DP
-mechanism, policy hash, sticky noise, or release identity.
+with `dsomop.tools.enabled = FALSE`. The DP service is enabled by default since
+dsOMOP 2.6.0; custodians can opt out with `options(dsomop.dp.enabled = FALSE)`
+or `DSOMOP_DP_ENABLED=0`. `dsomop.tools.mode` selects how the tools protect
+their outputs (`"auto"` by default, `"standard"` or `"dp"`); the custodial
+option `dsomop.dp.exclusive = TRUE` with DP enabled selects `"dp"`. Analysts
+cannot set these policies or bypass the noise through a client option.
+
+## Protected releases: guarantees and limits (2.10.3)
+
+dsOMOP's protected OHDSI-tool releases use deterministic disclosure controls
+without a privacy accountant, total-epsilon budget, query cap, rate limit, or
+admission state tied to the number of questions asked. Repeating an equivalent
+supported question, or changing a parameter within its documented public snap
+interval, reuses the same protected components. Canonical component ownership
+covers automatic and typed aliases. Output metadata identifies the effective
+population, grid, clipping bounds, contribution policy and approximation.
+
+There are two protected routes. A fixed-synopsis route derives all supported
+views solely from one calibrated public atom basis for an immutable dataset
+generation. Unlimited post-processing of that basis does not add a new raw-data
+release. A flexible-scope route uses secret, deterministic fingerprints of
+realised bounded contributions to prevent different formulations of the same
+component from drawing fresh noise. That second route is a heuristic disclosure
+control: its data-dependent correlations are not a general
+differential-privacy guarantee.
+
+These controls do not guarantee protection against all adaptive queries.
+Distinct overlapping populations, supported partition recombinations outside
+one common synopsis, auxiliary knowledge, model outputs and other permitted
+exact methods can still enable inference or averaging. Contributor-based
+sharing can reveal equality relationships between selected sets; a two-query
+transcript need not be epsilon-DP even if each isolated noise marginal is
+epsilon-calibrated. Exact support/model-admission rules also reveal threshold
+information. The reported noise calibration and bounded-vector mechanism
+epsilon are not a database-wide, cumulative or lifetime guarantee. No finite
+transcript epsilon is reported for the service.
+
+The default reference calibration is 0.1, with fixed component allocations; it
+is not 0.1 independently per cell. A custodian can choose another deployment
+calibration, accepting its noise/utility tradeoff. Lower noise does not cure
+unlimited adaptive inference. Public snapping, clipping and contribution limits
+change precision or the released estimand; small supported populations may
+have little useful moment/rate precision. No precision or availability changes
+according to the number of past questions.
+
+Changes to source data, secrets, grids, scales or mechanism versions can create
+additional disclosures. They do not erase past answers or reset privacy
+history. Stable data and identity replay across sessions and workers. Private
+contributor hashes, person keys and exact hidden support are never output.
+Audit is observational and is not an accountant.
+
+The intended deployment remains DataSHIELD's layered controls and governance:
+approved access and uses, custodian-selected methods, output checks and audit.
+This revision removes the tested dsOMOP exact-output bypasses and cheap
+cosmetic-variant averaging attacks; it does not replace the rest of that
+system. Custodians must assess the combined Opal method profile, including
+overlapping dsBase/core functions and available auxiliary information. Shared
+Rock credentials are not distinct analyst identities for privacy accounting or
+reliable individual attribution.
+
+### Modes and metadata
+
+- `fixed_synopsis`: `mechanism_epsilon` identifies the declared bounded vector
+  and allocation; `guarantee_scope = "fixed_vector_before_exact_support_gate"`;
+  `api_transcript_epsilon = NA` because the full service includes exact gates
+  and other outputs. `"dp"`/exclusive mode chooses this mechanism family; it is
+  not a claim about all enabled Opal methods. A request is a fixed synopsis
+  only when it is unscoped, its contract declares a public basis, and the
+  custodian declares an immutable data generation (`dsomop.dp.snapshot_id`);
+  the noise of each atom is keyed on (corpus, generation, owner, population,
+  atom).
+- `realised_sticky`: `noise_reference_epsilon` plus actual per-component
+  allocations, scales and sensitivities; `mechanism_epsilon = NA`,
+  `api_transcript_epsilon = NA`,
+  `guarantee_scope = "heuristic_realised_contribution_reuse"`. Every cohort- or
+  table-scoped request, and every unscoped request without a custodial
+  generation, takes this route in auto mode; DP-only mode refuses it with a
+  stable unsupported-mechanism message. Each component's noise is keyed on its
+  owner, coordinate and a secret HMAC fingerprint of the sorted
+  (person token, bounded contribution) map; request text, sessions, handles,
+  scope names, lineage spelling and the database version never enter it.
+- `standard` and `mixed`: explicit per-block protection; no blanket epsilon.
+  On the standard route (standard mode, or auto mode without the DP service:
+  `standard_fallback`) the demonstrated-disclosive fields are unavailable:
+  exact scoped moments and quantiles of per-person distributions, exact
+  flexible-window person-time, rates, MDRRs and effect estimates/CI/SE
+  (`masked_fields`, `masked_reason = "protected_output_required"` or
+  `"protected_mechanism_unavailable"`). Imported precomputed Achilles
+  distributions have no person-level basis: in auto mode their summaries are
+  unavailable (`"protected_basis_unavailable"`). Public parameters are safe
+  metadata; hidden support and map fingerprints are not.
+- Status: `privacy_call_quota = "none"`, `history_based_admission = FALSE`; no
+  balance, spent-epsilon, remaining-release or reset field.
+
+Component allocations of the reference calibration e: an eligible-person total
+0.2e wherever it occurs (one owner shared by typed and automatic routes); a
+histogram/partition 0.8e; histogram plus bounded moments 0.4e (cells), 0.2e
+(normalized sum) and 0.2e (square sum); bounded moments alone 0.4e/0.4e;
+person-time 0.3e (first-outcome status) and 0.5e (observed time, each person
+clipped to 3650 days); multi-label or record-capped cells and distinct-label
+cardinalities e with the fixed cap K (default 10) as sensitivity. At e = 0.1
+the noise standard deviation is about 70.7 people for a person total, 17.7 for
+a partition cell and 35.4 for a histogram-and-moments cell; moments of
+populations below a few thousand people are therefore imprecise, and their
+projection onto the feasible set can be degenerate.
+
+Public grids: birth years 1900 to the custodial reference year
+(`dsomop.dp.reference_year`, default the calendar year) plus unknown; ages in
+5-year bands 0 to 110+; durations 0, 30, 90, 180, 365, 730, 1095, 1825, 3650,
+7300, 10957 days; counts per person 0-20, 25, 30, 40, 50, 75, 100+. Free
+numeric parameters snap before evaluation: time-at-risk and window offsets
+outward on {-3650, 3650} plus multiples of 30 days (closed windows are converted
+to half-open ones), look-back durations to multiples of 30 days, `min_days` to
+the duration grid, ages to 5-year boundaries, age bands to {5, 10, 20}, alpha
+and power to 0.01 steps, a requested reference year to the fixed reference year
+(the protected age-by-decade view relabels the released birth-year basis with
+any requested year), model feature counts to {10, 20, 50, 100} and calibration
+bins to {5, 10, 20}. Requested and effective values are reported in
+`effective_parameters`. Typed histogram breaks snap to the 2-significant-digit
+decimal lattice (first days of months for dates, UTC midnights for datetimes);
+typed bounded means need one registered public scale (`omopDpStatusDS()`
+`public_scales`; custodian extension `dsomop.release.public_scales`).
+
+Observed time at risk: CohortMethod, incidence, Kaplan-Meier and interaction
+ports intersect the requested window with the coalesced observation period that
+contains the canonical first index, as a half-open interval (persons whose index
+lies outside observation contribute no risk time; outcomes outside the observed
+window never count).
+
+### DataSHIELD comparison
+
+Permitted exact counts and means on two target-identifiable cohorts A and
+A\{p} permit `n_A*mean_A - n_B*mean_B = x_p`. A retained-cohort size floor
+alone does not invalidate this algebra. But DataSHIELD does not simply ignore
+the issue: `dataFrameSubsetDS1` warns about and logs small complement
+differences, and method privacy profiles can restrict subsetting-capable
+functions. Current `dataFrameSubsetDS1/2` are profile-gated; the 2025 platform
+paper describes more restrictive profiles and the Five Safes approach. A dsOMOP
+scope interface may be more expressive than those strict profiles. Thus
+"better than standard DataSHIELD" is not a universal ordering, and "dsBase
+already permits differencing" is context, not an excuse for new exact leak
+paths. Verify the installed versions and profile in Opal. Sources:
+[dsBase meanDS](https://raw.githubusercontent.com/datashield/dsBase/master/R/meanDS.R),
+[dataFrameSubsetDS1](https://raw.githubusercontent.com/datashield/dsBase/master/R/dataFrameSubsetDS1.R),
+[dataFrameSubsetDS2](https://raw.githubusercontent.com/datashield/dsBase/master/R/dataFrameSubsetDS2.R),
+[Avraam et al., DataSHIELD disclosure-risk model](https://academic.oup.com/bioinformaticsadvances/article/5/1/vbaf046/8068803).
 
 ## Community-tool gate
 
@@ -44,6 +181,14 @@ argument decoding, cohort resolution, cached-result access or queries.
 | `omopQueryExecDS` | Aggregate query results |
 | `omopAnalysisRunDS` | Aggregate analysis results |
 | `omopAnalysisRunAssignDS` | Server-side analysis tables |
+| `omopDpStatusDS`, `omopDpPlanExecuteDS` | DP status and sealed preparation |
+| `omopDpReleaseDS` (since 2.10.3) | Typed protected releases; every attempt is written to the redacted audit log |
+
+`omopAnalysisRunDS`, `omopQueryExecDS` and the DP endpoints use the route-aware
+gate (`dp_routes = TRUE`): DP-only mode then refuses standard statistics
+question by question and admits fixed-synopsis releases. The typed release
+checks the gate before decoding its arguments or reading any provenance,
+handle or data.
 
 dsOMOP's own endpoints are never gated by DP: table and column statistics,
 domain coverage, missingness, value counts, concept prevalence, crosstabs,
@@ -52,11 +197,23 @@ location, safe cutpoints, plan preview, cohort list and definitions, observed
 concept-factor levels (`omopFactorLevelsDS`) and capabilities (including the
 banded population size). They apply the standard suppression and banding.
 
-Only outputs of the community tools can carry DP provenance and be released
-through `omopDpReleaseDS` (`ds.omop.dp.release` on the client). Supply public
-DP categories, bounds and breaks directly in the typed DP specification. The
-seven supported typed DP statistics remain available with identical sticky
-releases whether or not exclusivity is set.
+Only sealed person-local tables (community-tool loaders and the DP preparation
+path) can be released through `omopDpReleaseDS` (`ds.omop.dp.release` on the
+client). The seven typed statistics release protected components (see above):
+counts, capped record counts and registered-scale bounded means of unscoped
+pinned loader tables of a custodial generation are fixed synopses; every other
+typed release is realised-contribution protected and is refused in DP-only
+mode. Statistic aliases of one person total (count, `bounded_record_count`
+with k = 1, the denominators of rates and means) share the person-total
+owner. A typed variable has no registered label universe, so each declared
+label or bin is its own canonical component, keyed by the label and its
+realised contributions and never by the other declared levels: unused levels,
+dummy positives, reordered levels and clamp-only outer breaks add no fresh
+draw of an existing cell. The declared levels are the view, and displayed
+counts are the Euclidean projection of their signed components onto the
+noisy person total (exported unreconciled, so pooled views are unchanged).
+Multi-label and record-capped cells and distinct-label cardinalities use the
+fixed cap K as sensitivity for every requested k.
 
 The gate covers the registered community-tool surface. It does not alter
 internal profiling helpers, controller-only `omopAchillesHeelDS`, or
@@ -98,21 +255,34 @@ environment values still fail closed. No generic shared fallback domain is used.
 Initialize the resource with `omopInitDS()` before calling DP status when using
 derived defaults.
 
-Since 2.10.0 the noise also depends on a private automatic database version:
-without an explicit snapshot, each R session reads the largest primary-key
-identifier of every present clinical table once (an index lookup), keys the
-result with the protected subkey and puts it in every release identity. It is
-never released. A reload that adds rows therefore re-draws every answer at the
-next session, with no epoch bump. An in-place edit that adds no row with a
-larger identifier keeps the version: custodians **must bump
-`dsomop.dp.privacy_epoch` / `DSOMOP_DP_PRIVACY_EPOCH` after such edits** and
-restart affected sessions. An explicit `dsomop.dp.snapshot_id` replaces the
-automatic version (the database is then not read) and must change with every
-reload. Policy changes during a session fail closed. Use a separate session for
-a different derived resource; DSLite server sessions keep separate policies
-within their shared R process. For replicas and database aliases of one logical
-dataset, configure matching explicit identifiers if canonical connection
-coordinates differ.
+Before 2.10.3 the noise of a typed release depended on the canonical request
+semantic, the keyed fingerprint of the exact bounded statistic and a private
+automatic database version (the largest primary key of every clinical table),
+so every distinct request spelling drew fresh noise and every reload re-drew
+every answer. 2.10.3 removes that path: protected releases are keyed as
+described in "Modes and metadata", and no database version is read.
+
+- Realised-sticky releases follow their data. A reload or in-place edit that
+  changes a person's bounded contribution changes that component's
+  fingerprint and re-draws it; components whose contribution maps are
+  unchanged keep their draws (an unrelated insertion no longer re-draws them).
+  Repeating a question across a refresh therefore shows which components
+  changed, never by how much: the conditional equality of
+  [isglobal-brge/dsOMOP#20](https://github.com/isglobal-brge/dsOMOP/issues/20)
+  remains, by design, for unchanged components.
+- Fixed synopses follow the custodial generation: the noise of an atom depends
+  on (corpus, generation, owner, population, atom), not on the data.
+  **Custodians must change `dsomop.dp.snapshot_id` with every reload or
+  edit**: an unchanged generation adds the same noise to the new exact values,
+  so the difference of two releases would reveal the exact change.
+- `dsomop.dp.privacy_epoch` / `DSOMOP_DP_PRIVACY_EPOCH` is part of every noise
+  profile: bumping it re-draws every fixed and realised component at once.
+
+Policy changes during a session fail closed. Use a separate session for a
+different derived resource; DSLite server sessions keep separate policies
+within their shared R process. For replicas and database aliases of one
+logical dataset, configure matching explicit identifiers if canonical
+connection coordinates differ.
 
 The only DP state is the noise root, `DSOMOP_STATE_DIR/secrets/dp_noise_root`
 (or under `dsomop.state_dir`); mount the state directory across restarts. First
@@ -125,22 +295,22 @@ for DP. The default `~/.dsomop` is suitable only when the home is persistent.
 `DSOMOP_TEST_ALLOW_EPHEMERAL_STATE=1` permits temporary paths in tests only; it
 does not supply a resource identity or bypass policy checks.
 
-The mechanism remains person-bounded sticky discrete Laplace, with default
-release epsilon 0.1, admitted range [1e-6, 8] and delta 0. Contribution and level
-caps are unchanged. Resource domains separate HMAC subkeys; both identifiers enter
-the policy hash and release context. Equal canonical queries on distinct
-resources therefore use different PRF keys. Discrete noise draws can coincide
-by chance; independence does not imply unequal numeric outputs on every call.
+The mechanism remains person-bounded sticky discrete Laplace with the exact
+sampler below, default reference epsilon 0.1, admitted range [1e-6, 8] and
+delta 0; components receive the fixed allocations above. Resource domains
+separate the HMAC subkeys (person tokens, contribution fingerprints, noise and
+provenance), so equal components on distinct resources use different PRF keys.
+Discrete noise draws can coincide by chance; independence does not imply
+unequal numeric outputs on every call.
 
-Each answer is a deterministic function of the root, the public question
-(lineage, typed statistic, bounds, reducer, contribution contract, policy
-hash, domain, snapshot, epoch, mechanism and sensitivity), the keyed
-fingerprint of the bounded statistic and the database version. Nothing else is
-stored: a repeated valid question recomputes the same canonical bytes after
-restarts and on every R server with the same root, configuration and data, with no
-store, capacity limit or lock. Provenance and typed admission run on every
-request. Changing the root, snapshot, epoch or database version re-draws every
-answer; changing only the bounded statistic re-draws that answer.
+Each answer is a deterministic function of the root, the domain, the
+component's owner, family, coordinate and fixed noise profile (mechanism,
+sampler, reference epsilon, allocation, sensitivity, lattice and epoch), and
+either the custodial generation and population (fixed synopsis) or the
+contribution fingerprint (realised sticky). Nothing else is stored: a repeated
+valid question recomputes the same canonical bytes after restarts and on every
+R server with the same root, configuration and data, with no store, capacity
+limit or lock. Provenance and typed admission run on every request.
 
 dsOMOP 2.7.1 to 2.9.x instead bound each public request identity, snapshot and
 epoch permanently to its first complete response in an authenticated store
@@ -148,14 +318,8 @@ under `release-bindings/`. 2.10.0 does not read that store, so upgrading
 re-draws previously asked questions once; `omopInitializeReleaseStore()` is a
 deprecated no-op.
 
-For [isglobal-brge/dsOMOP#20](https://github.com/isglobal-brge/dsOMOP/issues/20)
-(the conditional equality across an unrotated refresh), a refresh that adds
-rows changes the database version, so every answer re-draws and equality
-reveals nothing. An in-place edit that adds no row with a larger identifier,
-without an epoch bump, re-draws only the statistics it changed: repeating a
-question across it shows whether that statistic changed, never by how much.
 There is no finite cumulative budget or full temporal-transcript DP claim.
-Distinct requests, database versions and public rotations compose; admission
+Distinct requests, data changes and public rotations compose; admission
 failures, administration, timing, availability and other DataSHIELD outputs
 remain separate. See README.md for deployment and upgrade notes. The
 QueryLibrary sticky catalogue is public metadata and remains available before
@@ -190,12 +354,12 @@ where `alpha = exp(-epsilon / sensitivity)`.
 
 There is no fixed noise bound, bit budget or rejection cutoff. For neighbouring
 integer statistics differing by at most sensitivity, the probability ratio at
-every integer output is at most exp(epsilon). Histogram coordinates use the
-person-level L1 bound; mean and rate components retain their sequential
-half-epsilon allocations. Noise is added using arbitrary-precision integers,
-then clipped to the existing public bounds (normally [0, 2^53-1]) before
-conversion back to an R number. Clipping is post-processing and preserves the
-privacy inequality.
+every integer output is at most exp(epsilon). Since 2.10.3 each protected
+component is drawn with its fixed allocation of the reference calibration and
+its declared sensitivity (see "Modes and metadata"). Noise is added using
+arbitrary-precision integers; the signed component is kept for pooling and only
+projected (top-down simplex, feasible moment set) for display. Projection and
+clipping are post-processing.
 
 The canonical inputs are the exact IEEE-754 binary rational values of the
 validated R epsilon and sensitivity, converted exactly: each positive double
@@ -221,8 +385,10 @@ With independent random bits the implemented mechanism has the exact ideal
 distribution and pure differential privacy (delta 0). The deployed keyed
 stream makes the corresponding cryptographic pseudorandomness assumption
 about HMAC; a finite secret key is not an information-theoretic source of
-infinitely many independent bits. The per-release scope and composition
-limitations above are unchanged.
+infinitely many independent bits, and the ideal DP theorem does not make a
+fixed secret, publicly unknown noise realization private across adaptively
+chosen questions. The limits of "Protected releases: guarantees and limits"
+apply.
 
 The mechanism identifier is `dsomop-sticky-discrete-laplace-prf-v2`, and the
 hashed policy schema changes from 2 to 3. Both the public sampler and mechanism
@@ -250,3 +416,14 @@ Changing the sampler changes the policy hash and sticky release identity, so an
 upgraded query can receive a new draw. All replicas of one logical node must
 use the same version. This repair does not retroactively protect old releases
 or erase their contribution to privacy loss.
+
+Since 2.10.3 the same protocol advertises the protected-release privacy
+contract `protected_release_fixed_basis_or_realised_v1` with guarantee
+`fixed_synopsis_or_heuristic_realised_contribution_reuse_v1` and binding
+`fixed_basis_or_realised_contributions_v1` (status also reports
+`release_protocol = "dsomop-protected-release-v1"`, the guarantee scope of each
+route, the fixed-synopsis statistics, the registered public scales and
+`history_based_admission = FALSE`). dsOMOPClient 2.10.3 validates and pools
+these releases from their signed components; older clients refuse them, and no
+client pools them with servers of the per-release contract. The sampler,
+mechanism identifier and canonical JSON are unchanged.

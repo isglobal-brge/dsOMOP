@@ -1,6 +1,32 @@
-# DP release status (2.10.0)
+# DP release status (2.10.3)
 
 The current server contract is `dsomop-dp-release-v3` /
+`protected_release_fixed_basis_or_realised_v1` with typed payload protocol
+`dsomop-protected-release-v1`, paired with dsOMOPClient 2.10.3. Protected
+releases share canonical components: a fixed synopsis (unscoped question over
+a public basis of a custodian-declared generation, `dsomop.dp.snapshot_id`)
+draws each atom's noise from the corpus, generation, owner, population and
+atom; a realised-sticky release (every other scope; a heuristic disclosure
+control without a joint differential-privacy guarantee) draws each
+component's noise from its owner, coordinate and a secret fingerprint of the
+realised bounded contributions. No key depends on request text, lineage
+cosmetics, earlier questions or a database version, and nothing but the root
+is stored. A reload re-draws exactly the realised components whose
+contributions changed; fixed synopses need a new snapshot for every data
+generation. DP-only mode accepts only fixed synopses.
+
+Status declares `history_dependent = FALSE`, `history_based_admission = FALSE`,
+`persistent_state = "noise_root_only"`,
+`release_binding = "fixed_basis_or_realised_contributions_v1"`,
+`privacy_call_quota = "none"` and `service_capacity = "none"`, plus the
+guarantee scopes, the fixed-synopsis typed statistics and the registered public
+scales. dsOMOPClient 2.10.3 validates and pools protected payloads and refuses
+federations that mix them with older contracts; older clients refuse typed
+releases from 2.10.3 servers.
+
+## Seed-only contract (2.10.0 to 2.10.2, superseded)
+
+The 2.10.0 to 2.10.2 server contract was `dsomop-dp-release-v3` /
 `fixed_per_release_seed_data_versioned_v1`, paired with dsOMOPClient 2.10.0.
 Every answer is a deterministic function of the secret noise root, the public
 question, the keyed fingerprint of the bounded statistic and a private automatic
@@ -11,7 +37,7 @@ the same root, configuration and data; a reload that adds rows re-draws every
 answer at once. Typed admission and provenance/MAC checks remain mandatory, and
 primitives, sampler, mechanism and calibration are unchanged.
 
-Status declares `history_dependent = FALSE`,
+Status declared `history_dependent = FALSE`,
 `persistent_state = "noise_root_only"`,
 `release_binding = "seed_data_versioned_v1"`, `privacy_call_quota = "none"` and
 `service_capacity = "none"`. dsOMOPClient 2.10.0 accepts this contract and the
