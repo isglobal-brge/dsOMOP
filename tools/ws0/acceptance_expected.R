@@ -131,15 +131,35 @@ fills_of <- function(pid, concept_ids) {
   f <- q(paste0("SELECT drug_exposure_id AS id, drug_exposure_start_date AS s, drug_exposure_end_date AS e, days_supply AS supply ",
                 "FROM drug_exposure WHERE person_id = ", pid, " AND drug_concept_id IN (", idlist(concept_ids), ") ",
                 "ORDER BY drug_exposure_start_date, drug_exposure_id"))
+  normalise_fills(f)
+}
+# the normalisation of fills_of() on rows (id, s, e, supply)
+normalise_fills <- function(f) {
   if (nrow(f) == 0L) return(f)
   f$start <- D(f$s)
   f$end <- as.Date(ifelse(!is.na(f$e), f$e, NA_character_))
+  sup_ok <- !is.na(f$supply) & f$supply >= 1 & f$supply == floor(f$supply)
+  # a present but invalid supply when it is the only end source contributes nothing (§6.7); a NULL supply is
+  # a one-day record
+  f <- f[!(is.na(f$e) & !is.na(f$supply) & !sup_ok), , drop = FALSE]
   sup_ok <- !is.na(f$supply) & f$supply >= 1 & f$supply == floor(f$supply)
   f$end[is.na(f$end) & sup_ok] <- f$start[is.na(f$end) & sup_ok] + f$supply[is.na(f$end) & sup_ok] - 1L
   f$end[is.na(f$end)] <- f$start[is.na(f$end)]
   f$supply_ok <- sup_ok
   f[f$end >= f$start, , drop = FALSE]
 }
+# NULL / 0 / negative / fractional supply with and without a recorded end (A-20 item 2): without a recorded
+# end only the NULL supply survives (one day); a recorded end is kept whatever the supply; an end before the
+# start is dropped
+local({
+  f <- data.frame(id = 1:9, s = "2020-01-01",
+                  e = c(NA, NA, NA, NA, "2020-01-05", "2020-01-05", "2020-01-05", "2020-01-05", "2019-12-31"),
+                  supply = c(NA, 0, -5, 2.5, NA, 0, -5, 2.5, 10), stringsAsFactors = FALSE)
+  n <- normalise_fills(f)
+  stopifnot(identical(n$id, c(1L, 5L, 6L, 7L, 8L)),
+            identical(iso(n$end), c("2020-01-01", rep("2020-01-05", 4L))),
+            identical(n$supply_ok, rep(FALSE, 5L)))
+})
 # gaps-and-islands eras (gap g) over closed intervals ordered by (start, id); returns list of (start, end, n)
 eras_of <- function(starts, ends, gap) {
   if (length(starts) == 0L) return(list())
@@ -153,7 +173,8 @@ eras_of <- function(starts, ends, gap) {
   res
 }
 # stockpiled effective-supply intervals (cap 90): supply precedence positive days_supply,
-# else recorded length, else one day; carry = min(cap, max(0, prev_eff_end - start + 1))
+# else recorded length, else one day; carry = min(cap, max(0, prev_eff_end - start + 1)) with prev_eff_end
+# the previous row's effective end (the cap discards excess stock; not a running maximum)
 effective_of <- function(f, cap = 90L) {
   if (nrow(f) == 0L) return(list())
   prev_end <- NULL; res <- list()
@@ -162,10 +183,23 @@ effective_of <- function(f, cap = 90L) {
     carry <- if (is.null(prev_end)) 0L else min(cap, max(0L, as.integer(prev_end - f$start[i] + 1L)))
     eff_end <- f$start[i] + supply - 1L + carry
     res[[length(res) + 1L]] <- c(f$start[i], eff_end)
-    prev_end <- if (is.null(prev_end)) eff_end else max(prev_end, eff_end)
+    prev_end <- eff_end
   }
   res
 }
+# the cap-binding case (WS-5 fixture person 3011; A-20 item 1): supplies 200 / 10 / 10 on 2020-01-01 /
+# 01-02 / 06-01 with cap 90 carry 0 / 90 / 0 and end 07-18 / 04-10 / 06-10 (a running maximum would carry
+# 48 days into the third fill); and a pre-window carry-in (person 3010): 30 / 30 on 2019-12-01 / 12-20
+local({
+  ends <- function(starts, supplies) {
+    f <- data.frame(start = D(starts), supply = supplies, supply_ok = TRUE)
+    f$end <- f$start + f$supply - 1L
+    vapply(effective_of(f), function(iv) iso(as.Date(iv[2], origin = "1970-01-01")), "")
+  }
+  stopifnot(identical(ends(c("2020-01-01", "2020-01-02", "2020-06-01"), c(200L, 10L, 10L)),
+                      c("2020-07-18", "2020-04-10", "2020-06-10")),
+            identical(ends(c("2019-12-01", "2019-12-20"), c(30L, 30L)), c("2019-12-30", "2020-01-29")))
+})
 
 # =============================================================================
 # 01 characterisation
@@ -423,7 +457,7 @@ effective_of <- function(f, cap = 90L) {
                          wide_cols(c("covered_rec", "covered_eff", "era_count", "first_era_days", "supply_start", "supply_clipped"))),
     persistence = frame_out("persistence", do.call(rbind, surv_rows), SURV_COLS)),
     c("recorded coverage unions normalised fills; effective coverage unions the stockpiled relation (1004: 44 vs 60)",
-      "a fill with end before start contributes nothing; NULL end and NULL supply is a one-day record",
+      "a fill with end before start contributes nothing; NULL end and NULL supply is a one-day record; a present invalid supply with no recorded end is dropped",
       "single-outcome survival names its outcome on censored rows too; follow_up_days == exit - entry",
       "discontinuation censor = first era end after entry + 30"))
 }
