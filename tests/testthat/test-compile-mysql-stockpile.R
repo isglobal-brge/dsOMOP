@@ -1,7 +1,7 @@
 test_that("MySQL stockpile ordering parses only top-level clauses and preserves literals", {
   cols <- list(event_id = .fragmentColumn("bigint", FALSE, "private"),
                 label = .fragmentColumn("text", TRUE, "measure"))
-  f <- .fragment("ordered", "stream", "row", "SELECT 1 AS event_id, 'x' AS label", cols,
+  f <- .fragment("ordered", "stream", "none", "SELECT 1 AS event_id, 'x' AS label", cols,
                   private_columns = "event_id")
   expect_identical(.mysqlExpandOrderAliases("CASE WHEN label = 'label' THEN 0 ELSE 1 END",
                                             c(label = "a.source_ns")),
@@ -51,14 +51,14 @@ test_that("MySQL stockpile payloads preserve exact values, ordering, empty sourc
                 label = .fragmentColumn("text", TRUE, "measure"),
                 concept_id = .fragmentColumn("bigint", TRUE, "concept"))
   source <- function(name, table) .mysqlStockpileSource(
-    .fragment(name, "interval", "row", paste0("SELECT * FROM ", table), cols,
+    .fragment(name, "interval", "none", paste0("SELECT * FROM ", table), cols,
                unique_key = "event_id", private_columns = "event_id"), table, h)
   a <- source("json_a", first)
   b <- source("json_b", first)
   empty <- source("json_empty", second)
   result_cols <- list(event_key = .fragmentColumn("text", FALSE, "measure"),
                        start_date = cols$start_date, label = cols$label, concept_id = cols$concept_id)
-  f <- .fragment("json_result", "stream", "row", paste0(
+  f <- .fragment("json_result", "stream", "none", paste0(
     "SELECT CAST(dsomop_payload_1.event_id AS CHAR) AS event_key, b.start_date, b.label, b.concept_id ",
     "FROM json_a dsomop_payload_1 INNER JOIN json_b b ON b.event_id = dsomop_payload_1.event_id ",
     "LEFT JOIN json_empty e ON e.event_id = b.event_id"), result_cols,
@@ -81,14 +81,14 @@ test_that("MySQL stockpile payloads preserve exact values, ordering, empty sourc
   expect_error(.executeQuery(h, short_sql), "JSON|json")
   # A sort expression over an unprojected source column remains private;
   # LIMIT selects the same row and no helper column escapes the statement.
-  label <- .fragment("json_label", "stream", "row",
+  label <- .fragment("json_label", "stream", "none",
     "SELECT a.label AS label FROM json_a a ORDER BY a.event_id DESC LIMIT 1",
     columns = list(label = cols$label), dependencies = a$name)
   rows <- .executeQuery(h, .buildStatement(fragments, label, dialect = h))
   expect_identical(names(rows), "label")
   expect_identical(rows$label, "b")
   # A volatile sort key is evaluated after DISTINCT, preserving row count.
-  distinct <- .fragment("json_distinct", "stream", "row",
+  distinct <- .fragment("json_distinct", "stream", "none",
     "SELECT DISTINCT 1 AS one FROM json_a a ORDER BY RAND()",
     columns = list(one = .fragmentColumn("integer", FALSE, "measure")), dependencies = a$name)
   rows <- .executeQuery(h, .buildStatement(fragments, distinct, dialect = h))
@@ -96,7 +96,7 @@ test_that("MySQL stockpile payloads preserve exact values, ordering, empty sourc
   expect_identical(names(rows), "one")
   # Empty payloads produce no event rows, but the one-row aggregate does not
   # erase an unrelated roster branch that deliberately keeps an uncovered row.
-  kept <- .fragment("json_kept", "stream", "row",
+  kept <- .fragment("json_kept", "stream", "none",
     "SELECT 7 AS row_key, e.event_id FROM (SELECT 7 AS k) r LEFT JOIN json_empty e ON 1 = 1",
     columns = list(row_key = .fragmentColumn("integer", FALSE, "private"),
                    event_id = .fragmentColumn("bigint", TRUE, "private")),
