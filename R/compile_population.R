@@ -401,6 +401,9 @@
 #' @return The result of \code{.compilePopulation()}.
 #' @keywords internal
 .compilePopulationByName <- function(ctx, name, .stack = character(0)) {
+  # Component ids transferred into frozen rosters must retain the same
+  # observation records throughout this operation, including dependencies.
+  assign("population_snapshots", TRUE, envir = ctx)
   existing <- .populationMetaGet(ctx, name)
   if (!is.null(existing)) return(existing)
   if (name %in% .stack) {
