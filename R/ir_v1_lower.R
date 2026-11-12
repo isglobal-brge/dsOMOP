@@ -327,6 +327,13 @@
       multi <- params[[pair[[2L]]]]
       if (!is.null(multi)) params[[pair[[2L]]]] <- lapply(.v1Items(multi), .v1Int)
     }
+    # visit_count with an empty concept list counts every visit. The native
+    # legacy leaf states that by omitting its optional concept restriction.
+    if (identical(type, "visit_count")) {
+      for (field in c("visit_concept_id", "visit_concept_ids")) {
+        if (!length(unlist(params[[field]], use.names = FALSE))) params[[field]] <- NULL
+      }
+    }
     if (!is.null(params[["groups"]])) {
       params[["groups"]] <- lapply(.v1Items(params[["groups"]]), function(g) trimws(as.character(g)))
     }
