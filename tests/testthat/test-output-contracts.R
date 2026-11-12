@@ -830,9 +830,10 @@ test_that("intervals_long ANDs global and source-specific filters", {
 })
 
 test_that("intervals_long rejects requested tables without interval dates", {
-  # Defect A-16 (design 6.2, 6.12): the role registry supplies the interval
-  # roles, so a point-event table is an interval table with end = start
-  # (newly permitted); a table without an event start role is still refused.
+  # Defect A-16 (design 5, 6.2, 6.12; corpus class newly_permitted): the role
+  # registry supplies the interval roles, so a point-event table is an interval
+  # table with end = start. The remaining refusal of a table without an event
+  # start role is its own block below.
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
@@ -850,6 +851,14 @@ test_that("intervals_long rejects requested tables without interval dates", {
     expect_identical(unique(df$interval_type), "measurement")
     expect_identical(df$end_days_from_index, df$start_days_from_index)
   })
+})
+
+test_that("intervals_long still refuses a table without an event start role", {
+  # Not a point table: the role registry has no event start role for it, so
+  # it is refused (unchanged by defect A-16).
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
   expect_error(.compileIntervalsLongSql(handle, "dummy_cohort", "concept"),
                "has no reviewed start date role")
 })
