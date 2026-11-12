@@ -440,7 +440,6 @@
 .expectAchillesLiveReader <- function(handle, label) {
   withr::local_options(list(nfilter.subset = 3, nfilter.tab = 3,
                             dsomop.nfilter.band = 5))
-  handle$achilles_gate_cache <- NULL
   # The 2016-06 cell: 11 in-period records from persons 1 and 2; persons 39
   # and 40 have records that month outside every observation period, and
   # person 1's overlapping period must not count them twice.

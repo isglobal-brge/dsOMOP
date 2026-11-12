@@ -30,12 +30,13 @@ beyond the row's own person basis:
 \describe{
   \item{\code{statistics}}{the coupled statistic columns, masked together;}
   \item{\code{person}}{distinct-person bases, each of which must reach
-    \code{nfilter.subset};}
+    \code{max(nfilter.subset, nfilter.tab)};}
   \item{\code{event}}{event counts with an event floor of
     \code{nfilter.tab} (an event count never establishes distinct people);}
   \item{\code{person_complement}}{pairs \code{c(total, part)} whose difference
     is a distinct-person basis (for example the non-outcome class of a
-    prediction population) that must reach \code{nfilter.subset};}
+    prediction population) that must reach
+    \code{max(nfilter.subset, nfilter.tab)};}
   \item{\code{event_complement}}{pairs \code{c(total, part)} whose difference
     is an event count with the \code{nfilter.tab} floor.}
 }

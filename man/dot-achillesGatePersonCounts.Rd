@@ -2,7 +2,7 @@
 % Please edit documentation in R/achilles_gating.R
 \name{.achillesGatePersonCounts}
 \alias{.achillesGatePersonCounts}
-\title{Resolve distinct-person counts for one record-gated analysis (cached)}
+\title{Resolve distinct-person counts for one record-gated analysis}
 \usage{
 .achillesGatePersonCounts(handle, analysis_id, spec, rows)
 }
@@ -22,7 +22,12 @@ Data frame with \code{spec$join_strata} columns and \code{n_persons}.
 Returns a data frame with the analysis's join-stratum columns plus an
 \code{n_persons} column. For "sibling" analyses the counts are read from the
 sibling x00 rows (fetched if absent) — no CDM query. For "companion"
-analyses they come from \code{.achillesCompanionPersonCounts}. Cached per
-analysis_id in \code{handle$achilles_gate_cache}.
+analyses they come from \code{.achillesCompanionPersonCounts}.
+}
+\details{
+The basis is recomputed on every read (dsOMOP 2.10.3): a release decision
+never rests on support remembered from an earlier read, so a CDM or results
+refresh that drops a cell below the person threshold withholds it at once,
+on cached and new handles alike. There is no per-handle support cache.
 }
 \keyword{internal}

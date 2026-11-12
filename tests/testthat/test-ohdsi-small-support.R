@@ -330,7 +330,7 @@ test_that("G-04: cm_result effect statistics need both arms' bases", {
   expect_identical(is.finite(gated$se_log_rr), is.finite(gated$rr))
 
   h <- create_test_handle()
-  on.exit(cleanup_handle(h))
+  on.exit(cleanup_handle(h), add = TRUE)
   .buildBlueprint(h)
   r <- .ohdsiGetResults(h, "cm_result")
   expect_equal(nrow(r), 4L)
@@ -346,7 +346,7 @@ test_that("G-04: cm_result effect statistics need both arms' bases", {
 test_that("G-04: plp_performances scalars need both outcome classes", {
   withr::local_options(ss_opts())
   h <- create_test_handle()
-  on.exit(cleanup_handle(h))
+  on.exit(cleanup_handle(h), add = TRUE)
   # Row 1: 150 outcomes in a population of 152 -> 2 non-outcome persons.
   DBI::dbExecute(h$conn, paste(
     "UPDATE plp_performances SET population_size = 152",
@@ -363,6 +363,92 @@ test_that("G-04: plp_performances scalars need both outcome classes", {
   expect_equal(r$auc[2:4], c(0.78, 0.85, 0.75))
   r_auc <- .ohdsiGetResults(h, "plp_performances", columns = "auc")
   expect_identical(is.finite(r_auc$auc), c(FALSE, TRUE, TRUE, TRUE))
+})
+
+# --- B08 (2.10.3 review): private person bases meet the tabular floor ---------
+
+ss_b08_values <- function(covariate_subjects) {
+  list(outcome_subjects = 120L, outcome_events = 180L,
+       covariate_subjects = as.integer(covariate_subjects),
+       covariate_outcomes = 60L)
+}
+
+test_that("B08: 2 exposed people behind 60 events release no ratio (subset 1, tab 3)", {
+  # The review's probe: with nfilter.subset = 1 the hidden person basis was
+  # only held to 1, so columns = 'rr' released finite ratios.
+  h <- ss_sccs_handle(values = ss_b08_values(2L))
+  on.exit(cleanup_handle(h))
+  withr::with_options(ss_opts(nfilter.subset = 1, nfilter.tab = 3), {
+    r <- .ohdsiGetResults(h, "sccs_result", columns = "rr")
+    expect_equal(nrow(r), 4L)
+    expect_true(all(is.na(r$rr)))
+    expect_identical(ss_finite_stats(.ohdsiGetResults(h, "sccs_result")), 0L)
+  })
+})
+
+test_that("B08: every person basis uses max(nfilter.subset, nfilter.tab)", {
+  for (case in list(c(subset = 1, tab = 3), c(subset = 5, tab = 3),
+                    c(subset = 3, tab = 5))) {
+    floor <- max(case[["subset"]], case[["tab"]])
+    for (n in c(floor - 1, floor)) {
+      h <- ss_sccs_handle(values = ss_b08_values(n))
+      withr::with_options(ss_opts(nfilter.subset = case[["subset"]],
+                                  nfilter.tab = case[["tab"]]), {
+        info <- paste(case[["subset"]], case[["tab"]], n)
+        r <- .ohdsiGetResults(h, "sccs_result", columns = "rr")
+        expect_equal(nrow(r), 4L, info = info)
+        if (n < floor) {
+          expect_true(all(is.na(r$rr)), info = info)
+        } else {
+          expect_true(all(is.finite(r$rr)), info = info)
+        }
+        # Prefixed physical tables and the full selection agree.
+        DBI::dbExecute(h$conn, paste(
+          "CREATE TABLE IF NOT EXISTS sccs_sccs_result AS",
+          "SELECT * FROM sccs_result"))
+        p <- .ohdsiGetResults(h, "sccs_sccs_result", columns = "rr")
+        expect_identical(is.finite(p$rr), is.finite(r$rr), info = info)
+        full <- .ohdsiGetResults(h, "sccs_result")
+        expect_identical(ss_finite_stats(full) > 0L, n >= floor, info = info)
+      })
+      cleanup_handle(h)
+    }
+  }
+})
+
+test_that("B08: the private gate fails missing, non-finite and negative bases", {
+  withr::local_options(ss_opts(nfilter.subset = 1, nfilter.tab = 3))
+  basis <- list(statistics = "rr", person = "exposed_people",
+                event = "exposed_events",
+                person_complement = list(c("people", "exposed_people")),
+                event_complement = list())
+  df <- data.frame(rr = c(2, 2, 2, 2, 2, 2, 2),
+                   exposed_people = c(3, 2, NA, Inf, NaN, -4, 3),
+                   exposed_events = c(60, 60, 60, 60, 60, 60, 60),
+                   people = c(6, 6, 6, 6, 6, 6, 5))
+  out <- .ohdsiStatisticGate(df, basis)
+  # Row 1 passes; row 2 is below the tabular floor; rows 3-6 are missing or
+  # non-finite or negative; row 7's person complement (5 - 3 = 2) is below it.
+  expect_identical(is.finite(out$rr),
+                   c(TRUE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE))
+  # A missing basis column fails every row; event counts never stand in for
+  # people.
+  out <- .ohdsiStatisticGate(df[, c("rr", "exposed_events", "people")], basis)
+  expect_true(all(is.na(out$rr)))
+})
+
+test_that("B08: plp_performances needs both outcome classes at the tabular floor", {
+  withr::local_options(ss_opts(nfilter.subset = 1, nfilter.tab = 3))
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h), add = TRUE)
+  # Row 1: 150 outcomes in a population of 152 -> 2 non-outcome persons, a
+  # private person complement that passed nfilter.subset = 1 before.
+  DBI::dbExecute(h$conn, paste(
+    "UPDATE plp_performances SET population_size = 152",
+    "WHERE rowid = 1"))
+  .buildBlueprint(h, force = TRUE)
+  r <- .ohdsiGetResults(h, "plp_performances", columns = "auc")
+  expect_identical(is.finite(r$auc), c(FALSE, TRUE, TRUE, TRUE))
 })
 
 # --- G-05: cohort overlap -------------------------------------------------------------
