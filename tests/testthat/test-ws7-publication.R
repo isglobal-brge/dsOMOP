@@ -34,16 +34,22 @@ withr::defer(.ws4_cleanup(.ws7_pub_backends), testthat::teardown_env())
   plan$outputs$tc <- list(rows = "t", format = "temporal_covariates", options = list(
     sources = list(list(event = "lab")), bin_width = 10L,
     window = list(start = -20L, end = 19L, anchor = "index"), analyses = list("count")))
+  plan$outputs$sp <- list(rows = "t", format = "sparse", options = list(
+    sources = list(list(event = "lab")), analyses = list("binary", "count")))
   plan$outputs$m <- list(rows = "t", format = "membership")
+  plan$outputs$j <- list(rows = "t", format = "joined", grain = "episode", options = list(
+    from = list(list(output = "o"), list(output = "m")), cardinality = "one_to_one"))
   plan$outputs$d <- list(rows = "t", format = "dictionary")
   plan$outputs$iv <- list(rows = "t", format = "intervals",
                           options = list(sources = list(list(event = "drug"))))
   plan
 }
 
-.ws7_pub_run <- function(handle, plan, frame, mode, threshold = 3L, publish = NULL) {
+.ws7_pub_run <- function(handle, plan, frame, mode, threshold = 3L, publish = NULL,
+                         commit_policy = "server") {
   if (!is.null(publish)) plan$publish <- as.list(publish)
   run <- .ws7_ctx(handle, plan, mode = mode)
+  run$ctx$commit_policy <- commit_policy
   on.exit(.ws7_close(run), add = TRUE)
   pop <- .ws7_population(run, "t", frame, cap_end = FALSE)
   .ws7_publish(run, list(t = pop), threshold = threshold)
@@ -89,6 +95,8 @@ test_that("every native format publishes the same rows in memory and staged mode
     expect_identical(names(inv$r), c("events", "risk_sets"), info = b)
     expect_identical(names(inv$tc), c("tc", "covariateRef", "timeRef"), info = b)
     expect_identical(inv$tc$covariateRef$grain, "none", info = b)
+    expect_identical(names(inv$sp), c("sp", "covariateRef"), info = b)
+    expect_identical(names(inv$j), "j", info = b)
     # tokens, not raw person ids, and the reviewed episode keys are kept
     w <- mem$values$o$o
     expect_true(all(grepl("^p2[0-9a-f]+\\.[0-9a-f]{64}$", w$person_id)), info = b)
@@ -96,29 +104,37 @@ test_that("every native format publishes the same rows in memory and staged mode
   }
 })
 
-test_that("each component is gated on its own support; one person's episodes count once", {
+test_that("k = 5 gates each component and applies the publication matrix in both modes", {
   plan <- .ws7_pub_plan()
   h <- .ws7_pub_backends$sqlite$handle
   .ws7_keys(list(h))
-  # five episodes of one person: support 1 < 3
-  frame <- .ws7_scenario_frame(rep(7001, 5))
-  frame$cohort_start_date <- as.Date("2020-01-10") + 0:4
-  frame$index_key <- paste0("k", 1:5)
-  res <- .ws7_pub_run(h, plan, frame, "memory", publish = "o")
-  expect_identical(res$status$status, "refused")
-  expect_identical(res$status$rejected$o$code, "insufficient_support")
-  # three persons: the dense panel passes; the temporal covariates (only 7001
-  # and 7005 have lab rows in the window) fail with k = 3, and the refused
-  # family publishes no reference companion
-  frame <- .ws7_scenario_frame(c(7001, 7002, 7005))
-  res <- .ws7_pub_run(h, plan, frame, "memory", publish = c("p", "tc"))
-  expect_identical(res$status$status, "refused")
-  expect_identical(names(res$status$rejected), "tc")
-  withr::local_options(list(dsomop.query_strict = FALSE))
-  res <- .ws7_pub_run(h, plan, frame, "memory", publish = c("p", "tc"))
-  expect_identical(res$status$status, "partial")
-  expect_identical(names(res$status$published), "p")
-  expect_false(any(grepl("covariateRef|timeRef", unlist(lapply(res$status$published, names)))))
+  for (mode in c("memory", "staged")) {
+    # Five episodes of one person are still one contributor.
+    frame <- .ws7_scenario_frame(rep(7001, 5))
+    frame$cohort_start_date <- as.Date("2020-01-10") + 0:4
+    frame$index_key <- paste0("k", 1:5)
+    res <- .ws7_pub_run(h, plan, frame, mode, threshold = 5L, publish = "o")
+    expect_identical(res$status$status, "refused", info = mode)
+    expect_identical(res$status$rejected$o$code, "insufficient_support", info = mode)
+    expect_length(res$values, 0L)
+    # Five persons contribute to the dense panel, but only four contribute
+    # sparse temporal rows. A family refusal includes both its references.
+    frame <- .ws7_scenario_frame(c(7001, 7002, 7005, 7006, 7007))
+    for (strict in c(TRUE, FALSE)) for (policy in c("server", "all_or_none")) {
+      res <- withr::with_options(list(dsomop.query_strict = strict),
+        .ws7_pub_run(h, plan, frame, mode, threshold = 5L, publish = c("p", "tc"),
+                     commit_policy = policy))
+      partial <- !strict && identical(policy, "server")
+      info <- paste(mode, strict, policy)
+      expect_identical(res$status$status, if (partial) "partial" else "refused", info = info)
+      expect_identical(names(res$status$rejected), "tc", info = info)
+      expect_identical(res$status$rejected$tc$code, "insufficient_support", info = info)
+      expect_identical(names(res$status$published), if (partial) "p" else NULL, info = info)
+      expect_false(any(grepl("covariateRef|timeRef", unlist(lapply(res$status$published, names)))),
+                   info = info)
+      expect_true(.validatePlanStatus(unclass(res$status)), info = info)
+    }
+  }
 })
 
 test_that("a joined root shrinking below k is refused; its private inputs are never assigned", {
@@ -176,5 +192,56 @@ test_that("omopPlanExecuteDS: native execution end to end (memory and staged) wi
       expect_false(any(grepl("^dsomop_ws7_pop_", h$temp_tables %||% character(0))), info = paste(b, mode))
     }
     rm(list = paste0("handle_", sym), envir = .dsomop_env)
+  }
+})
+
+
+test_that("reducer caps are bounded technical refusals with cleanup in both publication modes", {
+  h <- .ws7_pub_backends$sqlite$handle
+  .ws7_keys(list(h))
+  sym <- "ws7_cap_publication"
+  .setHandle(sym, h)
+  on.exit(rm(list = paste0("handle_", sym), envir = .dsomop_env), add = TRUE)
+  plan <- .ws7_scenario_plan(list(n = list(source = list(event = "lab"), reducer = list(fn = "count"))))
+  testthat::local_mocked_bindings(.outputPopulation = function(cctx, pop, populations = NULL) {
+    .ws7_population(list(cctx = cctx), pop, .ws7_scenario_frame(7001L), cap_end = FALSE)
+  })
+  before <- .ws5_temp_names(h)
+  for (mode in c("memory", "staged")) for (policy in c("server", "all_or_none")) {
+    for (cap in c(5L, 4L)) local({
+      target <- new.env(parent = emptyenv())
+      target$sentinel <- "caller-owned"
+      status <- withr::with_options(list(dsomop.max_memory_rows = cap, nfilter.subset = 1L,
+                                         dsomop.query_strict = FALSE),
+        .omopPlanExecuteDS(sym, plan, list(o = "D_cap"), output_mode = mode,
+                           commit_policy = policy, target_env = target))
+      ctx <- get(attr(status, "execution_id"), .publicationRegistry)
+      on.exit({
+        .publishAbort(ctx)
+        rm(list = ctx$id, envir = .publicationRegistry)
+      }, add = TRUE)
+      info <- paste(mode, policy, cap)
+      expect_true(.validatePlanStatus(unclass(status)), info = info)
+      expect_identical(target$sentinel, "caller-owned", info = info)
+      expect_setequal(.ws5_temp_names(h), before)
+      if (cap == 5L) {
+        expect_identical(status$status, "ok", info = info)
+        frame <- target$D_cap
+        if (inherits(frame, "FlowerDatasetDescriptor")) {
+          chunks <- list()
+          .publishReadChunks(frame, function(x) chunks[[length(chunks) + 1L]] <<- x)
+          frame <- do.call(rbind, chunks)
+        }
+        expect_identical(as.integer(frame$n), 5L, info = info)
+      } else {
+        expect_identical(status$status, "refused", info = info)
+        expect_identical(ls(target), "sentinel", info = info)
+        expect_identical(status$rejected$o$code, "validation_error", info = info)
+        expect_identical(status$rejected$o$reason, "reducer_row_cap", info = info)
+        expect_setequal(names(status$rejected$o), c("code", "message", "reason"))
+        expect_false(grepl("7001|97000|/variables/|dsomop.max_memory_rows", status$rejected$o$message),
+                     info = info)
+      }
+    })
   }
 })
