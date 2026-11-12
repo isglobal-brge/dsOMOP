@@ -1081,8 +1081,15 @@
   } else list()
   unrestricted <- cons
   unrestricted$time_window <- NULL
-  stream <- .reduceStream(ctx, unrestricted, src, NULL, stream_name, extra = extra,
-                           use = "rows", coverage = reducer[["coverage"]] %||% "recorded", quality = TRUE)
+  # Push a usable window into SQL before bounded realisation; the exact
+  # intersection and any source-anchored sides are still applied below.
+  prefilter <- .reduceWindow(reducer[["window"]]) %||% cons$time_window
+  if (identical(fn, "supply_days") && identical(fills, "clipped") && !is.null(prefilter)) {
+    prefilter$start <- NULL
+  }
+  stream <- .reduceStream(ctx, unrestricted, src, prefilter, stream_name, extra = extra,
+                           overlap = identical(fn, "covered_days"), use = "rows",
+                           coverage = reducer[["coverage"]] %||% "recorded", quality = TRUE)
   rows <- .reduceFetch(ctx, stream, order = c("row_key", "start_date"), field = field)
   select_bounds <- bounds
   if (identical(fn, "supply_days") && identical(fills, "clipped")) select_bounds$lo[] <- NA
