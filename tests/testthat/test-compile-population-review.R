@@ -146,10 +146,15 @@ test_that("start-date nullability follows members and survives every child fragm
       for (population in names(want)) {
         result <- .compilePopulationByName(ctx, population)
         fragments <- list(result$roster, result$candidates,
-          .fragmentGet(ctx, .fragmentName("pop", population, "sel", ctx = ctx)),
-          .fragmentGet(ctx, .fragmentName("pop", population, "all", ctx = ctx)),
-          .fragmentGet(ctx, .fragmentName("cand", population, "raw", ctx = ctx)),
-          .fragmentGet(ctx, .fragmentName("cand", population, "crit", ctx = ctx)))
+          .fragmentGet(ctx, .fragmentName("pop", population, "sel", ctx = ctx)))
+        if (identical(result$kind, "setop")) {
+          fragments <- c(fragments, list(.fragmentGet(ctx,
+            .fragmentName("pop", population, "all", ctx = ctx))))
+        } else {
+          fragments <- c(fragments, list(
+            .fragmentGet(ctx, .fragmentName("cand", population, "raw", ctx = ctx)),
+            .fragmentGet(ctx, .fragmentName("cand", population, "crit", ctx = ctx))))
+        }
         for (fragment in Filter(Negate(is.null), fragments)) {
           info <- paste(backend, population, fragment$name)
           expect_identical(fragment$columns$cohort_start_date$nullable, unname(want[[population]]), info = info)
@@ -171,7 +176,7 @@ test_that("start-date nullability follows members and survives every child fragm
 # directly at the frozen compiler interface, as the independent review did.
 .ws6f_empty_context <- function(handle, populations = list()) {
   ctx <- .ws4_ctx(handle, .ws6_plan(.ws6f_episode_events(),
-    c(list(empty = list(kind = "criteria")), populations)))
+    c(list(empty = list(kind = "criteria", coverage = list(on_missing = "keep"))), populations)))
   ctx$ir$populations$empty$legacy_empty <- TRUE
   ctx$ir$populations$empty$legacy_episodes <- "observation_periods"
   ctx
@@ -209,7 +214,8 @@ test_that("the closed legacy empty compiles to typed owned memoised empty relati
 })
 
 test_that("closed legacy empty operands obey union intersection and difference identities", {
-  populations <- list(people = list(kind = "criteria"), episodes = .ws6f_episode_population())
+  populations <- list(people = list(kind = "criteria", coverage = list(on_missing = "keep")),
+                      episodes = .ws6f_episode_population())
   for (member in c("people", "episodes")) {
     for (op in c("union", "intersect", "setdiff")) {
       populations[[paste(member, op, "left", sep = "_")]] <- .ws6f_setop(op, "empty", member)
