@@ -631,6 +631,7 @@
       # the executor's precedence (review B3): filters$... over the output fields
       cs <- .v1ConceptSet(filters[["concept_set"]][["ids"]] %||% out[["concept_set"]])
       concept_col <- filters[["concept_col"]] %||% out[["concept_col"]]
+      projected_concept <- NULL
       # the extraction's precedence (.compileSelect()): an override column that
       # is also requested or filtered on is a surfacing choice -- the concept
       # set then scopes the table's domain concept column (A-19 item 7)
@@ -640,6 +641,11 @@
           (cc %in% tolower(as.character(unlist(out[["columns"]], use.names = FALSE))) ||
            .filterTreeReferencesColumn(filters[["custom"]], cc))) {
         .v1Annex(st, path, surfacing_concept_col = cc)
+        # With an active concept filter .compileSelect() projects both its
+        # domain filter column and the surfacing override, even when the
+        # override appears only in the custom predicate. Keep that effective
+        # projection in the IR after clearing the event's scoping override.
+        if (!is.null(cs)) projected_concept <- cc
         concept_col <- NULL
       }
       visit <- .v1Visit(filters[["visit"]] %||% out[["visit_filter"]])
@@ -666,7 +672,8 @@
       lt <- .v1LegacyTemporal(temporal)
       if (!is.null(lt)) node[["legacy_temporal"]] <- lt
       if (!is.null(out[["columns"]])) {
-        node[["legacy_columns"]] <- as.list(unique(tolower(vapply(.v1Items(out[["columns"]]), function(x) as.character(.v1Scalar(x)), ""))))
+        node[["legacy_columns"]] <- as.list(unique(c(projected_concept,
+          tolower(vapply(.v1Items(out[["columns"]]), function(x) as.character(.v1Scalar(x)), "")))))
       }
       stream_event <- function() {
         .v1Event(st, paste0("ev_", name), out[["table"]], concept_set = cs, where = where,

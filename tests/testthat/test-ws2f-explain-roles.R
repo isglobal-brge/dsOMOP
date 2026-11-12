@@ -138,6 +138,57 @@ test_that("N1: lowered long outputs retain only requested physical columns and d
   expect_false(any(grepl("measurement_date|value_as_number", names(classes))))
 })
 
+test_that("N1: table contracts without a domain concept retain safe physical extras", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  plan <- .ws4_plan(events = list(observed = list(table = "observation_period")))
+  plan$outputs$o <- list(rows = "all", format = "long",
+    sources = list(list(event = "observed")), options = list(date_handling = list(mode = "absolute")))
+  ir <- .irPrepare(plan, handle)
+  expect_null(.roleOf(handle, "observation_period")$domain_concept)
+  classes <- .irExplain(ir, handle)$column_classes$o
+  expect_identical(classes$observed.period_type_concept_id$class, 3L)
+  expect_identical(classes$observed.start_date$class, 2L)
+  expect_identical(classes$observed.end_date$class, 2L)
+  expect_null(classes$observed.observation_period_id)
+})
+
+test_that("N1: filtered surfacing concept columns remain in the effective v1 projection", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  withr::local_options(list(nfilter.subset = 3L))
+  plan <- list(outputs = list(labs = list(type = "event_level", table = "measurement",
+    columns = list("value_as_number"), concept_set = 3004410L, concept_col = "unit_concept_id",
+    filters = list(custom = list(var = "unit_concept_id", op = "==", value = 8554L)),
+    representation = list(format = "long"))), options = list(translate_concepts = FALSE))
+  for (override_in_filter in c(FALSE, TRUE)) {
+    if (override_in_filter) {
+      plan$outputs$labs$filters$concept_col <- plan$outputs$labs$concept_col
+      plan$outputs$labs$concept_col <- NULL
+    }
+    ir <- .irPrepare(plan, handle)
+    source <- ir$outputs$labs$sources[[1L]]$event
+    expect_null(ir$events[[source]]$concept_col)
+    expect_identical(unlist(ir$outputs$labs$legacy_columns, use.names = FALSE),
+                     c("unit_concept_id", "value_as_number"))
+    result <- .planExecute(handle, plan, list(labs = "ws2f_surfaced"))$labs
+    expect_gt(nrow(result), 0L)
+    expect_true(all(c("unit_concept_id", "measurement_concept_id", "value_as_number") %in% names(result)))
+    classes <- .irExplain(ir, handle)$column_classes$labs
+    projected <- sub(paste0("^", source, "[.]"), "", names(classes))
+    expect_setequal(projected, setdiff(names(result), "row_id"))
+    expect_identical(classes[[paste0(source, ".unit_concept_id")]]$class, 3L)
+  }
+  # Omitting a requested projection still means the historical default;
+  # without a concept filter a predicate alone does not add its column.
+  plan$outputs$labs$columns <- NULL
+  expect_null(.irPrepare(plan, handle)$outputs$labs$legacy_columns)
+  plan$outputs$labs$columns <- list("value_as_number")
+  plan$outputs$labs$concept_set <- NULL
+  ir <- .irPrepare(plan, handle)
+  expect_identical(unlist(ir$outputs$labs$legacy_columns, use.names = FALSE), "value_as_number")
+})
+
 test_that("N2: role extensions use physical datatypes with CDM datatype priority", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
