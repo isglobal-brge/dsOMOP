@@ -222,3 +222,53 @@ test_that("the real dsOMOPClient 2.10.2 status call shows the server's upgrade m
   expect_match(message, "newserver", fixed = TRUE)
   expect_false(grepl("incoherent v3 DP contract field", message, fixed = TRUE))
 })
+
+test_that("public client pools actual independent binary bases for every reducer", {
+  testthat::skip_if_not_installed("dsOMOPClient")
+  make_site <- function(site, reducer, denominator) {
+    .release_state()
+    withr::local_options(list(dsomop.dp.domain = paste0("binary-site-", site),
+                              dsomop.dp.noise_root = strrep(c("1a", "2b")[[site]], 32)))
+    .release_restart()
+    d <- .tv_labels()
+    if (site == 2L) d$label[d$label == "a" & !is.na(d$label)] <- "c"
+    x <- .tv_table(d, list(label = c("a", "b", "c")))
+    spec <- list(statistic = "binary_rate", variable = "label",
+                 positive = c("c", "b"), reducer = reducer,
+                 denominator = denominator)
+    if (reducer %in% c("first", "last")) spec$order_by <- "day"
+    list(payload = .tv_release(x, spec),
+         status = omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL), spec = spec)
+  }
+  for (reducer in c("any", "all", "first", "last")) {
+    for (denominator in c("all_persons", "nonmissing")) {
+      a <- make_site(1L, reducer, denominator)
+      b <- make_site(2L, reducer, denominator)
+      sites <- list(a = a, b = b)
+      expect_false(identical(a$payload$source, b$payload$source))
+      testthat::local_mocked_bindings(
+        datashield.aggregate = function(conns, expr, ...) {
+          field <- if (as.character(expr[[1L]]) == "omopDpStatusDS") {
+            "status"
+          } else "payload"
+          lapply(sites[names(conns)], `[[`, field)
+        }, .package = "DSI")
+      res <- dsOMOPClient::ds.omop.dp.release("analysis_table",
+        do.call(dsOMOPClient::omop_privacy, a$spec),
+        datasources = list(a = "FAKE_A", b = "FAKE_B"))
+      basis <- a$payload$components$basis$signed + b$payload$components$basis$signed
+      h <- .dsomopTypedProject("typed-partition-simplex-v1", basis[[1L]], basis[-1L])
+      masks <- a$payload$components$view_of_basis
+      expect_equal(res$pooled$noisy_numerator, sum(h[masks[[1L]]]),
+                   tolerance = 1e-9)
+      expect_equal(res$pooled$noisy_denominator, sum(h[masks[[2L]]]),
+                   tolerance = 1e-9)
+      one <- dsOMOPClient::ds.omop.dp.release("analysis_table",
+        do.call(dsOMOPClient::omop_privacy, a$spec), datasources = list(a = "FAKE_A"))
+      expect_equal(one$pooled$noisy_numerator, a$payload$noisy_numerator,
+                   tolerance = 1e-9)
+      expect_equal(one$pooled$noisy_denominator, a$payload$noisy_denominator,
+                   tolerance = 1e-9)
+    }
+  }
+})
