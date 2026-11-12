@@ -208,7 +208,12 @@ test_that("reducer caps are bounded technical refusals with cleanup in both publ
   testthat::local_mocked_bindings(.outputPopulation = function(cctx, pop, populations = NULL) {
     .ws7_population(list(cctx = cctx), pop, .ws7_scenario_frame(7001L), cap_end = FALSE)
   })
-  before <- .ws5_temp_names(h)
+  # Keep this file runnable independently: lifecycle test-file functions are
+  # not shared test helpers. Inspect the actual SQLite session tables here.
+  temp_names <- function() DBI::dbGetQuery(h$conn,
+    "SELECT name FROM sqlite_temp_master WHERE type = 'table'")$name
+  before <- temp_names()
+  before_registered <- h$temp_tables
   for (mode in c("memory", "staged")) for (policy in c("server", "all_or_none")) {
     for (cap in c(5L, 4L)) local({
       target <- new.env(parent = emptyenv())
@@ -218,14 +223,19 @@ test_that("reducer caps are bounded technical refusals with cleanup in both publ
         .omopPlanExecuteDS(sym, plan, list(o = "D_cap"), output_mode = mode,
                            commit_policy = policy, target_env = target))
       ctx <- get(attr(status, "execution_id"), .publicationRegistry)
-      on.exit({
-        .publishAbort(ctx)
-        rm(list = ctx$id, envir = .publicationRegistry)
-      }, add = TRUE)
+      on.exit(.publishAbort(ctx), add = TRUE)
       info <- paste(mode, policy, cap)
       expect_true(.validatePlanStatus(unclass(status)), info = info)
       expect_identical(target$sentinel, "caller-owned", info = info)
-      expect_setequal(.ws5_temp_names(h), before)
+      expect_setequal(temp_names(), before)
+      expect_setequal(h$temp_tables, before_registered)
+      # The inner compiler must keep IR until a typed refusal is published;
+      # the public boundary must then close both success and refusal paths.
+      expect_true(ctx$closed, info = info)
+      expect_null(ctx$ir)
+      expect_false(exists(ctx$id, .planContextRegistry, inherits = FALSE), info = info)
+      expect_length(ctx$compile_context$compile_temp_tables, 0L)
+      expect_length(ls(ctx$staging_env, all.names = TRUE), 0L)
       if (cap == 5L) {
         expect_identical(status$status, "ok", info = info)
         frame <- target$D_cap
