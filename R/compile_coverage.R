@@ -384,7 +384,9 @@
 #' @param name Optional fragment name (default: the allocated identity
 #'   \code{("seg", <pop>, "[<suffix>_]obs_cand" | "[<suffix>_]obs_final")}).
 #' @return Fragment with \code{row_key}, \code{person_id}, \code{start_date},
-#'   \code{end_date} (one row per observed segment of each roster row).
+#'   \code{end_date}: one row per distinct observed segment of each roster row
+#'   (two observation-period records with the same dates in one component are
+#'   one segment; consumers take the union of overlapping segments).
 #' @keywords internal
 .compileObservedSegments <- function(ctx, cov, roster_fragment, phase, name = NULL) {
   spec <- .rosterSpec(roster_fragment, phase)
@@ -396,7 +398,7 @@
   h <- .compileDialect(ctx)
   rec <- cov$recorded
   if (!is.null(spec$op_component)) {
-    body <- paste0("SELECT r.", spec$key, " AS row_key, r.", spec$person, " AS person_id, ",
+    body <- paste0("SELECT DISTINCT r.", spec$key, " AS row_key, r.", spec$person, " AS person_id, ",
                    "o.start_date AS start_date, o.end_date AS end_date FROM ", spec$name,
                    " r INNER JOIN ", rec$name, " o ON o.person_id = r.", spec$person,
                    " AND o.component_id = r.", spec$op_component)
@@ -407,7 +409,7 @@
       stop("The roster carries no op_component_id and the coverage was compiled for another roster.",
            call. = FALSE)
     }
-    body <- paste0("SELECT r.", spec$key, " AS row_key, r.", spec$person, " AS person_id, ",
+    body <- paste0("SELECT DISTINCT r.", spec$key, " AS row_key, r.", spec$person, " AS person_id, ",
                    "o.start_date AS start_date, o.end_date AS end_date FROM ", spec$name,
                    " r INNER JOIN ", opc$name, " c ON c.row_key = r.", spec$key,
                    " INNER JOIN ", rec$name, " o ON o.person_id = r.", spec$person,
@@ -437,9 +439,12 @@
 #' @param cov The result of \code{.compileCoverage()}.
 #' @param roster_fragment Roster or candidates fragment.
 #' @param phase \code{"candidate"} or \code{"final"}.
-#' @return Vector of row keys.
+#' @param field JSON path of the consumer (the bounded fetch's rejection).
+#' @return Vector of row keys (a private fetch of at most
+#'   \code{dsomop.max_memory_rows} rows; one more is the typed rejection
+#'   \code{reducer_row_cap}, A-20 (j)).
 #' @keywords internal
-.coverageCoveredKeys <- function(ctx, cov, roster_fragment, phase) {
+.coverageCoveredKeys <- function(ctx, cov, roster_fragment, phase, field = "/reducer") {
   spec <- .rosterSpec(roster_fragment, phase)
   select <- if (!is.null(spec$op_component)) {
     paste0("SELECT r.", spec$key, " AS row_key FROM ", spec$name, " r WHERE r.",
@@ -453,5 +458,9 @@
   }
   final <- if (!is.null(spec$op_component)) roster_fragment else cov$coverage
   sql <- .buildStatement(ctx, final, select = select, dialect = .compileDialect(ctx))
-  .executeQuery(ctx[["handle"]], sql)$row_key
+  cap <- .extractionCap("dsomop.max_memory_rows", 1000000L)
+  .fetchBounded(ctx[["handle"]], sql, cap, function() {
+    .compileReject("a reducer's roster exceeds the server in-memory row cap (dsomop.max_memory_rows)",
+                   reason = "reducer_row_cap", field = field)
+  })$row_key
 }

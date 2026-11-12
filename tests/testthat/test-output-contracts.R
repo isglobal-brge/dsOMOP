@@ -152,6 +152,61 @@ test_that("baseline without cohort fails closed", {
   })
 })
 
+test_that("baseline coverage: unique values exact, uncovered NA, ambiguous dropped, publication gated (A-E6)", {
+  # Defect A-E6 (design 1.3, 6.13; corpus class newly_permitted): the default
+  # coverage policy (unique, on_ambiguous = "drop") instead of the abort.
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  cohort <- data.frame(subject_id = 1:3, cohort_start_date = "2020-01-10", cohort_end_date = "2020-12-31",
+                       stringsAsFactors = FALSE)
+  DBI::dbWriteTable(handle$conn, "ae6_cohort", cohort, temporary = TRUE)
+  register_test_temp(handle, "ae6_cohort")
+  # person 1: a second period covering the index (ambiguous); person 2: none
+  # (uncovered); person 3: exactly one (covered)
+  DBI::dbExecute(handle$conn, paste("INSERT INTO observation_period VALUES",
+                                    "(999991, 1, '2019-01-01', '2021-12-31', 44814724)"))
+  DBI::dbExecute(handle$conn, "DELETE FROM observation_period WHERE person_id = 2")
+  .buildBlueprint(handle)
+  op3 <- DBI::dbGetQuery(handle$conn, paste(
+    "SELECT observation_period_start_date AS s, observation_period_end_date AS e FROM observation_period",
+    "WHERE person_id = 3 AND observation_period_start_date <= '2020-01-10'",
+    "AND observation_period_end_date >= '2020-01-10'"))
+  expect_identical(nrow(op3), 1L)
+  person <- DBI::dbGetQuery(handle$conn, "SELECT person_id, gender_concept_id FROM person WHERE person_id IN (2, 3)")
+  out <- .extractBaseline(handle, cohort_table = "ae6_cohort", columns = "gender_concept_id",
+                          derived = c("age_at_index", "prior_observation", "future_observation"),
+                          translate_concepts = FALSE)
+  # the ambiguous episode disappears
+  expect_identical(as.integer(out$person_id), 2:3)
+  # the uncovered episode keeps its ordinary values and NA observation fields
+  p2 <- out[out$person_id == 2, ]
+  expect_identical(as.integer(p2$gender_concept_id), as.integer(person$gender_concept_id[person$person_id == 2]))
+  expect_false(is.na(p2$age_group))
+  expect_true(is.na(p2$prior_observation) && is.na(p2$future_observation))
+  # the uniquely covered episode keeps exact values
+  p3 <- out[out$person_id == 3, ]
+  expect_identical(p3$prior_observation, as.integer(as.Date("2020-01-10") - as.Date(op3$s)))
+  expect_identical(p3$future_observation, as.integer(as.Date(op3$e) - as.Date("2020-01-10")))
+  expect_identical(as.integer(p3$gender_concept_id), as.integer(person$gender_concept_id[person$person_id == 3]))
+  # Publish exactly the same three-case fixture. Its three input persons must
+  # not satisfy a threshold of three after the ambiguous episode is dropped.
+  DBI::dbExecute(handle$conn, paste(
+    "INSERT INTO cohort (cohort_definition_id, subject_id, cohort_start_date, cohort_end_date)",
+    "SELECT 991, subject_id, cohort_start_date, cohort_end_date FROM ae6_cohort"))
+  plan <- list(cohort = list(type = "cohort_table", cohort_definition_id = 991),
+               outputs = list(demo = list(type = "baseline", columns = "gender_concept_id",
+                 derived = c("age_at_index", "prior_observation", "future_observation"))),
+               options = list(translate_concepts = FALSE, block_sensitive = TRUE))
+  class(plan) <- c("omop_plan", "list")
+  withr::with_options(list(nfilter.subset = 3L), {
+    expect_error(.planExecute(handle, plan, list(demo = "demo_df")), "insufficient individuals")
+  })
+  withr::with_options(list(nfilter.subset = 2L), {
+    published <- .planExecute(handle, plan, list(demo = "demo_df"))$demo
+    expect_equal(published[, names(out)], out)
+  })
+})
+
 test_that("baseline with concept translation works", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
@@ -830,9 +885,10 @@ test_that("intervals_long ANDs global and source-specific filters", {
 })
 
 test_that("intervals_long rejects requested tables without interval dates", {
-  # Defect A-16 (design 6.2, 6.12): the role registry supplies the interval
-  # roles, so a point-event table is an interval table with end = start
-  # (newly permitted); a table without an event start role is still refused.
+  # Defect A-16 (design 5, 6.2, 6.12; corpus class newly_permitted): the role
+  # registry supplies the interval roles, so a point-event table is an interval
+  # table with end = start. The remaining refusal of a table without an event
+  # start role is its own block below.
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
@@ -850,6 +906,14 @@ test_that("intervals_long rejects requested tables without interval dates", {
     expect_identical(unique(df$interval_type), "measurement")
     expect_identical(df$end_days_from_index, df$start_days_from_index)
   })
+})
+
+test_that("intervals_long still refuses a table without an event start role", {
+  # Not a point table: the role registry has no event start role for it, so
+  # it is refused (unchanged by defect A-16).
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
   expect_error(.compileIntervalsLongSql(handle, "dummy_cohort", "concept"),
                "has no reviewed start date role")
 })

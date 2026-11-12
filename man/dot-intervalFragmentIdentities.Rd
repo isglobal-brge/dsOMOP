@@ -8,8 +8,11 @@
 }
 \description{
 Per interval: the stages \code{norm}, \code{mk} (gaps-and-islands marks),
-\code{rec} (recorded relation), for a stockpiled interval \code{effsrc}
-(the materialised effective rows) and \code{eff} (effective relation), and
-the final fragment (the course).
+\code{ek} (marks with the retained flag of \code{min_days}), \code{rec}
+(recorded relation), for a stockpiled interval \code{effsrc} (the
+materialised effective rows) and \code{eff} (effective relation), and the
+final fragment (the course). An interval over an adapter source also
+declares its per-parent relation (A-20 item 6): the same stages prefixed
+\code{par_} and the course \code{("iv", <name>, "par")}.
 }
 \keyword{internal}

@@ -15,8 +15,8 @@
   observed_only = FALSE,
   fills = "start_in_window",
   cov = NULL,
-  name = NULL,
-  names = NULL
+  names = NULL,
+  path = "/reducer"
 )
 }
 \arguments{
@@ -42,12 +42,11 @@
 \item{cov}{The roster's coverage (\code{.compileCoverage()}), required for
 observed_days and \code{observed_only = TRUE}.}
 
-\item{name}{Stem of the default fragment names (context-free: the bounds
-and stream fragments of a reducer belong to its consumer's identity family,
-which passes the allocated identifiers through \code{names}).}
+\item{names}{\code{list(bounds =, stream =)}: the fragment identifiers the
+consumer allocated from its own identity family (A-20 (e); required,
+\code{stream} not for observed_days). There is no context-free default.}
 
-\item{names}{Optional \code{list(bounds =, stream =)} of allocated fragment
-identifiers.}
+\item{path}{JSON path of the consumer (rejections).}
 }
 \value{
 data.frame(row_key, value).
@@ -57,8 +56,12 @@ The executable base of \code{covered_days} (union of the selected relation
 clipped to the window, optionally intersected with the row's observed
 segments), \code{supply_days} (both fill policies) and the derived
 \code{observed_days(window)}. Every roster row gets a value: 0 without
-rows, NA when the window's required anchor is missing; observation-dependent
+rows of an available source, NA when the source is unavailable (A-20 (i)),
+NA when the window's required anchor is missing; observation-dependent
 values (observed days, \code{observed_only = TRUE}) are NA for a row kept
-without a coverage component (\code{on_missing = "keep"}).
+without a coverage component (\code{on_missing = "keep"}). The streams are
+scoped by the consumer association (index visit, episode parent, person;
+\code{.consumerAssociation()}), and every fetch is bounded by
+\code{dsomop.max_memory_rows} (typed rejection \code{reducer_row_cap}).
 }
 \keyword{internal}

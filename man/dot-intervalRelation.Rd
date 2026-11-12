@@ -8,7 +8,8 @@
   ctx,
   source,
   coverage = "recorded",
-  path = "/reducer/coverage"
+  path = "/reducer/coverage",
+  association = "person"
 )
 }
 \arguments{
@@ -20,6 +21,9 @@
 \item{coverage}{\code{"recorded"} or \code{"effective_supply"}.}
 
 \item{path}{JSON path used in rejections.}
+
+\item{association}{\code{"person"} or \code{"parent"} (the per-parent
+relation of an interval over an adapter, A-20 item 6).}
 }
 \value{
 The fragment.

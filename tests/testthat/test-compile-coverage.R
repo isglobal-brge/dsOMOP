@@ -116,7 +116,7 @@ test_that("eligibility spans versus actually observed segments: a gap never adds
     expect_identical(s2$start_date, c("2015-01-01", "2020-01-01"), info = b)
     expect_identical(s2$end_date, c("2019-12-23", "2030-12-31"), info = b)
     # observed days in [index - 365, index]: 366 window days minus the 8 gap days
-    od <- .intervalReducerValues(ctx, "observed_days", roster, "final",
+    od <- .ws5_rv(ctx, "observed_days", roster, "final",
                                  window = list(start = -365, end = 0, anchor = "index"), cov = cov)
     expect_identical(od$value[od$row_key == 2], 358L, info = b)
     # a continuity requirement may be satisfied through the gap (eligibility span)
@@ -158,12 +158,12 @@ test_that("rows kept without coverage have no observed days (NA, never 0)", {
     expect_true(all(c(3, 4) %in% r$cohort_row_id), info = b)
     expect_true(all(is.na(r$op_end[r$cohort_row_id %in% c(3, 4)])), info = b)
     w <- list(start = -30L, end = 30L, anchor = "index")
-    od <- .intervalReducerValues(ctx, "observed_days", roster, "final", window = w, cov = cov)
+    od <- .ws5_rv(ctx, "observed_days", roster, "final", window = w, cov = cov)
     val <- function(v, k) v$value[as.numeric(v$row_key) == k]
     expect_true(is.na(val(od, 3)) && is.na(val(od, 4)), info = b)
     expect_identical(val(od, 5), 61L, info = b)
     # the same holds through the coverage of the candidates themselves
-    oc <- .intervalReducerValues(ctx, "observed_days", cand, "candidate", window = w, cov = cov)
+    oc <- .ws5_rv(ctx, "observed_days", cand, "candidate", window = w, cov = cov)
     expect_true(is.na(val(oc, 1)) && is.na(val(oc, 4)), info = b)
     expect_identical(val(oc, 5), 61L, info = b)
   }
@@ -199,6 +199,84 @@ test_that("coverage policies are validated; the observation table is required", 
                          logical(1))))
 })
 
+test_that("observed segments are distinct; malformed periods never cover (A-20 (f), (h); N1)", {
+  for (b in names(.ws5_cov_backends)) {
+    h <- .ws5_cov_backends[[b]]$handle
+    tbl <- .qualifyTable(h, "observation_period", h$cdm_schema)
+    ins <- function(id, pid, start, end) {
+      DBI::dbExecute(h$conn, paste0(
+        "INSERT INTO ", tbl, " (observation_period_id, person_id, observation_period_start_date, ",
+        "observation_period_end_date, period_type_concept_id) VALUES (", id, ", ", pid, ", ",
+        .sqlDateLiteral(h, start), ", ", if (is.na(end)) "NULL" else .sqlDateLiteral(h, end), ", 44814724)"))
+    }
+    # 3105: a second record with identical dates (one component) and a
+    # malformed open record from 2010; 3104 (no period): a malformed record
+    # starting before its index with a NULL end, and one ending before it starts
+    ins(399991, 3105, "2015-01-01", "2030-12-31")
+    ins(399992, 3105, "2010-01-01", NA)
+    ins(399993, 3104, "2020-01-01", NA)
+    ins(399994, 3104, "2020-01-05", "2019-01-01")
+    on.exit(DBI::dbExecute(h$conn, paste0("DELETE FROM ", tbl, " WHERE observation_period_id IN ",
+                                          "(399991, 399992, 399993, 399994)")), add = TRUE)
+    ctx <- .ws5_cov_ctx(h)
+    cand <- .ws5_candidates(ctx)
+    cov <- .ws5_cov(ctx, "g7", cand)
+    roster <- .ws5_roster(ctx, cand, cov, pop = "g7")
+    f <- .compileObservedSegments(ctx, cov, roster, "final")
+    v <- .ws5_rows(ctx, f, c("row_key", "start_date"))
+    expect_identical(anyDuplicated(v[f$unique_key]), 0L, info = b)
+    expect_identical(nrow(v[v$row_key == 5, ]), 1L, info = b)
+    candidate_segments <- .compileObservedSegments(ctx, cov, cand, "candidate")
+    candidate_rows <- .ws5_rows(ctx, candidate_segments, c("row_key", "start_date"))
+    expect_identical(anyDuplicated(candidate_rows[candidate_segments$unique_key]), 0L, info = b)
+    expect_identical(nrow(candidate_rows[candidate_rows$row_key == 5, ]), 1L, info = b)
+    # the malformed records never enter the component or the count
+    un <- .ws5_opc(ctx, cov)
+    expect_identical(c(un$op_start[un$row_key == 5], un$op_end[un$row_key == 5]),
+                     c("2015-01-01", "2030-12-31"), info = b)
+    expect_identical(un$op_count[un$row_key == 4], 0, info = b)
+    uni <- .ws5_opc(ctx, .ws5_cov(ctx, "u", cand))
+    expect_identical(uni$op_count[uni$row_key == 4], 0, info = b)
+    # 3105's two identical records are ambiguous under unique (two records), one
+    # segment once coalesced, and 61 observed days in [-30, 30]
+    expect_identical(uni$op_count[uni$row_key == 5], 2, info = b)
+    od <- .ws5_rv(ctx, "observed_days", roster, "final", window = list(start = -30L, end = 30L, anchor = "index"),
+                  cov = cov)
+    expect_identical(od$value[as.numeric(od$row_key) == 5], 61L, info = b)
+  }
+})
+
+test_that("observed-segment and covered-key realisations enforce the reducer cap (B6)", {
+  h <- .ws5_cov_backends$sqlite$handle
+  ctx <- .ws5_cov_ctx(h)
+  cand <- .ws5_literal_roster(ctx, data.frame(cand_key = 1L, subject_id = 1003,
+    cohort_start_date = "2020-01-01", cohort_end_date = "2020-12-31"))
+  cov <- .ws5_cov(ctx, "g7", cand)
+  roster <- .ws5_roster(ctx, cand, cov, pop = "g7")
+  value <- function() .ws5_rv(ctx, "observed_days", roster, "final",
+    window = list(start = 0L, end = 9L, anchor = "index"), cov = cov)$value
+  withr::with_options(list(dsomop.max_memory_rows = 2), expect_identical(value(), 4L))
+  # One roster row fits; its two recorded segments exceed the cap.
+  error <- withr::with_options(list(dsomop.max_memory_rows = 1), tryCatch(value(), error = identity))
+  expect_s3_class(error, "dsomop_plan_rejection")
+  expect_identical(error$reason, "reducer_row_cap")
+
+  ctx <- .ws5_cov_ctx(h)
+  cand <- .ws5_candidates(ctx)
+  cov <- .ws5_cov(ctx, "g7", cand)
+  roster <- .ws5_roster(ctx, cand, cov, pop = "g7")
+  for (phase in c("candidate", "final")) {
+    r <- if (phase == "candidate") cand else roster
+    keys <- function() .coverageCoveredKeys(ctx, cov, r, phase)
+    n <- length(keys())
+    expect_gt(n, 1L)
+    withr::with_options(list(dsomop.max_memory_rows = n), expect_length(keys(), n))
+    error <- withr::with_options(list(dsomop.max_memory_rows = n - 1L), tryCatch(keys(), error = identity))
+    expect_s3_class(error, "dsomop_plan_rejection")
+    expect_identical(error$reason, "reducer_row_cap")
+  }
+})
+
 test_that("compiled coverage SQL renders for every dialect family", {
   bp <- .buildBlueprint(.ws5_cov_backends$sqlite$handle)
   dbms <- c(postgresql = "postgresql", sqlite = "sqlite", duckdb = "duckdb", mysql = "mysql",
@@ -223,6 +301,7 @@ test_that("compiled coverage SQL renders for every dialect family", {
                                        cohort_end_date = .fragmentColumn("date", TRUE, "end")),
                         unique_key = "cand_key", person_lineage = list(person_col = "subject_id", via_roster = NULL),
                         private_columns = "cand_key")
+      attr(cand, "population") <- "t"
       .fragmentRegister(ctx, cand)
       cat("--", family, "\n")
       for (p in c("u", "e", "g7")) {

@@ -25,5 +25,11 @@ population also lists its \strong{candidate} anchors (those of its own
 criteria, resolved against its candidate roster) and its \strong{final}
 anchors (those of the variables and outputs over it, resolved against the
 final roster); one anchor definition used in both stages appears in both.
+Every value of a long output's named \code{options.anchors} map is a final
+anchor of the output's population, nested search anchors included; a
+matching controls template's candidate anchors include those of the match
+population's strata windows (design 6.10; amendment A-20(b)). Anchors are
+collected from the normalised IR, so omitted and explicit defaults give one
+canonical anchor.
 }
 \keyword{internal}

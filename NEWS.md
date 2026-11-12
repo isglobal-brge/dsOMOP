@@ -7,6 +7,18 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- (A-20; WS-5 review B1–B4, B6–B7, N1–N2) Era `min_days` uses the
+  normalised recorded span even when stockpiling; persistence and carry do
+  not satisfy the threshold. Direct-event coverage applies the interval
+  quality policy, unavailable reducers return NA, and visit/episode
+  associations restrict anchors and streams before interval construction.
+  Private fetches are bounded, compiler temporary tables follow execution
+  context cleanup, and duplicate observed periods preserve segment keys.
+  On MySQL, downstream consumers may reuse a stockpiled interval's course,
+  recorded rows and effective rows in one statement without reopening its
+  session temporary table.
+  The compiler handoff is recorded in
+  `inst/contracts/ws5-interval-anchor-coverage.md`.
 - Publication validates one genuine person per final row through direct keys or
   an immutable roster. Composite families commit together; support is counted
   on the materialized component, including streamed staged files.
@@ -97,11 +109,11 @@ fills its entries. Classes follow design-2.10.3 section 5.
   must have exactly one observation_period covering its index date"); baseline
   drops an episode covered by several periods and keeps an uncovered episode
   with NA observation fields. Aggregate endpoints keep their own controls.
-- (defect A-16) `intervals_long` accepts point-event tables (`measurement`,
-  `observation`, `death`, `specimen`, `note`, CDM 5.3 `procedure_occurrence`):
-  the role registry supplies their start and `end = start` (2.10.2: "has no
-  reviewed start/end date pair"). A table without an event start role is still
-  refused.
+- `intervals_long` accepts point-event tables (measurement, observation,
+  death, specimen, note, 5.3 procedures) as intervals with `end = start`
+  (defect A-16); a table without a start role is still refused. (2.10.2: "no
+  reviewed start/end date pair"; corpus class `newly_permitted`, amendment
+  A-20 item 4.)
 
 ## Newly refused
 
@@ -245,7 +257,8 @@ fills its entries. Classes follow design-2.10.3 section 5.
   `legacy_automatic_features` format `sparse`); probes I41-I60 and the wire
   refusals P64-P66.
 - A-18 a rejected status entry may carry a third closed field `reason`
-  (`adapter_person_mismatch`, `cost_currency_mixed`), present only with
+  (`adapter_person_mismatch`, `cost_currency_mixed` and, amendment A-20 (j),
+  `stockpile_row_cap`, `reducer_row_cap`), present only with
   `validation_error`: every status writer builds its entry with
   `.rejectionEntry()`, which copies the reason from the condition only under
   those conditions and never its raw message, field path or state;

@@ -22,7 +22,7 @@ withr::defer(.ws4_cleanup(.ws5_acc_backends), testthat::teardown_env())
 }
 
 .ws5_values <- function(ctx, acc, fn, ...) {
-  v <- .intervalReducerValues(ctx, fn, acc$roster, "final", cov = acc$cov, ...)
+  v <- .ws5_rv(ctx, fn, acc$roster, "final", cov = acc$cov, ...)
   v$value[match(as.numeric(acc$rows$cohort_row_id), as.numeric(v$row_key))]
 }
 
@@ -42,7 +42,7 @@ test_that("recipe 06: coverage, persistence and discontinuation censoring reprod
   for (b in names(.ws5_acc_backends)) {
     h <- .ws5_acc_backends[[b]]$handle
     ctx <- .ws4_ctx(h, plan)
-    on.exit(.compileReleaseTempTables(ctx), add = TRUE)
+    .ws5_release(ctx)
     acc <- .ws5_acc_roster(ctx, "users", 1001L)
     expect_setequal(.ws5_key(acc$rows), .ws5_key(want))
     w90 <- ctx$ir$variables$covered_rec$reducer$window
@@ -55,7 +55,8 @@ test_that("recipe 06: coverage, persistence and discontinuation censoring reprod
                                                    fills = "clipped"))
     # era_count / first_era_days: the course rows overlapping the window
     course <- .compileIntervalByName(ctx, "metf_era")$course
-    st <- .compileIntervalStream(ctx, course, acc$roster, w90, "final", "str_acc06_course")
+    st <- .compileIntervalStream(ctx, list(interval = "metf_era"), acc$roster, w90, "final",
+                                 "str_acc06_course", use = "course")
     s <- .fetchFragment(ctx, st, c("row_key", "start_date"))
     idx <- as.Date(acc$rows$cohort_start_date)
     lo <- idx + 1L
@@ -106,7 +107,7 @@ test_that("recipe 15: adherence (MPR and PDC bases over union coverage) reproduc
   for (b in names(.ws5_acc_backends)) {
     h <- .ws5_acc_backends[[b]]$handle
     ctx <- .ws4_ctx(h, plan)
-    on.exit(.compileReleaseTempTables(ctx), add = TRUE)
+    .ws5_release(ctx)
     acc <- .ws5_acc_roster(ctx, "users", 1001L)
     expect_identical(acc$cov$policy, list(policy = "union", on_ambiguous = "drop", on_missing = "drop", gap = 30L))
     expect_setequal(.ws5_key(acc$rows), .ws5_key(want))
@@ -378,6 +379,7 @@ test_that("recipe 12: per-candidate coverage, the observed criterion and prior o
                       dependencies = ev$name, unique_key = "cand_key",
                       person_lineage = list(person_col = "subject_id", via_roster = NULL),
                       private_columns = "cand_key")
+    attr(cand, "population") <- "t2dm_first"
     .fragmentRegister(ctx, cand)
     pop <- ctx$ir$populations$t2dm_first
     cov <- .compileCoverage(ctx, "t2dm_first", pop$coverage, cand, "candidate")
@@ -418,7 +420,7 @@ test_that("recipe 12: per-candidate coverage, the observed criterion and prior o
     .fragmentRegister(ctx, roster)
     rows <- .fetchFragment(ctx, roster, "cohort_row_id")
     got <- data.frame(person_id = as.numeric(rows$subject_id), index_date = format(rows$cohort_start_date, "%Y-%m-%d"))
-    v <- .intervalReducerValues(ctx, "observed_days", roster, "final", window = ctx$ir$variables$prior_obs$derived$window,
+    v <- .ws5_rv(ctx, "observed_days", roster, "final", window = ctx$ir$variables$prior_obs$derived$window,
                                 cov = cov)
     got$prior_obs <- v$value[match(as.numeric(rows$cohort_row_id), as.numeric(v$row_key))]
     expect_setequal(.ws5_key(got), .ws5_key(want))

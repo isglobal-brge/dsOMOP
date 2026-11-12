@@ -342,7 +342,12 @@
 #' fragment's SELECT body. With \code{select} given, the final fragment is
 #' itself hoisted and \code{select} (a SELECT reading it by name) becomes the
 #' main query. The statement is checked with \code{.sqlAssertTypedSql()} when
-#' a dialect is given.
+#' a dialect is given. On actual MySQL, stockpile fragments carrying the
+#' private \code{mysql_stockpile_source} attribute are read once into a
+#' statement-local JSON payload and reconstructed with typed JSON_TABLE rows
+#' inside a lateral query. This permits repeated consumers without reopening
+#' a session temporary table; final ordering remains explicit in the outer
+#' SELECT. Payloads never leave the database or become persistent state.
 #'
 #' @param fragments List of fragments, or an execution context holding them.
 #' @param final The final fragment (or the name of a registered one).
@@ -366,12 +371,272 @@
     deps <- c(deps, list(final))
     main <- select
   }
+  sources <- c(deps, if (is.null(select)) list(final))
+  if (any(vapply(sources, function(f) !is.null(attr(f, "mysql_stockpile_source", exact = TRUE)), logical(1)))) {
+    sql <- .mysqlStockpileStatement(deps, main, final, source_final = is.null(select))
+    if (!is.null(dialect)) .sqlAssertTypedSql(dialect, sql)
+    return(sql)
+  }
   sql <- if (length(deps)) {
     ctes <- vapply(deps, function(f) paste0(f$name, " AS (", f$select_body, ")"), "")
     paste0("WITH ", paste(ctes, collapse = ", "), " ", main)
   } else main
   if (!is.null(dialect)) .sqlAssertTypedSql(dialect, sql)
   sql
+}
+
+# Mark a bounded private stockpile table for MySQL's statement-local transport.
+# The attribute is compiler metadata, outside the frozen fragment record. Only
+# actual MySQL uses it: MariaDB shares the SQL family but supports temp reuse.
+.mysqlStockpileSource <- function(fragment, table, dialect) {
+  if (identical(.sqlDialectProfile(dialect, probe = TRUE)$engine, "mysql")) {
+    types <- vapply(fragment$columns, function(column) column$type, "")
+    if (!all(types %in% c("integer", "bigint", "date", "text", "boolean"))) {
+      stop("A MySQL stockpile payload needs exact integer, date, text or boolean columns.", call. = FALSE)
+    }
+    attr(fragment, "mysql_stockpile_source") <- list(table = table)
+  }
+  fragment
+}
+
+# Mask quoted strings, comments and parenthesised expressions while preserving
+# character offsets. This identifies top-level compiler SELECT/ORDER clauses
+# without mistaking a window ORDER BY or a literal for the final row order.
+.mysqlTopLevelSql <- function(sql, top_only = TRUE) {
+  chars <- strsplit(sql, "", fixed = TRUE)[[1L]]
+  out <- chars
+  n <- length(chars)
+  depth <- 0L
+  quote <- NULL
+  comment <- NULL
+  i <- 1L
+  while (i <= n) {
+    ch <- chars[[i]]
+    next_ch <- if (i < n) chars[[i + 1L]] else ""
+    if (!is.null(comment)) {
+      out[[i]] <- " "
+      if (comment == "line" && ch == "\n") comment <- NULL
+      if (identical(comment, "block") && ch == "*" && next_ch == "/") {
+        out[[i + 1L]] <- " "; i <- i + 1L; comment <- NULL
+      }
+    } else if (!is.null(quote)) {
+      out[[i]] <- " "
+      if (ch == "\\" && i < n) {
+        out[[i + 1L]] <- " "; i <- i + 1L
+      } else if (ch == quote) {
+        if (next_ch == quote) {
+          out[[i + 1L]] <- " "; i <- i + 1L
+        } else quote <- NULL
+      }
+    } else if (ch %in% c("'", '"', "`")) {
+      quote <- ch; out[[i]] <- " "
+    } else if ((ch == "-" && next_ch == "-") || ch == "#") {
+      comment <- "line"; out[[i]] <- " "
+    } else if (ch == "/" && next_ch == "*") {
+      comment <- "block"; out[[i]] <- " "
+    } else if (ch == "(") {
+      depth <- depth + 1L; if (top_only) out[[i]] <- " "
+    } else if (ch == ")") {
+      depth <- depth - 1L; if (top_only) out[[i]] <- " "
+    } else if (top_only && depth > 0L) out[[i]] <- " "
+    i <- i + 1L
+  }
+  paste(out, collapse = "")
+}
+
+.mysqlLocalSqlName <- function(base, sql) {
+  name <- base
+  counter <- 2
+  while (grepl(paste0("\\b", name, "\\b"), sql, ignore.case = TRUE, perl = TRUE)) {
+    name <- paste0(substr(base, 1L, 48L), "_", format(counter, scientific = FALSE, trim = TRUE))
+    counter <- counter + 1
+  }
+  name
+}
+
+# Substitute only original unqualified identifier tokens, right to left:
+# literals/comments are unchanged and inserted expressions are never rescanned.
+.mysqlExpandOrderAliases <- function(expr, expressions, qualified = FALSE) {
+  mask <- .mysqlTopLevelSql(expr, top_only = FALSE)
+  pattern <- if (qualified) "(?<![A-Za-z0-9_.])[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)*(?![A-Za-z0-9_.])" else
+    "(?<![A-Za-z0-9_.])[A-Za-z][A-Za-z0-9_]*(?![A-Za-z0-9_.])"
+  tokens <- gregexpr(pattern, mask, perl = TRUE)[[1L]]
+  if (tokens[[1L]] < 0L) return(expr)
+  sizes <- attr(tokens, "match.length")
+  for (i in rev(seq_along(tokens))) {
+    token <- substr(expr, tokens[[i]], tokens[[i]] + sizes[[i]] - 1L)
+    tail <- substring(mask, tokens[[i]] + sizes[[i]])
+    if (grepl("^\\s*\\(", tail, perl = TRUE)) next
+    k <- match(tolower(token), tolower(names(expressions)))
+    if (!is.na(k)) expr <- paste0(substr(expr, 1L, tokens[[i]] - 1L), "(", expressions[[k]], ")",
+                                  substring(expr, tokens[[i]] + sizes[[i]]))
+  }
+  expr
+}
+
+.mysqlSqlList <- function(sql) {
+  commas <- gregexpr(",", .mysqlTopLevelSql(sql), fixed = TRUE)[[1L]]
+  if (commas[[1L]] < 0L) return(trimws(sql))
+  starts <- c(1L, commas + 1L)
+  ends <- c(commas - 1L, nchar(sql))
+  trimws(substring(sql, starts, ends))
+}
+
+# Preserve final ordering outside the lateral query. Exposed expressions map
+# to their output aliases; otherwise a private sort expression is projected
+# inside and excluded from the outer SELECT. LIMIT stays inside, where the
+# original ORDER BY continues to select the same subset of rows.
+.mysqlStockpileOrder <- function(main, final, result_alias = "dsomop_result") {
+  top <- .mysqlTopLevelSql(main)
+  at <- regexpr("\\bORDER\\s+BY\\b", top, ignore.case = TRUE, perl = TRUE)
+  out <- list(main = main, projection = paste0(result_alias, ".*"), order = "")
+  if (at[[1L]] < 0L) return(out)
+  from <- regexpr("\\bFROM\\b", top, ignore.case = TRUE, perl = TRUE)[[1L]]
+  select <- regexpr("\\bSELECT\\s+(?:DISTINCT\\s+)?", top, ignore.case = TRUE, perl = TRUE)
+  projection_start <- select[[1L]] + attr(select, "match.length")
+  projection_end <- from - 1L
+  projection <- .mysqlSqlList(substr(main, projection_start, projection_end))
+  expressions <- character(0)
+  star_references <- character(0)
+  for (part in projection) {
+    if (grepl("^(?:[A-Za-z][A-Za-z0-9_]*\\.)?\\*$", part, perl = TRUE)) {
+      cols <- names(final$columns)
+      qualifier <- if (identical(part, "*")) final$name else sub("\\.\\*$", "", part)
+      refs <- paste0(qualifier, ".", cols)
+      star_references <- unique(c(star_references, refs))
+      expressions <- c(expressions, stats::setNames(if (identical(part, "*")) cols else refs, cols))
+    } else {
+      alias <- regexpr("\\s+AS\\s+([A-Za-z][A-Za-z0-9_]*)\\s*$", part, ignore.case = TRUE, perl = TRUE)
+      if (alias[[1L]] > 0L) {
+        name <- sub("^\\s+AS\\s+", "", regmatches(part, alias), ignore.case = TRUE)
+        expressions[[trimws(name)]] <- trimws(substr(part, 1L, alias[[1L]] - 1L))
+      } else {
+        name <- sub("^.*\\.", "", part)
+        expressions[[name]] <- part
+      }
+    }
+  }
+  rest <- substring(main, at[[1L]] + attr(at, "match.length"))
+  limit <- regexpr("\\bLIMIT\\b", .mysqlTopLevelSql(rest), ignore.case = TRUE, perl = TRUE)[[1L]]
+  order_sql <- if (limit > 0L) substr(rest, 1L, limit - 1L) else rest
+  terms <- .mysqlSqlList(order_sql)
+  added <- character(0)
+  added_output <- character(0)
+  input_alias <- .mysqlLocalSqlName("dsomop_order_input", main)
+  output_map <- stats::setNames(paste0(input_alias, ".", names(expressions)), names(expressions))
+  simple_sources <- grepl("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)?$", expressions)
+  output_map <- c(output_map, stats::setNames(paste0(input_alias, ".", names(expressions)[simple_sources]),
+                                             expressions[simple_sources]))
+  order <- vapply(seq_along(terms), function(i) {
+    term <- terms[[i]]
+    direction <- regmatches(term, regexpr("\\s+(?:ASC|DESC)\\s*$", term, ignore.case = TRUE, perl = TRUE))
+    expr <- trimws(sub("\\s+(ASC|DESC)\\s*$", "", term, ignore.case = TRUE))
+    if (grepl("^[0-9]+$", expr)) return(paste0(expr, direction))
+    matching <- names(expressions)[expressions == expr]
+    alias_match <- match(tolower(expr), tolower(names(expressions)))
+    if (!is.na(alias_match)) matching <- names(expressions)[[alias_match]]
+    # A qualified reference to a star-projected column retains its name.
+    simple <- sub("^[A-Za-z][A-Za-z0-9_]*\\.", "", expr)
+    if (!length(matching) && expr %in% star_references &&
+        grepl("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)?$", expr)) matching <- simple
+    if (length(matching)) return(paste0(result_alias, ".", matching[[1L]], direction))
+    name <- .mysqlLocalSqlName(paste0("dsomop_sort_", i), paste(c(main, names(added)), collapse = " "))
+    # ORDER BY may refer to a SELECT alias; a sibling projection cannot, so
+    # expand aliases to the source expression before adding the private key.
+    added_output[[name]] <<- .mysqlExpandOrderAliases(expr, output_map, qualified = TRUE)
+    added[[name]] <<- .mysqlExpandOrderAliases(expr, expressions)
+    paste0(result_alias, ".", name, direction)
+  }, "")
+  if (length(added)) {
+    distinct_or_union <- grepl("^\\s*SELECT\\s+DISTINCT\\b|\\bUNION\\b", top, ignore.case = TRUE, perl = TRUE)
+    if (distinct_or_union) {
+      # Compute expression sort keys after DISTINCT/UNION, so even a volatile
+      # key cannot turn duplicate input rows into distinct output records.
+      inner_order <- gsub(paste0(result_alias, "."), paste0(input_alias, "."), order, fixed = TRUE)
+      for (name in names(added)) inner_order <- gsub(paste0(input_alias, ".", name), name, inner_order, fixed = TRUE)
+      out$main <- paste0("SELECT ", input_alias, ".*, ",
+                         paste(paste0(added_output, " AS ", names(added_output)), collapse = ", "),
+                         " FROM (", substr(main, 1L, at[[1L]] - 1L), ") ", input_alias,
+                         " ORDER BY ", paste(inner_order, collapse = ", "),
+                         if (limit > 0L) paste0(" ", substring(rest, limit)))
+    } else {
+      if (sum(grepl("^(?:[A-Za-z][A-Za-z0-9_]*\\.)?\\*$", projection, perl = TRUE)) > 1L) {
+        stop("Private MySQL sort keys need an explicit projection or one fragment star.", call. = FALSE)
+      }
+      out$main <- paste0(substr(main, 1L, projection_end), ", ",
+                         paste(paste0(added, " AS ", names(added)), collapse = ", "),
+                         " ", substring(main, from))
+    }
+    out$projection <- paste(paste0(result_alias, ".", names(expressions)), collapse = ", ")
+  }
+  out$order <- paste0(" ORDER BY ", paste(order, collapse = ", "))
+  out
+}
+
+# MySQL 8.4 resolves a TEMPORARY table repeatedly through shared CTEs before
+# optimizer materialization; DISTINCT, NO_MERGE and recursive wrappers do not
+# avoid ERROR 1137. Capture each bounded stockpile once as a private JSON
+# payload in the outer FROM, then expose typed rows through JSON_TABLE inside
+# a correlated lateral statement. JSON never crosses the database boundary.
+.mysqlStockpileStatement <- function(deps, main, final, source_final) {
+  all <- c(deps, if (source_final) list(final))
+  sources <- Filter(function(f) !is.null(attr(f, "mysql_stockpile_source", exact = TRUE)), all)
+  tables <- unique(vapply(sources, function(f) attr(f, "mysql_stockpile_source")$table, ""))
+  payloads <- character(0)
+  replacements <- list()
+  original_sql <- paste(c(main, vapply(all, function(f) paste(f$name, f$select_body), "")), collapse = " ")
+  result_alias <- .mysqlLocalSqlName("dsomop_result", original_sql)
+  sql_types <- c(integer = "INT", bigint = "BIGINT", date = "DATE",
+                 text = "LONGTEXT", boolean = "BOOLEAN")
+  for (k in seq_along(tables)) {
+    table <- tables[[k]]
+    fs <- Filter(function(f) identical(attr(f, "mysql_stockpile_source")$table, table), sources)
+    f <- fs[[1L]]
+    cols <- names(f$columns)
+    if (any(!vapply(fs, function(source) identical(source$columns, f$columns), logical(1)))) {
+      stop("Aliases of one MySQL stockpile table must share its column contract.", call. = FALSE)
+    }
+    alias <- .mysqlLocalSqlName(paste0("dsomop_payload_", k), original_sql)
+    # MySQL encodes binary string expressions as opaque base64 JSON values.
+    # Honour the fragment's text contract even if CTAS inferred a BLOB from
+    # CONCAT/CHAR, so the typed decoder receives the original UTF-8 string.
+    encoded <- vapply(cols, function(column) {
+      if (identical(f$columns[[column]]$type, "text")) {
+        paste0("CAST(", column, " AS CHAR CHARACTER SET utf8mb4)")
+      } else column
+    }, "")
+    # JSON_ARRAYAGG returns SQL NULL for an empty input and can also return
+    # NULL on error. Count in the same scan and reject a failed/truncated
+    # payload instead of turning nonempty data into an empty stream. The
+    # invalid-JSON branch is dynamic, and its message contains no row count.
+    payloads <- c(payloads, paste0(
+      # DISTINCT over the one-row guard result keeps MySQL from merging the
+      # CASE expression into JSON_TABLE's correlated input (ERROR 1210).
+      "(SELECT DISTINCT CASE WHEN p.n = 0 THEN JSON_ARRAY() ",
+      "WHEN p.raw_payload IS NULL OR JSON_LENGTH(p.raw_payload) <> p.n ",
+      "THEN CAST(CONCAT('invalid_stockpile_payload', LEFT(CAST(p.n AS CHAR), 0)) AS JSON) ",
+      "ELSE p.raw_payload END AS payload FROM ",
+      "(SELECT JSON_ARRAYAGG(JSON_ARRAY(", paste(encoded, collapse = ", "),
+      ")) AS raw_payload, COUNT(*) AS n FROM ", table, ") p) ", alias))
+    typed <- vapply(seq_along(cols), function(i) {
+      paste0(cols[[i]], " ", sql_types[[f$columns[[cols[[i]]]]$type]], " PATH '$[", i - 1L,
+             "]' ERROR ON EMPTY ERROR ON ERROR")
+    }, "")
+    body <- paste0("SELECT ", paste(paste0("j.", cols), collapse = ", "),
+                    " FROM JSON_TABLE(", alias, ".payload, '$[*]' COLUMNS (",
+                    paste(typed, collapse = ", "), ")) j")
+    for (source in fs) replacements[[source$name]] <- body
+  }
+  for (i in seq_along(deps)) {
+    if (!is.null(replacements[[deps[[i]]$name]])) deps[[i]]$select_body <- replacements[[deps[[i]]$name]]
+  }
+  if (source_final && !is.null(replacements[[final$name]])) main <- replacements[[final$name]]
+  ordered <- .mysqlStockpileOrder(main, final, result_alias)
+  inner <- if (length(deps)) paste0("WITH ", paste(vapply(deps, function(f) {
+    paste0(f$name, " AS (", f$select_body, ")")
+  }, ""), collapse = ", "), " ", ordered$main) else ordered$main
+  paste0("SELECT ", ordered$projection, " FROM ", paste(payloads, collapse = " CROSS JOIN "),
+         " JOIN LATERAL (", inner, ") ", result_alias, " ON TRUE", ordered$order)
 }
 
 #' Dialect operand of an execution context
