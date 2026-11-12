@@ -17,15 +17,21 @@ withr::defer(.ws4_cleanup(.ws7_acc_backends), testthat::teardown_env())
   plan <- .ws7_plan(recipe)
   for (b in names(.ws7_acc_backends)) {
     h <- .ws7_acc_backends[[b]]$handle
+    local({
     run <- .ws7_ctx(h, plan)
+    on.exit(.ws7_close(run), add = TRUE)
     pops <- populations(run, h)
     out <- stats::setNames(as.list(paste0("D_", names(run$ir$outputs))), names(run$ir$outputs))
     compiled <- .planCompileOutputs(run$cctx, out, populations = pops)
     rosters <- lapply(pops, function(p) .reduceRosterFrame(run$cctx, p$roster))
     check(compiled, rosters, b)
-    .ws7_close(run)
+    })
   }
 }
+
+test_that("WS-7 acceptance exercises every configured database", {
+  .ws5_expect_backends(.ws7_acc_backends, "WS-7 acceptance")
+})
 
 .ws7_frame <- function(compiled, output, component = output) compiled[[output]]$components[[component]]$frame
 
@@ -260,6 +266,8 @@ test_that("recipe 10: matched roster columns (set_id, is_case, weights) and case
     at <- match(as.character(f$cohort_row_id), as.character(r$cohort_row_id))
     key <- paste(r$subject_id[at], format(r$cohort_start_date[at]), r$set_id[at])
     wkey <- paste(want$person_id, want$index_date, want$set_id)
+    expect_identical(length(key), length(wkey), info = b)
+    expect_identical(anyDuplicated(key), 0L, info = b)
     expect_setequal(key, wkey)
     g <- f[match(wkey, key), , drop = FALSE]
     for (c in c("set_id", "is_case", "w", "age", "statin_365")) {

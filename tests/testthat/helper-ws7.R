@@ -47,11 +47,13 @@
 }
 
 .ws7_close <- function(run) {
-  try(.compileReleaseTempTables(run$cctx), silent = TRUE)
-  try(.planContextClose(run$ctx), silent = TRUE)
-  if (exists(run$ctx$id, .publicationRegistry, inherits = FALSE)) {
-    rm(list = run$ctx$id, envir = .publicationRegistry)
-  }
+  on.exit({
+    if (exists(run$ctx$id, .publicationRegistry, inherits = FALSE)) {
+      rm(list = run$ctx$id, envir = .publicationRegistry)
+    }
+  }, add = TRUE)
+  # A cleanup error is test evidence: do not swallow failed DROP operations.
+  .planContextClose(run$ctx)
   invisible(NULL)
 }
 
@@ -209,12 +211,19 @@
 # Compare a compiled component frame with the oracle rows on (person_id,
 # index_date[, index_key]) and the comparison columns.
 .ws7_compare <- function(frame, roster_frame, want, cols, info, keys = c("person_id", "index_date")) {
+  testthat::expect_identical(anyDuplicated(as.character(roster_frame$cohort_row_id)), 0L, info = info)
   at <- match(as.character(frame$cohort_row_id), as.character(roster_frame$cohort_row_id))
+  testthat::expect_false(anyNA(at), info = info)
   got <- frame
   got$person_id <- as.numeric(roster_frame$subject_id[at])
   got$index_date <- format(as.Date(roster_frame$cohort_start_date[at]), "%Y-%m-%d")
   if ("index_key" %in% keys) got$index_key <- as.character(roster_frame$index_key[at])
   key <- function(df) do.call(paste, c(lapply(df[keys], as.character), sep = "|"))
+  # Set equality alone accepts duplicate output rows and can hide an invalid
+  # join. Require the exact cardinality and a unique comparison key as well.
+  testthat::expect_identical(nrow(got), nrow(want), info = info)
+  testthat::expect_identical(anyDuplicated(key(got)), 0L, info = info)
+  testthat::expect_identical(anyDuplicated(key(want)), 0L, info = info)
   testthat::expect_setequal(key(got), key(want))
   got <- got[match(key(want), key(got)), , drop = FALSE]
   for (c in cols) {

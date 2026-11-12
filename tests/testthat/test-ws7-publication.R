@@ -56,8 +56,8 @@ withr::defer(.ws4_cleanup(.ws7_pub_backends), testthat::teardown_env())
   class(df) <- "data.frame"
   for (c in names(df)) {
     x <- df[[c]]
-    x <- if (is.numeric(x)) format(x, digits = 12, trim = TRUE, scientific = FALSE) else as.character(x)
-    x[is.na(df[[c]]) | x %in% c("NA", "")] <- NA_character_
+    x <- if (is.numeric(x)) format(x, digits = 17, trim = TRUE, scientific = FALSE) else as.character(x)
+    x[is.na(df[[c]])] <- NA_character_
     df[[c]] <- x
   }
   rownames(df) <- NULL
