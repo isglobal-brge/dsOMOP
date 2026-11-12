@@ -228,18 +228,30 @@
   lapply(.vrQuestions(cohorts), function(q) {
     out <- suppressWarnings(.omopAnalysisRun(handle, q$id, q$params %||% list(),
                                              scope = q$scope))
-    list(id = q$id, protection = attr(out, "dsomop_protection")$protection %||%
-           "standard", values = .vrNumericFrame(out))
+    protection <- attr(out, "dsomop_protection", exact = TRUE)
+    read_snapshot <- protection$read_snapshot
+    # Each engine reports its own transaction mechanism. Check that field
+    # separately while retaining every other attribute in the parity check.
+    protection$read_snapshot <- NULL
+    attr(out, "dsomop_protection") <- protection
+    list(id = q$id, protection = protection$protection %||% "standard",
+         read_snapshot = read_snapshot, values = .vrNumericFrame(out))
   })
 }
 
 .expectVrSameAnswers <- function(reference, actual, label) {
   expect_identical(vapply(actual, `[[`, character(1L), "id"),
                    vapply(reference, `[[`, character(1L), "id"))
+  expected_snapshot <- switch(label,
+    duckdb = "snapshot_transaction",
+    postgresql = "repeatable_read_transaction",
+    mysql = "consistent_snapshot_transaction",
+    mariadb = "consistent_snapshot_transaction")
   for (i in seq_along(reference)) {
     info <- paste(label, reference[[i]]$id)
     expect_identical(actual[[i]]$protection, reference[[i]]$protection,
                      info = info)
+    expect_identical(actual[[i]]$read_snapshot, expected_snapshot, info = info)
     a <- actual[[i]]$values
     r <- reference[[i]]$values
     rownames(a) <- rownames(r) <- NULL
@@ -284,6 +296,8 @@ test_that("SQLite runs the observed-time helpers and every protected route", {
   .release_state()
   reference <- .vrReference()
   expect_length(reference, length(.vrQuestions(list())))
+  expect_identical(vapply(reference, `[[`, character(1L), "read_snapshot"),
+                   rep("serializable_transaction", length(reference)))
   # Every question returns rows on this fixture.
   for (r in reference) expect_gt(nrow(r$values), 0L, label = r$id)
 })
