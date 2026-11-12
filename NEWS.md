@@ -7,6 +7,15 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- (A-13) Native panels publish their dense person-period roster and each
+  sparse component on that component's own person lineage, in memory and
+  staged mode. An empty event stream can still produce a valid dense panel;
+  a refused patient family releases none of its reference companions.
+- (A-14, A-E12) Native survival uses its explicit censor list and recorded
+  observation segments, with last-observed-day endpoints. It adds no implicit
+  cohort-end cap; the v1 adapter retains `legacy_cohort_end_cap` and opt-in
+  death censoring. The unused legacy survival and interval extractors were
+  removed after moving their checks to the active adapter (F-6).
 - (A-20; WS-5 review B1–B4, B6–B7, N1–N2) Era `min_days` uses the
   normalised recorded span even when stockpiling; persistence and carry do
   not satisfy the threshold. Direct-event coverage applies the interval
@@ -68,6 +77,13 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Newly permitted (previously refused by an intermediate or granularity gate)
 
+- (A-11, A-12) Native reducers support first/last/nth selection with
+  `missing = "keep"`, distinct day/visit/concept counts, unioned coverage,
+  supply and observed days, and three-valued `any`/`all`; `all` over an
+  empty window is NA. Undefined anchors and unavailable sources produce NA.
+- (B-19, B-22) Native outputs include one multi-source wide episode roster,
+  long event logs, survival, intervals, seeded temporal/person-period panels,
+  sparse matrices, membership, dictionaries and private-input joins.
 - (B-20) Index events may come from any table with an event role record in
   the role registry (`inst/ohdsi/roles-5.3.csv`, `roles-5.4.csv`): besides the
   seven tables of 2.10.2, `visit_detail`, `observation_period`, `death`,
