@@ -1,0 +1,19 @@
+{
+  "server_commit": "764d0a80c42845da4a15b39be3b97e81d090e327",
+  "installed_client_commit": "70ca070884255173bdc50d15ff7ef64eb946f2f7",
+  "filter": "^(ws2f-membership-results|ir-review|legacy-execution-call|ws0-contract-tables)$",
+  "files": [
+    "test-ws2f-membership-results.R",
+    "test-ir-review.R",
+    "test-legacy-execution-call.R",
+    "test-ws0-contract-tables.R"
+  ],
+  "passed": 760,
+  "failed": 0,
+  "errors": 0,
+  "skipped": 0,
+  "timeout_seconds": 600,
+  "environment": "DSOMOP_TEST_POSTGRES_HOST=omopdb DSOMOP_TEST_MARIADB_HOST=127.0.0.1 DSOMOP_TEST_MYSQL_HOST=127.0.0.1 DSOMOP_TEST_MYSQL_PORT=3307",
+  "oracle_server_commit": "764d0a80c42845da4a15b39be3b97e81d090e327",
+  "oracle_client_commit": "ed8f1e261e81c0e0a2d8ffc20865821cafd30f56"
+}

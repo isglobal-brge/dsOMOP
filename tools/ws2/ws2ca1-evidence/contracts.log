@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws0/check_contracts.py", line 23, in <module>
+    from jsonschema import Draft202012Validator
+ModuleNotFoundError: No module named 'jsonschema'

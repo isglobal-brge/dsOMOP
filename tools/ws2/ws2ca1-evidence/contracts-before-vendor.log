@@ -1,0 +1,3 @@
+checked 3 schemas, 2 examples, 195 probes, 15 acceptance plans, 12 digest vectors, 17 normalised fixtures, 34 numbers, 11043 corpus doubles
+FAILURES:
+ - client v1-corpus-classes.csv differs from the regenerated corpus (A-24)
