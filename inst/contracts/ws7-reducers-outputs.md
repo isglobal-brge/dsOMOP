@@ -102,10 +102,15 @@ same bounded private materialization as memory output before publication;
 staging does not remove the reducer memory cap.
 
 The executable tests cover reducers, each output format, private publication
-families, lifecycle failures and WS-0 acceptance rows. The public client
+families, lifecycle failures and WS-0 acceptance rows. Acceptance and ordinary
+format/publication scenarios compile real WS-6 rosters from source fixtures;
+only deliberate malformed-metadata and boundary probes inject roster data.
+The public client
 `test-ws7-client-acceptance.R` gate executes all fifteen frozen recipes through
 the real WS-6 compiler and WS-8/WS-9 APIs, on SQLite and PostgreSQL, in memory
-and staged modes, with publicly verified k=5. Set
+and staged modes, with publicly verified k=5. It also executes all twelve
+recipe-13 bound variants against their base recipes' frozen expected results:
+108 recipe/backend/mode executions in total. Set
 `DSOMOP_TEST_WS7_ACCEPTANCE_REQUIRED=true` to fail missing prerequisites.
 It checks exact row cardinality and independent episode identities, oracle
 numeric values at tolerance 1e-9, and memory/staged parity with only fractional
