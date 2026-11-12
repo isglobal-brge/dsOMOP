@@ -163,11 +163,16 @@
     if (nrow(table_row) == 0L) {
       stop("Intervals table '", table, "' is unavailable.", call. = FALSE)
     }
-    date_pair <- .getDatePair(bp, table)
-    if (is.null(date_pair)) {
+    # Defect A-16: the start/end roles come from the role registry (design
+    # section 6.2), so point-event tables (measurement, observation, death,
+    # specimen, note, 5.3 procedures) are intervals with end = start rather
+    # than refused for lacking a *_start_date/*_end_date name pair.
+    role <- .roleOf(handle, table)
+    if (is.null(role) || is.null(role[["start"]])) {
       stop("Intervals table '", table,
-           "' has no reviewed start/end date pair.", call. = FALSE)
+           "' has no reviewed start date role.", call. = FALSE)
     }
+    date_pair <- list(start = role[["start"]], end = role[["end"]])
     columns <- bp$columns[[table]]
     domain_columns <- columns$column_name[
       columns$concept_role == "domain_concept"
@@ -192,7 +197,7 @@
            call. = FALSE)
     }
     table_filter <- .longitudinalSourceFilter(filters, table, tables)
-    selected_columns <- c(date_pair$start, date_pair$end, concept_column)
+    selected_columns <- unique(c(date_pair$start, date_pair$end, concept_column))
     base_sql <- .compileSelect(
       handle = handle,
       table = table,
@@ -211,9 +216,11 @@
     }
 
     start_expression <- paste0("q.", date_pair$start)
-    end_expression <- paste0(
-      "COALESCE(q.", date_pair$end, ", q.", date_pair$start, ")"
-    )
+    end_expression <- if (is.null(date_pair$end)) {
+      start_expression
+    } else {
+      paste0("COALESCE(q.", date_pair$end, ", q.", date_pair$start, ")")
+    }
     start_day <- .omopDateDiffDays(
       handle, start_expression, "q.cohort_start_date"
     )
@@ -234,8 +241,10 @@
       "q.dsomop_event_order_id AS dsomop_event_order_id",
       " FROM (", base_sql, ") AS q",
       " WHERE q.", date_pair$start, " IS NOT NULL",
-      " AND (q.", date_pair$end, " IS NULL OR q.", date_pair$end,
-      " >= q.", date_pair$start, ")"
+      if (!is.null(date_pair$end)) paste0(
+        " AND (q.", date_pair$end, " IS NULL OR q.", date_pair$end,
+        " >= q.", date_pair$start, ")"
+      )
     )
 
     predicates <- character(0)

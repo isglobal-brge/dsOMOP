@@ -386,7 +386,8 @@
   mode <- spec[["on_missing_table"]] %||% "error"
   contract <- .eventKindContract("cost")
   extra <- contract$extra
-  unavailable <- function() .eventUnavailable(ctx, name, "cost", kind = "cost", parent = parent)
+  unavailable <- function() .eventUnavailable(ctx, name, "cost", kind = "cost", parent = parent,
+                                              index_visit = pmeta$index_visit)
   if (identical(pmeta$availability, "unavailable")) return(unavailable())
   bp <- .buildBlueprint(handle)
   if (!.adapterTablePresent(bp, "cost")) {
@@ -478,7 +479,7 @@
   .eventMetaSet(ctx, name, list(
     name = name, kind = "cost", table = "cost", availability = "available",
     roles = roles, catalogue = catalogue, fragments = c(src = nm_src, final = nm_final),
-    index_visit = FALSE, parent = parent, field = field, currency = currency,
+    index_visit = isTRUE(pmeta$index_visit), parent = parent, field = field, currency = currency,
     columns = names(spec_cols)))
   f_final
 }

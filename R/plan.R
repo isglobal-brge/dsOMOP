@@ -2468,24 +2468,19 @@
     "op.observation_period_start_date <= t.", start_col, " AND ",
     "op.observation_period_end_date >= t.", start_col
   )
-  # Apply the ordinary DataSHIELD population gate before any data-quality
-  # diagnostic so a rare concept cannot be probed through differing validation
-  # errors. Candidate events outside every observation period are not eligible
-  # index events and therefore do not contribute to this gate.
-
-  coverage_sql <- paste0(
-    "SELECT COUNT(*) AS n FROM (SELECT t.", event_id_col, " FROM ",
-    qualified, " t LEFT JOIN ", op_qualified, " op ON ", op_join,
-    " WHERE t.", start_col, " IS NOT NULL", concept_predicate,
-    " GROUP BY t.person_id, t.", event_id_col,
-    " HAVING COUNT(op.observation_period_id) > 1) dsomop_bad_index_op"
+  # Coverage policy (design 1.3 and 6.13; defect A-E6): the lowered default is
+  # unique with on_missing = "drop" and on_ambiguous = "drop". A candidate
+  # outside every observation period is not an eligible index event (the inner
+  # join), and a candidate whose index is covered by more than one period is
+  # dropped privately -- it no longer aborts the plan. Both happen before the
+  # primary-limit selection, as uncovered candidates always did.
+  unique_coverage <- paste0(
+    " AND NOT EXISTS (SELECT 1 FROM ", op_qualified, " op2 WHERE ",
+    "op2.person_id = t.person_id AND ",
+    "op2.observation_period_start_date <= t.", start_col, " AND ",
+    "op2.observation_period_end_date >= t.", start_col, " AND ",
+    "op2.observation_period_id <> op.observation_period_id)"
   )
-  coverage <- .executeQuery(handle, coverage_sql)
-  if (nrow(coverage) != 1L || !"n" %in% names(coverage) ||
-      is.na(coverage$n[[1]]) || as.numeric(coverage$n[[1]]) > 0) {
-    stop("Candidate index events cannot have overlapping covering ",
-         "observation_period records.", call. = FALSE)
-  }
 
   cohort_end <- "op.observation_period_end_date"
   if (!is.null(end_strategy)) {
@@ -2509,7 +2504,8 @@
     " AS cohort_start_date, ", cohort_end,
     " AS cohort_end_date, t.", event_id_col, " AS index_event_id"
   )
-  where <- paste0(" WHERE t.", start_col, " IS NOT NULL", concept_predicate)
+  where <- paste0(" WHERE t.", start_col, " IS NOT NULL", concept_predicate,
+                  unique_coverage)
   event_from <- paste0(
     " FROM ", qualified, " t INNER JOIN ", op_qualified, " op ON ", op_join
   )
@@ -2969,6 +2965,14 @@
     ctx$validation <- validated
     on.exit(.planContextClose(ctx), add = TRUE)
   }
+  # Register before either executor can compile or materialise anything. The
+  # snapshot protects caller-owned tables while covering native compiler work
+  # as well as the legacy path, including a caller-provided context.
+  temp_tables_before <- unique(handle$temp_tables %||% character(0))
+  on.exit(
+    .dropTempTablesCreatedSince(handle, temp_tables_before),
+    add = TRUE
+  )
   if (identical(attr(ir, "source_version"), 2L)) {
     # An explicitly empty publication-root array is a validated no-op (A-22).
     # Keep the full validation sequence and context lifecycle above, but do
@@ -2984,11 +2988,6 @@
                      "execute them yet; use omopPlanExplainDS"))
   }
 
-  temp_tables_before <- unique(handle$temp_tables %||% character(0))
-  on.exit(
-    .dropTempTablesCreatedSince(handle, temp_tables_before),
-    add = TRUE
-  )
   bp <- .buildBlueprint(handle)
 
   staged <- identical(output_mode, "staged")

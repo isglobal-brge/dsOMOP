@@ -7,6 +7,18 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- (A-20; WS-5 review B1–B4, B6–B7, N1–N2) Era `min_days` uses the
+  normalised recorded span even when stockpiling; persistence and carry do
+  not satisfy the threshold. Direct-event coverage applies the interval
+  quality policy, unavailable reducers return NA, and visit/episode
+  associations restrict anchors and streams before interval construction.
+  Private fetches are bounded, compiler temporary tables follow execution
+  context cleanup, and duplicate observed periods preserve segment keys.
+  On MySQL, downstream consumers may reuse a stockpiled interval's course,
+  recorded rows and effective rows in one statement without reopening its
+  session temporary table.
+  The compiler handoff is recorded in
+  `inst/contracts/ws5-interval-anchor-coverage.md`.
 - Publication validates one genuine person per final row through direct keys or
   an immutable roster. Composite families commit together; support is counted
   on the materialized component, including streamed staged files.
@@ -91,6 +103,21 @@ fills its entries. Classes follow design-2.10.3 section 5.
   (`< <= > >=`, `between`, null tests and logic) on numeric, integer, date and
   boolean columns, and equality / IN on text columns; the excluded rows stay
   private and only the result's distinct persons are checked.
+- (A-E6) Observation-period coverage follows the default policy (`unique`,
+  `on_ambiguous = "drop"`, design sections 1.3 and 6.13) instead of aborting
+  the plan: a v1 index-event candidate whose index date is covered by two
+  observation periods is dropped privately before the primary-limit selection
+  (2.10.2: "Candidate index events cannot have overlapping covering
+  observation_period records"); temporal panels drop, with their events, the
+  episodes without exactly one covering period (2.10.2: "Every cohort episode
+  must have exactly one observation_period covering its index date"); baseline
+  drops an episode covered by several periods and keeps an uncovered episode
+  with NA observation fields. Aggregate endpoints keep their own controls.
+- `intervals_long` accepts point-event tables (measurement, observation,
+  death, specimen, note, 5.3 procedures) as intervals with `end = start`
+  (defect A-16); a table without a start role is still refused. (2.10.2: "no
+  reviewed start/end date pair"; corpus class `newly_permitted`, amendment
+  A-20 item 4.)
 
 ## Newly refused
 
@@ -246,7 +273,8 @@ fills its entries. Classes follow design-2.10.3 section 5.
   `legacy_automatic_features` format `sparse`); probes I41-I60 and the wire
   refusals P64-P66.
 - A-18 a rejected status entry may carry a third closed field `reason`
-  (`adapter_person_mismatch`, `cost_currency_mixed`), present only with
+  (`adapter_person_mismatch`, `cost_currency_mixed` and, amendment A-20 (j),
+  `stockpile_row_cap`, `reducer_row_cap`), present only with
   `validation_error`: every status writer builds its entry with
   `.rejectionEntry()`, which copies the reason from the condition only under
   those conditions and never its raw message, field path or state;
@@ -342,6 +370,44 @@ fills its entries. Classes follow design-2.10.3 section 5.
   compiler is installed (it advertised nothing while a compiler was missing).
   A deployment that lists `verb.mutate` or `verb.filter_expr` in
   `dsomop.recipe_operations_disabled` refuses that verb.
+## Intervals, anchors and coverage (WS-5)
+
+- `R/compile_interval.R`: eras (`omop_era()`) normalise each source row to a
+  closed recorded interval by the era's own `end`/`fallback` from the event's
+  original recorded-end and supply roles (never its coalesced end; `end =
+  "start"` makes point records, `fallback = "none"` ignores the supply), apply
+  one private data-quality policy (NULL start, end before start, an invalid
+  supply as the only end source), and form courses by gaps and islands with a
+  running maximum of prior ends per (person, group) (a record starts a new era
+  when start > previous maximum end + gap + 1; `persistence` extends course
+  construction only; `min_days` filters by the recorded span). Grouping
+  `by = "event"`, `"concept"` or RxNorm `"ingredient"` (unmapped concepts kept
+  or dropped); era identities are group-qualified (`<group>:<era_no>`). The
+  recorded intervals stay separate from the course: [1,2] + [10,11] with gap 30
+  is one 11-day course and 4 covered days. `stockpile = TRUE` adds an
+  effective-supply relation from a bounded deterministic iterator over the
+  whole recorded history (supply precedence: positive supply, recorded length,
+  one day; carry capped by `dsomop.max_stockpile_days`, default 90); the fills
+  [1,30] and [15,44] cover 44 recorded and 60 effective days. Reducer bases:
+  `covered_days` (union length of the selected relation clipped to the window,
+  optionally intersected with the episode's observed segments, the PDC
+  numerator) and `supply_days` (`start_in_window` or `clipped`).
+- `R/compile_coverage.R`: observation-period coverage per population,
+  `unique`, `earliest` or `union` with `on_ambiguous` (`drop` or the typed
+  `coverage_ambiguous` failure), `on_missing` (`drop` or `keep` with NULL
+  bounds) and `gap`; missing coverage is resolved before ambiguity; under
+  `union` the index must lie inside an actual recorded period (records [1,2]
+  and [10,11] with gap 7 leave an index on day 5 uncovered). Eligibility spans
+  (`opc_<pop>`) and actually observed segments (`seg_<pop>_rec`, associated
+  through the selected component) are separate fragments: a gap allowance
+  satisfies continuity but never adds observed days.
+- `R/compile_anchor.R`: anchors (`index`, `index_end`, `observation_start`,
+  `observation_end`, dates, and source anchors selecting one complete row by
+  `(start_date, source_ns, row key)` with `first`, `last`, `nth`,
+  `latest_end`, `field`, `scope = "episode"` and `search` windows) compiled per
+  roster and phase (candidate or final); windows with independent bounds; a
+  missing required anchor makes a window undefined (criteria UNKNOWN, also for
+  absence and `count == 0`; reducers NA).
 
 ## Plan IR, role registry, explain and capabilities (WS-2)
 
