@@ -62,8 +62,10 @@
 }
 
 # A-18: the closed vocabulary of the optional `reason` of a rejected status
-# entry (section 11 adapter refusals), present only with validation_error.
-.REJECTION_REASONS <- c("adapter_person_mismatch", "cost_currency_mixed")
+# entry, present only with validation_error: the section 11 adapter refusals
+# and (A-20 (j)) the bounded realisations of the interval helpers.
+.REJECTION_REASONS <- c("adapter_person_mismatch", "cost_currency_mixed",
+                        "stockpile_row_cap", "reducer_row_cap")
 
 # The bounded status entry for a dsomop_plan_rejection condition: {code,
 # message} with the constant message per code, plus `reason` only when the

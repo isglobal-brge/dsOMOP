@@ -245,7 +245,8 @@ fills its entries. Classes follow design-2.10.3 section 5.
   `legacy_automatic_features` format `sparse`); probes I41-I60 and the wire
   refusals P64-P66.
 - A-18 a rejected status entry may carry a third closed field `reason`
-  (`adapter_person_mismatch`, `cost_currency_mixed`), present only with
+  (`adapter_person_mismatch`, `cost_currency_mixed` and, amendment A-20 (j),
+  `stockpile_row_cap`, `reducer_row_cap`), present only with
   `validation_error`: every status writer builds its entry with
   `.rejectionEntry()`, which copies the reason from the condition only under
   those conditions and never its raw message, field path or state;
