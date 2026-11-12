@@ -894,13 +894,8 @@
     }
     stop(e)
   })
-  # MySQL otherwise merges this CTE into each downstream consumer, reopening
-  # the same temporary table when (for example) the course anchors a stream
-  # of effective rows. DISTINCT preserves these already-unique rows and
-  # makes the source CTE materialisable once for all its references.
-  body <- paste0("SELECT ", if (identical(.sqlFamily(h), "mysql")) "DISTINCT ",
-                 paste(paste0("t.", cols), collapse = ", "), " FROM ", tname, " t")
-  list(fragment = make(body), temp_table = tname)
+  body <- paste0("SELECT ", paste(paste0("t.", cols), collapse = ", "), " FROM ", tname, " t")
+  list(fragment = .mysqlStockpileSource(make(body), tname, h), temp_table = tname)
 }
 
 #' Release the temporary tables the compilers of a context materialised

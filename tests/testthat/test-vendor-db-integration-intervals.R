@@ -96,7 +96,8 @@ test_that("WS-5 eras, stockpiles, coverage and anchors execute on the configured
 # statement that hoists f's closure (each textual reference to a dependency in
 # a body is one path). This checks the individual relation structure, not
 # physical opens: a combined consumer can have several paths while MySQL
-# reuses the one non-mergeable effective-source CTE (amendment A-20 (l)).
+# reconstructs reusable rows from one private payload per physical stockpile
+# table (amendment A-20 (l)).
 .ws5_paths <- function(ctx, f, target) {
   if (identical(f$name, target)) return(1)
   sum(vapply(f$dependencies, function(d) {
@@ -132,7 +133,7 @@ test_that("MySQL 8.4: a stockpile with min_days > 0 reads its session table once
   expect_true(.isScalarString(tname))
   # every relation reaches the session table through exactly one reference
   src <- .intervalMeta(ctx, "s44")$fragments[["effective_source"]]
-  expect_match(.fragmentGet(ctx, src)$select_body, "^SELECT DISTINCT ")
+  expect_identical(attr(.fragmentGet(ctx, src), "mysql_stockpile_source")$table, tname)
   for (rel in c("course", "recorded", "effective")) {
     expect_identical(.ws5_paths(ctx, iv[[rel]], src), 1, info = rel)
   }
@@ -170,7 +171,7 @@ test_that("MySQL 8.4: a stockpile with min_days > 0 reads its session table once
   expect_identical(from_course$value, c(60L, NA))
   # One downstream statement uses the stockpiled course as its anchor and the
   # same interval's effective rows as its stream. Its shared effective-source
-  # CTE must be materialised once by MySQL despite the two consumer branches.
+  # table is captured once by MySQL despite the two consumer branches.
   anchored <- .ws5_rv(ctx, "covered_days", cand, "candidate", source = list(interval = "s44"),
                       coverage = "effective_supply",
                       window = list(start = 0L, end = 59L, anchor = last_course))
