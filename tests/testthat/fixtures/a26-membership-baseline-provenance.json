@@ -1,0 +1,7 @@
+{
+  "baseline_commit": "30b7905617dbe3de5d06699c324095635c68011f",
+  "source": "/workspace/dsomop/design/2.10.3/astra-scratch/cr27-baseline-full.log",
+  "sha256": "17e37717b52c16cdac6173bba87fd75c1264da2ea758e4ffda8092fcce7dfcef",
+  "records": 14,
+  "method": "Exact dput blocks extracted from the independently approved A-26 log; no expectations recaptured from implementation."
+}

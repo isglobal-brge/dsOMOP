@@ -1,0 +1,22 @@
+{
+  "server": {
+    "head": "764d0a80c42845da4a15b39be3b97e81d090e327",
+    "integration": "c7e541e4bac659cdc32358d14b1b4791c2e4203e",
+    "integration_is_ancestor": true,
+    "wire_sha256": "b762bed6aa93b64ee174e17a852bc6b873b8b939bb95dd3a73e65b0cdad529aa",
+    "version": "Version: 2.10.2"
+  },
+  "client": {
+    "head": "ed8f1e261e81c0e0a2d8ffc20865821cafd30f56",
+    "integration": "c8b337b77b09d5ed219215ddf205652193354220",
+    "integration_is_ancestor": true,
+    "wire_sha256": "b762bed6aa93b64ee174e17a852bc6b873b8b939bb95dd3a73e65b0cdad529aa",
+    "version": "Version: 2.10.2"
+  },
+  "client_has_compatibility_schema": false,
+  "client_manifest_has_compatibility_schema": false,
+  "shared_normalizers_identical": true,
+  "shared_corpus_identical": true,
+  "pending_b1_patch_applies": true,
+  "b1_applied": false
+}

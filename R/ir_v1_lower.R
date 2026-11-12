@@ -803,6 +803,13 @@
     cohort_membership = {
       node[["format"]] <- "membership"
       node[["options"]] <- list(date_handling = .v1DateHandling(out[["date_handling"]]))
+      # A-26: the executor labels membership with the root cohort ID, even
+      # when this output selects another population. Absence is not zero.
+      membership_id <- st[["plan"]][["cohort"]][["cohort_definition_id"]]
+      if (!is.null(membership_id)) {
+        value <- suppressWarnings(as.integer(membership_id))
+        node[["options"]]["legacy_cohort_definition_id"] <- list(if (is.na(value)) NULL else value)
+      }
     },
     concept_dictionary = {
       node[["format"]] <- "dictionary"
@@ -1238,4 +1245,17 @@
   if (length(st[["names"]])) ir[["legacy_names"]] <- st[["names"]]
   attr(ir, "legacy_annex") <- if (length(st[["annex"]])) st[["annex"]] else NULL
   ir
+}
+
+# A-26 compatibility adapter: the IR owns the label. Replaying a failed
+# historical conversion preserves its warning at the original execution point.
+# NULL without a property retains the historical missing-ID disposition.
+.v1MembershipLabel <- function(options, raw_id = NULL) {
+  if (!"legacy_cohort_definition_id" %in% names(options)) return(NULL)
+  value <- options[["legacy_cohort_definition_id"]]
+  if (is.null(value)) {
+    if (!is.null(raw_id)) as.integer(raw_id)
+    return(NA_integer_)
+  }
+  as.integer(value)
 }

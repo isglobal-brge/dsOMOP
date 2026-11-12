@@ -24,6 +24,26 @@ fills its entries. Classes follow design-2.10.3 section 5.
   cohort-end cap; the v1 adapter retains `legacy_cohort_end_cap` and opt-in
   death censoring. The unused legacy survival and interval extractors were
   removed after moving their checks to the active adapter (F-6).
+- (A-26; WS-2c B1) V1 membership outputs retain their effective root
+  cohort identifier in the semantic IR, digest, explain and output closure,
+  independently of the population supplying the rows. Signed identifiers,
+  zero and historical coercions are preserved; a supplied value coerced to
+  integer NA remains distinct from an absent identifier. The compatibility
+  option is refused on the native wire and on other output formats.
+- (WS-2f review B2–B3, N1–N3) A v1 criteria `base` explicitly depends on
+  its plan cohort's person seed while retaining fresh observation-period
+  episodes and independent filter anchors. Malformed numeric cohort arrays
+  refuse before database work; valid scalar IDs and owned-name wrappers
+  retain their historical behavior. Validation and preview check the closed
+  envelope before reading fields and treat native plans through their IR.
+  Explain includes interval and adapter long-output projections and exact
+  date classes, and extension role types use the blueprint's database type.
+- (A-25) Historical v1 population references to handle-owned cohort names
+  retain their population-local person scope, independent filter anchoring
+  and recurrent index episodes. Canonical names are carried in the closed
+  IR, explain and semantic digest; ownership is checked from the handle's
+  registry before queries. Native v2 cohort types remain strict, and named
+  ownership grants neither DP locality nor exemption from final support.
 - (WS-9 re-review R1–R2) Mutation and expression-filter predicates compare
   factor labels as text, including leading zeros. Datetime scalar, membership
   and range thresholds consistently use civil midnight in the input timezone;
@@ -46,20 +66,6 @@ fills its entries. Classes follow design-2.10.3 section 5.
   cases and stable case-rank gaps under the requested insufficient policy.
   The closed A-21 `legacy_empty` variant compiles to typed empty relations;
   it remains unavailable on the language-2.0 wire.
-- (WS-2f review B2–B3, N1–N3) A v1 criteria `base` explicitly depends on
-  its plan cohort's person seed while retaining fresh observation-period
-  episodes and independent filter anchors. Malformed numeric cohort arrays
-  refuse before database work; valid scalar IDs and owned-name wrappers
-  retain their historical behavior. Validation and preview check the closed
-  envelope before reading fields and treat native plans through their IR.
-  Explain includes interval and adapter long-output projections and exact
-  date classes, and extension role types use the blueprint's database type.
-- (A-25) Historical v1 population references to handle-owned cohort names
-  retain their population-local person scope, independent filter anchoring
-  and recurrent index episodes. Canonical names are carried in the closed
-  IR, explain and semantic digest; ownership is checked from the handle's
-  registry before queries. Native v2 cohort types remain strict, and named
-  ownership grants neither DP locality nor exemption from final support.
 - (A-20; WS-5 review B1–B4, B6–B7, N1–N2) Era `min_days` uses the
   normalised recorded span even when stockpiling; persistence and carry do
   not satisfy the threshold. Direct-event coverage applies the interval
