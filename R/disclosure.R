@@ -677,93 +677,25 @@
 
 # --- Filter safety policy ---
 #
-# Filters narrow the population. An overly specific filter can isolate a
-# single individual (targeted probing). The classification below prevents
-# this by limiting filter granularity:
-#   - "allowed": broad categories (sex, age_group) - low fingerprinting risk
-#   - "constrained": narrower ranges validated for minimum width
-#     (server-configured inclusive age/date widths)
-#   - "blocked": arbitrary thresholds or custom SQL - too specific
+# Known assignment predicates are structurally validated by their compilers.
+# Their granularity does not determine disclosure: only the published object's
+# own genuine-person support is gated. Aggregate endpoints keep their controls.
 
-#' Classify a filter operation by safety level
+#' Classify a filter operation
 #'
-#' Filters are classified based on fingerprinting risk. Narrow filters
-#' (e.g., exact value thresholds) can isolate individuals; broad filters
-#' (e.g., sex, age group) cannot. Constrained filters are allowed only
-#' if their parameters meet minimum-width requirements.
-#'
-#' @param filter_type Character; filter type from the DSL
-#' @param filter_params List; filter parameters
-#' @return Character; \code{"allowed"}, \code{"constrained"}, or \code{"blocked"}
+#' @param filter_type Character; filter type from the DSL.
+#' @param filter_params List; structurally validated filter parameters.
+#' @return "constrained" for a known filter type, "blocked" otherwise.
 #' @keywords internal
 .classifyFilter <- function(filter_type, filter_params = list()) {
-  # Always allowed: categorical with known small domains (low fingerprint risk)
-  always_allowed <- c("sex", "cohort", "concept_set", "value_bin")
-
-  # Constrained: allowed only after validating minimum range width.
-  # `value_threshold` is the legacy classification name retained for reviewed
-  # membership/null predicates; public client-authored numeric thresholds are
-  # blocked and numeric ranges use authenticated value_bin contracts. age_group is
-  # constrained (not always-allowed) so its bands get the same minimum as
-  # age_range -- otherwise groups like c("87-87") would target a single birth
-  # year and evade the age_range anti-fingerprinting width gate.
-  constrained <- c("age_range", "age_group", "has_concept", "date_range",
-                    "min_count",
-                    "not_has_concept", "concept_count", "prior_observation",
-                    "followup", "visit_count", "has_measurement",
-                    "missing_measurement", "value_threshold")
-
-  # Blocked: arbitrary SQL could fingerprint individuals
-  blocked <- c("custom")
-
-  if (filter_type %in% always_allowed) return("allowed")
-  if (filter_type %in% blocked) return("blocked")
-  if (filter_type %in% constrained) {
-    # The minimum range-width gates (age, date) are anti-fingerprinting defenses.
-    # They scale with the disclosure threshold: when the per-person gate is fully
-    # disabled (nfilter_subset == 0, e.g. a trusted/reach context the data
-    # controller has opted into) the width minimums relax to 0, so degenerate or
-    # deliberately-empty ranges can run. Under any positive threshold the
-    # configured minimums (defaults: age 5y, date 30d) apply.
-    settings <- .omopDisclosureSettings()
-    gate_on <- settings$nfilter_subset > 0
-    if (filter_type == "age_range" && gate_on) {
-      # Ages are integer years and both bounds are inclusive: 20--24 is the
-      # standard five-year epidemiological band (five possible ages).
-      range_width <- (filter_params$max %||% 150) -
-        (filter_params$min %||% 0) + 1
-      if (range_width < settings$nfilter_age_range) return("blocked")
-    }
-    if (filter_type == "age_group" && gate_on) {
-      groups <- filter_params$groups
-      if (!.ageGroupsOnGrid(groups, settings$age_breaks)) return("blocked")
-    }
-    if (filter_type == "date_range" && gate_on) {
-      if (!is.null(filter_params$start) && !is.null(filter_params$end)) {
-        inclusive_days <- as.numeric(
-          as.Date(filter_params$end) - as.Date(filter_params$start)
-        ) + 1
-        if (!is.finite(inclusive_days) ||
-            inclusive_days < settings$nfilter_date_range) return("blocked")
-      }
-    }
-    if (gate_on && !is.null(filter_params$window)) {
-      window <- filter_params$window
-      if (!is.list(window)) return("blocked")
-      start <- suppressWarnings(as.numeric(window$start))
-      end <- suppressWarnings(as.numeric(window$end))
-      if (!is.null(window$start) && !is.null(window$end)) {
-        if (length(start) != 1L || length(end) != 1L ||
-            !is.finite(start) || !is.finite(end) ||
-            start != floor(start) || end != floor(end) || start > end ||
-            (end - start + 1) < settings$nfilter_date_range) {
-          return("blocked")
-        }
-      }
-    }
-    return("constrained")
-  }
-  "blocked"  # Unknown filters are blocked
+  known <- c("sex", "cohort", "concept_set", "value_bin", "age_range",
+             "age_group", "has_concept", "date_range", "min_count",
+             "not_has_concept", "concept_count", "prior_observation",
+             "followup", "visit_count", "has_measurement",
+             "missing_measurement", "value_threshold")
+  if (length(filter_type) == 1L && !is.na(filter_type) &&
+      filter_type %in% known) return("constrained")
+  "blocked"
 }
 
 #' Validate a filter before execution
@@ -781,7 +713,7 @@
   if (classification == "blocked") {
     stop(
       "Disclosive: filter type '", filter_type,
-      "' is not allowed (could fingerprint individuals).",
+      "' is not allowed (unknown filter type).",
       call. = FALSE
     )
   }

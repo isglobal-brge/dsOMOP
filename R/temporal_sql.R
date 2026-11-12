@@ -230,12 +230,6 @@
   contract <- .temporalObservationSqlContract(
     handle, cohort_table, blueprint = blueprint
   )
-  # Do not reveal a data-quality diagnosis about a below-threshold cohort.
-  # Event-specific qualification is gated again after observability filtering.
-  .assertMinPersons(handle = handle, sql = paste0(
-    "SELECT COUNT(DISTINCT c.subject_id) AS n_persons FROM ",
-    contract$ranked_cohort, " c"
-  ))
   invalid <- suppressWarnings(as.numeric(
     .executeQuery(handle, contract$invalid)[[1L]][[1L]]
   ))
@@ -587,13 +581,6 @@
   }
 
   validations <- list(
-    min_persons = list(
-      kind = "min_persons",
-      sql = paste0(
-        "SELECT COUNT(DISTINCT person_id) AS n_persons FROM (",
-        binned_sql, ") dsomop_temporal_gate"
-      )
-    ),
     observation_period = list(
       kind = "max_value",
       sql = observation$invalid,

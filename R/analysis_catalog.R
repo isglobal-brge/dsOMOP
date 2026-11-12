@@ -4538,7 +4538,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #'   multiple scope sources.
 #' @return Character cohort temp table name, or NULL.
 #' @keywords internal
-.omopAnalysisResolveScope <- function(handle, scope = NULL, combine = "union") {
+.omopAnalysisResolveScope <- function(handle, scope = NULL, combine = "union",
+                                      ctx = NULL) {
+  private <- .cohortPrivateContext(ctx)
   if (is.null(scope)) return(NULL)
 
   # Normalise to a list of scope sources. A single omop.table frame is itself a
@@ -4555,9 +4557,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   cohorts <- character(0)
   for (src in sources) {
     if (.is_omop.table(src)) {
-      cohorts <- c(cohorts, .cohortFromTokenFrame(handle, src))
+      cohorts <- c(cohorts, .cohortFromTokenFrame(handle, src, ctx = ctx))
     } else {
-      ct <- .resolveCohortArg(handle, cohort = src)
+      ct <- .resolveCohortArg(handle, cohort = src, ctx = ctx)
       if (!is.null(ct)) cohorts <- c(cohorts, ct)
     }
   }
@@ -4574,13 +4576,13 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
         paste0("dsomop_analysis_scope_", sample(100000:999999, 1))
       )
       scoped <- .cohortCombine(handle, combine, scoped, cohorts[[k]],
-                               new_name = scope_name)
+                               new_name = scope_name, ctx = ctx)
     }
   }
 
   # Re-gate the final scope BEFORE running (fail-closed).
   count_sql <- paste0("SELECT COUNT(DISTINCT subject_id) AS n FROM ", scoped)
-  .assertMinPersons(handle = handle, sql = count_sql)
+  if (!private) .assertMinPersons(handle = handle, sql = count_sql)
   scoped
 }
 
@@ -5083,10 +5085,6 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     stop("Assign loaders must return a data.frame with person_id for ",
          "disclosure control.", call. = FALSE)
   }
-  .assertMinPersons(n_persons = length(unique(
-    assigned$person_id[!is.na(assigned$person_id)]
-  )))
-
   # Strip sensitive source/narrative fields even if a legacy native template
   # lists one, and never retain exact birth components in a generic loader.
   sensitive <- names(assigned)[vapply(names(assigned),
@@ -5144,7 +5142,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   effective_schema <- function(value) {
     if (bare_schemas || is.null(value) || !nzchar(value)) "" else value
   }
-  .dsomopDpBestEffort(
+  assigned <- .dsomopDpBestEffort(
     assigned,
     .dsomopDpSealToolOutput(handle, .dsomopDpSealAnalysisAssign(
       assigned, entry, scope_present = scope_present,
@@ -5165,6 +5163,9 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     )),
     "analysis output"
   )
+  .publishStandalone(assigned, handle = handle,
+                     caller = "omopAnalysisRunAssignDS",
+                     already_tokenized = TRUE)
 }
 
 #' THE single fail-closed run path for catalog analyses

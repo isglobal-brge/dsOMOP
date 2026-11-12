@@ -223,17 +223,12 @@ test_that("private eligibility failures expose only the final population gate", 
     format = "competing_risk"
   )
   expect_identical(malformed$validation_sql, list())
-  expect_match(malformed$population_gate_sql,
-               "FROM risk_episodes", fixed = TRUE)
-  expect_equal(.executeQuery(handle, malformed$population_gate_sql)$n_persons,
-               2L)
-  expect_error(
-    .executeLongitudinalSurvivalSql(handle, malformed),
-    "insufficient individuals"
-  )
-
-  withr::local_options(list(nfilter.subset = 1L))
+  expect_null(malformed$population_gate_sql)
   eligible <- .executeLongitudinalSurvivalSql(handle, malformed)
+  expect_equal(length(unique(eligible$person_id)), 2L)
+  expect_error(.publishStandalone(eligible, handle = handle,
+                                   already_tokenized = FALSE),
+               "insufficient individuals")
   expect_false(4L %in% eligible$cohort_row_id)
 })
 
@@ -250,10 +245,10 @@ test_that("survival requires observable TAR entry and washout lookback", {
     tar = list(start_offset = 0L, end_offset = 20L),
     washout_days = 3L, format = "recurrent_events"
   )
-  expect_error(
-    .executeLongitudinalSurvivalSql(handle, uncovered),
-    "insufficient individuals"
-  )
+  private <- .executeLongitudinalSurvivalSql(handle, uncovered)
+  expect_error(.publishStandalone(private$risk_sets, handle = handle,
+                                   already_tokenized = FALSE),
+               "insufficient individuals")
 
   DBI::dbExecute(handle$conn, paste0(
     "UPDATE observation_period SET observation_period_start_date = ",

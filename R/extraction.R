@@ -70,14 +70,7 @@
     if (parsed_start > parsed_end) {
       stop(context, " start must not be after end.", call. = FALSE)
     }
-    settings <- .omopDisclosureSettings()
-    inclusive_days <- as.numeric(parsed_end - parsed_start) + 1
-    if (settings$nfilter_subset > 0 &&
-        inclusive_days < settings$nfilter_date_range) {
-      stop(context, " must span at least ", settings$nfilter_date_range,
-           " days while disclosure filtering ",
-           "is enabled.", call. = FALSE)
-    }
+
   }
   list(start = parsed_start, end = parsed_end)
 }
@@ -1263,14 +1256,14 @@
 #' @return Character; a filter-type understood by \code{.classifyFilter}
 #' @keywords internal
 .filterOpClass <- function(op) {
-  switch(op,
-    "value_bin" = "value_bin",
-    "between" =, "in" =, "not_in" =, "is_null" =,
-      "not_null" = "value_threshold",
-    # Exact and ordered comparisons, plus anything unrecognised, are arbitrary
-    # client thresholds -> blocked by .classifyFilter (fail-closed).
-    "custom"
-  )
+  if (identical(op, "value_bin")) return("value_bin")
+  known <- c("==", "eq", "!=", "ne", ">=", "gte", "<=", "lte",
+             ">", "gt", "<", "lt", "between", "in", "not_in",
+             "is_null", "not_null")
+  if (length(op) == 1L && !is.na(op) && op %in% known) {
+    return("value_threshold")
+  }
+  "custom"
 }
 
 #' Does a custom filter tree reference a given column in any leaf?
@@ -1347,6 +1340,9 @@
 #' @return `TRUE` invisibly, or a generic fail-closed error.
 #' @keywords internal
 .assertSafeNumericBinContract <- function(handle, table, column, value, scope) {
+  # A server-issued bin is optional on assignment paths. Authenticate it when
+  # explicitly supplied; ordinary numeric bounds need no cutpoint release.
+  if (is.null(scope)) return(invisible(TRUE))
   fail <- function() {
     stop("Disclosive: numeric bin was not issued for this resource session and ",
          "table scope; request fresh safe cutpoints first.", call. = FALSE)
@@ -1511,28 +1507,22 @@
 
   value <- filter$value
   is_date <- grepl("_date$|_datetime$", var)
-  if (is_date) {
-    if (!identical(op, "between")) {
-      stop("Disclosive: date filter column '", var,
-           "' only permits one validated BETWEEN range; standalone date ",
-           "comparisons cannot prove a safe width.", call. = FALSE)
-    }
+  if (is_date && !op %in% c("is_null", "not_null")) {
     values <- unlist(value, use.names = FALSE)
-    if (length(values) != 2L) {
-      stop("Date BETWEEN filters require exactly two ISO dates.",
-           call. = FALSE)
+    if (identical(op, "between")) {
+      if (length(values) != 2L) {
+        stop("Date BETWEEN filters require exactly two ISO dates.",
+             call. = FALSE)
+      }
+      .validateDateBounds(values[1], values[2], "date filter")
+    } else {
+      for (date in values) .isoDate(date, "date filter value")
     }
-    bounds <- .validateDateBounds(values[1], values[2], "date filter")
-    .validateFilter("date_range", list(
-      start = as.character(bounds$start), end = as.character(bounds$end)
-    ))
-    return(invisible(TRUE))
   }
-
-  if (op %in% c(">=", "gte", "<=", "lte", ">", "gt", "<", "lt")) {
-    stop("Disclosive: client-authored ordered thresholds are not permitted; ",
-         "request a server-issued value_bin for numeric columns.",
-         call. = FALSE)
+  if (op %in% c("==", "eq", "!=", "ne", ">=", "gte", "<=", "lte",
+                ">", "gt", "<", "lt") &&
+      length(unlist(value, use.names = FALSE)) != 1L) {
+    stop("Comparison filters require exactly one value.", call. = FALSE)
   }
 
   if (identical(op, "value_bin")) {
@@ -1553,26 +1543,19 @@
   }
 
   if (op %in% c("in", "not_in")) {
-    safe_categories <- c(
-      "domain_id", "vocabulary_id", "concept_class_id",
-      "standard_concept", "invalid_reason"
-    )
-    is_safe_category <- grepl("_concept_id$", var) ||
-      var %in% safe_categories
     values <- unlist(value, use.names = FALSE)
-    if (!is_safe_category) {
-      stop("Disclosive: IN/NOT IN is only permitted for concept IDs or ",
-           "approved categorical columns, not '", var, "'.", call. = FALSE)
-    }
     if (length(values) == 0L || anyNA(values)) {
       stop("IN/NOT IN filters require at least one non-missing value.",
            call. = FALSE)
     }
   }
 
-  if (identical(op, "between")) {
-    stop("Numeric BETWEEN filters are not permitted; use a validated ",
-         "value_bin instead.", call. = FALSE)
+  if (identical(op, "between") && !is_date) {
+    values <- unlist(value, use.names = FALSE)
+    if (length(values) != 2L || anyNA(values) || values[1] > values[2]) {
+      stop("BETWEEN filters require two ordered non-missing values.",
+           call. = FALSE)
+    }
   }
   .validateFilter(.filterOpClass(op), list())
   invisible(TRUE)
@@ -1810,7 +1793,7 @@
 #'   stable storage/class type signatures.
 #' @keywords internal
 .executeQueryToParquet <- function(conn, sql, output_path, chunk_size = 50000L,
-                                   chunk_fn = NULL) {
+                                   chunk_fn = NULL, ctx = NULL) {
   old_umask <- Sys.umask("0077")
   on.exit(Sys.umask(old_umask), add = TRUE)
   chunk_num <- suppressWarnings(as.numeric(chunk_size))
@@ -1839,16 +1822,33 @@
     stop("output_path must be one non-empty staging path.", call. = FALSE)
   }
   staging_dir <- dirname(output_path)
-  staging_token <- basename(staging_dir)
   staging_base <- .stagingBaseDir()
   resolved_dir <- tryCatch(
     normalizePath(staging_dir, winslash = "/", mustWork = TRUE),
     error = function(e) ""
   )
+  if (is.null(ctx)) {
+    staging_token <- basename(staging_dir)
+    expected_dir <- file.path(staging_base, staging_token)
+    private_parents <- character(0)
+  } else {
+    if (!.isPlanContext(ctx) || !.isScalarString(ctx$private_dir) ||
+        !.isScalarString(ctx$staging_token) || !.isScalarString(ctx$id)) {
+      stop("Invalid private staging execution context.", call. = FALSE)
+    }
+    staging_token <- ctx$staging_token
+    expected_dir <- file.path(staging_base, staging_token, ".private", ctx$id)
+    private_parents <- c(file.path(staging_base, staging_token),
+                         dirname(expected_dir))
+    if (!identical(ctx$private_dir, expected_dir)) {
+      stop("Private staging directory does not match its execution context.",
+           call. = FALSE)
+    }
+  }
   if (!grepl("^stg_[0-9a-f]{32}$", staging_token) ||
       .isSymbolicLink(staging_dir) || !dir.exists(staging_dir) ||
-      !identical(resolved_dir,
-                 file.path(staging_base, staging_token))) {
+      any(vapply(private_parents, .isSymbolicLink, logical(1L))) ||
+      !identical(resolved_dir, expected_dir)) {
     stop("Streaming output must stay inside its reserved staging directory.",
          call. = FALSE)
   }
@@ -2656,20 +2656,7 @@
                             tie_col = tie_col)
   }
 
-  col_df <- bp$columns[[tolower(table)]]
-  has_person_id <- "person_id" %in% col_df$column_name
-
-  # Coverage / disclosure note: the distinct-person gate only fires for
-  # person-bearing tables. Specimen and dose_era carry person_id and so are
-  # extractable here under the normal gate. The cost table has NO person_id
-  # (it links via cost_event_id), so this gate cannot protect raw cost rows;
-  # cost is therefore intentionally NOT a person-keyed plan/extraction target
-  # and must be reached only through the curated, aggregate-only query library
-  # (see R/queries.R). (payer_plan_period DOES have person_id and is gated.)
-  if (has_person_id) {
-    count_sql <- .compilePersonCount(handle, sql)
-    .assertMinPersons(handle = handle, sql = count_sql)
-  }
+  # Patient support is checked on the final materialisation by publication.
 
   max_memory_rows <- suppressWarnings(as.numeric(
     getOption("dsomop.max_memory_rows", 1000000L)
@@ -4539,13 +4526,6 @@
     sql <- paste0(sql, " WHERE ", paste(where, collapse = " AND "))
   }
 
-  # Disclosure check
-  count_sql <- paste0(
-    "SELECT COUNT(DISTINCT person_id) AS n_persons FROM (",
-    sql, ") AS sub"
-  )
-  .assertMinPersons(handle = handle, sql = count_sql)
-
   df <- .executeQuery(handle, sql)
   obs_df <- NULL
   if (needs_obs) {
@@ -5423,9 +5403,6 @@
     " ORDER BY c.cohort_row_id"
   )
 
-  .assertMinPersons(handle = handle,
-    sql = paste0("SELECT COUNT(DISTINCT subject_id) AS n_persons FROM ",
-                 cohort_table))
 
   result <- .executeQuery(handle, sql)
   if (nrow(result) == 0) return(result)
@@ -5576,9 +5553,6 @@
     " ORDER BY c.cohort_row_id"
   )
 
-  .assertMinPersons(handle = handle,
-    sql = paste0("SELECT COUNT(DISTINCT subject_id) AS n_persons FROM ",
-                 cohort_table))
 
   cohort_df <- .executeQuery(handle, cohort_sql)
   if (nrow(cohort_df) == 0) return(cohort_df)
@@ -5631,7 +5605,7 @@
   # Custom filter DSL on the outcome events. Validated fail-closed (identifier/
   # blocked columns and narrow fingerprinting ops rejected) before any SQL is
   # emitted, then ANDed onto the outcome WHERE (alias t). Only narrows the
-  # qualifying events; the cohort and its .assertMinPersons gate above are
+  # qualifying events; the final publication boundary checks the output
   # unaffected, so the suppression can never be bypassed.
   if (!is.null(filters) && length(filters) > 0) {
     valid_cols <- .filterableColumns(bp, outcome_table)
@@ -5750,11 +5724,6 @@
     return(NULL)
   }
 
-  .assertMinPersons(
-    handle = handle,
-    sql = paste0("SELECT COUNT(DISTINCT subject_id) AS n_persons FROM ",
-                 cohort_table)
-  )
 
   sql <- paste0(
     "SELECT c.cohort_row_id, c.subject_id, c.cohort_start_date, ",
@@ -5814,11 +5783,6 @@
     return(NULL)
   }
 
-  .assertMinPersons(
-    handle = handle,
-    sql = paste0("SELECT COUNT(DISTINCT subject_id) AS n_persons FROM ",
-                 cohort_table)
-  )
 
   bp <- .buildBlueprint(handle)
   all_intervals <- list()
@@ -5880,7 +5844,6 @@
       block_sensitive = TRUE,
       add_event_order_id = TRUE
     )
-    .assertMinPersons(handle = handle, sql = .compilePersonCount(handle, sql))
 
     tbl_df <- .executeQuery(handle, sql)
     if (nrow(tbl_df) == 0) next
@@ -6124,7 +6087,6 @@
   )
 
   if (nrow(events) == 0L) {
-    .assertMinPersons(n_persons = 0L)
     return(empty_result)
   }
   if (!all(c("cohort_row_id", "person_id", "days_from_index") %in%
@@ -6148,7 +6110,6 @@
     events$days_from_index <=
       observation_roster$observation_end_day[observation_match]
   events <- events[!is.na(observed) & observed, , drop = FALSE]
-  .assertMinPersons(n_persons = length(unique(events$person_id)))
   if (nrow(events) == 0L) return(empty_result)
 
   # Find concept column

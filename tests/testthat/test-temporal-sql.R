@@ -90,10 +90,7 @@ test_that("SQL temporal components equal the in-memory episode extractor", {
       analyses = c("binary", "count")
     )
 
-    qualifying <- .executeQuery(
-      handle, compiled$validations$min_persons$sql
-    )$n_persons[[1L]]
-    expect_silent(.assertMinPersons(n_persons = qualifying))
+    expect_null(compiled$validations$min_persons)
 
     sql_covariates <- .executeQuery(
       handle, compiled$components$temporalCovariates$sql
@@ -389,7 +386,7 @@ test_that("temporal panels fail closed on missing or duplicate index OP", {
   )
 })
 
-test_that("temporal OP diagnostics run only after the disclosure gate", {
+test_that("temporal private OP validation precedes publication", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle), add = TRUE)
   .buildBlueprint(handle)
@@ -405,7 +402,7 @@ test_that("temporal OP diagnostics run only after the disclosure gate", {
       concept_filter = 888001L, bin_width = 5L,
       window_start = -5L, window_end = 5L
     ),
-    "Disclosive: operation blocked"
+    "exactly one observation_period"
   )
 })
 
