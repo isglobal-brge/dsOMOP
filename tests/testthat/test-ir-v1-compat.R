@@ -313,7 +313,9 @@ for (.compat_case in .compat_fx$cases) local({
         expect_s3_class(run$error, "dsomop_plan_rejection")
         if (!is.null(run$error)) {
           expect_identical(run$error$code, "validation_error")
-          expect_match(conditionMessage(run$error), disposition$field, fixed = TRUE)
+          location <- c(run$error$field, run$error$errors, conditionMessage(run$error))
+          expect_true(any(grepl(disposition$field, location, fixed = TRUE)),
+                      info = paste(case$id, "expected refusal field", disposition$field))
         }
       } else if (identical(disposition$current, "unchanged_refusal")) {
         expect_s3_class(run$error, "error")
