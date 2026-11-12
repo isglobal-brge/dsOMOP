@@ -346,6 +346,29 @@ test_that("covered_days and supply_days kernels: unions, clipping, NA for undefi
   expect_identical(.dayUnionLength(c(1L, 3L, 10L), c(2L, 5L, 10L)), 6L)
 })
 
+test_that("an adapter source contributes each physical event once (episode members)", {
+  for (b in names(.ws5_iv_backends)) {
+    h <- .ws5_iv_backends[[b]]$handle
+    events <- list(episodes = list(table = "episode", concept_set = list(concepts = list(32531))),
+                   members = list(episode_members = list(episode = list(event = "episodes"))))
+    ctx <- .ws5_iv_ctx(h, list(m = list(source = list(event = "members"), gap = 30, by = "concept"),
+                               ms = list(source = list(event = "members"), gap = 30, stockpile = TRUE)),
+                       events = events)
+    on.exit(.compileReleaseTempTables(ctx), add = TRUE)
+    # 1015's chemotherapy fill of 2019-04-12 is linked to two episodes: one record
+    rec <- .ws5_recorded(ctx, "m", 1015)
+    expect_identical(nrow(rec), 5L, info = b)
+    expect_false(anyDuplicated(paste(rec$member_table, rec$event_id)) > 0, info = b)
+    course <- .ws5_course(ctx, "m", 1015)
+    chemo <- course[course$group_id == 1718850, ]
+    expect_identical(chemo$n_events, c(3, 1), info = b)
+    expect_identical(chemo$era_key, c("1718850:1", "1718850:2"), info = b)
+    eff <- .ws5_recorded(ctx, "ms", 1015, "effective")
+    expect_identical(sum(eff$carry), 0, info = b)
+    expect_identical(nrow(eff), 5L, info = b)
+  }
+})
+
 test_that("an unavailable source contributes no coverage and no course", {
   for (b in names(.ws5_iv_backends)) {
     h <- .ws5_iv_backends[[b]]$handle

@@ -198,10 +198,13 @@
 # --- SQL builders -----------------------------------------------------------------------
 
 # Extra row-identity columns of an event source beyond event_id (adapters).
+# The parent identity of an adapter row is not part of a record's identity:
+# an era is a person-level construct over physical events, so an event linked
+# to two episodes is one record (the recorded relation selects it once).
 .intervalExtraKeys <- function(event_fragment) {
   setdiff(unique(c(event_fragment$unique_key, event_fragment$ordering)),
           c("person_id", "event_id", "source_ns", "start_date", "end_date",
-            "end_recorded", "supply", "concept_id"))
+            "end_recorded", "supply", "concept_id", .ADAPTER_PARENT_COLUMNS))
 }
 
 # The era's recorded end, from the ORIGINAL roles (design 6.7).
@@ -388,7 +391,10 @@
     concept_id = "e.concept_id", start_date = "e.start_date", end_date = end_sql,
     end_recorded = "e.end_recorded", supply = "e.supply")
   for (x in extras) select_norm[[x]] <- paste0("e.", x)
-  body_norm <- paste0("SELECT ", paste(paste0(select_norm, " AS ", names(select_norm)), collapse = ", "),
+  # an adapter source repeats a physical event once per parent link
+  distinct <- any(.ADAPTER_PARENT_COLUMNS %in% names(event_fragment$columns))
+  body_norm <- paste0("SELECT ", if (distinct) "DISTINCT ",
+                      paste(paste0(select_norm, " AS ", names(select_norm)), collapse = ", "),
                       " FROM ", ev, " e", join, " WHERE ", paste(where, collapse = " AND "))
   row_private <- c(.INTERVAL_PRIVATE_COLUMNS[.INTERVAL_PRIVATE_COLUMNS %in% row_cols],
                    intersect(extras, event_fragment$private_columns))
