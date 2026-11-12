@@ -884,6 +884,62 @@
       "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
       "result_from": "B.condition_start_date.not_in.iso",
       "reason": "The raw 2.10.2 capture refused standalone date predicates that lack a width proof. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "A.baseline.age_breaks.item.control": {
+      "classification": "corrected",
+      "current": "ok",
+      "reference": "A-19 item 1 / F-26; endorsed §7.4 and §7.6 remove per-band suppression from assigned age_group",
+      "result_from": "A.baseline.age_breaks.item.tab0.control",
+      "reason": "The assigned age_group now contains the requested age bands without the former per-band nfilter.tab suppression. Compare the complete result exactly with the independently captured identical-plan tab0 control; only that removed suppression setting differs. The immutable original suppressed baseline result remains recorded, so this is a named correction rather than unchanged result fidelity."
+    },
+    "A.baseline.age_breaks.item.str": {
+      "classification": "corrected",
+      "current": "ok",
+      "reference": "A-19 item 1 / F-26; endorsed §7.4 and §7.6 remove per-band suppression from assigned age_group",
+      "result_from": "A.baseline.age_breaks.item.tab0.str",
+      "reason": "The assigned age_group now contains the requested age bands without the former per-band nfilter.tab suppression. Compare the complete result exactly with the independently captured identical-plan tab0 control; only that removed suppression setting differs. The immutable original suppressed baseline result remains recorded, so this is a named correction rather than unchanged result fidelity."
+    },
+    "A.baseline.age_breaks.item.str_signed": {
+      "classification": "corrected",
+      "current": "ok",
+      "reference": "A-19 item 1 / F-26; endorsed §7.4 and §7.6 remove per-band suppression from assigned age_group",
+      "result_from": "A.baseline.age_breaks.item.tab0.str_signed",
+      "reason": "The assigned age_group now contains the requested age bands without the former per-band nfilter.tab suppression. Compare the complete result exactly with the independently captured identical-plan tab0 control; only that removed suppression setting differs. The immutable original suppressed baseline result remains recorded, so this is a named correction rather than unchanged result fidelity."
+    },
+    "A.baseline.age_breaks.item.str_exponent": {
+      "classification": "corrected",
+      "current": "ok",
+      "reference": "A-19 item 1 / F-26; endorsed §7.4 and §7.6 remove per-band suppression from assigned age_group",
+      "result_from": "A.baseline.age_breaks.item.tab0.str_exponent",
+      "reason": "The assigned age_group now contains the requested age bands without the former per-band nfilter.tab suppression. Compare the complete result exactly with the independently captured identical-plan tab0 control; only that removed suppression setting differs. The immutable original suppressed baseline result remains recorded, so this is a named correction rather than unchanged result fidelity."
+    },
+    "A.baseline.age_breaks.item.str_spaces": {
+      "classification": "corrected",
+      "current": "ok",
+      "reference": "A-19 item 1 / F-26; endorsed §7.4 and §7.6 remove per-band suppression from assigned age_group",
+      "result_from": "A.baseline.age_breaks.item.tab0.str_spaces",
+      "reason": "The assigned age_group now contains the requested age bands without the former per-band nfilter.tab suppression. Compare the complete result exactly with the independently captured identical-plan tab0 control; only that removed suppression setting differs. The immutable original suppressed baseline result remains recorded, so this is a named correction rather than unchanged result fidelity."
+    },
+    "A.baseline.age_breaks.item.str_hex": {
+      "classification": "corrected",
+      "current": "ok",
+      "reference": "A-19 item 1 / F-26; endorsed §7.4 and §7.6 remove per-band suppression from assigned age_group",
+      "result_from": "A.baseline.age_breaks.item.tab0.str_hex",
+      "reason": "The assigned age_group now contains the requested age bands without the former per-band nfilter.tab suppression. Compare the complete result exactly with the independently captured identical-plan tab0 control; only that removed suppression setting differs. The immutable original suppressed baseline result remains recorded, so this is a named correction rather than unchanged result fidelity."
+    },
+    "A.baseline.age_breaks.item.double": {
+      "classification": "corrected",
+      "current": "ok",
+      "reference": "A-19 item 1 / F-26; endorsed §7.4 and §7.6 remove per-band suppression from assigned age_group",
+      "result_from": "A.baseline.age_breaks.item.tab0.double",
+      "reason": "The assigned age_group now contains the requested age bands without the former per-band nfilter.tab suppression. Compare the complete result exactly with the independently captured identical-plan tab0 control; only that removed suppression setting differs. The immutable original suppressed baseline result remains recorded, so this is a named correction rather than unchanged result fidelity."
+    },
+    "A.baseline.age_breaks.item.empty_array": {
+      "classification": "corrected",
+      "current": "ok",
+      "reference": "A-19 item 1 / F-26; endorsed §7.4 and §7.6 remove per-band suppression from assigned age_group",
+      "result_from": "A.baseline.age_breaks.item.tab0.empty_array",
+      "reason": "The assigned age_group now contains the requested age bands without the former per-band nfilter.tab suppression. Compare the complete result exactly with the independently captured identical-plan tab0 control; only that removed suppression setting differs. The immutable original suppressed baseline result remains recorded, so this is a named correction rather than unchanged result fidelity."
     }
   }
 }
