@@ -76,7 +76,8 @@
 # verbatim into the replay tests): doubles are written with 17 significant
 # digits, which round-trips every IEEE-754 double (two doubles are equal exactly
 # when their 17-digit strings are; -0 and 0 are distinguished, NA and NaN are
-# explicit), dates ISO, date-times to the microsecond in UTC, factors as levels +
+# explicit), dates ISO and date-times in UTC with their underlying 17-digit numeric
+# payload (including fractional days and submicrosecond timestamps), factors as levels +
 # labels, integer64 as decimal strings, NA explicit as null. Equality of two
 # canonical forms is therefore byte identity of the values, not a tolerance.
 #

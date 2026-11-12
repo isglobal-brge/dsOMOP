@@ -137,10 +137,11 @@ fills its entries. Classes follow design-2.10.3 section 5.
   compatibility normalisation, and the `concept_col` override executes as
   2.10.2 did (any column of the table; the override column, when also
   requested or filtered on, surfaces while the concept set scopes the domain
-  concept column). Only literals 2.10.2 could not compile with one defined
-  result are refused: a number on a text column, a non-numeric string on a
-  numeric or concept column, a non-ISO date. Language 2.0 plans are typed
-  strictly (typed literals, filterable concept columns only).
+  concept column). Other literals admitted by the historical predicate DSL
+  retain the actual database's 2.10.2 comparison semantics, including its
+  coercions and execution refusals. The closed envelope, predicate safety,
+  column existence and private-key exclusions still apply. Language 2.0
+  plans are typed strictly (typed literals, filterable concept columns only).
 - A custom filter on an identifier, blocked or unknown column is refused with
   its path in non-strict mode too; 2.10.2 dropped it with a warning and
   returned no output for that root. The plan-declaration error

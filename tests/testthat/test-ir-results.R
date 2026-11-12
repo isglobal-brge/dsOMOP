@@ -442,15 +442,22 @@
 )
 
 # The F-26 age band of each output row: index year (the row's cohort start in
-# the plan's results cohort) minus year of birth, banded by .bandAges().
-.b10_f26_age_group <- function(conn, person_id, cohort_definition_id) {
+# the plan's results cohort) minus year of birth. Recompute the specified
+# half-open grid with base cut(), independently of production .bandAges().
+.b10_f26_age_group <- function(conn, person_id, cohort_definition_id, age_breaks = NULL) {
   cohort <- DBI::dbGetQuery(conn, paste0(
     "SELECT subject_id, cohort_start_date FROM cohort WHERE cohort_definition_id = ",
     as.integer(cohort_definition_id)))
   person <- DBI::dbGetQuery(conn, "SELECT person_id, year_of_birth FROM person")
   stopifnot(!anyDuplicated(cohort$subject_id), all(person_id %in% cohort$subject_id))
   index_year <- as.integer(substr(as.character(cohort$cohort_start_date[match(person_id, cohort$subject_id)]), 1L, 4L))
-  .bandAges(index_year - person$year_of_birth[match(person_id, person$person_id)])
+  age <- index_year - person$year_of_birth[match(person_id, person$person_id)]
+  grid <- if (is.null(age_breaks)) getOption("dsomop.age_breaks",
+    getOption("default.dsomop.age_breaks", seq(0L, 85L, 5L))) else age_breaks
+  grid <- as.numeric(unlist(grid))
+  labels <- c(paste0(head(grid, -1L), "-", tail(grid, -1L) - 1L),
+              paste0(tail(grid, 1L), "+"))
+  as.character(cut(age, breaks = c(grid, Inf), labels = labels, right = FALSE))
 }
 
 # The baseline result with each reviewed correction applied, checked first
@@ -467,7 +474,8 @@
     stopifnot(!is.na(k), !is.na(j), identical(item$kind, "data.frame"))
     plan <- .b10_decode(pin$plan)
     person_id <- as.integer(vapply(item$columns[[match("person_id", cols)]]$values, as.character, ""))
-    expected <- .b10_f26_age_group(conn, person_id, plan$cohort$cohort_definition_id)
+    expected <- .b10_f26_age_group(conn, person_id, plan$cohort$cohort_definition_id,
+                                    plan$outputs[[cr$output]]$age_breaks)
     kept <- !vapply(item$columns[[j]]$values, is.null, logical(1))
     expect_identical(vapply(item$columns[[j]]$values[kept], as.character, ""), expected[kept],
                      info = paste(info, cr$reference, "keeps the unsuppressed baseline bands"))
