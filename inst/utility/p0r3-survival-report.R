@@ -50,3 +50,28 @@ interaction <- do.call(rbind, lapply(tail(raw, 2L), function(d) {
 write.csv(interaction, file.path(root, "p0r3-c8-margin-diagnostics.csv"), row.names = FALSE)
 print(summary, row.names = FALSE)
 print(censor_summary, row.names = FALSE)
+
+# Hash the retained inputs and aggregation scripts. The executed survival
+# source is separately recorded in every final interaction raw row above.
+sha256 <- function(path) unclass(as.character(openssl::sha256(
+  readBin(path, "raw", n = file.info(path)$size))))
+manifest_paths <- c(file.path(root, runs, "p0r3-survival-raw.csv"),
+                    file.path(root, runs, "p0r3-survival-summary.csv"),
+                    "inst/utility/p0r3-survival-utility.R",
+                    "inst/utility/p0r3-survival-report.R")
+manifest <- data.frame(path = manifest_paths,
+                       sha256 = vapply(manifest_paths, sha256, character(1L)))
+write.csv(manifest, file.path(root, "p0r3-aggregation-manifest.csv"), row.names = FALSE)
+metadata <- data.frame(
+  field = c("sampler", "reference_epsilon", "replicates_per_scenario",
+            "scenarios", "finite_definition", "informative_definition",
+            "bias_rmse_scale", "seed_formula", "executed_final_survival_sha256",
+            "aggregation_R_version"),
+  value = c("law: deterministic 28-bit inverse-geometric approximation", "0.1", "100",
+            "1:12; pre-repair interaction and crypto smoke excluded",
+            "finite log estimate, SE, positive finite 95% CI",
+            "finite and CI upper/lower <= 4", "log; conditional on finite CI",
+            "2026111200 + scenario*10000 + replicate",
+            paste(unique(interaction$survival_source_sha256), collapse = ";"),
+            R.version.string))
+write.csv(metadata, file.path(root, "p0r3-aggregation-metadata.csv"), row.names = FALSE)

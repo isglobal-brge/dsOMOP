@@ -72,3 +72,33 @@ information. Baseline directories were generated before diagnostic columns
 were added for the extended scenarios; the formulas and seeds of IDs 1–8 are
 unchanged. `crypto-smoke` contains one replicate, while law directories contain
 100 replicates per selected scenario.
+
+After all final runs finish, rebuild the combined table and diagnostics with:
+
+```
+Rscript inst/utility/p0r3-survival-report.R
+```
+
+The combined summary has 16 model/stratum rows across 12 scenarios. Censoring
+summaries reconstruct only the seeded synthetic exit times, including the early
+baseline runs whose raw schema predates censoring columns. No protected release
+or fit is recomputed for that diagnostic. The report helper hashes retained
+inputs and aggregation scripts and records its definitions and R version.
+
+The interaction studies in `pre-c8-margin-repair/` precede the numerical repair
+in a860f42 and are retained only for paired comparison. Final interaction
+results are in `interaction-2000-final/` and `interaction-10000-final/`. Each
+final raw row records the executed `R/tools_release_survival.R` SHA-256. The
+ordinary Cox and SCCS paths do not call the subgroup matrix display and are
+unaffected by that repair. The C6 transport fallback added in 13bf981 is also
+outside these utility scenarios.
+
+For interaction C8 displays, finite IPF iterations are followed by a
+nonnegative transfer from surplus columns to deficit columns that leaves every
+row total fixed. This guarantees coherent margins, not an exact KL or Euclidean
+minimizer. Diagnostic counts distinguish any floating-point residual from a
+residual above `1e-8 * max(1, parent total)`. They include the original release
+and 200 uncertainty refits; `margin_initial_error_max_relative` measures just
+the original release's four matrices. Each family diagnostic is repeated on
+its three subgroup rows, so the report helper counts each replicate once.
+Final successful run logs are retained beside their raw results.
