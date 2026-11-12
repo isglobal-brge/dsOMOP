@@ -386,6 +386,14 @@
       "reference": "Endorsed §4.5 step 4 legacy context/declaration validation; A-19 item 7 preserves v1 execution refusal",
       "message": "Output 'demo' (type 'baseline') requires a cohort; no executable cohort source is declared for population 'base'.",
       "reason": "An empty scope-cohort list declares no executable cohort for the requested legacy baseline output. The handle/context legacy declaration check retains the exact original refusal; a no-handle IR preparation does not run that check."
+    },
+    "A.filter_tree.age_range.max.k3.boolean": {
+      "classification": "unchanged_invalid",
+      "current": "unchanged_refusal",
+      "reference": "Endorsed §7.4 removes assignment width gates; legacy baseline output requires an executable cohort",
+      "refusal_from": "A.filter_tree.age_range.max.boolean",
+      "message": "Output 'demo' (type 'baseline') requires a cohort; population 'base' did not resolve to an executable cohort table.",
+      "reason": "TRUE is the historical compiler bound 1. Removing the old age-width gate admits the predicate, but the fixture has no person of age <=1, so the requested legacy baseline output still refuses its empty cohort. The new refusal is checked against the independently captured same-predicate k=0 empty-cohort control; this is neither a published result nor unchanged early width rejection."
     }
   }
 }

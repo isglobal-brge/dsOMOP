@@ -33,7 +33,7 @@
 #     separately from the immutable baseline capture. A new refusal checks
 #     its typed code and field, a newly permitted case compares its exact
 #     result to an admissible independently captured baseline control, and
-#     a deferred legacy declaration still checks the original refusal text;
+#     a deferred legacy declaration checks its reviewed context refusal text;
 #   - a case flagged nondeterministic at the baseline is not replayed.
 # Cases fail where the current code has not (yet) restored the 2.10.2
 # behaviour; that is the purpose of the fixture.
@@ -262,6 +262,11 @@ test_that("v1 compatibility dispositions name exact cases and reviewed contracts
     expect_true(d$current %in% c("refused", "ok", "unchanged_refusal"))
     if (identical(d$current, "refused")) expect_true(nzchar(d$field))
     if (identical(d$current, "ok")) expect_true(d$result_from %in% ids)
+    if (!is.null(d$refusal_from)) {
+      expect_true(d$refusal_from %in% ids)
+      control <- .compat_fx$cases[[match(d$refusal_from, ids)]]
+      expect_identical(d$message, control$baseline$error$message)
+    }
   }
 })
 
