@@ -685,9 +685,6 @@
   spec <- c(.eventColumnSpec("integer")[c(.EVENT_SRC_COLUMNS, .EVENT_NORM_COLUMNS)],
             contract$extra)
   catalogue <- .eventUnavailableCatalogue(ctx, name, table, kind, spec)
-  for (col in setdiff(names(catalogue$columns), names(spec))) {
-    spec[[col]] <- .fragmentColumn(catalogue$columns[[col]]$type, TRUE, "measure")
-  }
   types <- vapply(spec, function(c) c$type, "")
   nulls <- vapply(names(spec), function(col) {
     if (identical(col, "source_ns")) return(.compileTextLiteral(name))
