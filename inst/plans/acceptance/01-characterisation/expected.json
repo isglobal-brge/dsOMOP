@@ -2,10 +2,15 @@
   "recipe": "01-characterisation",
   "fixture": "reach + extension (build_extended_reach_handle(100))",
   "nfilter_subset": 5,
+  "fixture_keys": ["person_id", "index_date", "index_key"],
+  "key_policy": "rows are matched to engine output on the fixture keys (person_id is the fixture identity; the harness tokenises it with the fixture's person key); index_date/index_key identify the episode and are not released columns",
   "outputs": {
     "table1": {
       "name": "table1",
       "n_persons": 122,
+      "released_columns": ["row_id", "cohort_row_id", "person_id", "age", "sex", "cond_dm", "cond_prediabetes", "cond_htn1", "cond_htn2", "cond_mi", "cond_mi2", "cond_ckd", "cond_af", "cond_hf", "cond_hld", "cond_obesity", "cond_pregnancy", "cond_stroke", "cond_stroke2", "cond_sepsis", "cond_cirrhosis", "cond_asthma", "cond_copd", "cond_chest_pain", "cond_resp_inf", "cond_prior_bleed", "cond_major_bleed", "cond_malignancy", "cond_chronic_pain", "cond_htn_comp", "cond_covar2", "drug_metformin", "drug_insulin", "drug_statin", "drug_warfarin", "drug_acei", "drug_arb", "drug_beta_blocker", "drug_diuretic", "drug_doac", "drug_sglt2", "proc_dialysis", "proc_pci", "proc_bariatric", "proc_cath", "hba1c_last", "glucose_last", "charlson"],
+      "comparison_columns": ["age", "sex", "cond_dm", "cond_prediabetes", "cond_htn1", "cond_htn2", "cond_mi", "cond_mi2", "cond_ckd", "cond_af", "cond_hf", "cond_hld", "cond_obesity", "cond_pregnancy", "cond_stroke", "cond_stroke2", "cond_sepsis", "cond_cirrhosis", "cond_asthma", "cond_copd", "cond_chest_pain", "cond_resp_inf", "cond_prior_bleed", "cond_major_bleed", "cond_malignancy", "cond_chronic_pain", "cond_htn_comp", "cond_covar2", "drug_metformin", "drug_insulin", "drug_statin", "drug_warfarin", "drug_acei", "drug_arb", "drug_beta_blocker", "drug_diuretic", "drug_doac", "drug_sglt2", "proc_dialysis", "proc_pci", "proc_bariatric", "proc_cath", "hba1c_last", "glucose_last", "charlson"],
+      "oracle_only": [],
       "columns": ["person_id", "index_date", "age", "sex", "cond_dm", "cond_prediabetes", "cond_htn1", "cond_htn2", "cond_mi", "cond_mi2", "cond_ckd", "cond_af", "cond_hf", "cond_hld", "cond_obesity", "cond_pregnancy", "cond_stroke", "cond_stroke2", "cond_sepsis", "cond_cirrhosis", "cond_asthma", "cond_copd", "cond_chest_pain", "cond_resp_inf", "cond_prior_bleed", "cond_major_bleed", "cond_malignancy", "cond_chronic_pain", "cond_htn_comp", "cond_covar2", "drug_metformin", "drug_insulin", "drug_statin", "drug_warfarin", "drug_acei", "drug_arb", "drug_beta_blocker", "drug_diuretic", "drug_doac", "drug_sglt2", "proc_dialysis", "proc_pci", "proc_bariatric", "proc_cath", "hba1c_last", "glucose_last", "charlson"],
       "rows": [
         {
@@ -5002,7 +5007,7 @@
           "proc_pci": 0,
           "proc_bariatric": 0,
           "proc_cath": 0,
-          "hba1c_last": 6.908,
+          "hba1c_last": 7.9,
           "glucose_last": null,
           "charlson": 1
         },
@@ -5988,5 +5993,11 @@
         }
       ]
     }
-  }
+  },
+  "invariants": [
+    "every episode of cohort 1 with exactly one covering observation period (1001 dropped)",
+    "cond_covar2 == 1 exactly for persons 1013 and 1014",
+    "charlson counts condition rows dated <= index (A-2): person 1011 scores 1, the v1 all-time rule would give 2",
+    "age is NA for a NULL or future year_of_birth"
+  ]
 }

@@ -20,7 +20,7 @@ an episode with an MI OR a death in [entry-365, entry) is excluded. Reach fixtur
 eras 2019-06-01..2020-06-01 for persons 20..45, ARB eras 2020-01-01..2020-08-01 for
 15..40, MI 2019-07-01 for 1..25, deaths 2020-06-15 for persons divisible by 4;
 extension 1031 (a first ACEI era with < 365 observed days before it, then an eligible
-one on 2020-03-01) and 1032 (ACEI 2019-06-01..08-31, own-arm restart 2019-11-01
+one on 2020-05-01, more than a year after the first era's start) and 1032 (ACEI 2019-06-01..08-31, own-arm restart 2019-11-01
 never censoring, ARB 2020-02-15 censoring the ACEI index at day 259).
 Released components (A-5): `baseline` is a wide episode frame (row_id, cohort_row_id,
 person_id, arm, age, sex, prior_mi); `tte.itt` and `tte.on_treatment` carry row_id,

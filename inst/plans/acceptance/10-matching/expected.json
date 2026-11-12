@@ -2,10 +2,15 @@
   "recipe": "10-matching",
   "fixture": "reach + extension (build_extended_reach_handle(100))",
   "nfilter_subset": 5,
+  "fixture_keys": ["person_id", "index_date", "index_key"],
+  "key_policy": "rows are matched to engine output on the fixture keys (person_id is the fixture identity; the harness tokenises it with the fixture's person key); index_date/index_key identify the episode and are not released columns",
   "outputs": {
     "cc_table": {
       "name": "cc_table",
-      "n_persons": 67,
+      "n_persons": 68,
+      "released_columns": ["row_id", "cohort_row_id", "person_id", "set_id", "is_case", "w", "age", "sex", "statin_365"],
+      "comparison_columns": ["set_id", "is_case", "w", "age", "sex", "statin_365"],
+      "oracle_only": "n_eligible",
       "columns": ["person_id", "index_date", "set_id", "is_case", "w", "age", "sex", "statin_365", "n_eligible"],
       "rows": [
         {
@@ -1216,7 +1221,18 @@
           "age": 60,
           "sex": "M",
           "statin_365": 0,
-          "n_eligible": 0
+          "n_eligible": 1
+        },
+        {
+          "person_id": 1031,
+          "index_date": "2020-01-20",
+          "set_id": 28,
+          "is_case": 0,
+          "w": 1,
+          "age": 62,
+          "sex": "M",
+          "statin_365": 0,
+          "n_eligible": 1
         },
         {
           "person_id": 1011,
@@ -1386,5 +1402,10 @@
       ]
     }
   },
-  "notes": "n_eligible (the private pool size N) is included for review only; it is not a released column"
+  "invariants": [
+    "cases: first MI per person with >= 365 observed days before it (unique coverage); same-time outcomes exclude controls",
+    "controls ordered by the SHA-256 of the published encoding; m = min(4, N); w = N/m; a zero-control case is kept (1012)",
+    "set_id = rank of the case in (t, identity) order"
+  ],
+  "notes": "n_eligible (the private pool size N) is an oracle-only audit field, never a released column"
 }

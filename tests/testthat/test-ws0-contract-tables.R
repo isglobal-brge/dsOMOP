@@ -50,7 +50,7 @@ test_that("the shared column corpus declares assignment class and aggregate admi
 })
 
 test_that("reviewed concepts, operator classes and adapter mappings carry verified values", {
-  rc <- read.csv(.ws0_inst("ohdsi", "reviewed_concepts.csv"), stringsAsFactors = FALSE)
+  rc <- read.csv(.ws0_inst("ohdsi", "reviewed_concepts.csv"), stringsAsFactors = FALSE, colClasses = c(concept_code = "character"))
   expect_true(all(c("concept_id", "concept_name", "domain_id", "vocabulary_id", "concept_class_id", "concept_code",
                     "valid_start_date", "valid_end_date", "source_url", "source_snapshot") %in% names(rc)))
   expect_true(all(rc$source_snapshot == "v5.0 27-FEB-25"))
@@ -74,7 +74,7 @@ test_that("reviewed concepts, operator classes and adapter mappings carry verifi
     expect_true(any(fields$cdmTableName == ee$table_name[i] & fields$cdmFieldName == ee$key_column[i]))
     expect_true(any(fields$cdmTableName == ee$table_name[i] & fields$cdmFieldName == "person_id"))
   }
-  ops <- read.csv(.ws0_inst("ohdsi", "operator_classes.csv"), stringsAsFactors = FALSE)
+  ops <- read.csv(.ws0_inst("ohdsi", "operator_classes.csv"), stringsAsFactors = FALSE, colClasses = c(concept_code = "character"))
   expect_identical(ops$concept_id[ops$class == "equality"], 4172703L)
   expect_setequal(ops$concept_id[ops$class == "inequality"], c(4171756L, 4172704L, 4171754L, 4171755L))
   for (i in seq_len(nrow(ops))) {

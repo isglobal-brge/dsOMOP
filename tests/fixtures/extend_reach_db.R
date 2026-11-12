@@ -44,7 +44,8 @@
 #   1030  Circe import: diabetes 2015-06-01 with < 365 prior observation
 #   1031  active comparator: a first ACE-inhibitor era failing eligibility (observation
 #         starts 2019-01-01, era 2019-04-01..2019-05-15: < 365 observed days) followed by
-#         an eligible ACE-inhibitor era 2020-03-01..2020-09-30
+#         an eligible ACE-inhibitor era 2020-05-01..2020-10-31 (observed 486 days, and the
+#         first era's start is outside the 365-day washout window)
 #   1032  active comparator: own-arm restart then opposite-arm switch: ACE-inhibitor eras
 #         2019-06-01..2019-08-31 and 2019-11-01..2020-04-30 (restart: never censors),
 #         ARB era 2020-02-15..2020-08-31 (switch: censors the ACE-inhibitor index)
@@ -285,8 +286,8 @@ extend_reach_handle <- function(handle, with_defects = FALSE) {
   app("drug_era", data.frame(
     drug_era_id = 900001:900005, person_id = c(1031L, 1031L, 1032L, 1032L, 1032L),
     drug_concept_id = c(ACEI, ACEI, ACEI, ACEI, ARB),
-    drug_era_start_date = c("2019-04-01", "2020-03-01", "2019-06-01", "2019-11-01", "2020-02-15"),
-    drug_era_end_date = c("2019-05-15", "2020-09-30", "2019-08-31", "2020-04-30", "2020-08-31"),
+    drug_era_start_date = c("2019-04-01", "2020-05-01", "2019-06-01", "2019-11-01", "2020-02-15"),
+    drug_era_end_date = c("2019-05-15", "2020-10-31", "2019-08-31", "2020-04-30", "2020-08-31"),
     drug_exposure_count = 2L, gap_days = 0L, stringsAsFactors = FALSE))
 
   # ---- cost (CDM 5.4 columns) -------------------------------------------------------

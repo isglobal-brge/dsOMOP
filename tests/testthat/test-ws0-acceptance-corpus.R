@@ -31,7 +31,8 @@ test_that("fifteen recipes with validated plans, recipes, semantics and manifest
     code <- paste(readLines(file.path(path, "recipe.R"), warn = FALSE), collapse = "\n")
     for (o in names(plan$outputs)) {
       sym <- plan$outputs[[o]]$result_symbol
-      if (!is.null(sym)) expect_true(grepl(sym, code, fixed = TRUE), info = paste(dir, o, sym))
+      # the client's default symbol is D_<output>; any other symbol must be declared in recipe.R
+      if (!is.null(sym) && !identical(sym, paste0("D_", o))) expect_true(grepl(sym, code, fixed = TRUE), info = paste(dir, o, sym))
     }
     exp <- .ws0_expected(d, dir)
     expect_identical(exp$recipe, dir)
@@ -76,7 +77,7 @@ test_that("the design's fixture values and the review's corrections are pinned",
   expect_identical(p1003$pdc_num_eff_10, 4L); expect_identical(p1003$observed_10, 4L); expect_identical(p1003$covered_eff_10, 10L)
   p1004 <- adh[adh$person_id == 1004, ]
   expect_identical(p1004$covered_rec_90, 44L); expect_identical(p1004$covered_eff_90, 60L)
-  expect_identical(adh$visit_cost_60[adh$person_id == 1017], 150); expect_identical(adh$drug_cost_60[adh$person_id == 1017], 20)
+  expect_equal(as.numeric(adh$visit_cost_60[adh$person_id == 1017]), 150); expect_equal(as.numeric(adh$drug_cost_60[adh$person_id == 1017]), 20)
   cov <- get("06-coverage-persistence", "coverage")
   expect_identical(cov$covered_rec[cov$person_id == 1004], 44L); expect_identical(cov$covered_eff[cov$person_id == 1004], 60L)
   expect_identical(cov$covered_rec[cov$person_id == 1005], 1L)
@@ -100,7 +101,7 @@ test_that("the design's fixture values and the review's corrections are pinned",
   expect_false(1001L %in% t1$person_id)
   # 02: arm-conditioned censoring, own-arm restart, first-ineligible-then-eligible
   base <- get("02-active-comparator", "baseline")
-  expect_identical(base$index_date[base$person_id == 1031], "2020-03-01")       # the ineligible first era is skipped
+  expect_identical(base$index_date[base$person_id == 1031], "2020-05-01")       # the ineligible first era is skipped
   expect_identical(base$arm[base$person_id == 1032], "acei")
   ot <- get("02-active-comparator", "tte.on_treatment"); itt <- get("02-active-comparator", "tte.itt")
   expect_identical(itt$exit_days_from_index[itt$person_id == 1032], 259L)         # censored by the ARB switch, not by the ACEI restart

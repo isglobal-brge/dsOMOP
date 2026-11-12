@@ -25,8 +25,9 @@ test_that("the extended reach fixture loads into PostgreSQL with the same scenar
   h <- build_extended_reach_handle(100L)
   on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
   schema <- paste0("ws0_reach_", as.integer(Sys.getpid()) %% 10000L)
+  DBI::dbExecute(pg, "SET client_min_messages TO WARNING")
   pgh <- load_reach_fixture_pg(pg, schema = schema, handle = h)
-  on.exit(DBI::dbExecute(pg, paste0("DROP SCHEMA IF EXISTS ", schema, " CASCADE")), add = TRUE)
+  on.exit(try(DBI::dbExecute(pg, paste0("DROP SCHEMA ", schema, " CASCADE")), silent = TRUE), add = TRUE)
   expect_identical(pgh$dbms, "postgresql")
   expect_true(all(c("person", "cost", "episode_event", "drug_era") %in% pgh$tables_loaded))
   # typed dates on PostgreSQL

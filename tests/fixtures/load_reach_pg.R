@@ -29,7 +29,11 @@ load_reach_fixture_pg <- function(pg_conn, schema = "ws0_reach", handle = NULL,
                                   n_persons = 100L, with_defects = FALSE) {
   if (is.null(handle)) handle <- build_extended_reach_handle(n_persons, with_defects = with_defects)
   src <- handle$conn
-  DBI::dbExecute(pg_conn, paste0("DROP SCHEMA IF EXISTS ", schema, " CASCADE"))
+  # no NOTICE traffic (RPostgres' notice callback can fail with bad_weak_ptr): quiet messages,
+  # and drop the schema only when it exists
+  DBI::dbExecute(pg_conn, "SET client_min_messages TO WARNING")
+  exists <- DBI::dbGetQuery(pg_conn, paste0("SELECT COUNT(*) AS n FROM information_schema.schemata WHERE schema_name = '", schema, "'"))$n
+  if (as.integer(exists) > 0L) DBI::dbExecute(pg_conn, paste0("DROP SCHEMA ", schema, " CASCADE"))
   DBI::dbExecute(pg_conn, paste0("CREATE SCHEMA ", schema))
   tables <- sort(DBI::dbListTables(src))
   tables <- tables[!grepl("^sqlite_", tables)]

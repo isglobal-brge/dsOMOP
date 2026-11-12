@@ -2,10 +2,15 @@
   "recipe": "13-parametrised",
   "fixture": "reach + extension (build_extended_reach_handle(100))",
   "nfilter_subset": 5,
+  "fixture_keys": ["person_id", "index_date", "index_key"],
+  "key_policy": "rows are matched to engine output on the fixture keys (person_id is the fixture identity; the harness tokenises it with the fixture's person key); index_date/index_key identify the episode and are not released columns",
   "outputs": {
     "two_days": {
       "name": "two_days",
       "n_persons": 26,
+      "released_columns": ["row_id", "cohort_row_id", "person_id", "dm_days", "dm_rows"],
+      "comparison_columns": ["dm_days", "dm_rows"],
+      "oracle_only": [],
       "columns": ["person_id", "index_date", "dm_days", "dm_rows"],
       "rows": [
         {
@@ -167,5 +172,10 @@
       ]
     }
   },
+  "invariants": [
+    "dm2 = cohort-1 episodes (unique coverage) with diabetes rows on >= 2 distinct days in [index-365, index]",
+    "1008's row on 2019-01-01 (the window's first day) counts; its 2018-12-31 row does not",
+    "every bound variant plan-NN.json equals NN-*/plan.json and reproduces NN-*/expected.json (variants/variants.json)"
+  ],
   "notes": "identical to 03-distinct-days: the bound plan is the same plan"
 }

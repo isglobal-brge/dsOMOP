@@ -2,10 +2,15 @@
   "recipe": "15-costs-adherence",
   "fixture": "reach + extension (build_extended_reach_handle(100))",
   "nfilter_subset": 5,
+  "fixture_keys": ["person_id", "index_date", "index_key"],
+  "key_policy": "rows are matched to engine output on the fixture keys (person_id is the fixture identity; the harness tokenises it with the fixture's person key); index_date/index_key identify the episode and are not released columns",
   "outputs": {
     "adherence": {
       "name": "adherence",
       "n_persons": 44,
+      "released_columns": ["row_id", "cohort_row_id", "person_id", "visit_cost_60", "drug_cost_60", "supply_90", "observed_90", "pdc_num_eff_90", "pdc_num_rec_90", "covered_eff_90", "covered_rec_90", "observed_10", "pdc_num_eff_10", "covered_eff_10"],
+      "comparison_columns": ["visit_cost_60", "drug_cost_60", "supply_90", "observed_90", "pdc_num_eff_90", "pdc_num_rec_90", "covered_eff_90", "covered_rec_90", "observed_10", "pdc_num_eff_10", "covered_eff_10"],
+      "oracle_only": [],
       "columns": ["person_id", "index_date", "visit_cost_60", "drug_cost_60", "supply_90", "observed_90", "pdc_num_eff_90", "pdc_num_rec_90", "covered_eff_90", "covered_rec_90", "observed_10", "pdc_num_eff_10", "covered_eff_10"],
       "rows": [
         {
@@ -670,5 +675,11 @@
         }
       ]
     }
-  }
+  },
+  "invariants": [
+    "union coverage (gap 30): the component containing an actual recorded period that covers the index; observed days = union of its recorded periods",
+    "USD = 44818668 (code USD); the EUR (44818568) row is excluded; 1017: visit 150, drug 20",
+    "PDC numerator = covered relation intersected with the window AND the same observed days as the denominator: 1003 gives 4/4 on [1, 10] (covered_eff_10 = 10)",
+    "1004: recorded 44 vs effective 60 covered days on [1, 90]"
+  ]
 }

@@ -2,10 +2,15 @@
   "recipe": "12-circe-baseline",
   "fixture": "reach + extension (build_extended_reach_handle(100))",
   "nfilter_subset": 5,
+  "fixture_keys": ["person_id", "index_date", "index_key"],
+  "key_policy": "rows are matched to engine output on the fixture keys (person_id is the fixture identity; the harness tokenises it with the fixture's person key); index_date/index_key identify the episode and are not released columns",
   "outputs": {
     "baseline": {
       "name": "baseline",
       "n_persons": 62,
+      "released_columns": ["row_id", "cohort_row_id", "person_id", "age_group", "sex", "prior_obs"],
+      "comparison_columns": ["age_group", "sex", "prior_obs"],
+      "oracle_only": [],
       "columns": ["person_id", "index_date", "age_group", "sex", "prior_obs"],
       "rows": [
         {
@@ -444,5 +449,9 @@
         }
       ]
     }
-  }
+  },
+  "invariants": [
+    "first eligible diabetes row per person: covered by exactly one observation period starting >= 365 days before it",
+    "age_group on the default 5-year grid (0-4 .. 85+), NA for a NULL or negative age; prior_obs = observed days in [index-365, index]"
+  ]
 }
