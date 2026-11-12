@@ -505,7 +505,8 @@
 #' Every value of a long output's named \code{options.anchors} map is a final
 #' anchor of the output's population, nested search anchors included; a
 #' matching controls template's candidate anchors include those of the match
-#' population's strata windows (design 6.10; amendment A-20(b)). Anchors are
+#' population's strata windows; the same definitions are final anchors of its
+#' cases population (design 6.10; amendment A-20(b)). Anchors are
 #' collected from the normalised IR, so omitted and explicit defaults give one
 #' canonical anchor.
 #'
@@ -572,18 +573,25 @@
   pops <- ir[["populations"]] %||% list()
   # matching (design 6.10): the controls template is instantiated at each case
   # time, so the anchors of a match population's strata windows are resolved
-  # on the template's candidate roster, with the template's own criteria
+  # on the template's candidate roster, with the template's own criteria.
+  # Case strata use those definitions against the cases' final roster.
   templates <- list()
+  cases <- list()
   for (p in names(pops)) {
     m <- pops[[p]][["match"]]
     controls <- m[["controls"]]
     if (is.list(m) && is.character(controls) && length(controls) == 1L) {
-      templates[[controls]] <- c(templates[[controls]], .irCollectAnchors(m[["match"]]))
+      anchors <- .irCollectAnchors(m[["match"]])
+      templates[[controls]] <- c(templates[[controls]], anchors)
+      case_pop <- m[["cases"]]
+      if (is.character(case_pop) && length(case_pop) == 1L) {
+        cases[[case_pop]] <- c(cases[[case_pop]], anchors)
+      }
     }
   }
   for (p in names(pops)) {
     candidate[[p]] <- .irUniqueAnchors(c(.irCollectAnchors(pops[[p]][["where"]]), templates[[p]]))
-    used <- list()
+    used <- cases[[p]] %||% list()
     for (o in names(ir[["outputs"]])) {
       out <- ir[["outputs"]][[o]]
       if (!identical(out[["rows"]], p)) next

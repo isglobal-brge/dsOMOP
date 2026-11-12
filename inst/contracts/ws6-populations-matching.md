@@ -169,7 +169,12 @@ person-level interval relation for a parent/visit consumer.
 Resolve anchors through `.anchorExpr()` and windows through
 `.compileWindow()`, carrying their returned joins/dependencies. Source
 anchors used by criteria and final outputs have different candidate/final
-identities and compile in each phase. WS-7 still owns declaring its bounds
+identities and compile in each phase. Matching strata windows also support
+source anchors and nested search windows: the index context is the case time,
+with each anchor resolved for that side's person. Their definitions belong to
+the cases population's final inventory and the controls template's candidate
+inventory (A-20(b)); missing anchors yield UNKNOWN strata and follow
+`missing_strata`. WS-7 still owns declaring its bounds
 and stream identities and passing allocated `names =` to reducer helpers.
 
 ## Exact matching and output responsibilities

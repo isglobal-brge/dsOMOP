@@ -1143,6 +1143,8 @@ test_that("A-20(b): a matching template's candidate anchors include its strata w
   want <- .jcsCanonical(list(source = list(event = "statin_rx"), which = "last", n = 1L, field = "start",
                              scope = "person", search = NULL))
   expect_true(want %in% got)
+  cases <- ir$populations$cc$match$cases
+  expect_true(want %in% vapply(.irOrder(ir)$anchors$final[[cases]], .jcsCanonical, ""))
 })
 
 # --- A-19 open item (i): private set-op intermediates are not gated in execution ---
