@@ -328,3 +328,29 @@ test_that("compiled event SQL renders for every dialect family", {
     }
   })
 })
+
+test_that("same-row vs different-row: one event's conjunction needs one row satisfying both", {
+  for (b in names(.ws4_ev_backends)) {
+    h <- .ws4_ev_backends[[b]]$handle
+    a1c <- list(concepts = list(3004410))
+    plan <- .ws4_plan(events = list(
+      both = list(table = "measurement", concept_set = a1c,
+                  where = list(and = list(list(var = "value", op = ">=", value = 9),
+                                          list(var = "operator_concept_id", op = "==", value = 4172704)))),
+      high = list(table = "measurement", concept_set = a1c, where = list(var = "value", op = ">=", value = 9)),
+      gt_op = list(table = "measurement", concept_set = a1c,
+                   where = list(var = "operator_concept_id", op = "==", value = 4172704))))
+    ctx <- .ws4_ctx(h, plan)
+    has <- function(e) {
+      f <- .compileEventByName(ctx, e)
+      sql <- .buildStatement(ctx, f, select = paste0(
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM ", f$name,
+        " x WHERE x.person_id = 1006) THEN 1 ELSE 0 END AS has"), dialect = ctx)
+      as.integer(.executeQuery(h, sql)$has)
+    }
+    # has(A_x) AND has(A_y) holds through two different rows ...
+    expect_identical(c(has("high"), has("gt_op")), c(1L, 1L), info = b)
+    # ... while has(A where x & y) needs one row satisfying both
+    expect_identical(has("both"), 0L, info = b)
+  }
+})
