@@ -180,7 +180,8 @@
 #' base event (an interval's source) decides
 #'   - the index visit: an event restricted by \code{visit = {index: true}}
 #'     joins \code{source.visit_id = roster.index_visit_id} (the roster must
-#'     carry \code{index_visit_id}; an interval over such an event is refused);
+#'     carry \code{index_visit_id}; an interval over such an event is compiled
+#'     per visit before its course or stockpile is constructed);
 #'   - the episode parent: an adapter source whose parent namespace can be the
 #'     roster's \code{index_source} (\code{attr(roster, "index_sources")}, else
 #'     \code{.irPopulationIndexSources()}, else unknown) is read through the
@@ -218,10 +219,6 @@
               visit = isTRUE(emeta$index_visit), parent = emeta$parent,
               availability = emeta$availability, branches = "person")
   if (out$visit) {
-    if (identical(kind, "interval")) {
-      .irReject(paste0("interval '", ref, "': its source is restricted to the index visit"),
-                field = path)
-    }
     if (is.null(spec$index_visit)) {
       stop("The roster '", spec$name, "' carries no index_visit_id: the index-visit source '",
            base, "' cannot be scoped to its rows (fail closed).", call. = FALSE)
@@ -260,7 +257,9 @@
             paste0(.sqlLosslessKeyText(h, col(i, "parent_event_id")), " = ", col(r, spec$index_key)))
   } else if ("parent" %in% assoc$branches) {
     src <- col(r, spec$index_source)
-    on <- c(on, paste0("(", src, " IS NULL OR ", src, " <> ", .compileTextLiteral(assoc$parent), ")"))
+    # A missing origin cannot establish a person association when an episode
+    # parent is possible. SQL NULL therefore matches neither branch.
+    on <- c(on, paste0(src, " <> ", .compileTextLiteral(assoc$parent)))
   }
   on
 }
@@ -269,7 +268,8 @@
 #'
 #' An event source: its event fragment (the branch's join binds the parent);
 #' an interval: the branch's relation (\code{"parent"}: the per-parent
-#' relation of an adapter source, A-20 item 6) -- its course
+#' relation of an adapter source, A-20 item 6), additionally partitioned by
+#' visit for an index-visit source -- its course
 #' (\code{use = "course"}) or its recorded / effective rows.
 #'
 #' @param ctx Execution context.
@@ -467,6 +467,10 @@
   deps <- unique(c(spec$name, vapply(srcs, function(x) x$name, "")))
   src <- srcs[[1L]]
   order <- unique(c(src$ordering, src$unique_key))
+  # Every parent branch already binds these columns to one roster origin.
+  # They cannot distinguish rows within that origin, and are absent from a
+  # person interval relation when both association branches are read.
+  if (!is.null(assoc$parent)) order <- setdiff(order, .ADAPTER_PARENT_COLUMNS)
   order <- c("start_date", setdiff(order, c("start_date", "end_date")))
   on <- "e.start_date IS NOT NULL"
   if (identical(a$field, "end")) on <- c(on, "e.end_date IS NOT NULL")
@@ -498,17 +502,23 @@
   }
   ranked_cols <- if (identical(a$which, "latest_end")) c(order, "end_date") else order
   branch_on <- function(b) paste(c(.consumerJoinSql(h, assoc, b, "e", "r"), on), collapse = " AND ")
-  inner <- if (length(srcs) == 1L) {
+  physical <- identical(assoc$kind, "event") && !is.null(assoc$parent) &&
+    "person" %in% assoc$branches
+  inner <- if (length(srcs) == 1L && !physical) {
     rn <- .sqlRowNumber(h, r(spec$key), rank("e", ranked_cols))
     paste0("SELECT ", r(spec$key), " AS row_key, ", r(spec$person), " AS person_id, ",
            field, " AS anchor_date, ", rn, " AS rn FROM ", spec$name, " r", joined,
            " INNER JOIN ", src$name, " e ON ", branch_on(assoc$branches[[1L]]))
   } else {
-    # rows indexed by the adapter's parent and the other rows read different
-    # relations; each roster row matches one branch, ranked over the union
+    # Rank after the branch projections: person-indexed adapter anchors see
+    # each physical event once, even if it belongs to several parents. The
+    # projected order retains its complete physical identity; DISTINCT must
+    # precede ROW_NUMBER, otherwise duplicated links would change nth.
+    # Mixed associations read separate relations and each row matches one.
     oc <- paste0("o_", seq_along(ranked_cols))
     parts <- vapply(seq_along(srcs), function(k) {
-      paste0("SELECT ", r(spec$key), " AS row_key, ", r(spec$person), " AS person_id, ",
+      paste0("SELECT ", if (physical && identical(assoc$branches[[k]], "person")) "DISTINCT ",
+             r(spec$key), " AS row_key, ", r(spec$person), " AS person_id, ",
              field, " AS anchor_date, ", paste(paste0("e.", ranked_cols, " AS ", oc), collapse = ", "),
              " FROM ", spec$name, " r", joined, " INNER JOIN ", srcs[[k]]$name, " e ON ",
              branch_on(assoc$branches[[k]]))

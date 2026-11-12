@@ -256,12 +256,17 @@ test_that("index-visit sources join the roster's index visit, in streams and anc
   for (b in names(.ws5_an_backends)) {
     h <- .ws5_an_backends[[b]]$handle
     first_proc <- list(source = list(event = "proc"), which = "first")
+    first_course <- list(source = list(interval = "pi"), which = "first")
+    first_stock <- list(source = list(interval = "psi"), which = "first")
     ctx <- .ws4_ctx(h, .ws5_plan(
       events = list(vis = list(table = "visit_occurrence"),
                     proc = list(table = "procedure_occurrence", concept_set = list(concepts = list(4283095)),
                                 visit = list(index = TRUE))),
-      populations = list(t = c(.ws5_anchor_population(list(first_proc), source = "proc")[c("where")],
+      intervals = list(pi = list(source = list(event = "proc")),
+                       psi = list(source = list(event = "proc"), stockpile = TRUE)),
+      populations = list(t = c(.ws5_anchor_population(list(first_proc, first_course, first_stock), source = "proc")[c("where")],
                                list(kind = "index", index = list(source = list(event = "vis"), select = "all"))))))
+    .ws5_release(ctx)
     # two candidates of person 1007, indexed by its visits 700701 (the PCI of
     # 2020-01-02 belongs to it) and 700702; a NULL index visit matches nothing
     cand <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:3, subject_id = 1007, cohort_start_date = "2020-01-01",
@@ -272,27 +277,85 @@ test_that("index-visit sources join the roster's index visit, in streams and anc
     a <- .ws5_rows(ctx, .compileAnchor(ctx, first_proc, cand, "candidate"), "row_key")
     expect_identical(a$row_key, 1, info = b)
     expect_identical(a$anchor_date, "2020-01-02", info = b)
+    # The interval source carries the same association. Its course and carry
+    # computation must never merge another visit's history.
+    for (interval in c("pi", "psi")) {
+      v <- .ws5_rv(ctx, "covered_days", cand, "candidate", source = list(interval = interval))
+      expect_identical(v$value, c(1L, 0L, 0L), info = b)
+    }
+    v <- .ws5_rv(ctx, "covered_days", cand, "candidate", source = list(interval = "psi"),
+                 coverage = "effective_supply")
+    expect_identical(v$value, c(1L, 0L, 0L), info = b)
+    for (anchor in list(first_course, first_stock)) {
+      a <- .ws5_rows(ctx, .compileAnchor(ctx, anchor, cand, "candidate"), "row_key")
+      expect_identical(a$row_key, 1, info = b)
+      expect_identical(a$anchor_date, "2020-01-02", info = b)
+    }
     # a roster without index_visit_id cannot scope an index-visit source
     bare <- .ws5_literal_roster(ctx, data.frame(cand_key = 1L, subject_id = 1007, cohort_start_date = "2020-01-01",
                                                 cohort_end_date = "2020-12-31"), name = "cand_bare")
     expect_error(.ws5_rv(ctx, "covered_days", bare, "candidate", source = list(event = "proc")),
                  "carries no index_visit_id")
   }
-  # an interval cannot be built over an index-visit source
-  h <- .ws5_an_backends$sqlite$handle
-  ctx <- .ws4_ctx(h, .ws5_plan(
-    events = list(proc = list(table = "procedure_occurrence", visit = list(index = TRUE))),
-    intervals = list(pi = list(source = list(event = "proc")))))
-  .ws4_expect_rejection(.compileIntervalByName(ctx, "pi"), pattern = "index visit")
+})
+
+test_that("cost consumers inherit their parent's index visit alongside parent association (B3)", {
+  h <- .ws4_reach_handle()
+  on.exit(try(DBI::dbDisconnect(h$conn), silent = TRUE), add = TRUE)
+  DBI::dbExecute(h$conn, paste0(
+    "INSERT INTO cost (cost_id, cost_event_id, cost_domain_id, cost_type_concept_id, ",
+    "currency_concept_id, total_cost) SELECT 939080, procedure_occurrence_id, 'Procedure', 32817, ",
+    "44818668, 100 FROM procedure_occurrence WHERE person_id = 1007 AND procedure_concept_id = 4283095"))
+  parent_key <- as.character(DBI::dbGetQuery(h$conn,
+    "SELECT cost_event_id FROM cost WHERE cost_id = 939080")$cost_event_id)
+  anchors <- list(list(source = list(event = "costs")), list(source = list(interval = "ci")),
+                  list(source = list(interval = "cs")))
+  plan <- .ws5_plan(events = list(
+    proc = list(table = "procedure_occurrence", visit = list(index = TRUE)),
+    vis = list(table = "visit_occurrence"),
+    costs = list(cost = list(event = list(event = "proc"), field = "total_cost", currency = 44818668,
+                             on_missing_table = "unavailable"))),
+    intervals = list(ci = list(source = list(event = "costs")),
+                     cs = list(source = list(event = "costs"), stockpile = TRUE)),
+    populations = list(t = c(.ws5_anchor_population(anchors, source = "costs")["where"],
+      list(kind = "index", index = list(source = list(any_of = list(list(event = "proc"), list(event = "vis"))),
+                                         select = "all")))))
+  ctx <- .ws4_ctx(h, plan)
+  on.exit(.planContextClose(ctx), add = TRUE, after = FALSE)
+  roster <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:4, subject_id = 1007,
+    cohort_start_date = "2020-01-01", cohort_end_date = "2020-12-31",
+    index_source = c("proc", "proc", "vis", "vis"),
+    index_key = c(parent_key, parent_key, "700701", "700702"),
+    index_visit_id = c(700701, 700702, 700701, 700702)))
+  for (anchor in anchors) {
+    rows <- .ws5_rows(ctx, .compileAnchor(ctx, anchor, roster, "candidate"), "row_key")
+    expect_identical(as.numeric(rows$row_key), c(1, 3))
+    expect_identical(rows$anchor_date, rep("2020-01-02", 2L))
+    values <- .ws5_rv(ctx, "covered_days", roster, "candidate", source = anchor$source)
+    expect_identical(values$value, c(1L, 0L, 1L, 0L))
+  }
+  expect_true(.eventMeta(ctx, "costs")$index_visit)
+  values <- .ws5_rv(ctx, "covered_days", roster, "candidate", source = list(interval = "cs"),
+                    coverage = "effective_supply")
+  expect_identical(values$value, c(1L, 0L, 1L, 0L))
+  # Availability changes values, never the consumer association contract.
+  DBI::dbExecute(h$conn, "DROP TABLE cost")
+  h$blueprint <- NULL
+  unavailable <- .ws4_ctx(h, plan)
+  .compileEventByName(unavailable, "costs")
+  expect_true(.eventMeta(unavailable, "costs")$index_visit)
+  expect_identical(.eventMeta(unavailable, "costs")$availability, "unavailable")
 })
 
 test_that("episode-indexed anchors bind the member's parent episode and person (B3, A-20 item 6)", {
   for (b in names(.ws5_an_backends)) {
     h <- .ws5_an_backends[[b]]$handle
     first_m <- list(source = list(event = "members"), which = "first")
+    second_m <- list(source = list(event = "members"), which = "nth", n = 2L)
+    fourth_m <- list(source = list(event = "members"), which = "nth", n = 4L)
     last_m <- list(source = list(event = "members"), which = "last")
     last_c <- list(source = list(interval = "mc"), which = "last")
-    anchors <- list(first_m, last_m, last_c)
+    anchors <- list(first_m, second_m, fourth_m, last_m, last_c)
     pop <- function(index) c(.ws5_anchor_population(anchors, source = "members")["where"],
                              list(kind = "index", index = list(source = index, select = "all")))
     ctx <- .ws4_ctx(h, .ws5_plan(
@@ -319,6 +382,8 @@ test_that("episode-indexed anchors bind the member's parent episode and person (
                                          `4` = "2020-01-01"), info = b)
     expect_identical(got(last_m, ep), c(`1` = "2019-04-12", `2` = "2019-10-01", `3` = "2020-01-15",
                                         `4` = "2020-02-10"), info = b)
+    expect_identical(unname(got(second_m, ep)[c("3", "4")]),
+                     c("2020-01-15", "2020-02-10"), info = b)
     # per-parent courses: E2's two eras at gap 0, the last one starts 02-10
     expect_identical(unname(got(last_c, ep)[c("3", "4")]), c("2020-01-01", "2020-02-10"), info = b)
     # a person-indexed roster sees the person's members; a mixed one per row
@@ -328,12 +393,24 @@ test_that("episode-indexed anchors bind the member's parent episode and person (
     expect_identical(unname(got(first_m, pp)), c("2019-03-01", "2020-01-01"), info = b)
     expect_identical(unname(got(last_m, pp)), c("2019-10-01", "2020-02-10"), info = b)
     expect_identical(unname(got(last_c, pp)), c("2019-10-01", "2020-01-01"), info = b)
-    mx <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:2, subject_id = 1015, cohort_start_date = "2019-01-01",
-                                              cohort_end_date = "2020-12-31", index_source = c("episodes", "drug"),
-                                              index_key = c("2", "939999")),
+    # The shared fill is one physical event for person-indexed anchors. It
+    # cannot occupy both nth positions, and three fills cannot have a fourth.
+    expect_identical(got(second_m, pp)[["2"]], "2020-01-15", info = b)
+    expect_false("2" %in% names(got(fourth_m, pp)), info = b)
+    mx <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:3, subject_id = 1015, cohort_start_date = "2019-01-01",
+                                              cohort_end_date = "2020-12-31", index_source = c("episodes", "drug", NA),
+                                              index_key = c("2", "939999", NA)),
                               name = "cand_mx", population = "mx")
     expect_identical(unname(got(first_m, mx)), c("2019-04-12", "2019-03-01"), info = b)
     expect_identical(unname(got(last_m, mx)), c("2019-10-01", "2019-10-01"), info = b)
+    # Parent and person interval branches have different provenance columns;
+    # their anchor ordering uses the common course identity. A NULL origin
+    # cannot silently enter the person branch of a mixed population.
+    expect_identical(got(last_c, mx), c(`1` = "2019-10-01", `2` = "2019-10-01"), info = b)
+    values <- .ws5_rv(ctx, "covered_days", mx, "candidate", source = list(event = "members"))
+    expect_identical(values$value[as.numeric(values$row_key) == 3], 0L, info = b)
+    values <- .ws5_rv(ctx, "supply_days", mx, "candidate", source = list(event = "members"))
+    expect_identical(values$value[as.numeric(values$row_key) == 3], 0L, info = b)
     # the person must agree: an origin of another person's episode matches nothing
     other <- .ws5_literal_roster(ctx, data.frame(cand_key = 1L, subject_id = 1016, cohort_start_date = "2019-01-01",
                                                  cohort_end_date = "2020-12-31", index_source = "episodes",
