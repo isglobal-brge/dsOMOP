@@ -184,6 +184,10 @@
 # original consumer association; controls are person-indexed at the case time.
 .irPopulationAssociationSources <- function(ir, pop, seen = character(0)) {
   if (pop %in% seen) return(NULL)
+  # A-20(c): matching instantiates controls per (case row, person). A
+  # template's parent restricts persons, never the candidate's association.
+  # Semantic validation forbids using a controls template as an ordinary roster.
+  if (pop %in% .populationUses(ir)$templates) return("(persons)")
   tags <- .irPopulationIndexSources(ir, pop)
   if (is.null(tags)) return(NULL)
   unique(unlist(lapply(tags, function(tag) {

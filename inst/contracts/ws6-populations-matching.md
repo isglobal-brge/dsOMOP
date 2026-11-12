@@ -197,6 +197,12 @@ the source roster. The controls template is instantiated once for the complete
 frozen dated-case roster, with `cand_key` per `(case row, person)` and index equal to case time.
 The template's own population metadata, coverage and candidate-anchor
 identities apply. Its parent or results-cohort seed narrows candidate persons.
+Instantiated raw candidates carry private `origin_source = "(persons)"`,
+preserved through coverage and criteria stages. The association resolver
+recognises controls templates before following their IR parent: criteria,
+source anchors, adapter intervals and strata all evaluate at person scope,
+deduplicating physical members shared by episodes. Ordinary episode rosters
+retain parent scoping and fail closed on missing required provenance.
 One template cannot also be an ordinary roster or serve a second matching
 node in the same plan.
 
