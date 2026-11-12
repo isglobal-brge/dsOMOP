@@ -60,7 +60,11 @@ according to the number of past questions.
 
 Changes to source data, secrets, grids, scales or mechanism versions can create
 additional disclosures. They do not erase past answers or reset privacy
-history. Stable data and identity replay across sessions and workers. Private
+history. One request's components, contribution maps and support checks are
+read by separate SELECT statements without a common database read snapshot
+(dsOMOP 2.10.3): a concurrent data load during a request could mix two data
+states. Load data in batches outside analysis hours; fixed synopses require a
+declared generation in any case. Stable data and identity replay across sessions and workers. Private
 contributor hashes, person keys and exact hidden support are never output.
 Audit is observational and is not an accountant.
 
@@ -76,7 +80,8 @@ reliable individual attribution.
 ### Modes and metadata
 
 - `fixed_synopsis`: `mechanism_epsilon` identifies the declared bounded vector
-  and allocation; `guarantee_scope = "fixed_vector_before_exact_support_gate"`;
+  (the union of the owned components) and `delta = 0`;
+  `guarantee_scope = "fixed_vector_before_exact_support_gate"`;
   `api_transcript_epsilon = NA` because the full service includes exact gates
   and other outputs. `"dp"`/exclusive mode chooses this mechanism family; it is
   not a claim about all enabled Opal methods. A request is a fixed synopsis
@@ -93,7 +98,12 @@ reliable individual attribution.
   stable unsupported-mechanism message. Each component's noise is keyed on its
   owner, coordinate and a secret HMAC fingerprint of the sorted
   (person token, bounded contribution) map; request text, sessions, handles,
-  scope names, lineage spelling and the database version never enter it.
+  scope names, lineage spelling and the database version never enter it. A
+  realised release states no `delta`. Person-time components belong to
+  scientific owners (first-outcome status of one outcome definition; observed
+  person-time of one time contract), never to subgroup labels, predicates,
+  scope names or window spelling: an arm or unstratified population is the
+  root of its own realised map, so equal memberships share their components.
 - `standard` and `mixed`: explicit per-block protection; no blanket epsilon.
   On the standard route (standard mode, or auto mode without the DP service:
   `standard_fallback`) the demonstrated-disclosive fields are unavailable:
@@ -102,14 +112,31 @@ reliable individual attribution.
   (`masked_fields`, `masked_reason = "protected_output_required"` or
   `"protected_mechanism_unavailable"`). Imported precomputed Achilles
   distributions have no person-level basis: in auto mode their summaries are
-  unavailable (`"protected_basis_unavailable"`). Public parameters are safe
-  metadata; hidden support and map fingerprints are not.
+  unavailable (`"protected_basis_unavailable"`). A mixed frame states no
+  frame-level epsilon or delta; its `blocks` name each block's protection.
+  Public parameters are safe metadata; hidden support and map fingerprints are
+  not.
+- Threshold views of one protected histogram (the QueryLibrary long
+  observation-period count) are released only from that histogram, in every
+  mode; without the DP service they return a stable unavailable row after the
+  parent-population admission only, so the presence of a row never re-tests
+  the raw tail at the threshold.
+- Source: every protected release and label carries
+  `source$logical_source_id`, a public opaque identifier derived from the
+  public noise-key fingerprint and corpus domain. Two connections to one
+  logical node carry the same identifier; dsOMOPClient refuses to pool them.
 - Status: `privacy_call_quota = "none"`, `history_based_admission = FALSE`; no
   balance, spent-epsilon, remaining-release or reset field.
 
 Component allocations of the reference calibration e: an eligible-person total
-0.2e wherever it occurs (one owner shared by typed and automatic routes); a
-histogram/partition 0.8e; histogram plus bounded moments 0.4e (cells), 0.2e
+0.2e wherever it occurs (one owner shared by typed and automatic routes). The
+public marginal hierarchy: every owner declares its eligible population; the
+population's one parent total is shared by all its stratifications, the strata
+totals of a public partition (another 0.2e) are reconciled to that signed
+parent for pooling and their displayed values are projected onto the
+parent's displayed total, so a child request never moves the parent and
+recombined children equal it; cells are reconciled to their stratum. Labels
+report the union of the owned components. Then: a histogram/partition 0.8e; histogram plus bounded moments 0.4e (cells), 0.2e
 (normalized sum) and 0.2e (square sum); bounded moments alone 0.4e/0.4e;
 person-time 0.3e (first-outcome status) and 0.5e (observed time, each person
 clipped to 3650 days); multi-label or record-capped cells and distinct-label
@@ -121,17 +148,26 @@ projection onto the feasible set can be degenerate.
 
 Public grids: birth years 1900 to the custodial reference year
 (`dsomop.dp.reference_year`, default the calendar year) plus unknown; ages in
-5-year bands 0 to 110+; durations 0, 30, 90, 180, 365, 730, 1095, 1825, 3650,
-7300, 10957 days; counts per person 0-20, 25, 30, 40, 50, 75, 100+. Free
-numeric parameters snap before evaluation: time-at-risk and window offsets
-outward on {-3650, 3650} plus multiples of 30 days (closed windows are converted
-to half-open ones), look-back durations to multiples of 30 days, `min_days` to
-the duration grid, ages to 5-year boundaries, age bands to {5, 10, 20}, alpha
-and power to 0.01 steps, a requested reference year to the fixed reference year
-(the protected age-by-decade view relabels the released birth-year basis with
-any requested year), model feature counts to {10, 20, 50, 100} and calibration
-bins to {5, 10, 20}. Requested and effective values are reported in
-`effective_parameters`. Typed histogram breaks snap to the 2-significant-digit
+5-year bands 0 to 110+; counts per person 0-20, 25, 30, 40, 50, 75, 100+. The
+clinical day anchors C = {0, 1, 7, 14, 21, 28, 30, 60, 90, 120, 180, 270, 365,
+545, 730, 1095, 1460, 1825, 3650} are fixed points of every day grid: the
+signed offset grid G is every multiple of 30 days with |z| <= 121 plus C and
+-C; the look-back / follow-up grid L is G within [0, 3650]; the duration
+histogram and threshold grid D is C plus 7300 and 10957 days. A closed window
+[a, b] snaps to [floor_G(a), ceil_G(b)] and is converted once to the half-open
+[a, b + 1) in SQL, so [1, 365] stays 365 inclusive days, [0, 0] one day and
+[-365, -1], look-back 365 and end 545 are unchanged; durations snap to the
+nearest point of L (strictly positive ones to L without 0) and `min_days` to D
+(ties to the smaller point, finite values saturating). Ages snap to 5-year
+boundaries, age bands to {5, 10, 20}, alpha and power to 0.01 steps, model
+feature counts to {10, 20, 50, 100} and calibration bins to {5, 10, 20}. A
+requested reference year is a view of the released birth-year basis on the
+protected route (labels report `basis_reference_year` and
+`view_reference_year`); the standard route freezes it at the custodial year.
+Requested and effective values are reported in `effective_parameters`. On
+scales without a public lower bound the first histogram bin is the explicit
+underflow bin (-Inf, b2); quantiles invert the displayed histogram's CDF and,
+in an open tail bin, report its finite edge. Typed histogram breaks snap to the 2-significant-digit
 decimal lattice (first days of months for dates, UTC midnights for datetimes);
 typed bounded means need one registered public scale (`omopDpStatusDS()`
 `public_scales`; custodian extension `dsomop.release.public_scales`).
@@ -140,7 +176,11 @@ Observed time at risk: CohortMethod, incidence, Kaplan-Meier and interaction
 ports intersect the requested window with the coalesced observation period that
 contains the canonical first index, as a half-open interval (persons whose index
 lies outside observation contribute no risk time; outcomes outside the observed
-window never count).
+window never count). Protected releases further cap that interval at the public
+contribution horizon T = 3650 days, before both event selection and
+person-time: `[lo, min(hi, lo + 3650))`. A requested window longer than T
+(e.g. `[0, 3650]`, 3651 inclusive days) is therefore clipped for release, and
+the label says so; in-session exact fits keep the whole observed window.
 
 ### DataSHIELD comparison
 
