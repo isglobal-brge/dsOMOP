@@ -532,3 +532,21 @@ test_that("final observed segments use transferred components after candidate re
     }, finally = .compileReleaseTempTables(ctx))
   }
 })
+
+test_that("case-distinct namespaces retain separate parent and person associations", {
+  plan <- .ws5_acceptance_plan("14-oncology-episodes")
+  plan$events$Episodes <- plan$events$episodes
+  plan$populations$mixed <- .ws6_idx("all", source = list(any_of = list(
+    list(event = "episodes"), list(event = "Episodes"))), end = list(strategy = "event_end"),
+    where = .ws6_has("members", op = "==", n = 5L))
+  plan$outputs$mixed <- list(rows = "mixed", format = "wide")
+  for (b in names(.ws6_pop_backends)) {
+    ctx <- .ws4_ctx(.ws6_pop_backends[[b]]$handle, plan)
+    tryCatch({
+      r <- .ws6_roster(ctx, "mixed")
+      r <- r[r$person_id == 1015, ]
+      expect_equal(nrow(r), 2L, info = b)
+      expect_true(all(r$index_source == "Episodes"), info = b)
+    }, finally = .compileReleaseTempTables(ctx))
+  }
+})
