@@ -80,7 +80,9 @@ test_that("arithmetic follows the frozen type rules: NA for division by zero and
   expect_equal(r$pdc, c(1, NA, 0.5, 0.5, NA, NA, 0.5, 0.5))   # 0/0 and 7/0 are NA
   expect_type(r$age2, "integer")
   expect_equal(r$age2, c(20L, 34L, 36L, 80L, 128L, 130L, 160L, NA))
-  expect_true(all(is.na(r$big)))                               # integer overflow is NA
+  expect_s3_class(r$big, "integer64")
+  expect_equal(as.character(r$big), as.character(bit64::as.integer64(x$age) *
+                                                  bit64::as.integer64(.Machine$integer.max)))
   expect_type(r$days, "integer")
   expect_equal(r$days, rep(31L, 8L))
   expect_s3_class(r$later, "Date")
