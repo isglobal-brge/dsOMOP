@@ -673,7 +673,7 @@ test_that("index-visit stockpiles partition carry and courses before consumer wi
                  coverage = "effective_supply")
   expect_identical(val$value, c(60L, 30L, 0L))
   course <- .ws5_course_full(ctx, "s", 1007)
-  expect_identical(course$visit_id, c(700701, 700702))
+  expect_identical(as.character(course$visit_id), c("700701", "700702"))
   expect_identical(course$end_date, c("2020-02-29", "2020-02-13"))
   expect_identical(course$era_key, c("700701|1:1", "700702|1:1"))
 })
