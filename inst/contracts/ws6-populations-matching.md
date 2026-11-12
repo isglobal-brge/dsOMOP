@@ -140,8 +140,9 @@ the left contract, and child candidate/selected/final fragments preserve it.
 A-21's closed `legacy_empty = TRUE` criteria variant with
 `legacy_episodes = "observation_periods"` compiles to typed empty candidate,
 selected and final-roster relations, with NULL coverage and segments. Its
-parent, criteria, cohort seed, episode policy and named-cohort compatibility
-reference must be absent or NULL. Other unsupported compatibility variants
+parent, criteria and cohort seed must be absent or NULL, and a named-cohort
+compatibility reference is forbidden. The lowerer keeps an ignored episode
+policy in its advisory annex. Other unsupported compatibility variants
 remain refused by the native compiler; this property is still IR-only.
 
 ## Coverage and the candidate-to-final handoff

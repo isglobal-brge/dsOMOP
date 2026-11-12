@@ -499,12 +499,15 @@
 .populationLegacyEmpty <- function(node, name) {
   if (is.null(node[["legacy_empty"]])) return(FALSE)
   allowed <- c("kind", "parent", "where", "cohort_definition_id", "episode_policy",
-               "coverage", "label", "legacy_empty", "legacy_episodes", "legacy_cohort_table")
-  absent <- c("parent", "where", "cohort_definition_id", "episode_policy", "legacy_cohort_table")
+               "coverage", "label", "legacy_empty", "legacy_episodes")
+  absent <- c("parent", "where", "cohort_definition_id")
+  episode_policy <- node[["episode_policy"]]
   if (!identical(node[["legacy_empty"]], TRUE) || !identical(node[["kind"]], "criteria") ||
       !identical(node[["legacy_episodes"]], "observation_periods") ||
       length(setdiff(names(node), allowed)) ||
-      any(vapply(absent, function(k) !is.null(node[[k]]), logical(1)))) {
+      any(vapply(absent, function(k) !is.null(node[[k]]), logical(1))) ||
+      (!is.null(episode_policy) &&
+       (!.isScalarString(episode_policy) || !episode_policy %in% .POP_EPISODE_POLICIES))) {
     .irReject("legacy_empty requires the closed A-21 empty criteria population",
               field = paste0("/populations/", name, "/legacy_empty"))
   }
@@ -517,7 +520,8 @@
   h <- .compileDialect(ctx)
   over <- .populationNulls(h, .POP_ROSTER_COLUMNS)
   raw_body <- paste0("SELECT ", .compileTypedNull(h, "bigint"), " AS cand_key, ",
-                     paste(.populationSelect("e", over), collapse = ", "), " WHERE 1 = 0")
+                     paste(.populationSelect("e", over), collapse = ", "),
+                     .compileNoTableFrom(h), " WHERE 1 = 0")
   f_raw <- .populationCandidateFragment(ctx, name, "raw", raw_body, character(0), indexed = FALSE)
   f_cand <- .populationCandidateFragment(
     ctx, name, NULL, paste0("SELECT r.cand_key AS cand_key, ", paste(.populationSelect("r"), collapse = ", "),
@@ -534,7 +538,8 @@
 .populationRefuseCompatibility <- function(node, name) {
   src <- node[["index"]][["source"]]
   legacy <- !is.null(src[["legacy_spec"]]) || !is.null(node[["index"]][["legacy_end_strategy"]]) ||
-    !is.null(node[["legacy_episodes"]]) || !is.null(node[["legacy_index_anchor"]])
+    !is.null(node[["legacy_episodes"]]) || !is.null(node[["legacy_index_anchor"]]) ||
+    !is.null(node[["legacy_cohort_table"]])
   found <- FALSE
   .irWalkCriteria(node[["where"]], function(k, leaf, path) {
     if (identical(k, "legacy")) found <<- TRUE
