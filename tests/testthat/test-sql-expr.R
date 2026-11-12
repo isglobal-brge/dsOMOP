@@ -63,6 +63,35 @@
   )
 }
 
+test_that("the section 6.3 signatures are the frozen ones", {
+  # Frozen in section 12.1; only optional trailing arguments may be added
+  # (CR-6: .sqlNullsLast(descending), .sqlSha256Hex(input)).
+  frozen <- list(
+    .sqlDateAddDays = c("h", "date_expr", "days_expr"),
+    .sqlDateDiffDays = c("h", "from_expr", "to_expr"),
+    .sqlYear = c("h", "date_expr"),
+    .sqlMonthKey = c("h", "date_expr"),
+    .sqlCalendarFloor = c("h", "date_expr", "unit"),
+    .sqlCalendarAdvance = c("h", "date_expr", "n_expr", "unit"),
+    .sqlMakeDate = c("h", "year_expr", "month_expr", "day_expr"),
+    .sqlDateLiteral = c("h", "x"),
+    .sqlIntegerLiteral = c("h", "x"),
+    .sqlLeast = c("h", "..."),
+    .sqlGreatest = c("h", "..."),
+    .sqlNullsLast = c("h", "order_expr", "descending"),
+    .sqlRowNumber = c("h", "partition", "order"),
+    .sqlLosslessKey = c("h", "expr"),
+    .sqlSha256Hex = c("h", "expr", "input")
+  )
+  for (name in names(frozen)) {
+    expect_identical(names(formals(get(name))), frozen[[name]], info = name)
+  }
+  expect_identical(eval(formals(.sqlCalendarFloor)$unit),
+                   c("month", "quarter", "year"))
+  expect_identical(formals(.sqlNullsLast)$descending, FALSE)
+  expect_identical(eval(formals(.sqlSha256Hex)$input), c("text", "hex"))
+})
+
 test_that("families resolve from names, handles, contexts and profiles", {
   expect_identical(.sqlFamily("postgresql"), "postgresql")
   expect_identical(.sqlFamily("postgres"), "postgresql")
