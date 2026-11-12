@@ -13,7 +13,8 @@
 #     under a SAVEPOINT, so a deliberately failing probe rolls back to it
 #     instead of aborting the snapshot.
 #   * MySQL and MariaDB: REPEATABLE READ with START TRANSACTION WITH CONSISTENT
-#     SNAPSHOT. InnoDB evaluates the SELECT of CREATE TABLE ... SELECT as a
+#     SNAPSHOT. Visible source base tables must use InnoDB; unsupported engines
+#     fail closed. InnoDB evaluates the SELECT of CREATE TABLE ... SELECT as a
 #     locking read of the latest committed rows, not of the snapshot, so inside
 #     a snapshot a temporary table is filled from a consistent read through R.
 #     Statements that would commit implicitly are refused.

@@ -62,8 +62,10 @@ Changes to source data, secrets, grids, scales or mechanism versions can create
 additional disclosures. They do not erase past answers or reset privacy
 history. Final aggregate requests pin one physical connection for generation,
 support and component reads. PostgreSQL uses REPEATABLE READ (temporary-table
-DDL remains permitted), MySQL and MariaDB use consistent-snapshot transactions,
-and DuckDB and SQLite use explicit transactions. Requests roll back on exit;
+DDL remains permitted), MySQL and MariaDB use consistent-snapshot transactions
+for InnoDB base tables, and DuckDB and SQLite use explicit transactions.
+Nontransactional MySQL/MariaDB source base tables fail closed, since that
+transaction cannot make their concurrent reads coherent. Requests roll back on exit;
 losing the snapshot fails the whole request, rather than reconnecting one
 SELECT. SQL Server and Oracle have SERIALIZABLE adapters; Redshift uses its
 native transaction. These three adapters have SQL-shape tests but no live vendor
