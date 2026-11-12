@@ -7,6 +7,14 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- (WS-7 review B1–B4, N1) Panels reject duplicate generated, reserved and
+  carry column names before reading panel values. Person-grain sparse
+  outputs select first/last episodes from the complete roster, including
+  empty episodes; only `any` combines counts by maximum. Bounded cost
+  sources retain their own values and inherit their parent's declared
+  concept identities. Mode ties use declared integer types for lossless
+  ordering, and unavailable CDM aliases retain their declared date and
+  integer types.
 - (A-13) Native panels publish their dense person-period roster and each
   sparse component on that component's own person lineage, in memory and
   staged mode. An empty event stream can still produce a valid dense panel;

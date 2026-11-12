@@ -14,6 +14,11 @@ existing active v1 executors, preserving their result contracts and composite
 inventories. The retired `.extractSurvival()` and `.extractIntervalsLongLegacy()`
 are not active adapter entry points.
 
+A-25 owned cohort references are integrated through that v1 adapter path.
+Their registry ownership is checked before queries, membership is local to
+the declared population, and borrowed tables survive success and refusal.
+They do not supply an index anchor or establish DP locality.
+
 The compiler uses a private child of the execution context. Its temporary
 tables are registered for cleanup. WS-7 reducer/output realizations are
 bounded by `dsomop.max_memory_rows`. An extra row is a non-skippable `validation_error`
@@ -60,6 +65,9 @@ relation and observation domain remain part of stream identity.
 
 All source anchors and windows resolve through `.anchorExpr()` and
 `.compileWindow()`. Undefined windows and unavailable sources give typed NA.
+Unavailable table catalogues retain packaged CDM aliases and types. Mode
+uses the declared type when ordering tied integer values transported as
+decimal text; genuine text retains lexical ordering.
 Available empty windows give the reducer's documented empty value; `all`
 over an empty window is NA. Any/all preserve UNKNOWN predicate values.
 Coverage uses the selected recorded/effective relation explicitly. Observation
@@ -76,6 +84,15 @@ ordering; raw projections do not invent a combined observation-period row.
 one candidate per independently accessible component. `inputs` supplies the
 population, private compiled dependencies, requested symbol and execution
 mode. No support gate runs inside the output compiler.
+
+Panels validate their complete prospective column inventory before fetching
+values; generated-name collisions are structural errors, without renaming.
+Sparse person outputs choose first/last episodes from the complete roster,
+using exact chronological keys, so an empty selected episode stays absent.
+Only `collapse = "any"` takes the maximum across episode cells. Bounded cost
+sources use their parent's declared/resolved concept set, including an empty
+set, while retaining the cost stream and its numeric role. Unrestricted
+source identity universes still require a separately reviewed policy.
 
 Episode components declare roster lineage on `(person_id, cohort_row_id)`;
 person components declare direct lineage. Dictionary, time, covariate and
