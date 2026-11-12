@@ -870,6 +870,7 @@
   # callers vary top_n. Suppress first, then rank only on the released count band
   # with the public categorical value as deterministic tie-breaker.
   translated <- .renderSql(handle, sql)
+  .dsomopSnapshotReadSql(handle, translated)
   result <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, translated))
   names(result) <- tolower(names(result))
   result <- .coerce_integer64(result)
@@ -1412,6 +1413,7 @@
   # top_n/offset cannot reveal the exact order of concepts within one count band.
   translated <- paste0(.renderSql(handle, sql),
                        .paginationClause(handle$target_dialect, limit, offset))
+  .dsomopSnapshotReadSql(handle, translated)
   result <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, translated))
   names(result) <- tolower(names(result))
   result <- .coerce_integer64(result)

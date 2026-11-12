@@ -710,6 +710,7 @@
   }
   statement <- trimws(as.character(statements[[1L]]))
   .assertOhdsiReadOnlySql(statement, dbms = handle$dbms)
+  .dsomopSnapshotReadSql(handle, statement)
   .coerce_integer64(
     .withDbReconnect(
       handle,
@@ -734,6 +735,7 @@
   if (.dsomopReadSnapshotActive(handle) && !is.null(handle$read_snapshot$conn)) {
     for (stmt in statements) {
       .dsomopSnapshotGuard(handle, stmt)
+      .dsomopSnapshotReadSql(handle, stmt)
       .dsomopSnapshotRun(handle, function(conn) DBI::dbExecute(conn, stmt))
     }
     return(invisible(NULL))
@@ -755,6 +757,7 @@
 .querySql <- function(handle, sql, ...) {
   rendered <- .sql_render(sql, ...)
   translated <- .sql_translate(rendered, handle$target_dialect)
+  .dsomopSnapshotReadSql(handle, translated)
   .coerce_integer64(
     .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, translated)))
 }

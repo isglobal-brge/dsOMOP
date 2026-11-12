@@ -948,6 +948,7 @@
     stop("chunk_size must be one integer from 1 to 1,000,000.",
          call. = FALSE)
   }
+  .dsomopSnapshotReadSql(handle, compiled$sql)
   result <- .withDbReconnect(handle, function(conn) {
     machine <- .newMultistateStreamTransformer(compiled, max_rows = max_rows)
     rs <- DBI::dbSendQuery(conn, compiled$sql)

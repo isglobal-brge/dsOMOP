@@ -524,6 +524,7 @@
     # a renewed connection that dropped the cohort temp table FAILS CLOSED here
     # rather than counting against a vanished table and waving the result past.
     sql <- .sql_translate(sql, handle$target_dialect)
+    .dsomopSnapshotReadSql(handle, sql)
     result <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql))
     n <- as.numeric(result[[1]][1])
   } else if (!is.null(n_persons)) {
@@ -860,6 +861,7 @@
   settings <- .omopDisclosureSettings()
   threshold <- settings$nfilter_subset
 
+  .dsomopSnapshotReadSql(handle, post_sql)
   post_result <- .coerce_integer64(
     .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, post_sql)))
   post_n <- as.numeric(post_result[[1]][1])

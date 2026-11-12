@@ -378,6 +378,7 @@
     sql <- .renderSql(handle, "SELECT * FROM @qualified",
                       qualified = .qualifyTable(handle, table, schema =
                         if (table == "vocabulary") handle$vocab_schema else NULL))
+    .dsomopSnapshotReadSql(handle, sql)
     rows <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql))
     names(rows) <- tolower(names(rows))
     if (!nrow(rows) || !all(fields %in% names(rows))) stop("Invalid metadata")

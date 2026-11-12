@@ -2020,6 +2020,7 @@
 #' @return Data frame returned by DBI.
 #' @keywords internal
 .metadataQuery <- function(handle, sql) {
+  .dsomopSnapshotReadSql(handle, sql)
   .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql))
 }
 
@@ -2581,6 +2582,7 @@
     sql <- .renderSql(handle,
       "SELECT TOP 1 * FROM @qualified",
       qualified = qualified)
+    .dsomopSnapshotReadSql(handle, sql)
     result <- .coerce_integer64(
       .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql)))
     if (nrow(result) == 0) return(NULL)
