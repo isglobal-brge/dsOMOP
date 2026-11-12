@@ -20,6 +20,10 @@ test_that("generated source expressions have a closed deterministic dependency c
                  "db.ABS(person_id)", "(SELECT person_id FROM secret)", "missing + 1")) {
     expect_error(.dsomopSnapshotTableDefinition(ddl(expr)), "generated source")
   }
+  expect_error(.dsomopSnapshotTableDefinition(ddl("CURRENT_TIMESTAMP",
+    ",\n`current_timestamp` bigint")), "Stateful")
+  expect_identical(.dsomopSnapshotTableDefinition(ddl("`current_timestamp`",
+    ",\n`current_timestamp` bigint"))$dependencies$year_of_birth, "current_timestamp")
   expect_error(.dsomopSnapshotTableDefinition(ddl("year_of_birth + 1")), "Cyclic")
   expect_error(.dsomopSnapshotTableDefinition(ddl("next_year", ",\n`next_year` int AS (year_of_birth + 1) VIRTUAL")), "Cyclic")
   expect_length(.dsomopSnapshotTableDefinition(ddl("person_id", ",\n`next_year` int AS (year_of_birth + 1) STORED"))$generated, 2L)

@@ -564,6 +564,13 @@
           if (!t$word[[i]] %in% .DSOMOP_SNAPSHOT_COLUMN_CALLS) {
             stop("Unknown or stateful generated source function.")
           }
+        } else if (t$word[[i]] %in% c(
+          "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "LOCALTIME",
+          "LOCALTIMESTAMP", "CURRENT_USER", "CURRENT_ROLE", "SESSION_USER",
+          "SYSTEM_USER", "ROWNUM", "SELECT", "WITH", "UNION", "EXISTS")) {
+          # Bare SQL values remain stateful even if a column has the same
+          # name. Quoted column identifiers have an empty word and are safe.
+          stop("Stateful or relational generated source expression.")
         } else if (tolower(t$value[[i]]) %in% names(columns)) {
           deps <- c(deps, tolower(t$value[[i]]))
         } else if (!t$word[[i]] %in% .DSOMOP_SNAPSHOT_COLUMN_WORDS) {
