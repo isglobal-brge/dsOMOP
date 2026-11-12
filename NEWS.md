@@ -7,6 +7,12 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- (A-26; WS-2c B1) V1 membership outputs retain their effective root
+  cohort identifier in the semantic IR, digest, explain and output closure,
+  independently of the population supplying the rows. Signed identifiers,
+  zero and historical coercions are preserved; a supplied value coerced to
+  integer NA remains distinct from an absent identifier. The compatibility
+  option is refused on the native wire and on other output formats.
 - (WS-2f review B2–B3, N1–N3) A v1 criteria `base` explicitly depends on
   its plan cohort's person seed while retaining fresh observation-period
   episodes and independent filter anchors. Malformed numeric cohort arrays
