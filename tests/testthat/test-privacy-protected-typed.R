@@ -90,24 +90,51 @@ test_that("statistic aliases of one person total share one component", {
   expect_equal(count$allocation$N, 0.02)
 })
 
+# The raw (pre-reconciliation) noisy components of a typed release, by
+# coordinate, from the internal pipeline with the actual keys and sampler.
+.typed_raw <- function(x, ...) {
+  policy <- .dsomopDpPolicy()
+  spec <- list(...)
+  common <- .dsomopDpParseSpec(x, spec, policy)
+  input <- .dsomopDpValidateInput(x, policy)
+  common$order_value <- .dsomopDpOrderVector(input$x, common$order_by)
+  tokens <- .dsomopReleasePersonTokens(
+    .dsomopReleaseKeys(policy), policy,
+    .dsomopTypedPersonIds(x, input$token))
+  capsule <- attr(x, "dsomop_dp_provenance", exact = TRUE)
+  analysis <- .dsomopTypedAnalysis(input, common, policy, tokens,
+                                   capsule$lineage_id)
+  stats::setNames(
+    .dsomopTypedDraw(policy, "realised_sticky", analysis$components),
+    vapply(analysis$components, function(c) c$coordinate, character(1L)))
+}
+
 test_that("dummy categorical levels never redraw the real levels", {
   .release_state()
   x <- .typed_table()
-  base <- .typed_release(x, statistic = "categorical_histogram",
-                         variable = "category", levels = c("a", "b", "c"),
-                         reducer = "first", order_by = "event_date")
+  spec <- list(statistic = "categorical_histogram", variable = "category",
+               levels = c("a", "b", "c"), reducer = "first",
+               order_by = "event_date")
+  base <- do.call(.typed_release, c(list(x), spec))
   coords <- paste0("stratum=root|cell=", c("a", "b", "c"))
-  real <- vapply(coords, function(k) .typed_signed(base, k), numeric(1L))
+  raw <- do.call(.typed_raw, c(list(x), spec))[c("stratum=root", coords)]
+  shown <- vapply(coords, function(k) .typed_signed(base, k), numeric(1L))
   for (i in c(1L, 7L, 400L)) {
     dummies <- sprintf("zz_dummy_%04d", seq_len(i))
-    padded <- .typed_release(x, statistic = "categorical_histogram",
-                             variable = "category",
-                             levels = c(dummies, "c", "a", "b"),
-                             reducer = "first", order_by = "event_date")
-    expect_identical(vapply(coords, function(k) .typed_signed(padded, k),
-                            numeric(1L)), real)
+    padded_spec <- utils::modifyList(spec, list(
+      levels = c(dummies, "c", "a", "b")))
+    padded <- do.call(.typed_release, c(list(x), padded_spec))
+    # The same draws for the person total and every real cell...
+    expect_identical(do.call(.typed_raw, c(list(x), padded_spec))[
+      c("stratum=root", coords)], raw)
     expect_identical(.typed_signed(padded, "stratum=root"),
                      .typed_signed(base, "stratum=root"))
+    # ...so the exported real cells differ only by the reconciliation shift
+    # (their contrasts are unchanged) and still sum with the dummies to N.
+    real <- vapply(coords, function(k) .typed_signed(padded, k), numeric(1L))
+    expect_equal(real - real[[1L]], shown - shown[[1L]], tolerance = 1e-9)
+    expect_equal(sum(padded$components$signed[-1L]),
+                 .typed_signed(padded, "stratum=root"), tolerance = 1e-6)
   }
 })
 
@@ -221,14 +248,22 @@ test_that("a changed contribution redraws only its own components", {
   spec <- list(statistic = "categorical_histogram", variable = "category",
                levels = c("a", "b", "c"), reducer = "first",
                order_by = "event_date")
+  ra <- do.call(.typed_raw, c(list(x), spec))
+  rb <- do.call(.typed_raw, c(list(y), spec))
+  # Cells a and c keep their draws; the new person's cell b and the person
+  # total are redrawn.
+  expect_identical(ra[["stratum=root|cell=a"]], rb[["stratum=root|cell=a"]])
+  expect_identical(ra[["stratum=root|cell=c"]], rb[["stratum=root|cell=c"]])
+  expect_false(identical(ra[["stratum=root|cell=b"]],
+                         rb[["stratum=root|cell=b"]]))
+  expect_false(identical(ra[["stratum=root"]], rb[["stratum=root"]]))
+  # In the exported components the unchanged contrast a - c is preserved.
   a <- suppressMessages(omopDpReleaseDS(x, spec))
   b <- suppressMessages(omopDpReleaseDS(y, spec))
-  expect_identical(.typed_signed(a, "stratum=root|cell=a"),
-                   .typed_signed(b, "stratum=root|cell=a"))
-  expect_identical(.typed_signed(a, "stratum=root|cell=c"),
-                   .typed_signed(b, "stratum=root|cell=c"))
-  expect_false(identical(.typed_signed(a, "stratum=root|cell=b"),
-                         .typed_signed(b, "stratum=root|cell=b")))
+  expect_equal(.typed_signed(a, "stratum=root|cell=a") -
+                 .typed_signed(a, "stratum=root|cell=c"),
+               .typed_signed(b, "stratum=root|cell=a") -
+                 .typed_signed(b, "stratum=root|cell=c"), tolerance = 1e-9)
 })
 
 test_that("DP-only mode accepts only fixed-synopsis typed releases", {

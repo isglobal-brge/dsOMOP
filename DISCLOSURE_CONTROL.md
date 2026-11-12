@@ -209,11 +209,16 @@ owner. A typed variable has no registered label universe, so each declared
 label or bin is its own canonical component, keyed by the label and its
 realised contributions and never by the other declared levels: unused levels,
 dummy positives, reordered levels and clamp-only outer breaks add no fresh
-draw of an existing cell. The declared levels are the view, and displayed
-counts are the Euclidean projection of their signed components onto the
-noisy person total (exported unreconciled, so pooled views are unchanged).
+draw of an existing cell. The declared levels are the view: exported signed
+cells are reconciled to the one noisy person total over the declared cells,
+and displayed counts are their Euclidean projection onto that total.
 Multi-label and record-capped cells and distinct-label cardinalities use the
-fixed cap K as sensitivity for every requested k.
+fixed cap K as sensitivity for every requested k. Residual: because the
+analyst declares the domain, known-empty (dummy) levels or bins move the
+reconciliation shift; their contrasts with a real cell let an analyst estimate
+that cell's single fixed draw, so each distinct typed partition can add one
+noisy estimate of its person total (the split-partition residual above),
+never a fresh draw of the same cell.
 
 The gate covers the registered community-tool surface. It does not alter
 internal profiling helpers, controller-only `omopAchillesHeelDS`, or

@@ -574,13 +574,17 @@
   fixed <- identical(protection, "fixed_synopsis")
   # The declared bounded vector's epsilon: one allocation per family.
   vector_epsilon <- sum(unlist(fam_alloc))
-  # Signed components for pooling, unreconciled: a typed declared domain is a
-  # view, so each label's or bin's component stays canonical (identical
-  # whatever other levels are declared). Views are the Euclidean simplex
-  # projection onto the noisy person total, which is invariant to the uniform
-  # least-squares shift a reconciliation would add, so pooled views are the
-  # same.
+  # Signed components for pooling: partition cells are linearly reconciled to
+  # their one noisy person total (spec 4.5), so no second, independent total
+  # is exported. Each label's or bin's underlying component is canonical: it
+  # is drawn from its own coordinate and contributions, whatever other levels
+  # are declared, so declared levels only change this shift (post-processing
+  # of fixed components), never redraw a cell.
   signed <- as.numeric(noisy)
+  if (identical(analysis$family, "H") && length(signed) > 1L) {
+    cells <- signed[-1L]
+    signed[-1L] <- cells + (signed[[1L]] - sum(cells)) / length(cells)
+  }
   payload <- c(list(
     protocol = .DSOMOP_RELEASE_PROTOCOL,
     release_contract = .DSOMOP_RELEASE_CONTRACT_VERSION,
@@ -606,7 +610,9 @@
       coordinates = vapply(analysis$components, function(c) c$coordinate,
                            character(1L)),
       families = families,
-      reconciliation = "none_views_project_onto_the_person_total",
+      reconciliation = if (identical(analysis$family, "H")) {
+        "declared_cells_sum_to_person_total"
+      } else "none",
       signed = signed)
   ))
   if (!is.null(analysis$effective_breaks)) {
