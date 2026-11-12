@@ -75,8 +75,8 @@
 #            parent), so each episode's eras use only its own members; courses
 #            keyed per parent (era_key "<parent_event_id>|<group_id>:<era_no>")
 #            and never shared with another association.
-# An event restricted to the index visit (visit = {index: true}) cannot be an
-# interval source: its rows depend on a roster row, not on a person's history.
+# An event restricted to the index visit (visit = {index: true}) is normalised
+# and stockpiled per visit; consumers bind that visit to index_visit_id.
 #
 # Grouping (`by`): "event" = one group (group_id 1); "concept" = the scoping
 # concept; "ingredient" = RxNorm ingredient ancestors through
@@ -489,21 +489,19 @@
   if (!is.null(smeta) && !identical(smeta$fragments[["final"]], event_fragment$name)) {
     stop("The interval's source event fragment does not match its event node.", call. = FALSE)
   }
-  if (isTRUE(smeta$index_visit)) {
-    .irReject(paste0("interval '", name, "': its source is restricted to the index visit ",
-                     "(visit = {index: true}), a property of a roster row, not of a person's ",
-                     "history"), field = paste0("/intervals/", name, "/source"))
-  }
   adapter <- all(.ADAPTER_PARENT_COLUMNS %in% names(event_fragment$columns))
   per_parent <- identical(association, "parent")
+  per_visit <- isTRUE(smeta$index_visit)
   if (per_parent && !adapter) {
     stop("A per-parent interval needs an adapter source (episode members, cost).", call. = FALSE)
   }
   h <- .compileDialect(ctx)
   availability <- event_fragment$availability
   extras <- .intervalExtraKeys(event_fragment, association)
+  if (per_visit) extras <- unique(c(extras, "visit_id"))
   order_keys <- c("event_id", extras)
-  partition <- c("person_id", "group_id", if (per_parent) .ADAPTER_PARENT_COLUMNS)
+  partition <- c("person_id", "group_id", if (per_parent) .ADAPTER_PARENT_COLUMNS,
+                 if (per_visit) "visit_id")
   stockpile <- isTRUE(spec$stockpile)
   ev <- event_fragment$name
   nm <- function(suffix = NULL) {
@@ -532,6 +530,7 @@
         "COALESCE(m.ingredient_concept_id, e.concept_id)"
     })
   where <- .intervalQualitySql(h, spec, end_sql, "e")
+  if (per_visit) where <- c(where, "e.visit_id IS NOT NULL")
   if (!identical(spec$by, "event")) where <- c(where, paste0(group_sql, " IS NOT NULL"))
   row_spec <- .intervalRowSpec(event_fragment, extras)
   row_cols <- names(row_spec)
@@ -602,6 +601,7 @@
   # 5. the course: one row per retained era ------------------------------------------------
   person_type <- row_spec$person_id$type
   course_spec <- .intervalCourseSpec(person_type, per_parent)
+  if (per_visit) course_spec$visit_id <- .fragmentColumn("bigint", FALSE, "visit")
   legacy <- .sqlLegacyHandle(.sqlFamily(h))
   ext <- if (spec$persistence > 0L) .sqlDateAddDays(h, "x.end_date", spec$persistence) else "x.end_date"
   course_select <- c(
@@ -622,17 +622,19 @@
   course_select[["n_events"]] <- .sqlIntegerCast(h, "COUNT(*)")
   era <- c(.sqlLosslessKeyText(h, "x.group_id"), "':'", .sqlLosslessKeyText(h, "x.era_no"))
   if (per_parent) era <- c(.sqlLosslessKeyText(h, "x.parent_event_id"), "'|'", era)
+  if (per_visit) era <- c(.sqlLosslessKeyText(h, "x.visit_id"), "'|'", era)
   course_select[["era_key"]] <- .omopConcatSql(legacy, era)
   if (per_parent) {
     course_select[["parent_source_ns"]] <- "x.parent_source_ns"
     course_select[["parent_event_id"]] <- "x.parent_event_id"
   }
+  if (per_visit) course_select[["visit_id"]] <- "x.visit_id"
   course_select <- course_select[names(course_spec)]
   body_course <- paste0("SELECT ", paste(paste0(course_select, " AS ", names(course_select)), collapse = ", "),
                         " FROM ", kept$name, " x", kept_where("x"), " GROUP BY ",
                         paste(paste0("x.", c(partition, "era_no")), collapse = ", "))
   course_identity <- c("source_ns", "person_id", "group_id", "era_no",
-                       if (per_parent) .ADAPTER_PARENT_COLUMNS)
+                       if (per_parent) .ADAPTER_PARENT_COLUMNS, if (per_visit) "visit_id")
   f_course <- register(.fragment(
     nm(), "interval", "row", body_course, course_spec, dependencies = kept$name,
     unique_key = "event_id", person_lineage = lineage, source_identity_columns = course_identity,
@@ -704,10 +706,11 @@
 #'   supply (sorted).
 #' @param cap Carry cap in days.
 #' @param partition Partition columns (default person_id, group_id).
+#' @param path Interval path used for an unsupported supply rejection.
 #' @return \code{rows} with \code{end_date} (effective end, Date),
 #'   \code{supply_days} and \code{carry}.
 #' @keywords internal
-.stockpileIterate <- function(rows, cap, partition = c("person_id", "group_id")) {
+.stockpileIterate <- function(rows, cap, partition = c("person_id", "group_id"), path = "/intervals") {
   n <- nrow(rows)
   rows$end_date <- as.Date(character(0))[seq_len(n)]
   rows$supply_days <- integer(n)
@@ -719,6 +722,9 @@
   supply <- suppressWarnings(as.numeric(rows$supply))
   valid <- !is.na(supply) & is.finite(supply) & supply >= 1 & supply == floor(supply)
   sup <- ifelse(valid, supply, ifelse(!is.na(rec) & rec >= start, rec - start + 1, 1))
+  if (any(!is.finite(sup) | sup > .Machine$integer.max)) {
+    .compileReject("a stockpiled supply lies outside the supported integer range", field = path)
+  }
   key <- do.call(paste, c(lapply(partition, function(p) as.character(rows[[p]])), sep = "\r"))
   first <- c(TRUE, key[-1L] != key[-n])
   eff <- numeric(n)
@@ -836,8 +842,8 @@
     f_norm$name, " x ORDER BY ", paste(paste0("x.", order), collapse = ", ")), dialect = h)
   rows <- .intervalDates(.fetchBounded(handle, sql, max_rows, over_cap),
                          c("start_date", "norm_end", "end_recorded"))
-  rows <- .stockpileIterate(rows, cap, partition)
-  if (nrow(rows) && any(rows$end_date > .INTERVAL_MAX_DATE, na.rm = TRUE)) {
+  rows <- .stockpileIterate(rows, cap, partition, path = field)
+  if (nrow(rows) && any(!is.finite(as.numeric(rows$end_date)) | rows$end_date > .INTERVAL_MAX_DATE)) {
     .compileReject(paste0("interval '", name, "': a stockpiled effective end lies beyond ",
                           format(.INTERVAL_MAX_DATE), ", outside the supported date range"),
                    field = field)
@@ -869,7 +875,17 @@
       }
     }
   }, error = function(e) {
-    try(.compileReleaseTempTables(ctx, tname), silent = TRUE)
+    cleanup <- tryCatch({
+      .compileReleaseTempTables(ctx, tname)
+      NULL
+    }, error = identity)
+    if (!is.null(cleanup)) {
+      # Keep the materialisation error (and any typed rejection fields), but
+      # also report cleanup failure instead of losing it. Ownership remains
+      # registered so execution-context closure can retry the DROP.
+      e$message <- paste(conditionMessage(e), conditionMessage(cleanup), sep = "\n")
+      e$cleanup_error <- cleanup
+    }
     stop(e)
   })
   body <- paste0("SELECT ", paste(paste0("t.", cols), collapse = ", "), " FROM ", tname, " t")

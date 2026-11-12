@@ -264,6 +264,10 @@ test_that("the stockpile iterator is deterministic, bounded and follows the froz
   expect_false(is.na(big$end_date))
   expect_true(big$end_date > as.Date("9999-12-31"))
   expect_identical(big$supply_days, .Machine$integer.max)
+  expect_no_warning(.ws4_expect_rejection(.stockpileIterate(
+    data.frame(person_id = 1, group_id = 1, start_date = as.Date("2020-01-01"),
+               end_recorded = as.Date(NA), supply = 2147483648), cap = 90L),
+    pattern = "supported integer range"))
   # a non-finite supply is not a valid supply (recorded length, else one day)
   nf <- .stockpileIterate(data.frame(person_id = 1, group_id = 1, start_date = as.Date("2020-01-01"),
                                      end_recorded = as.Date(c(NA, "2020-01-03")), supply = c(Inf, NaN)), 90L)
@@ -274,6 +278,32 @@ test_that("the stockpile iterator is deterministic, bounded and follows the froz
                                       end_recorded = as.Date(NA), supply = c(30, 30)), 90L,
                            partition = c("person_id", "group_id", "parent_event_id"))
   expect_identical(par$carry, c(0L, 0L))
+})
+
+test_that("stockpile materialisation refuses dates and supplies outside its supported range (N2)", {
+  h <- .ws4_reach_handle()
+  on.exit(try(DBI::dbDisconnect(h$conn), silent = TRUE), add = TRUE)
+  DBI::dbExecute(h$conn, paste0(
+    "INSERT INTO drug_exposure (drug_exposure_id, person_id, drug_concept_id, drug_exposure_start_date, ",
+    "drug_exposure_end_date, drug_type_concept_id, days_supply) VALUES ",
+    "(939091, 1004, 1503297, '2020-01-01', '2020-01-01', 38000177, 2147483647)"))
+  compile <- function() {
+    ctx <- .ws5_iv_ctx(h, list(s = list(source = list(event = "drug"), stockpile = TRUE)),
+                      events = list(drug = list(table = "drug_exposure")))
+    on.exit(.planContextClose(ctx), add = TRUE)
+    before <- h$temp_tables
+    error <- tryCatch(.compileIntervalByName(ctx, "s"), error = identity)
+    expect_s3_class(error, "dsomop_plan_rejection")
+    expect_identical(error$field, "/intervals/s")
+    expect_identical(h$temp_tables, before)
+    expect_length(ctx$compile_temp_tables, 0L)
+    error
+  }
+  expect_no_warning(e <- compile())
+  expect_match(conditionMessage(e), "supported date range")
+  DBI::dbExecute(h$conn, "UPDATE drug_exposure SET days_supply = 2147483648 WHERE drug_exposure_id = 939091")
+  expect_no_warning(e <- compile())
+  expect_match(conditionMessage(e), "supported integer range")
 })
 
 test_that("covered_days, supply_days and observed days over rosters and windows", {
@@ -598,6 +628,31 @@ test_that("an unavailable source is NA for every row; an available event-free so
     .ws4_expect_rejection(rv("covered_days", list(interval = "n"), coverage = "effective_supply"),
                           pattern = "stockpiled")
   }
+})
+
+test_that("index-visit stockpiles partition carry and courses before consumer windows (B3)", {
+  h <- .ws4_reach_handle()
+  on.exit(try(DBI::dbDisconnect(h$conn), silent = TRUE), add = TRUE)
+  DBI::dbExecute(h$conn, paste0(
+    "INSERT INTO drug_exposure (drug_exposure_id, person_id, drug_concept_id, drug_exposure_start_date, ",
+    "drug_exposure_end_date, drug_type_concept_id, days_supply, visit_occurrence_id) VALUES ",
+    "(939081, 1007, 1503297, '2020-01-01', '2020-01-30', 38000177, 30, 700701), ",
+    "(939082, 1007, 1503297, '2020-01-15', '2020-02-13', 38000177, 30, 700702), ",
+    "(939083, 1007, 1503297, '2020-01-20', '2020-02-18', 38000177, 30, 700701)"))
+  ctx <- .ws5_iv_ctx(h, list(s = list(source = list(event = "drug"), stockpile = TRUE)),
+    events = list(drug = list(table = "drug_exposure", visit = list(index = TRUE))),
+    populations = list(t = list(kind = "criteria")))
+  on.exit(.planContextClose(ctx), add = TRUE)
+  cand <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:3, subject_id = 1007,
+    index_visit_id = c(700701, 700702, NA),
+    cohort_start_date = "2019-12-31", cohort_end_date = "2020-12-31"))
+  val <- .ws5_rv(ctx, "covered_days", cand, "candidate", source = list(interval = "s"),
+                 coverage = "effective_supply")
+  expect_identical(val$value, c(60L, 30L, 0L))
+  course <- .ws5_course_full(ctx, "s", 1007)
+  expect_identical(course$visit_id, c(700701, 700702))
+  expect_identical(course$end_date, c("2020-02-29", "2020-02-13"))
+  expect_identical(course$era_key, c("700701|1:1", "700702|1:1"))
 })
 
 test_that("reducer and stockpile fetches are bounded: cap, cap + 1 and a grown realisation (A-20 (j), B6)", {

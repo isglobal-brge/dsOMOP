@@ -166,6 +166,31 @@ test_that("MySQL 8.4: a stockpile with min_days > 0 reads its session table once
   from_course <- .ws5_rv(ctx, "supply_days", cand, "candidate", source = list(event = "metf"),
                          window = list(start = 0L, end = 30L, anchor = last_course))
   expect_identical(from_course$value, c(60L, NA))
+  # One downstream statement uses the stockpiled course as its anchor and the
+  # same interval's effective rows as its stream. Its shared windowed marks
+  # must be materialised once by MySQL, despite the two consumer branches.
+  anchored <- .ws5_rv(ctx, "covered_days", cand, "candidate", source = list(interval = "s44"),
+                      coverage = "effective_supply",
+                      window = list(start = 0L, end = 59L, anchor = last_course))
+  expect_identical(anchored$value, c(60L, NA_integer_))
+  combined_body <- paste0(
+    "SELECT c.person_id, c.end_recorded, COUNT(*) AS fills, MAX(e.end_date) AS effective_end ",
+    "FROM ", iv$course$name, " c INNER JOIN ", iv$recorded$name,
+    " r ON r.person_id = c.person_id AND r.group_id = c.group_id AND r.era_no = c.era_no ",
+    "INNER JOIN ", iv$effective$name,
+    " e ON e.person_id = r.person_id AND e.group_id = r.group_id AND e.event_id = r.event_id ",
+    "WHERE c.person_id = 1004 GROUP BY c.person_id, c.end_recorded")
+  combined_fragment <- .fragment("ws5_combined", "stream", "row", combined_body,
+    columns = list(person_id = .fragmentColumn("bigint", FALSE, "person_key"),
+                   end_recorded = .fragmentColumn("date", FALSE, "end_recorded"),
+                   fills = .fragmentColumn("integer", FALSE, "private"),
+                   effective_end = .fragmentColumn("date", FALSE, "end")),
+    dependencies = c(iv$course$name, iv$recorded$name, iv$effective$name),
+    person_lineage = list(person_col = "person_id", via_roster = NULL), private_columns = "fills")
+  combined <- .executeQuery(h, .buildStatement(ctx, combined_fragment, dialect = h))
+  expect_identical(as.integer(combined$fills), 2L)
+  expect_identical(as.character(combined$end_recorded), "2020-02-13")
+  expect_identical(as.character(combined$effective_end), "2020-02-29")
   # 1004: effective [01-01, 02-29] inside one period; 1003: its one fill is a
   # 10-day era that min_days = 44 drops, observed 01-01..01-02 and 01-09..01-10
   ccand <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:2, subject_id = c(1004, 1003),

@@ -82,6 +82,10 @@ Deduplication happens for the consumer's association, before era normalisation:
 `.consumerAssociation()` resolves the association for anchors and streams,
 including supply streams and interval consumers. Index-visit events join
 `source.visit_id = roster.index_visit_id`; NULL visits match no source row.
+Intervals over these sources partition normalisation, course formation and
+stockpile carry by visit before that join, preserving visit identity in the
+course key. A cost adapter inherits its parent event's visit restriction;
+visit and parent restrictions apply together when both are required.
 Episode-member consumers join both parent identity columns and person.
 Missing required roster metadata fails closed. Stream sharing includes the
 source, coverage relation, observation component/domain, window and consumer
