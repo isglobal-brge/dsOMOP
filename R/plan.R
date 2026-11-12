@@ -3576,8 +3576,10 @@
         # the private context: neither a missing result key nor a client field
         # can exempt patient output from publication support. Source extensions
         # carrying patient/episode keys must still use genuine person lineage.
+        # A visit filter reads patient visits through an EXISTS, even when an
+        # extension's visit key is omitted from the reference projection.
         source_columns <- bp$columns[[tolower(out$table)]]$column_name
-        if (.referenceTableSource(bp, out$table) &&
+        if (is.null(visit_filter) && .referenceTableSource(bp, out$table) &&
             !any(c(.PERSON_KEY_COLS(), .EPISODE_KEY_COLS(), "set_id") %in% source_columns)) {
           ctx$reference_outputs <- union(ctx$reference_outputs, out_name)
         }

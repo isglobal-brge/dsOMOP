@@ -111,3 +111,59 @@ test_that("reference source proof does not exempt patient sources or patient sco
   handle$blueprint <- NULL
   expect_error(.planExecute(handle, .reference_plan(), c(ref = "R")), "insufficient individuals")
 })
+
+test_that("reference proof excludes effective visit dependencies in memory and staged outputs", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .setLegacyTestPersonKey(handle, "publication-reference-visit", .local_envir = environment())
+  staging <- withr::local_tempdir()
+  Sys.chmod(staging, "0700")
+  DBI::dbExecute(handle$conn, "ALTER TABLE concept ADD COLUMN visit_occurrence_id INTEGER")
+  visit <- DBI::dbGetQuery(handle$conn, paste(
+    "SELECT visit_occurrence_id, visit_concept_id FROM visit_occurrence",
+    "ORDER BY visit_occurrence_id LIMIT 1"))
+  DBI::dbExecute(handle$conn, paste0("UPDATE concept SET visit_occurrence_id = ",
+    visit$visit_occurrence_id[[1L]], " WHERE concept_id = 201820"))
+  withr::local_options(list(nfilter.subset = 100L, dsomop.query_strict = TRUE,
+    dsstaging.base_dir = staging,
+    dsomop.allowed_cdm_extensions = list(concept = "visit_occurrence_id")))
+  handle$blueprint <- NULL
+  linked <- list(concept_ids = list(visit$visit_concept_id[[1L]]))
+  empty <- list(concept_ids = list(99999999L))
+  for (mode in c("memory", "staged")) {
+    for (spelling in c("visit_filter", "filters.visit", "precedence")) {
+      plan <- .reference_plan()
+      if (spelling != "filters.visit") plan$outputs$ref$visit_filter <- linked
+      if (spelling != "visit_filter") {
+        plan$outputs$ref$filters <- list(visit = if (spelling == "precedence") empty else linked)
+      }
+      effective <- plan$outputs$ref$filters$visit %||% plan$outputs$ref$visit_filter
+      sql <- .compileSelect(handle, "concept", columns = plan$outputs$ref$columns,
+                             visit_filter = effective)
+      selected <- .executeQuery(handle, sql)
+      expect_identical(nrow(selected), if (spelling == "precedence") 0L else 1L)
+      expect_false("visit_occurrence_id" %in% names(selected))
+      refused <- tryCatch(.planExecute(handle, plan, c(ref = "R"), output_mode = mode),
+                           dsomop_plan_rejection = identity)
+      expect_s3_class(refused, "dsomop_plan_rejection")
+      expect_identical(refused$code, "lineage_malformed")
+      expect_length(handle$staging_dirs %||% character(0), 0L)
+      expect_length(list.files(staging, recursive = TRUE, all.files = TRUE,
+                                no.. = TRUE), 0L)
+    }
+  }
+  # Source-local date predicates do not read patients. They retain reference
+  # publication even when the authorized source has an unused visit extension.
+  expected <- DBI::dbGetQuery(handle$conn,
+    "SELECT concept_id, concept_code, vocabulary_id FROM concept")
+  for (kind in c("calendar", "time_window")) {
+    plan <- .reference_plan()
+    if (kind == "calendar") {
+      plan$outputs$ref$temporal <- list(calendar = list(start = "1900-01-01", end = "2100-01-01"))
+    } else {
+      plan$outputs$ref$filters <- list(time_window = list(date_column = "valid_start_date",
+        start_date = "1900-01-01", end_date = "2100-01-01"))
+    }
+    expect_identical(.planExecute(handle, plan, c(ref = "R"))$ref, expected)
+  }
+})
