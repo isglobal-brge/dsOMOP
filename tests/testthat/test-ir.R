@@ -725,3 +725,34 @@ test_that("the legacy-spec adapter wraps the unchanged .cohortCreate rows as a r
   expect_true(all(rows$index_source == "legacy_spec"))
   expect_true(all(is.na(rows$index_key)) && all(is.na(rows$op_start)))
 })
+
+test_that("the legacy-spec adapter forwards a private plan context to .cohortCreate", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+  expect_true("ctx" %in% names(formals(.cohortCreate)))
+  id <- DBI::dbGetQuery(handle$conn,
+    "SELECT condition_concept_id AS id FROM condition_occurrence LIMIT 1")$id
+  ir <- .irPrepare(list(cohort = list(type = "spec", spec = list(type = "condition",
+                                                                 concept_set = list(id))),
+                        outputs = list(m = list(type = "cohort_membership"))))
+  spec <- ir$populations$base$index$source$legacy_spec
+  ctx <- .planContext(handle, ir)
+  on.exit(.planContextClose(ctx), add = TRUE, after = FALSE)
+  rows <- function(fr) {
+    DBI::dbGetQuery(handle$conn, paste0("SELECT * FROM (", fr$select_body,
+                                        ") r ORDER BY cohort_row_id"))
+  }
+  first <- withr::with_options(list(nfilter.subset = 0), .adaptLegacySpec(handle, spec))
+  direct <- rows(first)
+  # .cohortCreate() names its temporary cohort dsomop_cohort_<id> (v1, one
+  # inline spec per plan): release it before the second materialisation
+  .dropTempTable(handle, attr(first, "temp_table"))
+  private <- rows(withr::with_options(list(nfilter.subset = 0), .adaptLegacySpec(ctx, spec)))
+  expect_gt(nrow(private), 0L)
+  expect_identical(private, direct)
+  # a forged context is refused by the cohort primitive, never ignored
+  forged <- new.env()
+  forged$handle <- handle
+  expect_error(.adaptLegacySpec(forged, spec), "Invalid private execution context")
+})
