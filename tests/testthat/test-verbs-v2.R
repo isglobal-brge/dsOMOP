@@ -293,11 +293,28 @@ test_that("omopFilterDS(expr) results pass the final-support boundary", {
   })
 })
 
-test_that("the capability block advertises the verbs only with their implementations", {
-  ops <- dsOMOP:::.recipeAvailableOperations()
-  if (length(ops)) {
-    expect_true(all(c("verb.mutate", "verb.filter_expr") %in% ops))
-  }
-  expect_true(is.function(dsOMOP:::.omopFilterExpr))
+test_that("the capability block advertises the verbs with their own endpoints only", {
+  expect_true(all(c("verb.mutate", "verb.filter_expr", "status.accessor") %in%
+                    dsOMOP:::.recipeAvailableOperations()))
   expect_true("omopMutateDS" %in% getNamespaceExports("dsOMOP"))
+  # the verbs do not need the plan compilers
+  testthat::local_mocked_bindings(.recipeFunctionInstalled = function(name) !startsWith(name, ".compile"),
+                                  .package = "dsOMOP")
+  expect_setequal(dsOMOP:::.recipeAvailableOperations(),
+                  c("status.accessor", "verb.mutate", "verb.filter_expr"))
+  testthat::local_mocked_bindings(.recipeFunctionInstalled = function(name) name != ".omopFilterExpr",
+                                  .package = "dsOMOP")
+  expect_false("verb.filter_expr" %in% dsOMOP:::.recipeAvailableOperations())
+})
+
+test_that("a deployment that disables a verb operation refuses the verb", {
+  x <- .v2v_frame()
+  withr::local_options(list(nfilter.subset = 3,
+                            dsomop.recipe_operations_disabled = c("verb.mutate", "verb.filter_expr")))
+  expect_false(any(c("verb.mutate", "verb.filter_expr") %in% dsOMOP:::.recipeAvailableOperations()))
+  expect_error(.v2v_mutate(x, list("y", .v2v_lit(1))), "does not offer verb.mutate",
+               class = "dsomop_plan_rejection")
+  expect_error(.v2v_filter(x, list(var = "age", op = ">=", value = 18)),
+               "does not offer verb.filter_expr", class = "dsomop_plan_rejection")
+  expect_equal(nrow(omopFilterDS(x, "label", "==", "a")), 3L)
 })

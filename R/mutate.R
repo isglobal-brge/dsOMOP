@@ -507,6 +507,9 @@ omopMutateDS <- function(x, exprs) {
     stop("omopMutateDS: input must be a dsOMOP table (omop.table).", call. = FALSE)
   }
   .omopTablePseudonymization(x, caller = "omopMutateDS")
+  if ("verb.mutate" %in% .irDisabledOperations()) {
+    .verbReject("omopMutateDS", "this server does not offer verb.mutate")
+  }
   req <- .ds_arg(exprs)
   if (!is.list(req) || is.null(names(req))) {
     .verbReject("omopMutateDS", "the mutation request must be a JSON object")
@@ -540,6 +543,9 @@ omopMutateDS <- function(x, exprs) {
 #' are kept.
 #' @keywords internal
 .omopFilterExpr <- function(x, expr) {
+  if ("verb.filter_expr" %in% .irDisabledOperations()) {
+    .verbReject("omopFilterDS", "this server does not offer verb.filter_expr")
+  }
   pred <- .ds_arg(expr)
   schema <- .irSchema("plan-v2")
   res <- .jsonSchemaValidate(schema[["$defs"]][["predicate"]], pred, root = schema)
