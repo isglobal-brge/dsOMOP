@@ -1989,7 +1989,9 @@
                                  bp$tables$table_name[bp$tables$present_in_db]),
     database_support = .databaseSupportProfile(handle$dbms),
     disclosure = disclosure,
-    pseudonymization = .personKeyPublicContract(handle)
+    pseudonymization = .personKeyPublicContract(handle),
+    # Recipe-language declaration (design-2.10.3 section 4.4, defect A-E7).
+    recipe_language = .recipeLanguageCapability(handle)
   )
 }
 
