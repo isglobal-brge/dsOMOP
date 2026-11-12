@@ -178,6 +178,28 @@ for (engine in c("mariadb", "mysql")) local({
     expect_null(h$read_snapshot)
   })
 
+  test_that(paste(dbms, "stored-function views cannot hide external MyISAM reads"), {
+    f <- .snapshotViewFixture(dbms)
+    on.exit(f$cleanup(), add = TRUE)
+    h <- f$handle
+    f$grant_metadata()
+    hidden <- paste0(f$external, ".hidden")
+    fun <- paste0(f$external, ".hidden_count")
+    DBI::dbExecute(f$admin, paste("CREATE TABLE", hidden, "(id INTEGER) ENGINE=MyISAM"))
+    DBI::dbExecute(f$admin, paste("INSERT INTO", hidden, "VALUES (1)"))
+    DBI::dbExecute(f$admin, paste("CREATE FUNCTION", paste0(fun, "()"),
+      "RETURNS BIGINT READS SQL DATA RETURN (SELECT COUNT(*) FROM", paste0(hidden, ")")))
+    DBI::dbExecute(f$admin, paste("CREATE OR REPLACE SQL SECURITY DEFINER VIEW", f$declared,
+      "AS SELECT * FROM", f$physical, "WHERE", paste0(fun, "()"), "= 1"))
+    expect_equal(.executeQuery(h, paste("SELECT COUNT(*) AS n FROM", f$declared))$n, 3)
+    expect_error(suppressMessages(.dsomopWithReadSnapshot(h,
+      .executeQuery(h, paste("SELECT COUNT(*) AS n FROM", f$declared)))),
+      class = "dsomop_snapshot_unavailable")
+    expect_null(h$read_snapshot)
+    DBI::dbExecute(f$admin, paste("INSERT INTO", hidden, "VALUES (2)"))
+    expect_equal(.executeQuery(h, paste("SELECT COUNT(*) AS n FROM", f$declared))$n, 0)
+  })
+
   test_that(paste(dbms, "base tables named VIEW cannot masquerade as views"), {
     f <- .snapshotViewFixture(dbms)
     on.exit(f$cleanup(), add = TRUE)
@@ -213,6 +235,10 @@ test_that("snapshot dependency parser follows scoped relational sources", {
   expect_equal(nrow(.dsomopSnapshotSqlSources("SELECT 1 FROM DUAL", "main")), 0L)
   expect_equal(.dsomopSnapshotSqlSources("SELECT * FROM `DUAL`", "main"),
     data.frame(schema = "main", table = "DUAL"))
+  expect_equal(.dsomopSnapshotSqlSources(
+    "SELECT * FROM JSON_TABLE((SELECT j FROM db.person), '$[*]' COLUMNS(id INT PATH '$')) t", "main"),
+    data.frame(schema = "db", table = "person"))
+  expect_error(.dsomopSnapshotSqlSources("SELECT * FROM other.TABLE_FN()", "main"), "Stored-routine")
   ambiguous <- paste0("SELECT '", intToUtf8(92L), "' FROM hidden.person # ' FROM safe.person")
   expect_equal(.dsomopSnapshotSqlSources(ambiguous, "main", sql_mode = "NO_BACKSLASH_ESCAPES"),
     data.frame(schema = "hidden", table = "person"))

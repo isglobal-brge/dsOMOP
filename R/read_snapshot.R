@@ -362,8 +362,12 @@
       while (i + 2L <= n && t$syntax[[i + 1L]] == "." && t$id[[i + 2L]]) {
         parts <- c(parts, t$value[[i + 2L]]); i <- i + 2L
       }
-      if (i < n && t$syntax[[i + 1L]] == "(") stop("Unverifiable table-valued source.")
-      virtual <- length(parts) == 1L && identical(w, "DUAL")
+      table_function <- i < n && t$syntax[[i + 1L]] == "("
+      json_table <- table_function && length(parts) == 1L && identical(w, "JSON_TABLE")
+      if (table_function && !json_table) stop("Unverifiable table-valued source.")
+      # JSON_TABLE is a native table constructor; its argument expressions and
+      # any nested SELECTs are still scanned by the parenthesis walk below.
+      virtual <- json_table || (length(parts) == 1L && identical(w, "DUAL"))
       local <- length(parts) == 1L && any(vapply(ctes, function(cte) {
         identical(tolower(parts[[1L]]), tolower(cte$name)) && i > cte$start && i < cte$end
       }, logical(1L)))
