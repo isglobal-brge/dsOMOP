@@ -1,0 +1,254 @@
+[
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/interval-invalid/dsOMOP",
+    "original_bytes": 13427835,
+    "deleted_file_bytes": 12553754,
+    "allocated_bytes_before_preserving_tools": 17248256,
+    "preserved_tools": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/interval-invalid/dsOMOP-source-tools-evidence",
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:00.581786+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/interval-invalid/dsOMOPClient",
+    "original_bytes": 11522398,
+    "deleted_file_bytes": 11522398,
+    "allocated_bytes_before_preserving_tools": 14659584,
+    "preserved_tools": null,
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:00.671165+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/interval-reference/dsOMOP",
+    "original_bytes": 13605870,
+    "deleted_file_bytes": 12704110,
+    "allocated_bytes_before_preserving_tools": 17444864,
+    "preserved_tools": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/interval-reference/dsOMOP-source-tools-evidence",
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:00.763548+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/interval-reference/dsOMOPClient",
+    "original_bytes": 11522398,
+    "deleted_file_bytes": 11522398,
+    "allocated_bytes_before_preserving_tools": 14663680,
+    "preserved_tools": null,
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:00.841615+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/interval-reference-audit/dsOMOP",
+    "original_bytes": 13616544,
+    "deleted_file_bytes": 12711659,
+    "allocated_bytes_before_preserving_tools": 17453056,
+    "preserved_tools": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/interval-reference-audit/dsOMOP-source-tools-evidence",
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:00.925673+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/interval-reference-audit/dsOMOPClient",
+    "original_bytes": 11522398,
+    "deleted_file_bytes": 11522398,
+    "allocated_bytes_before_preserving_tools": 14663680,
+    "preserved_tools": null,
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:01.007385+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/interval-reference-scope/dsOMOP",
+    "original_bytes": 15198899,
+    "deleted_file_bytes": 12718512,
+    "allocated_bytes_before_preserving_tools": 19054592,
+    "preserved_tools": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/interval-reference-scope/dsOMOP-source-tools-evidence",
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:01.095964+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/interval-reference-scope/dsOMOPClient",
+    "original_bytes": 11522398,
+    "deleted_file_bytes": 11522398,
+    "allocated_bytes_before_preserving_tools": 14663680,
+    "preserved_tools": null,
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:01.178500+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/root-full-client-v4/dsOMOP",
+    "original_bytes": 15202054,
+    "deleted_file_bytes": 12721667,
+    "allocated_bytes_before_preserving_tools": 19054592,
+    "preserved_tools": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/root-full-client-v4/dsOMOP-source-tools-evidence",
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:01.263521+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/root-full-client-v4/dsOMOPClient",
+    "original_bytes": 11525553,
+    "deleted_file_bytes": 11525553,
+    "allocated_bytes_before_preserving_tools": 14663680,
+    "preserved_tools": null,
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:01.344980+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/root-full-server-v4/dsOMOP",
+    "original_bytes": 15202054,
+    "deleted_file_bytes": 12721667,
+    "allocated_bytes_before_preserving_tools": 19054592,
+    "preserved_tools": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/root-full-server-v4/dsOMOP-source-tools-evidence",
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:01.436102+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/root-full-server-v4/dsOMOPClient",
+    "original_bytes": 11525553,
+    "deleted_file_bytes": 11525553,
+    "allocated_bytes_before_preserving_tools": 14663680,
+    "preserved_tools": null,
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:01.525303+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/root-policy-e/dsOMOP",
+    "original_bytes": 5293089,
+    "deleted_file_bytes": 5181609,
+    "allocated_bytes_before_preserving_tools": 7929856,
+    "preserved_tools": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/root-policy-e/dsOMOP-source-tools-evidence",
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:01.599981+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/root-policy-e/dsOMOPClient",
+    "original_bytes": 10123357,
+    "deleted_file_bytes": 10123357,
+    "allocated_bytes_before_preserving_tools": 13152256,
+    "preserved_tools": null,
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:01.677846+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/root-policy-f/dsOMOP",
+    "original_bytes": 5293089,
+    "deleted_file_bytes": 5181609,
+    "allocated_bytes_before_preserving_tools": 7929856,
+    "preserved_tools": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/root-policy-f/dsOMOP-source-tools-evidence",
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:01.737267+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/root-policy-f/dsOMOPClient",
+    "original_bytes": 10123357,
+    "deleted_file_bytes": 10123357,
+    "allocated_bytes_before_preserving_tools": 13156352,
+    "preserved_tools": null,
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:01.801852+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-debug/dsOMOP",
+    "original_bytes": 13649330,
+    "deleted_file_bytes": 12533701,
+    "allocated_bytes_before_preserving_tools": 17489920,
+    "preserved_tools": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-debug/dsOMOP-source-tools-evidence",
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:01.882072+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-debug/dsOMOPClient",
+    "original_bytes": 11522398,
+    "deleted_file_bytes": 11522398,
+    "allocated_bytes_before_preserving_tools": 14659584,
+    "preserved_tools": null,
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:01.963119+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-final/dsOMOP",
+    "original_bytes": 13645665,
+    "deleted_file_bytes": 12532224,
+    "allocated_bytes_before_preserving_tools": 17485824,
+    "preserved_tools": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-final/dsOMOP-source-tools-evidence",
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:02.044430+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-final/dsOMOPClient",
+    "original_bytes": 11522398,
+    "deleted_file_bytes": 11522398,
+    "allocated_bytes_before_preserving_tools": 14659584,
+    "preserved_tools": null,
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:02.120952+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-policy-replay/dsOMOP",
+    "original_bytes": 13853511,
+    "deleted_file_bytes": 12691878,
+    "allocated_bytes_before_preserving_tools": 17715200,
+    "preserved_tools": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-policy-replay/dsOMOP-source-tools-evidence",
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:02.206449+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-policy-replay/dsOMOPClient",
+    "original_bytes": 11522398,
+    "deleted_file_bytes": 11522398,
+    "allocated_bytes_before_preserving_tools": 14659584,
+    "preserved_tools": null,
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:02.304122+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-reference-final/dsOMOP",
+    "original_bytes": 13891462,
+    "deleted_file_bytes": 12708810,
+    "allocated_bytes_before_preserving_tools": 17764352,
+    "preserved_tools": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-reference-final/dsOMOP-source-tools-evidence",
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:02.401017+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-reference-final/dsOMOPClient",
+    "original_bytes": 11522398,
+    "deleted_file_bytes": 11522398,
+    "allocated_bytes_before_preserving_tools": 14659584,
+    "preserved_tools": null,
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:02.478472+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-repaired/dsOMOP",
+    "original_bytes": 13663106,
+    "deleted_file_bytes": 12547477,
+    "allocated_bytes_before_preserving_tools": 17506304,
+    "preserved_tools": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-repaired/dsOMOP-source-tools-evidence",
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:02.558294+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-repaired/dsOMOPClient",
+    "original_bytes": 11522398,
+    "deleted_file_bytes": 11522398,
+    "allocated_bytes_before_preserving_tools": 14659584,
+    "preserved_tools": null,
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:02.641847+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-temporal/dsOMOP",
+    "original_bytes": 13649647,
+    "deleted_file_bytes": 12534018,
+    "allocated_bytes_before_preserving_tools": 17489920,
+    "preserved_tools": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-temporal/dsOMOP-source-tools-evidence",
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:02.725576+00:00"
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/v1-temporal/dsOMOPClient",
+    "original_bytes": 11522398,
+    "deleted_file_bytes": 11522398,
+    "allocated_bytes_before_preserving_tools": 14659584,
+    "preserved_tools": null,
+    "reason": "Regenerable own scratch package copy; evidence logs and source manifests remain outside the copy",
+    "utc": "2026-11-12T15:19:02.804485+00:00"
+  }
+]
