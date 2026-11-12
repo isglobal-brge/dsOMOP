@@ -482,6 +482,7 @@
                  .populationNulls(h, c("index_key", "index_visit_id", "origin_source", "origin_key",
                                        "set_id", "is_case", "sampling_weight",
                                        "op_start", "op_end", "op_component_id", "key_1", "key_2", "key_3")))
+  inst_over$origin_source <- .compileTextLiteral("(persons)")
   inst_extra <- c(list(mt_set = col("bigint", FALSE, "private")),
                   stats::setNames(lapply(strata_cols, function(x) col("bigint", TRUE, "private")), strata_cols))
   carry_inst <- c("mt_set", strata_cols)
