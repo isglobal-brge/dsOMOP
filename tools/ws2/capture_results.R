@@ -170,10 +170,16 @@ if (nzchar(Sys.getenv("DSOMOP_RESULT_CAPTURE_DIR"))) local({
       }
       vals <- as.vector(vals)
       attributes(vals) <- NULL
-      return(list(kind = "atomic", class = I(class(x)), type = typeof(x),
+      out <- list(kind = "atomic", class = I(class(x)), type = typeof(x),
                   length = length(x), levels = lev, values = I(vals),
                   names = if (is.null(names(x))) NULL else I(as.character(names(x))),
-                  attrs = .b10_attrs(x, c("names", "class", "levels"), digits)))
+                  attrs = .b10_attrs(x, c("names", "class", "levels"), digits))
+      # ISO formatting discards fractional Date days and submicrosecond POSIXct
+      # values. Keep their complete numeric payload alongside readable text.
+      if (inherits(x, "Date") || inherits(x, "POSIXct")) {
+        out$numeric_payload <- I(.b10_num(x, 17L))
+      }
+      return(out)
     }
     list(kind = "other", class = I(class(x)), type = typeof(x))
   }
@@ -370,8 +376,9 @@ if (nzchar(Sys.getenv("DSOMOP_RESULT_CAPTURE_DIR"))) local({
       v <- text(n$values)
       x <- if ("factor" %in% cls) {
         factor(v, levels = text(n$levels))
-      } else if ("Date" %in% cls) {
-        as.Date(v)
+      } else if ("Date" %in% cls || "POSIXct" %in% cls) {
+        if (is.null(n$numeric_payload)) stop("date pin lacks its lossless numeric payload")
+        as.numeric(text(n$numeric_payload))
       } else switch(n$type,
         logical = as.logical(v), integer = as.integer(v), double = as.numeric(v),
         character = v, raw = as.raw(strtoi(v, 16L)),

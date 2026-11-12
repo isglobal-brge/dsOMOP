@@ -112,10 +112,16 @@
     }
     vals <- as.vector(vals)
     attributes(vals) <- NULL
-    return(list(kind = "atomic", class = I(class(x)), type = typeof(x),
+    out <- list(kind = "atomic", class = I(class(x)), type = typeof(x),
                 length = length(x), levels = lev, values = I(vals),
                 names = if (is.null(names(x))) NULL else I(as.character(names(x))),
-                attrs = .b10_attrs(x, c("names", "class", "levels"), digits)))
+                attrs = .b10_attrs(x, c("names", "class", "levels"), digits))
+    # ISO formatting discards fractional Date days and submicrosecond POSIXct
+    # values. Keep their complete numeric payload alongside readable text.
+    if (inherits(x, "Date") || inherits(x, "POSIXct")) {
+      out$numeric_payload <- I(.b10_num(x, 17L))
+    }
+    return(out)
   }
   list(kind = "other", class = I(class(x)), type = typeof(x))
 }
@@ -312,8 +318,9 @@
     v <- text(n$values)
     x <- if ("factor" %in% cls) {
       factor(v, levels = text(n$levels))
-    } else if ("Date" %in% cls) {
-      as.Date(v)
+    } else if ("Date" %in% cls || "POSIXct" %in% cls) {
+      if (is.null(n$numeric_payload)) stop("date pin lacks its lossless numeric payload")
+      as.numeric(text(n$numeric_payload))
     } else switch(n$type,
       logical = as.logical(v), integer = as.integer(v), double = as.numeric(v),
       character = v, raw = as.raw(strtoi(v, 16L)),
@@ -1052,6 +1059,9 @@ test_that("v1-corpus-classes.csv carries the A-19 dispositions", {
     # item 1 (F-26)
     stats::setNames("corrected", paste0(oc, "baseline output produces one row per cohort member#2")),
     stats::setNames("corrected", paste0(oc, "single plan with all output types executes successfully")),
+    # open item (ii): r005 has no suppressed band at nfilter.tab = 1;
+    # its entire result, including the requested age grid, stays exact.
+    stats::setNames("safe", paste0(oc, "baseline accepts only a public common age-grid coarsening#1")),
     # item 2
     stats::setNames(c("newly_refused_publication", "safe"),
                     paste0("dsOMOP:test-survival-sql.R:recurrent plan assignment splits and pseudonymizes both components",

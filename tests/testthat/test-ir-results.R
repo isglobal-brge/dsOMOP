@@ -22,7 +22,8 @@
 # types, row count, row order and values, the composite/split inventories and
 # every attribute. The comparison is LOSSLESS: doubles go through 17 significant
 # digits, which round-trip every IEEE-754 double, so equal canonical forms mean
-# byte-identical values (dates ISO, factors as levels + labels, NA explicit).
+# byte-identical finite numeric values (dates also retain their numeric payload;
+# factors keep levels + labels and NA is explicit).
 # The two baseline captures agreed at 17 digits on every pinned value.
 #
 # Staged results are compared as the complete descriptor plus the staged file's
@@ -111,10 +112,16 @@
     }
     vals <- as.vector(vals)
     attributes(vals) <- NULL
-    return(list(kind = "atomic", class = I(class(x)), type = typeof(x),
+    out <- list(kind = "atomic", class = I(class(x)), type = typeof(x),
                 length = length(x), levels = lev, values = I(vals),
                 names = if (is.null(names(x))) NULL else I(as.character(names(x))),
-                attrs = .b10_attrs(x, c("names", "class", "levels"), digits)))
+                attrs = .b10_attrs(x, c("names", "class", "levels"), digits))
+    # ISO formatting discards fractional Date days and submicrosecond POSIXct
+    # values. Keep their complete numeric payload alongside readable text.
+    if (inherits(x, "Date") || inherits(x, "POSIXct")) {
+      out$numeric_payload <- I(.b10_num(x, 17L))
+    }
+    return(out)
   }
   list(kind = "other", class = I(class(x)), type = typeof(x))
 }
@@ -311,8 +318,9 @@
     v <- text(n$values)
     x <- if ("factor" %in% cls) {
       factor(v, levels = text(n$levels))
-    } else if ("Date" %in% cls) {
-      as.Date(v)
+    } else if ("Date" %in% cls || "POSIXct" %in% cls) {
+      if (is.null(n$numeric_payload)) stop("date pin lacks its lossless numeric payload")
+      as.numeric(text(n$numeric_payload))
     } else switch(n$type,
       logical = as.logical(v), integer = as.integer(v), double = as.numeric(v),
       character = v, raw = as.raw(strtoi(v, 16L)),
@@ -575,5 +583,16 @@ test_that("safe-class v1 plans reproduce their 2.10.2 staged results on admissib
     expect_identical(live$volatile$raw_token_sha256, want_tokens$raw_token_sha256,
                      info = paste(info, "raw person tokens"))
     .b10_expect_result(.b10_roundtrip(live$tree), want, info)
+  }
+})
+
+
+test_that("result canonicalisation preserves fractional dates and submicrosecond times", {
+  date <- structure(c(0, 0.5, NA_real_), class = "Date")
+  time <- structure(c(0, 1e-8, NA_real_), class = c("POSIXct", "POSIXt"), tzone = "UTC")
+  for (x in list(date, time)) {
+    canonical <- .b10_roundtrip(.b10_canon(x))
+    expect_false(identical(canonical$numeric_payload[[1L]], canonical$numeric_payload[[2L]]))
+    expect_identical(.b10_decode(canonical), x)
   }
 })

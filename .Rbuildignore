@@ -5,3 +5,4 @@
 ^\.github$
 ^\.dp-
 ^STATUS_DP\.md$
+^tools/ws2/artifacts$
