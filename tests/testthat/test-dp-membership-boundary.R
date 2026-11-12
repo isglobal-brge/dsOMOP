@@ -14,7 +14,9 @@ for (engine in c("postgresql", "mariadb", "mysql")) local({
              "9223372036854775807")
     DBI::dbExecute(fixture$admin, paste0("DELETE FROM ", person))
     DBI::dbExecute(fixture$admin, paste0("INSERT INTO ", person,
-      " (person_id) VALUES ", paste0("(", c(ids, ids[1L]), ")", collapse = ",")))
+      " (person_id, gender_concept_id, year_of_birth, race_concept_id, ",
+      "ethnicity_concept_id) VALUES ",
+      paste0("(", c(ids, ids[1L]), ",8507,1970,8527,38003564)", collapse = ",")))
     .dsomopWithReadSnapshot(h, {
       native <- .dsomopDpMembershipHash(h, "database")
       expect_identical(native$n, as.character(length(ids)))
