@@ -512,8 +512,15 @@ test_that("without noise the record moments are the record-weighted mean and SD"
   lapply(.records_engine_questions, function(q) {
     out <- suppressWarnings(.omopAnalysisRun(handle, q$id,
                                              q$params %||% list()))
+    protection <- attr(out, "dsomop_protection", exact = TRUE)
+    read_snapshot <- protection$read_snapshot
+    # Transaction mechanisms differ by engine. Verify that field separately;
+    # the numeric answers and every other release attribute must still match.
+    protection$read_snapshot <- NULL
+    attr(out, "dsomop_protection") <- protection
     list(id = q$id,
-         protection = attr(out, "dsomop_protection")$protection,
+         protection = protection$protection,
+         read_snapshot = read_snapshot,
          values = .records_numeric_frame(out))
   })
 }
@@ -554,9 +561,15 @@ test_that("without noise the record moments are the record-weighted mean and SD"
 
 .expect_records_engine <- function(answers, label) {
   reference <- .records_sqlite_answers()
+  expected_snapshot <- switch(label,
+    duckdb = "snapshot_transaction",
+    postgresql = "repeatable_read_transaction",
+    mysql = "consistent_snapshot_transaction",
+    mariadb = "consistent_snapshot_transaction")
   for (i in seq_along(reference)) {
     info <- paste(label, reference[[i]]$id)
     expect_identical(answers[[i]]$protection, "realised_sticky", info = info)
+    expect_identical(answers[[i]]$read_snapshot, expected_snapshot, info = info)
     expect_gt(nrow(reference[[i]]$values), 0L, label = info)
     expect_equal(answers[[i]]$values, reference[[i]]$values,
                  tolerance = 1e-9, info = info)
@@ -568,6 +581,8 @@ test_that("record summaries run on SQLite and DuckDB with equal answers", {
   reference <- .records_sqlite_answers()
   expect_true(all(vapply(reference, `[[`, character(1L), "protection") ==
                     "realised_sticky"))
+  expect_identical(vapply(reference, `[[`, character(1L), "read_snapshot"),
+                   rep("serializable_transaction", length(reference)))
   value <- reference[[3L]]$values
   # The live fixture records three HbA1c values without a unit: their own
   # stratum, never merged with percent.
