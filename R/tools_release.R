@@ -493,8 +493,12 @@
     stop("Protected releases need a person identifier for every row.",
          call. = FALSE)
   }
-  framed <- paste0("dsomop-release-person-v1\u001f", policy$domain,
-                   "\u001f", text)
+  # Byte-length framed (B04): no identifier or domain text can shift a field
+  # boundary.
+  domain <- enc2utf8(as.character(policy$domain %||% ""))
+  text <- enc2utf8(text)
+  framed <- paste0("dsomop-release-person-v2|", nchar(domain, type = "bytes"),
+                   ":", domain, "|", nchar(text, type = "bytes"), ":", text)
   as.character(openssl::sha256(framed, key = keys$person))
 }
 
@@ -532,12 +536,15 @@
   digests <- character(0)
   if (length(tokens) > 0L) {
     order <- order(tokens, method = "radix")
-    records <- paste0(tokens[order], ":",
+    tok <- enc2utf8(as.character(tokens[order]))
+    # Length-prefixed tokens (B04): a record decodes unambiguously whatever
+    # characters a token holds.
+    records <- paste0(nchar(tok, type = "bytes"), ":", tok, ":",
                       .dsomopReleaseIntegerString(contributions[order]))
     chunks <- split(records, ceiling(seq_along(records) / 10000L))
     digests <- vapply(chunks, function(chunk) {
       .dsomopDpHmac(keys$fingerprint, paste(
-        c("dsomop-contribution-chunk-v1", length(chunk), chunk),
+        c("dsomop-contribution-chunk-v2", length(chunk), chunk),
         collapse = "\n"))
     }, character(1L), USE.NAMES = FALSE)
   }
