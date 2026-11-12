@@ -1079,6 +1079,12 @@ test_that("v1-corpus-classes.csv carries the A-19 dispositions", {
       paste0(so, "a scalar plan cohort id NARROWS populations as scope, not as base"))),
     # item 6
     stats::setNames("unchanged_invalid", "dsOMOP:test-cohort.R:cohort creation with inclusion criteria filters persons"),
+    # Final per-call audit: private index resolution is not publication;
+    # the original narrow-age call lacks a required public reference date.
+    stats::setNames("newly_permitted", "dsOMOP:test-plan-index-event.R:index-event populations remain subject to the disclosure gate"),
+    stats::setNames(c("unchanged_invalid", "newly_permitted"),
+                   paste0("dsOMOP:test-recipe-reach.R:reach SAFETY: narrow age_range blocked while gate is ON",
+                          c("#missing_reference", "#explicit_reference"))),
     # item 8
     stats::setNames(c("unchanged_invalid", "newly_refused_structural"),
                     paste0(oc, "survival custom filter on an identifier column is rejected", c("#strict", "#non_strict")))
