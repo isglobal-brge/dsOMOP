@@ -7,15 +7,14 @@
 #   index_source, index_key, index_visit_id, set_id, is_case,
 #   sampling_weight, op_start, op_end
 #
-# plus private typed columns: op_component_id (the selected coverage
+# plus private origin_source/origin_key (the original consumer association,
+# retained when matching assigns a new index identity), and typed columns: op_component_id (the selected coverage
 # component, A-20 c), source_rank and key_1..key_3 (the typed components of
-# the origin identity, below). Rosters are deterministic CTE chains over the
-# CDM: a roster is recomputed by every statement that reads it, and the total
-# orders below make every recomputation identical, so cohort_row_id is
-# immutable for the plan execution. Only the matched rows a matching sampler
-# realises in R are materialised (R/compile_match.R). No statement of this
-# module reads a session temporary table more than once (MySQL refuses a
-# temporary table referenced twice in one statement).
+# the origin identity, below). Raw candidates and final rosters are private
+# session tables, materialised once in the database. Row keys and origins
+# therefore stay fixed even if source tables change between statements.
+# MySQL reuses these tables through the statement builder's typed transport;
+# execution-context cleanup owns every table before allocation begins.
 #
 # Origin identity (section 6.9). Each roster row carries
 #   (index_source, subject_id, cohort_start_date, cohort_end_date, index_key)
@@ -64,9 +63,9 @@
 .POP_KEY_COLUMNS <- c("source_rank", "key_1", "key_2", "key_3")
 .POP_ROSTER_COLUMNS <- c("subject_id", "cohort_start_date", "cohort_end_date",
                          "index_source", "index_key", "index_visit_id",
-                         "set_id", "is_case", "sampling_weight", "op_start",
+                         "origin_source", "origin_key", "set_id", "is_case", "sampling_weight", "op_start",
                          "op_end", "op_component_id", .POP_KEY_COLUMNS)
-.POP_PRIVATE_COLUMNS <- c("index_key", "index_visit_id", "op_component_id",
+.POP_PRIVATE_COLUMNS <- c("index_key", "index_visit_id", "origin_source", "origin_key", "op_component_id",
                           .POP_KEY_COLUMNS)
 .POP_EPISODE_POLICIES <- c("any_episode", "all_episodes", "first_episode",
                            "last_episode")
@@ -88,6 +87,8 @@
     index_source = col("text", TRUE, "origin_identity"),
     index_key = col("text", TRUE, "origin_identity"),
     index_visit_id = col("bigint", TRUE, "visit"),
+    origin_source = col("text", TRUE, "origin_identity"),
+    origin_key = col("text", TRUE, "origin_identity"),
     set_id = col("bigint", TRUE, "analytic_key"),
     is_case = col("integer", TRUE, "measure"),
     sampling_weight = col("numeric", TRUE, "measure"),
@@ -117,6 +118,7 @@
                  ordering = c("subject_id", "cohort_start_date", "cohort_end_date",
                               .POP_KEY_COLUMNS))
   .sqlAssertTypedSql(.compileDialect(ctx), f$select_body)
+  f <- .populationFreezeFragment(ctx, f)
   .fragmentRegister(ctx, f)
 }
 
@@ -136,6 +138,7 @@
                  private_columns = unique(c("cand_key", .POP_PRIVATE_COLUMNS, names(extra))))
   attr(f, "population") <- pop
   .sqlAssertTypedSql(.compileDialect(ctx), f$select_body)
+  if (identical(suffix, "raw")) f <- .populationFreezeFragment(ctx, f)
   .fragmentRegister(ctx, f)
 }
 
@@ -524,6 +527,7 @@
       index_source = .compileTextLiteral(tag),
       index_key = text_key,
       index_visit_id = .compileTypedNull(h, "bigint"),
+      origin_source = .compileTextLiteral(tag), origin_key = text_key,
       source_rank = .sqlIntegerLiteral(h, .populationSourceRank(ctx, tag)),
       source_order = .sqlIntegerLiteral(h, order),
       key_1 = key(.sqlIntegerLiteral(h, cid)),
@@ -545,12 +549,14 @@
   rank <- .sqlIntegerLiteral(h, .populationSourceRank(ctx, tag))
   if (identical(kind, "interval")) {
     f <- .compileIntervalByName(ctx, name)$course
+    visit <- if ("visit_id" %in% f$source_identity_columns) key("e.visit_id") else
+      .compileTypedNull(h, "bigint")
     cols <- c(
       subject_id = key("e.person_id"), source_start = "e.start_date", source_end = "e.end_date",
       index_source = .compileTextLiteral(tag), index_key = "e.era_key",
-      index_visit_id = .compileTypedNull(h, "bigint"), source_rank = rank,
-      source_order = .sqlIntegerLiteral(h, order), key_1 = key("e.group_id"),
-      key_2 = key("e.era_no"), key_3 = .compileTypedNull(h, "bigint"))
+      index_visit_id = visit, origin_source = .compileTextLiteral(tag), origin_key = "e.era_key",
+      source_rank = rank, source_order = .sqlIntegerLiteral(h, order), key_1 = key("e.group_id"),
+      key_2 = key("e.era_no"), key_3 = visit)
   } else {
     f <- .compileEventByName(ctx, name)
     meta <- .eventMeta(ctx, name)
@@ -571,7 +577,10 @@
     cols <- c(
       subject_id = key("e.person_id"), source_start = "e.start_date", source_end = "e.end_date",
       index_source = .compileTextLiteral(tag), index_key = text_key,
-      index_visit_id = key("e.visit_id"), source_rank = rank,
+      index_visit_id = key("e.visit_id"),
+      origin_source = if (!is.null(meta$parent)) "e.parent_source_ns" else .compileTextLiteral(tag),
+      origin_key = if (!is.null(meta$parent)) .sqlLosslessKeyText(h, "e.parent_event_id") else text_key,
+      source_rank = rank,
       source_order = .sqlIntegerLiteral(h, order), keys)
   }
   body <- paste0("SELECT ", paste(paste0(cols, " AS ", names(cols)), collapse = ", "),
@@ -615,6 +624,8 @@
                    index_source = col("text", FALSE, "origin_identity"),
                    index_key = col("text", TRUE, "origin_identity"),
                    index_visit_id = col("bigint", TRUE, "visit"),
+                   origin_source = col("text", TRUE, "origin_identity"),
+                   origin_key = col("text", TRUE, "origin_identity"),
                    source_rank = col("integer", FALSE, "origin_identity"),
                    source_order = col("integer", FALSE, "private"),
                    key_1 = col("bigint", TRUE, "origin_identity"),
@@ -626,7 +637,7 @@
                      dependencies = unique(unlist(lapply(branches, function(b) b$deps))),
                      unique_key = c("subject_id", "source_start", "source_rank", "key_1", "key_2", "key_3"),
                      person_lineage = list(person_col = "subject_id", via_roster = NULL),
-                     private_columns = c("index_key", "index_visit_id", "source_rank", "source_order",
+                     private_columns = c("index_key", "index_visit_id", "origin_source", "origin_key", "source_rank", "source_order",
                                          "key_1", "key_2", "key_3"))
   attr(f_src, "population") <- name
   .sqlAssertTypedSql(h, f_src$select_body)
@@ -870,16 +881,15 @@
   ref <- leaf[["source"]]
   src_kind <- names(ref)[[1L]]
   src_name <- unlist(ref[[1L]])
-  f <- .populationSourceFragment(ctx, ref)
+  assoc <- .consumerAssociation(ctx, ref, roster, phase, path = path)
+  srcs <- lapply(assoc$branches, function(b) .consumerRelation(ctx, assoc, b, use = "course"))
   win <- .compileWindow(ctx, leaf[["window"]], roster, phase, alias = alias)
-  .populationAddJoins(state, win$joins, c(win$dependencies, f$name))
-  if (identical(f$availability, "unavailable")) return(.populationUnknownSql(h))
-  conds <- c(paste0("e.person_id = ", alias, ".subject_id"),
-             .windowStartPredicateSql(win, "e.start_date"),
-             .populationAssociationSql(ctx, src_kind, src_name, alias, pop))
+  .populationAddJoins(state, win$joins, c(win$dependencies, vapply(srcs, function(f) f$name, "")))
+  if (identical(assoc$availability, "unavailable")) return(.populationUnknownSql(h))
   distinct <- leaf[["distinct"]] %||% "row"
   nonmissing <- leaf[["nonmissing"]]
   if (is.list(nonmissing)) nonmissing <- unlist(nonmissing)
+  conds <- .windowStartPredicateSql(win, "e.start_date")
   if (!is.null(nonmissing)) {
     column <- .populationSourceColumn(ctx, src_kind, src_name, nonmissing, paste0(path, "/nonmissing"))
     conds <- c(conds, paste0("e.", column, " IS NOT NULL"))
@@ -887,11 +897,28 @@
   distinct_col <- switch(distinct, row = NULL, day = "e.start_date", visit = "e.visit_id",
                          concept = "e.concept_id",
                          .irReject("distinct is row, day, visit or concept", field = paste0(path, "/distinct")))
-  exists_conds <- c(conds, if (!is.null(distinct_col)) paste0(distinct_col, " IS NOT NULL"))
-  from <- paste0(" FROM ", f$name, " e WHERE ")
-  exists <- paste0("EXISTS (SELECT 1", from, paste(exists_conds, collapse = " AND "), ")")
-  count <- paste0("(SELECT ", if (is.null(distinct_col)) "COUNT(*)" else paste0("COUNT(DISTINCT ", distinct_col, ")"),
-                  from, paste(conds, collapse = " AND "), ")")
+  parts <- lapply(seq_along(srcs), function(j) {
+    f <- srcs[[j]]
+    branch <- assoc$branches[[j]]
+    from <- f$name
+    # Adapter links remain intact in the shared relation. A person consumer
+    # counts each physical event once, before applying its window/criterion.
+    if (identical(src_kind, "event") && identical(branch, "person") && !is.null(assoc$parent)) {
+      columns <- setdiff(names(f$columns), .ADAPTER_PARENT_COLUMNS)
+      from <- paste0("(SELECT DISTINCT ", paste(paste0("d.", columns), collapse = ", "),
+                     " FROM ", f$name, " d)")
+    }
+    on <- c(.consumerJoinSql(h, assoc, branch, "e", alias), conds)
+    from <- paste0(" FROM ", from, " e WHERE ")
+    list(exists = paste0("EXISTS (SELECT 1", from,
+                        paste(c(on, if (!is.null(distinct_col)) paste0(distinct_col, " IS NOT NULL")),
+                              collapse = " AND "), ")"),
+         count = paste0("(SELECT ", if (is.null(distinct_col)) "COUNT(*)" else paste0("COUNT(DISTINCT ", distinct_col, ")"),
+                        from, paste(on, collapse = " AND "), ")"))
+  })
+  # Association branches are disjoint for each roster row.
+  exists <- paste0("(", paste(vapply(parts, function(x) x$exists, ""), collapse = " OR "), ")")
+  count <- paste0("(", paste(vapply(parts, function(x) x$count, ""), collapse = " + "), ")")
   op <- leaf[["op"]] %||% ">="
   n <- as.integer(unlist(leaf[["n"]] %||% 1L))
   lit <- function(x) .sqlIntegerLiteral(h, x)
@@ -906,32 +933,6 @@
     },
     .irReject("has op is >=, <=, == or between", field = paste0(path, "/op")))
   .windowGuardSql(win, paste0("(", sql, ")"))
-}
-
-#' Consumer association of a source over a roster (amendment A-20 a)
-#'
-#' An index-visit event (\code{visit = {index: true}}) joins the roster row's
-#' \code{index_visit_id}; an episode-member source whose parent episode source
-#' is an index source of the population binds \code{parent_event_id} to the
-#' row's origin (\code{key_1}, the source row key) for rows of that origin,
-#' with the same person; rows of other origins keep person scope.
-#' @return Character vector of SQL conditions on alias \code{e}.
-#' @keywords internal
-.populationAssociationSql <- function(ctx, kind, name, alias, pop) {
-  if (!identical(kind, "event")) return(character(0))
-  meta <- .eventMeta(ctx, name)
-  if (is.null(meta)) return(character(0))
-  out <- character(0)
-  if (isTRUE(meta$index_visit)) out <- c(out, paste0("e.visit_id = ", alias, ".index_visit_id"))
-  if (identical(meta$kind, "episode_members") && .isScalarString(meta$parent)) {
-    tags <- .irIndexSourceTags(ctx[["ir"]], pop)
-    if (meta$parent %in% tags) {
-      rank <- .sqlIntegerLiteral(.compileDialect(ctx), .populationSourceRank(ctx, meta$parent))
-      out <- c(out, paste0("(", alias, ".source_rank IS NULL OR ", alias, ".source_rank <> ", rank,
-                           " OR e.parent_event_id = ", alias, ".key_1)"))
-    }
-  }
-  out
 }
 
 # A column of a source a criterion may test for presence (nonmissing): the
@@ -1237,10 +1238,13 @@
 #' @keywords internal
 .populationAssertNoIdentityConflict <- function(ctx, f_all, name) {
   ident <- c("subject_id", "cohort_start_date", "cohort_end_date", .POP_KEY_COLUMNS)
-  meta_cols <- c("index_source", "index_key", "index_visit_id", "set_id", "is_case",
+  meta_cols <- c("index_source", "index_key", "index_visit_id", "origin_source", "origin_key", "set_id", "is_case",
                  "sampling_weight", "op_start", "op_end", "op_component_id")
   differs <- vapply(meta_cols, function(m) {
-    paste0("(MIN(u.", m, ") <> MAX(u.", m, ") OR (COUNT(u.", m, ") > 0 AND COUNT(u.", m,
+    expr <- paste0("u.", m)
+    if (identical(.sqlFamily(.compileDialect(ctx)), "mysql") &&
+        identical(f_all$columns[[m]]$type, "text")) expr <- paste0("BINARY ", expr)
+    paste0("(MIN(", expr, ") <> MAX(", expr, ") OR (COUNT(u.", m, ") > 0 AND COUNT(u.", m,
            ") < COUNT(*)))")
   }, "")
   select <- paste0("SELECT COUNT(*) AS n FROM (SELECT 1 AS one FROM ", f_all$name, " u GROUP BY ",
@@ -1394,7 +1398,7 @@
 }
 
 #' Semantic rules of language 2.0 populations (design sections 2.5, 6.9,
-#' 6.10; change request CR-21)
+#' 6.10; amendment A-20)
 #'
 #' Rules the schema cannot express, checked before any query: a matching
 #' controls template is instantiated once per plan (A-20 c), so it cannot also
@@ -1443,6 +1447,18 @@
   }
   for (p in names(pops)) {
     node <- pops[[p]]
+    if (identical(node[["kind"]], "setop")) {
+      # Derived members have no coverage field of their own. Resolve their
+      # effective policy through set operations and matches before compiling
+      # any dependency; the runtime derived-coverage check is only a guard.
+      members <- as.character(unlist(node[["setop"]][["members"]], use.names = FALSE))
+      policies <- Filter(Negate(is.null), lapply(members, function(member) {
+        tryCatch(.populationCoveragePolicy(ir, member), error = function(e) NULL)
+      }))
+      if (length(unique(policies)) > 1L) {
+        add("/populations/", p, "/setop/members: set-op members must share one coverage policy")
+      }
+    }
     if (!identical(node[["kind"]], "criteria")) next
     policy <- node[["episode_policy"]]
     if (is.list(policy)) policy <- unlist(policy)

@@ -457,3 +457,78 @@ test_that("semantic rules of populations (CR-21) refuse before any query", {
   expect_s3_class(.irPrepare(.ws6_plan(ev, list(b = list(kind = "criteria", cohort_definition_id = 93002L,
                                                          where = .ws6_has("anc"))))), "dsomop_ir")
 })
+
+test_that("visit-local interval indices retain full keys through unions and scoped criteria", {
+  ev <- .ws6_ev()
+  ev$idx_visit <- c(ev$idx, list(visit = list(index = TRUE)))
+  has_iv <- list(has = list(source = list(interval = "proc_era"), op = ">=", n = 1L))
+  pop <- .ws6_idx("all", source = list(interval = "idx_era"), end = list(strategy = "interval_end"))
+  plan <- .ws6_plan(ev, list(a = pop, b = pop,
+    u = list(kind = "setop", setop = list(op = "union", members = list("a", "b"))),
+    scoped = c(pop, list(where = has_iv))), intervals = list(
+      idx_era = list(source = list(event = "idx_visit"), gap = 0L),
+      proc_era = list(source = list(event = "proc_visit"), gap = 0L)))
+  for (b in names(.ws6_pop_backends)) {
+    ctx <- .ws4_ctx(.ws6_pop_backends[[b]]$handle, plan)
+    tryCatch({
+      roster <- .compilePopulationByName(ctx, "u")$roster
+      r <- .fetchFragment(ctx, roster, "cohort_row_id")
+      r <- r[as.numeric(r$subject_id) == 6015, ]
+      expect_equal(nrow(r), 2L, info = b)
+      expect_equal(as.numeric(r$index_visit_id), c(601501, 601502), info = b)
+      expect_equal(length(unique(r$index_key)), 2L, info = b)
+      expect_true(all(grepl("^60150[12]\\|", r$index_key)), info = b)
+      scoped <- .fetchFragment(ctx, .compilePopulationByName(ctx, "scoped")$roster, "cohort_row_id")
+      expect_equal(as.numeric(scoped$index_visit_id[as.numeric(scoped$subject_id) == 6015]), 601501, info = b)
+    }, finally = .compileReleaseTempTables(ctx))
+  }
+})
+
+test_that("member-indexed criteria preserve parent origins and person criteria deduplicate links", {
+  plan <- .ws5_acceptance_plan("14-oncology-episodes")
+  # Person 1015 has six episode-member links but five physical events.
+  plan$populations$physical <- list(kind = "criteria", where = .ws6_has("members", op = "==", n = 5L))
+  plan$populations$linked <- .ws6_idx("all", source = list(event = "members"),
+                                     end = list(strategy = "event_end"))
+  plan$populations$child <- list(kind = "criteria", parent = "linked",
+                                 where = .ws6_has("members", op = "==", n = 2L))
+  plan$intervals <- list(mc = list(source = list(event = "members"), gap = 0L))
+  plan$populations$era_child <- list(kind = "criteria", parent = "linked",
+    where = list(has = list(source = list(interval = "mc"), op = "==", n = 2L)))
+  for (p in c("physical", "linked", "child", "era_child")) plan$outputs[[p]] <- list(rows = p, format = "wide")
+  for (b in names(.ws6_pop_backends)) {
+    ctx <- .ws4_ctx(.ws6_pop_backends[[b]]$handle, plan)
+    tryCatch({
+      expect_true(1015 %in% .ws6_roster(ctx, "physical")$person_id, info = b)
+      for (p in c("child", "era_child")) {
+        r <- .fetchFragment(ctx, .compilePopulationByName(ctx, p)$roster, "cohort_row_id")
+        r <- r[as.numeric(r$subject_id) == 1015, ]
+        expect_equal(nrow(r), 2L, info = paste(b, p))
+        expect_true(all(r$origin_source == "episodes" & r$origin_key == "2"), info = paste(b, p))
+      }
+    }, finally = .compileReleaseTempTables(ctx))
+  }
+})
+
+test_that("final observed segments use transferred components after candidate renumbering", {
+  plan <- .ws6_plan(.ws6_ev(), list(
+    all = .ws6_idx("all"),
+    child = list(kind = "criteria", parent = "all", where = .ws6_has("anc", window = .ws6_win(-60L, 0L)))))
+  for (b in names(.ws6_pop_backends)) {
+    ctx <- .ws4_ctx(.ws6_pop_backends[[b]]$handle, plan)
+    tryCatch({
+      res <- .compilePopulationByName(ctx, "child")
+      cand <- .fetchFragment(ctx, res$candidates, "cand_key")
+      roster <- .fetchFragment(ctx, res$roster, "cohort_row_id")
+      seg <- .fetchFragment(ctx, res$segments, "row_key")
+      r <- roster[as.numeric(roster$subject_id) == 6001, ]
+      c <- cand[as.numeric(cand$subject_id) == 6001 & as.character(cand$index_key) == r$index_key, ]
+      expect_false(identical(as.character(r$cohort_row_id), as.character(c$cand_key)), info = b)
+      expect_equal(as.character(r$op_component_id), as.character(c$op_component_id), info = b)
+      s <- seg[as.numeric(seg$person_id) == 6001 & as.character(seg$row_key) == as.character(r$cohort_row_id), ]
+      expect_equal(nrow(s), 1L, info = b)
+      expect_equal(format(s$start_date, "%Y-%m-%d"), "2010-01-01", info = b)
+      expect_equal(format(s$end_date, "%Y-%m-%d"), "2030-12-31", info = b)
+    }, finally = .compileReleaseTempTables(ctx))
+  }
+})
