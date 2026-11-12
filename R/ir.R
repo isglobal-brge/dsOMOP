@@ -1,0 +1,410 @@
+# Module: Plan IR (design-2.10.3 sections 4.5, 5 and 6.1)
+#
+# Every plan -- a language 2.0 wire plan or a v1 plan from an older client --
+# reaches the compilers through ONE frozen sequence (section 4.5):
+#
+#   (1) the incoming version's closed envelope and variants are validated
+#       before any normalisation: plan-v2.json for `version: 2`, the corrected
+#       v1 validators (R/ir_v1.R) for a v1 plan (no `version`, or 1);
+#   (2) .irNormalize() lowers a v1 plan (section 5) and expands every default;
+#       it never discards an unknown field, so invalid input cannot become
+#       valid by normalisation;
+#   (3) the IR is validated against ir-v2.json (wire schema plus the closed
+#       compatibility variants only the v1 lowering produces);
+#   (4) .irValidate() applies the semantic rules of section 4.1, then the
+#       handle-dependent checks (role registry, filterable and typed columns,
+#       column classes, deployment-disabled operations, dialect preflight).
+#
+# Failures are typed plan rejections: conditions of classes
+# dsomop_ir_validation_error, dsomop_plan_rejection, error, condition with
+# fields code ("validation_error", "unavailable_table" or "dialect_unsupported"
+# from R/sql_expr.R), output (NULL for a plan-level refusal) and field. Their
+# messages name fields, outputs and constructs, never data values or counts.
+
+.IR_LANGUAGE_VERSION <- "2.0"
+.IR_SEMANTIC_VERSION <- "2.0.0"
+.IR_SCHEMA_ID <- "https://isglobal-brge.github.io/dsOMOP/schema/plan-v2.json"
+
+.irCache <- new.env(parent = emptyenv())
+
+#' Packaged schema, parsed and linted once per session
+#' @param name "plan-v2", "ir-v2" or "mutate-v1".
+#' @keywords internal
+.irSchema <- function(name = "ir-v2") {
+  key <- paste0("schema_", name)
+  cached <- .irCache[[key]]
+  if (is.null(cached)) {
+    cached <- .jsonSchemaPackaged(name)
+    assign(key, cached, envir = .irCache)
+  }
+  cached
+}
+
+# --- Typed rejections ---------------------------------------------------------
+
+#' Signal a typed plan rejection
+#'
+#' @param message Human-readable reason (names fields/outputs/constructs only).
+#' @param code Rejection code (section 7.3): "validation_error" (default) or
+#'   "unavailable_table".
+#' @param output Optional output (publication root) the refusal belongs to.
+#' @param field Optional JSON-pointer-like path of the offending field.
+#' @param errors Optional character vector of individual findings.
+#' @keywords internal
+.irReject <- function(message, code = "validation_error", output = NULL,
+                      field = NULL, errors = NULL) {
+  stop(structure(
+    list(message = paste0(code, ": ", message), call = NULL, code = code,
+         output = output, field = field, errors = errors),
+    class = c("dsomop_ir_validation_error", "dsomop_plan_rejection",
+              "error", "condition")
+  ))
+}
+
+# Refuse with every finding, keeping the message bounded.
+.irRejectAll <- function(what, errors, code = "validation_error",
+                         output = NULL) {
+  errors <- unique(as.character(errors))
+  shown <- utils::head(errors, 8L)
+  .irReject(paste0(what, ": ", paste(shown, collapse = "; "),
+                   if (length(errors) > length(shown)) "; ..." else ""),
+            code = code, output = output, errors = errors)
+}
+
+# --- JSON form ----------------------------------------------------------------
+
+#' Canonical JSON form of a plan received as an R object
+#'
+#' Plans arrive either JSON-parsed (\code{.ds_arg()}, simplifyVector = FALSE)
+#' or as R lists built in-process. Both are mapped to one form, the one the
+#' DataSHIELD transport produces: named atomic vectors become objects (as the
+#' client's \code{.ds_encode()} does), length-one vectors scalars, NA and NULL
+#' null. Server-resolved workspace frames (\code{scope$tables_frames}) and any
+#' other non-JSON value are replaced by an explicit marker object, which no
+#' schema accepts, so they can never pass validation by accident.
+#'
+#' @param plan Plan object.
+#' @return The plan in parsed JSON form.
+#' @keywords internal
+.irJsonForm <- function(plan) {
+  coerce <- function(x) {
+    if (is.data.frame(x)) {
+      return(list(`__resolved_frame__` = list(ncol = ncol(x))))
+    }
+    if (is.environment(x) || is.function(x) || inherits(x, "R6")) {
+      return(list(`__unsupported__` = class(x)[[1L]]))
+    }
+    if (is.list(x)) {
+      out <- lapply(x, coerce)
+      names(out) <- names(x)
+      return(out)
+    }
+    if (inherits(x, "Date")) return(format(x, "%Y-%m-%d"))
+    if (is.factor(x)) x <- as.character(x)
+    if (is.atomic(x) && !is.null(names(x))) {
+      nm <- names(x)
+      attributes(x) <- NULL
+      out <- as.list(x)
+      names(out) <- nm
+      return(out)
+    }
+    if (is.atomic(x)) attributes(x) <- NULL
+    x
+  }
+  json <- jsonlite::toJSON(coerce(plan), auto_unbox = TRUE, null = "null",
+                           na = "null", digits = NA)
+  jsonlite::fromJSON(json, simplifyVector = FALSE)
+}
+
+#' Version of an incoming plan: 1 (no version, or 1) or 2
+#' @keywords internal
+.irPlanVersion <- function(plan) {
+  if (!is.list(plan) || (length(plan) > 0L && is.null(names(plan)))) {
+    .irReject("a plan must be a JSON object", field = "/")
+  }
+  version <- plan[["version"]]
+  if (is.null(version)) return(1L)
+  if (is.numeric(version) && length(version) == 1L && !is.na(version) &&
+      version %in% c(1, 2)) {
+    return(as.integer(version))
+  }
+  .irReject("plan version must be 1 or 2", field = "/version")
+}
+
+# --- The four steps -----------------------------------------------------------
+
+#' Step 1 for a language 2.0 plan: the closed wire schema
+#' @keywords internal
+.irValidateWire <- function(plan) {
+  res <- .jsonSchemaValidate(.irSchema("plan-v2"), plan)
+  if (!res[["valid"]]) .irRejectAll("plan does not validate against plan-v2.json",
+                               res[["errors"]])
+  invisible(TRUE)
+}
+
+#' Step 3: the IR schema (wire schema plus closed compatibility variants)
+#' @keywords internal
+.irValidateSchema <- function(ir) {
+  res <- .jsonSchemaValidate(.irSchema("ir-v2"), unclass(.irStripPrivate(ir)))
+  if (!res[["valid"]]) .irRejectAll("normalised plan does not validate against ir-v2.json",
+                               res[["errors"]])
+  invisible(TRUE)
+}
+
+# The server-private attributes of an IR (never part of the IR document).
+.irStripPrivate <- function(ir) {
+  attributes(ir) <- attributes(ir)[intersect(names(attributes(ir)), "names")]
+  ir
+}
+
+#' Normalise a plan to the IR (step 2)
+#'
+#' Language 2.0: identity plus every default (\code{.irNormalizeWire()}). A v1
+#' plan: lowered to the compatibility IR (section 5, \code{.irLowerV1()}),
+#' then defaults are expanded the same way. Pure: no database access. The
+#' normalised plan is what \code{omopPlanExplainDS} returns.
+#'
+#' @param plan Plan in parsed JSON form (see \code{.irJsonForm()}).
+#' @return The IR, class \code{dsomop_ir}, with attribute \code{source_version}
+#'   (1 or 2) and, for a lowered v1 plan, \code{legacy_residue} (see
+#'   \code{.irLowerV1()}).
+#' @keywords internal
+.irNormalize <- function(plan) {
+  version <- .irPlanVersion(plan)
+  residue <- NULL
+  if (identical(version, 2L)) {
+    ir <- .irNormalizeWire(plan, .irSchema("ir-v2"))
+  } else {
+    lowered <- .irLowerV1(plan)
+    residue <- attr(lowered, "legacy_residue")
+    ir <- .irNormalizeWire(.irStripPrivate(lowered), .irSchema("ir-v2"))
+  }
+  structure(ir, class = "dsomop_ir", source_version = version,
+            legacy_residue = residue)
+}
+
+#' Run the frozen validation sequence (steps 1 to 4)
+#'
+#' @param plan Incoming plan (any R or JSON-parsed form).
+#' @param handle CDM handle for the handle-dependent checks, or NULL to stop
+#'   after the semantic rules (client-side mirrors, explain without a site).
+#' @return The validated IR (\code{dsomop_ir}).
+#' @keywords internal
+.irPrepare <- function(plan, handle = NULL) {
+  plan <- .irJsonForm(plan)
+  version <- .irPlanVersion(plan)
+  if (identical(version, 2L)) {
+    .irValidateWire(plan)
+  } else {
+    .planV1Envelope(plan)
+    # A v1 plan without outputs computes and releases nothing; it has no
+    # IR (the IR, like the wire schema, needs at least one output). The v1
+    # executor keeps running it as before (populations only).
+    outputs <- plan[["outputs"]]
+    if (is.null(outputs) || (is.list(outputs) && length(outputs) == 0L)) {
+      return(invisible(NULL))
+    }
+  }
+  ir <- .irNormalize(plan)
+  .irValidateSchema(ir)
+  .irValidate(ir, handle)
+  ir
+}
+
+#' Semantic digest of an IR, binding a lowered plan's legacy residue
+#'
+#' For a language 2.0 plan this is exactly \code{.planSemanticDigest(ir)}
+#' (section 4.4, shared with the client, fixed test vectors). A lowered v1
+#' plan also binds its \code{legacy_residue}, so two v1 plans that differ
+#' only in a field the IR cannot express never share a digest.
+#'
+#' @param ir The IR (\code{dsomop_ir}).
+#' @return list(payload, sha256) as \code{.planSemanticDigest()}.
+#' @keywords internal
+.irSemanticDigest <- function(ir) {
+  doc <- unclass(.irStripPrivate(ir))
+  residue <- attr(ir, "legacy_residue")
+  if (is.null(residue)) return(.planSemanticDigest(doc))
+  .planSemanticDigest(list(ir = doc, legacy_residue = residue))
+}
+
+# --- References and nodes -----------------------------------------------------
+
+.IR_NODE_MAPS <- c(concept_set = "concept_sets", event = "events",
+                   interval = "intervals", population = "populations",
+                   variable = "variables", output = "outputs")
+
+#' Resolve one IR node by kind and name, or a typed source reference
+#'
+#' @param ir The IR.
+#' @param kind One of concept_set, event, interval, population, variable,
+#'   output -- or a typed reference list such as \code{list(event = "mi")}.
+#' @param name Node name (when \code{kind} is a kind).
+#' @return The node; a dangling reference is a typed validation error.
+#' @keywords internal
+.irNode <- function(ir, kind, name = NULL) {
+  if (is.list(kind)) {
+    ref <- kind
+    kind <- names(ref)[[1L]]
+    name <- ref[[1L]]
+  }
+  map <- .IR_NODE_MAPS[[kind]]
+  if (is.null(map)) .irReject(paste0("unknown node kind '", kind, "'"))
+  node <- if (is.character(name) && length(name) == 1L) ir[[map]][[name]]
+  if (is.null(node)) {
+    .irReject(paste0("dangling ", kind, " reference '", name %||% "", "'"),
+              field = paste0("/", map, "/", name %||% ""))
+  }
+  node
+}
+
+# Every typed source reference ({event: e} / {interval: i}) inside a value,
+# with its JSON path.
+.irCollectRefs <- function(x, path = "") {
+  out <- list()
+  if (!is.list(x)) return(out)
+  nm <- names(x)
+  if (!is.null(nm) && length(x) == 1L && nm %in% c("event", "interval") &&
+      is.character(x[[1L]]) && length(x[[1L]]) == 1L) {
+    return(list(list(kind = nm, name = x[[1L]], path = path)))
+  }
+  for (i in seq_along(x)) {
+    key <- if (is.null(nm)) as.character(i - 1L) else nm[[i]]
+    out <- c(out, .irCollectRefs(x[[i]], paste0(path, "/", key)))
+  }
+  out
+}
+
+# Byte-order (C locale) sort of a character vector; NULL gives character(0).
+.irSortNames <- function(x) {
+  x <- unique(as.character(unlist(x, use.names = FALSE)))
+  if (!length(x)) return(character(0))
+  sort(x, method = "radix")
+}
+
+# Topological order of `names` given deps(name) -> character; ties by name.
+# Returns list(order, cycle = names on a cycle or character(0)).
+.irTopoSort <- function(names, deps) {
+  names <- .irSortNames(names)
+  state <- stats::setNames(rep(0L, length(names)), names)
+  order <- character(0)
+  cycle <- character(0)
+  visit <- function(n, stack) {
+    if (length(cycle)) return(invisible(NULL))
+    if (identical(state[[n]], 2L)) return(invisible(NULL))
+    if (identical(state[[n]], 1L)) {
+      cycle <<- c(stack[seq.int(match(n, stack), length(stack))], n)
+      return(invisible(NULL))
+    }
+    state[[n]] <<- 1L
+    for (d in .irSortNames(intersect(as.character(deps(n)), names))) {
+      visit(d, c(stack, n))
+    }
+    state[[n]] <<- 2L
+    order <<- c(order, n)
+    invisible(NULL)
+  }
+  for (n in names) visit(n, character(0))
+  list(order = order, cycle = cycle)
+}
+
+.irEventDeps <- function(ir, e) {
+  node <- ir[["events"]][[e]]
+  if (is.list(node[["episode_members"]])) return(node[["episode_members"]][["episode"]][["event"]])
+  if (is.list(node[["cost"]])) return(node[["cost"]][["event"]][["event"]])
+  character(0)
+}
+
+.irPopulationDeps <- function(ir, p) {
+  node <- ir[["populations"]][[p]]
+  c(if (is.character(node[["parent"]])) node[["parent"]],
+    unlist(node[["setop"]][["members"]] %||% list(), use.names = FALSE),
+    if (is.list(node[["match"]])) c(node[["match"]][["cases"]], node[["match"]][["controls"]]))
+}
+
+.irOutputDeps <- function(ir, o) {
+  node <- ir[["outputs"]][[o]]
+  opts <- node[["options"]] %||% list()
+  c(vapply(opts[["from"]] %||% list(), function(f) f[["output"]] %||% "", ""),
+    unlist(opts[["source_outputs"]] %||% list(), use.names = FALSE))
+}
+
+#' Evaluation order of an IR (design section 6.1)
+#'
+#' Concept sets, events (including adapters) and intervals in reference
+#' order; populations topologically over parent, set-op members and match
+#' cases/controls (never "all indexed populations first"); variables; outputs
+#' with \code{joined} (and \code{dictionary}) after their inputs. Each
+#' population also lists its \strong{candidate} anchors (those of its own
+#' criteria, resolved against its candidate roster) and its \strong{final}
+#' anchors (those of the variables and outputs over it, resolved against the
+#' final roster); one anchor definition used in both stages appears in both.
+#'
+#' @param ir The IR (validated).
+#' @return list(concept_sets, events, intervals, populations, variables,
+#'   outputs, anchors = list(candidate = list(<pop> = list(<anchor>)), final =
+#'   ...)).
+#' @keywords internal
+.irOrder <- function(ir) {
+  ev <- .irTopoSort(names(ir[["events"]]), function(e) .irEventDeps(ir, e))
+  po <- .irTopoSort(names(ir[["populations"]]), function(p) .irPopulationDeps(ir, p))
+  ou <- .irTopoSort(names(ir[["outputs"]]), function(o) .irOutputDeps(ir, o))
+  if (length(ev[["cycle"]]) || length(po[["cycle"]]) || length(ou[["cycle"]])) {
+    .irReject(paste0("reference cycle: ",
+                     paste(c(ev[["cycle"]], po[["cycle"]], ou[["cycle"]]), collapse = " -> ")))
+  }
+  joined_last <- c(
+    ou[["order"]][!vapply(ou[["order"]], function(o) identical(ir[["outputs"]][[o]][["format"]], "joined"), logical(1))],
+    ou[["order"]][vapply(ou[["order"]], function(o) identical(ir[["outputs"]][[o]][["format"]], "joined"), logical(1))]
+  )
+  list(
+    concept_sets = .irSortNames(names(ir[["concept_sets"]])),
+    events = ev[["order"]],
+    intervals = .irSortNames(names(ir[["intervals"]])),
+    populations = po[["order"]],
+    variables = .irSortNames(names(ir[["variables"]])),
+    outputs = joined_last,
+    anchors = .irAnchorInventory(ir)
+  )
+}
+
+# Distinct source anchors (objects with a `source`) inside a value.
+.irCollectAnchors <- function(x) {
+  out <- list()
+  if (!is.list(x)) return(out)
+  nm <- names(x)
+  if (!is.null(nm)) {
+    for (key in intersect(nm, c("anchor", "reference"))) {
+      a <- x[[key]]
+      if (is.list(a) && !is.null(a[["source"]])) out <- c(out, list(a))
+    }
+  }
+  for (v in x) out <- c(out, .irCollectAnchors(v))
+  out
+}
+
+.irUniqueAnchors <- function(anchors) {
+  if (!length(anchors)) return(list())
+  keys <- vapply(anchors, .jcsCanonical, "")
+  anchors[!duplicated(keys)][order(keys[!duplicated(keys)], method = "radix")]
+}
+
+.irAnchorInventory <- function(ir) {
+  candidate <- list()
+  final <- list()
+  for (p in names(ir[["populations"]])) {
+    candidate[[p]] <- .irUniqueAnchors(.irCollectAnchors(ir[["populations"]][[p]][["where"]]))
+    used <- list()
+    for (o in names(ir[["outputs"]])) {
+      out <- ir[["outputs"]][[o]]
+      if (!identical(out[["rows"]], p)) next
+      cols <- unlist(out[["columns"]] %||% names(ir[["variables"]]), use.names = FALSE)
+      for (v in intersect(cols, names(ir[["variables"]]))) {
+        used <- c(used, .irCollectAnchors(ir[["variables"]][[v]]))
+      }
+      used <- c(used, .irCollectAnchors(out[["options"]]))
+    }
+    final[[p]] <- .irUniqueAnchors(used)
+  }
+  list(candidate = candidate, final = final)
+}

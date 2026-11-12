@@ -116,10 +116,10 @@ test_that("baseline accepts only a public common age-grid coarsening", {
                      common[-1L] - 1L), "80+")
   expect_true(all(result$age_group %in% labels))
 
-  plan$outputs$demo$age_breaks <- c(0L, 18L, 40L)
+  plan$outputs$demo$age_breaks <- c(0L, 18L, 40L)  # off-grid: an assignment grid (design 4.5 b)
+  expect_true(.planValidate(handle, plan)$valid); plan$outputs$demo$age_breaks <- c(5L, 18L)
   validation <- .planValidate(handle, plan)
-  expect_false(validation$valid)
-  expect_match(validation$errors, "invalid age_breaks")
+  expect_false(validation$valid); expect_match(validation$errors, "invalid age_breaks", all = FALSE)
 })
 
 test_that("baseline without cohort fails closed", {

@@ -200,15 +200,19 @@
                  "': observation_period not found; derived fields unavailable."))
       }
       if (!is.null(out$age_breaks)) {
-        age_error <- tryCatch({
-          .computeAgeGroups(
-            2000L, 2020L, age_breaks = out$age_breaks, min_cell = 0L
-          )
-          NULL
-        }, error = function(e) conditionMessage(e))
-        if (!is.null(age_error)) {
+        # Assignment grid-shape validation (design-2.10.3 section 4.5 (b)):
+        # any strictly increasing integer grid starting at 0 is a valid
+        # assigned age grid; .computeAgeGroups() and its on-grid/coarsening
+        # policy stay with the aggregate callers.
+        breaks <- suppressWarnings(as.numeric(unlist(out$age_breaks,
+                                                     use.names = FALSE)))
+        grid_ok <- length(breaks) >= 2L && !anyNA(breaks) &&
+          all(is.finite(breaks)) && all(breaks == round(breaks)) &&
+          breaks[[1L]] == 0 && all(diff(breaks) > 0)
+        if (!grid_ok) {
           errors <- c(errors, paste0(
-            "Output '", out_name, "': invalid age_breaks: ", age_error
+            "Output '", out_name, "': invalid age_breaks: at least two ",
+            "strictly increasing integers starting at 0 are required."
           ))
         }
       }
@@ -347,6 +351,15 @@
       }
     }
   }
+
+  # The closed envelope, normalisation, ir-v2.json and the semantic rules of
+  # the frozen validation sequence (design-2.10.3 section 4.5); reported here
+  # as validation errors, raised as typed rejections at execution.
+  ir_error <- tryCatch({
+    .irPrepare(plan, handle = NULL)
+    NULL
+  }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e))
+  errors <- c(errors, ir_error)
 
   list(
     valid = length(errors) == 0,
@@ -2323,17 +2336,16 @@
     stop("Unknown index_event field(s): ", paste(unknown, collapse = ", "),
          ".", call. = FALSE)
   }
-  allowed_tables <- c(
-    "condition_occurrence", "drug_exposure", "measurement", "observation",
-    "procedure_occurrence", "device_exposure", "visit_occurrence"
-  )
+  # Defect B-20: an index event may come from any table with an event role
+  # record (design-2.10.3 section 6.2) instead of a fixed allowlist.
   table <- index_event$table
   if (!is.character(table) || length(table) != 1L || is.na(table) ||
-      !tolower(table) %in% allowed_tables) {
-    stop("index_event table is outside the executable Circe table allowlist.",
-         call. = FALSE)
+      is.null(.roleOf(handle, table))) {
+    stop("index_event table has no event role record in the role registry ",
+         "of this CDM.", call. = FALSE)
   }
   table <- tolower(table)
+  role <- .roleOf(handle, table)
   primary_limit <- index_event$primary_limit %||% "first"
   if (!is.character(primary_limit) || length(primary_limit) != 1L ||
       is.na(primary_limit) ||
@@ -2352,10 +2364,9 @@
          call. = FALSE)
   }
   cols <- bp$columns[[table]]$column_name %||% character(0)
-  start_col <- .getDateColumn(bp, table)
-  pair <- .getDatePair(bp, table)
-  end_col <- pair$end %||% start_col
-  event_id_col <- .eventPrimaryKeyColumn(bp, table)
+  start_col <- role$start
+  end_col <- role$end %||% start_col
+  event_id_col <- role$event_key
   required <- c("person_id", start_col, end_col, event_id_col)
   if (any(vapply(list(start_col, end_col, event_id_col), is.null,
                  logical(1))) || any(!required %in% cols)) {
@@ -2381,14 +2392,17 @@
   if (!is.null(index_event$concept_set)) {
     cs <- index_event$concept_set
     if (is.list(cs) && !is.null(cs$concepts)) {
+      # Defect A-E3: index events accept `exclude` like every other concept
+      # set (one shared resolver, .resolveConceptSet()).
       unknown_cs <- setdiff(names(cs),
                             c("concepts", "include_descendants",
-                              "include_mapped"))
+                              "include_mapped", "exclude"))
       if (length(unknown_cs) > 0L) {
         stop("Unknown index-event concept-set field(s): ",
              paste(unknown_cs, collapse = ", "), ".", call. = FALSE)
       }
       .conceptIdList(cs$concepts)
+      .conceptIdList(cs$exclude)
       for (flag in c("include_descendants", "include_mapped")) {
         if (!is.null(cs[[flag]]) &&
             (!is.logical(cs[[flag]]) || length(cs[[flag]]) != 1L ||
@@ -2410,7 +2424,7 @@
     if (length(concept_ids) == 0L) {
       stop("index_event concept_set resolved to no concepts.", call. = FALSE)
     }
-    concept_col <- .getDomainConceptColumn(bp, table)
+    concept_col <- role$domain_concept %||% .getDomainConceptColumn(bp, table)
     if (is.null(concept_col) || !concept_col %in% cols) {
       stop("index_event table '", table,
            "' has no authorized domain concept column.", call. = FALSE)
@@ -2782,8 +2796,8 @@
     if (has_filter_tree) {
       # Anchor windowed concept filters in this population to the plan-level
       # cohort's index date (e.g. cohort=313217L). Without a plan cohort there is
-      # nothing to anchor to, so windows fall back to the wall-clock date inside
-      # .windowPredicateSql.
+      # no index: .windowPredicateSql then requires the filter's explicit
+      # reference_date and fails closed without one (never the wall clock).
       filter_ids <- .buildCohortFromFilters(handle, pop$filter_tree,
         index_cohort_table = index_cohort_table,
         episode_policy = pop$episode_policy)
@@ -2892,6 +2906,14 @@
   if (length(outputs) > max_plan_outputs) {
     stop("Plan exceeds the server max_plan_outputs cap of ",
          max_plan_outputs, ".", call. = FALSE)
+  }
+  # The single frozen validation sequence (design-2.10.3 section 4.5): closed
+  # envelope by version, normalisation, ir-v2.json, semantic rules -- before
+  # any query. A v1 plan then runs on the v1 executors below, unchanged.
+  ir <- .irPrepare(plan, handle)
+  if (identical(attr(ir, "source_version"), 2L)) {
+    .irReject(paste0("this server validates language 2.0 plans but does not ",
+                     "execute them yet; use omopPlanExplainDS"))
   }
   bp <- .buildBlueprint(handle)
 
