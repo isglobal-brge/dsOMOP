@@ -15,7 +15,8 @@
 
 \item{phase}{\code{"candidate"} or \code{"final"}.}
 
-\item{name}{Optional fragment name (default \code{seg_<coverage>_<roster>_row}).}
+\item{name}{Optional fragment name (default: the allocated identity
+\code{("seg", <pop>, "[<suffix>_]obs_cand" | "[<suffix>_]obs_final")}).}
 }
 \value{
 Fragment with \code{row_key}, \code{person_id}, \code{start_date},

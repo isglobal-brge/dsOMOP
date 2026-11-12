@@ -66,7 +66,8 @@
 #' observation semantics).
 #' @keywords internal
 .coverageSource <- function(ctx) {
-  existing <- .fragmentGet(ctx, "op_periods")
+  nm <- .fragmentName("op", "periods", ctx = ctx)
+  existing <- .fragmentGet(ctx, nm)
   if (!is.null(existing)) return(existing)
   h <- .compileDialect(ctx)
   handle <- ctx[["handle"]]
@@ -88,7 +89,7 @@
                  .sqlLosslessKey(h, paste0("o.", role[["event_key"]])), " AS period_id, ",
                  s, " AS start_date, ", e, " AS end_date FROM ", qualified, " o WHERE ",
                  s, " IS NOT NULL AND ", e, " IS NOT NULL AND ", e, " >= ", s)
-  f <- .fragment("op_periods", "coverage", "row", body,
+  f <- .fragment(nm, "coverage", "row", body,
                  columns = list(person_id = .fragmentColumn(person_type, FALSE, "person_key"),
                                 period_id = .fragmentColumn("bigint", FALSE, "origin_identity"),
                                 start_date = .fragmentColumn("date", FALSE, "start"),
@@ -111,7 +112,11 @@
 #' @param suffix Optional name suffix for a criterion-specific request (e.g.
 #'   \code{omop_observed(gap = )}).
 #' @return list(coverage = opc_<pop>, segments = seg_<pop>, recorded =
-#'   seg_<pop>_rec, policy).
+#'   seg_<pop>_rec, policy, pop, suffix). Fragment identities \code{("opc",
+#'   pop, suffix)}, \code{("seg", pop, suffix)}, \code{("seg", pop,
+#'   "[<suffix>_]rec")} and, for union, \code{("seg", pop, "[<suffix>_]mk")},
+#'   allocated per context (A-17): \code{suffix} is NULL for the population's
+#'   policy and \code{g<gap>} for an \code{omop_observed(gap =)} request.
 #' @keywords internal
 .compileCoverage <- function(ctx, pop, coverage, roster_fragment, phase = "candidate",
                              suffix = NULL) {
@@ -121,8 +126,8 @@
     stop("Coverage is looked up at the roster's index (cohort_start_date).", call. = FALSE)
   }
   h <- .compileDialect(ctx)
-  tag <- paste(c(pop, suffix), collapse = "_")
-  nm_opc <- .fragmentName("opc", tag)
+  stage <- function(x) paste(c(suffix, x), collapse = "_")
+  nm_opc <- .fragmentName("opc", pop, suffix, ctx = ctx)
   memo <- .compileMemo(ctx, "coverage_meta")
   if (exists(nm_opc, envir = memo, inherits = FALSE)) {
     meta <- get(nm_opc, envir = memo, inherits = FALSE)
@@ -131,7 +136,8 @@
     }
     return(list(coverage = .fragmentGet(ctx, meta$fragments[["coverage"]]),
                 segments = .fragmentGet(ctx, meta$fragments[["segments"]]),
-                recorded = .fragmentGet(ctx, meta$fragments[["recorded"]]), policy = policy))
+                recorded = .fragmentGet(ctx, meta$fragments[["recorded"]]), policy = policy,
+                pop = pop, suffix = suffix))
   }
   op <- .coverageSource(ctx)
   person_type <- op$columns$person_id$type
@@ -150,10 +156,10 @@
                    component_id = .fragmentColumn("bigint", FALSE, "group"),
                    start_date = .fragmentColumn("date", FALSE, "start"),
                    end_date = .fragmentColumn("date", FALSE, "end"))
-  nm_seg <- .fragmentName("seg", tag)
-  nm_rec <- .fragmentName("seg", tag, "rec")
+  nm_seg <- .fragmentName("seg", pop, suffix, ctx = ctx)
+  nm_rec <- .fragmentName("seg", pop, stage("rec"), ctx = ctx)
   if (identical(policy$policy, "union")) {
-    nm_mk <- .fragmentName("seg", tag, "mk")
+    nm_mk <- .fragmentName("seg", pop, stage("mk"), ctx = ctx)
     base <- paste0("SELECT p.person_id AS person_id, p.period_id AS period_id, ",
                    "p.start_date AS start_date, p.end_date AS end_date FROM ", op$name,
                    " p WHERE ", persons)
@@ -247,7 +253,50 @@
   assign(nm_opc, list(policy = policy, roster = roster_fragment$name,
                       fragments = c(coverage = f_opc$name, segments = f_seg$name,
                                     recorded = f_rec$name)), envir = memo)
-  list(coverage = f_opc, segments = f_seg, recorded = f_rec, policy = policy)
+  list(coverage = f_opc, segments = f_seg, recorded = f_rec, policy = policy, pop = pop,
+       suffix = suffix)
+}
+
+# Suffixes of the coverage requests a population can make: its own policy
+# (NULL) and one criterion-specific union request per distinct
+# omop_observed(gap =) in its criteria ("g<gap>").
+.coverageSuffixes <- function(pop) {
+  gaps <- integer(0)
+  walk <- function(x) {
+    if (!is.list(x)) return(invisible(NULL))
+    obs <- x[["observed"]]
+    if (is.list(obs) && !is.null(obs[["gap"]]) && !is.list(obs[["gap"]])) {
+      gaps <<- c(gaps, as.integer(obs[["gap"]]))
+    }
+    for (v in x) walk(v)
+    invisible(NULL)
+  }
+  walk(pop[["where"]])
+  c(list(NULL), lapply(sort(unique(gaps)), function(g) paste0("g", g)))
+}
+
+#' Identities of the coverage fragments of a plan (amendment A-17)
+#'
+#' \code{op_periods} once; per population and coverage request (the
+#' population's policy, and each criterion-specific \code{omop_observed(gap =)}
+#' union request, suffix \code{g<gap>}): \code{opc}, \code{seg} and its
+#' stages \code{rec}, \code{mk}, and the observed segments of the candidate
+#' and final rosters (\code{obs_cand}, \code{obs_final}).
+#' @keywords internal
+.coverageFragmentIdentities <- function(ir) {
+  pops <- names(ir[["populations"]] %||% list())
+  if (!length(pops)) return(list())
+  out <- list(.fragmentIdentity("op", "periods"))
+  for (p in pops) {
+    for (sfx in .coverageSuffixes(ir[["populations"]][[p]])) {
+      st <- function(x) paste(c(sfx, x), collapse = "_")
+      out <- c(out, list(.fragmentIdentity("opc", p, sfx), .fragmentIdentity("seg", p, sfx),
+                         .fragmentIdentity("seg", p, st("rec")), .fragmentIdentity("seg", p, st("mk")),
+                         .fragmentIdentity("seg", p, st("obs_cand")),
+                         .fragmentIdentity("seg", p, st("obs_final"))))
+    }
+  }
+  out
 }
 
 #' Rows a coverage policy keeps
@@ -332,14 +381,16 @@
 #' @param cov The result of \code{.compileCoverage()}.
 #' @param roster_fragment Roster or candidates fragment.
 #' @param phase \code{"candidate"} or \code{"final"}.
-#' @param name Optional fragment name (default \code{seg_<coverage>_<roster>_row}).
+#' @param name Optional fragment name (default: the allocated identity
+#'   \code{("seg", <pop>, "[<suffix>_]obs_cand" | "[<suffix>_]obs_final")}).
 #' @return Fragment with \code{row_key}, \code{person_id}, \code{start_date},
 #'   \code{end_date} (one row per observed segment of each roster row).
 #' @keywords internal
 .compileObservedSegments <- function(ctx, cov, roster_fragment, phase, name = NULL) {
   spec <- .rosterSpec(roster_fragment, phase)
-  name <- name %||% .fragmentName("seg", paste0(sub("^opc_", "", cov$coverage$name), "_", spec$name),
-                                  "row")
+  name <- name %||% .fragmentName("seg", cov$pop,
+                                  paste(c(cov$suffix, "obs", if (identical(phase, "candidate")) "cand" else "final"),
+                                        collapse = "_"), ctx = ctx)
   existing <- .fragmentGet(ctx, name)
   if (!is.null(existing)) return(existing)
   h <- .compileDialect(ctx)

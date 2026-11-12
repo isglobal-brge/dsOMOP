@@ -149,38 +149,93 @@
   .compileIntervalByName(ctx, a$source)$course
 }
 
-# Deterministic name of the anchor fragment of (population, phase, anchor).
+# Canonical form of an anchor (defaults applied, nested search windows
+# canonical too), so that an anchor matches its IR inventory entry whether or
+# not the caller's copy carries the normalised defaults.
+.anchorCanonical <- function(anchor) {
+  if (is.null(anchor)) return("index")
+  if (is.list(anchor) && length(anchor) == 1L && is.null(names(anchor)) &&
+      is.character(anchor[[1L]])) anchor <- anchor[[1L]]
+  if (is.character(anchor)) return(anchor)
+  if (is.list(anchor) && identical(names(anchor), "date")) return(list(date = unlist(anchor[["date"]])))
+  scalar <- function(x, default) {
+    if (is.null(x)) return(default)
+    if (is.list(x) && length(x) == 1L) x <- x[[1L]]
+    x
+  }
+  src <- anchor[["source"]]
+  list(source = stats::setNames(list(unlist(src[[1L]])), names(src)[[1L]]),
+       which = scalar(anchor[["which"]], "first"), n = as.integer(scalar(anchor[["n"]], 1L)),
+       field = scalar(anchor[["field"]], "start"), scope = scalar(anchor[["scope"]], "person"),
+       search = .windowCanonical(anchor[["search"]]))
+}
+
+.windowCanonical <- function(window) {
+  if (is.null(window) || (is.list(window) && !length(window))) return(NULL)
+  bound <- function(x) {
+    if (is.list(x) && length(x) == 1L && is.null(names(x))) x <- x[[1L]]
+    if (is.null(x)) return(NULL)
+    if (is.numeric(x)) return(as.integer(x))
+    list(anchor = .anchorCanonical(x[["anchor"]]), offset = as.integer(unlist(x[["offset"]])))
+  }
+  list(start = bound(window[["start"]]), end = bound(window[["end"]]),
+       anchor = .anchorCanonical(window[["anchor"]] %||% "index"))
+}
+
+.anchorKey <- function(anchor) .jcsCanonical(.anchorCanonical(anchor))
+
+# The IR's anchor inventory (.irOrder()$anchors), keyed canonically; memoised.
+.anchorInventoryKeys <- function(ctx) {
+  cached <- ctx[["anchor_inventory_keys"]]
+  if (!is.null(cached)) return(cached)
+  inventory <- if (!is.null(ctx[["ir"]])) .irAnchorInventory(ctx[["ir"]]) else list()
+  keys <- lapply(inventory, function(phase) {
+    lapply(phase, function(anchors) vapply(anchors, .anchorKey, ""))
+  })
+  assign("anchor_inventory_keys", keys, envir = ctx)
+  keys
+}
+
+#' Identities of the anchor fragments of a plan (amendment A-17)
+#'
+#' One per distinct source anchor of the IR's anchor inventory
+#' (\code{.irOrder()$anchors}): \code{("anc", "<pop>_<k>", "cand")} for the
+#' candidate stage and \code{("anc", "<pop>_<k>")} for the final stage, k
+#' the anchor's position in the population's sorted inventory.
+#' @keywords internal
+.anchorFragmentIdentities <- function(ir) {
+  inventory <- .irAnchorInventory(ir)
+  out <- list()
+  for (phase in c("candidate", "final")) {
+    for (p in names(inventory[[phase]])) {
+      for (k in seq_along(inventory[[phase]][[p]])) {
+        out[[length(out) + 1L]] <- .fragmentIdentity(
+          "anc", paste0(p, "_", k), if (identical(phase, "candidate")) "cand")
+      }
+    }
+  }
+  out
+}
+
+# The allocated name of the anchor fragment of (population, phase, anchor):
+# the anchor's position in the population's inventory for that phase. An
+# anchor the IR does not declare cannot be named (fail closed, A-17).
 .anchorFragmentName <- function(ctx, spec, anchor) {
-  memo <- .compileMemo(ctx, "anchor_names")
-  canonical <- .jcsCanonical(if (is.list(anchor)) unclass(anchor) else anchor)
-  key <- paste(spec$phase, spec$population, spec$name, canonical, sep = "\r")
-  if (exists(key, envir = memo, inherits = FALSE)) return(get(key, envir = memo, inherits = FALSE))
-  inventory <- ctx[["anchor_inventory"]]
-  if (is.null(inventory) && !is.null(ctx[["ir"]])) {
-    inventory <- tryCatch(.irAnchorInventory(ctx[["ir"]]), error = function(e) list())
-    assign("anchor_inventory", inventory, envir = ctx)
-  }
-  listed <- inventory[[spec$phase]][[spec$population]] %||% list()
-  keys <- vapply(listed, function(x) .jcsCanonical(x), "")
-  k <- match(canonical, keys)
+  keys <- .anchorInventoryKeys(ctx)[[spec$phase]][[spec$population]] %||% character(0)
+  k <- match(.anchorKey(anchor), keys)
   if (is.na(k)) {
-    extra <- (ctx[["anchor_extra"]] %||% list())
-    pk <- paste(spec$phase, spec$population, sep = "\r")
-    used <- extra[[pk]] %||% 0L
-    k <- length(listed) + used + 1L
-    extra[[pk]] <- used + 1L
-    assign("anchor_extra", extra, envir = ctx)
+    stop("Anchor not declared by the plan's anchor inventory for population '",
+         spec$population, "' (", spec$phase, " stage); it cannot be compiled.", call. = FALSE)
   }
-  name <- .fragmentName("anc", paste0(spec$population, "_", k),
-                        if (identical(spec$phase, "candidate")) "cand")
-  assign(key, name, envir = memo)
-  name
+  .fragmentName("anc", paste0(spec$population, "_", k),
+                if (identical(spec$phase, "candidate")) "cand", ctx = ctx)
 }
 
 #' Compile one anchor against a roster (frozen compiler signature, section 6)
 #'
 #' @param ctx Execution context.
-#' @param anchor An anchor (built-in name, date object or source anchor).
+#' @param anchor A source anchor of the IR's anchor inventory (built-in and
+#'   date anchors are roster expressions: \code{.anchorExpr()}).
 #' @param roster_fragment The candidates fragment (\code{phase =
 #'   "candidate"}) or the final roster (\code{phase = "final"}).
 #' @param phase \code{"candidate"} (design phase 4) or \code{"final"} (phase 6).
@@ -193,62 +248,55 @@
   if (.depth > .ANCHOR_SEARCH_DEPTH) .irReject("anchor search windows are nested too deeply")
   spec <- .rosterSpec(roster_fragment, phase)
   a <- .anchorNormalize(anchor)
+  if (!identical(a$kind, "source")) {
+    stop("Built-in and date anchors are roster expressions without a fragment; ",
+         "use .anchorExpr().", call. = FALSE)
+  }
   h <- .compileDialect(ctx)
   name <- .anchorFragmentName(ctx, spec, anchor)
   existing <- .fragmentGet(ctx, name)
   if (!is.null(existing)) return(existing)
   r <- function(col) paste0("r.", col)
   deps <- spec$name
-  if (a$kind %in% c("builtin", "date")) {
-    expr <- if (identical(a$kind, "date")) .sqlDateLiteral(h, a$date) else {
-      col <- spec[[switch(a$name, index = "index", index_end = "index_end",
-                          observation_start = "op_start", observation_end = "op_end")]]
-      if (is.null(col)) stop("The roster has no column for anchor '", a$name, "'.", call. = FALSE)
-      r(col)
-    }
-    body <- paste0("SELECT ", r(spec$key), " AS row_key, ", r(spec$person), " AS person_id, ",
-                   expr, " AS anchor_date FROM ", spec$name, " r")
-  } else {
-    src <- .anchorSourceFragment(ctx, a)
-    deps <- c(deps, src$name)
-    order <- unique(c(src$ordering, src$unique_key))
-    order <- c("start_date", setdiff(order, c("start_date", "end_date")))
-    order_items <- switch(a$which,
-      first = , nth = paste0("e.", order),
-      last = paste0("e.", order, " DESC"),
-      latest_end = c("e.end_date DESC", paste0("e.", order, " DESC")))
-    rn <- .sqlRowNumber(h, r(spec$key), order_items)
-    on <- c(paste0("e.person_id = ", r(spec$person)), "e.start_date IS NOT NULL")
-    if (identical(a$field, "end")) on <- c(on, "e.end_date IS NOT NULL")
-    joins <- character(0)
-    if (!is.null(a$search)) {
-      win <- .compileWindow(ctx, a$search, roster_fragment, phase, alias = "r",
-                            .depth = .depth + 1L)
-      joins <- win$joins
-      deps <- c(deps, win$dependencies)
-      pred <- .windowStartPredicateSql(win, "e.start_date")
-      if (!is.null(win$defined)) on <- c(on, win$defined)
-      if (!is.null(pred)) on <- c(on, pred)
-    }
-    if (identical(a$scope, "episode")) {
-      if (is.null(spec$op_start) || is.null(spec$op_end)) {
-        stop("scope = \"episode\" needs the roster's coverage bounds (op_start, op_end).",
-             call. = FALSE)
-      }
-      on <- c(on, paste0("e.start_date >= ", r(spec$op_start)), paste0("e.start_date <= ", r(spec$op_end)))
-    }
-    field <- if (identical(a$field, "end")) "e.end_date" else "e.start_date"
-    inner <- paste0("SELECT ", r(spec$key), " AS row_key, ", r(spec$person), " AS person_id, ",
-                    field, " AS anchor_date, ", rn, " AS rn FROM ", spec$name, " r",
-                    if (length(joins)) paste0(" ", paste(unname(joins), collapse = " ")),
-                    " INNER JOIN ", src$name, " e ON ", paste(on, collapse = " AND "))
-    body <- paste0("SELECT x.row_key AS row_key, x.person_id AS person_id, x.anchor_date AS anchor_date FROM (",
-                   inner, ") x WHERE x.rn = ", .sqlIntegerLiteral(h, if (identical(a$which, "nth")) a$n else 1L))
+  src <- .anchorSourceFragment(ctx, a)
+  deps <- c(deps, src$name)
+  order <- unique(c(src$ordering, src$unique_key))
+  order <- c("start_date", setdiff(order, c("start_date", "end_date")))
+  order_items <- switch(a$which,
+    first = , nth = paste0("e.", order),
+    last = paste0("e.", order, " DESC"),
+    latest_end = c("e.end_date DESC", paste0("e.", order, " DESC")))
+  rn <- .sqlRowNumber(h, r(spec$key), order_items)
+  on <- c(paste0("e.person_id = ", r(spec$person)), "e.start_date IS NOT NULL")
+  if (identical(a$field, "end")) on <- c(on, "e.end_date IS NOT NULL")
+  joins <- character(0)
+  if (!is.null(a$search)) {
+    win <- .compileWindow(ctx, a$search, roster_fragment, phase, alias = "r",
+                          .depth = .depth + 1L)
+    joins <- win$joins
+    deps <- c(deps, win$dependencies)
+    pred <- .windowStartPredicateSql(win, "e.start_date")
+    if (!is.null(win$defined)) on <- c(on, win$defined)
+    if (!is.null(pred)) on <- c(on, pred)
   }
+  if (identical(a$scope, "episode")) {
+    if (is.null(spec$op_start) || is.null(spec$op_end)) {
+      stop("scope = \"episode\" needs the roster's coverage bounds (op_start, op_end).",
+           call. = FALSE)
+    }
+    on <- c(on, paste0("e.start_date >= ", r(spec$op_start)), paste0("e.start_date <= ", r(spec$op_end)))
+  }
+  field <- if (identical(a$field, "end")) "e.end_date" else "e.start_date"
+  inner <- paste0("SELECT ", r(spec$key), " AS row_key, ", r(spec$person), " AS person_id, ",
+                  field, " AS anchor_date, ", rn, " AS rn FROM ", spec$name, " r",
+                  if (length(joins)) paste0(" ", paste(unname(joins), collapse = " ")),
+                  " INNER JOIN ", src$name, " e ON ", paste(on, collapse = " AND "))
+  body <- paste0("SELECT x.row_key AS row_key, x.person_id AS person_id, x.anchor_date AS anchor_date FROM (",
+                 inner, ") x WHERE x.rn = ", .sqlIntegerLiteral(h, if (identical(a$which, "nth")) a$n else 1L))
   f <- .fragment(name, "anchor", "episode", body,
                  columns = list(row_key = .fragmentColumn(spec$key_type, FALSE, "episode_key"),
                                 person_id = .fragmentColumn(spec$person_type, FALSE, "person_key"),
-                                anchor_date = .fragmentColumn("date", identical(a$kind, "builtin"), "start")),
+                                anchor_date = .fragmentColumn("date", FALSE, "start")),
                  dependencies = unique(deps), unique_key = "row_key",
                  person_lineage = list(person_col = "person_id", via_roster = NULL),
                  roster_namespace = spec$namespace, private_columns = "row_key")

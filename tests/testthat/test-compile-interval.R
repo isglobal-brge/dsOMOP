@@ -264,7 +264,8 @@ test_that("covered_days, supply_days and observed days over rosters and windows"
       rec = list(source = list(event = "drug"), gap = 30),
       stock = list(source = list(event = "drug"), gap = 30, stockpile = TRUE),
       mrec = list(source = list(event = "metf"), gap = 30),
-      mstock = list(source = list(event = "metf"), gap = 30, stockpile = TRUE)), events = events)
+      mstock = list(source = list(event = "metf"), gap = 30, stockpile = TRUE)), events = events,
+      populations = list(cv = list(kind = "criteria", coverage = list(policy = "union", gap = 30L))))
     on.exit(.compileReleaseTempTables(ctx), add = TRUE)
     # a roster of fixture episodes at index 2019-12-31 (union coverage, gap 30)
     cand <- .fragment("cand_cv", "candidates", "episode",
@@ -397,6 +398,17 @@ test_that("interval nodes are validated and compiled once per context", {
   expect_identical(a$course$source_identity_columns, c("source_ns", "person_id", "group_id", "era_no"))
   expect_true(all(c("era_no", "group_id", "n_events", "era_key", "event_id") %in% a$course$private_columns))
   expect_identical(.intervalMeta(ctx, "e")$spec$gap, 30L)
+  # identifiers are allocated per context from the declared identities (A-17):
+  # an interval "e_rec" and the recorded stage of "e" coexist
+  ctx2 <- .ws5_iv_ctx(h, list(e = list(source = list(event = "drug"), gap = 30),
+                              e_rec = list(source = list(event = "drug"), gap = 0)))
+  x <- .compileIntervalByName(ctx2, "e")
+  y <- .compileIntervalByName(ctx2, "e_rec")
+  expect_false(identical(tolower(x$recorded$name), tolower(y$course$name)))
+  expect_match(x$recorded$name, "^iv_e_rec_[0-9a-f]{10}$")
+  expect_identical(nrow(.ws5_course(ctx2, "e", 3003)), 1L)
+  expect_identical(nrow(.ws5_course(ctx2, "e_rec", 3003)), 2L)
+  expect_error(.fragmentName("iv", "nope", ctx = ctx2), "not declared by an identity generator")
   .ws4_expect_rejection(.intervalSpec(list(source = list(event = "drug"), gap = -1), "x"), pattern = "gap")
   .ws4_expect_rejection(.intervalSpec(list(source = list(interval = "y")), "x"), pattern = "event reference")
   .ws4_expect_rejection(.intervalSpec(list(source = list(event = "drug"), by = "atc"), "x"), pattern = "by")

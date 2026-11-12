@@ -15,7 +15,8 @@
   observed_only = FALSE,
   fills = "start_in_window",
   cov = NULL,
-  name = NULL
+  name = NULL,
+  names = NULL
 )
 }
 \arguments{
@@ -41,7 +42,12 @@
 \item{cov}{The roster's coverage (\code{.compileCoverage()}), required for
 observed_days and \code{observed_only = TRUE}.}
 
-\item{name}{Stem of the fragment names.}
+\item{name}{Stem of the default fragment names (context-free: the bounds
+and stream fragments of a reducer belong to its consumer's identity family,
+which passes the allocated identifiers through \code{names}).}
+
+\item{names}{Optional \code{list(bounds =, stream =)} of allocated fragment
+identifiers.}
 }
 \value{
 data.frame(row_key, value).

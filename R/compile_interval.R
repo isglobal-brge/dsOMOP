@@ -175,6 +175,25 @@
        effective = if (!is.na(fr["effective"])) .fragmentGet(ctx, fr[["effective"]]))
 }
 
+#' Identities of the interval fragments of a plan (amendment A-17)
+#'
+#' Per interval: the stages \code{norm}, \code{mk} (gaps-and-islands marks),
+#' \code{rec} (recorded relation), for a stockpiled interval \code{effsrc}
+#' (the materialised effective rows) and \code{eff} (effective relation), and
+#' the final fragment (the course).
+#' @keywords internal
+.intervalFragmentIdentities <- function(ir) {
+  out <- list()
+  for (i in names(ir[["intervals"]] %||% list())) {
+    stock <- isTRUE(unlist(ir[["intervals"]][[i]][["stockpile"]]))
+    for (stage in c("norm", if (stock) "effsrc", "mk", "rec", if (stock) "eff")) {
+      out[[length(out) + 1L]] <- .fragmentIdentity("iv", i, stage)
+    }
+    out[[length(out) + 1L]] <- .fragmentIdentity("iv", i)
+  }
+  out
+}
+
 #' Compile an interval by name, with its source event
 #'
 #' Resolves the node through \code{ctx$ir}, compiles its source event
@@ -359,7 +378,7 @@
   extras <- .intervalExtraKeys(event_fragment)
   order_keys <- c("event_id", extras)
   ev <- event_fragment$name
-  nm <- function(suffix = NULL) .fragmentName("iv", name, suffix)
+  nm <- function(suffix = NULL) .fragmentName("iv", name, suffix, ctx = ctx)
   lineage <- list(person_col = "person_id", via_roster = NULL)
   register <- function(f) {
     .sqlAssertTypedSql(h, f$select_body)
@@ -589,7 +608,7 @@
   eff_spec$end_date <- .fragmentColumn("date", FALSE, "end")
   cols <- names(eff_spec)
   types <- vapply(eff_spec, function(c) c$type, "")
-  nm_src <- .fragmentName("iv", name, "effsrc")
+  nm_src <- .fragmentName("iv", name, "effsrc", ctx = ctx)
   private <- unique(c(intersect(f_norm$private_columns, cols), "carry"))
   make <- function(body) {
     .fragment(nm_src, "interval", "row", body, eff_spec, dependencies = character(0),
@@ -940,19 +959,25 @@
 #' @param fills \code{"start_in_window"} or \code{"clipped"} (supply_days).
 #' @param cov The roster's coverage (\code{.compileCoverage()}), required for
 #'   observed_days and \code{observed_only = TRUE}.
-#' @param name Stem of the fragment names.
+#' @param name Stem of the default fragment names (context-free: the bounds
+#'   and stream fragments of a reducer belong to its consumer's identity family,
+#'   which passes the allocated identifiers through \code{names}).
+#' @param names Optional \code{list(bounds =, stream =)} of allocated fragment
+#'   identifiers.
 #' @return data.frame(row_key, value).
 #' @keywords internal
 .intervalReducerValues <- function(ctx, fn, roster_fragment, phase = "final", source = NULL,
                                    window = NULL, coverage = "recorded", observed_only = FALSE,
-                                   fills = "start_in_window", cov = NULL, name = NULL) {
+                                   fills = "start_in_window", cov = NULL, name = NULL,
+                                   names = NULL) {
   fn <- match.arg(fn, c("covered_days", "supply_days", "observed_days"))
   spec <- .rosterSpec(roster_fragment, phase)
   stem <- name %||% paste0(fn, "_", substr(paste(as.character(openssl::sha256(charToRaw(enc2utf8(
     .jcsCanonical(list(fn = fn, roster = spec$name, phase = phase, source = source %||% list(),
                        window = window %||% list(), coverage = coverage,
                        observed_only = observed_only, fills = fills)))))), collapse = ""), 1L, 12L))
-  bounds <- .compileWindowBounds(ctx, window, roster_fragment, phase, .fragmentName("win", stem))
+  bounds <- .compileWindowBounds(ctx, window, roster_fragment, phase,
+                                 names[["bounds"]] %||% .fragmentName("win", stem))
   b <- .fetchFragment(ctx, bounds, order = "row_key")
   windows <- data.frame(key = b$row_key, lo = b$win_start, hi = b$win_end,
                         defined = as.integer(b$win_defined) == 1L, stringsAsFactors = FALSE)
@@ -972,7 +997,8 @@
     observed_days = .observedDays(observed, windows),
     covered_days = {
       rel <- .intervalRelation(ctx, source, coverage)
-      st <- .compileIntervalStream(ctx, rel, roster_fragment, window, phase, .fragmentName("str", stem))
+      st <- .compileIntervalStream(ctx, rel, roster_fragment, window, phase,
+                                   names[["stream"]] %||% .fragmentName("str", stem))
       s <- .fetchFragment(ctx, st, order = c("row_key", "start_date"))
       .coveredDays(data.frame(key = s$row_key, start = s$start_date, end = s$end_date,
                               stringsAsFactors = FALSE), windows, observed)
@@ -994,7 +1020,7 @@
       st <- .compileIntervalStream(
         ctx, rel, roster_fragment,
         if (clipped && !is.null(window)) utils::modifyList(window, list(start = NULL), keep.null = TRUE) else window,
-        phase, .fragmentName("str", stem), overlap = FALSE,
+        phase, names[["stream"]] %||% .fragmentName("str", stem), overlap = FALSE,
         extra = c(supply = "supply", end_recorded = "end_recorded"))
       s <- .fetchFragment(ctx, st, order = c("row_key", "start_date"))
       .supplyDays(data.frame(key = s$row_key, start = s$start_date, supply = s$supply,

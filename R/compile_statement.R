@@ -61,14 +61,18 @@
 #' One function per prefix, mapping an IR to the identities its compiler can
 #' register for that plan. WS-4: \code{ev} (table events: stages
 #' \code{src}, \code{norm} and the final fragment; adapters: \code{src} and
-#' the final fragment) and \code{map} (vocabulary maps). Later compilers add
-#' their families here (e.g. intervals, anchors, coverage, populations,
-#' output rosters); a fragment family without a generator cannot be named.
+#' the final fragment) and \code{map} (vocabulary maps). WS-5: \code{iv}
+#' (intervals), \code{op} / \code{opc} / \code{seg} (coverage) and
+#' \code{anc} (anchors). Later compilers add their families here (e.g.
+#' populations, output rosters); a fragment family without a generator cannot
+#' be named.
 #'
 #' @return Named list of functions(ir) -> list of identities.
 #' @keywords internal
 .fragmentIdentityGenerators <- function() {
-  list(ev = .eventFragmentIdentities, map = .mapFragmentIdentities)
+  list(ev = .eventFragmentIdentities, map = .mapFragmentIdentities,
+       iv = .intervalFragmentIdentities, coverage = .coverageFragmentIdentities,
+       anc = .anchorFragmentIdentities)
 }
 
 #' Identities of the event and adapter fragments of a plan

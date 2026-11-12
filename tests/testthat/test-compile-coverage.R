@@ -7,7 +7,24 @@
 .ws5_cov_backends <- .ws5_backends()
 withr::defer(.ws4_cleanup(.ws5_cov_backends), testthat::teardown_env())
 
-.ws5_cov_ctx <- function(h) .ws4_ctx(h, .ws5_plan(events = list(drug = .ws5_drug_event())))
+# One population per coverage request (fragment identifiers are allocated from
+# the IR, amendment A-17): the policy of each is its declared coverage.
+.ws5_cov_pops <- function() {
+  cr <- function(...) list(kind = "criteria", coverage = list(...))
+  list(t = list(kind = "criteria"), u = cr(policy = "unique"), e = cr(policy = "earliest"),
+       g0 = cr(policy = "union", gap = 0L), g7 = cr(policy = "union", gap = 7L),
+       g8 = cr(policy = "union", gap = 8L), dk = cr(policy = "unique", on_missing = "keep"),
+       ue = cr(policy = "unique", on_ambiguous = "error"),
+       gk = cr(policy = "union", gap = 7L, on_missing = "keep"), k = cr(policy = "unique", on_missing = "keep"),
+       obs = list(kind = "criteria", where = list(observed = list(before = 30L, gap = 7L))))
+}
+.ws5_cov_ctx <- function(h) {
+  .ws4_ctx(h, .ws5_plan(events = list(drug = .ws5_drug_event()), populations = .ws5_cov_pops()))
+}
+# The coverage of population `pop` (its declared policy) over a roster.
+.ws5_cov <- function(ctx, pop, roster, phase = "candidate") {
+  .compileCoverage(ctx, pop, ctx$ir$populations[[pop]]$coverage, roster, phase)
+}
 
 .ws5_opc <- function(ctx, cov) {
   r <- .ws5_rows(ctx, cov$coverage, "row_key")
@@ -19,11 +36,11 @@ test_that("the coverage matrix: policies, missing before ambiguity, the gap-inde
     h <- .ws5_cov_backends[[b]]$handle
     ctx <- .ws5_cov_ctx(h)
     cand <- .ws5_candidates(ctx)
-    uni <- .ws5_opc(ctx, .compileCoverage(ctx, "t", list(policy = "unique"), cand, "candidate", "u"))
-    ear <- .ws5_opc(ctx, .compileCoverage(ctx, "t", list(policy = "earliest"), cand, "candidate", "e"))
-    un0 <- .ws5_opc(ctx, .compileCoverage(ctx, "t", list(policy = "union", gap = 0), cand, "candidate", "g0"))
-    un7 <- .ws5_opc(ctx, .compileCoverage(ctx, "t", list(policy = "union", gap = 7), cand, "candidate", "g7"))
-    un8 <- .ws5_opc(ctx, .compileCoverage(ctx, "t", list(policy = "union", gap = 8), cand, "candidate", "g8"))
+    uni <- .ws5_opc(ctx, .ws5_cov(ctx, "u", cand))
+    ear <- .ws5_opc(ctx, .ws5_cov(ctx, "e", cand))
+    un0 <- .ws5_opc(ctx, .ws5_cov(ctx, "g0", cand))
+    un7 <- .ws5_opc(ctx, .ws5_cov(ctx, "g7", cand))
+    un8 <- .ws5_opc(ctx, .ws5_cov(ctx, "g8", cand))
     k <- function(df, key) df[df$row_key == key, , drop = FALSE]
     # 3101: two overlapping periods cover the index -> ambiguous under unique
     # (bounds withheld), the earliest complete record under earliest, one
@@ -59,27 +76,26 @@ test_that("drop / keep / error: what each policy keeps, and coverage_ambiguous",
     h <- .ws5_cov_backends[[b]]$handle
     ctx <- .ws5_cov_ctx(h)
     cand <- .ws5_candidates(ctx)
-    kept <- function(coverage, suffix) {
-      cov <- .compileCoverage(ctx, "t", coverage, cand, "candidate", suffix)
+    kept <- function(pop) {
+      cov <- .ws5_cov(ctx, pop, cand)
       f <- cov$coverage
       sql <- .buildStatement(ctx, f, select = paste0(
         "SELECT o.row_key FROM ", f$name, " o WHERE ", .coverageKeepSql(cov$policy, "o"),
         " ORDER BY o.row_key"), dialect = ctx)
       as.numeric(.executeQuery(h, sql)$row_key)
     }
-    expect_identical(kept(list(policy = "unique"), "dd"), c(2, 5, 6, 7, 8, 9, 10), info = b)
-    expect_identical(kept(list(policy = "unique", on_missing = "keep"), "dk"), c(2, 3, 4, 5, 6, 7, 8, 9, 10), info = b)
-    expect_identical(kept(list(policy = "earliest"), "ed"), c(1, 2, 5, 6, 7, 8, 9, 10), info = b)
-    expect_identical(kept(list(policy = "union", gap = 7), "gd"), c(1, 2, 5, 6, 7, 8, 9, 10), info = b)
-    expect_identical(kept(list(policy = "union", gap = 7, on_missing = "keep"), "gk"), as.numeric(1:10), info = b)
+    expect_identical(kept("u"), c(2, 5, 6, 7, 8, 9, 10), info = b)
+    expect_identical(kept("dk"), c(2, 3, 4, 5, 6, 7, 8, 9, 10), info = b)
+    expect_identical(kept("e"), c(1, 2, 5, 6, 7, 8, 9, 10), info = b)
+    expect_identical(kept("g7"), c(1, 2, 5, 6, 7, 8, 9, 10), info = b)
+    expect_identical(kept("gk"), as.numeric(1:10), info = b)
     # on_ambiguous = "error": the user-chosen typed failure, never a count
-    err <- .compileCoverage(ctx, "t", list(policy = "unique", on_ambiguous = "error"), cand, "candidate", "ue")
-    rej <- .ws4_expect_rejection(.coverageAssertUnambiguous(ctx, err, "t"), code = "coverage_ambiguous",
+    err <- .ws5_cov(ctx, "ue", cand)
+    rej <- .ws4_expect_rejection(.coverageAssertUnambiguous(ctx, err, "ue"), code = "coverage_ambiguous",
                                  reason = "coverage_ambiguous")
-    expect_false(grepl("[0-9]", sub("^.*population 't'", "", conditionMessage(rej))))
+    expect_false(grepl("[0-9]", sub("^.*population 'ue'", "", conditionMessage(rej))))
     # the same policy over unambiguous rows passes; drop never asserts
-    expect_true(.coverageAssertUnambiguous(ctx, .compileCoverage(ctx, "t", list(policy = "unique"),
-                                                                 cand, "candidate", "dd"), "t"))
+    expect_true(.coverageAssertUnambiguous(ctx, .ws5_cov(ctx, "u", cand), "u"))
   }
 })
 
@@ -88,7 +104,7 @@ test_that("eligibility spans versus actually observed segments: a gap never adds
     h <- .ws5_cov_backends[[b]]$handle
     ctx <- .ws5_cov_ctx(h)
     cand <- .ws5_candidates(ctx)
-    cov <- .compileCoverage(ctx, "g8", list(policy = "union", gap = 8), cand, "candidate")
+    cov <- .ws5_cov(ctx, "g8", cand)
     roster <- .ws5_roster(ctx, cand, cov, pop = "g8")
     r <- .ws5_rows(ctx, roster, "cohort_row_id")
     # 3102 (row 2): the eligibility span bridges the 8 unobserved days ...
@@ -112,7 +128,7 @@ test_that("eligibility spans versus actually observed segments: a gap never adds
     expect_identical(as.integer(ok$ok[as.numeric(ok$cohort_row_id) == 2]), 1L, info = b)
     # under unique coverage the same requirement fails (the covering record
     # starts 9 days before the index)
-    ucov <- .compileCoverage(ctx, "u", list(policy = "unique"), cand, "candidate")
+    ucov <- .ws5_cov(ctx, "u", cand)
     uroster <- .ws5_roster(ctx, cand, ucov, pop = "u")
     sql <- .buildStatement(ctx, uroster, select = paste0(
       "SELECT r.cohort_row_id, CASE WHEN ", obs, " THEN 1 ELSE 0 END AS ok FROM ", uroster$name,
@@ -136,7 +152,7 @@ test_that("rows kept without coverage have no observed days (NA, never 0)", {
     h <- .ws5_cov_backends[[b]]$handle
     ctx <- .ws5_cov_ctx(h)
     cand <- .ws5_candidates(ctx)
-    cov <- .compileCoverage(ctx, "k", list(policy = "unique", on_missing = "keep"), cand, "candidate")
+    cov <- .ws5_cov(ctx, "k", cand)
     roster <- .ws5_roster(ctx, cand, cov, pop = "k")
     r <- .ws5_rows(ctx, roster, "cohort_row_id")
     expect_true(all(c(3, 4) %in% r$cohort_row_id), info = b)
@@ -167,9 +183,20 @@ test_that("coverage policies are validated; the observation table is required", 
   expect_identical(a$coverage$name, "opc_t")
   expect_identical(a$segments$name, "seg_t")
   expect_identical(a$recorded$name, "seg_t_rec")
+  expect_identical(.coverageSource(ctx)$name, "op_periods")
   expect_true(all(c("op_count", "component_id", "row_key") %in% a$coverage$private_columns))
   expect_identical(.compileCoverage(ctx, "t", NULL, cand, "candidate")$coverage, a$coverage)
   expect_error(.compileCoverage(ctx, "t", list(policy = "union"), cand, "candidate"), "another policy")
+  # identifiers come from the plan's declared identities (A-17): a criterion-
+  # specific omop_observed(gap = 7) request is declared as suffix g7; any other
+  # coverage request cannot be named
+  o7 <- .compileCoverage(ctx, "obs", list(policy = "union", gap = 7L), cand, "candidate", suffix = "g7")
+  expect_identical(c(o7$coverage$name, o7$recorded$name), c("opc_obs_g7", "seg_obs_g7_rec"))
+  expect_error(.compileCoverage(ctx, "obs", list(policy = "union", gap = 3L), cand, "candidate", suffix = "g3"),
+               "not declared by an identity generator")
+  expect_error(.compileCoverage(ctx, "nope", NULL, cand, "candidate"), "not declared by an identity generator")
+  expect_true(any(vapply(.coverageFragmentIdentities(ctx$ir), function(id) identical(id$suffix, "g7_obs_final"),
+                         logical(1))))
 })
 
 test_that("compiled coverage SQL renders for every dialect family", {
@@ -187,7 +214,7 @@ test_that("compiled coverage SQL renders for every dialect family", {
       fh$vocab_schema <- fh$cdm_schema
       fh$results_schema <- NULL
       fh$temp_tables <- character(0)
-      ctx <- .ws4_ctx(fh, .ws5_plan(events = list(drug = .ws5_drug_event())))
+      ctx <- .ws4_ctx(fh, .ws5_plan(events = list(drug = .ws5_drug_event()), populations = .ws5_cov_pops()))
       cand <- .fragment("cand_t", "candidates", "episode",
                         "SELECT 1 AS cand_key, 1 AS subject_id, NULL AS cohort_start_date, NULL AS cohort_end_date",
                         columns = list(cand_key = .fragmentColumn("bigint", FALSE, "episode_key"),
@@ -198,8 +225,8 @@ test_that("compiled coverage SQL renders for every dialect family", {
                         private_columns = "cand_key")
       .fragmentRegister(ctx, cand)
       cat("--", family, "\n")
-      for (p in c("unique", "earliest", "union")) {
-        cov <- .compileCoverage(ctx, "t", list(policy = p, gap = 7), cand, "candidate", p)
+      for (p in c("u", "e", "g7")) {
+        cov <- .ws5_cov(ctx, p, cand)
         cat(.buildStatement(ctx, cov$coverage, dialect = ctx), "\n")
       }
     }

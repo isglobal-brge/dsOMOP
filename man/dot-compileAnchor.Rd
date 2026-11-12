@@ -9,7 +9,8 @@
 \arguments{
 \item{ctx}{Execution context.}
 
-\item{anchor}{An anchor (built-in name, date object or source anchor).}
+\item{anchor}{A source anchor of the IR's anchor inventory (built-in and
+date anchors are roster expressions: \code{.anchorExpr()}).}
 
 \item{roster_fragment}{The candidates fragment (\code{phase =
 "candidate"}) or the final roster (\code{phase = "final"}).}

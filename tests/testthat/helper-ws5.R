@@ -252,12 +252,28 @@
   out
 }
 
-# A language-2.0 plan around events and intervals (schema-valid).
-.ws5_plan <- function(events = list(), intervals = list(), populations = NULL) {
+# A language-2.0 plan around events, intervals and populations (schema-valid;
+# the criteria population `all` and its wide output are always present). The
+# populations, intervals and anchors a test compiles must be declared here:
+# fragment identifiers are allocated from the IR (amendment A-17).
+.ws5_plan <- function(events = list(), intervals = list(), populations = NULL,
+                      variables = NULL, outputs = NULL) {
   plan <- .ws4_plan(events = events)
   if (length(intervals)) plan$intervals <- intervals
-  if (!is.null(populations)) plan$populations <- populations
+  if (!is.null(populations)) plan$populations <- c(plan$populations, populations)
+  if (!is.null(variables)) plan$variables <- variables
+  if (!is.null(outputs)) plan$outputs <- c(plan$outputs, outputs)
   plan
+}
+
+# A criteria population whose criteria use each anchor once (so that the
+# anchors are in its candidate inventory).
+.ws5_anchor_population <- function(anchors, coverage = NULL, source = "bb") {
+  pop <- list(kind = "criteria", where = list(and = lapply(unname(anchors), function(a) {
+    list(has = list(source = list(event = source), window = list(start = 0L, end = 0L, anchor = a)))
+  })))
+  if (!is.null(coverage)) pop$coverage <- coverage
+  pop
 }
 
 .ws5_drug_event <- function(concepts = .WS5$ERA_DRUG, end = NULL) {

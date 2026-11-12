@@ -30,7 +30,11 @@ section 6.1) or a final roster.}
 }
 \value{
 list(coverage = opc_<pop>, segments = seg_<pop>, recorded =
-  seg_<pop>_rec, policy).
+  seg_<pop>_rec, policy, pop, suffix). Fragment identities \code{("opc",
+  pop, suffix)}, \code{("seg", pop, suffix)}, \code{("seg", pop,
+  "[<suffix>_]rec")} and, for union, \code{("seg", pop, "[<suffix>_]mk")},
+  allocated per context (A-17): \code{suffix} is NULL for the population's
+  policy and \code{g<gap>} for an \code{omop_observed(gap =)} request.
 }
 \description{
 Compile the coverage of a roster (design section 6.13)

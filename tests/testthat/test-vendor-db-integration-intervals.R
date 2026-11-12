@@ -22,6 +22,9 @@ test_that("WS-5 eras, stockpiles, coverage and anchors execute on the configured
     expect_true(isTRUE(profile$window_frames), info = b)
     cat("\n[ws5 vendor]", b, profile$runtime %||% "unknown runtime", "\n")
     W <- .WS5
+    last_end <- list(source = list(event = "a"), which = "last", field = "end")
+    first_a <- list(source = list(event = "a"), which = "first")
+    cr <- function(...) list(kind = "criteria", coverage = list(...))
     ctx <- .ws4_ctx(h, .ws5_plan(
       events = list(drug = .ws5_drug_event(),
                     mix = .ws5_drug_event(c(W$DRUG_A, W$DRUG_AB, W$DRUG_X)),
@@ -32,7 +35,11 @@ test_that("WS-5 eras, stockpiles, coverage and anchors execute on the configured
       intervals = list(e30 = list(source = list(event = "drug"), gap = 30),
                        e0 = list(source = list(event = "drug"), gap = 0),
                        ing = list(source = list(event = "mix"), gap = 0, by = "ingredient"),
-                       stock = list(source = list(event = "metf"), gap = 30, stockpile = TRUE))))
+                       stock = list(source = list(event = "metf"), gap = 30, stockpile = TRUE)),
+      populations = list(t = .ws5_anchor_population(list(last_end, first_a)),
+                         u = cr(policy = "unique"), g7 = cr(policy = "union", gap = 7L),
+                         ue = cr(policy = "unique", on_ambiguous = "error"),
+                         cv = cr(policy = "union", gap = 30L))))
     on.exit(.compileReleaseTempTables(ctx), add = TRUE)
     course <- function(i, p) {
       r <- .ws5_rows(ctx, .compileIntervalByName(ctx, i)$course, c("person_id", "group_id", "start_date"))
@@ -59,26 +66,23 @@ test_that("WS-5 eras, stockpiles, coverage and anchors execute on the configured
       r <- .ws5_rows(ctx, cov$coverage, "row_key")
       r[r$row_key == key, , drop = FALSE]
     }
-    uni <- .compileCoverage(ctx, "t", list(policy = "unique"), cand, "candidate", "u")
-    un7 <- .compileCoverage(ctx, "t", list(policy = "union", gap = 7), cand, "candidate", "g7")
+    pcov <- function(p) .compileCoverage(ctx, p, ctx$ir$populations[[p]]$coverage, cand, "candidate")
+    uni <- pcov("u")
+    un7 <- pcov("g7")
     expect_identical(c(k(uni, 1)$op_count, k(uni, 3)$op_count, k(un7, 3)$op_count), c(2, 0, 0), info = b)
     expect_identical(k(un7, 2)$component_id, 2, info = b)
-    .ws4_expect_rejection(.coverageAssertUnambiguous(
-      ctx, .compileCoverage(ctx, "t", list(policy = "unique", on_ambiguous = "error"), cand, "candidate", "e"), "t"),
-      code = "coverage_ambiguous")
+    .ws4_expect_rejection(.coverageAssertUnambiguous(ctx, pcov("ue"), "ue"), code = "coverage_ambiguous")
     # anchors: the tie rule and a missing anchor
-    last_end <- list(source = list(event = "a"), which = "last", field = "end")
     f <- .compileAnchor(ctx, last_end, cand, "candidate")
     ad <- .ws5_rows(ctx, f, "row_key")
     expect_identical(ad$anchor_date[ad$row_key == 6], "2020-03-20", info = b)
     expect_false(7 %in% ad$row_key)
     v <- .intervalReducerValues(ctx, "covered_days", cand, "candidate", source = list(event = "bb"),
-                                window = list(start = 0L, end = 40L,
-                                              anchor = list(source = list(event = "a"), which = "first")))
+                                window = list(start = 0L, end = 40L, anchor = first_a))
     expect_identical(v$value[v$row_key == 6], 1L, info = b)
     expect_true(is.na(v$value[v$row_key == 7]), info = b)
     # the PDC pin on the union-coverage roster (reach person 1003: 4 / 4)
-    cov <- .compileCoverage(ctx, "cv", list(policy = "union", gap = 30), cand, "candidate")
+    cov <- pcov("cv")
     roster <- .ws5_roster(ctx, cand, cov, pop = "cv")
     w10 <- list(start = 1L, end = 10L, anchor = "index")
     pdc <- .intervalReducerValues(ctx, "covered_days", roster, "final", source = list(interval = "stock"),

@@ -8,10 +8,39 @@
 .ws5_an_backends <- .ws5_backends()
 withr::defer(.ws4_cleanup(.ws5_an_backends), testthat::teardown_env())
 
+# Every source anchor the tests compile, declared in the plan (anchor
+# fragments are named from the IR's anchor inventory, amendment A-17).
+.ws5_an_set <- function() {
+  a <- function(...) list(source = list(event = "a"), ...)
+  first_a <- a(which = "first")
+  ep <- function(w) a(which = w, n = 2L, field = "end", scope = "episode")
+  list(fs = a(which = "first", field = "start"), fe = a(which = "first", field = "end"),
+       ls = a(which = "last", field = "start"), le = a(which = "last", field = "end"),
+       n2s = a(which = "nth", n = 2L, field = "start"), n2e = a(which = "nth", n = 2L, field = "end"),
+       n3e = a(which = "nth", n = 3L, field = "end"), n4e = a(which = "nth", n = 4L, field = "end"),
+       n5 = a(which = "nth", n = 5L), lte = a(which = "latest_end", field = "end"),
+       first_a = first_a, epf = c(first_a, list(scope = "episode")),
+       ep_last = ep("last"), ep_nth = ep("nth"), ep_lte = ep("latest_end"),
+       plain_b = list(source = list(event = "b"), which = "first"),
+       b_after_a = list(source = list(event = "b"), which = "first",
+                        search = list(start = 1L, end = NULL, anchor = first_a)),
+       after_index = a(which = "first", search = list(start = 0L, end = NULL, anchor = "index")),
+       snap = list(source = list(event = "b"), which = "last", field = "end",
+                   search = list(start = 1L, end = NULL, anchor = a(which = "latest_end", field = "end"))))
+}
+
 .ws5_an_ctx <- function(h) {
-  .ws4_ctx(h, .ws5_plan(events = list(
-    a = list(table = "condition_occurrence", concept_set = list(concepts = list(.WS5$ANCHOR_A))),
-    b = list(table = "measurement", concept_set = list(concepts = list(.WS5$ANCHOR_B))))))
+  set <- .ws5_an_set()
+  .ws4_ctx(h, .ws5_plan(
+    events = list(
+      a = list(table = "condition_occurrence", concept_set = list(concepts = list(.WS5$ANCHOR_A))),
+      b = list(table = "measurement", concept_set = list(concepts = list(.WS5$ANCHOR_B)))),
+    populations = list(
+      t = .ws5_anchor_population(set, source = "b"),
+      cc = .ws5_anchor_population(set[c("first_a", "epf", "ep_last", "ep_nth", "ep_lte")], source = "b")),
+    variables = list(v_after = list(source = list(event = "b"), reducer = list(
+      fn = "count", window = list(start = 0L, end = 0L, anchor = set$after_index)))),
+    outputs = list(ot = list(rows = "t", format = "wide"))))
 }
 
 # Anchor dates per candidate key (NA when the row has no anchor).
@@ -206,8 +235,15 @@ test_that("anchor fragments are named by the IR anchor inventory", {
   cand <- .ws5_candidates(ctx)
   f <- .compileAnchor(ctx, inv$candidate$t[[1L]], cand, "candidate")
   expect_identical(f$name, "anc_t_1_cand")
-  other <- .compileAnchor(ctx, list(source = list(event = "b")), cand, "candidate")
-  expect_identical(other$name, "anc_t_2_cand")
+  # a copy without the normalised defaults matches its inventory entry
+  expect_identical(.compileAnchor(ctx, list(source = list(event = "a")), cand, "candidate")$name,
+                   "anc_t_1_cand")
+  # an anchor the IR does not declare cannot be named (fail closed, A-17)
+  expect_error(.compileAnchor(ctx, list(source = list(event = "b")), cand, "candidate"),
+               "not declared by the plan's anchor inventory")
+  expect_error(.compileAnchor(ctx, "index", cand, "candidate"), "roster expressions")
+  ids <- .anchorFragmentIdentities(ctx$ir)
+  expect_identical(vapply(ids, function(id) paste(c(id$name, id$suffix), collapse = "/"), ""), "t_1/cand")
   .ws4_expect_rejection(.anchorNormalize("tomorrow"), pattern = "unknown anchor")
   .ws4_expect_rejection(.anchorNormalize(list(source = list(table = "x"))), pattern = "source")
   .ws4_expect_rejection(.anchorNormalize(list(date = "2020-02-30")), pattern = "ISO date")
