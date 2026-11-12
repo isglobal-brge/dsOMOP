@@ -240,6 +240,19 @@ D["options_intervals"]["properties"]["legacy_anchor_offset"] = {
 D["options_intervals"]["allOf"] = [
     {"if": {"required": ["legacy_anchor_offset"]},
      "then": {"required": ["event_select"], "properties": {"event_select": {"const": "nearest"}}}}]
+# CR-21 (WS-2c, Astra's WS-2 re-review R3): a v1 criteria population with neither
+# filter_tree, cohort_definition_id nor index_event, which the v1 executor resolves
+# to no person (a private empty intermediate that 2.10.2 executed) -- IR-only,
+# closed, produced only by the v1 lowering
+for _branch in D["population"]["oneOf"]:
+    if _branch["properties"]["kind"].get("const") == "criteria":
+        _branch["properties"]["legacy_empty"] = {
+            "const": True,
+            "description": "the v1 criteria population without filter_tree, cohort_definition_id or index_event: no person (2.10.2 materialised an empty roster)"}
+        _branch.setdefault("allOf", []).append({
+            "if": {"required": ["legacy_empty"]},
+            "then": {"properties": {"parent": {"type": "null"}, "where": {"type": "null"},
+                                    "cohort_definition_id": {"type": "null"}}}})
 D["legacy_spec"]["properties"]["cohort_definition_id"] = {
     "type": "integer", "minimum": 0,
     "description": "the v1 plan cohort's cohort_definition_id of an inline spec (names its temporary cohort, fills the cohort_membership id column); present only when supplied, never defaulted"}
@@ -418,6 +431,10 @@ ir_probe("I57", "legacy_spec cohort_definition_id negative", R, A, _legacy_spec(
 ir_probe("I58", "scope legacy_cohort_sources without the materialised combine", R, A, lambda b: b.__setitem__("scope", {"cohort": 3, "legacy_cohort_sources": [3, 5]}))
 ir_probe("I59", "scope legacy_cohort_sources with a null scope cohort", R, A, lambda b: b.__setitem__("scope", {"cohort": None, "combine": "union", "legacy_cohort_sources": [3, 5]}))
 ir_probe("I60", "scope legacy_cohort_sources with a results-cohort reference of zero", R, A, lambda b: b.__setitem__("scope", {"cohort": 3, "combine": "intersect", "legacy_cohort_sources": [3, {"type": "cohort_table", "cohort_definition_id": 0}]}))
+# CR-21: the empty v1 criteria population
+ir_probe("I61", "legacy_empty criteria population in the IR (CR-21)", OK, A, lambda b: b["populations"].__setitem__("nobody", {"kind": "criteria", "legacy_empty": True, "legacy_episodes": "observation_periods"}))
+ir_probe("I62", "legacy_empty beside criteria", R, A, lambda b: b["populations"].__setitem__("nobody", {"kind": "criteria", "legacy_empty": True, "where": {"person": {"var": "gender_concept_id", "op": "==", "value": 8532}}}))
+ir_probe("I63", "legacy_empty false", R, A, lambda b: b["populations"].__setitem__("nobody", {"kind": "criteria", "legacy_empty": False}))
 probe("P63", "temporal source_analyses with a count-only selection (A-14; a wire field, so valid under both schemas)", OK, A, lambda b: _tc(b, {"hba1c": ["count"]}))
 probe("P44", "censor conditioned on an index source (A-7)", OK, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "which": "first_start_after_entry", "when_index_source": ["acei"]}}]))
 probe("P45", "censor when_index_source must be nonempty and unique", R, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "when_index_source": ["acei", "acei"]}}]))
@@ -441,6 +458,8 @@ probe("P62", "legacy_concept_scope on the wire", R, A, lambda b: b["events"]["hb
 probe("P64", "legacy_raw_filter on the wire", R, A, lambda b: b["outputs"]["baseline"].__setitem__("legacy_raw_filter", {"var": "gender_concept_id", "op": "==", "value": 8507}))
 probe("P65", "legacy_anchor_offset on the wire", R, A, lambda b: _iv(b, event_select="nearest", legacy_anchor_offset=30))
 probe("P66", "scope legacy_cohort_sources on the wire", R, A, lambda b: b.__setitem__("scope", {"cohort": 3, "combine": "union", "legacy_cohort_sources": [3, 5]}))
+# CR-21: refused on the wire
+probe("P67", "legacy_empty on the wire", R, A, lambda b: b["populations"].__setitem__("nobody", {"kind": "criteria", "legacy_empty": True}))
 # input-level probes carried as JSON TEXT (a conforming JSON document cannot hold
 # Infinity, and duplicate members are only visible to a parser): the R validator
 # parses `instance_text` with jsonlite (1e400 -> Inf; duplicate names kept) and
