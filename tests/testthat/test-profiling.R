@@ -704,7 +704,7 @@ test_that("concept drilldown categorical order uses released bands", {
 
 # --- Central profiler column gate --------------------------------------------
 
-test_that("public profilers reject identifiers and sensitive values before SQL", {
+test_that("public profilers reject identifiers and sensitive values before data queries", {
   handle <- create_test_handle(n_persons = 15)
   on.exit(cleanup_handle(handle), add = TRUE)
   .buildBlueprint(handle)  # cache metadata so the policy gate needs no query
@@ -712,9 +712,15 @@ test_that("public profilers reject identifiers and sensitive values before SQL",
   .setHandle(symbol, handle)
   on.exit(.removeHandle(symbol), add = TRUE)
 
-  # Disconnect after caching the blueprint. Matching the policy error below
-  # proves rejection happened before any profiler SQL was attempted.
-  DBI::dbDisconnect(handle$conn)
+  # Keep the connection live so the public endpoint can open and roll back
+  # its request snapshot. No profiler data query may precede the column gate;
+  # cached metadata makes these refusals independent of a data read.
+  data_queries <- 0L
+  local_mocked_bindings(.executeQuery = function(...) {
+    data_queries <<- data_queries + 1L
+    stop("A profiler data query preceded its column-policy rejection.",
+         call. = FALSE)
+  })
 
   identifier_calls <- list(
     function() omopColumnStatsDS(symbol, "person", "person_id"),
@@ -753,6 +759,9 @@ test_that("public profilers reject identifiers and sensitive values before SQL",
     omopMissingnessDS(symbol, "observation", columns = "value_as_string"),
     "blocked.*sensitive"
   )
+  expect_identical(data_queries, 0L)
+  expect_null(handle$read_snapshot)
+  expect_true(DBI::dbIsValid(handle$conn))
 })
 
 test_that("public numeric profilers still accept a clinical numeric measure", {
