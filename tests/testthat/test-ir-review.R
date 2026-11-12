@@ -966,7 +966,9 @@ test_that("R3: integer-coercible v1 values and literals keep their 2.10.2 meanin
 test_that("R3: inline-spec value bins compare coerced numeric bounds", {
   make <- function(lower, upper) list(cohort = list(type = "spec", spec = list(
     type = "measurement", concept_set = list(3004410L),
-    value_bin = list(lower = lower, upper = upper))), outputs = .rv_v1()$outputs)
+    value_bin = list(lower = lower, upper = upper,
+                     safe_scope = list(table = "measurement", column = "value_as_number",
+                                       concept_id = 3004410L, n_bins = 3L)))), outputs = .rv_v1()$outputs)
   # Lexicographic ordering reverses this valid numeric bin: "7.5" > "10".
   expect_identical(.rv_digest(make("7.5", "10")), .rv_digest(make(7.5, 10)))
   expect_identical(.rv_digest(make("0x1.ep+2", "1e1")), .rv_digest(make(7.5, 10)))
