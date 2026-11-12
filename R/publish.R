@@ -61,6 +61,24 @@
                  class = c("dsomop_plan_rejection", "error", "condition")))
 }
 
+# A-18: the closed vocabulary of the optional `reason` of a rejected status
+# entry (section 11 adapter refusals), present only with validation_error.
+.REJECTION_REASONS <- c("adapter_person_mismatch", "cost_currency_mixed")
+
+# The bounded status entry for a dsomop_plan_rejection condition: {code,
+# message} with the constant message per code, plus `reason` only when the
+# code is validation_error and the condition names one construct of the closed
+# vocabulary. The condition's raw message, field path and attached state never
+# enter the status (A-18).
+.rejectionEntry <- function(e) {
+  entry <- list(code = e$code, message = .publishMessage(e$code))
+  if (identical(e$code, "validation_error") && .isScalarString(e$reason) &&
+      e$reason %in% .REJECTION_REASONS) {
+    entry$reason <- e$reason
+  }
+  entry
+}
+
 #' Register an immutable roster namespace
 #' @keywords internal
 .planRegisterRoster <- function(ctx, roster_id, frame) {
@@ -396,8 +414,15 @@
     }
   }
   for (entry in x$rejected) {
-    if (!is.list(entry) || !identical(names(entry), c("code", "message")) ||
+    if (!is.list(entry) || !identical(names(entry)[1:2], c("code", "message")) ||
+        !length(entry) %in% 2:3 || !.isScalarString(entry$code) ||
         !entry$code %in% codes || !identical(entry$message, .publishMessage(entry$code))) {
+      stop("Invalid rejection status.", call. = FALSE)
+    }
+    # A-18: an optional closed `reason`, only with validation_error
+    if (length(entry) == 3L && (!identical(names(entry)[3L], "reason") ||
+        !identical(entry$code, "validation_error") || !.isScalarString(entry$reason) ||
+        !entry$reason %in% .REJECTION_REASONS)) {
       stop("Invalid rejection status.", call. = FALSE)
     }
   }
@@ -556,7 +581,7 @@ omopStagedRevokeDS <- function(exec_symbol) {
       }, dsomop_plan_rejection = function(e) {
         if (!e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",
                            "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
-        ctx$rejected[[root]] <- list(code = e$code, message = .publishMessage(e$code))
+        ctx$rejected[[root]] <- .rejectionEntry(e)
       })
       next
     }

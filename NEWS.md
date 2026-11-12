@@ -176,6 +176,20 @@ fills its entries. Classes follow design-2.10.3 section 5.
   A-14 execution plan selection for 2.10.1-style recipes, `source_analyses`
   on temporal and person-period outputs, and the windowed-features corpus row
   reclassified `newly_permitted`.
+- A-15 the `legacy_spec` inclusion `occurrence` is the executor's historical
+  `{type: at_least | at_most | exactly, count >= 0}` object (defaults
+  `at_least`, 1), not `{min, max}`; A-16 five further IR-only variants carry
+  the v1 semantics the executor audit found (`legacy_raw_filter`, the
+  nearest-only non-zero `legacy_anchor_offset`, `legacy_spec.cohort_definition_id
+  >= 0`, scope `legacy_cohort_sources` with the materialised `combine`,
+  `legacy_automatic_features` format `sparse`); probes I41-I60 and the wire
+  refusals P64-P66.
+- A-18 a rejected status entry may carry a third closed field `reason`
+  (`adapter_person_mismatch`, `cost_currency_mixed`), present only with
+  `validation_error`: every status writer builds its entry with
+  `.rejectionEntry()`, which copies the reason from the condition only under
+  those conditions and never its raw message, field path or state;
+  `.validatePlanStatus()` admits exactly that field and vocabulary.
 
 ## Concept sets, events, adapters and predicates (WS-4)
 
