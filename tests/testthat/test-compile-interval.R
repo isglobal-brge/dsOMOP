@@ -386,6 +386,25 @@ test_that("an unavailable source contributes no coverage and no course", {
     expect_identical(nrow(.ws5_rows(ctx, st$effective, "person_id")), 0L, info = b)
     expect_null(.intervalMeta(ctx, "ns")$temp_table)
   }
+  # an unavailable adapter keeps its declared contract (A-17): the interval
+  # over it has the same keys and still contributes nothing
+  h2 <- .ws4_reach_handle()
+  on.exit(DBI::dbDisconnect(h2$conn), add = TRUE)
+  DBI::dbExecute(h2$conn, "DROP TABLE episode_event")
+  h2$blueprint <- NULL
+  h2$role_registry <- NULL
+  ctx2 <- .ws5_iv_ctx(h2, list(m = list(source = list(event = "members"), gap = 30, stockpile = TRUE)),
+                      events = list(episodes = list(table = "episode", concept_set = list(concepts = list(32531))),
+                                    members = list(episode_members = list(episode = list(event = "episodes"),
+                                                                          on_missing_table = "unavailable"))))
+  iv <- .compileIntervalByName(ctx2, "m")
+  expect_identical(.eventMeta(ctx2, "members")$availability, "unavailable")
+  expect_identical(c(iv$course$availability, iv$recorded$availability, iv$effective$availability),
+                   rep("unavailable", 3L))
+  expect_true("member_table" %in% iv$recorded$unique_key)
+  expect_identical(nrow(.ws5_rows(ctx2, iv$recorded, "person_id")), 0L)
+  expect_identical(nrow(.ws5_rows(ctx2, iv$course, "person_id")), 0L)
+  expect_null(.intervalMeta(ctx2, "m")$temp_table)
 })
 
 test_that("interval nodes are validated and compiled once per context", {
