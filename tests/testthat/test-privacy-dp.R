@@ -1016,6 +1016,19 @@ test_that("DP preparation seals plan outputs while plan loading stays DP-free", 
   expect_identical(omopDpReleaseDS(prepared, list(statistic = "count")),
                    released)
 
+  # dsOMOPClient 2.10.2 sends the DP preparation positionally and without
+  # commit_policy (WS-8 review B1): the documented default "server" applies
+  # and the output is sealed as from a current client.
+  legacy_call <- .legacy_execution_call("omopDpPlanExecuteDS", handle_symbol, plan,
+                                        c(ages = "DP_legacy"))
+  expect_null(as.list(legacy_call)$commit_policy)
+  legacy_status <- eval(legacy_call, envir = session)
+  expect_identical(legacy_status$status, "ok")
+  legacy_prepared <- get("DP_legacy", envir = session, inherits = FALSE)
+  expect_false(is.null(attr(legacy_prepared, "dsomop_dp_provenance", exact = TRUE)))
+  expect_silent(.dsomopDpVerifyPersonLocal(legacy_prepared))
+  expect_identical(nrow(legacy_prepared), nrow(loaded))
+
   # The client includes commit_policy in every execution call. It is an
   # explicit publication policy, never a named scope input from `...`.
   all_or_none <- eval(quote(omopDpPlanExecuteDS(

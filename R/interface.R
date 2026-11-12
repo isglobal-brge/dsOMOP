@@ -739,8 +739,13 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   if (!is.list(out) && !is.character(out)) {
     stop("out must be a named output-to-symbol mapping.", call. = FALSE)
   }
-  if (length(out) == 0L || is.null(names(out)) || any(!nzchar(names(out))) ||
-      anyDuplicated(names(out))) {
+  # An explicitly empty publication root list (publish = [], section 4.1)
+  # releases nothing, so its out mapping is empty; every other plan maps at
+  # least one output.
+  no_roots <- is.list(plan) && !is.null(plan[["publish"]]) && length(plan[["publish"]]) == 0L
+  if ((length(out) == 0L && !no_roots) ||
+      (length(out) > 0L && (is.null(names(out)) || any(!nzchar(names(out))) ||
+                            anyDuplicated(names(out))))) {
     stop("out must have unique, non-empty output names.", call. = FALSE)
   }
   symbols <- vapply(out, function(sym) {
