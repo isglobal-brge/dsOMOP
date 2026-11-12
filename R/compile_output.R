@@ -611,37 +611,111 @@
   })
 }
 
+#' The normalised form of one survival censor entry
+#'
+#' Defaults applied (section 6.12, amendments A-5, A-7): a built-in
+#' (\code{observation_end}, \code{death}, \code{index_end}), an
+#' administrative date, a source entry (the first event starting on or after
+#' the entry) or an \code{omop_censor} entry with its \code{which},
+#' \code{offset}, \code{search}, \code{missing} and
+#' \code{when_index_source}. The compiler and explain read the same form
+#' (defect A-14: explain states the effective censoring).
+#' @param item One entry of \code{options$censor}.
+#' @return list(kind, ...).
+#' @keywords internal
+.survivalCensorSpec <- function(item) {
+  if (is.list(item) && length(item) == 1L && is.null(names(item)) && is.character(item[[1L]])) {
+    item <- item[[1L]]
+  }
+  if (is.character(item)) {
+    if (length(item) != 1L || !item %in% c("observation_end", "death", "index_end")) {
+      stop("Unknown censor '", paste(item, collapse = ","), "'.", call. = FALSE)
+    }
+    return(list(kind = item))
+  }
+  if (!is.null(item[["admin_date"]])) {
+    return(list(kind = "admin_date", date = as.character(unlist(item[["admin_date"]]))))
+  }
+  spec <- item[["censor"]]
+  if (is.null(spec)) {
+    return(list(kind = "source", source = item, which = "first_start_after_entry", offset = 0L,
+                search = NULL, missing = "ignore", when_index_source = NULL))
+  }
+  list(kind = "omop_censor", source = spec[["source"]],
+       which = spec[["which"]] %||% "first_end_after_entry",
+       offset = as.integer(unlist(spec[["offset"]] %||% 0L)), search = spec[["search"]],
+       missing = spec[["missing"]] %||% "ignore",
+       when_index_source = if (!is.null(spec[["when_index_source"]])) {
+         as.character(unlist(spec[["when_index_source"]]))
+       })
+}
+
+#' The effective censoring of a survival output (defect A-14)
+#'
+#' What explain states for every survival output: the censor entries in
+#' force with their defaults, the implicit cohort-end cap of a lowered v1
+#' plan (\code{legacy_cohort_end_cap}, defect A-E12), how observation ends the
+#' risk (a native plan always censors at the last observed day before the
+#' first observation gap after entry, or re-enters at the next observed
+#' segment for \code{counting_process} with \code{gap_policy = "reenter"}; a
+#' lowered v1 plan runs on the v1 executor, which censors at the end of the
+#' observation period containing the index only when \code{observation_end}
+#' is listed), the prior-outcome rule and the same-day priority.
+#' @param opts The survival output's options.
+#' @return Named list.
+#' @keywords internal
+.survivalEffectiveCensoring <- function(opts) {
+  opts <- opts %||% list()
+  entries <- lapply(.irItems(opts[["censor"]]), .survivalCensorSpec)
+  kinds <- vapply(entries, function(e) e$kind, character(1))
+  legacy <- isTRUE(unlist(opts[["legacy_cohort_end_cap"]]))
+  if (legacy && !"index_end" %in% kinds) {
+    entries <- c(entries, list(list(kind = "index_end", implicit = TRUE)))
+  }
+  fmt <- opts[["format"]] %||% "survival"
+  prior <- opts[["prior_outcome"]]
+  list(
+    entries = entries,
+    cohort_end_cap = legacy,
+    observation = if (legacy) {
+      if ("observation_end" %in% kinds) "containing_period_end" else "none"
+    } else if (identical(fmt, "counting_process") &&
+               identical(opts[["gap_policy"]] %||% "censor_at_gap", "reenter")) {
+      "reenter_at_next_observed_segment"
+    } else "last_observed_day_before_first_gap",
+    prior_outcome = if (is.null(prior)) list(action = "ignore") else
+      list(action = prior[["action"]] %||% "exclude", lookback = prior[["lookback"]]),
+    same_day_priority = opts[["same_day_priority"]] %||% "event"
+  )
+}
+
 # The censor dates of one censor item for every roster row (NA = none) and
 # the rows it makes ineligible (missing = "ineligible").
 .survivalCensorDates <- function(item, rows, keys, entry, index_source, roster, death) {
   n <- length(keys)
   none <- as.Date(rep(NA_character_, n))
   out <- list(date = none, ineligible = rep(FALSE, n))
-  if (is.character(item)) {
-    out$date <- switch(item,
+  spec <- .survivalCensorSpec(item)
+  if (spec$kind %in% c("observation_end", "death", "index_end")) {
+    out$date <- switch(spec$kind,
       observation_end = as.Date(roster$op_end),
       death = death,
-      index_end = as.Date(roster$cohort_end_date),
-      stop("Unknown censor '", item, "'.", call. = FALSE))
+      index_end = as.Date(roster$cohort_end_date))
     return(out)
   }
-  if (!is.null(item[["admin_date"]])) {
-    out$date <- rep(as.Date(as.character(unlist(item[["admin_date"]]))), n)
+  if (identical(spec$kind, "admin_date")) {
+    out$date <- rep(as.Date(spec$date), n)
     return(out)
   }
-  spec <- item[["censor"]]
-  which <- if (is.null(spec)) "first_start_after_entry" else spec[["which"]] %||% "first_end_after_entry"
-  offset <- if (is.null(spec)) 0L else as.integer(unlist(spec[["offset"]] %||% 0L))
   applies <- rep(TRUE, n)
-  when <- if (!is.null(spec)) spec[["when_index_source"]]
-  if (!is.null(when)) applies <- as.character(index_source) %in% as.character(unlist(when))
+  if (!is.null(spec$when_index_source)) applies <- as.character(index_source) %in% spec$when_index_source
   groups <- .reduceGroups(rows$row_key, keys)
   for (i in seq_len(n)) {
     if (!applies[[i]] || is.na(entry[[i]])) next
     ix <- groups[[i]]
     s <- rows$start_date[ix]
     e <- rows$end_date[ix]
-    d <- switch(which,
+    d <- switch(spec$which,
       first_end_after_entry = { x <- e[!is.na(e) & e >= entry[[i]]]; if (length(x)) min(x) else NA },
       first_start_after_entry = { x <- s[!is.na(s) & s >= entry[[i]]]; if (length(x)) min(x) else NA },
       containing_entry_end = {
@@ -649,10 +723,10 @@
         if (length(hit)) e[[hit[[1L]]]] else NA
       })
     if (is.na(d)) {
-      if (!is.null(spec) && identical(spec[["missing"]] %||% "ignore", "ineligible")) out$ineligible[[i]] <- TRUE
+      if (identical(spec$missing, "ineligible")) out$ineligible[[i]] <- TRUE
       next
     }
-    out$date[[i]] <- as.Date(d) + offset
+    out$date[[i]] <- as.Date(d) + spec$offset
   }
   out
 }
@@ -705,6 +779,14 @@
   opts <- node[["options"]] %||% list()
   fmt <- opts[["format"]] %||% "survival"
   field <- paste0("/outputs/", name, "/options")
+  # the v1 shapes run on the v1 executor (A-14); only the cohort-end cap has
+  # a native meaning
+  for (flag in c("legacy_single_outcome", "legacy_states", "legacy_state_step")) {
+    if (!is.null(opts[[flag]]) && !isFALSE(unlist(opts[[flag]]))) {
+      .irReject(paste0("output '", name, "' carries the v1 compatibility variant ", flag,
+                       ", which runs on the v1 executors"), field = paste0(field, "/", flag))
+    }
+  }
   pop <- inputs$population
   cons <- .reduceConsumer(ctx, name, pop$roster, pop$coverage, "episode")
   if (is.null(cons$coverage)) {
@@ -730,7 +812,8 @@
                       order = c("row_key", "start_date"), field = field)
   blocks <- .survivalBlocks(seg, keys)
   censors <- .irItems(opts[["censor"]])
-  needs_death <- any(vapply(censors, function(x) identical(x, "death"), logical(1)))
+  specs <- lapply(censors, .survivalCensorSpec)
+  needs_death <- any(vapply(specs, function(x) identical(x$kind, "death"), logical(1)))
   death <- if (needs_death) {
     dd <- .reduceDeathFrame(ctx, cons)
     as.Date(dd$death_date[match(as.character(keys), as.character(dd$row_key))])
@@ -741,22 +824,26 @@
   washout <- as.integer(unlist(opts[["washout_days"]] %||% 0L))
   extend <- if (!identical(prior_action, "ignore") && is.null(lookback)) NA_integer_ else
     max(washout, if (!identical(prior_action, "ignore")) as.integer(unlist(lookback)) else 0L)
-  censor_rows <- lapply(seq_along(censors), function(ci) {
-    item <- censors[[ci]]
-    if (is.character(item) || !is.null(item[["admin_date"]])) return(NULL)
-    ref <- if (!is.null(item[["censor"]])) item[["censor"]][["source"]] else item
-    src <- .reduceSource(ctx, ref)
-    if (!src$available) return(src$fragment)
-    window <- if (!is.null(item[["censor"]])) item[["censor"]][["search"]]
-    st <- .reduceStream(ctx, cons, src, window, .fragmentName("ox", name, paste0("c_", ci), ctx = ctx))
-    got <- .reduceStreamRows(ctx, cons, st, window, paste0(field, "/censor/", ci - 1L))
+  # an unavailable censor source cannot be evaluated: the output is
+  # published with status "unavailable" (section 2.3), as for an outcome
+  censor_unavailable <- FALSE
+  censor_rows <- lapply(seq_along(specs), function(ci) {
+    sp <- specs[[ci]]
+    if (!sp$kind %in% c("source", "omop_censor")) return(NULL)
+    src <- .reduceSource(ctx, sp$source)
+    if (!src$available) {
+      censor_unavailable <<- TRUE
+      return(NULL)
+    }
+    st <- .reduceStream(ctx, cons, src, sp$search, .fragmentName("ox", name, paste0("c_", ci), ctx = ctx))
+    got <- .reduceStreamRows(ctx, cons, st, sp$search, paste0(field, "/censor/", ci - 1L))
     got$rows
   })
   censor_wins <- identical(opts[["same_day_priority"]] %||% "event", "censor")
   gap_reenter <- identical(fmt, "counting_process") &&
     identical(opts[["gap_policy"]] %||% "censor_at_gap", "reenter")
   parts <- list()
-  status <- "ok"
+  status <- if (censor_unavailable) "unavailable" else "ok"
   for (ti in seq_along(tars)) {
     t <- names(tars)[[ti]]
     tar <- tars[[t]]

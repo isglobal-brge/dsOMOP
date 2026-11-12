@@ -93,6 +93,100 @@ test_that("survival: no implicit cohort-end cap (A-E12); index_end is a selectab
   }
 })
 
+test_that("survival: v1 shapes run on the v1 executors; an unavailable censor source; explain states the censoring (A-14)", {
+  h <- .ws7_out_backends$sqlite$handle
+  plan <- .ws7_sv_plan(list(outcomes = list(a = list(event = "a"))))
+  for (flag in list(list(legacy_single_outcome = TRUE), list(legacy_state_step = 0.01),
+                    list(legacy_states = list("a")))) {
+    run <- .ws7_ctx(h, plan)
+    run$cctx$ir$outputs$o$options[names(flag)] <- flag
+    pop <- .ws7_population(run, "t", .ws7_sv_frame(), cap_end = FALSE)
+    err <- tryCatch(.planCompileOutputs(run$cctx, list(o = "D"), populations = list(t = pop)),
+                    dsomop_plan_rejection = function(e) e)
+    expect_s3_class(err, "dsomop_plan_rejection")
+    expect_match(conditionMessage(err), paste0(names(flag), ", which runs on the v1 executors"), fixed = TRUE)
+    .ws7_close(run)
+  }
+  # a censor source on an absent table cannot be evaluated: the output is
+  # unavailable, its rows those without that censor
+  plain <- .ws7_scenario_run(h, plan, .ws7_sv_frame())
+  with_notes <- .ws7_sv_plan(list(outcomes = list(a = list(event = "a")),
+                                  censor = list("observation_end", list(event = "notes"))))
+  with_notes$events$notes <- list(table = "note", on_missing_table = "unavailable")
+  res <- .ws7_scenario_run(h, with_notes, .ws7_sv_frame())
+  expect_identical(res$compiled$status, "unavailable")
+  expect_identical(res$frame, plain$frame)
+  # the effective censoring: defaults applied, no implicit cap natively
+  rich <- .ws7_sv_plan(list(
+    outcomes = list(a = list(event = "a")),
+    censor = list("observation_end", "death", list(admin_date = "2020-06-01"), list(event = "b"),
+                  list(censor = list(source = list(event = "b"), which = "containing_entry_end",
+                                     missing = "ineligible"))),
+    prior_outcome = list(lookback = 30L, action = "censor")))
+  ir <- .irNormalize(.irJsonForm(rich))
+  d <- .irEffectiveDefaults(ir)$outputs$o$effective_censoring
+  expect_identical(vapply(d$entries, function(e) e$kind, ""),
+                   c("observation_end", "death", "admin_date", "source", "omop_censor"))
+  expect_identical(d$entries[[3]]$date, "2020-06-01")
+  expect_identical(d$entries[[4]][c("which", "offset")], list(which = "first_start_after_entry", offset = 0L))
+  expect_identical(d$entries[[5]][c("which", "offset", "missing")],
+                   list(which = "containing_entry_end", offset = 0L, missing = "ineligible"))
+  expect_false(d$cohort_end_cap)
+  expect_identical(d$observation, "last_observed_day_before_first_gap")
+  expect_identical(d$prior_outcome, list(action = "censor", lookback = 30L))
+  expect_identical(d$same_day_priority, "event")
+  reenter <- .ws7_sv_plan(list(outcomes = list(a = list(event = "a")), format = "counting_process",
+                               gap_policy = "reenter"))
+  expect_identical(.irEffectiveDefaults(.irNormalize(.irJsonForm(reenter)))$outputs$o$effective_censoring$observation,
+                   "reenter_at_next_observed_segment")
+  # a lowered v1 plan: the v1 executor's censoring, with its cohort-end cap
+  # (death opt-in for the historical single-outcome shape, A-14)
+  v1 <- .irNormalize(.irJsonForm(list(
+    cohort = list(type = "cohort_table", cohort_definition_id = 1L),
+    outputs = list(tte = list(type = "survival",
+                              outcome = list(table = "condition_occurrence", concept_set = .WS7$DX))))))
+  d <- .irEffectiveDefaults(v1)$outputs[[1L]]$effective_censoring
+  expect_identical(vapply(d$entries, function(e) e$kind, ""), c("observation_end", "index_end"))
+  expect_true(d$entries[[2L]]$implicit)
+  expect_true(d$cohort_end_cap)
+  expect_identical(d$observation, "containing_period_end")
+})
+
+test_that("explain states the coverage policy of covered_days and supply_days (A-20 (g))", {
+  W <- .WS7
+  vars <- list(
+    cd = list(source = list(event = "drug"), reducer = list(fn = "covered_days")),
+    cs = list(source = list(event = "drug_start"), reducer = list(fn = "covered_days", observed_only = TRUE)),
+    sd = list(source = list(event = "drug_supply"), reducer = list(fn = "supply_days", fills = "clipped")),
+    n = list(source = list(event = "drug"), reducer = list(fn = "count")))
+  plan <- .ws7_scenario_plan(vars, output = list(columns = list("cd", "cs", "sd", "n")),
+                             events = list(
+                               drug_start = list(table = "drug_exposure", end = "start",
+                                                 concept_set = list(concepts = list(W$DRUG))),
+                               drug_supply = list(table = "drug_exposure", end = list(fallback = "days_supply"),
+                                                  concept_set = list(concepts = list(W$DRUG)))))
+  red <- .irEffectiveDefaults(.irNormalize(.irJsonForm(plan)))$reducers
+  expect_null(red$n$coverage_policy)
+  expect_identical(red$cd$coverage_policy[c("relation", "end_policy", "quality")],
+                   list(relation = "recorded", end_policy = "recorded_end",
+                        quality = c("start_present", "end_not_before_start")))
+  expect_false(red$cd$coverage_policy$observed_only)
+  expect_identical(red$cs$coverage_policy$quality, "start_present")
+  expect_true(red$cs$coverage_policy$observed_only)
+  expect_identical(red$sd$coverage_policy[c("fills", "end_policy", "quality")],
+                   list(fills = "clipped", end_policy = "recorded_end_then_days_supply",
+                        quality = c("start_present", "end_not_before_start",
+                                    "supply_positive_integer_when_only_end_source")))
+  # an interval source reads its own normalised relation
+  ivp <- .ws7_scenario_plan(list(cv = list(source = list(interval = "rx"),
+                                           reducer = list(fn = "covered_days"))),
+                            output = list(columns = list("cv")))
+  ivp$intervals <- list(rx = list(source = list(event = "drug"), gap = 0L))
+  red <- .irEffectiveDefaults(.irNormalize(.irJsonForm(ivp)))$reducers
+  expect_identical(red$cv$coverage_policy$relation, "recorded")
+  expect_null(red$cv$coverage_policy$end_policy)
+})
+
 test_that("survival: entry, admin date, source and omop_censor censoring, washout in recurrent events", {
   for (b in names(.ws7_out_backends)) {
     h <- .ws7_out_backends[[b]]$handle

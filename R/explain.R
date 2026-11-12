@@ -217,6 +217,8 @@
       entry[["event_order"]] <- opts[["event_order"]]
       entry[["tie_policy"]] <- opts[["tie_policy"]]
       entry[["cohort_end_cap"]] <- isTRUE(opts[["legacy_cohort_end_cap"]])
+      # defect A-14: the censoring in force, defaults and the v1 cap included
+      entry[["effective_censoring"]] <- .survivalEffectiveCensoring(opts)
     }
     if (identical(node[["format"]], "person_period")) entry[["representation"]] <- opts[["representation"]]
     outputs[[o]] <- entry
@@ -225,6 +227,9 @@
   for (v in names(ir[["variables"]])) {
     r <- ir[["variables"]][[v]][["reducer"]]
     if (is.list(r)) reducers[[v]] <- list(fn = r[["fn"]], missing = r[["missing"]])
+    # A-20 (g): the coverage policy of covered_days / supply_days
+    policy <- .reduceCoveragePolicy(ir, ir[["variables"]][[v]])
+    if (!is.null(policy)) reducers[[v]][["coverage_policy"]] <- policy
   }
   list(populations = populations, outputs = outputs, reducers = reducers)
 }

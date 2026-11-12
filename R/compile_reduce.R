@@ -384,8 +384,11 @@
   roster <- .reduceRosterFrame(ctx, cons$roster)
   a <- .anchorNormalize(anchor)
   if (identical(a$kind, "date")) return(rep(as.Date(a$date), nrow(roster)))
+  # every anchor resolves through the one resolver (A-20 (d)): a built-in is
+  # the roster column it names, read from the roster frame
+  ax <- .anchorExpr(ctx, anchor, cons$roster, "final", alias = "r")
   if (identical(a$kind, "builtin")) {
-    col <- a$column
+    col <- sub("^r\\.", "", ax$expr)
     if (!col %in% names(roster)) {
       stop("The roster '", cons$roster$name, "' has no column for anchor '", a$name, "'.",
            call. = FALSE)
@@ -393,7 +396,6 @@
     return(as.Date(roster[[col]]))
   }
   memo <- .compileMemo(ctx, "reduce_anchor_dates")
-  ax <- .anchorExpr(ctx, anchor, cons$roster, "final", alias = "r")
   key <- ax$dependencies[[1L]]
   if (exists(key, envir = memo, inherits = FALSE)) {
     rows <- get(key, envir = memo, inherits = FALSE)
@@ -443,13 +445,8 @@
     if (is.null(b)) next
     a <- .anchorNormalize(b$anchor)
     if (identical(a$kind, "source")) next
-    base <- if (identical(a$kind, "date")) .sqlDateLiteral(h, a$date) else {
-      if (!a$column %in% names(cons$roster$columns)) {
-        stop("The roster '", cons$roster$name, "' has no column for anchor '", a$name, "'.",
-             call. = FALSE)
-      }
-      paste0(alias, ".", a$column)
-    }
+    # a roster column or a date literal, through the one resolver (A-20 (d))
+    base <- .anchorExpr(ctx, b$anchor, cons$roster, "final", alias = alias)$expr
     out[[side]] <- if (b$offset == 0L) base else .sqlDateAddDays(h, base, b$offset)
   }
   out
@@ -1025,6 +1022,46 @@
   }
   list(stream = NULL, reducer = NULL, declared_empty_value = 0L, columns = columns,
        evaluate = evaluate, available = TRUE)
+}
+
+#' The coverage policy in force for a coverage-family reducer (A-20 (g))
+#'
+#' What explain states for \code{covered_days} and \code{supply_days}: the
+#' relation read and, for a direct event source, the event's declared end
+#' policy and the one data-quality predicate applied at the consumer (section
+#' 6.7): a row needs a start; unless the end policy is \code{"start"}, its end
+#' must not be before its start; under the \code{days_supply} fallback a
+#' present supply that is the only end source must be a positive integer (a
+#' NULL supply is a one-day record). An interval source reads its own
+#' normalised relation (\code{recorded}, or \code{effective_supply} for a
+#' stockpiled course), whose era policy is the interval's.
+#' @param ir The IR.
+#' @param variable The IR variable node.
+#' @return Named list, or NULL for any other reducer.
+#' @keywords internal
+.reduceCoveragePolicy <- function(ir, variable) {
+  r <- variable[["reducer"]]
+  fn <- if (is.list(r)) r[["fn"]]
+  if (!is.character(fn) || !fn %in% c("covered_days", "supply_days")) return(NULL)
+  src <- variable[["source"]]
+  kind <- if (is.list(src) && length(src)) names(src)[[1L]] else NA_character_
+  out <- list(fn = fn, source = src)
+  if (identical(fn, "supply_days")) out$fills <- r[["fills"]] %||% "start_in_window"
+  if (identical(fn, "covered_days")) out$observed_only <- isTRUE(r[["observed_only"]])
+  if (identical(kind, "interval")) {
+    out$relation <- if (identical(fn, "covered_days")) r[["coverage"]] %||% "recorded" else "recorded"
+    return(out)
+  }
+  ev <- ir[["events"]][[unlist(src[[1L]])]] %||% list()
+  end <- ev[["end"]]
+  policy <- if (is.null(end)) "recorded_end" else if (identical(unlist(end), "start")) "start" else
+    if (is.list(end) && identical(end[["fallback"]], "days_supply")) "recorded_end_then_days_supply" else "recorded_end"
+  out$relation <- "recorded"
+  out$end_policy <- policy
+  out$quality <- c("start_present",
+                   if (!identical(policy, "start")) "end_not_before_start",
+                   if (identical(policy, "recorded_end_then_days_supply")) "supply_positive_integer_when_only_end_source")
+  out
 }
 
 # era_count / era_days / first_era_days over the course rows overlapping the
