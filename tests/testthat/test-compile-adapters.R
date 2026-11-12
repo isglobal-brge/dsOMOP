@@ -206,3 +206,66 @@ test_that("compiled adapter SQL renders for every dialect family", {
     }
   })
 })
+
+.ws4_expected_rows <- function(recipe, output) {
+  path <- testthat::test_path("..", "..", "inst", "plans", "acceptance", recipe)
+  expected <- jsonlite::fromJSON(file.path(path, "expected.json"), simplifyVector = FALSE)
+  rows <- expected$outputs[[output]]$rows
+  cols <- unique(unlist(lapply(rows, names)))
+  out <- lapply(cols, function(cn) {
+    v <- lapply(rows, function(r) if (is.null(r[[cn]])) NA else r[[cn]])
+    unlist(v)
+  })
+  names(out) <- cols
+  as.data.frame(out, stringsAsFactors = FALSE)
+}
+
+test_that("acceptance recipe 14: member streams reproduce the WS-0 oracle (links per episode identity)", {
+  path <- testthat::test_path("..", "..", "inst", "plans", "acceptance", "14-oncology-episodes")
+  plan <- jsonlite::fromJSON(file.path(path, "plan.json"), simplifyVector = FALSE)
+  want <- .ws4_expected_rows("14-oncology-episodes", "episodes")
+  for (b in names(.ws4_ad_backends)) {
+    h <- .ws4_ad_backends[[b]]$handle
+    ctx <- .ws4_ctx(h, plan)
+    num <- function(r) { r$event_id <- as.numeric(r$event_id); r$parent_event_id <- as.numeric(r$parent_event_id); r }
+    members <- num(.ws4_rows(ctx, "members", order = "parent_event_id, member_table, event_id"))
+    drugs <- num(.ws4_rows(ctx, "member_drugs", order = "parent_event_id, member_table, event_id"))
+    spec <- .ws4_rows(ctx, "specimens")
+    got <- do.call(rbind, lapply(seq_len(nrow(want)), function(i) {
+      ep <- as.numeric(want$index_key[[i]]); p <- want$person_id[[i]]
+      idx <- as.Date(want$index_date[[i]])
+      m <- members[members$parent_event_id == ep & members$person_id == p, , drop = FALSE]
+      s <- spec[spec$person_id == p & as.Date(spec$start_date) >= idx - 30 &
+                  as.Date(spec$start_date) <= idx + 365, , drop = FALSE]
+      data.frame(person_id = p, index_date = want$index_date[[i]], index_key = want$index_key[[i]],
+                 n_members = nrow(m),
+                 n_member_drugs = sum(drugs$parent_event_id == ep & drugs$person_id == p),
+                 first_member_days = if (nrow(m)) as.integer(min(as.Date(m$start_date)) - idx) else NA_integer_,
+                 n_specimens = nrow(s), stringsAsFactors = FALSE)
+    }))
+    expect_equal(got, want[names(got)], info = b)
+  }
+})
+
+test_that("acceptance recipe 15: cost streams reproduce the WS-0 oracle (USD only, parent dates)", {
+  path <- testthat::test_path("..", "..", "inst", "plans", "acceptance", "15-costs-adherence")
+  plan <- jsonlite::fromJSON(file.path(path, "plan.json"), simplifyVector = FALSE)
+  want <- .ws4_expected_rows("15-costs-adherence", "adherence")
+  for (b in names(.ws4_ad_backends)) {
+    h <- .ws4_ad_backends[[b]]$handle
+    ctx <- .ws4_ctx(h, plan)
+    vc <- .ws4_rows(ctx, "visit_cost", order = "event_id")
+    dc <- .ws4_rows(ctx, "drug_cost", order = "event_id")
+    sum_in <- function(r, p, idx) {
+      x <- r[r$person_id == p & as.Date(r$start_date) >= idx + 1 & as.Date(r$start_date) <= idx + 60, ]
+      sum(x$value)
+    }
+    got <- do.call(rbind, lapply(seq_len(nrow(want)), function(i) {
+      p <- want$person_id[[i]]; idx <- as.Date(want$index_date[[i]])
+      data.frame(visit_cost_60 = sum_in(vc, p, idx), drug_cost_60 = sum_in(dc, p, idx))
+    }))
+    expect_equal(got$visit_cost_60, as.numeric(want$visit_cost_60), info = b)
+    expect_equal(got$drug_cost_60, as.numeric(want$drug_cost_60), info = b)
+    expect_true(any(got$visit_cost_60 > 0))
+  }
+})
