@@ -112,6 +112,7 @@ withr::defer(.ws4_cleanup(.ws6_m_backends), testthat::teardown_env())
   set_id <- 0L
   pairs <- 0L
   for (cs in cases) {
+    set_id <- set_id + 1L
     t <- cs$t
     st <- strata(cs$pid, t)
     pool <- integer(0)
@@ -140,7 +141,6 @@ withr::defer(.ws4_cleanup(.ws6_m_backends), testthat::teardown_env())
     dropped <- length(chosen) < s$controls_per_case && identical(s$insufficient, "drop_case")
     if (identical(s$replacement, "none") && (!dropped || !rollback)) used <- c(used, as.character(chosen))
     if (dropped) next
-    set_id <- set_id + 1L
     w <- if (identical(s$replacement, "between_sets")) n / length(chosen) else NA_real_
     rows[[length(rows) + 1L]] <- data.frame(person_id = c(cs$pid, chosen), index_date = t, set_id = set_id,
                                             is_case = c(1, rep(0, length(chosen))), w = c(1, rep(w, length(chosen))),
@@ -268,7 +268,15 @@ test_that("greedy selection without replacement and the allocation rollback of a
   bd <- .ws6_roster(ctx, "between_drop")
   expect_false(any(c(7006, 7007) %in% bd$person_id))
   expect_true(all(table(bd$set_id) == 5L))
-  expect_identical(sort(unique(bd$set_id)), as.numeric(seq_along(unique(bd$set_id))))
+  # set_id is the rank in the complete ordered case roster. Independently
+  # obtain that order with keep_available, then map the retained cases back
+  # to it. Cases dropped between retained ones leave holes in the keys.
+  all_cases <- .ws6_ref_match(ref_conn, .ws6_m_variants$default)
+  all_cases <- all_cases[all_cases$is_case == 1, , drop = FALSE]
+  kept <- bd[bd$is_case == 1, , drop = FALSE]
+  full_ranks <- all_cases$set_id[match(kept$person_id, all_cases$person_id)]
+  expect_identical(kept$set_id, as.numeric(full_ranks))
+  expect_true(any(diff(sort(unique(bd$set_id))) > 1))
 })
 
 test_that("seed sensitivity and seed, order and dialect reproducibility", {

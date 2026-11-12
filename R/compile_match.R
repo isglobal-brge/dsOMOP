@@ -41,7 +41,7 @@
 #      controls NA.
 #   6. The matched roster: one row per member with its own person, index t
 #      (cohort_start_date = cohort_end_date = t for both arms), set_id = rank
-#      of the retained case in (t, K_c) order, is_case, sampling_weight,
+#      of the case in the complete (t, K_c) order, is_case, sampling_weight,
 #      index_source "match:<pop>", index_key "<serialised K_c>|case" or
 #      "|control", the case's original visit/parent association (controls
 #      have no index event association), and the op_* and coverage component of
@@ -604,7 +604,6 @@
   by_case <- split(seq_len(nrow(pool)), .matchChr(pool$set_rank))
   used <- new.env(parent = emptyenv())
   out <- list()
-  set_id <- 0L
   ns <- spec$cases
   for (i in seq_len(nrow(cases))) {
     cs <- cases[i, , drop = FALSE]
@@ -629,7 +628,9 @@
     if (identical(spec$replacement, "none")) {
       for (k in controls[chosen]) assign(k, TRUE, envir = used)
     }
-    set_id <- set_id + 1L
+    # The analytic set key is the complete case-roster rank. Dropping an
+    # insufficient case leaves a hole; later retained sets keep their keys.
+    set_id <- as.integer(cs$set_rank)
     kc <- .matchSerialiseCase(ns, cs$subject_id, cs$t, .matchChr(cs$case_end), .matchChr(cs$index_source),
                               .matchChr(cs$index_key))
     out[[length(out) + 1L]] <- data.frame(
