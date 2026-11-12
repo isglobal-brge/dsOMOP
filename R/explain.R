@@ -45,7 +45,8 @@
   event.episode_members = ".compileEpisodeMembers",
   event.cost = ".compileCost",
   status.accessor = "omopPlanStatusDS",
-  verb.mutate = "omopMutateDS"
+  verb.mutate = "omopMutateDS",
+  verb.filter_expr = ".omopFilterExpr"
 )
 
 .recipeFunctionInstalled <- function(name) {

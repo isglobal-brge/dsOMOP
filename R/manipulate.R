@@ -257,24 +257,44 @@ omopMergeDS <- function(x, y, by = "person_id", type = "inner") {
 #' Filter the rows of an omop.table (Assign)
 #'
 #' @description
-#' Applies a membership/equality filter to a server-side omop.table. The
-#' publication boundary validates the result's exact person lineage and final
-#' support. The excluded rows stay private. Protected identifiers cannot be
-#' used as filter columns.
+#' Applies a membership/equality filter (\code{var}, \code{op}, \code{value})
+#' or, from 2.10.3, a closed language-2 predicate (\code{expr}, design
+#' section 2.11) to a server-side omop.table. The predicate is data: it is
+#' validated against the frozen plan-v2 predicate grammar and type-checked
+#' against the frame's columns before any row is read, and evaluated with
+#' three-valued logic (only rows where it is TRUE are kept). The publication
+#' boundary validates the result's exact person lineage and final support. The
+#' excluded rows stay private. Protected identifiers cannot be used as filter
+#' columns.
 #'
 #' @param x A server-side omop.table data.frame.
 #' @param var Character; an existing, non-protected column to filter on.
 #' @param op Character; one of \code{"=="}, \code{"!="}, \code{"in"}, or
 #'   \code{"not_in"}.
 #' @param value Category value(s).
+#' @param expr A JSON-encoded predicate tree of the plan-v2 grammar
+#'   (\code{==}, \code{!=}, \code{<}, \code{<=}, \code{>}, \code{>=},
+#'   \code{in}, \code{not_in}, \code{is_null}, \code{not_null},
+#'   \code{between}, \code{and}, \code{or}, \code{not}) instead of
+#'   \code{var}/\code{op}/\code{value}.
 #' @return The filtered omop.table (re-assigned to the caller's symbol).
 #' @export
-omopFilterDS <- function(x, var, op, value) {
+omopFilterDS <- function(x, var = NULL, op = NULL, value = NULL, expr = NULL) {
   if (!.is_omop.table(x)) {
     stop("omopFilterDS: input must be a dsOMOP table (omop.table).",
          call. = FALSE)
   }
   .omopTablePseudonymization(x, caller = "omopFilterDS")
+  if (!is.null(expr)) {
+    if (!is.null(var) || !is.null(op) || !is.null(value)) {
+      stop("omopFilterDS: give expr or var/op/value, not both.", call. = FALSE)
+    }
+    result <- .retagOmopTable(.omopFilterExpr(x, expr), x)
+    return(.publishStandalone(result, caller = "omopFilterDS", already_tokenized = TRUE))
+  }
+  if (is.null(var) || is.null(op) || is.null(value)) {
+    stop("omopFilterDS: give var, op and value (or expr).", call. = FALSE)
+  }
   var <- .validateIdentifier(.ds_arg(var), "filter column")
   op <- .ds_arg(op)
   op <- match.arg(as.character(op), c("==", "!=", "in", "not_in"))
