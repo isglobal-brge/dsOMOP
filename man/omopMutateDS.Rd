@@ -21,11 +21,20 @@ Evaluates the closed mutation AST of \code{mutate-v1.json} (design section
 arithmetic (division by zero or a non-finite result is \code{NA}), the
 three-valued predicate grammar, \code{ifelse}/\code{case_when} (an UNKNOWN
 test yields \code{NA}), \code{coalesce}, \code{cut} with public breaks, and
-date arithmetic. The request is data: it is validated against the frozen
+date arithmetic. Integer arithmetic is exact in signed 64-bit storage:
+results beyond the ordinary R integer range retain \code{integer64}, and
+results outside its representable range become typed \code{NA}. Conditional
+branches and coalescing use a common physical type before selecting values,
+preserving \code{integer64} precision and supported datetime classes and
+timezones. Each resulting column is checked against its inferred type.
+The request is data: it is validated against the frozen
 schema and type-checked against the frame before any row is evaluated, and
 nothing in it is evaluated as R code. New columns may use earlier ones; an
 existing non-protected column may be overwritten; person, episode and set
-keys and protected columns are never read or written. The result is
+keys and protected columns are never read or written. Class-1 sources are
+refused before evaluation, including predicate references and aliases,
+even when the administrator permits sensitive-column projection. Class-2
+sources remain available. The result is
 published through the standalone publication boundary (its distinct-person
 support must reach \code{nfilter.subset}) and carries no DP provenance.
 }

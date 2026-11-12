@@ -44,6 +44,10 @@
     .verbReject(caller, paste0("column '", name, "' is a protected identifier and cannot be ",
                                "used in an expression"), path)
   }
+  if (isTRUE(.assignmentBlockedColumn(name))) {
+    .verbReject(caller, paste0("column '", name, "' is a blocked (class-1) source and cannot be ",
+                               "used in an expression"), path)
+  }
   type <- types[name]
   if (is.na(type)) {
     .verbReject(caller, paste0("column '", name, "' is not a column of the input or an earlier ",
@@ -149,14 +153,21 @@
 
 #' Evaluate a type-checked predicate over a frame (three-valued: NA = UNKNOWN)
 #'
-#' The NA-preserving R mask of the predicate grammar, .evalFilterMask(), on a
-#' copy of the referenced columns under private lower-case aliases (assigned
-#' names may carry upper-case letters, amendment A-6).
+#' The NA-preserving R mask of the predicate grammar on a copy of the
+#' referenced columns under private lower-case aliases (assigned names may
+#' carry upper-case letters, amendment A-6). Integer64 leaves use exact
+#' comparisons against public numeric literals; other leaves use
+#' .evalFilterMask().
 #' @keywords internal
 .verbPredicateMask <- function(pred, df) {
   refs <- unique(unlist(.verbPredicateRefs(pred)))
   aliases <- stats::setNames(paste0("v", seq_along(refs)), refs)
-  frame <- as.data.frame(lapply(refs, function(r) df[[r]]), stringsAsFactors = FALSE,
+  frame <- as.data.frame(lapply(refs, function(r) {
+    value <- df[[r]]
+    # Factors have the declared text type: compare labels, never level codes
+    # or numeric coercions of a text literal. Only the private copy changes.
+    if (is.factor(value)) as.character(value) else value
+  }), stringsAsFactors = FALSE,
                          col.names = unname(aliases), check.names = FALSE)
   if (!length(refs)) frame <- data.frame(row.names = seq_len(nrow(df)))
   rename <- function(node) {
@@ -167,9 +178,70 @@
     node[["var"]] <- unname(aliases[[node[["var"]]]])
     node
   }
-  mask <- .evalFilterMask(rename(pred), frame)
+  mask <- .verbExactPredicateMask(rename(pred), frame)
   if (length(mask) == 1L && nrow(df) != 1L) mask <- rep(mask, nrow(df))
   as.logical(mask)
+}
+
+# bit64's mixed comparisons coerce numeric literals to integer64, truncating
+# fractions; generic membership can also compare its underlying double bits.
+# Keep each observed integer exact and transform only the public threshold.
+.verbInteger64Compare <- function(x, op, value) {
+  value <- as.numeric(.verbScalar(value))
+  if (op %in% c("==", "!=")) {
+    out <- if (value != trunc(value) || value <= -2^63 || value >= 2^63)
+      rep(FALSE, length(x)) else x == bit64::as.integer64(value)
+    if (identical(op, "!=")) out <- !out
+  } else {
+    threshold <- if (op %in% c("<", ">=")) ceiling(value) else floor(value)
+    out <- if (threshold <= -2^63) rep(op %in% c(">", ">="), length(x)) else
+      if (threshold >= 2^63) rep(op %in% c("<", "<="), length(x)) else {
+        exact <- bit64::as.integer64(threshold)
+        switch(op, "<" = x < exact, "<=" = x <= exact, ">" = x > exact, ">=" = x >= exact)
+      }
+  }
+  out[is.na(x)] <- NA
+  out
+}
+
+.verbInteger64Predicate <- function(pred, x) {
+  op <- pred[["op"]]
+  if (identical(op, "is_null")) return(is.na(x))
+  if (identical(op, "not_null")) return(!is.na(x))
+  if (op %in% c("in", "not_in")) {
+    values <- vapply(.jsonArrayItems(pred[["value"]]), function(v) as.numeric(.verbScalar(v)), 0)
+    # Fractional and out-of-range literals cannot equal an integer64 value.
+    values <- values[values == trunc(values) & values > -2^63 & values < 2^63]
+    out <- bit64::match(x, bit64::as.integer64(values), nomatch = 0L) > 0L
+    if (identical(op, "not_in")) out <- !out
+    out[is.na(x)] <- NA
+    return(out)
+  }
+  if (identical(op, "between")) {
+    upper_op <- if (isFALSE(.verbScalar(pred[["value"]][["upper_inclusive"]]))) "<" else "<="
+    return(.verbInteger64Compare(x, ">=", pred[["value"]][["lower"]]) &
+             .verbInteger64Compare(x, upper_op, pred[["value"]][["upper"]]))
+  }
+  .verbInteger64Compare(x, op, pred[["value"]])
+}
+
+# Preserve the shared predicate grammar and SQL UNKNOWN rules while selecting
+# the exact comparison path for integer64 leaves only.
+.verbExactPredicateMask <- function(pred, frame) {
+  if ("and" %in% names(pred)) {
+    out <- rep(TRUE, nrow(frame))
+    for (part in .jsonArrayItems(pred[["and"]])) out <- out & .verbExactPredicateMask(part, frame)
+    return(out)
+  }
+  if ("or" %in% names(pred)) {
+    out <- rep(FALSE, nrow(frame))
+    for (part in .jsonArrayItems(pred[["or"]])) out <- out | .verbExactPredicateMask(part, frame)
+    return(out)
+  }
+  if ("not" %in% names(pred)) return(!.verbExactPredicateMask(pred[["not"]], frame))
+  value <- frame[[pred[["var"]]]]
+  if (inherits(value, "integer64")) return(.verbInteger64Predicate(pred, value))
+  .evalFilterMask(pred, frame)
 }
 
 # Exact (case-preserving) variables of a predicate.
@@ -220,6 +292,15 @@
   list(a = a, b = b, result = result)
 }
 
+# JSON object member order carries no meaning. The schema ensures exactly one
+# variant, and both the typer and evaluator use this same discriminator.
+.mutateVariant <- function(expr) {
+  keys <- intersect(names(expr), c("col", "lit", "op", "pred", "ifelse",
+                                   "case_when", "coalesce", "cut"))
+  if (length(keys) != 1L) .verbReject("omopMutateDS", "an expression needs exactly one variant")
+  keys[[1L]]
+}
+
 # Static type of an expression (design 4.6 type rules); refuses before any
 # evaluation.
 .mutateType <- function(expr, types, protected, caller, path, depth = 1L) {
@@ -227,7 +308,7 @@
     .verbReject(caller, "the expression is nested deeper than the server max_filter_depth cap",
                 path)
   }
-  key <- names(expr)[[1L]]
+  key <- .mutateVariant(expr)
   sub <- function(e, p) .mutateType(e, types, protected, caller, p, depth + 1L)
   switch(key,
     col = .verbColumn(expr[["col"]], types, protected, caller, paste0(path, "/col")),
@@ -244,7 +325,8 @@
       if (!is.null(v)) {
         ok <- switch(as,
           numeric = is.numeric(v),
-          integer = is.numeric(v) && v == trunc(v) && abs(v) <= .Machine$integer.max,
+          integer = is.numeric(v) && is.finite(v) && v == trunc(v) &&
+            !is.na(suppressWarnings(bit64::as.integer64(v))),
           text = is.character(v),
           boolean = is.logical(v),
           date = is.character(v) && !is.null(tryCatch(.isoDate(v, "literal"),
@@ -312,8 +394,8 @@
       labels <- ct[["labels"]]
       if (!is.null(labels)) {
         labels <- vapply(.jsonArrayItems(labels), as.character, "")
-        if (length(labels) != length(breaks) - 1L || anyDuplicated(labels)) {
-          .verbReject(caller, "cut labels must be unique, one per interval",
+        if (length(labels) != length(breaks) - 1L) {
+          .verbReject(caller, "cut labels must have one per interval",
                       paste0(path, "/cut/labels"))
         }
         for (l in labels) .validateString(l)
@@ -331,29 +413,124 @@
     return(rep(proto, n))
   }
   val <- switch(as %||% "",
-    numeric = as.numeric(v), integer = as.integer(v), text = as.character(v),
+    numeric = as.numeric(v), integer = .mutateNarrowInteger(bit64::as.integer64(v)),
+    text = as.character(v),
     boolean = as.logical(v), date = .isoDate(v, "literal"),
     if (is.logical(v)) v else if (is.numeric(v)) as.numeric(v) else as.character(v))
   rep(val, n)
 }
 
-# A value vector in the unified type of its expression.
-.mutateCoerce <- function(x, type) {
+# Retain ordinary R integers when possible, otherwise retain exact integer64.
+# The integer64 NA sentinel (-2^63) is not a representable integer value.
+.mutateNarrowInteger <- function(x) {
+  present <- x[!is.na(x)]
+  if (all(present >= -.Machine$integer.max & present <= .Machine$integer.max)) {
+    return(as.integer(x))
+  }
+  x
+}
+
+# Resolve one physical prototype before any indexed branch/coalesce writes.
+# In particular, an ordinary integer destination must never receive the raw
+# double storage of integer64, and an untyped missing destination must retain
+# the selected datetime class and timezone.
+.mutateCommon <- function(values, type) {
+  prototype <- switch(type,
+    integer = if (any(vapply(values, inherits, logical(1), "integer64")))
+      bit64::as.integer64(integer(0)) else integer(0),
+    datetime = {
+      candidates <- which(vapply(values, inherits, logical(1), c("POSIXct", "POSIXlt")))
+      values[[candidates[[1L]]]][0L]
+    },
+    date = as.Date(character(0)), text = character(0), boolean = logical(0), numeric(0))
+  list(values = lapply(values, .mutateCoerce, type = type, prototype = prototype),
+       prototype = prototype)
+}
+
+.mutateCoerce <- function(x, type, prototype = NULL) {
   switch(type,
-    numeric = { x <- suppressWarnings(as.numeric(x)); x },
-    integer = if (inherits(x, "integer64")) x else suppressWarnings(as.integer(x)),
+    numeric = suppressWarnings(as.numeric(x)),
+    integer = if (inherits(prototype, "integer64") || inherits(x, "integer64"))
+      bit64::as.integer64(x) else suppressWarnings(as.integer(x)),
     text = as.character(x),
     boolean = as.logical(x),
     date = if (inherits(x, "Date")) x else as.Date(x),
-    datetime = x,
+    datetime = {
+      if (is.null(prototype)) return(x)
+      zone <- attr(prototype, "tzone") %||% ""
+      zone <- if (length(zone)) zone[[1L]] else ""
+      seconds <- if (inherits(x, c("POSIXct", "POSIXlt"))) as.numeric(as.POSIXct(x)) else
+        rep(NA_real_, length(x))
+      value <- as.POSIXct(seconds, origin = "1970-01-01", tz = zone)
+      if (inherits(prototype, "POSIXlt")) as.POSIXlt(value, tz = zone) else value
+    },
     x)
+}
+
+# Arithmetic takes place in exact signed 64-bit storage before checking the
+# result. bit64's checked operators produce NA on overflow; the signed 32-bit
+# range only determines whether the result can use the smaller representation.
+.mutateIntegerOp <- function(op, a, b) {
+  a <- suppressWarnings(bit64::as.integer64(a))
+  b <- suppressWarnings(bit64::as.integer64(b))
+  out <- suppressWarnings(switch(op, "+" = a + b, "-" = a - b, "*" = a * b))
+  .mutateNarrowInteger(out)
+}
+
+# Cut integer64 values against public numeric breaks without rounding the
+# observations to double. Whole-number thresholds also handle fractional
+# breaks correctly; public bounds outside signed64 simply match all or none.
+.mutateCut <- function(x, breaks, labels, right) {
+  if (!inherits(x, "integer64")) {
+    return(as.character(cut(x, breaks = breaks, labels = labels, right = right,
+                            include.lowest = FALSE)))
+  }
+  if (is.null(labels)) {
+    labels <- levels(cut(numeric(0), breaks = breaks, right = right, include.lowest = FALSE))
+  }
+  index <- integer(length(x))
+  for (bound in breaks) {
+    threshold <- if (right) floor(bound) else ceiling(bound)
+    passed <- if (threshold >= 2^63) rep(FALSE, length(x)) else
+      if (threshold <= -2^63) rep(TRUE, length(x)) else {
+        exact <- bit64::as.integer64(threshold)
+        if (right) x > exact else x >= exact
+      }
+    index <- index + as.integer(passed)
+  }
+  out <- rep(NA_character_, length(x))
+  take <- !is.na(x) & !is.na(index) & index > 0L & index < length(breaks)
+  out[take] <- labels[index[take]]
+  out
+}
+
+# Validate the evaluated column, including class, before it can enter another
+# assignment or the publication boundary. A mismatch is an implementation
+# failure, never an implicit conversion of potentially corrupted storage.
+.mutateCheckResult <- function(value, type, n, name) {
+  matches <- if (identical(type, "null")) is.logical(value) && all(is.na(value)) else
+    identical(.verbColumnType(value), type)
+  if (length(value) != n || !is.null(dim(value)) || !matches) {
+    .verbReject("omopMutateDS", paste0("assignment '", name,
+                                      "' did not evaluate to its inferred type '", type, "'"))
+  }
+  invisible(value)
 }
 
 #' Evaluate a type-checked mutation expression over a frame
 #' @keywords internal
 .mutateEval <- function(expr, df, types) {
+  value <- .mutateEvalNode(expr, df, types)
+  type <- .mutateType(expr, types, character(0), "omopMutateDS", "")
+  .mutateCheckResult(value, type, nrow(df), "<expression>")
+  value
+}
+
+# Interpret one closed node; recursive operands go through .mutateEval so
+# every intermediate value is checked against its static type as well.
+.mutateEvalNode <- function(expr, df, types) {
   n <- nrow(df)
-  key <- names(expr)[[1L]]
+  key <- .mutateVariant(expr)
   sub <- function(e) .mutateEval(e, df, types)
   type_of <- function(e) .mutateType(e, types, character(0), "omopMutateDS", "")
   switch(key,
@@ -366,26 +543,29 @@
       a <- sub(args[[1L]])
       b <- sub(args[[2L]])
       if (identical(typed$a, "date") && identical(typed$b, "date")) {
-        a <- .mutateCoerce(a, "date")
-        b <- .mutateCoerce(b, "date")
-        return(as.integer(round(as.numeric(difftime(a, b, units = "days")))))
+        a <- as.numeric(.mutateCoerce(a, "date"))
+        b <- as.numeric(.mutateCoerce(b, "date"))
+        return(.mutateIntegerOp("-", a, b))
       }
       if (identical(typed$result, "date")) {
         first <- identical(typed$a, "date")
-        d <- .mutateCoerce(if (first) a else b, "date")
-        k <- suppressWarnings(as.integer(if (first) b else a))
-        return(as.Date(if (identical(op, "-")) d - k else d + k))
+        d <- as.numeric(.mutateCoerce(if (first) a else b, "date"))
+        k <- if (first) b else a
+        days <- .mutateIntegerOp(op, d, k)
+        value <- suppressWarnings(as.numeric(days))
+        # Date stores doubles; an integer day must survive that conversion.
+        if (inherits(days, "integer64")) {
+          same <- suppressWarnings(bit64::as.integer64(value)) == days
+          value[!is.na(days) & !(same %in% TRUE)] <- NA_real_
+        }
+        return(as.Date(value, origin = "1970-01-01"))
       }
+      if (identical(typed$result, "integer")) return(.mutateIntegerOp(op, a, b))
       a <- suppressWarnings(as.numeric(a))
       b <- suppressWarnings(as.numeric(b))
       out <- switch(op, "+" = a + b, "-" = a - b, "*" = a * b, "/" = a / b)
       # Division by zero or any non-finite result is NA (design 4.6).
       out[!is.finite(out)] <- NA
-      if (identical(typed$result, "integer")) {
-        # Outside the 32-bit integer range an integer result is not finite.
-        out[!is.na(out) & abs(out) > .Machine$integer.max] <- NA
-        out <- as.integer(out)
-      }
       out
     },
     pred = .verbPredicateMask(expr[["pred"]], df),
@@ -393,8 +573,9 @@
       ie <- expr[["ifelse"]]
       type <- type_of(expr)
       test <- .verbPredicateMask(ie[["test"]], df)
-      yes <- .mutateCoerce(sub(ie[["yes"]]), type)
-      no <- .mutateCoerce(sub(ie[["no"]]), type)
+      common <- .mutateCommon(list(sub(ie[["yes"]]), sub(ie[["no"]])), type)
+      yes <- common$values[[1L]]
+      no <- common$values[[2L]]
       out <- yes
       pick <- test %in% FALSE
       out[pick] <- no[pick]
@@ -406,12 +587,15 @@
       cw <- expr[["case_when"]]
       type <- type_of(expr)
       cases <- .jsonArrayItems(cw[["cases"]])
-      out <- .mutateCoerce(if (!is.null(cw[["else"]])) sub(cw[["else"]]) else
-        .mutateLiteral(NULL, NULL, n), type)
+      values <- c(lapply(cases, function(cs) sub(cs[["then"]])),
+                  list(if (!is.null(cw[["else"]])) sub(cw[["else"]]) else
+                    .mutateLiteral(NULL, NULL, n)))
+      common <- .mutateCommon(values, type)
+      out <- common$values[[length(values)]]
       decided <- rep(FALSE, n)
-      for (cs in cases) {
-        test <- .verbPredicateMask(cs[["when"]], df)
-        value <- .mutateCoerce(sub(cs[["then"]]), type)
+      for (i in seq_along(cases)) {
+        test <- .verbPredicateMask(cases[[i]][["when"]], df)
+        value <- common$values[[i]]
         hit <- !decided & test %in% TRUE
         unknown <- !decided & is.na(test)
         out[hit] <- value[hit]
@@ -424,25 +608,23 @@
     coalesce = {
       type <- type_of(expr)
       items <- .jsonArrayItems(expr[["coalesce"]])
-      out <- .mutateCoerce(sub(items[[1L]]), type)
-      for (it in items[-1L]) {
+      common <- .mutateCommon(lapply(items, sub), type)
+      out <- common$values[[1L]]
+      for (value in common$values[-1L]) {
         fill <- is.na(out)
         if (!any(fill)) break
-        value <- .mutateCoerce(sub(it), type)
         out[fill] <- value[fill]
       }
       out
     },
     cut = {
       ct <- expr[["cut"]]
-      x <- as.numeric(sub(ct[["arg"]]))
+      x <- sub(ct[["arg"]])
       breaks <- vapply(.jsonArrayItems(ct[["breaks"]]), function(b) as.numeric(b), numeric(1))
       right <- isTRUE(.verbScalar(ct[["right"]]))
       labels <- if (is.null(ct[["labels"]])) NULL else
         vapply(.jsonArrayItems(ct[["labels"]]), as.character, "")
-      out <- cut(x, breaks = breaks, labels = labels %||% NULL, right = right,
-                 include.lowest = FALSE)
-      as.character(out)
+      .mutateCut(x, breaks, labels, right)
     })
 }
 
@@ -489,11 +671,20 @@
 #' arithmetic (division by zero or a non-finite result is \code{NA}), the
 #' three-valued predicate grammar, \code{ifelse}/\code{case_when} (an UNKNOWN
 #' test yields \code{NA}), \code{coalesce}, \code{cut} with public breaks, and
-#' date arithmetic. The request is data: it is validated against the frozen
+#' date arithmetic. Integer arithmetic is exact in signed 64-bit storage:
+#' results beyond the ordinary R integer range retain \code{integer64}, and
+#' results outside its representable range become typed \code{NA}. Conditional
+#' branches and coalescing use a common physical type before selecting values,
+#' preserving \code{integer64} precision and supported datetime classes and
+#' timezones. Each resulting column is checked against its inferred type.
+#' The request is data: it is validated against the frozen
 #' schema and type-checked against the frame before any row is evaluated, and
 #' nothing in it is evaluated as R code. New columns may use earlier ones; an
 #' existing non-protected column may be overwritten; person, episode and set
-#' keys and protected columns are never read or written. The result is
+#' keys and protected columns are never read or written. Class-1 sources are
+#' refused before evaluation, including predicate references and aliases,
+#' even when the administrator permits sensitive-column projection. Class-2
+#' sources remain available. The result is
 #' published through the standalone publication boundary (its distinct-person
 #' support must reach \code{nfilter.subset}) and carries no DP provenance.
 #'
@@ -523,6 +714,7 @@ omopMutateDS <- function(x, exprs) {
   for (a in assigns) {
     value <- .mutateEval(a$expr, result, types)
     if (length(value) == 1L && nrow(result) != 1L) value <- rep(value, nrow(result))
+    .mutateCheckResult(value, a$type, nrow(result), a$name)
     result[[a$name]] <- value
     types[[a$name]] <- a$type
   }

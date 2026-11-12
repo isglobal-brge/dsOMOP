@@ -3029,7 +3029,9 @@
     add = TRUE
   )
   if (identical(attr(ir, "source_version"), 2L)) {
-    # A-22: fully validate empty roots, then perform no compilation.
+    # An explicitly empty publication-root array is a validated no-op (A-22).
+    # Keep the full validation sequence and context lifecycle above, but do
+    # not compile or materialize unrequested private sources and outputs.
     if (!length(ir$publish)) return(list())
     # Language-2.0 execution (design 6.1): the event sources of the requested
     # roots compile first in the private context, so the data-dependent adapter
