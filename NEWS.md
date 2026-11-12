@@ -79,6 +79,18 @@ fills its entries. Classes follow design-2.10.3 section 5.
   publication; safe-result equivalence applies only to results that satisfy
   the final publication contract.
 
+### Dialect
+- A v2 plan that needs an SQL construct the server's database family cannot
+  run is refused at preflight, before any query, with the typed
+  `dialect_unsupported` rejection naming the output and the construct:
+  session temporary tables for a roster reused by several statements on SQL
+  Server/Synapse/PDW, Oracle, Redshift, BigQuery, Snowflake and
+  Spark/Databricks; window functions on a SQLite runtime that cannot execute
+  the 1-PRECEDING frame (the runtime is probed, never inferred from the
+  package version); MySQL below 8.0 and MariaDB below 10.2. The SQL SHA-256
+  push-down is never required: matching computes its order in R where the
+  family lacks it, as on SQLite.
+
 ## Design amendments applied by WS-0 (design/2.10.3/amendments.md)
 
 - A-1 results-cohort index sources (namespace `cohort:<n>`, `event_end` =
@@ -144,6 +156,36 @@ fills its entries. Classes follow design-2.10.3 section 5.
   fragment's declared person lineage and key roles; the roster fragment name
   (`person_lineage$via_roster`) and the roster namespace (`lineage$roster_id`)
   stay distinct.
+
+## SQL dialect layer
+
+- (A-E8) New SQL never relies on regex translation of `DATEADD`/`DATEDIFF`,
+  which handles only literal offsets and identifier operands and passes
+  column or arithmetic forms through untranslated (SQLite then fails on
+  `DATEADD(day, t.days_supply - 1, t.start)`). The typed helpers of
+  `R/sql_expr.R` (`.sqlDateAddDays`, `.sqlDateDiffDays`, `.sqlYear`,
+  `.sqlMonthKey`, `.sqlCalendarFloor`, `.sqlCalendarAdvance`, `.sqlMakeDate`,
+  `.sqlDateLiteral`, `.sqlIntegerLiteral`, `.sqlLeast`, `.sqlGreatest`,
+  `.sqlNullsLast`, `.sqlRowNumber`, `.sqlLosslessKey`, `.sqlSha256Hex`, with
+  `.sqlWindow`, `.sqlMonth`, `.sqlDateText` and `.sqlLosslessKeyText`)
+  accept expressions as operands and have one semantics in every family:
+  NULL-ignoring `LEAST`/`GREATEST`, NULL (never an error or a normalised
+  date) for invalid date components, explicit window frames only. The
+  built-in translator leaves their output unchanged, and
+  `.sqlAssertTypedSql()` refuses the OHDSI spellings in new statements. The
+  v1 SQL paths, their helpers and the translator are unchanged.
+- Required support (design section 9): executable on PostgreSQL, SQLite,
+  DuckDB, MySQL >= 8.0 and MariaDB >= 10.2; SQL Server/Synapse/PDW, Oracle,
+  Redshift, BigQuery, Snowflake and Spark/Databricks are implemented and
+  verified by rendered-SQL snapshots (SQL contract only). The dialect profile
+  (`.sqlDialectProfile()`) gives the capability `dialect` block its family,
+  temporary materialisation, SHA-256 and window-frame availability and the
+  runtime version, and records the driver for the conformance report.
+- MariaDB servers whose version string carries a distribution suffix, such as
+  Ubuntu 22.04's `10.6.23-MariaDB-0ubuntu0.22.04.1`, are no longer refused
+  as below MariaDB 10.2: the version tagged `-MariaDB` is read instead of the
+  last dotted number (`0.22.04`). This affected every MariaDB connection and
+  the longitudinal SQL floor.
 
 # dsOMOP 2.10.2
 
