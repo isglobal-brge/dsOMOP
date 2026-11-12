@@ -709,11 +709,14 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
 #'   pooling, allocations, sensitivities, noise scales and the guarantee scope.
 #' @export
 omopDpReleaseDS <- function(x, spec) {
-  .dsomopRequireCommunityTool(dp_routes = TRUE)
+  # Every attempt, including one the community-tool gate refuses, is written
+  # to the redacted audit log (public fields only; observational, never used
+  # for admission).
   audit <- list(statistic = NA_character_, protection = NA_character_,
                 contract = .DSOMOP_RELEASE_CONTRACT_VERSION,
                 outcome = "refused")
   on.exit(.omopAuditLog("omopDpReleaseDS", audit), add = TRUE)
+  .dsomopRequireCommunityTool(dp_routes = TRUE)
   spec <- .ds_arg(spec)
   if (is.list(spec) && is.character(spec$statistic) &&
       length(spec$statistic) == 1L &&
@@ -724,6 +727,9 @@ omopDpReleaseDS <- function(x, spec) {
   policy <- .dsomopDpPolicy()
   payload <- .dsomopTypedRelease(x, spec, policy)
   audit$protection <- payload$protection
+  audit$settings <- payload[intersect(
+    c("reducer", "max_contributions", "denominator", "value_type", "scale"),
+    names(payload))]
   audit$outcome <- "released"
   payload
 }

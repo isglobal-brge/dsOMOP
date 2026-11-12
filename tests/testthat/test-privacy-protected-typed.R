@@ -47,9 +47,15 @@ test_that("the community-tool gate runs before any typed work", {
     stop("unexpected")
   })
   withr::local_options(list(dsomop.tools.enabled = FALSE))
-  expect_error(omopDpReleaseDS(x, list(statistic = "count")),
-               "community tools .* are disabled")
+  logged <- capture_messages(expect_error(
+    omopDpReleaseDS(x, list(statistic = "count")),
+    "community tools .* are disabled"))
   expect_identical(calls, 0L)
+  # The refused attempt is audited too, without any decoded argument.
+  audit <- grep("method=omopDpReleaseDS", logged, value = TRUE)
+  expect_length(audit, 1L)
+  expect_match(audit, '"outcome":"refused"')
+  expect_match(audit, '"statistic":null|"statistic":"NA"|"statistic":NA')
 })
 
 test_that("every typed attempt is audited without private values", {
@@ -61,6 +67,11 @@ test_that("every typed attempt is audited without private values", {
   expect_match(audit, '"outcome":"released"')
   expect_match(audit, '"protection":"realised_sticky"')
   expect_false(grepl("[0-9a-f]{64}", audit))
+  rec <- capture_messages(omopDpReleaseDS(x, list(
+    statistic = "bounded_record_count", reducer = "records",
+    max_contributions = 2)))
+  expect_match(grep("method=omopDpReleaseDS", rec, value = TRUE),
+               '"settings":\\{"reducer":"records","max_contributions":2')
   failed <- capture_messages(try(omopDpReleaseDS(
     x, list(statistic = "bounded_mean", variable = "measurement",
             lower = 0, upper = 77)), silent = TRUE))
