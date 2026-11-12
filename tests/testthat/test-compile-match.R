@@ -650,7 +650,7 @@ test_that("vendor matching under a request snapshot matches the independent fixe
       expect_length(ctx$compile_temp_tables, 0L)
       rows
     })
-    expect_gt(nrow(got), 0L, info = b)
+    expect_gt(nrow(got), 0L, label = b)
     expect_null(h$read_snapshot)
     expect_equal(as.integer(.executeQuery(h, paste("SELECT year_of_birth FROM", .qualifyTable(h, "person"),
       "WHERE person_id=7001"))$year_of_birth), 1925L, info = b)
