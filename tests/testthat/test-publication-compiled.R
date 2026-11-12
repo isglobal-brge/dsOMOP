@@ -206,9 +206,20 @@ test_that("compiled outputs must belong to the selected publication root", {
   compiled <- .publication_compiled_output(mode = "memory")
   ctx$ir$outputs$public <- ctx$ir$outputs$out
   ctx$ir$publish <- list("public")
-  expect_error(.publishOutputs(ctx, list(public = compiled), list(public = "D")),
-               "validation_error")
+  status <- .publishOutputs(ctx, list(public = compiled), list(public = "D"))
+  expect_identical(status$status, "refused")
+  expect_identical(status$rejected$public$code, "validation_error")
   expect_identical(ls(ctx$target_env), character(0))
+})
+
+test_that("compiled output availability is transported independently of support", {
+  ctx <- .publication_compiled_context(mode = "memory")
+  compiled <- .publication_compiled_output(mode = "memory")
+  compiled$status <- "unavailable"
+  .publishCompiled(ctx, compiled)
+  status <- .publishCommit(ctx)
+  expect_identical(status$status, "ok")
+  expect_identical(status$unavailable, "out")
 })
 
 test_that("late malformed rows and chunk failures cannot publish staged components", {

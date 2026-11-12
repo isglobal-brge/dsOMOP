@@ -84,6 +84,9 @@
 .publishCompiled <- function(ctx, compiled) {
   stopifnot(.isPlanContext(ctx))
   .assertCompiledOutput(compiled)
+  if (identical(compiled$status, "unavailable")) {
+    ctx$unavailable <- union(ctx$unavailable, compiled$output)
+  }
   for (candidate in compiled$publication_candidates) {
     id <- paste(candidate$output, candidate$component, sep = "/")
     ctx$publication_shapes[[id]] <- candidate$grain
