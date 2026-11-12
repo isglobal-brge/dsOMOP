@@ -689,7 +689,11 @@ omopInitDS <- function(resource_symbol,
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param plan List; the extraction plan
-#' @param out Named character vector; output_name -> symbol_name mapping
+#' @param out Named character vector; output_name -> symbol_name mapping.
+#'   A language-2 plan with an explicit empty \code{publish} array accepts an
+#'   empty mapping (transported as the JSON object \code{\{\}}). Full plan
+#'   validation still runs; no output is materialized or assigned, and the
+#'   publication status is \code{ok} with empty inventories.
 #' @param output_mode Character; "memory" (default) or "staged"
 #' @param scope Optional recipe-level scope: \code{omop.table} symbol(s) (which
 #'   cannot ride in the plan JSON, so they are spliced in by name here) and/or a
@@ -739,8 +743,19 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   if (!is.list(out) && !is.character(out)) {
     stop("out must be a named output-to-symbol mapping.", call. = FALSE)
   }
-  if (length(out) == 0L || is.null(names(out)) || any(!nzchar(names(out))) ||
-      anyDuplicated(names(out))) {
+  # An explicitly empty publication root list (publish = [], section 4.1)
+  # releases nothing, so its out mapping is empty; every other plan maps at
+  # least one output.
+  no_roots <- is.list(plan) &&
+    (identical(plan[["version"]], 2L) || identical(plan[["version"]], 2)) &&
+    !is.null(plan[["publish"]]) && is.null(names(plan[["publish"]])) &&
+    length(plan[["publish"]]) == 0L
+  if (no_roots && length(out) > 0L) {
+    stop("out must be empty when publish = [].", call. = FALSE)
+  }
+  if ((length(out) == 0L && !no_roots) ||
+      (length(out) > 0L && (is.null(names(out)) || any(!nzchar(names(out))) ||
+                            anyDuplicated(names(out))))) {
     stop("out must have unique, non-empty output names.", call. = FALSE)
   }
   symbols <- vapply(out, function(sym) {

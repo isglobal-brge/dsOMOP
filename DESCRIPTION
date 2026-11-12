@@ -28,6 +28,7 @@ Encoding: UTF-8
 Depends:
     R (>= 4.1.0)
 Imports:
+    bit64,
     DBI,
     R6,
     resourcer,
@@ -47,7 +48,6 @@ Suggests:
     RPostgreSQL,
     duckdb,
     odbc,
-    bit64,
     bigrquery,
     testthat (>= 3.0.0),
     withr,
@@ -130,6 +130,7 @@ AssignMethods:
     omopFilterDS,
     omopSelectDS,
     omopBindRowsDS,
+    omopMutateDS,
     omopAnalysisRunAssignDS,
     omopDpPlanExecuteDS
 Options:

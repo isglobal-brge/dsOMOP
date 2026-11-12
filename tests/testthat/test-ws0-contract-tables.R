@@ -127,6 +127,13 @@ test_that("the v1 corpus classes are reviewed per plan instance and keyed by sta
   expect_gte(sum(cls$class != "non_plan"), 580L)
   expect_true(all(nzchar(cls$rationale)))
   get <- function(file, test, pkg = "dsOMOP") cls[cls$package == pkg & cls$file == file & cls$test == test, ]
+  # A-24 corrects only the exact unindexed #1 fixture, through the CR-7 join.
+  windows <- get("test-recipe-executable-contract.R",
+                 "feature windows compile at episode grain with per-spec scopes", "dsOMOPClient")
+  expect_identical(windows$class[endsWith(windows$plan_id, "#1")], "unchanged_invalid")
+  expect_match(windows$rationale[endsWith(windows$plan_id, "#1")], "A-24.*indexed population")
+  expect_identical(windows$class[endsWith(windows$plan_id, "#2")], "newly_permitted")
+  expect_identical(windows$class[endsWith(windows$plan_id, "#3")], "safe")
   # the boundary examples of the review
   expect_true(all(get("test-recipe-reach.R", "reach C: blocked value_source is rejected at compile")$class == "unchanged_invalid"))
   expect_true(all(get("test-manipulate.R", "omopMergeDS fails closed when the join yields too few persons")$class == "publication_refused_unchanged"))
