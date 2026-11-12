@@ -884,12 +884,8 @@
     }
   }
   if (block_sensitive) {
-    blocked <- col_df$column_name[col_df$is_blocked]
-    # Exact birth components are quasi-identifiers. Age is exposed only through
-    # the episode-aware, minimum-width age_group derivation.
-    always_block <- c("year_of_birth", "month_of_birth", "day_of_birth",
-                      "birth_datetime")
-    blocked <- union(blocked, intersect(always_block, col_df$column_name))
+    blocked <- col_df$column_name[vapply(col_df$column_name,
+      .assignmentBlockedColumn, logical(1L), col_df = col_df)]
     # Fail closed when a blocked column was EXPLICITLY requested (e.g. a feature
     # value_source of value_as_string / *_source_value / sig). Silently dropping
     # it would return a person-id-only frame with no signal that the requested
@@ -1232,7 +1228,8 @@
   col_df <- bp$columns[[table_lower]]
   if (is.null(col_df) || nrow(col_df) == 0) return(unique(extra))
   cols <- col_df$column_name
-  blocked <- col_df$column_name[col_df$is_blocked]
+  blocked <- col_df$column_name[vapply(col_df$column_name,
+    .assignmentBlockedColumn, logical(1L), col_df = col_df)]
   # Identifiers are NEVER filterable: the person/subject key is a protected
   # pseudonym on output and the row ids are dropped, so allowing a filter to
   # reference them would let a client target an individual by raw id.
@@ -5313,8 +5310,7 @@
 #' @param columns Character vector; person columns to include
 #' @param derived Character vector; derived fields to compute
 #' @param translate_concepts Logical; translate concept IDs to names
-#' @param age_breaks Optional public age-grid coarsening negotiated by a
-#'   federation.
+#' @param age_breaks Optional increasing integer age-band lower bounds.
 #' @return Data frame with one row per cohort member
 #' @keywords internal
 .extractBaseline <- function(handle, cohort_table, columns = NULL,
@@ -5339,14 +5335,6 @@
   } else {
     tolower(columns)
   }
-  birth_components <- c("year_of_birth", "month_of_birth", "day_of_birth",
-                        "birth_datetime")
-  requested_birth <- intersect(requested_columns, birth_components)
-  if (length(requested_birth) > 0L) {
-    stop("Disclosive: exact birth components are blocked; request derived ",
-         "age_at_index to receive disclosure-controlled age groups.",
-         call. = FALSE)
-  }
   columns <- unique(c(
     requested_columns,
     if ("age_at_index" %in% derived) "year_of_birth" else character(0)
@@ -5363,14 +5351,8 @@
       stop("Baseline person column(s) not found: ",
            paste(missing_columns, collapse = ", "), ".", call. = FALSE)
     }
-    blocked <- union(
-      person_cols$column_name[person_cols$is_blocked],
-      intersect(c("month_of_birth", "day_of_birth", "birth_datetime"),
-                avail_person)
-    )
-    # `year_of_birth` may be added internally solely to derive an age group and
-    # is removed before release. Apply the public blocklist only to columns the
-    # caller actually requested; requested birth components already fail above.
+    blocked <- person_cols$column_name[vapply(person_cols$column_name,
+      .assignmentBlockedColumn, logical(1L), col_df = person_cols)]
     requested_blocked <- intersect(requested_columns, blocked)
     if (length(requested_blocked) > 0L) {
       stop("Disclosive: baseline person column(s) '",
@@ -5420,12 +5402,9 @@
   # Compute derived fields
   if ("age_at_index" %in% derived && "year_of_birth" %in% names(result)) {
     index_year <- as.integer(format(as.Date(result$cohort_start_date), "%Y"))
-    result$age_group <- .computeAgeGroups(
-      result$year_of_birth, index_year, age_breaks = age_breaks,
-      person_id = result$person_id
-    )
-    # Remove exact year_of_birth from output (quasi-identifier)
-    result$year_of_birth <- NULL
+    result$age_group <- .bandAges(index_year - result$year_of_birth,
+                                  age_breaks = age_breaks)
+    if (!"year_of_birth" %in% requested_columns) result$year_of_birth <- NULL
   }
 
   if ("prior_observation" %in% derived &&

@@ -249,9 +249,9 @@
     value_bin <- spec$value_bin
     if (!is.list(value_bin) || is.null(names(value_bin)) ||
         any(!nzchar(names(value_bin))) || anyDuplicated(names(value_bin)) ||
-        !setequal(names(value_bin), c("lower", "upper", "safe_scope")) ||
-        length(names(value_bin)) != 3L) {
-      stop("value_bin must contain exactly lower, upper, and safe_scope.",
+        !all(c("lower", "upper") %in% names(value_bin)) ||
+        length(setdiff(names(value_bin), c("lower", "upper", "safe_scope")))) {
+      stop("value_bin requires lower and upper, with optional safe_scope.",
            call. = FALSE)
     }
     if (!"value_as_number" %in% src_cols) {
@@ -260,26 +260,33 @@
     }
     lower <- suppressWarnings(as.numeric(value_bin$lower))
     upper <- suppressWarnings(as.numeric(value_bin$upper))
+    if (length(lower) != 1L || length(upper) != 1L ||
+        !is.finite(lower) || !is.finite(upper) || lower >= upper) {
+      stop("value_bin requires finite scalar lower/upper bounds with lower < upper.",
+           call. = FALSE)
+    }
     .assertSafeNumericBinContract(
       handle, table = source_table, column = "value_as_number",
       value = list(lower = lower, upper = upper),
       scope = value_bin$safe_scope
     )
-    scope_concept <- value_bin$safe_scope$concept_id %||% NULL
-    scope_concept_col <- value_bin$safe_scope$concept_col %||% NULL
-    if (length(concept_ids) == 0L) {
-      if (!is.null(scope_concept)) {
-        stop("value_bin concept scope does not match the cohort concept_set.",
-             call. = FALSE)
+    if (!is.null(value_bin$safe_scope)) {
+      scope_concept <- value_bin$safe_scope$concept_id %||% NULL
+      scope_concept_col <- value_bin$safe_scope$concept_col %||% NULL
+      if (length(concept_ids) == 0L) {
+        if (!is.null(scope_concept)) {
+          stop("value_bin concept scope does not match the cohort concept_set.",
+               call. = FALSE)
+        }
+      } else if (length(concept_ids) != 1L ||
+                 length(scope_concept) != 1L ||
+                 is.na(suppressWarnings(as.integer(scope_concept))) ||
+                 as.integer(scope_concept) != concept_ids[[1]] ||
+                 !identical(tolower(scope_concept_col %||% concept_col),
+                            tolower(concept_col))) {
+        stop("value_bin requires one concept and a matching server-issued ",
+             "concept scope.", call. = FALSE)
       }
-    } else if (length(concept_ids) != 1L ||
-               length(scope_concept) != 1L ||
-               is.na(suppressWarnings(as.integer(scope_concept))) ||
-               as.integer(scope_concept) != concept_ids[[1]] ||
-               !identical(tolower(scope_concept_col %||% concept_col),
-                          tolower(concept_col))) {
-      stop("value_bin requires one concept and a matching server-issued ",
-           "concept scope.", call. = FALSE)
     }
     where <- c(where, paste0(
       "value_as_number >= ", lower,

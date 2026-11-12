@@ -97,6 +97,7 @@ test_that("person support gates occur only at audited boundaries", {
 test_that("private cohort intermediates are small without granting a public bypass", {
   handle <- create_test_handle(n_persons = 1L)
   on.exit(cleanup_handle(handle))
+  DBI::dbExecute(handle$conn, "DELETE FROM condition_occurrence WHERE person_id <> 1")
   ctx <- .planContext(handle, list())
   on.exit(.planContextClose(ctx), add = TRUE)
   spec <- list(type = "condition", concept_set = 201820L)

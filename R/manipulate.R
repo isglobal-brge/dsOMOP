@@ -114,6 +114,12 @@
 #' @keywords internal
 .retagOmopTable <- function(result, ...) {
   sources <- list(...)
+  allow_sensitive <- getOption("dsomop.allow_sensitive_columns",
+    getOption("default.dsomop.allow_sensitive_columns", FALSE))
+  if (!isTRUE(allow_sensitive) &&
+      any(vapply(names(result), .assignmentBlockedColumn, logical(1L)))) {
+    stop("Disclosive: assigned result contains blocked columns.", call. = FALSE)
+  }
   # Core outputs never inherit DP state from their inputs.
   attr(result, "dsomop_dp_provenance") <- NULL
   attr(result, "dsomop_dp_filter_state") <- NULL

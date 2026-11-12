@@ -46,12 +46,11 @@ test_that("baseline output produces one row per cohort member", {
     expect_true("prior_observation" %in% names(df))
     expect_true("future_observation" %in% names(df))
 
-    # Exact year_of_birth never crosses the output boundary.
+    # Internally added year_of_birth is removed when not requested.
     expect_false("year_of_birth" %in% names(df))
     expect_false("age_at_index" %in% names(df))
 
-    # Locally under-supported canonical bands are NA rather than being merged
-    # into data-dependent labels that would differ across federated servers.
+    # Assigned bands keep the declared grid without per-band suppression.
     age_breaks <- .omopDisclosureSettings()$age_breaks
     canonical_age_groups <- c(
       paste0(age_breaks[-length(age_breaks)], "-", age_breaks[-1L] - 1L),
@@ -84,10 +83,9 @@ test_that("baseline rejects blocked and unknown person columns", {
   }
 
   withr::with_options(list(nfilter.subset = 3, dsomop.query_strict = TRUE), {
-    expect_error(
-      .planExecute(handle, make_plan("day_of_birth"), list(demo = "demo_df")),
-      "blocked"
-    )
+    birth <- .planExecute(handle, make_plan("day_of_birth"), list(demo = "demo_df"))$demo
+    expect_true("day_of_birth" %in% names(birth))
+    expect_equal(nrow(birth), 6L)
     expect_error(
       .planExecute(handle, make_plan("not_a_person_column"),
                    list(demo = "demo_df")),
@@ -96,7 +94,7 @@ test_that("baseline rejects blocked and unknown person columns", {
   })
 })
 
-test_that("baseline accepts only a public common age-grid coarsening", {
+test_that("baseline accepts any structurally valid declared age grid", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
@@ -118,8 +116,9 @@ test_that("baseline accepts only a public common age-grid coarsening", {
 
   plan$outputs$demo$age_breaks <- c(0L, 18L, 40L)
   validation <- .planValidate(handle, plan)
-  expect_false(validation$valid)
-  expect_match(validation$errors, "invalid age_breaks")
+  expect_true(validation$valid)
+  off_grid <- .planExecute(handle, plan, list(demo = "demo_offgrid"))$demo
+  expect_true(all(off_grid$age_group %in% c("0-17", "18-39", "40+")))
 })
 
 test_that("baseline without cohort fails closed", {

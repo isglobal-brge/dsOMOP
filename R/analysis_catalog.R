@@ -5085,14 +5085,10 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     stop("Assign loaders must return a data.frame with person_id for ",
          "disclosure control.", call. = FALSE)
   }
-  # Strip sensitive source/narrative fields even if a legacy native template
-  # lists one, and never retain exact birth components in a generic loader.
-  sensitive <- names(assigned)[vapply(names(assigned),
-                                      .detectSensitiveColumns, logical(1))]
-  assigned[intersect(names(assigned), c(
-    sensitive, "year_of_birth", "month_of_birth", "day_of_birth",
-    "birth_datetime"
-  ))] <- NULL
+  # Generic loaders strip class-1 fields; requested birth components are
+  # permitted quasi-identifiers under the ordinary date policy.
+  blocked <- vapply(names(assigned), .assignmentBlockedColumn, logical(1L))
+  assigned[names(assigned)[blocked]] <- NULL
 
   dh <- .normalizeDateHandling(assign_date_handling)
   if (is.null(dh)) {
