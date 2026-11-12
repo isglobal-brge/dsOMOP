@@ -1,0 +1,2911 @@
+{
+  "version": 1,
+  "description": "NEWLY PERMITTED predicate policy: independent 2.10.2 executor with only five reviewed section 7.4 gate branches adjusted; not unchanged baseline equivalence.",
+  "baseline": {
+    "dsOMOP": "30b7905617dbe3de5d06699c324095635c68011f",
+    "dsOMOPClient": "7eb2f6c8c2b49e5492e1f778916b84319626341d"
+  },
+  "reference": "Endorsed section 7.4; A-19 item 7 historical literal semantics",
+  "captures": [
+    {
+      "label": "policy-e",
+      "capture_sha256": "a7f5731f269a99b055ce18114298097f87ee8e00ac13c5a56da4ad1400d4cac9",
+      "tool_sha256": "0e9a676f9277c2a032406f99d2b5adfcbb49138c27b9b912d0c76e1bd19298e3",
+      "baseline_R_manifest_sha256": "0a08ca0eb2d97b5d577349cf6415d9ce5e539a06897c60a6a6bf670a9c191800",
+      "option_state": {
+        "options": {
+          "default.dsomop.dp.enabled": {
+            "kind": "atomic",
+            "class": [
+              "logical"
+            ],
+            "type": "logical",
+            "length": 1,
+            "levels": null,
+            "values": [
+              false
+            ],
+            "names": null,
+            "attrs": null
+          }
+        },
+        "env": {}
+      }
+    },
+    {
+      "label": "policy-f",
+      "capture_sha256": "31004b3c5cda140aa6d41b36d0a095cac66106b8603f27be13cbd77fbe09a727",
+      "tool_sha256": "0e9a676f9277c2a032406f99d2b5adfcbb49138c27b9b912d0c76e1bd19298e3",
+      "baseline_R_manifest_sha256": "0a08ca0eb2d97b5d577349cf6415d9ce5e539a06897c60a6a6bf670a9c191800",
+      "option_state": {
+        "options": {
+          "default.dsomop.dp.enabled": {
+            "kind": "atomic",
+            "class": [
+              "logical"
+            ],
+            "type": "logical",
+            "length": 1,
+            "levels": null,
+            "values": [
+              false
+            ],
+            "names": null,
+            "attrs": null
+          }
+        },
+        "env": {}
+      }
+    }
+  ],
+  "gate_changes": [
+    "date-operator-width-policy",
+    "ordered-threshold-policy",
+    "categorical-membership-policy",
+    "numeric-between-policy",
+    "custom-filter-family-policy"
+  ],
+  "original_gate_sha256": "22ff4e52cbc66fc84abf23058630aaaa562ac75e6a4eaab951208e1030fa508a",
+  "adjusted_gate_sha256": "a15a68090ee37aa3795d072b0dd9b27cc8493e624bdcf40d5bc8a268496b7ee5",
+  "encoding": "Complete compatibility canonical result at 17 significant digits; no Date/POSIX objects occur. Original raw baseline refusals and plan hashes are retained.",
+  "cases": {
+    "B.condition_concept_id.eq.int": {
+      "status": "ok",
+      "plan_sha256": "e4fb43b47cc2478ffc44f3585dacc5c25e92b93613980bb5b616b5c692ed52c2",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "ec11510a00321faa7af403266bd365f06722ef29e3834b93d2928bf058a66017",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 6,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 6,
+          "rows_per_person": {
+            "1": 1,
+            "11": 1,
+            "3": 1,
+            "5": 1,
+            "7": 1,
+            "9": 1
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.eq.str": {
+      "status": "ok",
+      "plan_sha256": "0a88358c4d2495ade37839d54f0ee7972119c3233d0ce0a125029dcf522a990d",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "ec11510a00321faa7af403266bd365f06722ef29e3834b93d2928bf058a66017",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 6,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 6,
+          "rows_per_person": {
+            "1": 1,
+            "11": 1,
+            "3": 1,
+            "5": 1,
+            "7": 1,
+            "9": 1
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.eq.str_decimal": {
+      "status": "ok",
+      "plan_sha256": "7bff1bc3f211c7287206850873e5bff8d4867544d543e360e04d76dda3411c03",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "ec11510a00321faa7af403266bd365f06722ef29e3834b93d2928bf058a66017",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 6,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 6,
+          "rows_per_person": {
+            "1": 1,
+            "11": 1,
+            "3": 1,
+            "5": 1,
+            "7": 1,
+            "9": 1
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.eq.str_exponent": {
+      "status": "ok",
+      "plan_sha256": "35b6e0f1d32c5e67dc62768615d2aa661730044d56d3294f7915fc3bbd4f20e3",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "402fddd4191b721b01fdef97c3531927569d7edc04165848429d2d163718ae7f",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.condition_concept_id.eq.str_alpha": {
+      "status": "ok",
+      "plan_sha256": "69ab40e73f05e7020300ac3d2a744547181759197769b77a192eeeb8b0aa019b",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "402fddd4191b721b01fdef97c3531927569d7edc04165848429d2d163718ae7f",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.condition_concept_id.eq.boolean": {
+      "status": "ok",
+      "plan_sha256": "4a1a156d72208358a579e1cbf30256469bc1bcca32ae9b778a7954d6402d23ef",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "402fddd4191b721b01fdef97c3531927569d7edc04165848429d2d163718ae7f",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.condition_concept_id.eq.fraction": {
+      "status": "ok",
+      "plan_sha256": "908849b965a382669a4cd6b6186f96896fcd8611ed46c79635d2b047ac2c85f3",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "402fddd4191b721b01fdef97c3531927569d7edc04165848429d2d163718ae7f",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.condition_concept_id.ne.int": {
+      "status": "ok",
+      "plan_sha256": "9ca064390967344ce78491cdade44d0cbb9a780e29ba776cf3be1768c7e1b0d7",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "b96f403220aa63963cb3a15ae227ff12fb38d90534873bc45712ed038ddc8c3a",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 18,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 8,
+          "rows_per_person": {
+            "1": 3,
+            "13": 1,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 4,
+            "7": 3,
+            "9": 4
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.ne.str": {
+      "status": "ok",
+      "plan_sha256": "c10e8a924803569ce7043d9a820a4ce5df1e396cacb3f669b4d3927df8c36b2d",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "b96f403220aa63963cb3a15ae227ff12fb38d90534873bc45712ed038ddc8c3a",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 18,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 8,
+          "rows_per_person": {
+            "1": 3,
+            "13": 1,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 4,
+            "7": 3,
+            "9": 4
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.ne.str_decimal": {
+      "status": "ok",
+      "plan_sha256": "54cf542c82f49018b8d096a918244e46db8a0c5643baa5caa642ef351384c117",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "b96f403220aa63963cb3a15ae227ff12fb38d90534873bc45712ed038ddc8c3a",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 18,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 8,
+          "rows_per_person": {
+            "1": 3,
+            "13": 1,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 4,
+            "7": 3,
+            "9": 4
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.ne.str_exponent": {
+      "status": "ok",
+      "plan_sha256": "f8c1f0b12d8fea3bf8ecc9836a84f5f029a907d03c1155888a72f7797a613a93",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "d1ffa2b1ab10f3d94d3c35c381f11733f68a8c3683e570a1e3f25a2787bb98f6",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 24,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 9,
+          "rows_per_person": {
+            "1": 4,
+            "11": 1,
+            "13": 1,
+            "2": 1,
+            "3": 2,
+            "4": 1,
+            "5": 5,
+            "7": 4,
+            "9": 5
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.ne.str_alpha": {
+      "status": "ok",
+      "plan_sha256": "3a891f42571425a9ee9a2498f98c82b550a76de13b27243606534c2841915d63",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "d1ffa2b1ab10f3d94d3c35c381f11733f68a8c3683e570a1e3f25a2787bb98f6",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 24,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 9,
+          "rows_per_person": {
+            "1": 4,
+            "11": 1,
+            "13": 1,
+            "2": 1,
+            "3": 2,
+            "4": 1,
+            "5": 5,
+            "7": 4,
+            "9": 5
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.ne.boolean": {
+      "status": "ok",
+      "plan_sha256": "6ea9ae2e317b7c65ed99e010f94024d16762ffc70a670776dec2efc4d5988686",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "d1ffa2b1ab10f3d94d3c35c381f11733f68a8c3683e570a1e3f25a2787bb98f6",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 24,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 9,
+          "rows_per_person": {
+            "1": 4,
+            "11": 1,
+            "13": 1,
+            "2": 1,
+            "3": 2,
+            "4": 1,
+            "5": 5,
+            "7": 4,
+            "9": 5
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.ne.fraction": {
+      "status": "ok",
+      "plan_sha256": "511b7254be0d5f978ce3ffffce7c095b21c3df3273d83e2dfa3d129cf7cce153",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "d1ffa2b1ab10f3d94d3c35c381f11733f68a8c3683e570a1e3f25a2787bb98f6",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 24,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 9,
+          "rows_per_person": {
+            "1": 4,
+            "11": 1,
+            "13": 1,
+            "2": 1,
+            "3": 2,
+            "4": 1,
+            "5": 5,
+            "7": 4,
+            "9": 5
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.gt.int": {
+      "status": "ok",
+      "plan_sha256": "b86697dc00801eeeeb517a060de2f1b4fcb2a4ecb0e9d3e8eea757da03131515",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: client-authored ordered thresholds are not permitted; request a server-issued value_bin for numeric columns.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "b96f403220aa63963cb3a15ae227ff12fb38d90534873bc45712ed038ddc8c3a",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 18,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 8,
+          "rows_per_person": {
+            "1": 3,
+            "13": 1,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 4,
+            "7": 3,
+            "9": 4
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.gt.str": {
+      "status": "ok",
+      "plan_sha256": "b8c9c4ab3b9d2e7259808ee70c9370b3d29b63100d941769afd1bb83fedc91d1",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: client-authored ordered thresholds are not permitted; request a server-issued value_bin for numeric columns.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "b96f403220aa63963cb3a15ae227ff12fb38d90534873bc45712ed038ddc8c3a",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 18,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 8,
+          "rows_per_person": {
+            "1": 3,
+            "13": 1,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 4,
+            "7": 3,
+            "9": 4
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.gt.str_decimal": {
+      "status": "ok",
+      "plan_sha256": "f9e16db055833f4cf56bd9a6418f7c260674cf8501747d827bb57e93796b6a02",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: client-authored ordered thresholds are not permitted; request a server-issued value_bin for numeric columns.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "b96f403220aa63963cb3a15ae227ff12fb38d90534873bc45712ed038ddc8c3a",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 18,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 8,
+          "rows_per_person": {
+            "1": 3,
+            "13": 1,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 4,
+            "7": 3,
+            "9": 4
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.gt.str_exponent": {
+      "status": "ok",
+      "plan_sha256": "2a98ac8aaf0c64b6893552b2d1e4109a492722759fc69dfd81872cb5265bf888",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: client-authored ordered thresholds are not permitted; request a server-issued value_bin for numeric columns.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "d1ffa2b1ab10f3d94d3c35c381f11733f68a8c3683e570a1e3f25a2787bb98f6",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 24,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 9,
+          "rows_per_person": {
+            "1": 4,
+            "11": 1,
+            "13": 1,
+            "2": 1,
+            "3": 2,
+            "4": 1,
+            "5": 5,
+            "7": 4,
+            "9": 5
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.gt.str_alpha": {
+      "status": "ok",
+      "plan_sha256": "b0020c1ba29caf1441473d1da530ec87b31164e4187f7a2f3559cb7f496962fe",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: client-authored ordered thresholds are not permitted; request a server-issued value_bin for numeric columns.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "402fddd4191b721b01fdef97c3531927569d7edc04165848429d2d163718ae7f",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.condition_concept_id.gt.boolean": {
+      "status": "ok",
+      "plan_sha256": "8a0852f9bbe6ca3f1f82b8bf2c99573596473b0a0b2e8d43fed8842dad7a44c1",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: client-authored ordered thresholds are not permitted; request a server-issued value_bin for numeric columns.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "d1ffa2b1ab10f3d94d3c35c381f11733f68a8c3683e570a1e3f25a2787bb98f6",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 24,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 9,
+          "rows_per_person": {
+            "1": 4,
+            "11": 1,
+            "13": 1,
+            "2": 1,
+            "3": 2,
+            "4": 1,
+            "5": 5,
+            "7": 4,
+            "9": 5
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.gt.fraction": {
+      "status": "ok",
+      "plan_sha256": "50d08e16f869115b6261cbbe49ce0779dde622d2c20906d9b56a9458069d994e",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: client-authored ordered thresholds are not permitted; request a server-issued value_bin for numeric columns.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "b96f403220aa63963cb3a15ae227ff12fb38d90534873bc45712ed038ddc8c3a",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 18,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 8,
+          "rows_per_person": {
+            "1": 3,
+            "13": 1,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 4,
+            "7": 3,
+            "9": 4
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.between.int": {
+      "status": "ok",
+      "plan_sha256": "aaaeea74edf5828ef8a55d6259b6376a3af5bd125f5959afd6665aaa780e78c5",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Numeric BETWEEN filters are not permitted; use a validated value_bin instead.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "0975d56b1fdf751dba965527bb9930ab0e5425f396252006786edf094132390b",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 10,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 7,
+          "rows_per_person": {
+            "1": 1,
+            "11": 1,
+            "13": 1,
+            "3": 1,
+            "5": 2,
+            "7": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.between.str": {
+      "status": "ok",
+      "plan_sha256": "15b8c21bd9b34e99ea4a4532002df7af392b3dc6bf9f5e26cb5e09f563c2c0ac",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Numeric BETWEEN filters are not permitted; use a validated value_bin instead.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "0975d56b1fdf751dba965527bb9930ab0e5425f396252006786edf094132390b",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 10,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 7,
+          "rows_per_person": {
+            "1": 1,
+            "11": 1,
+            "13": 1,
+            "3": 1,
+            "5": 2,
+            "7": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.between.str_decimal": {
+      "status": "ok",
+      "plan_sha256": "d53fcbe04fed701eb8217e725c1ccedb051c12d5d56d2ef4dae1e2b3d597d084",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Numeric BETWEEN filters are not permitted; use a validated value_bin instead.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "0975d56b1fdf751dba965527bb9930ab0e5425f396252006786edf094132390b",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 10,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 7,
+          "rows_per_person": {
+            "1": 1,
+            "11": 1,
+            "13": 1,
+            "3": 1,
+            "5": 2,
+            "7": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.between.boolean": {
+      "status": "ok",
+      "plan_sha256": "545bf8a7aaac0f790145410dc436959d11d219609ea0fe80dcd1ca07b1ca088e",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Numeric BETWEEN filters are not permitted; use a validated value_bin instead.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "0975d56b1fdf751dba965527bb9930ab0e5425f396252006786edf094132390b",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 10,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 7,
+          "rows_per_person": {
+            "1": 1,
+            "11": 1,
+            "13": 1,
+            "3": 1,
+            "5": 2,
+            "7": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.condition_concept_id.between.fraction": {
+      "status": "ok",
+      "plan_sha256": "e79314a9de547eab01b9c0225baccac4591c3d9096d64e4f20503621d7ac6fd0",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Numeric BETWEEN filters are not permitted; use a validated value_bin instead.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "12c337ab21c89fad3ae36d88e2adf0a07078b0b4453eec3f839652c7723a7688",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 4,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 4,
+          "rows_per_person": {
+            "13": 1,
+            "5": 1,
+            "7": 1,
+            "9": 1
+          }
+        }
+      }
+    },
+    "B.value_as_number.eq.int": {
+      "status": "ok",
+      "plan_sha256": "b58a752d223fb5c3d52f8cad14b5d5a05efaa3e934f1217bcafb464b04b05763",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "7aef4266ee19a30304ce215f96027b04f6a7eede7d13c1f1ff8b95e40882948d",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.value_as_number.eq.str": {
+      "status": "ok",
+      "plan_sha256": "c504bad4b01d8de93d0c792555f6fe16769407ef35c5dfd58c61fdc1073eecf6",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "7aef4266ee19a30304ce215f96027b04f6a7eede7d13c1f1ff8b95e40882948d",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.value_as_number.eq.str_decimal": {
+      "status": "ok",
+      "plan_sha256": "ea410cbb469e5c5d694e9b079869b2309c1517683de4b1e1bfa73975fada0a7c",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "7aef4266ee19a30304ce215f96027b04f6a7eede7d13c1f1ff8b95e40882948d",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.value_as_number.eq.str_alpha": {
+      "status": "ok",
+      "plan_sha256": "209cc36df2bc1d29eaff5850cfdddf1cdcfa81ea213b0c03ea9e724eddc677e9",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "7aef4266ee19a30304ce215f96027b04f6a7eede7d13c1f1ff8b95e40882948d",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.value_as_number.eq.boolean": {
+      "status": "ok",
+      "plan_sha256": "a14c807d237c2017aebe9e1fe0a22e4d00512cdb2c805cf3989e8eb0c7158f56",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "7aef4266ee19a30304ce215f96027b04f6a7eede7d13c1f1ff8b95e40882948d",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.value_as_number.ne.int": {
+      "status": "ok",
+      "plan_sha256": "3aa733d5e6666e334c49d411b6a99b3248d6d039ba989ea81319a4bda3e35289",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.value_as_number.ne.str": {
+      "status": "ok",
+      "plan_sha256": "86721f903607c83fd5c1cb95db18a4613f8fbfa581ce490f9b347184dfa3d18a",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.value_as_number.ne.str_decimal": {
+      "status": "ok",
+      "plan_sha256": "2acd6b35b98cbe23611aacd5b72c7996754e37798a152f5197d3883176278d90",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.value_as_number.ne.str_alpha": {
+      "status": "ok",
+      "plan_sha256": "2d129f85b547b56b1fe1ba9f6738c0b76c4852e1c2e5ee20fa9fbbfe1c7e2b78",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.value_as_number.ne.boolean": {
+      "status": "ok",
+      "plan_sha256": "087063f49306f1e03f84fb0c8fdeae99ec1ad4802cb2f24e4b9a6461e6e413aa",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.value_as_number.gt.int": {
+      "status": "ok",
+      "plan_sha256": "7e0b7dd9c6e2a832677bf74ecdfd79dce76f39cca1c71fa13262a55e8cfc7975",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: client-authored ordered thresholds are not permitted; request a server-issued value_bin for numeric columns.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.value_as_number.gt.str": {
+      "status": "ok",
+      "plan_sha256": "0d20b68b71e993fd06607ed66c4aa15474a94126e8bafefdee8e4d0a76aabc5b",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: client-authored ordered thresholds are not permitted; request a server-issued value_bin for numeric columns.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.value_as_number.gt.str_decimal": {
+      "status": "ok",
+      "plan_sha256": "c2746ff3619af0f02ba7bfe056a9e20bcfc6dcc34c6b87ce3c90d011fb9fec24",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: client-authored ordered thresholds are not permitted; request a server-issued value_bin for numeric columns.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.value_as_number.gt.str_alpha": {
+      "status": "ok",
+      "plan_sha256": "87c36b62ae03f1a6216b933b18c0a4323a48e352e8cf475db79550e487bf17c3",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: client-authored ordered thresholds are not permitted; request a server-issued value_bin for numeric columns.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "7aef4266ee19a30304ce215f96027b04f6a7eede7d13c1f1ff8b95e40882948d",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.value_as_number.gt.boolean": {
+      "status": "ok",
+      "plan_sha256": "6981d609b75125a78d14d47df715508b760f52f68546019ba1cd635a34be844d",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: client-authored ordered thresholds are not permitted; request a server-issued value_bin for numeric columns.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.value_as_number.in.int": {
+      "status": "ok",
+      "plan_sha256": "7202e7a0395ef1279eb06a9f12e595fa145173d2d2caada4eea029dff7225f21",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: IN/NOT IN is only permitted for concept IDs or approved categorical columns, not 'value_as_number'.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "7aef4266ee19a30304ce215f96027b04f6a7eede7d13c1f1ff8b95e40882948d",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.value_as_number.in.str": {
+      "status": "ok",
+      "plan_sha256": "e0946652231161d8c9604dc3853da8f45ced4588e6fe0002594f927f6b69d844",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: IN/NOT IN is only permitted for concept IDs or approved categorical columns, not 'value_as_number'.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "7aef4266ee19a30304ce215f96027b04f6a7eede7d13c1f1ff8b95e40882948d",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.value_as_number.in.str_decimal": {
+      "status": "ok",
+      "plan_sha256": "d44514cca1b8ab28ce6e38a7f5febae7bb125c14dd49e2e5acf94537010d98a4",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: IN/NOT IN is only permitted for concept IDs or approved categorical columns, not 'value_as_number'.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "7aef4266ee19a30304ce215f96027b04f6a7eede7d13c1f1ff8b95e40882948d",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.value_as_number.in.str_alpha": {
+      "status": "ok",
+      "plan_sha256": "5c0d9b6f8b1d3bc411f2d2c577d6e5b95959a893f874359e525de26b0e695a1d",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: IN/NOT IN is only permitted for concept IDs or approved categorical columns, not 'value_as_number'.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "7aef4266ee19a30304ce215f96027b04f6a7eede7d13c1f1ff8b95e40882948d",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.value_as_number.in.boolean": {
+      "status": "ok",
+      "plan_sha256": "2a562a03d4f3f650d73148b7f818c64b878d36e4a7f564f6fe3fd75c60fd6412",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: IN/NOT IN is only permitted for concept IDs or approved categorical columns, not 'value_as_number'.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "7aef4266ee19a30304ce215f96027b04f6a7eede7d13c1f1ff8b95e40882948d",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 0,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 0,
+          "rows_per_person": []
+        }
+      }
+    },
+    "B.value_as_number.not_in.int": {
+      "status": "ok",
+      "plan_sha256": "480d098a1f8846a5ea646d1be2d4aa47cd588c4cce8ddc5d2d8c054b835c1c2f",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: IN/NOT IN is only permitted for concept IDs or approved categorical columns, not 'value_as_number'.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.value_as_number.not_in.str": {
+      "status": "ok",
+      "plan_sha256": "6e4914eee147f4c72eb7a92ec2642d690a20238466593c1ae3ddea3599a37b22",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: IN/NOT IN is only permitted for concept IDs or approved categorical columns, not 'value_as_number'.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.value_as_number.not_in.str_decimal": {
+      "status": "ok",
+      "plan_sha256": "63dc944441750b47eba8c35828000c7fe211d3afc71296c333e5404f282ce1ac",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: IN/NOT IN is only permitted for concept IDs or approved categorical columns, not 'value_as_number'.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.value_as_number.not_in.str_alpha": {
+      "status": "ok",
+      "plan_sha256": "530fa5e7ab1b5715fbc756252b9cda15112b10bdc764c0ab3d31500f36229ac6",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: IN/NOT IN is only permitted for concept IDs or approved categorical columns, not 'value_as_number'.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.value_as_number.not_in.boolean": {
+      "status": "ok",
+      "plan_sha256": "3e79c5d4601ed12aa4f7eda923cf70f806fc842aec52920af23bb6fd2ff8306c",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: IN/NOT IN is only permitted for concept IDs or approved categorical columns, not 'value_as_number'.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.value_as_number.between.int": {
+      "status": "ok",
+      "plan_sha256": "1d7ebf71bf6a491d991bae7216659def320650202e6d4ea0e69d58be63e6bc96",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Numeric BETWEEN filters are not permitted; use a validated value_bin instead.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.value_as_number.between.boolean": {
+      "status": "ok",
+      "plan_sha256": "be08382aea48ff800ed9855d0c297e8a416de270dea46804840473a09164303b",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Numeric BETWEEN filters are not permitted; use a validated value_bin instead.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "3212392a4992becf5163905a8ab3875ad9f2a9ce15270decca19482268d20bde",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 26,
+          "columns": [
+            "person_id",
+            "value_as_number"
+          ],
+          "persons": 13,
+          "rows_per_person": {
+            "1": 3,
+            "10": 1,
+            "11": 1,
+            "12": 1,
+            "13": 1,
+            "2": 2,
+            "3": 3,
+            "4": 2,
+            "5": 3,
+            "6": 2,
+            "7": 3,
+            "8": 2,
+            "9": 2
+          }
+        }
+      }
+    },
+    "B.concept_code.eq.int": {
+      "status": "ok",
+      "plan_sha256": "69130397b7c2491890947ca7505bdae883aa8d0d6c2b2d21d2dac6d1a24637f3",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "64d871f8caa1b8b26f84e8748e5d9312bc1a52f3f30e3ef1bb6b83e9e9506962",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 1,
+          "columns": [
+            "concept_id",
+            "concept_code",
+            "vocabulary_id"
+          ],
+          "persons": null,
+          "rows_per_person": null
+        }
+      }
+    },
+    "B.concept_code.eq.str": {
+      "status": "ok",
+      "plan_sha256": "4710820ba59f95b8c997b57d9498638c9b7fcd69c76b1fd282fc55543e4164ad",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "64d871f8caa1b8b26f84e8748e5d9312bc1a52f3f30e3ef1bb6b83e9e9506962",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 1,
+          "columns": [
+            "concept_id",
+            "concept_code",
+            "vocabulary_id"
+          ],
+          "persons": null,
+          "rows_per_person": null
+        }
+      }
+    },
+    "B.concept_code.ne.int": {
+      "status": "ok",
+      "plan_sha256": "450b6133adb571b9f0d6f629f7ba710a4f2be78fa4a2a00502d77e3e1df23490",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "af9c7e732bbf266d8c09f2538efea2efc4e74ab5822bd0797efa588a0cf0d9d1",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 42,
+          "columns": [
+            "concept_id",
+            "concept_code",
+            "vocabulary_id"
+          ],
+          "persons": null,
+          "rows_per_person": null
+        }
+      }
+    },
+    "B.concept_code.ne.str": {
+      "status": "ok",
+      "plan_sha256": "90b43e5c040fb8de14ae3ea178190bc77be5c276643a79322870613f738ed871",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: filter type 'custom' is not allowed (could fingerprint individuals).",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe",
+          ".validateFilter"
+        ]
+      },
+      "result_sha256": "af9c7e732bbf266d8c09f2538efea2efc4e74ab5822bd0797efa588a0cf0d9d1",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 42,
+          "columns": [
+            "concept_id",
+            "concept_code",
+            "vocabulary_id"
+          ],
+          "persons": null,
+          "rows_per_person": null
+        }
+      }
+    },
+    "B.concept_code.gt.int": {
+      "status": "ok",
+      "plan_sha256": "c5af973c59ddf986963befaf05addc3422db61832c47d3726349c504236c5be6",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: client-authored ordered thresholds are not permitted; request a server-issued value_bin for numeric columns.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "54b74ee4dce8abfecf7a527ffe3b243a1e1c59eea5462cacc095d256a5c48ae6",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 41,
+          "columns": [
+            "concept_id",
+            "concept_code",
+            "vocabulary_id"
+          ],
+          "persons": null,
+          "rows_per_person": null
+        }
+      }
+    },
+    "B.concept_code.gt.str": {
+      "status": "ok",
+      "plan_sha256": "5fe3f3563bb489f4b0acad57ad313ab5704e5ac66bcb9c089ac12d37755a071e",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: client-authored ordered thresholds are not permitted; request a server-issued value_bin for numeric columns.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "54b74ee4dce8abfecf7a527ffe3b243a1e1c59eea5462cacc095d256a5c48ae6",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 41,
+          "columns": [
+            "concept_id",
+            "concept_code",
+            "vocabulary_id"
+          ],
+          "persons": null,
+          "rows_per_person": null
+        }
+      }
+    },
+    "B.concept_code.in.int": {
+      "status": "ok",
+      "plan_sha256": "b1f5fec5b64879e30dbe27caadba82bc8b5141847aab566b2b5e3021f0bd48cf",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: IN/NOT IN is only permitted for concept IDs or approved categorical columns, not 'concept_code'.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "64d871f8caa1b8b26f84e8748e5d9312bc1a52f3f30e3ef1bb6b83e9e9506962",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 1,
+          "columns": [
+            "concept_id",
+            "concept_code",
+            "vocabulary_id"
+          ],
+          "persons": null,
+          "rows_per_person": null
+        }
+      }
+    },
+    "B.concept_code.in.str": {
+      "status": "ok",
+      "plan_sha256": "2e218f23115374a43c76cd3b6517327732c83a3a37df25def4b586b1a50b2a1e",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: IN/NOT IN is only permitted for concept IDs or approved categorical columns, not 'concept_code'.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "64d871f8caa1b8b26f84e8748e5d9312bc1a52f3f30e3ef1bb6b83e9e9506962",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 1,
+          "columns": [
+            "concept_id",
+            "concept_code",
+            "vocabulary_id"
+          ],
+          "persons": null,
+          "rows_per_person": null
+        }
+      }
+    },
+    "B.concept_code.not_in.int": {
+      "status": "ok",
+      "plan_sha256": "17af77921e512a6cdb9280df28cc7181efd86d726bab5011c6d8e1401bbbe444",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: IN/NOT IN is only permitted for concept IDs or approved categorical columns, not 'concept_code'.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "af9c7e732bbf266d8c09f2538efea2efc4e74ab5822bd0797efa588a0cf0d9d1",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 42,
+          "columns": [
+            "concept_id",
+            "concept_code",
+            "vocabulary_id"
+          ],
+          "persons": null,
+          "rows_per_person": null
+        }
+      }
+    },
+    "B.concept_code.not_in.str": {
+      "status": "ok",
+      "plan_sha256": "027d1886469a98f70d5622832c337ad214e0bf37b9fce3ac082ad971c8557e02",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: IN/NOT IN is only permitted for concept IDs or approved categorical columns, not 'concept_code'.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "af9c7e732bbf266d8c09f2538efea2efc4e74ab5822bd0797efa588a0cf0d9d1",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 42,
+          "columns": [
+            "concept_id",
+            "concept_code",
+            "vocabulary_id"
+          ],
+          "persons": null,
+          "rows_per_person": null
+        }
+      }
+    },
+    "B.concept_code.between.int": {
+      "status": "ok",
+      "plan_sha256": "b53156c1cade640a0d5a189561d6f2ba9833ee25613403296a827c5f1ee45526",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Numeric BETWEEN filters are not permitted; use a validated value_bin instead.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "e9e39b897cb78849c551a6b6eceb986cc3ca8c0d43658812f7cbb01be7eea03f",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 31,
+          "columns": [
+            "concept_id",
+            "concept_code",
+            "vocabulary_id"
+          ],
+          "persons": null,
+          "rows_per_person": null
+        }
+      }
+    },
+    "B.concept_code.between.str": {
+      "status": "ok",
+      "plan_sha256": "3c92097aee81902cc05aa8a9598e56bd5eb2162af15da5181f061c49253a3061",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Numeric BETWEEN filters are not permitted; use a validated value_bin instead.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "e9e39b897cb78849c551a6b6eceb986cc3ca8c0d43658812f7cbb01be7eea03f",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 31,
+          "columns": [
+            "concept_id",
+            "concept_code",
+            "vocabulary_id"
+          ],
+          "persons": null,
+          "rows_per_person": null
+        }
+      }
+    },
+    "B.condition_start_date.eq.iso": {
+      "status": "ok",
+      "plan_sha256": "98d1efd87e904ef5510e2c984eda329af6b24ededd3af8027f3cacb5e718cbcf",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: date filter column 'condition_start_date' only permits one validated BETWEEN range; standalone date comparisons cannot prove a safe width.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "ec11510a00321faa7af403266bd365f06722ef29e3834b93d2928bf058a66017",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 6,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 6,
+          "rows_per_person": {
+            "1": 1,
+            "11": 1,
+            "3": 1,
+            "5": 1,
+            "7": 1,
+            "9": 1
+          }
+        }
+      }
+    },
+    "B.condition_start_date.ne.iso": {
+      "status": "ok",
+      "plan_sha256": "0bc4f32d37c30331a27e0e90095b529994faed44f0ff1ee8708e4f58e418f89c",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: date filter column 'condition_start_date' only permits one validated BETWEEN range; standalone date comparisons cannot prove a safe width.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "b96f403220aa63963cb3a15ae227ff12fb38d90534873bc45712ed038ddc8c3a",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 18,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 8,
+          "rows_per_person": {
+            "1": 3,
+            "13": 1,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 4,
+            "7": 3,
+            "9": 4
+          }
+        }
+      }
+    },
+    "B.condition_start_date.gt.iso": {
+      "status": "ok",
+      "plan_sha256": "008d7542233f9e19437f15acf398b0b491656ae424e1f233ac08ee956505bbe0",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: date filter column 'condition_start_date' only permits one validated BETWEEN range; standalone date comparisons cannot prove a safe width.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "b96f403220aa63963cb3a15ae227ff12fb38d90534873bc45712ed038ddc8c3a",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 18,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 8,
+          "rows_per_person": {
+            "1": 3,
+            "13": 1,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 4,
+            "7": 3,
+            "9": 4
+          }
+        }
+      }
+    },
+    "B.condition_start_date.in.iso": {
+      "status": "ok",
+      "plan_sha256": "c3aa7780cbd7b99621cc62da954ae41289aab05c0db61e7389110f5c45447768",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: date filter column 'condition_start_date' only permits one validated BETWEEN range; standalone date comparisons cannot prove a safe width.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "ec11510a00321faa7af403266bd365f06722ef29e3834b93d2928bf058a66017",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 6,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 6,
+          "rows_per_person": {
+            "1": 1,
+            "11": 1,
+            "3": 1,
+            "5": 1,
+            "7": 1,
+            "9": 1
+          }
+        }
+      }
+    },
+    "B.condition_start_date.not_in.iso": {
+      "status": "ok",
+      "plan_sha256": "9b8269264d171a2ec79c71f9e2c7efb72b02a1669831dae35e0c1a8ee50cacd5",
+      "original_baseline_error": {
+        "class": [
+          "simpleError",
+          "error",
+          "condition"
+        ],
+        "message": "Disclosive: date filter column 'condition_start_date' only permits one validated BETWEEN range; standalone date comparisons cannot prove a safe width.",
+        "stage": "plan",
+        "refused_before_query": true,
+        "data_statements_before": 0,
+        "origin": [
+          ".planExecute",
+          ".extractTable",
+          ".compileSelect",
+          ".assertCustomFilterSafe"
+        ]
+      },
+      "result_sha256": "b96f403220aa63963cb3a15ae227ff12fb38d90534873bc45712ed038ddc8c3a",
+      "outputs": {
+        "e": {
+          "kind": "data.frame",
+          "nrow": 18,
+          "columns": [
+            "person_id",
+            "condition_concept_id"
+          ],
+          "persons": 8,
+          "rows_per_person": {
+            "1": 3,
+            "13": 1,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 4,
+            "7": 3,
+            "9": 4
+          }
+        }
+      }
+    }
+  }
+}
