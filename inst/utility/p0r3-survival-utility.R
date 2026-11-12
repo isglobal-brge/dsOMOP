@@ -37,9 +37,9 @@ main <- function() {
   # Retain executable provenance and measure the pre-repair residual without
   # changing the production projection. Calls 1:4 are the released two-arm
   # family; later calls are the 200 uncertainty refits.
-  source_sha256 <- as.character(openssl::sha256(readBin(
+  source_sha256 <- unclass(as.character(openssl::sha256(readBin(
     "R/tools_release_survival.R", "raw",
-    n = file.info("R/tools_release_survival.R")$size)))
+    n = file.info("R/tools_release_survival.R")$size))))
   margin_diag <- list(calls = 0L, nonzero = 0L, material = 0L,
                       max_relative = 0, initial_max_relative = 0)
   repair_columns <- .dsomopReleaseRepairColumns
