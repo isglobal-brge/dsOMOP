@@ -335,6 +335,7 @@
     }
     for (k in intersect(names(params), c("min_value", "max_value"))) params[[k]] <- .v1Num(params[[k]])
     if (is.list(params[["window"]])) params[["window"]] <- lapply(.v1Compact(params[["window"]]), .v1Int)
+    if (!is.null(params[["safe_scope"]])) params[["safe_scope"]] <- .v1SafeScope(params[["safe_scope"]])
     if (length(params) == 0L) params <- structure(list(), names = character(0))
     return(list(legacy = list(type = type, params = params)))
   }
@@ -999,7 +1000,7 @@
     if (!is.null(spec[["concept_set"]])) ls[["concept_set"]] <- .v1ConceptSet(spec[["concept_set"]])
     if (!is.null(spec[["value_bin"]])) {
       vb <- .v1Compact(spec[["value_bin"]])
-      ls[["value_bin"]] <- list(lower = .v1Scalar(vb[["lower"]]), upper = .v1Scalar(vb[["upper"]]),
+      ls[["value_bin"]] <- list(lower = .v1Num(vb[["lower"]]), upper = .v1Num(vb[["upper"]]),
                                 safe_scope = .v1SafeScope(vb[["safe_scope"]]))
     }
     if (!is.null(spec[["inclusion_criteria"]])) ls[["inclusion_criteria"]] <- .v1Inclusion(spec[["inclusion_criteria"]])
