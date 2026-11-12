@@ -63,7 +63,7 @@
 # Compile a recipe and execute its plan on a fresh handle. Returns the result
 # list (named by output). Used inside withr::with_options(nfilter.subset=...).
 .reach_run <- function(recipe) {
-  plan <- dsOMOPClient::recipe_to_plan(recipe)
+  plan <- dsOMOPClient::recipe_to_plan(recipe, version = 1)
   syms <- stats::setNames(paste0("D_", names(plan$outputs)), names(plan$outputs))
   h <- .reach_handle()
   on.exit(cleanup_handle(h))
@@ -263,7 +263,7 @@ test_that("reach C: blocked value_source is rejected at compile", {
     k$v(name = "smoke_freetext", table = "observation", concept_id = 4275495,
         value_source = "value_as_string", format = "last_value")),
     outputs = k$out("rec_bad", type = "wide"))
-  expect_error(dsOMOPClient::recipe_to_plan(recipe), "blocked|Disclos")
+  expect_error(dsOMOPClient::recipe_to_plan(recipe, version = 1), "blocked|Disclos")
 })
 
 # ----------------------------------------------------------------------------
@@ -307,7 +307,7 @@ test_that("reach SAFETY: gate fires on tiny intersection when re-enabled", {
   withr::with_options(list(nfilter.subset = 50), {
     expect_error(
       {
-        plan <- dsOMOPClient::recipe_to_plan(recipe)
+        plan <- dsOMOPClient::recipe_to_plan(recipe, version = 1)
         syms <- stats::setNames("D_o", "o")
         h <- .reach_handle(); on.exit(cleanup_handle(h))
         .planExecute(h, plan, syms)
@@ -330,7 +330,7 @@ test_that("reach SAFETY: narrow age_range release depends only on publication su
       min = 30, max = 31, reference_date = "2020-07-01"))),
     variables = k$va_age(reference_date = "2020-07-01"),
     outputs = k$out("n", type = "wide", population_id = "u"))
-  plan <- dsOMOPClient::recipe_to_plan(recipe)
+  plan <- dsOMOPClient::recipe_to_plan(recipe, version = 1)
   syms <- c(n = "D_n")
   h <- .reach_handle()
   on.exit(cleanup_handle(h), add = TRUE)

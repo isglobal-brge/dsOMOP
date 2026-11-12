@@ -42,7 +42,7 @@ test_that("every registered assign method has an audited release boundary", {
   assign_methods <- trimws(strsplit(methods[1L, "AssignMethods"], ",")[[1L]])
   expect_false(anyDuplicated(registry[["function"]]) > 0L)
   expect_setequal(setdiff(assign_methods, registry[["function"]]), character(0))
-  pending <- registry[["function"]] %in% c("omopMutateDS", "omopPlanExplainDS")
+  pending <- registry[["function"]] %in% c("omopPlanExplainDS")
   expect_true(all(registry$status[pending] == "skeleton"))
   expect_true(all(registry$status[!pending] == "implemented"))
   for (note in registry$notes[!pending]) {

@@ -238,6 +238,21 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- (WS-9 re-review R1–R2) Mutation and expression-filter predicates compare
+  factor labels as text, including leading zeros. Datetime scalar, membership
+  and range thresholds consistently use civil midnight in the input timezone;
+  inclusive day ranges respect daylight-saving calendar boundaries.
+
+- (WS-9 review B3–B4; A-23) Mutation branches and coalescing use a common
+  physical type, preserving integer64 values and datetime classes/timezones.
+  Integer arithmetic is exact before overflow checks and promotes beyond
+  32 bits; bit64 is now a required dependency. Evaluated columns are checked
+  against their inferred type before publication. Expression meaning is
+  independent of JSON member order, and repeated public cut labels group
+  their intervals. Integer64 mutation and expression-filter predicates compare
+  fractional and out-of-range public literals exactly, preserving UNKNOWN
+  semantics for missing observations and avoiding rounded membership matches.
+
 - (WS-6 review B1-B3, N1) Person associations survive intersection,
   difference and mixed unions, including cohort-seeded people. Mixed unions
   and their children declare nullable start dates independently of indexed
@@ -367,6 +382,10 @@ fills its entries. Classes follow design-2.10.3 section 5.
   `nfilter_levels_density` cardinality gates, following the publication-only
   disclosure rule in design section 7.2. Filtered results still need the
   minimum number of distinct persons at publication.
+- `omopFilterDS(expr =)` admits every comparison of the predicate grammar
+  (`< <= > >=`, `between`, null tests and logic) on numeric, integer, date and
+  boolean columns, and equality / IN on text columns; the excluded rows stay
+  private and only the result's distinct persons are checked.
 - (A-E6) Observation-period coverage follows the default policy (`unique`,
   `on_ambiguous = "drop"`, design sections 1.3 and 6.13) instead of aborting
   the plan: a v1 index-event candidate whose index date is covered by two
@@ -386,6 +405,10 @@ fills its entries. Classes follow design-2.10.3 section 5.
 ## Newly refused
 
 ### Structural
+- (WS-9 review B5; A-23) Class-1 source columns are refused by mutation and
+  expression-filter validation before row evaluation, including when the
+  administrator allows their direct projection. Protected-key restrictions
+  remain in force; class-2 columns remain available.
 - (WS-6) Set-operation members must share one effective coverage policy,
   including policies inherited through nested set operations or matching;
   mismatches are refused before site queries. A union carrying contradictory
@@ -504,6 +527,18 @@ fills its entries. Classes follow design-2.10.3 section 5.
   publication refusal: no output is published. The assign call now returns
   status `refused`, so the old client reports that requested outputs did not
   materialize instead of receiving the previous constant `Disclosive` error.
+- A federation that still has a server older than 2.10.4 receives, from
+  dsOMOPClient 2.10.4, the legacy execution call of dsOMOPClient 2.10.2 on
+  every site for a v1 plan (language-2 plans are refused before any
+  assignment). This server runs that call, positional and without
+  `commit_policy`, under the documented default `commit_policy = "server"`:
+  its own strict mode decides, as for the DP preparation (WS-8 review B1).
+- `omopPlanExecuteDS()` and `omopDpPlanExecuteDS()` accept an empty out
+  mapping exactly when the plan's `publish` is an explicit empty array:
+  the full plan is validated, nothing is materialized or assigned and the
+  status is `ok` with empty inventories (A-22; WS-8 review B6). Invalid unused
+  declarations still refuse the plan. Any other plan still needs a non-empty
+  mapping.
 
 ## Design amendments applied by WS-0 (design/2.10.3/amendments.md)
 
@@ -524,9 +559,18 @@ fills its entries. Classes follow design-2.10.3 section 5.
   `legacy_concept_scope`); A-11 the pinned v2 normal form
   (`R/plan_normalize_v2.R`, vendored byte-identically, with the normalised
   fixtures of `inst/schema/normalized/`); A-12/A-13 client signature lines;
-  A-14 execution plan selection for 2.10.1-style recipes, `source_analyses`
-  on temporal and person-period outputs, and the windowed-features corpus row
-  reclassified `newly_permitted`.
+  A-14 execution plan selection for 2.10.1-style recipes and `source_analyses`
+  on temporal and person-period outputs. A-24 corrects the exact frozen
+  windowed-features corpus row `#1` to `unchanged_invalid`: its implicit
+  `base` is unindexed. Neither compatibility, the features preset nor root
+  cohort scope supplies an index. Its explicit v1 omitted-grain refusal
+  permits attempted native rendering, which refuses the unindexed fixture
+  before assignment. The separate indexed, per-variable-window variant
+  defaults to episode grain and passes server semantic validation; real
+  execution remains gated on native compiler integration. Explicit
+  incompatible grain and the corresponding `wide` grain refusal remain
+  ordinary v1 refusals; explicit episode grain retains v1 selection when
+  the complete recipe is v1-expressible.
 - A-15 the `legacy_spec` inclusion `occurrence` is the executor's historical
   `{type: at_least | at_most | exactly, count >= 0}` object (defaults
   `at_least`, 1), not `{min, max}`; A-16 five further IR-only variants carry
@@ -600,6 +644,39 @@ fills its entries. Classes follow design-2.10.3 section 5.
   and through `ds.omop.plan.execute()` over DSLite under both
   `on_small_site` settings.
 
+## Standalone verbs of language 2.0 (WS-9)
+
+- New assign method `omopMutateDS(x, exprs)` (design 2.11, 4.6; listed in
+  `DATASHIELD`): derives columns of an `omop.table` from the closed mutation
+  AST of `inst/schema/mutate-v1.json` -- column references, typed literals,
+  `+ - * /` (division by zero or a non-finite result is `NA`; integer results
+  outside the 32-bit range are `NA`), date - date (integer days), date +/-
+  integer, three-valued predicates, `ifelse` / `case_when` (the first
+  non-FALSE test decides: TRUE takes its value, UNKNOWN yields `NA`; no case
+  gives `else` or `NA`), `coalesce` (one type; integer and numeric unify to
+  numeric) and `cut` with public, strictly increasing breaks (text labels,
+  `NA` outside the breaks). The request is data: it is validated against the
+  frozen schema and type-checked against the frame -- references resolve to
+  input columns or earlier assignments, every expression has a static type --
+  before any row is evaluated; nothing is evaluated as R code. Person, episode
+  and set keys and `dsomop_protected` columns can be neither read nor
+  written; class-1 names are refused; an existing non-protected column may be
+  overwritten. The result passes the standalone publication boundary (its
+  distinct persons must reach `nfilter.subset`, constant message) and
+  carries no DP provenance. Text literals and labels keep the
+  `nfilter.string` length limit; expression nesting keeps the
+  `dsomop.max_filter_depth` cap.
+- `omopFilterDS(x, var, op, value, expr = NULL)`: the `expr` form filters with
+  the plan-v2 predicate grammar (`== != < <= > >= in not_in is_null not_null
+  between and or not`), validated against `plan-v2.json` and type-checked
+  before any row is read, three-valued (only TRUE rows are kept), released
+  through the same boundary; protected columns are refused. The legacy form is
+  unchanged.
+- The capability block advertises `status.accessor`, `verb.mutate` and
+  `verb.filter_expr` with their own endpoints, whether or not every plan
+  compiler is installed (it advertised nothing while a compiler was missing).
+  A deployment that lists `verb.mutate` or `verb.filter_expr` in
+  `dsomop.recipe_operations_disabled` refuses that verb.
 ## Intervals, anchors and coverage (WS-5)
 
 - `R/compile_interval.R`: eras (`omop_era()`) normalise each source row to a
