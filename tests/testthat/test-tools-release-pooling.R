@@ -184,7 +184,10 @@ test_that("protected effects of two live sites pool by per-site meta-analysis", 
                   b = .pool_survival_handle(240, 8))
   on.exit(lapply(handles, cleanup_handle), add = TRUE)
   id <- "dsomop:cm.effect_estimate"
-  rp <- .omopAnalysisGet(handles$a, id)$release_pooling
+  # This focused CDM fixture intentionally omits unrelated catalogue tables.
+  expect_warning(rp <- .omopAnalysisGet(handles$a, id)$release_pooling,
+    "analysis catalog: some entries depend on resources not present: tables",
+    fixed = TRUE)
   expect_identical(rp$effect_estimate$strategy, "effect_estimate")
   for (model in c("poisson", "cox")) {
     params <- list(outcome_concept_id = "4000002", model_type = model,
@@ -218,7 +221,7 @@ test_that("protected effects of two live sites pool by per-site meta-analysis", 
                  max(0, n_target), info = model)
     if (identical(model, "cox")) {
       expect_match(paste(pooled$warnings, collapse = " "),
-                   "no hazard ratio is refitted")
+                   "No hazard ratio is refitted on them.", fixed = TRUE)
     }
   }
 })
@@ -232,7 +235,10 @@ test_that("the protected SCCS IRR of two live sites pools by meta-analysis", {
   handles <- list(a = .pool_sccs_handle(220, 11), b = .pool_sccs_handle(260, 12))
   on.exit(lapply(handles, cleanup_handle), add = TRUE)
   id <- "dsomop:sccs.incidence_rate_ratio"
-  rp <- .omopAnalysisGet(handles$a, id)$release_pooling
+  # The missing resources concern other catalogue entries, not this SCCS input.
+  expect_warning(rp <- .omopAnalysisGet(handles$a, id)$release_pooling,
+    "analysis catalog: some entries depend on resources not present: tables",
+    fixed = TRUE)
   params <- list(exposure_concept_id = "1112807",
                  outcome_concept_id = "4000002", window = "30")
   frames <- .pool_sites(handles, function(h) .release_run(h, id, params))
