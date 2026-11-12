@@ -1,0 +1,85 @@
+dsOMOP v2.10.2 loaded. OMOP CDM resource resolver registered.
+achilles: .......................................................................................................................
+analysis-catalog: ............................................................................[dsomop-audit] 2026-11-12T17:02:14+0000 method=publication detail={"output":"result","component":"result","passed":true}
+................................................................[dsomop-audit] 2026-11-12T17:02:39+0000 method=publication detail={"output":"result","component":"result","passed":true}
+........................................................................................[dsomop-audit] 2026-11-12T17:02:50+0000 method=publication detail={"output":"result","component":"result","passed":true}
+..............[dsomop-audit] 2026-11-12T17:02:54+0000 method=omopAnalysisRunDS detail={"name":"dsomop:demo.__scope_dots_aggregate","params":[],"scope_present":true,"scope_table_count":2,"combine":"union"}
+[dsomop-audit] 2026-11-12T17:02:54+0000 method=omopAnalysisRunAssignDS detail={"name":"dsomop:demo.__scope_dots_assign","params":[],"scope_present":true,"scope_table_count":2,"combine":"union"}
+[dsomop-audit] 2026-11-12T17:02:55+0000 method=publication detail={"output":"result","component":"result","passed":true}
+..[dsomop-audit] 2026-11-12T17:02:55+0000 method=omopAnalysisRunDS detail={"name":"dsomop:demo.__scope_dots_aggregate","params":[],"scope_present":true,"scope_table_count":0,"combine":"union"}
+[dsomop-audit] 2026-11-12T17:02:55+0000 method=omopAnalysisRunAssignDS detail={"name":"dsomop:demo.__scope_dots_assign","params":[],"scope_present":true,"scope_table_count":0,"combine":"union"}
+[dsomop-audit] 2026-11-12T17:02:55+0000 method=publication detail={"output":"result","component":"result","passed":true}
+...............................................................................................................................................
+analysis-pooling-contract: .......................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+analysis-ports-1bc: ..............................................................................................................................................................................
+analysis-ports-achilles-live: .......................................................................................................................................................................................................................................................................................................
+analysis-ports-cm-effect: ..................................
+analysis-ports-cm-km: ...............................
+analysis-ports-cm-propensity: .....................................
+analysis-ports-cohortdx-concepts: ..........................
+analysis-ports-evidence-synthesis: ......................
+analysis-ports-plp-fitted: .........................................................................................
+analysis-ports-sccs-irr: ..............................
+analysis-ports: ..........................................................................................................................
+assignment-policy: .............................................................................................................................................[dsomop-audit] 2026-11-12T17:04:57+0000 method=publication detail={"output":"result","component":"result","passed":true}
+.......
+bigint-personid: ...................
+blueprint-quasi-identifiers: ...................................
+blueprint: .....................................................S..................................................................................................................................................................................CDM version 5.3 inferred from table structure (evidence: v5.4=0, v5.3=2)
+.
+boundary-audit: .....................................................................................................[dsomop-audit] 2026-11-12T17:05:09+0000 method=publication detail={"output":"result","component":"result","passed":false}
+......[dsomop-audit] 2026-11-12T17:05:09+0000 method=omopFilterDS detail={"var":"group","op":"=="}
+[dsomop-audit] 2026-11-12T17:05:09+0000 method=publication detail={"output":"result","component":"result","passed":true}
+.[dsomop-audit] 2026-11-12T17:05:09+0000 method=omopFilterDS detail={"var":"group","op":"=="}
+[dsomop-audit] 2026-11-12T17:05:09+0000 method=publication detail={"output":"result","component":"result","passed":false}
+.[dsomop-audit] 2026-11-12T17:05:09+0000 method=omopSelectDS detail={"cols":"group"}
+.[dsomop-audit] 2026-11-12T17:05:09+0000 method=omopBindRowsDS detail={"nx":5,"ny":5}
+.
+cm-interaction: ...................................
+cm-overlap-policy: ................
+cohort-disclosure: ...........
+cohort: .[dsomop-audit] 2026-11-12T17:05:19+0000 method=omopCohortCreateDS detail={"type":"condition","concept_set":201820,"inclusion_criteria":[{"table":"measurement","concept_set":3004410,"occurrence":{"type":"at_least","count":1}},{"table":"condition_occurrence","concept_set":201820,"occurrence":{"type":"at_least","count":1}}]}
+.....[dsomop-audit] 2026-11-12T17:05:19+0000 method=omopCohortCreateDS detail={"type":"condition","concept_set":201820,"inclusion_criteria":[{"table":"measurement","concept_set":3004410,"occurrence":{"type":"at_least","count":1}},{"table":"not_a_cdm_table"}]}
+....................................................................[dsomop-audit] 2026-11-12T17:05:25+0000 method=omopCohortCombineDS detail={"op":"intersect","a":"combine_owned_a","b":"combine_owned_b"}
+...
+compile-adapters: duckdb keeps downloaded extensions and secrets in a temporary directory:
+i /tmp/RtmpLsvajx/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+.................................................................................................................................................................................................................
+compile-anchor-inventory: duckdb keeps downloaded extensions and secrets in a temporary directory:
+i /tmp/RtmpLsvajx/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+.............................................
+[ws5 named anchor inventory backends] sqlite (SQLite 3.53.3); duckdb (DuckDB 2.0.0); postgresql (PostgreSQL 14.24); mysql (MariaDB 10.6.23); mysql (MySQL 8.4.11)
+
+compile-anchor: duckdb keeps downloaded extensions and secrets in a temporary directory:
+i /tmp/RtmpLsvajx/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+........................................................................................................................................................................................................................................................................................................................................................................................................................................................
+[ws5 anchor backends] sqlite (SQLite 3.53.3); duckdb (DuckDB 2.0.0); postgresql (PostgreSQL 14.24); mysql (MariaDB 10.6.23); mysql (MySQL 8.4.11)
+
+compile-column-classes: ...........................................................................................................................
+compile-concept: duckdb keeps downloaded extensions and secrets in a temporary directory:
+i /tmp/RtmpLsvajx/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+...............................................................................................................................

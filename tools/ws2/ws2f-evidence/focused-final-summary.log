@@ -1,0 +1,9 @@
+FAILURES BY FILE
+                   file blocks failed errors
+ test-ws2f-validation.R      1      0      1
+
+FAILING TESTS
+test-ws2f-validation.R | N3 malformed envelopes precede validation, preview and audit traversal | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 1 skipped: 0 passed: 865 
+RESULT failed: 0 errors: 1 skipped: 0 passed: 865 

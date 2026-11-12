@@ -1,0 +1,39 @@
+{
+  "completed_utc": "2026-11-12T17:13:56.856453+00:00",
+  "suite": "dsOMOPClient",
+  "filter": "",
+  "timeout_seconds": 2400,
+  "attempt": 2,
+  "rtest_exit_code": 0,
+  "totals": {
+    "failed": 0,
+    "errors": 0,
+    "skipped": 7,
+    "passed": 4922
+  },
+  "warnings": 4,
+  "warning_details": [
+    "1. A-18 end to end: adapter refusals reach the analyst with their reason, never published ('test-ws4-adapter-refusals-e2e.R:104:7') - object 'dsOexec.Wx6fvM' not found",
+    "2. A-18 end to end: adapter refusals reach the analyst with their reason, never published ('test-ws4-adapter-refusals-e2e.R:104:7') - object 'dsOexec.vqmCCY' not found",
+    "3. A-18 end to end: adapter refusals reach the analyst with their reason, never published ('test-ws4-adapter-refusals-e2e.R:104:7') - object 'dsOexec.ZuWPDS' not found",
+    "4. A-18 end to end: adapter refusals reach the analyst with their reason, never published ('test-ws4-adapter-refusals-e2e.R:104:7') - object 'dsOexec.XXREpZ' not found"
+  ],
+  "environment": {
+    "DSOMOP_TEST_POSTGRES_HOST": "omopdb",
+    "DSOMOP_TEST_MARIADB_HOST": "127.0.0.1",
+    "DSOMOP_TEST_MYSQL_HOST": "127.0.0.1",
+    "DSOMOP_TEST_MYSQL_PORT": "3307"
+  },
+  "commits": {
+    "dsOMOP": "35318226db115acc548a7cb92dd334ce381f5dac",
+    "dsOMOPClient": "b69ed1c9845c691c0d49b5ac89c2f865959e3cd7"
+  },
+  "RTEST_WITH": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/ws2f-client-complete/dsOMOP",
+  "remote_raw_log": "/root/rt/wt/ws2c/dsOMOP/tools/ws2/artifacts/ws2f-client-complete/dsOMOPClient.last.log",
+  "source_file_count_verified": 2536,
+  "local_source_manifest_identical": true,
+  "remote_source_manifest_identical": true,
+  "raw_log_sha256": "dd5c9ffc4dc718465b9534243efb3db4ff8adae45de699cf231a0666faf804cb",
+  "first_attempt": "client-complete-attempt1-run.json; aborted by concurrent parent-mirror sync; no RESULT",
+  "skips": "Seven ggplot2-dependent plotting tests; ggplot2 is not installed"
+}

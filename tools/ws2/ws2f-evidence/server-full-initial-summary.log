@@ -1,0 +1,9 @@
+FAILURES BY FILE
+             file blocks failed errors
+ test-ir-review.R      1      1      0
+
+FAILING TESTS
+test-ir-review.R | R1: advisory concept names are labels; malformed objects are typed rejections | failed=1 error=FALSE
+
+RESULT failed: 1 errors: 0 skipped: 11 passed: 48503 
+RESULT failed: 1 errors: 0 skipped: 11 passed: 48503 

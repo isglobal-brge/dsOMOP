@@ -1,0 +1,7 @@
+{
+  "stopped_utc": "2026-11-12T17:07:05.533646+00:00",
+  "head": "c0d9700b4f029bc1b5ef88333afa82718d1ad5e2",
+  "status": "intentionally stopped, not a full-suite result",
+  "reason": "Final read-only N3 audit found canonical-preview and internal-frame diagnostic paths requiring a production follow-up; replace this run after regression tests.",
+  "remote_timeout_pid": 963185
+}

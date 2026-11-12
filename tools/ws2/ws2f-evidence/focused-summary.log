@@ -1,0 +1,11 @@
+FAILURES BY FILE
+                       file blocks failed errors
+ test-plan-cohort-filters.R      1      1      0
+     test-ws2f-validation.R      1      0      1
+
+FAILING TESTS
+test-plan-cohort-filters.R | planValidate rejects non-executable population filter types | failed=1 error=FALSE
+test-ws2f-validation.R | N3 malformed envelopes precede validation, preview and audit traversal | failed=0 error=TRUE
+
+RESULT failed: 1 errors: 1 skipped: 1 passed: 1284 
+RESULT failed: 1 errors: 1 skipped: 1 passed: 1284 
