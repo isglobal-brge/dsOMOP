@@ -23,18 +23,34 @@ D <- function(x) as.Date(x)
 nday <- function(from, to) as.integer(as.Date(to) - as.Date(from))
 iso <- function(x) format(as.Date(x), "%Y-%m-%d")
 out_dir <- file.path(pkg, "inst", "plans", "acceptance")
-write_expected <- function(dir, outputs, notes = NULL) {
+IDENTITY <- c("row_id", "cohort_row_id", "person_id")
+FIXTURE_KEYS <- c("person_id", "index_date", "index_key")
+write_expected <- function(dir, outputs, invariants, notes = NULL) {
   obj <- list(recipe = dir, fixture = "reach + extension (build_extended_reach_handle(100))",
-              nfilter_subset = 5L, outputs = outputs)
+              nfilter_subset = 5L, fixture_keys = FIXTURE_KEYS,
+              key_policy = paste0("rows are matched to engine output on the fixture keys (person_id is the fixture identity; the harness ",
+                                  "tokenises it with the fixture's person key); index_date/index_key identify the episode and are not released columns"),
+              outputs = outputs, invariants = as.list(invariants))
   if (!is.null(notes)) obj$notes <- notes
   json <- jsonlite::toJSON(obj, auto_unbox = TRUE, null = "null", na = "null", digits = NA, pretty = TRUE)
   writeLines(json, file.path(out_dir, dir, "expected.json"))
   cat(dir, ":", paste(vapply(outputs, function(o) paste0(o$name, "=", nrow(o$rows)), ""), collapse = " "), "\n")
 }
-frame_out <- function(name, df) {
+# released = the complete released schema of the component (A-5 and the READMEs); comparison = the
+# columns the oracle pins (always a subset of released); oracle_only = review-only audit fields.
+frame_out <- function(name, df, released, oracle_only = character(0)) {
   rownames(df) <- NULL
-  list(name = name, n_persons = length(unique(df$person_id)), columns = names(df), rows = df)
+  comparison <- setdiff(names(df), c(FIXTURE_KEYS, oracle_only))
+  stopifnot(all(comparison %in% released), all(IDENTITY %in% released))
+  list(name = name, n_persons = length(unique(df$person_id)), released_columns = released,
+       comparison_columns = comparison, oracle_only = oracle_only, columns = names(df), rows = df)
 }
+wide_cols <- function(vars) c(IDENTITY, vars)
+SURV_COLS <- c(IDENTITY, "outcome_name", "event", "entry_days_from_index", "exit_days_from_index", "follow_up_days")
+REC_EVENT_COLS <- c(IDENTITY, "outcome_name", "event", "event_number", "outcome_event_number", "event_days_from_index",
+                    "entry_days_from_index", "exit_days_from_index")
+REC_RISK_COLS <- c(IDENTITY, "entry_days_from_index", "exit_days_from_index", "follow_up_days")
+PANEL_BASE <- c(IDENTITY, "period_start_days", "period_end_days", "days")
 
 # ---- fixture accessors --------------------------------------------------------
 persons <- q("SELECT person_id, gender_concept_id, year_of_birth FROM person")
@@ -204,7 +220,12 @@ effective_of <- function(f, cap = 90L) {
     score <- score + cat[[2]] * as.integer(ep$person_id %in% hits)
   }
   res$charlson <- score
-  write_expected("01-characterisation", list(table1 = frame_out("table1", res)))
+  vars <- setdiff(names(res), FIXTURE_KEYS)
+  write_expected("01-characterisation", list(table1 = frame_out("table1", res, wide_cols(vars))),
+                 c("every episode of cohort 1 with exactly one covering observation period (1001 dropped)",
+                   "cond_covar2 == 1 exactly for persons 1013 and 1014",
+                   "charlson counts condition rows dated <= index (A-2): person 1011 scores 1, the v1 all-time rule would give 2",
+                   "age is NA for a NULL or future year_of_birth"))
 }
 
 # =============================================================================
@@ -244,7 +265,10 @@ effective_of <- function(f, cap = 90L) {
       prior_mi = as.integer(any(D(mi_rows$d[mi_rows$person_id == pid]) <= index)), stringsAsFactors = FALSE)
     entry <- index + 1L
     mi_d <- D(mi_rows$d[mi_rows$person_id == pid]); death_d <- D(deaths$d[deaths$person_id == pid])
-    if (any(mi_d >= entry - 365L & mi_d < entry)) next   # prior_outcome exclude
+    # prior_outcome applies to EVERY declared outcome (mi and death)
+    if (any(mi_d >= entry - 365L & mi_d < entry) || any(death_d >= entry - 365L & death_d < entry)) next
+    # A-7: the censor whose when_index_source matches this episode's arm is the OTHER arm's era start;
+    # the own arm's eras (restarts) never censor
     other <- if (chosen$arm == "acei") arm_eras(pid, arb) else arm_eras(pid, acei)
     switch_d <- D(vapply(other, function(e) iso(e$s), ""))
     switch_d <- switch_d[switch_d >= entry]
@@ -256,21 +280,23 @@ effective_of <- function(f, cap = 90L) {
       ev <- rbind(if (length(mi_d)) data.frame(d = mi_d, name = "mi", pr = 1L) else NULL,
                   if (length(death_d)) data.frame(d = death_d, name = "death", pr = 2L) else NULL)
       ev <- if (!is.null(ev)) ev[ev$d >= entry & ev$d <= exit, , drop = FALSE] else ev
-      if (!is.null(ev) && nrow(ev) > 0L) {
-        ev <- ev[order(ev$d, ev$pr), , drop = FALSE]
-        tte_rows[[length(tte_rows) + 1L]] <- data.frame(person_id = pid, index_date = iso(index), arm = chosen$arm, tar = tar,
-          entry_days_from_index = 1L, exit_days_from_index = nday(index, ev$d[1]), event = 1L, outcome_name = ev$name[1], stringsAsFactors = FALSE)
-      } else {
-        tte_rows[[length(tte_rows) + 1L]] <- data.frame(person_id = pid, index_date = iso(index), arm = chosen$arm, tar = tar,
-          entry_days_from_index = 1L, exit_days_from_index = nday(index, exit), event = 0L, outcome_name = NA_character_, stringsAsFactors = FALSE)
-      }
+      exit_days <- if (!is.null(ev) && nrow(ev) > 0L) { ev <- ev[order(ev$d, ev$pr), , drop = FALSE]; nday(index, ev$d[1]) } else nday(index, exit)
+      tte_rows[[length(tte_rows) + 1L]] <- data.frame(person_id = pid, index_date = iso(index), tar = tar,
+        outcome_name = if (!is.null(ev) && nrow(ev) > 0L) ev$name[1] else NA_character_,
+        event = as.integer(!is.null(ev) && nrow(ev) > 0L), entry_days_from_index = 1L, exit_days_from_index = exit_days,
+        follow_up_days = exit_days - 1L, stringsAsFactors = FALSE)
     }
   }
   base <- do.call(rbind, base_rows); tte <- do.call(rbind, tte_rows)
   write_expected("02-active-comparator", list(
-    baseline = frame_out("baseline", base),
-    tte.itt = frame_out("tte.itt", tte[tte$tar == "itt", setdiff(names(tte), "tar")]),
-    tte.on_treatment = frame_out("tte.on_treatment", tte[tte$tar == "on_treatment", setdiff(names(tte), "tar")])))
+    baseline = frame_out("baseline", base, wide_cols(c("arm", "age", "sex", "prior_mi"))),
+    tte.itt = frame_out("tte.itt", tte[tte$tar == "itt", setdiff(names(tte), "tar")], SURV_COLS),
+    tte.on_treatment = frame_out("tte.on_treatment", tte[tte$tar == "on_treatment", setdiff(names(tte), "tar")], SURV_COLS)),
+    c("first_eligible: the earliest candidate whose criteria hold (1031 skips its first, under-observed era)",
+      "the ARB censor applies only to acei-index episodes and the ACEI censor only to arb-index episodes (A-7): 1032's own-arm restart never censors, its ARB start censors at day 259",
+      "prior_outcome excludes an MI OR a death in [entry-365, entry)",
+      "follow_up_days == exit_days_from_index - entry_days_from_index on every row",
+      "competing risk: outcome_name is the first of mi/death inside [entry, exit], NULL when censored"))
 }
 
 # =============================================================================
@@ -285,8 +311,11 @@ effective_of <- function(f, cap = 90L) {
                dm_days = length(unique(r$condition_start_date)), dm_rows = nrow(r), stringsAsFactors = FALSE)
   })
   res <- do.call(rbind, rows); res <- res[res$dm_days >= 2L, , drop = FALSE]
-  write_expected("03-distinct-days", list(two_days = frame_out("two_days", res)))
-  write_expected("13-parametrised", list(two_days = frame_out("two_days", res)),
+  inv03 <- c("dm2 = cohort-1 episodes (unique coverage) with diabetes rows on >= 2 distinct days in [index-365, index]",
+             "1008's row on 2019-01-01 (the window's first day) counts; its 2018-12-31 row does not")
+  write_expected("03-distinct-days", list(two_days = frame_out("two_days", res, wide_cols(c("dm_days", "dm_rows")))), inv03)
+  write_expected("13-parametrised", list(two_days = frame_out("two_days", res, wide_cols(c("dm_days", "dm_rows")))),
+                 c(inv03, "every bound variant plan-NN.json equals NN-*/plan.json and reproduces NN-*/expected.json (variants/variants.json)"),
                  notes = "identical to 03-distinct-days: the bound plan is the same plan")
 }
 
@@ -307,7 +336,7 @@ effective_of <- function(f, cap = 90L) {
     m$nv <- norm(m$v, m$u)
     nn <- m[!is.na(m$nv), , drop = FALSE]
     closest <- if (nrow(nn) == 0L) NA_real_ else {
-      dd <- as.integer(idx - D(nn$d)); cand <- nn[dd == min(dd), , drop = FALSE]; cand$nv[nrow(cand)]  # ties: last by (date, id) order
+      dd <- as.integer(idx - D(nn$d)); cand <- nn[dd == min(dd), , drop = FALSE]; cand$nv[1L]   # ties: FIRST by (date, source, key)
     }
     rows[[length(rows) + 1L]] <- data.frame(
       person_id = pid, index_date = ep$index_date[i], a1c_closest = closest,
@@ -316,7 +345,11 @@ effective_of <- function(f, cap = 90L) {
       a1c_n_known_unit = sum(!is.na(m$u) & m$u %in% c(8554L, 8753L)),
       a1c_max = if (nrow(nn) == 0L) NA_real_ else max(nn$nv), stringsAsFactors = FALSE)
   }
-  write_expected("04-units-censored", list(labs = frame_out("labs", do.call(rbind, rows))))
+  write_expected("04-units-censored", list(labs = frame_out("labs", do.call(rbind, rows),
+                 wide_cols(c("a1c_closest", "a1c_n_ge65", "a1c_n_uncensored", "a1c_n_known_unit", "a1c_max")))),
+                 c("normalisation precedes predicates and reducers; NULL/unknown units give NA values",
+                   "closest_value: minimum distance, NULL values skipped, ties resolved to the FIRST row by (date, source, key): 1006's 52 mmol/mol (key 500001) beats 7.9 % (key 500002) on 2019-12-20",
+                   "censored = exclude drops only reviewed inequality operators"))
 }
 
 # =============================================================================
@@ -340,7 +373,10 @@ effective_of <- function(f, cap = 90L) {
     rows[[length(rows) + 1L]] <- data.frame(person_id = pid, index_date = mi$d[i], index_key = as.character(mi$id[i]),
       n_same_day_mi = same_day, pci_same_visit = pci, chest_pain_same_visit = cp, inpatient_30 = as.integer(inp), stringsAsFactors = FALSE)
   }
-  write_expected("05-same-day-same-visit", list(episodes = frame_out("episodes", do.call(rbind, rows))))
+  write_expected("05-same-day-same-visit", list(episodes = frame_out("episodes", do.call(rbind, rows),
+                 wide_cols(c("n_same_day_mi", "pci_same_visit", "chest_pain_same_visit", "inpatient_30")))),
+                 c("one episode per MI row covered by exactly one observation period; two same-day rows are two episodes with distinct index keys",
+                   "visit = index joins on the index row's visit_occurrence_id"))
 }
 
 # =============================================================================
@@ -378,12 +414,18 @@ effective_of <- function(f, cap = 90L) {
     if (length(era_ends)) exit <- min(exit, min(era_ends) + 30L)
     mi_d <- D(mi_rows$d[mi_rows$person_id == pid]); mi_d <- mi_d[mi_d >= entry & mi_d <= exit]
     event <- as.integer(length(mi_d) > 0L)
-    surv_rows[[length(surv_rows) + 1L]] <- data.frame(person_id = pid, index_date = ep$index_date[i],
-      entry_days_from_index = 1L, exit_days_from_index = if (event) nday(idx, min(mi_d)) else nday(idx, exit),
-      event = event, stringsAsFactors = FALSE)
+    exit_days <- if (event) nday(idx, min(mi_d)) else nday(idx, exit)
+    surv_rows[[length(surv_rows) + 1L]] <- data.frame(person_id = pid, index_date = ep$index_date[i], outcome_name = "mi",
+      event = event, entry_days_from_index = 1L, exit_days_from_index = exit_days, follow_up_days = exit_days - 1L, stringsAsFactors = FALSE)
   }
-  write_expected("06-coverage-persistence", list(coverage = frame_out("coverage", do.call(rbind, cov_rows)),
-                                                 persistence = frame_out("persistence", do.call(rbind, surv_rows))))
+  write_expected("06-coverage-persistence", list(
+    coverage = frame_out("coverage", do.call(rbind, cov_rows),
+                         wide_cols(c("covered_rec", "covered_eff", "era_count", "first_era_days", "supply_start", "supply_clipped"))),
+    persistence = frame_out("persistence", do.call(rbind, surv_rows), SURV_COLS)),
+    c("recorded coverage unions normalised fills; effective coverage unions the stockpiled relation (1004: 44 vs 60)",
+      "a fill with end before start contributes nothing; NULL end and NULL supply is a one-day record",
+      "single-outcome survival names its outcome on censored rows too; follow_up_days == exit - entry",
+      "discontinuation censor = first era end after entry + 30"))
 }
 
 # =============================================================================
@@ -398,21 +440,39 @@ effective_of <- function(f, cap = 90L) {
   for (i in seq_len(nrow(ep))) {
     pid <- ep$person_id[i]; idx <- D(ep$index_date[i]); cov <- covering(pid, ep$index_date[i]); if (is.null(cov)) next
     L <- max(idx - 92L, D(cov$s)); U <- min(idx + 59L, D(cov$e))
-    w <- q(paste0("SELECT measurement_id AS id, measurement_date AS d, value_as_number AS v, unit_concept_id AS u FROM measurement ",
-                  "WHERE person_id = ", pid, " AND measurement_concept_id = 3025315 ORDER BY measurement_date, measurement_id"))
-    w$nv <- if (nrow(w)) norm(w$v, w$u) else numeric(0); w$dd <- D(w$d)
+    fetch <- function(concept) {
+      w <- q(paste0("SELECT measurement_id AS id, measurement_date AS d, value_as_number AS v, unit_concept_id AS u FROM measurement ",
+                    "WHERE person_id = ", pid, " AND measurement_concept_id = ", concept, " ORDER BY measurement_date, measurement_id"))
+      w$dd <- D(w$d); w
+    }
+    w <- fetch(3025315L); w$nv <- if (nrow(w)) norm(w$v, w$u) else numeric(0)          # `weight`: kg, pounds converted
+    vw <- fetch(3025315L); vw$nv <- vw$v                                                 # `vitals` identity 3025315: no conversion
+    vs <- fetch(3004249L); vs$nv <- vs$v                                                 # `vitals` identity 3004249
+    bm <- fetch(3038553L); bm$nv <- bm$v                                                 # `bmi`: no row anywhere at this site
+    stat <- function(x, ps, pe) {
+      inm <- x[x$dd >= ps & x$dd <= pe, , drop = FALSE]
+      list(count = nrow(inm), last = if (nrow(inm)) inm$nv[nrow(inm)] else NA_real_)
+    }
+    carry_of <- function(x, ps) { cf <- x[!is.na(x$nv) & x$dd <= ps & x$dd >= ps - 180L, , drop = FALSE]; if (nrow(cf)) cf$nv[nrow(cf)] else NA_real_ }
     for (m in seq_len(nrow(months))) {
       ps <- max(months$s[m], L); pe <- min(months$e[m], U); if (ps > pe) next
-      inm <- w[w$dd >= ps & w$dd <= pe, , drop = FALSE]
-      last <- if (nrow(inm)) inm$nv[nrow(inm)] else NA_real_
-      cf <- w[!is.na(w$nv) & w$dd <= ps & w$dd >= ps - 180L, , drop = FALSE]
-      carry <- if (nrow(cf)) cf$nv[nrow(cf)] else NA_real_
+      sw <- stat(w, ps, pe); svw <- stat(vw, ps, pe); svs <- stat(vs, ps, pe); sb <- stat(bm, ps, pe)
       rows[[length(rows) + 1L]] <- data.frame(person_id = pid, index_date = ep$index_date[i],
         period_start_days = nday(idx, ps), period_end_days = nday(idx, pe), days = as.integer(pe - ps + 1L),
-        weight_count = nrow(inm), weight_last = last, weight_carry = carry, stringsAsFactors = FALSE)
+        weight_count = sw$count, weight_last = sw$last, weight_carry = carry_of(w, ps),
+        vitals_3025315_count = svw$count, vitals_3025315_last = svw$last,
+        vitals_3004249_count = svs$count, vitals_3004249_last = svs$last,
+        bmi_count = sb$count, bmi_last = sb$last, bmi_carry = carry_of(bm, ps), stringsAsFactors = FALSE)
     }
   }
-  write_expected("07-monthly-panel", list(panel = frame_out("panel", do.call(rbind, rows))))
+  panel <- do.call(rbind, rows)
+  write_expected("07-monthly-panel", list(panel = frame_out("panel", panel,
+                 c(PANEL_BASE, "weight_count", "weight_last", "weight_carry", "vitals_3025315_count", "vitals_3025315_last",
+                   "vitals_3004249_count", "vitals_3004249_last", "bmi_count", "bmi_last", "bmi_carry"))),
+                 c("dense: one row per episode and calendar month in [index-92, index+59] intersected with the covering period (1002: January and February only)",
+                   "available source without rows at the whole site (bmi): count 0, last NA, carry NA on every row",
+                   "two-identity source (vitals): per-concept columns, concepts never pooled (A-3)",
+                   "carry-forward = value at the period start: last non-missing value dated <= period start and >= period start - 180 days"))
 }
 
 # =============================================================================
@@ -427,6 +487,7 @@ effective_of <- function(f, cap = 90L) {
     f <- fills_of(pid, asp_ids); eras <- if (nrow(f)) eras_of(f$start, f$end, 30L) else list()
     era_iv <- lapply(eras, function(e) c(e$s, e$e))
     b <- c(L, U + 1L, D(cov$s), D(cov$e) + 1L)
+    k <- 0L; repeat { bs <- L + 365L * k; if (bs > U) break; b <- c(b, bs); k <- k + 1L }   # width-365 bin starts inside the window
     for (e in eras) b <- c(b, e$s, e$e + 1L)
     for (y in as.integer(format(L, "%Y")):as.integer(format(U + 1L, "%Y"))) b <- c(b, D(sprintf("%d-01-01", y)))
     b <- sort(unique(b[b >= L & b <= U + 1L]))
@@ -444,7 +505,11 @@ effective_of <- function(f, cap = 90L) {
         n_mi = sum(mi_d >= ps & mi_d <= pe), stringsAsFactors = FALSE)
     }
   }
-  write_expected("08-sccs-matrix", list(matrix = frame_out("matrix", do.call(rbind, rows))))
+  write_expected("08-sccs-matrix", list(matrix = frame_out("matrix", do.call(rbind, rows),
+                 c(PANEL_BASE, "age", "age_band", "calendar_year", "exposed_aspirin", "active_aspirin", "n_mi"))),
+                 c("boundaries: L, U+1, bin starts L+365k inside the window (2020-06-30 = U is its own period), observed segment starts/ends+1, era starts/ends+1, 1 January",
+                   "periods are closed [b_i, b_{i+1}-1] intersected with the observed segments; empty periods dropped (139 rows)",
+                   "exposed days count the union of overlapping eras; n_mi counts MI rows inside the period"))
 }
 
 # =============================================================================
@@ -453,23 +518,31 @@ effective_of <- function(f, cap = 90L) {
 {
   ep <- cohort_episodes(1L); resp_ids <- descendants(320136L)
   deaths <- q("SELECT person_id, death_date AS d FROM death")
-  rows <- list()
+  rows <- list(); risk_rows <- list()
   for (i in seq_len(nrow(ep))) {
     pid <- ep$person_id[i]; idx <- D(ep$index_date[i]); cov <- covering(pid, ep$index_date[i]); if (is.null(cov)) next
     entry <- idx + 1L; exit <- min(idx + 90L, D(cov$e)); dd <- D(deaths$d[deaths$person_id == pid]); if (length(dd)) exit <- min(exit, dd[1])
+    if (exit < entry) next   # ineligible episode (1011: dead before entry): no sentinel, no risk-set row
+    risk_rows[[length(risk_rows) + 1L]] <- data.frame(person_id = pid, index_date = ep$index_date[i], entry_days_from_index = 1L,
+      exit_days_from_index = nday(idx, exit), follow_up_days = nday(idx, exit) - 1L, stringsAsFactors = FALSE)
     ev <- q(paste0("SELECT condition_occurrence_id AS id, condition_start_date AS d FROM condition_occurrence WHERE person_id = ", pid,
                    " AND condition_concept_id IN (", idlist(resp_ids), ") AND condition_start_date >= '", iso(entry), "' AND condition_start_date <= '", iso(exit),
                    "' ORDER BY condition_start_date, condition_occurrence_id"))
     if (nrow(ev)) {
-      for (k in seq_len(nrow(ev))) rows[[length(rows) + 1L]] <- data.frame(person_id = pid, index_date = ep$index_date[i],
-        event = 1L, event_number = k, event_days_from_index = nday(idx, ev$d[k]), entry_days_from_index = 1L,
+      for (k in seq_len(nrow(ev))) rows[[length(rows) + 1L]] <- data.frame(person_id = pid, index_date = ep$index_date[i], outcome_name = "resp",
+        event = 1L, event_number = k, outcome_event_number = k, event_days_from_index = nday(idx, ev$d[k]), entry_days_from_index = 1L,
         exit_days_from_index = nday(idx, exit), stringsAsFactors = FALSE)
     } else {
-      rows[[length(rows) + 1L]] <- data.frame(person_id = pid, index_date = ep$index_date[i], event = 0L, event_number = 1L,
-        event_days_from_index = NA_integer_, entry_days_from_index = 1L, exit_days_from_index = nday(idx, exit), stringsAsFactors = FALSE)
+      rows[[length(rows) + 1L]] <- data.frame(person_id = pid, index_date = ep$index_date[i], outcome_name = NA_character_, event = 0L, event_number = 1L,
+        outcome_event_number = NA_integer_, event_days_from_index = NA_integer_, entry_days_from_index = 1L, exit_days_from_index = nday(idx, exit), stringsAsFactors = FALSE)
     }
   }
-  write_expected("09-recurrent-events", list(recurrent = frame_out("recurrent", do.call(rbind, rows))))
+  write_expected("09-recurrent-events", list(
+    recurrent.events = frame_out("recurrent.events", do.call(rbind, rows), REC_EVENT_COLS),
+    recurrent.risk_sets = frame_out("recurrent.risk_sets", do.call(rbind, risk_rows), REC_RISK_COLS)),
+    c("exit >= entry for every released row; an episode with exit < entry produces neither a sentinel nor a risk-set row (1011)",
+      "complete = TRUE: exactly one sentinel (event 0, event_number 1, NULL outcome fields) per eligible episode without retained events",
+      "events: 5 retained (1027 x3, 1018 x2), 119 sentinels, 121 persons; risk_sets: one row per eligible episode"))
 }
 
 # =============================================================================
@@ -532,8 +605,12 @@ effective_of <- function(f, cap = 90L) {
     rows[[length(rows) + 1L]] <- stat(case$pid, 1L, 1)
     for (k in chosen) rows[[length(rows) + 1L]] <- stat(k, 0L, N / m)
   }
-  write_expected("10-matching", list(cc_table = frame_out("cc_table", do.call(rbind, rows))),
-                 notes = "n_eligible (the private pool size N) is included for review only; it is not a released column")
+  write_expected("10-matching", list(cc_table = frame_out("cc_table", do.call(rbind, rows),
+                 wide_cols(c("set_id", "is_case", "w", "age", "sex", "statin_365")), oracle_only = "n_eligible")),
+                 c("cases: first MI per person with >= 365 observed days before it (unique coverage); same-time outcomes exclude controls",
+                   "controls ordered by the SHA-256 of the published encoding; m = min(4, N); w = N/m; a zero-control case is kept (1012)",
+                   "set_id = rank of the case in (t, identity) order"),
+                 notes = "n_eligible (the private pool size N) is an oracle-only audit field, never a released column")
 }
 
 # =============================================================================
@@ -554,7 +631,8 @@ effective_of <- function(f, cap = 90L) {
         calendar_year = y, n_resp = sum(ev >= ps & ev <= pe), stringsAsFactors = FALSE)
     }
   }
-  write_expected("11-incidence-years", list(years = frame_out("years", do.call(rbind, rows))))
+  write_expected("11-incidence-years", list(years = frame_out("years", do.call(rbind, rows), c(PANEL_BASE, "calendar_year", "n_resp"))),
+                 c("dense calendar-year periods in [index, index+730] intersected with the covering period: 366 and 365 observed days when fully observed"))
 }
 
 # =============================================================================
@@ -581,7 +659,9 @@ effective_of <- function(f, cap = 90L) {
       break
     }
   }
-  write_expected("12-circe-baseline", list(baseline = frame_out("baseline", do.call(rbind, rows))))
+  write_expected("12-circe-baseline", list(baseline = frame_out("baseline", do.call(rbind, rows), wide_cols(c("age_group", "sex", "prior_obs")))),
+                 c("first eligible diabetes row per person: covered by exactly one observation period starting >= 365 days before it",
+                   "age_group on the default 5-year grid (0-4 .. 85+), NA for a NULL or negative age; prior_obs = observed days in [index-365, index]"))
 }
 
 # =============================================================================
@@ -606,9 +686,18 @@ effective_of <- function(f, cap = 90L) {
                     ") AND specimen_date >= '", iso(idx - 30L), "' AND specimen_date <= '", iso(idx + 365L), "'"))$n
     rows[[length(rows) + 1L]] <- data.frame(person_id = pid, index_date = eps$s[i], index_key = as.character(eps$episode_id[i]),
       n_members = length(all_m), n_member_drugs = length(drug_m),
-      first_member_days = if (length(all_m)) nday(idx, min(all_m)) else NA_integer_, n_specimens = as.integer(nsp), stringsAsFactors = FALSE)
+      first_member_days = if (length(all_m)) nday(idx, min(all_m)) else NA_integer_, n_specimens = as.integer(nsp),
+      line_days = as.integer(D(eps$e[i]) - idx + 1L), stringsAsFactors = FALSE)
   }
-  write_expected("14-oncology-episodes", list(episodes = frame_out("episodes", do.call(rbind, rows))))
+  all_rows <- do.call(rbind, rows)
+  first_line <- do.call(rbind, lapply(split(all_rows, all_rows$person_id), function(x) x[order(x$index_date, x$index_key), ][1L, ]))
+  write_expected("14-oncology-episodes", list(
+    episodes = frame_out("episodes", all_rows[, c("person_id", "index_date", "index_key", "n_members", "n_member_drugs", "first_member_days", "n_specimens")],
+                         wide_cols(c("n_members", "n_member_drugs", "first_member_days", "n_specimens"))),
+    first_line = frame_out("first_line", first_line[, c("person_id", "index_date", "index_key", "line_days", "n_member_drugs")],
+                           wide_cols(c("line_days", "n_member_drugs")))),
+    c("members are joined by the parent episode identity and person; an event linked to two episodes counts once in each",
+      "first_line = the chronologically first episode per person; line_days = inclusive coverage of that episode (214 for 1015, 123 for 1016, 90 for persons 1..8)"))
 }
 
 # =============================================================================
@@ -630,8 +719,8 @@ effective_of <- function(f, cap = 90L) {
     eff <- effective_of(f)
     cost_sum <- function(domain, event_ids, lo, hi) {
       if (length(event_ids) == 0L) return(0)
-      c <- q(paste0("SELECT c.total_cost AS v FROM cost c WHERE c.cost_domain_id = '", domain, "' AND c.currency_concept_id = 44818568 AND c.cost_event_id IN (",
-                    idlist(event_ids), ")"))
+      c <- q(paste0("SELECT c.total_cost AS v FROM cost c WHERE c.cost_domain_id = '", domain, "' AND c.currency_concept_id = 44818668 AND c.cost_event_id IN (",
+                    idlist(event_ids), ")"))   # USD = 44818668 (Currency vocabulary); the EUR row 44818568 is excluded
       sum(c$v)
     }
     visits <- q(paste0("SELECT visit_occurrence_id AS id FROM visit_occurrence WHERE person_id = ", pid, " AND visit_start_date >= '", iso(idx + 1L),
@@ -650,7 +739,13 @@ effective_of <- function(f, cap = 90L) {
       pdc_num_eff_10 = union_days(intersect_days(eff, observed), w10[1], w10[2]),
       covered_eff_10 = union_days(eff, w10[1], w10[2]), stringsAsFactors = FALSE)
   }
-  write_expected("15-costs-adherence", list(adherence = frame_out("adherence", do.call(rbind, rows))))
+  write_expected("15-costs-adherence", list(adherence = frame_out("adherence", do.call(rbind, rows),
+                 wide_cols(c("visit_cost_60", "drug_cost_60", "supply_90", "observed_90", "pdc_num_eff_90", "pdc_num_rec_90", "covered_eff_90",
+                             "covered_rec_90", "observed_10", "pdc_num_eff_10", "covered_eff_10")))),
+                 c("union coverage (gap 30): the component containing an actual recorded period that covers the index; observed days = union of its recorded periods",
+                   "USD = 44818668 (code USD); the EUR (44818568) row is excluded; 1017: visit 150, drug 20",
+                   "PDC numerator = covered relation intersected with the window AND the same observed days as the denominator: 1003 gives 4/4 on [1, 10] (covered_eff_10 = 10)",
+                   "1004: recorded 44 vs effective 60 covered days on [1, 90]"))
 }
 DBI::dbDisconnect(conn)
 cat("done\n")

@@ -41,6 +41,16 @@ fills its entries. Classes follow design-2.10.3 section 5.
   publication; safe-result equivalence applies only to results that satisfy
   the final publication contract.
 
+## Design amendments applied by WS-0 (design/2.10.3/amendments.md)
+
+- A-1 results-cohort index sources (namespace `cohort:<n>`, `event_end` =
+  `cohort_end_date`), A-2 `omop_score()` conditions on or before the reference
+  date (v1 adapter all-time, IR flag `legacy_all_time_conditions`), A-3
+  `person_period` carry-forward keyed by source and per-identity column names,
+  A-4 reviewed `episode_event` field concepts (visit 1147070, specimen 1147049),
+  A-5 native survival / recurrent component schemas, A-6 one identifier grammar
+  in the mutation AST, A-7 `omop_censor(when_index_source =)`.
+
 ## Contracts shipped by WS-0
 
 - `inst/schema/plan-v2.json`, `ir-v2.json`, `mutate-v1.json`, the canonical
