@@ -16,8 +16,10 @@ Displayed matrix.
 }
 \description{
 Iterative proportional fitting of the positive part of the reconciled
-table (a fixed floor keeps every cell positive) to the displayed parents,
-ending on the rows so each row equals its displayed parent exactly; the
-columns match theirs to the fitting tolerance. Deterministic.
+table (a fixed floor keeps every cell positive) to the displayed parents.
+A final nonnegative mass transfer from surplus columns to deficit columns
+preserves each row and fixes both margins even if IPF reaches its iteration
+limit. This is a deterministic feasible display, not a claim of an exact
+KL or Euclidean minimizer after the finite iteration cap.
 }
 \keyword{internal}
