@@ -1,33 +1,27 @@
 # Module: v1 plans -- closed envelope and lowering to the compatibility IR
-# (design-2.10.3 sections 4.5 and 5).
+# (design-2.10.3 sections 4.5 and 5; amendments A-10, A-15, A-16, A-19).
 #
-# A v1 plan (no `version`, or `version: 1`) is first validated by the
-# corrected v1 validator (.planV1Envelope, step 1 of the frozen sequence):
-# the existing v1 shape rules reused with exactly the enumerated 2.10.3
-# corrections --
-#   (a) unknown-field rejection at the root, in every output object and in
-#       every nested object (the 2.10.1 validators accepted, e.g.,
-#       `already_gated` at the root and in a concept_dictionary output);
-#   (b) assignment grid-shape validation of a baseline `age_breaks` (at least
-#       two strictly increasing integers starting at 0), replacing the
-#       .computeAgeGroups(min_cell = 0) call whose on-grid rule rejected an
-#       off-grid grid such as c(0, 18, 19, 65); .computeAgeGroups itself is
-#       unchanged for aggregate callers;
-#   (c) the width/grid gates deleted in section 7.4 are not applied here;
-# plus the shape exclusivity of defect A-E2 (a set-op population carries no
+# A v1 plan (no `version`, or `version: 1`) is first validated by the closed
+# v1 envelope (.planV1Envelope, step 1 of the frozen sequence): every object
+# is closed on its raw member names before null compaction, at every nesting
+# level, inactive and advisory positions included (R/ir_v1_shape.R); the
+# executors' own value validators and coercion rules run on the fields they
+# read (.v1CrossFieldErrors), so a value 2.10.2 executed is accepted with
+# the same meaning and a value it refused is refused, typed, before any query;
+# the shape exclusivity of defect A-E2 holds (a set-op population carries no
 # filter_tree, cohort_definition_id, index_event or episode_policy, and an
-# unknown population kind is refused instead of being read as criteria).
-# Value-level checks of known fields stay with the v1 executors, which still
-# run v1 plans in this release stage, so their messages and per-output
-# behaviour are unchanged. A null-valued field is absent, as it always was
-# for v1 (R lists cannot tell the two apart).
+# unknown population kind is refused). A null-valued known field is absent,
+# as it always was for v1.
 #
-# .irLowerV1() then maps the plan onto language 2.0 nodes plus the closed
-# compatibility variants of ir-v2.json (section 5). Whatever v1 states and
-# the frozen IR cannot express exactly is NOT discarded: it is kept verbatim
-# in the server-private attribute `legacy_residue` of the IR (keyed by IR
-# path), which the v1 adapters read, explain reports and .irSemanticDigest()
-# binds. Change request CR-10 proposes closed IR variants for it.
+# .irLowerV1() (R/ir_v1_lower.R) then maps the plan onto language 2.0 nodes
+# plus the closed IR-only compatibility variants of ir-v2.json: every
+# result-affecting v1 field is in the IR document, under the one
+# .planSemanticDigest(); advisory fields go to the server-private
+# `legacy_annex` attribute, which explain lists and no digest covers. The
+# historical literal coercions (integer-coercible concept ids and integer
+# fields) are applied there as validated compatibility normalisation (A-19
+# item 7). v1 plans still run on the v1 executors in this release stage; their
+# site requirements are checked before any query (.planV1SiteCheck).
 
 # --- shared helpers -------------------------------------------------------------
 

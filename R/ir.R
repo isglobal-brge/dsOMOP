@@ -468,8 +468,11 @@
     keep_i <- c(keep_i, new_i)
     pending <- c(ev[new_e], iv[new_i])
   }
+  # an event's own concept set and the v1 output-level concept set that also
+  # restricts it (A-10 legacy_concept_scope)
   cs_refs <- unlist(lapply(ev[keep_e], function(e) {
-    if (is.character(e[["concept_set"]])) e[["concept_set"]]
+    c(if (is.character(e[["concept_set"]])) e[["concept_set"]],
+      e[["legacy_concept_scope"]][["concept_set_ref"]])
   }), use.names = FALSE)
   pick <- function(map, keep) {
     map <- map %||% list()

@@ -750,3 +750,64 @@ test_that("A-16: a person_level custom filter restricts its raw tables; unread s
   expect_identical(.rv_digest(sparse()), .rv_digest(sparse(specs)))
   expect_identical(.rv_run(h, sparse(), "s"), .rv_run(h, sparse(specs), "s"))
 })
+
+# --- re-review R2: interval-backed reducers resolve against their source -------
+
+test_that("R2: interval reducer predicates and named values are typed against the interval", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  with_var <- function(reducer) {
+    x <- .rv_plan_a()
+    x$variables$iv <- list(source = list(interval = "metf_era"), reducer = reducer)
+    x$outputs$baseline$columns <- c(x$outputs$baseline$columns, list("iv"))
+    x
+  }
+  any_of <- function(predicate) list(fn = "any", predicate = predicate)
+  refused <- list(
+    made_up = any_of(list(var = "made_up", op = ">", value = 1)),
+    person_id = any_of(list(var = "person_id", op = "==", value = 1)),
+    era_key = any_of(list(var = "era_no", op = "==", value = 1)),
+    no_value_role = any_of(list(var = "value", op = ">", value = 1)),
+    date_type = any_of(list(var = "start_date", op = "==", value = 7)),
+    value_made_up = list(fn = "mode", value = "made_up"),
+    value_private = list(fn = "max", value = "group_id"))
+  for (nm in names(refused)) {
+    err <- .rv_refused(.irPrepare(with_var(refused[[nm]]), h))
+    expect_true(inherits(err, "dsomop_plan_rejection"), info = nm)
+    expect_match(conditionMessage(err), "/variables/iv/reducer/", fixed = TRUE, info = nm)
+  }
+  # controls: the interval's own dates and group concept
+  for (ok in list(any_of(list(var = "start_date", op = ">=", value = "2010-01-01")),
+                  any_of(list(var = "concept_id", op = "in", value = list(1L, 2L))),
+                  list(fn = "mode", value = "start_date"))) {
+    expect_s3_class(.irPrepare(with_var(ok), h), "dsomop_ir")
+  }
+  # an event reducer's named value resolves against the event's own catalogue
+  x <- .rv_plan_a()
+  x$variables$ev <- list(source = list(event = "hba1c"), reducer = list(fn = "max", value = "made_up"))
+  x$outputs$baseline$columns <- c(x$outputs$baseline$columns, list("ev"))
+  expect_match(conditionMessage(.rv_refused(.irPrepare(x, h))), "/variables/ev/reducer/value", fixed = TRUE)
+  x$variables$ev$reducer$value <- "value_as_number"
+  expect_s3_class(.irPrepare(x, h), "dsomop_ir")
+})
+
+test_that("N1: an interval's exact dates are class 2 in explain", {
+  x <- .rv_plan_a()
+  x$variables$iv <- list(source = list(interval = "metf_era"), reducer = list(fn = "mode", value = "start_date"))
+  x$outputs$baseline$columns <- c(x$outputs$baseline$columns, list("iv"))
+  classes <- .irExplain(.irPrepare(x))$column_classes$baseline
+  expect_identical(classes$iv$class, 2L)
+})
+
+test_that("an output's closure keeps the concept set of a v1 legacy concept scope", {
+  # a table-level concept set next to a feature's own one (corpus v1-004)
+  p <- list(outputs = list(p = list(type = "person_level",
+    tables = list(measurement = list(concept_set = 3004410L, features = list(
+      lab_mean = list(type = "mean_value", name = "lab_mean", concept_set = 3004411L,
+                      value_column = "value_as_number")))))))
+  ir <- .irPrepare(p)
+  scoped <- Filter(function(e) !is.null(e$legacy_concept_scope), ir$events)
+  expect_length(scoped, 1L)
+  ref <- scoped[[1L]]$legacy_concept_scope$concept_set_ref
+  expect_true(ref %in% names(.irOutputClosure(ir, "p")$concept_sets))
+})
