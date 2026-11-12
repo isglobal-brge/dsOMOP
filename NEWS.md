@@ -198,6 +198,16 @@ fills its entries. Classes follow design-2.10.3 section 5.
   publication refusal: no output is published. The assign call now returns
   status `refused`, so the old client reports that requested outputs did not
   materialize instead of receiving the previous constant `Disclosive` error.
+- A federation that still has a server older than 2.10.4 receives, from
+  dsOMOPClient 2.10.4, the legacy execution call of dsOMOPClient 2.10.2 on
+  every site for a v1 plan (language-2 plans are refused before any
+  assignment). This server runs that call, positional and without
+  `commit_policy`, under the documented default `commit_policy = "server"`:
+  its own strict mode decides, as for the DP preparation (WS-8 review B1).
+- `omopPlanExecuteDS()` and `omopDpPlanExecuteDS()` accept an empty out
+  mapping exactly when the plan's `publish` is an explicit empty array:
+  the plan is validated, nothing is assigned and the status is `ok`
+  (CR-22; WS-8 review B6). Any other plan still needs a non-empty mapping.
 
 ## Design amendments applied by WS-0 (design/2.10.3/amendments.md)
 
