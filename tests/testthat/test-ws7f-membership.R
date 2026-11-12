@@ -3,26 +3,28 @@
 .ws7f_member_backends <- function() {
   source <- create_test_handle()
   out <- list(sqlite = list(handle = source, cleanup = function() cleanup_handle(source)))
+  complete <- FALSE
+  on.exit(if (!complete) .ws4_cleanup(out), add = TRUE)
   if (requireNamespace("duckdb", quietly = TRUE)) {
     conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
-    .ws4_copy_tables(source$conn, conn)
     out$duckdb <- local({
       db <- conn
       list(handle = .ws4_handle_on(db, "duckdb", "duckdb", "main"),
            cleanup = function() DBI::dbDisconnect(db, shutdown = TRUE))
     })
+    .ws4_copy_tables(source$conn, conn)
   }
   pg <- .ws4_pg_connect()
   if (!is.null(pg)) {
     schema <- .ws4_namespace("ws7f_membership")
+    out$postgresql <- list(handle = .ws4_handle_on(pg, "postgresql", "postgresql", schema),
+      cleanup = function() {
+        on.exit(DBI::dbDisconnect(pg), add = TRUE)
+        DBI::dbExecute(pg, paste0("DROP SCHEMA IF EXISTS ", schema, " CASCADE"))
+      })
     DBI::dbExecute(pg, "SET client_min_messages TO WARNING")
     DBI::dbExecute(pg, paste0("CREATE SCHEMA ", schema))
     .ws4_copy_tables(source$conn, pg, schema)
-    out$postgresql <- list(handle = .ws4_handle_on(pg, "postgresql", "postgresql", schema),
-      cleanup = function() {
-        DBI::dbExecute(pg, paste0("DROP SCHEMA ", schema, " CASCADE"))
-        DBI::dbDisconnect(pg)
-      })
   }
   for (vendor in c("mariadb", "mysql")) local({
     config <- .dsomopVendorTestConfig(vendor)
@@ -30,15 +32,16 @@
     conn <- DBI::dbConnect(RMariaDB::MariaDB(), host = config$host, port = config$port,
       dbname = config$database, user = config$admin_user, password = config$admin_password)
     db <- .ws4_namespace("ws7f_membership")
+    out[[vendor]] <<- list(handle = .ws4_handle_on(conn, vendor, "mysql", db),
+      cleanup = function() {
+        on.exit(DBI::dbDisconnect(conn), add = TRUE)
+        DBI::dbExecute(conn, paste0("DROP DATABASE IF EXISTS ", db))
+      })
     .ensureMariaSession(conn, require_tls = FALSE)
     DBI::dbExecute(conn, paste0("CREATE DATABASE ", db))
     .ws4_copy_tables(source$conn, conn, db)
-    out[[vendor]] <<- list(handle = .ws4_handle_on(conn, vendor, "mysql", db),
-      cleanup = function() {
-        DBI::dbExecute(conn, paste0("DROP DATABASE ", db))
-        DBI::dbDisconnect(conn)
-      })
   })
+  complete <- TRUE
   out
 }
 
@@ -130,9 +133,26 @@ withr::defer(.ws4_cleanup(.ws7f_member_dbs), testthat::teardown_env())
 .ws7f_member_read <- function(value) {
   if (inherits(value, "FlowerDatasetDescriptor")) {
     expect_true(file.exists(omopStagedDatasetPath(value)))
+    schema <- unlist(value$metadata$column_types, use.names = TRUE)
+    format <- value$metadata$format
     chunks <- list()
     .publishReadChunks(value, function(x) chunks[[length(chunks) + 1L]] <<- x)
     value <- do.call(rbind, chunks)
+    expect_identical(names(value), names(schema))
+    # CSV is deliberately read as text for lossless publication lineage.
+    # Restore only types explicitly declared by the persisted descriptor;
+    # never infer a type from the expected baseline or the observed values.
+    if (identical(format, "csv")) for (name in names(value)) {
+      value[[name]] <- switch(schema[[name]],
+        "integer|integer" = as.integer(value[[name]]),
+        "double|numeric" = as.numeric(value[[name]]),
+        "double|Date" = as.Date(value[[name]]),
+        "logical|logical" = as.logical(value[[name]]),
+        "character|character" = value[[name]],
+        stop("Unexpected membership descriptor type: ", schema[[name]]))
+    }
+    expect_identical(vapply(value, function(x) paste(typeof(x), paste(class(x), collapse = "/"),
+                                                    sep = "|"), ""), schema)
   }
   # Publication adds protective attributes; compare every data column, its
   # type and order separately from that publication metadata.
@@ -196,9 +216,12 @@ test_that("A-26 lowered membership compiler preserves the complete baseline matr
           expect_identical(conditionMessage(actual$result), expected$result$error, info = info)
           expect_identical(class(actual$result), expected$result$class, info = info)
         } else {
-          # Native private frames use person_id and retain source provenance;
-          # all oracle rows, identities, labels, column types/order stay exact.
-          frame <- expected$result$members
+          # Lowered criteria membership declares person grain. The native
+          # consumer therefore projects away episode keys while retaining
+          # baseline person order, label values/types and source provenance.
+          # Public v1 parity below separately checks the full episode frame.
+          expect_identical(.irPrepare(plan, h)$outputs$members$grain, "person", info = info)
+          frame <- expected$result$members[c("subject_id", "cohort_definition_id")]
           names(frame)[names(frame) == "subject_id"] <- "person_id"
           frame$index_source <- rep("cohort:1", nrow(frame))
           expect_identical(actual$result$frame, frame, info = info)
