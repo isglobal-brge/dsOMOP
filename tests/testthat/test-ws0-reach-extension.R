@@ -27,7 +27,7 @@ test_that("the extension appends the documented persons and tables without touch
     meas = DBI::dbGetQuery(h$conn, "SELECT COUNT(*) AS n FROM measurement WHERE person_id <= 100")$n,
     c1 = DBI::dbGetQuery(h$conn, "SELECT COUNT(*) AS n FROM cohort WHERE cohort_definition_id = 1 AND subject_id <= 100")$n)
   expect_identical(after, before)
-  expect_identical(DBI::dbGetQuery(h$conn, "SELECT COUNT(*) AS n FROM person WHERE person_id BETWEEN 1001 AND 1030")$n, 30L)
+  expect_identical(DBI::dbGetQuery(h$conn, "SELECT COUNT(*) AS n FROM person WHERE person_id BETWEEN 1001 AND 1032")$n, 32L)
   expect_true("cost" %in% DBI::dbListTables(h$conn))
   expect_true(all(c("cost_event_id", "cost_domain_id", "currency_concept_id", "total_cost") %in% DBI::dbListFields(h$conn, "cost")))
   # scenario checks
@@ -50,7 +50,20 @@ test_that("the extension appends the documented persons and tables without touch
   expect_identical(nrow(links), 1L)                                        # one fill linked to two episodes
   expect_gte(DBI::dbGetQuery(h$conn, "SELECT COUNT(DISTINCT person_id) AS n FROM episode WHERE episode_concept_id = 32531")$n, 5L)
   cur <- DBI::dbGetQuery(h$conn, "SELECT DISTINCT currency_concept_id FROM cost")$currency_concept_id
-  expect_setequal(cur, c(44818568L, 44818570L))
+  expect_setequal(cur, c(44818668L, 44818568L))                           # USD and EUR by their real ids (B6)
+  expect_identical(DBI::dbGetQuery(h$conn, "SELECT COUNT(*) AS n FROM cost WHERE currency_concept_id = 44818668")$n, 4L)
+  vocab <- DBI::dbGetQuery(h$conn, "SELECT concept_id, concept_name, vocabulary_id, concept_class_id, concept_code FROM concept WHERE concept_id IN (44818668, 44818568, 1147094, 1147082, 4171756)")
+  expect_identical(vocab$concept_code[vocab$concept_id == 44818668L], "USD")
+  expect_identical(vocab$concept_code[vocab$concept_id == 44818568L], "EUR")
+  expect_true(all(vocab$vocabulary_id[vocab$concept_id %in% c(1147094L, 1147082L)] == "CDM"))
+  expect_true(all(vocab$concept_class_id[vocab$concept_id %in% c(1147094L, 1147082L)] == "Field"))
+  expect_identical(vocab$concept_name[vocab$concept_id == 1147094L], "drug_exposure.drug_exposure_id")
+  # active-comparator scenario persons and the closest-value tie rows
+  expect_identical(DBI::dbGetQuery(h$conn, "SELECT COUNT(*) AS n FROM drug_era WHERE person_id = 1031 AND drug_concept_id = 1308216")$n, 2L)
+  expect_identical(DBI::dbGetQuery(h$conn, "SELECT COUNT(*) AS n FROM drug_era WHERE person_id = 1032 AND drug_concept_id = 1308216")$n, 2L)
+  expect_identical(DBI::dbGetQuery(h$conn, "SELECT COUNT(*) AS n FROM drug_era WHERE person_id = 1032 AND drug_concept_id = 1367500")$n, 1L)
+  expect_identical(DBI::dbGetQuery(h$conn, "SELECT observation_period_start_date AS s FROM observation_period WHERE person_id = 1031")$s, "2019-01-01")
+  expect_identical(DBI::dbGetQuery(h$conn, "SELECT COUNT(*) AS n FROM measurement WHERE person_id = 1006 AND measurement_date = '2019-12-20'")$n, 2L)
   expect_identical(DBI::dbGetQuery(h$conn, "SELECT COUNT(*) AS n FROM episode_event ee JOIN episode e ON e.episode_id = ee.episode_id JOIN drug_exposure d ON d.drug_exposure_id = ee.event_id WHERE ee.episode_event_field_concept_id = 1147094 AND d.person_id <> e.person_id")$n, 0L)
   # every acceptance cohort has at least nfilter.subset = 5 persons
   for (cid in c(1L, 1001L, 1002L)) {

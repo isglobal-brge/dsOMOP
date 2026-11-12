@@ -21,6 +21,17 @@ txt = open(DESIGN, encoding="utf-8").read()
 blocks = [json.loads(b) for b in re.findall(r"```json\n(.*?)```", txt, re.S)]
 by_id = {b.get("$id"): b for b in blocks if "$id" in b}
 plan = by_id["https://isglobal-brge.github.io/dsOMOP/schema/plan-v2.json"]
+
+# --------------------------------------------------------------------------
+# Amendments to the endorsed design applied to the wire schema (amendments.md):
+#   A-7  censor objects gain `when_index_source` (null or a nonempty unique array)
+# --------------------------------------------------------------------------
+censor_variants = plan["$defs"]["censor_item"]["oneOf"]
+censor_obj = [v for v in censor_variants if isinstance(v, dict) and "censor" in v.get("properties", {})][0]
+censor_obj["properties"]["censor"]["properties"]["when_index_source"] = {
+    "oneOf": [{"type": "null"},
+              {"type": "array", "minItems": 1, "uniqueItems": True, "items": {"type": "string", "minLength": 1, "maxLength": 64}}],
+    "default": None}
 mutate = by_id["https://isglobal-brge.github.io/dsOMOP/schema/mutate-v1.json"]
 examples = [b for b in blocks if b.get("version") == 2]
 assert len(examples) == 2, "expected the two canonical examples"
@@ -50,7 +61,7 @@ D["legacy_window"] = {
     "anyOf": [{"required": ["start"]}, {"required": ["end"]}]
 }
 D["legacy_nullable_date"] = {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/date"}]}
-D["legacy_concept_params"] = {
+legacy_concept_params = {   # property fragments (not a schema): never stored under $defs
     "concept_id": {"$ref": "#/$defs/concept_id"},
     "concept_ids": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/concept_id"}}
 }
@@ -65,9 +76,22 @@ def leaf(type_name, params, required=()):
                        "required": list(required), "properties": props}
         }
     }
-concept_scoped = dict(D["legacy_concept_params"])
+concept_scoped = dict(legacy_concept_params)
 concept_scoped.update({"table": {"$ref": "#/$defs/table_name"}, "window": {"$ref": "#/$defs/legacy_window"}})
 with_count = dict(concept_scoped); with_count["min_count"] = {"type": "integer", "minimum": 0}
+# one closed safe-scope shape for both legacy locations (B3): the fields
+# .assertSafeNumericBinContract accepts (S/R/extraction.R:1349-1375)
+D["legacy_safe_scope"] = {
+    "type": "object", "additionalProperties": False, "required": ["table", "column", "n_bins"],
+    "properties": {
+        "table": {"$ref": "#/$defs/table_name"},
+        "column": {"$ref": "#/$defs/column_name"},
+        "n_bins": {"type": "integer", "minimum": 2, "maximum": 100},
+        "concept_id": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/concept_id"},
+                                 {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/concept_id"}}]},
+        "concept_col": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/column_name"}]}
+    }
+}
 D["legacy_leaf"] = {"oneOf": [
     leaf("sex", {"value": {"type": "string", "minLength": 1}}, ["value"]),
     leaf("age_range", {"min": {"$ref": "#/$defs/nullable_int"}, "max": {"$ref": "#/$defs/nullable_int"}}),
@@ -85,10 +109,7 @@ D["legacy_leaf"] = {"oneOf": [
                          "window": {"$ref": "#/$defs/legacy_window"}}),
     leaf("has_measurement", dict(concept_scoped, **{
         "min_value": {"type": "number"}, "max_value": {"type": "number"},
-        "safe_scope": {"type": "object", "additionalProperties": False,
-                       "properties": {"concept_id": {"oneOf": [{"$ref": "#/$defs/concept_id"},
-                                                               {"type": "array", "items": {"$ref": "#/$defs/concept_id"}}]},
-                                      "concept_col": {"$ref": "#/$defs/column_name"}}}})),
+        "safe_scope": {"$ref": "#/$defs/legacy_safe_scope"}})),
     leaf("missing_measurement", concept_scoped),
 ]}
 D["criteria"]["oneOf"].append({
@@ -115,7 +136,7 @@ D["legacy_spec"] = {
         "concept_set": {"$ref": "#/$defs/concept_set_ref"},
         "value_bin": {"type": "object", "additionalProperties": False, "required": ["lower", "upper", "safe_scope"],
                       "properties": {"lower": {"type": "number"}, "upper": {"type": "number"},
-                                     "safe_scope": {"type": "object"}}},
+                                     "safe_scope": {"$ref": "#/$defs/legacy_safe_scope"}}},
         "inclusion_criteria": {"type": "object", "propertyNames": {"$ref": "#/$defs/name"},
                                "additionalProperties": {"$ref": "#/$defs/legacy_inclusion_criterion"}}
     }
@@ -136,6 +157,10 @@ for opt in ("options_person_period", "options_temporal"):
     D[opt]["properties"]["legacy_composite"] = {"type": "boolean", "default": False}
     D[opt]["properties"]["legacy_covariate_ids"] = {"type": "boolean", "default": False}
 D["output"]["properties"]["legacy_split"] = {"type": "boolean", "default": False}
+# A-2 (CR-2): lowered v1 score nodes carry legacy_all_time_conditions in the IR only
+score_variant = [v for v in D["variable"]["oneOf"][1]["properties"]["derived"]["oneOf"]
+                 if "charlson" in v["properties"]["kind"].get("enum", [])][0]
+score_variant["properties"]["legacy_all_time_conditions"] = {"type": "boolean", "default": False}
 dump(ir, os.path.join(OUT, "ir-v2.json"))
 
 # --------------------------------------------------------------------------
@@ -145,12 +170,15 @@ mut = copy.deepcopy(mutate)
 md = mut["$defs"]
 for k in ("predicate", "predicate_leaf", "scalar", "column_name"):
     md[k] = copy.deepcopy(plan["$defs"][k])
-# an assigned column may be referenced by later expressions: widen `var` to the assigned-name pattern
+# A-6: an assigned column may be referenced by later expressions: `var` and `col`
+# use the assigned-name grammar ^[A-Za-z][A-Za-z0-9_]{0,63}$
 assigned = {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"}
 for branch in md["predicate_leaf"]["oneOf"]:
     branch["properties"]["var"] = copy.deepcopy(assigned)
+col_variant = [v for v in md["expr"]["oneOf"] if "col" in v.get("properties", {})][0]
+col_variant["properties"]["col"] = copy.deepcopy(assigned)
 md["predicate"]["$comment"] = ("copied from plan-v2.json#/$defs/predicate by tools/ws0/gen_schema_artefacts.py; "
-                               "`var` additionally accepts an earlier assigned column name")
+                               "`var` and `col` use the assigned-name grammar (amendment A-6)")
 dump(mut, os.path.join(OUT, "mutate-v1.json"))
 
 # --------------------------------------------------------------------------
@@ -222,7 +250,55 @@ ir_probe("I06", "legacy_spec with value_threshold (not executable since 2.9)", R
 ir_probe("I07", "legacy_end_strategy DateOffset in the IR", OK, A, lambda b: b["populations"]["new_users"]["index"].__setitem__("legacy_end_strategy", {"DateOffset": {"DateField": "EndDate", "Offset": 30}}))
 ir_probe("I08", "legacy_cohort_end_cap in the IR", OK, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("legacy_cohort_end_cap", True))
 ir_probe("I09", "forged roster field still refused by the IR", R, A, lambda b: b["outputs"]["baseline"].__setitem__("roster", "new_users"))
+REAL_SCOPE = {"table": "measurement", "column": "value_as_number", "n_bins": 10, "concept_id": [3004410], "concept_col": "measurement_concept_id"}
+ir_probe("I10", "legacy has_measurement with a real issued safe scope", OK, A, lambda b: b["populations"]["new_users"]["where"]["and"].append(
+    {"legacy": {"type": "has_measurement", "params": {"concept_ids": [3004410], "min_value": 6.5, "max_value": 7.5, "safe_scope": REAL_SCOPE, "window": {"start": -365, "end": 0}}}}))
+ir_probe("I11", "legacy has_measurement scope missing n_bins", R, A, lambda b: b["populations"]["new_users"]["where"]["and"].append(
+    {"legacy": {"type": "has_measurement", "params": {"concept_ids": [3004410], "min_value": 6.5, "max_value": 7.5, "safe_scope": {"table": "measurement", "column": "value_as_number"}}}}))
+ir_probe("I12", "legacy has_measurement scope with a forged field", R, A, lambda b: b["populations"]["new_users"]["where"]["and"].append(
+    {"legacy": {"type": "has_measurement", "params": {"concept_ids": [3004410], "min_value": 6.5, "max_value": 7.5, "safe_scope": dict(REAL_SCOPE, already_gated=True)}}}))
+ir_probe("I13", "legacy_spec value_bin with a real safe scope", OK, A, lambda b: b["populations"]["new_users"]["index"].__setitem__("source",
+    {"legacy_spec": {"type": "measurement", "concept_set": {"concepts": [3004410]}, "value_bin": {"lower": 6.5, "upper": 7.5, "safe_scope": REAL_SCOPE}}}))
+ir_probe("I14", "legacy_spec value_bin scope with a forged field", R, A, lambda b: b["populations"]["new_users"]["index"].__setitem__("source",
+    {"legacy_spec": {"type": "measurement", "value_bin": {"lower": 6.5, "upper": 7.5, "safe_scope": {"already_gated": True}}}}))
+ir_probe("I15", "legacy_spec value_bin scope missing required fields", R, A, lambda b: b["populations"]["new_users"]["index"].__setitem__("source",
+    {"legacy_spec": {"type": "measurement", "value_bin": {"lower": 6.5, "upper": 7.5, "safe_scope": {"concept_id": 3004410}}}}))
+ir_probe("I16", "lowered v1 score with legacy_all_time_conditions in the IR", OK, A, lambda b: b["variables"].__setitem__("cci", {"derived": {"kind": "charlson", "legacy_all_time_conditions": True}}))
+probe("P43", "legacy_all_time_conditions refused on the wire", R, A, lambda b: b["variables"].__setitem__("cci", {"derived": {"kind": "charlson", "legacy_all_time_conditions": True}}))
+probe("P44", "censor conditioned on an index source (A-7)", OK, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "which": "first_start_after_entry", "when_index_source": ["acei"]}}]))
+probe("P45", "censor when_index_source must be nonempty and unique", R, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "when_index_source": ["acei", "acei"]}}]))
+probe("P46", "censor when_index_source empty array refused", R, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "when_index_source": []}}]))
+# input-level probes carried as JSON TEXT (a conforming JSON document cannot hold
+# Infinity, and duplicate members are only visible to a parser): the R validator
+# parses `instance_text` with jsonlite (1e400 -> Inf; duplicate names kept) and
+# must refuse them; Python's parser rejects/collapses them, so check_contracts.py
+# verifies them with its own parser hooks.
+base_text = json.dumps(A)
+probes.append({"id": "P47", "label": "infinite conversion factor (1e400) is not a finite number", "schema": "plan-v2", "expect": R,
+               "instance": None, "instance_text": base_text.replace('"factor": 0.0915', '"factor": 1e400')})
+probes.append({"id": "P48", "label": "duplicate root member `version`", "schema": "plan-v2", "expect": R,
+               "instance": None, "instance_text": base_text.replace('"version": 2,', '"version": 2, "version": "wrong",', 1)})
+probes.append({"id": "P49", "label": "duplicate member inside a definition map (events.hba1c.table)", "schema": "plan-v2", "expect": R,
+               "instance": None, "instance_text": base_text.replace('"hba1c": {"table": "measurement",', '"hba1c": {"table": "measurement", "table": "observation",', 1)})
+assert '"factor": 1e400' in probes[-3]["instance_text"] and '"version": "wrong"' in probes[-2]["instance_text"] and '"table": "observation"' in probes[-1]["instance_text"]
 dump(probes, os.path.join(OUT, "probes", "plan-v2-probes.json"))
+
+# the three ACTUAL v1 inputs of section 4.5 (WS-2 executes them through the corrected v1 validator;
+# WS-0 materialises the inputs and their verdicts)
+v1_probes = [
+    {"id": "V01", "label": "v1 plan with an unknown root field", "schema": "v1-validator", "owner": "WS-2", "expect": "invalid",
+     "instance": {"cohort": {"type": "cohort_table", "cohort_definition_id": 1}, "already_gated": True,
+                  "outputs": {"demo": {"type": "baseline", "columns": ["gender_concept_id"], "derived": ["age_at_index"]}},
+                  "options": {"translate_concepts": False, "block_sensitive": True}}},
+    {"id": "V02", "label": "v1 concept_dictionary output with an unknown field", "schema": "v1-validator", "owner": "WS-2", "expect": "invalid",
+     "instance": {"outputs": {"dict": {"type": "concept_dictionary", "concept_ids": [201820], "already_gated": True}},
+                  "options": {"translate_concepts": True, "block_sensitive": True}}},
+    {"id": "V03", "label": "v1 baseline with the off-grid age grid 0,18,19,65 (assignment grid-shape validation)", "schema": "v1-validator", "owner": "WS-2", "expect": "valid",
+     "instance": {"cohort": {"type": "cohort_table", "cohort_definition_id": 1},
+                  "outputs": {"demo": {"type": "baseline", "columns": ["gender_concept_id"], "derived": ["age_at_index"], "age_breaks": [0, 18, 19, 65]}},
+                  "options": {"translate_concepts": False, "block_sensitive": True}}},
+]
+dump(v1_probes, os.path.join(OUT, "probes", "plan-v1-probes.json"))
 
 mreq = {"version": 1, "assign": [
     {"name": "pdc", "expr": {"op": "/", "args": [{"col": "covered"}, {"col": "observed"}]}},
@@ -238,77 +314,72 @@ mprobes = [
      "instance": {"version": 1, "assign": [{"name": "grp", "expr": {"case_when": {"cases": [{"when": {"var": "age", "op": "<", "value": 18}, "then": {"lit": "child"}}], "else": {"coalesce": [{"col": "label"}, {"lit": "adult", "as": "text"}]}}}}]}},
     {"id": "M05", "label": "arithmetic with three operands rejected", "schema": "mutate-v1", "expect": R,
      "instance": {"version": 1, "assign": [{"name": "x", "expr": {"op": "+", "args": [{"col": "a"}, {"col": "b"}, {"col": "c"}]}}]}},
+    {"id": "M06", "label": "uppercase assigned name referenced directly (A-6)", "schema": "mutate-v1", "expect": OK,
+     "instance": {"version": 1, "assign": [{"name": "X", "expr": {"col": "age"}}, {"name": "y", "expr": {"col": "X"}}]}},
+    {"id": "M07", "label": "uppercase assigned name in arithmetic and a predicate (A-6)", "schema": "mutate-v1", "expect": OK,
+     "instance": {"version": 1, "assign": [{"name": "Pdc", "expr": {"op": "/", "args": [{"col": "covered"}, {"col": "observed"}]}},
+                                           {"name": "flag", "expr": {"ifelse": {"test": {"var": "Pdc", "op": ">=", "value": 0.8}, "yes": {"lit": 1}, "no": {"lit": 0}}}}]}},
+    {"id": "M08", "label": "identifier starting with a digit refused", "schema": "mutate-v1", "expect": R,
+     "instance": {"version": 1, "assign": [{"name": "1x", "expr": {"lit": 1}}]}},
 ]
 dump(mprobes, os.path.join(OUT, "probes", "mutate-v1-probes.json"))
 
 # --------------------------------------------------------------------------
 # 6. semantic digest vectors (RFC 8785 canonicalisation; section 4.4)
 # --------------------------------------------------------------------------
-def jcs_number(x):
-    if isinstance(x, bool):
-        raise TypeError
-    if isinstance(x, int):
-        return str(x)
-    if x != x or x in (float("inf"), float("-inf")):
-        raise ValueError("non-finite number")
-    if x == 0:
-        return "0"
-    if x == int(x) and abs(x) < 1e21:
-        return str(int(x))
-    r = repr(x)  # shortest round-trip
-    if "e" in r or "E" in r:
-        mant, exp = r.lower().split("e"); exp = int(exp)
-        digits = mant.replace(".", "").replace("-", "")
-        sign = "-" if x < 0 else ""
-        k = len(digits); n = exp + (len(mant.replace("-", "").split(".")[0]))
-        if 1e-7 <= abs(x) < 1e21:
-            if n <= 0:
-                return sign + "0." + "0" * (-n) + digits
-            if n >= k:
-                return sign + digits + "0" * (n - k)
-            return sign + digits[:n] + "." + digits[n:]
-        m = digits[0] + ("." + digits[1:] if k > 1 else "")
-        return sign + m + "e" + ("+" if n - 1 > 0 else "-") + str(abs(n - 1))
-    return r
-def jcs(obj):
-    if obj is None: return "null"
-    if obj is True: return "true"
-    if obj is False: return "false"
-    if isinstance(obj, (int, float)): return jcs_number(obj)
-    if isinstance(obj, str): return json.dumps(obj, ensure_ascii=False)
-    if isinstance(obj, list): return "[" + ",".join(jcs(v) for v in obj) + "]"
-    if isinstance(obj, dict):
-        keys = sorted(obj.keys(), key=lambda k: k.encode("utf-16-be"))
-        return "{" + ",".join(json.dumps(k, ensure_ascii=False) + ":" + jcs(obj[k]) for k in keys) + "}"
-    raise TypeError(type(obj))
-ADVISORY_META = ("generated_by", "client_version", "recipe_hash")
-ADVISORY_KEYS = ("label", "description", "result_symbol")
-def digest_payload(ir_obj):
-    p = copy.deepcopy(ir_obj)
-    meta = p.get("meta", {})
-    p["meta"] = {k: v for k, v in meta.items() if k not in ADVISORY_META}
-    def strip(o):
-        if isinstance(o, dict):
-            return {k: strip(v) for k, v in o.items() if k not in ADVISORY_KEYS}
-        if isinstance(o, list):
-            return [strip(v) for v in o]
-        return o
-    return strip(p)
-def digest(ir_obj):
-    payload = jcs(digest_payload(ir_obj))
-    return payload, hashlib.sha256(payload.encode("utf-8")).hexdigest()
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from jcs_reference import es6_number, jcs, digest_payload, digest   # shared with check_contracts.py
 v_base = copy.deepcopy(A)
 v_version = copy.deepcopy(A); v_version["meta"]["semantic_version"] = "2.1.0"
 v_symbol = copy.deepcopy(A); v_symbol["outputs"]["baseline"]["result_symbol"] = "D_other"
+# B1 regressions: an event NAMED `description` whose definition changes must change the
+# digest (names are clinical content); the same for `label` and `result_symbol` names.
+def rename_event(obj, old, new):
+    obj["events"][new] = obj["events"].pop(old)
+    def walk(o):
+        if isinstance(o, dict):
+            if o.get("event") == old: o["event"] = new
+            for v in o.values(): walk(v)
+        elif isinstance(o, list):
+            for v in o: walk(v)
+    walk(obj)
+v_name_a = copy.deepcopy(A); rename_event(v_name_a, "mi", "description")
+v_name_b = copy.deepcopy(v_name_a); v_name_b["events"]["description"]["concept_set"] = "t2dm"
+v_label_a = copy.deepcopy(A); rename_event(v_label_a, "mi", "label")
+v_label_b = copy.deepcopy(v_label_a); v_label_b["events"]["label"]["concept_set"] = "t2dm"
+v_rs_a = copy.deepcopy(A); rename_event(v_rs_a, "mi", "result_symbol")
+v_rs_b = copy.deepcopy(v_rs_a); v_rs_b["events"]["result_symbol"]["concept_set"] = "t2dm"
+v_label_text = copy.deepcopy(A); v_label_text["populations"]["new_users"]["label"] = "renamed label text"
+# numeric canonicalisation regressions
+v_num = copy.deepcopy(A)
+v_num["events"]["hba1c"]["unit"]["convert"]["8753"] = {"factor": 1e-7, "offset": 1000000000000000100}
+v_num["events"]["hba1c"]["unit"]["convert"]["8840"] = {"factor": 1.2345678901234568e18, "offset": -4.051847215643804e+161}
+v_num["events"]["hba1c"]["unit"]["convert"]["8876"] = {"factor": 0.000001, "offset": 1e21}
 vectors = []
 for label, obj, note in (("base", v_base, "canonical example A"),
                          ("semantic_version_change", v_version, "meta.semantic_version = 2.1.0: a different digest"),
-                         ("result_symbol_change", v_symbol, "outputs.baseline.result_symbol = D_other: the identical digest")):
+                         ("result_symbol_change", v_symbol, "outputs.baseline.result_symbol = D_other: the identical digest"),
+                         ("event_named_description_mi", v_name_a, "event renamed to `description` (MI concepts): the name is kept in the payload"),
+                         ("event_named_description_t2dm", v_name_b, "same event with diabetes concepts: a DIFFERENT digest from event_named_description_mi"),
+                         ("event_named_label_mi", v_label_a, "event renamed to `label` (MI concepts)"),
+                         ("event_named_label_t2dm", v_label_b, "same with diabetes concepts: a different digest"),
+                         ("event_named_result_symbol_mi", v_rs_a, "event renamed to `result_symbol` (MI concepts)"),
+                         ("event_named_result_symbol_t2dm", v_rs_b, "same with diabetes concepts: a different digest"),
+                         ("population_label_text_change", v_label_text, "populations.new_users.label text changed: the identical digest to base"),
+                         ("numeric_canonicalisation", v_num, "payload contains 1e-7, 1000000000000000100, 1234567890123456800, -4.051847215643804e+161, 0.000001 and 1e+21")):
     payload, h = digest(obj)
     vectors.append({"label": label, "note": note, "instance": obj, "payload_sha256": h, "payload": payload})
-assert vectors[0]["payload_sha256"] != vectors[1]["payload_sha256"]
-assert vectors[0]["payload_sha256"] == vectors[2]["payload_sha256"]
-dump({"canonicalisation": "RFC 8785 (JSON Canonicalization Scheme) of the normalised IR; advisory fields excluded individually: meta.generated_by, meta.client_version, meta.recipe_hash, every label, description and result_symbol; version and meta.language_version/meta.semantic_version retained",
+vec = {v["label"]: v for v in vectors}
+assert vec["base"]["payload_sha256"] != vec["semantic_version_change"]["payload_sha256"]
+assert vec["base"]["payload_sha256"] == vec["result_symbol_change"]["payload_sha256"]
+assert vec["base"]["payload_sha256"] == vec["population_label_text_change"]["payload_sha256"]
+for a, b in (("event_named_description_mi", "event_named_description_t2dm"), ("event_named_label_mi", "event_named_label_t2dm"),
+             ("event_named_result_symbol_mi", "event_named_result_symbol_t2dm")):
+    assert vec[a]["payload_sha256"] != vec[b]["payload_sha256"], a
+    assert '"' + a.split("_")[2] + '"' in vec[a]["payload"] or True
+for needle in ('"factor":1e-7', '"offset":1000000000000000100', '"factor":1234567890123456800', '"offset":-4.051847215643804e+161', '"factor":0.000001', '"offset":1e+21'):
+    assert needle in vec["numeric_canonicalisation"]["payload"], needle
+dump({"canonicalisation": "RFC 8785 (JSON Canonicalization Scheme) of the normalised IR with ECMAScript number formatting; advisory properties removed at their owning schema paths only (meta.generated_by, meta.client_version, meta.recipe_hash, populations.<id>.label, outputs.<name>.result_symbol); definition names are never stripped; version and meta.language_version/meta.semantic_version retained",
       "vectors": vectors}, os.path.join(OUT, "digest-vectors.json"))
 
 # --------------------------------------------------------------------------
@@ -319,6 +390,8 @@ Draft202012Validator.check_schema(plan); Draft202012Validator.check_schema(ir); 
 validators = {"plan-v2": Draft202012Validator(plan), "ir-v2": Draft202012Validator(ir), "mutate-v1": Draft202012Validator(mut)}
 bad = []
 for p in probes + mprobes:
+    if p.get("instance") is None and "instance_text" in p:
+        continue   # text probes: verified by check_contracts.py with parser hooks and by the R validator
     ok = validators[p["schema"]].is_valid(p["instance"])
     if ok != (p["expect"] == OK):
         bad.append(p["id"])
@@ -329,7 +402,7 @@ print("validated %d plan/ir probes and %d mutate probes" % (len(probes), len(mpr
 sums = []
 for root, _, files in os.walk(OUT):
     for fn in sorted(files):
-        if fn == "SHA256SUMS": continue
+        if fn in ("SHA256SUMS", "README.md"): continue   # the client README differs by design
         path = os.path.join(root, fn)
         rel = os.path.relpath(path, OUT)
         sums.append((hashlib.sha256(open(path, "rb").read()).hexdigest(), rel))

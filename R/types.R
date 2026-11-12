@@ -8,7 +8,11 @@
 #                           with its exact person lineage
 # Every workstream builds these records through the constructors below and
 # passes them through the validators; a record that does not validate is a
-# structural failure, never a silent default.
+# structural failure, never a silent default. The validators re-check every
+# nested payload (an S3 class tag is never trusted on its own) and
+# .assertCompiledOutput() cross-checks each candidate against its fragment
+# (B4 of the WS-0 review). Runtime roster uniqueness, row-to-person coverage
+# and genuine support counting stay in WS-1's .publishPrepare().
 
 .FRAGMENT_KINDS <- c("concept", "event", "interval", "anchor", "coverage",
                      "roster", "candidates", "stream", "result")
@@ -50,13 +54,25 @@
 #' @param role Semantic role (see .FRAGMENT_COLUMN_ROLES).
 #' @keywords internal
 .fragmentColumn <- function(type, nullable = TRUE, role = "measure") {
-  .assertEnum(type, .FRAGMENT_COLUMN_TYPES, "column type", "fragment column")
-  .assertEnum(role, .FRAGMENT_COLUMN_ROLES, "column role", "fragment column")
-  if (!is.logical(nullable) || length(nullable) != 1L || is.na(nullable)) {
-    .typesFail("fragment column", "nullable must be TRUE or FALSE")
+  col <- structure(list(type = type, nullable = nullable, role = role),
+                   class = "dsomop_fragment_column")
+  .assertFragmentColumn(col, "<column>")
+}
+
+#' Validate one column payload (shared by construction and validation)
+#' @keywords internal
+.assertFragmentColumn <- function(col, name) {
+  what <- paste0("fragment column '", name, "'")
+  if (!inherits(col, "dsomop_fragment_column") || !is.list(col) ||
+      !setequal(names(col), c("type", "nullable", "role"))) {
+    .typesFail(what, "must be built with .fragmentColumn() (type, nullable, role)")
   }
-  structure(list(type = type, nullable = nullable, role = role),
-            class = "dsomop_fragment_column")
+  .assertEnum(col$type, .FRAGMENT_COLUMN_TYPES, "column type", what)
+  .assertEnum(col$role, .FRAGMENT_COLUMN_ROLES, "column role", what)
+  if (!is.logical(col$nullable) || length(col$nullable) != 1L || is.na(col$nullable)) {
+    .typesFail(what, "nullable must be TRUE or FALSE")
+  }
+  invisible(col)
 }
 
 #' Construct a compiled fragment (design section 6.4)
@@ -121,12 +137,7 @@
       any(!nzchar(names(f$columns))) || anyDuplicated(names(f$columns))) {
     .typesFail(what, "columns must be a non-empty uniquely named list")
   }
-  for (nm in names(f$columns)) {
-    col <- f$columns[[nm]]
-    if (!inherits(col, "dsomop_fragment_column")) {
-      .typesFail(what, "column '", nm, "' must be built with .fragmentColumn()")
-    }
-  }
+  for (nm in names(f$columns)) .assertFragmentColumn(f$columns[[nm]], nm)
   cols <- names(f$columns)
   roles <- vapply(f$columns, function(c) c$role, "")
   check_subset <- function(x, field) {
@@ -163,8 +174,17 @@
     }
     if (length(f$unique_key) == 0L) .typesFail(what, "a roster must declare its unique_key")
   }
-  if (f$grain == "none" && (!is.null(pl$person_col) || !is.null(pl$via_roster))) {
-    .typesFail(what, "a reference fragment (grain none) cannot carry person lineage")
+  if (f$grain == "none") {
+    if (!is.null(pl$person_col) || !is.null(pl$via_roster)) {
+      .typesFail(what, "a reference fragment (grain none) cannot carry person lineage")
+    }
+    if (any(roles %in% c("person_key", "episode_key"))) {
+      .typesFail(what, "a reference fragment (grain none) cannot carry person or episode keys")
+    }
+  }
+  if (f$grain != "none" && is.null(pl$person_col) && is.null(pl$via_roster) &&
+      any(roles == "person_key")) {
+    .typesFail(what, "a fragment with a person_key column must declare its person lineage")
   }
   if (any(roles == "private") && !all(cols[roles == "private"] %in% f$private_columns)) {
     .typesFail(what, "every column with the private role must be listed in private_columns")
@@ -285,14 +305,57 @@
   invisible(pc)
 }
 
+#' Cross-check a publication candidate against the fragment of its component
+#' @keywords internal
+.assertCandidateMatchesFragment <- function(pc, f, what) {
+  cols <- names(f$columns)
+  roles <- vapply(f$columns, function(c) c$role, "")
+  ln <- pc$lineage
+  if (ln$mode == "reference") {
+    if (f$grain != "none") .typesFail(what, "reference component '", pc$component, "' has a fragment of grain ", f$grain)
+    return(invisible(TRUE))
+  }
+  if (f$grain == "none") .typesFail(what, "patient component '", pc$component, "' has a reference fragment (grain none)")
+  if (!identical(pc$grain, f$grain) && !(f$grain == "row" && pc$grain %in% c("person", "episode"))) {
+    .typesFail(what, "candidate grain '", pc$grain, "' disagrees with fragment grain '", f$grain, "'")
+  }
+  missing <- setdiff(ln$key_columns, cols)
+  if (length(missing) > 0L) {
+    .typesFail(what, "candidate key column(s) ", paste(missing, collapse = ", "), " do not exist in the fragment")
+  }
+  if (ln$mode == "direct") {
+    if (roles[[ln$key_columns]] != "person_key") {
+      .typesFail(what, "direct key '", ln$key_columns, "' does not carry the person_key role")
+    }
+    if (is.null(f$person_lineage$person_col) || !identical(f$person_lineage$person_col, ln$key_columns)) {
+      .typesFail(what, "direct key '", ln$key_columns, "' is not the fragment's declared person column")
+    }
+  } else {
+    if (is.null(f$roster_namespace) || !identical(f$roster_namespace, ln$roster_id)) {
+      .typesFail(what, "roster lineage names namespace '", ln$roster_id, "' but the fragment uses '",
+                 f$roster_namespace %||% "<none>", "'")
+    }
+    if ("cohort_row_id" %in% ln$key_columns && roles[["cohort_row_id"]] != "episode_key") {
+      .typesFail(what, "cohort_row_id must carry the episode_key role")
+    }
+  }
+  missing_private <- setdiff(pc$private_columns, cols)
+  if (length(missing_private) > 0L) {
+    .typesFail(what, "candidate private column(s) ", paste(missing_private, collapse = ", "), " do not exist in the fragment")
+  }
+  if (!all(f$private_columns %in% pc$private_columns)) {
+    .typesFail(what, "the fragment's private columns must all be dropped by the candidate")
+  }
+  invisible(TRUE)
+}
+
 #' Construct a compiled output (design section 6.4)
 #'
 #' @param output Output name.
 #' @param components Named list; each element is list(statement = <SQL> or
 #'   frame = <data.frame>, fragment = <dsomop_fragment>).
-#' @param publication_candidates List of publication candidates, one per
-#'   patient component (reference components are listed in
-#'   `reference_components` and may carry a reference-mode candidate).
+#' @param publication_candidates List of publication candidates, exactly one
+#'   per component (reference components carry a reference-mode candidate).
 #' @param reference_components Character vector of component names without
 #'   person lineage.
 #' @param status "ok" or "unavailable".
@@ -337,6 +400,14 @@
   if (!is.character(refs) || anyNA(refs) || !all(refs %in% names(comps))) {
     .typesFail(what, "reference_components must name existing components")
   }
+  for (nm in refs) {
+    f <- comps[[nm]]$fragment
+    roles <- vapply(f$columns, function(c) c$role, "")
+    if (f$grain != "none" || !is.null(f$person_lineage$person_col) || !is.null(f$person_lineage$via_roster) ||
+        any(roles %in% c("person_key", "episode_key"))) {
+      .typesFail(what, "reference component '", nm, "' carries person lineage or keys; it is a patient component")
+    }
+  }
   pcs <- co$publication_candidates
   if (!is.list(pcs)) .typesFail(what, "publication_candidates must be a list")
   covered <- character(0)
@@ -357,11 +428,12 @@
     if (pc$component %in% covered) {
       .typesFail(what, "component '", pc$component, "' has more than one candidate")
     }
+    .assertCandidateMatchesFragment(pc, comps[[pc$component]]$fragment, what)
     covered <- c(covered, pc$component)
   }
-  uncovered <- setdiff(setdiff(names(comps), refs), covered)
+  uncovered <- setdiff(names(comps), covered)
   if (length(uncovered) > 0L) {
-    .typesFail(what, "patient component(s) without a publication candidate: ",
+    .typesFail(what, "component(s) without a publication candidate: ",
                paste(uncovered, collapse = ", "), " (fail closed)")
   }
   invisible(co)

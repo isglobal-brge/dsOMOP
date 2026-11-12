@@ -2323,6 +2323,10 @@
                         }
                       ],
                       "default": null
+                    },
+                    "legacy_all_time_conditions": {
+                      "type": "boolean",
+                      "default": false
                     }
                   }
                 }
@@ -2450,6 +2454,24 @@
                     "ineligible"
                   ],
                   "default": "ignore"
+                },
+                "when_index_source": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "array",
+                      "minItems": 1,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      }
+                    }
+                  ],
+                  "default": null
                 }
               }
             }
@@ -3447,15 +3469,52 @@
         }
       ]
     },
-    "legacy_concept_params": {
-      "concept_id": {
-        "$ref": "#/$defs/concept_id"
-      },
-      "concept_ids": {
-        "type": "array",
-        "minItems": 1,
-        "items": {
-          "$ref": "#/$defs/concept_id"
+    "legacy_safe_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "table",
+        "column",
+        "n_bins"
+      ],
+      "properties": {
+        "table": {
+          "$ref": "#/$defs/table_name"
+        },
+        "column": {
+          "$ref": "#/$defs/column_name"
+        },
+        "n_bins": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 100
+        },
+        "concept_id": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/concept_id"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/concept_id"
+              }
+            }
+          ]
+        },
+        "concept_col": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/column_name"
+            }
+          ]
         }
       }
     },
@@ -3839,26 +3898,7 @@
                   "type": "number"
                 },
                 "safe_scope": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "concept_id": {
-                      "oneOf": [
-                        {
-                          "$ref": "#/$defs/concept_id"
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "$ref": "#/$defs/concept_id"
-                          }
-                        }
-                      ]
-                    },
-                    "concept_col": {
-                      "$ref": "#/$defs/column_name"
-                    }
-                  }
+                  "$ref": "#/$defs/legacy_safe_scope"
                 },
                 "reference_date": {
                   "$ref": "#/$defs/legacy_nullable_date"
@@ -3991,7 +4031,7 @@
               "type": "number"
             },
             "safe_scope": {
-              "type": "object"
+              "$ref": "#/$defs/legacy_safe_scope"
             }
           }
         },

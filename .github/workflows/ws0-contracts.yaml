@@ -1,0 +1,24 @@
+# Mandatory independent check of the 2.10.3 contract artefacts (design-2.10.3
+# section 12.1; WS-0 review B2): a second Draft 2020-12 oracle (Python
+# jsonschema) for the packaged schemas, examples, probes, acceptance plans,
+# digest vectors and checksums. The R validator is the first oracle; both must
+# agree before any freeze resubmission or release.
+name: ws0-contracts
+on:
+  push:
+    branches: ["feat/2.10.3*", "main"]
+    paths: ["inst/schema/**", "inst/plans/**", "inst/column_classes.csv", "R/json_schema.R", "R/semantic_digest.R", "tools/ws0/**", ".github/workflows/ws0-contracts.yaml"]
+  pull_request:
+    paths: ["inst/schema/**", "inst/plans/**", "inst/column_classes.csv", "R/json_schema.R", "R/semantic_digest.R", "tools/ws0/**"]
+  workflow_dispatch:
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "jsonschema>=4.26"
+      - name: Independent schema, probe, plan, digest and checksum checks
+        run: python3 tools/ws0/check_contracts.py .

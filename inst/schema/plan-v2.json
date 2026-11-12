@@ -2390,6 +2390,24 @@
                     "ineligible"
                   ],
                   "default": "ignore"
+                },
+                "when_index_source": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "array",
+                      "minItems": 1,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      }
+                    }
+                  ],
+                  "default": null
                 }
               }
             }

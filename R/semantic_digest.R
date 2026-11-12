@@ -1,25 +1,36 @@
-# Semantic digest of a normalised plan IR (design-2.10.3 section 4.4).
+# Semantic digest of a normalised plan IR (design-2.10.3 section 4.4;
+# amendment list: B1 of the WS-0 review).
 #
 # WS-0 frozen artefact. The digest is SHA-256 of the RFC 8785 (JSON
 # Canonicalization Scheme) serialisation of the normalised IR with
-#   (i)   map keys sorted (by UTF-16 code units; plan keys are ASCII),
+#   (i)   map keys sorted by UTF-16 code units,
 #   (ii)  arrays kept in order,
 #   (iii) defaults expanded exactly once by the normaliser (the caller passes
 #         the normalised IR; this file never expands defaults),
 #   (iv)  null and absent kept distinct (an explicit null is serialised),
-#   (v)   advisory fields excluded individually: meta.generated_by,
-#         meta.client_version, meta.recipe_hash, and every `label`,
-#         `description` and `result_symbol`; `version`,
-#         meta.language_version and meta.semantic_version stay in the
-#         payload,
+#   (v)   advisory properties removed AT THEIR OWNING SCHEMA PATHS ONLY:
+#         meta.generated_by, meta.client_version, meta.recipe_hash,
+#         populations.<id>.label, outputs.<name>.result_symbol (and
+#         outputs.<name>.description / populations.<id>.description if a future
+#         schema adds them). A user-chosen definition NAME such as an event
+#         called `description` or `label` is clinical content and is never
+#         stripped; `version`, meta.language_version and meta.semantic_version
+#         stay in the payload,
 #   (vi)  everything else included.
+# Numbers follow ECMAScript Number::toString (RFC 8785 section 3.2.2.3):
+# the shortest round-tripping decimal digits, plain notation for exponents in
+# (-6, 21], exponent notation otherwise. The round-trip check parses with
+# jsonlite (a correctly rounded strtod); base R's as.numeric() is not
+# correctly rounded for every 16-17 digit input and is never used here.
 # The federation harmonisation signature and the DP provenance capsule bind
-# this same payload. inst/schema/digest-vectors.json holds the three test
-# vectors (base, semantic-version change, result-symbol change). The
-# identical file is vendored in dsOMOPClient (tests pin the byte identity).
+# this same payload. inst/schema/digest-vectors.json holds the test vectors.
+# The identical file is vendored in dsOMOPClient (tests pin the byte identity).
 
-.DIGEST_ADVISORY_META <- c("generated_by", "client_version", "recipe_hash")
-.DIGEST_ADVISORY_KEYS <- c("label", "description", "result_symbol")
+.DIGEST_ADVISORY_PATHS <- list(
+  list(c("meta"), c("generated_by", "client_version", "recipe_hash")),
+  list(c("populations", "*"), c("label", "description")),
+  list(c("outputs", "*"), c("result_symbol", "description"))
+)
 
 #' Canonical JSON (RFC 8785) of an R value parsed with simplifyVector = FALSE
 #'
@@ -62,9 +73,7 @@
        call. = FALSE)
 }
 
-# Sort keys by UTF-16 code units (RFC 8785 section 3.2.3). Keys are compared
-# as sequences of code units; for BMP characters this equals code-point
-# order, which C-locale ordering of the UTF-8 bytes also gives.
+# Sort keys by UTF-16 code units (RFC 8785 section 3.2.3).
 .jcsKeyOrder <- function(keys) {
   units <- lapply(keys, function(k) {
     cp <- utf8ToInt(enc2utf8(k))
@@ -87,7 +96,6 @@
     sign(length(a) - length(b))
   }
   ord <- seq_along(keys)
-  # insertion sort on code-unit vectors (key sets are small)
   for (i in seq_along(ord)[-1L]) {
     j <- i
     while (j > 1L && cmp(units[[ord[j - 1L]]], units[[ord[j]]]) > 0) {
@@ -114,78 +122,77 @@
   paste0("\"", paste(out, collapse = ""), "\"")
 }
 
-# RFC 8785 section 3.2.2.3: ECMAScript Number::toString of the shortest
-# round-tripping decimal.
-.jcsNumber <- function(x) {
-  if (is.na(x) || !is.finite(x)) stop("Non-finite numbers are not JSON values.", call. = FALSE)
-  if (x == 0) return("0")
-  if (x == round(x) && abs(x) < 1e21) {
-    return(format(x, scientific = FALSE, trim = TRUE, nsmall = 0L))
-  }
-  # shortest %.<d>g representation that round-trips
+# Shortest decimal digits that parse back to exactly `x` (correctly rounded
+# parse through jsonlite). Returns list(digits = "<no leading/trailing zeros>",
+# n = <decimal exponent: value = 0.digits * 10^n>) for a finite x > 0.
+.jcsShortestDigits <- function(x) {
   s <- NULL
   for (d in 1:17) {
-    cand <- sprintf(paste0("%.", d, "g"), x)
-    if (as.numeric(cand) == x) { s <- cand; break }
+    cand <- sprintf(paste0("%.", d - 1L, "e"), x)
+    parsed <- jsonlite::fromJSON(cand)
+    if (identical(as.numeric(parsed), x)) { s <- cand; break }
   }
-  if (is.null(s)) s <- sprintf("%.17g", x)
-  neg <- startsWith(s, "-")
-  s <- sub("^-", "", s)
-  if (grepl("e", s, fixed = TRUE)) {
-    parts <- strsplit(s, "e", fixed = TRUE)[[1L]]
-    mant <- parts[1L]; e <- as.integer(parts[2L])
-  } else {
-    mant <- s; e <- 0L
-  }
-  int_part <- sub("\\..*$", "", mant)
-  frac_part <- if (grepl(".", mant, fixed = TRUE)) sub("^.*\\.", "", mant) else ""
-  digits <- paste0(int_part, frac_part)
-  lead <- regmatches(digits, regexpr("^0*", digits))
-  digits <- substring(digits, nchar(lead) + 1L)
+  if (is.null(s)) s <- sprintf("%.16e", x)
+  parts <- strsplit(s, "e", fixed = TRUE)[[1L]]
+  mant <- parts[1L]; e <- as.integer(parts[2L])
+  digits <- gsub(".", "", mant, fixed = TRUE)
+  lead <- nchar(regmatches(digits, regexpr("^0*", digits)))
+  digits <- substring(digits, lead + 1L)
   digits <- sub("0+$", "", digits)
-  # n = position of the decimal point relative to the start of `digits`
-  n <- nchar(int_part) + e - nchar(lead)
-  if (nchar(digits) == 0L) return("0")
-  k <- nchar(digits)
-  ax <- abs(x)
-  body <- if (ax >= 1e-7 && ax < 1e21) {
-    if (n <= 0L) {
-      paste0("0.", strrep("0", -n), digits)
-    } else if (n >= k) {
-      paste0(digits, strrep("0", n - k))
-    } else {
-      paste0(substring(digits, 1L, n), ".", substring(digits, n + 1L, k))
-    }
+  # mantissa d.ddd means value = d.ddd * 10^e = 0.dddd * 10^(e + 1)
+  list(digits = digits, n = e + 1L - lead)
+}
+
+# RFC 8785 section 3.2.2.3 / ECMAScript Number::toString.
+.jcsNumber <- function(x) {
+  if (is.na(x) || !is.finite(x)) stop("Non-finite numbers are not JSON values.", call. = FALSE)
+  x <- as.numeric(x)
+  if (x == 0) return("0")
+  neg <- x < 0
+  sd <- .jcsShortestDigits(abs(x))
+  digits <- sd$digits; n <- sd$n; k <- nchar(digits)
+  body <- if (k <= n && n <= 21L) {
+    paste0(digits, strrep("0", n - k))
+  } else if (0L < n && n <= 21L) {
+    paste0(substring(digits, 1L, n), ".", substring(digits, n + 1L, k))
+  } else if (-6L < n && n <= 0L) {
+    paste0("0.", strrep("0", -n), digits)
   } else {
+    e10 <- n - 1L
     m <- if (k > 1L) paste0(substring(digits, 1L, 1L), ".", substring(digits, 2L, k)) else digits
-    paste0(m, "e", if (n - 1L > 0L) "+" else "-", abs(n - 1L))
+    paste0(m, "e", if (e10 > 0L) "+" else "-", abs(e10))
   }
   paste0(if (neg) "-" else "", body)
 }
 
-#' Digest payload: the normalised IR without its advisory fields
+#' Digest payload: the normalised IR without its advisory properties
+#'
+#' Advisory properties are removed only at their owning schema paths
+#' (.DIGEST_ADVISORY_PATHS); definition names are never touched.
 #' @keywords internal
 .planDigestPayload <- function(ir) {
   if (!is.list(ir) || is.null(names(ir))) {
     stop("A plan IR must be a named list.", call. = FALSE)
   }
-  if (!is.null(ir$meta)) {
-    keep <- setdiff(names(ir$meta), .DIGEST_ADVISORY_META)
-    ir$meta <- ir$meta[keep]
-    if (length(ir$meta) == 0L) ir$meta <- structure(list(), names = character(0))
+  drop_keys <- function(obj, keys) {
+    if (!is.list(obj) || is.null(names(obj))) return(obj)
+    keep <- setdiff(names(obj), keys)
+    out <- obj[keep]
+    if (length(out) == 0L) structure(list(), names = character(0)) else out
   }
-  strip <- function(o) {
-    if (is.list(o)) {
-      nm <- names(o)
-      if (!is.null(nm)) {
-        o <- o[!(nm %in% .DIGEST_ADVISORY_KEYS)]
-        if (length(o) == 0L) return(structure(list(), names = character(0)))
+  for (rule in .DIGEST_ADVISORY_PATHS) {
+    path <- rule[[1L]]; keys <- rule[[2L]]
+    if (length(path) == 1L) {
+      if (!is.null(ir[[path]])) ir[[path]] <- drop_keys(ir[[path]], keys)
+    } else {
+      container <- ir[[path[[1L]]]]
+      if (is.list(container) && !is.null(names(container))) {
+        for (nm in names(container)) container[[nm]] <- drop_keys(container[[nm]], keys)
+        ir[[path[[1L]]]] <- container
       }
-      return(lapply(o, strip))
     }
-    o
   }
-  strip(ir)
+  ir
 }
 
 #' Semantic digest of a normalised plan IR

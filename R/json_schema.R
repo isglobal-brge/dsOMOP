@@ -1,22 +1,29 @@
-# JSON Schema (2020-12 subset) validation for the 2.10.3 plan contracts.
+# JSON Schema validation for the 2.10.3 plan contracts: a packaged,
+# explicitly limited subset of JSON Schema 2020-12 (design-2.10.3 section 4;
+# B2 of the WS-0 review).
 #
-# WS-0 frozen artefact (design-2.10.3 section 4): the wire schema
-# inst/schema/plan-v2.json, the compatibility IR schema ir-v2.json and the
-# mutation schema mutate-v1.json are validated with this self-contained
-# validator, so that validation never depends on a JavaScript engine. It
-# implements exactly the keywords those schemas use: $ref (local JSON
+# WS-0 frozen artefact. The wire schema inst/schema/plan-v2.json, the
+# compatibility IR schema ir-v2.json and the mutation schema mutate-v1.json are
+# validated with this self-contained validator, so that validation never
+# depends on a JavaScript engine. It is NOT a general draft-2020-12 validator:
+# it implements exactly the keywords those schemas use -- $ref (local JSON
 # pointers), type, const, enum, properties, required, additionalProperties,
 # propertyNames, minProperties, maxProperties, items, minItems, maxItems,
 # uniqueItems, oneOf, anyOf, allOf, not, if/then/else, pattern, minLength,
 # maxLength, minimum, maximum, exclusiveMinimum, exclusiveMaximum, and boolean
 # schemas. Annotation keywords ($schema, $id, $comment, title, description,
-# default, examples, $defs) are ignored. An unknown applicator keyword is an
-# error (fail closed), never silently ignored.
+# default, examples, $defs) are ignored. Any other keyword is an error, both
+# when a packaged schema is loaded (.jsonSchemaLint walks every branch) and
+# when a branch is visited. The independent Python jsonschema check of
+# tools/ws0/check_contracts.py is the mandatory second oracle for the
+# packaged schemas, examples and probes (run in CI).
 #
 # Instances are R values as produced by jsonlite::fromJSON(simplifyVector =
 # FALSE): JSON objects are named lists, arrays unnamed lists, strings,
-# numbers and booleans length-one vectors, null is NULL. The identical file
-# is vendored in dsOMOPClient (tests pin the byte identity).
+# numbers and booleans length-one vectors, null is NULL. A non-finite number
+# (jsonlite parses "1e400" as Inf) and an object with duplicate member names
+# are rejected as input errors before any keyword runs. The identical file is
+# vendored in dsOMOPClient (tests pin the byte identity).
 
 .JSON_SCHEMA_ANNOTATIONS <- c("$schema", "$id", "$comment", "title",
                               "description", "default", "examples", "$defs",
@@ -28,6 +35,9 @@
                            "anyOf", "allOf", "not", "if", "then", "else",
                            "pattern", "minLength", "maxLength", "minimum",
                            "maximum", "exclusiveMinimum", "exclusiveMaximum")
+.JSON_SCHEMA_SUBSCHEMA_KEYS <- c("properties", "propertyNames", "additionalProperties",
+                                 "items", "oneOf", "anyOf", "allOf", "not",
+                                 "if", "then", "else", "$defs")
 
 #' Load a JSON Schema or a JSON instance without simplification
 #' @param path File path.
@@ -37,7 +47,38 @@
   jsonlite::fromJSON(path, simplifyVector = FALSE)
 }
 
-#' Read one of the packaged 2.10.3 schemas
+#' Lint a schema: every branch may use only the supported keywords
+#'
+#' @param schema Parsed schema.
+#' @param path Pointer used in messages.
+#' @return Invisibly TRUE; stops on the first unsupported keyword.
+#' @keywords internal
+.jsonSchemaLint <- function(schema, path = "#") {
+  if (is.logical(schema) && length(schema) == 1L) return(invisible(TRUE))
+  if (!is.list(schema) || is.null(names(schema))) {
+    if (is.list(schema) && length(schema) == 0L) return(invisible(TRUE))
+    stop("Schema node at ", path, " must be an object or a boolean.", call. = FALSE)
+  }
+  keys <- names(schema)
+  unknown <- setdiff(keys, c(.JSON_SCHEMA_KEYWORDS, .JSON_SCHEMA_ANNOTATIONS))
+  if (length(unknown) > 0L) {
+    stop("Unsupported JSON Schema keyword(s) at ", path, ": ",
+         paste(unknown, collapse = ", "), ".", call. = FALSE)
+  }
+  for (key in intersect(keys, .JSON_SCHEMA_SUBSCHEMA_KEYS)) {
+    node <- schema[[key]]
+    if (key %in% c("properties", "$defs")) {
+      for (nm in names(node)) .jsonSchemaLint(node[[nm]], paste0(path, "/", key, "/", nm))
+    } else if (key %in% c("oneOf", "anyOf", "allOf")) {
+      for (i in seq_along(node)) .jsonSchemaLint(node[[i]], paste0(path, "/", key, "/", i - 1L))
+    } else {
+      .jsonSchemaLint(node, paste0(path, "/", key))
+    }
+  }
+  invisible(TRUE)
+}
+
+#' Read one of the packaged 2.10.3 schemas (linted on load)
 #' @param name "plan-v2", "ir-v2" or "mutate-v1".
 #' @keywords internal
 .jsonSchemaPackaged <- function(name, package = "dsOMOP") {
@@ -46,10 +87,15 @@
   if (!nzchar(path)) {
     stop("Packaged schema '", name, "' not found.", call. = FALSE)
   }
-  .jsonSchemaLoad(path)
+  schema <- .jsonSchemaLoad(path)
+  .jsonSchemaLint(schema)
+  schema
 }
 
 #' JSON type of an instance value
+#'
+#' Non-finite numbers and objects with duplicate member names are input
+#' errors reported by the validator, not types.
 #' @keywords internal
 .jsonInstanceType <- function(x) {
   if (is.null(x)) return("null")
@@ -57,12 +103,13 @@
     nm <- names(x)
     if (is.null(nm)) return("array")
     if (length(x) == 0L) return("object")
-    if (all(nzchar(nm))) return("object")
+    if (all(nzchar(nm))) return(if (anyDuplicated(nm)) "duplicate_keys" else "object")
     stop("JSON instance list mixes named and unnamed elements.", call. = FALSE)
   }
   if (is.logical(x) && length(x) == 1L && !is.na(x)) return("boolean")
-  if (is.numeric(x) && length(x) == 1L && !is.na(x)) {
-    return(if (is.finite(x) && x == round(x)) "integer" else "number")
+  if (is.numeric(x) && length(x) == 1L) {
+    if (is.na(x) || !is.finite(x)) return("nonfinite")
+    return(if (x == round(x)) "integer" else "number")
   }
   if (is.character(x) && length(x) == 1L && !is.na(x)) return("string")
   if (is.atomic(x) && length(x) != 1L) return("array")
@@ -91,7 +138,8 @@
   }
   parts <- strsplit(substring(pointer, 2L), "/", fixed = TRUE)[[1L]]
   for (p in parts) {
-    p <- gsub("~1", "/", gsub("~0", "~", p, fixed = TRUE), fixed = TRUE)
+    # RFC 6901: unescape ~1 before ~0
+    p <- gsub("~0", "~", gsub("~1", "/", p, fixed = TRUE), fixed = TRUE)
     if (is.list(node) && !is.null(names(node)) && p %in% names(node)) {
       node <- node[[p]]
     } else if (is.list(node) && is.null(names(node)) &&
@@ -115,10 +163,33 @@
 #' @keywords internal
 .jsonSchemaValidate <- function(schema, instance, root = schema, path = "") {
   errors <- character(0)
+  input <- .jsonInputErrors(instance, path)
+  if (length(input) > 0L) return(list(valid = FALSE, errors = input))
   ok <- .jsv_node(schema, instance, root, path, function(msg) {
     errors <<- c(errors, msg)
   })
   list(valid = isTRUE(ok) && length(errors) == 0L, errors = errors)
+}
+
+# Input-level errors anywhere in the instance: non-finite numbers and
+# duplicate member names (checked before any schema keyword runs).
+.jsonInputErrors <- function(x, path = "") {
+  here <- if (nzchar(path)) path else "/"
+  t <- tryCatch(.jsonInstanceType(x), error = function(e) "unsupported")
+  if (t == "nonfinite") return(paste0(here, ": number is not finite"))
+  if (t == "duplicate_keys") {
+    return(paste0(here, ": duplicate object member(s) ",
+                  paste(unique(names(x)[duplicated(names(x))]), collapse = ", ")))
+  }
+  if (t == "unsupported") return(paste0(here, ": unsupported value"))
+  if (t == "object") {
+    return(unlist(lapply(names(x), function(nm) .jsonInputErrors(x[[nm]], paste0(path, "/", nm)))))
+  }
+  if (t == "array") {
+    items <- .jsonArrayItems(x)
+    return(unlist(lapply(seq_along(items), function(i) .jsonInputErrors(items[[i]], paste0(path, "/", i - 1L)))))
+  }
+  character(0)
 }
 
 .jsv_quiet <- function(schema, instance, root, path) {
@@ -145,6 +216,10 @@
     report(paste0(if (nzchar(path)) path else "/", ": ", msg))
   }
   itype <- .jsonInstanceType(x)
+  if (itype %in% c("nonfinite", "duplicate_keys")) {
+    fail(if (itype == "nonfinite") "number is not finite" else "duplicate object member names")
+    return(FALSE)
+  }
 
   if ("$ref" %in% keys) {
     target <- .jsonSchemaResolveRef(schema[["$ref"]], root)

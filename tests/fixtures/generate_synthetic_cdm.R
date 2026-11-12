@@ -1,9 +1,10 @@
 # =============================================================================
 # WS-0 (design-2.10.3 section 10.2): deterministic synthetic OMOP CDM generator.
 #
-# generate_synthetic_cdm() builds a GiBleed-shaped CDM: every table and column
-# of the vendored CDM 5.3 field metadata (the version Eunomia GiBleed uses),
-# filled deterministically from a seed, for n_persons persons. It writes one
+# generate_synthetic_cdm() builds 23 GiBleed-shaped CDM tables, with the full
+# column lists for those tables from the vendored CDM 5.3 field metadata (the
+# version Eunomia GiBleed uses; it does not generate every CDM table), filled
+# deterministically from a seed for n_persons persons. It writes one
 # CSV per table into `dir` and/or loads the tables into a DBI connection. The
 # 10k-person set of the test plan is `generate_synthetic_cdm(10000L)`; nothing
 # generated is checked in (design: generator script, not a blob).

@@ -1,7 +1,7 @@
 # =============================================================================
 # WS-0 (design-2.10.3 section 10.2): adversarial extension of the REACH fixture.
 #
-# extend_reach_handle(handle) appends deterministic rows for persons 1001..1030
+# extend_reach_handle(handle) appends deterministic rows for persons 1001..1032
 # to the in-memory SQLite fixture built by build_reach_handle() (create_reach_db.R)
 # and creates the `cost` table. Persons 1..100 are untouched, so every existing
 # test keeps its counts; new tests and the 2.10.3 acceptance corpus
@@ -42,6 +42,14 @@
 #   1027  recurrent respiratory infections (3 events); 1028 no outcome (sentinel)
 #   1029  Circe import: diabetes 2019-03-01 with >= 365 prior observation
 #   1030  Circe import: diabetes 2015-06-01 with < 365 prior observation
+#   1031  active comparator: a first ACE-inhibitor era failing eligibility (observation
+#         starts 2019-01-01, era 2019-04-01..2019-05-15: < 365 observed days) followed by
+#         an eligible ACE-inhibitor era 2020-03-01..2020-09-30
+#   1032  active comparator: own-arm restart then opposite-arm switch: ACE-inhibitor eras
+#         2019-06-01..2019-08-31 and 2019-11-01..2020-04-30 (restart: never censors),
+#         ARB era 2020-02-15..2020-08-31 (switch: censors the ACE-inhibitor index)
+#   1006  also carries two HbA1c rows on the same day (2019-12-20: 52 mmol/mol and
+#         7.9 %) so the closest-value tie rule (first by date, source, key) is pinned
 # Every new concept id is registered in `concept` so translation works.
 # =============================================================================
 
@@ -55,16 +63,17 @@ extend_reach_handle <- function(handle, with_defects = FALSE) {
   VINP <- 9201L; VOUT <- 9202L; VICU_DETAIL <- 32037L
   U_PCT <- 8554L; U_MMOLMOL <- 8753L; U_KG <- 9529L; VAL_HIGH <- 4328749L
   OP_LT <- 4171756L; OP_GT <- 4172704L; OP_EQ <- 4172703L
-  EPISODE <- 32531L; USD <- 44818568L; EUR <- 44818570L
+  EPISODE <- 32531L; USD <- 44818668L; EUR <- 44818568L   # Currency vocabulary: USD, EUR (verified, reviewed_concepts.csv)
   FIELD_DRUG <- 1147094L; FIELD_PROC <- 1147082L; COVAR2 <- 4000777L
   COND_TYPE <- 44818518L; DRUG_TYPE <- 38000177L; MEAS_TYPE <- 44818702L
   OP_TYPE <- 44814724L; VISIT_TYPE <- 44818518L; PROC_TYPE <- 44818518L
   TYPE_EHR <- 32817L; COST_TYPE <- 32817L; SPECTYPE <- 581378L
 
-  pids <- 1001:1030
+  pids <- 1001:1032
   yob <- c(1960L, 1961L, 1962L, 1963L, 1964L, 1965L, 1966L, 1967L, NA_integer_, 2030L,
            1968L, 1934L, 1970L, 1970L, 1955L, 1955L, 1972L, 1973L,
-           1960L, 1961L, 1962L, 1963L, 1980L, 1981L, 1982L, 1983L, 1975L, 1976L, 1950L, 1951L)
+           1960L, 1961L, 1962L, 1963L, 1980L, 1981L, 1982L, 1983L, 1975L, 1976L, 1950L, 1951L,
+           1958L, 1959L)
   gender <- ifelse(pids %% 2L == 0L, 8532L, 8507L)
   app("person", data.frame(
     person_id = pids, gender_concept_id = gender, year_of_birth = yob,
@@ -87,8 +96,9 @@ extend_reach_handle <- function(handle, with_defects = FALSE) {
     op(100301L, 1003L, "2015-01-01", "2020-01-02"), op(100302L, 1003L, "2020-01-09", "2030-12-31"),
     op(101901L, 1019L, "2019-01-01", "2020-12-31"), op(102001L, 1020L, "2019-01-01", "2020-12-31"),
     op(102101L, 1021L, "2019-01-01", "2020-12-31"), op(102201L, 1022L, "2019-01-01", "2020-12-31"),
-    op(103001L, 1030L, "2015-01-01", "2030-12-31"))
-  single <- setdiff(pids, c(1001L, 1002L, 1003L, 1019:1022, 1030L))
+    op(103001L, 1030L, "2015-01-01", "2030-12-31"),
+    op(103101L, 1031L, "2019-01-01", "2030-12-31"))
+  single <- setdiff(pids, c(1001L, 1002L, 1003L, 1019:1022, 1030L, 1031L))
   ops <- rbind(ops, op(100000L + single, single, "2015-01-01", "2030-12-31"))
   app("observation_period", ops)
 
@@ -185,6 +195,7 @@ extend_reach_handle <- function(handle, with_defects = FALSE) {
   }
   meas <- rbind(
     me(1006L, A1C, "2019-12-20", 52, unit = U_MMOLMOL),
+    me(1006L, A1C, "2019-12-20", 7.9, unit = U_PCT),        # same-day tie: the lower key (52 mmol/mol) wins
     me(1006L, A1C, "2019-12-10", 7.5, unit = U_PCT),
     me(1006L, A1C, "2019-12-15", 6.0, unit = NA_integer_),
     me(1006L, A1C, "2019-12-01", 9.0, unit = U_PCT, op = OP_LT),
@@ -269,6 +280,15 @@ extend_reach_handle <- function(handle, with_defects = FALSE) {
   }
   app("episode_event", links)
 
+  # ---- drug_era rows for the active-comparator scenarios (recipe 02) ----------------
+  ACEI <- 1308216L; ARB <- 1367500L
+  app("drug_era", data.frame(
+    drug_era_id = 900001:900005, person_id = c(1031L, 1031L, 1032L, 1032L, 1032L),
+    drug_concept_id = c(ACEI, ACEI, ACEI, ACEI, ARB),
+    drug_era_start_date = c("2019-04-01", "2020-03-01", "2019-06-01", "2019-11-01", "2020-02-15"),
+    drug_era_end_date = c("2019-05-15", "2020-09-30", "2019-08-31", "2020-04-30", "2020-08-31"),
+    drug_exposure_count = 2L, gap_days = 0L, stringsAsFactors = FALSE))
+
   # ---- cost (CDM 5.4 columns) -------------------------------------------------------
   cost <- data.frame(
     cost_id = 1:5,
@@ -287,19 +307,35 @@ extend_reach_handle <- function(handle, with_defects = FALSE) {
   DBI::dbWriteTable(conn, "cost", cost, overwrite = TRUE)
 
   # ---- vocabulary rows for the new concepts -------------------------------------------
-  new_concepts <- c(CHEMO, EPISODE, USD, EUR, OP_LT, OP_GT, FIELD_DRUG, FIELD_PROC, 1147127L, COVAR2)
+  # Field, Currency and operator concepts carry their real vocabulary metadata
+  # (inst/ohdsi/reviewed_concepts.csv); the fixture-only concepts are generic.
+  reviewed <- data.frame(
+    concept_id = c(FIELD_DRUG, FIELD_PROC, 1147127L, USD, EUR, OP_LT, OP_GT),
+    concept_name = c("drug_exposure.drug_exposure_id", "procedure_occurrence.procedure_occurrence_id",
+                     "condition_occurrence.condition_occurrence_id", "United States dollar", "Euro", "<", ">"),
+    domain_id = c("Metadata", "Metadata", "Metadata", "Currency", "Currency", "Meas Value Operator", "Meas Value Operator"),
+    vocabulary_id = c("CDM", "CDM", "CDM", "Currency", "Currency", "SNOMED", "SNOMED"),
+    concept_class_id = c("Field", "Field", "Field", "Currency", "Currency", "Qualifier Value", "Qualifier Value"),
+    concept_code = c("CDM150", "CDM138", "CDM183", "USD", "EUR", "276139006", "276140008"),
+    stringsAsFactors = FALSE)
+  generic <- data.frame(
+    concept_id = c(CHEMO, EPISODE, COVAR2), concept_name = c("cisplatin (fixture)", "Treatment regimen (fixture)", "fixture covariate 4000777"),
+    domain_id = c("Drug", "Episode", "Condition"), vocabulary_id = c("RxNorm", "Episode", "SNOMED"),
+    concept_class_id = c("Ingredient", "Episode Type", "Clinical Finding"), concept_code = c("2555", "32531", "4000777"),
+    stringsAsFactors = FALSE)
+  new_concepts <- rbind(reviewed, generic)
   have <- DBI::dbGetQuery(conn, paste0("SELECT concept_id FROM concept WHERE concept_id IN (",
-                                       paste(new_concepts, collapse = ","), ")"))$concept_id
-  add <- setdiff(new_concepts, have)
-  if (length(add) > 0L) {
+                                       paste(new_concepts$concept_id, collapse = ","), ")"))$concept_id
+  add <- new_concepts[!new_concepts$concept_id %in% have, , drop = FALSE]
+  if (nrow(add) > 0L) {
     app("concept", data.frame(
-      concept_id = add, concept_name = paste0("concept_", add),
-      domain_id = "Condition", vocabulary_id = "SNOMED", concept_class_id = "Clinical Finding",
-      standard_concept = "S", concept_code = as.character(add),
+      concept_id = add$concept_id, concept_name = add$concept_name,
+      domain_id = add$domain_id, vocabulary_id = add$vocabulary_id, concept_class_id = add$concept_class_id,
+      standard_concept = "S", concept_code = add$concept_code,
       valid_start_date = "1970-01-01", valid_end_date = "2099-12-31",
       invalid_reason = NA_character_, stringsAsFactors = FALSE))
     app("concept_ancestor", data.frame(
-      ancestor_concept_id = add, descendant_concept_id = add,
+      ancestor_concept_id = add$concept_id, descendant_concept_id = add$concept_id,
       min_levels_of_separation = 0L, max_levels_of_separation = 0L))
   }
   handle$blueprint <- NULL   # the cost table and new columns must be rediscovered

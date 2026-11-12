@@ -46,7 +46,7 @@
           "properties": {
             "col": {
               "type": "string",
-              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
             }
           }
         },
@@ -295,7 +295,7 @@
           "$ref": "#/$defs/predicate_leaf"
         }
       ],
-      "$comment": "copied from plan-v2.json#/$defs/predicate by tools/ws0/gen_schema_artefacts.py; `var` additionally accepts an earlier assigned column name"
+      "$comment": "copied from plan-v2.json#/$defs/predicate by tools/ws0/gen_schema_artefacts.py; `var` and `col` use the assigned-name grammar (amendment A-6)"
     },
     "predicate_leaf": {
       "oneOf": [

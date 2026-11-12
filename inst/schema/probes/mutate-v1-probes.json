@@ -162,5 +162,88 @@
         }
       ]
     }
+  },
+  {
+    "id": "M06",
+    "label": "uppercase assigned name referenced directly (A-6)",
+    "schema": "mutate-v1",
+    "expect": "valid",
+    "instance": {
+      "version": 1,
+      "assign": [
+        {
+          "name": "X",
+          "expr": {
+            "col": "age"
+          }
+        },
+        {
+          "name": "y",
+          "expr": {
+            "col": "X"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "M07",
+    "label": "uppercase assigned name in arithmetic and a predicate (A-6)",
+    "schema": "mutate-v1",
+    "expect": "valid",
+    "instance": {
+      "version": 1,
+      "assign": [
+        {
+          "name": "Pdc",
+          "expr": {
+            "op": "/",
+            "args": [
+              {
+                "col": "covered"
+              },
+              {
+                "col": "observed"
+              }
+            ]
+          }
+        },
+        {
+          "name": "flag",
+          "expr": {
+            "ifelse": {
+              "test": {
+                "var": "Pdc",
+                "op": ">=",
+                "value": 0.8
+              },
+              "yes": {
+                "lit": 1
+              },
+              "no": {
+                "lit": 0
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "M08",
+    "label": "identifier starting with a digit refused",
+    "schema": "mutate-v1",
+    "expect": "invalid",
+    "instance": {
+      "version": 1,
+      "assign": [
+        {
+          "name": "1x",
+          "expr": {
+            "lit": 1
+          }
+        }
+      ]
+    }
   }
 ]
