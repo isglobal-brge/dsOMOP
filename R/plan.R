@@ -3579,10 +3579,25 @@
         # A visit filter reads patient visits through an EXISTS, even when an
         # extension's visit key is omitted from the reference projection.
         source_columns <- bp$columns[[tolower(out$table)]]$column_name
-        if (is.null(visit_filter) && .referenceTableSource(bp, out$table) &&
-            !any(c(.PERSON_KEY_COLS(), .EPISODE_KEY_COLS(), "set_id") %in% source_columns)) {
-          ctx$reference_outputs <- union(ctx$reference_outputs, out_name)
+        reference <- is.null(visit_filter) && .referenceTableSource(bp, out$table) &&
+          !any(c(.PERSON_KEY_COLS(), .EPISODE_KEY_COLS(), "set_id") %in% source_columns)
+        if (reference && !is.null(concept_set)) {
+          # V1 permits key-column overrides on patient sources. A reference
+          # exemption cannot hide an extension selector by dropping its column
+          # from the result. Standard reference fields keep their historical
+          # semantics (including metadata_id and value_as_string); extensions
+          # must have a filterable role. is_extension is server-built from the
+          # vendored CDM specification, never a client declaration.
+          scope_column <- .conceptScopeColumns(bp, out$table, concept_col,
+            out$columns, custom_filters)$filter_column
+          source_metadata <- bp$columns[[tolower(out$table)]]
+          standard_columns <- source_metadata$column_name[
+            source_metadata$is_extension %in% FALSE]
+          reference <- length(scope_column) == 1L &&
+            scope_column %in% union(standard_columns,
+              .filterableColumns(bp, tolower(out$table)))
         }
+        if (reference) ctx$reference_outputs <- union(ctx$reference_outputs, out_name)
 
       } else if (out_type == "baseline") {
         if (!is.null(custom_filters) && length(custom_filters) > 0) {

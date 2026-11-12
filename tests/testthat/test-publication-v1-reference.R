@@ -33,6 +33,151 @@ test_that("legacy vocabulary and declared metadata sources retain reference publ
   }
 })
 
+test_that("reference proof checks the effective concept scope without changing private extraction", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .setLegacyTestPersonKey(handle, "publication-reference-scope", .local_envir = environment())
+  staging <- withr::local_tempdir()
+  Sys.chmod(staging, "0700")
+  unsafe <- c("visit_occurrence_id", "encounter_id", "secret_source_value")
+  for (column in unsafe) {
+    DBI::dbExecute(handle$conn, paste("ALTER TABLE concept ADD COLUMN", column, "INTEGER"))
+    DBI::dbExecute(handle$conn, paste("UPDATE concept SET", column, "= 1 WHERE concept_id = 201820"))
+  }
+  withr::local_options(list(nfilter.subset = 100L, dsomop.query_strict = TRUE,
+    dsstaging.base_dir = staging,
+    dsomop.allowed_cdm_extensions = list(concept = unsafe)))
+  handle$blueprint <- NULL
+  expected <- DBI::dbGetQuery(handle$conn,
+    "SELECT concept_id, concept_code, vocabulary_id FROM concept WHERE concept_id = 201820")
+  for (column in unsafe) {
+    # The legacy compiler can use this override privately, then remove it
+    # from projection. Publication must not mistake the result for reference
+    # data independent of the hidden selection.
+    selected <- .executeQuery(handle, .compileSelect(handle, "concept",
+      columns = names(expected), concept_filter = 1L, concept_col = column))
+    expect_identical(selected, expected)
+    for (mode in c("memory", "staged")) {
+      for (spelling in c("direct", "nested", "precedence")) {
+        plan <- .reference_plan()
+        plan$outputs$ref$concept_set <- 1L
+        if (spelling == "direct") {
+          plan$outputs$ref$concept_col <- column
+        } else {
+          plan$outputs$ref$filters <- list(concept_col = column)
+          if (spelling == "precedence") {
+            plan$outputs$ref$concept_col <- "concept_id"
+            plan$outputs$ref$concept_set <- 99999999L
+            plan$outputs$ref$filters$concept_set <- list(ids = 1L)
+          }
+        }
+        refused <- tryCatch(.planExecute(handle, plan, c(ref = "R"), output_mode = mode),
+          dsomop_plan_rejection = identity)
+        expect_s3_class(refused, "dsomop_plan_rejection")
+        expect_identical(refused$code, "lineage_malformed")
+        expect_length(handle$staging_dirs %||% character(0), 0L)
+        expect_length(list.files(staging, recursive = TRUE, all.files = TRUE,
+          no.. = TRUE), 0L)
+      }
+    }
+    # An unused override is not a selector. Nested safe values take the
+    # executor's precedence over an unsafe direct override and direct IDs.
+    plan <- .reference_plan()
+    plan$outputs$ref$concept_col <- column
+    all_reference <- DBI::dbGetQuery(handle$conn,
+      "SELECT concept_id, concept_code, vocabulary_id FROM concept")
+    expect_identical(.planExecute(handle, plan, c(ref = "R"))$ref, all_reference)
+    plan$outputs$ref$concept_set <- 1L
+    plan$outputs$ref$filters <- list(concept_col = "concept_id",
+      concept_set = list(ids = 201820L))
+    expect_identical(.planExecute(handle, plan, c(ref = "R"))$ref, expected)
+  }
+  DBI::dbExecute(handle$conn, "ALTER TABLE concept ADD COLUMN reference_flag INTEGER")
+  DBI::dbExecute(handle$conn, "UPDATE concept SET reference_flag = 1 WHERE concept_id = 201820")
+  withr::local_options(list(dsomop.allowed_cdm_extensions =
+    list(concept = c(unsafe, "reference_flag"))))
+  handle$blueprint <- NULL
+  plan <- .reference_plan()
+  plan$outputs$ref$concept_col <- "reference_flag"
+  plan$outputs$ref$concept_set <- 1L
+  safe_extension <- DBI::dbGetQuery(handle$conn, paste(
+    "SELECT reference_flag, concept_id, concept_code, vocabulary_id FROM concept",
+    "WHERE reference_flag = 1"))
+  expect_identical(.planExecute(handle, plan, c(ref = "R"))$ref, safe_extension)
+  # Empty non-NULL restrictions retain compiler/raw-envelope semantics;
+  # they must never be reclassified as absent by the reference proof.
+  for (ids in list(integer(0), list(list()))) {
+    plan <- .reference_plan()
+    plan$outputs$ref$concept_col <- "visit_occurrence_id"
+    plan$outputs$ref$concept_set <- ids
+    refused <- tryCatch(.planExecute(handle, plan, c(ref = "R")),
+      dsomop_plan_rejection = identity)
+    expect_s3_class(refused, "dsomop_plan_rejection")
+    expect_identical(refused$code, "validation_error")
+  }
+  # The same legacy override remains available on a patient source whose
+  # result has real person lineage and sufficient support.
+  withr::local_options(list(nfilter.subset = 3L))
+  plan <- .reference_plan("measurement", "value_as_number")
+  plan$outputs$ref$concept_col <- "person_id"
+  plan$outputs$ref$concept_set <- 1:6
+  actual <- .planExecute(handle, plan, c(ref = "R"))$ref
+  expected_values <- DBI::dbGetQuery(handle$conn,
+    "SELECT value_as_number FROM measurement WHERE person_id IN (1,2,3,4,5,6)")
+  expect_identical(actual$value_as_number, expected_values$value_as_number)
+  expect_equal(length(unique(actual$person_id)), 6L)
+})
+
+test_that("standard reference selectors and surfacing precedence preserve legacy metadata results", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  DBI::dbExecute(handle$conn, paste(
+    "CREATE TABLE metadata (metadata_id INTEGER, metadata_concept_id INTEGER,",
+    "metadata_type_concept_id INTEGER, value_as_string TEXT, value_as_number REAL)"))
+  DBI::dbExecute(handle$conn, paste(
+    "INSERT INTO metadata VALUES (1, 201820, 10, '1', 7.5),",
+    "(2, 320128, 20, '2', 8.5)"))
+  withr::local_options(list(nfilter.subset = 100L, dsomop.query_strict = TRUE))
+  handle$blueprint <- NULL
+  # These official source fields have reference semantics. Preserve the
+  # compiler's historical projection: its own metadata key is retained,
+  # while sensitive text is omitted.
+  for (column in c("metadata_id", "value_as_string")) {
+    plan <- .reference_plan("metadata", "value_as_number")
+    plan$outputs$ref$concept_col <- column
+    plan$outputs$ref$concept_set <- 1L
+    projection <- if (column == "metadata_id") "metadata_id, value_as_number" else "value_as_number"
+    expected <- DBI::dbGetQuery(handle$conn,
+      paste("SELECT", projection, "FROM metadata WHERE", column, "= 1"))
+    expect_identical(.planExecute(handle, plan, c(ref = "R"))$ref, expected)
+  }
+  # Standard metadata has no domain-concept role. An authorized concept
+  # extension supplies one through the same blueprint role classification
+  # used by the compiler, without forging blueprint metadata.
+  DBI::dbExecute(handle$conn, "ALTER TABLE metadata ADD COLUMN reference_concept_id INTEGER")
+  DBI::dbExecute(handle$conn, "UPDATE metadata SET reference_concept_id = metadata_concept_id")
+  withr::local_options(list(dsomop.allowed_cdm_extensions =
+    list(metadata = "reference_concept_id")))
+  handle$blueprint <- NULL
+  # A requested or independently filtered override surfaces values; the
+  # concept set then scopes the domain column, exactly as private extraction.
+  for (signal in c("columns", "custom")) {
+    plan <- .reference_plan("metadata", "value_as_number")
+    plan$outputs$ref$concept_col <- "metadata_type_concept_id"
+    plan$outputs$ref$concept_set <- 201820L
+    if (signal == "columns") {
+      plan$outputs$ref$columns <- c("value_as_number", "metadata_type_concept_id")
+    } else {
+      plan$outputs$ref$filters <- list(custom =
+        list(var = "metadata_type_concept_id", op = "in", value = list(10L)))
+    }
+    expected <- DBI::dbGetQuery(handle$conn, paste(
+      "SELECT reference_concept_id, metadata_type_concept_id, value_as_number",
+      "FROM metadata WHERE reference_concept_id = 201820"))
+    expect_identical(.planExecute(handle, plan, c(ref = "R"))$ref, expected)
+  }
+})
+
 test_that("legacy reference proof reaches public memory and staged inventories", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle), add = TRUE)
