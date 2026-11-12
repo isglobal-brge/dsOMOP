@@ -24,9 +24,10 @@
 #     metrics. Each is recomputed LIVE as a DERIVED scalar over the gated single-
 #     site aggregates the sibling ports already build (R-in-session: the sibling
 #     kernels are called in one fn and their outputs assembled into ONE row):
-#       * mdrr            -> .omopCmMdrr(total_outcomes, target_days,
-#                            comparator_days) VERBATIM (the cm_result kernel; bands
-#                            its inputs and is NA on any suppressed input).
+#       * mdrr            -> .omopCmReleasedMdrr(target, comparator) VERBATIM
+#                            (the cm_result kernel: NA unless each arm is
+#                            separately supported; computed from the released,
+#                            banded arm statistics only).
 #       * max_sdm         -> max(abs(SMD)) over .omopTwoArmCovariateSmd(target,
 #                            comparator) (the covariate-balance kernel; each SMD is
 #                            already NA when either arm is suppressed, so the max is
@@ -338,8 +339,15 @@
 #' person-time) — mirroring \code{\link{.omopAnalysisReconcileRatio}} so the
 #' released MDRR never rests on un-banded counts.
 #'
-#' @param outcomes Numeric; total outcomes across both arms (raw).
-#' @param target_days,comparator_days Numeric; person-days per arm (raw).
+#' Callers pass the RELEASED arm statistics of
+#' \code{\link{.omopCmReleasableArmStats}} (via
+#' \code{\link{.omopCmReleasedMdrr}}): \code{D} is
+#' \code{band(target outcomes) + band(comparator outcomes)}, never the band of
+#' the raw total, whose carry bit would reveal hidden arm information. Banding
+#' is idempotent, so re-banding released values here changes nothing.
+#'
+#' @param outcomes Numeric; total released outcomes across both arms.
+#' @param target_days,comparator_days Numeric; released person-days per arm.
 #' @param alpha Numeric; type-I error (default 0.05).
 #' @param power Numeric; target power (default 0.80).
 #' @param two_sided Logical; two-sided test (default TRUE).
@@ -420,19 +428,18 @@
     ta <- arm_row("target", cohorts$a)
     co <- arm_row("comparator", cohorts$b)
 
-    # MDRR is a SINGLE study-level value derived from the BANDED aggregates (NA
-    # when any input is suppressed). It is carried as a COLUMN on BOTH arm rows
-    # (NOT a separate row): a person-less mdrr row would have an NA distinct-person
-    # companion and be dropped by the gate's record branch, so the value rides on
-    # the arm rows that survive gating on their own person counts — i.e. the MDRR
-    # is released iff the arms it summarises are themselves releasable. The arm
-    # counts are declared (not pre-gated); the single gate bands them.
+    # MDRR is a SINGLE study-level value derived only from the RELEASED arm
+    # statistics (.omopCmReleasableArmStats): band(target outcomes) +
+    # band(comparator outcomes) and the banded person-days. It is carried as a
+    # COLUMN on BOTH arm rows (NOT a separate row) and is NA on both whenever
+    # EITHER arm is unsupported (its persons, outcome persons, outcomes or
+    # person-time below threshold): the old total-based MDRR rode on the
+    # surviving arm and constrained the suppressed arm's 1-2 outcome persons.
+    # The arm counts are declared (not pre-gated); the single gate bands them.
     # Outcomes are recurrent events: their support is the number of distinct
-    # persons with an outcome, not the arm size. An arm's outcome count (and the
-    # MDRR built from the total) needs nfilter.tab outcome persons.
-    total_out <- .omopCmSupportedOutcomes(ta, co)
-    mdrr <- .omopCmMdrr(total_out, ta$person_days, co$person_days,
-                        alpha = alpha, power = power, two_sided = two_sided)
+    # persons with an outcome, not the arm size.
+    mdrr <- .omopCmReleasedMdrr(ta, co, alpha = alpha, power = power,
+                                two_sided = two_sided)
     ta$mdrr <- as.numeric(mdrr)
     co$mdrr <- as.numeric(mdrr)
     ta$outcomes[!.omopCmOutcomeSupported(ta$outcome_persons)] <- NA_real_
@@ -472,12 +479,95 @@
   !is.na(x) & x >= .omopDisclosureSettings()$nfilter_tab
 }
 
-# Total outcomes across both arms, or NA when fewer than nfilter.tab distinct
-# persons contribute them.
+#' The released statistics of one CohortMethod arm (standard route)
+#'
+#' One arm's persons, person-time and outcome count as the final gate releases
+#' them, or unavailable. The arm is releasable only when EACH of its own bases
+#' passes separately: its person population (\code{nfilter.subset} and
+#' \code{nfilter.tab}), its distinct outcome-contributing persons
+#' (\code{nfilter.tab}), its outcome count and its person-time (the gate's
+#' \code{nfilter.tab} count floor). A supported total over both arms is not
+#' enough: one arm with 13 outcome persons cannot carry another with 2. Every
+#' released value is banded with the gate's \code{nfilter.band}; derived study
+#' statistics (the MDRR) are computed from these values only. A later protected
+#' route substitutes its released protected arm components here.
+#'
+#' @param arm List (or one-row frame) with \code{persons}, \code{person_days},
+#'   \code{outcomes} and \code{outcome_persons} (raw counts).
+#' @return List: \code{releasable} (logical) and the released \code{persons},
+#'   \code{person_days} and \code{outcomes} (\code{NA} when not releasable).
+#' @keywords internal
+.omopCmReleasableArmStats <- function(arm) {
+  unavailable <- list(releasable = FALSE, persons = NA_real_,
+                      person_days = NA_real_, outcomes = NA_real_)
+  if (!is.list(arm)) return(unavailable)
+  settings <- .omopDisclosureSettings()
+  band_width <- settings$nfilter_band
+  count_floor <- settings$nfilter_tab
+  person_floor <- max(settings$nfilter_tab, settings$nfilter_subset)
+  scalar <- function(x) {
+    x <- suppressWarnings(as.numeric(x %||% NA_real_))
+    if (length(x) != 1L || is.na(x) || !is.finite(x) || x < 0) NA_real_ else x
+  }
+  persons <- scalar(arm$persons)
+  person_days <- scalar(arm$person_days)
+  outcomes <- scalar(arm$outcomes)
+  outcome_persons <- scalar(arm$outcome_persons)
+  supported <- function(x, floor) !is.na(x) && x >= floor
+  if (!supported(persons, person_floor) ||
+      !supported(outcome_persons, count_floor) ||
+      !supported(outcomes, count_floor) ||
+      !supported(person_days, count_floor)) {
+    return(unavailable)
+  }
+  list(
+    releasable = TRUE,
+    persons = .bandCount(persons, band_width = band_width),
+    person_days = .bandCount(person_days, band_width = band_width),
+    outcomes = .bandCount(outcomes, band_width = band_width)
+  )
+}
+
+#' Total released outcomes of a two-arm comparison
+#'
+#' \code{band(target outcomes) + band(comparator outcomes)} when BOTH arms are
+#' separately releasable (\code{\link{.omopCmReleasableArmStats}}), else
+#' \code{NA}. It is never the band of the raw total.
+#'
+#' @param ta,co Raw arm counts (target, comparator).
+#' @return Numeric scalar or \code{NA_real_}.
+#' @keywords internal
 .omopCmSupportedOutcomes <- function(ta, co) {
-  persons <- sum(c(ta$outcome_persons, co$outcome_persons))
-  if (!isTRUE(.omopCmOutcomeSupported(persons))) return(NA_real_)
-  sum(c(ta$outcomes, co$outcomes), na.rm = TRUE)
+  target <- .omopCmReleasableArmStats(ta)
+  comparator <- .omopCmReleasableArmStats(co)
+  if (!isTRUE(target$releasable) || !isTRUE(comparator$releasable)) {
+    return(NA_real_)
+  }
+  target$outcomes + comparator$outcomes
+}
+
+#' MDRR of a two-arm comparison from its released arm statistics
+#'
+#' The single MDRR computation shared by \code{dsomop:cm.mdrr} (and its
+#' \code{ohdsi.cohort_method.cm_result} alias) and the diagnostics summary:
+#' \code{NA} unless both arms are separately releasable; otherwise
+#' \code{\link{.omopCmMdrr}} over the released total outcomes and the released
+#' person-days, so its exact inverse recovers only values the arm rows release.
+#'
+#' @param ta,co Raw arm counts (target, comparator).
+#' @inheritParams .omopCmMdrr
+#' @return Numeric scalar MDRR or \code{NA_real_}.
+#' @keywords internal
+.omopCmReleasedMdrr <- function(ta, co, alpha = 0.05, power = 0.80,
+                                two_sided = TRUE) {
+  target <- .omopCmReleasableArmStats(ta)
+  comparator <- .omopCmReleasableArmStats(co)
+  if (!isTRUE(target$releasable) || !isTRUE(comparator$releasable)) {
+    return(NA_real_)
+  }
+  .omopCmMdrr(target$outcomes + comparator$outcomes, target$person_days,
+              comparator$person_days, alpha = alpha, power = power,
+              two_sided = two_sided)
 }
 
 #' \code{dsomop:ohdsi.cohort_method.cm_result} entry (CohortMethod substrate + MDRR)
@@ -603,10 +693,11 @@
 #' \code{\link{.omopTwoPopCohorts}}), the sibling kernels are called in this one fn
 #' and their outputs reduced to scalars:
 #' \itemize{
-#'   \item \strong{mdrr}: total outcomes + per-arm person-time are counted exactly
-#'     as \code{\link{.omopCmResultFn}} does (descendant-expanded outcome set, TAR
-#'     window), then passed to \code{\link{.omopCmMdrr}} VERBATIM — which bands
-#'     each input and is NA on any suppressed input.
+#'   \item \strong{mdrr}: per-arm persons, person-time and outcomes are counted
+#'     exactly as \code{\link{.omopCmResultFn}} does (descendant-expanded outcome
+#'     set, TAR window), then passed to \code{\link{.omopCmReleasedMdrr}}
+#'     VERBATIM — NA unless EACH arm is separately supported, and otherwise
+#'     computed from the released (banded) arm statistics only.
 #'   \item \strong{max_sdm}: \code{max(abs(SMD))} over
 #'     \code{\link{.omopTwoArmCovariateSmd}} (each SMD is already NA when either
 #'     arm is suppressed, so the max is over disclosure-safe SMDs only; NA when no
@@ -667,11 +758,10 @@
     ta <- arm_substrate(cohorts$a)
     co <- arm_substrate(cohorts$b)
 
-    # (a) mdrr -- reuse the cm_result kernel verbatim (bands inputs; NA-on-suppress),
-    # with the outcome total supported by its distinct outcome persons.
-    total_out <- .omopCmSupportedOutcomes(ta, co)
-    mdrr <- .omopCmMdrr(total_out, ta$person_days, co$person_days,
-                        alpha = alpha, power = power, two_sided = two_sided)
+    # (a) mdrr -- the cm_result kernel verbatim: computed from the released arm
+    # statistics only, NA unless EACH arm is separately supported.
+    mdrr <- .omopCmReleasedMdrr(ta, co, alpha = alpha, power = power,
+                                two_sided = two_sided)
 
     # (b) max_sdm -- largest covariate imbalance over the banded-SMD kernel. Each
     # SMD is already NA where either arm is suppressed, so max(abs(.)) is over

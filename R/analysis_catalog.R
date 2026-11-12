@@ -3156,12 +3156,16 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     if (is.null(cohorts)) return(data.frame())
     a <- cohorts$a; b <- cohorts$b
 
-    # Distinct-person counts of the four overlap regions, each a COUNT(DISTINCT
-    # subject_id) over a set predicate. Returned LONG (one count per row) so the
-    # ONE gate suppresses + bands EACH region independently (the differencing
-    # defence): a sub-threshold region's row is dropped and every surviving count
-    # is floored to a multiple of nfilter_band, so no arithmetic over the
-    # released regions can recover a suppressed one.
+    # Distinct-person counts of the three MUTUALLY EXCLUSIVE overlap regions,
+    # each a COUNT(DISTINCT subject_id) over a set predicate, returned LONG (one
+    # count per row) so the ONE gate suppresses + bands each region. Banding
+    # alone does not stop arithmetic: a redundant union row ('either') next to
+    # its parts used to pin a suppressed region (54 A-only, 54 B-only and 2 in
+    # both released 50 / 50 / either 110, so both = 110 - 54 - 54 = 2). The
+    # union is therefore never released; a caller who needs it sums the
+    # released regions (the same values, so it adds no information). Other
+    # routes that release the cohorts' own sizes stay subject to the usual
+    # DataSHIELD differencing qualification.
     in_a <- paste0("subject_id IN (SELECT subject_id FROM ", a, ")")
     in_b <- paste0("subject_id IN (SELECT subject_id FROM ", b, ")")
     union_sql <- paste0(
@@ -3176,20 +3180,21 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     both   <- count_of(paste0(in_a, " AND ", in_b))
     a_only <- count_of(paste0(in_a, " AND NOT ", in_b))
     b_only <- count_of(paste0(in_b, " AND NOT ", in_a))
-    either <- count_of(paste0(in_a, " OR ", in_b))
 
     data.frame(
-      category = c("both", "a_only", "b_only", "either"),
-      n        = c(both, a_only, b_only, either),
+      category = c("both", "a_only", "b_only"),
+      n        = c(both, a_only, b_only),
       stringsAsFactors = FALSE)
   }
 
   .omopAnalysisEntry(
     name        = name,
     description = paste0("Distinct-person overlap of two scoped populations: ",
-                         "both / A-only / B-only / either. unit=person; every ",
-                         "region is suppressed + banded independently ",
-                         "(differencing defence)."),
+                         "the three disjoint regions both / A-only / B-only. ",
+                         "unit=person; every region is suppressed + banded. ",
+                         "The redundant union is not released (it would pin ",
+                         "a suppressed region); sum the released regions ",
+                         "for it."),
     domain      = "general",
     params      = list(),
     compute = list(
