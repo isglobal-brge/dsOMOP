@@ -1957,8 +1957,45 @@
             },
             "legacy_index_anchor": {
               "const": "scope_cohort"
+            },
+            "legacy_empty": {
+              "const": true,
+              "description": "the v1 criteria population without filter_tree, cohort_definition_id or index_event: no person (2.10.2 materialised an empty roster)"
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "legacy_empty"
+                ]
+              },
+              "then": {
+                "required": [
+                  "legacy_episodes"
+                ],
+                "not": {
+                  "required": [
+                    "legacy_cohort_table"
+                  ]
+                },
+                "properties": {
+                  "parent": {
+                    "type": "null"
+                  },
+                  "where": {
+                    "type": "null"
+                  },
+                  "cohort_definition_id": {
+                    "type": "null"
+                  },
+                  "legacy_episodes": {
+                    "const": "observation_periods"
+                  }
+                }
+              }
+            }
+          ]
         },
         {
           "type": "object",

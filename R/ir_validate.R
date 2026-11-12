@@ -387,7 +387,8 @@
       if (identical(pop[["setop"]][["op"]], "setdiff") && length(members) != 2L) {
         add(base, "/setop/members: setdiff takes exactly two members")
       }
-      if (anyDuplicated(unlist(members))) add(base, "/setop/members: members must be distinct")
+      # A-21: self-difference and repeated subtrahends are valid private
+      # populations. Membership need not be distinct for any set operation.
       covs <- unique(vapply(members, function(m) {
         mp <- pops[[m]]
         if (is.list(mp[["coverage"]])) .jcsCanonical(mp[["coverage"]]) else ""

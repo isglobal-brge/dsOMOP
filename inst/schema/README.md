@@ -7,7 +7,8 @@ Generated from the endorsed design (`design-2.10.3.endorsed.md`, SHA-256
   `when_index_source` and A-14 `source_analyses`);
 - `ir-v2.json` — the internal compatibility IR: wire schema plus the closed
   legacy variants that only `.irNormalize()` can produce (section 4.5,
-  amendments A-2, A-10, A-15 and A-16); never accepted on the wire;
+  amendments A-2, A-10, A-15, A-16 and A-21, including A-25's exclusion of
+  named cohort references from `legacy_empty`); never accepted on the wire;
 - `mutate-v1.json` — the mutation AST with the predicate grammar copied in
   (section 4.6);
 - `examples/` — canonical examples A (normalised form) and B (as emitted);
