@@ -2,7 +2,7 @@
 % Please edit documentation in R/tools_release_hierarchy.R
 \name{.dsomopReleaseTransport}
 \alias{.dsomopReleaseTransport}
-\title{Euclidean projection onto a transportation polytope}
+\title{Finite Dykstra display on a transportation polytope with a feasible fallback}
 \usage{
 .dsomopReleaseTransport(Y, rows, cols, tol = 1e-12, max_iter = 20000L)
 }
@@ -23,6 +23,10 @@ Numeric matrix.
 and column sums \code{cols} (nonnegative with equal totals), by Dykstra's
 alternating projections between the row and column simplex products
 (\code{.DSOMOP_RELEASE_TRANSPORT_VERSION}). The polytope is never empty
-for such margins. Deterministic: a fixed update rule and stopping rule.
+for such margins. If the finite iteration cap leaves inconsistent margins,
+nonnegative row normalization and a surplus-to-deficit column transfer
+repair feasibility. The algorithm targets the Euclidean projection; the
+fallback is a feasible display, not an exact minimizer. Deterministic: fixed
+update, stopping, repair and residual-validation rules.
 }
 \keyword{internal}

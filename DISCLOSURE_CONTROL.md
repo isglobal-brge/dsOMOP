@@ -243,6 +243,11 @@ disclosive are released from protected components instead of being withheld:
 - Crossed C6 age-by-year cells use separate nonnegative transports for E, NE,
   T and R, preserving both age and year margins and N=E+NE. The bounds
   T<=3650 N and E<=R<=10 E are enforced at the tree levels, not at crossed cells.
+  The versioned Dykstra display retains converged results; at its finite
+  iteration limit, nonnegative row normalization and column mass transfer
+  restore both margins. This fallback is feasible, not an exact L2 minimizer.
+  C8 interaction display likewise repairs both margins after finite IPF;
+  its repaired output is not claimed to be an exact KL or L2 minimizer.
 - Recurrent incidence counts and `char.time_to_event` retain K=10 events or
   occurrences per person. Event-time recurrence caps across all episodes and
   bins before view selection; 1-, 30- and 365-day views share a public signed-day
