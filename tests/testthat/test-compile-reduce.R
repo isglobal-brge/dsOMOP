@@ -506,7 +506,8 @@ test_that("integer duration kernels admit the maximum result and privately refus
   run <- .ws7_ctx(.ws7_red_backends$sqlite$handle, plan)
   on.exit(.ws7_close(run), add = TRUE)
   roster <- .ws5_literal_roster(run$cctx, data.frame(cohort_row_id = 1, subject_id = 7001L,
-    cohort_start_date = "2000-01-01", cohort_end_date = "2020-12-31"), phase = "final", name = "pop_t")
+    cohort_start_date = "2000-01-01", cohort_end_date = "2020-12-31",
+    index_source = "cohort:1", index_key = "duration-boundary"), phase = "final", name = "pop_t")
   cons <- .reduceConsumer(run$cctx, "o", roster)
   variable <- .compileVariable(run$cctx, .irNamedNode(run$ir, "variable", "total"), roster, cons)
   bounds <- data.frame(key = 1, lo = as.Date(NA), hi = as.Date(NA), defined = TRUE)
