@@ -4,10 +4,19 @@
 # database once, retaining its fragment contract and consumer metadata. This
 # path neither counts nor fetches patient rows into R and has no memory-row cap.
 
-# Takes an UNREGISTERED fragment whose dependencies are registered in ctx.
-# Returns the same fragment backed by a context-owned session table; the caller
-# registers it. The contract and attributes survive, including candidate
-# population identity and index-source metadata.
+#' Freeze a private population relation inside the database
+#'
+#' Takes an unregistered fragment whose dependencies are registered in the
+#' context. No patient rows are counted or fetched into R. The returned
+#' fragment retains its contract and attributes, including candidate identity,
+#' but reads a context-owned session table with no fragment dependencies.
+#' The caller registers it. MySQL reuse carries the private typed-payload
+#' attribute consumed by \code{.buildStatement()}.
+#'
+#' @param ctx Compilation context.
+#' @param f Unregistered fragment with registered dependencies.
+#' @return The frozen, unregistered fragment.
+#' @keywords internal
 .populationFreezeFragment <- function(ctx, f) {
   .assertFragment(f)
   if (!is.null(.fragmentGet(ctx, f$name))) {
