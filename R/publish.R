@@ -23,9 +23,11 @@
   ctx$prepared <- list()
   ctx$rejected <- list()
   ctx$unavailable <- character(0)
-  ctx$owned <- list(symbols = character(0), directories = character(0), files = character(0))
+  ctx$owned <- list(symbols = character(0), directories = character(0), files = character(0),
+                    status_bindings = list())
   ctx$rollback <- list()
   ctx$published_values <- list()
+  ctx$published_variants <- list()
   ctx$commit_policy <- "server"
   ctx$seal <- NULL
   ctx$already_tokenized <- FALSE
@@ -146,6 +148,9 @@
 .publishPrepare <- function(ctx, cand, value = NULL, already_tokenized = FALSE) {
   stopifnot(.isPlanContext(ctx))
   .assertPublicationCandidate(cand)
+  if (length(intersect(cand$private_columns, cand$lineage$key_columns))) {
+    .publishReject("lineage_malformed", cand$output)
+  }
   id <- paste(cand$output, cand$component, sep = "/")
   if (id %in% names(ctx$prepared)) stop("Component prepared more than once.", call. = FALSE)
   if (is.null(value)) value <- get(id, ctx$staging_env, inherits = FALSE)
@@ -166,6 +171,8 @@
   }
   passed <- cand$lineage$mode == "reference" || length(support) >= threshold
   rm(support)
+  .omopAuditLog("publication", list(output = cand$output, component = cand$component,
+                                    passed = passed))
   if (!passed) ctx$rejected[[cand$output]] <- list(
     code = "insufficient_support", message = .publishMessage("insufficient_support"))
   if (identical(cand$status, "unavailable")) ctx$unavailable <- union(ctx$unavailable, cand$output)
@@ -220,8 +227,12 @@
   failures <- character(0)
   for (symbol in rev(ctx$owned$symbols)) {
     tryCatch({
+      value <- if (exists(symbol, ctx$target_env, inherits = FALSE)) {
+        get(symbol, ctx$target_env, inherits = FALSE)
+      } else NULL
+      expected <- c(list(ctx$published_values[[symbol]]), ctx$published_variants[[symbol]])
       if (exists(symbol, ctx$target_env, inherits = FALSE) &&
-          identical(get(symbol, ctx$target_env, inherits = FALSE), ctx$published_values[[symbol]])) {
+          any(vapply(expected, identical, logical(1L), y = value))) {
         rm(list = symbol, envir = ctx$target_env)
         if (exists(symbol, ctx$target_env, inherits = FALSE)) stop("symbol remains")
       }
@@ -230,6 +241,15 @@
   for (symbol in names(ctx$rollback)) {
     tryCatch(assign(symbol, ctx$rollback[[symbol]], ctx$target_env),
              error = function(e) failures <<- c(failures, "replacement"))
+  }
+  for (binding in ctx$owned$status_bindings) {
+    tryCatch({
+      if (exists(binding$symbol, binding$env, inherits = FALSE) &&
+          identical(get(binding$symbol, binding$env, inherits = FALSE), ctx$status)) {
+        rm(list = binding$symbol, envir = binding$env)
+        if (exists(binding$symbol, binding$env, inherits = FALSE)) stop("status remains")
+      }
+    }, error = function(e) failures <<- c(failures, "status"))
   }
   for (path in rev(unique(c(ctx$owned$files, ctx$owned$directories)))) {
     if (file.exists(path) || dir.exists(path)) unlink(path, recursive = TRUE)
@@ -240,6 +260,9 @@
   ctx$committed <- FALSE
   ctx$closed <- TRUE
   if (length(failures)) stop("Publication cleanup failed.", call. = FALSE)
+  if (exists(ctx$id, .publicationRegistry, inherits = FALSE)) {
+    rm(list = ctx$id, envir = .publicationRegistry)
+  }
   invisible(TRUE)
 }
 
@@ -381,7 +404,7 @@ omopPlanStatusDS <- function(exec_symbol) {
   status
 }
 
-.publicationStatusObject <- function(exec_symbol, env) {
+.publicationStatusObject <- function(exec_symbol, env, require_committed = TRUE) {
   exec_symbol <- .ds_arg(exec_symbol)
   if (!.isScalarString(exec_symbol) || !exists(exec_symbol, env, inherits = TRUE)) {
     stop("Execution status is unavailable.", call. = FALSE)
@@ -393,6 +416,17 @@ omopPlanStatusDS <- function(exec_symbol) {
       !identical(status, get(id, .publicationRegistry)$status)) {
     stop("Execution status is not server-authenticated.", call. = FALSE)
   }
+  ctx <- get(id, .publicationRegistry, inherits = FALSE)
+  if (require_committed && !isTRUE(ctx$committed)) {
+    stop("Execution status has been revoked.", call. = FALSE)
+  }
+  binding_env <- env
+  while (!exists(exec_symbol, binding_env, inherits = FALSE)) binding_env <- parent.env(binding_env)
+  recorded <- vapply(ctx$owned$status_bindings, function(x) {
+    identical(x$symbol, exec_symbol) && identical(x$env, binding_env)
+  }, logical(1L))
+  if (!any(recorded)) ctx$owned$status_bindings <- c(ctx$owned$status_bindings,
+    list(list(symbol = exec_symbol, env = binding_env)))
   status
 }
 
@@ -420,7 +454,7 @@ omopStagedRevokeDS <- function(exec_symbol) {
   if (inherits(exec_symbol, "FlowerDatasetDescriptor")) {
     return(.publishRevokeDescriptor(exec_symbol))
   }
-  status <- .publicationStatusObject(exec_symbol, env)
+  status <- .publicationStatusObject(exec_symbol, env, require_committed = FALSE)
   ctx <- get(attr(status, "execution_id"), .publicationRegistry)
   .publishAbort(ctx)
   invisible(TRUE)
@@ -462,11 +496,12 @@ omopStagedRevokeDS <- function(exec_symbol) {
 .publishStageFrame <- function(ctx, cand, value) {
   directory <- .publishStagingDir(ctx)
   dataset <- if (cand$component == cand$output) cand$output else paste(cand$output, cand$component, sep = ".")
+  contracts <- .publicationStagedContracts(ctx, cand$output,
+    if (cand$component == cand$output) NULL else cand$component)
   .stageDataFrame(value, dataset, directory, ctx$staging_token,
                  .personKey(ctx$handle), pseudonymization = .personKeyPublicContract(ctx$handle),
-                 semantic_contract = .stagedSemanticContract(ctx$ir, cand$output,
-                   component = if (cand$component == cand$output) NULL else cand$component),
-                 bundle_contract = .stagedBundleContract(ctx$ir, cand$output, ctx$staging_token),
+                 semantic_contract = contracts$semantic,
+                 bundle_contract = contracts$bundle,
                  ctx = ctx, already_tokenized = TRUE)
 }
 
@@ -490,7 +525,6 @@ omopStagedRevokeDS <- function(exec_symbol) {
 .publishOutputs <- function(ctx, outputs, out) {
   roots <- ctx$ir$publish %||% names(ctx$ir$outputs)
   roots <- as.character(unlist(roots, use.names = FALSE))
-  if (!length(roots)) roots <- names(outputs)
   if (any(!roots %in% names(ctx$ir$outputs)) || anyDuplicated(roots)) {
     .publishReject("validation_error")
   }
@@ -503,16 +537,18 @@ omopStagedRevokeDS <- function(exec_symbol) {
       next
     }
     if (inherits(value, "dsomop_compiled_output")) {
-      .assertCompiledOutput(value)
-      for (pc in value$publication_candidates) {
-        component <- value$components[[pc$component]]
-        frame <- component$frame
-        if (is.null(frame)) frame <- .executeQuery(ctx$handle, component$statement)
-        .publishPrepare(ctx, pc, frame)
-      }
+      tryCatch({
+        if (!identical(value$output, root)) .publishReject("validation_error", root)
+        .publishCompiled(ctx, value)
+      }, dsomop_plan_rejection = function(e) {
+        if (!e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",
+                           "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
+        ctx$rejected[[root]] <- list(code = e$code, message = .publishMessage(e$code))
+      })
       next
     }
-    components <- if (is.data.frame(value) || inherits(value, "FlowerDatasetDescriptor")) {
+    composite <- !(is.data.frame(value) || inherits(value, "FlowerDatasetDescriptor"))
+    components <- if (!composite) {
       stats::setNames(list(value), root)
     } else value
     if (!is.list(components) || !length(components) || is.null(names(components))) {
@@ -532,7 +568,7 @@ omopStagedRevokeDS <- function(exec_symbol) {
       frame <- components[[component]]
       descriptor <- inherits(frame, "FlowerDatasetDescriptor")
       columns <- if (descriptor) frame$metadata$columns else names(frame)
-      reference <- component %in% references ||
+      reference <- (composite && component %in% references) ||
         (component == root && identical(ctx$ir$outputs[[root]]$type, "concept_dictionary"))
       key <- intersect(.PERSON_KEY_COLS(), columns)
       lineage <- if (reference) .lineage("reference") else if (length(key)) {
@@ -591,7 +627,13 @@ omopStagedRevokeDS <- function(exec_symbol) {
     ctx <- get(id, .publicationRegistry, inherits = FALSE)
     if (!isTRUE(ctx$committed)) next
     for (symbol in names(ctx$published_values)) {
-      if (identical(ctx$published_values[[symbol]], before)) ctx$published_values[[symbol]] <- after
+      expected <- c(list(ctx$published_values[[symbol]]), ctx$published_variants[[symbol]])
+      if (any(vapply(expected, identical, logical(1L), y = before)) &&
+          !any(vapply(expected, identical, logical(1L), y = after))) {
+        # Keep earlier representations too: identical components may be
+        # harmonised independently, including on DSLite sites in one process.
+        ctx$published_variants[[symbol]] <- c(ctx$published_variants[[symbol]], list(after))
+      }
     }
   }
   invisible(after)

@@ -7,6 +7,18 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- Publication validates one genuine person per final row through direct keys or
+  an immutable roster. Composite families commit together; support is counted
+  on the materialized component, including streamed staged files.
+- Output names come from the committed inventory and never overwrite occupied
+  symbols. Tokenization, DP sealing, assignments and manifest publication share
+  verified rollback; staged readers require exact committed membership.
+- `omopPlanStatusDS()` transports bounded execution status before client cleanup;
+  `omopStagedRevokeDS()` revokes execution-owned symbols and staged files.
+  Strict/non-strict behavior and small-site skipping are decided before commit.
+- DP preparation follows the full normalized graph and authenticated scopes;
+  matching taints descendants and sealing completes before publication.
+
 - (B-8) Before 2.10.3, `parent_id` recorded provenance but did not restrict
   membership; from 2.10.3 a child population is a subset of its parent, as
   `print()` has always shown.
@@ -36,6 +48,9 @@ fills its entries. Classes follow design-2.10.3 section 5.
   constructs on the wire, `tie_policy = "error"`.
 
 ### Publication
+- Orphan, conflicting or nonunique roster mappings fail closed. A set identifier
+  alone is never person lineage; reference companions cannot escape a refused
+  patient family. Uncommitted, altered and revoked staged descriptors are refused.
 - Final patient components with fewer than `nfilter.subset` persons,
   including empty sparse or recurrent components, are refused at
   publication; safe-result equivalence applies only to results that satisfy

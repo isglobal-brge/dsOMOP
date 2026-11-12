@@ -702,7 +702,12 @@ omopInitDS <- function(resource_symbol,
 #'   \code{scope_table_1}, ... without gaps. They are combined internally with
 #'   a literal \code{scope}; no generic aggregate \code{c()} or \code{list()}
 #'   method is required.
-#' @return Invisible TRUE (outputs are assigned into caller's environment)
+#' @param commit_policy Character; \code{"server"} applies the server's strict
+#'   mode, while \code{"all_or_none"} refuses the whole execution if any
+#'   final component fails support. This policy cannot relax disclosure gates.
+#' @return A server-authenticated publication status. Outputs are assigned into
+#'   the caller's environment; the client reads the bounded inventory with
+#'   \code{\link{omopPlanStatusDS}} before deleting its execution-status symbol.
 #' @examples
 #' \dontrun{
 #' omopPlanExecuteDS("omop", plan, out = c(cohort = "my_cohort"))

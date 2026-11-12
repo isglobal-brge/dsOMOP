@@ -687,7 +687,9 @@ test_that("small criteria populations are private until final publication", {
     plan$outputs <- list(study = list(
       type = "person_level", population_id = "A",
       tables = list(person = c("person_id", "gender_concept_id"))))
-    private <- .planExecute(h, plan, list(study = "study_sym"))$study
+    ctx <- .planContext(h, plan)
+    on.exit(.planContextClose(ctx), add = TRUE)
+    private <- .planExecute(h, plan, list(study = "study_sym"), ctx = ctx)$study
     expect_equal(length(unique(private$person_id)), 2L)
     expect_error(.publishStandalone(private, handle = h,
                                     caller = "recipe-setops-test",

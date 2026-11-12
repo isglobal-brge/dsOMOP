@@ -1519,6 +1519,12 @@
       if (!is.null(params$safe_scope)) {
         .assertSafeNumericBinContract(handle, table = "measurement", column = "value_as_number",
           value = list(lower = min_value, upper = max_value), scope = params$safe_scope)
+        scope_concept <- suppressWarnings(as.integer(params$safe_scope$concept_id %||% integer(0)))
+        scope_column <- params$safe_scope$concept_col %||% "measurement_concept_id"
+        if (length(concept_ids) != 1L || length(scope_concept) != 1L || is.na(scope_concept) ||
+            scope_concept != concept_ids[[1L]] || !identical(tolower(scope_column), "measurement_concept_id")) {
+          fail("safe-bin scope must match the measurement concept_id.")
+        }
       }
       if (!is.null(min_value)) sub_where <- paste0(sub_where, " AND m.value_as_number >= ", min_value)
       if (!is.null(max_value)) sub_where <- paste0(sub_where, " AND m.value_as_number < ", max_value)
@@ -2565,9 +2571,9 @@
 #' OR a set-operation over OTHER populations (\code{setop = list(op, members)},
 #' folded with \code{\link{.cohortCombine}}). Set-op populations are resolved AFTER
 #' their members, so a single pass over a parent-before-child ordering suffices;
-#' a member that has not yet been resolved is an error (fail-closed). Every
-#' produced person set is gated with \code{\link{.assertMinPersons}} — a tiny
-#' intersection therefore fails closed before any output is produced.
+#' a member that has not yet been resolved is an error (fail-closed). With an
+#' execution context these are private inputs; support is checked on each
+#' final publication component.
 #'
 #' @param handle CDM handle
 #' @param plan The extraction plan (uses \code{plan$populations} and, for the
@@ -2648,8 +2654,6 @@
       combined <- member_tables[[1]]
       if (length(member_tables) > 1) {
         for (k in 2:length(member_tables)) {
-          # .cohortCombine gates the running result with .assertMinPersons, so a
-          # tiny intersection fails closed here, before any output is produced.
           # Each fold step needs its own temp-table name: reusing one name across
           # a >=3-member fold makes the 2nd .createTempTable collide ("table
           # already exists"). The LAST step lands at the canonical population name
@@ -3777,9 +3781,7 @@
       } else if (inherits(result, "omop_temporal_sql_components")) {
         for (validation in result$validations) {
           value <- .executeQuery(handle, validation$sql)[[1L]][[1L]]
-          if (identical(validation$kind, "min_persons")) {
-
-          } else if (identical(validation$kind, "max_value")) {
+          if (identical(validation$kind, "max_value")) {
             numeric_value <- suppressWarnings(as.numeric(value))
             if (length(numeric_value) != 1L || is.na(numeric_value) ||
                 !is.finite(numeric_value) || numeric_value > validation$max) {

@@ -533,6 +533,9 @@
 # descriptor. Consumers compare the returned canonical list, never a partial or
 # caller-selected subset of fields.
 .validateStagedSemanticContract <- function(contract) {
+  if (is.list(contract) && identical(contract$contract_version, "dsomop-staged-semantics-v3")) {
+    return(.publicationValidateNativeSemantic(contract))
+  }
   fail <- function(detail = "") {
     stop("Invalid staged semantic contract", detail, ".", call. = FALSE)
   }
