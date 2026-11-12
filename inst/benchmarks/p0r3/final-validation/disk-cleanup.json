@@ -1,0 +1,25 @@
+{
+  "time_utc": "2026-11-12T15:16:28.765410+00:00",
+  "authority": "design/astra-dev/CLEANUP.md: Codex caches and named download caches",
+  "before_df": "Filesystem        1B-blocks         Used   Available Use% Mounted on\n/dev/md2       215892250624 194501722112 10349268992  95% /workspace\n",
+  "removed": [
+    {
+      "path": "/home/dev/.codex/cache",
+      "allocated_bytes": 70840320
+    },
+    {
+      "path": "/home/dev/.cache/pip",
+      "allocated_bytes": 798720
+    },
+    {
+      "path": "/home/dev/.cache/R",
+      "allocated_bytes": 8192
+    },
+    {
+      "path": "/home/dev/.npm/_cacache",
+      "allocated_bytes": 5390336
+    }
+  ],
+  "after_df": "Filesystem        1B-blocks         Used   Available Use% Mounted on\n/dev/md2       215892250624 194424684544 10426306560  95% /workspace\n",
+  "limits": "No eligible session rollouts older than four days; Nov11-14 sessions untouched. No repositories, worktrees, evidence files, active build mirrors or forbidden paths deleted. Remaining capacity is below the 15GB cleanup target. No full rerun or large copy was needed: the pod run completed intact; only small logs/report files are recovered."
+}
