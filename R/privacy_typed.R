@@ -147,8 +147,6 @@
   c(-rev(p), 0, p)
 })
 
-.DSOMOP_TYPED_CLINICAL_DAYS <- c(0, 1, 7, 14, 21, 28, 30, 60, 90, 120, 180,
-                                 270, 365, 545, 730, 1095, 1460, 1825, 3650)
 
 #' Fixed atom basis of a typed numeric variable
 #'
@@ -196,9 +194,8 @@
   }
   points <- switch(scale,
     age_years = 0:110,
-    duration_days = sort(unique(c(.DSOMOP_TYPED_CLINICAL_DAYS, 7300, 10957))),
-    tar_days = sort(unique(c(30 * (0:121), .DSOMOP_TYPED_CLINICAL_DAYS,
-                             3650))),
+    duration_days = .dsomopReleaseDurationGrid(),
+    tar_days = .dsomopReleaseDayGrid(),
     count_per_person = c(0:20, 25, 30, 40, 50, 75, 100),
     probability = round(seq(0, 1, by = 0.01), 2),
     seq(bounds[[1L]], bounds[[2L]], length.out = 101L))
