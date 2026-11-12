@@ -253,6 +253,10 @@
   roles <- list()
   dialect <- list(status = "not_checked")
   if (!is.null(handle)) {
+    for (p in names(ir[["populations"]])) {
+      .irCheckOwnedCohort(handle, ir[["populations"]][[p]][["legacy_cohort_table"]],
+                         paste0("/populations/", p, "/legacy_cohort_table"))
+    }
     if (!is.null(v1_plan)) {
       legacy <- tryCatch(.planV1SiteFindings(v1_plan, handle),
                          error = function(e) list(errors = conditionMessage(e)))
