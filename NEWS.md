@@ -94,7 +94,7 @@ fills its entries. Classes follow design-2.10.3 section 5.
   must have exactly one observation_period covering its index date"); baseline
   drops an episode covered by several periods and keeps an uncovered episode
   with NA observation fields. Aggregate endpoints keep their own controls.
-- (A-16) `intervals_long` accepts point-event tables (`measurement`,
+- (defect A-16) `intervals_long` accepts point-event tables (`measurement`,
   `observation`, `death`, `specimen`, `note`, CDM 5.3 `procedure_occurrence`):
   the role registry supplies their start and `end = start` (2.10.2: "has no
   reviewed start/end date pair"). A table without an event start role is still
