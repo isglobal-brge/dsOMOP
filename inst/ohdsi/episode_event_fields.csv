@@ -1,0 +1,9 @@
+episode_event_field_concept_id,table_name,key_column,concept_name,vocabulary_id,concept_class_id,concept_code,verification
+1147127,condition_occurrence,condition_occurrence_id,condition_occurrence.condition_occurrence_id,CDM,Field,CDM183,verified against OHDSI WebAPI concept record (snapshot v5.0 27-FEB-25; see reviewed_concepts.csv); 2014 CDM field family
+1147094,drug_exposure,drug_exposure_id,drug_exposure.drug_exposure_id,CDM,Field,CDM150,verified against OHDSI WebAPI concept record (snapshot v5.0 27-FEB-25; see reviewed_concepts.csv); 2014 CDM field family
+1147082,procedure_occurrence,procedure_occurrence_id,procedure_occurrence.procedure_occurrence_id,CDM,Field,CDM138,verified against OHDSI WebAPI concept record (snapshot v5.0 27-FEB-25; see reviewed_concepts.csv); 2014 CDM field family
+1147115,device_exposure,device_exposure_id,device_exposure.device_exposure_id,CDM,Field,CDM171,verified against OHDSI WebAPI concept record (snapshot v5.0 27-FEB-25; see reviewed_concepts.csv); 2014 CDM field family
+1147138,measurement,measurement_id,measurement.measurement_id,CDM,Field,CDM194,verified against OHDSI WebAPI concept record (snapshot v5.0 27-FEB-25; see reviewed_concepts.csv); 2014 CDM field family
+1147165,observation,observation_id,observation.observation_id,CDM,Field,CDM221,verified against OHDSI WebAPI concept record (snapshot v5.0 27-FEB-25; see reviewed_concepts.csv); 2014 CDM field family
+1147070,visit_occurrence,visit_occurrence_id,visit_occurrence.visit_occurrence_id,CDM,Field,CDM126,verified against OHDSI WebAPI concept record (snapshot v5.0 27-FEB-25; see reviewed_concepts.csv); 2014 CDM field family
+1147049,specimen,specimen_id,specimen.specimen_id,CDM,Field,CDM105,verified against OHDSI WebAPI concept record (snapshot v5.0 27-FEB-25; see reviewed_concepts.csv); 2014 CDM field family

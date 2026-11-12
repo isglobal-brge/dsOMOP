@@ -90,13 +90,49 @@
 
 #' Validate a plan against the handle's schema
 #'
+#' The v1 executors' own checks (\code{.planLegacyFindings()}) plus the frozen
+#' validation sequence on the plan's wire part, exactly as execution runs it.
+#'
 #' @param handle CDM handle
 #' @param plan List; the extraction plan
 #' @return List with validation results
 #' @keywords internal
 .planValidate <- function(handle, plan) {
+  legacy <- .planLegacyFindings(handle, plan)
+  # The frozen validation sequence (design-2.10.3 section 4.5) -- closed
+  # envelope, normalisation, ir-v2.json, semantic and site rules, dialect
+  # preflight -- reported here as validation errors, raised as typed
+  # rejections at execution.
+  wire <- .planWirePart(plan)
+  ir_error <- tryCatch({
+    .irPrepare(wire[["plan"]], handle = handle, scope_tables = wire[["scope_tables"]])
+    NULL
+  }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e),
+  # the v1 plan-declaration errors are among the legacy findings already
+  dsomop_v1_declaration_error = function(e) NULL)
+  errors <- unique(c(legacy[["errors"]], legacy[["missing_tables"]], ir_error))
+  list(
+    valid = length(errors) == 0,
+    errors = errors,
+    warnings = legacy[["warnings"]],
+    available_tables = legacy[["available_tables"]]
+  )
+}
+
+#' The v1 executors' checks of a plan against a site
+#'
+#' The checks the v1 executors make while they run, collected before any
+#' query: tables and the results cohort table the plan needs
+#' (\code{missing_tables}), and the legacy shape rules (\code{errors}).
+#'
+#' @param handle CDM handle
+#' @param plan List; the v1 plan
+#' @return list(errors, missing_tables, warnings, available_tables)
+#' @keywords internal
+.planLegacyFindings <- function(handle, plan) {
   bp <- .buildBlueprint(handle)
   errors <- character(0)
+  missing_tables <- character(0)
   warnings <- character(0)
 
   present_tables <- bp$tables$table_name[bp$tables$present_in_db]
@@ -105,7 +141,7 @@
     if (!is.null(plan$cohort$cohort_definition_id)) {
       results_tables <- .listTablesRaw(handle, .effectiveResultsSchema(handle))
       if (!"cohort" %in% results_tables) {
-        errors <- c(errors,
+        missing_tables <- c(missing_tables,
           "Plan cohort cannot execute: results cohort table not found.")
       }
     }
@@ -153,7 +189,7 @@
       for (tbl_name in names(out$tables)) {
         tbl_lower <- tolower(tbl_name)
         if (!tbl_lower %in% present_tables) {
-          errors <- c(errors,
+          missing_tables <- c(missing_tables,
             paste0("Output '", out_name, "': table '", tbl_name, "' not found."))
           next
         }
@@ -173,7 +209,7 @@
     if (out_type == "event_level") {
       tbl_name <- tolower(out$table %||% "")
       if (!tbl_name %in% present_tables) {
-        errors <- c(errors,
+        missing_tables <- c(missing_tables,
           paste0("Output '", out_name, "': table '", tbl_name, "' not found."))
       } else {
         avail_cols <- bp$columns[[tbl_name]]$column_name
@@ -191,7 +227,7 @@
 
     if (out_type == "baseline") {
       if (!"person" %in% present_tables) {
-        errors <- c(errors,
+        missing_tables <- c(missing_tables,
           paste0("Output '", out_name, "': person table not found."))
       }
       if (!"observation_period" %in% present_tables) {
@@ -201,9 +237,7 @@
       }
       if (!is.null(out$age_breaks)) {
         age_error <- tryCatch({
-          .computeAgeGroups(
-            2000L, 2020L, age_breaks = out$age_breaks, min_cell = 0L
-          )
+          .bandAges(20L, age_breaks = out$age_breaks)
           NULL
         }, error = function(e) conditionMessage(e))
         if (!is.null(age_error)) {
@@ -229,7 +263,7 @@
             survival_outcomes[[outcome_name]]$table %||% ""
           )
           if (!nzchar(outcome_tbl) || !outcome_tbl %in% present_tables) {
-            errors <- c(errors, paste0(
+            missing_tables <- c(missing_tables, paste0(
               "Output '", out_name, "': outcome '", outcome_name,
               "' table '", outcome_tbl, "' not found."
             ))
@@ -267,14 +301,14 @@
       }
       if (!identical(censoring$observation_period_end, FALSE) &&
           !"observation_period" %in% present_tables) {
-        errors <- c(errors, paste0(
+        missing_tables <- c(missing_tables, paste0(
           "Output '", out_name,
           "': observation-period censoring requires observation_period."
         ))
       }
       if (!identical(censoring$death, FALSE) &&
           !"death" %in% present_tables) {
-        errors <- c(errors, paste0(
+        missing_tables <- c(missing_tables, paste0(
           "Output '", out_name, "': death censoring requires death."
         ))
       }
@@ -296,7 +330,7 @@
       interval_tables <- out$tables %||% character(0)
       for (itbl in interval_tables) {
         if (!tolower(itbl) %in% present_tables) {
-          errors <- c(errors,
+          missing_tables <- c(missing_tables,
             paste0("Output '", out_name,
                    "': interval table '", itbl, "' not found."))
         }
@@ -330,7 +364,7 @@
     if (out_type %in% c("temporal_covariates", "person_period")) {
       tc_table <- tolower(out$table %||% "")
       if (tc_table != "" && !tc_table %in% present_tables) {
-        errors <- c(errors,
+        missing_tables <- c(missing_tables,
           paste0("Output '", out_name,
                  "': table '", tc_table, "' not found."))
       }
@@ -348,12 +382,8 @@
     }
   }
 
-  list(
-    valid = length(errors) == 0,
-    errors = errors,
-    warnings = warnings,
-    available_tables = present_tables
-  )
+  list(errors = unique(errors), missing_tables = unique(missing_tables),
+       warnings = warnings, available_tables = present_tables)
 }
 
 #' Preview resolvable plan projections (safe aggregate)
@@ -819,11 +849,22 @@
     return(invisible(TRUE))
   }
 
-  group_keys <- intersect(node_names %||% character(0), c("and", "or"))
+  group_keys <- intersect(node_names %||% character(0), c("and", "or", "not"))
   if (length(group_keys) > 0L) {
     if (length(group_keys) != 1L || length(node_names) != 1L) {
-      stop("Population filter nodes cannot mix AND/OR groups with each other ",
-           "or with leaf fields.", call. = FALSE)
+      stop("Population filter nodes cannot mix AND/OR/NOT groups with each ",
+           "other or with leaf fields.", call. = FALSE)
+    }
+    # NOT (design-2.10.3 section 6.6): one negated filter; SQL three-valued
+    # logic keeps an UNKNOWN child UNKNOWN, so only TRUE survives.
+    if (identical(group_keys, "not")) {
+      child <- node$not
+      if (!is.list(child) || length(child) == 0L) {
+        stop("Population filter NOT group must contain one filter.",
+             call. = FALSE)
+      }
+      .validateCohortFilterTree(child, .depth = .depth + 1L, .state = .state)
+      return(invisible(TRUE))
     }
     children <- node[[group_keys]]
     if (!is.list(children) || length(children) == 0L) {
@@ -895,6 +936,8 @@
     node$and
   } else if ("or" %in% names(node)) {
     node$or
+  } else if ("not" %in% names(node)) {
+    list(node$not)
   } else {
     unname(node)
   }
@@ -1092,12 +1135,29 @@
                                     index_anchor = index_anchor))
   }
 
-  group_keys <- intersect(node_names %||% character(0), c("and", "or"))
+  group_keys <- intersect(node_names %||% character(0), c("and", "or", "not"))
   if (length(group_keys) > 0L) {
     if (length(group_keys) != 1L || length(node_names) != 1L) {
-      stop("Population filter nodes cannot mix AND/OR groups with each other ",
-           "or with leaf fields.", call. = FALSE)
+      stop("Population filter nodes cannot mix AND/OR/NOT groups with each ",
+           "other or with leaf fields.", call. = FALSE)
     }
+  }
+
+  if (identical(group_keys, "not")) {
+    if (!is.list(node$not) || length(node$not) == 0) {
+      stop("Population filter NOT group must contain one filter.",
+           call. = FALSE)
+    }
+    part <- .compileCohortFilterWhere(handle, node$not, bp, person_cols,
+                                      index_anchor = index_anchor,
+                                      .depth = .depth + 1L, .state = .state)
+    if (!nzchar(part)) {
+      stop("A population filter in the NOT group compiled to no predicate.",
+           call. = FALSE)
+    }
+    # Native three-valued logic: NOT UNKNOWN stays UNKNOWN (design 6.6); the
+    # child is parenthesised whatever its own shape.
+    return(paste0("(NOT (", part, "))"))
   }
 
   if (identical(group_keys, "and")) {
@@ -1256,8 +1316,7 @@
     fail("params cannot contain duplicate names.")
   }
 
-  # Pre-execution granularity gate: blocks fingerprinting filters (e.g.
-  # age_range narrower than the disclosure minimum) before any SQL runs.
+  # Assignment filters keep structural validation; their width is unrestricted.
   .validateFilter(ftype, params)
 
   if (ftype == "sex") {
@@ -1513,44 +1572,24 @@
     has_numeric_range <- !is.null(params$min_value) ||
       !is.null(params$max_value)
     if (has_numeric_range) {
-      if (is.null(params$min_value) || is.null(params$max_value)) {
-        fail(paste0(
-          "numeric measurement filters require both min_value and max_value ",
-          "from one server-issued safe bin."
-        ))
-      }
-      if (length(concept_ids) != 1L) {
-        fail(paste0(
-          "numeric measurement filters require exactly one concept_id so ",
-          "the safe-bin scope is unambiguous."
-        ))
-      }
-      min_value <- numeric_param(params$min_value, "min_value")
-      max_value <- numeric_param(params$max_value, "max_value")
-      if (min_value >= max_value) {
+      min_value <- if (!is.null(params$min_value)) numeric_param(params$min_value, "min_value") else NULL
+      max_value <- if (!is.null(params$max_value)) numeric_param(params$max_value, "max_value") else NULL
+      if (!is.null(min_value) && !is.null(max_value) && min_value >= max_value) {
         fail("min_value must be strictly less than max_value.")
       }
-      .assertSafeNumericBinContract(
-        handle, table = "measurement", column = "value_as_number",
-        value = list(lower = min_value, upper = max_value),
-        scope = params$safe_scope
-      )
-      scope_concept <- suppressWarnings(as.integer(
-        params$safe_scope$concept_id %||% integer(0)
-      ))
-      scope_concept_col <- tolower(
-        params$safe_scope$concept_col %||% "measurement_concept_id"
-      )
-      if (length(scope_concept) != 1L || is.na(scope_concept) ||
-          scope_concept != concept_ids[[1]] ||
-          !identical(scope_concept_col, "measurement_concept_id")) {
-        fail("safe-bin scope must match the measurement concept_id.")
+      if (!is.null(params$safe_scope)) {
+        .assertSafeNumericBinContract(handle, table = "measurement", column = "value_as_number",
+          value = list(lower = min_value, upper = max_value), scope = params$safe_scope)
+        scope_concept <- suppressWarnings(as.integer(params$safe_scope$concept_id %||% integer(0)))
+        scope_column <- params$safe_scope$concept_col %||% "measurement_concept_id"
+        if (length(concept_ids) != 1L || length(scope_concept) != 1L || is.na(scope_concept) ||
+            scope_concept != concept_ids[[1L]] || !identical(tolower(scope_column), "measurement_concept_id")) {
+          fail("safe-bin scope must match the measurement concept_id.")
+        }
       }
-      sub_where <- paste0(
-        sub_where,
-        " AND m.value_as_number >= ", min_value,
-        " AND m.value_as_number < ", max_value
-      )
+      if (!is.null(min_value)) sub_where <- paste0(sub_where, " AND m.value_as_number >= ", min_value)
+      if (!is.null(max_value)) sub_where <- paste0(sub_where, " AND m.value_as_number < ", max_value)
+
     }
     win <- .windowPredicateSql(handle, bp, "measurement", "m", params$window,
                                anchor_sql = index_anchor,
@@ -1864,14 +1903,14 @@
 #' @param descriptors Named list of descriptors
 #' @keywords internal
 .writeStagingManifest <- function(staging_dir, descriptors) {
-  if (!is.list(descriptors) || length(descriptors) < 1L ||
-      is.null(names(descriptors)) || any(!nzchar(names(descriptors))) ||
-      anyDuplicated(names(descriptors))) {
+  if (!is.list(descriptors) || (length(descriptors) > 0L &&
+      (is.null(names(descriptors)) || any(!nzchar(names(descriptors))) ||
+      anyDuplicated(names(descriptors))))) {
     stop("A staging manifest requires uniquely named descriptors.",
          call. = FALSE)
   }
   descriptors <- lapply(descriptors, function(d) {
-    invisible(omopStagedDatasetPath(d))
+    invisible(.omopStagedDatasetPath(d, check_manifest = FALSE))
     list(
       dataset_id = d$dataset_id,
       source_kind = d$source_kind,
@@ -1892,20 +1931,16 @@
   manifest_path <- file.path(staging_dir, "manifest.json")
   old_umask <- Sys.umask("0077")
   on.exit(Sys.umask(old_umask), add = TRUE)
-  writeLines(jsonlite::toJSON(
-    manifest, auto_unbox = TRUE, pretty = TRUE, null = "null"
-  ),
-             manifest_path)
-  Sys.chmod(manifest_path, mode = "0600")
-  max_bytes <- suppressWarnings(as.numeric(
-    getOption("dsomop.max_staged_bytes", 10 * 1024^3)
-  ))
+  temporary <- tempfile(".manifest-", tmpdir = staging_dir)
+  on.exit(unlink(temporary), add = TRUE)
+  writeLines(jsonlite::toJSON(manifest, auto_unbox = TRUE, pretty = TRUE, null = "null"), temporary)
+  Sys.chmod(temporary, mode = "0600")
+  max_bytes <- suppressWarnings(as.numeric(getOption("dsomop.max_staged_bytes", 10 * 1024^3)))
   if (length(max_bytes) != 1L || is.na(max_bytes) || !is.finite(max_bytes) ||
       max_bytes < 1 || .stagingDirectoryBytes(staging_dir) > max_bytes) {
-    unlink(manifest_path)
-    stop("Staged outputs exceed or have an invalid server disk quota.",
-         call. = FALSE)
+    stop("Staged outputs exceed or have an invalid server disk quota.", call. = FALSE)
   }
+  if (!file.rename(temporary, manifest_path)) stop("Atomic manifest commit failed.", call. = FALSE)
   invisible(manifest_path)
 }
 
@@ -1948,9 +1983,9 @@
   if (!is.list(manifest) || !identical(manifest$contract_version, 2L) ||
       !is.character(manifest$created_at) || length(manifest$created_at) != 1L ||
       is.na(manifest$created_at) || !is.list(manifest$outputs) ||
-      length(manifest$outputs) < 1L || is.null(names(manifest$outputs)) ||
+      (length(manifest$outputs) > 0L && (is.null(names(manifest$outputs)) ||
       any(!nzchar(names(manifest$outputs))) ||
-      anyDuplicated(names(manifest$outputs))) {
+      anyDuplicated(names(manifest$outputs))))) {
     stop("Invalid staging manifest v2.", call. = FALSE)
   }
   created <- suppressWarnings(as.POSIXct(
@@ -1991,7 +2026,7 @@
     }
     class(entry) <- c("FlowerDatasetDescriptor",
                       "OMOPStagedDatasetDescriptor")
-    invisible(omopStagedDatasetPath(entry))
+    invisible(.omopStagedDatasetPath(entry, check_manifest = FALSE))
     entry
   })
   list(
@@ -2021,7 +2056,7 @@
 .stageDataFrame <- function(df, output_name, staging_dir, token, key,
                             pseudonymization = NULL,
                             semantic_contract = NULL,
-                            bundle_contract = NULL) {
+                            bundle_contract = NULL, ctx = NULL, already_tokenized = FALSE) {
   output_name <- .validateIdentifier(output_name, "staged output")
   if (is.null(semantic_contract)) {
     stop("Staged descriptor v2 requires a semantic contract.", call. = FALSE)
@@ -2040,7 +2075,8 @@
       !grepl("^stg_[0-9a-f]{32}$", token)) {
     stop("Invalid staging token.", call. = FALSE)
   }
-  expected_dir <- normalizePath(file.path(.stagingBaseDir(), token),
+  expected_dir <- normalizePath(if (.isPlanContext(ctx)) ctx$private_dir else
+                                  file.path(.stagingBaseDir(), token),
                                 winslash = "/", mustWork = FALSE)
   actual_dir <- normalizePath(staging_dir, winslash = "/", mustWork = FALSE)
   if (.isSymbolicLink(staging_dir) ||
@@ -2059,7 +2095,7 @@
   # The file itself is a server-side DataSHIELD object. Sanitize before the
   # first byte is written: person/subject keys become authenticated resource-
   # scoped tokens and every other OMOP row/entity identifier is removed.
-  df <- .pseudonymizeIdentifiers(df, key, pseudonymization)
+  if (!already_tokenized) df <- .pseudonymizeIdentifiers(df, key, pseudonymization)
   max_rows <- suppressWarnings(as.numeric(
     getOption("dsomop.max_staged_rows", 50000000L)
   ))
@@ -2092,7 +2128,11 @@
   } else {
     old_umask <- Sys.umask("0077")
     on.exit(Sys.umask(old_umask), add = TRUE)
-    utils::write.csv(df, output_path, row.names = FALSE)
+    # CSV is read as characters for lossless lineage checks. Keep numeric keys
+    # in the same decimal form as integer and BIGINT keys, regardless of scipen.
+    old_options <- options(scipen = 999)
+    tryCatch(utils::write.csv(df, output_path, row.names = FALSE),
+             finally = options(old_options))
   }
   if (existing_bytes + file.info(output_path)$size > max_bytes) {
     unlink(output_path)
@@ -2164,7 +2204,7 @@
 #' @param plan The extraction plan
 #' @return Character cohort temp table name, or NULL
 #' @keywords internal
-.planResolveScopeCohort <- function(handle, plan) {
+.planResolveScopeCohort <- function(handle, plan, ctx = NULL) {
   scope <- plan$scope
   combine <- tolower((scope$combine %||% "union"))
 
@@ -2213,7 +2253,7 @@
     stop("Plan scope exceeds the server max_analysis_scope_tables cap of ",
          server_max, ".", call. = FALSE)
   }
-  .omopAnalysisResolveScope(handle, sources, combine = combine)
+  .omopAnalysisResolveScope(handle, sources, combine = combine, ctx = ctx)
 }
 
 #' Materialize a population's person set as a cohort temp table
@@ -2323,17 +2363,16 @@
     stop("Unknown index_event field(s): ", paste(unknown, collapse = ", "),
          ".", call. = FALSE)
   }
-  allowed_tables <- c(
-    "condition_occurrence", "drug_exposure", "measurement", "observation",
-    "procedure_occurrence", "device_exposure", "visit_occurrence"
-  )
+  # Defect B-20: an index event may come from any table with an event role
+  # record (design-2.10.3 section 6.2) instead of a fixed allowlist.
   table <- index_event$table
   if (!is.character(table) || length(table) != 1L || is.na(table) ||
-      !tolower(table) %in% allowed_tables) {
-    stop("index_event table is outside the executable Circe table allowlist.",
-         call. = FALSE)
+      is.null(.roleOf(handle, table))) {
+    stop("index_event table has no event role record in the role registry ",
+         "of this CDM.", call. = FALSE)
   }
   table <- tolower(table)
+  role <- .roleOf(handle, table)
   primary_limit <- index_event$primary_limit %||% "first"
   if (!is.character(primary_limit) || length(primary_limit) != 1L ||
       is.na(primary_limit) ||
@@ -2352,10 +2391,9 @@
          call. = FALSE)
   }
   cols <- bp$columns[[table]]$column_name %||% character(0)
-  start_col <- .getDateColumn(bp, table)
-  pair <- .getDatePair(bp, table)
-  end_col <- pair$end %||% start_col
-  event_id_col <- .eventPrimaryKeyColumn(bp, table)
+  start_col <- role$start
+  end_col <- role$end %||% start_col
+  event_id_col <- role$event_key
   required <- c("person_id", start_col, end_col, event_id_col)
   if (any(vapply(list(start_col, end_col, event_id_col), is.null,
                  logical(1))) || any(!required %in% cols)) {
@@ -2381,14 +2419,17 @@
   if (!is.null(index_event$concept_set)) {
     cs <- index_event$concept_set
     if (is.list(cs) && !is.null(cs$concepts)) {
+      # Defect A-E3: index events accept `exclude` like every other concept
+      # set (one shared resolver, .resolveConceptSet()).
       unknown_cs <- setdiff(names(cs),
                             c("concepts", "include_descendants",
-                              "include_mapped"))
+                              "include_mapped", "exclude"))
       if (length(unknown_cs) > 0L) {
         stop("Unknown index-event concept-set field(s): ",
              paste(unknown_cs, collapse = ", "), ".", call. = FALSE)
       }
       .conceptIdList(cs$concepts)
+      .conceptIdList(cs$exclude)
       for (flag in c("include_descendants", "include_mapped")) {
         if (!is.null(cs[[flag]]) &&
             (!is.logical(cs[[flag]]) || length(cs[[flag]]) != 1L ||
@@ -2410,7 +2451,7 @@
     if (length(concept_ids) == 0L) {
       stop("index_event concept_set resolved to no concepts.", call. = FALSE)
     }
-    concept_col <- .getDomainConceptColumn(bp, table)
+    concept_col <- role$domain_concept %||% .getDomainConceptColumn(bp, table)
     if (is.null(concept_col) || !concept_col %in% cols) {
       stop("index_event table '", table,
            "' has no authorized domain concept column.", call. = FALSE)
@@ -2427,28 +2468,19 @@
     "op.observation_period_start_date <= t.", start_col, " AND ",
     "op.observation_period_end_date >= t.", start_col
   )
-  # Apply the ordinary DataSHIELD population gate before any data-quality
-  # diagnostic so a rare concept cannot be probed through differing validation
-  # errors. Candidate events outside every observation period are not eligible
-  # index events and therefore do not contribute to this gate.
-  .assertMinPersons(handle = handle, sql = paste0(
-    "SELECT COUNT(DISTINCT t.person_id) AS n FROM ", qualified,
-    " t INNER JOIN ", op_qualified, " op ON ", op_join,
-    " WHERE t.", start_col, " IS NOT NULL", concept_predicate
-  ))
-  coverage_sql <- paste0(
-    "SELECT COUNT(*) AS n FROM (SELECT t.", event_id_col, " FROM ",
-    qualified, " t LEFT JOIN ", op_qualified, " op ON ", op_join,
-    " WHERE t.", start_col, " IS NOT NULL", concept_predicate,
-    " GROUP BY t.person_id, t.", event_id_col,
-    " HAVING COUNT(op.observation_period_id) > 1) dsomop_bad_index_op"
+  # Coverage policy (design 1.3 and 6.13; defect A-E6): the lowered default is
+  # unique with on_missing = "drop" and on_ambiguous = "drop". A candidate
+  # outside every observation period is not an eligible index event (the inner
+  # join), and a candidate whose index is covered by more than one period is
+  # dropped privately -- it no longer aborts the plan. Both happen before the
+  # primary-limit selection, as uncovered candidates always did.
+  unique_coverage <- paste0(
+    " AND NOT EXISTS (SELECT 1 FROM ", op_qualified, " op2 WHERE ",
+    "op2.person_id = t.person_id AND ",
+    "op2.observation_period_start_date <= t.", start_col, " AND ",
+    "op2.observation_period_end_date >= t.", start_col, " AND ",
+    "op2.observation_period_id <> op.observation_period_id)"
   )
-  coverage <- .executeQuery(handle, coverage_sql)
-  if (nrow(coverage) != 1L || !"n" %in% names(coverage) ||
-      is.na(coverage$n[[1]]) || as.numeric(coverage$n[[1]]) > 0) {
-    stop("Candidate index events cannot have overlapping covering ",
-         "observation_period records.", call. = FALSE)
-  }
 
   cohort_end <- "op.observation_period_end_date"
   if (!is.null(end_strategy)) {
@@ -2472,7 +2504,8 @@
     " AS cohort_start_date, ", cohort_end,
     " AS cohort_end_date, t.", event_id_col, " AS index_event_id"
   )
-  where <- paste0(" WHERE t.", start_col, " IS NOT NULL", concept_predicate)
+  where <- paste0(" WHERE t.", start_col, " IS NOT NULL", concept_predicate,
+                  unique_coverage)
   event_from <- paste0(
     " FROM ", qualified, " t INNER JOIN ", op_qualified, " op ON ", op_join
   )
@@ -2504,8 +2537,7 @@
   }
   name <- .reserveTempTableName(handle, name)
   out <- .createTempTable(handle, name, sql)
-  .assertMinPersons(handle = handle, sql = paste0(
-    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", out))
+
   out
 }
 
@@ -2536,8 +2568,7 @@
   )
   name <- .reserveTempTableName(handle, name)
   out <- .createTempTable(handle, name, sql)
-  .assertMinPersons(handle = handle, sql = paste0(
-    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", out))
+
   out
 }
 
@@ -2551,8 +2582,7 @@
   )
   name <- .reserveTempTableName(handle, name)
   out <- .createTempTable(handle, name, sql)
-  .assertMinPersons(handle = handle, sql = paste0(
-    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", out))
+
   out
 }
 
@@ -2603,9 +2633,9 @@
 #' OR a set-operation over OTHER populations (\code{setop = list(op, members)},
 #' folded with \code{\link{.cohortCombine}}). Set-op populations are resolved AFTER
 #' their members, so a single pass over a parent-before-child ordering suffices;
-#' a member that has not yet been resolved is an error (fail-closed). Every
-#' produced person set is gated with \code{\link{.assertMinPersons}} — a tiny
-#' intersection therefore fails closed before any output is produced.
+#' a member that has not yet been resolved is an error (fail-closed). With an
+#' execution context these are private inputs; support is checked on each
+#' final publication component.
 #'
 #' @param handle CDM handle
 #' @param plan The extraction plan (uses \code{plan$populations} and, for the
@@ -2623,7 +2653,7 @@
 .planResolvePopulations <- function(handle, plan, bp,
                                     base_cohort_table = NULL,
                                     base_person_ids = NULL,
-                                    index_cohort_table = base_cohort_table) {
+                                    index_cohort_table = base_cohort_table, ctx = NULL) {
   pops <- plan$populations
   resolved <- list()
 
@@ -2686,8 +2716,6 @@
       combined <- member_tables[[1]]
       if (length(member_tables) > 1) {
         for (k in 2:length(member_tables)) {
-          # .cohortCombine gates the running result with .assertMinPersons, so a
-          # tiny intersection fails closed here, before any output is produced.
           # Each fold step needs its own temp-table name: reusing one name across
           # a >=3-member fold makes the 2nd .createTempTable collide ("table
           # already exists"). The LAST step lands at the canonical population name
@@ -2700,13 +2728,12 @@
           }
           step_name <- .reserveTempTableName(handle, step_name)
           combined <- .cohortCombine(handle, op, combined, member_tables[[k]],
-            new_name = step_name)
+            new_name = step_name, ctx = ctx)
         }
       } else {
         # Single member: re-gate so a lone-member set-op is still size-checked
         # under this population's id.
-        .assertMinPersons(handle = handle, sql = paste0(
-          "SELECT COUNT(DISTINCT subject_id) AS n FROM ", combined))
+
       }
       resolved[[pid]] <- list(
         cohort_table = combined,
@@ -2728,7 +2755,7 @@
       # A population-local cohort reference is a person scope. Keep the event
       # table on the left so its episode dates and recurrence survive.
       if (has_own_cohort) {
-        own_ct <- .resolveCohortTable(handle, pop$cohort_definition_id)
+        own_ct <- .resolveCohortTable(handle, pop$cohort_definition_id, ctx = ctx)
         event_ct <- .scopeIndexEventEpisodes(
           handle, event_ct, own_ct,
           name = paste0("dsomop_plan_pop_", pid, "_own_scope")
@@ -2741,7 +2768,7 @@
         )
       }
       person_ids <- .cohortPersonIds(handle, event_ct)
-      .assertMinPersons(n_persons = length(unique(person_ids)))
+
       resolved[[pid]] <- list(
         cohort_table = event_ct,
         person_ids = person_ids,
@@ -2752,9 +2779,12 @@
 
     if (is_base && !has_filter_tree && !has_own_cohort) {
       # Base population with no extra criteria: reuse the plan-level cohort.
+      # Without one it is every person, as in a single-population plan (an
+      # empty id set would restrict its outputs to nobody).
+      unrestricted <- is.null(base_cohort_table) && is.null(base_person_ids)
       resolved[[pid]] <- list(
         cohort_table = base_cohort_table,
-        person_ids = base_person_ids %||%
+        person_ids = if (unrestricted) NULL else base_person_ids %||%
           .cohortPersonIds(handle, base_cohort_table))
       next
     }
@@ -2774,7 +2804,7 @@
     }
 
     if (has_own_cohort) {
-      own_ct <- .resolveCohortTable(handle, pop$cohort_definition_id)
+      own_ct <- .resolveCohortTable(handle, pop$cohort_definition_id, ctx = ctx)
       own_ids <- .cohortPersonIds(handle, own_ct)
       seed_ids <- if (is.null(seed_ids)) own_ids else intersect(seed_ids, own_ids)
     }
@@ -2782,8 +2812,8 @@
     if (has_filter_tree) {
       # Anchor windowed concept filters in this population to the plan-level
       # cohort's index date (e.g. cohort=313217L). Without a plan cohort there is
-      # nothing to anchor to, so windows fall back to the wall-clock date inside
-      # .windowPredicateSql.
+      # no index: .windowPredicateSql then requires the filter's explicit
+      # reference_date and fails closed without one (never the wall clock).
       filter_ids <- .buildCohortFromFilters(handle, pop$filter_tree,
         index_cohort_table = index_cohort_table,
         episode_policy = pop$episode_policy)
@@ -2792,7 +2822,7 @@
     }
 
     person_ids <- seed_ids %||% integer(0)
-    .assertMinPersons(n_persons = length(unique(person_ids)))
+
     # Materialize a cohort table even when this population resolved to nobody
     # (allow_empty), so a later set-op over it operates on a real zero-row table
     # instead of failing with "no materialized person set". An empty member makes
@@ -2823,7 +2853,7 @@
 #' @param bp Blueprint
 #' @return The \code{resolved} list with each population narrowed to the scope
 #' @keywords internal
-.planScopePopulations <- function(handle, resolved, scope_cohort, bp) {
+.planScopePopulations <- function(handle, resolved, scope_cohort, bp, ctx = NULL) {
   if (is.null(scope_cohort)) return(resolved)
 
   for (pid in names(resolved)) {
@@ -2859,7 +2889,7 @@
         handle, paste0("dsomop_plan_pop_", pid, "_scoped")
       )
       .cohortCombine(handle, "intersect", scope_cohort, ct,
-        new_name = scoped_name)
+        new_name = scoped_name, ctx = ctx)
     }
     resolved[[pid]] <- list(
       cohort_table = narrowed,
@@ -2867,6 +2897,26 @@
       preserve_index_episodes = isTRUE(r$preserve_index_episodes))
   }
   resolved
+}
+
+#' The plan an execution context carries
+#'
+#' Validation runs before the context exists (design 4.5, WS-1): a language
+#' 2.0 plan's context carries its validated, normalised IR, which the native
+#' publication and DP contracts read (\code{.dsomopDpIsV2()}); a v1 plan's
+#' carries the execution plan, which its v1 executors and the legacy
+#' publication and DP contracts read in their own fields (the lowered IR is
+#' \code{ctx$validation$ir}). A refused plan keeps the plan as it arrived:
+#' only its refusal is published.
+#'
+#' @param validation list(ir, wire) from the validation sequence, or
+#'   list(error) when it refused the plan.
+#' @param plan The execution plan.
+#' @return The IR or the plan.
+#' @keywords internal
+.planContextIr <- function(validation, plan) {
+  ir <- validation[["ir"]]
+  if (!is.null(ir) && identical(attr(ir, "source_version"), 2L)) ir else plan
 }
 
 #' Execute a plan and produce server-side data frames
@@ -2881,18 +2931,59 @@
 #' @param output_mode Character; "memory" (default) or "staged"
 #' @return Named list of data frames or staged dataset descriptors.
 #' @keywords internal
-.planExecute <- function(handle, plan, out_symbols, output_mode = "memory") {
-  temp_tables_before <- unique(handle$temp_tables %||% character(0))
-  on.exit(
-    .dropTempTablesCreatedSince(handle, temp_tables_before),
-    add = TRUE
-  )
+.planExecute <- function(handle, plan, out_symbols, output_mode = "memory", ctx = NULL) {
+  if (!is.null(ctx) && !.isPlanContext(ctx)) {
+    stop("Invalid plan execution context.", call. = FALSE)
+  }
   outputs <- plan$outputs %||% list()
   max_plan_outputs <- .extractionCap("dsomop.max_plan_outputs", 100L)
   if (length(outputs) > max_plan_outputs) {
     stop("Plan exceeds the server max_plan_outputs cap of ",
          max_plan_outputs, ".", call. = FALSE)
   }
+  # The single frozen validation sequence (design-2.10.3 section 4.5): closed
+  # envelope by version, normalisation, ir-v2.json, semantic and site rules,
+  # dialect preflight -- on the plan's wire part (server-resolved workspace
+  # frames are not part of it), before the execution context is created and
+  # before any query. A context created by omopPlanExecuteDS carries the IR it
+  # validated for exactly this plan; anything else is validated here. A v1
+  # plan then runs on the v1 executors below, unchanged.
+  wire <- .planWirePart(plan)
+  validated <- if (!is.null(ctx)) ctx[["validation"]]
+  ir <- if (!is.null(validated) &&
+            identical(validated[["wire"]], .irJsonForm(wire[["plan"]]))) {
+    validated[["ir"]]
+  } else {
+    .irPrepare(wire[["plan"]], handle, scope_tables = wire[["scope_tables"]])
+  }
+  # the context exists only after validation (WS-1): created here when the
+  # caller brought none
+  own_context <- is.null(ctx)
+  if (own_context) {
+    validated <- list(ir = ir, wire = .irJsonForm(wire[["plan"]]))
+    ctx <- .planContext(handle, .planContextIr(validated, plan), output_mode)
+    ctx$validation <- validated
+    on.exit(.planContextClose(ctx), add = TRUE)
+  }
+  # Register before either executor can compile or materialise anything. The
+  # snapshot protects caller-owned tables while covering native compiler work
+  # as well as the legacy path, including a caller-provided context.
+  temp_tables_before <- unique(handle$temp_tables %||% character(0))
+  on.exit(
+    .dropTempTablesCreatedSince(handle, temp_tables_before),
+    add = TRUE
+  )
+  if (identical(attr(ir, "source_version"), 2L)) {
+    # The event stage of language-2.0 execution (design 6.1, WS-4): the event
+    # sources of the requested roots compile in the private context, so the
+    # data-dependent adapter refusals of section 11 are raised, with their
+    # reason (A-18), before any output is materialised. The later stages
+    # (intervals, populations, variables, outputs) replace the refusal below.
+    .planCompileSources(.compileContext(ctx, ir), names(out_symbols))
+    .irReject(paste0("this server validates language 2.0 plans but does not ",
+                     "execute them yet; use omopPlanExplainDS"))
+  }
+
   bp <- .buildBlueprint(handle)
 
   staged <- identical(output_mode, "staged")
@@ -2954,17 +3045,8 @@
            "expired/consumed staged outputs before creating more.",
            call. = FALSE)
     }
-    staging_token <- .generateStagingToken()
-    staging_dir <- .createStagingDir(staging_token)
-    handle$staging_dirs <- union(handle$staging_dirs %||% character(0),
-                                 staging_dir)
-    on.exit({
-      # An error must not strand a partially written directory. A successful
-      # plan commits only after every output and its manifest are complete.
-      if (!staging_committed && !is.null(staging_dir)) {
-        .cleanupHandleStaging(handle, paths = staging_dir)
-      }
-    }, add = TRUE)
+    staging_dir <- .publishStagingDir(ctx)
+    staging_token <- ctx$staging_token
   }
 
   cohort_table <- NULL
@@ -2973,7 +3055,7 @@
   # Resolve scope before compiling population filters: when the scope is an
   # existing cohort, its actual cohort_start_date is the index anchor used by
   # the explicit episode policy.
-  scope_cohort <- .planResolveScopeCohort(handle, plan)
+  scope_cohort <- .planResolveScopeCohort(handle, plan, ctx = ctx)
 
   if (!is.null(plan$cohort)) {
     # NOTE: a plan$cohort of type "cohort_table" (a scalar cohort_definition_id)
@@ -3009,7 +3091,7 @@
           cohort_table <- .createTempTable(handle, cohort_name, cohort_sql)
         }
       }
-      .assertMinPersons(n_persons = length(unique(cohort_person_ids)))
+
 
     } else if (!is.null(plan$cohort$spec)) {
       # Inline concept-based spec from ds.omop.plan.cohort(spec = ...): use
@@ -3017,7 +3099,7 @@
       spec <- plan$cohort$spec
       cohort_table <- .cohortCreate(
         handle, spec, mode = "temporary",
-        cohort_id = plan$cohort$cohort_definition_id)
+        cohort_id = plan$cohort$cohort_definition_id, ctx = ctx)
       pid_result <- .executeQuery(handle,
         paste0("SELECT DISTINCT subject_id AS person_id FROM ",
                cohort_table))
@@ -3050,8 +3132,8 @@
     pop_sets <- .planResolvePopulations(handle, plan, bp,
       base_cohort_table = cohort_table,
       base_person_ids = cohort_person_ids,
-      index_cohort_table = scope_cohort %||% cohort_table)
-    pop_sets <- .planScopePopulations(handle, pop_sets, scope_cohort, bp)
+      index_cohort_table = scope_cohort %||% cohort_table, ctx = ctx)
+    pop_sets <- .planScopePopulations(handle, pop_sets, scope_cohort, bp, ctx = ctx)
   } else if (!is.null(scope_cohort)) {
     # Single-population fast path: intersect the scope into the base cohort and
     # re-derive ids. The scope cohort is the LEFT side of the intersect so its
@@ -3065,7 +3147,7 @@
       handle, "dsomop_plan_cohort_scoped"
     )
     cohort_table <- .cohortCombine(handle, "intersect", scope_cohort,
-      base_ct, new_name = scoped_name)
+      base_ct, new_name = scoped_name, ctx = ctx)
     cohort_person_ids <- .cohortPersonIds(handle, cohort_table)
   }
 
@@ -3126,7 +3208,7 @@
       try(.dropTempTable(handle, temp_name), silent = TRUE)
     }
     if (remove_staging && !is.null(staging_dir)) {
-      .cleanupHandleStaging(handle, paths = staging_dir)
+      .publishAbort(ctx)
     }
     invisible(NULL)
   }
@@ -3400,7 +3482,7 @@
           col_df <- bp$columns[[tolower(out$table)]]
           if ("person_id" %in% col_df$column_name) {
             count_sql <- .compilePersonCount(handle, sql)
-            .assertMinPersons(handle = handle, sql = count_sql)
+
           }
 
           # Build per-chunk transform for date handling + type conversion.
@@ -3458,7 +3540,7 @@
                                     paste0(out_name, ".parquet"))
           file_info <- .executeQueryToParquet(
             .conn(handle), sql, output_path, chunk_fn = chunk_fn
-          )
+          , ctx = ctx)
           desc <- .buildStagedDescriptor(
             out_name, file_info, staging_token,
             pseudonymization = pseudonymization,
@@ -3538,7 +3620,7 @@
               .conn(handle), sql,
               file.path(staging_dir, paste0(dataset_name, ".parquet")),
               chunk_fn = survival_chunk
-            )
+            , ctx = ctx)
             desc <- .buildStagedDescriptor(
               dataset_name, file_info, staging_token,
               pseudonymization = pseudonymization,
@@ -3572,7 +3654,7 @@
               file.path(staging_dir, paste0(msdata_name, ".parquet")),
               chunk_size = stream_chunk_size,
               chunk_fn = multistate_chunk
-            )
+            , ctx = ctx)
             machine$assert_complete()
             msdata_desc <- .buildStagedDescriptor(
               msdata_name, msdata_info, staging_token,
@@ -3595,7 +3677,7 @@
               bundle_contract = .stagedBundleContract(
                 plan, out_name, staging_token
               )
-            )
+            , ctx = ctx)
             staged_descriptors[[msdata_name]] <- msdata_desc
             staged_descriptors[[transition_name]] <- transition_desc
             results[[out_name]] <- list(
@@ -3674,7 +3756,7 @@
             .conn(handle), interval_sql,
             file.path(staging_dir, paste0(out_name, ".parquet")),
             chunk_fn = interval_chunk
-          )
+          , ctx = ctx)
           desc <- .buildStagedDescriptor(
             out_name, file_info, staging_token,
             pseudonymization = pseudonymization,
@@ -3753,12 +3835,11 @@
         stop("Unsupported output type '", out_type, "'.", call. = FALSE)
       }
     }, error = function(e) {
-      if (isTRUE(.omopDisclosureSettings()$query_strict)) {
-        cleanup_plan_temps(remove_staging = TRUE)
-        stop(e)
-      }
+      if (!inherits(e, "dsomop_plan_rejection") ||
+          !e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",
+                         "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
+      ctx$rejected[[out_name]] <- .rejectionEntry(e)
       results[[out_name]] <<- NULL
-      warning("Plan output '", out_name, "' failed: ", e$message)
     })
   }
 
@@ -3787,12 +3868,11 @@
         )
       }
     }, error = function(e) {
-      if (isTRUE(.omopDisclosureSettings()$query_strict)) {
-        cleanup_plan_temps(remove_staging = TRUE)
-        stop(e)
-      }
+      if (!inherits(e, "dsomop_plan_rejection") ||
+          !e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",
+                         "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
+      ctx$rejected[[out_name]] <- .rejectionEntry(e)
       results[[out_name]] <<- NULL
-      warning("Plan output '", out_name, "' failed: ", e$message)
     })
   }
 
@@ -3814,15 +3894,13 @@
           bundle_contract = .stagedBundleContract(
             plan, out_name, staging_token
           )
-        )
+        , ctx = ctx)
         results[[out_name]] <- desc
         staged_descriptors[[out_name]] <- desc
       } else if (inherits(result, "omop_temporal_sql_components")) {
         for (validation in result$validations) {
           value <- .executeQuery(handle, validation$sql)[[1L]][[1L]]
-          if (identical(validation$kind, "min_persons")) {
-            .assertMinPersons(n_persons = value)
-          } else if (identical(validation$kind, "max_value")) {
+          if (identical(validation$kind, "max_value")) {
             numeric_value <- suppressWarnings(as.numeric(value))
             if (length(numeric_value) != 1L || is.na(numeric_value) ||
                 !is.finite(numeric_value) || numeric_value > validation$max) {
@@ -3852,7 +3930,7 @@
               .conn(handle), component$sql,
               file.path(staging_dir, paste0(full_name, ".parquet")),
               chunk_fn = component_transform
-            )
+            , ctx = ctx)
             desc <- .buildStagedDescriptor(
               full_name, file_info, staging_token,
               pseudonymization = pseudonymization,
@@ -3874,7 +3952,7 @@
               bundle_contract = .stagedBundleContract(
                 plan, out_name, staging_token
               )
-            )
+            , ctx = ctx)
           } else {
             stop("Invalid SQL-backed temporal component.", call. = FALSE)
           }
@@ -3897,7 +3975,7 @@
               bundle_contract = .stagedBundleContract(
                 plan, out_name, staging_token
               )
-            )
+            , ctx = ctx)
             result[[comp_name]] <- desc
             staged_descriptors[[full_name]] <- desc
           }
@@ -3906,10 +3984,7 @@
       }
     }
 
-    if (length(staged_descriptors) > 0) {
-      .writeStagingManifest(staging_dir, staged_descriptors)
-      staging_committed <- TRUE
-    }
+
   }
 
   # Drop working tables only after every SQL-backed staged component has been
@@ -3918,6 +3993,20 @@
   cleanup_plan_temps()
 
   attr(results, "omop_concept_cols") <- concept_cols_by_output
+  if (own_context) {
+    ctx$return_private <- !staged
+    status <- .publishOutputs(ctx, results, out_symbols)
+    if (exists(ctx$id, .publicationRegistry, inherits = FALSE)) rm(list = ctx$id, envir = .publicationRegistry)
+    if (status$status == "refused") .publishReject(status$rejected[[1L]]$code)
+    if (staged) {
+      for (root in names(status$published)) for (component in names(status$published[[root]])) {
+        descriptor <- get(status$published[[root]][[component]]$symbol, ctx$target_env)
+        if (component == root) results[[root]] <- descriptor else results[[root]][[component]] <- descriptor
+      }
+    }
+    results <- results[intersect(names(results), names(status$published))]
+    attr(results, "omop_concept_cols") <- concept_cols_by_output
+  }
   results
 }
 

@@ -1,0 +1,66 @@
+column,table,context,assignment_class,aggregate_admission,basis
+year_of_birth,person,cdm,2,blocked,birth component: permitted on assignment paths; .detectSensitiveColumns() blocks it for aggregate callers (unchanged)
+month_of_birth,person,cdm,2,blocked,birth component: permitted on assignment paths; .detectSensitiveColumns() blocks it for aggregate callers (unchanged)
+day_of_birth,person,cdm,2,blocked,birth component: permitted on assignment paths; .detectSensitiveColumns() blocks it for aggregate callers (unchanged)
+birth_datetime,person,cdm,2,blocked,birth component: permitted on assignment paths; .detectSensitiveColumns() blocks it for aggregate callers (unchanged)
+dob,person_ext,extension,2,blocked,extension birth-date name: permitted on assignment paths; aggregate callers keep the sensitive-pattern refusal
+date_of_birth,person_ext,extension,2,blocked,extension birth-date name: permitted on assignment paths; aggregate callers keep the sensitive-pattern refusal
+birth_date,person_ext,extension,2,blocked,extension birth-date name: permitted on assignment paths; aggregate callers keep the sensitive-pattern refusal
+patient_birth_datetime,person_ext,extension,2,blocked,extension birth-date name: permitted on assignment paths; aggregate callers keep the sensitive-pattern refusal
+age,derived,derived,2,admitted,exact annual age (reference year - year_of_birth): assigned on request; aggregate endpoints band it on dsomop.age_breaks
+age_group,derived,derived,2,admitted,"age band on any strictly increasing grid (assignment: pure banding, no suppression); aggregate grouping keeps .computeAgeGroups()"
+birth_year_band,derived,derived,2,admitted,birth-year band of width >= 1 on assignment paths; aggregate: banded by the endpoint
+condition_start_date,condition_occurrence,cdm,2,admitted,absolute date: released on assignment paths under dsomop.allow_absolute_dates (relative days otherwise); aggregate date endpoints keep their own banding
+drug_exposure_start_date,drug_exposure,cdm,2,admitted,absolute date: released on assignment paths under dsomop.allow_absolute_dates (relative days otherwise); aggregate date endpoints keep their own banding
+measurement_date,measurement,cdm,2,admitted,absolute date: released on assignment paths under dsomop.allow_absolute_dates (relative days otherwise); aggregate date endpoints keep their own banding
+visit_start_date,visit_occurrence,cdm,2,admitted,absolute date: released on assignment paths under dsomop.allow_absolute_dates (relative days otherwise); aggregate date endpoints keep their own banding
+death_date,death,cdm,2,admitted,absolute date: released on assignment paths under dsomop.allow_absolute_dates (relative days otherwise); aggregate date endpoints keep their own banding
+observation_period_start_date,observation_period,cdm,2,admitted,absolute date: released on assignment paths under dsomop.allow_absolute_dates (relative days otherwise); aggregate date endpoints keep their own banding
+person_source_value,person,cdm,1,blocked,source value / free text; blocked on every path
+condition_source_value,condition_occurrence,cdm,1,blocked,source value; blocked on every path
+value_as_string,observation,cdm,1,blocked,free text; blocked on every path
+value_source_value,measurement,cdm,1,blocked,free text; blocked on every path
+sig,drug_exposure,cdm,1,blocked,free text; blocked on every path
+stop_reason,drug_exposure,cdm,1,blocked,free text; blocked on every path
+lot_number,drug_exposure,cdm,1,blocked,free text; blocked on every path
+unique_device_id,device_exposure,cdm,1,blocked,device identifier; blocked on every path
+note_text,note,cdm,1,blocked,clinical narrative; blocked on every path
+note_title,note,cdm,1,blocked,clinical narrative; blocked on every path
+note_source_value,note,cdm,1,blocked,clinical narrative; blocked on every path
+snippet,note_nlp,cdm,1,blocked,NLP field; blocked on every path
+lexical_variant,note_nlp,cdm,1,blocked,NLP field; blocked on every path
+note_nlp_concept_id,note_nlp,cdm,1,blocked,NLP field; blocked on every path
+term_modifiers,note_nlp,cdm,1,blocked,NLP field; blocked on every path
+note_nlp_source_concept_id,note_nlp,cdm,1,blocked,NLP field; blocked on every path
+address_1,location,cdm,1,blocked,address; blocked on every path
+city,location,cdm,1,blocked,geography; blocked on every path
+zip,location,cdm,1,blocked,geography; blocked on every path
+latitude,location,cdm,1,blocked,geography; blocked on every path
+provider_name,provider,cdm,1,blocked,provider identity; blocked on every path
+npi,provider,cdm,1,blocked,provider identity; blocked on every path
+care_site_name,care_site,cdm,1,blocked,care-site identity; blocked on every path
+condition_source_concept_id,condition_occurrence,cdm,1,blocked,source coding: stays class 1 by default (2.10.5 audit item); blocked on every path
+patient_identifier,person_ext,extension,1,blocked,direct identifier (extension); blocked on every path
+mrn,person_ext,extension,1,blocked,direct identifier (extension); blocked on every path
+ssn,person_ext,extension,1,blocked,direct identifier (extension); blocked on every path
+email,person_ext,extension,1,blocked,direct identifier (extension); blocked on every path
+phone,person_ext,extension,1,blocked,direct identifier (extension); blocked on every path
+comments,visit_ext,extension,1,blocked,narrative text (extension); blocked on every path
+member_key,person_ext,extension,1,blocked,untyped extension identifier: denied by .untypedIdentifierColumns() even when a controller lists it (blueprint is_untyped_identifier); a short-name regex alone cannot certify extension identifiers
+person_id,person,cdm,3,admitted,reviewed person key (pseudonymised on release)
+gender_concept_id,person,cdm,3,admitted,ordinary concept
+race_concept_id,person,cdm,3,admitted,ordinary concept
+condition_concept_id,condition_occurrence,cdm,3,admitted,ordinary concept
+drug_concept_id,drug_exposure,cdm,3,admitted,ordinary concept
+value_as_number,measurement,cdm,3,admitted,ordinary measure
+unit_concept_id,measurement,cdm,3,admitted,ordinary concept
+operator_concept_id,measurement,cdm,3,admitted,ordinary concept
+days_supply,drug_exposure,cdm,3,admitted,ordinary measure
+quantity,drug_exposure,cdm,3,admitted,ordinary measure
+visit_concept_id,visit_occurrence,cdm,3,admitted,ordinary concept
+cohort_row_id,derived,derived,3,admitted,"reviewed analytic key (kept, not person lineage)"
+set_id,derived,derived,3,admitted,"reviewed analytic key (kept, never person lineage)"
+sampling_weight,derived,derived,3,admitted,"released weight (encodes eligible-pool size, documented)"
+total_cost,cost,cdm,3,admitted,ordinary measure
+currency_concept_id,cost,cdm,3,admitted,ordinary concept
+episode_concept_id,episode,cdm,3,admitted,ordinary concept

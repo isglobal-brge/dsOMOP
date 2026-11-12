@@ -1033,8 +1033,10 @@ test_that("DP preparation seals plan outputs while plan loading stays DP-free", 
   session$plan <- plan
   eval(quote(omopPlanExecuteDS(handle_symbol, plan, list(ages = "D_ages"))),
        envir = session)
-  eval(quote(omopDpPlanExecuteDS(handle_symbol, plan, list(ages = "DP_ages"))),
-       envir = session)
+  prepared_status <- eval(quote(omopDpPlanExecuteDS(
+    handle_symbol, plan, list(ages = "DP_ages"), commit_policy = "server"
+  )), envir = session)
+  expect_identical(prepared_status$status, "ok")
   loaded <- get("D_ages", envir = session, inherits = FALSE)
   prepared <- get("DP_ages", envir = session, inherits = FALSE)
   expect_null(attr(loaded, "dsomop_dp_provenance", exact = TRUE))
@@ -1048,6 +1050,18 @@ test_that("DP preparation seals plan outputs while plan loading stays DP-free", 
   expect_identical(released$statistic, "count")
   expect_identical(omopDpReleaseDS(prepared, list(statistic = "count")),
                    released)
+
+  # The client includes commit_policy in every execution call. It is an
+  # explicit publication policy, never a named scope input from `...`.
+  all_or_none <- eval(quote(omopDpPlanExecuteDS(
+    handle_symbol, plan, list(ages = "DP_all_or_none"), commit_policy = "all_or_none"
+  )), envir = session)
+  expect_identical(all_or_none$status, "ok")
+  expect_silent(.dsomopDpVerifyPersonLocal(get("DP_all_or_none", session)))
+  expect_error(eval(quote(omopDpPlanExecuteDS(
+    handle_symbol, plan, list(ages = "DP_invalid_policy"), commit_policy = "relaxed"
+  )), envir = session), "commit_policy")
+  expect_false(exists("DP_invalid_policy", envir = session, inherits = FALSE))
 
   # Preparing for DP is a community-tool operation that needs DP.
   withr::with_options(list(dsomop.tools.enabled = FALSE), expect_error(
@@ -1074,6 +1088,29 @@ test_that("DP preparation seals plan outputs while plan loading stays DP-free", 
                                    list(baseline = "DP_base"))),
          envir = session),
     "public reference year")
+  expect_false(exists("DP_base", envir = session, inherits = FALSE))
+
+  # The second component's seal fails after the first has been sealed privately.
+  # Neither component may become visible, and preceding successful executions
+  # remain owned by their original transactions.
+  two_outputs <- plan
+  two_outputs$outputs$ages_again <- plan$outputs$ages
+  session$two_outputs <- two_outputs
+  original_seal <- .dsomopDpSealPlanOutput
+  sealed_components <- 0L
+  local_mocked_bindings(.dsomopDpSealPlanOutput = function(...) {
+    sealed_components <<- sealed_components + 1L
+    if (sealed_components == 2L) stop("injected second DP seal failure")
+    original_seal(...)
+  })
+  expect_error(eval(quote(omopDpPlanExecuteDS(
+    handle_symbol, two_outputs,
+    list(ages = "DP_failed_first", ages_again = "DP_failed_second")
+  )), envir = session), "injected second DP seal failure")
+  expect_identical(sealed_components, 2L)
+  expect_false(exists("DP_failed_first", envir = session, inherits = FALSE))
+  expect_false(exists("DP_failed_second", envir = session, inherits = FALSE))
+  expect_identical(get("DP_ages", session), prepared)
 })
 
 test_that("derived column lineage uses a closed canonical contract", {
@@ -2971,4 +3008,166 @@ test_that("enabling DP reuses a root created while DP was disabled", {
   .dp_restart_runtime()
   expect_identical(.dsomopDpPolicy()$noise_root, old_root)
   expect_identical(.dp_state_files(state), .dp_root_files)
+})
+
+.dp_v2_ir <- function() {
+  list(
+    version = 2L,
+    meta = list(language_version = "2.0", semantic_version = "2.0.0",
+                generated_by = "dp-adapter-test"),
+    events = list(measure = list(table = "measurement")),
+    populations = list(base = list(kind = "criteria")),
+    variables = list(value = list(source = list(event = "measure"),
+                                  reducer = list(fn = "mean"))),
+    outputs = list(out = list(rows = "base", format = "wide",
+                              columns = list("value")))
+  )
+}
+
+test_that("v2 DP locality follows match descendants, joins and all typed sources", {
+  ir <- .dp_v2_ir()
+  expect_silent(.jsonSchemaAssert(ir, "ir-v2"))
+  expect_identical(.dsomopDpIrLocality(ir, list()), c(out = TRUE))
+  ir$populations$matched <- list(kind = "match", match = list(
+    cases = "base", controls = "base", outcome = list(event = "measure")
+  ))
+  ir$populations$child <- list(kind = "criteria", parent = "matched")
+  ir$populations$union <- list(kind = "setop", setop = list(
+    op = "union", members = list("base", "child")
+  ))
+  ir$outputs$child <- list(rows = "child", format = "membership")
+  ir$outputs$union <- list(rows = "union", format = "membership")
+  ir$outputs$joined <- list(rows = "base", format = "joined", options = list(
+    from = list(list(output = "out"), list(output = "child"))
+  ))
+  # Declaration order cannot accidentally turn an unresolved match into a
+  # criteria population. The independent, local branch remains eligible.
+  ir$populations <- rev(ir$populations)
+  expect_identical(.dsomopDpIrLocality(ir, list()),
+                   c(out = TRUE, child = FALSE, union = FALSE, joined = FALSE))
+  bad <- .dp_v2_ir()
+  bad$variables$value$reducer$fn <- "future_cross_person_reducer"
+  expect_false(.dsomopDpIrLocality(bad, list())[["out"]])
+  bad <- .dp_v2_ir()
+  bad$variables$value$source <- list(event = "missing")
+  expect_false(.dsomopDpIrLocality(bad, list())[["out"]])
+  bad <- .dp_v2_ir()
+  bad$events$measure <- list(cost = list(
+    event = list(event = "measure"), field = "total_paid"
+  ))
+  expect_false(.dsomopDpIrLocality(bad, list())[["out"]])
+  bad <- .dp_v2_ir()
+  bad$populations$base$parent <- "base"
+  expect_false(.dsomopDpIrLocality(bad, list())[["out"]])
+  bad <- .dp_v2_ir()
+  bad$variables$value$reducer$window <- list(
+    start = -30L, end = 0L,
+    anchor = list(source = list(event = "missing"))
+  )
+  expect_silent(.jsonSchemaAssert(bad, "ir-v2"))
+  expect_false(.dsomopDpIrLocality(bad, list())[["out"]])
+  bad <- .dp_v2_ir()
+  bad$outputs$out <- list(rows = "base", format = "sparse", options = list(
+    sources = list(list(event = "missing"))
+  ))
+  expect_silent(.jsonSchemaAssert(bad, "ir-v2"))
+  expect_false(.dsomopDpIrLocality(bad, list())[["out"]])
+  for (example in c("A", "B")) {
+    plan <- .jsonSchemaLoad(system.file("schema", "examples", paste0(
+      "plan-v2-example-", example, ".json"
+    ), package = "dsOMOP"))
+    local <- .dsomopDpIrLocality(plan, list())
+    expect_identical(unname(local), rep(identical(example, "A"), length(local)))
+  }
+})
+
+test_that("v2 DP scopes require authenticated lineage and never mask cohorts", {
+  .dp_local_state()
+  policy <- .dsomopDpPolicy()
+  ir <- .dp_v2_ir()
+  parent <- .dp_seal(.testPseudonymize(data.frame(person_id = 1:6)),
+                     producer = "test/v2-parent")
+  ir$scope <- list(tables = list("parent"), combine = "union")
+  expect_false(.dsomopDpIrLocality(ir, policy)[["out"]])
+  ir$scope$tables_frames <- list(parent = parent)
+  expect_true(.dsomopDpIrLocality(ir, policy)[["out"]])
+  ir$scope$cohort <- 7L
+  expect_false(.dsomopDpIrLocality(ir, policy)[["out"]])
+  ir$scope$cohort <- NULL
+  ir$scope$tables_frames$parent$person_id[[1L]] <-
+    ir$scope$tables_frames$parent$person_id[[2L]]
+  expect_false(.dsomopDpIrLocality(ir, policy)[["out"]])
+  ir$scope$tables_frames <- list(parent = data.frame(person_id = 1:6))
+  expect_false(.dsomopDpIrLocality(ir, policy)[["out"]])
+  ir <- .dp_v2_ir()
+  ir$populations$base$where <- list(cohort = list(cohort_definition_id = 7L))
+  expect_false(.dsomopDpIrLocality(ir, policy)[["out"]])
+  ir$populations$base <- list(kind = "index", index = list(
+    source = list(cohort_definition_id = 7L)
+  ))
+  expect_false(.dsomopDpIrLocality(ir, policy)[["out"]])
+})
+
+test_that("v2 DP provenance binds the shared digest and authenticated scopes", {
+  .dp_local_state()
+  ir <- .dp_v2_ir()
+  policy <- .dsomopDpPolicy()
+  frame <- .testPseudonymize(data.frame(person_id = 1:6, value = 1:6))
+  first <- .dp_seal_plan(frame, ir, "out")
+  expect_silent(.dsomopDpVerifyPersonLocal(first))
+  semantic <- .dsomopDpIrLineageSemantic(ir, "out", policy)
+  expect_identical(semantic$semantic_digest, .planSemanticDigest(ir)$sha256)
+  changed_symbol <- ir
+  changed_symbol$outputs$out$result_symbol <- "D_other"
+  expect_identical(.dp_lineage(first), .dp_lineage(.dp_seal_plan(
+    frame, changed_symbol, "out"
+  )))
+  changed_version <- ir
+  changed_version$meta$semantic_version <- "2.1.0"
+  expect_false(identical(.dp_lineage(first), .dp_lineage(.dp_seal_plan(
+    frame, changed_version, "out"
+  ))))
+  ir$scope <- list(tables = list("parent"), combine = "union")
+  semantic_ir <- ir
+  ir$scope$tables_frames <- list(parent = .dp_seal(
+    frame, producer = "test/v2-parent-a"
+  ))
+  semantic <- .dsomopDpIrLineageSemantic(ir, "out", policy)
+  expect_identical(semantic$semantic_digest,
+                   .planSemanticDigest(semantic_ir)$sha256)
+  first_parent <- .dp_seal_plan(frame, ir, "out")
+  ir$scope$tables_frames$parent <- .dp_seal(
+    frame, producer = "test/v2-parent-b"
+  )
+  expect_false(identical(.dp_lineage(first_parent), .dp_lineage(
+    .dp_seal_plan(frame, ir, "out")
+  )))
+})
+
+test_that("private DP sealing rejects nonlocal or unsealed components", {
+  .dp_local_state()
+  ir <- .dp_v2_ir()
+  ctx <- new.env(parent = emptyenv())
+  ctx$ir <- ir
+  ctx$handle <- create_test_handle()
+  candidate <- .publicationCandidate(
+    "out", "primary", "frame", .lineage("direct", "person_id"),
+    requested_symbol = "D", grain = "person"
+  )
+  seal <- .dsomopDpPublicationSeal(ctx)
+  # The unmarked private frame cannot silently escape as an unsealed result.
+  expect_error(seal(data.frame(person_id = 1:6), candidate),
+               "carries no DP provenance")
+  ctx$ir$populations$base$kind <- "future_population"
+  reject <- .dsomopDpPublicationSeal(ctx)
+  error <- tryCatch(reject(data.frame(person_id = 1:6), candidate),
+                    error = identity)
+  expect_s3_class(error, "dsomop_dp_rejection")
+  expect_identical(error$code, "not_person_local")
+  reference <- .publicationCandidate(
+    "out", "dictionary", "frame", .lineage("reference"),
+    requested_symbol = "D_dictionary", grain = "none"
+  )
+  dictionary <- data.frame(name = "value")
+  expect_identical(reject(dictionary, reference), dictionary)
 })

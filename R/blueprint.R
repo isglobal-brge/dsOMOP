@@ -1250,6 +1250,7 @@
       is_untyped_identifier = logical(nrow(db_cols)),
       is_sensitive  = logical(nrow(db_cols)),
       is_blocked   = logical(nrow(db_cols)),
+      is_quasi_identifier = logical(nrow(db_cols)),
       stringsAsFactors = FALSE
     )
 
@@ -1296,6 +1297,11 @@
       col_df$is_sensitive[j] <- .detectSensitiveColumns(col_name)
       col_df$is_blocked[j] <- col_df$is_sensitive[j] ||
         col_df$is_untyped_identifier[j]
+      # Informational assignment classification; aggregate flags above retain
+      # their existing policy, including refusal of exact birth components.
+      col_df$is_quasi_identifier[j] <-
+        .assignmentQuasiIdentifier(col_name) &&
+        !.assignmentBlockedColumn(col_name, col_df[j, , drop = FALSE])
     }
 
     columns[[tbl_name]] <- col_df
@@ -2000,7 +2006,9 @@
                                  bp$tables$table_name[bp$tables$present_in_db]),
     database_support = .databaseSupportProfile(handle$dbms),
     disclosure = disclosure,
-    pseudonymization = .personKeyPublicContract(handle)
+    pseudonymization = .personKeyPublicContract(handle),
+    # Recipe-language declaration (design-2.10.3 section 4.4, defect A-E7).
+    recipe_language = .recipeLanguageCapability(handle)
   )
 }
 

@@ -1,0 +1,3395 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://isglobal-brge.github.io/dsOMOP/schema/plan-v2.json",
+  "title": "dsOMOP recipe plan, language 2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "meta",
+    "outputs"
+  ],
+  "properties": {
+    "version": {
+      "const": 2
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language_version",
+        "semantic_version",
+        "generated_by"
+      ],
+      "properties": {
+        "language_version": {
+          "const": "2.0"
+        },
+        "semantic_version": {
+          "type": "string",
+          "pattern": "^2\\.[0-9]+\\.[0-9]+$"
+        },
+        "generated_by": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "client_version": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "recipe_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "translate_concepts": {
+          "type": "boolean",
+          "default": true
+        },
+        "block_sensitive": {
+          "type": "boolean",
+          "default": true
+        },
+        "factor_concepts": {
+          "type": "boolean",
+          "default": true
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        }
+      }
+    },
+    "concept_sets": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/concept_set"
+      }
+    },
+    "events": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/event"
+      }
+    },
+    "intervals": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/interval"
+      }
+    },
+    "populations": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/population"
+      }
+    },
+    "variables": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/variable"
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/output"
+      }
+    },
+    "publish": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/name"
+      },
+      "description": "Publication roots; absent = every output. Outputs not listed are private computed inputs."
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cohort": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "string",
+              "maxLength": 128
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "const": "cohort_table"
+                },
+                "cohort_definition_id": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          ]
+        },
+        "tables": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "combine": {
+          "enum": [
+            "union",
+            "intersect"
+          ],
+          "default": "union"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+    },
+    "table_name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "column_name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "concept_id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nullable_int": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "scalar": {
+      "type": [
+        "number",
+        "string",
+        "boolean"
+      ]
+    },
+    "concept_set": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "concepts"
+      ],
+      "properties": {
+        "concepts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/concept_id"
+          },
+          "maxItems": 100000
+        },
+        "include_descendants": {
+          "type": "boolean",
+          "default": false
+        },
+        "include_mapped": {
+          "type": "boolean",
+          "default": false
+        },
+        "exclude": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/concept_id"
+              }
+            },
+            {
+              "$ref": "#/$defs/concept_set"
+            }
+          ],
+          "default": null
+        }
+      }
+    },
+    "concept_set_ref": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/name"
+        },
+        {
+          "$ref": "#/$defs/concept_set"
+        }
+      ]
+    },
+    "event_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event"
+      ],
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/name"
+        }
+      }
+    },
+    "interval_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interval"
+      ],
+      "properties": {
+        "interval": {
+          "$ref": "#/$defs/name"
+        }
+      }
+    },
+    "source_ref": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/event_ref"
+        },
+        {
+          "$ref": "#/$defs/interval_ref"
+        }
+      ]
+    },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/concept_id"
+        },
+        "convert": {
+          "type": "object",
+          "default": {},
+          "propertyNames": {
+            "pattern": "^[0-9]+$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "factor"
+            ],
+            "properties": {
+              "factor": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "offset": {
+                "type": "number",
+                "default": 0
+              }
+            }
+          }
+        },
+        "unknown": {
+          "enum": [
+            "missing",
+            "exclude"
+          ],
+          "default": "missing"
+        },
+        "censored": {
+          "enum": [
+            "keep",
+            "exclude"
+          ],
+          "default": "keep"
+        }
+      }
+    },
+    "event_table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "table"
+      ],
+      "properties": {
+        "table": {
+          "$ref": "#/$defs/table_name"
+        },
+        "concept_set": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/concept_set_ref"
+            }
+          ],
+          "default": null
+        },
+        "concept_col": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/column_name"
+            }
+          ],
+          "default": null
+        },
+        "where": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/predicate"
+            }
+          ],
+          "default": null
+        },
+        "visit": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "#/$defs/concept_id"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "index"
+              ],
+              "properties": {
+                "index": {
+                  "const": true
+                }
+              }
+            }
+          ],
+          "default": null
+        },
+        "value": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "column"
+              ],
+              "properties": {
+                "column": {
+                  "$ref": "#/$defs/column_name"
+                }
+              }
+            }
+          ],
+          "default": null
+        },
+        "unit": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/unit"
+            }
+          ],
+          "default": null
+        },
+        "end": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "const": "start"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "fallback"
+              ],
+              "properties": {
+                "fallback": {
+                  "enum": [
+                    "days_supply"
+                  ]
+                }
+              }
+            }
+          ],
+          "default": null
+        },
+        "on_missing_table": {
+          "enum": [
+            "error",
+            "unavailable"
+          ],
+          "default": "error"
+        }
+      }
+    },
+    "event_episode_members": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "episode_members"
+      ],
+      "properties": {
+        "episode_members": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "episode"
+          ],
+          "properties": {
+            "episode": {
+              "$ref": "#/$defs/event_ref"
+            },
+            "tables": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "$ref": "#/$defs/table_name"
+                  }
+                }
+              ],
+              "default": null
+            },
+            "where": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/predicate"
+                }
+              ],
+              "default": null
+            },
+            "on_missing_table": {
+              "enum": [
+                "error",
+                "unavailable"
+              ],
+              "default": "error"
+            }
+          }
+        }
+      }
+    },
+    "event_cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cost"
+      ],
+      "properties": {
+        "cost": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event",
+            "field"
+          ],
+          "properties": {
+            "event": {
+              "$ref": "#/$defs/event_ref"
+            },
+            "field": {
+              "enum": [
+                "total_charge",
+                "total_cost",
+                "total_paid",
+                "paid_by_payer",
+                "paid_by_patient",
+                "paid_patient_copay",
+                "paid_patient_coinsurance",
+                "paid_patient_deductible",
+                "paid_by_primary",
+                "paid_ingredient_cost",
+                "paid_dispensing_fee",
+                "amount_allowed"
+              ]
+            },
+            "currency": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/concept_id"
+                }
+              ],
+              "default": null
+            },
+            "cost_type": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "#/$defs/concept_id"
+                  }
+                }
+              ],
+              "default": null
+            },
+            "where": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/predicate"
+                }
+              ],
+              "default": null
+            },
+            "on_missing_table": {
+              "enum": [
+                "error",
+                "unavailable"
+              ],
+              "default": "error"
+            }
+          }
+        }
+      }
+    },
+    "event": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/event_table"
+        },
+        {
+          "$ref": "#/$defs/event_episode_members"
+        },
+        {
+          "$ref": "#/$defs/event_cost"
+        }
+      ]
+    },
+    "interval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/event_ref"
+        },
+        "gap": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 30
+        },
+        "persistence": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "min_days": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "by": {
+          "enum": [
+            "event",
+            "concept",
+            "ingredient"
+          ],
+          "default": "event"
+        },
+        "unmapped": {
+          "enum": [
+            "own_concept",
+            "drop"
+          ],
+          "default": "own_concept"
+        },
+        "end": {
+          "enum": [
+            "recorded_end",
+            "start"
+          ],
+          "default": "recorded_end"
+        },
+        "fallback": {
+          "enum": [
+            "days_supply",
+            "none"
+          ],
+          "default": "days_supply"
+        },
+        "stockpile": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "predicate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "and"
+          ],
+          "properties": {
+            "and": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/predicate"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "or"
+          ],
+          "properties": {
+            "or": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/predicate"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "not"
+          ],
+          "properties": {
+            "not": {
+              "$ref": "#/$defs/predicate"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/predicate_leaf"
+        }
+      ]
+    },
+    "predicate_leaf": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "var",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "var": {
+              "$ref": "#/$defs/column_name"
+            },
+            "op": {
+              "enum": [
+                "==",
+                "!=",
+                "<",
+                "<=",
+                ">",
+                ">="
+              ]
+            },
+            "value": {
+              "$ref": "#/$defs/scalar"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "var",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "var": {
+              "$ref": "#/$defs/column_name"
+            },
+            "op": {
+              "enum": [
+                "in",
+                "not_in"
+              ]
+            },
+            "value": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 10000,
+              "items": {
+                "$ref": "#/$defs/scalar"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "var",
+            "op"
+          ],
+          "properties": {
+            "var": {
+              "$ref": "#/$defs/column_name"
+            },
+            "op": {
+              "enum": [
+                "is_null",
+                "not_null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "var",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "var": {
+              "$ref": "#/$defs/column_name"
+            },
+            "op": {
+              "const": "between"
+            },
+            "value": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lower",
+                "upper"
+              ],
+              "properties": {
+                "lower": {
+                  "$ref": "#/$defs/scalar"
+                },
+                "upper": {
+                  "$ref": "#/$defs/scalar"
+                },
+                "upper_inclusive": {
+                  "type": "boolean",
+                  "default": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "date_handling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "remove",
+            "relative",
+            "binned",
+            "absolute"
+          ],
+          "default": "relative"
+        },
+        "reference": {
+          "const": "index",
+          "default": "index"
+        },
+        "bin_width": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "week",
+                "month",
+                "year"
+              ]
+            }
+          ],
+          "default": null
+        },
+        "date_columns": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/column_name"
+              }
+            }
+          ],
+          "default": null
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "const": "binned"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "bin_width"
+            ],
+            "properties": {
+              "bin_width": {
+                "enum": [
+                  "week",
+                  "month",
+                  "year"
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "bin_width": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "anchor": {
+      "oneOf": [
+        {
+          "enum": [
+            "index",
+            "index_end",
+            "observation_start",
+            "observation_end"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "date"
+          ],
+          "properties": {
+            "date": {
+              "$ref": "#/$defs/date"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source"
+          ],
+          "properties": {
+            "source": {
+              "$ref": "#/$defs/source_ref"
+            },
+            "which": {
+              "enum": [
+                "first",
+                "last",
+                "nth",
+                "latest_end"
+              ],
+              "default": "first"
+            },
+            "n": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "field": {
+              "enum": [
+                "start",
+                "end"
+              ],
+              "default": "start"
+            },
+            "scope": {
+              "enum": [
+                "person",
+                "episode"
+              ],
+              "default": "person"
+            },
+            "search": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/window"
+                }
+              ],
+              "default": null
+            }
+          }
+        }
+      ]
+    },
+    "bound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "anchor",
+        "offset"
+      ],
+      "properties": {
+        "anchor": {
+          "$ref": "#/$defs/anchor"
+        },
+        "offset": {
+          "type": "integer"
+        }
+      }
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "$ref": "#/$defs/bound"
+            }
+          ],
+          "default": null
+        },
+        "end": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "$ref": "#/$defs/bound"
+            }
+          ],
+          "default": null
+        },
+        "anchor": {
+          "$ref": "#/$defs/anchor",
+          "default": "index"
+        }
+      }
+    },
+    "nullable_window": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/window"
+        }
+      ]
+    },
+    "criteria": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "and"
+          ],
+          "properties": {
+            "and": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/criteria"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "or"
+          ],
+          "properties": {
+            "or": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/criteria"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "not"
+          ],
+          "properties": {
+            "not": {
+              "$ref": "#/$defs/criteria"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "has"
+          ],
+          "properties": {
+            "has": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source"
+              ],
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/source_ref"
+                },
+                "op": {
+                  "enum": [
+                    ">=",
+                    "<=",
+                    "==",
+                    "between"
+                  ],
+                  "default": ">="
+                },
+                "n": {
+                  "oneOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "array",
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "items": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    }
+                  ],
+                  "default": 1
+                },
+                "window": {
+                  "$ref": "#/$defs/nullable_window",
+                  "default": null
+                },
+                "nonmissing": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/$defs/column_name"
+                    }
+                  ],
+                  "default": null
+                },
+                "distinct": {
+                  "enum": [
+                    "row",
+                    "day",
+                    "visit",
+                    "concept"
+                  ],
+                  "default": "row"
+                }
+              },
+              "if": {
+                "required": [
+                  "op"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "between"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "n"
+                ],
+                "properties": {
+                  "n": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "n": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "person"
+          ],
+          "properties": {
+            "person": {
+              "$ref": "#/$defs/predicate"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "age"
+          ],
+          "properties": {
+            "age": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "min": {
+                  "$ref": "#/$defs/nullable_int",
+                  "default": null
+                },
+                "max": {
+                  "$ref": "#/$defs/nullable_int",
+                  "default": null
+                },
+                "reference": {
+                  "oneOf": [
+                    {
+                      "const": "index"
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "year"
+                      ],
+                      "properties": {
+                        "year": {
+                          "type": "integer",
+                          "minimum": 1800,
+                          "maximum": 2200
+                        }
+                      }
+                    }
+                  ],
+                  "default": "index"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "observed"
+          ],
+          "properties": {
+            "observed": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "before": {
+                  "$ref": "#/$defs/nullable_int",
+                  "default": null
+                },
+                "after": {
+                  "$ref": "#/$defs/nullable_int",
+                  "default": null
+                },
+                "gap": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  ],
+                  "default": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cohort"
+          ],
+          "properties": {
+            "cohort": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cohort_definition_id"
+              ],
+              "properties": {
+                "cohort_definition_id": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "nullable_criteria": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/criteria"
+        }
+      ]
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "policy": {
+          "enum": [
+            "unique",
+            "earliest",
+            "union"
+          ],
+          "default": "unique"
+        },
+        "on_ambiguous": {
+          "enum": [
+            "drop",
+            "error"
+          ],
+          "default": "drop"
+        },
+        "on_missing": {
+          "enum": [
+            "drop",
+            "keep"
+          ],
+          "default": "drop"
+        },
+        "gap": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        }
+      }
+    },
+    "end_strategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy"
+      ],
+      "properties": {
+        "strategy": {
+          "enum": [
+            "observation_end",
+            "fixed",
+            "event_end",
+            "interval_end"
+          ]
+        },
+        "days": {
+          "$ref": "#/$defs/nullable_int",
+          "default": null
+        },
+        "pad": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        }
+      }
+    },
+    "index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source"
+      ],
+      "properties": {
+        "source": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/source_ref"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cohort_definition_id"
+              ],
+              "properties": {
+                "cohort_definition_id": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "any_of"
+              ],
+              "properties": {
+                "any_of": {
+                  "type": "array",
+                  "minItems": 2,
+                  "items": {
+                    "$ref": "#/$defs/source_ref"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "select": {
+          "enum": [
+            "first",
+            "first_eligible",
+            "last",
+            "all",
+            "nth"
+          ],
+          "default": "first"
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "offset": {
+          "type": "integer",
+          "default": 0
+        },
+        "end": {
+          "$ref": "#/$defs/end_strategy",
+          "default": {
+            "strategy": "observation_end",
+            "days": null,
+            "pad": 0
+          }
+        },
+        "restrict_to_observation": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "match": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cases",
+        "controls",
+        "outcome"
+      ],
+      "properties": {
+        "cases": {
+          "$ref": "#/$defs/name"
+        },
+        "controls": {
+          "$ref": "#/$defs/name"
+        },
+        "outcome": {
+          "$ref": "#/$defs/source_ref"
+        },
+        "at": {
+          "const": "index",
+          "default": "index"
+        },
+        "match": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "oneOf": [
+              {
+                "enum": [
+                  "sex",
+                  "calendar_year"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "age_band"
+                ],
+                "properties": {
+                  "age_band": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "strata"
+                ],
+                "properties": {
+                  "strata": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "source"
+                    ],
+                    "properties": {
+                      "source": {
+                        "$ref": "#/$defs/source_ref"
+                      },
+                      "window": {
+                        "$ref": "#/$defs/nullable_window",
+                        "default": null
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "controls_per_case": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 4
+        },
+        "prior_outcome": {
+          "enum": [
+            "exclude",
+            "allow"
+          ],
+          "default": "exclude"
+        },
+        "future_cases": {
+          "enum": [
+            "eligible",
+            "ineligible"
+          ],
+          "default": "eligible"
+        },
+        "replacement": {
+          "enum": [
+            "between_sets",
+            "none"
+          ],
+          "default": "between_sets"
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647,
+          "default": 1
+        },
+        "insufficient": {
+          "enum": [
+            "keep_available",
+            "drop_case"
+          ],
+          "default": "keep_available"
+        },
+        "missing_strata": {
+          "enum": [
+            "ineligible",
+            "match_missing"
+          ],
+          "default": "ineligible"
+        },
+        "max_candidates": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1000000
+        }
+      }
+    },
+    "population": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "index"
+          ],
+          "properties": {
+            "kind": {
+              "const": "index"
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "parent": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/name"
+                }
+              ],
+              "default": null
+            },
+            "index": {
+              "$ref": "#/$defs/index"
+            },
+            "where": {
+              "$ref": "#/$defs/nullable_criteria",
+              "default": null
+            },
+            "coverage": {
+              "$ref": "#/$defs/coverage"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "criteria"
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "parent": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/name"
+                }
+              ],
+              "default": null
+            },
+            "where": {
+              "$ref": "#/$defs/nullable_criteria",
+              "default": null
+            },
+            "cohort_definition_id": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              ],
+              "default": null
+            },
+            "episode_policy": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "enum": [
+                    "any_episode",
+                    "all_episodes",
+                    "first_episode",
+                    "last_episode"
+                  ]
+                }
+              ],
+              "default": null
+            },
+            "coverage": {
+              "$ref": "#/$defs/coverage"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "setop"
+          ],
+          "properties": {
+            "kind": {
+              "const": "setop"
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "parent": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/name"
+                }
+              ],
+              "default": null
+            },
+            "setop": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "op",
+                "members"
+              ],
+              "properties": {
+                "op": {
+                  "enum": [
+                    "union",
+                    "intersect",
+                    "setdiff"
+                  ]
+                },
+                "members": {
+                  "type": "array",
+                  "minItems": 2,
+                  "items": {
+                    "$ref": "#/$defs/name"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "match"
+          ],
+          "properties": {
+            "kind": {
+              "const": "match"
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "match": {
+              "$ref": "#/$defs/match"
+            }
+          }
+        }
+      ]
+    },
+    "reducer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fn"
+      ],
+      "properties": {
+        "fn": {
+          "enum": [
+            "binary",
+            "count",
+            "n_distinct",
+            "first_value",
+            "last_value",
+            "nth_value",
+            "closest_value",
+            "mean",
+            "min",
+            "max",
+            "sum",
+            "sd",
+            "cv",
+            "median",
+            "quantile",
+            "mode",
+            "slope",
+            "any",
+            "all",
+            "first_date",
+            "last_date",
+            "days_since",
+            "days_until",
+            "time_since",
+            "duration_sum",
+            "covered_days",
+            "supply_days",
+            "drug_duration",
+            "gap_max",
+            "gap_mean",
+            "abnormal_high",
+            "abnormal_low",
+            "era_count",
+            "era_days",
+            "first_era_days"
+          ]
+        },
+        "value": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/column_name"
+            }
+          ],
+          "default": null
+        },
+        "window": {
+          "$ref": "#/$defs/nullable_window",
+          "default": null
+        },
+        "which": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "first",
+                "last",
+                "nth",
+                "closest"
+              ]
+            }
+          ],
+          "default": null
+        },
+        "n": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 50,
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          ],
+          "default": 1
+        },
+        "side": {
+          "enum": [
+            "either",
+            "before",
+            "after"
+          ],
+          "default": "either"
+        },
+        "missing": {
+          "enum": [
+            "skip",
+            "keep"
+          ],
+          "default": "skip"
+        },
+        "distinct": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "row",
+                "day",
+                "visit",
+                "concept"
+              ]
+            }
+          ],
+          "default": null
+        },
+        "p": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            }
+          ],
+          "default": null
+        },
+        "agg": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "mean",
+                "sum",
+                "max"
+              ]
+            }
+          ],
+          "default": null
+        },
+        "reference": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/anchor"
+            }
+          ],
+          "default": null
+        },
+        "predicate": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/predicate"
+            }
+          ],
+          "default": null
+        },
+        "reference_date": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/date"
+            }
+          ],
+          "default": null
+        },
+        "unit": {
+          "enum": [
+            "day",
+            "month"
+          ],
+          "default": "day"
+        },
+        "coverage": {
+          "enum": [
+            "recorded",
+            "effective_supply"
+          ],
+          "default": "recorded"
+        },
+        "fills": {
+          "enum": [
+            "start_in_window",
+            "clipped"
+          ],
+          "default": "start_in_window"
+        },
+        "observed_only": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "if": {
+        "properties": {
+          "fn": {
+            "const": "covered_days"
+          }
+        }
+      },
+      "then": {},
+      "else": {
+        "properties": {
+          "observed_only": {
+            "const": false
+          },
+          "coverage": {
+            "const": "recorded"
+          }
+        }
+      }
+    },
+    "variable": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source",
+            "reducer"
+          ],
+          "properties": {
+            "source": {
+              "$ref": "#/$defs/source_ref"
+            },
+            "reducer": {
+              "$ref": "#/$defs/reducer"
+            },
+            "broadcast": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "derived"
+          ],
+          "properties": {
+            "derived": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "age"
+                    },
+                    "reference": {
+                      "enum": [
+                        "index",
+                        "today"
+                      ],
+                      "default": "index"
+                    },
+                    "reference_date": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/$defs/date"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "bands": {
+                      "type": "boolean",
+                      "default": false
+                    },
+                    "age_breaks": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "array",
+                          "minItems": 2,
+                          "items": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        }
+                      ],
+                      "default": null
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "sex_mf",
+                        "race",
+                        "ethnicity",
+                        "demo_missingness",
+                        "days_to_death",
+                        "n_observation_periods"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "birth_year_band"
+                    },
+                    "width": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "default": 5
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "obs_duration"
+                    },
+                    "period_policy": {
+                      "enum": [
+                        "total",
+                        "first",
+                        "last",
+                        "longest"
+                      ],
+                      "default": "total"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kind",
+                    "reference_date"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "prior_obs",
+                        "followup"
+                      ]
+                    },
+                    "reference_date": {
+                      "$ref": "#/$defs/date"
+                    },
+                    "period_policy": {
+                      "const": "containing",
+                      "default": "containing"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "died"
+                    },
+                    "before": {
+                      "$ref": "#/$defs/nullable_int",
+                      "default": null
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kind",
+                    "window"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "observed_days"
+                    },
+                    "window": {
+                      "$ref": "#/$defs/window"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "charlson",
+                        "chads2",
+                        "chadsvasc",
+                        "dcsi",
+                        "hfrs"
+                      ]
+                    },
+                    "reference_date": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/$defs/date"
+                        }
+                      ],
+                      "default": null
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "raw"
+          ],
+          "properties": {
+            "raw": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "table",
+                "column"
+              ],
+              "properties": {
+                "table": {
+                  "enum": [
+                    "person",
+                    "death",
+                    "observation_period"
+                  ]
+                },
+                "column": {
+                  "$ref": "#/$defs/column_name"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "population_column"
+          ],
+          "properties": {
+            "population_column": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "enum": [
+                    "index_source",
+                    "set_id",
+                    "is_case",
+                    "sampling_weight"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "censor_item": {
+      "oneOf": [
+        {
+          "enum": [
+            "observation_end",
+            "death",
+            "index_end"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "admin_date"
+          ],
+          "properties": {
+            "admin_date": {
+              "$ref": "#/$defs/date"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/source_ref"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "censor"
+          ],
+          "properties": {
+            "censor": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source"
+              ],
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/source_ref"
+                },
+                "which": {
+                  "enum": [
+                    "first_end_after_entry",
+                    "first_start_after_entry",
+                    "containing_entry_end"
+                  ],
+                  "default": "first_end_after_entry"
+                },
+                "offset": {
+                  "type": "integer",
+                  "default": 0
+                },
+                "search": {
+                  "$ref": "#/$defs/nullable_window",
+                  "default": null
+                },
+                "missing": {
+                  "enum": [
+                    "ignore",
+                    "ineligible"
+                  ],
+                  "default": "ignore"
+                },
+                "when_index_source": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "array",
+                      "minItems": 1,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      }
+                    }
+                  ],
+                  "default": null
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "temporal_select": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "event_select": {
+          "enum": [
+            "all",
+            "first",
+            "last"
+          ],
+          "default": "all"
+        },
+        "min_gap": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        }
+      }
+    },
+    "options_wide": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "date_handling": {
+          "$ref": "#/$defs/date_handling",
+          "default": {
+            "mode": "relative",
+            "reference": "index",
+            "bin_width": null,
+            "date_columns": null
+          }
+        },
+        "time_window": {
+          "$ref": "#/$defs/nullable_window",
+          "default": null
+        },
+        "temporal": {
+          "$ref": "#/$defs/temporal_select"
+        }
+      }
+    },
+    "options_long": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "date_handling": {
+          "$ref": "#/$defs/date_handling",
+          "default": {
+            "mode": "relative",
+            "reference": "index",
+            "bin_width": null,
+            "date_columns": null
+          }
+        },
+        "temporal": {
+          "$ref": "#/$defs/temporal_select"
+        },
+        "unit": {
+          "enum": [
+            "event",
+            "episode_event"
+          ],
+          "default": "episode_event"
+        },
+        "columns_derived": {
+          "type": "array",
+          "default": [],
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "days_from_index",
+              "days_from_anchor",
+              "event_number",
+              "days_since_previous",
+              "duration_days",
+              "value",
+              "unit",
+              "visit_type",
+              "concept_name"
+            ]
+          }
+        },
+        "anchors": {
+          "type": "object",
+          "default": {},
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/anchor"
+          }
+        },
+        "relations": {
+          "type": "object",
+          "default": {},
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source",
+              "within"
+            ],
+            "properties": {
+              "source": {
+                "$ref": "#/$defs/source_ref"
+              },
+              "within": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "distinct_by": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "enum": [
+                      "concept",
+                      "visit"
+                    ]
+                  }
+                ],
+                "default": null
+              },
+              "exclude_self": {
+                "type": "boolean",
+                "default": true
+              }
+            }
+          }
+        },
+        "event_log": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "options_survival": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcomes",
+        "censor"
+      ],
+      "properties": {
+        "outcomes": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/source_ref"
+          }
+        },
+        "tar": {
+          "$ref": "#/$defs/nullable_window",
+          "default": null
+        },
+        "tars": {
+          "type": "object",
+          "default": {},
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/window"
+          }
+        },
+        "entry": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/bound"
+            }
+          ],
+          "default": null
+        },
+        "censor": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/censor_item"
+          }
+        },
+        "prior_outcome": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lookback"
+              ],
+              "properties": {
+                "lookback": {
+                  "$ref": "#/$defs/nullable_int"
+                },
+                "action": {
+                  "enum": [
+                    "exclude",
+                    "censor",
+                    "ignore"
+                  ],
+                  "default": "exclude"
+                }
+              }
+            }
+          ],
+          "default": null
+        },
+        "format": {
+          "enum": [
+            "survival",
+            "competing_risk",
+            "recurrent_events",
+            "counting_process",
+            "multi_state"
+          ],
+          "default": "survival"
+        },
+        "outcome_mode": {
+          "enum": [
+            "composite",
+            "named"
+          ]
+        },
+        "event_order": {
+          "enum": [
+            "first",
+            "last",
+            "all"
+          ]
+        },
+        "washout_days": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "tie_policy": {
+          "enum": [
+            "priority",
+            "error",
+            "all",
+            "sequential"
+          ],
+          "default": "priority"
+        },
+        "same_day_priority": {
+          "enum": [
+            "event",
+            "censor"
+          ],
+          "default": "event"
+        },
+        "gap_policy": {
+          "enum": [
+            "censor_at_gap",
+            "reenter"
+          ],
+          "default": "censor_at_gap"
+        },
+        "transitions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "from",
+              "to"
+            ],
+            "properties": {
+              "from": {
+                "$ref": "#/$defs/name"
+              },
+              "to": {
+                "$ref": "#/$defs/name"
+              }
+            }
+          }
+        },
+        "initial_state": {
+          "$ref": "#/$defs/name",
+          "default": "index"
+        },
+        "state_hierarchy": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/name"
+          }
+        },
+        "state_step": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complete": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "options_intervals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sources"
+      ],
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/source_ref"
+          }
+        },
+        "window": {
+          "$ref": "#/$defs/nullable_window",
+          "default": null
+        },
+        "interval_match": {
+          "enum": [
+            "overlaps",
+            "starts_in",
+            "ends_in",
+            "active_at"
+          ],
+          "default": "overlaps"
+        },
+        "event_select": {
+          "enum": [
+            "all",
+            "first",
+            "last",
+            "nearest"
+          ],
+          "default": "all"
+        },
+        "select_n": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "select_by": {
+          "enum": [
+            "episode_source",
+            "episode_source_concept"
+          ],
+          "default": "episode_source"
+        },
+        "anchor": {
+          "$ref": "#/$defs/anchor",
+          "default": "index"
+        }
+      }
+    },
+    "options_temporal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sources"
+      ],
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/source_ref"
+          }
+        },
+        "bin_width": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 30
+        },
+        "window": {
+          "$ref": "#/$defs/nullable_window",
+          "default": null
+        },
+        "analyses": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "default": [
+            "binary"
+          ],
+          "items": {
+            "enum": [
+              "binary",
+              "count",
+              "mean",
+              "last",
+              "exposed_days"
+            ]
+          }
+        },
+        "source_analyses": {
+          "type": "object",
+          "default": {},
+          "description": "Per-source analysis selection: resolved source name -> nonempty unique subset of analyses; an omitted source inherits the output's analyses (A-14)",
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "binary",
+                "count",
+                "mean",
+                "last",
+                "exposed_days"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "options_person_period": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "representation": {
+          "enum": [
+            "dense",
+            "sparse"
+          ],
+          "default": "dense"
+        },
+        "sources": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/source_ref"
+          }
+        },
+        "bins": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "width"
+              ],
+              "properties": {
+                "width": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "calendar"
+              ],
+              "properties": {
+                "calendar": {
+                  "enum": [
+                    "month",
+                    "quarter",
+                    "year"
+                  ]
+                }
+              }
+            }
+          ],
+          "default": {
+            "width": 30
+          }
+        },
+        "window": {
+          "$ref": "#/$defs/nullable_window",
+          "default": null
+        },
+        "partition": {
+          "type": "object",
+          "additionalProperties": false,
+          "default": {},
+          "properties": {
+            "boundaries": {
+              "type": "array",
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/source_ref"
+              }
+            },
+            "age_bands": {
+              "$ref": "#/$defs/nullable_int",
+              "default": null
+            },
+            "calendar": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "enum": [
+                    "month",
+                    "year"
+                  ]
+                }
+              ],
+              "default": null
+            }
+          }
+        },
+        "outcomes": {
+          "type": "object",
+          "default": {},
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/source_ref"
+          }
+        },
+        "exposures": {
+          "type": "object",
+          "default": {},
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/interval_ref"
+          }
+        },
+        "carry_forward": {
+          "type": "object",
+          "default": {},
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "lookback"
+            ],
+            "properties": {
+              "lookback": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expire": {
+                "$ref": "#/$defs/nullable_int",
+                "default": null
+              }
+            }
+          }
+        },
+        "analyses": {
+          "type": "array",
+          "default": [
+            "binary"
+          ],
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "binary",
+              "count",
+              "mean",
+              "last",
+              "exposed_days"
+            ]
+          }
+        },
+        "source_analyses": {
+          "type": "object",
+          "default": {},
+          "description": "Per-source analysis selection: resolved source name -> nonempty unique subset of analyses; an omitted source inherits the output's analyses (A-14)",
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "binary",
+                "count",
+                "mean",
+                "last",
+                "exposed_days"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "options_sparse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sources"
+      ],
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/source_ref"
+          }
+        },
+        "analyses": {
+          "type": "array",
+          "default": [
+            "binary"
+          ],
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "binary",
+              "count"
+            ]
+          }
+        }
+      }
+    },
+    "options_membership": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "date_handling": {
+          "$ref": "#/$defs/date_handling",
+          "default": {
+            "mode": "relative",
+            "reference": "index",
+            "bin_width": null,
+            "date_columns": null
+          }
+        }
+      }
+    },
+    "options_dictionary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_outputs": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/name"
+          }
+        }
+      }
+    },
+    "options_joined": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from"
+      ],
+      "properties": {
+        "from": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "output"
+            ],
+            "properties": {
+              "output": {
+                "$ref": "#/$defs/name"
+              },
+              "component": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/name"
+                  }
+                ],
+                "default": null
+              }
+            }
+          }
+        },
+        "how": {
+          "enum": [
+            "inner",
+            "left"
+          ],
+          "default": "inner"
+        },
+        "cardinality": {
+          "enum": [
+            "one_to_one",
+            "many_to_one"
+          ],
+          "default": "one_to_one"
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rows",
+        "format"
+      ],
+      "properties": {
+        "rows": {
+          "$ref": "#/$defs/name"
+        },
+        "grain": {
+          "enum": [
+            "episode",
+            "person"
+          ]
+        },
+        "collapse": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "first_episode",
+                "last_episode",
+                "any"
+              ]
+            }
+          ],
+          "default": null
+        },
+        "columns": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/name"
+              }
+            }
+          ],
+          "default": null
+        },
+        "format": {
+          "enum": [
+            "wide",
+            "long",
+            "survival",
+            "intervals",
+            "temporal_covariates",
+            "person_period",
+            "sparse",
+            "membership",
+            "dictionary",
+            "joined"
+          ]
+        },
+        "sources": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/source_ref"
+          }
+        },
+        "options": {
+          "type": "object",
+          "default": {}
+        },
+        "result_symbol": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/name"
+            }
+          ],
+          "default": null
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "wide"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "options": {
+                "$ref": "#/$defs/options_wide"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "long"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "options": {
+                "$ref": "#/$defs/options_long"
+              }
+            },
+            "required": [
+              "sources"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "survival"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "options"
+            ],
+            "properties": {
+              "options": {
+                "$ref": "#/$defs/options_survival"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "intervals"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "options"
+            ],
+            "properties": {
+              "options": {
+                "$ref": "#/$defs/options_intervals"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "temporal_covariates"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "options"
+            ],
+            "properties": {
+              "options": {
+                "$ref": "#/$defs/options_temporal"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "person_period"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "options": {
+                "$ref": "#/$defs/options_person_period"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "sparse"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "options"
+            ],
+            "properties": {
+              "options": {
+                "$ref": "#/$defs/options_sparse"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "membership"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "options": {
+                "$ref": "#/$defs/options_membership"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "dictionary"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "options": {
+                "$ref": "#/$defs/options_dictionary"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "joined"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "options"
+            ],
+            "properties": {
+              "options": {
+                "$ref": "#/$defs/options_joined"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

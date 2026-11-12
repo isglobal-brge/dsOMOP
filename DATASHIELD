@@ -13,6 +13,8 @@ AssignMethods:
   omopAnalysisRunAssignDS,
   omopDpPlanExecuteDS
 AggregateMethods:
+  omopPlanStatusDS,
+  omopStagedRevokeDS,
   omopPingDS,
   omopGetCapabilitiesDS,
   omopDisclosureSettingsDS,
@@ -38,6 +40,7 @@ AggregateMethods:
   omopCdmSourceDS,
   omopCdmVersionDS,
   omopPlanPreviewDS,
+  omopPlanExplainDS,
   omopCohortListDS,
   omopCohortGetDefinitionDS,
   omopConceptPrevalenceDS,

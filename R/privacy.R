@@ -665,8 +665,8 @@ omopDpStatusDS <- function(client_contract = NULL) {
 #' Prepare person-local tables for differential-privacy releases (Assign)
 #'
 #' Community-tool counterpart of \code{\link{omopPlanExecuteDS}} for the sticky
-#' DP channel. It runs the same typed plan through the core plan engine, which
-#' is unchanged and never uses DP, and then seals each person-local output with
+#' DP channel. It runs the same typed plan through the core plan engine. The DP
+#' adapter seals each accepted person-local component privately before publication with
 #' the authenticated provenance capsule that \code{\link{omopDpReleaseDS}}
 #' requires: the canonical lineage of the plan and the dataset identity of the
 #' connected resource. Ordinary table loading (\code{omopPlanExecuteDS}) never
@@ -676,12 +676,16 @@ omopDpStatusDS <- function(client_contract = NULL) {
 #' (\code{dsomop.tools.enabled}) and an available DP service.
 #'
 #' @inheritParams omopPlanExecuteDS
-#' @return Invisible TRUE (sealed outputs are assigned into the caller's
-#'   environment under the requested symbols).
+#' @param commit_policy Character; \code{"server"} follows the server's
+#'   strictness setting. \code{"all_or_none"} refuses the entire execution if
+#'   any output is refused, as requested by a client skipping a small site.
+#' @return A bounded publication status; sealed outputs are assigned into the
+#'   caller's environment under the symbols reported in its inventory.
 #' @export
 omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
                                 output_mode = "memory",
-                                scope = NULL, combine = "union", ...) {
+                                scope = NULL, combine = "union", ...,
+                                commit_policy = "server") {
   .dsomopRequireCommunityTool(dp_routes = TRUE)
   if (!identical(.ds_arg(output_mode), "memory")) {
     stop("DP preparation creates in-memory tables only ",
@@ -693,12 +697,12 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
   extra <- list(...)
   # The plan's reads and the sealing share one request snapshot.
   .dsomopWithReadSnapshot(handle, .dsomopDpPlanExecuteSealed(
-    handle, omop_symbol, plan, out, scope, combine, extra, env))
+    handle, omop_symbol, plan, out, scope, combine, extra, env, commit_policy))
 }
 
 # The body of omopDpPlanExecuteDS, inside its request snapshot.
 .dsomopDpPlanExecuteSealed <- function(handle, omop_symbol, plan, out, scope,
-                                       combine, extra, env) {
+                                       combine, extra, env, commit_policy) {
   ready <- .dsomopToolsDpReady(handle)
   if (!isTRUE(ready$ready)) {
     stop("Preparing a table for DP releases needs the differential-privacy ",
@@ -718,55 +722,11 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
     outputs = names(decoded_out), scope_present = !is.null(scope_value)
   ))
 
-  # The core plan engine assigns its outputs into its caller's environment:
-  # call it as if from that environment, then seal what it created there.
-  do.call(omopPlanExecuteDS,
-          c(list(omop_symbol, plan, out, "memory", scope, combine), extra),
-          envir = env)
-
-  dataset_identity <- .dsomopDpDatasetIdentity(handle)
-  # The key that produced the outputs' person tokens: sealing reverses them
-  # once into the table's fixed release-person map (B01).
-  person_key <- .personKey(handle)
-  seal <- function(symbol, output_name, component = NULL) {
-    if (!exists(symbol, envir = env, inherits = FALSE)) return(FALSE)
-    value <- get(symbol, envir = env, inherits = FALSE)
-    if (!is.data.frame(value)) return(FALSE)
-    sealed <- .dsomopDpSealPlanOutput(
-      value, decoded_plan, output_name,
-      dataset_identity = dataset_identity, component = component,
-      person_key = person_key,
-      read_snapshot = .dsomopReadSnapshotLabel(handle)
-    )
-    assign(symbol, sealed, envir = env)
-    !is.null(attr(sealed, "dsomop_dp_provenance", exact = TRUE))
-  }
-  for (output_name in names(decoded_out)) {
-    symbol <- as.character(decoded_out[[output_name]])[[1L]]
-    sealed <- c(
-      seal(symbol, output_name),
-      seal(paste0(symbol, ".msdata"), output_name, "msdata"),
-      seal(paste0(symbol, ".transitionRef"), output_name, "transition_ref"),
-      seal(paste0(symbol, ".events"), output_name, "events"),
-      seal(paste0(symbol, ".riskSets"), output_name, "risk_sets")
-    )
-    if (!any(sealed)) {
-      spec <- decoded_plan$outputs[[output_name]]
-      hint <- if (identical(tolower(spec$type %||% ""), "baseline") &&
-                  "age_at_index" %in% tolower(spec$derived %||% character(0))) {
-        paste0(" Its age at index is protected using other persons' ages; ",
-               "derive no age_at_index and use an age at a public reference ",
-               "year (omop_variable_age(year = ...)) instead.")
-      } else {
-        paste0(" It must be a person-local table whose population the plan ",
-               "defines (not, for example, a plan scoped by a workspace ",
-               "table or a persistent cohort).")
-      }
-      stop("Plan output '", output_name, "' cannot be prepared for DP ",
-           "releases.", hint, call. = FALSE)
-    }
-  }
-  invisible(TRUE)
+  do.call(.omopPlanExecuteDS,
+          c(list(omop_symbol, plan, out, output_mode = "memory", scope = scope,
+                 combine = combine, target_env = env,
+                 commit_policy = commit_policy,
+                 seal_factory = .dsomopDpPublicationSeal), extra))
 }
 
 #' Release one protected, person-bounded statistic (Aggregate)
@@ -790,8 +750,10 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
 #' history-dependent admission. DP-only mode accepts only fixed-synopsis
 #' releases.
 #'
-#' @param x A server-created, pseudonymous \code{omop.table} carrying its
-#'   authenticated person-local provenance capsule.
+#' @param x A server-created, pseudonymous \code{omop.table} produced by an
+#'   OHDSI community tool (for example an analysis-catalog loader) or explicit
+#'   DP preparation, carrying its authenticated person-local provenance capsule.
+#'   Ordinary plan loading and manipulation never carry DP provenance.
 #' @param spec Typed statistic specification, usually JSON-encoded by
 #'   dsOMOPClient.
 #' @return The protected payload: displayed values, the signed components for

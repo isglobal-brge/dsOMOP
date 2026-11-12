@@ -533,6 +533,9 @@
 # descriptor. Consumers compare the returned canonical list, never a partial or
 # caller-selected subset of fields.
 .validateStagedSemanticContract <- function(contract) {
+  if (is.list(contract) && identical(contract$contract_version, "dsomop-staged-semantics-v3")) {
+    return(.publicationValidateNativeSemantic(contract))
+  }
   fail <- function(detail = "") {
     stop("Invalid staged semantic contract", detail, ".", call. = FALSE)
   }
@@ -917,6 +920,15 @@ omopStagedDatasetPath <- function(descriptor, expected_key_id = NULL,
                                   expected_epoch = NULL,
                                   expected_semantic_contract = NULL,
                                   expected_bundle_contract = NULL) {
+  .omopStagedDatasetPath(descriptor, expected_key_id, expected_epoch,
+                         expected_semantic_contract, expected_bundle_contract)
+}
+
+.omopStagedDatasetPath <- function(descriptor, expected_key_id = NULL,
+                                  expected_epoch = NULL,
+                                  expected_semantic_contract = NULL,
+                                  expected_bundle_contract = NULL,
+                                  check_manifest = TRUE) {
   if (!is.list(descriptor) ||
       !inherits(descriptor, c("FlowerDatasetDescriptor",
                              "OMOPStagedDatasetDescriptor"))) {
@@ -1108,5 +1120,6 @@ omopStagedDatasetPath <- function(descriptor, expected_key_id = NULL,
            call. = FALSE)
     }
   }
+  if (check_manifest) .validateStagedManifestMembership(descriptor, expected_dir)
   actual_file
 }

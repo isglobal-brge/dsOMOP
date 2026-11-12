@@ -171,7 +171,10 @@
 # Build the one-observation-period-per-episode relation used by every temporal
 # panel component. OMOP permits multiple non-overlapping observation periods
 # per person, but an index date must be covered by exactly one of them before
-# absence of an event can be interpreted as absence during follow-up.
+# absence of an event can be interpreted as absence during follow-up. Defect
+# A-E6 (design 1.3, 6.13): the v1 panels follow the default coverage policy
+# (unique; on_ambiguous and on_missing = drop) -- an episode without exactly
+# one covering period is dropped privately instead of aborting the plan.
 .temporalObservationSqlContract <- function(handle, cohort_table,
                                              blueprint = NULL) {
   blueprint <- blueprint %||% .buildBlueprint(handle)
@@ -230,21 +233,9 @@
   contract <- .temporalObservationSqlContract(
     handle, cohort_table, blueprint = blueprint
   )
-  # Do not reveal a data-quality diagnosis about a below-threshold cohort.
-  # Event-specific qualification is gated again after observability filtering.
-  .assertMinPersons(handle = handle, sql = paste0(
-    "SELECT COUNT(DISTINCT c.subject_id) AS n_persons FROM ",
-    contract$ranked_cohort, " c"
-  ))
-  invalid <- suppressWarnings(as.numeric(
-    .executeQuery(handle, contract$invalid)[[1L]][[1L]]
-  ))
-  if (length(invalid) != 1L || is.na(invalid) || !is.finite(invalid) ||
-      invalid != 0) {
-    stop("Every cohort episode must have exactly one observation_period ",
-         "covering its index date.", call. = FALSE)
-  }
-
+  # Episodes without exactly one covering period are dropped privately
+  # (coverage policy unique/drop/drop, defect A-E6): `observed` keeps only the
+  # uniquely covered episodes.
   roster <- .executeQuery(handle, paste0(
     "SELECT o.cohort_row_id, o.person_id, o.cohort_start_date, ",
     "o.observation_period_start_date, o.observation_period_end_date FROM (",
@@ -586,23 +577,10 @@
     )
   }
 
-  validations <- list(
-    min_persons = list(
-      kind = "min_persons",
-      sql = paste0(
-        "SELECT COUNT(DISTINCT person_id) AS n_persons FROM (",
-        binned_sql, ") dsomop_temporal_gate"
-      )
-    ),
-    observation_period = list(
-      kind = "max_value",
-      sql = observation$invalid,
-      max = 0,
-      label = paste0(
-        "cohort episodes without exactly one covering observation period"
-      )
-    )
-  )
+  # Episodes without exactly one covering observation period are dropped
+  # privately by `observation$observed` (coverage policy, defect A-E6); no
+  # validation aborts the plan on them.
+  validations <- list()
   if (is.null(concepts)) {
     validations$max_concepts <- list(
       kind = "max_value",

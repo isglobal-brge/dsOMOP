@@ -370,7 +370,7 @@ test_that("age_range reference_date requires an exact valid ISO date", {
   )
 })
 
-test_that("numeric has_measurement filters require a matching issued bin", {
+test_that("numeric measurement predicates compile privately with optional issued bins", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   bp <- .buildBlueprint(handle)
@@ -380,24 +380,31 @@ test_that("numeric has_measurement filters require a matching issued bin", {
     params = list(concept_id = 3004410L, min_value = 7, max_value = 10)
   )
 
-  expect_error(
-    .compileCohortFilterLeaf(handle, unbound, bp, person_cols),
-    "not issued"
-  )
+  unbound_sql <- .compileCohortFilterLeaf(handle, unbound, bp, person_cols)
+  expect_match(unbound_sql, "m.value_as_number >= 7", fixed = TRUE)
+  expect_match(unbound_sql, "m.value_as_number < 10", fixed = TRUE)
   one_sided <- unbound
   one_sided$params$max_value <- NULL
-  expect_error(
-    .compileCohortFilterLeaf(handle, one_sided, bp, person_cols),
-    "require both"
-  )
+  lower_sql <- .compileCohortFilterLeaf(handle, one_sided, bp, person_cols)
+  expect_match(lower_sql, "m.value_as_number >= 7", fixed = TRUE)
+  expect_false(grepl("m.value_as_number <", lower_sql, fixed = TRUE))
+  upper_only <- unbound
+  upper_only$params$min_value <- NULL
+  upper_sql <- .compileCohortFilterLeaf(handle, upper_only, bp, person_cols)
+  expect_match(upper_sql, "m.value_as_number < 10", fixed = TRUE)
+  expect_false(grepl("m.value_as_number >=", upper_sql, fixed = TRUE))
+
+  invalid_range <- unbound
+  invalid_range$params$min_value <- 10
+  expect_error(.compileCohortFilterLeaf(handle, invalid_range, bp, person_cols),
+               "strictly less")
 
   scope <- .test_issue_safe_bins(
     handle, c(0, 7, 10, 20), concept_id = 3004410L)
   bound <- unbound
   bound$params$safe_scope <- scope
   sql <- .compileCohortFilterLeaf(handle, bound, bp, person_cols)
-  expect_match(sql, "m.value_as_number >= 7", fixed = TRUE)
-  expect_match(sql, "m.value_as_number < 10", fixed = TRUE)
+  expect_identical(sql, unbound_sql)
 
   wrong_concept <- bound
   wrong_concept$params$concept_id <- 3013682L

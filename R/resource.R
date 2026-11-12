@@ -237,6 +237,32 @@
   version
 }
 
+#' Extract the server version number from a vendor version string
+#'
+#' MariaDB reports its own version tagged \code{-MariaDB}, possibly after the
+#' replication prefix \code{5.5.5-} and before a distribution suffix with
+#' dotted numbers of its own (Ubuntu: \code{10.6.23-MariaDB-0ubuntu0.22.04.1});
+#' the tagged number is the server version. Other families report it first.
+#'
+#' @param version Character vendor version string.
+#' @param family \code{"mariadb"} or any other family name.
+#' @return The version number as a string, or \code{NULL}.
+#' @keywords internal
+.databaseVersionNumber <- function(version, family) {
+  if (!is.character(version) || length(version) != 1L || is.na(version) ||
+      !nzchar(version)) return(NULL)
+  pattern <- "[0-9]+\\.[0-9]+(?:\\.[0-9]+)?"
+  if (identical(family, "mariadb")) {
+    tagged <- regmatches(version, regexec(
+      paste0("(", pattern, ")-mariadb"), version, ignore.case = TRUE,
+      perl = TRUE))[[1L]]
+    if (length(tagged) == 2L) return(tagged[[2L]])
+    version <- sub("^5\\.5\\.5-", "", version)
+  }
+  found <- regmatches(version, regexpr(pattern, version, perl = TRUE))
+  if (length(found) == 1L && nzchar(found)) found else NULL
+}
+
 #' Compare a vendor version string with a minimum version
 #'
 #' MariaDB reports its version either directly (\code{"10.6.23-MariaDB"},
@@ -255,26 +281,7 @@
 #'   \code{minimum}.
 #' @keywords internal
 .databaseVersionAtLeast <- function(version, minimum, family) {
-  if (!is.character(version) || length(version) != 1L || is.na(version) ||
-      !nzchar(version)) return(FALSE)
-  pattern <- "[0-9]+\\.[0-9]+(?:\\.[0-9]+)?"
-  first_version <- function(text) {
-    found <- regmatches(text, regexpr(pattern, text, perl = TRUE))
-    if (length(found) == 1L && nzchar(found)) found else NULL
-  }
-  candidate <- if (identical(family, "mariadb")) {
-    tagged <- regmatches(version, regexec(
-      paste0("(", pattern, ")-mariadb"), version, ignore.case = TRUE,
-      perl = TRUE
-    ))[[1L]]
-    if (length(tagged) == 2L) {
-      tagged[[2L]]
-    } else {
-      first_version(sub("^5\\.5\\.5-", "", version))
-    }
-  } else {
-    first_version(version)
-  }
+  candidate <- .databaseVersionNumber(version, family)
   if (is.null(candidate)) return(FALSE)
   parsed <- tryCatch(numeric_version(candidate), error = function(e) NULL)
   !is.null(parsed) && parsed >= numeric_version(minimum)

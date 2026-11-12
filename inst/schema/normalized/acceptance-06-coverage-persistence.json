@@ -1,0 +1,377 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "events": {
+    "metf": {
+      "table": "drug_exposure",
+      "concept_set": {
+        "concepts": [
+          1503297
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "end": {
+        "fallback": "days_supply"
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "on_missing_table": "error"
+    },
+    "mi": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          4329847
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "death": {
+      "table": "death",
+      "concept_set": null,
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    }
+  },
+  "intervals": {
+    "metf_era": {
+      "source": {
+        "event": "metf"
+      },
+      "gap": 30,
+      "fallback": "days_supply",
+      "persistence": 0,
+      "min_days": 0,
+      "by": "event",
+      "unmapped": "own_concept",
+      "end": "recorded_end",
+      "stockpile": false
+    },
+    "metf_stock": {
+      "source": {
+        "event": "metf"
+      },
+      "gap": 30,
+      "fallback": "days_supply",
+      "stockpile": true,
+      "persistence": 0,
+      "min_days": 0,
+      "by": "event",
+      "unmapped": "own_concept",
+      "end": "recorded_end"
+    }
+  },
+  "populations": {
+    "users": {
+      "kind": "index",
+      "index": {
+        "source": {
+          "cohort_definition_id": 1001
+        },
+        "select": "all",
+        "end": {
+          "strategy": "event_end",
+          "days": null,
+          "pad": 0
+        },
+        "n": 1,
+        "offset": 0,
+        "restrict_to_observation": true
+      },
+      "parent": null,
+      "where": null,
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      }
+    }
+  },
+  "variables": {
+    "covered_rec": {
+      "source": {
+        "interval": "metf_era"
+      },
+      "reducer": {
+        "fn": "covered_days",
+        "window": {
+          "start": 1,
+          "end": 90,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "covered_eff": {
+      "source": {
+        "interval": "metf_stock"
+      },
+      "reducer": {
+        "fn": "covered_days",
+        "window": {
+          "start": 1,
+          "end": 90,
+          "anchor": "index"
+        },
+        "coverage": "effective_supply",
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "era_count": {
+      "source": {
+        "interval": "metf_era"
+      },
+      "reducer": {
+        "fn": "era_count",
+        "window": {
+          "start": 1,
+          "end": 90,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "first_era_days": {
+      "source": {
+        "interval": "metf_era"
+      },
+      "reducer": {
+        "fn": "first_era_days",
+        "window": {
+          "start": 1,
+          "end": 90,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "supply_start": {
+      "source": {
+        "event": "metf"
+      },
+      "reducer": {
+        "fn": "supply_days",
+        "window": {
+          "start": 1,
+          "end": 90,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "supply_clipped": {
+      "source": {
+        "event": "metf"
+      },
+      "reducer": {
+        "fn": "supply_days",
+        "window": {
+          "start": 1,
+          "end": 90,
+          "anchor": "index"
+        },
+        "fills": "clipped",
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "observed_only": false
+      },
+      "broadcast": false
+    }
+  },
+  "outputs": {
+    "coverage": {
+      "rows": "users",
+      "format": "wide",
+      "grain": "episode",
+      "result_symbol": "D_coverage",
+      "collapse": null,
+      "columns": [
+        "covered_rec",
+        "covered_eff",
+        "era_count",
+        "first_era_days",
+        "supply_start",
+        "supply_clipped"
+      ],
+      "sources": [],
+      "options": {
+        "date_handling": {
+          "mode": "relative",
+          "reference": "index",
+          "bin_width": null,
+          "date_columns": null
+        },
+        "time_window": null
+      }
+    },
+    "persistence": {
+      "rows": "users",
+      "format": "survival",
+      "result_symbol": "D_persistence",
+      "options": {
+        "outcomes": {
+          "mi": {
+            "event": "mi"
+          }
+        },
+        "tar": {
+          "start": 1,
+          "end": 365,
+          "anchor": "index"
+        },
+        "censor": [
+          "observation_end",
+          "death",
+          {
+            "censor": {
+              "source": {
+                "interval": "metf_era"
+              },
+              "which": "first_end_after_entry",
+              "offset": 30,
+              "search": null,
+              "missing": "ignore",
+              "when_index_source": null
+            }
+          }
+        ],
+        "format": "survival",
+        "event_order": "first",
+        "tars": {},
+        "entry": null,
+        "prior_outcome": null,
+        "washout_days": 0,
+        "tie_policy": "priority",
+        "same_day_priority": "event",
+        "gap_policy": "censor_at_gap",
+        "initial_state": "index",
+        "complete": false,
+        "outcome_mode": "composite"
+      },
+      "collapse": null,
+      "columns": null,
+      "sources": [],
+      "grain": "episode"
+    }
+  },
+  "options": {
+    "translate_concepts": true,
+    "block_sensitive": true,
+    "factor_concepts": true
+  },
+  "concept_sets": {},
+  "publish": [
+    "coverage",
+    "persistence"
+  ]
+}

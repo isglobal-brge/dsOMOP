@@ -1,0 +1,6 @@
+concept_id,concept_name,operator,class,vocabulary_id,concept_class_id,concept_code,notes
+4172703,=,=,equality,SNOMED,Qualifier Value,276136004,default class for NULL or unknown operators (verified: OHDSI WebAPI snapshot v5.0 27-FEB-25)
+4171756,<,<,inequality,SNOMED,Qualifier Value,276139006,left-censored value (verified: OHDSI WebAPI snapshot v5.0 27-FEB-25)
+4172704,>,>,inequality,SNOMED,Qualifier Value,276140008,right-censored value (verified: OHDSI WebAPI snapshot v5.0 27-FEB-25)
+4171754,<=,<=,inequality,SNOMED,Qualifier Value,276137008,left-censored value (verified: OHDSI WebAPI snapshot v5.0 27-FEB-25)
+4171755,>=,>=,inequality,SNOMED,Qualifier Value,276138003,right-censored value (verified: OHDSI WebAPI snapshot v5.0 27-FEB-25)

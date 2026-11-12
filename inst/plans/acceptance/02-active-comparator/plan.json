@@ -1,0 +1,222 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "events": {
+    "acei_era_rows": {
+      "table": "drug_era",
+      "concept_set": {
+        "concepts": [
+          1308216
+        ],
+        "include_descendants": true
+      }
+    },
+    "arb_era_rows": {
+      "table": "drug_era",
+      "concept_set": {
+        "concepts": [
+          1367500
+        ],
+        "include_descendants": true
+      }
+    },
+    "mi": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          4329847
+        ],
+        "include_descendants": true
+      }
+    },
+    "death": {
+      "table": "death"
+    }
+  },
+  "intervals": {
+    "acei": {
+      "source": {
+        "event": "acei_era_rows"
+      },
+      "gap": 30
+    },
+    "arb": {
+      "source": {
+        "event": "arb_era_rows"
+      },
+      "gap": 30
+    }
+  },
+  "populations": {
+    "new_users": {
+      "kind": "index",
+      "index": {
+        "source": {
+          "any_of": [
+            {
+              "interval": "acei"
+            },
+            {
+              "interval": "arb"
+            }
+          ]
+        },
+        "select": "first_eligible",
+        "end": {
+          "strategy": "interval_end"
+        }
+      },
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      },
+      "where": {
+        "and": [
+          {
+            "observed": {
+              "before": 365
+            }
+          },
+          {
+            "has": {
+              "source": {
+                "interval": "acei"
+              },
+              "op": "==",
+              "n": 0,
+              "window": {
+                "start": -365,
+                "end": -1,
+                "anchor": "index"
+              }
+            }
+          },
+          {
+            "has": {
+              "source": {
+                "interval": "arb"
+              },
+              "op": "==",
+              "n": 0,
+              "window": {
+                "start": -365,
+                "end": -1,
+                "anchor": "index"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "variables": {
+    "arm": {
+      "population_column": {
+        "name": "index_source"
+      }
+    },
+    "age": {
+      "derived": {
+        "kind": "age"
+      }
+    },
+    "sex": {
+      "derived": {
+        "kind": "sex_mf"
+      }
+    },
+    "prior_mi": {
+      "source": {
+        "event": "mi"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": null,
+          "end": 0,
+          "anchor": "index"
+        }
+      }
+    }
+  },
+  "outputs": {
+    "baseline": {
+      "rows": "new_users",
+      "format": "wide",
+      "grain": "episode",
+      "result_symbol": "D_baseline"
+    },
+    "tte": {
+      "rows": "new_users",
+      "format": "survival",
+      "result_symbol": "D_tte",
+      "options": {
+        "outcomes": {
+          "mi": {
+            "event": "mi"
+          },
+          "death": {
+            "event": "death"
+          }
+        },
+        "tars": {
+          "itt": {
+            "start": 1,
+            "end": null,
+            "anchor": "index"
+          },
+          "on_treatment": {
+            "start": {
+              "anchor": "index",
+              "offset": 1
+            },
+            "end": {
+              "anchor": "index_end",
+              "offset": 30
+            },
+            "anchor": "index"
+          }
+        },
+        "censor": [
+          "observation_end",
+          {
+            "censor": {
+              "source": {
+                "interval": "arb"
+              },
+              "which": "first_start_after_entry",
+              "when_index_source": [
+                "acei"
+              ]
+            }
+          },
+          {
+            "censor": {
+              "source": {
+                "interval": "acei"
+              },
+              "which": "first_start_after_entry",
+              "when_index_source": [
+                "arb"
+              ]
+            }
+          }
+        ],
+        "prior_outcome": {
+          "lookback": 365,
+          "action": "exclude"
+        },
+        "format": "competing_risk",
+        "event_order": "first",
+        "outcome_mode": "named"
+      }
+    }
+  }
+}

@@ -1,0 +1,871 @@
+{
+  "recipe": "06-coverage-persistence",
+  "fixture": "reach + extension (build_extended_reach_handle(100))",
+  "nfilter_subset": 5,
+  "fixture_keys": ["person_id", "index_date", "index_key"],
+  "key_policy": "rows are matched to engine output on the fixture keys (person_id is the fixture identity; the harness tokenises it with the fixture's person key); index_date/index_key identify the episode and are not released columns",
+  "outputs": {
+    "coverage": {
+      "name": "coverage",
+      "n_persons": 44,
+      "released_columns": ["row_id", "cohort_row_id", "person_id", "covered_rec", "covered_eff", "era_count", "first_era_days", "supply_start", "supply_clipped"],
+      "comparison_columns": ["covered_rec", "covered_eff", "era_count", "first_era_days", "supply_start", "supply_clipped"],
+      "oracle_only": [],
+      "columns": ["person_id", "index_date", "covered_rec", "covered_eff", "era_count", "first_era_days", "supply_start", "supply_clipped"],
+      "rows": [
+        {
+          "person_id": 1,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 2,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 3,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 4,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 5,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 6,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 7,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 8,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 9,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 10,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 11,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 12,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 13,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 14,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 15,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 16,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 17,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 18,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 19,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 20,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 21,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 22,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 23,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 24,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 25,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 26,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 27,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 28,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 29,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 30,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 31,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 32,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 33,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 34,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 35,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 36,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 37,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 38,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 39,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 40,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 71,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 90,
+          "supply_clipped": 71
+        },
+        {
+          "person_id": 1003,
+          "index_date": "2019-12-31",
+          "covered_rec": 10,
+          "covered_eff": 10,
+          "era_count": 1,
+          "first_era_days": 10,
+          "supply_start": 10,
+          "supply_clipped": 10
+        },
+        {
+          "person_id": 1004,
+          "index_date": "2019-12-31",
+          "covered_rec": 44,
+          "covered_eff": 60,
+          "era_count": 1,
+          "first_era_days": 44,
+          "supply_start": 60,
+          "supply_clipped": 60
+        },
+        {
+          "person_id": 1005,
+          "index_date": "2019-12-31",
+          "covered_rec": 1,
+          "covered_eff": 1,
+          "era_count": 1,
+          "first_era_days": 1,
+          "supply_start": 0,
+          "supply_clipped": 0
+        },
+        {
+          "person_id": 1017,
+          "index_date": "2019-12-31",
+          "covered_rec": 30,
+          "covered_eff": 30,
+          "era_count": 1,
+          "first_era_days": 30,
+          "supply_start": 30,
+          "supply_clipped": 30
+        }
+      ]
+    },
+    "persistence": {
+      "name": "persistence",
+      "n_persons": 44,
+      "released_columns": ["row_id", "cohort_row_id", "person_id", "outcome_name", "event", "entry_days_from_index", "exit_days_from_index", "follow_up_days"],
+      "comparison_columns": ["outcome_name", "event", "entry_days_from_index", "exit_days_from_index", "follow_up_days"],
+      "oracle_only": [],
+      "columns": ["person_id", "index_date", "outcome_name", "event", "entry_days_from_index", "exit_days_from_index", "follow_up_days"],
+      "rows": [
+        {
+          "person_id": 1,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 2,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 3,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 4,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 5,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 6,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 7,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 8,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 9,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 10,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 11,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 12,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 13,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 14,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 15,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 16,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 17,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 18,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 19,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 20,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 21,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 22,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 23,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 24,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 25,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 26,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 27,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 28,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 29,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 30,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 31,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 32,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 33,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 34,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 35,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 36,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 37,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 38,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 39,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 40,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 1003,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 2,
+          "follow_up_days": 1
+        },
+        {
+          "person_id": 1004,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 74,
+          "follow_up_days": 73
+        },
+        {
+          "person_id": 1005,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 62,
+          "follow_up_days": 61
+        },
+        {
+          "person_id": 1017,
+          "index_date": "2019-12-31",
+          "outcome_name": "mi",
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 64,
+          "follow_up_days": 63
+        }
+      ]
+    }
+  },
+  "invariants": [
+    "recorded coverage unions normalised fills; effective coverage unions the stockpiled relation (1004: 44 vs 60)",
+    "a fill with end before start contributes nothing; NULL end and NULL supply is a one-day record; a present invalid supply with no recorded end is dropped",
+    "single-outcome survival names its outcome on censored rows too; follow_up_days == exit - entry",
+    "discontinuation censor = first era end after entry + 30"
+  ]
+}

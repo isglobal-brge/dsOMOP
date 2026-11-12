@@ -1,0 +1,148 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "events": {
+    "aspirin": {
+      "table": "drug_exposure",
+      "concept_set": {
+        "concepts": [
+          1124300
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "end": {
+        "fallback": "days_supply"
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "on_missing_table": "error"
+    },
+    "mi": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          4329847
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    }
+  },
+  "intervals": {
+    "aspirin_era": {
+      "source": {
+        "event": "aspirin"
+      },
+      "gap": 30,
+      "fallback": "days_supply",
+      "persistence": 0,
+      "min_days": 0,
+      "by": "event",
+      "unmapped": "own_concept",
+      "end": "recorded_end",
+      "stockpile": false
+    }
+  },
+  "populations": {
+    "sccs": {
+      "kind": "index",
+      "index": {
+        "source": {
+          "cohort_definition_id": 1002
+        },
+        "select": "all",
+        "end": {
+          "strategy": "event_end",
+          "days": null,
+          "pad": 0
+        },
+        "n": 1,
+        "offset": 0,
+        "restrict_to_observation": true
+      },
+      "parent": null,
+      "where": null,
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      }
+    }
+  },
+  "outputs": {
+    "matrix": {
+      "rows": "sccs",
+      "format": "person_period",
+      "result_symbol": "D_matrix",
+      "options": {
+        "representation": "dense",
+        "bins": {
+          "width": 365
+        },
+        "window": {
+          "start": 0,
+          "end": 365,
+          "anchor": "index"
+        },
+        "partition": {
+          "boundaries": [
+            {
+              "interval": "aspirin_era"
+            }
+          ],
+          "age_bands": 5,
+          "calendar": "year"
+        },
+        "outcomes": {
+          "mi": {
+            "event": "mi"
+          }
+        },
+        "exposures": {
+          "aspirin": {
+            "interval": "aspirin_era"
+          }
+        },
+        "analyses": [
+          "count"
+        ],
+        "sources": [],
+        "carry_forward": {},
+        "source_analyses": {}
+      },
+      "collapse": null,
+      "columns": null,
+      "sources": [],
+      "grain": "episode"
+    }
+  },
+  "options": {
+    "translate_concepts": true,
+    "block_sensitive": true,
+    "factor_concepts": true
+  },
+  "concept_sets": {},
+  "variables": {},
+  "publish": [
+    "matrix"
+  ]
+}

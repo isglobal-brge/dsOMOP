@@ -1,0 +1,110 @@
+[
+  {
+    "variant": "recipe-01.R",
+    "bound_plan": "plan-01.json",
+    "parameters": {
+      "lookback": 365
+    },
+    "equals_plan_of": "01-characterisation",
+    "expected_from": "01-characterisation/expected.json"
+  },
+  {
+    "variant": "recipe-02.R",
+    "bound_plan": "plan-02.json",
+    "parameters": {
+      "washout": 365
+    },
+    "equals_plan_of": "02-active-comparator",
+    "expected_from": "02-active-comparator/expected.json"
+  },
+  {
+    "variant": "recipe-03.R",
+    "bound_plan": "plan-03.json",
+    "parameters": {
+      "dx": "omop_concept_set(201820, descendants = TRUE)"
+    },
+    "equals_plan_of": "03-distinct-days",
+    "expected_from": "03-distinct-days/expected.json"
+  },
+  {
+    "variant": "recipe-04.R",
+    "bound_plan": "plan-04.json",
+    "parameters": {
+      "threshold": 6.5
+    },
+    "equals_plan_of": "04-units-censored",
+    "expected_from": "04-units-censored/expected.json"
+  },
+  {
+    "variant": "recipe-05.R",
+    "bound_plan": "plan-05.json",
+    "parameters": {
+      "follow": 30
+    },
+    "equals_plan_of": "05-same-day-same-visit",
+    "expected_from": "05-same-day-same-visit/expected.json"
+  },
+  {
+    "variant": "recipe-06.R",
+    "bound_plan": "plan-06.json",
+    "parameters": {
+      "gap": 30
+    },
+    "equals_plan_of": "06-coverage-persistence",
+    "expected_from": "06-coverage-persistence/expected.json"
+  },
+  {
+    "variant": "recipe-07.R",
+    "bound_plan": "plan-07.json",
+    "parameters": {
+      "lookback": 180
+    },
+    "equals_plan_of": "07-monthly-panel",
+    "expected_from": "07-monthly-panel/expected.json"
+  },
+  {
+    "variant": "recipe-08.R",
+    "bound_plan": "plan-08.json",
+    "parameters": {
+      "band": 5
+    },
+    "equals_plan_of": "08-sccs-matrix",
+    "expected_from": "08-sccs-matrix/expected.json"
+  },
+  {
+    "variant": "recipe-09.R",
+    "bound_plan": "plan-09.json",
+    "parameters": {
+      "tar_end": 90
+    },
+    "equals_plan_of": "09-recurrent-events",
+    "expected_from": "09-recurrent-events/expected.json"
+  },
+  {
+    "variant": "recipe-10.R",
+    "bound_plan": "plan-10.json",
+    "parameters": {
+      "seed": 20261111
+    },
+    "equals_plan_of": "10-matching",
+    "expected_from": "10-matching/expected.json"
+  },
+  {
+    "variant": "recipe-11.R",
+    "bound_plan": "plan-11.json",
+    "parameters": {
+      "horizon": 730
+    },
+    "equals_plan_of": "11-incidence-years",
+    "expected_from": "11-incidence-years/expected.json"
+  },
+  {
+    "variant": "recipe-12.R",
+    "bound_plan": "plan-12.json",
+    "parameters": {
+      "prior": 365
+    },
+    "equals_plan_of": "12-circe-baseline",
+    "expected_from": "12-circe-baseline/expected.json"
+  }
+]

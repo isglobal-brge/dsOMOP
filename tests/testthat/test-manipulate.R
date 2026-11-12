@@ -205,11 +205,16 @@ test_that("omopFilterDS fails closed when the filter isolates too few persons", 
   })
 })
 
-test_that("omopFilterDS rejects arbitrary numeric thresholds", {
+test_that("omopFilterDS gates final support for numeric filters and rare exclusions", {
   x <- .mk_persons(10, extra = data.frame(age = 20:29))
   withr::with_options(list(nfilter.subset = 3), {
     expect_error(omopFilterDS(x, var = "age", op = "in", value = 22),
-                 "numeric/date thresholds")
+                 "insufficient individuals")
+    selected <- omopFilterDS(x, var = "age", op = "in", value = 20:28)
+    expect_equal(selected$age, 20:28)
+    expect_equal(nrow(selected), 9L)
+    expect_identical(attr(selected, "dsomop_pseudonymization"),
+                     attr(x, "dsomop_pseudonymization"))
   })
 })
 

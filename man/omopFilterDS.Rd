@@ -12,7 +12,7 @@ omopFilterDS(x, var, op, value)
 \item{var}{Character; an existing, non-protected column to filter on.}
 
 \item{op}{Character; one of \code{"=="}, \code{"!="}, \code{"in"}, or
-\code{"not_in"}, on a low-cardinality categorical column.}
+\code{"not_in"}.}
 
 \item{value}{Category value(s).}
 }
@@ -20,10 +20,8 @@ omopFilterDS(x, var, op, value)
 The filtered omop.table (re-assigned to the caller's symbol).
 }
 \description{
-Applies a categorical membership/equality filter to a server-side omop.table
-and re-gates both sides of the split on distinct persons. Numeric/date
-thresholds are rejected here because arbitrary repeated cut points form a
-disclosure oracle; express those filters in a recipe using controller-sized
-age/date ranges or protected numeric bins. Protected identifiers are always
-rejected.
+Applies a membership/equality filter to a server-side omop.table. The
+publication boundary validates the result's exact person lineage and final
+support. The excluded rows stay private. Protected identifiers cannot be
+used as filter columns.
 }

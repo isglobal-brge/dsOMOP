@@ -70,14 +70,7 @@
     if (parsed_start > parsed_end) {
       stop(context, " start must not be after end.", call. = FALSE)
     }
-    settings <- .omopDisclosureSettings()
-    inclusive_days <- as.numeric(parsed_end - parsed_start) + 1
-    if (settings$nfilter_subset > 0 &&
-        inclusive_days < settings$nfilter_date_range) {
-      stop(context, " must span at least ", settings$nfilter_date_range,
-           " days while disclosure filtering ",
-           "is enabled.", call. = FALSE)
-    }
+
   }
   list(start = parsed_start, end = parsed_end)
 }
@@ -891,12 +884,8 @@
     }
   }
   if (block_sensitive) {
-    blocked <- col_df$column_name[col_df$is_blocked]
-    # Exact birth components are quasi-identifiers. Age is exposed only through
-    # the episode-aware, minimum-width age_group derivation.
-    always_block <- c("year_of_birth", "month_of_birth", "day_of_birth",
-                      "birth_datetime")
-    blocked <- union(blocked, intersect(always_block, col_df$column_name))
+    blocked <- col_df$column_name[vapply(col_df$column_name,
+      .assignmentBlockedColumn, logical(1L), col_df = col_df)]
     # Fail closed when a blocked column was EXPLICITLY requested (e.g. a feature
     # value_source of value_as_string / *_source_value / sig). Silently dropping
     # it would return a person-id-only frame with no signal that the requested
@@ -1239,7 +1228,8 @@
   col_df <- bp$columns[[table_lower]]
   if (is.null(col_df) || nrow(col_df) == 0) return(unique(extra))
   cols <- col_df$column_name
-  blocked <- col_df$column_name[col_df$is_blocked]
+  blocked <- col_df$column_name[vapply(col_df$column_name,
+    .assignmentBlockedColumn, logical(1L), col_df = col_df)]
   # Identifiers are NEVER filterable: the person/subject key is a protected
   # pseudonym on output and the row ids are dropped, so allowing a filter to
   # reference them would let a client target an individual by raw id.
@@ -1263,14 +1253,14 @@
 #' @return Character; a filter-type understood by \code{.classifyFilter}
 #' @keywords internal
 .filterOpClass <- function(op) {
-  switch(op,
-    "value_bin" = "value_bin",
-    "between" =, "in" =, "not_in" =, "is_null" =,
-      "not_null" = "value_threshold",
-    # Exact and ordered comparisons, plus anything unrecognised, are arbitrary
-    # client thresholds -> blocked by .classifyFilter (fail-closed).
-    "custom"
-  )
+  if (identical(op, "value_bin")) return("value_bin")
+  known <- c("==", "eq", "!=", "ne", ">=", "gte", "<=", "lte",
+             ">", "gt", "<", "lt", "between", "in", "not_in",
+             "is_null", "not_null")
+  if (length(op) == 1L && !is.na(op) && op %in% known) {
+    return("value_threshold")
+  }
+  "custom"
 }
 
 #' Does a custom filter tree reference a given column in any leaf?
@@ -1295,6 +1285,9 @@
     return(any(vapply(filter$or, .filterTreeReferencesColumn, logical(1),
                       col = col)))
   }
+  if ("not" %in% names(filter)) {
+    return(.filterTreeReferencesColumn(filter$not, col))
+  }
   identical(tolower(filter$var %||% ""), col)
 }
 
@@ -1317,23 +1310,46 @@
 #' @return The filter structure with date sentinels resolved
 #' @keywords internal
 .resolveFilterDateColumns <- function(filter, bp, table_lower) {
+  cols <- bp$columns[[table_lower]]$column_name %||% character(0)
+  # Defect F-1: the table-agnostic concept sentinel `concept_id` (the client's
+  # concept_set row filter without a concept_col) is the table's domain concept
+  # column, resolved like the date sentinels (a table with a literal concept_id
+  # column keeps it).
+  concept_col <- if ("concept_id" %in% cols) NULL else .getDomainConceptColumn(bp, table_lower)
+  .resolveFilterSentinels(filter, date_col = .getDateColumn(bp, table_lower),
+                          concept_col = concept_col)
+}
+
+#' Resolve the table-agnostic sentinels of a custom filter tree
+#'
+#' \code{start_date} / \code{end_date} become \code{date_col} and
+#' \code{concept_id} becomes \code{concept_col} (when given); every other leaf
+#' is unchanged. Walks AND / OR / NOT groups.
+#'
+#' @param filter Custom filter tree.
+#' @param date_col The source's date column, or NULL.
+#' @param concept_col The source's concept column, or NULL.
+#' @return The filter tree with sentinels resolved.
+#' @keywords internal
+.resolveFilterSentinels <- function(filter, date_col = NULL, concept_col = NULL) {
   if (is.null(filter) || length(filter) == 0) return(filter)
-
-  if ("and" %in% names(filter)) {
-    filter$and <- lapply(filter$and, .resolveFilterDateColumns, bp = bp,
-                         table_lower = table_lower)
+  for (group in c("and", "or")) {
+    if (group %in% names(filter)) {
+      filter[[group]] <- lapply(filter[[group]], .resolveFilterSentinels,
+                                date_col = date_col, concept_col = concept_col)
+      return(filter)
+    }
+  }
+  if ("not" %in% names(filter)) {
+    filter$not <- .resolveFilterSentinels(filter$not, date_col = date_col,
+                                          concept_col = concept_col)
     return(filter)
   }
-  if ("or" %in% names(filter)) {
-    filter$or <- lapply(filter$or, .resolveFilterDateColumns, bp = bp,
-                        table_lower = table_lower)
-    return(filter)
-  }
-
   var <- tolower(filter$var %||% "")
-  if (var %in% c("start_date", "end_date")) {
-    date_col <- .getDateColumn(bp, table_lower)
-    if (!is.null(date_col)) filter$var <- date_col
+  if (var %in% c("start_date", "end_date") && !is.null(date_col)) {
+    filter$var <- date_col
+  } else if (identical(var, "concept_id") && !is.null(concept_col)) {
+    filter$var <- concept_col
   }
   filter
 }
@@ -1347,6 +1363,9 @@
 #' @return `TRUE` invisibly, or a generic fail-closed error.
 #' @keywords internal
 .assertSafeNumericBinContract <- function(handle, table, column, value, scope) {
+  # A server-issued bin is optional on assignment paths. Authenticate it when
+  # explicitly supplied; ordinary numeric bounds need no cutpoint release.
+  if (is.null(scope)) return(invisible(TRUE))
   fail <- function() {
     stop("Disclosive: numeric bin was not issued for this resource session and ",
          "table scope; request fresh safe cutpoints first.", call. = FALSE)
@@ -1431,22 +1450,36 @@
   if (is.null(filter) || length(filter) == 0) return(invisible(TRUE))
 
   leaf_values <- if (is.list(filter) && !is.null(names(filter)) &&
-      !any(c("and", "or") %in% names(filter))) {
+      !any(c("and", "or", "not") %in% names(filter))) {
     length(unlist(filter$value, use.names = FALSE))
   } else 0L
   .state <- .filterComplexityVisit(.state, .depth, leaf_values)
 
   if (!is.list(filter) || is.null(names(filter)) ||
       any(!nzchar(names(filter))) || anyDuplicated(names(filter))) {
-    stop("Custom filters must be named AND/OR groups or named leaves.",
+    stop("Custom filters must be named AND/OR/NOT groups or named leaves.",
          call. = FALSE)
   }
-  group_keys <- intersect(names(filter), c("and", "or"))
+  group_keys <- intersect(names(filter), c("and", "or", "not"))
   if (length(group_keys) > 0L) {
     if (length(group_keys) != 1L || length(names(filter)) != 1L) {
-      stop("Custom filter nodes cannot mix AND/OR groups with each other or ",
-           "with leaf fields.", call. = FALSE)
+      stop("Custom filter nodes cannot mix AND/OR/NOT groups with each other ",
+           "or with leaf fields.", call. = FALSE)
     }
+  }
+
+  # NOT (design-2.10.3 section 6.6): one negated predicate, compiled with SQL
+  # three-valued logic (NOT UNKNOWN stays UNKNOWN; only TRUE rows are kept).
+  if (identical(group_keys, "not")) {
+    if (!is.list(filter$not) || length(filter$not) == 0) {
+      stop("Custom filter NOT group must contain one predicate.",
+           call. = FALSE)
+    }
+    .assertCustomFilterSafe(
+      filter$not, valid_columns, handle = handle, table = table,
+      .depth = .depth + 1L, .state = .state
+    )
+    return(invisible(TRUE))
   }
 
   if (identical(group_keys, "and")) {
@@ -1511,28 +1544,22 @@
 
   value <- filter$value
   is_date <- grepl("_date$|_datetime$", var)
-  if (is_date) {
-    if (!identical(op, "between")) {
-      stop("Disclosive: date filter column '", var,
-           "' only permits one validated BETWEEN range; standalone date ",
-           "comparisons cannot prove a safe width.", call. = FALSE)
-    }
+  if (is_date && !op %in% c("is_null", "not_null")) {
     values <- unlist(value, use.names = FALSE)
-    if (length(values) != 2L) {
-      stop("Date BETWEEN filters require exactly two ISO dates.",
-           call. = FALSE)
+    if (identical(op, "between")) {
+      if (length(values) != 2L) {
+        stop("Date BETWEEN filters require exactly two ISO dates.",
+             call. = FALSE)
+      }
+      .validateDateBounds(values[1], values[2], "date filter")
+    } else {
+      for (date in values) .isoDate(date, "date filter value")
     }
-    bounds <- .validateDateBounds(values[1], values[2], "date filter")
-    .validateFilter("date_range", list(
-      start = as.character(bounds$start), end = as.character(bounds$end)
-    ))
-    return(invisible(TRUE))
   }
-
-  if (op %in% c(">=", "gte", "<=", "lte", ">", "gt", "<", "lt")) {
-    stop("Disclosive: client-authored ordered thresholds are not permitted; ",
-         "request a server-issued value_bin for numeric columns.",
-         call. = FALSE)
+  if (op %in% c("==", "eq", "!=", "ne", ">=", "gte", "<=", "lte",
+                ">", "gt", "<", "lt") &&
+      length(unlist(value, use.names = FALSE)) != 1L) {
+    stop("Comparison filters require exactly one value.", call. = FALSE)
   }
 
   if (identical(op, "value_bin")) {
@@ -1553,26 +1580,19 @@
   }
 
   if (op %in% c("in", "not_in")) {
-    safe_categories <- c(
-      "domain_id", "vocabulary_id", "concept_class_id",
-      "standard_concept", "invalid_reason"
-    )
-    is_safe_category <- grepl("_concept_id$", var) ||
-      var %in% safe_categories
     values <- unlist(value, use.names = FALSE)
-    if (!is_safe_category) {
-      stop("Disclosive: IN/NOT IN is only permitted for concept IDs or ",
-           "approved categorical columns, not '", var, "'.", call. = FALSE)
-    }
     if (length(values) == 0L || anyNA(values)) {
       stop("IN/NOT IN filters require at least one non-missing value.",
            call. = FALSE)
     }
   }
 
-  if (identical(op, "between")) {
-    stop("Numeric BETWEEN filters are not permitted; use a validated ",
-         "value_bin instead.", call. = FALSE)
+  if (identical(op, "between") && !is_date) {
+    values <- unlist(value, use.names = FALSE)
+    if (length(values) != 2L || anyNA(values) || values[1] > values[2]) {
+      stop("BETWEEN filters require two ordered non-missing values.",
+           call. = FALSE)
+    }
   }
   .validateFilter(.filterOpClass(op), list())
   invisible(TRUE)
@@ -1594,10 +1614,22 @@
   if (is.null(filter) || length(filter) == 0) return(NULL)
 
   leaf_values <- if (is.list(filter) && !is.null(names(filter)) &&
-      !any(c("and", "or") %in% names(filter))) {
+      !any(c("and", "or", "not") %in% names(filter))) {
     length(unlist(filter$value, use.names = FALSE))
   } else 0L
   .state <- .filterComplexityVisit(.state, .depth, leaf_values)
+
+  if ("not" %in% names(filter)) {
+    part <- .compileFilter(handle, filter$not, table_alias, valid_columns,
+                           .depth = .depth + 1L, .state = .state)
+    if (is.null(part) || !nzchar(part)) {
+      stop("Custom filter NOT group compiled to no predicate.", call. = FALSE)
+    }
+    # Native three-valued logic: NOT UNKNOWN is UNKNOWN (design 6.6). The
+    # child is parenthesised: a leaf such as a date BETWEEN compiles to a bare
+    # conjunction.
+    return(paste0("(NOT (", part, "))"))
+  }
 
   if ("and" %in% names(filter)) {
     parts <- vapply(filter$and, function(f) {
@@ -1810,7 +1842,7 @@
 #'   stable storage/class type signatures.
 #' @keywords internal
 .executeQueryToParquet <- function(conn, sql, output_path, chunk_size = 50000L,
-                                   chunk_fn = NULL) {
+                                   chunk_fn = NULL, ctx = NULL) {
   old_umask <- Sys.umask("0077")
   on.exit(Sys.umask(old_umask), add = TRUE)
   chunk_num <- suppressWarnings(as.numeric(chunk_size))
@@ -1839,16 +1871,33 @@
     stop("output_path must be one non-empty staging path.", call. = FALSE)
   }
   staging_dir <- dirname(output_path)
-  staging_token <- basename(staging_dir)
   staging_base <- .stagingBaseDir()
   resolved_dir <- tryCatch(
     normalizePath(staging_dir, winslash = "/", mustWork = TRUE),
     error = function(e) ""
   )
+  if (is.null(ctx)) {
+    staging_token <- basename(staging_dir)
+    expected_dir <- file.path(staging_base, staging_token)
+    private_parents <- character(0)
+  } else {
+    if (!.isPlanContext(ctx) || !.isScalarString(ctx$private_dir) ||
+        !.isScalarString(ctx$staging_token) || !.isScalarString(ctx$id)) {
+      stop("Invalid private staging execution context.", call. = FALSE)
+    }
+    staging_token <- ctx$staging_token
+    expected_dir <- file.path(staging_base, staging_token, ".private", ctx$id)
+    private_parents <- c(file.path(staging_base, staging_token),
+                         dirname(expected_dir))
+    if (!identical(ctx$private_dir, expected_dir)) {
+      stop("Private staging directory does not match its execution context.",
+           call. = FALSE)
+    }
+  }
   if (!grepl("^stg_[0-9a-f]{32}$", staging_token) ||
       .isSymbolicLink(staging_dir) || !dir.exists(staging_dir) ||
-      !identical(resolved_dir,
-                 file.path(staging_base, staging_token))) {
+      any(vapply(private_parents, .isSymbolicLink, logical(1L))) ||
+      !identical(resolved_dir, expected_dir)) {
     stop("Streaming output must stay inside its reserved staging directory.",
          call. = FALSE)
   }
@@ -1971,10 +2020,14 @@
         as.integer(nrow(chunk))
       )
     } else {
-      utils::write.table(chunk, output_path,
+      # Restrict formatting to the writer; chunk transforms and tokenisation
+      # must continue to see the caller's numeric options.
+      old_options <- options(scipen = 999)
+      tryCatch(utils::write.table(chunk, output_path,
                   sep = ",", row.names = FALSE,
                   col.names = (n_rows == 0L),
-                  append = (n_rows > 0L))
+                  append = (n_rows > 0L)),
+               finally = options(old_options))
     }
 
     n_rows <- n_rows + nrow(chunk)
@@ -2105,8 +2158,18 @@
         stop("Expanded feature concept_set exceeds the server ",
              "max_filter_values cap of ", max_values, ".", call. = FALSE)
       }
+      # Defect A-E1: a DECLARED set that resolves to nothing matches no row
+      # (state none), never every row of the stream.
+      spec$concept_state <- if (length(spec$concept_set)) "set" else "none"
     } else {
       spec$concept_set <- exact_ids(concept_set)
+      # A spec resolved before keeps its state (an expanded empty set stays
+      # none when resolved again by the extraction).
+      spec$concept_state <- if (length(spec$concept_set)) {
+        "set"
+      } else if (identical(spec$concept_state, "none")) {
+        "none"
+      } else "all"
     }
     spec
   })
@@ -2149,6 +2212,8 @@
       } else {
         concept_tag <- if (length(spec$concept_set) > 0L) {
           paste(spec$concept_set, collapse = "_")
+        } else if (identical(spec$concept_state, "none")) {
+          "none"
         } else {
           "all"
         }
@@ -2219,16 +2284,29 @@
 .featureScopeFilter <- function(specs, default_concept_col) {
   if (is.null(specs) || length(specs) == 0L) return(NULL)
   concept_sets <- lapply(specs, function(spec) spec$concept_set)
+  # A declared set that resolved to nothing (state none, defect A-E1) adds no
+  # rows to the shared stream; an undeclared one (state all) keeps it unscoped.
+  none <- vapply(specs, function(spec) identical(spec$concept_state, "none"), logical(1))
   # One unscoped spec means the shared source stream must remain unscoped.
-  if (any(lengths(concept_sets) == 0L)) return(NULL)
+  if (any(lengths(concept_sets) == 0L & !none)) return(NULL)
 
-  leaves <- lapply(seq_along(specs), function(i) {
+  column_of <- function(i) {
     column <- specs[[i]]$concept_col %||% default_concept_col
     if (is.null(column) || length(column) != 1L || is.na(column) ||
         !nzchar(column)) {
       stop("A scoped feature requires a usable concept_col.", call. = FALSE)
     }
-    list(var = tolower(column), op = "in", value = concept_sets[[i]])
+    tolower(column)
+  }
+  scoped <- which(!none)
+  if (!length(scoped)) {
+    # Every spec matches nothing: a predicate no row satisfies.
+    column <- column_of(1L)
+    return(list(and = list(list(var = column, op = "is_null"),
+                           list(var = column, op = "not_null"))))
+  }
+  leaves <- lapply(scoped, function(i) {
+    list(var = column_of(i), op = "in", value = concept_sets[[i]])
   })
   if (length(leaves) == 1L) leaves[[1]] else list(or = leaves)
 }
@@ -2382,6 +2460,7 @@
           return(unique(unlist(lapply(filter$or, filter_columns),
                                use.names = FALSE)))
         }
+        if (!is.null(filter$not)) return(filter_columns(filter$not))
         tolower(as.character(filter$var %||% ""))
       }
       spec_filter_cols <- unique(unlist(lapply(feature_specs, function(spec) {
@@ -2656,20 +2735,7 @@
                             tie_col = tie_col)
   }
 
-  col_df <- bp$columns[[tolower(table)]]
-  has_person_id <- "person_id" %in% col_df$column_name
-
-  # Coverage / disclosure note: the distinct-person gate only fires for
-  # person-bearing tables. Specimen and dose_era carry person_id and so are
-  # extractable here under the normal gate. The cost table has NO person_id
-  # (it links via cost_event_id), so this gate cannot protect raw cost rows;
-  # cost is therefore intentionally NOT a person-keyed plan/extraction target
-  # and must be reached only through the curated, aggregate-only query library
-  # (see R/queries.R). (payer_plan_period DOES have person_id and is gated.)
-  if (has_person_id) {
-    count_sql <- .compilePersonCount(handle, sql)
-    .assertMinPersons(handle = handle, sql = count_sql)
-  }
+  # Patient support is checked on the final materialisation by publication.
 
   max_memory_rows <- suppressWarnings(as.numeric(
     getOption("dsomop.max_memory_rows", 1000000L)
@@ -3201,17 +3267,25 @@
 
 #' Evaluate a custom filter tree as a row mask over an in-memory data frame
 #'
-#' Mirrors \code{\link{.compileFilter}}'s AND/OR/leaf grammar but evaluates it
-#' against an already-extracted (disclosure-filtered) data frame in R, returning
-#' a logical keep-mask. Used to scope a single feature spec's rows by its own
-#' row filter (e.g. a unit/type slice) without re-querying the database. A leaf
-#' that references a column not present in the frame matches NOTHING (fail-closed
-#' for that leaf), and an unknown operator likewise drops the row, so a filter
-#' can only ever narrow the rows feeding the aggregation.
+#' The R mirror of \code{\link{.compileFilter}} and of the language 2.0
+#' predicate compiler (\code{.predicateSql()}), with the SAME three-valued
+#' truth table (design-2.10.3 section 6.6): a comparison with a missing operand
+#' is UNKNOWN (\code{NA}); \code{x IN (v...)} is TRUE when \code{x} equals a
+#' listed value, FALSE when \code{x} is non-missing and equals none, and
+#' UNKNOWN when \code{x} is missing; \code{NOT IN} is its negation with UNKNOWN
+#' preserved; \code{not} is \code{!mask} (NA stays NA); \code{and} / \code{or}
+#' are Kleene (R's \code{&} / \code{|}); \code{is_null} / \code{not_null} are
+#' the only leaves that turn a missing value into TRUE/FALSE. The mask is
+#' NA-preserving: callers keep rows with \code{mask \%in\% TRUE}. A leaf naming
+#' a column the frame does not carry, or an unknown operator, is refused (the
+#' validators reject both before evaluation; the mask never fails closed
+#' silently). Accepts the v1 leaf forms (\code{between} with two values,
+#' \code{value_bin}, operator aliases) and the v2 \code{between} object
+#' (\code{lower}, \code{upper}, \code{upper_inclusive}).
 #'
-#' @param filter List; the filter structure (and/or/leaf)
+#' @param filter List; the filter structure (and/or/not/leaf)
 #' @param df Data frame to evaluate against
-#' @return Logical vector of length \code{nrow(df)}
+#' @return Logical vector of length \code{nrow(df)}, \code{NA} for UNKNOWN
 #' @keywords internal
 .evalFilterMask <- function(filter, df) {
   n <- nrow(df)
@@ -3227,16 +3301,23 @@
     for (f in filter$or) mask <- mask | .evalFilterMask(f, df)
     return(mask)
   }
+  if ("not" %in% names(filter)) {
+    return(!.evalFilterMask(filter$not, df))
+  }
 
   var <- tolower(filter$var %||% "")
   op <- tolower(filter$op %||% "")
   value <- filter$value
-  if (!nzchar(var) || !var %in% names(df)) return(rep(FALSE, n))
+  if (!nzchar(var) || !var %in% names(df)) {
+    stop("Filter column '", var, "' is not a column of the evaluated rows.",
+         call. = FALSE)
+  }
   col <- df[[var]]
 
   is_date_col <- inherits(col, "Date")
   is_datetime_col <- inherits(col, c("POSIXct", "POSIXlt"))
   typed_value <- function(x, label = "filter value") {
+    if (is.list(x) && length(x) == 1L) x <- x[[1L]]
     if (is_date_col) return(.isoDate(x, label))
     if (is_datetime_col) {
       date <- .isoDate(x, label)
@@ -3246,7 +3327,9 @@
       }
       return(as.POSIXct(date, tz = timezone[1]))
     }
-    suppressWarnings(as.numeric(x))
+    if (is.character(x) && !is.character(col)) return(suppressWarnings(as.numeric(x)))
+    if (is.logical(x) && is.numeric(col)) return(as.numeric(x))
+    x
   }
   typed_values <- function(x, label = "filter value") {
     values <- unlist(x, use.names = FALSE)
@@ -3267,14 +3350,32 @@
       return(as.POSIXct(vapply(parsed, as.character, character(1)),
                         tz = timezone[1]))
     }
+    if (is.logical(values) && is.numeric(col)) return(as.numeric(values))
     values
+  }
+  # IN with the SQL table: NA operand -> UNKNOWN (never FALSE).
+  in_mask <- function(values) {
+    out <- col %in% values
+    out[is.na(col)] <- NA
+    out
   }
 
   between_mask <- function() {
-    values <- unlist(value, use.names = FALSE)
-    if (length(values) != 2L) return(rep(FALSE, n))
-    lower <- typed_value(values[1], "filter lower bound")
-    upper <- typed_value(values[2], "filter upper bound")
+    if (is.list(value) && !is.null(names(value)) && !is.null(value$lower)) {
+      lower_raw <- value$lower
+      upper_raw <- value$upper
+      inclusive <- !isFALSE(unlist(value$upper_inclusive))
+    } else {
+      values <- unlist(value, use.names = FALSE)
+      if (length(values) != 2L) {
+        stop("BETWEEN filters require exactly two bounds.", call. = FALSE)
+      }
+      lower_raw <- values[1]
+      upper_raw <- values[2]
+      inclusive <- TRUE
+    }
+    lower <- typed_value(lower_raw, "filter lower bound")
+    upper <- typed_value(upper_raw, "filter upper bound")
     if (is_datetime_col) {
       # ISO bounds denote whole calendar days. Use an exclusive next-midnight
       # upper bound so events later on the stated end date are retained.
@@ -3283,34 +3384,29 @@
         timezone <- "UTC"
       }
       next_midnight <- as.POSIXct(
-        .isoDate(values[2], "filter upper bound") + 1L, tz = timezone[1]
+        .isoDate(unlist(upper_raw), "filter upper bound") + if (inclusive) 1L else 0L,
+        tz = timezone[1]
       )
       return(col >= lower & col < next_midnight)
     }
-    col >= lower & col <= upper
+    if (inclusive) col >= lower & col <= upper else col >= lower & col < upper
   }
 
-  mask <- switch(op,
-    "==" =, "eq" = col == if (is_date_col || is_datetime_col) {
-      typed_value(value)
-    } else value,
-    "!=" =, "ne" = col != if (is_date_col || is_datetime_col) {
-      typed_value(value)
-    } else value,
+  switch(op,
+    "==" =, "eq" = col == typed_value(value),
+    "!=" =, "ne" = col != typed_value(value),
     ">=" =, "gte" = col >= typed_value(value),
     "<=" =, "lte" = col <= typed_value(value),
     ">"  =, "gt"  = col > typed_value(value),
     "<"  =, "lt"  = col < typed_value(value),
-    "in" = !is.na(col) & col %in% typed_values(value),
-    "not_in" = !is.na(col) & !(col %in% typed_values(value)),
+    "in" = in_mask(typed_values(value)),
+    "not_in" = !in_mask(typed_values(value)),
     "between" = between_mask(),
     "is_null" = is.na(col),
     "not_null" = !is.na(col),
     "value_bin" = col >= as.numeric(value$lower) & col < as.numeric(value$upper),
-    rep(FALSE, n)
+    stop("Unknown filter operator '", op, "'.", call. = FALSE)
   )
-  mask[is.na(mask)] <- FALSE
-  mask
 }
 
 #' Compute person-level features from event data
@@ -3894,7 +3990,10 @@
              "' concept_col is unavailable in the extracted table.",
              call. = FALSE)
       }
-      if (!is.null(spec_concept_col) && spec_concept_col %in% names(df) &&
+      if (identical(spec$concept_state, "none")) {
+        # Defect A-E1: a declared set that resolved to nothing selects no row.
+        spec_data <- df[0, , drop = FALSE]
+      } else if (!is.null(spec_concept_col) && spec_concept_col %in% names(df) &&
           length(cs) > 0) {
         spec_data <- df[df[[spec_concept_col]] %in% cs, , drop = FALSE]
       } else {
@@ -3955,12 +4054,20 @@
       # already-extracted (disclosure-filtered) frame.
       if (!is.null(spec$filter)) {
         feature_filter_cols <- setdiff(names(spec_data), .identifierColumns())
-        .assertCustomFilterSafe(spec$filter, feature_filter_cols)
-        keep <- .evalFilterMask(spec$filter, spec_data)
-        spec_data <- spec_data[keep, , drop = FALSE]
+        spec_filter <- .resolveFilterSentinels(
+          spec$filter, date_col = date_col,
+          concept_col = if (!"concept_id" %in% names(spec_data)) spec_concept_col)
+        .assertCustomFilterSafe(spec_filter, feature_filter_cols)
+        keep <- .evalFilterMask(spec_filter, spec_data)
+        # NA-preserving mask: only TRUE rows are kept (UNKNOWN is dropped).
+        spec_data <- spec_data[keep %in% TRUE, , drop = FALSE]
       }
 
-      concept_tag <- if (length(cs) > 0) paste(cs, collapse = "_") else "all"
+      concept_tag <- if (length(cs) > 0) {
+        paste(cs, collapse = "_")
+      } else if (identical(spec$concept_state, "none")) {
+        "none"
+      } else "all"
       features <- .add_feature(features, spec, spec_data, concept_tag, df)
       if (!is.null(spec$type) && spec$type %in% zero_fill_types &&
           !is.null(spec$name) && nzchar(spec$name)) {
@@ -4538,13 +4645,6 @@
   if (length(where) > 0) {
     sql <- paste0(sql, " WHERE ", paste(where, collapse = " AND "))
   }
-
-  # Disclosure check
-  count_sql <- paste0(
-    "SELECT COUNT(DISTINCT person_id) AS n_persons FROM (",
-    sql, ") AS sub"
-  )
-  .assertMinPersons(handle = handle, sql = count_sql)
 
   df <- .executeQuery(handle, sql)
   obs_df <- NULL
@@ -5333,8 +5433,7 @@
 #' @param columns Character vector; person columns to include
 #' @param derived Character vector; derived fields to compute
 #' @param translate_concepts Logical; translate concept IDs to names
-#' @param age_breaks Optional public age-grid coarsening negotiated by a
-#'   federation.
+#' @param age_breaks Optional increasing integer age-band lower bounds.
 #' @return Data frame with one row per cohort member
 #' @keywords internal
 .extractBaseline <- function(handle, cohort_table, columns = NULL,
@@ -5359,14 +5458,6 @@
   } else {
     tolower(columns)
   }
-  birth_components <- c("year_of_birth", "month_of_birth", "day_of_birth",
-                        "birth_datetime")
-  requested_birth <- intersect(requested_columns, birth_components)
-  if (length(requested_birth) > 0L) {
-    stop("Disclosive: exact birth components are blocked; request derived ",
-         "age_at_index to receive disclosure-controlled age groups.",
-         call. = FALSE)
-  }
   columns <- unique(c(
     requested_columns,
     if ("age_at_index" %in% derived) "year_of_birth" else character(0)
@@ -5383,14 +5474,8 @@
       stop("Baseline person column(s) not found: ",
            paste(missing_columns, collapse = ", "), ".", call. = FALSE)
     }
-    blocked <- union(
-      person_cols$column_name[person_cols$is_blocked],
-      intersect(c("month_of_birth", "day_of_birth", "birth_datetime"),
-                avail_person)
-    )
-    # `year_of_birth` may be added internally solely to derive an age group and
-    # is removed before release. Apply the public blocklist only to columns the
-    # caller actually requested; requested birth components already fail above.
+    blocked <- person_cols$column_name[vapply(person_cols$column_name,
+      .assignmentBlockedColumn, logical(1L), col_df = person_cols)]
     requested_blocked <- intersect(requested_columns, blocked)
     if (length(requested_blocked) > 0L) {
       stop("Disclosive: baseline person column(s) '",
@@ -5423,16 +5508,17 @@
     " ORDER BY c.cohort_row_id"
   )
 
-  .assertMinPersons(handle = handle,
-    sql = paste0("SELECT COUNT(DISTINCT subject_id) AS n_persons FROM ",
-                 cohort_table))
 
   result <- .executeQuery(handle, sql)
   if (nrow(result) == 0) return(result)
-  if (anyDuplicated(result$cohort_row_id)) {
-    stop("Baseline extraction found multiple matching observation periods for ",
-         "one cohort episode; one-row-per-episode output is ambiguous.",
-         call. = FALSE)
+  # Defect A-E6 (design 1.3, 6.13): an episode whose index is covered by more
+  # than one observation period follows the default coverage policy
+  # (on_ambiguous = "drop") and is dropped privately instead of aborting the
+  # plan; an uncovered episode keeps its row with NA observation fields.
+  ambiguous <- unique(result$cohort_row_id[duplicated(result$cohort_row_id)])
+  if (length(ambiguous) > 0L) {
+    result <- result[!result$cohort_row_id %in% ambiguous, , drop = FALSE]
+    if (nrow(result) == 0) return(result)
   }
 
   # row_id remains the legacy name; cohort_row_id is the explicit, shared
@@ -5443,12 +5529,9 @@
   # Compute derived fields
   if ("age_at_index" %in% derived && "year_of_birth" %in% names(result)) {
     index_year <- as.integer(format(as.Date(result$cohort_start_date), "%Y"))
-    result$age_group <- .computeAgeGroups(
-      result$year_of_birth, index_year, age_breaks = age_breaks,
-      person_id = result$person_id
-    )
-    # Remove exact year_of_birth from output (quasi-identifier)
-    result$year_of_birth <- NULL
+    result$age_group <- .bandAges(index_year - result$year_of_birth,
+                                  age_breaks = age_breaks)
+    if (!"year_of_birth" %in% requested_columns) result$year_of_birth <- NULL
   }
 
   if ("prior_observation" %in% derived &&
@@ -5576,9 +5659,6 @@
     " ORDER BY c.cohort_row_id"
   )
 
-  .assertMinPersons(handle = handle,
-    sql = paste0("SELECT COUNT(DISTINCT subject_id) AS n_persons FROM ",
-                 cohort_table))
 
   cohort_df <- .executeQuery(handle, cohort_sql)
   if (nrow(cohort_df) == 0) return(cohort_df)
@@ -5631,7 +5711,7 @@
   # Custom filter DSL on the outcome events. Validated fail-closed (identifier/
   # blocked columns and narrow fingerprinting ops rejected) before any SQL is
   # emitted, then ANDed onto the outcome WHERE (alias t). Only narrows the
-  # qualifying events; the cohort and its .assertMinPersons gate above are
+  # qualifying events; the final publication boundary checks the output
   # unaffected, so the suppression can never be bypassed.
   if (!is.null(filters) && length(filters) > 0) {
     valid_cols <- .filterableColumns(bp, outcome_table)
@@ -5750,11 +5830,6 @@
     return(NULL)
   }
 
-  .assertMinPersons(
-    handle = handle,
-    sql = paste0("SELECT COUNT(DISTINCT subject_id) AS n_persons FROM ",
-                 cohort_table)
-  )
 
   sql <- paste0(
     "SELECT c.cohort_row_id, c.subject_id, c.cohort_start_date, ",
@@ -5814,11 +5889,6 @@
     return(NULL)
   }
 
-  .assertMinPersons(
-    handle = handle,
-    sql = paste0("SELECT COUNT(DISTINCT subject_id) AS n_persons FROM ",
-                 cohort_table)
-  )
 
   bp <- .buildBlueprint(handle)
   all_intervals <- list()
@@ -5880,7 +5950,6 @@
       block_sensitive = TRUE,
       add_event_order_id = TRUE
     )
-    .assertMinPersons(handle = handle, sql = .compilePersonCount(handle, sql))
 
     tbl_df <- .executeQuery(handle, sql)
     if (nrow(tbl_df) == 0) next
@@ -6124,7 +6193,6 @@
   )
 
   if (nrow(events) == 0L) {
-    .assertMinPersons(n_persons = 0L)
     return(empty_result)
   }
   if (!all(c("cohort_row_id", "person_id", "days_from_index") %in%
@@ -6136,7 +6204,13 @@
   observation_match <- match(
     events$cohort_row_id, observation_roster$cohort_row_id
   )
-  if (anyNA(observation_match) || any(
+  # Episodes without exactly one covering observation period are not in the
+  # roster (coverage policy unique/drop/drop, defect A-E6): their events are
+  # dropped privately with them.
+  events <- events[!is.na(observation_match), , drop = FALSE]
+  observation_match <- observation_match[!is.na(observation_match)]
+  if (nrow(events) == 0L) return(empty_result)
+  if (any(
     events$person_id != observation_roster$person_id[observation_match]
   )) {
     stop("Temporal events do not match the validated cohort episode roster.",
@@ -6148,7 +6222,6 @@
     events$days_from_index <=
       observation_roster$observation_end_day[observation_match]
   events <- events[!is.na(observed) & observed, , drop = FALSE]
-  .assertMinPersons(n_persons = length(unique(events$person_id)))
   if (nrow(events) == 0L) return(empty_result)
 
   # Find concept column

@@ -1,0 +1,177 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "events": {
+    "dm": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          201820
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    }
+  },
+  "populations": {
+    "c1": {
+      "kind": "index",
+      "index": {
+        "source": {
+          "cohort_definition_id": 1
+        },
+        "select": "all",
+        "end": {
+          "strategy": "event_end",
+          "days": null,
+          "pad": 0
+        },
+        "n": 1,
+        "offset": 0,
+        "restrict_to_observation": true
+      },
+      "parent": null,
+      "where": null,
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      }
+    },
+    "dm2": {
+      "kind": "criteria",
+      "parent": "c1",
+      "where": {
+        "has": {
+          "source": {
+            "event": "dm"
+          },
+          "op": ">=",
+          "n": 2,
+          "window": {
+            "start": -365,
+            "end": 0,
+            "anchor": "index"
+          },
+          "distinct": "day",
+          "nonmissing": null
+        }
+      },
+      "cohort_definition_id": null,
+      "episode_policy": null,
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      }
+    }
+  },
+  "variables": {
+    "dm_days": {
+      "source": {
+        "event": "dm"
+      },
+      "reducer": {
+        "fn": "count",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "distinct": "day",
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "dm_rows": {
+      "source": {
+        "event": "dm"
+      },
+      "reducer": {
+        "fn": "count",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    }
+  },
+  "outputs": {
+    "two_days": {
+      "rows": "dm2",
+      "format": "wide",
+      "grain": "episode",
+      "result_symbol": "D_two_days",
+      "collapse": null,
+      "columns": [
+        "dm_days",
+        "dm_rows"
+      ],
+      "sources": [],
+      "options": {
+        "date_handling": {
+          "mode": "relative",
+          "reference": "index",
+          "bin_width": null,
+          "date_columns": null
+        },
+        "time_window": null
+      }
+    }
+  },
+  "options": {
+    "translate_concepts": true,
+    "block_sensitive": true,
+    "factor_concepts": true
+  },
+  "concept_sets": {},
+  "intervals": {},
+  "publish": [
+    "two_days"
+  ]
+}

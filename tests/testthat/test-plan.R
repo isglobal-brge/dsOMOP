@@ -1138,7 +1138,9 @@ test_that("streamed event_select keeps an omitted ordering date private", {
     filters = list()
   )), options = list(translate_concepts = FALSE, block_sensitive = TRUE))
 
-  result <- .planExecute(handle, plan, list(), output_mode = "staged")
+  result <- .planExecute(handle, plan,
+                         list(first_condition = "first_condition_df"),
+                         output_mode = "staged")
   descriptor <- result$first_condition
   on.exit(unlink(base, recursive = TRUE), add = TRUE)
   landed <- read_staged_output(descriptor)
@@ -1167,7 +1169,7 @@ test_that("plan output names cannot escape a staging directory", {
   )
 })
 
-test_that("plan output symbols cannot collide with person-period components", {
+test_that("plan rejects requested outputs absent from the graph", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle), add = TRUE)
   handle_symbol <- paste0("person_period_collision_handle_", Sys.getpid())
@@ -1180,7 +1182,7 @@ test_that("plan output symbols cannot collide with person-period components", {
       list(outputs = list()),
       c(first = "panel", second = "panel.personPeriods")
     ),
-    "collide after sparse/temporal suffix expansion"
+    "Unknown requested plan output"
   )
 })
 

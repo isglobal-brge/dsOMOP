@@ -52,7 +52,7 @@ test_that("nfilter_band defaults to 5 and follows the option chain", {
   })
 })
 
-test_that("age and date filter widths follow server-side options", {
+test_that("age and date width options are inert for assignment predicates", {
   withr::with_options(list(
     nfilter.subset = 3,
     dsomop.nfilter.age_range = 10,
@@ -62,11 +62,11 @@ test_that("age and date filter widths follow server-side options", {
     expect_equal(settings$nfilter_age_range, 10)
     expect_equal(settings$nfilter_date_range, 60)
     expect_equal(.classifyFilter("age_range", list(min = 20, max = 24)),
-                 "blocked")
+                 "constrained")
     expect_equal(.classifyFilter("age_range", list(min = 20, max = 29)),
                  "constrained")
     expect_equal(.classifyFilter("date_range", list(
-      start = "2024-01-01", end = "2024-02-28")), "blocked")
+      start = "2024-01-01", end = "2024-02-28")), "constrained")
     expect_equal(.classifyFilter("date_range", list(
       start = "2024-01-01", end = "2024-02-29")), "constrained")
   })
@@ -264,12 +264,12 @@ test_that("computeAgeGroups counts distinct persons, not recurrent episodes", {
 # ==============================================================================
 
 test_that("classifyFilter returns correct classification", {
-  expect_equal(.classifyFilter("sex"), "allowed")
+  expect_equal(.classifyFilter("sex"), "constrained")
   # age_group is now constrained (5-year minimum band width enforced).
   expect_equal(.classifyFilter("age_group", list(groups = c("0-4", "5-9"))),
                "constrained")
-  expect_equal(.classifyFilter("cohort"), "allowed")
-  expect_equal(.classifyFilter("concept_set"), "allowed")
+  expect_equal(.classifyFilter("cohort"), "constrained")
+  expect_equal(.classifyFilter("concept_set"), "constrained")
   # value_threshold is a population-defining range filter (allowed/size-checked);
   # its disclosive exact-value operators (==, !=) are blocked at the cohort site.
   expect_equal(.classifyFilter("value_threshold"), "constrained")
@@ -279,23 +279,23 @@ test_that("classifyFilter returns correct classification", {
   expect_equal(.classifyFilter("min_count"), "constrained")
 })
 
-test_that("classifyFilter blocks narrow age ranges", {
+test_that("classifyFilter permits narrow age ranges", {
   # 0-year range (single age) -> blocked
-  expect_equal(.classifyFilter("age_range", list(min = 18, max = 18)), "blocked")
+  expect_equal(.classifyFilter("age_range", list(min = 18, max = 18)), "constrained")
   # Inclusive five-year epidemiological bands are accepted; four are not.
   expect_equal(.classifyFilter("age_range", list(min = 20, max = 24)),
                "constrained")
   expect_equal(.classifyFilter("age_range", list(min = 20, max = 23)),
-               "blocked")
+               "constrained")
   # Wide range -> constrained
   expect_equal(.classifyFilter("age_range", list(min = 18, max = 65)), "constrained")
 })
 
-test_that("classifyFilter blocks narrow date ranges", {
+test_that("classifyFilter permits narrow date ranges", {
   # 10-day range -> blocked
   expect_equal(
     .classifyFilter("date_range", list(start = "2024-01-01", end = "2024-01-10")),
-    "blocked"
+    "constrained"
   )
   # 60-day range -> constrained
   expect_equal(
@@ -326,24 +326,24 @@ test_that("validateFilter passes allowed and constrained filters", {
   expect_invisible(.validateFilter("value_threshold"))
 })
 
-test_that("age_group filter enforces the 5-year minimum band width", {
+test_that("age_group filter permits arbitrary declared bands", {
   # Wide / standard 5-year bands are allowed.
   expect_equal(.classifyFilter("age_group", list(groups = c("0-4", "5-9"))),
                "constrained")
   # Shifted client bins are not unions of the public server grid.
   expect_equal(.classifyFilter("age_group", list(groups = c("18-24"))),
-               "blocked")
+               "constrained")
   # Open-ended upper band ("85+") is wide -> allowed.
   expect_equal(.classifyFilter("age_group", list(groups = c("85+"))),
                "constrained")
   # A single-birth-year band must be blocked (would evade the age_range gate).
   expect_equal(.classifyFilter("age_group", list(groups = c("87-87"))),
-               "blocked")
+               "constrained")
   expect_equal(.classifyFilter("age_group", list(groups = c("0-4", "60-62"))),
-               "blocked")
+               "constrained")
   # Empty / unparseable groups fail closed.
   expect_equal(.classifyFilter("age_group", list(groups = character(0))),
-               "blocked")
+               "constrained")
 })
 
 test_that("age grid is public, configurable, and only permits coarsening", {

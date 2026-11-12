@@ -7,20 +7,28 @@
 .evalFilterMask(filter, df)
 }
 \arguments{
-\item{filter}{List; the filter structure (and/or/leaf)}
+\item{filter}{List; the filter structure (and/or/not/leaf)}
 
 \item{df}{Data frame to evaluate against}
 }
 \value{
-Logical vector of length \code{nrow(df)}
+Logical vector of length \code{nrow(df)}, \code{NA} for UNKNOWN
 }
 \description{
-Mirrors \code{\link{.compileFilter}}'s AND/OR/leaf grammar but evaluates it
-against an already-extracted (disclosure-filtered) data frame in R, returning
-a logical keep-mask. Used to scope a single feature spec's rows by its own
-row filter (e.g. a unit/type slice) without re-querying the database. A leaf
-that references a column not present in the frame matches NOTHING (fail-closed
-for that leaf), and an unknown operator likewise drops the row, so a filter
-can only ever narrow the rows feeding the aggregation.
+The R mirror of \code{\link{.compileFilter}} and of the language 2.0
+predicate compiler (\code{.predicateSql()}), with the SAME three-valued
+truth table (design-2.10.3 section 6.6): a comparison with a missing operand
+is UNKNOWN (\code{NA}); \code{x IN (v...)} is TRUE when \code{x} equals a
+listed value, FALSE when \code{x} is non-missing and equals none, and
+UNKNOWN when \code{x} is missing; \code{NOT IN} is its negation with UNKNOWN
+preserved; \code{not} is \code{!mask} (NA stays NA); \code{and} / \code{or}
+are Kleene (R's \code{&} / \code{|}); \code{is_null} / \code{not_null} are
+the only leaves that turn a missing value into TRUE/FALSE. The mask is
+NA-preserving: callers keep rows with \code{mask \%in\% TRUE}. A leaf naming
+a column the frame does not carry, or an unknown operator, is refused (the
+validators reject both before evaluation; the mask never fails closed
+silently). Accepts the v1 leaf forms (\code{between} with two values,
+\code{value_bin}, operator aliases) and the v2 \code{between} object
+(\code{lower}, \code{upper}, \code{upper_inclusive}).
 }
 \keyword{internal}

@@ -1,0 +1,814 @@
+{
+  "recipe": "02-active-comparator",
+  "fixture": "reach + extension (build_extended_reach_handle(100))",
+  "nfilter_subset": 5,
+  "fixture_keys": ["person_id", "index_date", "index_key"],
+  "key_policy": "rows are matched to engine output on the fixture keys (person_id is the fixture identity; the harness tokenises it with the fixture's person key); index_date/index_key identify the episode and are not released columns",
+  "outputs": {
+    "baseline": {
+      "name": "baseline",
+      "n_persons": 33,
+      "released_columns": ["row_id", "cohort_row_id", "person_id", "arm", "age", "sex", "prior_mi"],
+      "comparison_columns": ["arm", "age", "sex", "prior_mi"],
+      "oracle_only": [],
+      "columns": ["person_id", "index_date", "arm", "age", "sex", "prior_mi"],
+      "rows": [
+        {
+          "person_id": 15,
+          "index_date": "2020-01-01",
+          "arm": "arb",
+          "age": 79,
+          "sex": "M",
+          "prior_mi": 1
+        },
+        {
+          "person_id": 16,
+          "index_date": "2020-01-01",
+          "arm": "arb",
+          "age": 30,
+          "sex": "F",
+          "prior_mi": 1
+        },
+        {
+          "person_id": 17,
+          "index_date": "2020-01-01",
+          "arm": "arb",
+          "age": 37,
+          "sex": "M",
+          "prior_mi": 1
+        },
+        {
+          "person_id": 18,
+          "index_date": "2020-01-01",
+          "arm": "arb",
+          "age": 44,
+          "sex": "F",
+          "prior_mi": 1
+        },
+        {
+          "person_id": 19,
+          "index_date": "2020-01-01",
+          "arm": "arb",
+          "age": 51,
+          "sex": "M",
+          "prior_mi": 1
+        },
+        {
+          "person_id": 20,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 57,
+          "sex": "F",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 21,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 64,
+          "sex": "M",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 22,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 71,
+          "sex": "F",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 23,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 78,
+          "sex": "M",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 24,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 29,
+          "sex": "F",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 25,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 36,
+          "sex": "M",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 26,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 43,
+          "sex": "F",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 27,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 50,
+          "sex": "M",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 28,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 57,
+          "sex": "F",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 29,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 64,
+          "sex": "M",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 30,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 71,
+          "sex": "F",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 31,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 78,
+          "sex": "M",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 32,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 29,
+          "sex": "F",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 33,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 36,
+          "sex": "M",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 34,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 43,
+          "sex": "F",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 35,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 50,
+          "sex": "M",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 36,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 57,
+          "sex": "F",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 37,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 64,
+          "sex": "M",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 38,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 71,
+          "sex": "F",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 39,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 78,
+          "sex": "M",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 40,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 29,
+          "sex": "F",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 41,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 36,
+          "sex": "M",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 42,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 43,
+          "sex": "F",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 43,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 50,
+          "sex": "M",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 44,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 57,
+          "sex": "F",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 45,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 64,
+          "sex": "M",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 1031,
+          "index_date": "2020-05-01",
+          "arm": "acei",
+          "age": 62,
+          "sex": "M",
+          "prior_mi": 0
+        },
+        {
+          "person_id": 1032,
+          "index_date": "2019-06-01",
+          "arm": "acei",
+          "age": 60,
+          "sex": "F",
+          "prior_mi": 0
+        }
+      ]
+    },
+    "tte.itt": {
+      "name": "tte.itt",
+      "n_persons": 28,
+      "released_columns": ["row_id", "cohort_row_id", "person_id", "outcome_name", "event", "entry_days_from_index", "exit_days_from_index", "follow_up_days"],
+      "comparison_columns": ["outcome_name", "event", "entry_days_from_index", "exit_days_from_index", "follow_up_days"],
+      "oracle_only": [],
+      "columns": ["person_id", "index_date", "outcome_name", "event", "entry_days_from_index", "exit_days_from_index", "follow_up_days"],
+      "rows": [
+        {
+          "person_id": 20,
+          "index_date": "2019-06-01",
+          "outcome_name": "mi",
+          "event": 1,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 30,
+          "follow_up_days": 29
+        },
+        {
+          "person_id": 21,
+          "index_date": "2019-06-01",
+          "outcome_name": "mi",
+          "event": 1,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 30,
+          "follow_up_days": 29
+        },
+        {
+          "person_id": 22,
+          "index_date": "2019-06-01",
+          "outcome_name": "mi",
+          "event": 1,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 30,
+          "follow_up_days": 29
+        },
+        {
+          "person_id": 23,
+          "index_date": "2019-06-01",
+          "outcome_name": "mi",
+          "event": 1,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 30,
+          "follow_up_days": 29
+        },
+        {
+          "person_id": 24,
+          "index_date": "2019-06-01",
+          "outcome_name": "mi",
+          "event": 1,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 30,
+          "follow_up_days": 29
+        },
+        {
+          "person_id": 25,
+          "index_date": "2019-06-01",
+          "outcome_name": "mi",
+          "event": 1,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 30,
+          "follow_up_days": 29
+        },
+        {
+          "person_id": 26,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 27,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 28,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 29,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 30,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 31,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 32,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 33,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 34,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 35,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 36,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 37,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 38,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 39,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 40,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 41,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 4231,
+          "follow_up_days": 4230
+        },
+        {
+          "person_id": 42,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 4231,
+          "follow_up_days": 4230
+        },
+        {
+          "person_id": 43,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 4231,
+          "follow_up_days": 4230
+        },
+        {
+          "person_id": 44,
+          "index_date": "2019-06-01",
+          "outcome_name": "death",
+          "event": 1,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 380,
+          "follow_up_days": 379
+        },
+        {
+          "person_id": 45,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 4231,
+          "follow_up_days": 4230
+        },
+        {
+          "person_id": 1031,
+          "index_date": "2020-05-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 3896,
+          "follow_up_days": 3895
+        },
+        {
+          "person_id": 1032,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 259,
+          "follow_up_days": 258
+        }
+      ]
+    },
+    "tte.on_treatment": {
+      "name": "tte.on_treatment",
+      "n_persons": 28,
+      "released_columns": ["row_id", "cohort_row_id", "person_id", "outcome_name", "event", "entry_days_from_index", "exit_days_from_index", "follow_up_days"],
+      "comparison_columns": ["outcome_name", "event", "entry_days_from_index", "exit_days_from_index", "follow_up_days"],
+      "oracle_only": [],
+      "columns": ["person_id", "index_date", "outcome_name", "event", "entry_days_from_index", "exit_days_from_index", "follow_up_days"],
+      "rows": [
+        {
+          "person_id": 20,
+          "index_date": "2019-06-01",
+          "outcome_name": "mi",
+          "event": 1,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 30,
+          "follow_up_days": 29
+        },
+        {
+          "person_id": 21,
+          "index_date": "2019-06-01",
+          "outcome_name": "mi",
+          "event": 1,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 30,
+          "follow_up_days": 29
+        },
+        {
+          "person_id": 22,
+          "index_date": "2019-06-01",
+          "outcome_name": "mi",
+          "event": 1,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 30,
+          "follow_up_days": 29
+        },
+        {
+          "person_id": 23,
+          "index_date": "2019-06-01",
+          "outcome_name": "mi",
+          "event": 1,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 30,
+          "follow_up_days": 29
+        },
+        {
+          "person_id": 24,
+          "index_date": "2019-06-01",
+          "outcome_name": "mi",
+          "event": 1,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 30,
+          "follow_up_days": 29
+        },
+        {
+          "person_id": 25,
+          "index_date": "2019-06-01",
+          "outcome_name": "mi",
+          "event": 1,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 30,
+          "follow_up_days": 29
+        },
+        {
+          "person_id": 26,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 27,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 28,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 29,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 30,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 31,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 32,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 33,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 34,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 35,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 36,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 37,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 38,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 39,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 40,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 214,
+          "follow_up_days": 213
+        },
+        {
+          "person_id": 41,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 396,
+          "follow_up_days": 395
+        },
+        {
+          "person_id": 42,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 396,
+          "follow_up_days": 395
+        },
+        {
+          "person_id": 43,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 396,
+          "follow_up_days": 395
+        },
+        {
+          "person_id": 44,
+          "index_date": "2019-06-01",
+          "outcome_name": "death",
+          "event": 1,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 380,
+          "follow_up_days": 379
+        },
+        {
+          "person_id": 45,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 396,
+          "follow_up_days": 395
+        },
+        {
+          "person_id": 1031,
+          "index_date": "2020-05-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 213,
+          "follow_up_days": 212
+        },
+        {
+          "person_id": 1032,
+          "index_date": "2019-06-01",
+          "outcome_name": null,
+          "event": 0,
+          "entry_days_from_index": 1,
+          "exit_days_from_index": 121,
+          "follow_up_days": 120
+        }
+      ]
+    }
+  },
+  "invariants": [
+    "first_eligible: the earliest candidate whose criteria hold (1031 skips its first, under-observed era)",
+    "the ARB censor applies only to acei-index episodes and the ACEI censor only to arb-index episodes (A-7): 1032's own-arm restart never censors, its ARB start censors at day 259",
+    "prior_outcome excludes an MI OR a death in [entry-365, entry)",
+    "follow_up_days == exit_days_from_index - entry_days_from_index on every row",
+    "competing risk: outcome_name is the first of mi/death inside [entry, exit], NULL when censored"
+  ]
+}

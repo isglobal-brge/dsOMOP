@@ -1,0 +1,81 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "concept_sets": {
+    "type_2_diabetes": {
+      "concepts": [
+        201820
+      ],
+      "include_descendants": true,
+      "include_mapped": false,
+      "exclude": null
+    }
+  },
+  "events": {
+    "type_2_diabetes_dx": {
+      "table": "condition_occurrence",
+      "concept_set": "type_2_diabetes"
+    }
+  },
+  "populations": {
+    "t2dm_first": {
+      "kind": "index",
+      "label": "Type 2 diabetes (Circe)",
+      "index": {
+        "source": {
+          "event": "type_2_diabetes_dx"
+        },
+        "select": "first_eligible"
+      },
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      },
+      "where": {
+        "observed": {
+          "before": 365,
+          "after": 0
+        }
+      }
+    }
+  },
+  "variables": {
+    "age_group": {
+      "derived": {
+        "kind": "age",
+        "reference": "index",
+        "bands": true
+      }
+    },
+    "sex": {
+      "derived": {
+        "kind": "sex_mf"
+      }
+    },
+    "prior_obs": {
+      "derived": {
+        "kind": "observed_days",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        }
+      }
+    }
+  },
+  "outputs": {
+    "baseline": {
+      "rows": "t2dm_first",
+      "format": "wide",
+      "grain": "episode",
+      "result_symbol": "D_baseline"
+    }
+  }
+}

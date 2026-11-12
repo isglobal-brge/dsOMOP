@@ -1,0 +1,218 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "events": {
+    "hba1c": {
+      "table": "measurement",
+      "concept_set": {
+        "concepts": [
+          3004410
+        ],
+        "include_descendants": false
+      },
+      "value": {
+        "column": "value_as_number"
+      },
+      "unit": {
+        "target": 8554,
+        "convert": {
+          "8753": {
+            "factor": 0.0915,
+            "offset": 2.15
+          }
+        },
+        "unknown": "missing",
+        "censored": "keep"
+      }
+    },
+    "hba1c_ge65": {
+      "table": "measurement",
+      "concept_set": {
+        "concepts": [
+          3004410
+        ],
+        "include_descendants": false
+      },
+      "value": {
+        "column": "value_as_number"
+      },
+      "unit": {
+        "target": 8554,
+        "convert": {
+          "8753": {
+            "factor": 0.0915,
+            "offset": 2.15
+          }
+        },
+        "unknown": "missing",
+        "censored": "keep"
+      },
+      "where": {
+        "var": "value",
+        "op": ">=",
+        "value": 6.5
+      }
+    },
+    "hba1c_uncensored": {
+      "table": "measurement",
+      "concept_set": {
+        "concepts": [
+          3004410
+        ],
+        "include_descendants": false
+      },
+      "value": {
+        "column": "value_as_number"
+      },
+      "unit": {
+        "target": 8554,
+        "convert": {
+          "8753": {
+            "factor": 0.0915,
+            "offset": 2.15
+          }
+        },
+        "unknown": "missing",
+        "censored": "exclude"
+      }
+    },
+    "hba1c_known_unit": {
+      "table": "measurement",
+      "concept_set": {
+        "concepts": [
+          3004410
+        ],
+        "include_descendants": false
+      },
+      "value": {
+        "column": "value_as_number"
+      },
+      "unit": {
+        "target": 8554,
+        "convert": {
+          "8753": {
+            "factor": 0.0915,
+            "offset": 2.15
+          }
+        },
+        "unknown": "exclude",
+        "censored": "keep"
+      }
+    }
+  },
+  "populations": {
+    "c1": {
+      "kind": "index",
+      "index": {
+        "source": {
+          "cohort_definition_id": 1
+        },
+        "select": "all",
+        "end": {
+          "strategy": "event_end"
+        }
+      }
+    },
+    "with_a1c": {
+      "kind": "criteria",
+      "parent": "c1",
+      "where": {
+        "has": {
+          "source": {
+            "event": "hba1c"
+          },
+          "op": ">=",
+          "n": 1,
+          "window": {
+            "start": -180,
+            "end": 0,
+            "anchor": "index"
+          }
+        }
+      }
+    }
+  },
+  "variables": {
+    "a1c_closest": {
+      "source": {
+        "event": "hba1c"
+      },
+      "reducer": {
+        "fn": "closest_value",
+        "value": "value",
+        "window": {
+          "start": -180,
+          "end": 0,
+          "anchor": "index"
+        },
+        "side": "before"
+      }
+    },
+    "a1c_n_ge65": {
+      "source": {
+        "event": "hba1c_ge65"
+      },
+      "reducer": {
+        "fn": "count",
+        "window": {
+          "start": -180,
+          "end": 0,
+          "anchor": "index"
+        }
+      }
+    },
+    "a1c_n_uncensored": {
+      "source": {
+        "event": "hba1c_uncensored"
+      },
+      "reducer": {
+        "fn": "count",
+        "window": {
+          "start": -180,
+          "end": 0,
+          "anchor": "index"
+        }
+      }
+    },
+    "a1c_n_known_unit": {
+      "source": {
+        "event": "hba1c_known_unit"
+      },
+      "reducer": {
+        "fn": "count",
+        "window": {
+          "start": -180,
+          "end": 0,
+          "anchor": "index"
+        }
+      }
+    },
+    "a1c_max": {
+      "source": {
+        "event": "hba1c"
+      },
+      "reducer": {
+        "fn": "max",
+        "value": "value",
+        "window": {
+          "start": -180,
+          "end": 0,
+          "anchor": "index"
+        }
+      }
+    }
+  },
+  "outputs": {
+    "labs": {
+      "rows": "with_a1c",
+      "format": "wide",
+      "grain": "episode",
+      "result_symbol": "D_labs"
+    }
+  }
+}

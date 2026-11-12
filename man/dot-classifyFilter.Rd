@@ -2,22 +2,19 @@
 % Please edit documentation in R/disclosure.R
 \name{.classifyFilter}
 \alias{.classifyFilter}
-\title{Classify a filter operation by safety level}
+\title{Classify a filter operation}
 \usage{
 .classifyFilter(filter_type, filter_params = list())
 }
 \arguments{
-\item{filter_type}{Character; filter type from the DSL}
+\item{filter_type}{Character; filter type from the DSL.}
 
-\item{filter_params}{List; filter parameters}
+\item{filter_params}{List; structurally validated filter parameters.}
 }
 \value{
-Character; \code{"allowed"}, \code{"constrained"}, or \code{"blocked"}
+"constrained" for a known filter type, "blocked" otherwise.
 }
 \description{
-Filters are classified based on fingerprinting risk. Narrow filters
-(e.g., exact value thresholds) can isolate individuals; broad filters
-(e.g., sex, age group) cannot. Constrained filters are allowed only
-if their parameters meet minimum-width requirements.
+Classify a filter operation
 }
 \keyword{internal}

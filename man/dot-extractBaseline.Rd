@@ -24,8 +24,7 @@
 
 \item{translate_concepts}{Logical; translate concept IDs to names}
 
-\item{age_breaks}{Optional public age-grid coarsening negotiated by a
-federation.}
+\item{age_breaks}{Optional increasing integer age-band lower bounds.}
 }
 \value{
 Data frame with one row per cohort member
