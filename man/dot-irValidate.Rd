@@ -12,10 +12,21 @@
 \item{handle}{CDM handle, or NULL for the pure semantic rules only.}
 }
 \value{
-Invisibly, a list(operations, unavailable, site_findings,
-  dialect); stops with a typed rejection on the first failing stage.
+Invisibly, a list(operations, unavailable, unavailable_outputs,
+  site_findings, dialect); stops with a typed rejection on the first
+  failing stage.
 }
 \description{
-Semantic and handle-dependent validation (step 4)
+Stages, each refusing with one typed rejection (design section 7.3 codes,
+as the publication status transports them): the semantic rules and
+deployment-disabled operations (\code{validation_error}); the site checks
+-- plan findings first (\code{validation_error}), then event sources this
+site cannot serve under \code{on_missing_table = "error"}
+(\code{unavailable_table}); the dialect preflight
+(\code{dialect_unsupported}). All run before any query. Sources served
+under \code{on_missing_table = "unavailable"} are never a refusal: their
+events and the outputs reading them are reported (\code{unavailable},
+\code{unavailable_outputs}). \code{insufficient_support} is never raised
+here: support exists only for computed outputs, at publication.
 }
 \keyword{internal}

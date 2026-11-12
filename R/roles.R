@@ -227,6 +227,30 @@
   .roleRegistry(handle)[["records"]][[tolower(table)]]
 }
 
+#' Why a table has, or lacks, a role record at this site
+#'
+#' @param handle CDM handle.
+#' @param table Table name (case-insensitive).
+#' @return \code{"available"} (a role record exists); \code{"absent"} (an
+#'   event source of some CDM version that this site cannot serve: the table
+#'   is missing, lacks a required role column, or belongs to another CDM
+#'   version -- a site resource, \code{on_missing_table} applies); or
+#'   \code{"not_event_source"} (a table that is never an event source, such as
+#'   cost or episode_event, or an unknown table -- a plan error).
+#' @keywords internal
+.roleAvailability <- function(handle, table) {
+  if (!is.null(.roleOf(handle, table))) return("available")
+  if (!is.character(table) || length(table) != 1L || is.na(table)) {
+    return("not_event_source")
+  }
+  t <- tolower(table)
+  sources <- unlist(lapply(.ROLE_VERSIONS, function(v) {
+    rows <- .roleRecordsCsv(v)
+    rows[["table_name"]][rows[["event_source"]] == "TRUE"]
+  }), use.names = FALSE)
+  if (t %in% sources) "absent" else "not_event_source"
+}
+
 #' Public, count-free summary of a role record (explain payload)
 #' @keywords internal
 .roleRecordSummary <- function(record) {

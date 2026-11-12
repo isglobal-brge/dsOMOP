@@ -22,6 +22,13 @@
 
 .irItems <- function(x) if (is.null(x)) list() else .jsonArrayItems(x)
 
+# Does a node contain a negation (an object whose only key is `not`)?
+.irHasNot <- function(x) {
+  if (!is.list(x)) return(FALSE)
+  if (identical(names(x), "not")) return(TRUE)
+  any(vapply(x, .irHasNot, logical(1)))
+}
+
 # The assignment age-grid shape (design 4.5 b: at least two strictly
 # increasing integers starting at 0), decided by the one rule the executors
 # and .planValidate() use, .bandAges() in R/assignment_policy.R.
@@ -451,7 +458,7 @@
     .irWalkCriteria(p[["where"]], function(k, leaf, path) {
       if (identical(k, "age")) op("criteria.age")
     }, "")
-    if (grepl('"not"', .jcsCanonical(p[["where"]] %||% list()), fixed = TRUE)) op("criteria.not")
+    if (.irHasNot(p)) op("criteria.not")
   }
   anchors <- .irCollectAnchors(ir[c("populations", "variables", "outputs")])
   if (length(anchors)) op("window.anchor.source")
@@ -479,7 +486,12 @@
       op("output.person_period.partition")
     }
   }
-  if (length(ir[["publish"]] %||% list()) != length(ir[["outputs"]] %||% list())) op("publish.roots")
+  # publish.roots: a declared strict subset of the outputs (a lowered v1 plan
+  # has no publish: its roots are the outputs the execution maps)
+  if (!is.null(ir[["publish"]]) &&
+      length(ir[["publish"]]) != length(ir[["outputs"]] %||% list())) {
+    op("publish.roots")
+  }
   unique(ops)
 }
 
@@ -500,11 +512,15 @@
 #' filterable predicate columns, typed value / concept columns, raw columns
 #' and their classes (section 7.6).
 #'
-#' @return list(errors = character(), unavailable = character() of events
-#'   whose tables are absent under on_missing_table = "unavailable").
+#' @return list(errors = character() of plan findings, missing_tables =
+#'   character() of findings for event sources this site cannot serve under
+#'   on_missing_table = "error" (the unavailable_table refusal), unavailable
+#'   = character() of events whose sources this site cannot serve under
+#'   on_missing_table = "unavailable").
 #' @keywords internal
 .irSiteErrors <- function(ir, handle) {
   errors <- character(0)
+  missing_tables <- character(0)
   unavailable <- character(0)
   add <- function(...) errors <<- c(errors, paste0(...))
   bp <- .buildBlueprint(handle)
@@ -514,10 +530,13 @@
     if (!is.null(node[["table"]])) {
       role <- .roleOf(handle, node[["table"]])
       if (is.null(role)) {
-        if (identical(node[["on_missing_table"]], "unavailable")) {
+        if (identical(.roleAvailability(handle, node[["table"]]), "not_event_source")) {
+          add(base, "/table: '", node[["table"]], "' is not an event table (no event role record)")
+        } else if (identical(node[["on_missing_table"]], "unavailable")) {
           unavailable <- c(unavailable, e)
         } else {
-          add(base, "/table: table '", node[["table"]], "' has no event role record at this site")
+          missing_tables <- c(missing_tables, paste0(
+            base, "/table: table '", node[["table"]], "' is not available at this site"))
         }
         next
       }
@@ -539,11 +558,26 @@
         add(base, "/end/fallback: table '", node[["table"]], "' has no days_supply role")
       }
     }
+    # An adapter's own tables are site resources under its on_missing_table.
+    site_missing <- function(field, table, mode) {
+      if (identical(mode, "unavailable")) {
+        unavailable <<- unique(c(unavailable, e))
+      } else {
+        missing_tables <<- c(missing_tables, paste0(
+          base, field, ": table '", table, "' is not available at this site"))
+      }
+    }
     if (!is.null(node[["episode_members"]])) {
       fields <- .irEpisodeEventFields()
+      mode <- node[["episode_members"]][["on_missing_table"]]
+      if (is.null(bp[["columns"]][["episode_event"]])) {
+        site_missing("/episode_members", "episode_event", mode)
+      }
       for (t in unlist(node[["episode_members"]][["tables"]] %||% list())) {
-        if (is.null(.roleOf(handle, t)) || !t %in% fields[["table_name"]]) {
-          add(base, "/episode_members/tables: '", t, "' has no role record or reviewed episode_event field mapping")
+        if (!t %in% fields[["table_name"]]) {
+          add(base, "/episode_members/tables: '", t, "' has no reviewed episode_event field mapping")
+        } else if (is.null(.roleOf(handle, t))) {
+          site_missing("/episode_members/tables", t, mode)
         }
       }
     }
@@ -552,6 +586,9 @@
       domains <- .irCostDomains()
       if (is.null(parent[["table"]]) || !parent[["table"]] %in% domains[["table_name"]]) {
         add(base, "/cost/event: the cost source must reference a table event with a reviewed cost_domain_id mapping")
+      }
+      if (is.null(bp[["columns"]][["cost"]])) {
+        site_missing("/cost", "cost", node[["cost"]][["on_missing_table"]])
       }
     }
   }
@@ -566,7 +603,23 @@
       }
     }
   }
-  list(errors = errors, unavailable = unavailable)
+  list(errors = errors, missing_tables = missing_tables, unavailable = unavailable)
+}
+
+#' Outputs whose sources this site cannot serve (the status field
+#' \code{unavailable}, design section 7.3)
+#'
+#' @param ir The IR.
+#' @param events Events marked unavailable by \code{.irSiteErrors()}.
+#' @return Character vector of output names (declaration order) whose
+#'   dependency closure (\code{.irOutputClosure()}) reads one of them.
+#' @keywords internal
+.irUnavailableOutputs <- function(ir, events) {
+  if (!length(events)) return(character(0))
+  outs <- names(ir[["outputs"]] %||% list())
+  outs[vapply(outs, function(o) {
+    any(events %in% names(.irOutputClosure(ir, o)[["events"]]))
+  }, logical(1))]
 }
 
 .irEpisodeEventFields <- function() {
@@ -629,10 +682,23 @@
 
 #' Semantic and handle-dependent validation (step 4)
 #'
+#' Stages, each refusing with one typed rejection (design section 7.3 codes,
+#' as the publication status transports them): the semantic rules and
+#' deployment-disabled operations (\code{validation_error}); the site checks
+#' -- plan findings first (\code{validation_error}), then event sources this
+#' site cannot serve under \code{on_missing_table = "error"}
+#' (\code{unavailable_table}); the dialect preflight
+#' (\code{dialect_unsupported}). All run before any query. Sources served
+#' under \code{on_missing_table = "unavailable"} are never a refusal: their
+#' events and the outputs reading them are reported (\code{unavailable},
+#' \code{unavailable_outputs}). \code{insufficient_support} is never raised
+#' here: support exists only for computed outputs, at publication.
+#'
 #' @param ir The IR (schema-valid).
 #' @param handle CDM handle, or NULL for the pure semantic rules only.
-#' @return Invisibly, a list(operations, unavailable, site_findings,
-#'   dialect); stops with a typed rejection on the first failing stage.
+#' @return Invisibly, a list(operations, unavailable, unavailable_outputs,
+#'   site_findings, dialect); stops with a typed rejection on the first
+#'   failing stage.
 #' @keywords internal
 .irValidate <- function(ir, handle = NULL) {
   errors <- .irSemanticErrors(ir)
@@ -644,14 +710,22 @@
                      paste(disabled, collapse = ", ")))
   }
   report <- list(operations = ops, unavailable = character(0),
+                 unavailable_outputs = character(0),
                  site_findings = character(0), dialect = NULL)
   if (is.null(handle)) return(invisible(report))
   site <- .irSiteErrors(ir, handle)
   report[["unavailable"]] <- site[["unavailable"]]
-  report[["site_findings"]] <- site[["errors"]]
+  report[["unavailable_outputs"]] <- .irUnavailableOutputs(ir, site[["unavailable"]])
+  report[["site_findings"]] <- c(site[["errors"]], site[["missing_tables"]])
   legacy <- identical(attr(ir, "source_version"), 1L)
-  if (length(site[["errors"]]) && !legacy) {
-    .irRejectAll("plan fails the site checks", site[["errors"]])
+  if (!legacy) {
+    if (length(site[["errors"]])) {
+      .irRejectAll("plan fails the site checks", report[["site_findings"]])
+    }
+    if (length(site[["missing_tables"]])) {
+      .irRejectAll("plan needs tables this site does not provide",
+                   site[["missing_tables"]], code = "unavailable_table")
+    }
   }
   report[["dialect"]] <- .irDialectPreflight(ir, handle)
   invisible(report)

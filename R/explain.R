@@ -212,13 +212,15 @@
   report <- .irValidate(ir, NULL)
   site_findings <- character(0)
   unavailable <- character(0)
+  unavailable_outputs <- character(0)
   roles <- list()
   dialect <- list(status = "not_checked")
   if (!is.null(handle)) {
     site <- tryCatch(.irSiteErrors(ir, handle),
                      error = function(e) list(errors = conditionMessage(e), unavailable = character(0)))
-    site_findings <- site[["errors"]]
+    site_findings <- c(site[["errors"]], site[["missing_tables"]])
     unavailable <- site[["unavailable"]]
+    unavailable_outputs <- .irUnavailableOutputs(ir, unavailable)
     for (t in .irTablesUsed(ir)) {
       roles[[t]] <- .roleRecordSummary(.roleOf(handle, t))
     }
@@ -244,6 +246,7 @@
     column_classes = .irOutputColumnClasses(ir, handle),
     site_findings = site_findings,
     unavailable = unavailable,
+    unavailable_outputs = unavailable_outputs,
     dialect = dialect,
     legacy_residue = attr(ir, "legacy_residue"),
     order = .irOrder(ir)[c("concept_sets", "events", "intervals",

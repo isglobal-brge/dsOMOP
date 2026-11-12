@@ -42,9 +42,9 @@ test_that("normalising a v2 plan expands every schema and semantic default", {
                         on_missing = "drop", gap = 0L))
   expect_identical(ir$populations$eligible$coverage$policy, "unique")
   expect_identical(unlist(ir$publish), "cc_table")
-  expect_identical(ir$scope, list(cohort = NULL, tables = list(), combine = "union"))
-  expect_identical(ir$outputs$cc_table$options$temporal,
-                   list(event_select = "all", min_gap = 0L))
+  # a field with neither a schema nor a semantic default stays absent (CR-11)
+  expect_false("scope" %in% names(ir))
+  expect_false("temporal" %in% names(ir$outputs$cc_table$options))
   expect_identical(ir$outputs$cc_table$options$date_handling$reference, "index")
   # the normalised plan still validates and is a fixed point
   expect_true(.jsonSchemaValidate(.irSchema("ir-v2"), unclass(.irStripPrivate(ir)))$valid)
@@ -81,13 +81,35 @@ test_that("absent and explicit defaults normalise identically (one digest)", {
   expect_identical(.irSemanticDigest(ir)$sha256, .irSemanticDigest(explicit)$sha256)
   expect_identical(.irSemanticDigest(ir)$sha256,
                    .planSemanticDigest(unclass(.irStripPrivate(ir)))$sha256)
-  # publish is a set: order does not change the digest
-  b$outputs$other <- b$outputs$cc_table
-  b$publish <- list("other", "cc_table")
-  p1 <- .irNormalize(b)
-  b$publish <- list("cc_table", "other")
-  p2 <- .irNormalize(b)
-  expect_identical(.irSemanticDigest(p1)$sha256, .irSemanticDigest(p2)$sha256)
+  # an absent publish is every output in declaration order; a given one is kept
+  b$outputs <- c(list(zeta = b$outputs$cc_table), b$outputs)
+  b$publish <- NULL
+  expect_identical(unlist(.irNormalize(b)$publish), c("zeta", "cc_table"))
+  b$publish <- list("cc_table", "zeta")
+  expect_identical(unlist(.irNormalize(b)$publish), c("cc_table", "zeta"))
+})
+
+test_that("the semantic defaults of the canonical example A are the normaliser's (CR-11)", {
+  # WS-0 ships example A with the semantic defaults its R recipe leaves
+  # implicit written out (wide columns, publish, coverage, grain, event_order);
+  # leaving them implicit gives the same normal form
+  a <- .ir_json("examples", "plan-v2-example-A.json")
+  implicit <- a
+  implicit$outputs$baseline$columns <- NULL
+  implicit$publish <- NULL
+  implicit$populations$new_users$coverage <- NULL
+  implicit$outputs$baseline$grain <- NULL
+  implicit$outputs$tte$grain <- NULL
+  implicit$outputs$tte$options$event_order <- NULL
+  expect_identical(.irSemanticDigest(.irNormalize(implicit))$sha256,
+                   .irSemanticDigest(.irNormalize(a))$sha256)
+  ir <- .irNormalize(implicit)
+  expect_identical(unlist(ir$outputs$baseline$columns), c("age", "sex", "hba1c_base"))
+  expect_identical(unlist(ir$publish), c("baseline", "tte"))
+  expect_identical(ir$outputs$tte$options$outcome_mode, "composite")
+  # normalising twice changes nothing
+  again <- .irNormalize(unclass(.irStripPrivate(ir)))
+  expect_identical(.jcsCanonical(.irStripPrivate(again)), .jcsCanonical(.irStripPrivate(ir)))
 })
 
 test_that("survival format defaults follow the format matrix", {
@@ -363,9 +385,15 @@ test_that("an output's closure keeps every node it references", {
 
 test_that("an output projects its columns, or every variable only when wide", {
   acc <- .ir_shipped_v2_plans()[["02-active-comparator"]]
+  expect_null(acc$outputs$baseline$columns)
   ir <- .irPrepare(acc)
-  expect_null(ir$outputs$baseline$columns)
+  # the normaliser writes a wide output's implicit columns (CR-11) ...
+  expect_identical(unlist(ir$outputs$baseline$columns), names(ir$variables))
   expect_identical(.irOutputVariables(ir, "baseline"), names(ir$variables))
+  # ... and an un-normalised null reads the same way; survival projects none
+  ir$outputs$baseline$columns <- NULL
+  expect_identical(.irOutputVariables(ir, "baseline"), names(ir$variables))
+  expect_null(ir$outputs$tte$columns)
   expect_identical(.irOutputVariables(ir, "tte"), character(0))
   a <- .irPrepare(.ir_json("examples", "plan-v2-example-A.json"))
   expect_identical(.irOutputVariables(a, "baseline"), c("age", "sex", "hba1c_base"))
@@ -620,6 +648,16 @@ test_that("a v1 plan without outputs has no IR and is still accepted", {
   expect_null(.irPrepare(list(populations = list(base = list(id = "base")), outputs = list())))
   expect_s3_class(.ir_rejection(.irPrepare(list(outputs = list(), already_gated = TRUE))),
                   "dsomop_plan_rejection")
+})
+
+test_that("a lowered v1 plan names no publication roots: they are the mapped outputs", {
+  ir <- .irPrepare(list(
+    cohort = list(type = "cohort_table", cohort_definition_id = 1L),
+    outputs = list(b = list(type = "baseline", columns = list("gender_concept_id")),
+                   a = list(type = "baseline", columns = list("year_of_birth")))))
+  expect_false("publish" %in% names(ir))
+  expect_false("publish.roots" %in% .irOperations(ir))
+  expect_true(.jsonSchemaValidate(.irSchema("ir-v2"), unclass(.irStripPrivate(ir)))$valid)
 })
 
 test_that("the residue is bound by the IR digest", {

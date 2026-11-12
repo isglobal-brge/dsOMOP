@@ -17,7 +17,11 @@ The IR, class \code{dsomop_ir}, with attribute \code{source_version}
 \description{
 Language 2.0: identity plus every default (\code{.irNormalizeWire()}). A v1
 plan: lowered to the compatibility IR (section 5, \code{.irLowerV1()}),
-then defaults are expanded the same way. Pure: no database access. The
+then defaults are expanded the same way, except \code{publish}: a v1 plan
+never names publication roots, its roots are the outputs the execution maps
+to symbols (\code{out}; unmapped outputs stay private computed inputs, as in
+2.10.2), so the lowered IR carries no \code{publish} and consumers use
+\code{ir$publish \%||\% names(out)}. Pure: no database access. The
 normalised plan is what \code{omopPlanExplainDS} returns.
 }
 \keyword{internal}

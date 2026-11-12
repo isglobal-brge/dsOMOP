@@ -1,7 +1,10 @@
 # Normalisation of a plan in the language 2.0 form (design-2.10.3 sections
 # 4.1, 4.4 and 6.1): every default written in the schema, plus the documented
-# semantic defaults, expanded exactly once, so that no consumer ever sees an
-# absent optional field and two spellings of one plan normalise identically.
+# semantic defaults (the rule set of change request CR-11), expanded exactly
+# once, so that two spellings of one plan normalise identically (the
+# canonical example A of WS-0 writes these semantic defaults out; leaving
+# them implicit gives the same normal form). A field with neither a schema
+# nor a semantic default stays absent.
 #
 # Shared by client and server: the identical file is vendored in
 # dsOMOPClient (tests pin the byte identity), because the semantic digest
@@ -83,8 +86,8 @@
 .irEmptyObject <- function() structure(list(), names = character(0))
 
 # Is a population id (transitively) episode-indexed? index and match
-# populations are; a set-op keeps its first member's episodes; a criteria
-# child inherits the episode roster of an indexed parent (section 2.5).
+# populations are; a set-op is when any member is; a criteria child inherits
+# the episode roster of an indexed parent (section 2.5; CR-11).
 .irPopulationIndexed <- function(populations, id, seen = character(0)) {
   if (!is.character(id) || length(id) != 1L || id %in% seen) return(FALSE)
   pop <- populations[[id]]
@@ -97,8 +100,8 @@
     match = TRUE,
     setop = {
       members <- .jsonArrayItems(pop[["setop"]][["members"]] %||% list())
-      length(members) > 0L &&
-        .irPopulationIndexed(populations, members[[1L]], seen)
+      any(vapply(members, function(m) .irPopulationIndexed(populations, m, seen),
+                 logical(1)))
     },
     criteria = {
       parent <- pop[["parent"]]
@@ -111,17 +114,20 @@
 
 #' Normalise a language 2.0 plan or IR: schema defaults plus semantic defaults
 #'
-#' Semantic defaults (design sections 1.3, 2.5, 2.9, 2.10, 4.1): absent root
-#' maps become empty objects; absent \code{options} and \code{scope} take
-#' their defaults; \code{publish} lists every output when absent and is a
-#' sorted set; an index or criteria population without \code{coverage}
-#' inherits \code{options.coverage} (or the coverage defaults), and
-#' \code{restrict_to_observation = false} lowers to \code{on_missing =
-#' "keep"}; an output without \code{grain} takes \code{episode} over an
-#' indexed population and \code{person} otherwise; survival
-#' \code{outcome_mode} and \code{event_order} take the format matrix defaults;
-#' wide/long \code{options.temporal} takes its defaults. Pure: no database
-#' access, no validation (conflicts are reported by the validator).
+#' The schema \code{default} keywords, applied in the branch each instance
+#' matches, then the semantic defaults the design states in prose (sections
+#' 1.3, 2.5, 2.9, 2.10, 4.1; the rule set of change request CR-11, which the
+#' canonical example A of WS-0 writes out): absent root \code{options}
+#' and registries are empty objects; an absent \code{publish} is the output
+#' names in declaration order; an index or criteria population without
+#' \code{coverage} takes \code{options.coverage} (or the coverage defaults),
+#' with \code{on_missing = "keep"} when its \code{restrict_to_observation} is
+#' false; an output without \code{grain} takes \code{episode} over an indexed
+#' population and \code{person} otherwise; a \code{wide} output with
+#' \code{columns: null} takes every variable in declaration order; survival
+#' \code{outcome_mode} and \code{event_order} take the format matrix defaults.
+#' No other field is added and none is removed. Pure: no database access, no
+#' validation (conflicts are reported by the validator).
 #'
 #' @param plan Instance in parsed JSON form.
 #' @param schema Root schema: ir-v2.json on the server, plan-v2.json on the
@@ -140,22 +146,13 @@
   if (!"options" %in% names(plan) || is.null(plan[["options"]])) {
     plan["options"] <- list(.irEmptyObject())
   }
-  if (!"scope" %in% names(plan) || is.null(plan[["scope"]])) {
-    plan["scope"] <- list(.irEmptyObject())
-  }
-  scope <- plan[["scope"]]
-  if (is.list(scope) && (length(scope) == 0L || !is.null(names(scope)))) {
-    if (!"cohort" %in% names(plan[["scope"]])) plan[["scope"]]["cohort"] <- list(NULL)
-    if (!"tables" %in% names(plan[["scope"]])) plan[["scope"]]["tables"] <- list(list())
-  }
   plan <- .irExpandDefaults(plan, schema, schema)
 
   outputs <- plan[["outputs"]]
   output_names <- if (is.list(outputs)) names(outputs) %||% character(0) else character(0)
   publish <- plan[["publish"]]
   publish <- if (is.null(publish)) output_names else unlist(publish, use.names = FALSE)
-  publish <- as.character(unlist(publish, use.names = FALSE))
-  plan[["publish"]] <- if (length(publish)) as.list(sort(publish, method = "radix")) else list()
+  plan[["publish"]] <- as.list(as.character(unlist(publish, use.names = FALSE)))
 
   pops <- plan[["populations"]]
   coverage_schema <- .jsonSchemaResolveRef("#/$defs/coverage", schema)
@@ -187,13 +184,10 @@
       }
     }
     fmt <- out[["format"]] %||% ""
-    opts <- out[["options"]]
-    if (is.list(opts) && fmt %in% c("wide", "long") &&
-        is.null(opts[["temporal"]])) {
-      opts["temporal"] <- list(.irExpandDefaults(
-        .irEmptyObject(),
-        .jsonSchemaResolveRef("#/$defs/temporal_select", schema), schema))
+    if (identical(fmt, "wide") && is.null(out[["columns"]])) {
+      out["columns"] <- list(as.list(names(plan[["variables"]]) %||% character(0)))
     }
+    opts <- out[["options"]]
     if (is.list(opts) && identical(fmt, "survival")) {
       sformat <- opts[["format"]] %||% "survival"
       if (is.null(opts[["outcome_mode"]])) {

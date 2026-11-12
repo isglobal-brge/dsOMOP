@@ -86,6 +86,36 @@ test_that("explain reports site findings and refuses invalid plans with the type
   expect_identical(out$plan$populations$cc$kind, "match")
 })
 
+test_that("site resources: unavailable_table, unavailable sources and non-event tables", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  a <- .explain_example("plan-v2-example-A.json")
+  # the unit-test CDM has no drug_exposure.days_supply: drop the supply
+  # fallback, a plan finding that would precede the site resource refusal
+  a$events$metf_rx$end <- NULL
+  # hba1c is read only by the baseline output; specimen is an event source
+  # this unit-test CDM does not have
+  a$events$hba1c$table <- "specimen"
+  expect_identical(.roleAvailability(handle, "specimen"), "absent")
+  err <- tryCatch(.irPrepare(a, handle), dsomop_plan_rejection = function(e) e)
+  expect_s3_class(err, "dsomop_ir_validation_error")
+  expect_identical(err$code, "unavailable_table")
+  expect_match(conditionMessage(err),
+               "/events/hba1c/table: table 'specimen' is not available at this site",
+               fixed = TRUE)
+  a$events$hba1c$on_missing_table <- "unavailable"
+  report <- .irValidate(.irPrepare(a), handle)
+  expect_identical(report$unavailable, "hba1c")
+  expect_identical(report$unavailable_outputs, "baseline")
+  # a table that is never an event source is a plan error under either mode
+  a$events$hba1c$table <- "provider"
+  expect_identical(.roleAvailability(handle, "provider"), "not_event_source")
+  err <- tryCatch(.irPrepare(a, handle), dsomop_plan_rejection = function(e) e)
+  expect_identical(err$code, "validation_error")
+  expect_match(conditionMessage(err), "'provider' is not an event table")
+  expect_identical(.roleAvailability(handle, "measurement"), "available")
+})
+
 test_that("explain is listed as a reviewed aggregate method", {
   root <- testthat::test_path("..", "..")
   desc <- read.dcf(file.path(root, "DESCRIPTION"))

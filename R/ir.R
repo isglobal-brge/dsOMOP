@@ -161,7 +161,11 @@
 #'
 #' Language 2.0: identity plus every default (\code{.irNormalizeWire()}). A v1
 #' plan: lowered to the compatibility IR (section 5, \code{.irLowerV1()}),
-#' then defaults are expanded the same way. Pure: no database access. The
+#' then defaults are expanded the same way, except \code{publish}: a v1 plan
+#' never names publication roots, its roots are the outputs the execution maps
+#' to symbols (\code{out}; unmapped outputs stay private computed inputs, as in
+#' 2.10.2), so the lowered IR carries no \code{publish} and consumers use
+#' \code{ir$publish \%||\% names(out)}. Pure: no database access. The
 #' normalised plan is what \code{omopPlanExplainDS} returns.
 #'
 #' @param plan Plan in parsed JSON form (see \code{.irJsonForm()}).
@@ -178,6 +182,7 @@
     lowered <- .irLowerV1(plan)
     residue <- attr(lowered, "legacy_residue")
     ir <- .irNormalizeWire(.irStripPrivate(lowered), .irSchema("ir-v2"))
+    ir["publish"] <- NULL
   }
   structure(ir, class = "dsomop_ir", source_version = version,
             legacy_residue = residue)
@@ -425,7 +430,7 @@
   sub[["populations"]] <- pick(pops, keep_p)
   sub[["variables"]] <- pick(vars, keep_v)
   sub[["outputs"]] <- pick(outs, keep_o)
-  sub[["publish"]] <- as.list(.irSortNames(keep_o))
+  sub[["publish"]] <- as.list(intersect(names(outs), keep_o))
   sub
 }
 

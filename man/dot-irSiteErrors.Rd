@@ -7,8 +7,11 @@
 .irSiteErrors(ir, handle)
 }
 \value{
-list(errors = character(), unavailable = character() of events
-  whose tables are absent under on_missing_table = "unavailable").
+list(errors = character() of plan findings, missing_tables =
+  character() of findings for event sources this site cannot serve under
+  on_missing_table = "error" (the unavailable_table refusal), unavailable
+  = character() of events whose sources this site cannot serve under
+  on_missing_table = "unavailable").
 }
 \description{
 Role records for every event table (respecting on_missing_table),

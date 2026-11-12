@@ -124,18 +124,29 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 - `R/ir.R`: `.irPrepare()` (the frozen sequence), `.irNormalize()`,
   `.irValidate()`, `.irOrder()`, `.irNode()`; failures are typed
-  `dsomop_plan_rejection` conditions with code `validation_error`, naming
-  fields, outputs and constructs only. `omopPlanPreviewDS()` and
-  `ds.omop.plan.validate()` report the same findings in `validation$errors`.
+  `dsomop_plan_rejection` conditions naming fields, outputs and constructs
+  only, with the codes the publication status transports: `validation_error`
+  (plan findings), `unavailable_table` (an event source this site cannot
+  serve under `on_missing_table = "error"`) and `dialect_unsupported`
+  (preflight, naming the output). Sources served under
+  `on_missing_table = "unavailable"` are reported with the outputs that read
+  them, never refused. `omopPlanPreviewDS()` and `ds.omop.plan.validate()`
+  report the same findings in `validation$errors`.
 - v1 plans lower to the compatibility IR of design section 5 (legacy leaves,
   `legacy_spec`, `legacy_end_strategy`, `legacy_cohort_end_cap`,
   `legacy_composite`, `legacy_covariate_ids`, `legacy_all_time_conditions`).
   v1 semantics the frozen IR cannot express are kept verbatim in a
   server-private `legacy_residue` (change request CR-10), bound by the plan's
   semantic digest; nothing is discarded. v1 plans keep running on the v1
-  executors in this release stage.
-- `R/ir_defaults.R`: the normaliser shared with dsOMOPClient (byte-identical);
-  every schema default plus the semantic defaults is expanded exactly once.
+  executors in this release stage. A lowered v1 plan names no publication
+  roots: they are the outputs the execution maps to symbols, as in 2.10.2.
+- `R/ir_defaults.R`: the normaliser shared with dsOMOPClient (byte-identical):
+  the schema defaults and the semantic defaults of change request CR-11,
+  expanded exactly once and nothing else added. Leaving the semantic
+  defaults of the canonical example A implicit gives the same normal form,
+  and the server's normal form gives the same digest as the client's
+  `.planNormalizeV2()` on the shipped examples, acceptance recipes and valid
+  probes.
 - `R/roles.R`: `.roleOf(handle, table)`, the role registry of design 6.2.
 - New aggregate method `omopPlanExplainDS(omop_symbol, plan)`: the normalised
   plan, role records, column classes, effective defaults, publication roots

@@ -16,16 +16,19 @@ client.}
 The normalised instance.
 }
 \description{
-Semantic defaults (design sections 1.3, 2.5, 2.9, 2.10, 4.1): absent root
-maps become empty objects; absent \code{options} and \code{scope} take
-their defaults; \code{publish} lists every output when absent and is a
-sorted set; an index or criteria population without \code{coverage}
-inherits \code{options.coverage} (or the coverage defaults), and
-\code{restrict_to_observation = false} lowers to \code{on_missing =
-"keep"}; an output without \code{grain} takes \code{episode} over an
-indexed population and \code{person} otherwise; survival
-\code{outcome_mode} and \code{event_order} take the format matrix defaults;
-wide/long \code{options.temporal} takes its defaults. Pure: no database
-access, no validation (conflicts are reported by the validator).
+The schema \code{default} keywords, applied in the branch each instance
+matches, then the semantic defaults the design states in prose (sections
+1.3, 2.5, 2.9, 2.10, 4.1; the rule set of change request CR-11, which the
+canonical example A of WS-0 writes out): absent root \code{options}
+and registries are empty objects; an absent \code{publish} is the output
+names in declaration order; an index or criteria population without
+\code{coverage} takes \code{options.coverage} (or the coverage defaults),
+with \code{on_missing = "keep"} when its \code{restrict_to_observation} is
+false; an output without \code{grain} takes \code{episode} over an indexed
+population and \code{person} otherwise; a \code{wide} output with
+\code{columns: null} takes every variable in declaration order; survival
+\code{outcome_mode} and \code{event_order} take the format matrix defaults.
+No other field is added and none is removed. Pure: no database access, no
+validation (conflicts are reported by the validator).
 }
 \keyword{internal}
