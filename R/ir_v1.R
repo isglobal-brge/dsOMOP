@@ -159,9 +159,18 @@
     if (depth > 64L) return(add(path, ": filter nesting is too deep"))
     if (!.v1IsObject(x)) return(add(path, ": a row filter is an and/or group or a leaf object"))
     keys <- names(.v1Compact(x))
-    group <- intersect(keys, c("and", "or"))
+    group <- intersect(keys, c("and", "or", "not"))
     if (length(group)) {
-      if (length(keys) != 1L) return(add(path, ": a filter group carries exactly one of and/or"))
+      if (length(keys) != 1L || length(group) != 1L) {
+        return(add(path, ": a filter group carries exactly one of and/or/not"))
+      }
+      # NOT in the row grammar (design 6.6): one negated predicate.
+      if (identical(group, "not")) {
+        if (!.v1IsObject(x[["not"]]) || length(x[["not"]]) == 0L) {
+          return(add(path, "/not: a NOT group negates one predicate"))
+        }
+        return(row_filter(x[["not"]], paste0(path, "/not"), depth + 1L))
+      }
       items <- .v1Items(x[[group]])
       for (i in seq_along(items)) row_filter(items[[i]], paste0(path, "/", group, "/", i - 1L), depth + 1L)
       return(invisible())
@@ -206,9 +215,16 @@
       }
       return(invisible())
     }
-    group <- intersect(keys, c("and", "or"))
+    group <- intersect(keys, c("and", "or", "not"))
     if (length(group) != 1L || length(keys) != 1L) {
       return(add(path, ": unknown or malformed population filter specification"))
+    }
+    # NOT in the population grammar (design 6.6): one negated filter.
+    if (identical(group, "not")) {
+      if (!is.list(x[["not"]]) || length(x[["not"]]) == 0L) {
+        return(add(path, "/not: a NOT group negates one filter"))
+      }
+      return(filter_tree(x[["not"]], paste0(path, "/not"), depth + 1L))
     }
     items <- .v1Items(x[[group]])
     for (i in seq_along(items)) filter_tree(items[[i]], paste0(path, "/", group, "/", i - 1L), depth + 1L)

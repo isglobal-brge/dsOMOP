@@ -826,11 +826,22 @@
     return(invisible(TRUE))
   }
 
-  group_keys <- intersect(node_names %||% character(0), c("and", "or"))
+  group_keys <- intersect(node_names %||% character(0), c("and", "or", "not"))
   if (length(group_keys) > 0L) {
     if (length(group_keys) != 1L || length(node_names) != 1L) {
-      stop("Population filter nodes cannot mix AND/OR groups with each other ",
-           "or with leaf fields.", call. = FALSE)
+      stop("Population filter nodes cannot mix AND/OR/NOT groups with each ",
+           "other or with leaf fields.", call. = FALSE)
+    }
+    # NOT (design-2.10.3 section 6.6): one negated filter; SQL three-valued
+    # logic keeps an UNKNOWN child UNKNOWN, so only TRUE survives.
+    if (identical(group_keys, "not")) {
+      child <- node$not
+      if (!is.list(child) || length(child) == 0L) {
+        stop("Population filter NOT group must contain one filter.",
+             call. = FALSE)
+      }
+      .validateCohortFilterTree(child, .depth = .depth + 1L, .state = .state)
+      return(invisible(TRUE))
     }
     children <- node[[group_keys]]
     if (!is.list(children) || length(children) == 0L) {
@@ -902,6 +913,8 @@
     node$and
   } else if ("or" %in% names(node)) {
     node$or
+  } else if ("not" %in% names(node)) {
+    list(node$not)
   } else {
     unname(node)
   }
@@ -1099,12 +1112,28 @@
                                     index_anchor = index_anchor))
   }
 
-  group_keys <- intersect(node_names %||% character(0), c("and", "or"))
+  group_keys <- intersect(node_names %||% character(0), c("and", "or", "not"))
   if (length(group_keys) > 0L) {
     if (length(group_keys) != 1L || length(node_names) != 1L) {
-      stop("Population filter nodes cannot mix AND/OR groups with each other ",
-           "or with leaf fields.", call. = FALSE)
+      stop("Population filter nodes cannot mix AND/OR/NOT groups with each ",
+           "other or with leaf fields.", call. = FALSE)
     }
+  }
+
+  if (identical(group_keys, "not")) {
+    if (!is.list(node$not) || length(node$not) == 0) {
+      stop("Population filter NOT group must contain one filter.",
+           call. = FALSE)
+    }
+    part <- .compileCohortFilterWhere(handle, node$not, bp, person_cols,
+                                      index_anchor = index_anchor,
+                                      .depth = .depth + 1L, .state = .state)
+    if (!nzchar(part)) {
+      stop("A population filter in the NOT group compiled to no predicate.",
+           call. = FALSE)
+    }
+    # Native three-valued logic: NOT UNKNOWN stays UNKNOWN (design 6.6).
+    return(paste0("(NOT ", part, ")"))
   }
 
   if (identical(group_keys, "and")) {

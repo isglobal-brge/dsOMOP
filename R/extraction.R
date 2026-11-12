@@ -1285,6 +1285,9 @@
     return(any(vapply(filter$or, .filterTreeReferencesColumn, logical(1),
                       col = col)))
   }
+  if ("not" %in% names(filter)) {
+    return(.filterTreeReferencesColumn(filter$not, col))
+  }
   identical(tolower(filter$var %||% ""), col)
 }
 
@@ -1307,23 +1310,46 @@
 #' @return The filter structure with date sentinels resolved
 #' @keywords internal
 .resolveFilterDateColumns <- function(filter, bp, table_lower) {
+  cols <- bp$columns[[table_lower]]$column_name %||% character(0)
+  # Defect F-1: the table-agnostic concept sentinel `concept_id` (the client's
+  # concept_set row filter without a concept_col) is the table's domain concept
+  # column, resolved like the date sentinels (a table with a literal concept_id
+  # column keeps it).
+  concept_col <- if ("concept_id" %in% cols) NULL else .getDomainConceptColumn(bp, table_lower)
+  .resolveFilterSentinels(filter, date_col = .getDateColumn(bp, table_lower),
+                          concept_col = concept_col)
+}
+
+#' Resolve the table-agnostic sentinels of a custom filter tree
+#'
+#' \code{start_date} / \code{end_date} become \code{date_col} and
+#' \code{concept_id} becomes \code{concept_col} (when given); every other leaf
+#' is unchanged. Walks AND / OR / NOT groups.
+#'
+#' @param filter Custom filter tree.
+#' @param date_col The source's date column, or NULL.
+#' @param concept_col The source's concept column, or NULL.
+#' @return The filter tree with sentinels resolved.
+#' @keywords internal
+.resolveFilterSentinels <- function(filter, date_col = NULL, concept_col = NULL) {
   if (is.null(filter) || length(filter) == 0) return(filter)
-
-  if ("and" %in% names(filter)) {
-    filter$and <- lapply(filter$and, .resolveFilterDateColumns, bp = bp,
-                         table_lower = table_lower)
+  for (group in c("and", "or")) {
+    if (group %in% names(filter)) {
+      filter[[group]] <- lapply(filter[[group]], .resolveFilterSentinels,
+                                date_col = date_col, concept_col = concept_col)
+      return(filter)
+    }
+  }
+  if ("not" %in% names(filter)) {
+    filter$not <- .resolveFilterSentinels(filter$not, date_col = date_col,
+                                          concept_col = concept_col)
     return(filter)
   }
-  if ("or" %in% names(filter)) {
-    filter$or <- lapply(filter$or, .resolveFilterDateColumns, bp = bp,
-                        table_lower = table_lower)
-    return(filter)
-  }
-
   var <- tolower(filter$var %||% "")
-  if (var %in% c("start_date", "end_date")) {
-    date_col <- .getDateColumn(bp, table_lower)
-    if (!is.null(date_col)) filter$var <- date_col
+  if (var %in% c("start_date", "end_date") && !is.null(date_col)) {
+    filter$var <- date_col
+  } else if (identical(var, "concept_id") && !is.null(concept_col)) {
+    filter$var <- concept_col
   }
   filter
 }
@@ -1424,22 +1450,36 @@
   if (is.null(filter) || length(filter) == 0) return(invisible(TRUE))
 
   leaf_values <- if (is.list(filter) && !is.null(names(filter)) &&
-      !any(c("and", "or") %in% names(filter))) {
+      !any(c("and", "or", "not") %in% names(filter))) {
     length(unlist(filter$value, use.names = FALSE))
   } else 0L
   .state <- .filterComplexityVisit(.state, .depth, leaf_values)
 
   if (!is.list(filter) || is.null(names(filter)) ||
       any(!nzchar(names(filter))) || anyDuplicated(names(filter))) {
-    stop("Custom filters must be named AND/OR groups or named leaves.",
+    stop("Custom filters must be named AND/OR/NOT groups or named leaves.",
          call. = FALSE)
   }
-  group_keys <- intersect(names(filter), c("and", "or"))
+  group_keys <- intersect(names(filter), c("and", "or", "not"))
   if (length(group_keys) > 0L) {
     if (length(group_keys) != 1L || length(names(filter)) != 1L) {
-      stop("Custom filter nodes cannot mix AND/OR groups with each other or ",
-           "with leaf fields.", call. = FALSE)
+      stop("Custom filter nodes cannot mix AND/OR/NOT groups with each other ",
+           "or with leaf fields.", call. = FALSE)
     }
+  }
+
+  # NOT (design-2.10.3 section 6.6): one negated predicate, compiled with SQL
+  # three-valued logic (NOT UNKNOWN stays UNKNOWN; only TRUE rows are kept).
+  if (identical(group_keys, "not")) {
+    if (!is.list(filter$not) || length(filter$not) == 0) {
+      stop("Custom filter NOT group must contain one predicate.",
+           call. = FALSE)
+    }
+    .assertCustomFilterSafe(
+      filter$not, valid_columns, handle = handle, table = table,
+      .depth = .depth + 1L, .state = .state
+    )
+    return(invisible(TRUE))
   }
 
   if (identical(group_keys, "and")) {
@@ -1574,10 +1614,20 @@
   if (is.null(filter) || length(filter) == 0) return(NULL)
 
   leaf_values <- if (is.list(filter) && !is.null(names(filter)) &&
-      !any(c("and", "or") %in% names(filter))) {
+      !any(c("and", "or", "not") %in% names(filter))) {
     length(unlist(filter$value, use.names = FALSE))
   } else 0L
   .state <- .filterComplexityVisit(.state, .depth, leaf_values)
+
+  if ("not" %in% names(filter)) {
+    part <- .compileFilter(handle, filter$not, table_alias, valid_columns,
+                           .depth = .depth + 1L, .state = .state)
+    if (is.null(part) || !nzchar(part)) {
+      stop("Custom filter NOT group compiled to no predicate.", call. = FALSE)
+    }
+    # Native three-valued logic: NOT UNKNOWN is UNKNOWN (design 6.6).
+    return(paste0("(NOT ", part, ")"))
+  }
 
   if ("and" %in% names(filter)) {
     parts <- vapply(filter$and, function(f) {
@@ -2106,8 +2156,18 @@
         stop("Expanded feature concept_set exceeds the server ",
              "max_filter_values cap of ", max_values, ".", call. = FALSE)
       }
+      # Defect A-E1: a DECLARED set that resolves to nothing matches no row
+      # (state none), never every row of the stream.
+      spec$concept_state <- if (length(spec$concept_set)) "set" else "none"
     } else {
       spec$concept_set <- exact_ids(concept_set)
+      # A spec resolved before keeps its state (an expanded empty set stays
+      # none when resolved again by the extraction).
+      spec$concept_state <- if (length(spec$concept_set)) {
+        "set"
+      } else if (identical(spec$concept_state, "none")) {
+        "none"
+      } else "all"
     }
     spec
   })
@@ -2150,6 +2210,8 @@
       } else {
         concept_tag <- if (length(spec$concept_set) > 0L) {
           paste(spec$concept_set, collapse = "_")
+        } else if (identical(spec$concept_state, "none")) {
+          "none"
         } else {
           "all"
         }
@@ -2220,16 +2282,29 @@
 .featureScopeFilter <- function(specs, default_concept_col) {
   if (is.null(specs) || length(specs) == 0L) return(NULL)
   concept_sets <- lapply(specs, function(spec) spec$concept_set)
+  # A declared set that resolved to nothing (state none, defect A-E1) adds no
+  # rows to the shared stream; an undeclared one (state all) keeps it unscoped.
+  none <- vapply(specs, function(spec) identical(spec$concept_state, "none"), logical(1))
   # One unscoped spec means the shared source stream must remain unscoped.
-  if (any(lengths(concept_sets) == 0L)) return(NULL)
+  if (any(lengths(concept_sets) == 0L & !none)) return(NULL)
 
-  leaves <- lapply(seq_along(specs), function(i) {
+  column_of <- function(i) {
     column <- specs[[i]]$concept_col %||% default_concept_col
     if (is.null(column) || length(column) != 1L || is.na(column) ||
         !nzchar(column)) {
       stop("A scoped feature requires a usable concept_col.", call. = FALSE)
     }
-    list(var = tolower(column), op = "in", value = concept_sets[[i]])
+    tolower(column)
+  }
+  scoped <- which(!none)
+  if (!length(scoped)) {
+    # Every spec matches nothing: a predicate no row satisfies.
+    column <- column_of(1L)
+    return(list(and = list(list(var = column, op = "is_null"),
+                           list(var = column, op = "not_null"))))
+  }
+  leaves <- lapply(scoped, function(i) {
+    list(var = column_of(i), op = "in", value = concept_sets[[i]])
   })
   if (length(leaves) == 1L) leaves[[1]] else list(or = leaves)
 }
@@ -2383,6 +2458,7 @@
           return(unique(unlist(lapply(filter$or, filter_columns),
                                use.names = FALSE)))
         }
+        if (!is.null(filter$not)) return(filter_columns(filter$not))
         tolower(as.character(filter$var %||% ""))
       }
       spec_filter_cols <- unique(unlist(lapply(feature_specs, function(spec) {
@@ -3189,17 +3265,25 @@
 
 #' Evaluate a custom filter tree as a row mask over an in-memory data frame
 #'
-#' Mirrors \code{\link{.compileFilter}}'s AND/OR/leaf grammar but evaluates it
-#' against an already-extracted (disclosure-filtered) data frame in R, returning
-#' a logical keep-mask. Used to scope a single feature spec's rows by its own
-#' row filter (e.g. a unit/type slice) without re-querying the database. A leaf
-#' that references a column not present in the frame matches NOTHING (fail-closed
-#' for that leaf), and an unknown operator likewise drops the row, so a filter
-#' can only ever narrow the rows feeding the aggregation.
+#' The R mirror of \code{\link{.compileFilter}} and of the language 2.0
+#' predicate compiler (\code{.predicateSql()}), with the SAME three-valued
+#' truth table (design-2.10.3 section 6.6): a comparison with a missing operand
+#' is UNKNOWN (\code{NA}); \code{x IN (v...)} is TRUE when \code{x} equals a
+#' listed value, FALSE when \code{x} is non-missing and equals none, and
+#' UNKNOWN when \code{x} is missing; \code{NOT IN} is its negation with UNKNOWN
+#' preserved; \code{not} is \code{!mask} (NA stays NA); \code{and} / \code{or}
+#' are Kleene (R's \code{&} / \code{|}); \code{is_null} / \code{not_null} are
+#' the only leaves that turn a missing value into TRUE/FALSE. The mask is
+#' NA-preserving: callers keep rows with \code{mask \%in\% TRUE}. A leaf naming
+#' a column the frame does not carry, or an unknown operator, is refused (the
+#' validators reject both before evaluation; the mask never fails closed
+#' silently). Accepts the v1 leaf forms (\code{between} with two values,
+#' \code{value_bin}, operator aliases) and the v2 \code{between} object
+#' (\code{lower}, \code{upper}, \code{upper_inclusive}).
 #'
-#' @param filter List; the filter structure (and/or/leaf)
+#' @param filter List; the filter structure (and/or/not/leaf)
 #' @param df Data frame to evaluate against
-#' @return Logical vector of length \code{nrow(df)}
+#' @return Logical vector of length \code{nrow(df)}, \code{NA} for UNKNOWN
 #' @keywords internal
 .evalFilterMask <- function(filter, df) {
   n <- nrow(df)
@@ -3215,16 +3299,23 @@
     for (f in filter$or) mask <- mask | .evalFilterMask(f, df)
     return(mask)
   }
+  if ("not" %in% names(filter)) {
+    return(!.evalFilterMask(filter$not, df))
+  }
 
   var <- tolower(filter$var %||% "")
   op <- tolower(filter$op %||% "")
   value <- filter$value
-  if (!nzchar(var) || !var %in% names(df)) return(rep(FALSE, n))
+  if (!nzchar(var) || !var %in% names(df)) {
+    stop("Filter column '", var, "' is not a column of the evaluated rows.",
+         call. = FALSE)
+  }
   col <- df[[var]]
 
   is_date_col <- inherits(col, "Date")
   is_datetime_col <- inherits(col, c("POSIXct", "POSIXlt"))
   typed_value <- function(x, label = "filter value") {
+    if (is.list(x) && length(x) == 1L) x <- x[[1L]]
     if (is_date_col) return(.isoDate(x, label))
     if (is_datetime_col) {
       date <- .isoDate(x, label)
@@ -3234,7 +3325,9 @@
       }
       return(as.POSIXct(date, tz = timezone[1]))
     }
-    suppressWarnings(as.numeric(x))
+    if (is.character(x) && !is.character(col)) return(suppressWarnings(as.numeric(x)))
+    if (is.logical(x) && is.numeric(col)) return(as.numeric(x))
+    x
   }
   typed_values <- function(x, label = "filter value") {
     values <- unlist(x, use.names = FALSE)
@@ -3255,14 +3348,32 @@
       return(as.POSIXct(vapply(parsed, as.character, character(1)),
                         tz = timezone[1]))
     }
+    if (is.logical(values) && is.numeric(col)) return(as.numeric(values))
     values
+  }
+  # IN with the SQL table: NA operand -> UNKNOWN (never FALSE).
+  in_mask <- function(values) {
+    out <- col %in% values
+    out[is.na(col)] <- NA
+    out
   }
 
   between_mask <- function() {
-    values <- unlist(value, use.names = FALSE)
-    if (length(values) != 2L) return(rep(FALSE, n))
-    lower <- typed_value(values[1], "filter lower bound")
-    upper <- typed_value(values[2], "filter upper bound")
+    if (is.list(value) && !is.null(names(value)) && !is.null(value$lower)) {
+      lower_raw <- value$lower
+      upper_raw <- value$upper
+      inclusive <- !isFALSE(unlist(value$upper_inclusive))
+    } else {
+      values <- unlist(value, use.names = FALSE)
+      if (length(values) != 2L) {
+        stop("BETWEEN filters require exactly two bounds.", call. = FALSE)
+      }
+      lower_raw <- values[1]
+      upper_raw <- values[2]
+      inclusive <- TRUE
+    }
+    lower <- typed_value(lower_raw, "filter lower bound")
+    upper <- typed_value(upper_raw, "filter upper bound")
     if (is_datetime_col) {
       # ISO bounds denote whole calendar days. Use an exclusive next-midnight
       # upper bound so events later on the stated end date are retained.
@@ -3271,34 +3382,29 @@
         timezone <- "UTC"
       }
       next_midnight <- as.POSIXct(
-        .isoDate(values[2], "filter upper bound") + 1L, tz = timezone[1]
+        .isoDate(unlist(upper_raw), "filter upper bound") + if (inclusive) 1L else 0L,
+        tz = timezone[1]
       )
       return(col >= lower & col < next_midnight)
     }
-    col >= lower & col <= upper
+    if (inclusive) col >= lower & col <= upper else col >= lower & col < upper
   }
 
-  mask <- switch(op,
-    "==" =, "eq" = col == if (is_date_col || is_datetime_col) {
-      typed_value(value)
-    } else value,
-    "!=" =, "ne" = col != if (is_date_col || is_datetime_col) {
-      typed_value(value)
-    } else value,
+  switch(op,
+    "==" =, "eq" = col == typed_value(value),
+    "!=" =, "ne" = col != typed_value(value),
     ">=" =, "gte" = col >= typed_value(value),
     "<=" =, "lte" = col <= typed_value(value),
     ">"  =, "gt"  = col > typed_value(value),
     "<"  =, "lt"  = col < typed_value(value),
-    "in" = !is.na(col) & col %in% typed_values(value),
-    "not_in" = !is.na(col) & !(col %in% typed_values(value)),
+    "in" = in_mask(typed_values(value)),
+    "not_in" = !in_mask(typed_values(value)),
     "between" = between_mask(),
     "is_null" = is.na(col),
     "not_null" = !is.na(col),
     "value_bin" = col >= as.numeric(value$lower) & col < as.numeric(value$upper),
-    rep(FALSE, n)
+    stop("Unknown filter operator '", op, "'.", call. = FALSE)
   )
-  mask[is.na(mask)] <- FALSE
-  mask
 }
 
 #' Compute person-level features from event data
@@ -3882,7 +3988,10 @@
              "' concept_col is unavailable in the extracted table.",
              call. = FALSE)
       }
-      if (!is.null(spec_concept_col) && spec_concept_col %in% names(df) &&
+      if (identical(spec$concept_state, "none")) {
+        # Defect A-E1: a declared set that resolved to nothing selects no row.
+        spec_data <- df[0, , drop = FALSE]
+      } else if (!is.null(spec_concept_col) && spec_concept_col %in% names(df) &&
           length(cs) > 0) {
         spec_data <- df[df[[spec_concept_col]] %in% cs, , drop = FALSE]
       } else {
@@ -3943,12 +4052,20 @@
       # already-extracted (disclosure-filtered) frame.
       if (!is.null(spec$filter)) {
         feature_filter_cols <- setdiff(names(spec_data), .identifierColumns())
-        .assertCustomFilterSafe(spec$filter, feature_filter_cols)
-        keep <- .evalFilterMask(spec$filter, spec_data)
-        spec_data <- spec_data[keep, , drop = FALSE]
+        spec_filter <- .resolveFilterSentinels(
+          spec$filter, date_col = date_col,
+          concept_col = if (!"concept_id" %in% names(spec_data)) spec_concept_col)
+        .assertCustomFilterSafe(spec_filter, feature_filter_cols)
+        keep <- .evalFilterMask(spec_filter, spec_data)
+        # NA-preserving mask: only TRUE rows are kept (UNKNOWN is dropped).
+        spec_data <- spec_data[keep %in% TRUE, , drop = FALSE]
       }
 
-      concept_tag <- if (length(cs) > 0) paste(cs, collapse = "_") else "all"
+      concept_tag <- if (length(cs) > 0) {
+        paste(cs, collapse = "_")
+      } else if (identical(spec$concept_state, "none")) {
+        "none"
+      } else "all"
       features <- .add_feature(features, spec, spec_data, concept_tag, df)
       if (!is.null(spec$type) && spec$type %in% zero_fill_types &&
           !is.null(spec$name) && nzchar(spec$name)) {

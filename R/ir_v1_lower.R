@@ -125,6 +125,9 @@
   if (is.null(x) || (is.list(x) && length(x) == 0L)) return(NULL)
   if (!.v1IsObject(x)) return(x)
   x <- .v1Compact(x)
+  if (identical(names(x), "not")) {
+    return(list(not = .v1Predicate(x[["not"]], st = st, path = path)))
+  }
   group <- intersect(names(x), c("and", "or"))
   if (length(group) == 1L && length(x) == 1L) {
     items <- lapply(.v1Items(x[[group]]), .v1Predicate, st = st, path = path)
@@ -211,6 +214,9 @@
     }
     if (length(params) == 0L) params <- structure(list(), names = character(0))
     return(list(legacy = list(type = type, params = params)))
+  }
+  if (identical(names(x), "not")) {
+    return(list(not = .v1Criteria(x[["not"]], st = st, path = path)))
   }
   group <- intersect(names(x), c("and", "or"))
   if (length(group) == 1L && length(x) == 1L) {
