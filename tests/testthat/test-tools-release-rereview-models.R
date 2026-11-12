@@ -188,7 +188,7 @@ test_that("Astra B10 boundary probe: exact closed days share protected horizon f
   check(0L, 0L, "start", 1, 1)
 })
 
-test_that("Deviation 16: the q-grid shift is bounded inside the grid; clipping is excluded", {
+test_that("Deviation 16: the q-grid shift is bounded only inside the grid", {
   g <- .dsomopReleaseSccsQGrid()
   # Astra's witness: just below an odds midpoint the exact conditional
   # expected counts (no sampling or release noise) give the shift

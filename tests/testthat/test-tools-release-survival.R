@@ -368,6 +368,39 @@ test_that("two-way reconciliation and display keep both parents", {
   expect_equal(.dsomopReleaseBoxSimplex(c(1, 2), 10, c(3, 3)), c(3, 3))
 })
 
+
+test_that("subgroup coarsening preserves the complete signed and displayed C6/C8 atoms", {
+  mask <- .dsomopReleaseExitMask(list(start = 0L, end = 365L,
+                                      anchor_start = "start", anchor_end = "start"))
+  nevent <- sum(mask[, "event"])
+  nnonevent <- sum(mask[, colnames(mask) != "event"])
+  raw <- function(n, e, shift) list(
+    n = n, e = e, ne = n - e, t = 200 * n,
+    event = e / nevent + 8 * sin(seq_len(nevent) + shift),
+    nonevent = (n - e) / nnonevent + 12 * cos(seq_len(nnonevent) + shift))
+  arm <- list("arm=target" = raw(2200, 700, 1),
+              "arm=comparator" = raw(2100, 500, 2))
+  subs <- lapply(1:4, function(i) list(
+    "arm=target" = raw(450 + i * 30, 140 + i * 10, i + 2),
+    "arm=comparator" = raw(420 + i * 30, 110 + i * 10, i + 6)))
+  fine <- .omopReleaseInteractionCoxPipeline(arm, subs, mask)
+  combine <- list(1:2, 3:4)
+  coarse <- .omopReleaseInteractionCoxPipeline(arm, subs, mask, combine)
+  expect_identical(coarse$arm, fine$arm)
+  for (a in names(arm)) {
+    for (g in seq_along(combine)) {
+      for (field in c("n_signed", "n_display", "status_signed", "events_display",
+                      "time_signed", "time_display", "h", "cells")) {
+        expected <- Reduce(`+`, lapply(fine$subgroups[combine[[g]]], function(s) s[[a]][[field]]))
+        expect_equal(coarse$subgroups[[g]][[a]][[field]], expected,
+                     tolerance = 1e-10, info = paste(a, g, field))
+      }
+    }
+    expect_equal(Reduce(`+`, lapply(coarse$subgroups, function(s) s[[a]]$cells)),
+                 coarse$arm[[a]]$cells, tolerance = 1e-6)
+  }
+})
+
 .family_handle <- function(n = 400, seed = 3) {
   h <- create_test_handle(n_persons = n)
   DBI::dbExecute(h$conn, "DELETE FROM observation_period")
@@ -424,8 +457,9 @@ test_that("interaction families hang under their arms: signed and displayed marg
                    info = paste(model, col))
     }
     ow <- attr(sex, "dsomop_release")$owners
-    arm <- ow[[1L]]
-    subs <- ow[2:4]
+    c6 <- Filter(function(o) identical(o$family, "C6"), ow)
+    arm <- c6[[length(c6)]]
+    subs <- c6[-length(c6)]
     for (j in 1:2) {
       a <- arm$components[[j]]
       s <- lapply(subs, function(o) o$components[[j]])
@@ -438,8 +472,9 @@ test_that("interaction families hang under their arms: signed and displayed marg
       for (x in s) expect_equal(sum(x$status), x$n, tolerance = 1e-9)
     }
     if (identical(model, "cox")) {
-      c8_arm <- ow[[5L]]
-      c8_subs <- ow[6:8]
+      c8 <- Filter(function(o) identical(o$family, "C8"), ow)
+      c8_arm <- c8[[1L]]
+      c8_subs <- c8[-1L]
       expect_identical(c8_arm$family, "C8")
       event <- c8_arm$status_of_cell == "event"
       for (j in 1:2) {
