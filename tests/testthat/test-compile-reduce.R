@@ -400,3 +400,34 @@ test_that("the reducer stream cap admits the exact limit and refuses the next re
   expect_identical(err$field, "/variables/n/reducer")
   expect_false(any(c("rows", "count", "condition", "data") %in% names(err)))
 })
+
+test_that("cost reducer consumers bind both the parent origin and inherited index visit", {
+  h <- .ws4_reach_handle()
+  on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
+  DBI::dbExecute(h$conn, paste0(
+    "INSERT INTO cost (cost_id, cost_event_id, cost_domain_id, cost_type_concept_id, ",
+    "currency_concept_id, total_cost) SELECT 939080, procedure_occurrence_id, 'Procedure', 32817, ",
+    "44818668, 100 FROM procedure_occurrence WHERE person_id = 1007 AND procedure_concept_id = 4283095"))
+  parent_key <- as.character(DBI::dbGetQuery(h$conn,
+    "SELECT cost_event_id FROM cost WHERE cost_id = 939080")$cost_event_id)
+  vars <- list(n = .rd("count", "costs"), total = .rd("sum", "costs"),
+               course = list(source = list(interval = "ci"), reducer = list(fn = "era_count")))
+  plan <- .ws7_scenario_plan(vars, events = list(
+    proc = list(table = "procedure_occurrence", visit = list(index = TRUE)),
+    vis = list(table = "visit_occurrence"),
+    costs = list(cost = list(event = list(event = "proc"), field = "total_cost", currency = 44818668))))
+  plan$intervals <- list(ci = list(source = list(event = "costs")))
+  plan$populations$t$index$source <- list(any_of = list(list(event = "proc"), list(event = "vis")))
+  frame <- data.frame(subject_id = 1007L, cohort_start_date = as.Date("2020-01-01"),
+                       cohort_end_date = as.Date("2020-12-31"),
+                       index_source = c("proc", "proc", "vis", "vis"),
+                       index_key = c(parent_key, parent_key, "700701", "700702"),
+                       index_visit_id = c(700701, 700702, 700701, 700702))
+  run <- .ws7_scenario_run(h, plan, frame)
+  signature <- function(x) paste(x$index_source, x$index_key, x$index_visit_id)
+  at <- match(signature(frame), signature(run$roster))
+  got <- run$frame[match(run$roster$cohort_row_id[at], run$frame$cohort_row_id), ]
+  expect_identical(got$n, c(1L, 0L, 1L, 0L))
+  expect_identical(got$total, c(100, 0, 100, 0))
+  expect_identical(got$course, c(1L, 0L, 1L, 0L))
+})
