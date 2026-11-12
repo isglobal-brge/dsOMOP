@@ -5237,6 +5237,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       assigned, entry, scope_present = scope_present,
       effective_params = effective_params,
       dataset_identity = .dsomopDpDatasetIdentity(handle),
+      person_key = .personKey(handle),
       public_config = list(
         target_dialect = handle$target_dialect,
         schemas = list(

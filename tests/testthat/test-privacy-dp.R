@@ -113,10 +113,13 @@
   if (reverse_rows) value <- value[rev(seq_len(nrow(value))), , drop = FALSE]
   value <- .testPseudonymize(value)
   if (.dsomopDpEnabled()) {
-    value <- .dp_seal(value, producer = producer)
+    value <- .dp_seal(value, producer = producer, domains = .dp_domains)
   }
   value
 }
+
+# Public categorical domains the fixtures' producers declare (B05).
+.dp_domains <- list(category = c("a", "b", "c"), flag = c("no", "yes"))
 
 .dp_state_files <- function(state) {
   files <- list.files(
@@ -138,13 +141,9 @@
   }
   input <- .dsomopDpValidateInput(x, policy)
   common$order_value <- .dsomopDpOrderVector(input$x, common$order_by)
-  ids <- .dsomopTypedPersonIds(x, input$token)
-  tokens <- if (length(ids)) {
-    .dsomopReleasePersonTokens(.dsomopReleaseKeys(policy), policy, ids)
-  } else character(0)
+  tokens <- .dsomopDpSealedReleaseTokens(x, input$token)
   capsule <- attr(x, "dsomop_dp_provenance", exact = TRUE)
-  analysis <- .dsomopTypedAnalysis(input, common, policy, tokens,
-                                   capsule$lineage_id)
+  analysis <- .dsomopTypedAnalysis(input, common, policy, tokens, capsule)
   analysis$common <- common
   analysis$values <- stats::setNames(
     vapply(analysis$components, function(c) c$value, numeric(1L)),
@@ -1718,7 +1717,8 @@ test_that("longitudinal DP primitives bound contributions and return fixed shape
   categorical_records_analysis <- .dp_analysis(
     table, categorical_records_spec, policy
   )
-  expect_identical(unname(categorical_records_analysis$values), c(2, 3, 1))
+  # Cells a, b, c and Other of the complete basis.
+  expect_identical(unname(categorical_records_analysis$values), c(2, 3, 1, 0))
   expect_true(all(categorical_records_analysis$per_person <= 2))
   expect_identical(
     .dp_analysis(
@@ -1737,17 +1737,19 @@ test_that("longitudinal DP primitives bound contributions and return fixed shape
     event_date = as.Date("2020-01-01"), stringsAsFactors = FALSE
   )
   tied <- .dp_seal(
-    .testPseudonymize(tied_raw), producer = "test/canonical-record-order"
+    .testPseudonymize(tied_raw), producer = "test/canonical-record-order",
+    domains = .dp_domains["category"]
   )
   tied_reverse <- .dp_seal(
     .testPseudonymize(tied_raw[4:1, , drop = FALSE]),
-    producer = "test/canonical-record-order"
+    producer = "test/canonical-record-order",
+    domains = .dp_domains["category"]
   )
   tied_spec <- categorical_records_spec
   tied_spec$population_id <- "tied-order"
   tied_forward <- .dp_analysis(tied, tied_spec, policy)
   tied_backward <- .dp_analysis(tied_reverse, tied_spec, policy)
-  expect_identical(unname(tied_forward$values), c(1, 1, 1))
+  expect_identical(unname(tied_forward$values), c(1, 1, 1, 0))
   expect_identical(tied_forward$values, tied_backward$values)
 
   distinct_spec <- list(
@@ -1884,11 +1886,13 @@ test_that("irrelevant ordering and unbounded public domains are rejected", {
     statistic = "bounded_record_count", reducer = "presence",
     max_contributions = 2L, population_id = "cohort-a"
   ), policy), "requires reducer='records'")
+  # A distinct cardinality is over the complete registered domain: its
+  # levels may only restate it (B05).
   expect_error(.dp_analysis(table, list(
     statistic = "bounded_distinct", variable = "category",
-    reducer = "distinct", max_contributions = 2L,
+    levels = c("a", "b"), reducer = "distinct", max_contributions = 2L,
     population_id = "cohort-a"
-  ), policy), "field 'levels' is required")
+  ), policy), "complete registered public domain")
   expect_error(.dp_analysis(table, list(
     statistic = "bounded_distinct", variable = "category",
     levels = c("a", "b", "c"), reducer = "distinct",
@@ -1926,7 +1930,8 @@ test_that("first and last admission is unchanged by resealed private values", {
   missing$measurement[] <- NA_real_
   inputs <- lapply(list(missing = missing, observed = observed,
                         empty = observed[FALSE, , drop = FALSE]), function(raw) {
-    .dp_seal(.testPseudonymize(raw), producer = "test/public-admission")
+    .dp_seal(.testPseudonymize(raw), producer = "test/public-admission",
+             domains = list(category = c("a", "b"), flag = c("no", "yes")))
   })
   expect_length(unique(vapply(inputs, .dp_lineage, character(1L))), 1L)
 
@@ -1979,9 +1984,10 @@ test_that("first and last admission is unchanged by resealed private values", {
     inputs$empty,
     c(families[[1L]], list(reducer = "first", order_by = "event_date"))
   )
-  # The person total and both public cells exist (and are zero) for an empty
-  # population: the shape never depends on private values.
-  expect_identical(unname(empty_categorical$values), c(0, 0, 0))
+  # The person total and every cell of the complete basis (a, b, Other,
+  # Unknown) exist and are zero for an empty population: the shape never
+  # depends on private values.
+  expect_identical(unname(empty_categorical$values), c(0, 0, 0, 0, 0))
 })
 
 test_that("public DP requirements reject before private admission or release", {
@@ -2015,8 +2021,11 @@ test_that("public DP requirements reject before private admission or release", {
             error = "requires reducer='records'"),
     invalid("bounded_record_count", order_by = "event_date",
             error = "does not use order_by"),
-    invalid("categorical_histogram", levels = c("a", "a"),
-            error = "unique, non-empty public labels"),
+    invalid("categorical_histogram", levels = c("a", ""),
+            error = "non-empty UTF-8 labels"),
+    # Labels outside the registered domain are refused publicly (B05).
+    invalid("categorical_histogram", levels = c("a", "zz_unregistered"),
+            error = "registered public domain"),
     invalid("categorical_histogram", reducer = "mean",
             error = "Unsupported categorical longitudinal reducer"),
     invalid("categorical_histogram", order_by = "event_date",
@@ -2034,7 +2043,9 @@ test_that("public DP requirements reject before private admission or release", {
     invalid("numeric_histogram", order_by = "event_date",
             error = "order_by is only valid"),
     invalid("bounded_distinct", levels = character(0),
-            error = "level cap"),
+            error = "non-empty UTF-8 labels"),
+    invalid("bounded_distinct", levels = "a",
+            error = "complete registered public domain"),
     invalid("bounded_distinct", reducer = "presence",
             error = "requires reducer='distinct'"),
     invalid("bounded_distinct", order_by = "event_date",
@@ -2111,9 +2122,9 @@ test_that("public status and release identify the exact sampler", {
   expect_setequal(names(value), c(
     "protocol", "release_contract", "statistic", "protection",
     "guarantee_scope", "noise_reference_epsilon", "mechanism_epsilon",
-    "api_transcript_epsilon", "delta", "adjacency", "mechanism", "sampler",
+    "api_transcript_epsilon", "adjacency", "mechanism", "sampler",
     "sticky", "allocation", "sensitivity", "noise_sd", "privacy_call_quota",
-    "history_based_admission", "noisy_count", "components"
+    "history_based_admission", "source", "noisy_count", "components"
   ))
   expect_identical(value$protocol, "dsomop-protected-release-v1")
   expect_identical(value$protection, "realised_sticky")
@@ -2124,7 +2135,8 @@ test_that("public status and release identify the exact sampler", {
   expect_true(is.na(value$mechanism_epsilon))
   expect_true(is.na(value$api_transcript_epsilon))
   expect_equal(value$allocation$N, 0.05)
-  expect_identical(value$delta, 0)
+  # No pure-DP delta is claimed for a heuristic release (B14).
+  expect_false("delta" %in% names(value))
   expect_identical(value$sticky, TRUE)
   expect_identical(value$sampler, status$sampler)
   expect_identical(value$mechanism, status$mechanism)
@@ -2767,7 +2779,7 @@ test_that("exclusive mode keeps only the fixed-synopsis typed releases", {
     flag = rep("yes", changed_persons), stringsAsFactors = FALSE
   ))
   if (reverse) raw <- raw[rev(seq_len(nrow(raw))), , drop = FALSE]
-  .dp_seal(.testPseudonymize(raw), producer = producer)
+  .dp_seal(.testPseudonymize(raw), producer = producer, domains = .dp_domains)
 }
 
 test_that("all seven primitives are byte-deterministic and data edits re-draw them", {

@@ -8,6 +8,7 @@
 .dsomopDpStripProvenance <- function(x) {
   attr(x, "dsomop_dp_provenance") <- NULL
   attr(x, .DSOMOP_DP_FILTER_STATE_ATTRIBUTE) <- NULL
+  attr(x, .DSOMOP_DP_RELEASE_PERSONS_ATTRIBUTE) <- NULL
   x
 }
 
@@ -54,7 +55,14 @@
   })
 }
 
-.DSOMOP_DP_PROVENANCE_PROTOCOL <- "dsomop-dp-person-local-provenance-v2"
+# v3 (dsOMOP 2.10.3): the capsule also seals the table's release-person map,
+# its public categorical domains and numeric scales.
+.DSOMOP_DP_PROVENANCE_PROTOCOL <- "dsomop-dp-person-local-provenance-v3"
+.DSOMOP_DP_RELEASE_PERSONS_ATTRIBUTE <- "dsomop_dp_release_persons"
+.DSOMOP_DP_RELEASE_PERSON_NAMESPACES <- c("cdm_person_id_v1", "pseudonym_v1")
+.DSOMOP_DP_RELEASE_IDENTITY_ERROR <- paste0(
+  "This table's protected-release person identity is missing or invalid; ",
+  "prepare the table again with this dsOMOP version.")
 .DSOMOP_DP_LINEAGE_PROTOCOL <- "dsomop-dp-semantic-lineage-v1"
 .DSOMOP_DP_DATASET_PROTOCOL <- "dsomop-dp-dataset-identity-v1"
 .DSOMOP_DP_FRAME_DIGEST_PROTOCOL <- "dsomop-dp-frame-digest-chunked-v1"
@@ -411,11 +419,92 @@
   )))
 }
 
+#' Release-person map of a table being sealed
+#'
+#' One stable private release-person token per pseudonym token, fixed when the
+#' table is sealed and stored (MAC-covered) with it, so typed releases never
+#' depend on which handle or key cache resolved what earlier. With the
+#' pseudonymization key that produced the table's tokens (every production
+#' sealing path passes it), tokens are reversed to the CDM person identifiers
+#' and mapped exactly as the automatic routes map them
+#' (\code{.dsomopReleasePersonTokens}), so typed and automatic components of
+#' the same people coincide. Without a key (fixtures) the namespaced pseudonym,
+#' framed with the table's key id, identifies the person.
+#'
+#' @param x Pseudonymized omop.table.
+#' @param person_key_col Person key column.
+#' @param key Raw 32-byte pseudonymization key, or NULL.
+#' @param policy DP policy.
+#' @return List: namespace, map (named character: pseudonym -> release token).
+#' @keywords internal
+.dsomopDpReleasePersonMap <- function(x, person_key_col, key, policy) {
+  tokens <- x[[person_key_col]]
+  tokens <- enc2utf8(as.character(tokens[!is.na(tokens)]))
+  u <- sort(unique(tokens), method = "radix")
+  contract <- .omopTablePseudonymization(x, caller = "DP release identity")
+  if (!is.null(key)) {
+    if (!is.raw(key) || length(key) != 32L ||
+        !identical(contract$key_id, .personKeyId(key))) {
+      stop("The sealing key does not match the table's pseudonymization ",
+           "contract.", call. = FALSE)
+    }
+    ids <- if (length(u)) .unhashPersonKey(u, key) else character(0)
+    numeric_text <- !is.na(suppressWarnings(as.numeric(ids))) &
+      grepl("^-?[0-9.]+(e[+]?[0-9]+)?$", ids)
+    ids[numeric_text] <- sprintf("%.0f", as.numeric(ids[numeric_text]))
+    text <- .dsomopReleasePersonIdText(ids)
+    namespace <- "cdm_person_id_v1"
+  } else {
+    text <- vapply(u, function(t) {
+      .dsomopFrame("pseudonym/v1", contract$key_id, t)
+    }, character(1L), USE.NAMES = FALSE)
+    namespace <- "pseudonym_v1"
+  }
+  release <- if (length(u)) {
+    .dsomopReleasePersonTokens(.dsomopReleaseKeys(policy), policy, text)
+  } else character(0)
+  list(namespace = namespace, map = stats::setNames(release, u))
+}
+
+# Digest of a release-person map (bound into the capsule contract).
+.dsomopDpReleasePersonsDigest <- function(namespace, map) {
+  .dsomopDpSha256(.dsomopFrame("dsomop-release-persons-v1", namespace,
+                                names(map), unname(map)))
+}
+
+# Public categorical domains / numeric scales declared by a producer.
+.dsomopDpPublicColumnMetadata <- function(x, value, what) {
+  if (is.null(value)) return(NULL)
+  if (!is.list(value) || is.null(names(value)) || anyNA(names(value)) ||
+      any(!nzchar(names(value))) || anyDuplicated(names(value)) ||
+      any(!names(value) %in% names(x))) {
+    stop("Declared public ", what, " must be a named list of table columns.",
+         call. = FALSE)
+  }
+  out <- lapply(value, function(v) {
+    v <- enc2utf8(as.character(v))
+    if (!length(v) || anyNA(v) || any(!nzchar(v)) ||
+        any(!validUTF8(v)) || any(nchar(v, type = "bytes") > 256L)) {
+      stop("Declared public ", what, " must be non-empty UTF-8 labels.",
+           call. = FALSE)
+    }
+    if (identical(what, "domains")) sort(unique(v), method = "radix") else {
+      if (length(v) != 1L) stop("A declared public scale names one scale.",
+                                call. = FALSE)
+      v
+    }
+  })
+  out[order(names(out), method = "radix")]
+}
+
 .dsomopDpSealPersonLocal <- function(x, producer, episode_domain = NULL,
                                      lineage = NULL, policy = NULL,
                                      dataset_identity = NULL,
-                                     dataset_id = NULL) {
+                                     dataset_id = NULL, person_key = NULL,
+                                     domains = NULL, scales = NULL,
+                                     release_persons = NULL) {
   attr(x, "dsomop_dp_provenance") <- NULL
+  attr(x, .DSOMOP_DP_RELEASE_PERSONS_ATTRIBUTE) <- NULL
   if (!.dsomopDpEnabled()) return(x)
   if (!is.data.frame(x) || !.is_omop.table(x)) return(x)
   if (is.null(policy)) policy <- .dsomopDpPolicy()
@@ -456,6 +545,14 @@
     episode_domain = episode_domain,
     operation = lineage
   ))
+  # One stable release-person representation, fixed now (B01).
+  persons <- release_persons %||%
+    .dsomopDpReleasePersonMap(x, keys[[1L]], person_key, policy)
+  if (!persons$namespace %in% .DSOMOP_DP_RELEASE_PERSON_NAMESPACES ||
+      !is.character(persons$map) || is.null(names(persons$map))) {
+    stop(.DSOMOP_DP_RELEASE_IDENTITY_ERROR, call. = FALSE)
+  }
+  attr(x, .DSOMOP_DP_RELEASE_PERSONS_ATTRIBUTE) <- persons$map
   contract <- list(
     protocol = .DSOMOP_DP_PROVENANCE_PROTOCOL,
     adjacency = policy$adjacency,
@@ -466,7 +563,12 @@
     dataset_id = dataset_id,
     producer = producer,
     episode_domain = episode_domain,
-    lineage_id = lineage_id
+    lineage_id = lineage_id,
+    release_person_namespace = persons$namespace,
+    release_persons_sha256 = .dsomopDpReleasePersonsDigest(
+      persons$namespace, persons$map),
+    public_domains = .dsomopDpPublicColumnMetadata(x, domains, "domains"),
+    public_scales = .dsomopDpPublicColumnMetadata(x, scales, "scales")
   )
   capsule <- c(contract, list(
     mac = .dsomopDpProvenanceMac(x, contract, policy)
@@ -483,8 +585,14 @@
   expected_names <- c(
     "protocol", "adjacency", "domain", "snapshot_id", "privacy_epoch",
     "person_key", "dataset_id", "producer", "episode_domain", "lineage_id",
-    "mac"
+    "release_person_namespace", "release_persons_sha256", "public_domains",
+    "public_scales", "mac"
   )
+  if (is.list(capsule) && !is.null(names(capsule)) &&
+      identical(capsule$protocol, "dsomop-dp-person-local-provenance-v2")) {
+    # Sealed by an earlier version: no release-person identity (B01).
+    stop(.DSOMOP_DP_RELEASE_IDENTITY_ERROR, call. = FALSE)
+  }
   if (!is.list(capsule) || is.null(names(capsule)) ||
       !identical(names(capsule), expected_names)) {
     stop("This table carries no DP provenance. DP releases accept only ",
@@ -535,7 +643,38 @@
     stop("The omop.table DP provenance MAC does not match its content.",
          call. = FALSE)
   }
+  map <- attr(x, .DSOMOP_DP_RELEASE_PERSONS_ATTRIBUTE, exact = TRUE)
+  if (!is.character(capsule$release_person_namespace) ||
+      length(capsule$release_person_namespace) != 1L ||
+      !capsule$release_person_namespace %in%
+        .DSOMOP_DP_RELEASE_PERSON_NAMESPACES ||
+      !is.character(map) || is.null(names(map)) || anyNA(map) ||
+      !identical(capsule$release_persons_sha256,
+                 .dsomopDpReleasePersonsDigest(
+                   capsule$release_person_namespace, map))) {
+    stop(.DSOMOP_DP_RELEASE_IDENTITY_ERROR, call. = FALSE)
+  }
   capsule
+}
+
+#' Sealed release-person tokens of a verified table's rows
+#'
+#' Uses only the release-person map sealed with the table: no handle, key
+#' cache or earlier operation can change them. A row whose pseudonym is not in
+#' the map is an integrity failure, never another namespace.
+#'
+#' @param x Verified sealed omop.table.
+#' @param tokens Pseudonym tokens of the rows used by the release.
+#' @return Character vector of release-person tokens.
+#' @keywords internal
+.dsomopDpSealedReleaseTokens <- function(x, tokens) {
+  map <- attr(x, .DSOMOP_DP_RELEASE_PERSONS_ATTRIBUTE, exact = TRUE)
+  if (!is.character(map) || is.null(names(map))) {
+    stop(.DSOMOP_DP_RELEASE_IDENTITY_ERROR, call. = FALSE)
+  }
+  out <- unname(map[enc2utf8(as.character(tokens))])
+  if (anyNA(out)) stop(.DSOMOP_DP_RELEASE_IDENTITY_ERROR, call. = FALSE)
+  out
 }
 
 .dsomopDpScopePersonLocal <- function(scope, policy) {
@@ -1231,7 +1370,7 @@
 
 .dsomopDpSealPlanOutput <- function(x, plan, output_name,
                                     dataset_identity = NULL,
-                                    component = NULL) {
+                                    component = NULL, person_key = NULL) {
   attr(x, "dsomop_dp_provenance") <- NULL
   if (!.dsomopDpEnabled() || !is.data.frame(x) || !.is_omop.table(x)) {
     return(x)
@@ -1269,7 +1408,7 @@
       "plan", type, representation, component %||% "primary", sep = "/"
     ),
     episode_domain = episode_domain, lineage = lineage, policy = policy,
-    dataset_id = dataset_id
+    dataset_id = dataset_id, person_key = person_key
   )
 }
 
@@ -1296,7 +1435,8 @@
 .dsomopDpSealAnalysisAssign <- function(x, entry, scope_present = FALSE,
                                         effective_params = list(),
                                         public_config = list(),
-                                        dataset_identity = NULL) {
+                                        dataset_identity = NULL,
+                                        person_key = NULL) {
   attr(x, "dsomop_dp_provenance") <- NULL
   query_id <- entry$meta$query_id %||% ""
   sql <- entry$compute$sql %||% NULL
@@ -1318,8 +1458,27 @@
       effective_params = .dsomopDpLineageObject(effective_params),
       public_config = public_config
     ),
-    dataset_identity = dataset_identity
+    dataset_identity = dataset_identity, person_key = person_key
   )
+}
+
+# The verified source's release-person map and public column metadata,
+# restricted to a derived result's rows and columns.
+.dsomopDpInheritedPersons <- function(result, source, provenance) {
+  map <- attr(source, .DSOMOP_DP_RELEASE_PERSONS_ATTRIBUTE, exact = TRUE)
+  tokens <- result[[provenance$person_key]]
+  tokens <- unique(enc2utf8(as.character(tokens[!is.na(tokens)])))
+  if (!is.character(map) || any(!tokens %in% names(map))) {
+    stop(.DSOMOP_DP_RELEASE_IDENTITY_ERROR, call. = FALSE)
+  }
+  list(namespace = provenance$release_person_namespace,
+       map = map[sort(tokens, method = "radix")])
+}
+
+.dsomopDpInheritedColumns <- function(meta, result) {
+  if (is.null(meta)) return(NULL)
+  meta <- meta[names(meta) %in% names(result)]
+  if (length(meta)) meta else NULL
 }
 
 .dsomopDpResealUnary <- function(result, source, producer, args = list()) {
@@ -1371,7 +1530,10 @@
         filter_tree = filter_tree
       ),
       policy = policy,
-      dataset_id = provenance$dataset_id
+      dataset_id = provenance$dataset_id,
+      release_persons = .dsomopDpInheritedPersons(result, source, provenance),
+      domains = .dsomopDpInheritedColumns(provenance$public_domains, result),
+      scales = .dsomopDpInheritedColumns(provenance$public_scales, result)
     ))
   }
   .dsomopDpSealPersonLocal(
@@ -1385,17 +1547,24 @@
       arguments = args
     ),
     policy = policy,
-    dataset_id = provenance$dataset_id
+    dataset_id = provenance$dataset_id,
+    release_persons = .dsomopDpInheritedPersons(result, source, provenance),
+    domains = .dsomopDpInheritedColumns(provenance$public_domains, result),
+    scales = .dsomopDpInheritedColumns(provenance$public_scales, result)
   )
 }
 
 .dsomopDpSealInheritedLineage <- function(result, provenance, producer,
-                                           policy) {
+                                           policy, source) {
   attr(result, "dsomop_dp_provenance") <- NULL
   producer <- .dsomopDpProvenanceText(producer, "producer")
   .assertOmopTablePseudonymization(
     result, caller = ".dsomopDpSealInheritedLineage"
   )
+  # The verified source's release-person map, restricted to the result rows.
+  persons <- .dsomopDpInheritedPersons(result, source, provenance)
+  map <- persons$map
+  attr(result, .DSOMOP_DP_RELEASE_PERSONS_ATTRIBUTE) <- map
   contract <- list(
     protocol = .DSOMOP_DP_PROVENANCE_PROTOCOL,
     adjacency = policy$adjacency,
@@ -1406,7 +1575,14 @@
     dataset_id = provenance$dataset_id,
     producer = producer,
     episode_domain = provenance$episode_domain,
-    lineage_id = provenance$lineage_id
+    lineage_id = provenance$lineage_id,
+    release_person_namespace = provenance$release_person_namespace,
+    release_persons_sha256 = .dsomopDpReleasePersonsDigest(
+      provenance$release_person_namespace, map),
+    public_domains = .dsomopDpInheritedColumns(provenance$public_domains,
+                                               result),
+    public_scales = .dsomopDpInheritedColumns(provenance$public_scales,
+                                              result)
   )
   attr(result, "dsomop_dp_provenance") <- c(contract, list(
     mac = .dsomopDpProvenanceMac(result, contract, policy)
@@ -1439,7 +1615,7 @@
     .dsomopDpFilterState(source, provenance = provenance, policy = policy)
   )
   .dsomopDpSealInheritedLineage(
-    result, provenance, "manipulate/select", policy
+    result, provenance, "manipulate/select", policy, source = source
   )
 }
 
@@ -1536,7 +1712,8 @@
     result,
     .dsomopDpFilterState(source, provenance = provenance, policy = policy)
   )
-  .dsomopDpSealInheritedLineage(result, provenance, provenance$producer, policy)
+  .dsomopDpSealInheritedLineage(result, provenance, provenance$producer, policy,
+                                source = source)
 }
 
 .dsomopDpResealBind <- function(result, x, y) {

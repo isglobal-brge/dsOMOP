@@ -3055,5 +3055,6 @@ omopAsFactorColumnsDS <- function(df, spec) {
   # Core outputs never inherit DP state from their inputs.
   attr(df, "dsomop_dp_provenance") <- NULL
   attr(df, "dsomop_dp_filter_state") <- NULL
+  attr(df, "dsomop_dp_release_persons") <- NULL
   df
 }
