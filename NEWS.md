@@ -30,6 +30,12 @@ Security release: the P0 fixes of the OHDSI-tools audit.
 
 ## Corrected
 
+- Snapshot source certification now checks generated-column expressions and
+  their column dependencies, including behind nested definer views. Volatile,
+  stateful or unverifiable expressions refuse the whole request; deterministic
+  generated columns and stored timestamp defaults remain supported. Normalized
+  source definitions and session expression settings are rechecked on exit.
+
 - MySQL and MariaDB snapshot requests certify the transitive sources of views,
   including external schemas, and refuse unverifiable or nontransactional
   dependencies. Snapshot failures revoke pending plan publications.

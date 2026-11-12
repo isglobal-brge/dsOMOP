@@ -189,7 +189,8 @@
           "SELECT CAST(transaction_timestamp() AS TEXT) AS t"))$t[[1L]]
       },
       consistent_snapshot_transaction = {
-        session <- DBI::dbGetQuery(conn, "SELECT DATABASE() AS db, @@session.sql_mode AS sql_mode")
+        session <- .dsomopSnapshotSession(conn)
+        ctx$session <- session
         ctx$default_schema <- session[[1L]][[1L]]
         ctx$sql_mode <- session[[2L]][[1L]]
         # The session isolation applies to the consistent-snapshot
@@ -482,6 +483,125 @@
   unique(out)
 }
 
+# A closed scalar-expression contract for generated source columns. These
+# functions read only their arguments. SQL keywords/types are separate from
+# calls so neither unknown routines nor bare session values pass as syntax.
+.DSOMOP_SNAPSHOT_COLUMN_CALLS <- c(
+  "ABS", "CEIL", "CEILING", "FLOOR", "MOD", "ROUND", "TRUNCATE", "SIGN",
+  "POW", "POWER", "SQRT", "EXP", "LN", "LOG", "LOG2", "LOG10",
+  "COALESCE", "IF", "IFNULL", "NULLIF", "GREATEST", "LEAST", "CAST", "CONVERT",
+  "CONCAT", "CONCAT_WS", "LOWER", "UPPER", "LCASE", "UCASE", "LENGTH",
+  "CHAR_LENGTH", "CHARACTER_LENGTH", "OCTET_LENGTH", "LEFT", "RIGHT",
+  "SUBSTR", "SUBSTRING", "SUBSTRING_INDEX", "TRIM", "LTRIM", "RTRIM",
+  "REPLACE", "REVERSE", "LPAD", "RPAD", "LOCATE", "INSTR", "ASCII", "ORD",
+  "HEX", "UNHEX", "BIT_LENGTH", "BIT_COUNT", "DATE", "YEAR", "MONTH",
+  "DAY", "DAYOFMONTH", "DAYOFWEEK", "DAYOFYEAR", "HOUR", "MINUTE", "SECOND",
+  "DATEDIFF", "TO_DAYS", "FROM_DAYS", "JSON_EXTRACT", "JSON_UNQUOTE",
+  "JSON_LENGTH", "JSON_TYPE", "JSON_VALID", "DECIMAL", "NUMERIC", "CHAR",
+  "BINARY", "DATETIME", "TIME", "IN", "NOT")
+.DSOMOP_SNAPSHOT_COLUMN_WORDS <- c(
+  "NULL", "TRUE", "FALSE", "CASE", "WHEN", "THEN", "ELSE", "END", "AS",
+  "AND", "OR", "XOR", "NOT", "IS", "IN", "BETWEEN", "LIKE", "DIV", "MOD",
+  "SIGNED", "UNSIGNED", "INTEGER", "DECIMAL", "NUMERIC", "CHAR", "BINARY",
+  "DATE", "DATETIME", "TIME", "BOTH", "LEADING", "TRAILING", "FROM")
+
+# Parse SHOW CREATE's column clauses, not DEFAULT expressions: stored defaults
+# (including CURRENT_TIMESTAMP) do not execute on reads. Retain normalized
+# definitions for final comparison, excluding only the write-driven sequence
+# counter. This also retains types, collations and generated-column storage.
+.dsomopSnapshotTableDefinition <- function(ddl, sql_mode = "") {
+  t <- .dsomopSnapshotSqlTokens(ddl, sql_mode)
+  n <- nrow(t)
+  depth <- integer(n)
+  closing <- integer(n)
+  stack <- integer()
+  for (i in seq_len(n)) {
+    depth[[i]] <- length(stack)
+    if (t$syntax[[i]] == "(") stack <- c(stack, i)
+    if (t$syntax[[i]] == ")") {
+      if (!length(stack)) stop("Unbalanced source definition.")
+      closing[[tail(stack, 1L)]] <- i
+      stack <- head(stack, -1L)
+      depth[[i]] <- length(stack)
+    }
+  }
+  if (length(stack)) stop("Unbalanced source definition.")
+  start <- which(t$syntax == "(")[1L]
+  if (is.na(start) || !closing[[start]]) stop("Missing source columns.")
+  end <- closing[[start]]
+  separators <- c(start, which(t$syntax == "," & depth == 1L & seq_len(n) > start & seq_len(n) < end), end)
+  columns <- list()
+  generated <- list()
+  constraints <- c("PRIMARY", "UNIQUE", "KEY", "INDEX", "CONSTRAINT", "CHECK",
+                   "FOREIGN", "FULLTEXT", "SPATIAL", "PERIOD")
+  for (k in seq_len(length(separators) - 1L)) {
+    idx <- seq.int(separators[[k]] + 1L, separators[[k + 1L]] - 1L)
+    first <- idx[[1L]]
+    if (t$word[[first]] %in% constraints) next
+    if (!t$id[[first]]) stop("Unverifiable source column.")
+    name <- tolower(t$value[[first]])
+    if (name %in% names(columns)) stop("Ambiguous source columns.")
+    columns[[name]] <- idx
+    expr <- idx[t$word[idx] == "AS" & depth[idx] == 1L]
+    if (!length(expr)) {
+      if (any(t$word[idx] %in% c("GENERATED", "VIRTUAL", "STORED", "PERSISTENT"))) {
+        stop("Missing generated source expression.")
+      }
+      next
+    }
+    if (length(expr) != 1L || t$syntax[[expr + 1L]] != "(" ||
+        closing[[expr + 1L]] <= expr + 2L) stop("Unverifiable generated source expression.")
+    generated[[name]] <- seq.int(expr + 2L, closing[[expr + 1L]] - 1L)
+  }
+  dependencies <- list()
+  for (name in names(generated)) {
+    idx <- generated[[name]]
+    deps <- character()
+    for (i in idx) {
+      if (t$id[[i]]) {
+        call <- i < tail(idx, 1L) && t$syntax[[i + 1L]] == "("
+        if (call) {
+          if (!t$word[[i]] %in% .DSOMOP_SNAPSHOT_COLUMN_CALLS) {
+            stop("Unknown or stateful generated source function.")
+          }
+        } else if (tolower(t$value[[i]]) %in% names(columns)) {
+          deps <- c(deps, tolower(t$value[[i]]))
+        } else if (!t$word[[i]] %in% .DSOMOP_SNAPSHOT_COLUMN_WORDS) {
+          stop("Unverifiable generated source dependency.")
+        }
+      } else if (nzchar(t$syntax[[i]]) &&
+                 !grepl("^[0-9]+$", t$syntax[[i]]) &&
+                 !t$syntax[[i]] %in% c("(", ")", ",", "+", "-", "*", "/", "%",
+                                       "=", "<", ">", "!", "~", "&", "|", "^")) {
+        # A period is only a numeric decimal point, never a schema/routine
+        # qualifier. Variables, assignments and statement delimiters refuse.
+        if (t$syntax[[i]] != "." || i == idx[[1L]] || i == tail(idx, 1L) ||
+            !all(grepl("^[0-9]+$", t$syntax[c(i - 1L, i + 1L)]))) {
+          stop("Unverifiable generated source syntax.")
+        }
+      }
+    }
+    dependencies[[name]] <- unique(deps)
+  }
+  visit <- function(name, path = character()) {
+    if (name %in% path) stop("Cyclic generated source dependencies.")
+    for (dep in dependencies[[name]]) visit(dep, c(path, name))
+  }
+  for (name in names(generated)) visit(name)
+  keep <- seq_len(n)
+  counters <- which(t$word == "AUTO_INCREMENT" & depth == 0L)
+  for (i in counters) {
+    if (i + 2L > n || t$syntax[[i + 1L]] != "=" ||
+        !grepl("^[0-9]+$", t$syntax[[i + 2L]])) stop("Unverifiable source sequence.")
+    keep <- setdiff(keep, i + 0:2)
+  }
+  normalized <- t[keep, , drop = FALSE]
+  rownames(normalized) <- NULL
+  list(definition = normalized, generated = lapply(generated, function(idx) {
+    x <- t[idx, , drop = FALSE]; rownames(x) <- NULL; x
+  }), dependencies = dependencies)
+}
+
 .dsomopSnapshotSourceDefinition <- function(ctx, schema, table) {
   qualified <- paste(DBI::dbQuoteIdentifier(ctx$conn, schema),
                      DBI::dbQuoteIdentifier(ctx$conn, table), sep = ".")
@@ -499,7 +619,8 @@
   if (length(engine) != 2L || toupper(engine[[2L]]) != "INNODB") {
     stop("Nontransactional or unverifiable source engine.")
   }
-  list(schema = schema, table = table, view = FALSE, engine = toupper(engine[[2L]]))
+  list(schema = schema, table = table, view = FALSE, engine = toupper(engine[[2L]]),
+       columns = .dsomopSnapshotTableDefinition(ddl, ctx$sql_mode))
 }
 
 .dsomopSnapshotCertifySource <- function(ctx, schema, table, path = character()) {
@@ -544,10 +665,20 @@
   invisible(TRUE)
 }
 
+# Pin expression interpretation as well as the namespace for this request.
+.dsomopSnapshotSession <- function(conn) {
+  DBI::dbGetQuery(conn, paste(
+    "SELECT DATABASE() AS db, @@session.sql_mode AS sql_mode,",
+    "@@session.time_zone AS time_zone, @@session.lc_time_names AS lc_time_names,",
+    "@@session.character_set_connection AS character_set_connection,",
+    "@@session.collation_connection AS collation_connection,",
+    "@@session.div_precision_increment AS div_precision_increment,",
+    "@@session.default_week_format AS default_week_format"))
+}
+
 .dsomopSnapshotAssertSession <- function(ctx) {
-  session <- DBI::dbGetQuery(ctx$conn, "SELECT DATABASE() AS db, @@session.sql_mode AS sql_mode")
-  if (!identical(session[[1L]][[1L]], ctx$default_schema) ||
-      !identical(session[[2L]][[1L]], ctx$sql_mode)) {
+  session <- .dsomopSnapshotSession(ctx$conn)
+  if (!identical(session, ctx$session)) {
     stop("The source namespace or SQL interpretation changed during the request.")
   }
   invisible(TRUE)
