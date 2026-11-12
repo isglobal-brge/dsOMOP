@@ -172,6 +172,15 @@ The live MySQL 8.4 regression must exercise positive `min_days`, each of the
 course/recorded/effective relations, a downstream consumer reusing them and
 cleanup. Every generated statement reads a physical stockpile temporary
 table at most once. MariaDB execution and SQL snapshots do not replace that
-MySQL evidence. Native end-to-end publication and the integrated v1 result
+MySQL evidence. On MySQL, `.buildStatement()` reads each bounded stockpile
+table once into a statement-local JSON payload and exposes typed rows inside
+a lateral query. This avoids MySQL's repeated table resolution through shared
+CTEs. The payload stays in the database, preserves BIGINT identities and NULLs,
+and introduces no persistent objects or data-owner settings. Final result
+ordering is preserved outside the lateral query. MariaDB keeps its existing
+CTE path. Consumers use the ordinary fragment builder; they do not construct
+this transport themselves.
+
+Native end-to-end publication and the integrated v1 result
 reconciliation remain separate WS-6/WS-7 and WS-2c integration checks; WS-5's
 stream-level acceptance harness alone does not establish them.

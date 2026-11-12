@@ -14,6 +14,9 @@ fills its entries. Classes follow design-2.10.3 section 5.
   associations restrict anchors and streams before interval construction.
   Private fetches are bounded, compiler temporary tables follow execution
   context cleanup, and duplicate observed periods preserve segment keys.
+  On MySQL, downstream consumers may reuse a stockpiled interval's course,
+  recorded rows and effective rows in one statement without reopening its
+  session temporary table.
   The compiler handoff is recorded in
   `inst/contracts/ws5-interval-anchor-coverage.md`.
 - Publication validates one genuine person per final row through direct keys or
