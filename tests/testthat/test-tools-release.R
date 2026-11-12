@@ -313,6 +313,49 @@ test_that("two scopes differing by one person no longer expose the exact mean al
   expect_false(all(is.na(wide$avg_value)))
 })
 
+test_that("two scopes differing by one person no longer expose a measurement value (E2)", {
+  .release_state()
+  h <- create_test_handle(n_persons = 60)
+  on.exit(cleanup_handle(h), add = TRUE)
+  # HbA1c for persons 1..31; person 31 has the audit's 7.85.
+  values <- c(5 + (1:30 %% 7) * 0.45, 7.85)
+  DBI::dbWriteTable(h$conn, "measurement", data.frame(
+    measurement_id = 9000L + 1:31, person_id = 1:31,
+    measurement_concept_id = 3004410L, measurement_date = "2021-03-01",
+    measurement_type_concept_id = 44818518L, value_as_number = values,
+    value_as_concept_id = NA_integer_, unit_concept_id = 8554L,
+    range_low = 4, range_high = 6, visit_occurrence_id = NA_integer_),
+    append = TRUE)
+  a <- .release_cohort(h, "release_e2_a", 1:30)
+  b <- .release_cohort(h, "release_e2_b", 1:31)
+  params <- list(metric = "measurement_value", domain_code = "3")
+  ra <- .release_run(h, "dsomop:fe.continuous", params, scope = a)
+  rb <- .release_run(h, "dsomop:fe.continuous", params, scope = b)
+  for (r in list(ra, rb)) {
+    expect_identical(attr(r, "dsomop_protection")$protection,
+                     "realised_sticky")
+    expect_false(any(c("min_value", "max_value") %in% names(r)))
+    row <- r[r$covariate_id == 3004410, ]
+    # No public scale for this measurement: no mean or SD at all, only
+    # quantiles of the noisy public 1-2-5 histogram.
+    if (nrow(row)) expect_true(all(is.na(c(row$avg_value, row$stdev_value))))
+  }
+  # Without a public scale no sum or square component exists at all, so the
+  # attack's n * mean algebra has nothing to difference.
+  owners <- attr(rb, "dsomop_release")$owners
+  comps <- unlist(lapply(owners, `[[`, "components"), recursive = FALSE)
+  expect_gt(length(comps), 0L)
+  expect_true(all(vapply(comps, function(c) is.null(c$s) && is.null(c$q),
+                         logical(1L))))
+  # Standard mode: the exact scoped moments and quantiles are unavailable.
+  withr::local_options(list(dsomop.tools.mode = "standard"))
+  suppressWarnings(.omopAnalysisRegistry(h, force = TRUE))
+  std <- .release_run(h, "dsomop:fe.continuous", params, scope = b)
+  expect_true(all(is.na(std[, .DSOMOP_RELEASE_DIST_FIELDS])))
+  expect_identical(attr(std, "dsomop_protection")$masked_reason,
+                   "protected_output_required")
+})
+
 test_that("realised components replay for equal maps whatever the program", {
   .release_state()
   h <- create_test_handle(n_persons = 60)
