@@ -1,0 +1,39 @@
+{
+  "packages": {
+    "dsOMOP": {
+      "head": "62fd41834e39e934352c1e9fc95cbb9fb34877c9",
+      "integration": "c7e541e4bac659cdc32358d14b1b4791c2e4203e",
+      "integration_is_ancestor": true,
+      "version": "2.10.2"
+    },
+    "dsOMOPClient": {
+      "head": "4f1ef7ba208a79cd4c1f7668e68bb03ab438bdc1",
+      "integration": "c8b337b77b09d5ed219215ddf205652193354220",
+      "integration_is_ancestor": true,
+      "version": "2.10.2"
+    }
+  },
+  "shared_files": {
+    "R/plan_normalize_v2.R": {
+      "identical": true,
+      "sha256": "a83e2e1ac308087f213fe37f5980b3e3e5fb226237a6d2fc2bf645dee54499fb"
+    },
+    "R/semantic_digest.R": {
+      "identical": true,
+      "sha256": "1a36af8a69c4d8e1a04b302ac6ff021aa33864825e0d924edbe0cd74939dce27"
+    },
+    "R/json_schema.R": {
+      "identical": true,
+      "sha256": "e0e49e6ad92a9ff1de483008b6e66fe8127c04f902da9dc847d39e8d26e8dae7"
+    },
+    "inst/schema/plan-v2.json": {
+      "identical": true,
+      "sha256": "b762bed6aa93b64ee174e17a852bc6b873b8b939bb95dd3a73e65b0cdad529aa"
+    },
+    "inst/schema/probes/plan-v2-probes.json": {
+      "identical": true,
+      "sha256": "703f60515b40f8280b19d56406b5f7f1417f5cd481965d53fb8a6dc3ea4d5513"
+    }
+  },
+  "client_has_compatibility_schema": false
+}

@@ -1,0 +1,45 @@
+[
+  {
+    "package": "dsOMOP",
+    "commit": "5c6fd9ae0c20a990fb1c890e9c1534c61a3d3fa0",
+    "matching_client": "4f1ef7ba208a79cd4c1f7668e68bb03ab438bdc1",
+    "filter": "^(ws2f-membership-results|ir-review|ws0-schema|legacy-execution-call)$",
+    "files": [
+      "test-ir-review.R",
+      "test-legacy-execution-call.R",
+      "test-ws0-schema.R",
+      "test-ws2f-membership-results.R"
+    ],
+    "passed": 1152,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 1
+  },
+  {
+    "package": "dsOMOPClient",
+    "commit": "4f1ef7ba208a79cd4c1f7668e68bb03ab438bdc1",
+    "matching_server": "62fd41834e39e934352c1e9fc95cbb9fb34877c9",
+    "filter": "^ws0-schema$",
+    "files": [
+      "test-ws0-schema.R"
+    ],
+    "passed": 150,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  {
+    "package": "dsOMOP",
+    "commit": "62fd41834e39e934352c1e9fc95cbb9fb34877c9",
+    "matching_client": "4f1ef7ba208a79cd4c1f7668e68bb03ab438bdc1",
+    "filter": "^ws2ca1-membership-golden$",
+    "files": [
+      "test-ws2ca1-membership-golden.R"
+    ],
+    "note": "Temporary targeted probe, retained byte-identically in this evidence directory; nine membership records selected from the existing corpus/golden fixture.",
+    "passed": 37,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  }
+]

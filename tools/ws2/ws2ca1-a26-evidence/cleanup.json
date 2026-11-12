@@ -1,0 +1,14 @@
+{
+  "deleted": [
+    {
+      "path": "/workspace/dsomop/wt/ws2c/dsOMOP/tests/testthat/test-ws2ca1-membership-golden.R",
+      "bytes": 1290
+    },
+    {
+      "path": "/root/rt/wt/ws2c/dsOMOP/tests/testthat/test-ws2ca1-membership-golden.R",
+      "bytes": 1290
+    }
+  ],
+  "retained_probe": "test-ws2ca1-membership-golden.R",
+  "no_package_snapshots_created": true
+}
