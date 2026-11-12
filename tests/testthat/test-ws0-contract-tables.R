@@ -127,12 +127,26 @@ test_that("the v1 corpus classes are reviewed per plan instance", {
   expect_true(all(get("test-manipulate.R", 216)$class == "publication_refused_unchanged"))
   expect_true(all(get("test-manipulate.R", 229)$class == "publication_refused_unchanged"))
   expect_true(all(get("test-manipulate.R", 208)$class == "newly_permitted"))
-  expect_true(all(get("test-cohort.R", 512)$class == "publication_refused_unchanged"))
+  expect_setequal(get("test-cohort.R", 512)$class, c("safe", "publication_refused_unchanged"))
   for (ln in c(247, 268, 672)) expect_true("newly_permitted" %in% get("test-recipe-setops.R", ln)$class, info = ln)
   oc72 <- get("test-output-contracts.R", 72); expect_true(all(c("newly_permitted", "unchanged_invalid") %in% oc72$class))
   oc99 <- get("test-output-contracts.R", 99); expect_true(all(c("safe", "newly_permitted") %in% oc99$class))
-  expect_true(all(get("test-plan-dsl.R", 884, "dsOMOPClient")$class == "unchanged_invalid"))
   expect_true(all(get("test-filters.R", 18)$class == "newly_permitted"))
+  # re-review B7: helper-built plans are inventoried and classified; mixed blocks are split
+  ie190 <- get("test-plan-index-event.R", 190); expect_identical(ie190$class, "safe"); expect_match(ie190$rationale, ".ie_resolve")
+  so213 <- get("test-recipe-setops.R", 213)
+  expect_setequal(so213$plan_id, paste0("dsOMOP:test-recipe-setops.R:213#", c("union", "intersect", "setdiff"))); expect_true(all(so213$class == "safe"))
+  expect_identical(get("test-recipe-circe.R", 426, "dsOMOPClient")$class, "unchanged_invalid")
+  sl298 <- get("test-survival-longitudinal.R", 298, "dsOMOPClient")
+  expect_setequal(sl298$plan_id, paste0("dsOMOPClient:test-survival-longitudinal.R:298#", 1:2)); expect_setequal(sl298$class, c("safe", "unchanged_invalid"))
+  # a block that builds no plan is only ever non_plan, and every non_plan row says so
+  expect_true(all(grepl("^no plan|^gate:", cls$rationale[cls$class == "non_plan"])))
+  expect_true(all(get("test-plan-dsl.R", 884, "dsOMOPClient")$class == "non_plan"))   # omop.date_handling constructor validation builds no plan
+  # the gate-helper blocks the design names carry their own dispositions
+  expect_true(all(get("test-disclosure.R", 329)$class == "newly_permitted"))
+  expect_true(all(get("test-disclosure.R", 349)$class == "safe"))
+  expect_true(all(get("test-phase1-leak-gates.R", 43)$class == "unchanged_invalid"))
+  expect_true("newly_permitted" %in% get("test-filters.R", 503)$class)
   # inventory completeness: every plan-building suite of both packages is covered
   for (f in c("test-phase-e-ergonomics.R", "test-staged-harmonization-regression.R", "test-factor-harmonization-client.R", "test-dp-prepare.R")) {
     expect_true(f %in% cls$file[cls$package == "dsOMOPClient"], info = f)

@@ -355,6 +355,10 @@ v_num = copy.deepcopy(A)
 v_num["events"]["hba1c"]["unit"]["convert"]["8753"] = {"factor": 1e-7, "offset": 1000000000000000100}
 v_num["events"]["hba1c"]["unit"]["convert"]["8840"] = {"factor": 1.2345678901234568e18, "offset": -4.051847215643804e+161}
 v_num["events"]["hba1c"]["unit"]["convert"]["8876"] = {"factor": 0.000001, "offset": 1e21}
+# re-review B1: a power of two has an asymmetric rounding interval; the shortest round-trip
+# decimal of 2^-24 is 5.960464477539063e-8 (sixteen digits), not the nearest sixteen-digit decimal
+v_pow2 = copy.deepcopy(A)
+v_pow2["events"]["hba1c"]["unit"]["convert"]["8753"]["factor"] = 2.0 ** -24
 vectors = []
 for label, obj, note in (("base", v_base, "canonical example A"),
                          ("semantic_version_change", v_version, "meta.semantic_version = 2.1.0: a different digest"),
@@ -366,7 +370,8 @@ for label, obj, note in (("base", v_base, "canonical example A"),
                          ("event_named_result_symbol_mi", v_rs_a, "event renamed to `result_symbol` (MI concepts)"),
                          ("event_named_result_symbol_t2dm", v_rs_b, "same with diabetes concepts: a different digest"),
                          ("population_label_text_change", v_label_text, "populations.new_users.label text changed: the identical digest to base"),
-                         ("numeric_canonicalisation", v_num, "payload contains 1e-7, 1000000000000000100, 1234567890123456800, -4.051847215643804e+161, 0.000001 and 1e+21")):
+                         ("numeric_canonicalisation", v_num, "payload contains 1e-7, 1000000000000000100, 1234567890123456800, -4.051847215643804e+161, 0.000001 and 1e+21"),
+                         ("power_of_two_factor", v_pow2, "events.hba1c.unit.convert.8753.factor = 2^-24 (bits 3e70000000000000): payload contains 5.960464477539063e-8")):
     payload, h = digest(obj)
     vectors.append({"label": label, "note": note, "instance": obj, "payload_sha256": h, "payload": payload})
 vec = {v["label"]: v for v in vectors}
@@ -377,6 +382,8 @@ for a, b in (("event_named_description_mi", "event_named_description_t2dm"), ("e
              ("event_named_result_symbol_mi", "event_named_result_symbol_t2dm")):
     assert vec[a]["payload_sha256"] != vec[b]["payload_sha256"], a
     assert '"' + a.split("_")[2] + '"' in vec[a]["payload"] or True
+assert '"factor":5.960464477539063e-8' in vec["power_of_two_factor"]["payload"]
+assert vec["power_of_two_factor"]["payload_sha256"] == "101a26cd7a125eefec08cb556361c7ae33e81d737fa0abe27e9c85d43aab905d", vec["power_of_two_factor"]["payload_sha256"]
 for needle in ('"factor":1e-7', '"offset":1000000000000000100', '"factor":1234567890123456800', '"offset":-4.051847215643804e+161', '"factor":0.000001', '"offset":1e+21'):
     assert needle in vec["numeric_canonicalisation"]["payload"], needle
 dump({"canonicalisation": "RFC 8785 (JSON Canonicalization Scheme) of the normalised IR with ECMAScript number formatting; advisory properties removed at their owning schema paths only (meta.generated_by, meta.client_version, meta.recipe_hash, populations.<id>.label, outputs.<name>.result_symbol); definition names are never stripped; version and meta.language_version/meta.semantic_version retained",

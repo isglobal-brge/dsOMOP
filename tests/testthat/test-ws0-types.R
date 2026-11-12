@@ -121,3 +121,49 @@ test_that("a compiled output cross-checks every candidate against its fragment (
   bad <- co; bad$components$baseline$fragment$columns$person_id$type <- "blob"
   expect_error(dsOMOP:::.assertCompiledOutput(bad), "column type must be one of")
 })
+
+test_that("roster-mode candidates must agree with the fragment's person lineage and key roles (re-review B4)", {
+  L <- dsOMOP:::.lineage
+  roster_cand <- function(keys = c("person_id", "cohort_row_id")) {
+    dsOMOP:::.publicationCandidate("wide", "wide", "frame", L("roster", keys, "base", keys, "person_id"), requested_symbol = "D_wide")
+  }
+  # (a) a result fragment whose person_id is a plain measure and that declares no person lineage
+  f_measure <- dsOMOP:::.fragment("res_a", "result", "episode", "SELECT person_id, cohort_row_id, x FROM pop_base",
+    columns = list(person_id = .ws0_col("bigint", FALSE, "measure"), cohort_row_id = .ws0_col("integer", FALSE, "episode_key"),
+                   x = .ws0_col("numeric", TRUE, "measure")), roster_namespace = "base")
+  expect_error(dsOMOP:::.compiledOutput("wide", components = list(wide = list(statement = "SELECT 1", fragment = f_measure)),
+                                        publication_candidates = list(roster_cand())), "declares no person lineage")
+  # (b) a fragment with direct lineage through subject_id published through person_id
+  f_subject <- dsOMOP:::.fragment("res_b", "result", "episode", "SELECT subject_id, person_id, cohort_row_id FROM pop_base",
+    columns = list(subject_id = .ws0_col("bigint", FALSE, "person_key"), person_id = .ws0_col("bigint", FALSE, "person_key"),
+                   cohort_row_id = .ws0_col("integer", FALSE, "episode_key")),
+    person_lineage = list(person_col = "subject_id", via_roster = NULL), roster_namespace = "base")
+  expect_error(dsOMOP:::.compiledOutput("wide", components = list(wide = list(statement = "SELECT 1", fragment = f_subject)),
+                                        publication_candidates = list(roster_cand())), "declares person lineage through 'subject_id'")
+  # (c) person_id present but with the wrong role, lineage mediated by another roster
+  f_other <- dsOMOP:::.fragment("res_c", "result", "episode", "SELECT person_id, cohort_row_id FROM pop_other",
+    columns = list(person_id = .ws0_col("bigint", FALSE, "person_key"), cohort_row_id = .ws0_col("integer", FALSE, "episode_key")),
+    person_lineage = list(person_col = NULL, via_roster = "other"), roster_namespace = "base")
+  expect_error(dsOMOP:::.compiledOutput("wide", components = list(wide = list(statement = "SELECT 1", fragment = f_other)),
+                                        publication_candidates = list(roster_cand())), "mediated by roster 'other'")
+  # legitimate roster-mediated fragments: direct person column, and rowId mediated by the roster
+  f_ok <- dsOMOP:::.fragment("res_d", "result", "episode", "SELECT person_id, cohort_row_id, x FROM pop_base",
+    columns = list(person_id = .ws0_col("bigint", FALSE, "person_key"), cohort_row_id = .ws0_col("integer", FALSE, "episode_key"),
+                   x = .ws0_col("numeric", TRUE, "measure")),
+    person_lineage = list(person_col = "person_id", via_roster = NULL), roster_namespace = "base")
+  expect_s3_class(dsOMOP:::.compiledOutput("wide", components = list(wide = list(statement = "SELECT 1", fragment = f_ok)),
+                                           publication_candidates = list(roster_cand())), "dsomop_compiled_output")
+  f_rowid <- dsOMOP:::.fragment("res_e", "result", "episode", "SELECT rowId, covariate_id FROM pop_base_sparse",
+    columns = list(rowId = .ws0_col("integer", FALSE, "episode_key"), covariate_id = .ws0_col("integer", FALSE, "measure")),
+    person_lineage = list(person_col = NULL, via_roster = "base"), roster_namespace = "base")
+  expect_s3_class(dsOMOP:::.compiledOutput("sparse", components = list(sparse = list(statement = "SELECT 1", fragment = f_rowid)),
+    publication_candidates = list(dsOMOP:::.publicationCandidate("sparse", "sparse", "frame",
+      L("roster", "rowId", "base", "cohort_row_id", "person_id"), requested_symbol = "D_sparse"))), "dsomop_compiled_output")
+  # a rowId-keyed fragment that is not roster-mediated is refused
+  f_rowid_bad <- dsOMOP:::.fragment("res_f", "result", "episode", "SELECT rowId, covariate_id FROM pop_base_sparse",
+    columns = list(rowId = .ws0_col("integer", FALSE, "episode_key"), covariate_id = .ws0_col("integer", FALSE, "measure")),
+    roster_namespace = "base")
+  expect_error(dsOMOP:::.compiledOutput("sparse", components = list(sparse = list(statement = "SELECT 1", fragment = f_rowid_bad)),
+    publication_candidates = list(dsOMOP:::.publicationCandidate("sparse", "sparse", "frame",
+      L("roster", "rowId", "base", "cohort_row_id", "person_id"), requested_symbol = "D_sparse"))), "declares no person lineage")
+})

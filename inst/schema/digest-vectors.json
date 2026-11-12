@@ -2945,6 +2945,273 @@
       },
       "payload_sha256": "65e3993a51b0cc24ebd6e32d22827d5980d464591fa15e58f29baf428d73f35c",
       "payload": "{\"concept_sets\":{\"metformin\":{\"concepts\":[1503297],\"exclude\":null,\"include_descendants\":true,\"include_mapped\":false},\"mi\":{\"concepts\":[4329847],\"exclude\":null,\"include_descendants\":true,\"include_mapped\":false},\"t2dm\":{\"concepts\":[201826],\"exclude\":null,\"include_descendants\":true,\"include_mapped\":false}},\"events\":{\"hba1c\":{\"concept_set\":{\"concepts\":[3004410]},\"table\":\"measurement\",\"unit\":{\"censored\":\"keep\",\"convert\":{\"8753\":{\"factor\":1e-7,\"offset\":1000000000000000100},\"8840\":{\"factor\":1234567890123456800,\"offset\":-4.051847215643804e+161},\"8876\":{\"factor\":0.000001,\"offset\":1e+21}},\"target\":8554,\"unknown\":\"missing\"},\"value\":{\"column\":\"value_as_number\"},\"where\":{\"op\":\"not_null\",\"var\":\"value\"}},\"metf_rx\":{\"concept_set\":\"metformin\",\"end\":{\"fallback\":\"days_supply\"},\"table\":\"drug_exposure\"},\"mi\":{\"concept_set\":\"mi\",\"table\":\"condition_occurrence\"},\"t2dm_dx\":{\"concept_set\":\"t2dm\",\"table\":\"condition_occurrence\"}},\"intervals\":{\"metf_era\":{\"by\":\"event\",\"end\":\"recorded_end\",\"fallback\":\"days_supply\",\"gap\":30,\"min_days\":0,\"persistence\":0,\"source\":{\"event\":\"metf_rx\"},\"stockpile\":false,\"unmapped\":\"own_concept\"}},\"meta\":{\"language_version\":\"2.0\",\"semantic_version\":\"2.0.0\"},\"options\":{\"block_sensitive\":true,\"factor_concepts\":true,\"translate_concepts\":true},\"outputs\":{\"baseline\":{\"columns\":[\"age\",\"sex\",\"hba1c_base\"],\"format\":\"wide\",\"grain\":\"episode\",\"options\":{\"date_handling\":{\"bin_width\":null,\"date_columns\":null,\"mode\":\"relative\",\"reference\":\"index\"}},\"rows\":\"new_users\"},\"tte\":{\"format\":\"survival\",\"grain\":\"episode\",\"options\":{\"censor\":[\"observation_end\",\"death\"],\"event_order\":\"first\",\"format\":\"survival\",\"outcomes\":{\"mi\":{\"event\":\"mi\"}},\"prior_outcome\":{\"action\":\"exclude\",\"lookback\":365},\"tars\":{\"itt\":{\"anchor\":\"index\",\"end\":null,\"start\":1},\"on_treatment\":{\"anchor\":\"index\",\"end\":{\"anchor\":\"index_end\",\"offset\":30},\"start\":{\"anchor\":\"index\",\"offset\":1}}},\"tie_policy\":\"priority\"},\"rows\":\"new_users\"}},\"populations\":{\"new_users\":{\"coverage\":{\"gap\":0,\"on_ambiguous\":\"drop\",\"on_missing\":\"drop\",\"policy\":\"unique\"},\"index\":{\"end\":{\"days\":null,\"pad\":0,\"strategy\":\"interval_end\"},\"n\":1,\"offset\":0,\"restrict_to_observation\":true,\"select\":\"first_eligible\",\"source\":{\"interval\":\"metf_era\"}},\"kind\":\"index\",\"where\":{\"and\":[{\"observed\":{\"after\":null,\"before\":365,\"gap\":null}},{\"has\":{\"n\":0,\"op\":\"==\",\"source\":{\"event\":\"metf_rx\"},\"window\":{\"anchor\":\"index\",\"end\":-1,\"start\":-365}}},{\"has\":{\"n\":1,\"op\":\">=\",\"source\":{\"event\":\"t2dm_dx\"},\"window\":{\"anchor\":\"index\",\"end\":0,\"start\":null}}}]}}},\"publish\":[\"baseline\",\"tte\"],\"variables\":{\"age\":{\"derived\":{\"age_breaks\":null,\"bands\":false,\"kind\":\"age\",\"reference\":\"index\",\"reference_date\":null}},\"hba1c_base\":{\"reducer\":{\"fn\":\"closest_value\",\"side\":\"before\",\"value\":\"value\",\"window\":{\"anchor\":\"index\",\"end\":0,\"start\":-180}},\"source\":{\"event\":\"hba1c\"}},\"sex\":{\"derived\":{\"kind\":\"sex_mf\"}}},\"version\":2}"
+    },
+    {
+      "label": "power_of_two_factor",
+      "note": "events.hba1c.unit.convert.8753.factor = 2^-24 (bits 3e70000000000000): payload contains 5.960464477539063e-8",
+      "instance": {
+        "version": 2,
+        "meta": {
+          "language_version": "2.0",
+          "semantic_version": "2.0.0",
+          "generated_by": "dsOMOPClient",
+          "client_version": "2.10.3"
+        },
+        "options": {
+          "translate_concepts": true,
+          "block_sensitive": true,
+          "factor_concepts": true
+        },
+        "concept_sets": {
+          "t2dm": {
+            "concepts": [
+              201826
+            ],
+            "include_descendants": true,
+            "include_mapped": false,
+            "exclude": null
+          },
+          "metformin": {
+            "concepts": [
+              1503297
+            ],
+            "include_descendants": true,
+            "include_mapped": false,
+            "exclude": null
+          },
+          "mi": {
+            "concepts": [
+              4329847
+            ],
+            "include_descendants": true,
+            "include_mapped": false,
+            "exclude": null
+          }
+        },
+        "events": {
+          "hba1c": {
+            "table": "measurement",
+            "concept_set": {
+              "concepts": [
+                3004410
+              ]
+            },
+            "value": {
+              "column": "value_as_number"
+            },
+            "unit": {
+              "target": 8554,
+              "convert": {
+                "8753": {
+                  "factor": 5.960464477539063e-08,
+                  "offset": 2.15
+                }
+              },
+              "unknown": "missing",
+              "censored": "keep"
+            },
+            "where": {
+              "var": "value",
+              "op": "not_null"
+            }
+          },
+          "metf_rx": {
+            "table": "drug_exposure",
+            "concept_set": "metformin",
+            "end": {
+              "fallback": "days_supply"
+            }
+          },
+          "t2dm_dx": {
+            "table": "condition_occurrence",
+            "concept_set": "t2dm"
+          },
+          "mi": {
+            "table": "condition_occurrence",
+            "concept_set": "mi"
+          }
+        },
+        "intervals": {
+          "metf_era": {
+            "source": {
+              "event": "metf_rx"
+            },
+            "gap": 30,
+            "persistence": 0,
+            "min_days": 0,
+            "by": "event",
+            "unmapped": "own_concept",
+            "end": "recorded_end",
+            "fallback": "days_supply",
+            "stockpile": false
+          }
+        },
+        "populations": {
+          "new_users": {
+            "kind": "index",
+            "label": "Metformin new users",
+            "index": {
+              "source": {
+                "interval": "metf_era"
+              },
+              "select": "first_eligible",
+              "n": 1,
+              "offset": 0,
+              "end": {
+                "strategy": "interval_end",
+                "days": null,
+                "pad": 0
+              },
+              "restrict_to_observation": true
+            },
+            "coverage": {
+              "policy": "unique",
+              "on_ambiguous": "drop",
+              "on_missing": "drop",
+              "gap": 0
+            },
+            "where": {
+              "and": [
+                {
+                  "observed": {
+                    "before": 365,
+                    "after": null,
+                    "gap": null
+                  }
+                },
+                {
+                  "has": {
+                    "source": {
+                      "event": "metf_rx"
+                    },
+                    "op": "==",
+                    "n": 0,
+                    "window": {
+                      "start": -365,
+                      "end": -1,
+                      "anchor": "index"
+                    }
+                  }
+                },
+                {
+                  "has": {
+                    "source": {
+                      "event": "t2dm_dx"
+                    },
+                    "op": ">=",
+                    "n": 1,
+                    "window": {
+                      "start": null,
+                      "end": 0,
+                      "anchor": "index"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "variables": {
+          "age": {
+            "derived": {
+              "kind": "age",
+              "reference": "index",
+              "reference_date": null,
+              "bands": false,
+              "age_breaks": null
+            }
+          },
+          "sex": {
+            "derived": {
+              "kind": "sex_mf"
+            }
+          },
+          "hba1c_base": {
+            "source": {
+              "event": "hba1c"
+            },
+            "reducer": {
+              "fn": "closest_value",
+              "value": "value",
+              "side": "before",
+              "window": {
+                "start": -180,
+                "end": 0,
+                "anchor": "index"
+              }
+            }
+          }
+        },
+        "outputs": {
+          "baseline": {
+            "rows": "new_users",
+            "grain": "episode",
+            "format": "wide",
+            "columns": [
+              "age",
+              "sex",
+              "hba1c_base"
+            ],
+            "options": {
+              "date_handling": {
+                "mode": "relative",
+                "reference": "index",
+                "bin_width": null,
+                "date_columns": null
+              }
+            },
+            "result_symbol": "D_baseline"
+          },
+          "tte": {
+            "rows": "new_users",
+            "grain": "episode",
+            "format": "survival",
+            "result_symbol": "D_tte",
+            "options": {
+              "outcomes": {
+                "mi": {
+                  "event": "mi"
+                }
+              },
+              "tars": {
+                "itt": {
+                  "start": 1,
+                  "end": null,
+                  "anchor": "index"
+                },
+                "on_treatment": {
+                  "start": {
+                    "anchor": "index",
+                    "offset": 1
+                  },
+                  "end": {
+                    "anchor": "index_end",
+                    "offset": 30
+                  },
+                  "anchor": "index"
+                }
+              },
+              "censor": [
+                "observation_end",
+                "death"
+              ],
+              "prior_outcome": {
+                "lookback": 365,
+                "action": "exclude"
+              },
+              "format": "survival",
+              "event_order": "first",
+              "tie_policy": "priority"
+            }
+          }
+        },
+        "publish": [
+          "baseline",
+          "tte"
+        ]
+      },
+      "payload_sha256": "101a26cd7a125eefec08cb556361c7ae33e81d737fa0abe27e9c85d43aab905d",
+      "payload": "{\"concept_sets\":{\"metformin\":{\"concepts\":[1503297],\"exclude\":null,\"include_descendants\":true,\"include_mapped\":false},\"mi\":{\"concepts\":[4329847],\"exclude\":null,\"include_descendants\":true,\"include_mapped\":false},\"t2dm\":{\"concepts\":[201826],\"exclude\":null,\"include_descendants\":true,\"include_mapped\":false}},\"events\":{\"hba1c\":{\"concept_set\":{\"concepts\":[3004410]},\"table\":\"measurement\",\"unit\":{\"censored\":\"keep\",\"convert\":{\"8753\":{\"factor\":5.960464477539063e-8,\"offset\":2.15}},\"target\":8554,\"unknown\":\"missing\"},\"value\":{\"column\":\"value_as_number\"},\"where\":{\"op\":\"not_null\",\"var\":\"value\"}},\"metf_rx\":{\"concept_set\":\"metformin\",\"end\":{\"fallback\":\"days_supply\"},\"table\":\"drug_exposure\"},\"mi\":{\"concept_set\":\"mi\",\"table\":\"condition_occurrence\"},\"t2dm_dx\":{\"concept_set\":\"t2dm\",\"table\":\"condition_occurrence\"}},\"intervals\":{\"metf_era\":{\"by\":\"event\",\"end\":\"recorded_end\",\"fallback\":\"days_supply\",\"gap\":30,\"min_days\":0,\"persistence\":0,\"source\":{\"event\":\"metf_rx\"},\"stockpile\":false,\"unmapped\":\"own_concept\"}},\"meta\":{\"language_version\":\"2.0\",\"semantic_version\":\"2.0.0\"},\"options\":{\"block_sensitive\":true,\"factor_concepts\":true,\"translate_concepts\":true},\"outputs\":{\"baseline\":{\"columns\":[\"age\",\"sex\",\"hba1c_base\"],\"format\":\"wide\",\"grain\":\"episode\",\"options\":{\"date_handling\":{\"bin_width\":null,\"date_columns\":null,\"mode\":\"relative\",\"reference\":\"index\"}},\"rows\":\"new_users\"},\"tte\":{\"format\":\"survival\",\"grain\":\"episode\",\"options\":{\"censor\":[\"observation_end\",\"death\"],\"event_order\":\"first\",\"format\":\"survival\",\"outcomes\":{\"mi\":{\"event\":\"mi\"}},\"prior_outcome\":{\"action\":\"exclude\",\"lookback\":365},\"tars\":{\"itt\":{\"anchor\":\"index\",\"end\":null,\"start\":1},\"on_treatment\":{\"anchor\":\"index\",\"end\":{\"anchor\":\"index_end\",\"offset\":30},\"start\":{\"anchor\":\"index\",\"offset\":1}}},\"tie_policy\":\"priority\"},\"rows\":\"new_users\"}},\"populations\":{\"new_users\":{\"coverage\":{\"gap\":0,\"on_ambiguous\":\"drop\",\"on_missing\":\"drop\",\"policy\":\"unique\"},\"index\":{\"end\":{\"days\":null,\"pad\":0,\"strategy\":\"interval_end\"},\"n\":1,\"offset\":0,\"restrict_to_observation\":true,\"select\":\"first_eligible\",\"source\":{\"interval\":\"metf_era\"}},\"kind\":\"index\",\"where\":{\"and\":[{\"observed\":{\"after\":null,\"before\":365,\"gap\":null}},{\"has\":{\"n\":0,\"op\":\"==\",\"source\":{\"event\":\"metf_rx\"},\"window\":{\"anchor\":\"index\",\"end\":-1,\"start\":-365}}},{\"has\":{\"n\":1,\"op\":\">=\",\"source\":{\"event\":\"t2dm_dx\"},\"window\":{\"anchor\":\"index\",\"end\":0,\"start\":null}}}]}}},\"publish\":[\"baseline\",\"tte\"],\"variables\":{\"age\":{\"derived\":{\"age_breaks\":null,\"bands\":false,\"kind\":\"age\",\"reference\":\"index\",\"reference_date\":null}},\"hba1c_base\":{\"reducer\":{\"fn\":\"closest_value\",\"side\":\"before\",\"value\":\"value\",\"window\":{\"anchor\":\"index\",\"end\":0,\"start\":-180}},\"source\":{\"event\":\"hba1c\"}},\"sex\":{\"derived\":{\"kind\":\"sex_mf\"}}},\"version\":2}"
     }
   ]
 }

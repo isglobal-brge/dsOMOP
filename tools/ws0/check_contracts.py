@@ -170,6 +170,30 @@ for x, want in ((1e-7, "1e-7"), (1000000000000000100.0, "1000000000000000100"), 
                 (0.0915, "0.0915"), (2.15, "2.15"), (365.0, "365"), (1e21, "1e+21"), (0.000001, "0.000001"), (100.0, "100")):
     check(gen.es6_number(x) == want, f"number {x!r}: got {gen.es6_number(x)}, want {want}")
 
+# ECMAScript differential corpus: the frozen CSV must equal the oracle's regenerated rows
+corpus_csv = os.path.join(S, "tests", "testthat", "fixtures", "es6-number-corpus.csv")
+if os.path.exists(corpus_csv):
+    import csv as _csv
+    frozen = [(r["hex"], r["expected"], r.get("group", "")) for r in _csv.DictReader(open(corpus_csv, newline="", encoding="utf-8"))]
+    regenerated = [tuple(r) for r in gen.number_corpus(corpus_csv)]
+    check(frozen == regenerated, f"es6-number-corpus.csv differs from the regenerated oracle corpus ({len(frozen)} vs {len(regenerated)} rows)")
+    for hx, want in (("3e70000000000000", "5.960464477539063e-8"), ("0060000000000000", "7.120236347223045e-307")):
+        check(dict((h, e) for h, e, _ in frozen).get(hx) == want, f"corpus lacks the power-of-two regression {hx}")
+    n_corpus = len(frozen)
+else:
+    check(False, "tests/testthat/fixtures/es6-number-corpus.csv is missing")
+    n_corpus = 0
+
+# reviewed v1 corpus classes: explicit decisions joined with the live inventory of BOTH suites
+if C:
+    import review_corpus_classes as rcc
+    rows, problems = rcc.build_rows(S, C, os.path.join(S, "tools", "ws0", "corpus_decisions.csv"))
+    for p in problems:
+        check(False, f"corpus classes: {p}")
+    fixture = os.path.join(S, "tests", "testthat", "fixtures", "v1-corpus-classes.csv")
+    check(os.path.exists(fixture) and open(fixture, encoding="utf-8").read() == rcc.to_csv_text(rows),
+          "tests/testthat/fixtures/v1-corpus-classes.csv is not the join of corpus_decisions.csv with the live inventory")
+
 # --- checksums ----------------------------------------------------------------------
 def check_sums(dirname, label):
     sums = os.path.join(dirname, "SHA256SUMS")
@@ -191,7 +215,7 @@ if C:
     check(open(os.path.join(S, "inst", "column_classes.csv"), "rb").read() == open(os.path.join(C, "inst", "column_classes.csv"), "rb").read(),
           "column corpus differs between packages")
 
-print(f"checked 3 schemas, 2 examples, {n_probes} probes, {n_plans} acceptance plans, {len(vec['vectors'])} digest vectors, {len(NUMBERS) + 9} numbers")
+print(f"checked 3 schemas, 2 examples, {n_probes} probes, {n_plans} acceptance plans, {len(vec['vectors'])} digest vectors, {len(NUMBERS) + 9} numbers, {n_corpus} corpus doubles")
 if failures:
     print("FAILURES:"); [print(" -", f) for f in failures]
     sys.exit(1)
