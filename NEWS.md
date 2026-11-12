@@ -28,6 +28,26 @@ fills its entries. Classes follow design-2.10.3 section 5.
   session temporary table.
   The compiler handoff is recorded in
   `inst/contracts/ws5-interval-anchor-coverage.md`.
+- (WS-6; A-20) The language-2.0 population compiler freezes raw candidates,
+  final rosters, matching case identities/strata and observation-period
+  records in private session tables. Source changes between statements cannot
+  renumber a retained episode or reassign its coverage component. Coverage is
+  compiled once on candidates and its selected component is transferred to
+  final rows; observed segments retain the original recorded periods.
+- (WS-6; A-20) Population criteria use the same visit/parent association as
+  anchors and streams. Rosters preserve `index_visit_id` and the separate
+  `origin_source`/`origin_key` through parents, set operations and matched
+  cases. Person-scoped adapter criteria count each physical event once;
+  visit-qualified era identities remain distinct when dates coincide.
+- (A-E10; WS-6) `set_id` and `cohort_row_id` are reviewed analytic keys and
+  survive identifier handling. Each matched row retains its own person's
+  lineage. Matching excludes same-time outcomes, uses the complete bounded
+  eligible pool and full case identity, and returns tentative controls when
+  an insufficient case is dropped. Case weights are 1; controls have
+  `N_c / m_c` weights under `between_sets` and NA under `none`. A released
+  `N_c / m_c` weight reveals eligible-pool information and is assigned data
+  subject to final publication support and downstream DataSHIELD controls.
+  The WS-7 handoff is `inst/contracts/ws6-populations-matching.md`.
 - Publication validates one genuine person per final row through direct keys or
   an immutable roster. Composite families commit together; support is counted
   on the materialized component, including streamed staged files.
@@ -53,7 +73,9 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 - (B-8) Before 2.10.3, `parent_id` recorded provenance but did not restrict
   membership; from 2.10.3 a child population is a subset of its parent, as
-  `print()` has always shown.
+  `print()` has always shown. A child without an index inherits its parent's
+  episodes before filtering; a child with its own index, or a set-operation
+  child, restricts its own episodes to the parent's persons.
 - (A-E1) A specified concept set that resolves to no concept now matches no
   row (`{concepts = 123, exclude = 123}` yields zero counts); it was treated
   as unrestricted in feature extraction. A v1 feature specification whose
@@ -61,7 +83,9 @@ fills its entries. Classes follow design-2.10.3 section 5.
   counts zero; the language-2.0 concept-set node has the explicit states
   `all` (no set declared), `set` and `none` (SQL `1 = 0`, never unrestricted).
 - (A-E4) Cohort unions keep distinct same-date index events of different
-  sources or keys; they collapsed on (subject, start, end).
+  sources or keys; they collapsed on (subject, start, end). The language-2.0
+  compiler deduplicates full origin identities and preserves left-hand
+  episodes in person-based intersections and differences.
 - (A-E3) Index-event concept sets accept `exclude`, resolved by the shared
   concept-set resolver like every other concept set; they were refused with
   "Unknown index-event concept-set field(s): exclude".
@@ -104,6 +128,12 @@ fills its entries. Classes follow design-2.10.3 section 5.
 - (B-19, B-22) Native outputs include one multi-source wide episode roster,
   long event logs, survival, intervals, seeded temporal/person-period panels,
   sparse matrices, membership, dictionaries and private-input joins.
+- (WS-6) The language-2.0 compiler evaluates complete criteria and candidate
+  anchors for `first_eligible`, allowing a later eligible episode after an
+  earlier candidate fails. `first`, `last` and `nth` retain the legacy
+  selection-before-criteria order. Private populations, set-operation inputs
+  and matching pools have no minimum-person gate; `keep_available` can retain
+  a case with no controls, with publication support checked on final rows.
 - (B-20) Index events may come from any table with an event role record in
   the role registry (`inst/ohdsi/roles-5.3.csv`, `roles-5.4.csv`): besides the
   seven tables of 2.10.2, `visit_detail`, `observation_period`, `death`,
@@ -159,6 +189,17 @@ fills its entries. Classes follow design-2.10.3 section 5.
 ## Newly refused
 
 ### Structural
+- (WS-6) Set-operation members must share one effective coverage policy,
+  including policies inherited through nested set operations or matching;
+  mismatches are refused before site queries. A union carrying contradictory
+  metadata for one origin identity fails with `setop_identity_conflict`.
+  A matching controls template has one instantiation per plan and cannot
+  also serve as an ordinary roster or another match's template.
+- (WS-6) Matching fetches at most the effective candidate cap plus one row;
+  overflow fails with `match_candidates_exceeded` before selection. No pool
+  is truncated or reported as an insufficient case. Snapshot/materialisation
+  failures release operation-owned tables, retaining failed drops for
+  execution-context cleanup to retry.
 - Unknown fields anywhere in a plan, mixed population shapes, legacy
   constructs on the wire, `tie_policy = "error"`.
 - Every plan passes one validation sequence before any query (design 4.5):

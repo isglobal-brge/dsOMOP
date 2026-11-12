@@ -287,10 +287,15 @@ test_that("B9: an age-at-case-time criterion is valid in a controls template", {
 
 test_that("A-11: intersect/setdiff take their first member's indexedness", {
   b <- .rv_example("plan-v2-example-B.json")
-  b$populations$mixed <- list(kind = "setop", setop = list(op = "intersect", members = list("eligible", "cases")))
+  # The matching template keeps its own candidate/coverage identity (A-20).
+  # Use an ordinary person population to isolate the indexedness rule.
+  b$populations$people_seed <- list(kind = "criteria")
+  b$populations$mixed <- list(kind = "setop", setop = list(op = "intersect", members = list("people_seed", "cases")))
   b$outputs$people <- list(rows = "mixed", format = "wide", columns = list("age"))
   ir <- .irPrepare(b)
   expect_identical(ir$outputs$people$grain, "person")
+  b$populations$mixed$setop$op <- "setdiff"
+  expect_identical(.irPrepare(b)$outputs$people$grain, "person")
   b$populations$mixed$setop$op <- "union"
   expect_identical(.irPrepare(b)$outputs$people$grain, "episode")
 })

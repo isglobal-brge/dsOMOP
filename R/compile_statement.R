@@ -63,18 +63,21 @@
 #' \code{src}, \code{norm} and the final fragment; adapters: \code{src} and
 #' the final fragment) and \code{map} (vocabulary maps). WS-5: \code{iv}
 #' (intervals), \code{op} / \code{opc} / \code{seg} (coverage) and
-#' \code{anc} (anchors). WS-7: \code{rd} (variable streams, bounds and person
-#' attributes per output) and \code{ox} (output-level streams: survival
-#' outcomes and censors, panel sources, exposures, outcomes and boundaries,
-#' long and interval sources, relations). Later compilers add their families
-#' here; a fragment family without a generator cannot be named.
+#' \code{anc} (anchors). WS-6: \code{cand} / \code{pop} / \code{scope}
+#' (populations) and \code{mt} (matching). WS-7: \code{rd} (variable streams,
+#' bounds and person attributes per output) and \code{ox} (output-level
+#' streams: survival outcomes and censors, panel sources, exposures, outcomes
+#' and boundaries, long and interval sources, relations). Later compilers
+#' add their families here; a fragment family without a generator cannot be
+#' named.
 #'
 #' @return Named list of functions(ir) -> list of identities.
 #' @keywords internal
 .fragmentIdentityGenerators <- function() {
   list(ev = .eventFragmentIdentities, map = .mapFragmentIdentities,
        iv = .intervalFragmentIdentities, coverage = .coverageFragmentIdentities,
-       anc = .anchorFragmentIdentities, rd = .reduceFragmentIdentities,
+       anc = .anchorFragmentIdentities, population = .populationFragmentIdentities,
+       match = .matchFragmentIdentities, rd = .reduceFragmentIdentities,
        ox = .outputFragmentIdentities)
 }
 
@@ -392,8 +395,8 @@
 .mysqlStockpileSource <- function(fragment, table, dialect) {
   if (identical(.sqlDialectProfile(dialect, probe = TRUE)$engine, "mysql")) {
     types <- vapply(fragment$columns, function(column) column$type, "")
-    if (!all(types %in% c("integer", "bigint", "date", "text", "boolean"))) {
-      stop("A MySQL stockpile payload needs exact integer, date, text or boolean columns.", call. = FALSE)
+    if (!all(types %in% c("integer", "bigint", "numeric", "date", "text", "boolean"))) {
+      stop("A MySQL private payload needs integer, numeric, date, text or boolean columns.", call. = FALSE)
     }
     attr(fragment, "mysql_stockpile_source") <- list(table = table)
   }
@@ -587,7 +590,7 @@
   replacements <- list()
   original_sql <- paste(c(main, vapply(all, function(f) paste(f$name, f$select_body), "")), collapse = " ")
   result_alias <- .mysqlLocalSqlName("dsomop_result", original_sql)
-  sql_types <- c(integer = "INT", bigint = "BIGINT", date = "DATE",
+  sql_types <- c(integer = "INT", bigint = "BIGINT", numeric = "DOUBLE", date = "DATE",
                  text = "LONGTEXT", boolean = "BOOLEAN")
   for (k in seq_along(tables)) {
     table <- tables[[k]]

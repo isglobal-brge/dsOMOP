@@ -38,6 +38,10 @@ base event (an interval's source) decides
     per-parent relation) and through the \code{"person"} branch for the
     other rows; the roster must carry \code{index_source} and
     \code{index_key}.
+Native population rosters additionally retain \code{origin_source} and
+\code{origin_key}: adapter indices carry their parent origin, and matched
+cases keep their original association separately from the new immutable
+matching index identity. Those columns take precedence when present.
 Missing metadata fails closed, never broadening to person scope.
 }
 \keyword{internal}

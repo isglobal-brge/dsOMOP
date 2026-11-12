@@ -68,7 +68,25 @@
 .coverageSource <- function(ctx) {
   nm <- .fragmentName("op", "periods", ctx = ctx)
   existing <- .fragmentGet(ctx, nm)
-  if (!is.null(existing)) return(existing)
+  snapshot <- isTRUE(ctx[["population_snapshots"]])
+  if (!is.null(existing)) {
+    if (!snapshot || isTRUE(attr(existing, "coverage_snapshot", exact = TRUE))) return(existing)
+    # A source compiled by a standalone/rendering helper can precede native
+    # populations. Promote it once before roster/component materialisation.
+    # Dependencies resolve this identity through the registry, so existing
+    # coverage fragments now read the same snapshot. Restore the original
+    # entry if materialisation fails; never leave a half-replaced registry.
+    store <- .fragmentStore(ctx)
+    rm(list = nm, envir = store)
+    return(tryCatch({
+      frozen <- .populationFreezeFragment(ctx, existing)
+      attr(frozen, "coverage_snapshot") <- TRUE
+      .fragmentRegister(ctx, frozen)
+    }, error = function(e) {
+      assign(nm, existing, envir = store)
+      stop(e)
+    }))
+  }
   h <- .compileDialect(ctx)
   handle <- ctx[["handle"]]
   role <- .roleOf(handle, "observation_period")
@@ -98,6 +116,10 @@
                  person_lineage = list(person_col = "person_id", via_roster = NULL),
                  private_columns = "period_id", ordering = c("start_date", "period_id"))
   .sqlAssertTypedSql(h, f$select_body)
+  if (snapshot) {
+    f <- .populationFreezeFragment(ctx, f)
+    attr(f, "coverage_snapshot") <- TRUE
+  }
   .fragmentRegister(ctx, f)
 }
 
