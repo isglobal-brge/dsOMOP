@@ -7,6 +7,14 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- (WS-9 review B3–B4; A-23) Mutation branches and coalescing use a common
+  physical type, preserving integer64 values and datetime classes/timezones.
+  Integer arithmetic is exact before overflow checks and promotes beyond
+  32 bits; bit64 is now a required dependency. Evaluated columns are checked
+  against their inferred type before publication. Expression meaning is
+  independent of JSON member order, and repeated public cut labels group
+  their intervals.
+
 - (A-20; WS-5 review B1–B4, B6–B7, N1–N2) Era `min_days` uses the
   normalised recorded span even when stockpiling; persistence and carry do
   not satisfy the threshold. Direct-event coverage applies the interval
@@ -122,6 +130,10 @@ fills its entries. Classes follow design-2.10.3 section 5.
 ## Newly refused
 
 ### Structural
+- (WS-9 review B5; A-23) Class-1 source columns are refused by mutation and
+  expression-filter validation before row evaluation, including when the
+  administrator allows their direct projection. Protected-key restrictions
+  remain in force; class-2 columns remain available.
 - Unknown fields anywhere in a plan, mixed population shapes, legacy
   constructs on the wire, `tie_policy = "error"`.
 - Every plan passes one validation sequence before any query (design 4.5):
