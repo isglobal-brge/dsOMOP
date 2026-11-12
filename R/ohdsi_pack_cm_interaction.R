@@ -284,11 +284,12 @@
 #' @return Data frame (person_days, events) — one row per subject in the subgroup.
 #' @keywords internal
 .omopCmSubgroupSubjectFrame <- function(handle, cohort, out_src, tar, predicate) {
-  # The shared observed window (.omopObservedTarSql), half-open [lo, hi); the
-  # subgroup predicate is evaluated on the canonical first episode (alias coh).
-  first <- .omopFirstCohortEpisodeSql(handle, cohort)
+  # The shared observed window (.omopObservedTarSql), half-open [lo, hi), of
+  # the canonical first episode (alias coh; it carries that episode's dates,
+  # so the subgroup predicate is evaluated on it). The cohort table is read
+  # once: MySQL/MariaDB cannot reopen a temporary table within one query.
   observed <- .omopObservedTarSql(handle, cohort, tar)
-  pdays  <- .omopDateDiffDays(handle, "w.tar_hi", "w.tar_lo")
+  pdays  <- .omopDateDiffDays(handle, "coh.tar_hi", "coh.tar_lo")
 
   outcome_join <- ""
   out_event_expr <- "0"
@@ -296,8 +297,8 @@
     outcome_join <- paste0(
       " LEFT JOIN ", out_src$table, " o ON o.", out_src$person_col,
       " = coh.subject_id AND o.", out_src$concept_col, " IN (",
-      out_src$id_list, ") AND o.", out_src$date_col, " >= w.tar_lo",
-      " AND o.", out_src$date_col, " < w.tar_hi")
+      out_src$id_list, ") AND o.", out_src$date_col, " >= coh.tar_lo",
+      " AND o.", out_src$date_col, " < coh.tar_hi")
     out_event_expr <- paste0("COUNT(o.", out_src$concept_col, ")")
   }
   conditions <- c(predicate)
@@ -309,8 +310,7 @@
     "SELECT coh.subject_id AS subject_id, ",
     "MAX(", pdays, ") AS person_days, ",
     out_event_expr, " AS events ",
-    "FROM ", first, " coh INNER JOIN ", observed,
-    " w ON w.subject_id = coh.subject_id", outcome_join, where,
+    "FROM ", observed, " coh", outcome_join, where,
     " GROUP BY coh.subject_id"),
     handle$target_dialect))
   res <- .executeQuery(handle, sql)

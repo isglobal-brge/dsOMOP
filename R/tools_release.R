@@ -1415,8 +1415,8 @@
   var <- 1 / et + sd$status^2 / et^2 + sd$time^2 / tt^2 +
     1 / ec + sd$status^2 / ec^2 + sd$time^2 / tc^2
   se <- sqrt(var)
-  .dsomopReleaseRound(c(estimate = exp(log_rr),
-                        ci_lo = exp(log_rr - 1.96 * se),
-                        ci_hi = exp(log_rr + 1.96 * se),
-                        log_estimate = log_rr, se_log_estimate = se))
+  out <- c(estimate = exp(log_rr), ci_lo = exp(log_rr - 1.96 * se),
+           ci_hi = exp(log_rr + 1.96 * se), log_estimate = log_rr,
+           se_log_estimate = se)
+  stats::setNames(.dsomopReleaseRound(out), names(out))
 }
