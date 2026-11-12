@@ -1279,13 +1279,10 @@
     },
     mysql = {
       v <- .databaseServerVersion(handle)
-      if (is.null(v)) NULL else if (grepl("mariadb", v, ignore.case = TRUE)) {
-        paste("MariaDB", sub("^([0-9][0-9.]*).*$", "\\1",
-                             sub("^.*?([0-9]+\\.[0-9]+\\.[0-9]+)-MariaDB.*$",
-                                 "\\1", v, perl = TRUE)))
-      } else {
-        paste("MySQL", sub("^([0-9][0-9.]*).*$", "\\1", v))
-      }
+      maria <- !is.null(v) && grepl("mariadb", v, ignore.case = TRUE)
+      number <- .databaseVersionNumber(v, if (maria) "mariadb" else "mysql")
+      if (is.null(number)) NULL else
+        paste(if (maria) "MariaDB" else "MySQL", number)
     },
     {
       v <- .databaseServerVersion(handle)

@@ -237,20 +237,36 @@
   version
 }
 
+#' Extract the server version number from a vendor version string
+#'
+#' MariaDB reports its own version tagged \code{-MariaDB}, possibly after the
+#' replication prefix \code{5.5.5-} and before a distribution suffix with
+#' dotted numbers of its own (Ubuntu: \code{10.6.23-MariaDB-0ubuntu0.22.04.1});
+#' the tagged number is the server version. Other families report it first.
+#'
+#' @param version Character vendor version string.
+#' @param family \code{"mariadb"} or any other family name.
+#' @return The version number as a string, or \code{NULL}.
+#' @keywords internal
+.databaseVersionNumber <- function(version, family) {
+  if (!is.character(version) || length(version) != 1L || is.na(version) ||
+      !nzchar(version)) return(NULL)
+  pattern <- "[0-9]+\\.[0-9]+(?:\\.[0-9]+)?"
+  if (identical(family, "mariadb")) {
+    tagged <- regmatches(version, regexpr(paste0(pattern, "(?=-MariaDB)"),
+                                          version, perl = TRUE))
+    if (length(tagged) == 1L) return(tagged)
+  }
+  matches <- regmatches(version, gregexpr(pattern, version, perl = TRUE))[[1L]]
+  if (length(matches) == 0L || identical(matches, "")) return(NULL)
+  if (identical(family, "mariadb")) matches[[length(matches)]] else matches[[1L]]
+}
+
 #' Compare a vendor version string with a minimum version
 #' @keywords internal
 .databaseVersionAtLeast <- function(version, minimum, family) {
-  if (!is.character(version) || length(version) != 1L || is.na(version) ||
-      !nzchar(version)) return(FALSE)
-  matches <- regmatches(
-    version, gregexpr("[0-9]+\\.[0-9]+(?:\\.[0-9]+)?", version, perl = TRUE)
-  )[[1L]]
-  if (length(matches) == 0L || identical(matches, "")) return(FALSE)
-  candidate <- if (identical(family, "mariadb")) {
-    matches[[length(matches)]]
-  } else {
-    matches[[1L]]
-  }
+  candidate <- .databaseVersionNumber(version, family)
+  if (is.null(candidate)) return(FALSE)
   parsed <- tryCatch(numeric_version(candidate), error = function(e) NULL)
   !is.null(parsed) && parsed >= numeric_version(minimum)
 }

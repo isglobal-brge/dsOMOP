@@ -89,6 +89,11 @@ fills its entries. Classes follow design-2.10.3 section 5.
   (`.sqlDialectProfile()`) gives the capability `dialect` block its family,
   temporary materialisation, SHA-256 and window-frame availability and the
   runtime version, and records the driver for the conformance report.
+- MariaDB servers whose version string carries a distribution suffix, such as
+  Ubuntu 22.04's `10.6.23-MariaDB-0ubuntu0.22.04.1`, are no longer refused
+  as below MariaDB 10.2: the version tagged `-MariaDB` is read instead of the
+  last dotted number (`0.22.04`). This affected every MariaDB connection and
+  the longitudinal SQL floor.
 
 # dsOMOP 2.10.2
 

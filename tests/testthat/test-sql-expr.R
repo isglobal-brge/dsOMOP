@@ -451,6 +451,39 @@ test_that("preflight refuses missing constructs before any query", {
                "TRUE or FALSE")
 })
 
+test_that("MariaDB and MySQL versions are read from the server's own number", {
+  # Ubuntu 22.04's MariaDB 10.6 package: the distribution suffix carries
+  # dotted numbers ("0.22.04") that the last-number rule took for the server
+  # version, so the connection floor refused a MariaDB 10.6 as below 10.2.
+  ubuntu <- "10.6.23-MariaDB-0ubuntu0.22.04.1"
+  expect_identical(.databaseVersionNumber(ubuntu, "mariadb"), "10.6.23")
+  expect_true(.databaseVersionAtLeast(ubuntu, "10.2.0", "mariadb"))
+  expect_true(.assertAnalyticDbmsSupport(list(
+    dbms = "mariadb", target_dialect = "mysql", dbms_version = ubuntu)))
+  expect_true(.assertAnalyticDbmsSupport(list(
+    dbms = "mysql", target_dialect = "mysql", dbms_version = ubuntu)))
+  expect_identical(.sqlDialectProfile(list(
+    conn = new.env(), dbms = "mariadb", target_dialect = "mysql",
+    dbms_version = ubuntu), probe = TRUE)$runtime, "MariaDB 10.6.23")
+  # Replication prefix, other distribution suffixes, untagged strings.
+  expect_identical(.databaseVersionNumber("5.5.5-10.6.12-MariaDB-log",
+                                          "mariadb"), "10.6.12")
+  expect_false(.databaseVersionAtLeast("5.5.5-10.1.48-MariaDB", "10.2.0",
+                                       "mariadb"))
+  expect_identical(.databaseVersionNumber("11.4.2-MariaDB-ubu2404",
+                                          "mariadb"), "11.4.2")
+  expect_identical(.databaseVersionNumber("10.11.6-MariaDB-0+deb12u1",
+                                          "mariadb"), "10.11.6")
+  expect_identical(.databaseVersionNumber("10.6.23", "mariadb"), "10.6.23")
+  expect_identical(.databaseVersionNumber("8.0.36-0ubuntu0.22.04.1", "mysql"),
+                   "8.0.36")
+  expect_true(.databaseVersionAtLeast("8.4.3", "8.0.0", "mysql"))
+  expect_false(.databaseVersionAtLeast("5.7.44-log", "8.0.0", "mysql"))
+  expect_null(.databaseVersionNumber("", "mysql"))
+  expect_null(.databaseVersionNumber("unknown", "mariadb"))
+  expect_false(.databaseVersionAtLeast(NA_character_, "8.0.0", "mysql"))
+})
+
 test_that("the capability dialect block has exactly the section 4.4 fields", {
   skip_if_not_installed("RSQLite")
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
