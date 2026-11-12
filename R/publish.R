@@ -221,6 +221,12 @@
   invisible(NULL)
 }
 
+# Ownership checks retain only a server-private fingerprint after commit, so
+# deleting a large published table also releases its materialised frame.
+.publishFingerprint <- function(value) {
+  as.character(openssl::sha256(serialize(value, NULL, version = 3L)))
+}
+
 #' Revoke every execution-owned artefact and verify cleanup
 #' @keywords internal
 .publishAbort <- function(ctx) {
@@ -230,9 +236,9 @@
       value <- if (exists(symbol, ctx$target_env, inherits = FALSE)) {
         get(symbol, ctx$target_env, inherits = FALSE)
       } else NULL
-      expected <- c(list(ctx$published_values[[symbol]]), ctx$published_variants[[symbol]])
+      expected <- c(ctx$published_values[[symbol]], ctx$published_variants[[symbol]])
       if (exists(symbol, ctx$target_env, inherits = FALSE) &&
-          any(vapply(expected, identical, logical(1L), y = value))) {
+          .publishFingerprint(value) %in% expected) {
         rm(list = symbol, envir = ctx$target_env)
         if (exists(symbol, ctx$target_env, inherits = FALSE)) stop("symbol remains")
       }
@@ -332,7 +338,7 @@
       entry$n_columns <- as.integer(length(value$metadata$columns))
     } else entry$n_columns <- as.integer(ncol(value))
     ctx$owned$symbols <- c(ctx$owned$symbols, entry$symbol)
-    ctx$published_values[[entry$symbol]] <- value
+    ctx$published_values[[entry$symbol]] <- .publishFingerprint(value)
     assign(entry$symbol, value, ctx$target_env)
     .publishInject(ctx, "assign")
     published[[pc$output]][[pc$component]] <- entry
@@ -623,20 +629,21 @@ omopStagedRevokeDS <- function(exec_symbol) {
 #' Record an audited in-place factor recode without changing released attributes
 #' @keywords internal
 .publishUpdateOwnedValue <- function(before, after) {
+  before <- .publishFingerprint(before)
+  after <- .publishFingerprint(after)
   for (id in ls(.publicationRegistry, all.names = TRUE)) {
     ctx <- get(id, .publicationRegistry, inherits = FALSE)
     if (!isTRUE(ctx$committed)) next
     for (symbol in names(ctx$published_values)) {
-      expected <- c(list(ctx$published_values[[symbol]]), ctx$published_variants[[symbol]])
-      if (any(vapply(expected, identical, logical(1L), y = before)) &&
-          !any(vapply(expected, identical, logical(1L), y = after))) {
+      expected <- c(ctx$published_values[[symbol]], ctx$published_variants[[symbol]])
+      if (before %in% expected && !after %in% expected) {
         # Keep earlier representations too: identical components may be
         # harmonised independently, including on DSLite sites in one process.
-        ctx$published_variants[[symbol]] <- c(ctx$published_variants[[symbol]], list(after))
+        ctx$published_variants[[symbol]] <- c(ctx$published_variants[[symbol]], after)
       }
     }
   }
-  invisible(after)
+  invisible(NULL)
 }
 
 #' Authorise one server-side in-place verb destination with a rollback copy
