@@ -7,6 +7,11 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- (WS-9 re-review R1–R2) Mutation and expression-filter predicates compare
+  factor labels as text, including leading zeros. Datetime scalar, membership
+  and range thresholds consistently use civil midnight in the input timezone;
+  inclusive day ranges respect daylight-saving calendar boundaries.
+
 - (WS-9 review B3–B4; A-23) Mutation branches and coalescing use a common
   physical type, preserving integer64 values and datetime classes/timezones.
   Integer arithmetic is exact before overflow checks and promotes beyond

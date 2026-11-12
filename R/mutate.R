@@ -162,7 +162,12 @@
 .verbPredicateMask <- function(pred, df) {
   refs <- unique(unlist(.verbPredicateRefs(pred)))
   aliases <- stats::setNames(paste0("v", seq_along(refs)), refs)
-  frame <- as.data.frame(lapply(refs, function(r) df[[r]]), stringsAsFactors = FALSE,
+  frame <- as.data.frame(lapply(refs, function(r) {
+    value <- df[[r]]
+    # Factors have the declared text type: compare labels, never level codes
+    # or numeric coercions of a text literal. Only the private copy changes.
+    if (is.factor(value)) as.character(value) else value
+  }), stringsAsFactors = FALSE,
                          col.names = unname(aliases), check.names = FALSE)
   if (!length(refs)) frame <- data.frame(row.names = seq_len(nrow(df)))
   rename <- function(node) {

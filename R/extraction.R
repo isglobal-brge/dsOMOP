@@ -3316,17 +3316,20 @@
 
   is_date_col <- inherits(col, "Date")
   is_datetime_col <- inherits(col, c("POSIXct", "POSIXlt"))
+  timezone <- attr(col, "tzone")
+  if (is.null(timezone) || length(timezone) == 0L || !nzchar(timezone[1])) {
+    timezone <- "UTC"
+  }
+  date_midnight <- function(x, label, offset = 0L) {
+    date <- .isoDate(x, label)
+    # Date -> POSIXct represents UTC midnight even with tz set. Parse civil
+    # dates in the input zone, after calendar-day offsets (including DST).
+    as.POSIXct(as.character(date + offset), tz = timezone[1])
+  }
   typed_value <- function(x, label = "filter value") {
     if (is.list(x) && length(x) == 1L) x <- x[[1L]]
     if (is_date_col) return(.isoDate(x, label))
-    if (is_datetime_col) {
-      date <- .isoDate(x, label)
-      timezone <- attr(col, "tzone")
-      if (is.null(timezone) || length(timezone) == 0L || !nzchar(timezone[1])) {
-        timezone <- "UTC"
-      }
-      return(as.POSIXct(date, tz = timezone[1]))
-    }
+    if (is_datetime_col) return(date_midnight(x, label))
     if (is.character(x) && !is.character(col)) return(suppressWarnings(as.numeric(x)))
     if (is.logical(x) && is.numeric(col)) return(as.numeric(x))
     x
@@ -3340,15 +3343,9 @@
       return(as.Date(vapply(parsed, as.character, character(1))))
     }
     if (is_datetime_col) {
-      timezone <- attr(col, "tzone")
-      if (is.null(timezone) || length(timezone) == 0L || !nzchar(timezone[1])) {
-        timezone <- "UTC"
-      }
-      parsed <- lapply(seq_along(values), function(i) {
-        .isoDate(values[i], paste0(label, " ", i))
-      })
-      return(as.POSIXct(vapply(parsed, as.character, character(1)),
-                        tz = timezone[1]))
+      return(do.call(c, lapply(seq_along(values), function(i) {
+        date_midnight(values[i], paste0(label, " ", i))
+      })))
     }
     if (is.logical(values) && is.numeric(col)) return(as.numeric(values))
     values
@@ -3379,14 +3376,8 @@
     if (is_datetime_col) {
       # ISO bounds denote whole calendar days. Use an exclusive next-midnight
       # upper bound so events later on the stated end date are retained.
-      timezone <- attr(col, "tzone")
-      if (is.null(timezone) || length(timezone) == 0L || !nzchar(timezone[1])) {
-        timezone <- "UTC"
-      }
-      next_midnight <- as.POSIXct(
-        .isoDate(unlist(upper_raw), "filter upper bound") + if (inclusive) 1L else 0L,
-        tz = timezone[1]
-      )
+      next_midnight <- date_midnight(unlist(upper_raw), "filter upper bound",
+                                     if (inclusive) 1L else 0L)
       return(col >= lower & col < next_midnight)
     }
     if (inclusive) col >= lower & col <= upper else col >= lower & col < upper
