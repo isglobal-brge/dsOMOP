@@ -22,6 +22,7 @@ def attribute(record, by_block):
     classes = {row["class"] for row in rows}
     status, error, _ = capture.effective(record)
     error = error or ""
+    test = key.split(":", 2)[2]
 
     def select(cls=None, suffix=None, reason=""):
         selected = [row for row in rows if
@@ -37,15 +38,15 @@ def attribute(record, by_block):
 
     if not rows:
         return dict(disposition="unclassified", plan_ids=[], attribution="No frozen corpus row")
+    if test == "legacy or forged cohort numeric thresholds fail closed":
+        suffix = "#1" if "value_threshold" in error else "#2"
+        return select(suffix=suffix, reason="Five legacy value_threshold inputs and the sixth unissued value_bin input are distinct calls")
     if len(classes) == 1:
         if status == "ok" and classes <= {"unchanged_invalid", "publication_refused_unchanged"}:
             return dict(disposition="setup_control", plan_ids=[],
                         attribution="Successful fixture preparation in a refusal-class block; the subsequently refused analysis/helper is not this captured call")
         return select(reason="Single class in the frozen block")
 
-    test = (record.get("context") or {}).get("test")
-    # The block key is stable even where the test context omits its title.
-    test = key.split(":", 2)[2]
     if test == "baseline output produces one row per cohort member":
         return select(suffix="#2", reason="The only executor call requests derived age_group, not the year_of_birth column of subrow #1")
     if test == "baseline accepts only a public common age-grid coarsening":
@@ -58,9 +59,6 @@ def attribute(record, by_block):
         return select(suffix="#below_k", reason="Original pinned fixture has two event persons at threshold three; admissible variants are the separate A-19 memory/staged evidence")
     if test == "reach SAFETY: narrow age_range blocked while gate is ON":
         return select(suffix="#missing_reference", reason="Original pinned min=121/max=122 plan omits an explicit reference; the valid-reference variant is separately tested")
-    if test == "legacy or forged cohort numeric thresholds fail closed":
-        suffix = "#1" if "value_threshold" in error else "#2"
-        return select(suffix=suffix, reason="Five legacy value_threshold inputs and the sixth unissued value_bin input are distinct calls")
     if test == "cohort criteria fail closed instead of becoming unfiltered":
         if status == "ok":
             return dict(disposition="setup_control", plan_ids=[],
