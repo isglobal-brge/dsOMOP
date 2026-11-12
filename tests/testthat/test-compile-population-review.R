@@ -248,6 +248,8 @@ test_that("closed legacy empty operands obey union intersection and difference i
 test_that("the legacy empty exception refuses open shapes and remains IR-only", {
   invalid <- list(
     false = list(legacy_empty = FALSE), missing_mode = list(legacy_episodes = NULL),
+    null_without_mode = list(legacy_empty = NULL, legacy_episodes = NULL),
+    null_with_mode = list(legacy_empty = NULL),
     wrong_mode = list(legacy_episodes = "cohort_rows"), wrong_kind = list(kind = "index"),
     parent = list(parent = "people"), where = list(where = .ws6f_has_members(5L)),
     cohort = list(cohort_definition_id = 93991L),
