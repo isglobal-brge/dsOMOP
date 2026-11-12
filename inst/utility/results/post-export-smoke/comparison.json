@@ -1,0 +1,26 @@
+{
+  "scenario": 4,
+  "replicate": 1,
+  "fits": 3,
+  "comparison": "exact CSV-field equality",
+  "unchanged_fields": [
+    "seed",
+    "level",
+    "log_estimate",
+    "se",
+    "lo",
+    "hi",
+    "finite",
+    "informative",
+    "covered",
+    "margin_projection_calls",
+    "margin_repairs_nonzero",
+    "margin_repairs_above_1e_minus8_relative",
+    "margin_error_max_relative",
+    "margin_initial_error_max_relative"
+  ],
+  "final_study_survival_sha256": "742cb7cfd9e45bbaa55c211b48211ad89dc0b65a3f7294bb41495edf75f1c358",
+  "post_export_survival_sha256": "7e8c070dc5ed65e15347e46c48f86361a36a3a54b848af1e7c0f07e19c5a7b1a",
+  "post_export_commit": "9f8a898",
+  "note": "The 100-replicate estimator evidence predates export-only metadata. This smoke reruns the same seed after that change; it is not additional empirical coverage evidence."
+}

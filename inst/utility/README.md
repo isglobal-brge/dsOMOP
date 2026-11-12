@@ -115,3 +115,8 @@ family and its public view map. It changes the payload after fitting; it does
 not change the server's draws, projections, estimates or uncertainty inputs.
 The retained final source hashes identify the estimator revision used by the
 100-replicate study, before that export-only addition.
+`post-export-smoke/` reruns scenario 4, replicate 1 at export commit `9f8a898`:
+all three subgroup estimates, standard errors, intervals, finite/informative/
+coverage flags and repair diagnostics exactly match the retained final-study
+CSV fields. Its raw results, log, session and comparison hashes are retained.
+This is an estimator-preservation check, not additional coverage evidence.
