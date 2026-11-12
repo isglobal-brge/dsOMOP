@@ -401,7 +401,7 @@ test_that("B11: a singleton union lowers to its member and returns the member's 
                              .planExecute(handle, p, list(on_alias = "rv_alias", on_base = "rv_base")))
   expect_gt(nrow(res$on_alias), 0L)
   expect_identical(res$on_alias, res$on_base)
-  # n-ary differences lower to the v1 left fold; a self-difference is refused
+  # A-21: n-ary differences lower to the v1 left fold; self-difference is empty.
   p3 <- list(populations = list(
     a = list(kind = "criteria", cohort_definition_id = 1L),
     b = list(kind = "criteria", filter_tree = list(type = "sex", params = list(value = "F"))),
@@ -413,7 +413,9 @@ test_that("B11: a singleton union lowers to its member and returns the member's 
   expect_identical(ir3$populations[[fold]]$setop, list(op = "setdiff", members = list("a", "b")))
   expect_identical(unlist(ir3$populations$d$setop$members), c(fold, "c"))
   p3$populations$d$setop$members <- list("a", "a")
-  expect_match(conditionMessage(.rv_refused(.irPrepare(p3))), "difference of a population with itself")
+  self <- .irPrepare(p3)
+  expect_identical(self$populations$d$setop,
+                   list(op = "setdiff", members = list("a", "a")))
 })
 
 # --- the multi-population base is every person (Corrected) ------------------------
