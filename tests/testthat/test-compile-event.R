@@ -15,7 +15,9 @@ withr::defer(.ws4_cleanup(.ws4_ev_backends), testthat::teardown_env())
     "measurement_date, measurement_type_concept_id, operator_concept_id, value_as_number, ",
     "value_as_concept_id, unit_concept_id, range_low, range_high) VALUES ",
     "(599001, 1009, 3004410, ", d("2019-12-05"), ", 44818702, 0, 60, 0, 8753, 20, 42), ",
-    "(599002, 1009, 3004410, ", d("2019-12-06"), ", 44818702, 0, 5.5, 0, 8554, 4, 6)"))
+    "(599002, 1009, 3004410, ", d("2019-12-06"), ", 44818702, 0, 5.5, 0, 8554, 4, 6), ",
+    "(599003, 1009, 3004410, ", d("2019-12-07"), ", 44818702, NULL, 6.1, 0, 8554, NULL, NULL), ",
+    "(599004, 1009, 3004410, ", d("2019-12-08"), ", 44818702, 4171755, 6.2, 0, 8554, NULL, NULL)"))
   DBI::dbExecute(h$conn, paste0(
     "INSERT INTO ", q("drug_exposure"), " (drug_exposure_id, person_id, drug_concept_id, ",
     "drug_exposure_start_date, drug_exposure_end_date, drug_type_concept_id, days_supply) VALUES ",
@@ -78,6 +80,9 @@ test_that("units are normalised before every predicate; unknown units and censor
     expect_false(any(unc$operator_concept_id %in% c(4171756L, 4172704L)), info = b)
     expect_identical(sum(unc$person_id == 1006L), 5L, info = b)
     expect_true(4172703L %in% unc$operator_concept_id, info = b)
+    # a NULL operator counts as equality (kept); a reviewed >= is dropped
+    expect_true(599003 %in% as.numeric(unc$event_id), info = b)
+    expect_false(599004 %in% as.numeric(unc$event_id), info = b)
     # reference ranges use the same affine map as the value
     r <- .ws4_rows(ctx, "all_rows", "x.person_id = 1009")
     mm <- r[r$event_id == 599001, ]

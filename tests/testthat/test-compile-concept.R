@@ -73,6 +73,26 @@ test_that("descendants, mapped sources and expanded exclusions resolve in the do
   }
 })
 
+test_that("descendant-only rows are matched only when descendants are requested", {
+  for (b in names(.ws4_cs_backends)) {
+    h <- .ws4_cs_backends[[b]]$handle
+    DBI::dbExecute(h$conn, paste0(
+      "INSERT INTO ", .qualifyTable(h, "condition_occurrence", h$cdm_schema),
+      " (condition_occurrence_id, person_id, condition_concept_id, condition_start_date, ",
+      "condition_type_concept_id) VALUES (598001, 1030, 201822, ", .sqlDateLiteral(h, "2018-01-01"), ", 32817)"))
+    plan <- .ws4_plan(events = list(
+      with_desc = list(table = "condition_occurrence",
+                       concept_set = list(concepts = list(201820), include_descendants = TRUE)),
+      root_only = list(table = "condition_occurrence", concept_set = list(concepts = list(201820)))))
+    ctx <- .ws4_ctx(h, plan)
+    wd <- .ws4_rows(ctx, "with_desc", "x.person_id = 1030")
+    ro <- .ws4_rows(ctx, "root_only", "x.person_id = 1030")
+    expect_true(201822L %in% wd$concept_id, info = b)
+    expect_false(201822L %in% ro$concept_id, info = b)
+    expect_identical(setdiff(wd$concept_id, ro$concept_id), 201822L, info = b)
+  }
+})
+
 test_that("malformed concept-set nodes are typed refusals", {
   h <- .ws4_cs_backends$sqlite$handle
   .ws4_expect_rejection(.resolveConceptSetNode(h, list(concepts = list(1), lineage = "x")),

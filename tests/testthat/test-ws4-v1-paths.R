@@ -70,6 +70,24 @@ test_that("F-25: assigned wide outputs return requested birth components; class 
   })
   expect_error(.compileSelect(h, "person", columns = c("person_id", "person_source_value")),
                "blocked")
+  # baseline (no date handling of its own) returns every requested birth
+  # component, birth_datetime included
+  th <- create_test_handle()
+  on.exit(cleanup_handle(th), add = TRUE)
+  DBI::dbExecute(th$conn, "ALTER TABLE person ADD COLUMN birth_datetime TEXT")
+  DBI::dbExecute(th$conn, paste0("UPDATE person SET birth_datetime = year_of_birth || '-06-15 08:30:00' ",
+                                 "WHERE year_of_birth IS NOT NULL"))
+  th$blueprint <- NULL
+  bplan <- list(cohort = list(type = "cohort_table", cohort_definition_id = 1L),
+                outputs = list(b = list(type = "baseline",
+                                        columns = c("year_of_birth", "month_of_birth", "birth_datetime"),
+                                        derived = "age_at_index")),
+                options = list(translate_concepts = FALSE, block_sensitive = TRUE))
+  withr::with_options(list(nfilter.subset = 3), {
+    res <- .planExecute(th, bplan, list(b = "b_df"))
+  })
+  expect_true(all(c("year_of_birth", "month_of_birth", "birth_datetime", "age_group") %in% names(res$b)))
+  expect_true(any(grepl("-06-15", res$b$birth_datetime)))
   expect_identical(.ql_classify("SELECT year_of_birth, COUNT(*) AS n FROM person GROUP BY year_of_birth",
                                 "aggregate")$class, "BLOCKED")
   expect_error(.profileColumnStats(h, "person", "year_of_birth"), "blocked")
