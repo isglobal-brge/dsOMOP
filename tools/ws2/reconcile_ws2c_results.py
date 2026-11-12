@@ -38,7 +38,10 @@ def attribute(record, by_block):
     if not rows:
         return dict(disposition="unclassified", plan_ids=[], attribution="No frozen corpus row")
     if len(classes) == 1:
-        return select(reason="Single class in the frozen block; unchanged successful setup calls remain separately identifiable by baseline_status")
+        if status == "ok" and classes <= {"unchanged_invalid", "publication_refused_unchanged"}:
+            return dict(disposition="setup_control", plan_ids=[],
+                        attribution="Successful fixture preparation in a refusal-class block; the subsequently refused analysis/helper is not this captured call")
+        return select(reason="Single class in the frozen block")
 
     test = (record.get("context") or {}).get("test")
     # The block key is stable even where the test context omits its title.
