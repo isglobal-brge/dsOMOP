@@ -521,12 +521,14 @@ test_that("min_days measures the normalised recorded span, for stockpiled source
       s50 = iv(stockpile = TRUE, min_days = 50),
       s44p = iv(stockpile = TRUE, min_days = 44, persistence = 30),
       s45p = iv(stockpile = TRUE, min_days = 45, persistence = 30),
+      s15points = iv(stockpile = TRUE, end = "start", min_days = 15),
+      s16points = iv(stockpile = TRUE, end = "start", min_days = 16, persistence = 30),
       r44p = iv(min_days = 44, persistence = 30), r45p = iv(min_days = 45, persistence = 30)),
       events = events)
     .ws5_release(ctx)
     # reach person 1004: fills [01-01, 01-30] + [01-15, 02-13] -- normalised
     # recorded span 44 days; effective span 60 days (carry 16)
-    for (name in c("s45", "s50", "s45p", "r45p")) {
+    for (name in c("s45", "s50", "s45p", "r45p", "s16points")) {
       info <- paste(b, name)
       expect_identical(nrow(.ws5_course(ctx, name, 1004)), 0L, info = info)
       expect_identical(nrow(.ws5_recorded(ctx, name, 1004)), 0L, info = info)
@@ -544,6 +546,9 @@ test_that("min_days measures the normalised recorded span, for stockpiled source
     expect_identical(ends("s44"), c("2020-01-01", "2020-02-29", "2020-02-13"), info = b)
     expect_identical(ends("s44p"), c("2020-01-01", "2020-03-30", "2020-02-13"), info = b)
     expect_identical(ends("r44p"), c("2020-01-01", "2020-03-14", "2020-02-13"), info = b)
+    # An era override changes the measured recorded end, even though the
+    # original recorded roles and effective supply still extend beyond it.
+    expect_identical(ends("s15points"), c("2020-01-01", "2020-02-29", "2020-01-15"), info = b)
     expect_identical(nrow(.ws5_recorded(ctx, "s44", 1004)), 2L, info = b)
     expect_identical(.ws5_recorded(ctx, "s44", 1004, "effective")$end_date,
                      c("2020-01-30", "2020-02-29"), info = b)
