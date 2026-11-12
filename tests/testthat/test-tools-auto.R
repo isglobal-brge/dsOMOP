@@ -178,9 +178,9 @@ test_that("auto mode without DP releases the same tables under the standard gate
                .tools_summary_ids)) {
     out <- tools_run(h, id, .tools_params[[id]] %||% list())
     label <- attr(out, "dsomop_protection")
-    expected <- if (id %in% .tools_summary_ids) "standard" else
-      "standard_fallback"
-    expect_identical(label$protection, expected, info = id)
+    # Every reviewed question has a protected route; without the DP service
+    # auto mode releases its standard table under the gate.
+    expect_identical(label$protection, "standard_fallback", info = id)
     expect_identical(names(out),
                      .omopAnalysisResolve(h, paste0("dsomop:", id))$meta$output_fields,
                      info = id)
@@ -240,9 +240,13 @@ test_that("auto mode with DP releases complete protected histograms", {
   by_gender <- tools_run(h, "observation_period.length_by_gender")
   expect_equal(nrow(by_gender), nrow(.dsomopToolsGenders()) *
                  length(.DSOMOP_TOOLS_DAY_BREAKS))
-  # Questions without a public scale stay standard in auto mode.
-  value <- tools_run(h, "measurement.value_stats", list(concept_id = 3025315))
-  expect_identical(attr(value, "dsomop_protection")$protection, "standard")
+  # Record-weighted summaries are capped record moments on public scales
+  # (tools_release_records.R), not standard statistics.
+  for (id in .tools_summary_ids) {
+    res <- tools_run(h, id, .tools_params[[id]] %||% list())
+    expect_identical(attr(res, "dsomop_protection")$protection,
+                     "fixed_synopsis", info = id)
+  }
 })
 
 test_that("each person changes exactly one cell of a DP histogram by one", {
@@ -323,9 +327,9 @@ test_that("DP-only mode refuses standard statistics and keeps DP questions", {
   out <- tools_run(h, "condition.duration_stats", list(concept_id = 201820))
   expect_identical(attr(out, "dsomop_protection")$protection,
                    "fixed_synopsis")
-  expect_error(tools_run(h, "measurement.value_stats",
-                         list(concept_id = 3025315)),
-               "no differential-privacy release")
+  value <- tools_run(h, "measurement.value_stats", list(concept_id = 3025315))
+  expect_identical(attr(value, "dsomop_protection")$protection,
+                   "fixed_synopsis")
   expect_error(tools_run(h, "demo.person_count_by_gender"),
                "DP-only mode")
   expect_error(.dsomopRequireCommunityTool(), "DP-only mode")

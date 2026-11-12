@@ -14,6 +14,8 @@ Contract (with its canonical \code{name}) or NULL.
 }
 \description{
 Only built-in adapters resolve a contract; external packs never can. A
-reviewed QueryLibrary question in its standard summary shape has none.
+reviewed QueryLibrary question in its standard summary shape has none,
+except the record-weighted summaries, whose protected route keeps that
+shape (\code{summary_shape}).
 }
 \keyword{internal}

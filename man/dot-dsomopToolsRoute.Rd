@@ -13,8 +13,8 @@
 }
 \value{
 List with protection ("standard", or "pending_release_route" for
-  histogram/partition shapes whose release contract decides), shape and
-  mode.
+  histogram/partition shapes and record-weighted summaries whose release
+  contract decides), shape and mode.
 }
 \description{
 Depends only on the custodial mode, the DP service state and the question;

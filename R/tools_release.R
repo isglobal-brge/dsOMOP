@@ -1201,6 +1201,8 @@
   owners <- lapply(built_list, function(b) b$owner)
   components <- lapply(built_list, function(b) {
     o <- b$owner
+    # Capped record-weighted moments (tools_release_records.R).
+    if (identical(o$family, "RM")) return(.dsomopReleaseRecordLabel(b, e))
     cap <- max(1L, o$cap)
     frac <- .DSOMOP_RELEASE_FRACTIONS
     # A public partition owns its parent total and its strata totals.
@@ -1426,6 +1428,21 @@
   if (is.null(release) || identical(mode, "standard") ||
       identical(contract$strategy, "not_poolable")) {
     entry$meta$pooling_contract <- contract
+    return(entry)
+  }
+  # Record-weighted components (R/S/Q) are shown per server: the 2.10.3
+  # client pools person-weighted components only.
+  if (isTRUE(release$per_site_only)) {
+    reason <- paste0(
+      "Protected record-weighted release (", release$class, "): its capped ",
+      "record moments are shown per server and are not pooled.")
+    entry$meta$release_pooling <- list(
+      version = 1L, strategy = "per_site_only",
+      protocol = .DSOMOP_RELEASE_PROTOCOL,
+      contract = .DSOMOP_RELEASE_CONTRACT_VERSION,
+      release_contract = release$name, class = release$class,
+      columns = contract$columns, reason = reason)
+    entry$meta$pooling_contract <- .omopPoolingNotPoolable(reason)
     return(entry)
   }
   entry$meta$release_pooling <- list(

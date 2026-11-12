@@ -806,13 +806,16 @@
     out[[paste0("dsomop:", id)]] <- contract("C7",
                                              .omopReleaseRunToolsHistogram)
   }
-  out
+  # Record-weighted QueryLibrary summaries (tools_release_records.R).
+  c(out, .omopReleaseRecordSummaryContracts())
 }
 
 #' Resolve the protected release contract of a catalogue entry
 #'
 #' Only built-in adapters resolve a contract; external packs never can. A
-#' reviewed QueryLibrary question in its standard summary shape has none.
+#' reviewed QueryLibrary question in its standard summary shape has none,
+#' except the record-weighted summaries, whose protected route keeps that
+#' shape (\code{summary_shape}).
 #'
 #' @param entry Catalog entry.
 #' @return Contract (with its canonical \code{name}) or NULL.
@@ -820,13 +823,14 @@
 .omopToolsReleaseContract <- function(entry) {
   adapter <- entry$meta$adapter %||% ""
   if (!adapter %in% .DSOMOP_RELEASE_BUILTIN_ADAPTERS) return(NULL)
-  if (identical(adapter, "tools_auto") &&
-      identical(entry$meta$tools_shape, "summary")) {
-    return(NULL)
-  }
   name <- entry$meta$alias_target %||% entry$name
   contract <- .omopToolsReleaseContracts()[[name]]
   if (is.null(contract)) return(NULL)
+  if (identical(adapter, "tools_auto") &&
+      identical(entry$meta$tools_shape, "summary") &&
+      !isTRUE(contract$summary_shape)) {
+    return(NULL)
+  }
   contract$name <- name
   contract
 }
