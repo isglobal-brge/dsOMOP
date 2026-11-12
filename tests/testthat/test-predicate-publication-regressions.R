@@ -143,8 +143,17 @@ test_that("datetime predicates retain the UTC fallback and reject invalid dates"
     for (pred in list(.pp_pred("stamp", "==", "2020-01-01"),
                      .pp_pred("stamp", "in", list("2020-01-01")),
                      .pp_pred("stamp", "between", list(lower = "2020-01-01", upper = "2020-01-01")))) {
-      expect_identical(.pp_mut(x, list(pred = pred)), c(TRUE, TRUE, TRUE, FALSE, NA))
-      expect_identical(omopFilterDS(x, expr = pred)$person_id, x$person_id[1:3])
+      check_fallback <- function(value) {
+        # Base R may warn about display-zone metadata on these fallback
+        # inputs. Suppress only that warning; check the actual instants below.
+        withCallingHandlers(force(value), warning = function(w) {
+          if (identical(conditionMessage(w), "'tzone' attributes are inconsistent")) {
+            invokeRestart("muffleWarning")
+          }
+        })
+      }
+      expect_identical(check_fallback(.pp_mut(x, list(pred = pred))), c(TRUE, TRUE, TRUE, FALSE, NA))
+      expect_identical(check_fallback(omopFilterDS(x, expr = pred))$person_id, x$person_id[1:3])
     }
   }
   for (invalid in c("2020-02-30", "2020-1-1", "2020-01-01 00:00:00")) {
