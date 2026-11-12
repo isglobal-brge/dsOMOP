@@ -17,9 +17,9 @@ test_that("named long-output anchors compile after full IR preparation (B5)", {
       outputs = list(events = list(rows = "t", format = "long", sources = list(list(event = "a")),
                                    options = list(anchors = list(first = first_a, same = explicit_a, after = after_b)))))
     ir <- .irPrepare(plan, h)
-    expect_s3_class(ir, "dsomop_ir", info = backend)
-    expect_length(.irAnchorInventory(ir)$final$t, 3L, info = backend)
-    expect_length(.irAnchorInventory(ir)$candidate$t, 0L, info = backend)
+    expect_s3_class(ir, "dsomop_ir")
+    expect_identical(length(.irAnchorInventory(ir)$final$t), 3L, info = backend)
+    expect_identical(length(.irAnchorInventory(ir)$candidate$t), 0L, info = backend)
     ctx <- .planContext(h, ir)
     roster <- .ws5_literal_roster(ctx, data.frame(
       cohort_row_id = c(31L, 92L), subject_id = c(3201L, 3202L),
