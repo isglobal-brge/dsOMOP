@@ -400,22 +400,39 @@ test_that("two scopes differing by one person no longer expose a measurement val
   params <- list(metric = "measurement_value", domain_code = "3")
   ra <- .release_run(h, "dsomop:fe.continuous", params, scope = a)
   rb <- .release_run(h, "dsomop:fe.continuous", params, scope = b)
+  hba1c <- function(r) r[r$covariate_id == 3004410 & r$unit_concept_id == 8554, ]
   for (r in list(ra, rb)) {
     expect_identical(attr(r, "dsomop_protection")$protection,
                      "realised_sticky")
     expect_false(any(c("min_value", "max_value") %in% names(r)))
-    row <- r[r$covariate_id == 3004410, ]
-    # No public scale for this measurement: no mean or SD at all, only
-    # quantiles of the noisy public 1-2-5 histogram.
-    if (nrow(row)) expect_true(all(is.na(c(row$avg_value, row$stdev_value))))
+    expect_equal(nrow(hba1c(r)), 1L)
   }
-  # Without a public scale no sum or square component exists at all, so the
-  # attack's n * mean algebra has nothing to difference.
+  # HbA1c in percent has a registered public scale [0, 20] (B13): its owner
+  # releases bounded lattice moments, and the displayed mean is
+  # post-processing of the exported noisy components only.
   owners <- attr(rb, "dsomop_release")$owners
-  comps <- unlist(lapply(owners, `[[`, "components"), recursive = FALSE)
-  expect_gt(length(comps), 0L)
-  expect_true(all(vapply(comps, function(c) is.null(c$s) && is.null(c$q),
-                         logical(1L))))
+  owner <- Filter(function(o) "concept=3004410|unit=8554" %in%
+                    vapply(o$components, `[[`, character(1L), "stratum"),
+                  owners)[[1L]]
+  expect_equal(owner$bounds, c(0, 20))
+  comp <- Filter(function(c) identical(c$stratum, "concept=3004410|unit=8554"),
+                 owner$components)[[1L]]
+  expect_false(is.null(comp$s))
+  expect_false(is.null(comp$q))
+  row <- hba1c(rb)
+  if (!is.na(row$avg_value)) {
+    p <- .dsomopReleaseProjectMoments(comp$s / 65535, comp$q / 65535,
+                                      row$count_value)
+    expect_equal(row$avg_value, 10 + 10 * p[["S"]] / row$count_value,
+                 tolerance = 1e-6)
+  }
+  # The attack's exact n * mean difference does not recover the value.
+  rowa <- hba1c(ra)
+  if (!anyNA(c(rowa$avg_value, row$avg_value))) {
+    recovered <- row$count_value * row$avg_value -
+      rowa$count_value * rowa$avg_value
+    expect_false(isTRUE(all.equal(recovered, 7.85)))
+  }
   # Standard mode: the exact scoped moments and quantiles are unavailable.
   withr::local_options(list(dsomop.tools.mode = "standard"))
   suppressWarnings(.omopAnalysisRegistry(h, force = TRUE))
@@ -423,6 +440,39 @@ test_that("two scopes differing by one person no longer expose a measurement val
   expect_true(all(is.na(std[, .DSOMOP_RELEASE_DIST_FIELDS])))
   expect_identical(attr(std, "dsomop_protection")$masked_reason,
                    "protected_output_required")
+})
+
+test_that("a measurement without a registered scale has no moment components (E2)", {
+  .release_state()
+  h <- create_test_handle(n_persons = 60)
+  on.exit(cleanup_handle(h), add = TRUE)
+  # Hemoglobin (3000963) in g/dL (8713): no public scale is registered.
+  DBI::dbWriteTable(h$conn, "measurement", data.frame(
+    measurement_id = 9100L + 1:31, person_id = 1:31,
+    measurement_concept_id = 3000963L, measurement_date = "2021-03-01",
+    measurement_type_concept_id = 44818518L,
+    value_as_number = c(12 + (1:30 %% 5) * 0.4, 9.1),
+    value_as_concept_id = NA_integer_, unit_concept_id = 8713L,
+    range_low = NA_real_, range_high = NA_real_,
+    visit_occurrence_id = NA_integer_), append = TRUE)
+  b <- .release_cohort(h, "release_e2_unscaled", 1:31)
+  out <- .release_run(h, "dsomop:fe.continuous",
+                      list(metric = "measurement_value", domain_code = "3"),
+                      scope = b)
+  row <- out[out$covariate_id == 3000963, ]
+  expect_equal(nrow(row), 1L)
+  expect_equal(row$unit_concept_id, 8713)
+  # Only quantiles of the noisy public 1-2-5 histogram; no mean or SD and no
+  # sum or square component for the n * mean algebra.
+  expect_true(is.na(row$avg_value) && is.na(row$stdev_value))
+  owners <- attr(out, "dsomop_release")$owners
+  owner <- Filter(function(o) "concept=3000963|unit=8713" %in%
+                    vapply(o$components, `[[`, character(1L), "stratum"),
+                  owners)[[1L]]
+  expect_null(owner$bounds)
+  expect_true(all(vapply(owner$components, function(c) {
+    is.null(c$s) && is.null(c$q)
+  }, logical(1L))))
 })
 
 test_that("realised components replay for equal maps whatever the program", {

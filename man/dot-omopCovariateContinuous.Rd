@@ -27,12 +27,16 @@
 Data frame of dist rows (one per covariate).
 }
 \description{
-Pulls one numeric value per (covariate, person) into R and summarises each
-covariate into a dist row: \code{count_value} (persons contributing),
-min/max (stripped by the gate), avg/sd, and p10/p25/median/p75/p90 (masked by
-the gate below nfilter_dist). snake_case column names so the gate's dist
-branch handles them. \code{value_kind} selects the value: \code{"value"}
-(measurement \code{value_as_number}, requires a measurement/observation
-domain) or \code{"count"} (per-person record count of the concept).
+Pulls one numeric value per (covariate, unit, person) into R and summarises
+each covariate x unit into a dist row: \code{count_value} (persons
+contributing), min/max (stripped by the gate), avg/sd, and
+p10/p25/median/p75/p90 (masked by the gate below nfilter_dist). snake_case
+column names so the gate's dist branch handles them. \code{value_kind}
+selects the value: \code{"value"} (measurement \code{value_as_number},
+requires a measurement/observation domain; values of one concept in
+different or unknown units are separate rows and are never averaged
+together, after the public unit conversions of the measurement scale
+registry) or \code{"count"} (per-person record count of the concept; no
+unit).
 }
 \keyword{internal}

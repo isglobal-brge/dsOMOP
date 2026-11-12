@@ -1337,29 +1337,6 @@
                       bounds = c(grid$lower, grid$upper), estimand = estimand)
 }
 
-# Per (concept, person) values of a domain within the scoped cohort.
-.omopReleaseConceptValues <- function(handle, ctx, domain_code, value_kind) {
-  cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
-  concept <- .qualifyTable(handle, "concept",
-                           handle$vocab_schema %||% handle$cdm_schema)
-  src <- .omopCovariateSource(handle, domain_code)
-  .omopDiagAssertPersons(handle, ctx, src$table, "e", src$person_col)
-  value_sql <- if (identical(value_kind, "value") && !is.na(src$value_col)) {
-    paste0("AVG(CAST(e.", src$value_col, " AS FLOAT))")
-  } else "COUNT(*)"
-  where <- if (identical(value_kind, "value") && !is.na(src$value_col)) {
-    paste0(" WHERE e.", src$value_col, " IS NOT NULL")
-  } else ""
-  .omopReleaseFetch(handle, paste0(
-    "SELECT pp.covariate_id, cc.concept_name AS covariate_name, pp.person_id, ",
-    "pp.v FROM (SELECT e.", src$concept_col, " AS covariate_id, e.",
-    src$person_col, " AS person_id, ", value_sql, " AS v FROM ", src$table,
-    " e INNER JOIN (SELECT DISTINCT subject_id FROM ", cohort,
-    ") c ON c.subject_id = e.", src$person_col, where, " GROUP BY e.",
-    src$concept_col, ", e.", src$person_col, ") pp LEFT JOIN ", concept,
-    " cc ON cc.concept_id = pp.covariate_id"))
-}
-
 .omopReleaseConceptOwner <- function(id, value_kind, estimand) {
   grid <- if (identical(value_kind, "value")) .dsomopReleaseGrid("signed_125") else
     .dsomopReleaseGrid("count_per_person")
@@ -1427,21 +1404,24 @@
     built <- .dsomopReleaseBuild(route$policy, route$protection, owner, sub)
     st <- built$strata
     df <- cbind(data.frame(metric = metric, covariate_id = NA_integer_,
-                           covariate_name = metric, count_value = st$n_display,
+                           covariate_name = metric,
+                           unit_concept_id = NA_real_,
+                           unit_name = if (identical(metric, "age")) "years"
+                             else "days",
+                           count_value = st$n_display,
                            n_persons = st$n_display, stringsAsFactors = FALSE),
                 .omopReleaseDistColumns(st)[, -1L, drop = FALSE])
     return(list(df = df, built = list(built)))
   }
+  # Measurement/observation values: per person within concept x unit (B13).
   domain <- params$domain_code %||% "3"
-  raw <- .omopReleaseConceptValues(handle, ctx, domain, "value")
-  owner <- .omopReleaseConceptOwner(
-    paste0("fe/person-mean-value-by-concept/domain=", domain, "/v1"), "value",
-    "per-person mean value of each concept in the cohort")
-  built <- .omopReleaseTopStrata(route, owner,
-                                 .omopReleaseConceptSubstrate(raw),
-                                 as.integer(params$top_n %||% "50"))
-  df <- .omopReleaseConceptRows(built, raw, list(metric = metric))
-  list(df = df, built = list(built))
+  raw <- .omopReleaseConceptUnitValues(handle, ctx, domain)
+  res <- .omopReleaseUnitStrataBuild(
+    route, raw, paste0("fe/person-mean-value-by-concept-unit/domain=", domain),
+    "per-person mean value of each concept in the cohort",
+    top_n = as.integer(params$top_n %||% "50"))
+  df <- .omopReleaseUnitRows(res$strata, raw, list(metric = metric))
+  list(df = df, built = res$built, extra = list(weighting = "person"))
 }
 
 .omopComorbiditySeeds <- function(index_type) {
@@ -1594,26 +1574,52 @@
          call. = FALSE)
   }
   use_value <- identical(value_kind, "value") && !is.na(src$value_col)
+  window <- paste0("[", start_d, ",", end_d, "]")
+  if (use_value) {
+    # Values per person within concept x unit (B13), after the public unit
+    # conversions of the measurement scale registry.
+    conv <- .omopReleaseUnitConversionSql(
+      src, .dsomopReleaseMeasurementScales(),
+      has_unit = .omopReleaseHasUnit(handle, src))
+    matched <- paste0(
+      "SELECT DISTINCT e.", event_id_col, " AS event_id, e.",
+      src$concept_col, " AS covariate_id, e.", src$person_col,
+      " AS person_id, ", conv$value, " AS v, ", conv$unit,
+      " AS unit_concept_id FROM ", src$table, " e INNER JOIN ", cohort,
+      " c ON c.subject_id = e.", src$person_col, " WHERE e.", src$value_col,
+      " IS NOT NULL", extra)
+    raw <- .omopReleaseFetch(handle, paste0(
+      "SELECT pp.covariate_id, cc.concept_name AS covariate_name, ",
+      "pp.unit_concept_id, uu.concept_name AS unit_name, pp.person_id, pp.v ",
+      "FROM (SELECT me.covariate_id, me.unit_concept_id, me.person_id, ",
+      "AVG(me.v) AS v FROM (", matched, ") me GROUP BY me.covariate_id, ",
+      "me.unit_concept_id, me.person_id) pp LEFT JOIN ", concept,
+      " cc ON cc.concept_id = pp.covariate_id LEFT JOIN ", concept,
+      " uu ON uu.concept_id = pp.unit_concept_id"))
+    res <- .omopReleaseUnitStrataBuild(
+      route, raw, paste0("cohortdx/temporal-value-by-concept-unit/domain=",
+                         domain, "/window=", start_d, ",", end_d,
+                         "/covariates=", params$covariate_ids %||% "all"),
+      paste0("per-person mean value of each concept in the index-relative ",
+             "window ", window),
+      top_n = as.integer(params$top_n %||% "50"))
+    rows <- .omopReleaseUnitRows(res$strata, raw, list(time_window = window))
+    return(list(df = rows, built = res$built,
+                extra = list(weighting = "person")))
+  }
   matched <- paste0(
     "SELECT DISTINCT e.", event_id_col, " AS event_id, e.", src$concept_col,
     " AS covariate_id, e.", src$person_col, " AS person_id",
-    if (use_value) paste0(", e.", src$value_col, " AS raw_value") else "",
     " FROM ", src$table, " e INNER JOIN ", cohort, " c ON c.subject_id = e.",
     src$person_col, " WHERE 1 = 1", extra)
-  per_person <- if (use_value) {
-    paste0("SELECT me.covariate_id, me.person_id, AVG(CAST(me.raw_value AS ",
-           "FLOAT)) AS v FROM (", matched, ") me WHERE me.raw_value IS NOT ",
-           "NULL GROUP BY me.covariate_id, me.person_id")
-  } else {
-    paste0("SELECT me.covariate_id, me.person_id, COUNT(*) AS v FROM (",
-           matched, ") me GROUP BY me.covariate_id, me.person_id")
-  }
+  per_person <- paste0(
+    "SELECT me.covariate_id, me.person_id, COUNT(*) AS v FROM (",
+    matched, ") me GROUP BY me.covariate_id, me.person_id")
   raw <- .omopReleaseFetch(handle, paste0(
     "SELECT pp.covariate_id, cc.concept_name AS covariate_name, pp.person_id, ",
     "pp.v FROM (", per_person, ") pp LEFT JOIN ", concept,
     " cc ON cc.concept_id = pp.covariate_id"))
-  kind <- if (use_value) "value" else "count"
-  window <- paste0("[", start_d, ",", end_d, "]")
+  kind <- "count"
   owner <- .omopReleaseConceptOwner(
     paste0("cohortdx/temporal-", kind, "-by-concept/domain=", domain,
            "/window=", start_d, ",", end_d, "/covariates=",
@@ -1624,6 +1630,14 @@
                                  .omopReleaseConceptSubstrate(raw),
                                  as.integer(params$top_n %||% "50"))
   rows <- .omopReleaseConceptRows(built, raw, list(time_window = window))
+  if (nrow(rows)) {
+    # Record counts carry no unit.
+    rows <- cbind(rows[, 1:3, drop = FALSE],
+                  data.frame(unit_concept_id = rep(NA_real_, nrow(rows)),
+                             unit_name = rep(NA_character_, nrow(rows)),
+                             stringsAsFactors = FALSE),
+                  rows[, -(1:3), drop = FALSE])
+  }
   list(df = rows, built = list(built))
 }
 
@@ -1750,16 +1764,21 @@
   if (!is.data.frame(df) || nrow(df) == 0L || !any(df$kind == "continuous")) {
     return(list(df = df, built = list()))
   }
-  raw <- .omopReleaseConceptValues(handle, ctx, "3", "value")
-  owner <- .omopReleaseConceptOwner(
-    "fe/person-mean-value-by-concept/domain=3/v1", "value",
-    "per-person mean value of each concept in the cohort")
+  # The continuous rows are concept x unit strata of the fe.continuous owners
+  # (B13): the same draws as that question.
+  raw <- .omopReleaseConceptUnitValues(handle, ctx, "3")
   cont <- which(df$kind == "continuous")
-  keys <- paste0("concept=", df$covariate_id[cont])
-  b <- .dsomopReleaseBuild(route$policy, route$protection, owner,
-                           .omopReleaseConceptSubstrate(raw),
-                           data_strata_keys = keys)
-  st <- b$strata
+  keys <- .omopReleaseUnitKey(df$covariate_id[cont], df$unit_concept_id[cont])
+  res <- .omopReleaseUnitStrataBuild(
+    route, raw, "fe/person-mean-value-by-concept-unit/domain=3",
+    "per-person mean value of each concept in the cohort", keys = keys)
+  st <- res$strata
+  if (!is.data.frame(st) || nrow(st) == 0L) {
+    st <- data.frame(stratum = character(0), mean = numeric(0),
+                     sd = numeric(0), p10 = numeric(0), p25 = numeric(0),
+                     median = numeric(0), p75 = numeric(0), p90 = numeric(0),
+                     stringsAsFactors = FALSE)
+  }
   at <- match(keys, st$stratum)
   for (col in c("avg_value", "stdev_value", "p10_value", "p25_value",
                 "median_value", "p75_value", "p90_value")) {
@@ -1769,7 +1788,7 @@
                   p90_value = st$p90)
     df[[col]][cont] <- src[at]
   }
-  list(df = df, built = list(b))
+  list(df = df, built = res$built)
 }
 
 # The diagnostics summary's MDRR from the protected arm components of cm.mdrr

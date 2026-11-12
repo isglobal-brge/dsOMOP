@@ -535,9 +535,9 @@
   if (identical(id,
                 "dsomop:ohdsi.cohort_diagnostics.temporal_covariate_value_dist")) {
     return(.omopPoolingDistribution(
-      c("time_window", "covariate_id", "covariate_name", "count_value",
-        "n_persons", "avg_value", "stdev_value", "p10_value", "p25_value",
-        "median_value", "p75_value", "p90_value"),
+      c("time_window", "covariate_id", "covariate_name", "unit_concept_id",
+        "unit_name", "count_value", "n_persons", "avg_value", "stdev_value",
+        "p10_value", "p25_value", "median_value", "p75_value", "p90_value"),
       c("count_value", "n_persons"), "n_persons"
     ))
   }
@@ -611,9 +611,9 @@
   }
   if (id %in% c("dsomop:fe.continuous")) {
     return(.omopPoolingDistribution(
-      c("metric", "covariate_id", "covariate_name", "count_value",
-        "n_persons", "avg_value", "stdev_value", "p10_value", "p25_value",
-        "median_value", "p75_value", "p90_value"),
+      c("metric", "covariate_id", "covariate_name", "unit_concept_id",
+        "unit_name", "count_value", "n_persons", "avg_value", "stdev_value",
+        "p10_value", "p25_value", "median_value", "p75_value", "p90_value"),
       c("count_value", "n_persons"), "n_persons"
     ))
   }
@@ -643,11 +643,11 @@
     return(tab(columns, "sum_value", nonpoolable = setdiff(columns[5:13], "sum_value")))
   }
   if (id %in% c("dsomop:char.target_covariates")) {
-    columns <- c("kind", "covariate_id", "covariate_name", "sum_value",
-                 "average", "count_value", "avg_value", "stdev_value",
-                 "p10_value", "p25_value", "median_value", "p75_value",
-                 "p90_value")
-    return(tab(columns, "sum_value", nonpoolable = columns[5:13]))
+    columns <- c("kind", "covariate_id", "covariate_name", "unit_concept_id",
+                 "unit_name", "sum_value", "average", "count_value",
+                 "avg_value", "stdev_value", "p10_value", "p25_value",
+                 "median_value", "p75_value", "p90_value")
+    return(tab(columns, "sum_value", nonpoolable = columns[7:15]))
   }
   if (id %in% c("dsomop:cohortdx.cohort_overlap")) {
     return(tab(c("category", "n"), "n"))
