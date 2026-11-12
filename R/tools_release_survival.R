@@ -1053,8 +1053,9 @@
 #' nearest grid point changes the estimand: for a homogeneous q inside the
 #' grid range the noise-free log-IRR shifts by \code{logit(q) -
 #' logit(q_grid)}, at most half the logit spacing (about 0.2); heterogeneous
-#' q within a cell partly cancel. Strata outside the grid range are excluded,
-#' never clamped (\code{.omopReleaseSccsCases}).
+#' q within a cell partly cancel. Informative strata outside the grid range
+#' are retained and clamped to its endpoints; the bound does not apply there
+#' (for example q=0.999 incurs about +2.3 log-IRR bias when clamped to 0.99).
 #'
 #' @return Increasing numeric vector.
 #' @keywords internal
@@ -1079,15 +1080,13 @@
 #' (person, coalesced observation island) with an outcome record in it; its
 #' \code{q} is the window's overlap with the island over the island's length
 #' (half-open day counts), so distinct periods keep distinct exposure
-#' fractions. Strata whose \code{q} lies outside the public grid range
-#' [0.0001, 0.99] are excluded before the cap: at \code{q} 0 or 1 they carry
-#' no within-person contrast, and near the boundary their conditional
-#' information (proportional to \code{q (1 - q)}) is negligible, while
-#' clamping them to the grid's end would misstate their exposure fraction and
-#' bias the estimate (a homogeneous \code{q = 0.999} clamped to 0.99 shifts the
-#' noise-free log-IRR by about +2.3). The selection depends only on the
-#' exposure and observation geometry, never on event timing, so the
-#' conditional likelihood of the remaining strata is unchanged. The person's
+#' fractions. Only strata with q=0 or q=1 are excluded because they carry no
+#' within-person contrast. Every informative stratum with 0<q<1 is retained;
+#' exposed fractions outside the public grid range [0.0001, 0.99] are clamped
+#' to its endpoints. This can cause substantial approximation bias near the
+#' boundaries: homogeneous q=0.999 clamped to 0.99 shifts the noise-free
+#' log-IRR by about +2.3. Exclusion depends only on exposure and observation
+#' geometry, never on event timing. The person's
 #' remaining records share the one cap of K events. Islands are disjoint, so
 #' a record is one event.
 #'
@@ -1148,9 +1147,7 @@
   raw$exposed <- as.integer(num(raw$exposed) > 0)
   raw$day_offset <- num(raw$day_offset)
   raw$concept_id <- num(raw$concept_id)
-  q_range <- range(.dsomopReleaseSccsQGrid())
-  raw <- raw[is.finite(raw$q) & raw$q >= q_range[[1L]] &
-               raw$q <= q_range[[2L]] &
+  raw <- raw[is.finite(raw$q) & raw$q > 0 & raw$q < 1 &
                !duplicated(paste(raw$person_id, raw$event_id,
                                  sep = "\u001f")), , drop = FALSE]
   if (!nrow(raw)) return(empty)
@@ -1394,8 +1391,8 @@
                      "IRR: one stratum per case and merged observation ",
                      "period (island), its exposed fraction of observed time ",
                      "snapped to a public logit-spaced grid of ", length(grid),
-                     " points in [0.0001, 0.99] (strata outside that range ",
-                     "excluded), at most ", K, " events per person (first by ",
+                     " points in [0.0001, 0.99] (informative q outside that range ",
+                     "clamped; only q=0 or q=1 excluded), at most ", K, " events per person (first by ",
                      "date); the estimating-equation root of the conditional ",
                      "score on the signed protected cells (not the exact ",
                      "per-person fit)")

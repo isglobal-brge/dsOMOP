@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # Run from the dsOMOP source root on the R test pod:
-# Rscript inst/utility/p0r3-survival-utility.R [replicates=100] [output-directory=inst/utility/results] [sampler=law|crypto]
+# Rscript inst/utility/p0r3-survival-utility.R [replicates=100] [output-directory=inst/utility/results] [sampler=law|crypto] [scenario-ids=1,2,...,12]
 # Uses production contribution fingerprints, HMAC contexts, complete-basis
 # projection and 200-refit SE. Default law mode samples the calibrated
 # discrete-Laplace law using two inverse-geometric draws (28-bit uniforms),
@@ -17,7 +17,7 @@ args <- commandArgs(TRUE)
 replicates <- if (length(args)) as.integer(args[[1L]]) else 100L
 outdir <- if (length(args) >= 2L) args[[2L]] else "inst/utility/results"
 sampler <- if (length(args) >= 3L) args[[3L]] else "law"
-selected <- if (length(args) >= 4L) as.integer(strsplit(args[[4L]], ",")[[1L]]) else 1:8
+selected <- if (length(args) >= 4L) as.integer(strsplit(args[[4L]], ",")[[1L]]) else 1:12
 stopifnot(is.finite(replicates), replicates > 0, sampler %in% c("law", "crypto"))
 pkgload::load_all(".", quiet = TRUE, export_all = TRUE)
 source("tests/testthat/helper-db.R")
@@ -35,12 +35,16 @@ main <- function() {
                                     .package = "dsOMOP")
   }
   scenarios <- data.frame(
-    model = c(rep("cox", 3), rep("interaction_cox", 2), rep("sccs", 3)),
-    n = c(500L, 2000L, 10000L, 2000L, 10000L, 500L, 2000L, 10000L),
-    q_min = c(rep(NA_real_, 5), 0.001, 0.02, 0.02),
-    q_max = c(rep(NA_real_, 5), 0.02, 0.5, 0.5),
+    model = c(rep("cox", 3), rep("interaction_cox", 2), rep("sccs", 3),
+              "cox", "cox", "sccs", "sccs"),
+    n = c(500L, 2000L, 10000L, 2000L, 10000L, 500L, 2000L, 10000L,
+          rep(2000L, 4)),
+    q_min = c(rep(NA_real_, 5), 0.001, 0.02, 0.02, NA, NA, 0.95, 0.02),
+    q_max = c(rep(NA_real_, 5), 0.02, 0.5, 0.5, NA, NA, 0.999, 0.5),
+    horizon_days = c(rep(366L, 8), 366L, 7L, NA, NA),
+    baseline_event_days = c(rep(730, 8), 7300, 730, NA, NA),
+    periods_per_person = c(rep(1L, 11), 2L),
     stringsAsFactors = FALSE)
-  tar <- list(start = 0L, end = 365L, anchor_start = "start", anchor_end = "start")
   outcome_key <- "utility-first-outcome/v1"
   owner <- c(list(id = "utility-arms/v1", population = "c6/persons-at-risk/v1",
                   strata = .omopReleaseArmStrata(), cap = 1L,
@@ -59,12 +63,37 @@ main <- function() {
       beta <- log(1.5)
       n <- scenario$n
       shared_empty <- NA_real_
+      target_censoring <- comparator_censoring <- excluded_strata <- NA_real_
+      eligible_persons <- max_events_person <- NA_real_
+      tar <- list(start = 0L, end = scenario$horizon_days - 1L,
+                  anchor_start = "start", anchor_end = "start")
       if (identical(scenario$model, "sccs")) {
-        q <- plogis(runif(n, qlogis(scenario$q_min), qlogis(scenario$q_max)))
-        m <- pmin(10, 1 + rpois(n, 3))
-        exposed <- rbinom(n, m, plogis(qlogis(q) + beta))
-        cases <- data.frame(person_id = as.character(seq_len(n)),
-                            stratum = "island=1", q = q,
+        periods <- scenario$periods_per_person
+        person <- rep(as.character(seq_len(n)), each = periods)
+        island <- rep(seq_len(periods), times = n)
+        q <- plogis(runif(n * periods, qlogis(scenario$q_min),
+                         qlogis(scenario$q_max)))
+        m <- 1 + rpois(n * periods, if (periods == 1L) 3 else 7)
+        if (periods > 1L) m[island == 1L] <- pmin(8, m[island == 1L])
+        # Production selects informative OP strata before applying one K10
+        # cap to each person's chronological records. This conditional-model
+        # study fixes retained totals first, then samples exposed counts; it
+        # does not model bias induced by truncating a full event-time process.
+        keep <- is.finite(q) & q > 0 & q < 1
+        excluded_strata <- mean(!keep)
+        person <- person[keep]; island <- island[keep]; q <- q[keep]; m <- m[keep]
+        if (periods == 1L) m <- pmin(10, m) else {
+          prior <- ave(m, person, FUN = function(x) c(0, head(cumsum(x), -1L)))
+          m <- pmin(m, pmax(0, 10 - prior))
+        }
+        keep <- m > 0
+        person <- person[keep]; island <- island[keep]; q <- q[keep]; m <- m[keep]
+        max_events_person <- max(tapply(m, person, sum))
+        eligible_persons <- length(unique(person))
+        stopifnot(max_events_person <= 10)
+        exposed <- rbinom(length(m), m, plogis(qlogis(q) + beta))
+        cases <- data.frame(person_id = person,
+                            stratum = paste0("island=", island), q = q,
                             n_exposed = exposed, n_unexposed = m - exposed)
         fit <- .omopReleaseSccsCore(route, cases, "utility-sccs/v1")
         oracle <- .dsomopReleaseSccsFit(.dsomopReleaseSccsQ(q), m,
@@ -74,9 +103,12 @@ main <- function() {
           oracle = oracle)
       } else {
         arm <- rep(c("arm=target", "arm=comparator"), each = n)
-        duration <- rexp(2L * n, rate = ifelse(arm == "arm=target", 1.5, 1) / 730)
-        event <- as.integer(duration < 366)
-        exit <- pmin(366, pmax(1, floor(duration) + 1))
+        duration <- rexp(2L * n, rate = ifelse(arm == "arm=target", 1.5, 1) /
+                           scenario$baseline_event_days)
+        event <- as.integer(duration < scenario$horizon_days)
+        exit <- pmin(scenario$horizon_days, pmax(1, floor(duration) + 1))
+        target_censoring <- mean(event[arm == "arm=target"] == 0)
+        comparator_censoring <- mean(event[arm == "arm=comparator"] == 0)
         exits <- data.frame(person_id = as.character(seq_len(2L * n)),
           stratum = arm, event = event, time = exit,
           status = ifelse(event == 1L, "event", "admin_censored"))
@@ -127,7 +159,13 @@ main <- function() {
       result[[length(result) + 1L]] <- cbind(data.frame(
         scenario = j, model = scenario$model, n = n, replicate = r,
         seed = seed, sampler = sampler, epsilon = p$release_epsilon, truth_log = beta,
-        shared_empty_event_atoms = shared_empty), estimates)
+        shared_empty_event_atoms = shared_empty,
+        horizon_days = scenario$horizon_days,
+        baseline_event_days = scenario$baseline_event_days,
+        target_censoring = target_censoring, comparator_censoring = comparator_censoring,
+        periods_per_person = scenario$periods_per_person,
+        eligible_persons = eligible_persons, excluded_strata_fraction = excluded_strata,
+        max_events_per_person = max_events_person), estimates)
       cat("scenario", j, scenario$model, "n", n,
           "replicate", r, "of", replicates, "seconds",
           round(proc.time()[["elapsed"]] - started, 3), "\n")

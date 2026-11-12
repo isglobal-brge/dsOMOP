@@ -209,15 +209,15 @@ test_that("Deviation 16: the q-grid shift is bounded inside the grid; clipping i
   probe <- plogis(seq(qlogis(min(g)), qlogis(max(g)), length.out = 5001L))
   expect_true(all(abs(qlogis(probe) - qlogis(.dsomopReleaseSccsQ(probe))) <=
                     half + 1e-9))
-  # q = .999 would be clamped to .99 (+2.31 log-IRR): such strata are now
-  # excluded from the release before the cap instead.
+  # q = .999 is retained and clamped to .99 (+2.31 log-IRR), beyond
+  # the approximation bound for q inside the grid range.
   q2 <- .999
   b2 <- .dsomopReleaseSccsFit(.dsomopReleaseSccsQ(q2), M,
                               M * plogis(qlogis(q2) + beta))[["beta"]]
   expect_gt(b2 - beta, 2.3)
 })
 
-test_that("Deviation 16: strata with q outside the public grid range are excluded", {
+test_that("Deviation 16: all informative OP strata survive endpoint grid clipping", {
   h <- create_test_handle(n_persons = 10)
   on.exit(cleanup_handle(h), add = TRUE)
   DBI::dbExecute(h$conn, "DELETE FROM observation_period")
@@ -227,14 +227,15 @@ test_that("Deviation 16: strata with q outside the public grid range are exclude
   # person 2: the window over a 32-day island (q = 31/32 = 0.969, kept);
   # person 3: the window over a 3100-day island (q = 0.01, kept).
   DBI::dbWriteTable(h$conn, "observation_period", data.frame(
-    observation_period_id = 1:3, person_id = 1:3,
+    observation_period_id = 1:5, person_id = 1:5,
     observation_period_start_date = c("2020-01-01", "2020-01-01",
-                                      "2015-01-01"),
+                                      "2015-01-01", "2020-01-01", "2020-01-01"),
     observation_period_end_date = c("2020-01-31", "2020-02-01",
-                                    as.character(as.Date("2015-01-01") +
-                                                   3099)),
+                                    as.character(as.Date("2015-01-01") + 3099),
+                                    as.character(as.Date("2020-01-01") + 399999),
+                                    as.character(as.Date("2020-01-01") + 999)),
     period_type_concept_id = 44814724L), append = TRUE)
-  for (p in 1:3) {
+  for (p in 1:5) {
     ex <- if (p == 3) "2016-01-01" else "2020-01-01"
     DBI::dbExecute(h$conn, sprintf(paste0(
       "INSERT INTO drug_exposure (drug_exposure_id, person_id, ",
@@ -245,12 +246,17 @@ test_that("Deviation 16: strata with q outside the public grid range are exclude
   .release_add_condition(h, 1L, 4000002L, "2020-01-10")
   .release_add_condition(h, 2L, 4000002L, "2020-01-10")
   .release_add_condition(h, 3L, 4000002L, "2016-01-10")
+  .release_add_condition(h, 4:5, 4000002L, "2020-01-10")
   cases <- .omopReleaseSccsCases(h, list(scoped_cohort = NULL),
                                  .omopOutcomeSource(h, "1112807", "1"),
                                  .omopOutcomeSource(h, "4000002", "0"), 30L)
-  expect_setequal(cases$person_id, c("2", "3"))
-  expect_true(all(cases$q >= min(.dsomopReleaseSccsQGrid()) &
-                    cases$q <= max(.dsomopReleaseSccsQGrid())))
+  expect_setequal(cases$person_id, c("2", "3", "4", "5"))
+  expect_lt(cases$q[cases$person_id == "4"], min(.dsomopReleaseSccsQGrid()))
+  high <- .omopReleaseSccsCases(h, list(scoped_cohort = NULL),
+                                .omopOutcomeSource(h, "1112807", "1"),
+                                .omopOutcomeSource(h, "4000002", "0"), 998L)
+  expect_equal(high$q[high$person_id == "5"], 0.999)
+  expect_equal(.dsomopReleaseSccsQ(high$q[high$person_id == "5"]), 0.99)
 })
 
 test_that("Deviation 16: the estimating-equation root selection is documented and stable", {
