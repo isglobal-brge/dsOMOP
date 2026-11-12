@@ -34,6 +34,11 @@
 #     its typed code and field, a newly permitted case compares its exact
 #     result to an admissible independently captured baseline control, and
 #     a deferred legacy declaration checks its reviewed context refusal text;
+#   - policy_oracle cases retain the original raw baseline refusal, and check
+#     the newly permitted predicate against two independent baseline captures
+#     with only the endorsed assignment granularity gates removed. Their SQL
+#     compiler, value coercion, output shaping and pseudonymization are baseline
+#     code; this is a policy-adjusted oracle, not unchanged raw-baseline fidelity;
 #   - a case flagged nondeterministic at the baseline is not replayed.
 # Cases fail where the current code has not (yet) restored the 2.10.2
 # behaviour; that is the purpose of the fixture.
@@ -248,6 +253,8 @@ test_that("compatibility hashes never silently discard temporal numeric payloads
                                  simplifyVector = FALSE)
 .compat_dispositions <- jsonlite::fromJSON(
   testthat::test_path("fixtures", "ir-v1-compat-dispositions.json"), simplifyVector = FALSE)
+.compat_policy_fx <- jsonlite::fromJSON(
+  testthat::test_path("fixtures", "ir-v1-policy-results.json"), simplifyVector = FALSE)
 .compat_fx$cases <- lapply(.compat_fx$cases, function(case) {
   case$disposition <- .compat_dispositions$cases[[case$id]]
   case
@@ -257,15 +264,40 @@ test_that("v1 compatibility dispositions name exact cases and reviewed contracts
   ids <- vapply(.compat_fx$cases, `[[`, "", "id")
   expect_identical(.compat_dispositions$baseline, .compat_fx$baseline$dsOMOP)
   expect_true(all(names(.compat_dispositions$cases) %in% ids))
+  expect_identical(.compat_policy_fx$baseline$dsOMOP, .compat_fx$baseline$dsOMOP)
+  expect_identical(.compat_policy_fx$baseline$dsOMOPClient, .compat_fx$baseline$dsOMOPClient)
+  expect_length(.compat_policy_fx$captures, 2L)
+  policy_ids <- names(Filter(function(d) identical(d$current, "policy_oracle"),
+                            .compat_dispositions$cases))
+  expect_setequal(policy_ids, names(.compat_policy_fx$cases))
+  for (id in policy_ids) {
+    disposition <- .compat_dispositions$cases[[id]]
+    original <- .compat_fx$cases[[match(id, ids)]]
+    expect_identical(original$baseline$status, "error", info = id)
+    expect_identical(disposition$classification, "newly_permitted", info = id)
+    expect_identical(disposition$result_from, id, info = id)
+    expect_identical(.compat_policy_fx$cases[[id]]$plan_sha256, original$plan_sha256,
+                     info = paste(id, "policy oracle uses the original transport plan"))
+  }
   for (d in .compat_dispositions$cases) {
     expect_true(nzchar(d$reference) && nzchar(d$reason))
-    expect_true(d$current %in% c("refused", "ok", "unchanged_refusal"))
+    expect_true(d$current %in% c("refused", "ok", "unchanged_refusal", "policy_oracle"))
     if (identical(d$current, "refused")) expect_true(nzchar(d$field))
     if (identical(d$current, "ok")) expect_true(d$result_from %in% ids)
     if (!is.null(d$refusal_from)) {
       expect_true(d$refusal_from %in% ids)
       control <- .compat_fx$cases[[match(d$refusal_from, ids)]]
       expect_identical(d$message, control$baseline$error$message)
+    }
+    if (identical(d$current, "policy_oracle")) {
+      expect_true(d$result_from %in% names(.compat_policy_fx$cases))
+      control <- .compat_policy_fx$cases[[d$result_from]]
+      expect_true(control$status %in% c("ok", "error"))
+      if (identical(control$status, "ok")) {
+        expect_true(grepl("^[0-9a-f]{64}$", control$result_sha256))
+      } else {
+        expect_true(is.character(control$message) && length(control$message) == 1L)
+      }
     }
   }
 })
@@ -322,6 +354,22 @@ for (.compat_case in .compat_fx$cases) local({
           expect_true(any(grepl(disposition$field, location, fixed = TRUE)),
                       info = paste(case$id, "expected refusal field", disposition$field))
         }
+      } else if (identical(disposition$current, "policy_oracle")) {
+        control <- .compat_policy_fx$cases[[disposition$result_from]]
+        if (identical(control$status, "ok")) {
+          expect_null(run$error, info = paste(info, "policy-adjusted baseline oracle"))
+          if (is.null(run$error)) {
+            expect_identical(.compat_sha(run$value), control$result_sha256,
+                             info = paste(info, "policy-adjusted baseline result"))
+          }
+        } else {
+          expect_s3_class(run$error, "error")
+          if (!is.null(run$error)) {
+            expect_identical(conditionMessage(run$error), control$message)
+            if (!is.null(control$code)) expect_identical(run$error$code, control$code)
+          }
+        }
+        expect_null(.compat_prepare(fx, case, plan))
       } else if (identical(disposition$current, "unchanged_refusal")) {
         expect_s3_class(run$error, "error")
         if (!is.null(run$error)) {

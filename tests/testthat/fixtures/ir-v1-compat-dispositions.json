@@ -394,6 +394,496 @@
       "refusal_from": "A.filter_tree.age_range.max.boolean",
       "message": "Output 'demo' (type 'baseline') requires a cohort; population 'base' did not resolve to an executable cohort table.",
       "reason": "TRUE is the historical compiler bound 1. Removing the old age-width gate admits the predicate, but the fixture has no person of age <=1, so the requested legacy baseline output still refuses its empty cohort. The new refusal is checked against the independently captured same-predicate k=0 empty-cohort control; this is neither a published result nor unchanged early width rejection."
+    },
+    "B.condition_concept_id.eq.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.eq.int",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.eq.str": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.eq.str",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.eq.str_decimal": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.eq.str_decimal",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.eq.str_exponent": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.eq.str_exponent",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.eq.str_alpha": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.eq.str_alpha",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.eq.boolean": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.eq.boolean",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.eq.fraction": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.eq.fraction",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.ne.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.ne.int",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.ne.str": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.ne.str",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.ne.str_decimal": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.ne.str_decimal",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.ne.str_exponent": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.ne.str_exponent",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.ne.str_alpha": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.ne.str_alpha",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.ne.boolean": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.ne.boolean",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.ne.fraction": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.ne.fraction",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.gt.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.gt.int",
+      "reason": "The raw 2.10.2 capture refused client-authored ordered numeric thresholds. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.gt.str": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.gt.str",
+      "reason": "The raw 2.10.2 capture refused client-authored ordered numeric thresholds. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.gt.str_decimal": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.gt.str_decimal",
+      "reason": "The raw 2.10.2 capture refused client-authored ordered numeric thresholds. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.gt.str_exponent": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.gt.str_exponent",
+      "reason": "The raw 2.10.2 capture refused client-authored ordered numeric thresholds. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.gt.str_alpha": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.gt.str_alpha",
+      "reason": "The raw 2.10.2 capture refused client-authored ordered numeric thresholds. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.gt.boolean": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.gt.boolean",
+      "reason": "The raw 2.10.2 capture refused client-authored ordered numeric thresholds. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.gt.fraction": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.gt.fraction",
+      "reason": "The raw 2.10.2 capture refused client-authored ordered numeric thresholds. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.between.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.between.int",
+      "reason": "The raw 2.10.2 capture refused numeric BETWEEN ranges. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.between.str": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.between.str",
+      "reason": "The raw 2.10.2 capture refused numeric BETWEEN ranges. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.between.str_decimal": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.between.str_decimal",
+      "reason": "The raw 2.10.2 capture refused numeric BETWEEN ranges. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.between.boolean": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.between.boolean",
+      "reason": "The raw 2.10.2 capture refused numeric BETWEEN ranges. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_concept_id.between.fraction": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_concept_id.between.fraction",
+      "reason": "The raw 2.10.2 capture refused numeric BETWEEN ranges. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.eq.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.eq.int",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.eq.str": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.eq.str",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.eq.str_decimal": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.eq.str_decimal",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.eq.str_alpha": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.eq.str_alpha",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.eq.boolean": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.eq.boolean",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.ne.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.ne.int",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.ne.str": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.ne.str",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.ne.str_decimal": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.ne.str_decimal",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.ne.str_alpha": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.ne.str_alpha",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.ne.boolean": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.ne.boolean",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.gt.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.gt.int",
+      "reason": "The raw 2.10.2 capture refused client-authored ordered numeric thresholds. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.gt.str": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.gt.str",
+      "reason": "The raw 2.10.2 capture refused client-authored ordered numeric thresholds. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.gt.str_decimal": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.gt.str_decimal",
+      "reason": "The raw 2.10.2 capture refused client-authored ordered numeric thresholds. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.gt.str_alpha": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.gt.str_alpha",
+      "reason": "The raw 2.10.2 capture refused client-authored ordered numeric thresholds. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.gt.boolean": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.gt.boolean",
+      "reason": "The raw 2.10.2 capture refused client-authored ordered numeric thresholds. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.in.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.in.int",
+      "reason": "The raw 2.10.2 capture refused numeric/text IN and NOT IN membership. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.in.str": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.in.str",
+      "reason": "The raw 2.10.2 capture refused numeric/text IN and NOT IN membership. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.in.str_decimal": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.in.str_decimal",
+      "reason": "The raw 2.10.2 capture refused numeric/text IN and NOT IN membership. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.in.str_alpha": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.in.str_alpha",
+      "reason": "The raw 2.10.2 capture refused numeric/text IN and NOT IN membership. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.in.boolean": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.in.boolean",
+      "reason": "The raw 2.10.2 capture refused numeric/text IN and NOT IN membership. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.not_in.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.not_in.int",
+      "reason": "The raw 2.10.2 capture refused numeric/text IN and NOT IN membership. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.not_in.str": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.not_in.str",
+      "reason": "The raw 2.10.2 capture refused numeric/text IN and NOT IN membership. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.not_in.str_decimal": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.not_in.str_decimal",
+      "reason": "The raw 2.10.2 capture refused numeric/text IN and NOT IN membership. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.not_in.str_alpha": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.not_in.str_alpha",
+      "reason": "The raw 2.10.2 capture refused numeric/text IN and NOT IN membership. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.not_in.boolean": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.not_in.boolean",
+      "reason": "The raw 2.10.2 capture refused numeric/text IN and NOT IN membership. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.between.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.between.int",
+      "reason": "The raw 2.10.2 capture refused numeric BETWEEN ranges. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.value_as_number.between.boolean": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.value_as_number.between.boolean",
+      "reason": "The raw 2.10.2 capture refused numeric BETWEEN ranges. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.concept_code.eq.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.concept_code.eq.int",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.concept_code.eq.str": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.concept_code.eq.str",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.concept_code.ne.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.concept_code.ne.int",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.concept_code.ne.str": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.concept_code.ne.str",
+      "reason": "The raw 2.10.2 capture refused custom equality or inequality predicates. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.concept_code.gt.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.concept_code.gt.int",
+      "reason": "The raw 2.10.2 capture refused client-authored ordered numeric thresholds. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.concept_code.gt.str": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.concept_code.gt.str",
+      "reason": "The raw 2.10.2 capture refused client-authored ordered numeric thresholds. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.concept_code.in.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.concept_code.in.int",
+      "reason": "The raw 2.10.2 capture refused numeric/text IN and NOT IN membership. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.concept_code.in.str": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.concept_code.in.str",
+      "reason": "The raw 2.10.2 capture refused numeric/text IN and NOT IN membership. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.concept_code.not_in.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.concept_code.not_in.int",
+      "reason": "The raw 2.10.2 capture refused numeric/text IN and NOT IN membership. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.concept_code.not_in.str": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.concept_code.not_in.str",
+      "reason": "The raw 2.10.2 capture refused numeric/text IN and NOT IN membership. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.concept_code.between.int": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.concept_code.between.int",
+      "reason": "The raw 2.10.2 capture refused numeric BETWEEN ranges. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.concept_code.between.str": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.concept_code.between.str",
+      "reason": "The raw 2.10.2 capture refused numeric BETWEEN ranges. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_start_date.eq.iso": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_start_date.eq.iso",
+      "reason": "The raw 2.10.2 capture refused standalone date predicates that lack a width proof. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_start_date.ne.iso": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_start_date.ne.iso",
+      "reason": "The raw 2.10.2 capture refused standalone date predicates that lack a width proof. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_start_date.gt.iso": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_start_date.gt.iso",
+      "reason": "The raw 2.10.2 capture refused standalone date predicates that lack a width proof. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_start_date.in.iso": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_start_date.in.iso",
+      "reason": "The raw 2.10.2 capture refused standalone date predicates that lack a width proof. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
+    },
+    "B.condition_start_date.not_in.iso": {
+      "classification": "newly_permitted",
+      "current": "policy_oracle",
+      "reference": "Endorsed §7.4 removes assignment filter granularity gates; A-19 item 7 retains actual-site historical literal semantics",
+      "result_from": "B.condition_start_date.not_in.iso",
+      "reason": "The raw 2.10.2 capture refused standalone date predicates that lack a width proof. The endorsed policy now admits this structurally valid predicate. Compare its actual SQLite outcome and full result to two independent policy-adjusted 2.10.2 captures retaining the original SQL compiler, output shaping and pseudonymization; this is not unchanged equivalence to the raw baseline refusal."
     }
   }
 }
