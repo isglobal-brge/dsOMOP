@@ -611,3 +611,31 @@ test_that("the shared normaliser and role tables are vendored byte-identically",
     expect_identical(sha(file.path(client_root, f)), sha(file.path(server_root, f)), info = f)
   }
 })
+
+test_that("the legacy-spec adapter wraps the unchanged .cohortCreate rows as a roster", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle))
+  .buildBlueprint(handle)
+  id <- DBI::dbGetQuery(handle$conn,
+    "SELECT condition_concept_id AS id FROM condition_occurrence LIMIT 1")$id
+  ir <- .irPrepare(list(cohort = list(type = "spec", spec = list(type = "condition",
+                                                                 concept_set = list(id))),
+                        outputs = list(m = list(type = "cohort_membership"))))
+  spec <- ir$populations$base$index$source$legacy_spec
+  fr <- withr::with_options(list(nfilter.subset = 0), .adaptLegacySpec(handle, spec))
+  expect_s3_class(fr, "dsomop_fragment")
+  expect_identical(fr$kind, "roster")
+  expect_identical(fr$roster_namespace, "base")
+  rows <- DBI::dbGetQuery(handle$conn, paste0("SELECT * FROM (", fr$select_body,
+                                              ") r ORDER BY cohort_row_id"))
+  legacy <- DBI::dbGetQuery(handle$conn, paste0(
+    "SELECT * FROM ", attr(fr, "temp_table"),
+    " ORDER BY subject_id, cohort_start_date, cohort_end_date"))
+  expect_gt(nrow(rows), 0L)
+  expect_identical(nrow(rows), nrow(legacy))
+  expect_identical(as.integer(rows$cohort_row_id), seq_len(nrow(rows)))
+  expect_identical(as.integer(rows$subject_id), as.integer(legacy$subject_id))
+  expect_identical(as.character(rows$cohort_start_date), as.character(legacy$cohort_start_date))
+  expect_true(all(rows$index_source == "legacy_spec"))
+  expect_true(all(is.na(rows$index_key)) && all(is.na(rows$op_start)))
+})

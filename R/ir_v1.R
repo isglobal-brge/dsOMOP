@@ -27,7 +27,7 @@
 # the frozen IR cannot express exactly is NOT discarded: it is kept verbatim
 # in the server-private attribute `legacy_residue` of the IR (keyed by IR
 # path), which the v1 adapters read, explain reports and .irSemanticDigest()
-# binds. Change request CR-8 proposes closed IR variants for it.
+# binds. Change request CR-10 proposes closed IR variants for it.
 
 # --- shared helpers -------------------------------------------------------------
 

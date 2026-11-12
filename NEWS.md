@@ -15,11 +15,28 @@ fills its entries. Classes follow design-2.10.3 section 5.
   as unrestricted in feature extraction.
 - (A-E4) Cohort unions keep distinct same-date index events of different
   sources or keys; they collapsed on (subject, start, end).
-- (A-E2) Set-operation populations carrying `filter_tree` or
-  `cohort_definition_id`, and unknown population kinds, are refused instead of
-  silently treated as criteria populations.
+- (A-E3) Index-event concept sets accept `exclude`, resolved by the shared
+  concept-set resolver like every other concept set; they were refused with
+  "Unknown index-event concept-set field(s): exclude".
+- (B-20) On CDM 5.4, an index event on `procedure_occurrence` with an
+  `EndDate` end strategy ends at `procedure_end_date` when it is recorded (role
+  registry, design section 6.2); 2.10.2 always used `procedure_date`.
+- (A-9) The plan code no longer claims that windowed population filters
+  without a cohort index fall back to the server wall clock: they need an
+  explicit `reference_date` and fail closed without one (behaviour unchanged).
 
 ## Newly permitted (previously refused by an intermediate or granularity gate)
+
+- (B-20) Index events may come from any table with an event role record in
+  the role registry (`inst/ohdsi/roles-5.3.csv`, `roles-5.4.csv`): besides the
+  seven tables of 2.10.2, `visit_detail`, `observation_period`, `death`,
+  `specimen`, `note`, `payer_plan_period`, the era tables and, on CDM 5.4,
+  `episode`. Tables that are never event sources (`cost`, `episode_event`,
+  `provider`, `care_site`, `location`, `fact_relationship`) stay refused.
+- A baseline `age_breaks` grid is validated by shape only: any strictly
+  increasing integer grid starting at 0 (for example `c(0, 18, 19, 65)`) is a
+  valid assigned grid; the aggregate on-grid/coarsening rule of
+  `.computeAgeGroups()` no longer applies to it at validation (design 4.5 b).
 
 - Small private intermediates (populations, set-operation members, candidate
   rosters) run; only the released object's minimum persons is checked.
@@ -34,6 +51,27 @@ fills its entries. Classes follow design-2.10.3 section 5.
 ### Structural
 - Unknown fields anywhere in a plan, mixed population shapes, legacy
   constructs on the wire, `tie_policy = "error"`.
+- Every plan passes one validation sequence before any query (design 4.5):
+  the closed envelope of its version, normalisation (a v1 plan is lowered to
+  the compatibility IR), `ir-v2.json` and the semantic rules. A v1 plan with an
+  unknown field at the root, in an output (including `concept_dictionary` and
+  `cohort_membership` outputs) or in any nested object is refused with the
+  field's path; `already_gated` was accepted at the root and in a dictionary
+  output. A null-valued field still counts as absent.
+- (A-E2) v1 set-operation populations carrying `filter_tree`,
+  `cohort_definition_id`, `index_event` or `episode_policy` are refused (the
+  first two were silently ignored), and a population of an unknown `kind` is
+  refused instead of being read as a criteria population.
+- A v1 output targeting a population the multi-population plan does not
+  declare, and a dictionary whose `source_outputs` name missing outputs, are
+  refused at validation (the output was skipped with a warning).
+- A plan `version` other than none, 1 or 2 is refused. Language 2.0 plans are
+  validated and explained (`omopPlanExplainDS`) but not executed by this build
+  until the 2.0 compilers are installed; `recipe_language.operations` is empty
+  until then, so 2.10.3 clients emit v1.
+- Validation failures are plan-level errors under `dsomop.query_strict = FALSE`
+  as well (design 7.3); per-output failures of the v1 executors keep their
+  non-strict behaviour.
 
 ### Publication
 - Final patient components with fewer than `nfilter.subset` persons,
@@ -50,6 +88,33 @@ fills its entries. Classes follow design-2.10.3 section 5.
   A-4 reviewed `episode_event` field concepts (visit 1147070, specimen 1147049),
   A-5 native survival / recurrent component schemas, A-6 one identifier grammar
   in the mutation AST, A-7 `omop_censor(when_index_source =)`.
+
+## Plan IR, role registry, explain and capabilities (WS-2)
+
+- `R/ir.R`: `.irPrepare()` (the frozen sequence), `.irNormalize()`,
+  `.irValidate()`, `.irOrder()`, `.irNode()`; failures are typed
+  `dsomop_plan_rejection` conditions with code `validation_error`, naming
+  fields, outputs and constructs only. `omopPlanPreviewDS()` and
+  `ds.omop.plan.validate()` report the same findings in `validation$errors`.
+- v1 plans lower to the compatibility IR of design section 5 (legacy leaves,
+  `legacy_spec`, `legacy_end_strategy`, `legacy_cohort_end_cap`,
+  `legacy_composite`, `legacy_covariate_ids`, `legacy_all_time_conditions`).
+  v1 semantics the frozen IR cannot express are kept verbatim in a
+  server-private `legacy_residue` (change request CR-10), bound by the plan's
+  semantic digest; nothing is discarded. v1 plans keep running on the v1
+  executors in this release stage.
+- `R/ir_defaults.R`: the normaliser shared with dsOMOPClient (byte-identical);
+  every schema default plus the semantic defaults is expanded exactly once.
+- `R/roles.R`: `.roleOf(handle, table)`, the role registry of design 6.2.
+- New aggregate method `omopPlanExplainDS(omop_symbol, plan)`: the normalised
+  plan, role records, column classes, effective defaults, publication roots
+  and the dialect preflight; no counts, no SQL.
+- (A-E7) `omopGetCapabilitiesDS()` reports `recipe_language`: version 2,
+  semantic version 2.0.0, the schema id, the operations and reducers this
+  server executes and the dialect block. New option
+  `dsomop.recipe_operations_disabled` (none by default) withdraws operations.
+- `tests/testthat/fixtures/ir-v1-corpus.json` / `ir-v1-golden.json`: every
+  distinct v1 plan of the 2.10.x suites and its normalised IR.
 
 ## Contracts shipped by WS-0
 
