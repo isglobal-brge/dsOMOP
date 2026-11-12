@@ -354,3 +354,60 @@ test_that("same-row vs different-row: one event's conjunction needs one row sati
     expect_identical(has("both"), 0L, info = b)
   }
 })
+
+test_that("acceptance recipe 04: the compiled event streams reproduce the WS-0 oracle's inputs", {
+  path <- testthat::test_path("..", "..", "inst", "plans", "acceptance", "04-units-censored")
+  plan <- jsonlite::fromJSON(file.path(path, "plan.json"), simplifyVector = FALSE)
+  expected <- jsonlite::fromJSON(file.path(path, "expected.json"), simplifyVector = FALSE)
+  want <- do.call(rbind, lapply(expected$outputs$labs$rows, function(r) data.frame(
+    person_id = r$person_id, index_date = r$index_date,
+    a1c_closest = if (is.null(r$a1c_closest)) NA_real_ else r$a1c_closest,
+    a1c_n_ge65 = r$a1c_n_ge65, a1c_n_uncensored = r$a1c_n_uncensored,
+    a1c_n_known_unit = r$a1c_n_known_unit,
+    a1c_max = if (is.null(r$a1c_max)) NA_real_ else r$a1c_max)))
+  for (b in names(.ws4_ev_backends)) {
+    h <- .ws4_ev_backends[[b]]$handle
+    ctx <- .ws4_ctx(h, plan)
+    who <- paste0("x.person_id IN (", paste(unique(want$person_id), collapse = ", "), ")")
+    # the seeded rows of this file (person 1009) are not part of the oracle
+    stream <- function(e) {
+      r <- .ws4_rows(ctx, e, paste0(who, " AND x.event_id < 599000"))
+      r$event_id <- as.numeric(r$event_id)
+      r
+    }
+    s <- list(all = stream("hba1c"), ge65 = stream("hba1c_ge65"),
+              unc = stream("hba1c_uncensored"), known = stream("hba1c_known_unit"))
+    got <- do.call(rbind, lapply(seq_len(nrow(want)), function(i) {
+      p <- want$person_id[[i]]
+      idx <- as.Date(want$index_date[[i]])
+      inw <- function(r) r[r$person_id == p & as.Date(r$start_date) >= idx - 180 &
+                             as.Date(r$start_date) <= idx, , drop = FALSE]
+      all <- inw(s$all)
+      cand <- all[!is.na(all$value), , drop = FALSE]
+      closest <- NA_real_
+      if (nrow(cand)) {
+        d <- as.numeric(idx - as.Date(cand$start_date))
+        cand <- cand[d == min(d), , drop = FALSE]
+        closest <- cand$value[order(cand$start_date, cand$source_ns, cand$event_id)][[1L]]
+      }
+      data.frame(person_id = p, index_date = want$index_date[[i]], a1c_closest = closest,
+                 a1c_n_ge65 = nrow(inw(s$ge65)), a1c_n_uncensored = nrow(inw(s$unc)),
+                 a1c_n_known_unit = nrow(inw(s$known)),
+                 a1c_max = if (any(!is.na(all$value))) max(all$value, na.rm = TRUE) else NA_real_)
+    }))
+    expect_equal(got, want, tolerance = 1e-9, info = b)
+  }
+})
+
+test_that("the executable WS-4 tests ran on every configured backend", {
+  b <- names(.ws4_ev_backends)
+  expect_true("sqlite" %in% b)
+  if (requireNamespace("duckdb", quietly = TRUE)) expect_true("duckdb" %in% b)
+  if (nzchar(Sys.getenv("DSOMOP_TEST_POSTGRES_HOST"))) expect_true("postgresql" %in% b)
+  if (nzchar(Sys.getenv("DSOMOP_TEST_MARIADB_HOST"))) expect_true("mariadb" %in% b)
+  runtime <- vapply(.ws4_ev_backends, function(x) {
+    p <- .sqlDialectProfile(x$handle, probe = TRUE)
+    paste0(p$family, " (", p$runtime %||% "unknown runtime", ")")
+  }, "")
+  cat("\n[ws4 backends]", paste(runtime, collapse = "; "), "\n")
+})
