@@ -245,6 +245,12 @@
     ids <- names(ctx$prepared)[outputs == root]
     patient <- ids[vapply(ctx$prepared[ids], function(p) p$candidate$lineage$mode != "reference", logical(1))]
     if (any(vapply(ctx$prepared[patient], function(p) identical(p$rows, 0), logical(1)))) {
+      # A component prepared before the unavailable component may already
+      # have recorded a support refusal. Availability decides the whole
+      # family; it supersedes only support, never a technical rejection.
+      if (identical(ctx$rejected[[root]]$code, "insufficient_support")) {
+        ctx$rejected[[root]] <- NULL
+      }
       for (id in ids) {
         ctx$prepared[[id]]$withheld <- TRUE
         ctx$inventory[[id]] <- NULL

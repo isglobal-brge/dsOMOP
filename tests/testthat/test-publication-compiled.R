@@ -525,3 +525,46 @@ test_that("a composite unavailable family is decided as one: an empty component 
   expect_identical(status$rejected$out$code, "insufficient_support")
   expect_length(status$unavailable, 0L)
 })
+
+test_that("unavailable empty components override earlier support only, withholding reference companions", {
+  for (mode in c("memory", "staged")) for (reverse in c(FALSE, TRUE)) {
+    ctx <- .publication_compiled_context(mode = mode)
+    compiled <- .publication_compiled_family(mode, "person_id <= 2", "person_id < 0")
+    # Candidates may report availability individually. The first available
+    # component records insufficient support before the empty unavailable one.
+    compiled$publication_candidates[[2L]]$status <- "unavailable"
+    compiled$components$dictionary <- list(
+      frame = data.frame(concept_id = 201820L),
+      fragment = .fragment("dictionary", "result", "none", "SELECT 201820 AS concept_id",
+        list(concept_id = .fragmentColumn("integer")),
+        person_lineage = list(person_col = NULL, via_roster = NULL)))
+    compiled$reference_components <- "dictionary"
+    compiled$publication_candidates[[3L]] <- .publicationCandidate("out", "dictionary",
+      if (mode == "staged") "staged" else "frame", .lineage("reference"), grain = "none",
+      requested_symbol = if (mode == "memory") "D_dictionary",
+      requested_path = if (mode == "staged") "D_dictionary.parquet")
+    if (reverse) compiled$publication_candidates <- rev(compiled$publication_candidates)
+    .publishCompiled(ctx, compiled)
+    expect_identical(ctx$rejected$out$code, "insufficient_support")
+    status <- .publishCommit(ctx)
+    expect_identical(status$status, "ok", info = mode)
+    expect_identical(status$unavailable, "out")
+    expect_length(status$published, 0L)
+    expect_length(status$rejected, 0L)
+    expect_length(ctx$inventory, 0L)
+    expect_identical(ls(ctx$target_env), character(0))
+    if (mode == "staged") expect_false(dir.exists(ctx$staging_dir))
+    .publication_status_disjoint(status)
+  }
+  # A genuine validation failure must never disappear behind availability.
+  ctx <- .publication_compiled_context(mode = "memory")
+  compiled <- .publication_compiled_family("memory", "person_id <= 2", "person_id < 0")
+  compiled$publication_candidates[[2L]]$status <- "unavailable"
+  .publishCompiled(ctx, compiled)
+  ctx$rejected$out <- list(code = "validation_error", message = .publishMessage("validation_error"))
+  status <- .publishCommit(ctx)
+  expect_identical(status$status, "refused")
+  expect_identical(status$rejected$out$code, "validation_error")
+  expect_length(status$unavailable, 0L)
+  expect_length(status$published, 0L)
+})
