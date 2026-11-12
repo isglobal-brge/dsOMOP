@@ -536,9 +536,9 @@
 .v1sRowFilter <- function() .v1sCustom(.v1RowFilterErrors)
 .v1sFilterTree <- function() .v1sCustom(.v1FilterTreeErrors)
 .v1sConceptSet <- function() {
-  .v1sOneOf(.v1sConceptIds(),
-            .v1sObj(concepts = .v1sConceptIds(), include_descendants = .v1sBool(),
-                    include_mapped = .v1sBool(), exclude = .v1sConceptIds()))
+  .v1sOneOf(.v1sObj(concepts = .v1sConceptIds(), include_descendants = .v1sBool(),
+                    include_mapped = .v1sBool(), exclude = .v1sConceptIds()),
+            .v1sConceptIds())
 }
 .v1sVisit <- function() .v1sObj(concept_ids = .v1sConceptIds(), visit_concept_id = .v1sConceptIds())
 .v1sDateHandling <- function() {
