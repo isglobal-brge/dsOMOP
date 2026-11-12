@@ -281,9 +281,15 @@
   })
 }
 # The plan cohort's cohort_definition_id: a results-cohort reference (>= 1,
-# A-10) when the cohort is a cohort_table; otherwise the optional identifier
-# of an inline spec, any non-negative integer (A-16).
-.v1sPlanCohortId <- function() .v1sScalar("cohort_id")
+# A-10) when the cohort is a cohort_table; the cross-field check applies
+# A-16 to actual inline-spec creation. Filter-tree labels retain as.integer()
+# scalar coercion, including signed integers and NA (A-26).
+.v1sPlanCohortId <- function() .v1sCustom(function(x, path) {
+  value <- tryCatch(suppressWarnings(as.integer(x)), error = function(e) NULL)
+  if (!is.null(names(x)) || length(value) != 1L) {
+    paste0(path, ": must be one historically integer-coercible value")
+  }
+})
 
 # .resolveCohortTable() dispatches only numeric values and digit-only strings
 # as ids. Other strings are cohort-table names, so coercing "+1" or "1e0"
@@ -754,8 +760,10 @@
                        spec <- x[["spec"]]
                        c(if (!is.null(id) && identical(.v1Text(x[["type"]]), "cohort_table")) {
                            .v1ShapeErrors(id, .v1sCohortId(), paste0(path, "/cohort_definition_id"))
-                         } else if (!is.null(id) && isTRUE(.v1AsCohortInteger(id) < 0L)) {
-                           paste0(path, "/cohort_definition_id: an inline spec's cohort_definition_id is a non-negative integer")
+                         } else if (!is.null(id) && is.null(x[["filter_tree"]])) {
+                           c(.v1ShapeErrors(id, .v1sScalar("cohort_id"), paste0(path, "/cohort_definition_id")),
+                             if (isTRUE(.v1AsCohortInteger(id) < 0L))
+                               paste0(path, "/cohort_definition_id: an inline spec's cohort_definition_id is a non-negative integer"))
                          },
                          if (!is.null(spec)) {
                            if (!is.null(x[["filter_tree"]]) && .v1IsArray(spec)) {

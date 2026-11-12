@@ -3507,6 +3507,15 @@
             "bin_width": null,
             "date_columns": null
           }
+        },
+        "legacy_cohort_definition_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": -2147483647,
+          "maximum": 2147483647,
+          "description": "effective historical root cohort identifier used in the released membership column, independent of the output population; present only when supplied, coerced integer NA is present null, never defaulted"
         }
       }
     },

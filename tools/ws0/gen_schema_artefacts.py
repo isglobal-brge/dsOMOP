@@ -271,6 +271,11 @@ for _branch in D["population"]["oneOf"]:
             _named_requirements["properties"]["legacy_episodes"] = {"const": "observation_periods"}
         _branch.setdefault("allOf", []).append({
             "if": {"required": ["legacy_cohort_table"]}, "then": _named_requirements})
+# A-26: the effective root cohort ID labels every v1 membership output;
+# it never selects population membership and has no absent-value default.
+D["options_membership"]["properties"]["legacy_cohort_definition_id"] = {
+    "type": ["integer", "null"], "minimum": -2147483647, "maximum": 2147483647,
+    "description": "effective historical root cohort identifier used in the released membership column, independent of the output population; present only when supplied, coerced integer NA is present null, never defaulted"}
 D["legacy_spec"]["properties"]["cohort_definition_id"] = {
     "type": "integer", "minimum": 0,
     "description": "the v1 plan cohort's cohort_definition_id of an inline spec (names its temporary cohort, fills the cohort_membership id column); present only when supplied, never defaulted"}
@@ -504,6 +509,40 @@ _named_cases.extend([
 for _i, (_label, _expect, _population) in enumerate(_named_cases, 68):
     ir_probe(f"I{_i:02d}", f"{_label} (A-25)", _expect, _named_base,
              lambda b, pop=_population: b["populations"].__setitem__("named", pop))
+
+# CR-27: an isolated membership output proves both the closed IR option
+# and native-wire refusal; no other compatibility field masks the boundary.
+_membership_base = {"version": 2, "meta": copy.deepcopy(A["meta"]),
+                    "populations": {"p": {"kind": "criteria"}},
+                    "outputs": {"members": {"rows": "p", "format": "membership", "options": {}}}}
+_membership_cases = [("positive identifier", OK, 1), ("zero identifier", OK, 0),
+                     ("null identifier", OK, None), ("negative identifier", OK, -1),
+                     ("fractional identifier", R, 1.5), ("string identifier", R, "1"),
+                     ("boolean identifier", R, True), ("array identifier", R, [1]),
+                     ("object identifier", R, {"value": 1})]
+for _i, (_label, _expect, _value) in enumerate(_membership_cases, 111):
+    ir_probe(f"I{_i:02d}", f"membership {_label} (CR-27)", _expect, _membership_base,
+             lambda b, value=_value: b["outputs"]["members"]["options"].__setitem__("legacy_cohort_definition_id", value))
+probe("P74", "membership identifier absent without default on native wire (CR-27)", OK,
+         _membership_base, lambda b: None)
+def _membership_wrong_format(b):
+    b["outputs"]["members"]["format"] = "wide"
+    b["outputs"]["members"]["options"]["legacy_cohort_definition_id"] = 1
+ir_probe("I120", "membership identifier refused on wide output (CR-27)", R,
+         _membership_base, _membership_wrong_format)
+probe("P73", "membership identifier refused on native wire (CR-27)", R,
+      _membership_base,
+      lambda b: b["outputs"]["members"]["options"].__setitem__("legacy_cohort_definition_id", 1))
+
+for _i, (_label, _expect, _value) in enumerate([
+        ("minimum integer", OK, -2147483647), ("maximum integer", OK, 2147483647),
+        ("below integer range", R, -2147483648), ("above integer range", R, 2147483648)], 121):
+    ir_probe(f"I{_i:02d}", f"membership {_label} (A-26)", _expect, _membership_base,
+             lambda b, value=_value: b["outputs"]["members"]["options"].__setitem__("legacy_cohort_definition_id", value))
+for _i, _value in enumerate([None, -1, 0], 75):
+    probe(f"P{_i:02d}", "membership compatibility label refused on native wire (A-26)", R,
+          _membership_base,
+          lambda b, value=_value: b["outputs"]["members"]["options"].__setitem__("legacy_cohort_definition_id", value))
 
 # Native probes isolate each unchanged boundary: no other legacy field is used.
 _native_named_cases = [

@@ -31629,6 +31629,559 @@
     }
   },
   {
+    "id": "I111",
+    "label": "membership positive identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": 1
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I112",
+    "label": "membership zero identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": 0
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I113",
+    "label": "membership null identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I114",
+    "label": "membership negative identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": -1
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I115",
+    "label": "membership fractional identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": 1.5
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I116",
+    "label": "membership string identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": "1"
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I117",
+    "label": "membership boolean identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I118",
+    "label": "membership array identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": [
+              1
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I119",
+    "label": "membership object identifier (CR-27)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": {
+              "value": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "P74",
+    "label": "membership identifier absent without default on native wire (CR-27)",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {}
+        }
+      }
+    }
+  },
+  {
+    "id": "I120",
+    "label": "membership identifier refused on wide output (CR-27)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "wide",
+          "options": {
+            "legacy_cohort_definition_id": 1
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "P73",
+    "label": "membership identifier refused on native wire (CR-27)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": 1
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I121",
+    "label": "membership minimum integer (A-26)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": -2147483647
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I122",
+    "label": "membership maximum integer (A-26)",
+    "schema": "ir-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": 2147483647
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I123",
+    "label": "membership below integer range (A-26)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": -2147483648
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "I124",
+    "label": "membership above integer range (A-26)",
+    "schema": "ir-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": 2147483648
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "P75",
+    "label": "membership compatibility label refused on native wire (A-26)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "P76",
+    "label": "membership compatibility label refused on native wire (A-26)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": -1
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "P77",
+    "label": "membership compatibility label refused on native wire (A-26)",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "dsOMOPClient",
+        "client_version": "2.10.3"
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "outputs": {
+        "members": {
+          "rows": "p",
+          "format": "membership",
+          "options": {
+            "legacy_cohort_definition_id": 0
+          }
+        }
+      }
+    }
+  },
+  {
     "id": "P68",
     "label": "criteria legacy_cohort_table refused on the wire (A-25)",
     "schema": "plan-v2",

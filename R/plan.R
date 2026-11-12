@@ -3801,7 +3801,9 @@
         results[[out_name]] <- .extractCohortMembership(
           handle,
           cohort_table = cohort_table,
-          cohort_definition_id = plan$cohort$cohort_definition_id,
+          cohort_definition_id = .v1MembershipLabel(
+            ir$outputs[[.v1AllocateNames(names(outputs))[[out_name]]]]$options,
+            plan$cohort$cohort_definition_id),
           date_handling = out$date_handling
         )
 
