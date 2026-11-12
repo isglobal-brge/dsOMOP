@@ -268,9 +268,12 @@ test_that("temporal panels use only the observation period covering index", {
       output_type = "person_period", grain = "episode",
       time_origin = "index"
     )
+    # every episode here is uniquely covered (the coverage policy drops none)
     expect_equal(
       as.numeric(.executeQuery(
-        handle, compiled$validations$observation_period$sql
+        handle, .temporalObservationSqlContract(
+          handle, "observation_aware_cohort"
+        )$invalid
       )[[1L]][[1L]]),
       0
     )
@@ -321,6 +324,10 @@ test_that("temporal panels use only the observation period covering index", {
 })
 
 test_that("temporal panels fail closed on missing or duplicate index OP", {
+  # Defect A-E6 (design 1.3, 6.13; corpus class newly_permitted): an episode
+  # without exactly one covering observation period follows the default
+  # coverage policy (unique; on_missing and on_ambiguous = "drop") and is
+  # dropped privately, with its events, instead of aborting the panel.
   missing <- create_test_handle()
   on.exit(cleanup_handle(missing), add = TRUE)
   .buildBlueprint(missing)
@@ -328,25 +335,34 @@ test_that("temporal panels fail closed on missing or duplicate index OP", {
   DBI::dbExecute(
     missing$conn, "DELETE FROM observation_period WHERE person_id = 1"
   )
-  expect_error(
-    .extractTemporalCovariates(
-      missing, "observation_aware_cohort", "condition_occurrence",
-      concept_filter = 888001L, bin_width = 5L,
-      window_start = -5L, window_end = 5L
-    ),
-    "exactly one observation_period"
+  temporal <- .extractTemporalCovariates(
+    missing, "observation_aware_cohort", "condition_occurrence",
+    concept_filter = 888001L, bin_width = 5L,
+    window_start = -5L, window_end = 5L
   )
+  expect_identical(sort(as.integer(temporal$personRef$rowId)), c(2L, 3L))
+  expect_false(any(as.integer(temporal$temporalCovariates$rowId) == 1L))
+  expect_gt(nrow(temporal$temporalCovariates), 0L)
   missing_compiled <- .compileTemporalSqlComponents(
     missing, "observation_aware_cohort", "condition_occurrence",
     concept_filter = 888001L, bin_width = 5L,
     window_start = -5L, window_end = 5L
   )
+  expect_null(missing_compiled$validations$observation_period)
   expect_equal(
     as.numeric(.executeQuery(
-      missing, missing_compiled$validations$observation_period$sql
+      missing, .temporalObservationSqlContract(
+        missing, "observation_aware_cohort"
+      )$invalid
     )[[1L]][[1L]]),
     1
   )
+  sql_covariates <- .normalizeTemporalSqlChunk(
+    .executeQuery(missing, missing_compiled$components$temporalCovariates$sql),
+    missing_compiled$components$temporalCovariates
+  )
+  expect_gt(nrow(sql_covariates), 0L)
+  expect_false(any(as.integer(sql_covariates$rowId) == 1L))
 
   duplicate <- create_test_handle()
   on.exit(cleanup_handle(duplicate), add = TRUE)
@@ -362,15 +378,14 @@ test_that("temporal panels fail closed on missing or duplicate index OP", {
       "VALUES (999991, 1, '2020-01-09', '2020-01-12', 44814724)"
     )
   )
-  expect_error(
-    .extractPersonPeriod(
-      duplicate, "observation_aware_cohort", "condition_occurrence",
-      concept_filter = 888001L, bin_width = 5L,
-      window_start = -5L, window_end = 5L,
-      grain = "episode", time_origin = "index"
-    ),
-    "exactly one observation_period"
+  periods <- .extractPersonPeriod(
+    duplicate, "observation_aware_cohort", "condition_occurrence",
+    concept_filter = 888001L, bin_width = 5L,
+    window_start = -5L, window_end = 5L,
+    grain = "episode", time_origin = "index"
   )
+  expect_identical(sort(unique(as.integer(periods$personPeriods$rowId))), c(2L, 3L))
+  expect_false(any(as.integer(periods$temporalCovariates$rowId) == 1L))
   duplicate_compiled <- .compileTemporalSqlComponents(
     duplicate, "observation_aware_cohort", "condition_occurrence",
     concept_filter = 888001L, bin_width = 5L,
@@ -378,15 +393,26 @@ test_that("temporal panels fail closed on missing or duplicate index OP", {
     output_type = "person_period", grain = "episode",
     time_origin = "index"
   )
+  expect_null(duplicate_compiled$validations$observation_period)
+  sql_periods <- .normalizeTemporalSqlChunk(
+    .executeQuery(duplicate, duplicate_compiled$components$personPeriods$sql),
+    duplicate_compiled$components$personPeriods
+  )
+  expect_identical(sort(unique(as.integer(sql_periods$rowId))), c(2L, 3L))
   expect_equal(
     as.numeric(.executeQuery(
-      duplicate, duplicate_compiled$validations$observation_period$sql
+      duplicate, .temporalObservationSqlContract(
+        duplicate, "observation_aware_cohort"
+      )$invalid
     )[[1L]][[1L]]),
     1
   )
 })
 
 test_that("temporal private OP validation precedes publication", {
+  # The coverage policy is private (A-E6): the uncovered episode is dropped
+  # before any publication decision and no observation-period diagnostic is
+  # raised; the final object is gated only at publication (design 7.2).
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle), add = TRUE)
   .buildBlueprint(handle)
@@ -396,14 +422,12 @@ test_that("temporal private OP validation precedes publication", {
   )
 
   withr::local_options(list(nfilter.subset = 4L))
-  expect_error(
-    .extractTemporalCovariates(
-      handle, "observation_aware_cohort", "condition_occurrence",
-      concept_filter = 888001L, bin_width = 5L,
-      window_start = -5L, window_end = 5L
-    ),
-    "exactly one observation_period"
+  temporal <- .extractTemporalCovariates(
+    handle, "observation_aware_cohort", "condition_occurrence",
+    concept_filter = 888001L, bin_width = 5L,
+    window_start = -5L, window_end = 5L
   )
+  expect_identical(sort(as.integer(temporal$personRef$rowId)), c(2L, 3L))
 })
 
 test_that("dynamic concept references stay SQL-first and bounded", {

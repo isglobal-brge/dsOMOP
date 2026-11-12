@@ -63,8 +63,10 @@
 }
 
 # A-18: the closed vocabulary of the optional `reason` of a rejected status
-# entry (section 11 adapter refusals), present only with validation_error.
-.REJECTION_REASONS <- c("adapter_person_mismatch", "cost_currency_mixed")
+# entry, present only with validation_error: the section 11 adapter refusals
+# and (A-20 (j)) the bounded realisations of the interval helpers.
+.REJECTION_REASONS <- c("adapter_person_mismatch", "cost_currency_mixed",
+                        "stockpile_row_cap", "reducer_row_cap")
 
 # The bounded status entry for a dsomop_plan_rejection condition: {code,
 # message} with the constant message per code, plus `reason` only when the
@@ -371,7 +373,25 @@
     ctx$rollback <- list()
     if (exists(ctx$id, .planContextRegistry, inherits = FALSE)) rm(list = ctx$id, envir = .planContextRegistry)
   }, add = TRUE)
-  if (!isTRUE(ctx$committed)) .publishAbort(ctx)
+  # Compiler-owned session tables (A-20 (k)) of the context and of its
+  # compilation child: released on every exit path (success, rejection,
+  # error); a table that cannot be dropped stays registered for a retry and
+  # its aggregated cleanup error is raised once the context is closed.
+  failures <- character(0)
+  for (owner in list(ctx[["compile_context"]], ctx)) {
+    if (!is.environment(owner)) next
+    failure <- tryCatch({
+      .compileReleaseTempTables(owner)
+      NULL
+    }, error = function(e) e)
+    if (!is.null(failure)) failures <- c(failures, conditionMessage(failure))
+  }
+  if (!isTRUE(ctx$committed)) {
+    tryCatch(.publishAbort(ctx), error = function(e) {
+      failures <<- c(failures, conditionMessage(e))
+    })
+  }
+  if (length(failures)) stop(paste(unique(failures), collapse = "\n"), call. = FALSE)
   invisible(NULL)
 }
 

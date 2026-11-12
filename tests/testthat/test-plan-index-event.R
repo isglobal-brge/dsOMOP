@@ -155,6 +155,10 @@ test_that("index events drop unobserved and ambiguously covered candidates", {
   )
   expect_equal(.ie_rows(h, resolved)$index_event_id, 102L)
 
+  # Defect A-E6 (design 1.3, 6.13): ambiguous coverage follows the default
+  # policy (unique, on_ambiguous = "drop"). A candidate covered by two periods
+  # is dropped privately before the primary-limit selection; the plan no longer
+  # aborts (corpus class newly_permitted).
   DBI::dbExecute(h$conn, "DELETE FROM observation_period")
   DBI::dbExecute(h$conn, paste0(
     "INSERT INTO observation_period ",
