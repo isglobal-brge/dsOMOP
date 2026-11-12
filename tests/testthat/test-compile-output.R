@@ -456,6 +456,123 @@ test_that("covariate identities are shared across outputs regardless of source o
   }
 })
 
+test_that("dictionary source outputs remain static dependencies through public execution", {
+  plan <- .ws7_scenario_plan(list(n = list(source = list(event = "lab"), reducer = list(fn = "count"))),
+                              output = list(columns = list("n")))
+  plan$outputs$d <- list(rows = "t", format = "dictionary", options = list(source_outputs = list("o")))
+  plan$publish <- list("d")
+  ir <- .irNormalize(.irJsonForm(plan))
+  expect_identical(.irOutputDeps(ir, "d"), "o")
+  expect_identical(names(.irOutputClosure(ir, "d")$events), "lab")
+  invalid <- plan
+  invalid$outputs$d$options$source_outputs <- list("missing_output")
+  expect_error(.irPrepare(invalid), "dangling output 'missing_output'", fixed = TRUE)
+  testthat::local_mocked_bindings(
+    .outputPopulation = function(...) stop("dictionary materialised a population"),
+    .compileEventByName = function(...) stop("dictionary compiled a clinical event"))
+  for (b in names(.ws7_out_backends)) {
+    h <- .ws7_out_backends[[b]]$handle
+    .ws7_keys(list(h))
+    sym <- paste0("ws7_dictionary_", b)
+    .setHandle(sym, h)
+    for (mode in c("memory", "staged")) {
+      target <- new.env(parent = emptyenv())
+      status <- withr::with_options(list(nfilter.subset = 5L),
+        .omopPlanExecuteDS(sym, plan, list(d = "DICT"), output_mode = mode, target_env = target))
+      expect_identical(status$status, "ok", info = paste(b, mode))
+      expect_identical(status$published$d$d$grain, "none", info = paste(b, mode))
+      frame <- get(status$published$d$d$symbol, target)
+      if (identical(mode, "staged")) {
+        chunks <- list()
+        .publishReadChunks(frame, function(x) chunks[[length(chunks) + 1L]] <<- x)
+        frame <- do.call(rbind, chunks)
+      }
+      expect_identical(as.integer(frame$concept_id), .WS7$LAB, info = paste(b, mode))
+      expect_identical(as.character(frame$source), "lab", info = paste(b, mode))
+    }
+    rm(list = paste0("handle_", sym), envir = .dsomop_env)
+  }
+})
+
+test_that("dictionary-only sparse dependencies do not enter source preflight or the live registry", {
+  plan <- .ws7_scenario_plan(list(), output = list(format = "sparse", options = list(
+    sources = list(list(event = "lab")), analyses = list("count"))))
+  plan$variables <- NULL
+  plan$outputs <- c(list(metadata = list(rows = "t", format = "sparse", options = list(
+    sources = list(list(event = "dx")), analyses = list("count")))), plan$outputs)
+  plan$outputs$d <- list(rows = "t", format = "dictionary", options = list(source_outputs = list("metadata")))
+  plan$publish <- list("o", "d")
+  compile_event <- .compileEventByName
+  testthat::local_mocked_bindings(.compileEventByName = function(ctx, name, ...) {
+    if (identical(name, "dx")) stop("dictionary-only source was compiled")
+    compile_event(ctx, name, ...)
+  })
+  run <- .ws7_ctx(.ws7_out_backends$sqlite$handle, plan)
+  on.exit(.ws7_close(run), add = TRUE)
+  expect_identical(.planCompileSources(run$cctx, c("o", "d")), "lab")
+  pop <- .ws7_population(run, "t", .ws7_scenario_frame(7001), cap_end = FALSE)
+  co <- .planCompileOutputs(run$cctx, populations = list(t = pop))
+  expect_identical(names(co), c("o", "d"))
+  expect_identical(co$o$components$covariateRef$frame$covariate_id, 1L)
+  expect_identical(co$o$components$covariateRef$frame$source, "lab")
+  expect_identical(co$d$components$d$frame$concept_id, c(.WS7$DX, .WS7$DX2))
+  expect_identical(co$d$components$d$frame$source, c("dx", "dx"))
+})
+
+test_that("sparse and temporal output names cannot collide with reference companions", {
+  h <- .ws7_out_backends$sqlite$handle
+  .ws7_keys(list(h))
+  for (case in list(c("sparse", "covariateRef"), c("temporal_covariates", "covariateRef"),
+                    c("temporal_covariates", "timeRef"))) {
+    fmt <- case[[1L]]
+    root <- case[[2L]]
+    opts <- list(sources = list(list(event = "lab")), analyses = list("count"))
+    if (identical(fmt, "temporal_covariates")) {
+      opts$bin_width <- 5L
+      opts$window <- list(start = -10L, end = 9L, anchor = "index")
+    }
+    plan <- .ws7_scenario_plan(list(), output = list(format = fmt, options = opts))
+    plan$variables <- NULL
+    names(plan$outputs) <- root
+    expected_refs <- if (identical(fmt, "sparse")) "covariateRef" else c("covariateRef", "timeRef")
+    frames <- list()
+    inventories <- list()
+    for (mode in c("memory", "staged")) {
+      run <- .ws7_ctx(h, plan, mode = mode)
+      pop <- .ws7_population(run, "t", .ws7_scenario_frame(c(7001, 7003, 7004, 7005, 7006, 7007)),
+                             cap_end = FALSE)
+      res <- .ws7_publish(run, list(t = pop), stats::setNames(list("D_collision"), root), threshold = 5L)
+      expect_identical(res$status$status, "ok", info = paste(fmt, root, mode))
+      co <- res$compiled[[root]]
+      inventory <- res$status$published[[root]]
+      expect_identical(names(inventory), names(co$components))
+      expect_identical(anyDuplicated(names(inventory)), 0L)
+      expect_true(all(grepl(.NAME_PATTERN, names(inventory))))
+      expect_identical(inventory[[root]]$symbol, "D_collision")
+      expect_identical(inventory[[root]]$grain, "episode")
+      expect_identical(length(co$reference_components), length(expected_refs))
+      expect_false(root %in% co$reference_components)
+      expect_true(all(setdiff(expected_refs, root) %in% co$reference_components))
+      expect_true(all(vapply(inventory[co$reference_components], function(x) identical(x$grain, "none"), logical(1))))
+      if (identical(mode, "staged")) {
+        primary <- get(inventory[[root]]$symbol, run$ctx$target_env)
+        expect_null(primary$metadata$semantic_contract$component)
+        expect_identical(primary$metadata$semantic_contract$grain, "episode")
+        for (ref in co$reference_components) {
+          descriptor <- get(inventory[[ref]]$symbol, run$ctx$target_env)
+          expect_identical(descriptor$metadata$semantic_contract$component, ref)
+          expect_identical(descriptor$metadata$semantic_contract$grain, "none")
+        }
+      }
+      inventories[[mode]] <- names(inventory)
+      frames[[mode]] <- lapply(res$values[[root]], function(frame) lapply(frame, as.character))
+      .ws7_close(run)
+    }
+    expect_identical(inventories$memory, inventories$staged)
+    expect_identical(frames$memory, frames$staged)
+  }
+})
+
 test_that("empty long and person sparse sources retain their typed empty schemas", {
   for (b in names(.ws7_out_backends)) {
     for (fmt in c("long", "sparse")) {

@@ -30,6 +30,11 @@ Both compiler and operation-table cleanup are attempted when a DROP fails.
 and their private output dependencies in topological order. An optional
 `populations` mapping supplies `list(roster, coverage)` records for tests.
 Normal execution calls `.compilePopulationByName(cctx, population)`.
+Dictionary `source_outputs` remain part of static validation and concept
+closure, but are not execution dependencies. Dictionary-only roots compile
+neither clinical sources nor populations, and metadata-only sparse outputs
+do not enter the live covariate registry. Joined inputs remain execution
+dependencies.
 
 Rosters follow the WS-5/A-20 contract in
 `ws5-interval-anchor-coverage.md`: explicit population namespace,
@@ -52,6 +57,10 @@ Available empty windows give the reducer's documented empty value; `all`
 over an empty window is NA. Any/all preserve UNKNOWN predicate values.
 Coverage uses the selected recorded/effective relation explicitly. Observation
 eligibility envelopes never replace actual recorded observed segments.
+Temporal output selection also applies to era course reducers. Raw
+observation columns use structural population indexing: the selected
+unique/earliest record for indexed rosters and first-record ordering for
+unindexed rosters.
 
 ## Publication and documentation
 
@@ -66,6 +75,15 @@ transition reference components have explicit reference lineage. References
 attached to patient families publish only with that family. Joined inputs
 stay private unless separately selected as roots. Publication gates each
 patient component on its own rows in both memory and staged execution.
+
+Generated reference names normally remain `covariateRef` and `timeRef`.
+If an output itself has one of those valid names, only the conflicting
+reference name receives a deterministic bounded hash suffix, using the same
+allocator as survival components. The dynamic publication inventory reports
+the resulting name. The patient primary keeps its output name and requested
+symbol; this preserves default joined-component lookup and the primary
+staged semantic contract's explicit `component = NULL`. No wire names become
+reserved, and ordinary companion names remain unchanged.
 
 WS-10 should document native survival's explicit censor list, last-observed
 day endpoints, and the v1 adapter's retained cohort-end cap and opt-in death

@@ -758,11 +758,13 @@
 #'
 #' Design 6.1 orders a plan's evaluation concept sets, events (adapters
 #' included), intervals, populations, variables, outputs. This is the event
-#' stage: every event the outputs read (their dependency closures), with its
-#' concept set and adapter parents, compiled in the plan order inside the
+#' stage: every event the outputs read (their execution dependency closures),
+#' with its concept set and adapter parents, compiled in the plan order inside the
 #' private compilation context. The data-dependent adapter refusals of
 #' section 11 (\code{adapter_person_mismatch}, \code{cost_currency_mixed},
 #' amendment A-18) surface here, before any output is materialised.
+#' Dictionary source outputs remain static concept dependencies and do not
+#' cause clinical events, adapters or populations to be materialised.
 #'
 #' @param cctx Compilation context (\code{.compileContext()}).
 #' @param outputs Names of the outputs to compute.
@@ -770,9 +772,14 @@
 #' @keywords internal
 .planCompileSources <- function(cctx, outputs) {
   ir <- cctx[["ir"]]
-  outputs <- intersect(as.character(outputs), names(ir[["outputs"]] %||% list()))
+  outputs <- .irReach(outputs, function(o) .outputExecutionDeps(ir, o), names(ir[["outputs"]]))
+  outputs <- outputs[!vapply(ir[["outputs"]][outputs], function(o) {
+    identical(o[["format"]], "dictionary")
+  }, logical(1))]
+  execution_ir <- ir
+  execution_ir[["outputs"]] <- ir[["outputs"]][outputs]
   events <- unique(unlist(lapply(outputs, function(o) {
-    names(.irOutputClosure(ir, o)[["events"]] %||% list())
+    names(.irOutputClosure(execution_ir, o)[["events"]] %||% list())
   }), use.names = FALSE))
   events <- intersect(.irOrder(ir)[["events"]], events)
   for (e in events) .compileEventByName(cctx, e)

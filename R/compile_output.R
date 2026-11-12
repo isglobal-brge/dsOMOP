@@ -89,6 +89,13 @@
 
 # --- the driver -----------------------------------------------------------------------------------
 
+# Dictionary source_outputs describe static concept dependencies. Only joined
+# inputs require another output's patient rows to be materialised.
+.outputExecutionDeps <- function(ir, output) {
+  opts <- ir[["outputs"]][[output]][["options"]] %||% list()
+  vapply(opts[["from"]] %||% list(), function(input) input[["output"]] %||% "", "")
+}
+
 #' The population record an output reads
 #'
 #' The final roster and coverage of a population, compiled once per context
@@ -126,14 +133,14 @@
   ir <- cctx[["ir"]]
   ctx <- cctx[["execution"]]
   roots <- as.character(unlist(ir[["publish"]] %||% names(ir[["outputs"]]), use.names = FALSE))
-  needed <- .irReach(roots, function(o) .irOutputDeps(ir, o), names(ir[["outputs"]]))
+  needed <- .irReach(roots, function(o) .outputExecutionDeps(ir, o), names(ir[["outputs"]]))
   order <- intersect(.irOrder(ir)[["outputs"]], needed)
   compiled <- list()
   for (o in order) {
     node <- .irNamedNode(ir, "output", o)
     pop <- if (identical(node[["format"]], "dictionary")) NULL else
       .outputPopulation(cctx, node[["rows"]], populations)
-    deps <- intersect(.irOutputDeps(ir, o), names(compiled))
+    deps <- intersect(.outputExecutionDeps(ir, o), names(compiled))
     inputs <- list(population = pop, outputs = compiled[deps],
                    symbol = as.character(out_symbols[[o]] %||% node[["result_symbol"]] %||% o),
                    mode = if (.isPlanContext(ctx)) ctx$output_mode else "memory")
@@ -965,7 +972,7 @@
   .outputCompiled(name, parts, status = status)
 }
 
-# Allocate generated component names together, preserving declared TAR names
+# Allocate generated component names together, preserving declared primary names
 # and ordinary readable names. Hash only overlength/colliding generated names;
 # collision probing also covers an adversarial user TAR matching a hash name.
 .outputAllocateComponents <- function(readable, identities, fixed = rep(FALSE, length(readable))) {
@@ -992,6 +999,18 @@
     stop("Output component allocation failed its distinctness check.", call. = FALSE)
   }
   out
+}
+
+# Keep the primary's name (and therefore its requested symbol and NULL staged
+# semantic component). Reference companions keep their documented names unless
+# the output itself uses one of them; the dynamic inventory carries that name.
+.outputReferenceNames <- function(output, references) {
+  readable <- c(output, references)
+  identities <- c(.jcsCanonical(list(output, "primary")),
+                  vapply(references, function(ref) .jcsCanonical(list(output, "reference", ref)), ""))
+  allocated <- .outputAllocateComponents(readable, identities,
+                                         c(TRUE, rep(FALSE, length(references))))
+  stats::setNames(allocated[-1L], references)
 }
 
 # Component names of one TAR's family, allocated against all sibling TARs.
@@ -1370,7 +1389,7 @@
   if (!exists("registry", envir = memo, inherits = FALSE)) {
     ir <- ctx[["ir"]]
     roots <- as.character(unlist(ir[["publish"]] %||% names(ir[["outputs"]]), use.names = FALSE))
-    needed <- .irReach(roots, function(o) .irOutputDeps(ir, o), names(ir[["outputs"]]))
+    needed <- .irReach(roots, function(o) .outputExecutionDeps(ir, o), names(ir[["outputs"]]))
     all <- list()
     for (o in intersect(names(ir[["outputs"]]), needed)) {
       other <- ir[["outputs"]][[o]]
@@ -1911,11 +1930,12 @@
                     covariate_id = .fragmentColumn("integer", FALSE, "measure"),
                     covariate_value = .fragmentColumn("numeric", TRUE, "measure")))
   status <- if (unavailable) "unavailable" else "ok"
+  refs <- .outputReferenceNames(name, c("covariateRef", "timeRef"))
   parts <- list(
     .outputComponent(inputs, name, name, frame, columns, cons, grain = "episode", status = status),
-    .outputComponent(inputs, name, "covariateRef", .outputCovariateRef(ctx, reg),
+    .outputComponent(inputs, name, refs[["covariateRef"]], .outputCovariateRef(ctx, reg),
                      .outputCovariateRefColumns(), NULL, grain = "none"),
-    .outputComponent(inputs, name, "timeRef", time_ref,
+    .outputComponent(inputs, name, refs[["timeRef"]], time_ref,
                      list(time_id = .fragmentColumn("integer", FALSE, "measure"),
                           start_day = .fragmentColumn("integer", FALSE, "measure"),
                           end_day = .fragmentColumn("integer", FALSE, "measure")), NULL, grain = "none"))
@@ -1992,9 +2012,10 @@
                       covariate_value = .fragmentColumn("numeric", TRUE, "measure")))
   }
   status <- if (unavailable) "unavailable" else "ok"
+  refs <- .outputReferenceNames(name, "covariateRef")
   parts <- list(
     .outputComponent(inputs, name, name, frame, columns, cons, grain = grain, status = status),
-    .outputComponent(inputs, name, "covariateRef", .outputCovariateRef(ctx, reg),
+    .outputComponent(inputs, name, refs[["covariateRef"]], .outputCovariateRef(ctx, reg),
                      .outputCovariateRefColumns(), NULL, grain = "none"))
   .outputCompiled(name, parts, status = status)
 }
