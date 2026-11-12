@@ -73,18 +73,8 @@ test_that("a 2.10.4 server runs the 2.10.2 client's call with commit_policy = 's
   expect_identical(nrow(single$D_one), 15L)
 })
 
-test_that("an empty out mapping is accepted only with publish = [] (B6)", {
-  handle <- create_test_handle()
-  on.exit(cleanup_handle(handle), add = TRUE)
-  .setHandle("no_roots", handle)
-  on.exit(.removeHandle("no_roots"), add = TRUE)
-  seen <- NULL
-  # the plan executes nothing: no root is requested
-  local_mocked_bindings(.planExecute = function(handle, plan, out_symbols, output_mode, ctx) {
-    seen <<- out_symbols
-    list()
-  })
-  plan <- list(
+.empty_roots_plan <- function() {
+  list(
     version = 2L,
     meta = list(language_version = "2.0", semantic_version = "2.0.0", generated_by = "ws8-b6-test"),
     events = list(visits = list(table = "visit_occurrence")),
@@ -92,21 +82,84 @@ test_that("an empty out mapping is accepted only with publish = [] (B6)", {
     variables = list(n_visits = list(source = list(event = "visits"), reducer = list(fn = "count"))),
     outputs = list(visits_out = list(rows = "all", format = "wide", columns = list("n_visits"))),
     publish = list())
+}
+
+test_that("publish = [] completes real validation and empty publication (A-22)", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .setHandle("no_roots", handle)
+  on.exit(.removeHandle("no_roots"), add = TRUE)
+  plan <- .empty_roots_plan()
+  tables <- DBI::dbListTables(handle$conn)
+  contexts <- ls(.planContextRegistry, all.names = TRUE)
+  staging <- handle$staging_dirs
+  for (mode in c("memory", "staged")) {
+    target <- new.env(parent = environment())
+    # Use the exported endpoint and transport; no executor or validator mock.
+    call <- as.call(list(as.name("omopPlanExecuteDS"), "no_roots",
+                        .legacy_ds_encode(plan), "B64:e30", mode))
+    target$exec <- eval(call, target)
+    status <- eval(quote(omopPlanStatusDS("exec")), target)
+    expect_identical(status$status, "ok")
+    expect_length(status$published, 0L)
+    expect_length(status$rejected, 0L)
+    expect_identical(ls(target, all.names = TRUE), "exec")
+    expect_identical(DBI::dbListTables(handle$conn), tables)
+    expect_identical(handle$temp_tables, character(0))
+    expect_identical(handle$staging_dirs, staging)
+    expect_identical(ls(.planContextRegistry, all.names = TRUE), contexts)
+    expect_true(eval(quote(omopStagedRevokeDS("exec")), target))
+    expect_identical(ls(target, all.names = TRUE), character(0))
+  }
+})
+
+test_that("an empty out mapping requires an explicitly empty v2 root array", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .setHandle("empty_mapping", handle)
+  on.exit(.removeHandle("empty_mapping"), add = TRUE)
   target <- new.env(parent = emptyenv())
-  # the client sends the empty mapping as the B64 JSON object {}
-  status <- .omopPlanExecuteDS("no_roots", .legacy_ds_encode(plan), "B64:e30",
-                               target_env = target)
-  expect_length(seen, 0L)
-  expect_identical(status$status, "ok")
-  expect_length(status$published, 0L)
-  expect_length(status$rejected, 0L)
-  expect_true(.validatePlanStatus(status))
+  for (publish in list(NULL, list("visits_out"), .pnv2EmptyObject())) {
+    plan <- .empty_roots_plan()
+    plan["publish"] <- list(publish)
+    expect_error(.omopPlanExecuteDS("empty_mapping", plan, "B64:e30",
+                                    target_env = target),
+                 "out must have unique, non-empty output names")
+  }
+  legacy <- .legacy_plan()
+  legacy$publish <- list()
+  expect_error(.omopPlanExecuteDS("empty_mapping", legacy, list(),
+                                  target_env = target),
+               "out must have unique, non-empty output names")
   expect_identical(ls(target, all.names = TRUE), character(0))
-  # without publish = [] an empty mapping is refused, as before
-  plan$publish <- NULL
-  expect_error(.omopPlanExecuteDS("no_roots", plan, "B64:e30", target_env = target),
-               "out must have unique, non-empty output names")
-  plan$publish <- list("visits_out")
-  expect_error(.omopPlanExecuteDS("no_roots", plan, list(), target_env = target),
-               "out must have unique, non-empty output names")
+})
+
+test_that("empty roots do not bypass invalid unused declarations or site rules", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .setHandle("empty_validation", handle)
+  on.exit(.removeHandle("empty_validation"), add = TRUE)
+  target <- new.env(parent = emptyenv())
+  invalid <- .empty_roots_plan()
+  invalid$events$visits$unknown <- TRUE
+  expect_error(.omopPlanExecuteDS("empty_validation", invalid, "B64:e30",
+                                  target_env = target),
+               "plan-v2.json", class = "dsomop_plan_rejection")
+  invalid <- .empty_roots_plan()
+  invalid$variables$n_visits$source$event <- "undeclared"
+  expect_error(.omopPlanExecuteDS("empty_validation", invalid, "B64:e30",
+                                  target_env = target),
+               "semantic rules", class = "dsomop_plan_rejection")
+  invalid <- .empty_roots_plan()
+  invalid$events$visits$table <- "provider"
+  expect_error(.omopPlanExecuteDS("empty_validation", invalid, "B64:e30",
+                                  target_env = target),
+               "site checks", class = "dsomop_plan_rejection")
+  withr::with_options(list(dsomop.recipe_operations_disabled = "publish.roots"), {
+    expect_error(.omopPlanExecuteDS("empty_validation", .empty_roots_plan(),
+                                    "B64:e30", target_env = target),
+                 "operation.*disabled", class = "dsomop_plan_rejection")
+  })
+  expect_identical(ls(target, all.names = TRUE), character(0))
+  expect_identical(handle$temp_tables, character(0))
 })

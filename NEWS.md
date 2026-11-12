@@ -206,8 +206,10 @@ fills its entries. Classes follow design-2.10.3 section 5.
   its own strict mode decides, as for the DP preparation (WS-8 review B1).
 - `omopPlanExecuteDS()` and `omopDpPlanExecuteDS()` accept an empty out
   mapping exactly when the plan's `publish` is an explicit empty array:
-  the plan is validated, nothing is assigned and the status is `ok`
-  (CR-22; WS-8 review B6). Any other plan still needs a non-empty mapping.
+  the full plan is validated, nothing is materialized or assigned and the
+  status is `ok` with empty inventories (A-22; WS-8 review B6). Invalid unused
+  declarations still refuse the plan. Any other plan still needs a non-empty
+  mapping.
 
 ## Design amendments applied by WS-0 (design/2.10.3/amendments.md)
 
