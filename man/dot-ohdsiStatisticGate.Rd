@@ -16,9 +16,12 @@
 }
 \description{
 Applied to RAW (unbanded) rows, after small-cell suppression and before the
-person gate bands the counts. For each row, every person basis must reach
-\code{nfilter.subset}, every event basis \code{nfilter.tab}, and every
-complement its own floor. A basis column that the physical table does not
+person gate bands the counts. For each row, every person basis and person
+complement must reach \code{max(nfilter.subset, nfilter.tab)} (a private
+basis column bypasses the public small-cell suppression, so it must meet the
+tabular floor itself), every event basis and event complement
+\code{nfilter.tab}; recurrent events never stand in for people. A basis
+column that the physical table does not
 provide, or a missing / non-finite / negative value, fails the row. A failed
 row keeps its dimensions and its own supported counts; only the coupled
 statistics (for example rr, the CI bounds, p, log_rr and se_log_rr) become

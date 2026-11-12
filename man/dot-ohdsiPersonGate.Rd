@@ -42,8 +42,9 @@ control) leaves open.
 \details{
 Behaviour, mirroring the "no hints" fail-closed policy:
 \itemize{
-  \item rows whose person count is below \code{nfilter.subset} (or NA) are
-    DROPPED — the same threshold and row-drop semantics as the raw-CDM gate;
+  \item rows whose person count is below
+    \code{max(nfilter.subset, nfilter.tab)} (or NA) are DROPPED — the same
+    threshold and row-drop semantics as the raw-CDM gate;
   \item if the result carries count columns but NONE of the tool's person
     columns (a person-less count basis, e.g. record/event/outcome counts with
     no person denominator), it is rejected (emptied) when
