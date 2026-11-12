@@ -1,0 +1,20 @@
+{
+  "server_commit": "7f536fe5e074fa9c9c02a0962cb29bdc1bc6e94a",
+  "client_commit": "acdfc75b5b5558fc6eda66cd84c91f8819182385",
+  "server_integration": "bf446cbd24c30abdaaac2889e9fc442bf4ba1d92",
+  "client_integration": "fd0c2d8199e58e1e462c40cdd6f4cb9b8cc3121b",
+  "schema_sha256": {
+    "plan-v2.json": "b762bed6aa93b64ee174e17a852bc6b873b8b939bb95dd3a73e65b0cdad529aa",
+    "ir-v2.json": "974c5e939dc2fd5536d06201a29cedae0aaa5d4d41aefb70fed9e34de6da04f6",
+    "probes/plan-v2-probes.json": "2a2cd8dc8d4e54f66a12c9311e40c89895b82e4d7c95afc59be892941b546291",
+    "SHA256SUMS": "9fb84f2f29d9502ba77476477830efb4fb73ee53a953b1184c8ab0a28f1c75e0"
+  },
+  "pending_patch_sha256": "eaeb4d0e2540f5a82562435925c695d3a1f0313796883c9d782c6db8f4a76d0a",
+  "pending_patch_applies": true,
+  "pending_patch_applied": false,
+  "client_has_compatibility_schema": false,
+  "package_versions": {
+    "dsOMOP": "Version: 2.10.2",
+    "dsOMOPClient": "Version: 2.10.2"
+  }
+}

@@ -1,0 +1,9 @@
+FAILURES BY FILE
+             file blocks failed errors
+ test-ir-review.R      1      0      1
+
+FAILING TESTS
+test-ir-review.R | A-20(b): a matching template's candidate anchors include its strata windows | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 1 skipped: 1 passed: 1326 
+RESULT failed: 0 errors: 1 skipped: 1 passed: 1326 
