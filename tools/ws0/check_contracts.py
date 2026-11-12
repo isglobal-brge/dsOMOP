@@ -170,6 +170,39 @@ for x, want in ((1e-7, "1e-7"), (1000000000000000100.0, "1000000000000000100"), 
                 (0.0915, "0.0915"), (2.15, "2.15"), (365.0, "365"), (1e21, "1e+21"), (0.000001, "0.000001"), (100.0, "100")):
     check(gen.es6_number(x) == want, f"number {x!r}: got {gen.es6_number(x)}, want {want}")
 
+# --- normal form (A-11): one rule, fixed points, pinned normalised fixtures -------------
+spec_n = importlib.util.spec_from_file_location("normref", os.path.join(S, "tools", "ws0", "normalize_reference.py"))
+normref = importlib.util.module_from_spec(spec_n); spec_n.loader.exec_module(normref)
+wire_schema = load(os.path.join(SCHEMA, "plan-v2.json"))
+def nsha(obj):
+    return hashlib.sha256(gen.jcs(obj).encode("utf-8")).hexdigest()
+nvec = load(os.path.join(SCHEMA, "normalized-vectors.json"))
+n_norm = 0
+for v in nvec["vectors"]:
+    stored = load(os.path.join(SCHEMA, "normalized", v["label"] + ".json"))
+    check(nsha(stored) == v["normalized_sha256"], f"normalised fixture {v['label']}: stored document hash differs")
+    check(gen.digest(stored)[1] == v["digest_sha256"], f"normalised fixture {v['label']}: semantic digest differs")
+    check(normref.normalize(stored, wire_schema) == stored, f"normalised fixture {v['label']} is not a fixed point")
+    check(schemas["plan-v2"].is_valid(stored) and schemas["ir-v2"].is_valid(stored), f"normalised fixture {v['label']} does not validate")
+    src = os.path.normpath(os.path.join(SCHEMA, v["source"]))
+    if os.path.exists(src):
+        n = normref.normalize(load(src), wire_schema)
+        check(n == stored, f"normalising {v['source']} does not reproduce the pinned {v['label']}")
+        n_norm += 1
+check(n_norm >= 2, "normalised examples A and B must be reproducible")
+# every valid wire probe has an idempotent, still-valid normal form
+for p in load(os.path.join(SCHEMA, "probes", "plan-v2-probes.json")):
+    if p["schema"] == "plan-v2" and p["expect"] == "valid" and p.get("instance") is not None:
+        n = normref.normalize(p["instance"], wire_schema)
+        check(normref.normalize(n, wire_schema) == n and schemas["plan-v2"].is_valid(n), f"probe {p['id']}: normal form not a valid fixed point")
+# the bound variants normalise exactly as their base plans
+for d in sorted(os.listdir(corpus)):
+    var_dir = os.path.join(corpus, d, "variants")
+    if os.path.isdir(var_dir):
+        for m in load(os.path.join(var_dir, "variants.json")):
+            vplan = load(os.path.join(var_dir, m["bound_plan"])); base = load(os.path.join(corpus, m["equals_plan_of"], "plan.json"))
+            check(normref.normalize(vplan, wire_schema) == normref.normalize(base, wire_schema), f"variant {m['bound_plan']}: normal form differs from its base")
+
 # ECMAScript differential corpus: the frozen CSV must equal the oracle's regenerated rows
 corpus_csv = os.path.join(S, "tests", "testthat", "fixtures", "es6-number-corpus.csv")
 if os.path.exists(corpus_csv):
@@ -215,7 +248,7 @@ if C:
     check(open(os.path.join(S, "inst", "column_classes.csv"), "rb").read() == open(os.path.join(C, "inst", "column_classes.csv"), "rb").read(),
           "column corpus differs between packages")
 
-print(f"checked 3 schemas, 2 examples, {n_probes} probes, {n_plans} acceptance plans, {len(vec['vectors'])} digest vectors, {len(NUMBERS) + 9} numbers, {n_corpus} corpus doubles")
+print(f"checked 3 schemas, 2 examples, {n_probes} probes, {n_plans} acceptance plans, {len(vec['vectors'])} digest vectors, {len(nvec['vectors'])} normalised fixtures, {len(NUMBERS) + 9} numbers, {n_corpus} corpus doubles")
 if failures:
     print("FAILURES:"); [print(" -", f) for f in failures]
     sys.exit(1)

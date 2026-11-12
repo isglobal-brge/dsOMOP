@@ -2820,6 +2820,28 @@
               "exposed_days"
             ]
           }
+        },
+        "source_analyses": {
+          "type": "object",
+          "default": {},
+          "description": "Per-source analysis selection: resolved source name -> nonempty unique subset of analyses; an omitted source inherits the output's analyses (A-14)",
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "binary",
+                "count",
+                "mean",
+                "last",
+                "exposed_days"
+              ]
+            }
+          }
         }
       }
     },
@@ -2971,6 +2993,28 @@
               "last",
               "exposed_days"
             ]
+          }
+        },
+        "source_analyses": {
+          "type": "object",
+          "default": {},
+          "description": "Per-source analysis selection: resolved source name -> nonempty unique subset of analyses; an omitted source inherits the output's analyses (A-14)",
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "binary",
+                "count",
+                "mean",
+                "last",
+                "exposed_days"
+              ]
+            }
           }
         }
       }

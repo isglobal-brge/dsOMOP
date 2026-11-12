@@ -1,0 +1,445 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "events": {
+    "metf": {
+      "table": "drug_exposure",
+      "concept_set": {
+        "concepts": [
+          1503297
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "end": {
+        "fallback": "days_supply"
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "on_missing_table": "error"
+    },
+    "visits": {
+      "table": "visit_occurrence",
+      "concept_set": null,
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "visit_cost": {
+      "cost": {
+        "event": {
+          "event": "visits"
+        },
+        "field": "total_cost",
+        "currency": 44818668,
+        "cost_type": null,
+        "where": null,
+        "on_missing_table": "error"
+      }
+    },
+    "drug_cost": {
+      "cost": {
+        "event": {
+          "event": "metf"
+        },
+        "field": "total_cost",
+        "currency": 44818668,
+        "cost_type": null,
+        "where": null,
+        "on_missing_table": "error"
+      }
+    }
+  },
+  "intervals": {
+    "metf_stock": {
+      "source": {
+        "event": "metf"
+      },
+      "gap": 30,
+      "fallback": "days_supply",
+      "stockpile": true,
+      "persistence": 0,
+      "min_days": 0,
+      "by": "event",
+      "unmapped": "own_concept",
+      "end": "recorded_end"
+    },
+    "metf_era": {
+      "source": {
+        "event": "metf"
+      },
+      "gap": 30,
+      "fallback": "days_supply",
+      "persistence": 0,
+      "min_days": 0,
+      "by": "event",
+      "unmapped": "own_concept",
+      "end": "recorded_end",
+      "stockpile": false
+    }
+  },
+  "populations": {
+    "users": {
+      "kind": "index",
+      "index": {
+        "source": {
+          "cohort_definition_id": 1001
+        },
+        "select": "all",
+        "end": {
+          "strategy": "event_end",
+          "days": null,
+          "pad": 0
+        },
+        "n": 1,
+        "offset": 0,
+        "restrict_to_observation": true
+      },
+      "coverage": {
+        "policy": "union",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 30
+      },
+      "parent": null,
+      "where": null
+    }
+  },
+  "variables": {
+    "visit_cost_60": {
+      "source": {
+        "event": "visit_cost"
+      },
+      "reducer": {
+        "fn": "sum",
+        "value": "value",
+        "window": {
+          "start": 1,
+          "end": 60,
+          "anchor": "index"
+        },
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "drug_cost_60": {
+      "source": {
+        "event": "drug_cost"
+      },
+      "reducer": {
+        "fn": "sum",
+        "value": "value",
+        "window": {
+          "start": 1,
+          "end": 60,
+          "anchor": "index"
+        },
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "supply_90": {
+      "source": {
+        "event": "metf"
+      },
+      "reducer": {
+        "fn": "supply_days",
+        "window": {
+          "start": 1,
+          "end": 90,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "observed_90": {
+      "derived": {
+        "kind": "observed_days",
+        "window": {
+          "start": 1,
+          "end": 90,
+          "anchor": "index"
+        }
+      }
+    },
+    "pdc_num_eff_90": {
+      "source": {
+        "interval": "metf_stock"
+      },
+      "reducer": {
+        "fn": "covered_days",
+        "window": {
+          "start": 1,
+          "end": 90,
+          "anchor": "index"
+        },
+        "coverage": "effective_supply",
+        "observed_only": true,
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "fills": "start_in_window"
+      },
+      "broadcast": false
+    },
+    "pdc_num_rec_90": {
+      "source": {
+        "interval": "metf_era"
+      },
+      "reducer": {
+        "fn": "covered_days",
+        "window": {
+          "start": 1,
+          "end": 90,
+          "anchor": "index"
+        },
+        "observed_only": true,
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window"
+      },
+      "broadcast": false
+    },
+    "covered_eff_90": {
+      "source": {
+        "interval": "metf_stock"
+      },
+      "reducer": {
+        "fn": "covered_days",
+        "window": {
+          "start": 1,
+          "end": 90,
+          "anchor": "index"
+        },
+        "coverage": "effective_supply",
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "covered_rec_90": {
+      "source": {
+        "interval": "metf_era"
+      },
+      "reducer": {
+        "fn": "covered_days",
+        "window": {
+          "start": 1,
+          "end": 90,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "observed_10": {
+      "derived": {
+        "kind": "observed_days",
+        "window": {
+          "start": 1,
+          "end": 10,
+          "anchor": "index"
+        }
+      }
+    },
+    "pdc_num_eff_10": {
+      "source": {
+        "interval": "metf_stock"
+      },
+      "reducer": {
+        "fn": "covered_days",
+        "window": {
+          "start": 1,
+          "end": 10,
+          "anchor": "index"
+        },
+        "coverage": "effective_supply",
+        "observed_only": true,
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "fills": "start_in_window"
+      },
+      "broadcast": false
+    },
+    "covered_eff_10": {
+      "source": {
+        "interval": "metf_stock"
+      },
+      "reducer": {
+        "fn": "covered_days",
+        "window": {
+          "start": 1,
+          "end": 10,
+          "anchor": "index"
+        },
+        "coverage": "effective_supply",
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    }
+  },
+  "outputs": {
+    "adherence": {
+      "rows": "users",
+      "format": "wide",
+      "grain": "episode",
+      "result_symbol": "D_adherence",
+      "collapse": null,
+      "columns": [
+        "visit_cost_60",
+        "drug_cost_60",
+        "supply_90",
+        "observed_90",
+        "pdc_num_eff_90",
+        "pdc_num_rec_90",
+        "covered_eff_90",
+        "covered_rec_90",
+        "observed_10",
+        "pdc_num_eff_10",
+        "covered_eff_10"
+      ],
+      "sources": [],
+      "options": {
+        "date_handling": {
+          "mode": "relative",
+          "reference": "index",
+          "bin_width": null,
+          "date_columns": null
+        },
+        "time_window": null
+      }
+    }
+  },
+  "options": {
+    "translate_concepts": true,
+    "block_sensitive": true,
+    "factor_concepts": true
+  },
+  "concept_sets": {},
+  "publish": [
+    "adherence"
+  ]
+}
