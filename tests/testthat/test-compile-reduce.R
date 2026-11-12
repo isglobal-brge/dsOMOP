@@ -285,3 +285,118 @@ test_that("fragment identities: the rd and ox families are declared and allocate
   keys2 <- vapply(.reduceFragmentIdentities(ir2), .fragmentIdentityKey, "")
   expect_false(anyDuplicated(keys2) > 0L)
 })
+
+test_that("lossless row and event ordering survives adjacent BIGINT keys and date modes", {
+  keys <- c("9007199254740993", "10", "9007199254740992", "2", "-10", "-2", NA)
+  expect_identical(keys[order(.reduceKeyOrder(keys))],
+                   c("-10", "-2", "2", "10", "9007199254740992", "9007199254740993", NA))
+  rows <- data.frame(row_key = "1", event_id = c("9007199254740993", "9007199254740992"),
+                     start_date = as.Date("2020-01-01"), v = c(9, 2))
+  got <- .reduceApply("first_value", rows, "1", list(), c("start_date", "event_id"))
+  expect_identical(.reduceCoerce(got[[1L]], "numeric"), 2)
+  frame <- data.frame(cohort_row_id = rows$event_id, person_id = "1", value = rows$v)
+  expect_identical(.reduceCollapse(frame, "first_episode")$value, 2)
+  expect_identical(.reduceCollapse(frame, "last_episode")$value, 9)
+  dates <- as.Date(c("2020-01-02", "2020-01-01", "2020-01-02"))
+  expect_identical(.reduceCoerce(list(.reduceMode(dates)), "date"), as.Date("2020-01-02"))
+  expect_identical(.reduceCoerce(list(), "integer"), integer(0))
+  expect_identical(.reduceCoerce(keys, "bigint"), keys)
+})
+
+test_that("unavailable reducers retain their result types and still validate effective coverage", {
+  vars <- list(n = .rd("count", "notes"), avg = .rd("mean", "notes"),
+               mode = .rd("mode", "notes"), day = .rd("mode", "notes", value = "start_date"),
+               cov = .rd("covered_days", "notes"), supply = .rd("supply_days", "notes"))
+  plan <- .ws7_scenario_plan(vars, events = list(notes = list(table = "note", on_missing_table = "unavailable")))
+  for (b in names(.ws7_red_backends)) {
+    f <- .ws7_scenario_run(.ws7_red_backends[[b]]$handle, plan)$frame
+    expect_true(all(vapply(f[names(vars)], function(x) all(is.na(x)), logical(1))), info = b)
+    for (col in c("n", "mode", "cov", "supply")) expect_type(f[[col]], "integer")
+    expect_type(f$avg, "double")
+    expect_type(f$day, "integer") # Date mode follows the output's relative-date policy
+  }
+  plan$variables <- list(bad = .rd("covered_days", "notes", coverage = "effective_supply"))
+  .ws4_expect_rejection(.ws7_scenario_run(.ws7_red_backends$sqlite$handle, plan),
+                        pattern = "stockpiled interval")
+})
+
+test_that("mixed origins scope members and course reducers before parent-local stockpiling", {
+  vars <- list(n = .rd("count", "members"),
+               courses = list(source = list(interval = "mc"), reducer = list(fn = "era_count")),
+               duration = list(source = list(interval = "ms"), reducer = list(fn = "era_days")))
+  plan <- .ws7_scenario_plan(vars, events = list(
+    episodes = list(table = "episode", concept_set = list(concepts = list(32531))),
+    members = list(episode_members = list(episode = list(event = "episodes")))))
+  plan$intervals <- list(mc = list(source = list(event = "members"), gap = 0L),
+                         ms = list(source = list(event = "members"), gap = 0L, stockpile = TRUE))
+  plan$populations$t$index$source <- list(any_of = list(list(event = "episodes"), list(event = "drug")))
+  frame <- data.frame(subject_id = 3301L, cohort_start_date = as.Date("2020-01-01"),
+                       cohort_end_date = as.Date("2020-12-31"),
+                       index_source = c("episodes", "episodes", "drug", NA),
+                       index_key = c("3301001", "3301002", "other", NA))
+  for (b in names(.ws7_red_backends)) {
+    got <- .ws7_scenario_run(.ws7_red_backends[[b]]$handle, plan, frame)
+    at <- match(c("3301001", "3301002", "other", NA), got$roster$index_key)
+    out <- got$frame[match(got$roster$cohort_row_id[at], got$frame$cohort_row_id), ]
+    expect_identical(out$n, c(2L, 2L, 3L, 0L), info = b)
+    expect_identical(out$courses, c(1L, 2L, 1L, 0L), info = b)
+    expect_identical(out$duration, c(60L, 60L, 90L, NA_integer_), info = b)
+  }
+})
+
+test_that("event and interval reducer streams inherit index-visit restrictions", {
+  vars <- list(n = .rd("count", "proc"),
+               course = list(source = list(interval = "pi"), reducer = list(fn = "era_count")),
+               stock = list(source = list(interval = "ps"), reducer = list(fn = "era_count")))
+  plan <- .ws7_scenario_plan(vars, events = list(
+    proc = list(table = "procedure_occurrence", concept_set = list(concepts = list(4283095)),
+                visit = list(index = TRUE)), vis = list(table = "visit_occurrence")))
+  plan$intervals <- list(pi = list(source = list(event = "proc")),
+                         ps = list(source = list(event = "proc"), stockpile = TRUE))
+  plan$populations$t$index$source <- list(event = "vis")
+  frame <- data.frame(subject_id = 1007L, cohort_start_date = as.Date("2020-01-01"),
+                       cohort_end_date = as.Date("2020-12-31"), index_source = "vis",
+                       index_key = c("700701", "700702", "missing"),
+                       index_visit_id = c(700701, 700702, NA))
+  for (b in names(.ws7_red_backends)) {
+    got <- .ws7_scenario_run(.ws7_red_backends[[b]]$handle, plan, frame)
+    at <- match(frame$index_key, got$roster$index_key)
+    out <- got$frame[match(got$roster$cohort_row_id[at], got$frame$cohort_row_id), ]
+    for (col in names(vars)) expect_identical(out[[col]], c(1L, 0L, 0L), info = paste(b, col))
+  }
+})
+
+test_that("coverage reducers combine output windows and temporal selection without broadening", {
+  vars <- list(coverage = .rd("covered_days", "drug"),
+               observed = .rd("covered_days", "drug", observed_only = TRUE),
+               supply = .rd("supply_days", "drug", fills = "clipped"))
+  plan <- .ws7_scenario_plan(vars, output = list(options = list(
+    time_window = list(start = -3L, end = 2L, anchor = "index"),
+    temporal = list(event_select = "last"))))
+  for (b in names(.ws7_red_backends)) {
+    f <- .ws7_scenario_run(.ws7_red_backends[[b]]$handle, plan)$frame
+    expect_identical(.ws7_value(f, 7001L, "coverage"), 6L, info = b)
+    expect_identical(.ws7_value(f, 7001L, "observed"), 6L, info = b)
+    expect_identical(.ws7_value(f, 7001L, "supply"), 0L, info = b)
+    expect_identical(.ws7_value(f, 7002L, "coverage"), 0L, info = b)
+  }
+  plan$outputs$o$options$time_window$anchor <- list(source = list(event = "dx"))
+  f <- .ws7_scenario_run(.ws7_red_backends$sqlite$handle, plan)$frame
+  expect_identical(.ws7_value(f, 7001L, "coverage"), 4L)
+  for (col in names(vars)) expect_identical(.ws7_value(f, 7002L, col), NA_integer_)
+})
+
+test_that("the reducer stream cap admits the exact limit and refuses the next realised row", {
+  h <- .ws7_red_backends$sqlite$handle
+  plan <- .ws7_scenario_plan(list(n = .rd("count")))
+  frame <- .ws7_scenario_frame(7001L)
+  withr::local_options(list(dsomop.max_memory_rows = 5L))
+  expect_identical(.ws7_scenario_run(h, plan, frame)$frame$n, 5L)
+  options(dsomop.max_memory_rows = 4L)
+  err <- tryCatch(.ws7_scenario_run(h, plan, frame), dsomop_plan_rejection = identity)
+  expect_s3_class(err, "dsomop_plan_rejection")
+  expect_identical(err$code, "validation_error")
+  expect_identical(err$reason, "reducer_row_cap")
+  expect_identical(err$field, "/variables/n/reducer")
+  expect_false(any(c("rows", "count", "condition", "data") %in% names(err)))
+})

@@ -125,19 +125,11 @@
 #' @return data.frame with lower-case names.
 #' @keywords internal
 .reduceFetchSql <- function(ctx, sql, field = "/outputs") {
-  cap <- .reduceRowCap()
-  rows <- .withDbReconnect(ctx[["handle"]], function(conn) {
-    rs <- DBI::dbSendQuery(conn, sql)
-    on.exit(try(DBI::dbClearResult(rs), silent = TRUE), add = TRUE)
-    DBI::dbFetch(rs, n = as.numeric(cap) + 1)
-  })
-  if (nrow(rows) > cap) {
+  .fetchBounded(ctx[["handle"]], sql, .reduceRowCap(), function() {
     .compileReject(paste0("a private stream exceeds the server in-memory row cap ",
                           "(dsomop.max_memory_rows)"),
                    reason = "reducer_row_cap", field = field)
-  }
-  names(rows) <- tolower(names(rows))
-  .coerce_integer64(rows)
+  })
 }
 
 #' Rows of a fragment, bounded, with its date columns as Date
@@ -265,70 +257,63 @@
        available = identical(f$availability, "available"))
 }
 
-#' The consumer association of a source over a roster (A-20 (a), item 6)
+#' The consumer association of a source over a final roster
 #'
-#' An event restricted by \code{visit = {index: true}} joins the roster row's
-#' index visit (a NULL visit matches no row); an episode-member source over a
-#' roster indexed on its parent episode event joins the row's parent origin
-#' (\code{parent_source_ns}, \code{parent_event_id} = the roster's
-#' \code{index_source}, \code{index_key}) and the same person; any other
-#' consumer is person-indexed and analyses each physical event once (an
-#' event linked to two episodes is one row). Missing roster metadata fails
-#' closed.
-#'
+#' Uses the same resolver as anchors and interval coverage. Its branches bind
+#' the index visit and parent origin before any selection or reduction.
 #' @param ctx Compilation context.
-#' @param src A resolved source (\code{.reduceSource()}).
-#' @param cons The consumer (\code{.reduceConsumer()}).
-#' @param e,r SQL aliases of the source and roster rows.
-#' @return list(kind = "person" | "visit" | "parent", predicates (character),
-#'   dedup (logical: wrap the source to one row per physical event)).
+#' @param src Resolved source.
+#' @param cons Consumer record.
+#' @return The record from \code{.consumerAssociation()}.
 #' @keywords internal
-.reduceAssociation <- function(ctx, src, cons, e = "e", r = "r") {
-  h <- .compileDialect(ctx)
-  cols <- names(cons$roster$columns)
-  meta <- src$meta
-  if (identical(src$kind, "event") && isTRUE(meta$index_visit)) {
-    if (!"index_visit_id" %in% cols) {
-      stop("An index-visit event needs the roster's index_visit_id.", call. = FALSE)
-    }
-    return(list(kind = "visit", dedup = FALSE,
-                predicates = paste0(e, ".visit_id = ", r, ".index_visit_id")))
-  }
-  if (identical(src$kind, "event") && identical(meta$kind, "episode_members")) {
-    parent <- meta$parent
-    tags <- .irIndexSourceTags(ctx[["ir"]], cons$population)
-    if (length(tags) && all(tags == parent)) {
-      if (!all(c("index_source", "index_key") %in% cols)) {
-        stop("An episode-indexed member consumer needs the roster's index_source and index_key.",
-             call. = FALSE)
-      }
-      return(list(kind = "parent", dedup = FALSE, predicates = c(
-        paste0(e, ".parent_source_ns = ", r, ".index_source"),
-        paste0(.sqlLosslessKeyText(h, paste0(e, ".parent_event_id")), " = ", r, ".index_key"))))
-    }
-    if (parent %in% tags) {
-      .irReject(paste0("episode members of '", parent, "' over a population indexed partly on '",
-                       parent, "' and partly on other sources have no single consumer association"),
-                field = paste0("/outputs/", cons$output))
-    }
-    return(list(kind = "person", dedup = TRUE, predicates = character(0)))
-  }
-  list(kind = "person", dedup = FALSE, predicates = character(0))
+.reduceAssociation <- function(ctx, src, cons) {
+  .consumerAssociation(ctx, stats::setNames(list(src$name), src$kind), cons$roster,
+                        "final", path = paste0("/outputs/", cons$output, "/source"))
 }
 
-# The FROM item of a source for a consumer: the fragment itself, or for a
-# person-indexed episode-member consumer one row per physical event (the first
-# link by parent identity).
-.reduceSourceFrom <- function(ctx, src, assoc, alias = "e") {
-  if (!isTRUE(assoc$dedup)) return(paste0(src$fragment$name, " ", alias))
+# Resolve every branch before assembling one roster join. Keeping the roster
+# reference outside the branch union also works with MySQL session tables.
+# Registered source fragments are retained intact, including the private
+# mysql_stockpile_source attribute used by .buildStatement().
+.reduceSourceFrom <- function(ctx, src, assoc, alias = "e", use = "course", coverage = "recorded") {
   h <- .compileDialect(ctx)
-  f <- src$fragment
-  cols <- names(f$columns)
-  rn <- .sqlRowNumber(h, c("m.person_id", "m.member_table", "m.event_id"),
-                      c("m.parent_source_ns", "m.parent_event_id"))
-  paste0("(SELECT ", paste(paste0("x.", cols), collapse = ", "), " FROM (SELECT ",
-         paste(paste0("m.", cols), collapse = ", "), ", ", rn, " AS dsomop_link_rank FROM ",
-         f$name, " m) x WHERE x.dsomop_link_rank = 1) ", alias)
+  rels <- lapply(assoc$branches, function(b) .consumerRelation(ctx, assoc, b, use = use, coverage = coverage))
+  names(rels) <- assoc$branches
+  cols <- unique(unlist(lapply(rels, function(f) names(f$columns))))
+  from <- rels[[1L]]$name
+  branches <- vapply(assoc$branches, function(b) {
+    paste(.consumerJoinSql(h, assoc, b, alias, "r"), collapse = " AND ")
+  }, "")
+  if (identical(src$kind, "event")) {
+    # Every parent branch binds one origin. Only a person branch deduplicates
+    # links; the physical identity includes the adapter's member table.
+    if (!is.null(assoc$parent) && "person" %in% assoc$branches) {
+      f <- rels[[1L]]
+      physical <- unique(c("person_id", "source_ns", setdiff(f$unique_key, .ADAPTER_PARENT_COLUMNS)))
+      rn <- .sqlRowNumber(h, paste0("m.", physical), paste0("m.", .ADAPTER_PARENT_COLUMNS))
+      from <- paste0("(SELECT m.*, ", rn, " AS dsomop_link_rank FROM ", f$name, " m)")
+      branches[["person"]] <- paste0("(", branches[["person"]], ") AND ", alias, ".dsomop_link_rank = 1")
+    }
+  } else if (length(rels) > 1L) {
+    types <- list()
+    for (f in rels) types[names(f$columns)] <- f$columns
+    bodies <- lapply(names(rels), function(b) {
+      f <- rels[[b]]
+      projected <- vapply(cols, function(col) {
+        if (col %in% names(f$columns)) paste0("m.", col) else .compileTypedNull(h, types[[col]]$type)
+      }, "")
+      paste0("SELECT ", paste(paste0(projected, " AS ", cols), collapse = ", "), ", ",
+             .compileTextLiteral(b), " AS dsomop_association FROM ", f$name, " m")
+    })
+    from <- paste0("(", paste(bodies, collapse = " UNION ALL "), ")")
+    for (b in names(branches)) {
+      branches[[b]] <- paste0(alias, ".dsomop_association = ", .compileTextLiteral(b),
+                              " AND (", branches[[b]], ")")
+    }
+  }
+  list(from = paste0(from, " ", alias),
+       predicates = paste0("(", paste(paste0("(", branches, ")"), collapse = " OR "), ")"),
+       dependencies = unique(vapply(rels, function(f) f$name, "")), fragment = rels[[1L]])
 }
 
 # The deterministic order columns of a source (A-17: the source's own
@@ -437,19 +422,14 @@
 # reference: sides anchored on roster columns or dates; a source-anchored side
 # is NULL here (broadened) and applied in R.
 .reduceSqlBounds <- function(ctx, cons, window, alias = "r") {
-  h <- .compileDialect(ctx)
   sides <- .reduceWindowSides(window)
-  out <- list(lower = NULL, upper = NULL)
+  partial <- list()
   for (side in c("lower", "upper")) {
     b <- sides[[side]]
-    if (is.null(b)) next
-    a <- .anchorNormalize(b$anchor)
-    if (identical(a$kind, "source")) next
-    # a roster column or a date literal, through the one resolver (A-20 (d))
-    base <- .anchorExpr(ctx, b$anchor, cons$roster, "final", alias = alias)$expr
-    out[[side]] <- if (b$offset == 0L) base else .sqlDateAddDays(h, base, b$offset)
+    if (is.null(b) || identical(.anchorNormalize(b$anchor)$kind, "source")) next
+    partial[[if (identical(side, "lower")) "start" else "end"]] <- b
   }
-  out
+  .compileWindow(ctx, if (length(partial)) partial else NULL, cons$roster, "final", alias = alias)
 }
 
 # Keep the rows inside each roster row's exact window (start inside, or for
@@ -484,16 +464,21 @@
 #' @param extra Named list: column -> list(expr (SQL over e/r), type, role).
 #' @param overlap Logical: select rows whose [start, end] overlaps the window
 #'   (courses) instead of rows starting in it.
+#' @param use Course or recorded/effective rows of an interval.
+#' @param coverage Coverage relation for interval rows.
+#' @param quality Apply the direct-event coverage quality policy.
 #' @return The stream fragment.
 #' @keywords internal
-.reduceStream <- function(ctx, cons, src, window, name, extra = list(), overlap = FALSE) {
+.reduceStream <- function(ctx, cons, src, window, name, extra = list(), overlap = FALSE,
+                          use = "course", coverage = "recorded", quality = FALSE) {
   existing <- .fragmentGet(ctx, name)
   if (!is.null(existing)) return(existing)
   h <- .compileDialect(ctx)
   spec <- cons$spec
   win <- .reduceSqlBounds(ctx, cons, window, "r")
   tw <- .reduceSqlBounds(ctx, cons, cons$time_window, "r")
-  assoc <- .reduceAssociation(ctx, src, cons, "e", "r")
+  assoc <- .reduceAssociation(ctx, src, cons)
+  source <- .reduceSourceFrom(ctx, src, assoc, "e", use, coverage)
   pred <- if (isTRUE(overlap)) {
     c(if (!is.null(win$upper)) paste0("e.start_date <= ", win$upper),
       if (!is.null(win$lower)) paste0("e.end_date >= ", win$lower))
@@ -503,10 +488,12 @@
   }
   tw_pred <- c(if (!is.null(tw$lower)) paste0("e.start_date >= ", tw$lower),
                if (!is.null(tw$upper)) paste0("e.start_date <= ", tw$upper))
-  on <- c(paste0("e.person_id = r.", spec$person), "e.start_date IS NOT NULL", pred, tw_pred,
-          assoc$predicates)
-  f <- src$fragment
-  ord <- .reduceSourceOrdering(src)
+  on <- c(source$predicates, "e.start_date IS NOT NULL", pred, tw_pred,
+          if (quality && identical(src$kind, "event")) .eventCoverageQualitySql(h, src$meta, "e"))
+  f <- source$fragment
+  ordered_src <- src
+  ordered_src$fragment <- f
+  ord <- .reduceSourceOrdering(ordered_src)
   keep <- unique(c("event_id", "source_ns", setdiff(ord, "start_date")))
   keep <- keep[keep %in% names(f$columns)]
   cols <- c(row_key = paste0("r.", spec$key), person_id = paste0("r.", spec$person),
@@ -514,7 +501,7 @@
   for (k in keep) cols[[k]] <- paste0("e.", k)
   for (x in names(extra)) cols[[x]] <- extra[[x]]$expr
   body <- paste0("SELECT ", paste(paste0(cols, " AS ", names(cols)), collapse = ", "),
-                 " FROM ", spec$name, " r INNER JOIN ", .reduceSourceFrom(ctx, src, assoc, "e"),
+                 " FROM ", spec$name, " r INNER JOIN ", source$from,
                  " ON ", paste(on, collapse = " AND "))
   spec_cols <- list(row_key = .fragmentColumn(spec$key_type, FALSE, "private"),
                     person_id = .fragmentColumn(spec$person_type, FALSE, "person_key"),
@@ -526,10 +513,10 @@
   }
   private <- names(spec_cols)[vapply(spec_cols, function(c) c$role == "private", logical(1))]
   out <- .fragment(name, "stream", "row", body, spec_cols,
-                   dependencies = unique(c(spec$name, f$name)),
+                   dependencies = unique(c(spec$name, source$dependencies)),
                    person_lineage = list(person_col = "person_id", via_roster = NULL),
                    roster_namespace = spec$namespace, private_columns = private,
-                   availability = f$availability)
+                   availability = f$availability, ordering = c("row_key", ord))
   .sqlAssertTypedSql(h, out$select_body)
   .fragmentRegister(ctx, out)
 }
@@ -558,6 +545,37 @@
 }
 
 # --- reducer kernels (pure R) ---------------------------------------------------------------------
+
+# Orderable ranks for lossless BIGINT keys. Decimal strings are compared by
+# sign and digit length before byte order, never converted to a double.
+.reduceKeyOrder <- function(x) {
+  if (inherits(x, "integer64")) x <- as.character(x)
+  if (!is.character(x) && !is.factor(x)) return(as.numeric(x))
+  x <- as.character(x)
+  have <- !is.na(x)
+  if (!any(have)) return(rep(NA_integer_, length(x)))
+  if (!all(grepl("^[+-]?[0-9]+$", x[have]))) {
+    return(match(x, sort(unique(x[have]), method = "radix")))
+  }
+  digits <- sub("^[+-]", "", x)
+  digits <- sub("^0+(?=.)", "", digits, perl = TRUE)
+  negative <- have & startsWith(x, "-") & digits != "0"
+  normalized <- ifelse(negative, paste0("-", digits), digits)
+  neg <- unique(normalized[negative])
+  pos <- unique(normalized[have & !negative])
+  neg <- neg[order(nchar(neg), neg, decreasing = TRUE, method = "radix")]
+  pos <- pos[order(nchar(pos), pos, method = "radix")]
+  match(normalized, c(neg, pos))
+}
+
+.reduceOrderRows <- function(rows, columns, decreasing = FALSE) {
+  keys <- c("row_key", "cohort_row_id", "person_id", "event_id", "visit_id", "era_no", "parent_event_id")
+  cols <- lapply(columns, function(col) {
+    x <- rows[[col]]
+    if (sub("^src_", "", col) %in% keys) .reduceKeyOrder(x) else x
+  })
+  do.call(order, c(cols, list(decreasing = decreasing, method = "radix")))
+}
 
 # Group indices of rows by key, in key order of `keys` (missing keys absent).
 .reduceGroups <- function(row_keys, keys) {
@@ -766,7 +784,7 @@
 .reduceApply <- function(fn, rows, keys, r, ordering, anchors = NULL) {
   ord_cols <- c("row_key", intersect(ordering, names(rows)))
   if (nrow(rows)) {
-    o <- do.call(order, c(unname(as.list(rows[ord_cols])), list(method = "radix")))
+    o <- .reduceOrderRows(rows, ord_cols)
     rows <- rows[o, , drop = FALSE]
   }
   groups <- .reduceGroups(rows$row_key, keys)
@@ -844,12 +862,13 @@
 
 .reduceCoerce <- function(x, type) {
   if (is.list(x)) x <- unlist(lapply(x, function(e) if (is.null(e) || length(e) == 0L) NA else e))
+  if (is.null(x)) x <- .reduceTypedNA(type, 0L)
   switch(type,
     integer = suppressWarnings(as.integer(x)),
     numeric = { y <- suppressWarnings(as.numeric(x)); y[!is.finite(y)] <- NA_real_; y },
     text = as.character(x),
-    bigint = suppressWarnings(as.numeric(x)),
-    date = as.Date(x),
+    bigint = if (is.character(x)) x else if (inherits(x, "integer64")) as.character(x) else x,
+    date = if (is.numeric(x)) as.Date(x, origin = "1970-01-01") else as.Date(x),
     x)
 }
 
@@ -879,14 +898,17 @@
     return(.reduceEraVariable(ctx, node, name, cons, src))
   }
   value_col <- NULL
-  value_type <- "numeric"
+  value_type <- if (identical(fn, "mode")) {
+    col <- r[["value"]] %||% "concept_id"
+    (src$fragment$columns[[col]] %||% list(type = "numeric"))$type
+  } else "numeric"
   needs_value <- fn %in% .REDUCER_VALUE_FNS || identical(fn, "mode") ||
     (identical(fn, "n_distinct") && !is.null(r[["value"]]))
   if (needs_value && src$available) {
     requested <- r[["value"]] %||% if (identical(fn, "mode")) "concept_id" else "value"
     res <- .predicateResolve(src$catalogue, requested, paste0(field, "/value"))
     value_col <- res$column
-    value_type <- if (res$type %in% c("integer", "bigint")) "integer" else
+    value_type <- if (res$type %in% c("integer", "bigint")) res$type else
       if (identical(res$type, "text")) "text" else if (identical(res$type, "date")) "date" else
         "numeric"
     if (fn %in% .REDUCER_VALUE_FNS && !res$type %in% c("integer", "bigint", "numeric")) {
@@ -904,8 +926,7 @@
   extra <- list()
   if (!is.null(value_col)) {
     extra$v <- list(expr = paste0("e.", value_col),
-                    type = switch(value_type, integer = "integer", text = "text", date = "date",
-                                  "numeric"))
+                    type = value_type)
   }
   if (fn %in% c("count", "n_distinct")) {
     if ("visit_id" %in% names(src$fragment$columns) && !"visit_id" %in% names(extra)) {
@@ -961,7 +982,7 @@
   gap <- as.integer(unlist(temporal[["min_gap"]] %||% 0L))
   if (identical(sel, "all") && gap <= 0L) return(rows)
   ord_cols <- c("row_key", intersect(ordering, names(rows)))
-  o <- do.call(order, c(unname(as.list(rows[ord_cols])), list(method = "radix")))
+  o <- .reduceOrderRows(rows, ord_cols)
   rows <- rows[o, , drop = FALSE]
   keep <- rep(FALSE, nrow(rows))
   for (ix in split(seq_len(nrow(rows)), as.character(rows$row_key))) {
@@ -991,16 +1012,19 @@
   fn <- r[["fn"]]
   field <- paste0("/variables/", name, "/reducer")
   columns <- stats::setNames(list(.fragmentColumn("integer", TRUE, "measure")), name)
-  if (!is.null(cons$time_window) || !is.null(cons$temporal)) {
-    .irReject(paste0("reducer '", fn, "' does not combine with the output's time_window or ",
-                     "temporal selection; put the window on the reducer"), field = field)
+  if (identical(fn, "covered_days")) {
+    available <- .reducerSourceAvailability(ctx, node[["source"]], r[["coverage"]] %||% "recorded",
+                                            path = paste0(field, "/coverage"))
+  } else {
+    if (!identical(src$kind, "event")) {
+      .irReject("supply_days reads the days_supply role of an event source", field = field)
+    }
+    available <- src$fragment$availability
+    if (identical(available, "available") && !"supply" %in% src$meta$roles) {
+      .irReject("supply_days needs a source with the days_supply role", field = field)
+    }
   }
-  rel_available <- src$available
-  if (identical(fn, "covered_days") && identical(src$kind, "interval")) {
-    rel <- .intervalRelation(ctx, node[["source"]], r[["coverage"]] %||% "recorded", field)
-    rel_available <- identical(rel$availability, "available")
-  }
-  if (!rel_available) return(.reduceUnavailable(ctx, cons, name, columns))
+  if (!identical(available, "available")) return(.reduceUnavailable(ctx, cons, name, columns))
   if (isTRUE(r[["observed_only"]]) && is.null(cons$coverage)) {
     .irReject("covered_days(observed_only = TRUE) needs a population with observation coverage",
               field = paste0(field, "/observed_only"))
@@ -1009,12 +1033,14 @@
                     stream = .reduceName(ctx, cons, "s", name))
   evaluate <- function() {
     roster <- .reduceRosterFrame(ctx, cons$roster)
-    v <- .intervalReducerValues(ctx, fn, cons$roster, "final", source = node[["source"]],
+    v <- if (!is.null(cons$time_window) || !is.null(cons$temporal)) {
+      .reduceSelectedCoverage(ctx, cons, src, r, allocated$stream, field)
+    } else .intervalReducerValues(ctx, fn, cons$roster, "final", source = node[["source"]],
                                 window = .reduceWindow(r[["window"]]),
                                 coverage = r[["coverage"]] %||% "recorded",
                                 observed_only = isTRUE(r[["observed_only"]]),
                                 fills = r[["fills"]] %||% "start_in_window",
-                                cov = cons$coverage, names = allocated)
+                                cov = cons$coverage, names = allocated, path = field)
     out <- data.frame(row_key = roster$cohort_row_id, stringsAsFactors = FALSE)
     out[[name]] <- as.integer(v$value[match(as.character(roster$cohort_row_id),
                                             as.character(v$row_key))])
@@ -1022,6 +1048,61 @@
   }
   list(stream = NULL, reducer = NULL, declared_empty_value = 0L, columns = columns,
        evaluate = evaluate, available = TRUE)
+}
+
+# Intersect two consumer windows without dropping missing-anchor information.
+.reduceIntersectBounds <- function(left, right) {
+  at <- match(as.character(left$key), as.character(right$key))
+  for (side in c("lo", "hi")) {
+    a <- left[[side]]
+    b <- right[[side]][at]
+    both <- !is.na(a) & !is.na(b)
+    a[is.na(a)] <- b[is.na(a)]
+    a[both] <- if (identical(side, "lo")) pmax(a[both], b[both]) else pmin(a[both], b[both])
+    left[[side]] <- a
+  }
+  left$defined <- left$defined & !is.na(at) & right$defined[at] %in% TRUE
+  left
+}
+
+# Output-wide restrictions select the same recorded/effective fill rows as
+# the ordinary WS-5 kernel. Temporal selection precedes the union or supply
+# sum, and observation still uses the component's actual recorded segments.
+.reduceSelectedCoverage <- function(ctx, cons, src, reducer, stream_name, field) {
+  bounds <- .reduceBoundsR(ctx, cons, reducer[["window"]], field)
+  if (!is.null(cons$time_window)) {
+    bounds <- .reduceIntersectBounds(bounds, .reduceBoundsR(ctx, cons, cons$time_window, field))
+  }
+  fn <- reducer[["fn"]]
+  fills <- reducer[["fills"]] %||% "start_in_window"
+  extra <- if (identical(fn, "supply_days")) {
+    list(supply = list(expr = "e.supply", type = "numeric"),
+         end_recorded = list(expr = "e.end_recorded", type = "date"))
+  } else list()
+  unrestricted <- cons
+  unrestricted$time_window <- NULL
+  stream <- .reduceStream(ctx, unrestricted, src, NULL, stream_name, extra = extra,
+                           use = "rows", coverage = reducer[["coverage"]] %||% "recorded", quality = TRUE)
+  rows <- .reduceFetch(ctx, stream, order = c("row_key", "start_date"), field = field)
+  select_bounds <- bounds
+  if (identical(fn, "supply_days") && identical(fills, "clipped")) select_bounds$lo[] <- NA
+  rows <- .reduceWindowFilter(rows, select_bounds, overlap = identical(fn, "covered_days"))
+  rows <- .reduceTemporal(rows, cons$temporal, stream$ordering)
+  observed <- NULL
+  if (isTRUE(reducer[["observed_only"]])) {
+    segments <- .compileObservedSegments(ctx, cons$coverage, cons$roster, "final")
+    o <- .reduceFetch(ctx, segments, order = c("row_key", "start_date"), field = field)
+    observed <- data.frame(key = o$row_key, start = o$start_date, end = o$end_date)
+    covered <- .coverageCoveredKeys(ctx, cons$coverage, cons$roster, "final", field = field)
+    bounds$defined <- bounds$defined & as.character(bounds$key) %in% as.character(covered)
+  }
+  value <- if (identical(fn, "covered_days")) {
+    .coveredDays(data.frame(key = rows$row_key, start = rows$start_date, end = rows$end_date), bounds, observed)
+  } else {
+    .supplyDays(data.frame(key = rows$row_key, start = rows$start_date, supply = rows$supply,
+                           end_recorded = rows$end_recorded), bounds, fills)
+  }
+  data.frame(row_key = bounds$key, value = value)
 }
 
 #' The coverage policy in force for a coverage-family reducer (A-20 (g))
@@ -1088,8 +1169,7 @@
     ce <- ifelse(is.na(hi), e, pmin(e, hi))
     len <- pmax(0L, ce - cs + 1L)
     o <- if (nrow(rows)) {
-      do.call(order, c(unname(as.list(rows[c("row_key", intersect(ordering, names(rows)))])),
-                       list(method = "radix")))
+      .reduceOrderRows(rows, c("row_key", intersect(ordering, names(rows))))
     } else integer(0)
     groups <- .reduceGroups(rows$row_key[o], keys)
     vapply(seq_along(keys), function(k) {
@@ -1710,9 +1790,8 @@
     return(out)
   }
   groups <- split(seq_len(nrow(frame)), factor(as.character(frame$person_id), levels = persons))
-  ord <- order(as.numeric(frame$cohort_row_id))
   pick <- vapply(groups, function(ix) {
-    ix <- ix[order(as.numeric(frame$cohort_row_id[ix]))]
+    ix <- ix[order(.reduceKeyOrder(frame$cohort_row_id[ix]))]
     if (identical(collapse, "last_episode")) ix[[length(ix)]] else ix[[1L]]
   }, integer(1))
   out <- frame[pick, c("person_id", vars), drop = FALSE]
