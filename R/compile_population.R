@@ -75,14 +75,16 @@
 #' Column contract of a population roster (design section 6.9)
 #'
 #' @param indexed Logical; whether the roster's rows are indexed episodes.
+#' @param start_nullable Logical; whether start dates can be NULL, separately
+#'   from indexedness (a mixed union is indexed but retains person rows).
 #' @return Named list of \code{.fragmentColumn()} records, without
 #'   \code{cohort_row_id}.
 #' @keywords internal
-.populationColumnSpec <- function(indexed = TRUE) {
+.populationColumnSpec <- function(indexed = TRUE, start_nullable = !isTRUE(indexed)) {
   col <- .fragmentColumn
   list(
     subject_id = col("bigint", FALSE, "person_key"),
-    cohort_start_date = col("date", !isTRUE(indexed), "start"),
+    cohort_start_date = col("date", start_nullable, "start"),
     cohort_end_date = col("date", TRUE, "end"),
     index_source = col("text", TRUE, "origin_identity"),
     index_key = col("text", TRUE, "origin_identity"),
@@ -103,9 +105,10 @@
 
 # The roster fragment of population `pop` over a SELECT body producing
 # cohort_row_id plus the roster columns.
-.populationRosterFragment <- function(ctx, pop, body, dependencies, indexed) {
+.populationRosterFragment <- function(ctx, pop, body, dependencies, indexed,
+                                       start_nullable = !isTRUE(indexed)) {
   cols <- c(list(cohort_row_id = .fragmentColumn("bigint", FALSE, "episode_key")),
-            .populationColumnSpec(indexed))
+            .populationColumnSpec(indexed, start_nullable))
   f <- .fragment(.fragmentName("pop", pop, ctx = ctx), "roster", "episode", body,
                  columns = cols, dependencies = unique(dependencies),
                  unique_key = "cohort_row_id",
@@ -125,9 +128,10 @@
 # A candidates fragment of population `pop` (attr(f, "population") names it;
 # A-20 a): the roster columns keyed by the private cand_key, plus extras.
 .populationCandidateFragment <- function(ctx, pop, suffix, body, dependencies,
-                                         indexed = TRUE, extra = list()) {
+                                         indexed = TRUE, extra = list(),
+                                         start_nullable = !isTRUE(indexed)) {
   cols <- c(list(cand_key = .fragmentColumn("bigint", FALSE, "episode_key")),
-            .populationColumnSpec(indexed), extra)
+            .populationColumnSpec(indexed, start_nullable), extra)
   f <- .fragment(.fragmentName("cand", pop, suffix, ctx = ctx), "candidates", "episode",
                  body, columns = cols, dependencies = unique(dependencies),
                  unique_key = "cand_key",
@@ -471,9 +475,10 @@
   name <- .compileNodeName(node, "population")
   existing <- .populationMetaGet(ctx, name)
   if (!is.null(existing)) return(existing)
-  .populationRefuseCompatibility(node, name)
+  empty <- .populationLegacyEmpty(node, name)
+  if (!empty) .populationRefuseCompatibility(node, name)
   kind <- node[["kind"]] %||% ""
-  result <- switch(kind,
+  result <- if (empty) .compileEmptyPopulation(ctx, name) else switch(kind,
     index = .compileIndexPopulation(ctx, name, node, deps),
     criteria = .compileCriteriaPopulation(ctx, name, node, deps),
     setop = .compileSetopPopulation(ctx, name, node, deps),
@@ -489,8 +494,43 @@
   .populationMetaSet(ctx, name, result)
 }
 
-# The IR-only compatibility variants of lowered v1 plans run on the v1
-# executors (amendment A-14); the language 2.0 compilers never execute them.
+# A-21 is the one closed compatibility variant with a native empty relation.
+# Validate it here too: the frozen compiler entry point can be called directly.
+.populationLegacyEmpty <- function(node, name) {
+  if (is.null(node[["legacy_empty"]])) return(FALSE)
+  allowed <- c("kind", "parent", "where", "cohort_definition_id", "episode_policy",
+               "coverage", "label", "legacy_empty", "legacy_episodes", "legacy_cohort_table")
+  absent <- c("parent", "where", "cohort_definition_id", "episode_policy", "legacy_cohort_table")
+  if (!identical(node[["legacy_empty"]], TRUE) || !identical(node[["kind"]], "criteria") ||
+      !identical(node[["legacy_episodes"]], "observation_periods") ||
+      length(setdiff(names(node), allowed)) ||
+      any(vapply(absent, function(k) !is.null(node[[k]]), logical(1)))) {
+    .irReject("legacy_empty requires the closed A-21 empty criteria population",
+              field = paste0("/populations/", name, "/legacy_empty"))
+  }
+  TRUE
+}
+
+# No source table is read: every column is typed even when there are no rows.
+# Ordinary fragment registration, snapshot ownership and memoisation apply.
+.compileEmptyPopulation <- function(ctx, name) {
+  h <- .compileDialect(ctx)
+  over <- .populationNulls(h, .POP_ROSTER_COLUMNS)
+  raw_body <- paste0("SELECT ", .compileTypedNull(h, "bigint"), " AS cand_key, ",
+                     paste(.populationSelect("e", over), collapse = ", "), " WHERE 1 = 0")
+  f_raw <- .populationCandidateFragment(ctx, name, "raw", raw_body, character(0), indexed = FALSE)
+  f_cand <- .populationCandidateFragment(
+    ctx, name, NULL, paste0("SELECT r.cand_key AS cand_key, ", paste(.populationSelect("r"), collapse = ", "),
+                            " FROM ", f_raw$name, " r"), f_raw$name, indexed = FALSE)
+  f_sel <- .populationSelectionFragment(
+    ctx, name, paste0("SELECT ", paste(.populationSelect("c"), collapse = ", "),
+                      " FROM ", f_cand$name, " c"), f_cand$name, indexed = FALSE)
+  roster <- .populationRosterFragment(ctx, name, .rankedRosterSql(h, f_sel$name), f_sel$name, indexed = FALSE)
+  list(candidates = f_cand, roster = roster, coverage = NULL, segments = NULL)
+}
+
+# Other IR-only compatibility variants of lowered v1 plans run on the v1
+# executors (amendment A-14); the language 2.0 compilers refuse them.
 .populationRefuseCompatibility <- function(node, name) {
   src <- node[["index"]][["source"]]
   legacy <- !is.null(src[["legacy_spec"]]) || !is.null(node[["index"]][["legacy_end_strategy"]]) ||
@@ -718,9 +758,10 @@
 }
 
 # The selected episodes of a population (before cohort_row_id allocation).
-.populationSelectionFragment <- function(ctx, name, body, dependencies, indexed) {
+.populationSelectionFragment <- function(ctx, name, body, dependencies, indexed,
+                                          start_nullable = !isTRUE(indexed)) {
   f <- .fragment(.fragmentName("pop", name, "sel", ctx = ctx), "candidates", "episode", body,
-                 columns = .populationColumnSpec(indexed), dependencies = unique(dependencies),
+                 columns = .populationColumnSpec(indexed, start_nullable), dependencies = unique(dependencies),
                  unique_key = c("subject_id", "cohort_start_date", "cohort_end_date", .POP_KEY_COLUMNS),
                  person_lineage = list(person_col = "subject_id", via_roster = NULL),
                  private_columns = .POP_PRIVATE_COLUMNS)
@@ -801,7 +842,8 @@
                  if (length(state$joins)) paste0(" ", paste(unname(state$joins), collapse = " ")),
                  if (!is.null(restrict)) paste0(" WHERE ", restrict))
   extra$crit_true <- .fragmentColumn("integer", FALSE, "private")
-  .populationCandidateFragment(ctx, pop, "crit", body, state$deps, indexed = indexed, extra = extra)
+  .populationCandidateFragment(ctx, pop, "crit", body, state$deps, indexed = indexed, extra = extra,
+                               start_nullable = cand$columns$cohort_start_date$nullable)
 }
 
 # Compile a criteria tree to one SQL boolean expression over alias c.
@@ -1042,6 +1084,7 @@
   filters <- .populationPersonFilters(ctx, "p", "person_id")
   over <- c(list(subject_id = .sqlLosslessKey(h, "p.person_id")),
             .populationNulls(h, setdiff(.POP_ROSTER_COLUMNS, "subject_id")))
+  over$origin_source <- .compileTextLiteral("(persons)")
   raw_body <- paste0("SELECT ", .sqlLosslessKey(h, "p.person_id"), " AS cand_key, ",
                      paste(.populationSelect("p", over), collapse = ", "), " FROM ",
                      .populationTable(ctx, "person"), " p",
@@ -1067,6 +1110,7 @@
   h <- .compileDialect(ctx)
   base <- paste0("/populations/", name)
   indexed <- isTRUE(parent$indexed)
+  start_nullable <- parent$roster$columns$cohort_start_date$nullable
   conds <- character(0)
   if (!is.null(cohort)) {
     conds <- paste0("EXISTS (SELECT 1 FROM ", .populationCohortTable(ctx), " sc WHERE ",
@@ -1078,7 +1122,8 @@
                      paste(.populationSelect("p", raw_over), collapse = ", "), " FROM ",
                      parent$roster$name, " p",
                      if (length(conds)) paste0(" WHERE ", paste(conds, collapse = " AND ")))
-  f_raw <- .populationCandidateFragment(ctx, name, "raw", raw_body, parent$roster$name, indexed = indexed)
+  f_raw <- .populationCandidateFragment(ctx, name, "raw", raw_body, parent$roster$name,
+                                        indexed = indexed, start_nullable = start_nullable)
   cov <- NULL
   if (indexed) {
     cov <- .compileCoverage(ctx, name, policy, f_raw, "candidate")
@@ -1088,19 +1133,22 @@
                         " FROM ", f_raw$name, " r INNER JOIN ", cov$coverage$name,
                         " o ON o.row_key = r.cand_key WHERE ", .coverageKeepSql(policy, "o"))
     f_cand <- .populationCandidateFragment(ctx, name, NULL, cand_body,
-                                           c(f_raw$name, cov$coverage$name), indexed = TRUE)
+                                           c(f_raw$name, cov$coverage$name), indexed = TRUE,
+                                           start_nullable = start_nullable)
   } else {
     f_cand <- .populationCandidateFragment(
       ctx, name, NULL, paste0("SELECT r.cand_key AS cand_key, ", paste(.populationSelect("r"), collapse = ", "),
-                              " FROM ", f_raw$name, " r"), f_raw$name, indexed = FALSE)
+                              " FROM ", f_raw$name, " r"), f_raw$name, indexed = FALSE,
+      start_nullable = start_nullable)
   }
   f_crit <- .populationCriteriaFragment(ctx, name, node[["where"]], f_cand, if (indexed) f_raw,
                                         policy, indexed = indexed)
   f_sel <- .populationSelectionFragment(
     ctx, name, paste0("SELECT ", paste(.populationSelect("x"), collapse = ", "), " FROM ", f_crit$name,
-                      " x WHERE x.crit_true = 1"), f_crit$name, indexed = indexed)
+                      " x WHERE x.crit_true = 1"), f_crit$name, indexed = indexed,
+    start_nullable = start_nullable)
   roster <- .populationRosterFragment(ctx, name, .rankedRosterSql(h, f_sel$name), f_sel$name,
-                                      indexed = indexed)
+                                      indexed = indexed, start_nullable = start_nullable)
   list(candidates = f_cand, roster = roster, coverage = cov, segments = NULL)
 }
 
@@ -1163,6 +1211,7 @@
     .irReject("episode_policy is any_episode, all_episodes, first_episode or last_episode",
               field = paste0(base, "/episode_policy")))
   over_p <- .populationNulls(h, setdiff(.POP_ROSTER_COLUMNS, "subject_id"))
+  over_p$origin_source <- .compileTextLiteral("(persons)")
   sel_body <- paste0("SELECT ", paste(.populationSelect("g", over_p), collapse = ", "),
                      " FROM (SELECT x.subject_id AS subject_id FROM ", f_crit$name,
                      " x GROUP BY x.subject_id HAVING ", having, ") g")
@@ -1190,6 +1239,9 @@
   members <- deps$members
   indexed <- .populationIndexed(ctx[["ir"]], name)
   rosters <- lapply(members, function(m) m$roster)
+  start_nullable <- if (identical(op, "union")) {
+    any(vapply(rosters, function(r) r$columns$cohort_start_date$nullable, logical(1)))
+  } else rosters[[1L]]$columns$cohort_start_date$nullable
   parent <- deps$parent
   parent_cond <- function(alias) {
     if (is.null(parent)) return(character(0))
@@ -1200,7 +1252,7 @@
       paste0("SELECT ", paste(.populationSelect("m"), collapse = ", "), " FROM ", r$name, " m")
     }, ""), collapse = " UNION ALL ")
     f_all <- .fragment(.fragmentName("pop", name, "all", ctx = ctx), "candidates", "episode", all_body,
-                       columns = .populationColumnSpec(indexed),
+                       columns = .populationColumnSpec(indexed, start_nullable),
                        dependencies = vapply(rosters, function(r) r$name, ""),
                        person_lineage = list(person_col = "subject_id", via_roster = NULL),
                        private_columns = .POP_PRIVATE_COLUMNS)
@@ -1230,9 +1282,10 @@
                        if (length(conds)) paste0(" WHERE ", paste(conds, collapse = " AND ")))
     sel_deps <- c(vapply(rosters, function(r) r$name, ""), if (!is.null(parent)) parent$roster$name)
   }
-  f_sel <- .populationSelectionFragment(ctx, name, sel_body, sel_deps, indexed = indexed)
+  f_sel <- .populationSelectionFragment(ctx, name, sel_body, sel_deps, indexed = indexed,
+                                         start_nullable = start_nullable)
   roster <- .populationRosterFragment(ctx, name, .rankedRosterSql(h, f_sel$name), f_sel$name,
-                                      indexed = indexed)
+                                      indexed = indexed, start_nullable = start_nullable)
   covs <- Filter(Negate(is.null), lapply(members, function(m) m$coverage))
   cov <- if (length(covs)) .populationDerivedCoverage(ctx, name, covs, roster) else NULL
   list(candidates = NULL, roster = roster, coverage = cov, segments = NULL)

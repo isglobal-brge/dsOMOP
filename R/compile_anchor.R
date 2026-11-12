@@ -168,6 +168,9 @@
     },
     setop = {
       members <- unlist(p[["setop"]][["members"]])
+      # Intersection and difference retain only the left member's origins.
+      # Right operands restrict persons, never consumer associations.
+      if (!identical(p[["setop"]][["op"]], "union")) members <- head(members, 1L)
       parts <- lapply(members, function(m) .irPopulationIndexSources(ir, m, seen))
       if (!length(parts) || any(vapply(parts, is.null, logical(1)))) NULL else unique(unlist(parts))
     },
