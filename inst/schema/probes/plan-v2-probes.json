@@ -22611,9 +22611,9 @@
     }
   },
   {
-    "id": "I41",
-    "label": "source_analyses is also valid in the IR (A-14)",
-    "schema": "ir-v2",
+    "id": "P63",
+    "label": "temporal source_analyses with a count-only selection (A-14; a wire field, so valid under both schemas)",
+    "schema": "plan-v2",
     "expect": "valid",
     "instance": {
       "version": 2,

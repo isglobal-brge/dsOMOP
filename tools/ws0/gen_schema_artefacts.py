@@ -358,7 +358,7 @@ ir_probe("I37", "legacy_names for an output and a column in the IR", OK, A, lamb
 ir_probe("I38", "legacy_names with an unknown map", R, A, lambda b: b.__setitem__("legacy_names", {"other": {"a": "b"}}))
 ir_probe("I39", "legacy_concept_scope in the IR", OK, A, lambda b: b["events"]["hba1c"].__setitem__("legacy_concept_scope", {"concept_set_ref": "t2dm"}))
 ir_probe("I40", "legacy_concept_scope with an extra field", R, A, lambda b: b["events"]["hba1c"].__setitem__("legacy_concept_scope", {"concept_set_ref": "t2dm", "extra": 1}))
-ir_probe("I41", "source_analyses is also valid in the IR (A-14)", OK, A, lambda b: _tc(b, {"hba1c": ["count"]}))
+probe("P63", "temporal source_analyses with a count-only selection (A-14; a wire field, so valid under both schemas)", OK, A, lambda b: _tc(b, {"hba1c": ["count"]}))
 probe("P44", "censor conditioned on an index source (A-7)", OK, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "which": "first_start_after_entry", "when_index_source": ["acei"]}}]))
 probe("P45", "censor when_index_source must be nonempty and unique", R, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "when_index_source": ["acei", "acei"]}}]))
 probe("P46", "censor when_index_source empty array refused", R, A, lambda b: b["outputs"]["tte"]["options"].__setitem__("censor", ["observation_end", {"censor": {"source": {"interval": "metf_era"}, "when_index_source": []}}]))
