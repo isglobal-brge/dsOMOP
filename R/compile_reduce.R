@@ -599,12 +599,10 @@
 # Mode with ties resolved to the smallest value (NULLs ignored).
 .reduceMode <- function(v) {
   v <- v[!is.na(v)]
-  if (!length(v)) return(NA)
-  counts <- table(as.character(v))
-  best <- names(counts)[counts == max(counts)]
+  if (!length(v)) return(v[NA_integer_])
   vals <- unique(v)
-  vals <- vals[as.character(vals) %in% best]
-  sort(vals, method = "radix")[[1L]]
+  counts <- tabulate(match(v, vals), nbins = length(vals))
+  sort(vals[counts == max(counts)], method = "radix")[[1L]]
 }
 
 # Per-day least-squares slope of v on dates (>= 2 distinct dates).

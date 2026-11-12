@@ -518,3 +518,15 @@ test_that("integer duration kernels admit the maximum result and privately refus
   expect_identical(overflow$reason, "validation_error")
   expect_identical(overflow$field, "/variables/total/reducer")
 })
+
+test_that("mode counts exact numeric values and preserves date and text ties and missing types", {
+  repeated <- 1 + 1e-15
+  expect_identical(.reduceMode(c(1, repeated, repeated, NA_real_)), repeated)
+  expect_identical(.reduceMode(c(repeated, 1, repeated, 1)), 1)
+  expect_identical(.reduceMode(as.Date(c("2020-02-01", "2020-01-01", "2020-02-01", "2020-01-01", NA))),
+                   as.Date("2020-01-01"))
+  expect_identical(.reduceMode(c("b", "a", "b", "a", NA_character_)), "a")
+  expect_identical(.reduceMode(as.Date(NA)), as.Date(NA))
+  expect_identical(.reduceMode(character(0)), NA_character_)
+  expect_identical(.reduceMode(c(NA_real_, NA_real_)), NA_real_)
+})
