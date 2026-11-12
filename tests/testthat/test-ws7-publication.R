@@ -186,7 +186,7 @@ test_that("omopPlanExecuteDS: native execution end to end (memory and staged) wi
         expect_s3_class(get("D_o", target), "data.frame")
       }
       # no temporary object of the execution remains
-      expect_setequal(h$temp_tables, before, info = paste(b, mode))
+      expect_setequal(h$temp_tables, before)
     }
     rm(list = paste0("handle_", sym), envir = .dsomop_env)
   }
