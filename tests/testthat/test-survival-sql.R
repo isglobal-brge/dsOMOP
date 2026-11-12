@@ -668,6 +668,24 @@ test_that("recurrent plan assignment splits and pseudonymizes both components", 
   ), class = c("omop_plan", "list"))
 
   memory_base <- paste0("survival_memory_", Sys.getpid())
+  # Legacy sparse events represent only persons 1 and 5: person 9's event
+  # occurs after death. The independently accessible events component refuses
+  # the entire family even though the complete risk set exceeds the threshold.
+  refused <- withr::with_options(list(nfilter.subset = 3L), {
+    omopPlanExecuteDS(handle_symbol, plan,
+                      stats::setNames(memory_base, "recurrent"))
+  })
+  expect_identical(refused$status, "refused")
+  expect_identical(refused$rejected$recurrent$code, "insufficient_support")
+  expect_length(refused$published, 0L)
+  expect_false(exists(paste0(memory_base, ".events"), inherits = FALSE))
+  expect_false(exists(paste0(memory_base, ".riskSets"), inherits = FALSE))
+  # Add a third genuine event person before death to test the passing legacy
+  # shape and memory/staged token parity without relaxing the release gate.
+  DBI::dbExecute(handle$conn, paste0(
+    "INSERT INTO condition_occurrence VALUES ",
+    "(99999, 9, 4000002, '2021-02-01', '2021-02-01', 44818518, NULL)"
+  ))
   withr::with_options(list(nfilter.subset = 3L), {
     omopPlanExecuteDS(
       handle_symbol, plan, stats::setNames(memory_base, "recurrent")

@@ -465,11 +465,10 @@ test_that("survival custom filter on an identifier column is rejected", {
     )
   })
   withr::with_options(list(nfilter.subset = 3, dsomop.query_strict = FALSE), {
-    expect_warning(
-      result <- .planExecute(handle, plan, list(tte = "tte_df")),
+    expect_error(
+      .planExecute(handle, plan, list(tte = "tte_df")),
       "not permitted"
     )
-    expect_null(result$tte)
   })
 })
 

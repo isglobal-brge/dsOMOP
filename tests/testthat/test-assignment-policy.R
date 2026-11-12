@@ -50,7 +50,7 @@ test_that("baseline keeps requested birth components and only drops internally a
     expect_false("year_of_birth" %in% names(private_birth))
     expect_match(.compileSelect(handle, "person", columns = "year_of_birth"),
                  "year_of_birth", fixed = TRUE)
-    expect_error(.compileSelect(handle, "person", columns = "person_source_value"),
+    expect_error(.compileSelect(handle, "observation", columns = "value_as_string"),
                  "blocked")
     expect_error(.profileColumnStats(handle, "person", "year_of_birth"), "blocked")
   })
