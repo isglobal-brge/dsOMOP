@@ -430,10 +430,13 @@
     k <- length(contexts); state <- contexts[[k]]
     v <- t$value[[i]]; w <- t$word[[i]]; op <- t$syntax[[i]]
     if (op == "(") {
-      # A parenthesized table group inherits FROM, a function does not.
+      # A parenthesized table group inherits FROM. A derived query starts
+      # its own scope; in particular WITH is syntax, never a physical source.
+      derived <- i < n && t$word[[i + 1L]] %in% c("SELECT", "WITH")
+      inherit_from <- state$expect && !derived
       contexts[[k]]$expect <- FALSE
-      contexts[[k + 1L]] <- list(select = FALSE, from = state$expect,
-                                 expect = state$expect)
+      contexts[[k + 1L]] <- list(select = FALSE, from = inherit_from,
+                                 expect = inherit_from)
     } else if (op == ")") {
       contexts <- head(contexts, -1L)
     } else if (w == "SELECT") {
