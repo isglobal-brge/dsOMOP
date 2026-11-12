@@ -24,7 +24,7 @@
 .DSOMOP_RELEASE_C6_TREE_VERSION <- "c6-tree-gender-age5-year-v1"
 .DSOMOP_RELEASE_RECURRENT_CAP <- 10L
 .DSOMOP_RELEASE_RECURRENT_FRACTION <- 0.3
-.DSOMOP_RELEASE_TRANSPORT_VERSION <- "l2-transportation-dykstra-v1"
+.DSOMOP_RELEASE_TRANSPORT_VERSION <- "l2-transportation-dykstra-feasible-fallback-v2"
 
 # --- Projections -------------------------------------------------------------------
 
@@ -82,13 +82,17 @@
   pmax(Y - tau, 0)
 }
 
-#' Euclidean projection onto a transportation polytope
+#' Finite Dykstra display on a transportation polytope with a feasible fallback
 #'
 #' \code{argmin ||X - Y||^2} subject to \code{X >= 0}, row sums \code{rows}
 #' and column sums \code{cols} (nonnegative with equal totals), by Dykstra's
 #' alternating projections between the row and column simplex products
 #' (\code{.DSOMOP_RELEASE_TRANSPORT_VERSION}). The polytope is never empty
-#' for such margins. Deterministic: a fixed update rule and stopping rule.
+#' for such margins. If the finite iteration cap leaves inconsistent margins,
+#' nonnegative row normalization and a surplus-to-deficit column transfer
+#' repair feasibility. The algorithm targets the Euclidean projection; the
+#' fallback is a feasible display, not an exact minimizer. Deterministic: fixed
+#' update, stopping, repair and residual-validation rules.
 #'
 #' @param Y Numeric matrix (signed target).
 #' @param rows,cols Nonnegative margins with equal sums.
@@ -132,7 +136,19 @@
     if (done) break
   }
   if (max(abs(rowSums(X) - rows), abs(colSums(X) - cols)) > 1e-8 * scale) {
-    stop("Canonical hierarchy projection did not converge.", call. = FALSE)
+    # A feasible display always exists for nonnegative margins with one
+    # total. Preserve the iterative answer where it converged; otherwise
+    # normalize rows (including an empty positive-target row) and repair
+    # columns while leaving those row totals fixed.
+    X <- pmax(X, 0)
+    rs <- rowSums(X)
+    live <- rs > 0
+    X[live, ] <- X[live, , drop = FALSE] * (rows[live] / rs[live])
+    if (any(!live)) X[!live, ] <- outer(rows[!live], cols / total)
+    X <- .dsomopReleaseRepairColumns(X, cols)
+    if (max(abs(rowSums(X) - rows), abs(colSums(X) - cols)) > 1e-8 * scale) {
+      stop("Canonical hierarchy projection did not converge.", call. = FALSE)
+    }
   }
   X
 }

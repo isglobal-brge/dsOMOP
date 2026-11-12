@@ -19,3 +19,21 @@ test_that("C8 display repairs margins after a slow IPF convergence", {
   expect_identical(as.numeric(Z[, 1]), c(0, 0))
   expect_equal(.dsomopReleaseRepairColumns(Z, colSums(Z)), Z)
 })
+
+test_that("finite Dykstra preserves feasible C6 margins at the iteration cap", {
+  rows <- c(1, 1)
+  cols <- c(1.0001, 0.9999)
+  for (iterations in c(1L, 20000L)) {
+    Z <- .dsomopReleaseTransport(diag(1e4, 2), rows, cols,
+                                max_iter = iterations)
+    expect_true(all(Z >= 0))
+    expect_equal(rowSums(Z), rows, tolerance = 1e-12)
+    expect_equal(colSums(Z), cols, tolerance = 1e-12)
+    expect_true(all(Z <= outer(rows, cols, pmin) + 1e-12))
+  }
+  expect_identical(.DSOMOP_RELEASE_TRANSPORT_VERSION,
+                   "l2-transportation-dykstra-feasible-fallback-v2")
+  Z <- .dsomopReleaseTransport(matrix(c(1e4, -1e4, -1e4, 1e4), 2),
+                               c(1, 0), c(0, 1), max_iter = 1L)
+  expect_equal(Z, matrix(c(0, 0, 1, 0), 2), tolerance = 1e-12)
+})
