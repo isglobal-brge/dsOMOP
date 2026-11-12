@@ -1,0 +1,9 @@
+FAILURES BY FILE
+            file blocks failed errors
+ test-e2e-fix1.R      1      0      1
+
+FAILING TESTS
+test-e2e-fix1.R | DP-only sessions can prepare a pinned loader then release its fixed count | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 1 skipped: 0 passed: 4 
+RESULT failed: 0 errors: 1 skipped: 0 passed: 4 
