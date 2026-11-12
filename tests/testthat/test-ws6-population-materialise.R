@@ -165,7 +165,11 @@ test_that("request snapshots freeze complete typed populations from one consiste
       empty$select_body <- paste0(empty$select_body, " WHERE 1=0")
       frozen_empty <- .populationFreezeFragment(ctx, empty)
       .fragmentRegister(ctx, frozen_empty)
-      empty_rows <- .executeQuery(h, .buildStatement(ctx, frozen_empty, dialect = ctx))
+      empty_sql <- .buildStatement(ctx, frozen_empty, dialect = ctx)
+      .dsomopSnapshotReadSql(h, empty_sql)
+      # Inspect the actual driver types before .executeQuery intentionally
+      # normalises empty integer64 vectors to ordinary R integers.
+      empty_rows <- DBI::dbGetQuery(h$conn, empty_sql)
       expect_equal(nrow(empty_rows), 0L, info = b)
       expect_identical(names(empty_rows), names(empty$columns), info = b)
       expect_s3_class(empty_rows$source_key, "integer64")
