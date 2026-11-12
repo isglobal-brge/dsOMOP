@@ -14,7 +14,7 @@ test_that("B3 numeric population wrappers refuse before public endpoint work", {
   .setHandle("ws2f_validation", handle)
   on.exit(.removeHandle("ws2f_validation"), add = TRUE)
   withr::local_options(list(nfilter.subset = 3L, nfilter.tab = 1L))
-  queries <- statements <- metadata <- 0L
+  queries <- statements <- metadata <- dialect_queries <- 0L
   contexts <- conditions <- list()
   original_context <- .planContext
   original_rejection <- .rejectionEntry
@@ -22,6 +22,7 @@ test_that("B3 numeric population wrappers refuse before public endpoint work", {
     .executeQuery = function(...) { queries <<- queries + 1L; stop("unexpected query") },
     .executeStatement = function(...) { statements <<- statements + 1L; stop("unexpected statement") },
     .buildBlueprint = function(...) { metadata <<- metadata + 1L; stop("unexpected metadata") },
+    .sqlQueryOne = function(...) { dialect_queries <<- dialect_queries + 1L; stop("unexpected dialect query") },
     .planContext = function(...) {
       ctx <- original_context(...)
       contexts[[length(contexts) + 1L]] <<- ctx
@@ -43,6 +44,7 @@ test_that("B3 numeric population wrappers refuse before public endpoint work", {
     expect_identical(err$code, "validation_error")
     expect_match(conditionMessage(err), "/populations/p/cohort_definition_id", fixed = TRUE)
     target <- new.env(parent = environment())
+    handle$sql_dialect_profile <- NULL
     status <- evalq(omopPlanExecuteDS("ws2f_validation", plan, list(demo = "D_ws2f")), target)
     expect_identical(status$status, "refused")
     expect_identical(status$rejected$demo$code, "validation_error")
@@ -56,6 +58,7 @@ test_that("B3 numeric population wrappers refuse before public endpoint work", {
   expect_identical(queries, 0L)
   expect_identical(statements, 0L)
   expect_identical(metadata, 0L)
+  expect_identical(dialect_queries, 0L)
 })
 
 test_that("B3 scalar IDs and historical named wrappers retain their results", {
@@ -116,7 +119,7 @@ test_that("N3 malformed envelopes precede validation, preview and audit traversa
     plan <- plans[[name]]
     validation <- .planValidate(handle, plan)
     expect_false(validation$valid, info = name)
-    expect_gt(length(validation$errors), 0L, info = name)
+    expect_true(length(validation$errors) > 0L, info = name)
     expect_length(validation$available_tables, 0L)
     for (preview in list(function() .planPreview(handle, plan),
                          function() omopPlanPreviewDS("ws2f_preview", plan))) {
@@ -147,6 +150,24 @@ test_that("N3 native validation uses prepared IR without legacy table assumption
   preview <- .planPreview(handle, plan)
   expect_true(preview$validation$valid)
   expect_identical(preview$outputs$x$type, "wide")
+  expect_identical(preview$outputs$x$columns, "sex")
+  expect_false(preview$outputs$x$columns_complete)
+  expect_false(preview$outputs$x$n_persons_available)
+
+  plan$events <- list(diagnosis = list(table = "condition_occurrence"))
+  plan$populations$base <- list(kind = "index", index = list(source = list(event = "diagnosis")))
+  plan$outputs <- list(s = list(rows = "base", format = "survival", options = list(
+    outcomes = list(diagnosis = list(event = "diagnosis")),
+    tar = list(start = 7L, end = 100L), censor = list("observation_end"))))
+  ir <- .irPrepare(plan, handle)
+  native_survival <- .planPreview(handle, plan)
+  expect_true(native_survival$validation$valid)
+  expect_identical(native_survival$outputs$s$type, "survival")
+  expect_identical(native_survival$outputs$s$options, ir$outputs$s$options)
+  expect_null(native_survival$outputs$s$outcomes)
+  expect_null(native_survival$outputs$s$tar)
+  expect_false(native_survival$outputs$s$columns_complete)
+  expect_false(native_survival$outputs$s$n_persons_available)
 })
 
 test_that("N3 safe v1 validation keeps useful historical diagnostics", {

@@ -420,6 +420,27 @@
   .irValidateEnvelope(json)
   validation <- .planValidate(handle, plan)
   native <- identical(.irPlanVersion(json), 2L)
+  settings <- .omopDisclosureSettings()
+  if (native) {
+    ir <- .irPrepare(json, handle, scope_tables = wire[["scope_tables"]])
+    # Native formats have their own option contracts. Report their prepared
+    # declarations without applying the v1 table and survival projections.
+    outputs <- lapply(ir[["outputs"]], function(node) list(
+      type = node[["format"]], rows = node[["rows"]], grain = node[["grain"]],
+      columns = as.character(unlist(node[["columns"]], use.names = FALSE)),
+      columns_complete = FALSE,
+      columns_unavailable_reason = paste0(
+        "only declared variable columns are listed; output keys and generated ",
+        "columns are resolved at execution"),
+      sources = node[["sources"]], options = node[["options"]],
+      n_persons = NA_real_, n_persons_available = FALSE,
+      n_persons_unavailable_reason = "native output populations are not executed by preview",
+      n_persons_banded = FALSE, band_width = settings$nfilter_band,
+      disclosive = NA
+    ))
+    return(list(validation = validation, outputs = outputs,
+                band_width = settings$nfilter_band))
+  }
   bp <- .buildBlueprint(handle)
   cohort_errors <- validation$errors[grepl(
     "no executable cohort source|Plan cohort cannot execute",
@@ -429,7 +450,6 @@
     stop("Plan preview rejected: ", paste(cohort_errors, collapse = " "),
          call. = FALSE)
   }
-  settings <- .omopDisclosureSettings()
 
   # Disclosure note (differencing defence):
   # The per-output n_persons counts below are the most-repeated, lowest-cost
@@ -517,7 +537,7 @@
   outputs <- plan$outputs %||% list()
   for (out_name in names(outputs)) {
     out <- outputs[[out_name]]
-    out_type <- if (native) out$format else out$type %||% "event_level"
+    out_type <- out$type %||% "event_level"
     out_preview <- list(type = out_type)
 
     if (out_type == "person_level" && !is.null(out$tables)) {

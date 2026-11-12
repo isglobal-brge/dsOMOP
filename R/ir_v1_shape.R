@@ -558,7 +558,15 @@
 .v1sStrs <- function(enum = NULL) .v1sArr(.v1sStr(enum))
 .v1sWindow <- function() .v1sObj(start = .v1sInt(), end = .v1sInt())
 .v1sRowFilter <- function() .v1sCustom(.v1RowFilterErrors)
-.v1sFilterTree <- function() .v1sCustom(.v1FilterTreeErrors)
+.v1sFilterTree <- function() .v1sCustom(function(x, path) {
+  errors <- .v1FilterTreeErrors(x, path)
+  context <- if (startsWith(path, "/populations/")) {
+    name <- sub("/filter_tree$", "", substring(path, nchar("/populations/") + 1L))
+    paste0("Population '", name, "' filter_tree")
+  } else "Plan cohort filter_tree"
+  # Keep the historical diagnostic label as well as the precise wire path.
+  sub(": ", paste0(": ", context, ": "), errors, fixed = TRUE)
+})
 .v1sConceptSet <- function() {
   .v1sOneOf(.v1sObj(concepts = .v1sConceptIds(), include_descendants = .v1sBool(),
                     include_mapped = .v1sBool(), exclude = .v1sConceptIds()),
