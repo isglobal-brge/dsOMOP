@@ -140,12 +140,26 @@ test_that("roster-mode candidates must agree with the fragment's person lineage 
     person_lineage = list(person_col = "subject_id", via_roster = NULL), roster_namespace = "base")
   expect_error(dsOMOP:::.compiledOutput("wide", components = list(wide = list(statement = "SELECT 1", fragment = f_subject)),
                                         publication_candidates = list(roster_cand())), "declares person lineage through 'subject_id'")
-  # (c) person_id present but with the wrong role, lineage mediated by another roster
-  f_other <- dsOMOP:::.fragment("res_c", "result", "episode", "SELECT person_id, cohort_row_id FROM pop_other",
+  # (c) the roster FRAGMENT name (via_roster) and the roster NAMESPACE (roster_id) are distinct: a fragment
+  # mediated by the roster fragment 'pop_base' publishing through namespace 'base' is legitimate (re-review 2)
+  f_pop_rowid <- dsOMOP:::.fragment("res_sparse", "result", "episode", "SELECT rowId, covariate_id FROM pop_base_sparse",
+    columns = list(rowId = .ws0_col("integer", FALSE, "episode_key"), covariate_id = .ws0_col("integer", FALSE, "measure")),
+    dependencies = "pop_base", person_lineage = list(person_col = NULL, via_roster = "pop_base"), roster_namespace = "base")
+  expect_s3_class(dsOMOP:::.compiledOutput("sparse", components = list(sparse = list(statement = "SELECT * FROM res_sparse", fragment = f_pop_rowid)),
+    publication_candidates = list(dsOMOP:::.publicationCandidate("sparse", "sparse", "frame",
+      L("roster", "rowId", "base", "cohort_row_id", "person_id"), requested_symbol = "D_sparse"))), "dsomop_compiled_output")
+  f_pop_keys <- dsOMOP:::.fragment("res_wide", "result", "episode", "SELECT person_id, cohort_row_id, x FROM pop_base",
+    columns = list(person_id = .ws0_col("bigint", FALSE, "person_key"), cohort_row_id = .ws0_col("integer", FALSE, "episode_key"),
+                   x = .ws0_col("numeric", TRUE, "measure")),
+    dependencies = "pop_base", person_lineage = list(person_col = NULL, via_roster = "pop_base"), roster_namespace = "base")
+  expect_s3_class(dsOMOP:::.compiledOutput("wide", components = list(wide = list(statement = "SELECT * FROM res_wide", fragment = f_pop_keys)),
+                                           publication_candidates = list(roster_cand())), "dsomop_compiled_output")
+  # the namespace itself must still agree
+  f_other_ns <- dsOMOP:::.fragment("res_c", "result", "episode", "SELECT person_id, cohort_row_id FROM pop_other",
     columns = list(person_id = .ws0_col("bigint", FALSE, "person_key"), cohort_row_id = .ws0_col("integer", FALSE, "episode_key")),
-    person_lineage = list(person_col = NULL, via_roster = "other"), roster_namespace = "base")
-  expect_error(dsOMOP:::.compiledOutput("wide", components = list(wide = list(statement = "SELECT 1", fragment = f_other)),
-                                        publication_candidates = list(roster_cand())), "mediated by roster 'other'")
+    person_lineage = list(person_col = NULL, via_roster = "pop_other"), roster_namespace = "other")
+  expect_error(dsOMOP:::.compiledOutput("wide", components = list(wide = list(statement = "SELECT 1", fragment = f_other_ns)),
+                                        publication_candidates = list(roster_cand())), "names namespace 'base' but the fragment uses 'other'")
   # legitimate roster-mediated fragments: direct person column, and rowId mediated by the roster
   f_ok <- dsOMOP:::.fragment("res_d", "result", "episode", "SELECT person_id, cohort_row_id, x FROM pop_base",
     columns = list(person_id = .ws0_col("bigint", FALSE, "person_key"), cohort_row_id = .ws0_col("integer", FALSE, "episode_key"),

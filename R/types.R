@@ -335,12 +335,12 @@
       .typesFail(what, "roster lineage names namespace '", ln$roster_id, "' but the fragment uses '",
                  f$roster_namespace %||% "<none>", "'")
     }
+    # person_lineage$via_roster names a roster FRAGMENT; lineage$roster_id names a roster
+    # NAMESPACE (compared with the fragment's roster_namespace above). They are never
+    # compared with each other (re-review 2, B4).
     pl <- f$person_lineage
     if (is.null(pl$person_col) && is.null(pl$via_roster)) {
       .typesFail(what, "roster lineage on a fragment that declares no person lineage")
-    }
-    if (!is.null(pl$via_roster) && !identical(pl$via_roster, ln$roster_id)) {
-      .typesFail(what, "the fragment is mediated by roster '", pl$via_roster, "' but the candidate names '", ln$roster_id, "'")
     }
     if (!ln$roster_person_col %in% .PERSON_KEY_NAMES) {
       .typesFail(what, "roster_person_col must be a person key column (", paste(.PERSON_KEY_NAMES, collapse = " or "), ")")

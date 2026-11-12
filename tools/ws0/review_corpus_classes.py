@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
-"""WS-0 (review B7, re-review B7): the REVIEWED v1 corpus classes.
+"""WS-0 (review B7, re-review B7, CR-7): the REVIEWED v1 corpus classes.
 
 Every row of tests/testthat/fixtures/v1-corpus-classes.csv is an explicit,
-hand-written disposition of one test block (or of one sub-row `#k` when a
-block mixes dispositions) from tools/ws0/corpus_decisions.csv, joined with the
-live inventory of tools/ws0/corpus_inventory.py. Nothing is inferred: a block
-without a decision, a decision without a live block, a plan-building block
-marked `non_plan`, or a block that builds no plan but carries another class
-(without the explicit `gate:` / `no plan:` justification prefix) makes this
-script fail. Classes:
+hand-written disposition of one test block of the pinned 2.10.2 BASELINE suites
+(tools/ws0/corpus_baseline.json; or of one sub-row `#k` when a block mixes
+dispositions) from tools/ws0/corpus_decisions.csv, joined with the baseline
+inventory of tools/ws0/corpus_inventory.py. Blocks are keyed by the stable
+identifier `package:file:<test_that description>[@k]` (never by line numbers;
+`baseline_line` in the fixture is informational). Nothing is inferred: a block
+without a decision, a decision without a block, a plan-building block marked
+`non_plan` (without the `no plan:` rationale prefix) or a block that builds no
+plan but carries another class (without the `gate:` prefix) makes this script
+fail. Editing a live test never changes the corpus; a reclassification is a
+change to corpus_decisions.csv followed by regeneration. Classes:
   safe                       executes today and keeps byte-identical results
   corrected                  executes today with a result the ledger declares wrong
   newly_permitted            refused today by an intermediate/granularity gate; runs in 2.10.3
   newly_refused_structural   accepted today, invalid in 2.10.3 (schema/shape)
   newly_refused_publication  accepted today, refused at publication in 2.10.3
-  publication_refused_unchanged  a final-publication (or retained creation-gate) refusal that stays
-  unchanged_invalid          argument/structure/class-1 validation that stays an error
+  publication_refused_unchanged  a final-publication, retained creation-gate or aggregate k-gate refusal that stays
+  unchanged_invalid          argument/structure/class-1 validation (plan or aggregate) that stays an error
   non_plan                   a block in an inventoried file that builds no plan
 Usage:
   python3 tools/ws0/review_corpus_classes.py <dsOMOP> <dsOMOPClient> <out.csv> [--check]
@@ -29,17 +33,21 @@ from corpus_inventory import inventory, builds_plan
 
 CLASSES = ("safe", "corrected", "newly_permitted", "newly_refused_structural", "newly_refused_publication",
            "publication_refused_unchanged", "unchanged_invalid", "non_plan")
-FIELDS = ["plan_id", "package", "file", "line", "test", "class", "review", "prior_behaviour", "intended_behaviour", "rationale"]
+FIELDS = ["plan_id", "package", "file", "test", "baseline_line", "class", "review", "prior_behaviour", "intended_behaviour", "rationale"]
+
+
+def split_id(plan_id):
+    """`pkg:file:description[@k][#sub]` -> (block key, sub-row suffix)."""
+    base, _, sub = plan_id.partition("#")
+    return base, sub
 
 
 def load_decisions(path):
     rows = list(csv.DictReader(open(path, newline="", encoding="utf-8")))
     by_block = {}
     for r in rows:
-        pid = r["plan_id"]
-        base = pid.split("#")[0]
-        pkg, f, line = base.split(":")
-        by_block.setdefault((pkg, f, int(line)), []).append(r)
+        base, _ = split_id(r["plan_id"])
+        by_block.setdefault(base, []).append(r)
     return rows, by_block
 
 
@@ -50,11 +58,11 @@ def build_rows(S, C, decisions_path):
     seen = set()
     out = []
     for b in inv:
-        key = (b["package"], b["file"], b["line"])
+        key = b["key"]
         seen.add(key)
         decs = by_block.get(key)
         if not decs:
-            problems.append(f"no decision for {key[0]}:{key[1]}:{key[2]} ({b['test']!r})")
+            problems.append(f"no decision for {key} (baseline line {b['line']})")
             continue
         plan = builds_plan(b)
         for r in decs:
@@ -68,18 +76,18 @@ def build_rows(S, C, decisions_path):
                 problems.append(f"{r['plan_id']}: builds no plan but is {cls} (prefix the rationale with 'gate:' if a gate helper is under review)")
             if not r["prior_behaviour"].strip() or not r["intended_behaviour"].strip() or not rat:
                 problems.append(f"{r['plan_id']}: empty prior/intended/rationale")
-            out.append({"plan_id": r["plan_id"], "package": b["package"], "file": b["file"], "line": b["line"], "test": b["test"],
+            out.append({"plan_id": r["plan_id"], "package": b["package"], "file": b["file"], "test": b["test"], "baseline_line": b["line"],
                         "class": cls, "review": "reviewed", "prior_behaviour": r["prior_behaviour"],
                         "intended_behaviour": r["intended_behaviour"], "rationale": r["rationale"]})
-        suffixes = [r["plan_id"].split("#")[1] if "#" in r["plan_id"] else "" for r in decs]
+        suffixes = [split_id(r["plan_id"])[1] for r in decs]
         if len(suffixes) > 1 and "" in suffixes:
             problems.append(f"{key}: sub-rows and an unsuffixed row cannot be mixed")
         if len(set(suffixes)) != len(suffixes):
             problems.append(f"{key}: duplicate decision rows")
     for key in by_block:
         if key not in seen:
-            problems.append(f"decision without a live test block: {key[0]}:{key[1]}:{key[2]}")
-    out.sort(key=lambda r: (r["package"], r["file"], r["line"], r["plan_id"]))
+            problems.append(f"decision without a baseline test block: {key}")
+    out.sort(key=lambda r: (r["package"], r["file"], r["baseline_line"], r["plan_id"]))
     return out, problems
 
 
@@ -106,7 +114,7 @@ def main():
     if check:
         current = open(OUT, encoding="utf-8").read() if os.path.exists(OUT) else ""
         if current != text:
-            print("v1-corpus-classes.csv is out of date with corpus_decisions.csv / the live inventory; regenerate it")
+            print("v1-corpus-classes.csv is out of date with corpus_decisions.csv / the baseline inventory; regenerate it")
             sys.exit(1)
         print("v1-corpus-classes.csv is in step;", summary)
     else:
