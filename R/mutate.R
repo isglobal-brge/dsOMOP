@@ -218,8 +218,9 @@
     return(out)
   }
   if (identical(op, "between")) {
+    upper_op <- if (isFALSE(.verbScalar(pred[["value"]][["upper_inclusive"]]))) "<" else "<="
     return(.verbInteger64Compare(x, ">=", pred[["value"]][["lower"]]) &
-             .verbInteger64Compare(x, "<=", pred[["value"]][["upper"]]))
+             .verbInteger64Compare(x, upper_op, pred[["value"]][["upper"]]))
   }
   .verbInteger64Compare(x, op, pred[["value"]])
 }
