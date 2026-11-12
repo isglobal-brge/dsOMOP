@@ -8,14 +8,14 @@
 }
 \description{
 A missing domain is the SHA-256 fingerprint of the canonical resource
-coordinates. The public \code{snapshot_id} is only a display label for
-clients (the SHA-256 of the resource identity and the cdm_source metadata:
-cdm_source_name, cdm_release_date, cdm_version, vocabulary_version, with the
-documented fallbacks); since dsOMOP 2.10.3 no key, route or admission
-depends on it. The deprecated \code{dsomop.dp.snapshot_id} option only
-replaces that label. Fixed synopses are keyed on the automatic data
-generation instead (\code{.dsomopDpDataGeneration}), which needs no
-configuration. The noise root is the only persistent DP state; ephemeral
-state directories are test-only.
+coordinates. The public \code{snapshot_id} is display metadata only, for
+clients that print it (derived from the canonical privacy domain without
+any metadata database read): since dsOMOP 2.10.3 it
+enters no key, policy hash, provenance check, route or admission. The
+deprecated \code{dsomop.dp.snapshot_id} option only replaces that label.
+Fixed synopses are keyed on the per-request person-membership generation
+(\code{.dsomopDpDataGeneration}), which needs no configuration. The noise
+root is the only persistent DP state; ephemeral state directories are
+test-only.
 }
 \keyword{internal}

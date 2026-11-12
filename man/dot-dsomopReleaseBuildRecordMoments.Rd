@@ -47,6 +47,6 @@ records, never using N; H cells are reconciled (signed) to the stratum's
 signed R and projected (displayed) onto its displayed R, and give interval
 quantiles. Strata need the exact support floor of distinct persons, and
 moments and histograms \code{nfilter.dist} distinct persons (exact support
-gates outside the fixed-vector guarantee, as for every protected owner).
+gates on a realised-sticky route, with no joint DP guarantee).
 }
 \keyword{internal}

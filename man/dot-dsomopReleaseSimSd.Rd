@@ -17,9 +17,12 @@
 \description{
 Perturbs the displayed protected values with draws of their public noise
 law (per-value calibrations), passes them through the release's own
-post-processing (\code{refit}: projection and fit; or clipping at zero
-first when \code{clip}) and returns the SD of the finite estimates (NA
-unless at least half the replicates are finite). Pure post-processing,
-deterministic in the displayed values.
+post-processing (\code{refit}: reconciliation, projection and fit; or
+clipping at zero first when \code{clip}) and returns the SD of the finite
+estimates (NA unless at least half the replicates are finite). Pure
+post-processing, deterministic in the displayed values. Every simulated
+component gets an independent draw: equal-map components that share one
+sticky draw in the mechanism (for example a cell that is empty in both
+arms) are treated as independent, so the result is an approximation.
 }
 \keyword{internal}

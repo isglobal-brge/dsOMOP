@@ -2,19 +2,18 @@
 % Please edit documentation in R/tools_release_survival.R
 \name{.dsomopReleaseExitGrid}
 \alias{.dsomopReleaseExitGrid}
-\title{Public exit-time bins of the protected survival basis}
+\title{Canonical public exit-time bins of the protected survival basis}
 \usage{
-.dsomopReleaseExitGrid(max_exit = NULL)
-}
-\arguments{
-\item{max_exit}{Public maximum exit in days, or NULL.}
+.dsomopReleaseExitGrid()
 }
 \value{
-Grid list (id, breaks, unit).
+Grid list (id, breaks, lower, upper, unit).
 }
 \description{
-The clinical day grid L within [0, 3650]; when both window anchors are the
-same, exits cannot exceed the public window length, so the bins beyond it
-are structurally empty and omitted (a function of public parameters only).
+One versioned basis for every request (dsOMOP 2.10.3, review R06): the
+clinical day grid L within [0, 3650], the last interval [3650, Inf) holding
+exits at the horizon. Interval identities never depend on the requested
+window, its spelling, scope labels or the observed exits, so equal bounded
+exit/status maps always reach the same atoms.
 }
 \keyword{internal}

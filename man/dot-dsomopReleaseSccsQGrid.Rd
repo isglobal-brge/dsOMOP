@@ -13,8 +13,13 @@ Increasing numeric vector.
 36 points evenly spaced on the logit scale from 0.0001 to 0.99 (3
 significant digits): a short window over a long observation (q of a few
 per thousand) keeps its exposure fraction, and few cells lie where cases
-are rare. A uniform 0.01 grid clamps every q below 0.015 to 0.01 (a
+are rare. A uniform 0.01 grid would clamp every q below 0.015 to 0.01 (a
 zero-noise log-IRR bias of about -0.6 for a 7-day window over 1-10 years
-of observation) and spreads the noise over 198 cells.
+of observation) and spread the noise over 198 cells. Snapping q to the
+nearest grid point changes the estimand: for a homogeneous q inside the
+grid range the noise-free log-IRR shifts by \code{logit(q) -
+logit(q_grid)}, at most half the logit spacing (about 0.2); heterogeneous
+q within a cell partly cancel. Strata outside the grid range are excluded,
+never clamped (\code{.omopReleaseSccsCases}).
 }
 \keyword{internal}

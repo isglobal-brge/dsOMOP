@@ -20,13 +20,14 @@
 
 \item{route}{Protected route.}
 
-\item{c6}{The C6 build of the same arms (person totals shared).}
+\item{c6}{The C6 build of the same arms (person totals and status
+parents shared).}
 
-\item{sub_c6}{Its substrate (time to first outcome).}
+\item{arm_data}{Per arm first-outcome data (\code{.omopCmEffectArmData}).}
 }
 \value{
 List: rr (estimate, ci_lo, ci_hi, log_estimate, se_log_estimate),
-  built (the C8 build as a release-owner list), note.
+  built (the C8 build as a release-owner list), reason.
 }
 \description{
 Protected grouped-time Cox hazard ratio of two arms

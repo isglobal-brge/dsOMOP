@@ -2,19 +2,32 @@
 % Please edit documentation in R/tools_release_survival.R
 \name{.dsomopReleaseSccsFit}
 \alias{.dsomopReleaseSccsFit}
-\title{Score root of the q-grouped conditional SCCS likelihood}
+\title{Estimating-equation root of the q-grouped conditional SCCS score}
 \usage{
 .dsomopReleaseSccsFit(q, m, e)
 }
 \arguments{
 \item{q}{Grid points; @param m Events per point; @param e Exposed events.}
 }
+\value{
+c(beta, se_model) with attribute \code{reason} when NA.
+}
 \description{
-\code{l(b) = b E - sum_q M_q log(1 - q + q e^b)}: its score
-\code{E - sum_q M_q q e^b / (1 - q + q e^b)} is linear in the cells, so on
-the signed (unclipped) protected cells it is unbiased in the noise; with
-non-negative cells its root is the maximum likelihood estimate. Returns
-the root with its observed information, or NA when the score has no root
-in [-10, 10] or the information is not positive (not identifiable).
+\code{U(b) = E - sum_q M_q q e^b / (1 - q + q e^b)}, the score of the
+conditional likelihood \code{l(b) = b E - sum_q M_q log(1 - q + q e^b)}.
+\code{U} is linear in the cells, so on the signed (unclipped) protected
+cells it is unbiased in the release noise (its root need not be). With
+non-negative cells \code{U} is strictly decreasing and its root is the
+maximum-likelihood estimate; with signed cells it can be non-monotone.
+Root selection: interval bounds for the score and its derivative certify
+all of [-10, 10]; monotone intervals locate and refine each root. A
+numerically unresolved interval gives \code{uncertified_root}. A root is
+admissible when the information
+\code{sum_q M_q w_q(b)} (the negative score slope) is positive and
+\code{|b| <= 9.9}. Exactly one admissible root is returned with its
+information; otherwise a stable NA with reason \code{"no_root"} (no sign
+change), \code{"multiple_roots"} (more than one admissible root),
+\code{"nonpositive_information"} (only roots where the score increases)
+or \code{"boundary"} (only roots beyond 9.9).
 }
 \keyword{internal}

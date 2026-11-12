@@ -2,40 +2,30 @@
 % Please edit documentation in R/tools_release_survival.R
 \name{.dsomopReleaseBuildC8}
 \alias{.dsomopReleaseBuildC8}
-\title{Build the protected C8 exit-time x status histogram of the two arms}
+\title{Build the protected C8 exit-time x status cells of two arms}
 \usage{
-.dsomopReleaseBuildC8(
-  policy,
-  protection,
-  owner_id,
-  sub,
-  n_signed,
-  n_display,
-  grid
-)
+.dsomopReleaseBuildC8(policy, protection, owner_id, sub, parents, mask)
 }
 \arguments{
-\item{policy}{DP policy.}
+\item{policy, protection}{Route.}
 
-\item{protection}{Route.}
+\item{owner_id}{Scientific owner.}
 
-\item{owner_id}{Scientific owner of the exit histogram.}
+\item{sub}{Data frame: person_id, stratum, exit, status.}
 
-\item{sub}{Data frame: person_id, stratum ("arm=target"/"arm=comparator"),
-exit (days at risk, >= 1), status (one of the public statuses).}
+\item{parents}{Per stratum C6 parents (\code{.dsomopReleaseC6Parents}).}
 
-\item{n_signed, n_display}{Named per-arm signed and displayed person totals.}
-
-\item{grid}{Exit grid.}
+\item{mask}{Feasibility matrix (\code{.dsomopReleaseExitMask}).}
 }
 \value{
-List: cells (per arm displayed matrix bins x statuses), export,
-  noise_sd, allocation.
+List: cells (displayed matrix per stratum), raw, signed, export,
+  allocation, noise_sd, mask.
 }
 \description{
-One atom per person (arms are disjoint), so the vector has L1 sensitivity
-1; cells are the H family at 0.8 of the reference calibration. Each arm's
-signed cells are reconciled to its shared person total (the C6 N component
-of the same people) and displayed by projection onto its displayed total.
+Signed event cells are reconciled (uniform shift, the least-squares
+projection) to the C6 signed event parent of the same arm, censored and
+administratively censored cells jointly to the C6 signed no-event parent;
+the parents are never moved. Displayed cells are projected onto the
+already displayed C6 parents (\code{.dsomopReleaseC8Display}).
 }
 \keyword{internal}

@@ -23,12 +23,13 @@ whether the request is scoped: never on the data or on earlier questions.
   \item \code{standard} mode: the established standard output, with the
     contract's demonstrated-disclosive fields unavailable.
   \item \code{auto} mode: \code{fixed_synopsis} for an unscoped question
-    over the contract's public basis, keyed on the automatic data
-    generation of the connected database (\code{.dsomopDpDataGeneration};
-    no custodial configuration); otherwise, or when that generation cannot
-    be derived in this session, \code{realised_sticky}. Without the DP
-    service, the standard output with the disclosive fields unavailable
-    (\code{standard_fallback}).
+    over the contract's public basis, keyed on the person-membership
+    generation read inside this request's snapshot
+    (\code{.dsomopDpDataGeneration}; no custodial configuration, nothing
+    cached); \code{realised_sticky} for every scoped question. A failed
+    generation read fails this request only (one stable error), never a
+    silent change of route. Without the DP service, the standard output
+    with the disclosive fields unavailable (\code{standard_fallback}).
   \item \code{dp} mode: only \code{fixed_synopsis}; anything else is a
     stable unsupported-mechanism refusal.
 }

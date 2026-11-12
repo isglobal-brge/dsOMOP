@@ -2,22 +2,22 @@
 % Please edit documentation in R/privacy_typed.R
 \name{.dsomopTypedDataGeneration}
 \alias{.dsomopTypedDataGeneration}
-\title{Automatic data generation of a typed table's source database}
+\title{Current source generation of a typed table}
 \usage{
 .dsomopTypedDataGeneration(capsule, policy)
 }
 \arguments{
-\item{capsule}{The table's verified provenance capsule.}
+\item{capsule}{Authenticated provenance capsule.}
 
 \item{policy}{DP policy.}
 }
 \value{
-List: \code{available}, \code{id} (internal only).
+List: available, id (internal only).
 }
 \description{
-The generation (\code{.dsomopDpDataGeneration}) of the session handle whose
-keyed dataset identity is the one sealed in the table's provenance capsule;
-unavailable when no connected handle of this session is that dataset, so a
-table can never borrow another database's generation.
+Recomputed within this release's request snapshot. A fixed release requires
+the live source to match the sealed origin membership. An offline restored
+table, an older capsule or a changed source has realised protection only;
+it cannot borrow a generation from another source or an earlier request.
 }
 \keyword{internal}

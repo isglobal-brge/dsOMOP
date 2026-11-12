@@ -26,9 +26,9 @@ statistic, protection class and a generic outcome; never contribution
 fingerprints, person tokens or data-derived details). The answer is a
 deterministic function of the secret noise root and either a fixed public
 basis (counts, capped record counts and registered-scale bounded means of
-unscoped pinned loader tables, keyed on the automatic data generation of the
-connected database: \code{protection = "fixed_synopsis"}) or the realised
-bounded
+unscoped pinned loader tables, keyed on live person membership re-read in
+the release snapshot and checked against the authenticated loader origin:
+\code{protection = "fixed_synopsis"}) or the realised bounded
 contributions of the people each component contains
 (\code{protection = "realised_sticky"}, a heuristic disclosure control
 without a joint differential-privacy guarantee). Equivalent requests, dummy

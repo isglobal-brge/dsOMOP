@@ -10,10 +10,13 @@
 Named list of contracts.
 }
 \description{
-C7 contracts over the unscoped CDM population (a public basis), released
+C7 contracts over data-enumerated supported CDM strata, released
 in their original summary schemas. dsOMOPClient 2.10.3 pools compatible
-servers by summing the signed N, R, S and Q of each stratum and deriving
+servers by summing the signed N, R, S, Q and H of each stratum and deriving
 the record-weighted mean and SD once (\code{.omopReleaseRecordPoolingExport}
 carries the display fields); older clients see a not-poolable contract.
+Public stratum descriptions do not materialize the complete domain: these
+contracts use realised-sticky protection even for an unscoped request, and
+DP-exclusive mode refuses them without a fixed-public-basis claim.
 }
 \keyword{internal}
