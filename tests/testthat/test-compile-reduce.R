@@ -320,6 +320,8 @@ test_that("unavailable reducers retain their result types and still validate eff
                         pattern = "stockpiled interval")
 })
 
+# Synthetic mixed origins include a missing origin and an absent event key,
+# isolating consumer association from population eligibility.
 test_that("mixed origins scope members and course reducers before parent-local stockpiling", {
   vars <- list(n = .rd("count", "members"),
                courses = list(source = list(interval = "mc"), reducer = list(fn = "era_count")),
@@ -335,7 +337,8 @@ test_that("mixed origins scope members and course reducers before parent-local s
                        index_source = c("episodes", "episodes", "drug", NA),
                        index_key = c("3301001", "3301002", "other", NA))
   for (b in names(.ws7_red_backends)) {
-    got <- .ws7_scenario_run(.ws7_red_backends[[b]]$handle, plan, frame)
+    got <- .ws7_scenario_run(.ws7_red_backends[[b]]$handle, plan, frame,
+      population = .ws7_population_double)
     at <- match(c("3301001", "3301002", "other", NA), got$roster$index_key)
     out <- got$frame[match(got$roster$cohort_row_id[at], got$frame$cohort_row_id), ]
     expect_identical(out$n, c(2L, 2L, 3L, 0L), info = b)
@@ -344,6 +347,7 @@ test_that("mixed origins scope members and course reducers before parent-local s
   }
 })
 
+# The missing visit identity is an intentional malformed-roster probe.
 test_that("event and interval reducer streams inherit index-visit restrictions", {
   vars <- list(n = .rd("count", "proc"),
                course = list(source = list(interval = "pi"), reducer = list(fn = "era_count")),
@@ -359,7 +363,8 @@ test_that("event and interval reducer streams inherit index-visit restrictions",
                        index_key = c("700701", "700702", "missing"),
                        index_visit_id = c(700701, 700702, NA))
   for (b in names(.ws7_red_backends)) {
-    got <- .ws7_scenario_run(.ws7_red_backends[[b]]$handle, plan, frame)
+    got <- .ws7_scenario_run(.ws7_red_backends[[b]]$handle, plan, frame,
+      population = .ws7_population_double)
     at <- match(frame$index_key, got$roster$index_key)
     out <- got$frame[match(got$roster$cohort_row_id[at], got$frame$cohort_row_id), ]
     for (col in names(vars)) expect_identical(out[[col]], c(1L, 0L, 0L), info = paste(b, col))
@@ -401,6 +406,7 @@ test_that("the reducer stream cap admits the exact limit and refuses the next re
   expect_false(any(c("rows", "count", "condition", "data") %in% names(err)))
 })
 
+# Deliberately pair one parent with a foreign visit to test fail-closed scoping.
 test_that("cost reducer consumers bind both the parent origin and inherited index visit", {
   h <- .ws4_reach_handle()
   on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
@@ -423,7 +429,7 @@ test_that("cost reducer consumers bind both the parent origin and inherited inde
                        index_source = c("proc", "proc", "vis", "vis"),
                        index_key = c(parent_key, parent_key, "700701", "700702"),
                        index_visit_id = c(700701, 700702, 700701, 700702))
-  run <- .ws7_scenario_run(h, plan, frame)
+  run <- .ws7_scenario_run(h, plan, frame, population = .ws7_population_double)
   signature <- function(x) paste(x$index_source, x$index_key, x$index_visit_id)
   at <- match(signature(frame), signature(run$roster))
   got <- run$frame[match(run$roster$cohort_row_id[at], run$frame$cohort_row_id), ]
@@ -482,7 +488,7 @@ test_that("raw observation columns follow the complete selected unique or earlie
   # contains a period at that index: a retained row may lack a component.
   run <- .ws7_ctx(h, plan)
   on.exit(.ws7_close(run), add = TRUE, after = FALSE)
-  pop <- .ws7_population(run, "t", frame, cap_end = FALSE)
+  pop <- .ws7_population_double(run, "t", frame)
   DBI::dbExecute(h$conn, paste0("UPDATE ", pop$temp_table, " SET op_component_id = NULL"))
   out <- .planCompileOutputs(run$cctx, list(o = "D"), populations = list(t = pop))$o$components$o$frame
   expect_identical(out$end, rep(NA_integer_, 2L))

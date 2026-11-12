@@ -82,7 +82,7 @@ test_that("survival: no implicit cohort-end cap (A-E12); index_end is a selectab
     plan <- .ws7_sv_plan(list(outcomes = list(a = list(event = "a"))))
     run <- .ws7_ctx(h, plan)
     run$cctx$ir$outputs$o$options$legacy_cohort_end_cap <- TRUE
-    pop <- .ws7_population(run, "t", .ws7_sv_frame(), cap_end = FALSE)
+    pop <- .ws7_population(run, "t", .ws7_sv_frame())
     co <- .planCompileOutputs(run$cctx, list(o = "D"), populations = list(t = pop))
     f <- co$o$components$o$frame
     roster <- .reduceRosterFrame(run$cctx, pop$roster)
@@ -100,7 +100,7 @@ test_that("survival: v1 shapes run on the v1 executors; an unavailable censor so
                     list(legacy_states = list("a")))) {
     run <- .ws7_ctx(h, plan)
     run$cctx$ir$outputs$o$options[names(flag)] <- flag
-    pop <- .ws7_population(run, "t", .ws7_sv_frame(), cap_end = FALSE)
+    pop <- .ws7_population(run, "t", .ws7_sv_frame())
     err <- tryCatch(.planCompileOutputs(run$cctx, list(o = "D"), populations = list(t = pop)),
                     dsomop_plan_rejection = function(e) e)
     expect_s3_class(err, "dsomop_plan_rejection")
@@ -382,7 +382,7 @@ test_that("membership, dictionary, joined and date handling", {
   for (b in names(.ws7_out_backends)) {
     h <- .ws7_out_backends[[b]]$handle
     run <- .ws7_ctx(h, plan)
-    pop <- .ws7_population(run, "t", .ws7_scenario_frame(c(7001, 7002, 7003)), cap_end = FALSE)
+    pop <- .ws7_population(run, "t", .ws7_scenario_frame(c(7001, 7002, 7003)))
     co <- .planCompileOutputs(run$cctx, list(m = "M", j = "J", d = "DICT"), populations = list(t = pop))
     expect_identical(names(co), c("m", "j", "d"), info = b)               # private inputs not roots
     m <- co$m$components$m$frame
@@ -425,7 +425,7 @@ test_that("joined: cardinality failures are typed join_cardinality refusals nami
   h <- .ws7_out_backends$sqlite$handle
   run <- .ws7_ctx(h, plan)
   on.exit(.ws7_close(run), add = TRUE)
-  pop <- .ws7_population(run, "t", .ws7_scenario_frame(c(7001, 7002)), cap_end = FALSE)
+  pop <- .ws7_population(run, "t", .ws7_scenario_frame(c(7001, 7002)))
   err <- tryCatch(.planCompileOutputs(run$cctx, list(j = "J"), populations = list(t = pop)),
                   dsomop_plan_rejection = function(e) e)
   expect_identical(err$code, "join_cardinality")
@@ -444,7 +444,7 @@ test_that("covariate identities are shared across outputs regardless of source o
     sources = list(list(event = "dx"), list(event = "lab")), analyses = list("count", "binary")))
   for (b in names(.ws7_out_backends)) {
     run <- .ws7_ctx(.ws7_out_backends[[b]]$handle, plan)
-    pop <- .ws7_population(run, "t", .ws7_scenario_frame(c(7001, 7002)), cap_end = FALSE)
+    pop <- .ws7_population(run, "t", .ws7_scenario_frame(c(7001, 7002)))
     co <- .planCompileOutputs(run$cctx, populations = list(t = pop))
     one <- co$o$components$covariateRef$frame
     two <- co$second$components$covariateRef$frame
@@ -510,7 +510,7 @@ test_that("dictionary-only sparse dependencies do not enter source preflight or 
   run <- .ws7_ctx(.ws7_out_backends$sqlite$handle, plan)
   on.exit(.ws7_close(run), add = TRUE)
   expect_identical(.planCompileSources(run$cctx, c("o", "d")), "lab")
-  pop <- .ws7_population(run, "t", .ws7_scenario_frame(7001), cap_end = FALSE)
+  pop <- .ws7_population(run, "t", .ws7_scenario_frame(7001))
   co <- .planCompileOutputs(run$cctx, populations = list(t = pop))
   expect_identical(names(co), c("o", "d"))
   expect_identical(co$o$components$covariateRef$frame$covariate_id, 1L)
@@ -539,8 +539,7 @@ test_that("sparse and temporal output names cannot collide with reference compan
     inventories <- list()
     for (mode in c("memory", "staged")) {
       run <- .ws7_ctx(h, plan, mode = mode)
-      pop <- .ws7_population(run, "t", .ws7_scenario_frame(c(7001, 7003, 7004, 7005, 7006, 7007)),
-                             cap_end = FALSE)
+      pop <- .ws7_population(run, "t", .ws7_scenario_frame(c(7001, 7003, 7004, 7005, 7006, 7007)))
       res <- .ws7_publish(run, list(t = pop), stats::setNames(list("D_collision"), root), threshold = 5L)
       expect_identical(res$status$status, "ok", info = paste(fmt, root, mode))
       co <- res$compiled[[root]]
@@ -716,7 +715,7 @@ test_that("joined inputs must retain the consumer roster namespace", {
   plan$publish <- list("o", "other")
   run <- .ws7_ctx(.ws7_out_backends$sqlite$handle, plan)
   on.exit(.ws7_close(run), add = TRUE)
-  pop <- .ws7_population(run, "t", .ws7_scenario_frame(7001), cap_end = FALSE)
+  pop <- .ws7_population(run, "t", .ws7_scenario_frame(7001))
   co <- .planCompileOutputs(run$cctx, populations = list(t = pop))
   co$o$components$o$fragment$roster_namespace <- "another_population"
   node <- .irNamedNode(run$cctx$ir, "output", "j")
@@ -738,7 +737,7 @@ test_that("unavailable sources retain the declared value-role schema", {
   # Unavailable fragments deliberately have no physically available roles.
   .eventUnavailable(run$cctx, "dx", "condition_occurrence")
   .eventUnavailable(run$cctx, "lab", "measurement")
-  pop <- .ws7_population(run, "t", .ws7_scenario_frame(7001), cap_end = FALSE)
+  pop <- .ws7_population(run, "t", .ws7_scenario_frame(7001))
   actual <- .planCompileOutputs(run$cctx, populations = list(t = pop))$o
   expect_identical(names(actual$components$o$frame), names(expected))
   expect_identical(actual$status, "unavailable")
@@ -780,6 +779,7 @@ test_that("a single named TAR keeps its declared component name", {
   expect_identical(res$publication_candidates[[1L]]$requested_symbol, "D.short")
 })
 
+# Deliberately equal index dates isolate parent ownership from date selection.
 test_that("person-event long output unions all associated episodes before physical deduplication", {
   plan <- .ws7_scenario_plan(list(), output = list(format = "long", sources = list(list(event = "members")),
     options = list(unit = "event", columns_derived = list("event_number", "days_since_previous"))), events = list(
@@ -791,7 +791,7 @@ test_that("person-event long output unions all associated episodes before physic
                       cohort_end_date = as.Date("2020-12-31"), index_source = "episodes",
                       index_key = c("3301001", "3301002"))
   for (b in names(.ws7_out_backends)) {
-    f <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, plan, frame)$compiled$components$o$frame
+    f <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, plan, frame, population = .ws7_population_double)$compiled$components$o$frame
     # The shared January 1 fill appears once; the distinct January 15 and
     # February 10 fills from the two parents must both survive.
     expect_identical(f$start_date, c(0L, 14L, 40L), info = b)
@@ -800,7 +800,7 @@ test_that("person-event long output unions all associated episodes before physic
     expect_false(any(c("row_id", "cohort_row_id") %in% names(f)), info = b)
     p <- plan
     p$outputs$o$options$temporal <- list(event_select = "last")
-    f <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, p, frame)$compiled$components$o$frame
+    f <- .ws7_scenario_run(.ws7_out_backends[[b]]$handle, p, frame, population = .ws7_population_double)$compiled$components$o$frame
     expect_identical(f$start_date, 40L, info = b)
   }
   # Pin the ordering of same-day members whose owning episodes differ. The
@@ -818,10 +818,10 @@ test_that("person-event long output unions all associated episodes before physic
     }
     rows
   })
-  f <- .ws7_scenario_run(.ws7_out_backends$sqlite$handle, plan, frame)$compiled$components$o$frame
+  f <- .ws7_scenario_run(.ws7_out_backends$sqlite$handle, plan, frame, population = .ws7_population_double)$compiled$components$o$frame
   expect_identical(f$member_table, c("condition_occurrence", "drug_exposure", "drug_exposure"))
   plan$outputs$o$options$temporal <- list(event_select = "first")
-  f <- .ws7_scenario_run(.ws7_out_backends$sqlite$handle, plan, frame)$compiled$components$o$frame
+  f <- .ws7_scenario_run(.ws7_out_backends$sqlite$handle, plan, frame, population = .ws7_population_double)$compiled$components$o$frame
   expect_identical(f$member_table, "condition_occurrence")
 })
 

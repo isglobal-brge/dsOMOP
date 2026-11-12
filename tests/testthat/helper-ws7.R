@@ -1,13 +1,9 @@
 # Shared fixtures for the WS-7 tests (design-2.10.3 sections 2.7, 2.9, 6.11,
-# 6.12, 7.3): variables, reducers and outputs over hand-built ROSTER DOUBLES of
-# the frozen roster contract of section 6.9 (cohort_row_id, subject_id,
-# cohort_start_date, cohort_end_date, index_source, index_key, index_visit_id,
-# set_id, is_case, sampling_weight, op_start, op_end, private op_component_id)
-# until the WS-6 populations compiler lands. A double is built like WS-6's
-# rosters: candidates in a test table, the population's coverage compiled on
-# them (R/compile_coverage.R), and the final roster materialised as a SESSION
-# TEMPORARY table, so MySQL's one-reference rule for temporary tables is
-# exercised by every statement of the reducer and output compilers.
+# 6.12, 7.3): variables, reducers and outputs over real WS-6 populations.
+# Scenario episode frames seed a scoped results-cohort fixture, then the
+# production population compiler owns candidate selection, coverage, origin
+# metadata, immutable roster tables and cleanup. Explicit synthetic rosters
+# remain only for targeted impossible-origin and metadata-mutation probes.
 
 .ws7_backends <- function() .ws5_backends()
 
@@ -92,14 +88,59 @@
 
 .ws7_table_seq <- new.env(parent = emptyenv())
 
-# A roster double from an episode frame: subject_id, cohort_start_date,
+# Temporarily replace one fixture cohort's source rows, restoring every
+# original row after the caller finishes. This changes source data only:
+# population compilation, coverage and row identities all remain production.
+.ws7_seed_cohort <- function(handle, frame, cid = 1L) {
+  schema <- handle$results_schema %||% handle$cdm_schema
+  id <- if (is.null(schema) || identical(handle$dbms, "sqlite")) "cohort" else
+    DBI::Id(schema = schema, table = "cohort")
+  table <- .qualifyTable(handle, "cohort", schema)
+  predicate <- paste0(" WHERE cohort_definition_id = ", as.integer(cid))
+  original <- DBI::dbGetQuery(handle$conn, paste0("SELECT * FROM ", table, predicate))
+  rows <- data.frame(cohort_definition_id = rep(as.integer(cid), nrow(frame)),
+    subject_id = frame$subject_id,
+    cohort_start_date = as.Date(frame$cohort_start_date),
+    cohort_end_date = as.Date(frame$cohort_end_date))
+  if (identical(handle$dbms, "sqlite")) {
+    rows$cohort_start_date <- format(rows$cohort_start_date, "%Y-%m-%d")
+    rows$cohort_end_date <- format(rows$cohort_end_date, "%Y-%m-%d")
+  }
+  restore <- function() {
+    DBI::dbExecute(handle$conn, paste0("DELETE FROM ", table, predicate))
+    if (nrow(original)) DBI::dbWriteTable(handle$conn, id, original, append = TRUE)
+    invisible(NULL)
+  }
+  DBI::dbExecute(handle$conn, paste0("DELETE FROM ", table, predicate))
+  tryCatch({
+    if (nrow(rows)) DBI::dbWriteTable(handle$conn, id, rows, append = TRUE)
+  }, error = function(e) {
+    restore()
+    stop(e)
+  })
+  restore
+}
+
+.ws7_population <- function(run, pop, frame) {
+  source <- run$cctx$ir$populations[[pop]]$index$source
+  if (!identical(names(source), "cohort_definition_id")) {
+    stop("Scenario source fixtures require a results-cohort index population.")
+  }
+  restore <- .ws7_seed_cohort(run$cctx$handle, frame, source$cohort_definition_id)
+  on.exit(restore(), add = TRUE)
+  .compilePopulationByName(run$cctx, pop)
+}
+
+# A deliberately synthetic roster for isolated association/metadata probes,
+# never ordinary format or publication execution. The supplied frame has
+# subject_id, cohort_start_date,
 # cohort_end_date, index_source, index_key (+ index_visit_id, set_id,
 # is_case, sampling_weight). The candidates are written as a test table, the
 # population's coverage compiled on them, and the final roster -- the covered
 # episodes under the policy, ends capped at op_end (event_end strategy),
 # cohort_row_id ranked in the chronological identity order of section 6.9 --
 # materialised as a session temporary table.
-.ws7_population <- function(run, pop, frame, cap_end = TRUE) {
+.ws7_population_double <- function(run, pop, frame, cap_end = FALSE) {
   cctx <- run$cctx
   handle <- cctx$handle
   h <- .compileDialect(cctx)
@@ -494,10 +535,11 @@
 }
 
 # Compile output `o` of a scenario plan on one backend; the frame by person.
-.ws7_scenario_run <- function(handle, plan, frame = .ws7_scenario_frame(), output = "o") {
+.ws7_scenario_run <- function(handle, plan, frame = .ws7_scenario_frame(), output = "o",
+                              population = .ws7_population) {
   run <- .ws7_ctx(handle, plan)
   on.exit(.ws7_close(run), add = TRUE)
-  pop <- .ws7_population(run, "t", frame, cap_end = FALSE)
+  pop <- population(run, "t", frame)
   compiled <- .planCompileOutputs(run$cctx, stats::setNames(list("D"), output),
                                   populations = list(t = pop))
   roster <- .reduceRosterFrame(run$cctx, pop$roster)

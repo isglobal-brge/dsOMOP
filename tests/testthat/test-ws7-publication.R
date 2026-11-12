@@ -51,7 +51,7 @@ withr::defer(.ws4_cleanup(.ws7_pub_backends), testthat::teardown_env())
   run <- .ws7_ctx(handle, plan, mode = mode)
   run$ctx$commit_policy <- commit_policy
   on.exit(.ws7_close(run), add = TRUE)
-  pop <- .ws7_population(run, "t", frame, cap_end = FALSE)
+  pop <- .ws7_population(run, "t", frame)
   .ws7_publish(run, list(t = pop), threshold = threshold)
 }
 
@@ -150,7 +150,7 @@ test_that("a joined root shrinking below k is refused; its private inputs are ne
   .ws7_keys(list(h))
   run <- .ws7_ctx(h, c(plan, list(publish = list("j"))), mode = "memory")
   on.exit(.ws7_close(run), add = TRUE)
-  pop <- .ws7_population(run, "t", .ws7_scenario_frame(c(7001, 7002, 7003, 7004)), cap_end = FALSE)
+  pop <- .ws7_population(run, "t", .ws7_scenario_frame(c(7001, 7002, 7003, 7004)))
   res <- .ws7_publish(run, list(t = pop), threshold = 4L)
   # the inner join keeps 7001, 7003 (lab rows), 7004: three persons < 4
   expect_identical(res$status$status, "refused")
@@ -167,19 +167,14 @@ test_that("omopPlanExecuteDS: native execution end to end (memory and staged) wi
     sym <- paste0("ws7_e2e_", as.integer(stats::runif(1L, 1, 1e6)))
     .setHandle(sym, h)
     for (mode in c("memory", "staged")) {
-      testthat::local_mocked_bindings(.outputPopulation = function(cctx, pop, populations = NULL) {
-        memo <- .compileMemo(cctx, "ws7_test_pops")
-        if (exists(pop, envir = memo, inherits = FALSE)) return(get(pop, envir = memo))
-        rec <- .ws7_population(list(cctx = cctx), pop, .ws7_scenario_frame(c(7001, 7003, 7004, 7005)),
-                               cap_end = FALSE)
-        assign(pop, rec, envir = memo)
-        rec
-      })
       target <- new.env(parent = emptyenv())
       out <- list(o = "D_o", s = "D_s", r = "D_r", p = "D_p", m = "D_m", d = "D_d")
       plan$publish <- as.list(names(out))
-      status <- withr::with_options(list(nfilter.subset = 3L),
-        .omopPlanExecuteDS(sym, plan, out, output_mode = mode, target_env = target))
+      before <- h$temp_tables
+      restore <- .ws7_seed_cohort(h, .ws7_scenario_frame(c(7001, 7003, 7004, 7005)))
+      status <- tryCatch(withr::with_options(list(nfilter.subset = 3L),
+        .omopPlanExecuteDS(sym, plan, out, output_mode = mode, target_env = target)),
+        finally = restore())
       expect_identical(status$status, "ok", info = paste(b, mode))
       expect_true(.validatePlanStatus(unclass(status)), info = paste(b, mode))
       expect_setequal(ls(target), c("D_o", "D_s.short", "D_s.long", "D_r.events", "D_r.risk_sets", "D_p",
@@ -191,7 +186,7 @@ test_that("omopPlanExecuteDS: native execution end to end (memory and staged) wi
         expect_s3_class(get("D_o", target), "data.frame")
       }
       # no temporary object of the execution remains
-      expect_false(any(grepl("^dsomop_ws7_pop_", h$temp_tables %||% character(0))), info = paste(b, mode))
+      expect_setequal(h$temp_tables, before, info = paste(b, mode))
     }
     rm(list = paste0("handle_", sym), envir = .dsomop_env)
   }
@@ -205,9 +200,8 @@ test_that("reducer caps are bounded technical refusals with cleanup in both publ
   .setHandle(sym, h)
   on.exit(rm(list = paste0("handle_", sym), envir = .dsomop_env), add = TRUE)
   plan <- .ws7_scenario_plan(list(n = list(source = list(event = "lab"), reducer = list(fn = "count"))))
-  testthat::local_mocked_bindings(.outputPopulation = function(cctx, pop, populations = NULL) {
-    .ws7_population(list(cctx = cctx), pop, .ws7_scenario_frame(7001L), cap_end = FALSE)
-  })
+  restore <- .ws7_seed_cohort(h, .ws7_scenario_frame(7001L))
+  on.exit(restore(), add = TRUE)
   # Keep this file runnable independently: lifecycle test-file functions are
   # not shared test helpers. Inspect the actual SQLite session tables here.
   temp_names <- function() DBI::dbGetQuery(h$conn,
