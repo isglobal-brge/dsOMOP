@@ -15,7 +15,7 @@
 | 11 | 11-incidence-years | years | c1 |
 | 12 | 12-circe-baseline | baseline | t2dm_first |
 | 13 | 13-parametrised | two_days | dm2 |
-| 14 | 14-oncology-episodes | episodes | onc |
+| 14 | 14-oncology-episodes | episodes, first_line | first_line, onc |
 | 15 | 15-costs-adherence | adherence | users |
 
 Each directory holds `recipe.R` (public-client recipe in the frozen 2.10.3 API; runs once WS-8 lands), `plan.json` (the validated v2 plan, the normative target the client must emit after normalisation), `README.md` (the semantics the expected results follow) and `expected.json` (hand-computed results on the extended reach fixture at nfilter.subset = 5: every output has at least five persons).

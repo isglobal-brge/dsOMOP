@@ -14,4 +14,6 @@ encoding (seed 20261111, case identity = cases namespace, person, t, t, "mi", MI
 key as text; control person id); the first min(4, N) controls are taken
 (between_sets), weights 1 for cases and N/m for controls, set_id = rank of the case
 in (t, identity) order. Expected results were computed with the reference encoding
-of tests/testthat/fixtures/match-vectors.json in base R.
+of tests/testthat/fixtures/match-vectors.json in base R. The private pool size N is an
+oracle-only audit field (`n_eligible`), never a released column. Released component:
+row_id, cohort_row_id, person_id, set_id, is_case, w, age, sex, statin_365.

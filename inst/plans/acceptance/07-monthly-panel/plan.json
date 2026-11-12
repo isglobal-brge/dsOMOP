@@ -29,6 +29,31 @@
         "unknown": "missing",
         "censored": "keep"
       }
+    },
+    "vitals": {
+      "table": "measurement",
+      "concept_set": {
+        "concepts": [
+          3025315,
+          3004249
+        ],
+        "include_descendants": false
+      },
+      "value": {
+        "column": "value_as_number"
+      }
+    },
+    "bmi": {
+      "table": "measurement",
+      "concept_set": {
+        "concepts": [
+          3038553
+        ],
+        "include_descendants": false
+      },
+      "value": {
+        "column": "value_as_number"
+      }
     }
   },
   "populations": {
@@ -55,6 +80,12 @@
         "sources": [
           {
             "event": "weight"
+          },
+          {
+            "event": "vitals"
+          },
+          {
+            "event": "bmi"
           }
         ],
         "bins": {
@@ -71,6 +102,10 @@
         ],
         "carry_forward": {
           "weight": {
+            "lookback": 180,
+            "expire": null
+          },
+          "bmi": {
             "lookback": 180,
             "expire": null
           }

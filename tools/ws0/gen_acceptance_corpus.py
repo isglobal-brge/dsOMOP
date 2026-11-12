@@ -129,8 +129,11 @@ with mmol/mol converted as 0.0915 x + 2.15; glucose in mg/dL with the fixture's 
 rows converted x 18.0182; unknown units give NA; the last row by date then id), and
 the Charlson index (sum of category weights over condition rows with start date on
 or before the index date; categories and weights as `.computeComorbidityScore`,
-descendants from the fixture's concept_ancestor). WS-0 decision: the v2 score counts
-conditions on or before the reference date (the v1 adapter keeps the all-time rule).
+descendants from the fixture's concept_ancestor). Amendment A-2: the native v2 score
+counts conditions on or before the reference date (extension person 1011, whose MI is
+dated after the index, scores 1 = diabetes only; the v1 adapter with
+`legacy_all_time_conditions` would score 2). Released component: row_id, cohort_row_id,
+person_id and the 45 variables.
 ''')
 
 # ---------------------------------------------------------------------------
@@ -160,8 +163,8 @@ p02 = plan(
             "tars": {"itt": win(1, None),
                      "on_treatment": {"start": {"anchor": "index", "offset": 1}, "end": {"anchor": "index_end", "offset": 30}, "anchor": "index"}},
             "censor": ["observation_end",
-                       {"censor": {"source": {"interval": "acei"}, "which": "first_start_after_entry"}},
-                       {"censor": {"source": {"interval": "arb"}, "which": "first_start_after_entry"}}],
+                       {"censor": {"source": {"interval": "arb"}, "which": "first_start_after_entry", "when_index_source": ["acei"]}},
+                       {"censor": {"source": {"interval": "acei"}, "which": "first_start_after_entry", "when_index_source": ["arb"]}}],
             "prior_outcome": {"lookback": 365, "action": "exclude"},
             "format": "competing_risk", "event_order": "first", "outcome_mode": "named"})})
 add(2, "active-comparator", p02, r'''
@@ -187,7 +190,9 @@ rec <- omop_recipe(
       outcomes = list(mi = mi, death = death), format = "competing_risk", event_order = "first", outcome_mode = "named",
       tars = list(itt = omop_window(1, NULL),
                   on_treatment = omop_window(omop_bound("index", 1), omop_bound("index_end", 30))),
-      censor = list("observation_end", omop_censor(acei, "first_start_after_entry"), omop_censor(arb, "first_start_after_entry")),
+      censor = list("observation_end",
+                    omop_censor(arb, "first_start_after_entry", when_index_source = "acei"),   # switch to the other arm (A-7)
+                    omop_censor(acei, "first_start_after_entry", when_index_source = "arb")),
       prior_outcome = list(lookback = 365, action = "exclude")))))
 plan <- recipe_to_plan(rec)
 ''', '''
@@ -200,11 +205,20 @@ is the selected era's end (course end). Baseline: arm (index_source = "acei" or 
 age, sex, prior MI (any MI on or before the index). Survival (competing risk, first of
 mi/death): entry = index + 1 for both TARs; ITT exit = observation end; on-treatment
 exit = course end + 30; censoring also at the first start of the OTHER arm's era after
-entry (the own arm's eras never censor), observation end, and for the competing-risk
-format death is an outcome, not a censor; episodes with an MI in [entry-365, entry)
-are excluded (prior_outcome). Reach fixture: ACEI eras 2019-06-01..2020-06-01 for
-persons 20..45, ARB eras 2020-01-01..2020-08-01 for 15..40, MI 2019-07-01 for 1..25,
-deaths 2020-06-15 for persons divisible by 4.
+entry, expressed with `when_index_source` (amendment A-7): the ARB censor applies to
+ACEI-index episodes only and the ACEI censor to ARB-index episodes only, so an own-arm
+restart never censors; observation end also censors; for the competing-risk format
+death is an outcome, not a censor. `prior_outcome` applies to every declared outcome:
+an episode with an MI OR a death in [entry-365, entry) is excluded. Reach fixture: ACEI
+eras 2019-06-01..2020-06-01 for persons 20..45, ARB eras 2020-01-01..2020-08-01 for
+15..40, MI 2019-07-01 for 1..25, deaths 2020-06-15 for persons divisible by 4;
+extension 1031 (a first ACEI era with < 365 observed days before it, then an eligible
+one on 2020-03-01) and 1032 (ACEI 2019-06-01..08-31, own-arm restart 2019-11-01
+never censoring, ARB 2020-02-15 censoring the ACEI index at day 259).
+Released components (A-5): `baseline` is a wide episode frame (row_id, cohort_row_id,
+person_id, arm, age, sex, prior_mi); `tte.itt` and `tte.on_treatment` carry row_id,
+cohort_row_id, person_id, outcome_name, event, entry_days_from_index,
+exit_days_from_index, follow_up_days (= exit - entry).
 ''')
 
 # ---------------------------------------------------------------------------
@@ -294,7 +308,10 @@ Rows: cohort-1 episodes (unique coverage) with at least one HbA1c row (any unit,
 predicate and reducer: `value` = the % value when the unit is 8554, 0.0915 x + 2.15 when
 the unit is 8753 (mmol/mol), NA when the unit is NULL or anything else (unknown =
 missing keeps the row). `a1c_closest`: the row nearest to the index on or before it
-whose normalised value is not NULL (missing = skip), ties by date then id.
+whose normalised value is not NULL (missing = skip); among rows at the minimum distance
+the FIRST under ascending (date, source namespace, event key) wins, as the reducer
+contract orders rows (extension person 1006 has two rows on 2019-12-20: 52 mmol/mol,
+key 500001, and 7.9 %, key 500002, so 6.908 wins).
 `a1c_n_ge65`: rows whose normalised value >= 6.5 (NULL values never satisfy).
 `a1c_n_uncensored`: rows whose operator is not a reviewed inequality (4171756, 4172704,
 4171754, 4171755); NULL/0/= operators count. `a1c_n_known_unit`: rows whose unit is 8554
@@ -425,39 +442,53 @@ overlapping 30-day fills (recorded 44, effective 60), 1005 data-quality rows.
 # ---------------------------------------------------------------------------
 wt = ev("measurement", cs(3025315, False), value={"column": "value_as_number"},
         unit={"target": 9529, "convert": {"8739": {"factor": 0.45359237, "offset": 0}}, "unknown": "missing", "censored": "keep"})
+vitals = ev("measurement", {"concepts": [3025315, 3004249], "include_descendants": False}, value={"column": "value_as_number"})
+bmi = ev("measurement", cs(3038553, False), value={"column": "value_as_number"})   # no row at this site: available but empty
 p07 = plan(
-    events={"weight": wt},
+    events={"weight": wt, "vitals": vitals, "bmi": bmi},
     populations={"c1": cohort_index(1)},
     outputs={"panel": out("c1", "person_period", result_symbol="D_panel", options={
-        "representation": "dense", "sources": [{"event": "weight"}],
+        "representation": "dense", "sources": [{"event": "weight"}, {"event": "vitals"}, {"event": "bmi"}],
         "bins": {"calendar": "month"}, "window": win(-92, 59),
         "analyses": ["last", "count"],
-        "carry_forward": {"weight": {"lookback": 180, "expire": None}}})})
+        "carry_forward": {"weight": {"lookback": 180, "expire": None}, "bmi": {"lookback": 180, "expire": None}}})})
 add(7, "monthly-panel", p07, r'''
 # Acceptance recipe 07 - numeric monthly dense panel with carry-forward (design 10.7 item 7)
 library(dsOMOPClient)
 weight <- omop_event("measurement", 3025315, value = "value_as_number",
                      unit = omop_unit(9529, convert = list("8739" = c(factor = 0.45359237, offset = 0))), name = "weight")
+vitals <- omop_event("measurement", c(3025315, 3004249), value = "value_as_number", name = "vitals")   # two concept identities
+bmi <- omop_event("measurement", 3038553, value = "value_as_number", name = "bmi")                   # no row at this site
 rec <- omop_recipe(
-  events = list(weight),
+  events = list(weight, vitals, bmi),
   populations = list(omop_population("c1", index = omop_index(list(cohort_definition_id = 1), select = "all", end = omop_end("event_end")))),
   outputs = list(omop_output("panel", rows = "c1", format = "person_period", options = list(
-    representation = "dense", sources = list(weight), bins = list(calendar = "month"),
+    representation = "dense", sources = list(weight, vitals, bmi), bins = list(calendar = "month"),
     window = omop_window(-92, 59), analyses = c("last", "count"),
-    carry_forward = list(weight = list(lookback = 180, expire = NULL))))))
+    carry_forward = list(weight = list(lookback = 180, expire = NULL), bmi = list(lookback = 180, expire = NULL))))))
 plan <- recipe_to_plan(rec)
 ''', '''
-Rows: one row per cohort-1 episode and calendar month overlapping the window
-[index-92, index+59] = [2019-10-01, 2020-02-29] intersected with the episode's
-observation period (five months for every episode, each fully observed). Columns:
+Rows: one row per cohort-1 episode (unique coverage; 1001 dropped) and calendar month
+overlapping the window [index-92, index+59] = [2019-10-01, 2020-02-29] intersected with
+the episode's observation period: five months for every episode except 1002, whose
+covering period starts 2020-01-01 (January and February only). Columns (amendment A-3):
 period_start_days/period_end_days (relative to the index), days (observed days in the
-period), weight_count (rows in the month), weight_last (normalised value of the last
-row in the month by date then id; NA when none), weight_carry (value at the period
-start: the last non-missing normalised value dated <= period start and >= period start
-- 180 days; NA when none; no expiry). Weights are in kg; the fixture's pound rows (unit
-8739) are converted x 0.45359237. Fixture: persons 1..40 weigh 80 kg on 2019-12-01 and
-1..20 have 176 lb on 2020-02-01; extension 1023 (Oct 80, Dec 82, Feb 85), 1024 (no
-rows), 1025 (70 kg on 2019-09-01, before the window: carried), 1026 (90 and 91 in Jan).
+period); for the single-identity source `weight`: weight_count, weight_last (normalised
+value of the last row in the month by date then id; NA when none), weight_carry (value
+at the period start: the last non-missing normalised value dated <= period start and >=
+period start - 180 days; NA when none; no expiry); for the two-identity source `vitals`
+(weight 3025315 and systolic blood pressure 3004249, no unit conversion): vitals_3025315_count,
+vitals_3025315_last, vitals_3004249_count, vitals_3004249_last (concepts are never
+pooled); for the available but whole-site-empty source `bmi` (3038553, no row at this
+site): bmi_count = 0, bmi_last = NA and bmi_carry = NA on every row of the dense roster.
+Weights are in kg; the fixture's pound rows (unit 8739) are converted x 0.45359237 for
+`weight` only. Fixture: persons 1..40 weigh 80 kg on 2019-12-01 and 1..20 have 176 lb on
+2020-02-01, persons 20..70 have systolic pressures on 2019-12-01 and 2020-03-01 (the
+latter outside the window); extension 1023 (Oct 80, Dec 82, Feb 85), 1024 (no rows),
+1025 (70 kg on 2019-09-01, before the window: carried), 1026 (90 and 91 in Jan).
+Released component: row_id, cohort_row_id, person_id, period_start_days, period_end_days,
+days, weight_count, weight_last, weight_carry, vitals_3025315_count, vitals_3025315_last,
+vitals_3004249_count, vitals_3004249_last, bmi_count, bmi_last, bmi_carry.
 ''')
 
 # ---------------------------------------------------------------------------
@@ -490,17 +521,22 @@ plan <- recipe_to_plan(rec)
 ''', '''
 Rows: cohort 1002 (index 2019-07-01, end 2020-06-30; base aspirin users 1..30 and the
 SCCS persons 1019..1022). Effective window [L, U] = [2019-07-01, 2020-06-30]
-intersected with the eligibility span. Boundaries: L and U+1; starts and ends+1 of the
-actual observed segments; starts and ends+1 of each aspirin era (gap 30, supply
-fallback); the 1 January of every year (age bands of 5 years change on 1 January and
-calendar years start there); the bin boundary L+365 is beyond U. Periods are
+intersected with the eligibility span. Boundaries: L and U+1; the bin starts L + 365k
+inside the window (width 365: L + 365 = 2020-06-30 = U, so the last day is its own
+period); starts and ends+1 of the actual observed segments; starts and ends+1 of each
+aspirin era (gap 30, supply fallback); the 1 January of every year (age bands of 5
+years change on 1 January and calendar years start there). Periods are
 [b_i, b_{i+1}-1] intersected with the observed segments; empty periods are dropped.
 Columns: period_start_days, period_end_days, days, age (annual: year of period start
 - year_of_birth), age_band (floor(age/5)), calendar_year, exposed_aspirin (days of
 the period inside the union of aspirin eras), active_aspirin (the union covers the
 period start), n_mi (MI rows dated inside the period and inside an observed segment).
 Fixture: base aspirin 2019-07-01 (end = start, supply 30: one-day exposure), base MI
-2019-07-01 (persons 1..25); extension exposures and MI straddle 1 January 2020.
+2019-07-01 (persons 1..25); extension exposures and MI straddle 1 January 2020. The bin
+boundary adds the one-day period [365, 365] to every episode whose last day was not
+already a boundary: 139 rows in all. Released component: row_id, cohort_row_id,
+person_id, period_start_days, period_end_days, days, age, age_band, calendar_year,
+exposed_aspirin, active_aspirin, n_mi.
 ''')
 
 # ---------------------------------------------------------------------------
@@ -525,16 +561,23 @@ rec <- omop_recipe(
     format = "recurrent_events", event_order = "all", complete = TRUE))))
 plan <- recipe_to_plan(rec)
 ''', '''
-Rows: every cohort-1 episode; TAR [index+1, index+90] = [2020-01-02, 2020-03-31];
-exit = min(TAR end, observation end, death date). Event rows: every respiratory
+Rows: every cohort-1 episode (unique coverage) whose exit is not before its entry:
+TAR [index+1, index+90] = [2020-01-02, 2020-03-31]; exit = min(TAR end, observation
+end, death date); an episode with exit < entry (person 1011, dead on 2019-06-01) is
+ineligible and produces neither a sentinel nor a risk-set row — `complete = TRUE`
+never revives an ineligible episode. Components (amendment A-5): `recurrent.events`
+(row_id, cohort_row_id, person_id, outcome_name, event, event_number,
+outcome_event_number, event_days_from_index, entry_days_from_index,
+exit_days_from_index) and `recurrent.risk_sets` (row_id, cohort_row_id, person_id,
+entry_days_from_index, exit_days_from_index, follow_up_days). Event rows: every respiratory
 infection (320136) dated in [entry, exit], numbered per episode by date then key
 (`event = 1`, event_days_from_index); `complete = TRUE` adds exactly one sentinel
 row (`event = 0`, event_number = last + 1, event_days_from_index = NA) for every
 episode without a retained event, so the dense frame has one row per episode at
 least. Fixture: the base rows of 320136 are dated 2020-04-01 (day 91, outside the
 TAR) so only extension persons 1027 (days 9, 19, 45) and 1018 (days 1 and 61) have
-events; everyone else gets a sentinel; persons divisible by 4 die on 2020-06-15 (after
-the TAR, no effect).
+events; every other eligible episode gets a sentinel (119 sentinels, 124 event rows,
+121 persons); persons divisible by 4 die on 2020-06-15 (after the TAR, no effect).
 ''')
 
 # ---------------------------------------------------------------------------
@@ -583,7 +626,7 @@ rec <- omop_recipe(
                    w = omop_population_column("sampling_weight"), age = omop_age(), sex = omop_sex(),
                    statin_365 = omop_variable(name = "statin_365", event = statin_rx, reducer = omop_reduce("binary", window = omop_window(-365, -1)))),
   outputs = list(omop_output("cc_table", rows = "cc", format = "wide", grain = "episode",
-                             columns = c("set_id", "is_case", "w", "age", "sex", "statin_365"))))
+                             columns = c("set_id", "is_case", "w", "age", "sex", "statin_365"), result_symbol = "D_cc")))
 plan <- recipe_to_plan(rec)
 ''', '''
 Cases: the first MI row per person (date, then key) with >= 365 observed days before
@@ -597,7 +640,9 @@ encoding (seed 20261111, case identity = cases namespace, person, t, t, "mi", MI
 key as text; control person id); the first min(4, N) controls are taken
 (between_sets), weights 1 for cases and N/m for controls, set_id = rank of the case
 in (t, identity) order. Expected results were computed with the reference encoding
-of tests/testthat/fixtures/match-vectors.json in base R.
+of tests/testthat/fixtures/match-vectors.json in base R. The private pool size N is an
+oracle-only audit field (`n_eligible`), never a released column. Released component:
+row_id, cohort_row_id, person_id, set_id, is_case, w, age, sex, statin_365.
 ''')
 
 # ---------------------------------------------------------------------------
@@ -682,6 +727,7 @@ fully observed). Fixture: persons 1..50 (2019-06-01), extension 1003/1004/1005
 # 13 parametrised recipe 03
 # ---------------------------------------------------------------------------
 p13 = copy.deepcopy(p03)
+VARIANTS = {}
 add(13, "parametrised", p13, r'''
 # Acceptance recipe 13 - recipe 03 parametrised with omop_param() and bound on the client (design 10.7 item 13)
 library(dsOMOPClient)
@@ -704,10 +750,13 @@ stopifnot(setequal(names(recipe_params(rec)), c("dx", "cohort", "min_days")))
 bound <- recipe_bind(rec, dx = omop_concept_set(201820, descendants = TRUE), cohort = 1L, min_days = 2L)
 plan <- recipe_to_plan(bound)   # identical to recipe 03's plan.json after normalisation
 ''', '''
-The same study as recipe 03, written with three parameters (the concept set, the
-cohort id and the day threshold) and bound on the client before emission. The bound
-plan equals plan.json of recipe 03 exactly (this directory's plan.json is a copy) and
-the expected results are recipe 03's.
+Recipe 03 written with three parameters (the concept set, the cohort id and the day
+threshold) and bound on the client before emission; its bound plan equals plan.json of
+recipe 03 exactly (this directory's plan.json is a copy) and its expected results are
+recipe 03's. The directory `variants/` holds one parametrised public recipe for EACH of
+recipes 01..12 (`recipe-NN.R`, a bound parameter per recipe) with the bound plan target
+`plan-NN.json` (byte-identical to that recipe's plan.json) and `variants.json`, the
+manifest mapping every variant to the directory whose expected.json it must reproduce.
 ''')
 
 # ---------------------------------------------------------------------------
@@ -721,11 +770,19 @@ p14 = plan(
     populations={"onc": {"kind": "index", "label": "Treatment episodes",
                          "index": {"source": {"event": "episodes"}, "select": "all", "end": {"strategy": "event_end"}},
                          "coverage": {"policy": "unique", "on_ambiguous": "drop", "on_missing": "drop", "gap": 0}}},
+    intervals={"episode_course": {"source": {"event": "episodes"}, "gap": 0, "end": "recorded_end", "fallback": "none"}},
     variables={"n_members": var({"event": "members"}, red("count")),
                "n_member_drugs": var({"event": "member_drugs"}, red("count")),
                "first_member_days": var({"event": "members"}, red("first_date")),
-               "n_specimens": var({"event": "specimens"}, red("count", window=win(-30, 365)))},
-    outputs={"episodes": out("onc", "wide", grain="episode", result_symbol="D_onc")})
+               "n_specimens": var({"event": "specimens"}, red("count", window=win(-30, 365))),
+               "line_days": var({"interval": "episode_course"},
+                                red("covered_days", window={"start": {"anchor": "index", "offset": 0}, "end": {"anchor": "index_end", "offset": 0}, "anchor": "index"}))},
+    outputs={"episodes": out("onc", "wide", grain="episode", result_symbol="D_onc",
+                             columns=["n_members", "n_member_drugs", "first_member_days", "n_specimens"]),
+             "first_line": out("first_line", "wide", grain="episode", result_symbol="D_first_line", columns=["line_days", "n_member_drugs"])})
+p14["populations"]["first_line"] = {"kind": "index", "label": "First treatment line",
+                                    "index": {"source": {"event": "episodes"}, "select": "first", "end": {"strategy": "event_end"}},
+                                    "coverage": {"policy": "unique", "on_ambiguous": "drop", "on_missing": "drop", "gap": 0}}
 add(14, "oncology-episodes", p14, r'''
 # Acceptance recipe 14 - oncology episodes with episode_event members (design 10.7 item 14)
 library(dsOMOPClient)
@@ -733,17 +790,25 @@ episodes <- omop_event("episode", 32531, name = "episodes")
 members <- omop_episode_members(episodes, name = "members")
 member_drugs <- omop_episode_members(episodes, tables = "drug_exposure", name = "member_drugs")
 specimens <- omop_event("specimen", 4001225, descendants = TRUE, name = "specimens")
+episode_course <- omop_era(episodes, gap = 0, end = "recorded_end", fallback = "none", name = "episode_course")
 rec <- omop_recipe(
-  events = list(episodes, members, member_drugs, specimens),
-  populations = list(omop_population("onc", label = "Treatment episodes",
-                                     index = omop_index(episodes, select = "all", end = omop_end("event_end")),
-                                     coverage = omop_coverage("unique"))),
+  events = list(episodes, members, member_drugs, specimens), intervals = list(episode_course),
+  populations = list(
+    omop_population("onc", label = "Treatment episodes", index = omop_index(episodes, select = "all", end = omop_end("event_end")),
+                    coverage = omop_coverage("unique")),
+    omop_population("first_line", label = "First treatment line", index = omop_index(episodes, select = "first", end = omop_end("event_end")),
+                    coverage = omop_coverage("unique"))),
   variables = list(
     n_members = omop_variable(name = "n_members", event = members, reducer = omop_reduce("count")),
     n_member_drugs = omop_variable(name = "n_member_drugs", event = member_drugs, reducer = omop_reduce("count")),
     first_member_days = omop_variable(name = "first_member_days", event = members, reducer = omop_reduce("first_date")),
-    n_specimens = omop_variable(name = "n_specimens", event = specimens, reducer = omop_reduce("count", window = omop_window(-30, 365)))),
-  outputs = list(omop_output("episodes", rows = "onc", format = "wide", grain = "episode")))
+    n_specimens = omop_variable(name = "n_specimens", event = specimens, reducer = omop_reduce("count", window = omop_window(-30, 365))),
+    line_days = omop_variable(name = "line_days", event = episode_course,
+                              reducer = omop_reduce("covered_days", window = omop_window(omop_bound("index", 0), omop_bound("index_end", 0))))),
+  outputs = list(omop_output("episodes", rows = "onc", format = "wide", grain = "episode",
+                             columns = c("n_members", "n_member_drugs", "first_member_days", "n_specimens"), result_symbol = "D_onc"),
+                 omop_output("first_line", rows = "first_line", format = "wide", grain = "episode",
+                             columns = c("line_days", "n_member_drugs"), result_symbol = "D_first_line")))
 plan <- recipe_to_plan(rec)
 ''', '''
 Rows: one episode per `episode` row of concept 32531 (index = episode start, end =
@@ -754,10 +819,18 @@ identity and person, so `n_members` counts the links of THAT episode (no window)
 the same drug row linked to two episodes counts once in each. `n_member_drugs`
 restricts the member tables to drug_exposure. `first_member_days` = days from the
 index to the earliest member row (start date of the member event). `n_specimens` =
-tumour specimen rows (4001225) in [index-30, index+365]. Fixture: 1015 has episodes 1
-(3 chemotherapy fills + 1 procedure, 2019-03-01..09-30) and 2 (the 2019-10-01 fill
-plus the 2019-04-12 fill linked a second time), 1016 episode 3 (one fill), base persons
-1..8 one episode each (2019-12-01..2020-02-28) linking their 2020-02-01 metformin fill.
+tumour specimen rows (4001225) in [index-30, index+365]. `first_line` is the
+chronologically first treatment episode per person (same coverage rule); its
+`line_days` is the INCLUSIVE coverage of the episode itself (the `episode_course` era
+over the episode rows with gap 0 and no supply fallback, `covered_days` over the window
+[index, index_end]): 214 for 1015 (2019-03-01..2019-09-30), 123 for 1016, 90 for
+persons 1..8; `n_member_drugs` is repeated there for the first line. Fixture: 1015 has
+episodes 1 (3 chemotherapy fills + 1 procedure, 2019-03-01..09-30) and 2 (the
+2019-10-01 fill plus the 2019-04-12 fill linked a second time), 1016 episode 3 (one
+fill), base persons 1..8 one episode each (2019-12-01..2020-02-28) linking their
+2020-02-01 metformin fill. Released components: `episodes` (row_id, cohort_row_id,
+person_id, n_members, n_member_drugs, first_member_days, n_specimens) and `first_line`
+(row_id, cohort_row_id, person_id, line_days, n_member_drugs).
 ''')
 
 # ---------------------------------------------------------------------------
@@ -765,8 +838,8 @@ plus the 2019-04-12 fill linked a second time), 1016 episode 3 (one fill), base 
 # ---------------------------------------------------------------------------
 p15 = plan(
     events={"metf": metf_fill, "visits": ev("visit_occurrence"),
-            "visit_cost": {"cost": {"event": {"event": "visits"}, "field": "total_cost", "currency": 44818568}},
-            "drug_cost": {"cost": {"event": {"event": "metf"}, "field": "total_cost", "currency": 44818568}}},
+            "visit_cost": {"cost": {"event": {"event": "visits"}, "field": "total_cost", "currency": 44818668}},
+            "drug_cost": {"cost": {"event": {"event": "metf"}, "field": "total_cost", "currency": 44818668}}},
     intervals={"metf_stock": {"source": {"event": "metf"}, "gap": 30, "fallback": "days_supply", "stockpile": True},
                "metf_era": {"source": {"event": "metf"}, "gap": 30, "fallback": "days_supply"}},
     populations={"users": {"kind": "index", "index": {"source": {"cohort_definition_id": 1001}, "select": "all", "end": {"strategy": "event_end"}},
@@ -788,8 +861,8 @@ add(15, "costs-adherence", p15, r'''
 library(dsOMOPClient)
 metf <- omop_event("drug_exposure", 1503297, descendants = TRUE, end = list(fallback = "days_supply"), name = "metf")
 visits <- omop_event("visit_occurrence", name = "visits")
-visit_cost <- omop_cost(visits, field = "total_cost", currency = 44818568, name = "visit_cost")
-drug_cost <- omop_cost(metf, field = "total_cost", currency = 44818568, name = "drug_cost")
+visit_cost <- omop_cost(visits, field = "total_cost", currency = 44818668, name = "visit_cost")
+drug_cost <- omop_cost(metf, field = "total_cost", currency = 44818668, name = "drug_cost")
 metf_stock <- omop_era(metf, gap = 30, fallback = "days_supply", stockpile = TRUE, name = "metf_stock")
 metf_era <- omop_era(metf, gap = 30, fallback = "days_supply", name = "metf_era")
 w90 <- omop_window(1, 90); w10 <- omop_window(1, 10); w60 <- omop_window(1, 60)
@@ -816,10 +889,11 @@ plan <- recipe_to_plan(rec)
 Rows: cohort 1001 (index 2019-12-31) under the union-coverage policy with gap 30: the
 eligibility component is the coalesced observation span containing an ACTUAL recorded
 period that covers the index; actual observed days are the union of that component's
-recorded periods. Costs: `visit_cost_60` sums total_cost of USD (44818568) cost rows
+recorded periods. Costs: `visit_cost_60` sums total_cost of USD (44818668, Currency vocabulary code USD) cost rows
 whose cost_event_id is a visit of the person (cost_domain_id "Visit") dated in
-[index+1, index+60]; `drug_cost_60` likewise for metformin fills ("Drug"); EUR rows are
-excluded by the currency filter; persons without cost rows get 0. Adherence over
+[index+1, index+60]; `drug_cost_60` likewise for metformin fills ("Drug"); the EUR
+(44818568) row is excluded by the currency filter; persons without cost rows get 0.
+Released component: row_id, cohort_row_id, person_id and the thirteen variables. Adherence over
 [1, 90] = 2020-01-01..2020-03-30: `supply_90` (MPR numerator) = sum of days_supply of
 fills starting in the window; `observed_90` = observed days in the window;
 `pdc_num_eff_90` = union of the stockpiled effective-supply intervals intersected with
@@ -829,6 +903,35 @@ design's fixture on person 1003: observed [1,2] U [9,10] = 4 days, effective cov
 4 of 10 -> pdc_num_eff_10 = 4, observed_10 = 4 (4/4, never 10/4); person 1004 pins
 recorded 44 vs effective 60 covered days.
 ''')
+
+# ---------------------------------------------------------------------------
+# parametrised variants of recipes 01..12 (item 13): base recipe code with one
+# construct replaced by omop_param() and bound on the client
+# ---------------------------------------------------------------------------
+PARAM_VARIANTS = {}
+def variant(num, parameters, replacements, bind):
+    base = [r for r in recipes if r[0] == num][0][3].lstrip("\n")
+    code = base
+    for old_text, new_text in replacements:
+        assert old_text in code, (num, old_text)
+        code = code.replace(old_text, new_text, 1)
+    code = code.replace("plan <- recipe_to_plan(rec)", "bound <- recipe_bind(rec, %s)\nplan <- recipe_to_plan(bound)   # equals the base recipe's plan.json" % bind)
+    code = code.replace("plan <- recipe_to_plan(rec)   # equals plan.json after normalisation", "bound <- recipe_bind(rec, %s)\nplan <- recipe_to_plan(bound)" % bind)
+    code = code.replace("plan <- recipe_to_plan(rec)   # the importer must produce the population of plan.json", "bound <- recipe_bind(rec, %s)\nplan <- recipe_to_plan(bound)" % bind)
+    code = code.replace("library(dsOMOPClient)\n", "", 1)
+    PARAM_VARIANTS[num] = {"parameters": parameters, "code": code}
+variant(1, {"lookback": 365}, [("w365 <- omop_window(-365, 0)", "w365 <- omop_window(omop_param(\"lookback\", type = \"integer\", default = 365) * -1L, 0)")], "lookback = 365L")
+variant(2, {"washout": 365}, [("omop_has_not(acei, window = omop_window(-365, -1))", "omop_has_not(acei, window = omop_window(-omop_param(\"washout\", type = \"integer\"), -1))")], "washout = 365L")
+variant(3, {"dx": "omop_concept_set(201820, descendants = TRUE)"}, [("dm <- omop_event(\"condition_occurrence\", 201820, descendants = TRUE, name = \"dm\")", "dm <- omop_event(\"condition_occurrence\", omop_param(\"dx\", type = \"concept_set\"), name = \"dm\")")], "dx = omop_concept_set(201820, descendants = TRUE)")
+variant(4, {"threshold": 6.5}, [("where = omop_where(value >= 6.5)", "where = omop_where(value >= omop_param(\"threshold\", type = \"number\"))")], "threshold = 6.5")
+variant(5, {"follow": 30}, [("omop_reduce(\"count\", window = omop_window(0, 30), distinct = \"visit\")", "omop_reduce(\"count\", window = omop_window(0, omop_param(\"follow\", type = \"integer\")), distinct = \"visit\")")], "follow = 30L")
+variant(6, {"gap": 30}, [("metf_era <- omop_era(metf, gap = 30,", "metf_era <- omop_era(metf, gap = omop_param(\"gap\", type = \"integer\"),")], "gap = 30L")
+variant(7, {"lookback": 180}, [("carry_forward = list(weight = list(lookback = 180, expire = NULL), bmi = list(lookback = 180, expire = NULL))", "carry_forward = list(weight = list(lookback = omop_param(\"lookback\", type = \"integer\"), expire = NULL), bmi = list(lookback = omop_param(\"lookback\", type = \"integer\"), expire = NULL))")], "lookback = 180L")
+variant(8, {"band": 5}, [("age_bands = 5", "age_bands = omop_param(\"band\", type = \"integer\")")], "band = 5L")
+variant(9, {"tar_end": 90}, [("tar = omop_window(1, 90)", "tar = omop_window(1, omop_param(\"tar_end\", type = \"integer\"))")], "tar_end = 90L")
+variant(10, {"seed": 20261111}, [("controls_per_case = 4, seed = 20261111", "controls_per_case = 4, seed = omop_param(\"seed\", type = \"integer\")")], "seed = 20261111L")
+variant(11, {"horizon": 730}, [("window = omop_window(0, 730)", "window = omop_window(0, omop_param(\"horizon\", type = \"integer\"))")], "horizon = 730L")
+variant(12, {"prior": 365}, [("prior_obs = omop_observed_days(omop_window(-365, 0))", "prior_obs = omop_observed_days(omop_window(-omop_param(\"prior\", type = \"integer\"), 0))")], "prior = 365L")
 
 # ---------------------------------------------------------------------------
 # write and validate
@@ -856,7 +959,29 @@ for num, name, p, recipe_r, readme in recipes:
     if num == 12:
         with open(os.path.join(d, "circe.json"), "w") as f:
             json.dump(CIRCE, f, indent=2); f.write("\n")
+    if num == 13:
+        vdir = os.path.join(d, "variants"); os.makedirs(vdir, exist_ok=True)
+        manifest = []
+        for vnum, vname, vplan, vrecipe, _ in recipes:
+            if vnum > 12: continue
+            with open(os.path.join(vdir, "plan-%02d.json" % vnum), "w") as f:
+                json.dump(vplan, f, indent=2); f.write("\n")
+            param = PARAM_VARIANTS[vnum]
+            with open(os.path.join(vdir, "recipe-%02d.R" % vnum), "w") as f:
+                f.write("# Parametrised variant of acceptance recipe %02d (design 10.7 item 13)\n" % vnum)
+                f.write("# One public parameter is declared with omop_param() and bound with recipe_bind(); the bound\n")
+                f.write("# plan must equal ../../%02d-%s/plan.json after normalisation.\n" % (vnum, vname))
+                f.write("library(dsOMOPClient)\n")
+                f.write(param["code"])
+            manifest.append({"variant": "recipe-%02d.R" % vnum, "bound_plan": "plan-%02d.json" % vnum,
+                             "parameters": param["parameters"], "equals_plan_of": "%02d-%s" % (vnum, vname),
+                             "expected_from": "%02d-%s/expected.json" % (vnum, vname)})
+        with open(os.path.join(vdir, "variants.json"), "w") as f:
+            json.dump(manifest, f, indent=2); f.write("\n")
     rows = ", ".join(sorted(set(o["rows"] for o in p["outputs"].values())))
+    for v in (os.listdir(os.path.join(d, "variants")) if os.path.isdir(os.path.join(d, "variants")) else []):
+        if v.startswith("plan-"):
+            assert V.is_valid(json.load(open(os.path.join(d, "variants", v)))), v
     index_lines.append("| %02d | %02d-%s | %s | %s |" % (num, num, name, ", ".join(p["outputs"].keys()), rows))
 with open(os.path.join(OUT, "README.md"), "w") as f:
     f.write("\n".join(index_lines) + "\n\nEach directory holds `recipe.R` (public-client recipe in the frozen "

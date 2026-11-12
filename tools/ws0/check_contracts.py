@@ -122,9 +122,14 @@ for d in sorted(os.listdir(corpus)):
     check(schemas["ir-v2"].is_valid(plan), f"acceptance plan {d} does not validate under ir-v2")
     var_dir = os.path.join(corpus, d, "variants")
     if os.path.isdir(var_dir):
-        for v in sorted(os.listdir(var_dir)):
-            if v.endswith(".json"):
-                check(schemas["plan-v2"].is_valid(load(os.path.join(var_dir, v))), f"variant {d}/{v} does not validate")
+        manifest = load(os.path.join(var_dir, "variants.json"))
+        check(len(manifest) == 12, f"{d}: twelve parametrised variants expected")
+        for m in manifest:
+            vplan = load(os.path.join(var_dir, m["bound_plan"]))
+            check(schemas["plan-v2"].is_valid(vplan), f"variant {d}/{m['bound_plan']} does not validate")
+            base = load(os.path.join(corpus, m["equals_plan_of"], "plan.json"))
+            check(vplan == base, f"variant {d}/{m['bound_plan']} differs from {m['equals_plan_of']}/plan.json")
+            check(os.path.exists(os.path.join(var_dir, m["variant"])), f"variant recipe {m['variant']} missing")
 
 # --- digest vectors (independent canonicaliser) --------------------------------------
 import importlib.util

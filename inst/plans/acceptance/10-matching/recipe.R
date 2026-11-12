@@ -17,5 +17,5 @@ rec <- omop_recipe(
                    w = omop_population_column("sampling_weight"), age = omop_age(), sex = omop_sex(),
                    statin_365 = omop_variable(name = "statin_365", event = statin_rx, reducer = omop_reduce("binary", window = omop_window(-365, -1)))),
   outputs = list(omop_output("cc_table", rows = "cc", format = "wide", grain = "episode",
-                             columns = c("set_id", "is_case", "w", "age", "sex", "statin_365"))))
+                             columns = c("set_id", "is_case", "w", "age", "sex", "statin_365"), result_symbol = "D_cc")))
 plan <- recipe_to_plan(rec)

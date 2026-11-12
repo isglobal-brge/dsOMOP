@@ -62,6 +62,35 @@
         "on_missing": "drop",
         "gap": 0
       }
+    },
+    "first_line": {
+      "kind": "index",
+      "label": "First treatment line",
+      "index": {
+        "source": {
+          "event": "episodes"
+        },
+        "select": "first",
+        "end": {
+          "strategy": "event_end"
+        }
+      },
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      }
+    }
+  },
+  "intervals": {
+    "episode_course": {
+      "source": {
+        "event": "episodes"
+      },
+      "gap": 0,
+      "end": "recorded_end",
+      "fallback": "none"
     }
   },
   "variables": {
@@ -101,6 +130,25 @@
           "anchor": "index"
         }
       }
+    },
+    "line_days": {
+      "source": {
+        "interval": "episode_course"
+      },
+      "reducer": {
+        "fn": "covered_days",
+        "window": {
+          "start": {
+            "anchor": "index",
+            "offset": 0
+          },
+          "end": {
+            "anchor": "index_end",
+            "offset": 0
+          },
+          "anchor": "index"
+        }
+      }
     }
   },
   "outputs": {
@@ -108,7 +156,23 @@
       "rows": "onc",
       "format": "wide",
       "grain": "episode",
-      "result_symbol": "D_onc"
+      "result_symbol": "D_onc",
+      "columns": [
+        "n_members",
+        "n_member_drugs",
+        "first_member_days",
+        "n_specimens"
+      ]
+    },
+    "first_line": {
+      "rows": "first_line",
+      "format": "wide",
+      "grain": "episode",
+      "result_symbol": "D_first_line",
+      "columns": [
+        "line_days",
+        "n_member_drugs"
+      ]
     }
   }
 }

@@ -15,5 +15,8 @@ with mmol/mol converted as 0.0915 x + 2.15; glucose in mg/dL with the fixture's 
 rows converted x 18.0182; unknown units give NA; the last row by date then id), and
 the Charlson index (sum of category weights over condition rows with start date on
 or before the index date; categories and weights as `.computeComorbidityScore`,
-descendants from the fixture's concept_ancestor). WS-0 decision: the v2 score counts
-conditions on or before the reference date (the v1 adapter keeps the all-time rule).
+descendants from the fixture's concept_ancestor). Amendment A-2: the native v2 score
+counts conditions on or before the reference date (extension person 1011, whose MI is
+dated after the index, scores 1 = diabetes only; the v1 adapter with
+`legacy_all_time_conditions` would score 2). Released component: row_id, cohort_row_id,
+person_id and the 45 variables.

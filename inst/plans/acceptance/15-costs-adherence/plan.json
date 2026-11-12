@@ -28,7 +28,7 @@
           "event": "visits"
         },
         "field": "total_cost",
-        "currency": 44818568
+        "currency": 44818668
       }
     },
     "drug_cost": {
@@ -37,7 +37,7 @@
           "event": "metf"
         },
         "field": "total_cost",
-        "currency": 44818568
+        "currency": 44818668
       }
     }
   },

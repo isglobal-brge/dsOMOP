@@ -115,15 +115,19 @@ test_that("the v1 corpus classes are reviewed per plan instance", {
   cls <- read.csv(testthat::test_path("fixtures", "v1-corpus-classes.csv"), stringsAsFactors = FALSE)
   expect_true(all(c("plan_id", "package", "file", "line", "test", "class", "review", "prior_behaviour", "intended_behaviour", "rationale") %in% names(cls)))
   expect_true(all(cls$class %in% c("safe", "corrected", "newly_permitted", "newly_refused_structural", "newly_refused_publication",
-                                   "unchanged_invalid", "non_plan")))
+                                   "publication_refused_unchanged", "unchanged_invalid", "non_plan")))
   expect_true(all(cls$review == "reviewed"))
   expect_false(anyDuplicated(cls$plan_id) > 0)
-  expect_gte(nrow(cls), 900L)
+  expect_gte(nrow(cls), 1300L)
+  expect_gte(sum(cls$class != "non_plan"), 580L)
+  expect_true(all(nzchar(cls$rationale)))
   # the boundary examples of the review
   get <- function(file, line, pkg = "dsOMOP") cls[cls$package == pkg & cls$file == file & cls$line == line, ]
   expect_true(all(get("test-recipe-reach.R", 257)$class == "unchanged_invalid"))
-  expect_true(all(get("test-manipulate.R", 216)$class == "newly_refused_publication"))
-  expect_true(all(get("test-manipulate.R", 229)$class == "newly_refused_publication"))
+  expect_true(all(get("test-manipulate.R", 216)$class == "publication_refused_unchanged"))
+  expect_true(all(get("test-manipulate.R", 229)$class == "publication_refused_unchanged"))
+  expect_true(all(get("test-manipulate.R", 208)$class == "newly_permitted"))
+  expect_true(all(get("test-cohort.R", 512)$class == "publication_refused_unchanged"))
   for (ln in c(247, 268, 672)) expect_true("newly_permitted" %in% get("test-recipe-setops.R", ln)$class, info = ln)
   oc72 <- get("test-output-contracts.R", 72); expect_true(all(c("newly_permitted", "unchanged_invalid") %in% oc72$class))
   oc99 <- get("test-output-contracts.R", 99); expect_true(all(c("safe", "newly_permitted") %in% oc99$class))
@@ -133,7 +137,7 @@ test_that("the v1 corpus classes are reviewed per plan instance", {
   for (f in c("test-phase-e-ergonomics.R", "test-staged-harmonization-regression.R", "test-factor-harmonization-client.R", "test-dp-prepare.R")) {
     expect_true(f %in% cls$file[cls$package == "dsOMOPClient"], info = f)
   }
-  for (f in c("test-factor-harmonization.R", "test-privacy-dp.R", "test-staging-contract.R", "test-cohort-disclosure.R")) {
+  for (f in c("test-factor-harmonization.R", "test-privacy-dp.R", "test-staging-contract.R", "test-phase1-leak-gates.R", "test-disclosure.R")) {
     expect_true(f %in% cls$file[cls$package == "dsOMOP"], info = f)
   }
   srv <- cls[cls$package == "dsOMOP", ]

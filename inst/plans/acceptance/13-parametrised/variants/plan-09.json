@@ -1,0 +1,63 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "events": {
+    "resp": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          320136
+        ],
+        "include_descendants": true
+      }
+    },
+    "death": {
+      "table": "death"
+    }
+  },
+  "populations": {
+    "c1": {
+      "kind": "index",
+      "index": {
+        "source": {
+          "cohort_definition_id": 1
+        },
+        "select": "all",
+        "end": {
+          "strategy": "event_end"
+        }
+      }
+    }
+  },
+  "outputs": {
+    "recurrent": {
+      "rows": "c1",
+      "format": "survival",
+      "result_symbol": "D_recurrent",
+      "options": {
+        "outcomes": {
+          "resp": {
+            "event": "resp"
+          }
+        },
+        "tar": {
+          "start": 1,
+          "end": 90,
+          "anchor": "index"
+        },
+        "censor": [
+          "observation_end",
+          "death"
+        ],
+        "format": "recurrent_events",
+        "event_order": "all",
+        "complete": true
+      }
+    }
+  }
+}

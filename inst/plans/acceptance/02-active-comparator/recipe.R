@@ -20,6 +20,8 @@ rec <- omop_recipe(
       outcomes = list(mi = mi, death = death), format = "competing_risk", event_order = "first", outcome_mode = "named",
       tars = list(itt = omop_window(1, NULL),
                   on_treatment = omop_window(omop_bound("index", 1), omop_bound("index_end", 30))),
-      censor = list("observation_end", omop_censor(acei, "first_start_after_entry"), omop_censor(arb, "first_start_after_entry")),
+      censor = list("observation_end",
+                    omop_censor(arb, "first_start_after_entry", when_index_source = "acei"),   # switch to the other arm (A-7)
+                    omop_censor(acei, "first_start_after_entry", when_index_source = "arb")),
       prior_outcome = list(lookback = 365, action = "exclude")))))
 plan <- recipe_to_plan(rec)
