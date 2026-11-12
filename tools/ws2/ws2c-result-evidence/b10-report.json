@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-12T13:03:34.513428Z",
+ "generated": "2026-11-12T13:31:28.946059Z",
  "classes_csv": "/workspace/dsomop/wt/ws2c/dsOMOP/tests/testthat/fixtures/v1-corpus-classes.csv",
  "corpus_json": "/workspace/dsomop/wt/ws2c/dsOMOP/tests/testthat/fixtures/ir-v1-corpus.json",
  "runs": [
@@ -147,14 +147,14 @@
    "finished": "2026-11-12T12:17:40.560808Z"
   },
   {
-   "label": "ws2c-final3-current",
+   "label": "ws2c-final4-current",
    "side": "current",
-   "server_commit": "8871d8e116423452fb288d6a57ed2e22e9c10289",
+   "server_commit": "9b3cb5df1e579038118b1ed4718e219c872d0f47",
    "client_commit": "5a53401af29f5184ac001165be698383f1705293",
    "tests_from": null,
    "server_repo": "/workspace/dsomop/wt/ws2c/dsOMOP",
    "client_repo": "/workspace/dsomop/wt/ws2c/dsOMOPClient",
-   "snapshot": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/ws2c/snap/ws2c-final3-current",
+   "snapshot": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/ws2c/snap/ws2c-final4-current",
    "added_tests": [
     {
      "path": "tests/testthat/test-ir-results.R",
@@ -207,11 +207,11 @@
     "dsOMOP": {
      "rtest_exit": 0,
      "result": "RESULT failed: 0 errors: 0 skipped: 3 passed: 4085 ",
-     "seconds": 643.925034,
+     "seconds": 506.443218,
      "fetch_exit": 0,
      "files": [
-      "ws2c-final3-current-dsOMOP-703260.jsonl",
-      "ws2c-final3-current-dsOMOP-715266.jsonl"
+      "ws2c-final4-current-dsOMOP-748710.jsonl",
+      "ws2c-final4-current-dsOMOP-764986.jsonl"
      ],
      "rtest_tail": [
       "RESULT failed: 0 errors: 0 skipped: 3 passed: 4085 "
@@ -219,13 +219,13 @@
      "rtest_stderr": ""
     }
    },
-   "started": "2026-11-12T12:52:27.994833Z",
-   "finished": "2026-11-12T13:03:17.829805Z"
+   "started": "2026-11-12T13:22:24.623372Z",
+   "finished": "2026-11-12T13:30:56.400661Z"
   },
   {
-   "label": "ws2c-final3-hybrid",
+   "label": "ws2c-final4-hybrid",
    "side": "hybrid",
-   "server_commit": "8871d8e116423452fb288d6a57ed2e22e9c10289",
+   "server_commit": "9b3cb5df1e579038118b1ed4718e219c872d0f47",
    "client_commit": "5a53401af29f5184ac001165be698383f1705293",
    "tests_from": {
     "dsOMOP": "30b7905617dbe3de5d06699c324095635c68011f",
@@ -233,7 +233,7 @@
    },
    "server_repo": "/workspace/dsomop/wt/ws2c/dsOMOP",
    "client_repo": "/workspace/dsomop/wt/ws2c/dsOMOPClient",
-   "snapshot": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/ws2c/snap/ws2c-final3-hybrid",
+   "snapshot": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/ws2c/snap/ws2c-final4-hybrid",
    "added_tests": [
     {
      "path": "tests/testthat/test-ir-results.R",
@@ -286,11 +286,11 @@
     "dsOMOP": {
      "rtest_exit": 0,
      "result": "RESULT failed: 24 errors: 9 skipped: 3 passed: 3948 ",
-     "seconds": 626.110068,
+     "seconds": 501.550583,
      "fetch_exit": 0,
      "files": [
-      "ws2c-final3-hybrid-dsOMOP-703380.jsonl",
-      "ws2c-final3-hybrid-dsOMOP-714695.jsonl"
+      "ws2c-final4-hybrid-dsOMOP-748766.jsonl",
+      "ws2c-final4-hybrid-dsOMOP-764971.jsonl"
      ],
      "rtest_tail": [
       "FAILURES BY FILE",
@@ -343,8 +343,8 @@
      "rtest_stderr": ""
     }
    },
-   "started": "2026-11-12T12:52:29.131641Z",
-   "finished": "2026-11-12T13:03:00.657125Z"
+   "started": "2026-11-12T13:22:24.634099Z",
+   "finished": "2026-11-12T13:30:51.569635Z"
   }
  ],
  "determinism": {
@@ -366,7 +366,7 @@
  },
  "comparisons": [
   {
-   "title": "Baseline ws2c-b18-a-reviewed vs ws2c-final3-current (current)",
+   "title": "Baseline ws2c-b18-a-reviewed vs ws2c-final4-current (current)",
    "baseline": {
     "label": "ws2c-b18-a-reviewed",
     "side": "baseline",
@@ -446,14 +446,14 @@
     }
    },
    "current": {
-    "label": "ws2c-final3-current",
+    "label": "ws2c-final4-current",
     "side": "current",
-    "server_commit": "8871d8e116423452fb288d6a57ed2e22e9c10289",
+    "server_commit": "9b3cb5df1e579038118b1ed4718e219c872d0f47",
     "client_commit": "5a53401af29f5184ac001165be698383f1705293",
     "tests_from": null,
     "server_repo": "/workspace/dsomop/wt/ws2c/dsOMOP",
     "client_repo": "/workspace/dsomop/wt/ws2c/dsOMOPClient",
-    "snapshot": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/ws2c/snap/ws2c-final3-current",
+    "snapshot": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/ws2c/snap/ws2c-final4-current",
     "added_tests": [
      {
       "path": "tests/testthat/test-ir-results.R",
@@ -506,11 +506,11 @@
      "dsOMOP": {
       "rtest_exit": 0,
       "result": "RESULT failed: 0 errors: 0 skipped: 3 passed: 4085 ",
-      "seconds": 643.925034,
+      "seconds": 506.443218,
       "fetch_exit": 0,
       "files": [
-       "ws2c-final3-current-dsOMOP-703260.jsonl",
-       "ws2c-final3-current-dsOMOP-715266.jsonl"
+       "ws2c-final4-current-dsOMOP-748710.jsonl",
+       "ws2c-final4-current-dsOMOP-764986.jsonl"
       ],
       "rtest_tail": [
        "RESULT failed: 0 errors: 0 skipped: 3 passed: 4085 "
@@ -518,8 +518,8 @@
       "rtest_stderr": ""
      }
     },
-    "started": "2026-11-12T12:52:27.994833Z",
-    "finished": "2026-11-12T13:03:17.829805Z"
+    "started": "2026-11-12T13:22:24.623372Z",
+    "finished": "2026-11-12T13:30:56.400661Z"
    },
    "expectations": [
     {
@@ -1229,10 +1229,10 @@
     },
     "current": {
      "dsOMOP": {
-      "main": 703260,
+      "main": 748710,
       "calls": {
-       "703260": 457,
-       "715266": 0
+       "748710": 457,
+       "764986": 0
       }
      },
      "dsOMOPClient": {
@@ -6911,7 +6911,7 @@
      "diffs": [],
      "notes": [],
      "baseline_error": "Could not clean every owned staging directory: /tmp/RtmpNFfbRZ/dsstaging_preflight_974ae74aaf59/stg_b09ce1ee5ff558ac1feb7ab53abee144: unsafe or invalid owned path",
-     "current_error": "Could not clean every owned staging directory: /tmp/RtmpNl0tDC/dsstaging_preflight_abb1c7082f88a/stg_ea26dd0f4edb12f57fecda229e7cc09b: unsafe or invalid owned path",
+     "current_error": "Could not clean every owned staging directory: /tmp/RtmppyQlyz/dsstaging_preflight_b6ca64d4fa08b/stg_3e947309ba4af081d924a65209576e62: unsafe or invalid owned path",
      "current_error_code": null,
      "baseline_compared_result_sha256": null,
      "current_compared_result_sha256": null,
@@ -7966,7 +7966,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 81f8b682b370 / a7cbf0e45461)"
+      "fixture data differ (db 81f8b682b370 / df1903c406b2)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -7999,7 +7999,7 @@
       }
      ],
      "notes": [
-      "fixture data differ (db 04f7a1ab666e / 87f4ac513fa3)"
+      "fixture data differ (db 04f7a1ab666e / e9a72135bb49)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8032,7 +8032,7 @@
       }
      ],
      "notes": [
-      "fixture data differ (db b15a72396bcc / cb19c6e72425)"
+      "fixture data differ (db b15a72396bcc / 2b477a269208)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8065,7 +8065,7 @@
       }
      ],
      "notes": [
-      "fixture data differ (db 303732f34b20 / 4c63102a7e82)"
+      "fixture data differ (db 303732f34b20 / e9800b93388c)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8090,7 +8090,7 @@
      "outcome": "both_refused_fixture_differs",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 862da77b1b03 / d439b02f35fb)"
+      "fixture data differ (db 862da77b1b03 / a06cebb1308e)"
      ],
      "baseline_error": "Disclosive: operation blocked - insufficient individuals to meet disclosure threshold. No further details available.",
      "current_error": "Disclosive: operation blocked - insufficient individuals to meet disclosure threshold. No further details available.",
@@ -8115,7 +8115,7 @@
      "outcome": "both_refused_fixture_differs",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 2d674e4c56ee / 3ad370749dc6)"
+      "fixture data differ (db 2d674e4c56ee / 435df425eee5)"
      ],
      "baseline_error": "Disclosive: operation blocked - insufficient individuals to meet disclosure threshold. No further details available.",
      "current_error": "Disclosive: operation blocked - insufficient individuals to meet disclosure threshold. No further details available.",
@@ -8141,7 +8141,7 @@
      "diffs": [],
      "notes": [
       "return value differs (not compared): [\"logical\"] -> [\"dsomop_plan_status\"]",
-      "fixture data differ (db bd1f5168f8df / 8c1cb5a65d03)"
+      "fixture data differ (db bd1f5168f8df / ff08ead97d7f)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8167,7 +8167,7 @@
      "diffs": [],
      "notes": [
       "return value differs (not compared): [\"logical\"] -> [\"dsomop_plan_status\"]",
-      "fixture data differ (db bd1f5168f8df / 8c1cb5a65d03)"
+      "fixture data differ (db bd1f5168f8df / ff08ead97d7f)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8192,7 +8192,7 @@
      "outcome": "both_refused_fixture_differs",
      "diffs": [],
      "notes": [
-      "fixture data differ (db bd1f5168f8df / 8c1cb5a65d03)"
+      "fixture data differ (db bd1f5168f8df / ff08ead97d7f)"
      ],
      "baseline_error": "Additional analysis scope table names must be contiguous from scope_table_1 with no gaps.",
      "current_error": "Additional analysis scope table names must be contiguous from scope_table_1 with no gaps.",
@@ -8225,7 +8225,7 @@
       }
      ],
      "notes": [
-      "fixture data differ (db 8add571f0980 / 789be14a4310)"
+      "fixture data differ (db 8add571f0980 / a1464d14bd19)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8250,7 +8250,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 8add571f0980 / 789be14a4310)"
+      "fixture data differ (db 8add571f0980 / a1464d14bd19)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8275,7 +8275,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 8add571f0980 / 789be14a4310)"
+      "fixture data differ (db 8add571f0980 / a1464d14bd19)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8300,7 +8300,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 8add571f0980 / 789be14a4310)"
+      "fixture data differ (db 8add571f0980 / a1464d14bd19)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8325,7 +8325,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 8add571f0980 / 789be14a4310)"
+      "fixture data differ (db 8add571f0980 / a1464d14bd19)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8350,7 +8350,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 8add571f0980 / 789be14a4310)"
+      "fixture data differ (db 8add571f0980 / a1464d14bd19)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8383,7 +8383,7 @@
       }
      ],
      "notes": [
-      "fixture data differ (db 97063b5abe75 / 5dc23fee5121)"
+      "fixture data differ (db 97063b5abe75 / 20db8c876774)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8408,7 +8408,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 97063b5abe75 / 5dc23fee5121)"
+      "fixture data differ (db 97063b5abe75 / 20db8c876774)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8433,7 +8433,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 97063b5abe75 / 5dc23fee5121)"
+      "fixture data differ (db 97063b5abe75 / 20db8c876774)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8458,7 +8458,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 4bbf06701cde / 4fb8c72f1a7f)"
+      "fixture data differ (db 4bbf06701cde / d213806d3ee9)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8483,7 +8483,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 4bbf06701cde / 4fb8c72f1a7f)"
+      "fixture data differ (db 4bbf06701cde / d213806d3ee9)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8508,7 +8508,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 4bbf06701cde / 4fb8c72f1a7f)"
+      "fixture data differ (db 4bbf06701cde / d213806d3ee9)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -8534,7 +8534,7 @@
      "diffs": [],
      "notes": [
       "return value differs (not compared): [\"logical\"] -> [\"dsomop_plan_status\"]",
-      "fixture data differ (db bdfd163b8343 / 6f198ea94abf)"
+      "fixture data differ (db bdfd163b8343 / d5f8407777ae)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -9297,7 +9297,7 @@
      "cls": "unclassified",
      "record_id": 417,
      "occurrence": 1,
-     "context_sha256": "d4beb010fee36b89",
+     "context_sha256": "7152b131d2ffc319",
      "output_mode": "memory",
      "error": null
     },
@@ -9309,7 +9309,7 @@
      "cls": "unclassified",
      "record_id": 419,
      "occurrence": 1,
-     "context_sha256": "e58f46afb0b953e1",
+     "context_sha256": "55e2faa776c2f0bd",
      "output_mode": "memory",
      "error": null
     },
@@ -9321,7 +9321,7 @@
      "cls": "unclassified",
      "record_id": 421,
      "occurrence": 1,
-     "context_sha256": "9ebf1420ce21c594",
+     "context_sha256": "78fd5721f64d670d",
      "output_mode": "memory",
      "error": null
     },
@@ -9340,7 +9340,7 @@
    ]
   },
   {
-   "title": "Baseline ws2c-b18-a-reviewed vs ws2c-final3-hybrid (hybrid)",
+   "title": "Baseline ws2c-b18-a-reviewed vs ws2c-final4-hybrid (hybrid)",
    "baseline": {
     "label": "ws2c-b18-a-reviewed",
     "side": "baseline",
@@ -9420,9 +9420,9 @@
     }
    },
    "current": {
-    "label": "ws2c-final3-hybrid",
+    "label": "ws2c-final4-hybrid",
     "side": "hybrid",
-    "server_commit": "8871d8e116423452fb288d6a57ed2e22e9c10289",
+    "server_commit": "9b3cb5df1e579038118b1ed4718e219c872d0f47",
     "client_commit": "5a53401af29f5184ac001165be698383f1705293",
     "tests_from": {
      "dsOMOP": "30b7905617dbe3de5d06699c324095635c68011f",
@@ -9430,7 +9430,7 @@
     },
     "server_repo": "/workspace/dsomop/wt/ws2c/dsOMOP",
     "client_repo": "/workspace/dsomop/wt/ws2c/dsOMOPClient",
-    "snapshot": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/ws2c/snap/ws2c-final3-hybrid",
+    "snapshot": "/workspace/dsomop/wt/ws2c/dsOMOP/tools/ws2/artifacts/ws2c/snap/ws2c-final4-hybrid",
     "added_tests": [
      {
       "path": "tests/testthat/test-ir-results.R",
@@ -9483,11 +9483,11 @@
      "dsOMOP": {
       "rtest_exit": 0,
       "result": "RESULT failed: 24 errors: 9 skipped: 3 passed: 3948 ",
-      "seconds": 626.110068,
+      "seconds": 501.550583,
       "fetch_exit": 0,
       "files": [
-       "ws2c-final3-hybrid-dsOMOP-703380.jsonl",
-       "ws2c-final3-hybrid-dsOMOP-714695.jsonl"
+       "ws2c-final4-hybrid-dsOMOP-748766.jsonl",
+       "ws2c-final4-hybrid-dsOMOP-764971.jsonl"
       ],
       "rtest_tail": [
        "FAILURES BY FILE",
@@ -9540,8 +9540,8 @@
       "rtest_stderr": ""
      }
     },
-    "started": "2026-11-12T12:52:29.131641Z",
-    "finished": "2026-11-12T13:03:00.657125Z"
+    "started": "2026-11-12T13:22:24.634099Z",
+    "finished": "2026-11-12T13:30:51.569635Z"
    },
    "expectations": [
     {
@@ -10276,10 +10276,10 @@
     },
     "current": {
      "dsOMOP": {
-      "main": 703380,
+      "main": 748766,
       "calls": {
-       "703380": 434,
-       "714695": 0
+       "748766": 434,
+       "764971": 0
       }
      },
      "dsOMOPClient": {
@@ -16089,7 +16089,7 @@
      "diffs": [],
      "notes": [],
      "baseline_error": "Could not clean every owned staging directory: /tmp/RtmpNFfbRZ/dsstaging_preflight_974ae74aaf59/stg_b09ce1ee5ff558ac1feb7ab53abee144: unsafe or invalid owned path",
-     "current_error": "Could not clean every owned staging directory: /tmp/RtmpV038v8/dsstaging_preflight_abb9479d2ad1f/stg_a1888255e557d9a14ad1677ecc27317c: unsafe or invalid owned path",
+     "current_error": "Could not clean every owned staging directory: /tmp/Rtmp4O5Pqr/dsstaging_preflight_b6cde5be692ba/stg_883ac412019d81d59c43fa20bd0be862: unsafe or invalid owned path",
      "current_error_code": null,
      "baseline_compared_result_sha256": null,
      "current_compared_result_sha256": null,
@@ -17228,7 +17228,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 81f8b682b370 / 255fc24ce732)"
+      "fixture data differ (db 81f8b682b370 / 000ca2813763)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17261,7 +17261,7 @@
       }
      ],
      "notes": [
-      "fixture data differ (db 04f7a1ab666e / 777df32370e0)"
+      "fixture data differ (db 04f7a1ab666e / 1d715535cb29)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17294,7 +17294,7 @@
       }
      ],
      "notes": [
-      "fixture data differ (db b15a72396bcc / d0076dd72167)"
+      "fixture data differ (db b15a72396bcc / 7e3ef59f584f)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17327,7 +17327,7 @@
       }
      ],
      "notes": [
-      "fixture data differ (db 303732f34b20 / 7520168d9953)"
+      "fixture data differ (db 303732f34b20 / b9a42b3936ac)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17352,7 +17352,7 @@
      "outcome": "both_refused_fixture_differs",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 862da77b1b03 / 944e354a1619)"
+      "fixture data differ (db 862da77b1b03 / a76dec264555)"
      ],
      "baseline_error": "Disclosive: operation blocked - insufficient individuals to meet disclosure threshold. No further details available.",
      "current_error": "Disclosive: operation blocked - insufficient individuals to meet disclosure threshold. No further details available.",
@@ -17377,7 +17377,7 @@
      "outcome": "both_refused_fixture_differs",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 2d674e4c56ee / e0df3967f75f)"
+      "fixture data differ (db 2d674e4c56ee / e2655644b7cb)"
      ],
      "baseline_error": "Disclosive: operation blocked - insufficient individuals to meet disclosure threshold. No further details available.",
      "current_error": "Disclosive: operation blocked - insufficient individuals to meet disclosure threshold. No further details available.",
@@ -17403,7 +17403,7 @@
      "diffs": [],
      "notes": [
       "return value differs (not compared): [\"logical\"] -> [\"dsomop_plan_status\"]",
-      "fixture data differ (db bd1f5168f8df / 87a3f59752db)"
+      "fixture data differ (db bd1f5168f8df / e265030977db)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17429,7 +17429,7 @@
      "diffs": [],
      "notes": [
       "return value differs (not compared): [\"logical\"] -> [\"dsomop_plan_status\"]",
-      "fixture data differ (db bd1f5168f8df / 87a3f59752db)"
+      "fixture data differ (db bd1f5168f8df / e265030977db)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17454,7 +17454,7 @@
      "outcome": "both_refused_fixture_differs",
      "diffs": [],
      "notes": [
-      "fixture data differ (db bd1f5168f8df / 87a3f59752db)"
+      "fixture data differ (db bd1f5168f8df / e265030977db)"
      ],
      "baseline_error": "Additional analysis scope table names must be contiguous from scope_table_1 with no gaps.",
      "current_error": "Additional analysis scope table names must be contiguous from scope_table_1 with no gaps.",
@@ -17487,7 +17487,7 @@
       }
      ],
      "notes": [
-      "fixture data differ (db 8add571f0980 / 81b34de0825c)"
+      "fixture data differ (db 8add571f0980 / 3b58f99128c6)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17512,7 +17512,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 8add571f0980 / 81b34de0825c)"
+      "fixture data differ (db 8add571f0980 / 3b58f99128c6)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17537,7 +17537,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 8add571f0980 / 81b34de0825c)"
+      "fixture data differ (db 8add571f0980 / 3b58f99128c6)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17562,7 +17562,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 8add571f0980 / 81b34de0825c)"
+      "fixture data differ (db 8add571f0980 / 3b58f99128c6)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17587,7 +17587,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 8add571f0980 / 81b34de0825c)"
+      "fixture data differ (db 8add571f0980 / 3b58f99128c6)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17612,7 +17612,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 8add571f0980 / 81b34de0825c)"
+      "fixture data differ (db 8add571f0980 / 3b58f99128c6)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17645,7 +17645,7 @@
       }
      ],
      "notes": [
-      "fixture data differ (db 97063b5abe75 / 1ea43e07272c)"
+      "fixture data differ (db 97063b5abe75 / e63b465fa9b7)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17670,7 +17670,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 97063b5abe75 / 1ea43e07272c)"
+      "fixture data differ (db 97063b5abe75 / e63b465fa9b7)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17695,7 +17695,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 97063b5abe75 / 1ea43e07272c)"
+      "fixture data differ (db 97063b5abe75 / e63b465fa9b7)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17720,7 +17720,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 4bbf06701cde / 06fb0fb95e26)"
+      "fixture data differ (db 4bbf06701cde / 5b096582a05f)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17745,7 +17745,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 4bbf06701cde / 06fb0fb95e26)"
+      "fixture data differ (db 4bbf06701cde / 5b096582a05f)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17770,7 +17770,7 @@
      "outcome": "identical",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 4bbf06701cde / 06fb0fb95e26)"
+      "fixture data differ (db 4bbf06701cde / 5b096582a05f)"
      ],
      "baseline_error": null,
      "current_error": null,
@@ -17795,7 +17795,7 @@
      "outcome": "refused_baseline_only_fixture_differs",
      "diffs": [],
      "notes": [
-      "fixture data differ (db 6078af60ccdb / a6948372b51d)"
+      "fixture data differ (db 6078af60ccdb / 84a7d24c8745)"
      ],
      "baseline_error": "Disclosive: operation blocked - insufficient individuals to meet disclosure threshold. No further details available.",
      "current_error": null,
@@ -17820,7 +17820,7 @@
      "outcome": "refused_baseline_only_fixture_differs",
      "diffs": [],
      "notes": [
-      "fixture data differ (db c8b7160f4781 / ee5542a02578)"
+      "fixture data differ (db c8b7160f4781 / f1945ac37d5a)"
      ],
      "baseline_error": "Disclosive: operation blocked - insufficient individuals to meet disclosure threshold. No further details available.",
      "current_error": null,
@@ -17846,7 +17846,7 @@
      "diffs": [],
      "notes": [
       "return value differs (not compared): [\"logical\"] -> [\"dsomop_plan_status\"]",
-      "fixture data differ (db bdfd163b8343 / d6b1eac82d04)"
+      "fixture data differ (db bdfd163b8343 / 8d98dafdce82)"
      ],
      "baseline_error": null,
      "current_error": null,
