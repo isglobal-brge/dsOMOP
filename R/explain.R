@@ -139,6 +139,105 @@
   3L
 }
 
+# Safe source columns before the output's date policy. Native sources share
+# the compiler's declared contract, including adapters without a table of
+# their own and interval courses (not their private construction rows).
+# Lowered v1 keeps its physical column projection instead.
+.irLongSourceClasses <- function(ir, source, node, handle, bp) {
+  name <- source[["event"]] %||% source[["interval"]]
+  event <- ir[["events"]][[source[["event"]] %||% ""]]
+  table <- event[["table"]]
+  col_df <- bp[["columns"]][[table %||% ""]]
+  legacy <- identical(attr(ir, "source_version"), 1L) && !is.null(table)
+  if (legacy) {
+    columns <- col_df[["column_name"]] %||% character(0)
+    if (!length(columns)) return(list())
+    if (!is.null(node[["legacy_columns"]])) {
+      requested <- as.character(unlist(node[["legacy_columns"]], use.names = FALSE))
+      mandatory <- "person_id"
+      if (!is.null(event[["concept_set"]])) {
+        mandatory <- c(mandatory, event[["concept_col"]] %||% .getDomainConceptColumn(bp, table))
+      }
+      columns <- intersect(columns, c(mandatory, requested))
+    }
+    columns <- setdiff(columns, setdiff(.identifierColumns(), "person_id"))
+    classes <- vapply(columns, .roleColumnClass, integer(1), col_df = col_df)
+    dates <- vapply(columns, function(column) {
+      isTRUE(col_df[["is_date"]][match(column, col_df[["column_name"]])]) ||
+        grepl("_date$|_datetime$", column)
+    }, logical(1))
+    origin <- table
+  } else {
+    if (!is.null(source[["interval"]])) {
+      spec <- .intervalCourseSpec("integer")
+      private <- c(.INTERVAL_PRIVATE_COLUMNS, "visit_id", "n_events", "era_key")
+      origin <- paste0("interval:", name)
+    } else {
+      kind <- if (!is.null(event[["episode_members"]])) "episode_members" else
+        if (!is.null(event[["cost"]])) "cost" else "table"
+      contract <- .eventKindContract(kind)
+      spec <- c(.eventColumnSpec(), contract[["extra"]])
+      private <- contract[["private"]]
+      origin <- paste0("event:", name)
+      if (identical(kind, "table") && !is.null(handle)) {
+        # This is metadata preparation only: no fragments, SQL or data reads.
+        plan <- tryCatch({
+          role <- .roleOf(handle, table)
+          if (!is.null(role)) .eventPlan(list(handle = handle), event, name, role, list(state = "all"))
+        }, error = function(e) NULL)
+        for (column in names(plan[["others"]])) {
+          spec[[column]] <- list(type = plan[["others"]][[column]])
+        }
+      }
+    }
+    columns <- setdiff(names(spec), private)
+    dates <- vapply(spec[columns], function(column) identical(column[["type"]], "date"), logical(1))
+    classes <- vapply(columns, .roleColumnClass, integer(1), col_df = col_df)
+    classes[dates] <- 2L
+  }
+  policy <- node[["options"]][["date_handling"]] %||% list(mode = "absolute")
+  selected <- policy[["date_columns"]]
+  treated <- dates & (is.null(selected) | columns %in% unlist(selected, use.names = FALSE))
+  keep <- classes >= 2L
+  if (identical(policy[["mode"]], "remove")) keep <- keep & !treated
+  # Relative day coordinates still preserve exact dates when the anchor is
+  # known, just as the date reducers do. Calendar bins no longer do so.
+  if (identical(policy[["mode"]], "binned")) classes[treated] <- 3L
+  out <- lapply(which(keep), function(i) {
+    list(source = paste0(origin, ".", columns[[i]]), class = unname(classes[[i]]))
+  })
+  if (length(out)) stats::setNames(out, paste0(name, ".", columns[keep])) else list()
+}
+
+# The common-schema event log replaces the source-specific projection;
+# requested derived coordinates and relation columns augment ordinary long
+# outputs. These columns are defined by the output, not its physical table.
+.irLongProjectionClasses <- function(node) {
+  options <- node[["options"]] %||% list()
+  if (isTRUE(options[["event_log"]])) {
+    columns <- c("source", "concept_id", "start_days", "end_days", "value",
+                 "unit_concept_id", "event_number")
+    dates <- c("start_days", "end_days")
+  } else {
+    columns <- as.character(unlist(options[["columns_derived"]], use.names = FALSE))
+    columns[columns == "unit"] <- "unit_concept_id"
+    if ("days_from_anchor" %in% columns) {
+      columns <- setdiff(columns, "days_from_anchor")
+      if (length(options[["anchors"]])) {
+        columns <- c(columns, paste0("days_from_", names(options[["anchors"]])))
+      }
+    }
+    if (length(options[["relations"]])) {
+      columns <- c(columns, paste0("days_to_", names(options[["relations"]])))
+    }
+    columns <- unique(columns)
+    dates <- grep("^days_from_", columns, value = TRUE)
+  }
+  stats::setNames(lapply(columns, function(column) {
+    list(source = paste0("projection:", column), class = if (column %in% dates) 2L else 3L)
+  }), columns)
+}
+
 # Columns each output projects, with their assignment class (section 7.6).
 .irOutputColumnClasses <- function(ir, handle) {
   bp <- if (!is.null(handle)) tryCatch(.buildBlueprint(handle), error = function(e) NULL)
@@ -164,19 +263,14 @@
       }
     }
     if (node[["format"]] %in% c("long", "intervals")) {
-      srcs <- .jsonArrayItems(node[["sources"]] %||% node[["options"]][["sources"]] %||% list())
-      for (s in srcs) {
-        ev <- ir[["events"]][[s[["event"]] %||% ""]]
-        table <- ev[["table"]]
-        if (is.null(table) || is.null(bp)) next
-        col_df <- bp[["columns"]][[table]]
-        if (is.null(col_df)) next
-        for (cn in col_df[["column_name"]]) {
-          cls <- .roleColumnClass(cn, col_df)
-          if (cls < 2L) next
-          cols[[paste0(s[["event"]], ".", cn)]] <- list(source = paste0(table, ".", cn), class = cls)
+      srcs <- node[["sources"]]
+      if (!length(srcs)) srcs <- node[["options"]][["sources"]]
+      if (!isTRUE(node[["options"]][["event_log"]])) {
+        for (s in .jsonArrayItems(srcs %||% list())) {
+          cols <- c(cols, .irLongSourceClasses(ir, s, node, handle, bp))
         }
       }
+      cols <- c(cols, .irLongProjectionClasses(node))
     }
     out[[o]] <- cols
   }
