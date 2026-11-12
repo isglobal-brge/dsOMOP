@@ -19,7 +19,8 @@ of observation) and spread the noise over 198 cells. Snapping q to the
 nearest grid point changes the estimand: for a homogeneous q inside the
 grid range the noise-free log-IRR shifts by \code{logit(q) -
 logit(q_grid)}, at most half the logit spacing (about 0.2); heterogeneous
-q within a cell partly cancel. Strata outside the grid range are excluded,
-never clamped (\code{.omopReleaseSccsCases}).
+q within a cell partly cancel. Informative strata outside the grid range
+are retained and clamped to its endpoints; the bound does not apply there
+(for example q=0.999 incurs about +2.3 log-IRR bias when clamped to 0.99).
 }
 \keyword{internal}

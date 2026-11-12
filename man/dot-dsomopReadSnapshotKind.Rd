@@ -13,8 +13,10 @@
 One of \code{"repeatable_read_transaction"} (PostgreSQL),
   \code{"consistent_snapshot_transaction"} (MySQL, MariaDB),
   \code{"snapshot_transaction"} (DuckDB), \code{"serializable_transaction"}
-  (SQLite) or \code{"not_isolated"} (any other engine: its statements are
-  not read from one snapshot).
+  (SQLite), \code{"sqlserver_serializable_transaction"},
+  \code{"oracle_serializable_transaction"},
+  \code{"redshift_snapshot_transaction"}, or \code{"not_isolated"}
+  (an engine without a native adapter: statements can see different states).
 }
 \description{
 Read-snapshot capability of a handle's database engine

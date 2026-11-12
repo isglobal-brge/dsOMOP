@@ -25,11 +25,10 @@ signed component is kept for pooling and projected only for display).
 \code{fixed_synopsis} keys the noise on (corpus, automatic data generation,
 privacy epoch, owner, population, family, coordinate, profile) and on the
 secret fingerprint of the component's realised bounded contributions: the
-generation redraws every fixed synopsis at once when rows are added or
-removed, and the fingerprint redraws a component whose contributions
-changed although the generation did not (an in-place edit, or a change
-while the session is open), so a component's noise is never reused for
-different contributions. \code{realised_sticky} keys it on the owner,
+generation changes when person membership changes. The fingerprint changes
+a component's key when its bounded contributions change even if membership
+does not. Distinct discrete draws can coincide; comparisons across edits
+can reveal component change/equality patterns and have no joint guarantee. \code{realised_sticky} keys it on the owner,
 family, coordinate and the contribution fingerprint, never on the data
 generation.
 }
