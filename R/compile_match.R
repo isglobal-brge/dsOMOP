@@ -43,7 +43,8 @@
 #      (cohort_start_date = cohort_end_date = t for both arms), set_id = rank
 #      of the retained case in (t, K_c) order, is_case, sampling_weight,
 #      index_source "match:<pop>", index_key "<serialised K_c>|case" or
-#      "|control", index_visit_id NULL, and the op_* and coverage component of
+#      "|control", the case's original visit/parent association (controls
+#      have no index event association), and the op_* and coverage component of
 #      the respective lookup (the cases' roster, the template's coverage at t;
 #      one shared policy, validated). The realised rows are materialised once
 #      -- a session temporary table, or a literal relation on the MySQL
@@ -414,12 +415,17 @@
                     t = col("date", FALSE, "start"), case_end = col("date", TRUE, "end"),
                     index_source = col("text", TRUE, "origin_identity"),
                     index_key = col("text", TRUE, "origin_identity"),
+                    index_visit_id = col("bigint", TRUE, "visit"),
+                    origin_source = col("text", TRUE, "origin_identity"),
+                    origin_key = col("text", TRUE, "origin_identity"),
                     op_start = col("date", TRUE, "start"), op_end = col("date", TRUE, "end"),
                     op_component_id = col("bigint", TRUE, "private"))
   for (i in seq_along(strata_c)) case_cols[[paste0("s_", i)]] <- col("bigint", TRUE, "private")
   case_select <- c(paste0(set_rank, " AS set_rank"), "r.cohort_row_id AS case_row_id",
                    "r.subject_id AS subject_id", "r.cohort_start_date AS t", "r.cohort_end_date AS case_end",
-                   "r.index_source AS index_source", "r.index_key AS index_key", "r.op_start AS op_start",
+                   "r.index_source AS index_source", "r.index_key AS index_key",
+                   "r.index_visit_id AS index_visit_id", "r.origin_source AS origin_source",
+                   "r.origin_key AS origin_key", "r.op_start AS op_start",
                    "r.op_end AS op_end", "r.op_component_id AS op_component_id",
                    if (length(strata_c)) paste0(vapply(strata_c, function(x) .sqlLosslessKey(h, x), ""),
                                                 " AS s_", seq_along(strata_c)))
@@ -429,7 +435,8 @@
                        columns = case_cols, dependencies = unique(state_c$deps), unique_key = "set_rank",
                        person_lineage = list(person_col = "subject_id", via_roster = NULL),
                        roster_namespace = spec$cases,
-                       private_columns = c("case_row_id", "index_key", "op_component_id",
+                       private_columns = c("case_row_id", "index_key", "index_visit_id", "origin_source", "origin_key",
+                                           "op_component_id",
                                            if (length(strata_c)) paste0("s_", seq_along(strata_c))))
   .sqlAssertTypedSql(h, f_cases$select_body)
   .fragmentRegister(ctx, f_cases)
@@ -466,7 +473,8 @@
   inst_key <- .sqlLosslessKey(h, .sqlRowNumber(h, character(0), c("q.set_rank", "q.person_id")))
   inst_over <- c(list(subject_id = "q.person_id", cohort_start_date = "q.t", cohort_end_date = "q.t",
                       index_source = .compileTextLiteral(tag), source_rank = rank),
-                 .populationNulls(h, c("index_key", "index_visit_id", "set_id", "is_case", "sampling_weight",
+                 .populationNulls(h, c("index_key", "index_visit_id", "origin_source", "origin_key",
+                                       "set_id", "is_case", "sampling_weight",
                                        "op_start", "op_end", "op_component_id", "key_1", "key_2", "key_3")))
   inst_extra <- c(list(mt_set = col("bigint", FALSE, "private")),
                   stats::setNames(lapply(strata_cols, function(x) col("bigint", TRUE, "private")), strata_cols))
@@ -495,7 +503,13 @@
   state_k$joins[["pk"]] <- paste0("LEFT JOIN ", .populationTable(ctx, "person"),
                                   " pk ON pk.person_id = x.subject_id")
   strata_k <- .matchStrataSql(ctx, spec, "x", "pk", f_cand, "candidate", tpl, state_k, name)
-  where <- c("x.crit_true = 1")
+  # Bind observation to this template's selected component, never its gap
+  # envelope or another coverage request's component numbering (A-20 f).
+  where <- c("x.crit_true = 1", paste0(
+    "EXISTS (SELECT 1 FROM ", cov_t$recorded$name,
+    " mr WHERE mr.person_id = x.subject_id AND mr.component_id = x.op_component_id",
+    " AND mr.start_date <= x.cohort_start_date AND mr.end_date >= x.cohort_start_date)"))
+  state_k$deps <- c(state_k$deps, cov_t$recorded$name)
   death <- .roleOf(handle, "death")
   if (!is.null(death)) {
     where <- c(where, paste0("NOT EXISTS (SELECT 1 FROM ", .populationTable(ctx, "death"), " d WHERE d.",
@@ -542,7 +556,9 @@
   case_rows <- .matchFetchBounded(ctx, f_cases, paste0(
     "SELECT ", txt("c.set_rank"), " AS set_rank, ", txt("c.subject_id"), " AS subject_id, ",
     dtxt("c.t"), " AS t, ", dtxt("c.case_end"), " AS case_end, c.index_source AS index_source, ",
-    "c.index_key AS index_key, ", dtxt("c.op_start"), " AS op_start, ", dtxt("c.op_end"), " AS op_end, ",
+    "c.index_key AS index_key, ", txt("c.index_visit_id"), " AS index_visit_id, ",
+    "c.origin_source AS origin_source, c.origin_key AS origin_key, ",
+    dtxt("c.op_start"), " AS op_start, ", dtxt("c.op_end"), " AS op_end, ",
     txt("c.op_component_id"), " AS op_component_id FROM ", f_cases$name, " c"),
     .extractionCap("dsomop.max_memory_rows", 1000000L), field = base)
   pool <- .matchFetchBounded(ctx, f_pairs, paste0(
@@ -572,12 +588,13 @@
 #' @param spec Match settings (\code{.matchSpec()}).
 #' @param name Match population id (\code{"match:<name>"} namespace).
 #' @param cases data.frame(set_rank, subject_id, t, case_end, index_source,
-#'   index_key, op_start, op_end, op_component_id) as text.
+#'   index_key, index_visit_id, origin_source, origin_key, op_start, op_end,
+#'   op_component_id) as text.
 #' @param pool data.frame(set_rank, subject_id, op_start, op_end,
 #'   op_component_id) as text.
 #' @return data.frame of matched rows: subject_id, t, set_id, role
 #'   (0 case, 1 control), sampling_weight, index_key, op_start, op_end,
-#'   op_component_id.
+#'   op_component_id, index_visit_id, origin_source, origin_key.
 #' @keywords internal
 .matchSelect <- function(spec, name, cases, pool) {
   cases <- cases[order(as.numeric(cases$set_rank)), , drop = FALSE]
@@ -614,7 +631,9 @@
                               .matchChr(cs$index_key))
     out[[length(out) + 1L]] <- data.frame(
       subject_id = .matchDecimal(cs$subject_id), t = cs$t, set_id = set_id, role = 0L,
-      sampling_weight = 1, index_key = paste0(kc, "|case"), op_start = .matchChr(cs$op_start),
+      sampling_weight = 1, index_key = paste0(kc, "|case"),
+      index_visit_id = .matchChr(cs$index_visit_id), origin_source = .matchChr(cs$origin_source),
+      origin_key = .matchChr(cs$origin_key), op_start = .matchChr(cs$op_start),
       op_end = .matchChr(cs$op_end), op_component_id = .matchChr(cs$op_component_id),
       stringsAsFactors = FALSE)
     if (m_c) {
@@ -622,13 +641,15 @@
       out[[length(out) + 1L]] <- data.frame(
         subject_id = vapply(controls[chosen], .matchDecimal, "", USE.NAMES = FALSE), t = cs$t,
         set_id = set_id, role = 1L, sampling_weight = w, index_key = paste0(kc, "|control"),
+        index_visit_id = NA_character_, origin_source = NA_character_, origin_key = NA_character_,
         op_start = .matchChr(pool$op_start[idx][chosen]), op_end = .matchChr(pool$op_end[idx][chosen]),
         op_component_id = .matchChr(pool$op_component_id[idx][chosen]), stringsAsFactors = FALSE)
     }
   }
   if (!length(out)) {
     return(data.frame(subject_id = character(0), t = character(0), set_id = integer(0), role = integer(0),
-                      sampling_weight = numeric(0), index_key = character(0), op_start = character(0),
+                      sampling_weight = numeric(0), index_key = character(0), index_visit_id = character(0),
+                      origin_source = character(0), origin_key = character(0), op_start = character(0),
                       op_end = character(0), op_component_id = character(0), stringsAsFactors = FALSE))
   }
   do.call(rbind, out)
@@ -646,7 +667,8 @@
   value <- function(col, i) {
     v <- switch(col,
       subject_id = rows$subject_id[[i]], cohort_start_date = rows$t[[i]], cohort_end_date = rows$t[[i]],
-      index_source = tag, index_key = rows$index_key[[i]], index_visit_id = NA,
+      index_source = tag, index_key = rows$index_key[[i]], index_visit_id = rows$index_visit_id[[i]],
+      origin_source = rows$origin_source[[i]], origin_key = rows$origin_key[[i]],
       set_id = rows$set_id[[i]], is_case = if (rows$role[[i]] == 0L) 1L else 0L,
       sampling_weight = rows$sampling_weight[[i]], op_start = rows$op_start[[i]],
       op_end = rows$op_end[[i]], op_component_id = rows$op_component_id[[i]], source_rank = rank,
@@ -675,20 +697,34 @@
     .sqlRequire(h, "session_table")
     base <- substr(gsub("[^a-z0-9_]", "_", tolower(paste0("dsomop_mt_", name))), 1L, 40L)
     tname <- .reserveTempTableName(handle, base)
-    .createTempTable(handle, tname, empty)
+    # Register ownership before CREATE. On an error release this operation's
+    # table immediately; failed DROP remains owned for context-close retry.
     owned <- ctx[["compile_temp_tables"]] %||% character(0)
     assign("compile_temp_tables", unique(c(owned, tname)), envir = ctx)
-    if (nrow(rows)) {
-      for (from in seq(1L, nrow(rows), by = 500L)) {
-        idx <- seq.int(from, min(nrow(rows), from + 499L))
-        values <- vapply(idx, function(i) {
-          paste0("(", paste(vapply(cols, value, "", i = i), collapse = ", "), ")")
-        }, "")
-        .withDbReconnect(handle, function(conn) DBI::dbExecute(conn, paste0(
-          "INSERT INTO ", tname, " (", paste(cols, collapse = ", "), ") VALUES ",
-          paste(values, collapse = ", "))))
+    tryCatch({
+      .createTempTable(handle, tname, empty)
+      if (nrow(rows)) {
+        for (from in seq(1L, nrow(rows), by = 500L)) {
+          idx <- seq.int(from, min(nrow(rows), from + 499L))
+          values <- vapply(idx, function(i) {
+            paste0("(", paste(vapply(cols, value, "", i = i), collapse = ", "), ")")
+          }, "")
+          .withDbReconnect(handle, function(conn) DBI::dbExecute(conn, paste0(
+            "INSERT INTO ", tname, " (", paste(cols, collapse = ", "), ") VALUES ",
+            paste(values, collapse = ", "))))
+        }
       }
-    }
+    }, error = function(e) {
+      cleanup <- tryCatch({
+        .compileReleaseTempTables(ctx, tname)
+        NULL
+      }, error = identity)
+      if (!is.null(cleanup)) {
+        e$message <- paste(conditionMessage(e), conditionMessage(cleanup), sep = "\n")
+        e$cleanup_error <- cleanup
+      }
+      stop(e)
+    })
     body <- paste0("SELECT ", paste(paste0("t.", cols, " AS ", cols), collapse = ", "), " FROM ", tname, " t")
   }
   f <- .fragment(.fragmentName("mt", name, "rows", ctx = ctx), "candidates", "episode", body,

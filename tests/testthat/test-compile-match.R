@@ -408,3 +408,111 @@ test_that("the matched roster: identities, coverage handoff, derivations and the
     .compileReleaseTempTables(ctx)
   }
 })
+
+test_that("matching carries case visit and origin while union gaps never enter the risk set", {
+  extend <- function(conn) {
+    .ws6_match_extend(conn)
+    # One case has a real index visit. Control 7013 is in the tolerated gap
+    # on 1 March, but in a recorded segment for the later case on 1 June.
+    DBI::dbExecute(conn, "UPDATE condition_occurrence SET visit_occurrence_id = 771001 WHERE condition_occurrence_id = 970001")
+    DBI::dbExecute(conn, "UPDATE observation_period SET observation_period_end_date = '2020-02-28' WHERE person_id = 7013")
+    DBI::dbExecute(conn, paste0(
+      "INSERT INTO observation_period (observation_period_id, person_id, observation_period_start_date, ",
+      "observation_period_end_date, period_type_concept_id) VALUES (777013, 7013, '2020-03-03', '2030-12-31', 44814724)"))
+  }
+  backends <- .ws6_backends(extend = extend)
+  on.exit(.ws4_cleanup(backends), add = TRUE)
+  plan <- .ws6_m_plan(list(default = list(seed = 20261111L, controls_per_case = 100L)))
+  policy <- list(policy = "union", gap = 7L)
+  plan$populations$cases$coverage <- policy
+  plan$populations$tpl_default$coverage <- policy
+  first <- NULL
+  for (b in names(backends)) {
+    ctx <- .ws4_ctx(backends[[b]]$handle, plan)
+    result <- .compilePopulationByName(ctx, "default")
+    r <- .fetchFragment(ctx, result$roster, "cohort_row_id")
+    cs <- r[r$subject_id == 7001 & r$is_case == 1, , drop = FALSE]
+    expect_identical(as.character(cs$index_visit_id), "771001", info = b)
+    expect_identical(cs$origin_source, "out", info = b)
+    expect_identical(cs$origin_key, "970001", info = b)
+    expect_true(all(is.na(r$index_visit_id[r$is_case == 0])), info = b)
+    expect_true(all(is.na(r$origin_source[r$is_case == 0]) & is.na(r$origin_key[r$is_case == 0])), info = b)
+    expect_true(all(c("index_visit_id", "origin_source", "origin_key") %in% result$roster$private_columns), info = b)
+    early <- r$set_id[r$subject_id == 7001 & r$is_case == 1]
+    later <- r$set_id[r$subject_id == 7003 & r$is_case == 1]
+    expect_false(any(r$subject_id == 7013 & r$set_id == early), info = b)
+    expect_true(any(r$subject_id == 7013 & r$set_id == later & r$is_case == 0), info = b)
+    member <- r[r$subject_id == 7013 & r$set_id == later, , drop = FALSE]
+    expect_identical(as.character(member$op_start), "2010-01-01", info = b)
+    # Its selected component has two actual recorded segments; transferred
+    # final row ids recover those segments, without turning the gap into time.
+    seg <- .fetchFragment(ctx, result$segments, "row_key")
+    seg <- seg[seg$row_key %in% member$cohort_row_id, , drop = FALSE]
+    expect_identical(nrow(seg), 2L, info = b)
+    expect_setequal(as.character(seg$start_date), c("2010-01-01", "2020-03-03"))
+    got <- .ws6_roster(ctx, "default")
+    if (is.null(first)) first <- got else expect_identical(got, first, info = b)
+    .planContextClose(ctx)
+  }
+})
+
+test_that("the exact sampler breaks hash ties with lossless signed integer keys", {
+  cases <- data.frame(set_rank = "1", subject_id = "9223372036854775807", t = "2020-01-01",
+                       case_end = "2020-01-01", index_source = "out", index_key = "9007199254740993",
+                       index_visit_id = "9007199254740995", origin_source = "out",
+                       origin_key = "9007199254740993", op_start = "2010-01-01", op_end = "2030-01-01",
+                       op_component_id = "1", stringsAsFactors = FALSE)
+  ids <- c("9007199254740993", "10", "-9007199254740993", "9007199254740992", "9", "-9007199254740992")
+  pool <- data.frame(set_rank = "1", subject_id = ids, op_start = "2010-01-01", op_end = "2030-01-01",
+                     op_component_id = "2", stringsAsFactors = FALSE)
+  spec <- .matchSpec(list(match = list(cases = "cases", controls = "template", controls_per_case = 6L)), "m")
+  # A forced collision proves the secondary order is numeric without ever
+  # converting adjacent integers above 2^53 to doubles.
+  testthat::local_mocked_bindings(.matchHashes = function(prefix, controls) rep("same", length(controls)))
+  got <- .matchSelect(spec, "m", cases, pool)
+  want <- c("-9007199254740993", "-9007199254740992", "9", "10", "9007199254740992", "9007199254740993")
+  expect_identical(got$subject_id[got$role == 1], want)
+  expect_identical(got$index_visit_id[got$role == 0], "9007199254740995")
+  expect_identical(got$origin_key[got$role == 0], "9007199254740993")
+  expect_identical(.matchSelect(spec, "m", cases, pool[rev(seq_len(nrow(pool))), ]), got)
+})
+
+test_that("matching insertion failures clean up immediately and retain failed DROP for retry", {
+  h <- .ws4_reach_handle()
+  on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
+  .ws6_match_extend(h$conn)
+  h$blueprint <- NULL
+  h$role_registry <- NULL
+  pre <- .createTempTable(h, "ws6_match_preexisting", "SELECT 29 AS value")
+  physical <- function() DBI::dbGetQuery(h$conn, "SELECT name FROM sqlite_temp_master WHERE type = 'table'")$name
+  create <- .createTempTable
+  rejecting_create <- function(handle, name, select_sql) {
+    result <- create(handle, name, select_sql)
+    DBI::dbExecute(handle$conn, paste0(
+      "CREATE TEMP TRIGGER ws6_match_reject_insert BEFORE INSERT ON ", name,
+      " BEGIN SELECT RAISE(ABORT, 'injected matching insertion failure'); END"))
+    result
+  }
+  for (drop_fails in c(FALSE, TRUE)) {
+    ctx <- .ws4_ctx(h, .ws6_m_plan(.ws6_m_variants["default"]))
+    drop <- if (drop_fails) function(...) stop("injected DROP failure") else .dropTempTable
+    testthat::with_mocked_bindings({
+      error <- tryCatch(.compilePopulationByName(ctx, "default"), error = identity)
+    }, .createTempTable = rejecting_create, .dropTempTable = drop)
+    expect_match(conditionMessage(error), "injected matching insertion failure")
+    if (drop_fails) {
+      expect_match(conditionMessage(error), "Could not release the compiler temporary table")
+      expect_s3_class(error$cleanup_error, "error")
+      expect_length(ctx$compile_temp_tables, 1L)
+      expect_true(ctx$compile_temp_tables %in% h$temp_tables)
+      expect_true(ctx$compile_temp_tables %in% physical())
+    } else {
+      expect_length(ctx$compile_temp_tables, 0L)
+      expect_setequal(physical(), pre)
+    }
+    .planContextClose(ctx)
+    expect_setequal(h$temp_tables, pre)
+    expect_setequal(physical(), pre)
+    expect_length(ctx$compile_temp_tables, 0L)
+  }
+})
