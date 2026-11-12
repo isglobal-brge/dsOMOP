@@ -335,8 +335,36 @@
       .typesFail(what, "roster lineage names namespace '", ln$roster_id, "' but the fragment uses '",
                  f$roster_namespace %||% "<none>", "'")
     }
+    # person_lineage$via_roster names a roster FRAGMENT; lineage$roster_id names a roster
+    # NAMESPACE (compared with the fragment's roster_namespace above). They are never
+    # compared with each other (re-review 2, B4).
+    pl <- f$person_lineage
+    if (is.null(pl$person_col) && is.null(pl$via_roster)) {
+      .typesFail(what, "roster lineage on a fragment that declares no person lineage")
+    }
+    if (!ln$roster_person_col %in% .PERSON_KEY_NAMES) {
+      .typesFail(what, "roster_person_col must be a person key column (", paste(.PERSON_KEY_NAMES, collapse = " or "), ")")
+    }
+    if ("person_id" %in% ln$key_columns) {
+      if (roles[["person_id"]] != "person_key") {
+        .typesFail(what, "roster key 'person_id' does not carry the person_key role")
+      }
+      if (!is.null(pl$person_col) && !identical(pl$person_col, "person_id")) {
+        .typesFail(what, "the fragment declares person lineage through '", pl$person_col, "' but the candidate keys person_id")
+      }
+    }
     if ("cohort_row_id" %in% ln$key_columns && roles[["cohort_row_id"]] != "episode_key") {
       .typesFail(what, "cohort_row_id must carry the episode_key role")
+    }
+    if (identical(as.character(ln$key_columns), "rowId")) {
+      if (roles[["rowId"]] != "episode_key") .typesFail(what, "roster key 'rowId' must carry the episode_key role")
+      if (is.null(pl$via_roster)) .typesFail(what, "a rowId-keyed component must be mediated by its roster (person_lineage$via_roster)")
+      if (any(roles == "person_key") && is.null(pl$person_col)) {
+        .typesFail(what, "the fragment carries a person_key column that its lineage does not declare")
+      }
+    }
+    if (!is.null(pl$person_col) && roles[[pl$person_col]] != "person_key") {
+      .typesFail(what, "the declared person column '", pl$person_col, "' does not carry the person_key role")
     }
   }
   missing_private <- setdiff(pc$private_columns, cols)

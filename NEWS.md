@@ -126,7 +126,24 @@ fills its entries. Classes follow design-2.10.3 section 5.
   `inst/plans/acceptance/` (the fifteen acceptance recipes with validated
   plans and hand-computed expected results); `R/types.R`,
   `R/json_schema.R`, `R/semantic_digest.R`; the adversarial extension of
-  the reach fixture and the synthetic CDM generator under `tests/fixtures/`.
+  the reach fixture and the synthetic CDM generator under `tests/fixtures/`
+  (PostgreSQL loads with typed dates through `conn`/`schema`).
+- `inst/plans/acceptance/score-reference.json`: paired v1/v2 Charlson, CHADS2
+  and CHA2DS2-VASc expectations with fixed and index-resolved reference dates
+  (CR-2 / A-2); `tests/testthat/fixtures/v1-corpus-classes.csv`: one explicit
+  reviewed disposition per test block of both 2.10.2 suites (helper-built
+  plans included, mixed blocks split; `tools/ws0/corpus_decisions.csv`), keyed
+  by `package:file:<test description>` against the pinned 2.10.2 commits of
+  `tools/ws0/corpus_baseline.json` (CR-7): live test edits never move or break
+  the corpus; a reclassification is a decisions-file change.
+- Semantic digest: the ECMAScript shortest round-trip decimal is found for
+  every finite double (powers of two have asymmetric rounding intervals;
+  `2^-24` serialises as `5.960464477539063e-8`), checked against the Python
+  reference on 11,045 doubles including every power of two and its neighbours.
+- `R/types.R`: roster-mode publication candidates must agree with the
+  fragment's declared person lineage and key roles; the roster fragment name
+  (`person_lineage$via_roster`) and the roster namespace (`lineage$roster_id`)
+  stay distinct.
 
 # dsOMOP 2.10.2
 

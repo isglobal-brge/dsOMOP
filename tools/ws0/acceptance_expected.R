@@ -747,5 +747,20 @@ effective_of <- function(f, cap = 90L) {
                    "PDC numerator = covered relation intersected with the window AND the same observed days as the denominator: 1003 gives 4/4 on [1, 10] (covered_eff_10 = 10)",
                    "1004: recorded 44 vs effective 60 covered days on [1, 90]"))
 }
+# =============================================================================
+# CR-2 / A-2: paired v1 (legacy, all-time history) and v2 (native, history up to
+# the reference date; NULL -> index date) comorbidity-score expectations, with
+# fixed versus index-resolved reference dates (tests/fixtures/score_reference.R).
+# =============================================================================
+{
+  source(file.path(pkg, "tests", "fixtures", "score_reference.R"))
+  ref <- compute_score_reference(conn)
+  json <- jsonlite::toJSON(ref, auto_unbox = TRUE, null = "null", na = "null", digits = NA, pretty = TRUE)
+  writeLines(json, file.path(out_dir, "score-reference.json"))
+  cat("score-reference :", paste(vapply(ref$cases, function(cs) paste0(cs$cohort_definition_id, "/", cs$reference, "=", cs$n_persons), ""), collapse = " "),
+      "; charlson 1011 legacy", ref$pins$charlson_history$legacy, "native", ref$pins$charlson_history$native,
+      "; age shift chadsvasc n =", length(ref$pins$age_reference_shift$chadsvasc_persons),
+      "; index resolution chads2 n =", length(ref$pins$index_resolution$chads2_persons), "\n")
+}
 DBI::dbDisconnect(conn)
 cat("done\n")
