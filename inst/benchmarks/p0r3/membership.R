@@ -74,5 +74,6 @@ run <- function(dbms) {
     flush.console()
   }
 }
-for (dbms in c('postgresql', 'mariadb', 'mysql', 'duckdb')) run(dbms)
+engines <- if (length(args) > 1L) strsplit(args[[2L]], ',', fixed = TRUE)[[1L]] else c('postgresql', 'mariadb', 'mysql', 'duckdb')
+for (dbms in engines) run(dbms)
 stopifnot(length(unique(vapply(rows, function(x) x$digest, character(1L)))) == 1L)

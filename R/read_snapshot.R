@@ -202,6 +202,9 @@
     )
   }, error = function(e) {
     try(DBI::dbRollback(conn), silent = TRUE)
+    if (!is.null(ctx$restore_isolation_sql)) {
+      try(DBI::dbExecute(conn, ctx$restore_isolation_sql), silent = TRUE)
+    }
     .dsomopSnapshotLost("the request snapshot could not be opened")
   })
   invisible(TRUE)

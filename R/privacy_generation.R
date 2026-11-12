@@ -91,7 +91,7 @@
       "SELECT CAST(p DIV 10000 AS CHAR) AS bucket, CAST(SUM(k) AS CHAR) AS n, ",
       "SHA2(", payload, ", 256) AS digest, LENGTH(", payload,
       ") AS bytes, SUM(LENGTH(", record, ")) AS expected_bytes FROM (", rows,
-      ") dsomop_membership GROUP BY p DIV 10000 ORDER BY p DIV 10000"))
+      ") dsomop_membership GROUP BY CAST(p DIV 10000 AS CHAR) ORDER BY MIN(p DIV 10000)"))
   }
   NULL
 }
