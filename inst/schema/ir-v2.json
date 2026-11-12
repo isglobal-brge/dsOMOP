@@ -175,6 +175,39 @@
             "intersect"
           ],
           "default": "union"
+        },
+        "legacy_cohort_sources": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "cohort_table"
+                  },
+                  "cohort_definition_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            ]
+          },
+          "description": "every cohort source v1 folds into the one scope cohort (scope.cohort and a results-cohort plan cohort), in fold order; scope.cohort is the first"
         }
       }
     },
@@ -3035,6 +3068,10 @@
         "anchor": {
           "$ref": "#/$defs/anchor",
           "default": "index"
+        },
+        "legacy_anchor_offset": {
+          "type": "integer",
+          "description": "the v1 intervals_long anchor: days from the index that event_select = nearest orders by (0 is the native anchor index)"
         }
       }
     },
@@ -3508,7 +3545,8 @@
             "format": {
               "enum": [
                 "wide",
-                "features"
+                "features",
+                "sparse"
               ]
             },
             "source": {
@@ -3524,6 +3562,10 @@
               }
             }
           }
+        },
+        "legacy_raw_filter": {
+          "$ref": "#/$defs/predicate",
+          "description": "the v1 person_level output-level custom filter, which also restricts each raw person/death table of the output"
         }
       },
       "allOf": [
@@ -4257,14 +4299,23 @@
         "occurrence": {
           "type": "object",
           "additionalProperties": false,
+          "default": {
+            "type": "at_least",
+            "count": 1
+          },
           "properties": {
-            "min": {
-              "type": "integer",
-              "minimum": 0
+            "type": {
+              "enum": [
+                "at_least",
+                "at_most",
+                "exactly"
+              ],
+              "default": "at_least"
             },
-            "max": {
+            "count": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "default": 1
             }
           }
         }
@@ -4315,6 +4366,11 @@
           "additionalProperties": {
             "$ref": "#/$defs/legacy_inclusion_criterion"
           }
+        },
+        "cohort_definition_id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "the v1 plan cohort id of an inline spec (names its temporary cohort, fills the cohort_membership id column)"
         }
       }
     },
