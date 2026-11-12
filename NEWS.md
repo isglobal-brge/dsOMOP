@@ -33,6 +33,10 @@ Security release: the P0 fixes of the OHDSI-tools audit.
 - MySQL and MariaDB snapshot requests certify the transitive sources of views,
   including external schemas, and refuse unverifiable or nontransactional
   dependencies. Snapshot failures revoke pending plan publications.
+- Native population and matching compilers preserve those request snapshots.
+  Active MySQL/MariaDB snapshots freeze populations through the existing
+  private R transfer, requiring memory for the complete relation without
+  imposing a row cap. Failed transfers retain temporary-table cleanup ownership.
 - Nested Achilles histogram quantile intervals and tail flags follow the final
   reconciled histogram. Empty eligible incidence populations use the complete
   protected basis under the existing cohort-parent gate.
