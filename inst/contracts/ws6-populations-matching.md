@@ -200,6 +200,8 @@ no control allocation; its tentative controls remain available later.
 
 The matched roster has index/start/end equal to case time, one new identity
 per case/control membership, `set_id`, `is_case` and `sampling_weight`.
+`set_id` is the case's rank in the complete frozen case roster; dropping a
+case leaves a gap rather than renumbering the retained sets.
 Cases have weight 1. Controls under `between_sets` have `N_c / m_c`, using
 the complete eligible pool and selected count; controls under `none` have
 NA. A released weight encodes eligible-pool information and can reveal
