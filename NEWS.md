@@ -30,6 +30,15 @@ Security release: the P0 fixes of the OHDSI-tools audit.
 
 ## Corrected
 
+- MySQL and MariaDB snapshot requests certify the transitive sources of views,
+  including external schemas, and refuse unverifiable or nontransactional
+  dependencies. Snapshot failures revoke pending plan publications.
+- Nested Achilles histogram quantile intervals and tail flags follow the final
+  reconciled histogram. Empty eligible incidence populations use the complete
+  protected basis under the existing cohort-parent gate.
+- Streamed membership digests preserve the minimum signed 64-bit identifier
+  by selecting decimal text before driver conversion. This does not extend
+  the separate person-token contract to that identifier.
 - Achilles 2, 4, 5, 10 and 12 group by every selected concept name and run on
   PostgreSQL, SQL Server, DuckDB, Oracle and BigQuery (before, only SQLite and
   MySQL/MariaDB accepted their SQL). Verified on PostgreSQL 14, MariaDB 10.6

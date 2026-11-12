@@ -179,6 +179,7 @@
   if (identical(method, "database") && is.null(sql)) stop("No database digest adapter.")
   if (is.null(sql)) return(c(.dsomopDpMembershipStream(handle, page), list(method = "stream")))
   acc <- .dsomopDpMembershipAccumulator()
+  .dsomopSnapshotReadSql(handle, sql)
   .withDbReconnect(handle, function(conn) {
     if (.normalizeDBMS(handle$dbms) %in% c("mysql", "mariadb")) {
       old <- DBI::dbGetQuery(conn, "SELECT @@session.group_concat_max_len AS n")$n[[1L]]
