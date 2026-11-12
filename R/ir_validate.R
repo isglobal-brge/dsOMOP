@@ -830,6 +830,21 @@
 #' column; reducer value columns; raw columns and their classes (section
 #' 7.6).
 #'
+#' Each IR is checked with the rules of the engine that executes it. A native
+#' plan meets the compilers' own metadata rules: WS-4's
+#' \code{.eventSiteCheck()} for every event and adapter source that this site
+#' serves (its concept, value, unit, supply and visit roles, its
+#' \code{where} and the reducer predicates over its rows, typed against the
+#' normalised columns) and \code{.predicateTableCatalogue()} /
+#' \code{.predicateSql()} for criteria person predicates. A lowered v1 plan
+#' runs on the v1 executors, whose own site requirements
+#' \code{.planV1SiteCheck()} checks first; here its predicates are typed
+#' against the columns the v1 executors accept (the role aliases and the
+#' table's filterable physical columns), and an event over a table with no
+#' event role record that is present at the site is a legacy row source (the
+#' v1 executors read its rows directly: \code{event_level} over
+#' \code{person}, for instance) whose predicates are the executors' to check.
+#'
 #' @return list(errors = character() of plan findings, missing_tables =
 #'   character() of findings for event sources this site cannot serve under
 #'   on_missing_table = "error" (the unavailable_table refusal), unavailable
@@ -842,11 +857,27 @@
   unavailable <- character(0)
   add <- function(...) errors <<- c(errors, paste0(...))
   bp <- .buildBlueprint(handle)
+  native <- !identical(attr(ir, "source_version"), 1L)
+  present <- bp[["tables"]][["table_name"]][bp[["tables"]][["present_in_db"]]]
   ev <- ir[["events"]] %||% list()
+  vars <- ir[["variables"]] %||% list()
+  # reducer predicates over each event's rows: typed with that event's own
+  # catalogue (native plans)
+  reducer_predicates <- list()
+  for (i in seq_along(vars)) {
+    src <- vars[[i]][["source"]][["event"]]
+    pred <- vars[[i]][["reducer"]][["predicate"]]
+    if (is.character(src) && length(src) == 1L && !is.null(pred)) {
+      path <- paste0("/variables/", names(vars)[[i]], "/reducer/predicate")
+      reducer_predicates[[src]][[path]] <- pred
+    }
+  }
   for (i in seq_along(ev)) {
     e <- names(ev)[[i]]
     node <- ev[[i]]
     base <- paste0("/events/", e)
+    n_errors <- length(errors)
+    n_missing <- length(missing_tables)
     # An event's or adapter's own tables are site resources under its
     # on_missing_table.
     site_missing <- function(field, table, mode) {
@@ -860,6 +891,7 @@
     if (!is.null(node[["table"]])) {
       role <- .roleOf(handle, node[["table"]])
       if (is.null(role)) {
+        if (!native && tolower(node[["table"]]) %in% present) next
         if (identical(.roleAvailability(handle, node[["table"]]), "not_event_source")) {
           add(base, "/table: '", node[["table"]], "' is not an event table (no event role record)")
         } else {
@@ -867,35 +899,42 @@
         }
         next
       }
-      cols <- role[["columns"]]
-      col <- function(name) {
-        k <- match(name, cols[["column_name"]])
-        if (is.na(k) || !isTRUE(cols[["filterable"]][[k]])) NULL else cols[k, , drop = FALSE]
+      visit <- node[["visit"]]
+      if (native && is.list(visit) && !isTRUE(unlist(visit[["index"]])) && !is.null(visit[["type"]]) &&
+          is.null(.roleOf(handle, "visit_occurrence"))) {
+        site_missing("/visit", "visit_occurrence", node[["on_missing_table"]])
       }
-      cc <- node[["concept_col"]]
-      if (!is.null(cc)) {
-        r <- col(cc)
-        if (is.null(r)) {
-          add(base, "/concept_col: '", cc, "' is not a filterable column of '", node[["table"]], "'")
-        } else if (!isTRUE(r[["is_concept"]])) {
-          add(base, "/concept_col: '", cc, "' is not a concept column of '", node[["table"]], "'")
+      if (!native) {
+        cols <- role[["columns"]]
+        col <- function(name) {
+          k <- match(name, cols[["column_name"]])
+          if (is.na(k) || !isTRUE(cols[["filterable"]][[k]])) NULL else cols[k, , drop = FALSE]
         }
-      }
-      vc <- node[["value"]][["column"]]
-      if (!is.null(vc)) {
-        r <- col(vc)
-        if (is.null(r)) {
-          add(base, "/value/column: '", vc, "' is not a filterable column of '", node[["table"]], "'")
-        } else if (!r[["value_type"]] %in% c("integer", "numeric", "unknown")) {
-          add(base, "/value/column: '", vc, "' is not a numeric column of '", node[["table"]], "'")
+        cc <- node[["concept_col"]]
+        if (!is.null(cc)) {
+          r <- col(cc)
+          if (is.null(r)) {
+            add(base, "/concept_col: '", cc, "' is not a filterable column of '", node[["table"]], "'")
+          } else if (!isTRUE(r[["is_concept"]])) {
+            add(base, "/concept_col: '", cc, "' is not a concept column of '", node[["table"]], "'")
+          }
         }
-      }
-      if (!is.null(node[["unit"]]) && (is.null(role[["unit"]]) ||
-                                        (is.null(role[["value"]]) && is.null(vc)))) {
-        add(base, "/unit: table '", node[["table"]], "' has no value and unit roles to normalise")
-      }
-      if (!is.null(node[["end"]][["fallback"]]) && is.null(role[["supply"]])) {
-        add(base, "/end/fallback: table '", node[["table"]], "' has no days_supply role")
+        vc <- node[["value"]][["column"]]
+        if (!is.null(vc)) {
+          r <- col(vc)
+          if (is.null(r)) {
+            add(base, "/value/column: '", vc, "' is not a filterable column of '", node[["table"]], "'")
+          } else if (!r[["value_type"]] %in% c("integer", "numeric", "unknown")) {
+            add(base, "/value/column: '", vc, "' is not a numeric column of '", node[["table"]], "'")
+          }
+        }
+        if (!is.null(node[["unit"]]) && (is.null(role[["unit"]]) ||
+                                          (is.null(role[["value"]]) && is.null(vc)))) {
+          add(base, "/unit: table '", node[["table"]], "' has no value and unit roles to normalise")
+        }
+        if (!is.null(node[["end"]][["fallback"]]) && is.null(role[["supply"]])) {
+          add(base, "/end/fallback: table '", node[["table"]], "' has no days_supply role")
+        }
       }
     }
     if (!is.null(node[["episode_members"]])) {
@@ -922,14 +961,47 @@
         site_missing("/cost", "cost", node[["cost"]][["on_missing_table"]])
       }
     }
+    # a native source this site serves meets the compilers' own rules
+    if (native && length(errors) == n_errors && length(missing_tables) == n_missing &&
+        !e %in% unavailable) {
+      errors <- c(errors, .eventSiteCheck(handle, ir, e, predicates = reducer_predicates[[e]] %||% list()))
+    }
   }
-  # every predicate, typed against the columns of its own source
+  # every other predicate position, typed against the columns of its source
+  h <- if (native) .sqlDialectProfile(handle, probe = FALSE)
+  person_catalogue <- NULL
   for (pr in .irPredicates(ir)) {
-    cols <- .irPredicateColumns(ir, handle, bp, pr[["context"]])
+    context <- pr[["context"]]
+    if (native) {
+      # event, adapter and reducer predicates over events were typed above
+      if (!identical(context[["kind"]], "person")) {
+        src <- context[["source"]][["event"]]
+        if (!identical(context[["kind"]], "source") || (is.character(src) && length(src) == 1L)) next
+        cols <- .irPredicateColumns(ir, handle, bp, context)
+      } else {
+        if (is.null(person_catalogue)) {
+          person_catalogue <- tryCatch(.predicateTableCatalogue(handle, "person", "the person table"),
+                                       dsomop_plan_rejection = function(e) e)
+        }
+        if (inherits(person_catalogue, "dsomop_plan_rejection")) {
+          missing_tables <- unique(c(missing_tables, paste0(
+            pr[["path"]], ": table 'person' is not available at this site")))
+          next
+        }
+        errors <- c(errors, tryCatch({
+          .predicateSql(h, pr[["tree"]], person_catalogue, "p", pr[["path"]])
+          NULL
+        }, dsomop_plan_rejection = function(e) {
+          paste0(e[["field"]] %||% pr[["path"]], ": ", sub("^[a-z_]+: ", "", conditionMessage(e)))
+        }))
+        next
+      }
+    } else {
+      cols <- .irPredicateColumns(ir, handle, bp, context)
+    }
     if (is.null(cols)) next
     .irWalkPredicate(pr[["tree"]], function(l, lp) .irCheckSiteLeaf(l, cols, paste0(pr[["path"]], lp), add), "")
   }
-  vars <- ir[["variables"]] %||% list()
   for (i in seq_along(vars)) {
     v <- names(vars)[[i]]
     node <- vars[[i]]
@@ -937,7 +1009,7 @@
     if (is.list(raw)) {
       col_df <- bp[["columns"]][[raw[["table"]]]]
       if (is.null(col_df) || !raw[["column"]] %in% col_df[["column_name"]]) {
-        add("/variables/", v, "/raw: column '", raw[["column"]], "' does not exist on '", raw[["table"]], "'")
+        add("/variables/", v, "/raw: column '", raw[["column"]], "' not found in table '", raw[["table"]], "'")
       } else if (identical(.roleColumnClass(raw[["column"]], col_df), 1L)) {
         add("/variables/", v, "/raw: column '", raw[["column"]], "' is never released (class 1)")
       }
@@ -1063,21 +1135,25 @@
 #' (\code{unavailable_table}); the dialect preflight
 #' (\code{dialect_unsupported}). All run before any query, for native and
 #' lowered v1 plans alike (a lowered plan's legacy semantics are in its
-#' compatibility variants, never an exemption from a stage; its v1-specific
-#' site requirements are checked by \code{.irPrepare()} as well). Sources
-#' served under \code{on_missing_table = "unavailable"} are never a refusal:
-#' their events and the outputs reading them are reported
-#' (\code{unavailable}, \code{unavailable_outputs}).
-#' \code{insufficient_support} is never raised here: support exists only for
-#' computed outputs, at publication.
+#' compatibility variants, never an exemption from a stage). A lowered v1
+#' plan first meets the site requirements of the v1 executors that run it,
+#' with their own rules and messages (\code{.planV1SiteCheck()} on
+#' \code{v1_plan}), then the IR's site checks. Sources served under
+#' \code{on_missing_table = "unavailable"} are never a refusal: their events
+#' and the outputs reading them are reported (\code{unavailable},
+#' \code{unavailable_outputs}). \code{insufficient_support} is never raised
+#' here: support exists only for computed outputs, at publication.
 #'
 #' @param ir The IR (schema-valid).
 #' @param handle CDM handle, or NULL for the pure semantic rules only.
+#' @param v1_plan For a lowered v1 IR, the v1 plan it was lowered from (the
+#'   parsed JSON form that passed the closed envelope), checked against the
+#'   v1 executors' site requirements when a handle is given.
 #' @return Invisibly, a list(operations, unavailable, unavailable_outputs,
 #'   site_findings, dialect); stops with a typed rejection on the first
 #'   failing stage.
 #' @keywords internal
-.irValidate <- function(ir, handle = NULL) {
+.irValidate <- function(ir, handle = NULL, v1_plan = NULL) {
   errors <- .irSemanticErrors(ir)
   if (length(errors)) .irRejectAll("plan fails the semantic rules", errors)
   ops <- .irOperations(ir)
@@ -1090,6 +1166,7 @@
                  unavailable_outputs = character(0),
                  site_findings = character(0), dialect = NULL)
   if (is.null(handle)) return(invisible(report))
+  if (!is.null(v1_plan)) .planV1SiteCheck(v1_plan, handle)
   site <- .irSiteErrors(ir, handle)
   report[["unavailable"]] <- site[["unavailable"]]
   report[["unavailable_outputs"]] <- .irUnavailableOutputs(ir, site[["unavailable"]])

@@ -35,8 +35,8 @@
 .v1sCustom <- function(fn) list(kind = "custom", check = fn)
 # An object whose shape is chosen by the value of one member (an output by
 # its `type`); `default` is the case of an absent member.
-.v1sSwitch <- function(field, cases, default) {
-  list(kind = "switch", field = field, cases = cases, default = default)
+.v1sSwitch <- function(field, cases, default, unknown = NULL) {
+  list(kind = "switch", field = field, cases = cases, default = default, unknown = unknown)
 }
 
 # JSON type of a parsed value: "null", "object", "array" or "scalar".
@@ -82,7 +82,9 @@
       key <- if (is.character(key) && length(key) == 1L) key else shape[["default"]]
       sub <- shape[["cases"]][[key]]
       if (is.null(sub)) {
-        add(label, "/", shape[["field"]], ": must be one of ", paste(names(shape[["cases"]]), collapse = ", "))
+        add(label, "/", shape[["field"]], ": ",
+            if (is.function(shape[["unknown"]])) shape[["unknown"]](key) else "",
+            "must be one of ", paste(names(shape[["cases"]]), collapse = ", "))
       } else {
         errors <- c(errors, .v1ShapeErrors(x, sub, path))
       }
@@ -389,7 +391,10 @@
   feature_table <- .v1sObj(features = .v1sFeatureSpecs(), concept_set = .v1sConceptSet(),
                            filters = .v1sRowFilter(), concept_col = .v1sStr(), visit = .v1sVisit(),
                            .required = "features")
-  .v1sSwitch("type", default = "event_level", cases = list(
+  # an unknown output type keeps the executor's wording (R/plan.R)
+  .v1sSwitch("type", default = "event_level",
+             unknown = function(key) paste0("Unsupported output type '", key, "'; "),
+             cases = list(
     person_level = out(
       tables = .v1sMap(.v1sOneOf(.v1sStrs(), feature_table, .v1sMap(.v1sStr()))),
       representation = .v1sStr(),

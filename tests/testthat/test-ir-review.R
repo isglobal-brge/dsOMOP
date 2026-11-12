@@ -425,3 +425,129 @@ test_that("a multi-population base without criteria is every person, as in singl
   expect_gt(nrow(a), 0L)
   expect_identical(b, a)
 })
+
+# --- a lowered v1 plan meets its executors' site rules first (B4/B5) ------------
+
+test_that("v1 plans meet the site rules of the v1 executors, with their messages", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  .buildBlueprint(h)
+  baseline <- function(columns) list(cohort = list(type = "cohort_table", cohort_definition_id = 1L),
+                                     outputs = list(d = list(type = "baseline", columns = columns)))
+  err <- .rv_refused(.irPrepare(baseline(list("not_a_person_column")), h))
+  expect_identical(err$code, "validation_error")
+  expect_match(conditionMessage(err), "/outputs/d/columns: Baseline person column(s) not found: not_a_person_column.",
+               fixed = TRUE)
+  expect_s3_class(.irPrepare(baseline(list("gender_concept_id", "day_of_birth")), h), "dsomop_ir")
+  # a class-1 person column (the default fixture has none)
+  DBI::dbExecute(h$conn, "ALTER TABLE person ADD COLUMN person_source_value TEXT")
+  h$blueprint <- NULL
+  .buildBlueprint(h)
+  err <- .rv_refused(.irPrepare(baseline(list("person_source_value")), h))
+  expect_match(conditionMessage(err), "Disclosive: baseline person column(s) 'person_source_value' are blocked.",
+               fixed = TRUE)
+  # a custom filter on an identifier: the executor's own refusal, before the IR's
+  surv <- list(cohort = list(type = "cohort_table", cohort_definition_id = 1L),
+               outputs = list(s = list(type = "survival",
+                                       outcome = list(table = "condition_occurrence", concept_set = list(4000002L)),
+                                       tar = list(start_offset = 0L, end_offset = 730L),
+                                       filters = list(custom = list(var = "person_id", op = "in", value = list(1L, 5L))))))
+  err <- .rv_refused(.irPrepare(surv, h))
+  expect_match(conditionMessage(err), "filter on column 'person_id' is not permitted", fixed = TRUE)
+  # a plan-declaration error keeps the executor's untyped error (never a
+  # transported refusal) and .planValidate() reports it
+  nocohort <- list(outputs = list(d = list(type = "baseline")))
+  err <- tryCatch(.irPrepare(nocohort, h), error = function(e) e)
+  expect_s3_class(err, "dsomop_v1_declaration_error")
+  expect_false(inherits(err, "dsomop_plan_rejection"))
+  expect_match(conditionMessage(err), "requires a cohort")
+  v <- .planValidate(h, nocohort)
+  expect_false(v$valid)
+  expect_identical(sum(grepl("requires a cohort", v$errors)), 1L)
+  # explain lists the executors' findings first
+  ex <- .irExplain(.irNormalize(baseline(list("not_a_person_column"))), h,
+                   v1_plan = baseline(list("not_a_person_column")))
+  expect_match(ex$site_findings[[1L]], "Baseline person column(s) not found", fixed = TRUE)
+})
+
+test_that("an event over a present table without an event role is a v1 row source only", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  expect_identical(.roleAvailability(h, "person"), "not_event_source")
+  v1 <- list(outputs = list(people = list(type = "event_level", table = "person",
+                                          columns = list("person_id", "gender_concept_id"),
+                                          representation = list(format = "long"))))
+  ir <- .irPrepare(v1, h)
+  expect_identical(ir$events[[1L]]$table, "person")
+  # ... but never a native event table
+  x <- .rv_plan_a()
+  x$events$hba1c$table <- "person"
+  x$events$hba1c$concept_set <- NULL
+  err <- .rv_refused(.irPrepare(x, h))
+  expect_identical(err$code, "validation_error")
+  expect_match(conditionMessage(err), "'person' is not an event table")
+  # and an absent v1 table is still the typed unavailable_table refusal
+  v1$outputs$people$table <- "specimen"
+  expect_identical(.rv_refused(.irPrepare(v1, h))$code, "unavailable_table")
+})
+
+test_that("native sources meet the compilers' own metadata rules (WS-4 .eventSiteCheck)", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  x <- .rv_plan_a()
+  # a role-bound physical column is its role's alias; a datetime is not a predicate column
+  x$events$hba1c$where <- list(var = "value_as_number", op = ">", value = 5)
+  expect_s3_class(.irPrepare(x, h), "dsomop_ir")
+  # the compiler's own value-column rule: an integer concept column is no value
+  x$events$hba1c$value$column <- "measurement_type_concept_id"
+  err <- .rv_refused(.irPrepare(x, h))
+  expect_identical(err$code, "validation_error")
+  expect_match(conditionMessage(err), "/events/hba1c/value/column: 'measurement_type_concept_id' is not a filterable numeric column",
+               fixed = TRUE)
+  # person predicates use the compiler's catalogue of the person table
+  x <- .rv_plan_a()
+  x$populations$new_users$where <- list(and = list(x$populations$new_users$where,
+    list(person = list(var = "year_of_birth", op = ">=", value = "1980"))))
+  err <- .rv_refused(.irPrepare(x, h))
+  expect_match(conditionMessage(err), "/populations/new_users/where/and/1/person")
+  x$populations$new_users$where$and[[2]]$person$value <- 1980L
+  expect_s3_class(.irPrepare(x, h), "dsomop_ir")
+})
+
+# --- the execution context carries the validated IR (WS-1) ----------------------
+
+test_that("the context of a language 2.0 plan carries its validated IR, a v1 plan's its plan", {
+  v1 <- .rv_v1()
+  ir1 <- .irPrepare(v1)
+  expect_identical(.planContextIr(list(ir = ir1, wire = .irJsonForm(v1)), v1), v1)
+  v2 <- .rv_v2()
+  ir2 <- .irPrepare(v2)
+  got <- .planContextIr(list(ir = ir2, wire = .irJsonForm(v2)), v2)
+  expect_s3_class(got, "dsomop_ir")
+  expect_true(.dsomopDpIsV2(got))
+  expect_identical(got$outputs$o$options, ir2$outputs$o$options)
+  expect_identical(.planContextIr(list(error = simpleError("refused")), v2), v2)
+  # omopPlanExecuteDS creates the context after validation, with that IR
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .setHandle("rv_context_ir", handle)
+  on.exit(.removeHandle("rv_context_ir"), add = TRUE)
+  seen <- new.env()
+  local_mocked_bindings(.planExecute = function(handle, plan, out_symbols, output_mode, ctx) {
+    seen$ir <- ctx$ir
+    seen$validated <- ctx$validation$ir
+    .irReject("stops after the context checks")
+  })
+  status <- .omopPlanExecuteDS("rv_context_ir", v1, list(p = "A"), target_env = new.env(parent = emptyenv()))
+  expect_identical(status$status, "refused")
+  expect_identical(seen$ir$outputs, v1$outputs)
+  expect_identical(attr(seen$validated, "source_version"), 1L)
+})
+
+test_that("A-10: a v1 plan without outputs has no IR and publishes nothing", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  plan <- list(cohort = list(type = "cohort_table", cohort_definition_id = 1L))
+  expect_null(.irPrepare(plan, h))
+  expect_length(.planExecute(h, plan, list()), 0L)
+})

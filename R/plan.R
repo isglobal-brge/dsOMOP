@@ -107,7 +107,9 @@
   ir_error <- tryCatch({
     .irPrepare(wire[["plan"]], handle = handle, scope_tables = wire[["scope_tables"]])
     NULL
-  }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e))
+  }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e),
+  # the v1 plan-declaration errors are among the legacy findings already
+  dsomop_v1_declaration_error = function(e) NULL)
   errors <- unique(c(legacy[["errors"]], legacy[["missing_tables"]], ir_error))
   list(
     valid = length(errors) == 0,
@@ -2901,6 +2903,26 @@
   resolved
 }
 
+#' The plan an execution context carries
+#'
+#' Validation runs before the context exists (design 4.5, WS-1): a language
+#' 2.0 plan's context carries its validated, normalised IR, which the native
+#' publication and DP contracts read (\code{.dsomopDpIsV2()}); a v1 plan's
+#' carries the execution plan, which its v1 executors and the legacy
+#' publication and DP contracts read in their own fields (the lowered IR is
+#' \code{ctx$validation$ir}). A refused plan keeps the plan as it arrived:
+#' only its refusal is published.
+#'
+#' @param validation list(ir, wire) from the validation sequence, or
+#'   list(error) when it refused the plan.
+#' @param plan The execution plan.
+#' @return The IR or the plan.
+#' @keywords internal
+.planContextIr <- function(validation, plan) {
+  ir <- validation[["ir"]]
+  if (!is.null(ir) && identical(attr(ir, "source_version"), 2L)) ir else plan
+}
+
 #' Execute a plan and produce server-side data frames
 #'
 #' Processes all outputs defined in the plan: builds a cohort (if specified),
@@ -2944,8 +2966,9 @@
   }
   own_context <- is.null(ctx)
   if (own_context) {
-    ctx <- .planContext(handle, plan, output_mode)
-    ctx$validation <- list(ir = ir, wire = .irJsonForm(wire[["plan"]]))
+    validated <- list(ir = ir, wire = .irJsonForm(wire[["plan"]]))
+    ctx <- .planContext(handle, .planContextIr(validated, plan), output_mode)
+    ctx$validation <- validated
     on.exit(.planContextClose(ctx), add = TRUE)
   }
 

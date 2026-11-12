@@ -237,9 +237,12 @@
 #'
 #' @param ir The IR (through steps 1 to 3 and the semantic rules).
 #' @param handle CDM handle, or NULL for a site-free explanation.
+#' @param v1_plan For a lowered v1 IR, the v1 plan it was lowered from: its
+#'   executors' site findings (\code{.planV1SiteFindings()}) come first in
+#'   \code{site_findings}, as execution checks them first.
 #' @return Named list (see Details).
 #' @keywords internal
-.irExplain <- function(ir, handle = NULL) {
+.irExplain <- function(ir, handle = NULL, v1_plan = NULL) {
   report <- .irValidate(ir, NULL)
   site_findings <- character(0)
   unavailable <- character(0)
@@ -247,9 +250,14 @@
   roles <- list()
   dialect <- list(status = "not_checked")
   if (!is.null(handle)) {
+    if (!is.null(v1_plan)) {
+      legacy <- tryCatch(.planV1SiteFindings(v1_plan, handle),
+                         error = function(e) list(errors = conditionMessage(e)))
+      site_findings <- c(legacy[["declaration"]], legacy[["errors"]], legacy[["missing_tables"]])
+    }
     site <- tryCatch(.irSiteErrors(ir, handle),
                      error = function(e) list(errors = conditionMessage(e), unavailable = character(0)))
-    site_findings <- c(site[["errors"]], site[["missing_tables"]])
+    site_findings <- c(site_findings, site[["errors"]], site[["missing_tables"]])
     unavailable <- site[["unavailable"]]
     unavailable_outputs <- .irUnavailableOutputs(ir, unavailable)
     for (t in .irTablesUsed(ir)) {
@@ -323,5 +331,5 @@ omopPlanExplainDS <- function(omop_symbol, plan) {
   .irValidateEnvelope(json)
   ir <- .irNormalize(json)
   .irValidateSchema(ir)
-  .irExplain(ir, handle)
+  .irExplain(ir, handle, v1_plan = if (!identical(attr(ir, "source_version"), 2L)) json)
 }

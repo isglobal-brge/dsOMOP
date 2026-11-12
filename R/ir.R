@@ -250,8 +250,7 @@
   }
   ir <- .irNormalize(plan, scope_tables = scope_tables, validated = TRUE)
   .irValidateSchema(ir)
-  .irValidate(ir, handle)
-  if (!is.null(handle) && !identical(version, 2L)) .planV1SiteCheck(plan, handle)
+  .irValidate(ir, handle, v1_plan = if (!identical(version, 2L)) plan)
   ir
 }
 

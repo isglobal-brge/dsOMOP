@@ -799,7 +799,11 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   # Resolved frames are server state: they reach the v1 executors through the
   # execution plan and the context, never through the client's plan.
   if (!is.null(scope)) plan$scope$tables_frames <- scope
-  ctx <- .planContext(handle, plan, output_mode, target_env)
+  # The context carries the plan its executors and publication read: the
+  # validated, normalised IR of a language 2.0 plan; for a v1 plan, which the
+  # v1 executors and the legacy publication and DP contracts read in its own
+  # fields, the execution plan (its validated IR is ctx$validation$ir).
+  ctx <- .planContext(handle, .planContextIr(validation, plan), output_mode, target_env)
   on.exit(.planContextClose(ctx), add = TRUE)
   ctx$validation <- validation[c("ir", "wire")]
   ctx$scopes <- scope

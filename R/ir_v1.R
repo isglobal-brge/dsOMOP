@@ -322,14 +322,17 @@
 
 # --- step 4 for a v1 plan: the site requirements of its executors ------------------
 
-#' The custom-filter checks the v1 executors make against the site
+#' The column and custom-filter checks the v1 executors make against the site
 #'
 #' Every custom filter position, checked by \code{.assertCustomFilterSafe()}
 #' with the table's filterable columns, the handle and the table, exactly as
 #' the executor calls it (event and feature streams after the legacy
 #' start/end date sentinel resolution, \code{.resolveFilterDateColumns()};
 #' survival outcome filters as \code{.compileLongitudinalSurvivalSql()};
-#' interval source filters as their stream extraction).
+#' interval source filters as their stream extraction), and the person
+#' columns of a baseline output with the rules and messages of
+#' \code{.extractBaseline()} (unknown and blocked columns), which the
+#' executor would otherwise only meet after materialising the cohort.
 #'
 #' @param plan v1 plan (parsed JSON form, through the closed envelope).
 #' @param handle CDM handle.
@@ -388,31 +391,92 @@
         sf <- out[["source_filters"]] %||% list()
         for (tbl in names(sf)) check(sf[[tbl]], tbl, paste0(p, "/source_filters/", tbl))
       },
+      baseline = {
+        errors <- c(errors, .v1Legacy(paste0(p, "/columns"), .planV1BaselineColumns(out, bp)))
+      },
       NULL)
   }
   unique(errors)
 }
 
+# The person-column contract of .extractBaseline(), before any query: the
+# same requested set (default gender and race; year_of_birth added for
+# age_at_index), the same unknown-column and blocklist refusals and messages.
+.planV1BaselineColumns <- function(out, bp) {
+  person_cols <- bp[["columns"]][["person"]]
+  if (is.null(person_cols)) {
+    stop("Person columns are unavailable for baseline extraction.", call. = FALSE)
+  }
+  spec <- .colSpec(out[["columns"]])
+  derived <- tolower(as.character(unlist(out[["derived"]], use.names = FALSE)))
+  requested <- if (is.null(spec[["source"]])) {
+    c("gender_concept_id", "race_concept_id")
+  } else tolower(spec[["source"]])
+  columns <- unique(c(requested, if ("age_at_index" %in% derived) "year_of_birth"))
+  missing <- setdiff(columns, person_cols[["column_name"]])
+  if (length(missing)) {
+    stop("Baseline person column(s) not found: ", paste(missing, collapse = ", "), ".", call. = FALSE)
+  }
+  blocked <- person_cols[["column_name"]][vapply(person_cols[["column_name"]],
+    .assignmentBlockedColumn, logical(1L), col_df = person_cols)]
+  requested_blocked <- intersect(requested, blocked)
+  if (length(requested_blocked)) {
+    stop("Disclosive: baseline person column(s) '", paste(requested_blocked, collapse = "', '"),
+         "' are blocked.", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+#' The site findings of the v1 executors
+#'
+#' What the executors of a v1 plan would check while running, from metadata
+#' only: the plan-declaration rules of \code{.planExecute()}
+#' (\code{.planRequiredCohortErrors()}: an output type that needs a cohort),
+#' the tables, the results cohort table, the filter trees and age breaks
+#' (\code{.planLegacyFindings()}), the custom filters and the baseline person
+#' columns (\code{.planV1FilterSiteErrors()}).
+#'
+#' @param plan v1 plan (parsed JSON form, through the closed envelope).
+#' @param handle CDM handle.
+#' @return list(declaration, errors, missing_tables), character vectors.
+#' @keywords internal
+.planV1SiteFindings <- function(plan, handle) {
+  legacy <- .planLegacyFindings(handle, plan)
+  declaration <- .planRequiredCohortErrors(plan)
+  list(declaration = declaration,
+       errors = c(setdiff(legacy[["errors"]], declaration), .planV1FilterSiteErrors(plan, handle)),
+       missing_tables = legacy[["missing_tables"]])
+}
+
 #' The site requirements of the v1 executors, checked before any query
 #'
-#' Step 4 for a v1 plan, after the IR's own site checks: the tables, the
-#' results cohort table and the custom filters its executors would check
-#' while running (\code{.planLegacyFindings()},
-#' \code{.planV1FilterSiteErrors()}), refused with the typed codes the
-#' publication status transports (\code{unavailable_table} for an absent
-#' table, \code{validation_error} otherwise).
+#' Step 4 for a v1 plan, before the IR's own site checks
+#' (\code{.irValidate()}): the findings of \code{.planV1SiteFindings()}. A
+#' plan-declaration error keeps the untyped error the 2.10.2 executor raised
+#' before any query (its message and its transport are unchanged; condition
+#' class \code{dsomop_v1_declaration_error}); the
+#' other findings are refused with the typed codes the publication status
+#' transports (\code{validation_error}, then \code{unavailable_table} for
+#' absent tables).
 #'
 #' @param plan v1 plan (parsed JSON form, through the closed envelope).
 #' @param handle CDM handle.
 #' @return Invisibly TRUE.
 #' @keywords internal
 .planV1SiteCheck <- function(plan, handle) {
-  legacy <- .planLegacyFindings(handle, plan)
-  errors <- c(legacy[["errors"]], .planV1FilterSiteErrors(plan, handle))
-  if (length(errors)) .irRejectAll("v1 plan fails the site checks of its executors", errors)
-  if (length(legacy[["missing_tables"]])) {
+  findings <- .planV1SiteFindings(plan, handle)
+  if (length(findings[["declaration"]])) {
+    # untyped, as .planExecute() raises it (never a transported refusal); the
+    # condition class only lets .planValidate() report it as a finding
+    stop(structure(class = c("dsomop_v1_declaration_error", "error", "condition"),
+                   list(message = paste(findings[["declaration"]], collapse = " "), call = NULL)))
+  }
+  if (length(findings[["errors"]])) {
+    .irRejectAll("v1 plan fails the site checks of its executors", findings[["errors"]])
+  }
+  if (length(findings[["missing_tables"]])) {
     .irRejectAll("plan needs tables this site does not provide",
-                 legacy[["missing_tables"]], code = "unavailable_table")
+                 findings[["missing_tables"]], code = "unavailable_table")
   }
   invisible(TRUE)
 }
