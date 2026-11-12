@@ -181,11 +181,13 @@ test_that("protected noise is added exactly before numeric conversion", {
   policy <- list(
     noise_root = list(key = .dp_sampler_key), domain = "sampler-test",
     snapshot_id = "sampler-snapshot", privacy_epoch = 1L,
+    data_generation = strrep("3", 64L),
     release_epsilon = 0.1, mechanism = "test", sampler = .DSOMOP_DP_SAMPLER
   )
   component <- list(owner = "test/owner/v1", population = "sampler-test",
                     family = "N", coordinate = "stratum=root", value = 100,
-                    allocation = 1, sensitivity = 1)
+                    allocation = 1, sensitivity = 1,
+                    fingerprint = strrep("ab", 32L))
   with_noise <- function(noise, value = 100) {
     testthat::with_mocked_bindings(
       .dsomopReleaseNoisyComponent(
