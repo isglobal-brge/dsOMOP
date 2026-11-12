@@ -28,9 +28,11 @@
 #     ok) or refuses with a dsomop_plan_rejection (baseline refused at the plan
 #     stage); `none` when 2.10.2 refused only at the site, executor, data or
 #     session stage;
-#   - a non-empty `disposition` (a reviewed, documented deviation filled in by
-#     the WS-2 agent) replaces the baseline equivalence and the IR-level check
-#     by its `current` outcome ("refused": a typed refusal; "ok": success);
+#   - ir-v1-compat-dispositions.json records each reviewed contract change
+#     separately from the immutable baseline capture. A new refusal checks
+#     its typed code and field, a newly permitted case compares its exact
+#     result to an admissible independently captured baseline control, and
+#     a deferred legacy declaration still checks the original refusal text;
 #   - a case flagged nondeterministic at the baseline is not replayed.
 # Cases fail where the current code has not (yet) restored the 2.10.2
 # behaviour; that is the purpose of the fixture.
@@ -223,6 +225,24 @@
 
 .compat_fx <- jsonlite::fromJSON(testthat::test_path("fixtures", "ir-v1-compat.json"),
                                  simplifyVector = FALSE)
+.compat_dispositions <- jsonlite::fromJSON(
+  testthat::test_path("fixtures", "ir-v1-compat-dispositions.json"), simplifyVector = FALSE)
+.compat_fx$cases <- lapply(.compat_fx$cases, function(case) {
+  case$disposition <- .compat_dispositions$cases[[case$id]]
+  case
+})
+
+test_that("v1 compatibility dispositions name exact cases and reviewed contracts", {
+  ids <- vapply(.compat_fx$cases, `[[`, "", "id")
+  expect_identical(.compat_dispositions$baseline, .compat_fx$baseline$dsOMOP)
+  expect_true(all(names(.compat_dispositions$cases) %in% ids))
+  for (d in .compat_dispositions$cases) {
+    expect_true(nzchar(d$reference) && nzchar(d$reason))
+    expect_true(d$current %in% c("refused", "ok", "unchanged_refusal"))
+    if (identical(d$current, "refused")) expect_true(nzchar(d$field))
+    if (identical(d$current, "ok")) expect_true(d$result_from %in% ids)
+  }
+})
 
 test_that("the v1 compatibility fixture is a reviewed 2.10.2 capture", {
   fx <- .compat_fx
@@ -266,11 +286,26 @@ for (.compat_case in .compat_fx$cases) local({
     run <- .compat_execute(fx, case, plan)
     info <- paste0(case$id, " (", .compat_baseline_text(case), ")")
     if (is.list(disposition)) {
-      # a reviewed deviation: its `current` outcome replaces the baseline equivalence
+      # Each changed case has an explicit reviewed structural/publication
+      # contract and an outcome assertion; no blanket compatibility waiver.
       if (identical(disposition$current, "refused")) {
         expect_s3_class(run$error, "dsomop_plan_rejection")
+        if (!is.null(run$error)) {
+          expect_match(conditionMessage(run$error), disposition$field, fixed = TRUE)
+        }
+      } else if (identical(disposition$current, "unchanged_refusal")) {
+        expect_s3_class(run$error, "error")
+        if (!is.null(run$error)) {
+          expect_match(conditionMessage(run$error), disposition$message, fixed = TRUE)
+        }
       } else {
         expect_null(run$error, info = paste(info, "disposition", disposition$reference))
+        if (is.null(run$error)) {
+          control <- Filter(function(c) identical(c$id, disposition$result_from), fx$cases)[[1L]]
+          expect_identical(.compat_sha(run$value), control$baseline$result_sha256,
+                           info = paste(info, "independent control", control$id))
+        }
+        expect_null(.compat_prepare(fx, case, plan))
       }
       return(invisible())
     }
