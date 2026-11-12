@@ -938,8 +938,8 @@ omopDpStatusDS <- function() {
 #' Prepare person-local tables for differential-privacy releases (Assign)
 #'
 #' Community-tool counterpart of \code{\link{omopPlanExecuteDS}} for the sticky
-#' DP channel. It runs the same typed plan through the core plan engine, which
-#' seals each accepted person-local component privately before publication with
+#' DP channel. It runs the same typed plan through the core plan engine. The DP
+#' adapter seals each accepted person-local component privately before publication with
 #' the authenticated provenance capsule that \code{\link{omopDpReleaseDS}}
 #' requires: the canonical lineage of the plan and the dataset identity of the
 #' connected resource. Ordinary table loading (\code{omopPlanExecuteDS}) never
@@ -997,9 +997,9 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
 #' admission are always required.
 #'
 #' @param x A server-created, pseudonymous \code{omop.table} produced by an
-#'   OHDSI community tool (for example an analysis-catalog loader) and carrying
-#'   its authenticated person-local provenance capsule. Tables loaded through
-#'   plans, recipes or manipulation never carry DP provenance.
+#'   OHDSI community tool (for example an analysis-catalog loader) or explicit
+#'   DP preparation, carrying its authenticated person-local provenance capsule.
+#'   Ordinary plan loading and manipulation never carry DP provenance.
 #' @param spec Typed DP statistic specification, usually JSON-encoded by
 #'   dsOMOPClient.
 #' @return A deterministic sticky noisy aggregate with per-release mechanism

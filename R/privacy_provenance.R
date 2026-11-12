@@ -12,9 +12,10 @@
 }
 
 # The core of dsOMOP (plans, recipes, filters, factors, manipulation) never
-# calls DP. Only the community tools' own outputs may carry DP provenance, and
-# DP never decides whether a tool call succeeds: any DP error leaves the
-# result without DP provenance (DP releases then refuse it) and is logged.
+# calls DP. Community-tool outputs and the explicit DP preparation endpoint
+# may carry DP provenance. Best-effort community-tool sealing leaves a result
+# without provenance on failure; explicit DP preparation instead aborts its
+# publication transaction before any patient component becomes public.
 # The staged contract's query digest is a core fingerprint that is not
 # canonical across equivalent plans. DP lineage replaces it with the same
 # canonical DP digest as dsOMOP 2.7.x, so sticky identities are unchanged.
@@ -488,8 +489,8 @@
   if (!is.list(capsule) || is.null(names(capsule)) ||
       !identical(names(capsule), expected_names)) {
     stop("This table carries no DP provenance. DP releases accept only ",
-         "outputs of the OHDSI community tools; tables loaded through ",
-         "plans, recipes or manipulation never carry DP provenance.",
+         "outputs of the OHDSI community tools or explicit DP preparation; ",
+         "ordinary plan loading and manipulation never carry DP provenance.",
          call. = FALSE)
   }
   text_fields <- c("protocol", "adjacency", "domain", "snapshot_id",
