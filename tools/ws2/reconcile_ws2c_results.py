@@ -61,7 +61,7 @@ def attribute(record, by_block):
     if len(classes) == 1:
         if status == "ok" and classes <= {"unchanged_invalid", "publication_refused_unchanged"}:
             return dict(disposition="setup_control", plan_ids=[],
-                        attribution="Successful fixture preparation in a refusal-class block; the subsequently refused analysis/helper is not this captured call")
+                        attribution="Successful control/intermediate call in a refusal-class block; the subsequently refused analysis/helper is not this captured call")
         return select(reason="Single class in the frozen block")
 
     if test == "baseline output produces one row per cohort member":

@@ -879,6 +879,15 @@ def describe_pair(p, by_block):
     b, c = p["b"], p["c"]
     ctx = b.get("context") or {}
     bind = binding(by_block, p["key"])
+    def compared_hash(record):
+        if effective(record)[0] != "ok":
+            return None
+        node = result_node(record)
+        if p.get("masked"):
+            node = mask_keyed_dp(node)
+        volatile = "assigned_volatile" if record["fn"] in ASSIGN_FNS else "volatile"
+        payload = dict(result=node, raw_token_sha256=(record.get(volatile) or {}).get("raw_token_sha256"))
+        return hashlib.sha256(canon_json(payload).encode()).hexdigest()
     return dict(key=p["key"], fn=b["fn"], plan_sha256=b["_hash"], occurrence=p["join"][-1], cls=bind["label"],
                 mixed=bind["mixed"], file=ctx.get("file"), line=ctx.get("line"), output_mode=(b.get("call") or {}).get("output_mode"),
                 default_fixture=(b.get("handle") or {}).get("default_fixture"),
@@ -886,6 +895,9 @@ def describe_pair(p, by_block):
                 baseline_error=effective(b)[1] if effective(b)[0] == "error" else None,
                 current_error=effective(c)[1] if effective(c)[0] == "error" else None,
                 current_error_code=effective(c)[2] if effective(c)[0] == "error" else None,
+                baseline_compared_result_sha256=compared_hash(b),
+                current_compared_result_sha256=compared_hash(c),
+                masked_dp_provenance=bool(p.get("masked")),
                 baseline_id=b["id"], current_id=c["id"])
 
 
