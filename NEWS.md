@@ -93,23 +93,21 @@ Security release: the P0 fixes of the OHDSI-tools audit.
   (person-time status and time components; Poisson rate ratios derived from
   them), and every alias of these entries. Every other scope is
   realised-contribution protected.
-- Fixed synopses need no custodial configuration: unscoped questions over a
-  public basis are keyed on an automatic data generation, an HMAC under the
-  noise root of the exact row count and largest identifier of every OMOP
-  clinical table (plus `cdm_source`, the vocabulary versions and the concept
-  table), derived on the fly once per R session and held in memory only (no
-  file, table or cache). A reload that adds or removes rows re-draws every
-  fixed synopsis at once; equal data give equal answers in every session and
-  worker sharing the root. Fixed components are also keyed on their
-  contribution fingerprints, so an in-place edit or a change during an open
-  session (which the generation cannot see) re-draws the affected components
-  instead of releasing an exact difference. Status and labels describe the
-  generation (`data_generation`, `data_generation_basis`,
-  `data_generation_residual`), never its value. `dsomop.dp.snapshot_id` is
-  deprecated: it only replaces the public `snapshot_id` status label, and the
-  profile option `default.dsomop.dp.snapshot_id` is removed.
-- CohortMethod Cox effects are grouped-time Cox fits on a protected per-arm
-  histogram of exit-time bin × status (Breslow ties, capped at 3650 days,
+- Fixed synopses compute a canonical person-membership digest within each
+  request's pinned snapshot. Clinical COUNT/MAX scans and cross-request
+  generation/failure caches are removed. Membership insertions, removals and
+  balanced replacements redraw fixed components; unrelated clinical inserts
+  leave unchanged components stable. Clinical edits with unchanged membership
+  retain the documented component-change residual and no evolving-transcript
+  DP guarantee. `snapshot_id` affects only display metadata, including restored
+  sealed tables. Epoch rotation is optional hardening.
+- Aggregate requests use backend snapshot transactions where supported, pin the
+  connection through support/generation/components, and roll back on exit.
+  Snapshot loss fails the entire request. PostgreSQL permits temporary-table
+  DDL under REPEATABLE READ; MySQL/MariaDB use consistent snapshots, and
+  DuckDB/SQLite use explicit transactions. Other capabilities are labelled.
+- CohortMethod Cox and admitted interaction Cox use one full-horizon protected
+  exit-time/status basis with shared C6 event parents (Breslow ties, 3650 days,
   labelled as such, not the raw Efron estimator); the SCCS incidence rate
   ratio is estimated from a protected histogram of the q-gridded conditional
   sufficient statistics (each person's first 10 events); both report standard
@@ -123,10 +121,24 @@ Security release: the P0 fixes of the OHDSI-tools audit.
   give bounded moments, other strata a coarse histogram. The outputs gain
   `unit_concept_id` and `unit_name`.
 - The eight QueryLibrary record summaries release capped record-weighted
-  moments in auto and DP-only modes (K = 10 records per person by date and
+  moments in auto mode (K = 10 records per person by date and
   key; persons, records and lattice sums; days [0, 10957], calendar months
   [0, 360]; quantity and cost scales through `dsomop.release.quantity_scales`
-  and `dsomop.release.cost_scales`); standard mode is unchanged.
+  and `dsomop.release.cost_scales`). Unregistered scales retain weighted
+  value histograms and interval quantiles; moments stay unavailable. Observed
+  strata are honestly labelled realised-sticky and DP-exclusive mode refuses
+  them. Standard mode retains its established governance exception.
+- Capped recurrent incidence counts and event-time histograms are restored.
+  Event-time 1/30/365-day views share one public hierarchy with a whole-person
+  cap across episodes and bins; first-event requests remain distinct.
+- Typed binary pooling validates complete semantic domains and numerator/
+  denominator masks. Weighted numeric views project the complete atom basis
+  before coarsening on server and client. Catalogue guarantee scopes are checked
+  alongside epsilon/delta. New clients warn about old servers and refuse mixed
+  protected pooling; old typed clients receive a clear upgrade refusal.
+- Quantiles include bin intervals and open/censored flags. SCCS documentation
+  distinguishes signed estimating equations from likelihood fits, states q-grid
+  clipping bias, and reports simulation uncertainty as approximate.
 - The public marginal hierarchy: one canonical parent person total per
   eligible population, shared by its stratifications; strata are reconciled to
   it and projected onto its displayed total, so a child request never moves

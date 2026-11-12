@@ -3,26 +3,20 @@
 The current server contract is `dsomop-dp-release-v3` /
 `protected_release_fixed_basis_or_realised_v1` with typed payload protocol
 `dsomop-protected-release-v1`, paired with dsOMOPClient 2.10.3. Protected
-releases share canonical components: a fixed synopsis (unscoped question over
-a public basis) draws each atom's noise from the corpus, the automatic data
-generation, the privacy epoch, owner, population and atom and the atom's
-contribution fingerprint; a realised-sticky release (every other scope; a
-heuristic disclosure control without a joint differential-privacy guarantee)
-draws each component's noise from its owner, coordinate and a secret
-fingerprint of the realised bounded contributions. The automatic data
-generation is an HMAC under the noise root of the exact row count and largest
-identifier of every OMOP clinical table (plus `cdm_source`, vocabulary
-versions and the concept table), derived on the fly once per R session and
-held in memory only; no custodial setting is needed, and
-`dsomop.dp.snapshot_id` is a deprecated status label that nothing depends on.
-No key depends on request text, lineage cosmetics or earlier questions, and
-nothing but the root is stored. A reload that adds or removes rows re-draws
-every fixed synopsis; a reload or edit re-draws exactly the realised
-components whose contributions changed. In-place edits that change no count
-and no largest identifier, and changes during an open session, are not seen
-by the generation; the affected fixed components still re-draw by their
-fingerprints (DISCLOSURE_CONTROL.md). DP-only mode accepts only fixed
-synopses.
+fixed-synopsis releases use a canonical person-membership digest recomputed
+within each request's pinned snapshot, plus component fingerprints. There is no
+cross-request generation or failure cache and no clinical COUNT/MAX fingerprint.
+The secret stays in R. `snapshot_id` is display-only, including restored sealed
+tables. Person-set changes globally redraw fixed components; clinical edits
+with unchanged membership have the documented change-pattern residual. The
+fixed-vector guarantee is qualified to an unchanged source state before exact
+support admission; the evolving transcript has no finite epsilon claim.
+
+Realised-sticky releases reuse bounded contribution maps and make no joint DP
+claim. They include data-enumerated record summaries, which now retain weighted
+value H without registered scales. Interaction Cox and capped recurrent outputs
+are restored; public subgroup margins, Cox status parents and typed view masks
+have explicit contracts. DP-exclusive mode accepts only fixed-basis contracts.
 
 Status declares `history_dependent = FALSE`, `history_based_admission = FALSE`,
 `persistent_state = "noise_root_only"`,
