@@ -499,6 +499,12 @@
 #' criteria, resolved against its candidate roster) and its \strong{final}
 #' anchors (those of the variables and outputs over it, resolved against the
 #' final roster); one anchor definition used in both stages appears in both.
+#' Every value of a long output's named \code{options.anchors} map is a final
+#' anchor of the output's population, nested search anchors included; a
+#' matching controls template's candidate anchors include those of the match
+#' population's strata windows (design 6.10; amendment A-20(b)). Anchors are
+#' collected from the normalised IR, so omitted and explicit defaults give one
+#' canonical anchor.
 #'
 #' @param ir The IR (validated).
 #' @return list(concept_sets, events, intervals, populations, variables,
@@ -526,7 +532,11 @@
   )
 }
 
-# Distinct source anchors (objects with a `source`) inside a value.
+# Distinct source anchors (objects with a `source`) inside a value: the
+# anchor positions of the IR (a window's or bound's `anchor`, a reducer's or
+# age leaf's `reference`) and every value of a named anchor map (a long
+# output's `options.anchors`, amendment A-20(b)); nested search windows are
+# visited by the recursion.
 .irCollectAnchors <- function(x) {
   out <- list()
   if (!is.list(x)) return(out)
@@ -536,10 +546,11 @@
       a <- x[[key]]
       if (is.list(a) && !is.null(a[["source"]])) out <- c(out, list(a))
     }
-    # the named anchors of a long output (options.anchors.<name>, A-20 (b))
-    named <- x[["anchors"]]
-    if (is.list(named) && !is.null(names(named))) {
-      for (a in named) if (is.list(a) && !is.null(a[["source"]])) out <- c(out, list(a))
+    # Named output anchors (A-20(b)), including nested search anchors.
+    if ("anchors" %in% nm && is.list(x[["anchors"]])) {
+      for (a in x[["anchors"]]) {
+        if (is.list(a) && !is.null(a[["source"]])) out <- c(out, list(a))
+      }
     }
   }
   for (v in x) out <- c(out, .irCollectAnchors(v))
@@ -555,8 +566,20 @@
 .irAnchorInventory <- function(ir) {
   candidate <- list()
   final <- list()
-  for (p in names(ir[["populations"]])) {
-    candidate[[p]] <- .irUniqueAnchors(.irCollectAnchors(ir[["populations"]][[p]][["where"]]))
+  pops <- ir[["populations"]] %||% list()
+  # matching (design 6.10): the controls template is instantiated at each case
+  # time, so the anchors of a match population's strata windows are resolved
+  # on the template's candidate roster, with the template's own criteria
+  templates <- list()
+  for (p in names(pops)) {
+    m <- pops[[p]][["match"]]
+    controls <- m[["controls"]]
+    if (is.list(m) && is.character(controls) && length(controls) == 1L) {
+      templates[[controls]] <- c(templates[[controls]], .irCollectAnchors(m[["match"]]))
+    }
+  }
+  for (p in names(pops)) {
+    candidate[[p]] <- .irUniqueAnchors(c(.irCollectAnchors(pops[[p]][["where"]]), templates[[p]]))
     used <- list()
     for (o in names(ir[["outputs"]])) {
       out <- ir[["outputs"]][[o]]

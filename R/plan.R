@@ -2965,6 +2965,14 @@
     ctx$validation <- validated
     on.exit(.planContextClose(ctx), add = TRUE)
   }
+  # Register before either executor can compile or materialise anything. The
+  # snapshot protects caller-owned tables while covering native compiler work
+  # as well as the legacy path, including a caller-provided context.
+  temp_tables_before <- unique(handle$temp_tables %||% character(0))
+  on.exit(
+    .dropTempTablesCreatedSince(handle, temp_tables_before),
+    add = TRUE
+  )
   if (identical(attr(ir, "source_version"), 2L)) {
     # Language-2.0 execution (design 6.1): the event sources of the requested
     # roots compile first in the private context, so the data-dependent adapter
@@ -2976,11 +2984,6 @@
     return(.planExecuteNative(ctx, ir, out_symbols, own_context))
   }
 
-  temp_tables_before <- unique(handle$temp_tables %||% character(0))
-  on.exit(
-    .dropTempTablesCreatedSince(handle, temp_tables_before),
-    add = TRUE
-  )
   bp <- .buildBlueprint(handle)
 
   staged <- identical(output_mode, "staged")

@@ -20,6 +20,7 @@
           cohort_end_date = .fragmentColumn("date", TRUE, "end")), unique_key = "cand_key",
           person_lineage = list(person_col = "subject_id", via_roster = NULL),
           private_columns = "cand_key")
+        attr(cand, "population") <- "t"
         .fragmentRegister(ctx, cand)
         cat("--", family, "\n")
         for (p in c("u", "e", "g7")) {

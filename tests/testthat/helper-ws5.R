@@ -21,8 +21,18 @@
 #   3012  supply fills: 2020-01-05 (10), 2019-12-25 (20), 2020-01-20 (0),
 #         2020-01-25 (NULL)
 #   3013  observation ends at the index (2019-12-31); fill 2020-01-05 (10)
+#   3015  recorded ends with supply 0 ([01-01,01-05]), -5 ([02-01,02-03]) and
+#         NULL ([03-01,03-02]): every row kept by its recorded end (10 days)
+#   3016  NULL end and NULL supply on 2020-01-01: a one-day record
 #   3020..3022  drug_era parity: ingredient-mapped fills and the matching
 #         drug_era rows (same mapping, end inference, gap 30, persistence 0)
+# Adapter association (episode members, concept EP_DRUG; A-20 item 6):
+#   3301  episodes E1 = 3301001 [2020-01-01, 2020-02-29] and E2 = 3301002
+#         [2020-01-01, 2020-03-31]; fills F1 2020-01-01 (30, linked to both),
+#         F2 2020-01-15 (30, E1 only), F3 2020-02-10 (30, E2 only). Person
+#         scope: recorded [01-01, 03-10], effective (stockpiled) [01-01,
+#         03-30]; E1 recorded 44 / effective 60 days; E2 recorded 60 /
+#         effective 60 (no carry from E1's F2 into F3).
 # Coverage scenarios (observation_period; roster ws5_roster):
 #   3101  two overlapping periods covering the index (ambiguous)
 #   3102  periods with exactly 8 uncovered days (gap 7 apart, gap 8 merged)
@@ -37,13 +47,13 @@
 
 .WS5 <- list(ERA_DRUG = 92000021L, ING_A = 92000001L, ING_B = 92000002L,
              DRUG_A = 92000011L, DRUG_AB = 92000012L, DRUG_X = 92000013L,
-             PAR_DRUG1 = 92000014L, PAR_DRUG2 = 92000015L,
+             PAR_DRUG1 = 92000014L, PAR_DRUG2 = 92000015L, EP_DRUG = 92000016L,
              ANCHOR_A = 92100001L, ANCHOR_B = 92100002L)
 
 .ws5_extend <- function(conn) {
   W <- .WS5
   app <- function(name, df) DBI::dbWriteTable(conn, name, df, append = TRUE)
-  pids <- c(3001:3013, 3020:3022, 3101:3105, 3201:3203)
+  pids <- c(3001:3013, 3015:3016, 3020:3022, 3101:3105, 3201:3203, 3301)
   app("person", data.frame(
     person_id = pids, gender_concept_id = 8507L, year_of_birth = 1970L,
     month_of_birth = 1L, day_of_birth = 1L, race_concept_id = 8527L,
@@ -54,7 +64,7 @@
     observation_period_id = id, person_id = pid, observation_period_start_date = s,
     observation_period_end_date = e, period_type_concept_id = 44814724L,
     stringsAsFactors = FALSE)
-  plain <- c(3001:3012, 3020:3022, 3105, 3201:3202)
+  plain <- c(3001:3012, 3015:3016, 3020:3022, 3105, 3201:3202, 3301)
   app("observation_period", rbind(
     op(300000L + plain, plain, "2015-01-01", "2030-12-31"),
     op(301301L, 3013L, "2015-01-01", "2019-12-31"),
@@ -73,7 +83,7 @@
                drug_source_value = "WS5", drug_source_concept_id = 0L, stringsAsFactors = FALSE)
   }
   E <- W$ERA_DRUG
-  app("drug_exposure", rbind(
+  drugs <- rbind(
     de(3001L, E, "2020-01-01", "2020-01-02"), de(3001L, E, "2020-01-10", "2020-01-11"),
     de(3002L, E, "2020-01-01", "2020-01-31"), de(3002L, E, "2020-01-05", "2020-01-10"),
     de(3002L, E, "2020-01-20", "2020-01-25"),
@@ -92,12 +102,28 @@
     de(3012L, E, "2020-01-05", supply = 10L), de(3012L, E, "2019-12-25", supply = 20L),
     de(3012L, E, "2020-01-20", supply = 0L), de(3012L, E, "2020-01-25"),
     de(3013L, E, "2020-01-05", supply = 10L),
+    de(3015L, E, "2020-01-01", "2020-01-05", supply = 0L),
+    de(3015L, E, "2020-02-01", "2020-02-03", supply = -5L),
+    de(3015L, E, "2020-03-01", "2020-03-02"),
+    de(3016L, E, "2020-01-01"),
+    de(3301L, W$EP_DRUG, "2020-01-01", supply = 30L), de(3301L, W$EP_DRUG, "2020-01-15", supply = 30L),
+    de(3301L, W$EP_DRUG, "2020-02-10", supply = 30L),
     # drug_era parity: fills normalised as the era definition does (recorded end,
     # else start + supply - 1, else start); ingredient A for both drugs
     de(3020L, W$PAR_DRUG1, "2020-01-01", supply = 30L), de(3020L, W$PAR_DRUG2, "2020-02-15", supply = 30L),
     de(3020L, W$PAR_DRUG1, "2020-05-01", "2020-05-10"),
     de(3021L, W$PAR_DRUG2, "2020-03-01", supply = 10L), de(3021L, W$PAR_DRUG2, "2020-04-10", supply = 5L),
-    de(3022L, W$PAR_DRUG1, "2020-01-01", "2020-01-31"), de(3022L, W$PAR_DRUG1, "2020-01-10", "2020-01-15")))
+    de(3022L, W$PAR_DRUG1, "2020-01-01", "2020-01-31"), de(3022L, W$PAR_DRUG1, "2020-01-10", "2020-01-15"))
+  app("drug_exposure", drugs)
+  ep_fills <- drugs$drug_exposure_id[drugs$person_id == 3301L]
+  app("episode", data.frame(
+    episode_id = c(3301001L, 3301002L), person_id = 3301L, episode_concept_id = 32531L,
+    episode_start_date = "2020-01-01", episode_end_date = c("2020-02-29", "2020-03-31"),
+    stringsAsFactors = FALSE))
+  app("episode_event", data.frame(
+    episode_id = c(3301001L, 3301002L, 3301001L, 3301002L),
+    event_id = ep_fills[c(1L, 1L, 2L, 3L)], episode_event_field_concept_id = 1147094L,
+    stringsAsFactors = FALSE))
   # Matched drug_era rows: ingredient A, gap 30, persistence 0.
   #   3020: [01-01,01-30] + [02-15,03-15] merge (02-15 <= 01-30 + 31); 05-01 > 03-15 + 31
   #   3021: [03-01,03-10] + [04-10,04-14] merge (04-10 <= 03-10 + 31)
@@ -136,17 +162,17 @@
   app("measurement", rbind(me(3201L, W$ANCHOR_B, "2019-05-01"), me(3201L, W$ANCHOR_B, "2019-07-01")))
   concepts <- data.frame(
     concept_id = c(W$ING_A, W$ING_B, W$DRUG_A, W$DRUG_AB, W$DRUG_X, W$ERA_DRUG, W$PAR_DRUG1,
-                   W$PAR_DRUG2, W$ANCHOR_A, W$ANCHOR_B),
+                   W$PAR_DRUG2, W$EP_DRUG, W$ANCHOR_A, W$ANCHOR_B),
     concept_name = c("ws5 ingredient A", "ws5 ingredient B", "ws5 drug A", "ws5 drug A+B",
                      "ws5 unmapped drug", "ws5 era drug", "ws5 parity drug 1", "ws5 parity drug 2",
-                     "ws5 anchor condition", "ws5 anchor measurement"),
-    domain_id = c(rep("Drug", 8), "Condition", "Measurement"),
+                     "ws5 episode drug", "ws5 anchor condition", "ws5 anchor measurement"),
+    domain_id = c(rep("Drug", 9), "Condition", "Measurement"),
     vocabulary_id = c("RxNorm", "RxNorm", "RxNorm", "RxNorm", "RxNorm", "RxNorm", "RxNorm",
-                      "RxNorm", "SNOMED", "LOINC"),
+                      "RxNorm", "RxNorm", "SNOMED", "LOINC"),
     concept_class_id = c("Ingredient", "Ingredient", "Clinical Drug", "Clinical Drug",
                          "Clinical Drug", "Clinical Drug", "Clinical Drug", "Clinical Drug",
-                         "Clinical Finding", "Lab Test"),
-    standard_concept = "S", concept_code = paste0("WS5", 1:10),
+                         "Clinical Drug", "Clinical Finding", "Lab Test"),
+    standard_concept = "S", concept_code = paste0("WS5", 1:11),
     valid_start_date = "1970-01-01", valid_end_date = "2099-12-31",
     invalid_reason = NA_character_, stringsAsFactors = FALSE)
   app("concept", concepts)
@@ -370,6 +396,72 @@
                  person_lineage = list(person_col = "subject_id", via_roster = NULL),
                  roster_namespace = pop, private_columns = "op_component_id")
   .fragmentRegister(ctx, f)
+}
+
+# A candidates (phase "candidate", keyed by cand_key) or final roster (keyed
+# by cohort_row_id) from literal rows: `rows` has the key, subject_id,
+# cohort_start_date, cohort_end_date and optionally index_visit_id,
+# index_source, index_key, op_start, op_end. The population is named
+# explicitly (A-20 (a)); `index_sources` declares the rows' possible origins.
+.ws5_literal_roster <- function(ctx, rows, name = "cand_t", population = "t",
+                                phase = "candidate", index_sources = NULL) {
+  h <- .compileDialect(ctx)
+  candidate <- identical(phase, "candidate")
+  key <- if (candidate) "cand_key" else "cohort_row_id"
+  lit <- function(col, v) {
+    if (length(v) != 1L || is.na(v)) {
+      type <- switch(col, index_source = , index_key = "text",
+                     cohort_start_date = , cohort_end_date = , op_start = , op_end = "date", "bigint")
+      return(.compileTypedNull(h, type))
+    }
+    switch(col,
+      subject_id = .sqlIntegerLiteral(h, as.integer(v)),
+      cohort_start_date = , cohort_end_date = , op_start = , op_end = .sqlDateLiteral(h, as.character(v)),
+      index_source = , index_key = .compileTextLiteral(as.character(v)),
+      .sqlLosslessKey(h, format(v, scientific = FALSE)))
+  }
+  cols <- intersect(c(key, "subject_id", "cohort_start_date", "cohort_end_date", "index_visit_id",
+                      "index_source", "index_key", "op_start", "op_end"), names(rows))
+  selects <- vapply(seq_len(nrow(rows)), function(i) {
+    paste0("SELECT ", paste(vapply(cols, function(cn) paste0(lit(cn, rows[[cn]][[i]]), " AS ", cn), ""),
+                            collapse = ", "), .compileNoTableFrom(h))
+  }, "")
+  types <- list(subject_id = .fragmentColumn("integer", FALSE, "person_key"),
+                cohort_start_date = .fragmentColumn("date", FALSE, "start"),
+                cohort_end_date = .fragmentColumn("date", TRUE, "end"),
+                index_visit_id = .fragmentColumn("bigint", TRUE, "private"),
+                index_source = .fragmentColumn("text", TRUE, "origin_identity"),
+                index_key = .fragmentColumn("text", TRUE, "origin_identity"),
+                op_start = .fragmentColumn("date", TRUE, "start"),
+                op_end = .fragmentColumn("date", TRUE, "end"))
+  types[[key]] <- .fragmentColumn("bigint", FALSE, "episode_key")
+  f <- .fragment(name, if (candidate) "candidates" else "roster", "episode",
+                 paste(selects, collapse = " UNION ALL "), columns = types[cols], unique_key = key,
+                 person_lineage = list(person_col = "subject_id", via_roster = NULL),
+                 roster_namespace = if (!candidate) population,
+                 private_columns = intersect(c(key, "index_visit_id", "index_source", "index_key"), cols))
+  if (candidate) attr(f, "population") <- population
+  if (!is.null(index_sources)) attr(f, "index_sources") <- index_sources
+  .fragmentRegister(ctx, f)
+}
+
+# Release a context's compiler session tables when the calling frame exits,
+# before cleanups registered earlier (the backends' connections): one deferred
+# release per context, the context captured by value (A-20 (k)).
+.ws5_release <- function(ctx, envir = parent.frame()) {
+  force(ctx)
+  withr::defer(.compileReleaseTempTables(ctx), envir = envir, priority = "first")
+}
+
+# .intervalReducerValues() with fragment names allocated by the test (the
+# consumer): one bounds and one stream identifier per distinct call (A-20 (e)).
+.ws5_rv <- function(ctx, fn, roster, phase = "final", ...) {
+  args <- list(...)
+  key <- paste(fn, roster$name, phase, args[["cov"]][["coverage"]][["name"]] %||% "",
+               paste(deparse(args[setdiff(names(args), "cov")], control = NULL), collapse = ""))
+  tag <- substr(paste(as.character(openssl::sha256(charToRaw(enc2utf8(key)))), collapse = ""), 1L, 12L)
+  .intervalReducerValues(ctx, fn, roster, phase, ...,
+                         names = list(bounds = paste0("tb_", tag), stream = paste0("ts_", tag)))
 }
 
 # Expected rows of an acceptance output as a data frame.

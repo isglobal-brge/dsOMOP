@@ -620,7 +620,7 @@
 # private columns (.eventKindContract(), amendment A-17); an adapter's
 # parent_source_ns is fixed by its declaration.
 .eventUnavailable <- function(ctx, name, table, kind = "table", concept = NULL,
-                              parent = NULL) {
+                              parent = NULL, index_visit = FALSE) {
   h <- .compileDialect(ctx)
   contract <- .eventKindContract(kind)
   nm_final <- .fragmentName("ev", name, ctx = ctx)
@@ -647,7 +647,7 @@
   .eventMetaSet(ctx, name, list(
     name = name, kind = kind, table = table, availability = "unavailable",
     roles = character(0), catalogue = NULL, fragments = c(final = nm_final),
-    index_visit = FALSE, concept = concept, parent = parent, columns = names(spec)))
+    index_visit = isTRUE(index_visit), concept = concept, parent = parent, columns = names(spec)))
   f
 }
 

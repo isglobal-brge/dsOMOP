@@ -2,12 +2,26 @@
 % Please edit documentation in R/compile_interval.R
 \name{.compileReleaseTempTables}
 \alias{.compileReleaseTempTables}
-\title{Drop the temporary tables the compilers of a context materialised}
+\title{Release the temporary tables the compilers of a context materialised}
 \usage{
-.compileReleaseTempTables(ctx)
+.compileReleaseTempTables(ctx, tables = NULL)
+}
+\arguments{
+\item{ctx}{Execution or compilation context.}
+
+\item{tables}{Optional subset of the registered names.}
+}
+\value{
+NULL invisibly.
 }
 \description{
-The plan executor releases every temporary object created during a plan;
-callers that compile outside it (tests, explain) release them here.
+Drops each registered name through the session-safe
+\code{.dropTempTable()} (only tables the handle owns, on their own session;
+objects owned before the operation are never registered here), clears
+only the names it released, keeps every failure registered for a retry and
+raises one aggregated cleanup error (A-20 (k)). The execution context's
+closure (\code{.planContextClose()}) calls it for the context and its
+compilation child; callers that compile outside it (tests, explain) call it
+themselves.
 }
 \keyword{internal}

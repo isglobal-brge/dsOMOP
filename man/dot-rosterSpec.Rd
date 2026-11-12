@@ -12,15 +12,23 @@
 \item{phase}{\code{"candidate"} or \code{"final"}.}
 }
 \value{
-list(name, key, key_type, person, person_type, index, index_end,
-  op_start, op_end, op_component, population, namespace).
+list(name, phase, key, key_type, person, person_type, index,
+  index_end, op_start, op_end, op_component, population, namespace,
+  index_visit, index_source, index_key, index_sources).
 }
 \description{
 Candidates (\code{cand_<pop>}) are keyed by the private \code{cand_key};
 final rosters (\code{pop_<id>}) by \code{cohort_row_id}. Both carry the
 person column of their lineage (\code{subject_id} or \code{person_id}) and,
 where the population has them, \code{cohort_start_date} (the index after
-offsets), \code{cohort_end_date}, \code{op_start}, \code{op_end} and the
-private \code{op_component_id} of the selected coverage component.
+offsets), \code{cohort_end_date}, \code{op_start}, \code{op_end}, the
+private \code{op_component_id} of the selected coverage component,
+\code{index_visit_id} and the origin \code{index_source} /
+\code{index_key} (design 6.9). The population is named explicitly --
+\code{attr(f, "population")} for candidates, \code{roster_namespace} for
+final rosters -- and never derived from the fragment name, which an
+allocated identifier cannot be reversed to (A-20 (a)); a roster may declare
+the possible \code{index_source} values of its rows as \code{attr(f,
+"index_sources")}.
 }
 \keyword{internal}

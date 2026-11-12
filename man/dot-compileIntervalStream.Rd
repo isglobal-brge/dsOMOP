@@ -2,23 +2,27 @@
 % Please edit documentation in R/compile_interval.R
 \name{.compileIntervalStream}
 \alias{.compileIntervalStream}
-\title{Rows of a relation overlapping each roster row's window}
+\title{Rows of a source overlapping each roster row's window}
 \usage{
 .compileIntervalStream(
   ctx,
-  relation,
+  source,
   roster_fragment,
   window,
   phase,
   name,
+  coverage = "recorded",
   overlap = TRUE,
-  extra = character(0)
+  extra = character(0),
+  path = "/reducer",
+  use = c("rows", "course")
 )
 }
 \arguments{
 \item{ctx}{Execution context.}
 
-\item{relation}{Row fragment with person_id, start_date, end_date.}
+\item{source}{Typed source reference \code{list(event = )} or
+\code{list(interval = )}.}
 
 \item{roster_fragment}{Roster or candidates fragment.}
 
@@ -26,17 +30,32 @@
 
 \item{phase}{\code{"candidate"} or \code{"final"}.}
 
-\item{name}{Fragment name.}
+\item{name}{Fragment name (allocated by the consumer, A-20 (e)).}
+
+\item{coverage}{\code{"recorded"} or \code{"effective_supply"}.}
 
 \item{overlap}{Logical; select rows overlapping the window (intervals) or
 starting inside it (fills under \code{start_in_window}).}
 
 \item{extra}{Named character vector of extra relation columns to project.}
+
+\item{path}{JSON path used in rejections.}
+
+\item{use}{\code{"rows"} (the recorded / effective rows of an interval, the
+rows of an event: coverage consumers) or \code{"course"} (the course of
+an interval source, an event consumer such as an era count).}
 }
 \value{
-Stream fragment: row_key, person_id, start_date, end_date (+ extra).
+Stream fragment: row_key, person_id, start_date, end_date (+ extra
+  and, over an adapter event, the private physical identity src_*).
 }
 \description{
-Rows of a relation overlapping each roster row's window
+The relation is resolved through the consumer association
+(\code{.consumerAssociation()}): the index visit, the episode parent of an
+adapter source (the per-parent interval relation, or the adapter's links
+bound to the row's origin) and the person; a person-indexed stream over an
+adapter event keeps each physical event once per roster row (A-20 item 6).
+A direct event source gets the coverage-quality predicate
+(\code{.eventCoverageQualitySql()}).
 }
 \keyword{internal}

@@ -7,6 +7,8 @@
 .intervalStockpileCap()
 }
 \description{
-\code{getOption("dsomop.max_stockpile_days", 90)}; a non-negative integer.
+\code{getOption("dsomop.max_stockpile_days", 90)}: one integer between 0
+and \code{.Machine$integer.max}, validated before any coercion (a larger
+value is refused, never turned into NA).
 }
 \keyword{internal}

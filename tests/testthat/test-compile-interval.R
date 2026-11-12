@@ -54,7 +54,8 @@ test_that("gaps and islands use the running maximum of prior ends; adjacency mer
   for (b in names(.ws5_iv_backends)) {
     h <- .ws5_iv_backends[[b]]$handle
     ctx <- .ws5_iv_ctx(h, list(era0 = list(source = list(event = "drug"), gap = 0),
-                               era1 = list(source = list(event = "drug"), gap = 1)))
+                               era1 = list(source = list(event = "drug"), gap = 1),
+                               maxgap = list(source = list(event = "drug"), gap = .Machine$integer.max)))
     # nested: [01-20, 01-25] starts after the nested record's end (01-10) but
     # inside the running maximum (01-31): one era, never three
     nested <- .ws5_course(ctx, "era0", 3002)
@@ -69,6 +70,8 @@ test_that("gaps and islands use the running maximum of prior ends; adjacency mer
     expect_identical(adj0$era_key, c("1:1", "1:2"), info = b)
     adj1 <- .ws5_course(ctx, "era1", 3003)
     expect_identical(nrow(adj1), 1L, info = b)
+    expect_no_warning(maxgap <- .ws5_course(ctx, "maxgap", 3003))
+    expect_identical(nrow(maxgap), 1L, info = b)
     # a one-day record is a one-day era
     one <- .ws5_course(ctx, "era0", 3004)
     expect_identical(c(one$start_date, one$end_date), c("2020-03-01", "2020-03-01"), info = b)
@@ -200,7 +203,7 @@ test_that("stockpiling: a separate effective relation; recorded coverage is neve
       rec = list(source = list(event = "metf"), gap = 30),
       stock = list(source = list(event = "metf"), gap = 30, stockpile = TRUE),
       dstock = list(source = list(event = "drug"), gap = 30, stockpile = TRUE)), events = events)
-    on.exit(.compileReleaseTempTables(ctx), add = TRUE)
+    .ws5_release(ctx)
     plain <- .compileIntervalByName(ctx, "rec")
     expect_null(plain$effective)
     st <- .compileIntervalByName(ctx, "stock")
@@ -250,8 +253,72 @@ test_that("the stockpile iterator is deterministic, bounded and follows the froz
                                          end_recorded = as.Date(NA), supply = c(300, 5)), cap = 7L)
   expect_identical(capped$carry, c(0L, 7L))
   expect_identical(.stockpileIterate(rows[0, ], 90L)$carry, integer(0))
-  withr::with_options(list(dsomop.max_stockpile_days = -1), expect_error(.intervalStockpileCap(), "non-negative"))
+  withr::with_options(list(dsomop.max_stockpile_days = -1), expect_error(.intervalStockpileCap(), "between 0 and"))
   withr::with_options(list(dsomop.max_stockpile_days = 30), expect_identical(.intervalStockpileCap(), 30L))
+  # N2: a cap beyond the integer range is refused before coercion (never NA)
+  withr::with_options(list(dsomop.max_stockpile_days = 2147483648),
+                      expect_error(.intervalStockpileCap(), "between 0 and 2147483647"))
+  withr::with_options(list(dsomop.max_stockpile_days = 2147483647),
+                      expect_identical(.intervalStockpileCap(), .Machine$integer.max))
+  withr::with_options(list(dsomop.max_stockpile_days = Inf), expect_error(.intervalStockpileCap()))
+  # N2: no integer overflow -- the largest integer supply gives a finite date
+  big <- .stockpileIterate(data.frame(person_id = 1, group_id = 1, start_date = as.Date("2020-01-01"),
+                                      end_recorded = as.Date(NA), supply = 2147483647), cap = 90L)
+  expect_false(is.na(big$end_date))
+  expect_true(big$end_date > as.Date("9999-12-31"))
+  expect_identical(big$supply_days, .Machine$integer.max)
+  expect_no_warning(.ws4_expect_rejection(.stockpileIterate(
+    data.frame(person_id = 1, group_id = 1, start_date = as.Date("2020-01-01"),
+               end_recorded = as.Date(NA), supply = 2147483648), cap = 90L),
+    pattern = "supported integer range"))
+  # a non-finite supply is not a valid supply (recorded length, else one day)
+  nf <- .stockpileIterate(data.frame(person_id = 1, group_id = 1, start_date = as.Date("2020-01-01"),
+                                     end_recorded = as.Date(c(NA, "2020-01-03")), supply = c(Inf, NaN)), 90L)
+  expect_identical(nf$supply_days, c(1L, 3L))
+  # the partition may carry the parent identity (per-parent stockpiles, A-20 item 6)
+  par <- .stockpileIterate(data.frame(person_id = 1, group_id = 1, parent_event_id = c(1, 2),
+                                      start_date = as.Date(c("2020-01-01", "2020-01-10")),
+                                      end_recorded = as.Date(NA), supply = c(30, 30)), 90L,
+                           partition = c("person_id", "group_id", "parent_event_id"))
+  expect_identical(par$carry, c(0L, 0L))
+})
+
+test_that("stockpile materialisation refuses dates and supplies outside its supported range (N2)", {
+  h <- .ws4_reach_handle()
+  on.exit(try(DBI::dbDisconnect(h$conn), silent = TRUE), add = TRUE)
+  DBI::dbExecute(h$conn, paste0(
+    "INSERT INTO drug_exposure (drug_exposure_id, person_id, drug_concept_id, drug_exposure_start_date, ",
+    "drug_exposure_end_date, drug_type_concept_id, days_supply) VALUES ",
+    "(939091, 1004, 1503297, '2020-01-01', '2020-01-01', 38000177, 2147483647)"))
+  compile <- function() {
+    ctx <- .ws5_iv_ctx(h, list(s = list(source = list(event = "drug"), stockpile = TRUE)),
+                      events = list(drug = list(table = "drug_exposure")))
+    on.exit(.planContextClose(ctx), add = TRUE)
+    before <- h$temp_tables
+    error <- tryCatch(.compileIntervalByName(ctx, "s"), error = identity)
+    expect_s3_class(error, "dsomop_plan_rejection")
+    expect_identical(error$field, "/intervals/s")
+    expect_identical(h$temp_tables, before)
+    expect_length(ctx$compile_temp_tables, 0L)
+    error
+  }
+  expect_no_warning(e <- compile())
+  expect_match(conditionMessage(e), "supported date range")
+  DBI::dbExecute(h$conn, "UPDATE drug_exposure SET days_supply = 2147483648 WHERE drug_exposure_id = 939091")
+  expect_no_warning(e <- compile())
+  expect_match(conditionMessage(e), "supported integer range")
+})
+
+test_that("supply kernels treat non-finite supply as invalid and reject unrepresentable totals", {
+  windows <- data.frame(key = 1L, lo = as.Date(NA), hi = as.Date(NA))
+  fills <- data.frame(key = 1L, start = as.Date("2020-01-01"), supply = c(Inf, -Inf, NaN))
+  for (policy in c("start_in_window", "clipped")) {
+    expect_no_warning(value <- .supplyDays(fills, windows, policy))
+    expect_identical(value, 0L)
+  }
+  fills$supply <- c(.Machine$integer.max, 1, 0)
+  expect_no_warning(.ws4_expect_rejection(.supplyDays(fills, windows),
+                                          pattern = "supported integer range"))
 })
 
 test_that("covered_days, supply_days and observed days over rosters and windows", {
@@ -266,7 +333,7 @@ test_that("covered_days, supply_days and observed days over rosters and windows"
       mrec = list(source = list(event = "metf"), gap = 30),
       mstock = list(source = list(event = "metf"), gap = 30, stockpile = TRUE)), events = events,
       populations = list(cv = list(kind = "criteria", coverage = list(policy = "union", gap = 30L))))
-    on.exit(.compileReleaseTempTables(ctx), add = TRUE)
+    .ws5_release(ctx)
     # a roster of fixture episodes at index 2019-12-31 (union coverage, gap 30)
     cand <- .fragment("cand_cv", "candidates", "episode",
                       paste0("SELECT ", .sqlLosslessKey(ctx, "w.cand_key"), " AS cand_key, w.subject_id AS subject_id, ",
@@ -278,11 +345,12 @@ test_that("covered_days, supply_days and observed days over rosters and windows"
                                      cohort_end_date = .fragmentColumn("date", TRUE, "end")),
                       unique_key = "cand_key", person_lineage = list(person_col = "subject_id", via_roster = NULL),
                       private_columns = "cand_key")
+    attr(cand, "population") <- "cv"
     .fragmentRegister(ctx, cand)
     cov <- .compileCoverage(ctx, "cv", list(policy = "union", gap = 30), cand, "candidate")
     roster <- .ws5_roster(ctx, cand, cov, pop = "cv")
     val <- function(fn, ...) {
-      v <- .intervalReducerValues(ctx, fn, roster, "final", cov = cov, ...)
+      v <- .ws5_rv(ctx, fn, roster, "final", cov = cov, ...)
       stats::setNames(v$value, as.character(v$row_key))
     }
     w31 <- list(start = 1, end = 31, anchor = "index")
@@ -355,7 +423,7 @@ test_that("an adapter source contributes each physical event once (episode membe
     ctx <- .ws5_iv_ctx(h, list(m = list(source = list(event = "members"), gap = 30, by = "concept"),
                                ms = list(source = list(event = "members"), gap = 30, stockpile = TRUE)),
                        events = events)
-    on.exit(.compileReleaseTempTables(ctx), add = TRUE)
+    .ws5_release(ctx)
     # 1015's chemotherapy fill of 2019-04-12 is linked to two episodes: one record
     rec <- .ws5_recorded(ctx, "m", 1015)
     expect_identical(nrow(rec), 5L, info = b)
@@ -432,6 +500,380 @@ test_that("interval nodes are validated and compiled once per context", {
   .ws4_expect_rejection(.intervalSpec(list(source = list(interval = "y")), "x"), pattern = "event reference")
   .ws4_expect_rejection(.intervalSpec(list(source = list(event = "drug"), by = "atc"), "x"), pattern = "by")
   .ws4_expect_rejection(.intervalSpec(list(source = list(event = "drug"), extra = 1), "x"), pattern = "unknown")
+})
+
+# --- A-20 fix round (Astra's WS-5 review B1, B2, B4, B6, B7; item 6) ---------------------
+
+.ws5_course_full <- function(ctx, name, persons, association = "person") {
+  iv <- .compileIntervalByName(ctx, name, association = association)
+  r <- .ws5_rows(ctx, iv$course, c("person_id", "start_date", "event_id"))
+  r[r$person_id %in% persons, , drop = FALSE]
+}
+
+test_that("min_days measures the normalised recorded span, for stockpiled sources too (A-20 item 3, B1)", {
+  for (b in names(.ws5_iv_backends)) {
+    h <- .ws5_iv_backends[[b]]$handle
+    events <- list(metf = list(table = "drug_exposure", concept_set = list(concepts = list(1503297)),
+                               end = list(fallback = "days_supply")))
+    iv <- function(...) c(list(source = list(event = "metf"), gap = 30), list(...))
+    ctx <- .ws5_iv_ctx(h, list(
+      s44 = iv(stockpile = TRUE, min_days = 44), s45 = iv(stockpile = TRUE, min_days = 45),
+      s50 = iv(stockpile = TRUE, min_days = 50),
+      s44p = iv(stockpile = TRUE, min_days = 44, persistence = 30),
+      s45p = iv(stockpile = TRUE, min_days = 45, persistence = 30),
+      s15points = iv(stockpile = TRUE, end = "start", min_days = 15),
+      s16points = iv(stockpile = TRUE, end = "start", min_days = 16, persistence = 30),
+      r44p = iv(min_days = 44, persistence = 30), r45p = iv(min_days = 45, persistence = 30)),
+      events = events)
+    .ws5_release(ctx)
+    # reach person 1004: fills [01-01, 01-30] + [01-15, 02-13] -- normalised
+    # recorded span 44 days; effective span 60 days (carry 16)
+    for (name in c("s45", "s50", "s45p", "r45p", "s16points")) {
+      info <- paste(b, name)
+      expect_identical(nrow(.ws5_course(ctx, name, 1004)), 0L, info = info)
+      expect_identical(nrow(.ws5_recorded(ctx, name, 1004)), 0L, info = info)
+      if (startsWith(name, "s")) {
+        expect_identical(nrow(.ws5_recorded(ctx, name, 1004, "effective")), 0L, info = info)
+      }
+    }
+    # at the threshold the era stays, in all three relations: course end =
+    # effective end (+ persistence) when stockpiled, recorded end + persistence
+    # otherwise; course end_recorded = the normalised recorded end, never effective
+    ends <- function(name) {
+      c <- .ws5_course_full(ctx, name, 1004)
+      c(c$start_date, c$end_date, c$end_recorded)
+    }
+    expect_identical(ends("s44"), c("2020-01-01", "2020-02-29", "2020-02-13"), info = b)
+    expect_identical(ends("s44p"), c("2020-01-01", "2020-03-30", "2020-02-13"), info = b)
+    expect_identical(ends("r44p"), c("2020-01-01", "2020-03-14", "2020-02-13"), info = b)
+    # An era override changes the measured recorded end, even though the
+    # original recorded roles and effective supply still extend beyond it.
+    expect_identical(ends("s15points"), c("2020-01-01", "2020-02-29", "2020-01-15"), info = b)
+    expect_identical(nrow(.ws5_recorded(ctx, "s44", 1004)), 2L, info = b)
+    expect_identical(.ws5_recorded(ctx, "s44", 1004, "effective")$end_date,
+                     c("2020-01-30", "2020-02-29"), info = b)
+    expect_identical(.ws5_recorded(ctx, "s44", 1004, "effective")$norm_end,
+                     c("2020-01-30", "2020-02-13"), info = b)
+    # the retained flag is one marks pass: no relation reads its own course
+    meta <- .intervalMeta(ctx, "s44")
+    for (rel in c("course", "recorded", "effective")) {
+      f <- .fragmentGet(ctx, meta$fragments[[rel]])
+      expect_false(meta$fragments[["course"]] %in% setdiff(f$dependencies, f$name), info = paste(b, rel))
+      expect_false(grepl("EXISTS", f$select_body, fixed = TRUE), info = paste(b, rel))
+    }
+  }
+})
+
+test_that("direct-event coverage applies the one quality policy: event/interval parity (A-20 item 2, B2)", {
+  for (b in names(.ws5_iv_backends)) {
+    h <- .ws5_iv_backends[[b]]$handle
+    ctx <- .ws5_iv_ctx(h, list(
+      i_fb = list(source = list(event = "d_fb")),
+      i_none = list(source = list(event = "d_role"), fallback = "none"),
+      i_start = list(source = list(event = "d_start"), end = "start")),
+      events = list(d_fb = .ws5_drug_event(end = list(fallback = "days_supply")),
+                    d_role = .ws5_drug_event(), d_start = .ws5_drug_event(end = "start")),
+      populations = list(t = list(kind = "criteria")))
+    # 3007: NULL end with supply 0 and -5; 3015: recorded ends with supply 0,
+    # -5, NULL; 3016: NULL end and supply; 3005: NULL end, supply 10; 3004: [03-01]
+    cand <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:5, subject_id = c(3007, 3015, 3016, 3005, 3004),
+                                                cohort_start_date = "2019-12-31", cohort_end_date = "2020-12-31"))
+    w <- list(start = 1L, end = 120L, anchor = "index")
+    want <- list(c(0L, 10L, 1L, 10L, 1L), c(2L, 10L, 1L, 1L, 1L), c(2L, 3L, 1L, 1L, 1L))
+    pairs <- list(c("d_fb", "i_fb"), c("d_role", "i_none"), c("d_start", "i_start"))
+    for (k in seq_along(pairs)) {
+      ev <- .ws5_rv(ctx, "covered_days", cand, "candidate", source = list(event = pairs[[k]][[1L]]), window = w)
+      iv <- .ws5_rv(ctx, "covered_days", cand, "candidate", source = list(interval = pairs[[k]][[2L]]), window = w)
+      expect_identical(ev$value, want[[k]], info = paste(b, pairs[[k]][[1L]]))
+      expect_identical(iv$value, want[[k]], info = paste(b, pairs[[k]][[2L]]))
+    }
+    # supply_days reads the same quality: an invalid supply contributes nothing
+    sd <- .ws5_rv(ctx, "supply_days", cand, "candidate", source = list(event = "d_fb"), window = w)
+    expect_identical(sd$value, c(0L, 0L, 0L, 10L, 0L), info = b)
+  }
+  # a fractional supply (SQLite keeps the REAL a vendor integer column cannot)
+  h <- .ws4_reach_handle()
+  on.exit(try(DBI::dbDisconnect(h$conn), silent = TRUE), add = TRUE)
+  .ws5_extend(h$conn)
+  DBI::dbExecute(h$conn, paste0(
+    "INSERT INTO drug_exposure (drug_exposure_id, person_id, drug_concept_id, drug_exposure_start_date, ",
+    "drug_exposure_end_date, drug_type_concept_id, days_supply) VALUES ",
+    "(939001, 3017, ", .WS5$ERA_DRUG, ", '2020-01-01', NULL, 38000177, 2.5), ",
+    "(939002, 3018, ", .WS5$ERA_DRUG, ", '2020-01-01', '2020-01-03', 38000177, 2.5)"))
+  h$blueprint <- NULL
+  h$role_registry <- NULL
+  ctx <- .ws5_iv_ctx(h, list(i_fb = list(source = list(event = "d_fb")),
+                             i_none = list(source = list(event = "d_role"), fallback = "none")),
+                     events = list(d_fb = .ws5_drug_event(end = list(fallback = "days_supply")),
+                                   d_role = .ws5_drug_event()),
+                     populations = list(t = list(kind = "criteria")))
+  cand <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:2, subject_id = c(3017, 3018),
+                                              cohort_start_date = "2019-12-31", cohort_end_date = "2020-12-31"))
+  w <- list(start = 1L, end = 30L, anchor = "index")
+  val <- function(src) .ws5_rv(ctx, "covered_days", cand, "candidate", source = src, window = w)$value
+  expect_identical(val(list(event = "d_fb")), c(0L, 3L))
+  expect_identical(val(list(interval = "i_fb")), c(0L, 3L))
+  expect_identical(val(list(event = "d_role")), c(1L, 3L))
+  expect_identical(val(list(interval = "i_none")), c(1L, 3L))
+})
+
+test_that("an unavailable source is NA for every row; an available event-free source is 0 (A-20 (i), B4)", {
+  for (b in names(.ws5_iv_backends)) {
+    h <- .ws5_iv_backends[[b]]$handle
+    if (!is.null(.roleOf(h, "note"))) next
+    ctx <- .ws5_iv_ctx(h, list(n = list(source = list(event = "notes")),
+                               ns = list(source = list(event = "notes"), stockpile = TRUE),
+                               d = list(source = list(event = "drug")),
+                               ds = list(source = list(event = "drug"), stockpile = TRUE)),
+                       events = list(notes = list(table = "note", on_missing_table = "unavailable"),
+                                     drug = .ws5_drug_event()),
+                       populations = list(t = list(kind = "criteria")))
+    .ws5_release(ctx)
+    # 3001 has drug rows (4 covered days in January); 3202 has none
+    cand <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:2, subject_id = c(3001, 3202),
+                                                cohort_start_date = "2019-12-31", cohort_end_date = "2020-12-31"))
+    w <- list(start = 1L, end = 31L, anchor = "index")
+    rv <- function(fn, src, ...) .ws5_rv(ctx, fn, cand, "candidate", source = src, window = w, ...)$value
+    na <- c(NA_integer_, NA_integer_)
+    expect_identical(rv("covered_days", list(event = "notes")), na, info = b)
+    expect_identical(rv("covered_days", list(interval = "n")), na, info = b)
+    expect_identical(rv("covered_days", list(interval = "ns"), coverage = "effective_supply"), na, info = b)
+    expect_identical(rv("supply_days", list(event = "notes")), na, info = b)
+    # available controls: values, and 0 for the event-free row
+    expect_identical(rv("covered_days", list(event = "drug")), c(4L, 0L), info = b)
+    expect_identical(rv("covered_days", list(interval = "d")), c(4L, 0L), info = b)
+    expect_identical(rv("covered_days", list(interval = "ds"), coverage = "effective_supply"), c(4L, 0L), info = b)
+    expect_identical(rv("supply_days", list(event = "drug")), c(0L, 0L), info = b)
+    # effective_supply over a non-stockpiled source is refused even when unavailable
+    .ws4_expect_rejection(rv("covered_days", list(interval = "n"), coverage = "effective_supply"),
+                          pattern = "stockpiled")
+  }
+})
+
+test_that("index-visit stockpiles partition carry and courses before consumer windows (B3)", {
+  h <- .ws4_reach_handle()
+  on.exit(try(DBI::dbDisconnect(h$conn), silent = TRUE), add = TRUE)
+  DBI::dbExecute(h$conn, "ALTER TABLE drug_exposure ADD COLUMN visit_occurrence_id BIGINT")
+  DBI::dbExecute(h$conn, paste0(
+    "INSERT INTO drug_exposure (drug_exposure_id, person_id, drug_concept_id, drug_exposure_start_date, ",
+    "drug_exposure_end_date, drug_type_concept_id, days_supply, visit_occurrence_id) VALUES ",
+    "(939081, 1007, 1503297, '2020-01-01', '2020-01-30', 38000177, 30, 700701), ",
+    "(939082, 1007, 1503297, '2020-01-15', '2020-02-13', 38000177, 30, 700702), ",
+    "(939083, 1007, 1503297, '2020-01-20', '2020-02-18', 38000177, 30, 700701)"))
+  h$blueprint <- NULL
+  h$role_registry <- NULL
+  ctx <- .ws5_iv_ctx(h, list(s = list(source = list(event = "drug"), stockpile = TRUE)),
+    events = list(drug = list(table = "drug_exposure", visit = list(index = TRUE))),
+    populations = list(t = list(kind = "criteria")))
+  on.exit(.planContextClose(ctx), add = TRUE, after = FALSE)
+  cand <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:3, subject_id = 1007,
+    index_visit_id = c(700701, 700702, NA),
+    cohort_start_date = "2019-12-31", cohort_end_date = "2020-12-31"))
+  val <- .ws5_rv(ctx, "covered_days", cand, "candidate", source = list(interval = "s"),
+                 coverage = "effective_supply")
+  expect_identical(val$value, c(60L, 30L, 0L))
+  course <- .ws5_course_full(ctx, "s", 1007)
+  expect_identical(as.character(course$visit_id), c("700701", "700702"))
+  expect_identical(course$end_date, c("2020-02-29", "2020-02-13"))
+  expect_identical(course$era_key, c("700701|1:1", "700702|1:1"))
+})
+
+test_that("reducer and stockpile fetches are bounded: cap, cap + 1 and a grown realisation (A-20 (j), B6)", {
+  h <- .ws5_iv_backends$sqlite$handle
+  ctx <- .ws5_iv_ctx(h, list(d = list(source = list(event = "drug"))),
+                     populations = list(t = list(kind = "criteria")))
+  # two roster rows; 3002 and 3003 have 3 drug rows each (6 stream rows)
+  cand <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:2, subject_id = c(3002, 3003),
+                                              cohort_start_date = "2019-12-31", cohort_end_date = "2020-12-31"))
+  rv <- function() .ws5_rv(ctx, "covered_days", cand, "candidate", source = list(event = "drug"))
+  withr::with_options(list(dsomop.max_memory_rows = 6), expect_identical(rv()$value, c(31L, 24L)))
+  e <- withr::with_options(list(dsomop.max_memory_rows = 5), tryCatch(rv(), error = identity))
+  expect_s3_class(e, "dsomop_plan_rejection")
+  expect_identical(c(e$code, e$reason), c("validation_error", "reducer_row_cap"))
+  expect_identical(.rejectionEntry(e), list(code = "validation_error",
+                                            message = "Publication refused: validation_error.",
+                                            reason = "reducer_row_cap"))
+  expect_false(grepl("[0-9]", conditionMessage(e)))
+  # the roster bounds are bounded too (two rows, cap 1)
+  e <- withr::with_options(list(dsomop.max_memory_rows = 1), tryCatch(rv(), error = identity))
+  expect_identical(e$reason, "reducer_row_cap")
+  # stockpile: the realised rows are bounded; the COUNT is only an early check
+  n <- nrow(.ws5_rows(ctx, .compileIntervalByName(ctx, "d")$recorded, "person_id"))
+  stock <- function() {
+    sctx <- .ws5_iv_ctx(h, list(s = list(source = list(event = "drug"), stockpile = TRUE)))
+    on.exit(.compileReleaseTempTables(sctx), add = TRUE)
+    before <- h$temp_tables
+    out <- tryCatch(.compileIntervalByName(sctx, "s"), error = identity)
+    list(out = out, left = setdiff(h$temp_tables, before), owned = sctx$compile_temp_tables)
+  }
+  withr::with_options(list(dsomop.max_memory_rows = n), {
+    ok <- stock()
+    expect_s3_class(ok$out$effective, "dsomop_fragment")
+  })
+  withr::with_options(list(dsomop.max_memory_rows = n - 1), {
+    over <- stock()
+    expect_identical(c(over$out$code, over$out$reason), c("validation_error", "stockpile_row_cap"))
+    expect_length(over$left, 0L)
+    expect_length(over$owned, 0L)
+  })
+  # a realisation that grew after the pre-count: the bounded fetch refuses it
+  testthat::local_mocked_bindings(.adapterCount = function(...) 0)
+  withr::with_options(list(dsomop.max_memory_rows = n - 1), {
+    grown <- stock()
+    expect_identical(grown$out$reason, "stockpile_row_cap")
+    expect_length(grown$left, 0L)
+  })
+})
+
+test_that("compiler session tables are released on every exit path; a failed DROP is retried (A-20 (k), B7)", {
+  h <- .ws4_reach_handle()
+  on.exit(try(DBI::dbDisconnect(h$conn), silent = TRUE), add = TRUE)
+  p <- .ws5_plan(events = list(d = list(table = "drug_exposure")),
+                 intervals = list(i = list(source = list(event = "d"), stockpile = TRUE)))
+  physical <- function() DBI::dbGetQuery(h$conn, "SELECT name FROM sqlite_temp_master WHERE type = 'table'")$name
+  pre <- .createTempTable(h, "ws5_preexisting", "SELECT 1 AS x")
+  # success: closing the execution context releases the compiler's table
+  ctx <- .ws4_ctx(h, p)
+  .compileIntervalByName(ctx, "i")
+  owned <- ctx$compile_temp_tables
+  expect_length(owned, 1L)
+  expect_true(owned %in% physical())
+  .planContextClose(ctx)
+  expect_length(intersect(owned, c(h$temp_tables, physical())), 0L)
+  expect_length(ctx$compile_temp_tables, 0L)
+  # the compilation child of a publication context is released with it
+  ctx <- .ws4_ctx(h, p)
+  cctx <- .compileContext(ctx, ctx$ir)
+  .compileIntervalByName(cctx, "i")
+  owned <- cctx$compile_temp_tables
+  expect_length(owned, 1L)
+  .planContextClose(ctx)
+  expect_length(intersect(owned, c(h$temp_tables, physical())), 0L)
+  # a downstream failure and a rejection after materialisation
+  for (fail in list(function() stop("downstream compile failure"),
+                    function() .compileReject("downstream refusal", reason = "reducer_row_cap"))) {
+    run <- function() {
+      ctx <- .ws4_ctx(h, p)
+      on.exit(.planContextClose(ctx), add = TRUE)
+      .compileIntervalByName(ctx, "i")
+      fail()
+    }
+    expect_error(run(), "downstream")
+    expect_identical(setdiff(h$temp_tables, pre), character(0))
+    expect_identical(setdiff(physical(), pre), character(0))
+  }
+  # an insertion failure releases the table at once and re-raises
+  ctx <- .ws4_ctx(h, p)
+  testthat::with_mocked_bindings(
+    expect_error(.compileIntervalByName(ctx, "i"), "injected insert failure"),
+    .intervalLiteral = function(...) stop("injected insert failure"))
+  expect_length(ctx$compile_temp_tables, 0L)
+  expect_identical(setdiff(h$temp_tables, pre), character(0))
+  expect_identical(setdiff(physical(), pre), character(0))
+  .planContextClose(ctx)
+  # a failed DROP keeps the name for a retry and surfaces an aggregated error;
+  # the context still closes
+  ctx <- .ws4_ctx(h, p)
+  .compileIntervalByName(ctx, "i")
+  owned <- ctx$compile_temp_tables
+  testthat::with_mocked_bindings(
+    expect_error(.planContextClose(ctx), "Could not release the compiler temporary table"),
+    .dropTempTable = function(handle, name) stop("injected DROP failure"))
+  expect_true(isTRUE(ctx$closed))
+  expect_identical(ctx$compile_temp_tables, owned)
+  expect_true(owned %in% physical())
+  .compileReleaseTempTables(ctx)
+  expect_length(ctx$compile_temp_tables, 0L)
+  expect_length(intersect(owned, c(h$temp_tables, physical())), 0L)
+  # objects owned before the operation are never released by the compiler
+  expect_true("ws5_preexisting" %in% h$temp_tables)
+  expect_true("ws5_preexisting" %in% physical())
+})
+
+test_that("an adapter interval is compiled per consumer association (A-20 item 6)", {
+  for (b in names(.ws5_iv_backends)) {
+    h <- .ws5_iv_backends[[b]]$handle
+    events <- list(episodes = list(table = "episode", concept_set = list(concepts = list(32531))),
+                   members = list(episode_members = list(episode = list(event = "episodes"),
+                                                         tables = list("drug_exposure"))))
+    pops <- list(ep = list(kind = "index", index = list(source = list(event = "episodes"), select = "all")),
+                 pp = list(kind = "criteria"),
+                 mx = list(kind = "index", index = list(source = list(any_of = list(
+                   list(event = "episodes"), list(event = "drug"))), select = "all")))
+    ctx <- .ws5_iv_ctx(h, list(m = list(source = list(event = "members"), gap = 0),
+                               ms = list(source = list(event = "members"), gap = 0, stockpile = TRUE)),
+                       events = c(events, list(drug = .ws5_drug_event())), populations = pops)
+    .ws5_release(ctx)
+    # 3301: F1 (01-01) linked to E1 and E2, F2 (01-15) E1 only, F3 (02-10) E2 only
+    person <- .ws5_recorded(ctx, "m", 3301)
+    expect_identical(person$start_date, c("2020-01-01", "2020-01-15", "2020-02-10"), info = b)
+    par <- .compileIntervalByName(ctx, "m", association = "parent")
+    prow <- .ws5_rows(ctx, par$recorded, c("parent_event_id", "start_date"))
+    prow <- prow[prow$person_id == 3301, ]
+    expect_identical(paste(prow$parent_event_id, prow$start_date),
+                     c("3301001 2020-01-01", "3301001 2020-01-15", "3301002 2020-01-01",
+                       "3301002 2020-02-10"), info = b)
+    # courses keyed per parent: E2's fills are two eras at gap 0, the person's one
+    pc <- .ws5_course_full(ctx, "m", 3301, "parent")
+    expect_identical(paste(pc$parent_event_id, pc$era_key, pc$start_date, pc$end_date),
+                     c("3301001 3301001|1:1 2020-01-01 2020-02-13", "3301002 3301002|1:1 2020-01-01 2020-01-30",
+                       "3301002 3301002|1:2 2020-02-10 2020-03-10"), info = b)
+    expect_identical(nrow(.ws5_course(ctx, "m", 3301)), 1L, info = b)
+    expect_false(identical(par$course$name, .compileIntervalByName(ctx, "m")$course$name))
+    # per-parent stockpile: E2's F3 gets no carry from E1's F2
+    pe <- .ws5_rows(ctx, .compileIntervalByName(ctx, "ms", association = "parent")$effective,
+                    c("parent_event_id", "start_date"))
+    pe <- pe[pe$person_id == 3301, ]
+    expect_identical(paste(pe$parent_event_id, pe$end_date, pe$carry),
+                     c("3301001 2020-01-30 0", "3301001 2020-02-29 16", "3301002 2020-01-30 0",
+                       "3301002 2020-03-10 0"), info = b)
+    # the person relation counts the shared fill once (carry 16, then 20)
+    expect_identical(.ws5_recorded(ctx, "ms", 3301, "effective")$carry, c(0, 16, 20), info = b)
+    # consumers: an episode-indexed roster, a person-indexed one, a mixed one
+    ep <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:2, subject_id = 3301, cohort_start_date = "2020-01-01",
+                                              cohort_end_date = "2020-03-31", index_source = "episodes",
+                                              index_key = c("3301001", "3301002")),
+                              name = "cand_ep", population = "ep")
+    pp <- .ws5_literal_roster(ctx, data.frame(cand_key = 1L, subject_id = 3301, cohort_start_date = "2020-01-01",
+                                              cohort_end_date = "2020-03-31"), name = "cand_pp", population = "pp")
+    mx <- .ws5_literal_roster(ctx, data.frame(cand_key = 1:2, subject_id = 3301, cohort_start_date = "2020-01-01",
+                                              cohort_end_date = "2020-03-31", index_source = c("episodes", "drug"),
+                                              index_key = c("3301001", "939999")),
+                              name = "cand_mx", population = "mx")
+    w <- list(start = 0L, end = 90L, anchor = "index")
+    rv <- function(r, fn, src, ...) .ws5_rv(ctx, fn, r, "candidate", source = src, window = w, ...)$value
+    expect_identical(rv(ep, "covered_days", list(interval = "m")), c(44L, 60L), info = b)
+    expect_identical(rv(pp, "covered_days", list(interval = "m")), 70L, info = b)
+    expect_identical(rv(mx, "covered_days", list(interval = "m")), c(44L, 70L), info = b)
+    expect_identical(rv(ep, "covered_days", list(interval = "ms"), coverage = "effective_supply"), c(60L, 60L), info = b)
+    expect_identical(rv(pp, "covered_days", list(interval = "ms"), coverage = "effective_supply"), 90L, info = b)
+    expect_identical(rv(mx, "covered_days", list(interval = "ms"), coverage = "effective_supply"), c(60L, 90L), info = b)
+    # direct member events (point records: the members' recorded end is NULL)
+    expect_identical(rv(ep, "covered_days", list(event = "members")), c(2L, 2L), info = b)
+    expect_identical(rv(pp, "covered_days", list(event = "members")), 3L, info = b)
+    # supply: the shared fill counts once for the person, once in each episode
+    expect_identical(rv(ep, "supply_days", list(event = "members")), c(60L, 60L), info = b)
+    expect_identical(rv(pp, "supply_days", list(event = "members")), 90L, info = b)
+    expect_identical(rv(mx, "supply_days", list(event = "members")), c(60L, 90L), info = b)
+    # missing association metadata fails closed
+    bare <- .ws5_literal_roster(ctx, data.frame(cand_key = 1L, subject_id = 3301, cohort_start_date = "2020-01-01",
+                                                cohort_end_date = "2020-03-31"), name = "cand_bare", population = "ep")
+    expect_error(rv(bare, "covered_days", list(interval = "m")), "index_source/index_key")
+  }
+})
+
+test_that("reducer fragments are named by their consumer only (A-20 (e))", {
+  h <- .ws5_iv_backends$sqlite$handle
+  ctx <- .ws5_iv_ctx(h, list(d = list(source = list(event = "drug"))), populations = list(t = list(kind = "criteria")))
+  cand <- .ws5_candidates(ctx)
+  expect_error(.intervalReducerValues(ctx, "covered_days", cand, "candidate", source = list(event = "drug")),
+               "named by its consumer")
+  expect_error(.intervalReducerValues(ctx, "covered_days", cand, "candidate", source = list(event = "drug"),
+                                      names = list(bounds = "b_1")), "named by its consumer")
+  v <- .intervalReducerValues(ctx, "covered_days", cand, "candidate", source = list(event = "drug"),
+                              names = list(bounds = "str_o_1_b", stream = "str_o_1_s"))
+  expect_identical(nrow(v), 10L)
+  expect_s3_class(.fragmentGet(ctx, "str_o_1_s"), "dsomop_fragment")
 })
 
 test_that("compiled interval SQL renders for every dialect family", {

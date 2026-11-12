@@ -4,12 +4,14 @@
 \alias{.compileIntervalByName}
 \title{Compile an interval by name, with its source event}
 \usage{
-.compileIntervalByName(ctx, name)
+.compileIntervalByName(ctx, name, association = "person")
 }
 \arguments{
 \item{ctx}{Execution context.}
 
 \item{name}{Interval name.}
+
+\item{association}{\code{"person"} or \code{"parent"} (adapter sources).}
 }
 \value{
 \code{list(course, recorded, effective)} (see
@@ -18,6 +20,6 @@
 \description{
 Resolves the node through \code{ctx$ir}, compiles its source event
 (\code{.compileEventByName()}) and dispatches to \code{.compileInterval()}.
-Memoised per execution context.
+Memoised per execution context and association.
 }
 \keyword{internal}

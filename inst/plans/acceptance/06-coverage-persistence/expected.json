@@ -864,7 +864,7 @@
   },
   "invariants": [
     "recorded coverage unions normalised fills; effective coverage unions the stockpiled relation (1004: 44 vs 60)",
-    "a fill with end before start contributes nothing; NULL end and NULL supply is a one-day record",
+    "a fill with end before start contributes nothing; NULL end and NULL supply is a one-day record; a present invalid supply with no recorded end is dropped",
     "single-outcome survival names its outcome on censored rows too; follow_up_days == exit - entry",
     "discontinuation censor = first era end after entry + 30"
   ]
