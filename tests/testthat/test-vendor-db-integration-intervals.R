@@ -125,12 +125,13 @@ test_that("MySQL 8.4: a stockpile with min_days > 0 reads its session table once
     populations = list(t = .ws5_anchor_population(list(last_course), source = "metf"),
                        cv = list(kind = "criteria", coverage = list(policy = "union", gap = 30L)))))
   closed <- FALSE
-  on.exit(if (!closed) .planContextClose(ctx), add = TRUE)
+  on.exit(if (!closed) .planContextClose(ctx), add = TRUE, after = FALSE)
   iv <- .compileIntervalByName(ctx, "s44")
   tname <- .intervalMeta(ctx, "s44")$temp_table
   expect_true(.isScalarString(tname))
   # every relation reaches the session table through exactly one reference
   src <- .intervalMeta(ctx, "s44")$fragments[["effective_source"]]
+  expect_match(.fragmentGet(ctx, src)$select_body, "^SELECT DISTINCT ")
   for (rel in c("course", "recorded", "effective")) {
     expect_identical(.ws5_paths(ctx, iv[[rel]], src), 1, info = rel)
   }

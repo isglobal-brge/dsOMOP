@@ -653,12 +653,15 @@ test_that("an unavailable source is NA for every row; an available event-free so
 test_that("index-visit stockpiles partition carry and courses before consumer windows (B3)", {
   h <- .ws4_reach_handle()
   on.exit(try(DBI::dbDisconnect(h$conn), silent = TRUE), add = TRUE)
+  DBI::dbExecute(h$conn, "ALTER TABLE drug_exposure ADD COLUMN visit_occurrence_id BIGINT")
   DBI::dbExecute(h$conn, paste0(
     "INSERT INTO drug_exposure (drug_exposure_id, person_id, drug_concept_id, drug_exposure_start_date, ",
     "drug_exposure_end_date, drug_type_concept_id, days_supply, visit_occurrence_id) VALUES ",
     "(939081, 1007, 1503297, '2020-01-01', '2020-01-30', 38000177, 30, 700701), ",
     "(939082, 1007, 1503297, '2020-01-15', '2020-02-13', 38000177, 30, 700702), ",
     "(939083, 1007, 1503297, '2020-01-20', '2020-02-18', 38000177, 30, 700701)"))
+  h$blueprint <- NULL
+  h$role_registry <- NULL
   ctx <- .ws5_iv_ctx(h, list(s = list(source = list(event = "drug"), stockpile = TRUE)),
     events = list(drug = list(table = "drug_exposure", visit = list(index = TRUE))),
     populations = list(t = list(kind = "criteria")))
