@@ -2,6 +2,7 @@
 # immutable rosters and materialisations never enter the public status object.
 
 .publicationRegistry <- new.env(parent = emptyenv())
+.planContextRegistry <- new.env(parent = emptyenv())
 
 #' Create a private execution context
 #' @keywords internal
@@ -24,12 +25,14 @@
   ctx$unavailable <- character(0)
   ctx$owned <- list(symbols = character(0), directories = character(0), files = character(0))
   ctx$rollback <- list()
+  ctx$published_values <- list()
   ctx$commit_policy <- "server"
   ctx$seal <- NULL
   ctx$already_tokenized <- FALSE
   ctx$dialect <- if (!is.null(handle) && exists(".sqlDialectProfile", mode = "function")) {
     .sqlDialectProfile(handle, probe = TRUE)
   } else NULL
+  assign(ctx$id, ctx, .planContextRegistry)
   ctx
 }
 
@@ -37,7 +40,9 @@
 #' @keywords internal
 .isPlanContext <- function(ctx) {
   is.environment(ctx) && inherits(ctx, "dsomop_plan_context") &&
-    isTRUE(ctx$private) && !isTRUE(ctx$closed)
+    isTRUE(ctx$private) && !isTRUE(ctx$closed) && .isScalarString(ctx$id) &&
+    exists(ctx$id, .planContextRegistry, inherits = FALSE) &&
+    identical(get(ctx$id, .planContextRegistry, inherits = FALSE), ctx)
 }
 
 .publishMessage <- function(code) {
@@ -188,9 +193,13 @@
     header <- readLines(con, n = 1L)
     repeat {
       # Read via the CSV parser (quoted newlines are records, not line boundaries).
-      chunk <- utils::read.csv(con, header = FALSE, col.names = descriptor$metadata$columns,
+      chunk <- tryCatch(utils::read.csv(con, header = FALSE, col.names = descriptor$metadata$columns,
                                nrows = 50000L, colClasses = "character",
-                               check.names = FALSE, stringsAsFactors = FALSE)
+                               check.names = FALSE, stringsAsFactors = FALSE), error = function(e) {
+        if (!grepl("no lines available", conditionMessage(e), fixed = TRUE)) stop(e)
+        as.data.frame(stats::setNames(rep(list(character(0)), length(descriptor$metadata$columns)),
+                                      descriptor$metadata$columns))
+      })
       callback(chunk)
       if (nrow(chunk) < 50000L) break
     }
@@ -209,8 +218,11 @@
   failures <- character(0)
   for (symbol in rev(ctx$owned$symbols)) {
     tryCatch({
-      if (exists(symbol, ctx$target_env, inherits = FALSE)) rm(list = symbol, envir = ctx$target_env)
-      if (exists(symbol, ctx$target_env, inherits = FALSE)) stop("symbol remains")
+      if (exists(symbol, ctx$target_env, inherits = FALSE) &&
+          identical(get(symbol, ctx$target_env, inherits = FALSE), ctx$published_values[[symbol]])) {
+        rm(list = symbol, envir = ctx$target_env)
+        if (exists(symbol, ctx$target_env, inherits = FALSE)) stop("symbol remains")
+      }
     }, error = function(e) failures <<- c(failures, "symbol"))
   }
   for (symbol in names(ctx$rollback)) {
@@ -237,6 +249,11 @@
     rm(list = ls(ctx$staging_env, all.names = TRUE), envir = ctx$staging_env)
   }
   ctx$closed <- TRUE
+  ctx$rosters <- new.env(parent = emptyenv())
+  ctx$ir <- NULL
+  ctx$seal <- NULL
+  ctx$rollback <- list()
+  if (exists(ctx$id, .planContextRegistry, inherits = FALSE)) rm(list = ctx$id, envir = .planContextRegistry)
   invisible(NULL)
 }
 
@@ -288,6 +305,7 @@
       entry$n_columns <- as.integer(length(value$metadata$columns))
     } else entry$n_columns <- as.integer(ncol(value))
     ctx$owned$symbols <- c(ctx$owned$symbols, entry$symbol)
+    ctx$published_values[[entry$symbol]] <- value
     assign(entry$symbol, value, ctx$target_env)
     .publishInject(ctx, "assign")
     published[[pc$output]][[pc$component]] <- entry
@@ -295,6 +313,15 @@
   if (length(descriptors)) {
     .publishInject(ctx, "manifest")
     .writeStagingManifest(ctx$staging_dir, descriptors)
+  }
+  if (!is.null(ctx$private_dir)) {
+    unlink(file.path(ctx$staging_dir, ".private"), recursive = TRUE)
+    if (dir.exists(file.path(ctx$staging_dir, ".private"))) stop("Private staging cleanup failed.", call. = FALSE)
+  }
+  if (!length(descriptors) && !is.null(ctx$staging_dir)) {
+    unlink(ctx$staging_dir, recursive = TRUE)
+    if (dir.exists(ctx$staging_dir)) stop("Staging cleanup failed.", call. = FALSE)
+    ctx$handle$staging_dirs <- setdiff(ctx$handle$staging_dirs, ctx$staging_dir)
   }
   status <- list(status = if (length(rejected)) {
     if (length(published)) "partial" else "refused"
@@ -392,5 +419,144 @@ omopStagedRevokeDS <- function(exec_symbol) {
   .publishPrepare(ctx, pc, value, already_tokenized = already_tokenized)
   if (length(ctx$rejected)) .publishReject("insufficient_support")
   .publishCommit(ctx)
-  get("result", ctx$target_env, inherits = FALSE)
+  result <- get("result", ctx$target_env, inherits = FALSE)
+  rm(list = ctx$id, envir = .publicationRegistry)
+  result
+}
+
+#' Reserve an owner-only private staging namespace
+#' @keywords internal
+.publishStagingDir <- function(ctx) {
+  if (!is.null(ctx$private_dir)) return(ctx$private_dir)
+  ctx$staging_token <- ctx$id
+  ctx$staging_dir <- .createStagingDir(ctx$staging_token)
+  ctx$owned$directories <- union(ctx$owned$directories, ctx$staging_dir)
+  ctx$handle$staging_dirs <- union(ctx$handle$staging_dirs, ctx$staging_dir)
+  ctx$private_dir <- file.path(ctx$staging_dir, ".private", ctx$id)
+  if (!dir.create(ctx$private_dir, recursive = TRUE, mode = "0700")) {
+    stop("Could not create private staging namespace.", call. = FALSE)
+  }
+  Sys.chmod(dirname(ctx$private_dir), "0700")
+  ctx$private_dir
+}
+
+.publishStageFrame <- function(ctx, cand, value) {
+  directory <- .publishStagingDir(ctx)
+  dataset <- if (cand$component == cand$output) cand$output else paste(cand$output, cand$component, sep = ".")
+  .stageDataFrame(value, dataset, directory, ctx$staging_token,
+                 .personKey(ctx$handle), pseudonymization = .personKeyPublicContract(ctx$handle),
+                 semantic_contract = .stagedSemanticContract(ctx$ir, cand$output,
+                   component = if (cand$component == cand$output) NULL else cand$component),
+                 bundle_contract = .stagedBundleContract(ctx$ir, cand$output, ctx$staging_token),
+                 ctx = ctx, already_tokenized = TRUE)
+}
+
+.publishMoveStaged <- function(ctx, descriptor) {
+  from <- descriptor$metadata$file
+  to <- file.path(ctx$staging_dir, basename(from))
+  if (identical(from, to)) return(descriptor)
+  if (!identical(normalizePath(dirname(from)), normalizePath(ctx$private_dir)) ||
+      file.exists(to) || .isSymbolicLink(from)) {
+    stop("Invalid publication staging destination.", call. = FALSE)
+  }
+  ctx$owned$files <- union(ctx$owned$files, c(from, to))
+  .publishInject(ctx, "move")
+  if (!file.rename(from, to)) stop("Could not publish staged file.", call. = FALSE)
+  descriptor$metadata$file <- to
+  descriptor
+}
+
+#' Convert reviewed legacy executor shapes to declared release candidates
+#' @keywords internal
+.publishOutputs <- function(ctx, outputs, out) {
+  roots <- ctx$ir$publish %||% names(ctx$ir$outputs)
+  roots <- as.character(unlist(roots, use.names = FALSE))
+  if (!length(roots)) roots <- names(outputs)
+  if (any(!roots %in% names(ctx$ir$outputs)) || anyDuplicated(roots)) {
+    .publishReject("validation_error")
+  }
+  aliases <- c(risk_sets = "riskSets", transition_ref = "transitionRef")
+  references <- c("covariateRef", "timeRef", "transitionRef", "transition_ref")
+  for (root in roots) {
+    value <- outputs[[root]]
+    if (is.null(value)) {
+      if (is.null(ctx$rejected[[root]])) .publishReject("validation_error", root)
+      next
+    }
+    if (inherits(value, "dsomop_compiled_output")) {
+      .assertCompiledOutput(value)
+      for (pc in value$publication_candidates) {
+        component <- value$components[[pc$component]]
+        frame <- component$frame
+        if (is.null(frame)) frame <- .executeQuery(ctx$handle, component$statement)
+        .publishPrepare(ctx, pc, frame)
+      }
+      next
+    }
+    components <- if (is.data.frame(value) || inherits(value, "FlowerDatasetDescriptor")) {
+      stats::setNames(list(value), root)
+    } else value
+    if (!is.list(components) || !length(components) || is.null(names(components))) {
+      .publishReject("lineage_malformed", root)
+    }
+    roster_id <- root
+    if (!is.null(components$personRef)) {
+      roster <- components$personRef
+      if (inherits(roster, "FlowerDatasetDescriptor")) {
+        chunks <- list()
+        .publishReadChunks(roster, function(x) chunks[[length(chunks) + 1L]] <<- x)
+        roster <- do.call(rbind, chunks)
+      }
+      .planRegisterRoster(ctx, roster_id, roster)
+    }
+    for (component in names(components)) {
+      frame <- components[[component]]
+      descriptor <- inherits(frame, "FlowerDatasetDescriptor")
+      columns <- if (descriptor) frame$metadata$columns else names(frame)
+      reference <- component %in% references ||
+        (component == root && identical(ctx$ir$outputs[[root]]$type, "concept_dictionary"))
+      key <- intersect(.PERSON_KEY_COLS(), columns)
+      lineage <- if (reference) .lineage("reference") else if (length(key)) {
+        .lineage("direct", key[[1L]])
+      } else if ("rowId" %in% columns && !is.null(components$personRef)) {
+        .lineage("roster", "rowId", roster_id, "rowId", "person_id")
+      } else .publishReject("lineage_malformed", root)
+      suffix <- if (component %in% names(aliases)) aliases[[component]] else component
+      symbol <- if (component == root) out[[root]] %||% root else paste0(out[[root]] %||% root, ".", suffix)
+      pc <- .publicationCandidate(root, component, "frame", lineage,
+        requested_symbol = symbol,
+        grain = if (reference) "none" else if (any(c(.EPISODE_KEY_COLS(), "rowId") %in% columns)) "episode" else "person")
+      if (is.data.frame(frame)) {
+        cc <- intersect(attr(outputs, "omop_concept_cols")[[root]] %||% character(0), names(frame))
+        if (length(cc)) attr(frame, "omop_concept_cols") <- cc
+      }
+      .publishPrepare(ctx, pc, frame, already_tokenized = descriptor)
+    }
+  }
+  .publishCommit(ctx)
+}
+
+#' Revoke one authenticated manifest member atomically
+#' @keywords internal
+.publishRevokeDescriptor <- function(descriptor) {
+  path <- omopStagedDatasetPath(descriptor)
+  manifest_path <- file.path(dirname(path), "manifest.json")
+  manifest <- .readStagingManifest(manifest_path)
+  keep <- !vapply(manifest$outputs, function(x) identical(x$dataset_id, descriptor$dataset_id), logical(1))
+  .writeStagingManifest(dirname(path), manifest$outputs[keep])
+  unlink(path)
+  if (file.exists(path)) stop("Staged revocation cleanup failed.", call. = FALSE)
+  invisible(TRUE)
+}
+
+#' Check exact membership in the committed, owner-only manifest
+#' @keywords internal
+.validateStagedManifestMembership <- function(descriptor, directory) {
+  manifest <- .readStagingManifest(file.path(directory, "manifest.json"))
+  same <- vapply(manifest$outputs, function(x) {
+    identical(x$dataset_id, descriptor$dataset_id) &&
+      identical(.dsomopDpCanonicalJson(unclass(x)), .dsomopDpCanonicalJson(unclass(descriptor)))
+  }, logical(1))
+  if (sum(same) != 1L) stop("Staged component is not committed or has been revoked.", call. = FALSE)
+  invisible(TRUE)
 }
