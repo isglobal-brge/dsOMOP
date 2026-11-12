@@ -335,29 +335,20 @@ scope of the gate.
 No privacy setting needs configuring. When `dsomop.dp.domain` /
 `DSOMOP_DP_DOMAIN` is unset or has an empty package default, initialization
 derives it from the connected resource; an explicitly configured value takes
-precedence. The public `snapshot_id` status label is derived the same way;
+precedence. The public `snapshot_id` status label is a digest of that domain;
 the deprecated `dsomop.dp.snapshot_id` / `DSOMOP_DP_SNAPSHOT_ID` only replaces
-that label, and nothing depends on it. The domain is a SHA-256
+that display label, and no answer or admission depends on it. The domain is a SHA-256
 hash of versioned, canonical database coordinates: normalized DBMS, lowercase
 host, effective port, database (canonical absolute file path for SQLite/DuckDB),
 and effective CDM and vocabulary schemas. Credentials, transport settings,
 resource display names, results schemas and temporary schemas are excluded.
 SQLite's implicit and explicit `main` schema have the same identity.
 
-Label precedence is **explicit configuration → complete `cdm_source` →
-fallback**. The label hashes the resource identity and the source fields
-`cdm_source_name`, `cdm_release_date`, `cdm_version` and `vocabulary_version`,
-converted to text. One complete row retains the `dsomop-dp-cdm-snapshot-v1`
-contract; multiple complete rows are all canonically sorted and hashed under
-`dsomop-dp-cdm-snapshot-multi-v1`.
-
-Missing/unreadable tables, zero rows, or missing/blank fields fall back to all
-canonically sorted `vocabulary_id`/`vocabulary_version` pairs from `vocabulary`
-(including the `None` row), plus resource identity, under
-`dsomop-dp-cdm-snapshot-fallback-v1`. If vocabulary metadata is also unavailable
-or incomplete, resource identity alone is hashed under
-`dsomop-dp-cdm-snapshot-resource-only-v1`. Each explicit identifier wins
-independently, and an explicit label skips metadata derivation.
+An optional explicit `snapshot_id` is printed as display metadata. With no
+valid label, status derives one from the canonical corpus domain only. No
+metadata query, noise key, provenance admission or identity decision depends on
+the label. Clearing or changing it during a session or after restoring a sealed
+table changes neither protection nor values.
 
 Unscoped questions over complete registered public bases use a generation
 computed from canonical person membership inside each request's pinned database

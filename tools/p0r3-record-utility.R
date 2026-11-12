@@ -65,6 +65,6 @@ run <- function() {
     "Quantile-bin containment is descriptive, NOT confidence-interval coverage.",
     "Bias/RMSE condition on available medians and use original value units.",
     "This measures the actual heuristic builder, not joint DP or useful clinical calibration.",
-    capture.output(sessionInfo())),file.path(outdir,"record-utility-metadata.txt"))
+    trimws(capture.output(sessionInfo()), which = "right")),file.path(outdir,"record-utility-metadata.txt"))
 }
 run()

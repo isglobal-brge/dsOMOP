@@ -221,3 +221,51 @@ test_that("standard mode keeps the standard time-to-event histogram", {
   expect_identical(attr(out, "dsomop_protection")$protection, "standard")
   expect_false(any(is.infinite(out$day_offset)))
 })
+
+test_that("actual first and recurrent time-to-event frames preserve client pooling", {
+  skip_if_not_installed("dsOMOPClient")
+  cl <- asNamespace("dsOMOPClient")
+  expect_true(exists(".pool_protected_tte", envir = cl))
+  .release_state()
+  fixtures <- list(a = .tte_fixture(60), b = .tte_fixture(80))
+  on.exit(lapply(fixtures, function(f) cleanup_handle(f$handle)), add = TRUE)
+  for (first in c("0", "1")) {
+    views <- lapply(c("1", "30", "365"), function(scale) {
+      frames <- lapply(seq_along(fixtures), function(i) {
+        withr::with_options(list(
+          dsomop.dp.domain = paste0("tte-pooling-site-", i),
+          dsomop.dp.noise_root = paste(rep(if (i == 1L) "6a" else "7b", 32),
+                                        collapse = "")
+        ), {
+          .release_restart()
+          .tte_run(fixtures[[i]]$handle, fixtures[[i]]$scope, scale, first)
+        })
+      })
+      names(frames) <- names(fixtures)
+      rp <- .omopAnalysisGet(fixtures$a$handle,
+                             "dsomop:char.time_to_event")$release_pooling
+      for (i in seq_along(frames)) {
+        one <- cl$.pool_protected_analysis(frames[i], rp)$result
+        expect_identical(names(one), names(frames[[i]]))
+        for (col in names(one)) {
+          expect_equal(one[[col]], frames[[i]][[col]], tolerance = 1e-8,
+                       info = paste(first, scale, names(frames)[[i]], col))
+        }
+      }
+      pooled <- cl$.pool_protected_analysis(frames, rp)$result
+      owners <- lapply(frames, function(x) attr(x, "dsomop_release")$owners[[1]])
+      field <- if (first == "1") "n" else "r"
+      total <- max(0, sum(vapply(owners, function(o) o$components[[1]][[field]],
+                                 numeric(1))))
+      expect_equal(sum(pooled$num_events), total, tolerance = 1e-8)
+      if (first == "1") expect_equal(pooled$persons, pooled$num_events)
+      else expect_true(all(is.na(pooled$persons)))
+      pooled
+    })
+    # The central 365-day bin is also the sum of its 365 one-day children.
+    expect_equal(sum(views[[1]]$num_events[views[[1]]$day_offset >= 0 &
+                                           views[[1]]$day_offset < 365]),
+                 views[[3]]$num_events[views[[3]]$day_offset == 0],
+                 tolerance = 1e-8)
+  }
+})

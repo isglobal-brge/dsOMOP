@@ -65,8 +65,11 @@ support and component reads. PostgreSQL uses REPEATABLE READ (temporary-table
 DDL remains permitted), MySQL and MariaDB use consistent-snapshot transactions,
 and DuckDB and SQLite use explicit transactions. Requests roll back on exit;
 losing the snapshot fails the whole request, rather than reconnecting one
-SELECT. Other engines expose a capability and its residual where a native
-snapshot would require a database option. This is request-local state only.
+SELECT. SQL Server and Oracle have SERIALIZABLE adapters; Redshift uses its
+native transaction. These three adapters have SQL-shape tests but no live vendor
+execution here. Engines without a native adapter report `not_isolated`: their
+connection is pinned, but concurrent writes can produce a mixed-state response.
+This is request-local state only and needs no database option.
 Private contributor hashes, person keys, the membership generation and hidden
 support are never output. Audit is observational (ordinary server log messages)
 and is never consulted for admission.
@@ -78,7 +81,11 @@ each request's database snapshot. The digest covers the canonical ordered
 person identifiers, with unambiguous framing, and is keyed in R under a subkey
 of the noise root. Database digest computation never receives the secret key;
 engines without a suitable database implementation stream bounded chunks.
-There is no cross-request, per-handle or negative-result generation cache.
+Fixed-capable pinned loaders also compute membership inside their preparation
+snapshot to authenticate the sealed table's origin. A later fixed typed release
+recomputes live membership and requires an origin match; stale prepared tables
+use the realised route (or are refused in DP-exclusive mode). There is no
+cross-request, per-handle or negative-result generation cache.
 Clinical-table COUNT/MAX scans are removed. A transient read failure fails the
 current request; it does not switch to a new noisy stream or poison later calls.
 
@@ -242,7 +249,8 @@ disclosive are released from protected components instead of being withheld:
   q=0/1 are noninformative and excluded before the cap. The signed-cell fit solves
   an estimating equation; it is not an ordinary nonnegative-count likelihood.
   Negative weights can make the score nonmonotone, and the root need not be
-  unbiased. No-root, multiple-root and nonpositive-information cases are refused.
+  unbiased. No-root, multiple admissible root and nonpositive-information cases are refused;
+  unresolved numerical root certification is also unavailable.
   Gridding changes the estimand: the homogeneous pseudo-true log-IRR shift is
   logit(q)-logit(q_grid). The earlier <=.04 statement described selected scenarios,
   not a bound: q=.1796156 to .152 gives about +.200, and q=.999 to .99 gives
@@ -257,7 +265,8 @@ disclosive are released from protected components instead of being withheld:
 Utility at the default reference e=.1 can be poor, especially with sparse
 outcomes, high censoring, narrow windows and extreme exposure fractions. Finite
 fits do not imply informative intervals. Runnable scripts, seeds and replicate
-summaries accompany this revision under `tools/` and its evidence directories;
+summaries accompany this revision in `tools/p0r3-record-utility.R` and
+`inst/utility/p0r3-survival-utility.R`, with adjacent evidence directories;
 release reports distinguish finite/informative rates, unconditional/conditional
 coverage and log-effect bias/RMSE. The earlier unretained simulation numbers are
 not evidence for the revised mechanism. For record summaries, calibration alone
@@ -305,7 +314,7 @@ dates on fixed year/month atoms): requested breaks snap to atom boundaries,
 every displayed bin is a sum of signed atoms and the payload reports the
 `basis_id`, `view_of_basis` and the effective breaks. Irrelevant contribution
 caps are normalised (a count's cap is 1). Typed bounded means need one
-registered public scale (`omopDpStatusDS()` `public_scales`; custodian
+registered public scale (current-client status `public_scales`; custodian
 extension `dsomop.release.public_scales`). The release-person map is sealed
 with the table (B01), so no earlier key resolution or handle state can change
 a contributor's identity, and counts, capped record counts and partitions of
@@ -379,25 +388,27 @@ banded population size). They apply the standard suppression and banding.
 Only sealed person-local tables (community-tool loaders and the DP preparation
 path) can be released through `omopDpReleaseDS` (`ds.omop.dp.release` on the
 client). The seven typed statistics release protected components (see above):
-counts, capped record counts and registered-scale bounded means of unscoped
-pinned loader tables of a custodial generation are fixed synopses; every other
-typed release is realised-contribution protected and is refused in DP-only
-mode. Statistic aliases of one person total (count, `bounded_record_count`
-with k = 1, the denominators of rates and means) share the person-total
-owner. A typed variable has no registered label universe, so each declared
-label or bin is its own canonical component, keyed by the label and its
-realised contributions and never by the other declared levels: unused levels,
-dummy positives, reordered levels and clamp-only outer breaks add no fresh
-draw of an existing cell. The declared levels are the view: exported signed
-cells are reconciled to the one noisy person total over the declared cells,
-and displayed counts are their Euclidean projection onto that total.
-Multi-label and record-capped cells and distinct-label cardinalities use the
-fixed cap K as sensitivity for every requested k. Residual: because the
-analyst declares the domain, known-empty (dummy) levels or bins move the
-reconciliation shift; their contrasts with a real cell let an analyst estimate
-that cell's single fixed draw, so each distinct typed partition can add one
-noisy estimate of its person total (the split-partition residual above),
-never a fresh draw of the same cell.
+counts, capped record counts and registered-scale bounded means can use a
+fixed synopsis only for an unscoped pinned loader table with authenticated origin
+membership matching the connected source inside the current release snapshot.
+A restored table without a live matching source, or with changed source
+membership, retains the realised-sticky route and is refused in DP-exclusive
+mode. It is not silently relabelled as a fresh copy of the current corpus.
+Every other typed release remains realised-contribution protected. Statistic
+aliases share their declared eligible-population person total.
+
+Typed categories require registered complete domains with explicit Other and
+Unknown cells. Numeric/date views use registered fixed atoms. Requested levels,
+positive sets and break boundaries are validated post-processing views, never
+new noise owners. Binary numerator and denominator masks identify canonical
+atom indices and preserve all/nonmissing eligibility through pooling. Semantic
+domain labels, not only bit-pattern widths, enter basis identity. Weighted
+histograms own one protected weighted total; server and client both reconcile
+and project the complete atom vector before summing any requested bins. They
+never reconcile a record-weighted histogram to person N. Multi-label and
+record-capped vectors retain their declared whole-person cap. These repairs
+close the enumerated cosmetic/view inconsistencies; distinct realised questions
+still carry the documented equality/overlap residual.
 
 The gate covers the registered community-tool surface. It does not alter
 internal profiling helpers, controller-only `omopAchillesHeelDS`, or
@@ -411,30 +422,18 @@ provide a finite cumulative privacy budget.
 When `dsomop.dp.domain` / `DSOMOP_DP_DOMAIN` is unset or has an empty
 package default, initialization derives it from the connected resource; an
 explicitly configured value takes precedence. The public `snapshot_id` status
-label is derived the same way (the deprecated `dsomop.dp.snapshot_id` /
-`DSOMOP_DP_SNAPSHOT_ID` replaces it); it is a display value only, and with a
-configured domain but no derivable resource coordinates it is the fingerprint
-of the domain. The domain is a SHA-256
+label is a digest of that domain unless the deprecated `dsomop.dp.snapshot_id` /
+`DSOMOP_DP_SNAPSHOT_ID` supplies a valid display label. The domain is a SHA-256
 hash of versioned, canonical database coordinates: normalized DBMS, lowercase
 host, effective port, database (canonical absolute file path for SQLite/DuckDB),
 and effective CDM and vocabulary schemas. Credentials, transport settings,
 resource display names, results schemas and temporary schemas are excluded.
 SQLite's implicit and explicit `main` schema have the same identity.
 
-Label precedence is **explicit configuration → complete `cdm_source` →
-fallback**. The label hashes the resource identity and the source fields
-`cdm_source_name`, `cdm_release_date`, `cdm_version` and `vocabulary_version`,
-converted to text. One complete row retains the `dsomop-dp-cdm-snapshot-v1`
-contract; multiple complete rows are all canonically sorted and hashed under
-`dsomop-dp-cdm-snapshot-multi-v1`.
-
-Missing/unreadable tables, zero rows, or missing/blank fields fall back to all
-canonically sorted `vocabulary_id`/`vocabulary_version` pairs from `vocabulary`
-(including the `None` row), plus resource identity, under
-`dsomop-dp-cdm-snapshot-fallback-v1`. If vocabulary metadata is also unavailable
-or incomplete, resource identity alone is hashed under
-`dsomop-dp-cdm-snapshot-resource-only-v1`. Each explicit identifier wins
-independently, and an explicit label skips metadata derivation.
+The optional snapshot label is display-only; absent or malformed labels
+fall back to a digest of the canonical corpus domain. Current policy derivation
+never queries CDM/vocabulary metadata to obtain this label, so a display change
+cannot alter database reads, snapshot availability or provenance admission.
 
 Without a configured domain, in-memory databases and unavailable/ambiguous
 resource coordinates still fail closed with instructions to configure the

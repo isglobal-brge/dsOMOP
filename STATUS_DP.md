@@ -29,6 +29,10 @@ releases from 2.10.3 servers.
 
 ## Seed-only contract (2.10.0 to 2.10.2, superseded)
 
+Everything below is historical evidence, not current setup instructions.
+The earlier snapshot/epoch imperatives and retained-answer stores do not apply
+to 2.10.3; its active contract is described above and in DISCLOSURE_CONTROL.md.
+
 The 2.10.0 to 2.10.2 server contract was `dsomop-dp-release-v3` /
 `fixed_per_release_seed_data_versioned_v1`, paired with dsOMOPClient 2.10.0.
 Every answer is a deterministic function of the secret noise root, the public
@@ -288,7 +292,7 @@ process, held in package state independently of DSLite session/runtime state,
 naming both explicit options and requiring an epoch bump after every reload.
 The warning uses R's standard warning/log channel. A fallback snapshot cannot
 track data reloads: unchanged snapshot labels permit comparisons/differencing
-across reloads. Epoch rotation remains mandatory; it does not create a cumulative
+across reloads. That version required epoch rotation; it does not create a cumulative
 privacy budget or eliminate composition of distinct releases.
 
 Different resource domains select different HMAC subkeys under the same persistent
@@ -299,8 +303,9 @@ not reuse a noise stream. Discrete numeric draws can coincide by chance; the tes
 asserts separation of keys and IDs, rather than requiring unequal draws.
 
 The existing keyed bounded-statistic fingerprint remains in release keys.
-The derived snapshot follows metadata, not every data edit: custodians must bump
-`privacy_epoch` when data change without metadata changes. Metadata is reread at
+The historical derived snapshot followed metadata, not every data edit; that
+version instructed custodians to bump `privacy_epoch` after untracked edits.
+The 2.10.3 membership mechanism supersedes that requirement. Metadata is reread at
 policy validation; changes trigger the existing policy-change error. The
 mechanism, epsilon default 0.1, epsilon maximum 8, delta 0 and contribution/level
 caps are unchanged. This remains a per-release claim without a finite cumulative
