@@ -1043,3 +1043,41 @@ test_that("A-20(b): a matching template's candidate anchors include its strata w
                              scope = "person", search = NULL))
   expect_true(want %in% got)
 })
+
+# --- A-19 open item (i): private set-op intermediates are not gated in execution ---
+
+test_that("A-19 (i): an empty or tiny private intersection resolves privately; only the standalone resolver keeps its gate", {
+  ins <- function(conn, pid, concept_id) {
+    DBI::dbExecute(conn, sprintf(paste0(
+      "INSERT INTO condition_occurrence (condition_occurrence_id, person_id, condition_concept_id, ",
+      "condition_start_date, condition_end_date, condition_type_concept_id, visit_occurrence_id) ",
+      "VALUES (%d, %d, %d, '2019-06-01', '2019-06-01', 44818518, %d)"),
+      as.integer(500000L + pid * 1000L + concept_id %% 997L), pid, concept_id, pid))
+  }
+  crit <- function(id, cid) list(id = id, kind = "criteria", filter_tree = list(and = list(
+    list(type = "sex", params = list(value = "F")),
+    list(type = "has_concept", params = list(concept_id = cid, table = "condition_occurrence")))))
+  for (case in list(list(a = c(2, 4, 6), b = c(8, 10, 12), n = 0L), list(a = c(2, 4, 6, 8), b = c(8, 10, 12, 14), n = 1L))) {
+    h <- create_test_handle()
+    DBI::dbExecute(h$conn, "DELETE FROM condition_occurrence")
+    for (p in case$a) ins(h$conn, p, 201820L)
+    for (p in case$b) ins(h$conn, p, 255573L)
+    bp <- .buildBlueprint(h)
+    plan <- list(populations = list(base = list(id = "base"), A = crit("A", 201820L), B = crit("B", 255573L),
+                                    res = list(id = "res", kind = "setop", setop = list(op = "intersect", members = list("A", "B")))),
+                 outputs = list(), options = list(translate_concepts = FALSE, block_sensitive = TRUE))
+    withr::with_options(list(nfilter.subset = 3L), {
+      # the standalone resolver (no execution context) keeps its creation gate (design 7.3)
+      expect_error(.planResolvePopulations(h, plan, bp), "Disclosive|insufficient")
+      # inside an execution the intermediate is private and never gated (design 7.1, 7.4)
+      ctx <- .planContext(h, plan)
+      expect_length(.planResolvePopulations(h, plan, bp, ctx = ctx)$res$person_ids, case$n)
+      .planContextClose(ctx)
+      expect_length(.planExecute(h, plan, list()), 0L)
+      plan$outputs <- list(pa = list(type = "person_level", population_id = "A",
+                                     tables = list(person = list("gender_concept_id"))))
+      expect_identical(nrow(.planExecute(h, plan, list(pa = "rv_pa"))$pa), length(case$a))
+    })
+    cleanup_handle(h)
+  }
+})
