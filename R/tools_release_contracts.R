@@ -1656,8 +1656,9 @@
     concept, " cc ON cc.concept_id = pp.covariate_id"))
   grid <- .dsomopReleaseGrid("duration_days")
   owner <- .dsomopReleaseOwner(
-    id = paste0("txpath/era-duration-days-by-treatment/domain=", domain,
-                "/filter=", params$filter_treatments %||% "none", "/v1"),
+    id = paste0("txpath/era-duration-days-by-treatment/", .dsomopFrame(
+      "v1", as.character(domain),
+      .omopReleaseOutcomeKey(params$filter_treatments, domain))),
     family = "HM", grid = grid, strata = list(kind = "data"),
     cap = .DSOMOP_RELEASE_MULTI_CAP, bounds = c(grid$lower, grid$upper),
     estimand = paste0("per-person mean era duration in days of each ",
@@ -1699,9 +1700,10 @@
   grid <- list(id = paste0("signed-day-offset-", scale, "d-", span, "-v1"),
                breaks = breaks, lower = NULL, upper = NULL, unit = "days")
   owner <- .dsomopReleaseOwner(
-    id = paste0("characterization/first-outcome-day-offset/outcome=",
-                params$outcome_concept_id, "/domain=",
-                params$domain_code %||% "0", "/scale=", scale, "/v1"),
+    id = paste0("characterization/first-outcome-day-offset/", .dsomopFrame(
+      "v1", .omopReleaseOutcomeKey(params$outcome_concept_id,
+                                   params$domain_code %||% "0"),
+      as.integer(scale))),
     family = "H", grid = grid,
     estimand = paste0("day offset of each person's first outcome event from ",
                       "the cohort index, in ", scale, "-day bins over [",

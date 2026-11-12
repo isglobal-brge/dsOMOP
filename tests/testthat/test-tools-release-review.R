@@ -244,3 +244,22 @@ test_that("B12/B14: releases carry a logical source and only fixed vectors claim
     expect_true(is.na(lm$mechanism_epsilon))
   }
 })
+
+test_that("B04: framed identities are injective for delimiters and control characters", {
+  cases <- list(
+    list("a", "b"), list("a\u001fb"), list(c("a", "b")), list("a|b"),
+    list("a", "|b"), list("a:b"), list("a", ":b"), list("a\nb"),
+    list("a\n", "b"), list(NA_character_), list("NA"), list(NULL),
+    list(character(0)), list(1), list("1"), list(TRUE), list("t;"),
+    list(list("a", "b")), list(list(a = "b")), list(c("a", NA)),
+    list("s1:a"), list(c("1:a", "b")), list("\u001e\u001f"), list(""),
+    list(c("", "")), list(0), list(-0.0 + 1e-300))
+  encoded <- vapply(cases, function(x) do.call(.dsomopFrame, x),
+                    character(1L))
+  expect_false(anyDuplicated(encoded) > 0L)
+  # Outcome identities are canonical sets, not request spellings.
+  expect_identical(.omopReleaseOutcomeKey("201820,4000002", "0"),
+                   .omopReleaseOutcomeKey(" 4000002, 201820,201820", "0"))
+  expect_false(identical(.omopReleaseOutcomeKey("201820", "0"),
+                         .omopReleaseOutcomeKey("201820", "1")))
+})
