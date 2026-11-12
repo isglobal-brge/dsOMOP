@@ -283,6 +283,46 @@
   data.frame(value = value, word = word, id = id, syntax = syntax, stringsAsFactors = FALSE)
 }
 
+# Audited scalar/aggregate/window constructors for view expressions. Unknown
+# calls (including native UDFs with hidden file/table reads) are unverifiable.
+# SQL syntax and type constructors are included because they also precede '('.
+.DSOMOP_SNAPSHOT_VIEW_CALLS <- c(
+  "ABS", "ACOS", "ADDDATE", "ADDTIME", "ASCII", "ASIN", "ATAN", "ATAN2", "AVG",
+  "BIN", "BIT_AND", "BIT_COUNT", "BIT_LENGTH", "BIT_OR", "BIT_XOR", "CAST",
+  "CEIL", "CEILING", "CHAR", "CHAR_LENGTH", "CHARACTER_LENGTH", "COALESCE",
+  "COMPRESS", "CONCAT", "CONCAT_WS", "CONV", "CONVERT", "COS", "COT", "COUNT",
+  "CRC32", "CUME_DIST", "DATE", "DATEDIFF", "DATE_ADD", "DATE_FORMAT", "DATE_SUB",
+  "DAY", "DAYNAME", "DAYOFMONTH", "DAYOFWEEK", "DAYOFYEAR", "DEGREES", "DENSE_RANK",
+  "ELT", "EXP", "EXTRACT", "FIELD", "FIND_IN_SET", "FIRST_VALUE", "FLOOR", "FORMAT",
+  "FROM_BASE64", "FROM_DAYS", "FROM_UNIXTIME", "GREATEST", "GROUP_CONCAT", "HEX",
+  "HOUR", "IF", "IFNULL", "INSTR", "ISNULL", "LAG", "LAST_DAY", "LAST_VALUE",
+  "LCASE", "LEAD", "LEAST", "LEFT", "LENGTH", "LN", "LOCATE", "LOG", "LOG10",
+  "LOG2", "LOWER", "LPAD", "LTRIM", "MAKEDATE", "MAKETIME", "MAX", "MD5",
+  "MICROSECOND", "MID", "MIN", "MOD", "MONTH", "MONTHNAME", "NTH_VALUE", "NTILE",
+  "NULLIF", "OCT", "OCTET_LENGTH", "ORD", "PERCENT_RANK", "PERIOD_ADD", "PERIOD_DIFF",
+  "PI", "POSITION", "POW", "POWER", "QUARTER", "RADIANS", "RANK", "REGEXP_INSTR",
+  "REGEXP_LIKE", "REGEXP_REPLACE", "REGEXP_SUBSTR", "REPEAT", "REPLACE", "REVERSE",
+  "RIGHT", "ROUND", "ROW_NUMBER", "RPAD", "RTRIM", "SECOND", "SEC_TO_TIME",
+  "SHA", "SHA1", "SHA2", "SIGN", "SIN", "SOUNDEX", "SPACE", "SQRT", "STD",
+  "STDDEV", "STDDEV_POP", "STDDEV_SAMP", "STRCMP", "STR_TO_DATE", "SUBDATE",
+  "SUBSTR", "SUBSTRING", "SUBSTRING_INDEX", "SUM", "TAN", "TIME", "TIMEDIFF",
+  "TIMESTAMP", "TIMESTAMPADD", "TIMESTAMPDIFF", "TIME_FORMAT", "TIME_TO_SEC",
+  "TO_BASE64", "TO_DAYS", "TO_SECONDS", "TRIM", "TRUNCATE", "UCASE", "UNCOMPRESS",
+  "UNCOMPRESSED_LENGTH", "UNHEX", "UNIX_TIMESTAMP", "UPPER", "VARIANCE", "VAR_POP",
+  "VAR_SAMP", "WEEK", "WEEKDAY", "WEEKOFYEAR", "YEAR", "YEARWEEK",
+  "JSON_ARRAY", "JSON_ARRAYAGG", "JSON_ARRAY_APPEND", "JSON_ARRAY_INSERT",
+  "JSON_CONTAINS", "JSON_CONTAINS_PATH", "JSON_DEPTH", "JSON_EXTRACT", "JSON_INSERT",
+  "JSON_KEYS", "JSON_LENGTH", "JSON_MERGE", "JSON_MERGE_PATCH", "JSON_MERGE_PRESERVE",
+  "JSON_OBJECT", "JSON_OBJECTAGG", "JSON_OVERLAPS", "JSON_PRETTY", "JSON_QUOTE",
+  "JSON_REMOVE", "JSON_REPLACE", "JSON_SEARCH", "JSON_SET", "JSON_TABLE", "JSON_TYPE",
+  "JSON_UNQUOTE", "JSON_VALID", "JSON_VALUE",
+  "AS", "IN", "EXISTS", "NOT", "ANY", "ALL", "SOME", "OVER", "PARTITION",
+  "VALUES", "ROW", "CASE", "WHEN", "THEN", "ELSE", "ON", "USING", "JOIN", "SELECT",
+  "UNION", "WITH", "FROM", "WHERE", "HAVING", "BY", "COLUMNS", "CHECK",
+  "TINYINT", "SMALLINT", "MEDIUMINT", "INT", "INTEGER", "BIGINT", "DECIMAL", "DEC",
+  "FIXED", "NUMERIC", "FLOAT", "DOUBLE", "REAL", "VARCHAR", "NCHAR", "NVARCHAR",
+  "BINARY", "VARBINARY", "BIT", "DATETIME")
+
 # Enumerate relational references, including comma/parenthesized joins,
 # subqueries, UNION arms and CTEs. CTE bindings apply only within their SQL
 # scope; only an unqualified reference can resolve to one. In a server view,
@@ -331,15 +371,27 @@
     end <- if (length(end)) end[[1L]] else n + 1L
     repeat {
       if (j > n || !t$id[[j]]) stop("Unverifiable CTE source.")
-      name <- t$value[[j]]; j <- j + 1L
+      name <- t$value[[j]]; declaration <- j; j <- j + 1L
       if (j <= n && t$syntax[[j]] == "(") j <- closing[[j]] + 1L
       if (j + 1L > n || t$word[[j]] != "AS" || t$syntax[[j + 1L]] != "(") {
         stop("Unverifiable CTE source.")
       }
-      ctes[[length(ctes) + 1L]] <- list(name = name, start = if (recursive) j + 1L else closing[[j + 1L]], end = end)
+      ctes[[length(ctes) + 1L]] <- list(name = name, declaration = declaration,
+        start = if (recursive) j + 1L else closing[[j + 1L]], end = end)
       j <- closing[[j + 1L]] + 1L
       if (j > n || t$syntax[[j]] != ",") break
       j <- j + 1L
+    }
+  }
+  if (view && n > 1L) {
+    declarations <- vapply(ctes, `[[`, integer(1L), "declaration")
+    for (i in seq_len(n - 1L)) {
+      if (!t$id[[i]] || t$syntax[[i + 1L]] != "(" || i %in% declarations) next
+      call <- toupper(t$value[[i]])
+      if (!call %in% .DSOMOP_SNAPSHOT_VIEW_CALLS ||
+          (call == "UNIX_TIMESTAMP" && i + 2L <= n && t$syntax[[i + 2L]] == ")")) {
+        stop("An unknown or stateful view function cannot be certified.")
+      }
     }
   }
   contexts <- list(list(select = FALSE, from = FALSE, expect = FALSE))

@@ -252,6 +252,14 @@ test_that("snapshot dependency parser follows scoped relational sources", {
     expect_error(.dsomopSnapshotSqlSources(paste("SELECT * FROM db.person WHERE", f),
       "main", view = TRUE), "Volatile or external")
   }
+  expect_error(.dsomopSnapshotSqlSources("SELECT hidden_udf(id) FROM db.person", "main", view = TRUE),
+    "unknown or stateful")
+  expect_error(.dsomopSnapshotSqlSources("SELECT UNIX_TIMESTAMP() FROM db.person", "main", view = TRUE),
+    "unknown or stateful")
+  expect_equal(.dsomopSnapshotSqlSources(paste(
+    "WITH q(id) AS (SELECT CAST(COALESCE(id, 0) AS SIGNED) FROM db.person)",
+    "SELECT SUM(ABS(id)) OVER () FROM q WHERE id IN (1, 2)"), "main", view = TRUE),
+    data.frame(schema = "db", table = "person"))
   ambiguous <- paste0("SELECT '", intToUtf8(92L), "' FROM hidden.person # ' FROM safe.person")
   expect_equal(.dsomopSnapshotSqlSources(ambiguous, "main", sql_mode = "NO_BACKSLASH_ESCAPES"),
     data.frame(schema = "hidden", table = "person"))
