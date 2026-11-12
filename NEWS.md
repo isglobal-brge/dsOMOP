@@ -114,6 +114,11 @@ Security release: the P0 fixes of the OHDSI-tools audit.
   errors that include the release noise. In standard mode with the DP
   service, incidence and CohortMethod person-time, rates, MDRRs and effects
   are filled from the same protected run (mixed frames).
+- Client pooling preserves Cox status parents and complete interaction
+  families before age-view coarsening. Signed family exports include public
+  atom/view identities; supplemental pooled rows and cells retain their view
+  labels. Effect estimates continue to use per-site inverse-variance
+  meta-analysis rather than a pooled Cox refit.
 - Continuous values of `fe.continuous`, target covariates and temporal value
   distributions are reduced per person within concept × unit (unknown units a
   separate stratum; only registry-declared conversions); registered

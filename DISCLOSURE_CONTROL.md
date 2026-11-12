@@ -240,6 +240,14 @@ disclosive are released from protected components instead of being withheld:
   remain explicit. Unidentifiable or noise-dominated fits carry an unavailable
   reason. Noise uncertainty is deterministic post-processing, not an R RNG or
   call-history input, and provides approximate, not guaranteed, coverage.
+- Cox component pooling preserves the protected event/non-event parents.
+  Interaction exports include the complete signed canonical family and its
+  public view mapping; the client sums site components, projects the full
+  family under its arm/status parents, and then selects the requested view.
+  Coarser age views sum the same projected atoms. Public family and view
+  identities distinguish supplemental rows; incompatible or incomplete
+  metadata refuses pooling. Effects remain inverse-variance meta-analysis
+  of per-site protected fits, not a pooled C8 refit.
 - Crossed C6 age-by-year cells use separate nonnegative transports for E, NE,
   T and R, preserving both age and year margins and N=E+NE. The bounds
   T<=3650 N and E<=R<=10 E are enforced at the tree levels, not at crossed cells.
