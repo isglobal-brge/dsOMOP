@@ -70,9 +70,9 @@ test_that("residual: a window change across a public grid boundary is a new ques
     lapply(attr(out, "dsomop_release")$owners, `[[`, "components")
   }
   # Inside one public cell: one effective window, one answer...
-  expect_identical(run(20), run(28))
+  expect_identical(run(31), run(59))
   # ...across a cell boundary: another effective window and other components.
-  expect_false(identical(run(28), run(31)))
+  expect_false(identical(run(59), run(61)))
 })
 
 test_that("invariant: fixed-synopsis views recombine to one basis under every partition", {

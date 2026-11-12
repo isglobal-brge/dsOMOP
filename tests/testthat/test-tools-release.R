@@ -15,10 +15,78 @@ test_that("public quantizers take the nearest grid point, ties to the smaller", 
   expect_identical(.dsomopReleaseSnapCeil(31, grid), 60)
   expect_error(.dsomopReleaseSnap(NA_real_, grid), "finite")
   expect_error(.dsomopReleaseSnap(Inf, grid), "finite")
+  # The exact public day grids (review section 5): G contains every multiple
+  # of 30 with |z| <= 121 and every clinical anchor and its negative; L is G
+  # within [0, 3650]; D adds the 7300/10957 tails.
+  C <- c(0, 1, 7, 14, 21, 28, 30, 60, 90, 120, 180, 270, 365, 545, 730, 1095,
+         1460, 1825, 3650)
   signed <- .dsomopReleaseSignedDayGrid()
+  expect_identical(signed, sort(unique(c(30 * (-121:121), C, -C))))
   expect_identical(range(signed), c(-3650, 3650))
-  expect_true(all(signed[-c(1L, length(signed))] %% 30 == 0))
   expect_false(anyDuplicated(signed) > 0L)
+  expect_identical(.dsomopReleaseDayGrid(), signed[signed >= 0])
+  expect_identical(.dsomopReleaseDurationGrid(),
+                   sort(unique(c(C, 7300, 10957))))
+  expect_identical(.dsomopReleaseGrid("duration_days")$breaks,
+                   .dsomopReleaseDurationGrid())
+})
+
+test_that("common clinical windows and durations are fixed points", {
+  entry <- list(name = "probe", params = lapply(
+    c("tar_start_offset", "tar_end_offset", "min_prior_observation",
+      "min_days", "min_observed_days"),
+    function(n) list(name = n, type = "int")))
+  C <- c(0, 1, 7, 14, 21, 28, 30, 60, 90, 120, 180, 270, 365, 545, 730, 1095,
+         1460, 1825, 3650)
+  for (n in C) {
+    p <- .omopToolsSnapReleaseParams(entry, list(
+      tar_start_offset = as.character(n), tar_end_offset = as.character(n),
+      min_prior_observation = as.character(n),
+      min_days = as.character(n)))$effective
+    expect_identical(unname(unlist(p)), rep(as.character(n), 4L), info = n)
+    neg <- .omopToolsSnapReleaseParams(entry, list(
+      tar_start_offset = as.character(-n),
+      tar_end_offset = as.character(-n)))$effective
+    expect_identical(unname(unlist(neg)), rep(as.character(-n), 2L),
+                     info = -n)
+  }
+  # The review's examples: [1, 365] stays 365 inclusive days, [0, 0] one day,
+  # [-365, -1] unchanged, look-back 365 unchanged, end 545 unchanged.
+  p <- .omopToolsSnapReleaseParams(entry, list(
+    tar_start_offset = "1", tar_end_offset = "365",
+    min_prior_observation = "365"))$effective
+  expect_identical(unname(unlist(p)), c("1", "365", "365"))
+  p <- .omopToolsSnapReleaseParams(entry, list(
+    tar_start_offset = "-365", tar_end_offset = "-1"))$effective
+  expect_identical(unname(unlist(p)), c("-365", "-1"))
+  # A strictly positive duration never snaps to 0.
+  p <- .omopToolsSnapReleaseParams(entry, list(min_observed_days = "0"))
+  expect_identical(p$effective$min_observed_days, "1")
+  # Below / tie / above every grid midpoint of D: nearest, ties smaller.
+  D <- .dsomopReleaseDurationGrid()
+  for (i in seq_len(length(D) - 1L)) {
+    mid <- (D[[i]] + D[[i + 1L]]) / 2
+    expect_identical(.dsomopReleaseSnap(mid, D), D[[i]], info = mid)
+    expect_identical(.dsomopReleaseSnap(mid + 0.5, D), D[[i + 1L]],
+                     info = mid)
+    expect_identical(.dsomopReleaseSnap(mid - 0.5, D), D[[i]], info = mid)
+  }
+  # Window ends between public points take the next point up, starts the
+  # next point down; large safe integers saturate.
+  G <- .dsomopReleaseSignedDayGrid()
+  for (i in seq_len(length(G) - 1L)) {
+    if (G[[i + 1L]] - G[[i]] < 2) next
+    x <- G[[i]] + 1
+    p <- .omopToolsSnapReleaseParams(entry, list(
+      tar_start_offset = as.character(x),
+      tar_end_offset = as.character(x)))$effective
+    expect_identical(p$tar_start_offset, as.character(G[[i]]), info = x)
+    expect_identical(p$tar_end_offset, as.character(G[[i + 1L]]), info = x)
+  }
+  far <- .omopToolsSnapReleaseParams(entry, list(
+    tar_start_offset = "-9007199254740991",
+    tar_end_offset = "9007199254740991"))$effective
+  expect_identical(unname(unlist(far)), c("-3650", "3650"))
 })
 
 test_that("windows snap outward and scalars to the nearest public point", {
@@ -46,9 +114,9 @@ test_that("windows snap outward and scalars to the nearest public point", {
     min_prior_observation = "365", reference_year = "2002", top_n = "7",
     concept_id = "201820"))
   e <- snap$effective
-  expect_identical(e$tar_start_offset, "0")
-  expect_identical(e$tar_end_offset, "29")
-  expect_identical(e$temporal_start_days, "-390")
+  expect_identical(e$tar_start_offset, "1")
+  expect_identical(e$tar_end_offset, "0")
+  expect_identical(e$temporal_start_days, "-365")
   expect_identical(e$temporal_end_days, "-1")
   expect_identical(e$min_days, "365")
   expect_identical(e$min_age, "35")
@@ -56,28 +124,29 @@ test_that("windows snap outward and scalars to the nearest public point", {
   expect_identical(e$age_band_years, "10")
   expect_identical(e$alpha, "0.05")
   expect_identical(e$age_breaks, "40")
-  expect_identical(e$min_prior_observation, "360")
+  expect_identical(e$min_prior_observation, "365")
   expect_identical(e$reference_year, "2026")
   expect_identical(e$top_n, "7")
   expect_identical(e$concept_id, "201820")
   # Every change is reported with the requested and effective value.
-  expect_identical(snap$changes$tar_end_offset$requested, "0")
-  expect_identical(snap$changes$tar_end_offset$effective, "29")
+  expect_identical(snap$changes$min_days$requested, "400")
+  expect_identical(snap$changes$min_days$effective, "365")
+  expect_null(snap$changes$tar_end_offset)
   expect_null(snap$changes$top_n)
   # Saturation of huge, negative and boundary values.
   far <- .omopToolsSnapReleaseParams(entry, list(
     tar_end_offset = "10000", tar_start_offset = "-99999",
     min_days = "-5", max_age = "200"))$effective
-  expect_identical(far$tar_end_offset, "3649")
+  expect_identical(far$tar_end_offset, "3650")
   expect_identical(far$tar_start_offset, "-3650")
   expect_identical(far$min_days, "0")
   expect_identical(far$max_age, "109")
   # Requests inside one quantization cell share one effective estimand.
-  inside <- vapply(c("95", "100", "107", "114", "119"), function(x) {
+  inside <- vapply(c("95", "100", "107", "114", "120"), function(x) {
     .omopToolsSnapReleaseParams(entry, list(tar_end_offset = x))$effective$
       tar_end_offset
   }, character(1L))
-  expect_identical(unname(inside), rep("119", 5L))
+  expect_identical(unname(inside), rep("120", 5L))
 })
 
 test_that("every numeric parameter of every built-in aggregate entry is classified", {
@@ -373,13 +442,21 @@ test_that("realised components replay for equal maps whatever the program", {
   person <- DBI::dbGetQuery(h$conn, paste(
     "SELECT gender_concept_id, year_of_birth FROM person WHERE person_id = 41"))
   stratum <- .omopReleaseGenderKey(person$gender_concept_id)
-  for (i in seq_along(base)) {
-    if (identical(base[[i]]$stratum, stratum)) {
-      expect_false(identical(base[[i]]$n, plus[[i]]$n))
-    } else {
-      expect_identical(base[[i]]$n, plus[[i]]$n)
-      expect_identical(base[[i]]$h, plus[[i]]$h)
-    }
+  # Exported children are reconciled to the canonical parent total (B03), so
+  # a new person shifts every child uniformly; the unchanged strata keep their
+  # own draws, i.e. their contrasts and their cells' contrasts.
+  same <- which(vapply(base, `[[`, character(1L), "stratum") != stratum)
+  changed <- setdiff(seq_along(base), same)
+  expect_length(changed, 1L)
+  expect_false(isTRUE(all.equal(base[[changed]]$n - base[[same[[1L]]]]$n,
+                                plus[[changed]]$n - plus[[same[[1L]]]]$n)))
+  for (k in seq_along(same)[-1L]) {
+    i <- same[[k]]; j <- same[[k - 1L]]
+    expect_equal(base[[i]]$n - base[[j]]$n, plus[[i]]$n - plus[[j]]$n,
+                 tolerance = 1e-9)
+  }
+  for (i in same) {
+    expect_equal(diff(base[[i]]$h), diff(plus[[i]]$h), tolerance = 1e-9)
   }
 })
 

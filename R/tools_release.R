@@ -133,12 +133,11 @@
   grids <- list(
     age_5y = list(id = "age-years-5y-v1", breaks = seq(0, 110, by = 5),
                   lower = 0, upper = 110, unit = "years"),
-    duration_days = list(id = "duration-days-v1",
-                         breaks = c(0, 30, 90, 180, 365, 730, 1095, 1825,
-                                    3650, 7300, 10957),
+    duration_days = list(id = "duration-days-v2",
+                         breaks = .dsomopReleaseDurationGrid(),
                          lower = 0, upper = 10957, unit = "days"),
-    tar_days = list(id = "tar-days-v1",
-                    breaks = c(0, 30, 90, 180, 365, 730, 1095, 1825, 3650),
+    tar_days = list(id = "tar-days-v2",
+                    breaks = .DSOMOP_RELEASE_CLINICAL_DAYS,
                     lower = 0, upper = 3650, unit = "days"),
     count_per_person = list(id = "count-per-person-v1",
                             breaks = c(0:20, 25, 30, 40, 50, 75, 100),
@@ -233,15 +232,29 @@
   if (length(above) == 0L) grid[[length(grid)]] else above[[1L]]
 }
 
-# Fixed signed day grid of window offsets: {-3650, 3650} plus every multiple
-# of 30 days strictly inside (-3650, 3650).
+# Public clinical day anchors (dsOMOP 2.10.3): common acute and long-term
+# windows and durations are fixed points of every day grid, so standard
+# clinical requests keep their exact closed-day meaning.
+.DSOMOP_RELEASE_CLINICAL_DAYS <- c(0, 1, 7, 14, 21, 28, 30, 60, 90, 120, 180,
+                                   270, 365, 545, 730, 1095, 1460, 1825,
+                                   3650)
+
+# G: the signed offset grid, every multiple of 30 days with |z| <= 121 plus
+# the clinical anchors and their negatives.
 .dsomopReleaseSignedDayGrid <- function() {
-  c(-3650, 30 * seq.int(-121L, 121L), 3650)
+  C <- .DSOMOP_RELEASE_CLINICAL_DAYS
+  sort(unique(c(30 * seq.int(-121L, 121L), C, -C)))
 }
 
-# Fixed non-negative day grid of look-back / follow-up durations.
+# L: the non-negative look-back / follow-up duration grid, G within [0, 3650].
 .dsomopReleaseDayGrid <- function() {
-  c(30 * seq.int(0L, 121L), 3650)
+  G <- .dsomopReleaseSignedDayGrid()
+  G[G >= 0 & G <= 3650]
+}
+
+# D: the general duration histogram / threshold grid with its declared tails.
+.dsomopReleaseDurationGrid <- function() {
+  sort(unique(c(.DSOMOP_RELEASE_CLINICAL_DAYS, 7300, 10957)))
 }
 
 .dsomopReleaseProbabilityGrid <- function() {
@@ -331,9 +344,12 @@
 #' Applies the public quantizer of every classified parameter before the
 #' final aggregate is evaluated and before its identity is formed, so a request
 #' evaluates exactly the effective estimand it reports. Closed integer windows
-#' \code{[a, b]} are treated as half-open \code{[a, b + 1)} and snapped
-#' outward (\code{floor_G(a)}, \code{ceil_G(b + 1)}); scalar thresholds snap to
-#' the nearest grid point (ties to the smaller one) with endpoint saturation.
+#' \code{[a, b]} snap outward to \code{[floor_G(a), ceil_G(b)]} on the signed
+#' clinical grid G (and are converted once to the half-open
+#' \code{[a, b + 1)} in SQL), so common clinical windows such as
+#' \code{[1, 365]} or \code{[0, 0]} are unchanged; scalar durations snap to the
+#' nearest point of the duration grids (ties to the smaller one) with endpoint
+#' saturation.
 #' Discrete, display and released-value thresholds are unchanged. The returned
 #' \code{changes} name every parameter whose effective value differs from the
 #' request, with the requested and effective values.
@@ -384,13 +400,17 @@
       next
     }
     if (length(x) != 1L || is.na(x)) next
+    # Closed integer windows [a, b] snap to [floor_G(a), ceil_G(b)] (converted
+    # once to the half-open [a, b + 1) in SQL); scalar durations snap to the
+    # nearest point of L (strictly positive ones to L without 0), thresholds
+    # to D, ties to the smaller point, finite values saturating.
     out <- switch(q,
       window_start = .dsomopReleaseSnapFloor(x, .dsomopReleaseSignedDayGrid()),
-      window_end = .dsomopReleaseSnapCeil(x + 1, .dsomopReleaseSignedDayGrid()) - 1,
+      window_end = .dsomopReleaseSnapCeil(x, .dsomopReleaseSignedDayGrid()),
       day_duration = .dsomopReleaseSnap(max(x, 0), .dsomopReleaseDayGrid()),
-      day_duration_positive = max(30, .dsomopReleaseSnap(max(x, 0),
-                                                         .dsomopReleaseDayGrid())),
-      duration_grid = .dsomopReleaseSnap(x, .dsomopReleaseGrid("duration_days")$breaks),
+      day_duration_positive = .dsomopReleaseSnap(
+        max(x, 0), setdiff(.dsomopReleaseDayGrid(), 0)),
+      duration_grid = .dsomopReleaseSnap(x, .dsomopReleaseDurationGrid()),
       age_lower = .dsomopReleaseSnapFloor(x, .dsomopReleaseAgeGrid()),
       age_upper = .dsomopReleaseSnapCeil(x + 1, .dsomopReleaseAgeGrid()) - 1,
       age_band = .dsomopReleaseSnap(x, c(5, 10, 20)),
@@ -952,6 +972,20 @@
   # never re-tested one by one).
   data_kind <- identical(owner$strata$kind, "data")
   parent_dist_ok <- n_total >= support$dist
+  # The public marginal hierarchy: one canonical parent person total of the
+  # owner's eligible population (shared by every owner that declares the same
+  # population), drawn before any child stratification. Children of a public
+  # partition are reconciled to it and projected onto its displayed total; a
+  # child request never moves the parent.
+  public_kind <- identical(owner$strata$kind, "public") &&
+    length(strata_keys) > 1L
+  root_noisy <- NA_real_
+  if (!data_kind) {
+    first <- !duplicated(sub$person_id)
+    root_noisy <- noisy("N", "stratum=root", n_total, frac$N, cap,
+                        tokens[first], rep(1, sum(first)),
+                        owner_id = .DSOMOP_RELEASE_N_OWNER)
+  }
   rows <- vector("list", length(strata_keys))
   bins <- vector("list", length(strata_keys))
   for (i in seq_along(strata_keys)) {
@@ -960,8 +994,9 @@
     tok <- tokens[in_s]
     n_exact <- sum(in_s)
     dist_ok <- if (data_kind) n_exact >= support$dist else parent_dist_ok
-    n_noisy <- noisy("N", paste0("stratum=", s), n_exact, frac$N, cap, tok,
-                     rep(1, n_exact), owner_id = .DSOMOP_RELEASE_N_OWNER)
+    n_noisy <- if (!data_kind && !public_kind) root_noisy else
+      noisy("N", paste0("stratum=", s), n_exact, frac$N, cap, tok,
+            rep(1, n_exact), owner_id = .DSOMOP_RELEASE_N_OWNER)
     h_noisy <- rep(NA_real_, length(bin_keys))
     if (has_h && (dist_ok || !data_kind)) {
       cell <- if (is_cell) match(sub$cell[in_s], owner$cells) else
@@ -993,12 +1028,17 @@
                dist_ok = logical(0), stringsAsFactors = FALSE)
 
   # Displayed values: top-down projection of the signed components.
-  if (identical(owner$strata$kind, "data")) {
+  if (data_kind) {
+    strata$n_signed <- strata$n_noisy
     strata$n_display <- pmax(0, strata$n_noisy)
+  } else if (public_kind) {
+    strata$n_signed <- strata$n_noisy +
+      (root_noisy - sum(strata$n_noisy)) / nrow(strata)
+    strata$n_display <- .dsomopReleaseSimplex(strata$n_noisy,
+                                              max(0, root_noisy))
   } else {
-    root <- max(0, sum(strata$n_noisy))
-    strata$n_display <- if (nrow(strata) == 1L) root else
-      .dsomopReleaseSimplex(strata$n_noisy, root)
+    strata$n_signed <- strata$n_noisy
+    strata$n_display <- max(0, root_noisy)
   }
   display_bins <- lapply(seq_along(bins), function(i) {
     if (!has_h || all(is.na(bins[[i]]))) return(rep(NA_real_, length(bin_keys)))
@@ -1036,19 +1076,21 @@
   }
 
   # Signed components for pooling: histogram cells reconciled to the one
-  # canonical noisy N of their stratum (no second total), plus N, S and Q.
+  # canonical signed N of their stratum (itself reconciled to the parent of a
+  # public partition), plus N, S and Q; no second, independent total.
   export <- lapply(seq_along(strata_keys), function(i) {
     h <- bins[[i]]
     reconciled <- if (has_h && !all(is.na(h)) && length(h) > 0L) {
-      h + (strata$n_noisy[[i]] - sum(h)) / length(h)
+      h + (strata$n_signed[[i]] - sum(h)) / length(h)
     } else NULL
-    list(stratum = strata_keys[[i]], n = strata$n_noisy[[i]],
+    list(stratum = strata_keys[[i]], n = strata$n_signed[[i]],
          s = if (has_m) strata$s_noisy[[i]] else NULL,
          q = if (has_m) strata$q_noisy[[i]] else NULL,
          h = reconciled)
   })
   list(
     owner = owner, protection = protection, strata = strata,
+    root_n = root_noisy,
     bins = stats::setNames(display_bins, strata_keys), bin_keys = bin_keys,
     export = list(
       protocol = .DSOMOP_RELEASE_PROTOCOL, owner = owner$id,
@@ -1056,11 +1098,16 @@
       grid = owner$grid$id %||% NULL,
       breaks = if (!is_cell && has_h) owner$grid$breaks else NULL,
       bounds = owner$bounds, strata_kind = owner$strata$kind,
+      root = if (public_kind) list(n = root_noisy) else NULL,
       cell_keys = if (has_h) bin_keys else NULL,
       cells = if (is_cell) owner$cells else NULL,
       lattice = if (has_m) J else NULL, cap = cap,
-      allocation = list(N = frac$N, H = alloc_h, S = alloc_s, Q = alloc_q),
-      reconciliation = "histogram_cells_sum_to_stratum_N",
+      allocation = c(list(N = frac$N),
+                     if (public_kind) list(N_strata = frac$N),
+                     list(H = alloc_h, S = alloc_s, Q = alloc_q)),
+      reconciliation = if (public_kind) {
+        "strata_N_sum_to_root_N_cells_to_stratum_N"
+      } else "histogram_cells_sum_to_stratum_N",
       components = export
     )
   )
@@ -1091,7 +1138,8 @@
 #' @keywords internal
 .omopToolsReleaseRoute <- function(handle, contract, scoped) {
   mode <- .dsomopToolsMode()
-  if (identical(mode, "standard")) {
+  always <- isTRUE(contract$protected_always)
+  if (identical(mode, "standard") && !always) {
     return(list(protection = "standard", mode = mode))
   }
   # A contract without a protected mechanism (an effect with no bounded
@@ -1109,6 +1157,10 @@
       stop("The data custodian has set the community tools to DP-only mode, ",
            "but the differential-privacy service is not available on this ",
            "server.", call. = FALSE)
+    }
+    if (always) {
+      return(list(protection = "unavailable", mode = mode,
+                  reason = ready$reason))
     }
     return(list(protection = "standard_fallback", mode = mode,
                 reason = ready$reason))
@@ -1151,16 +1203,23 @@
     o <- b$owner
     cap <- max(1L, o$cap)
     frac <- .DSOMOP_RELEASE_FRACTIONS
-    alloc <- list(N = frac$N)
+    # A public partition owns its parent total and its strata totals.
+    stratified <- !is.null(b$export$root)
+    alloc <- c(list(N = frac$N), if (stratified) list(N_strata = frac$N))
     if (identical(o$family, "C6")) {
-      alloc <- list(N = frac$N, status = frac$C6$status, time = frac$C6$time)
-      sens <- list(N = cap, status = cap,
-                   time = cap * .DSOMOP_RELEASE_TIME_CAP)
+      alloc <- c(alloc, list(status = frac$C6$status, time = frac$C6$time))
+      sens <- lapply(names(alloc), function(f) {
+        if (identical(f, "time")) cap * .DSOMOP_RELEASE_TIME_CAP else cap
+      })
+      names(sens) <- names(alloc)
       sd <- lapply(names(alloc), function(f) {
         .dsomopReleaseNoiseSd(e * alloc[[f]], sens[[f]])
       })
       names(sd) <- names(alloc)
       return(list(owner = o$id, estimand = o$estimand, family = "C6",
+                  population = o$population,
+                  status_owner = o$status_owner %||% o$id,
+                  time_owner = o$time_owner %||% o$id,
                   horizon_days = .DSOMOP_RELEASE_TIME_CAP,
                   contribution_cap = cap, allocation_fraction = alloc,
                   allocation_epsilon = lapply(alloc, function(a) a * e),
@@ -1183,6 +1242,7 @@
     })
     names(sd) <- names(alloc)
     list(owner = o$id, estimand = o$estimand, family = o$family,
+         population = o$population,
          grid = o$grid$id %||% NA_character_,
          bounds = o$bounds %||% NA_real_, contribution_cap = cap,
          allocation_fraction = alloc,
@@ -1190,9 +1250,22 @@
          sensitivity = sens, noise_sd = sd)
   })
   fixed <- identical(route$protection, "fixed_synopsis")
-  vector_epsilon <- sum(vapply(components, function(c) {
-    sum(unlist(c$allocation_epsilon))
-  }, numeric(1L)))
+  # The union of the owned components: a person total shared by several
+  # owners of one population counts once.
+  union_keys <- character(0)
+  union_eps <- numeric(0)
+  for (c in components) {
+    for (f in names(c$allocation_epsilon)) {
+      key <- if (f %in% c("N", "N_strata")) {
+        paste(f, c$population %||% c$owner, sep = "\u001f")
+      } else paste(c$owner, f, sep = "\u001f")
+      if (!key %in% union_keys) {
+        union_keys <- c(union_keys, key)
+        union_eps <- c(union_eps, c$allocation_epsilon[[f]])
+      }
+    }
+  }
+  vector_epsilon <- sum(union_eps)
   label <- list(
     protection = route$protection,
     mode = route$mode,
@@ -1203,7 +1276,6 @@
     noise_reference_epsilon = e,
     mechanism_epsilon = if (fixed) vector_epsilon else NA_real_,
     api_transcript_epsilon = NA_real_,
-    delta = 0,
     adjacency = "add_remove_person",
     mechanism = policy$mechanism,
     sampler = policy$sampler,
@@ -1224,11 +1296,22 @@
       "same answer. It is not a joint differential-privacy guarantee."
     )
   )
+  # delta = 0 belongs to the declared fixed vector only; a heuristic
+  # realised or mixed release states no delta at all (B14).
+  if (fixed) label$delta <- 0
+  label$source <- list(logical_source_id =
+                         .dsomopReleaseLogicalSourceId(policy))
   if (length(owners) == 1L) {
     label$estimand <- owners[[1L]]$estimand
     label$owner <- owners[[1L]]$id
   }
   for (name in names(extra)) label[[name]] <- extra[[name]]
+  if (identical(label$protection, "mixed")) {
+    # A mixed frame claims no frame-level epsilon or delta; its blocks name
+    # their own protection.
+    label$delta <- NULL
+    label$mechanism_epsilon <- NA_real_
+  }
   label
 }
 
@@ -1307,6 +1390,36 @@
 #' @return The entry with \code{meta$pooling_contract} (and possibly
 #'   \code{meta$release_pooling}) set.
 #' @keywords internal
+#' Stable unavailable status of an always-protected view
+#'
+#' Used when a view that is only ever released from its protected basis (a
+#' threshold view of one protected histogram) has no protected mechanism on
+#' this server, or in standard mode without the DP service. After the parent
+#' population admission only, it returns the contract's fixed one-row shape
+#' with every value unavailable: the raw tail support is never re-tested, so
+#' the presence of the row reveals nothing about the threshold.
+#'
+#' @keywords internal
+.omopToolsReleaseUnavailable <- function(handle, params, contract, route,
+                                         snap) {
+  if (!is.function(contract$unavailable)) {
+    stop("This protected view has no stable unavailable shape.",
+         call. = FALSE)
+  }
+  df <- contract$unavailable(handle, params)
+  attr(df, "dsomop_protection") <- list(
+    protection = "unavailable", mode = route$mode,
+    contract = contract$name,
+    masked_fields = names(df),
+    masked_reason = "protected_mechanism_unavailable",
+    effective_parameters = snap$changes,
+    privacy_call_quota = "none", history_based_admission = FALSE,
+    note = paste0("This view is released only from its protected histogram; ",
+                  "the DP service is unavailable, so its values are ",
+                  "unavailable (the threshold's raw support is not tested)."))
+  df
+}
+
 .omopToolsReleasePoolingContract <- function(entry, contract) {
   release <- tryCatch(.omopToolsReleaseContract(entry), error = function(e) NULL)
   mode <- tryCatch(.dsomopToolsMode(), error = function(e) "auto")
@@ -1384,8 +1497,15 @@
   tokens <- if (nrow(sub)) .dsomopReleasePersonTokens(keys, policy,
                                                       sub$person_id) else
     character(0)
+  # Status and time belong to their own scientific owners (first-outcome
+  # status of this outcome definition; observed person-time of this time
+  # contract), never to request labels, scope spelling or window text: the
+  # realised maps carry the population and the window. Person totals use the
+  # one eligible-person owner.
+  status_owner <- owner$status_owner %||% owner$id
+  time_owner <- owner$time_owner %||% owner$id
   noisy <- function(family, coordinate, value, allocation, sensitivity,
-                    map_tokens, contributions, owner_id = owner$id) {
+                    map_tokens, contributions, owner_id) {
     fp <- if (identical(protection, "realised_sticky")) {
       .dsomopReleaseFingerprint(keys, owner_id, family, coordinate,
                                 map_tokens, contributions)
@@ -1395,30 +1515,47 @@
       coordinate = coordinate, value = value, allocation = allocation,
       sensitivity = sensitivity, fingerprint = fp))
   }
+  public_kind <- identical(owner$strata$kind, "public") &&
+    length(strata_keys) > 1L
+  # Coordinates carry public partition cells only: an unstratified population
+  # and each independent arm is "stratum=root" of its own map, so the same
+  # people answer alike whatever the request labels them (B06).
+  coord_of <- function(s) if (public_kind) paste0("stratum=", s) else
+    "stratum=root"
+  # The canonical parent person total of a public partition, drawn once and
+  # never moved by a child.
+  root_noisy <- if (public_kind) {
+    noisy("N", "stratum=root", nrow(sub), frac$N, cap, tokens,
+          rep(1, nrow(sub)), owner_id = .DSOMOP_RELEASE_N_OWNER)
+  } else NA_real_
   rows <- lapply(strata_keys, function(s) {
     in_s <- sub$stratum == s
     tok <- tokens[in_s]
     ev <- sub$event[in_s]
     tm <- sub$time[in_s]
-    n <- noisy("N", paste0("stratum=", s), sum(in_s), frac$N, cap, tok,
+    n <- noisy("N", coord_of(s), sum(in_s), frac$N, cap, tok,
                rep(1, sum(in_s)), owner_id = .DSOMOP_RELEASE_N_OWNER)
-    e1 <- noisy("status", paste0("stratum=", s, "|status=event"), sum(ev),
-                frac$C6$status, cap, tok[ev == 1L], rep(1, sum(ev)))
-    e0 <- noisy("status", paste0("stratum=", s, "|status=no_event"),
+    e1 <- noisy("status", paste0(coord_of(s), "|status=event"), sum(ev),
+                frac$C6$status, cap, tok[ev == 1L], rep(1, sum(ev)),
+                owner_id = status_owner)
+    e0 <- noisy("status", paste0(coord_of(s), "|status=no_event"),
                 sum(1L - ev), frac$C6$status, cap, tok[ev == 0L],
-                rep(1, sum(1L - ev)))
-    t <- noisy("T", paste0("stratum=", s), sum(tm), frac$C6$time,
-               cap * T_cap, tok, tm)
+                rep(1, sum(1L - ev)), owner_id = status_owner)
+    t <- noisy("T", coord_of(s), sum(tm), frac$C6$time,
+               cap * T_cap, tok, tm, owner_id = time_owner)
     data.frame(stratum = s, n_noisy = n, event_noisy = e1,
                no_event_noisy = e0, time_noisy = t,
                n_exact_supported = sum(in_s) >= support$floor,
                stringsAsFactors = FALSE)
   })
   st <- do.call(rbind, rows)
-  if (identical(owner$strata$kind, "public") && nrow(st) > 1L) {
-    root <- max(0, sum(st$n_noisy))
-    st$n_display <- .dsomopReleaseSimplex(st$n_noisy, root)
+  if (public_kind) {
+    # Signed children reconciled to the fixed signed parent (pooling);
+    # displayed children projected onto the parent's displayed total.
+    st$n_signed <- st$n_noisy + (root_noisy - sum(st$n_noisy)) / nrow(st)
+    st$n_display <- .dsomopReleaseSimplex(st$n_noisy, max(0, root_noisy))
   } else {
+    st$n_signed <- st$n_noisy
     st$n_display <- pmax(0, st$n_noisy)
   }
   st$events_display <- vapply(seq_len(nrow(st)), function(i) {
@@ -1434,22 +1571,28 @@
   for (col in c("n_display", "events_display", "time_display")) {
     st[[col]] <- .dsomopReleaseRound(st[[col]])
   }
-  # Status cells are reconciled to their stratum's one noisy total before export.
+  # Status cells are reconciled to their stratum's signed total before export.
   export <- lapply(seq_len(nrow(st)), function(i) {
     h <- c(st$event_noisy[[i]], st$no_event_noisy[[i]])
-    list(stratum = st$stratum[[i]], n = st$n_noisy[[i]],
-         status = h + (st$n_noisy[[i]] - sum(h)) / 2,
+    list(stratum = st$stratum[[i]], n = st$n_signed[[i]],
+         status = h + (st$n_signed[[i]] - sum(h)) / 2,
          time = st$time_noisy[[i]])
   })
   list(owner = c(owner, list(family = "C6")), protection = protection,
-       strata = st, noise_sd = sd,
+       strata = st, noise_sd = sd, root_n = root_noisy,
        export = list(protocol = .DSOMOP_RELEASE_PROTOCOL, owner = owner$id,
+                     status_owner = status_owner, time_owner = time_owner,
                      population = owner$population, family = "C6",
                      strata_kind = owner$strata$kind,
+                     root = if (public_kind) list(n = root_noisy) else NULL,
                      horizon_days = T_cap, cap = cap,
-                     allocation = list(N = frac$N, status = frac$C6$status,
-                                       time = frac$C6$time),
-                     reconciliation = "status_cells_sum_to_stratum_N",
+                     allocation = c(list(N = frac$N),
+                                    if (public_kind) list(N_strata = frac$N),
+                                    list(status = frac$C6$status,
+                                         time = frac$C6$time)),
+                     reconciliation = if (public_kind) {
+                       "strata_N_sum_to_root_N_status_cells_to_stratum_N"
+                     } else "status_cells_sum_to_stratum_N",
                      components = export))
 }
 

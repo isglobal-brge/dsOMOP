@@ -76,6 +76,7 @@
              "unknown")
   .dsomopReleaseOwner(
     id = paste0("person/gender-birth-year/reference-", year, "/v1"),
+    population = "cdm/person/v1",
     family = "H", cells = cells, strata = .omopReleaseGenderStrata(),
     estimand = paste0("persons by gender and year of birth (1900 to ", year,
                       "; other or missing years as unknown)"))
@@ -204,8 +205,20 @@
                    stringsAsFactors = FALSE)
       })
     rownames(df) <- NULL
-    list(df = df, built = list(built),
-         extra = list(reference_year = year))
+    extra <- list(basis_reference_year = year)
+    if (identical(view, "age_distribution_decade")) {
+      # On the protected route the requested year is a view of the released
+      # birth-year basis (N01): report it as the view year, not as snapped.
+      requested <- snap$changes$reference_year$requested %||%
+        params$reference_year %||% year
+      view_year <- suppressWarnings(as.integer(requested))
+      if (is.na(view_year)) view_year <- year
+      effective <- snap$changes %||% list()
+      effective$reference_year <- NULL
+      extra$view_reference_year <- view_year
+      extra$effective_parameters <- effective
+    }
+    list(df = df, built = list(built), extra = extra)
   }
 }
 
@@ -273,8 +286,11 @@
                         gender = .omopReleaseGenderStrata(),
                         age_decile = .omopReleaseDecileStrata())
   if (identical(value_kind, "age")) {
+    # One eligible population for every stratification of this value: the
+    # root person total and the gender/age-decile margins are shared (B03).
     .dsomopReleaseOwner(
       id = paste0("achilles/first-op-age-years/by-", strata, "/v1"),
+      population = "cdm/first-observation-period/age/v1",
       family = "HM", grid = .dsomopReleaseGrid("age_5y"),
       strata = strata_spec, bounds = c(0, 110),
       estimand = paste0("year-only age at the first observation period ",
@@ -284,6 +300,7 @@
     grid <- .dsomopReleaseGrid("duration_days")
     .dsomopReleaseOwner(
       id = paste0("achilles/first-op-length-days/by-", strata, "/v1"),
+      population = "cdm/first-observation-period/length/v1",
       family = "HM", grid = grid, strata = strata_spec,
       bounds = c(grid$lower, grid$upper),
       estimand = paste0("length in days of the first observation period, ",
@@ -598,6 +615,20 @@
 
 # Persons whose longest observation period is at least min_days: a tail view
 # of the one public histogram of the longest period length.
+# Parent admission only, then the fixed unavailable shape (B09): the persons
+# with an observation period must reach the support floor; the tail at the
+# threshold is never counted.
+.omopReleaseUnavailableLongPeriod <- function(handle, params) {
+  obs <- .qualifyTable(handle, "observation_period")
+  n <- .omopReleaseFetch(handle, paste0(
+    "SELECT COUNT(DISTINCT op.person_id) AS n FROM ", obs, " op"))$n
+  if (!length(n) || is.na(n) ||
+      as.numeric(n[[1L]]) < .dsomopReleaseSupport()$floor) {
+    .dsomopReleaseDisclosive()
+  }
+  data.frame(n_persons = NA_real_)
+}
+
 .omopReleaseRunLongPeriod <- function(handle, ctx, params, route, snap) {
   obs <- .qualifyTable(handle, "observation_period")
   .omopDiagAssertPersons(handle, ctx, obs, "op", "person_id")
@@ -609,6 +640,7 @@
   grid <- .dsomopReleaseGrid("duration_days")
   owner <- .dsomopReleaseOwner(
     id = "querylibrary/observation_period.longest-period-days/v1",
+    population = "cdm/longest-observation-period/v1",
     family = "H", grid = grid,
     estimand = "length in days of each person's longest observation period")
   sub <- data.frame(person_id = raw$person_id %||% character(0),
@@ -675,8 +707,10 @@
       "C2", .omopReleaseRunToolsPartition),
     "dsomop:person.age_distribution_decade" = contract(
       "C2", .omopReleaseRunBirthYear("age_distribution_decade")),
-    "dsomop:observation_period.long_period_count" = contract(
-      "C7", .omopReleaseRunLongPeriod)
+    "dsomop:observation_period.long_period_count" = c(contract(
+      "C7", .omopReleaseRunLongPeriod),
+      list(protected_always = TRUE,
+           unavailable = .omopReleaseUnavailableLongPeriod))
   )
   for (x in list(c(203L, "visit"), c(403L, "condition"),
                  c(603L, "procedure"), c(703L, "drug"),
@@ -833,6 +867,8 @@
     contract = .DSOMOP_RELEASE_CONTRACT_VERSION,
     entry = contract$name, protection = route$protection,
     reference_epsilon = route$policy$release_epsilon,
+    source = list(logical_source_id =
+                    .dsomopReleaseLogicalSourceId(route$policy)),
     owners = lapply(result$built, function(b) b$export))
   df
 }
@@ -879,7 +915,8 @@
   out_src <- .omopOutcomeSource(handle, params$outcome_concept_id,
                                 params$domain_code %||% "0")
   substrate <- .omopPersonOutcomeSubstrateSql(
-    handle, cohort, out_src, tar_start, tar_end, anchor_start, anchor_end)
+    handle, cohort, out_src, tar_start, tar_end, anchor_start, anchor_end,
+    horizon = .DSOMOP_RELEASE_TIME_CAP)
   anchor <- if (identical(anchor_start, "end")) "c.cohort_end_date" else
     "c.cohort_start_date"
   birth_dt <- .omopYearStartDateSql(handle, "p.year_of_birth")
@@ -939,18 +976,15 @@
     stringsAsFactors = FALSE) else
     data.frame(person_id = character(0), stratum = character(0),
                event = numeric(0), time = numeric(0))
-  owner <- list(
-    id = paste0("incidence/first-outcome-person-time/outcome=",
-                params$outcome_concept_id %||% "none", "/domain=",
-                params$domain_code %||% "0", "/tar=", tar_start, ",",
-                tar_end, ",", anchor_start, ",", anchor_end, "/strata=",
-                paste(names(dims), collapse = "+"),
-                if (by_age) paste0("/band=", band) else "", "/v1"),
-    population = NULL, strata = strata, cap = 1L,
+  owner <- c(list(
+    id = "incidence/first-outcome-person-time/v2",
+    population = "c6/persons-at-risk/v1", strata = strata, cap = 1L,
     estimand = paste0("persons at risk, persons with a first outcome and ",
-                      "observed person-days (each person's observed window ",
-                      "clipped to ", .DSOMOP_RELEASE_TIME_CAP, " days)"))
-  owner$population <- owner$id
+                      "observed person-days, each person's observed window ",
+                      "capped at ", .DSOMOP_RELEASE_TIME_CAP,
+                      " days for both events and time")),
+    .omopReleaseC6Owners(.omopReleaseOutcomeKey(
+      params$outcome_concept_id, params$domain_code %||% "0"), "full"))
   built <- .dsomopReleaseBuildC6(route$policy, route$protection, owner, sub)
   st <- built$strata
   lab <- strata$labels[match(st$stratum, strata$labels$stratum), ,
@@ -966,6 +1000,29 @@
     rate = .dsomopReleaseRound(ifelse(time > 0, events / time, NA_real_)),
     stringsAsFactors = FALSE)
   list(df = df, built = list(built))
+}
+
+# Canonical identity of an outcome definition: the sorted unique concept ids
+# and the domain, framed injectively (not the request spelling).
+.omopReleaseOutcomeKey <- function(concepts, domain) {
+  ids <- trimws(unlist(strsplit(as.character(concepts %||% ""), ",",
+                                fixed = TRUE)))
+  ids <- suppressWarnings(as.numeric(ids[nzchar(ids)]))
+  ids <- sort(unique(ids[is.finite(ids)]))
+  .dsomopFrame("outcome/v1", ids, as.character(domain %||% "0"))
+}
+
+# The scientific owners of person-time components (B06): first-outcome status
+# of one outcome definition, and observed person-time of one time contract.
+# Request labels, subgroup predicates, scope names and window spelling never
+# enter them; the realised maps carry the population and the window.
+.omopReleaseC6Owners <- function(outcome_key, time = c("full", "to_first")) {
+  time <- match.arg(time)
+  list(
+    status_owner = paste0("c6/first-outcome-status/", outcome_key),
+    time_owner = if (identical(time, "full")) {
+      "c6/observed-person-time/full-window/v1"
+    } else paste0("c6/observed-person-time/to-first-outcome/", outcome_key))
 }
 
 # The two CohortMethod arms as independent strata of one owner.
@@ -1005,13 +1062,14 @@
       anchor_end = params$tar_anchor_end %||% "end")
     out_src <- .omopOutcomeSource(handle, params$outcome_concept_id,
                                   params$outcome_domain_code %||% "0")
-    owner_base <- paste0("outcome=", params$outcome_concept_id %||% "none",
-                         "/domain=", params$outcome_domain_code %||% "0",
-                         "/tar=", tar$start, ",", tar$end, ",",
-                         tar$anchor_start, ",", tar$anchor_end)
+    outcome_key <- .omopReleaseOutcomeKey(
+      params$outcome_concept_id, params$outcome_domain_code %||% "0")
+    horizon <- .DSOMOP_RELEASE_TIME_CAP
     if (identical(view, "effect")) {
-      ta <- .omopCmEffectArmData(handle, cohorts$a, 1L, out_src, tar)
-      co <- .omopCmEffectArmData(handle, cohorts$b, 0L, out_src, tar)
+      ta <- .omopCmEffectArmData(handle, cohorts$a, 1L, out_src, tar,
+                                 horizon = horizon)
+      co <- .omopCmEffectArmData(handle, cohorts$b, 0L, out_src, tar,
+                                 horizon = horizon)
       sub <- rbind(
         data.frame(person_id = ta$data$person_id, stratum = rep("arm=target",
                                                                 nrow(ta$data)),
@@ -1021,17 +1079,17 @@
                    stratum = rep("arm=comparator", nrow(co$data)),
                    event = co$data$event, time = co$data$tar_days,
                    stringsAsFactors = FALSE))
-      id <- paste0("cohortmethod/arms-time-to-first-outcome/", owner_base,
-                   "/v1")
+      id <- "cohortmethod/arms-time-to-first-outcome/v2"
+      time_kind <- "to_first"
       estimand <- paste0("per arm: persons, persons with a first outcome and ",
                          "time to first outcome or censoring in the observed ",
-                         "window (clipped to ", .DSOMOP_RELEASE_TIME_CAP,
-                         " days)")
+                         "window, capped at ", .DSOMOP_RELEASE_TIME_CAP,
+                         " days for both events and time")
     } else {
       arm_sub <- function(cohort, label) {
         substrate <- .omopPersonOutcomeSubstrateSql(
           handle, cohort, out_src, tar$start, tar$end, tar$anchor_start,
-          tar$anchor_end)
+          tar$anchor_end, horizon = horizon)
         raw <- .omopReleaseFetch(handle, paste0(
           "SELECT s.subject_id AS person_id, s.person_days AS t, ",
           "s.person_outcomes AS e FROM ", substrate, " s"))
@@ -1043,14 +1101,17 @@
       }
       sub <- rbind(arm_sub(cohorts$a, "arm=target"),
                    arm_sub(cohorts$b, "arm=comparator"))
-      id <- paste0("cohortmethod/arms-first-outcome-person-time/", owner_base,
-                   "/v1")
+      id <- "cohortmethod/arms-first-outcome-person-time/v2"
+      time_kind <- "full"
       estimand <- paste0("per arm: persons, persons with a first outcome and ",
-                         "observed person-days (each clipped to ",
-                         .DSOMOP_RELEASE_TIME_CAP, " days)")
+                         "observed person-days, each person's observed window ",
+                         "capped at ", .DSOMOP_RELEASE_TIME_CAP,
+                         " days for both events and time")
     }
-    owner <- list(id = id, population = id, strata = .omopReleaseArmStrata(),
-                  cap = 1L, estimand = estimand)
+    owner <- c(list(id = id, population = "c6/persons-at-risk/v1",
+                    strata = .omopReleaseArmStrata(), cap = 1L,
+                    estimand = estimand),
+               .omopReleaseC6Owners(outcome_key, time_kind))
     built <- .dsomopReleaseBuildC6(route$policy, route$protection, owner, sub)
     st <- built$strata
     t_row <- st[st$stratum == "arm=target", , drop = FALSE]
@@ -1120,7 +1181,8 @@
                                 params$outcome_domain_code %||% "0")
   subgroups <- .omopCmInteractionSubgroups(handle, params)
   frame_of <- function(cohort, predicate) {
-    fr <- .omopCmSubgroupSubjectFrame(handle, cohort, out_src, tar, predicate)
+    fr <- .omopCmSubgroupSubjectFrame(handle, cohort, out_src, tar, predicate,
+                                      horizon = .DSOMOP_RELEASE_TIME_CAP)
     list(frame = fr, persons = nrow(fr),
          outcomes = sum(fr$events, na.rm = TRUE),
          outcome_persons = sum(fr$events > 0, na.rm = TRUE),
@@ -1150,16 +1212,21 @@
       time = as.numeric(fr$frame$person_days), stringsAsFactors = FALSE)
     sub <- rbind(to_sub(lv$target, "arm=target"),
                  to_sub(lv$comparator, "arm=comparator"))
-    id <- paste0("cohortmethod/interaction-first-outcome-person-time/outcome=",
-                 params$outcome_concept_id %||% "none", "/domain=",
-                 params$outcome_domain_code %||% "0", "/tar=", tar$start, ",",
-                 tar$end, ",", tar$anchor_start, ",", tar$anchor_end,
-                 "/level=", sg$label, "/v1")
-    owner <- list(id = id, population = id, strata = .omopReleaseArmStrata(),
-                  cap = 1L, estimand = paste0(
-                    "per arm within subgroup '", sg$label, "': persons, ",
-                    "persons with a first outcome and observed person-days ",
-                    "(each clipped to ", .DSOMOP_RELEASE_TIME_CAP, " days)"))
+    # The subgroup label and predicate are presentation: membership enters
+    # through the realised maps, so equal memberships share their components
+    # with each other and with the overall arms (B06).
+    owner <- c(list(id = "cohortmethod/interaction-first-outcome-person-time/v2",
+                    population = "c6/persons-at-risk/v1",
+                    strata = .omopReleaseArmStrata(), cap = 1L,
+                    estimand = paste0(
+                      "per arm within subgroup '", sg$label, "': persons, ",
+                      "persons with a first outcome and observed ",
+                      "person-days, each person's observed window capped at ",
+                      .DSOMOP_RELEASE_TIME_CAP,
+                      " days for both events and time")),
+               .omopReleaseC6Owners(.omopReleaseOutcomeKey(
+                 params$outcome_concept_id,
+                 params$outcome_domain_code %||% "0"), "full"))
     built <- .dsomopReleaseBuildC6(route$policy, route$protection, owner, sub)
     built_all[[length(built_all) + 1L]] <<- built
     st <- built$strata
@@ -1743,6 +1810,8 @@
     contract = .DSOMOP_RELEASE_CONTRACT_VERSION,
     entry = contract$name, protection = "mixed",
     reference_epsilon = route$policy$release_epsilon,
+    source = list(logical_source_id =
+                    .dsomopReleaseLogicalSourceId(route$policy)),
     owners = lapply(result$built, function(b) b$export))
   out
 }

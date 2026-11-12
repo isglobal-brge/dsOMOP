@@ -40,7 +40,7 @@ test_that("min_days sweeps only see the canonical views of one public histogram"
   grid <- .dsomopReleaseGrid("duration_days")$breaks
   # Every request inside one quantization cell is the same effective estimand
   # and the same answer.
-  for (pair in list(c(0, 14), c(16, 59), c(61, 134), c(4000, 5470))) {
+  for (pair in list(c(31, 44), c(61, 74), c(366, 455), c(4000, 5475))) {
     expect_identical(release(pair[[1L]]), release(pair[[2L]]))
   }
   # The audit's binary search for the minimum and third-largest period length
@@ -127,14 +127,17 @@ test_that("a TAR sweep no longer locates event days through SE, counts or time",
     attr(sweep[[i]], "dsomop_protection")$effective_parameters$
       tar_end_offset$effective %||% as.character((95:125)[[i]])
   }, character(1L))
-  # 31 requests collapse to two public windows ([0, 119] and [0, 149]).
-  expect_setequal(unique(effective), c("119", "149"))
+  # 31 requests collapse to two public windows on the clinical grid:
+  # 95..120 end at 120, 121..125 at 150 (review section 5).
+  expect_identical(effective[(95:125) <= 120], rep("120", 26L))
+  expect_identical(effective[(95:125) > 120], rep("150", 5L))
   key <- function(r) paste(unlist(r[, c("persons", "person_days", "outcomes",
                                         "se_log_estimate")]), collapse = "|")
   keys <- vapply(sweep, key, character(1L))
-  expect_lte(length(unique(keys)), 2L)
-  changes <- (95:125)[-1L][keys[-1L] != keys[-length(keys)]]
-  expect_false(any(changes %in% c(100L, 107L, 114L, 121L)))
+  # Equality inside each public cell: the event days 100, 107 and 114 create
+  # no transition; 121 is the announced public boundary.
+  expect_length(unique(keys[(95:125) <= 120]), 1L)
+  expect_length(unique(keys[(95:125) > 120]), 1L)
   for (r in sweep) {
     expect_identical(attr(r, "dsomop_protection")$protection,
                      "realised_sticky")
@@ -197,9 +200,11 @@ test_that("incidence person-time is protected or unavailable on every route", {
   label <- attr(out, "dsomop_protection")
   expect_identical(label$protection, "realised_sticky")
   expect_true(all(is.na(out$outcomes)))
-  # The same effective window replays exactly.
+  # The same effective window (366..390 all end at 390) replays exactly.
+  out <- .release_run(h, "dsomop:incidence.rate", list(
+    outcome_concept_id = "4000002", tar_end_offset = "371"), scope = "sw_t")
   again <- .release_run(h, "dsomop:incidence.rate", list(
-    outcome_concept_id = "4000002", tar_end_offset = "370"), scope = "sw_t")
+    outcome_concept_id = "4000002", tar_end_offset = "389"), scope = "sw_t")
   expect_identical(.release_values(out), .release_values(again))
   withr::local_options(list(dsomop.tools.mode = "standard"))
   suppressWarnings(.omopAnalysisRegistry(h, force = TRUE))

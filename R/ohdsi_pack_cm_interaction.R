@@ -281,14 +281,17 @@
 #' @param tar A list with the TAR offsets/anchors (start/end/anchor_start/anchor_end).
 #' @param predicate SQL boolean over \code{coh} restricting to the subgroup (or
 #'   NULL for the unrestricted "overall" level).
+#' @param horizon Public contribution horizon in days of protected releases
+#'   (NULL: the whole observed window, for in-session fits).
 #' @return Data frame (person_days, events) — one row per subject in the subgroup.
 #' @keywords internal
-.omopCmSubgroupSubjectFrame <- function(handle, cohort, out_src, tar, predicate) {
+.omopCmSubgroupSubjectFrame <- function(handle, cohort, out_src, tar, predicate,
+                                        horizon = NULL) {
   # The shared observed window (.omopObservedTarSql), half-open [lo, hi), of
   # the canonical first episode (alias coh; it carries that episode's dates,
   # so the subgroup predicate is evaluated on it). The cohort table is read
   # once: MySQL/MariaDB cannot reopen a temporary table within one query.
-  observed <- .omopObservedTarSql(handle, cohort, tar)
+  observed <- .omopObservedTarSql(handle, cohort, tar, horizon = horizon)
   pdays  <- .omopDateDiffDays(handle, "coh.tar_hi", "coh.tar_lo")
 
   outcome_join <- ""

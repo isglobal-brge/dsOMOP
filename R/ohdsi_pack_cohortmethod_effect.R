@@ -66,13 +66,17 @@
 #' @param arm Integer 0/1 arm code (0 comparator, 1 target).
 #' @param out_src Resolved \code{\link{.omopOutcomeSource}} (or NULL: no outcome).
 #' @param tar Named list of TAR params (start/end offset, start/end anchor).
+#' @param horizon Public contribution horizon in days of protected releases
+#'   (NULL: the whole observed window, for in-session fits).
 #' @return list(data = <per-subject frame: arm, tar_days, event>,
 #'   persons, person_days, outcomes).
 #' @keywords internal
-.omopCmEffectArmData <- function(handle, cohort, arm, out_src, tar) {
+.omopCmEffectArmData <- function(handle, cohort, arm, out_src, tar,
+                                 horizon = NULL) {
   # The shared observed window (.omopObservedTarSql): requested TAR intersected
-  # with the observation period containing the index, half-open [lo, hi).
-  observed <- .omopObservedTarSql(handle, cohort, tar)
+  # with the observation period containing the index, half-open [lo, hi);
+  # protected releases also cap it at their public horizon.
+  observed <- .omopObservedTarSql(handle, cohort, tar, horizon = horizon)
   full_days <- .omopDateDiffDays(handle, "w.tar_hi", "w.tar_lo")
 
   outcome_join <- ""

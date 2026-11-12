@@ -1040,15 +1040,18 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #' @param out_src Outcome source returned by `.omopOutcomeSource`, or NULL.
 #' @param tar_start,tar_end Integer TAR offsets.
 #' @param anchor_start,anchor_end Either `"start"` or `"end"`.
+#' @param horizon Public contribution horizon in days of protected releases
+#'   (NULL: the whole observed window).
 #' @return SQL for a derived person-level outcome substrate.
 #' @keywords internal
 .omopPersonOutcomeSubstrateSql <- function(handle, cohort, out_src,
                                            tar_start, tar_end,
                                            anchor_start = "start",
-                                           anchor_end = "end") {
+                                           anchor_end = "end",
+                                           horizon = NULL) {
   observed <- .omopObservedTarSql(handle, cohort, list(
     start = tar_start, end = tar_end, anchor_start = anchor_start,
-    anchor_end = anchor_end))
+    anchor_end = anchor_end), horizon = horizon)
   pdays <- .omopDateDiffDays(handle, "w.tar_hi", "w.tar_lo")
 
   outcomes <- "0"
@@ -1121,10 +1124,15 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #' @param cohort Validated cohort table.
 #' @param tar List with \code{start}, \code{end} (integer day offsets) and
 #'   \code{anchor_start}, \code{anchor_end} ("start" or "end").
+#' @param horizon Protected releases pass their public contribution horizon
+#'   in days (\code{.DSOMOP_RELEASE_TIME_CAP}): the window becomes
+#'   \code{[tar_lo, min(tar_hi, tar_lo + horizon))}, so event eligibility and
+#'   person-time share the same bounded interval. \code{NULL} (internal
+#'   in-session fits) keeps the whole observed window.
 #' @return SQL for a derived table (subject_id, cohort_start_date,
 #'   cohort_end_date, tar_lo, tar_hi).
 #' @keywords internal
-.omopObservedTarSql <- function(handle, cohort, tar) {
+.omopObservedTarSql <- function(handle, cohort, tar, horizon = NULL) {
   first <- .omopFirstCohortEpisodeSql(handle, cohort)
   anchor <- function(value) {
     if (identical(value, "end")) "cohort_end_date" else "cohort_start_date"
@@ -1139,9 +1147,20 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   requested_hi <- paste0("DATEADD(day, ", end + 1L, ", coh.",
                          anchor(tar$anchor_end %||% "end"), ")")
   islands <- .omopObservationIslandsSql(handle)
+  hi_expr <- "c.tar_hi"
+  if (!is.null(horizon)) {
+    horizon <- as.integer(horizon)
+    if (length(horizon) != 1L || is.na(horizon) || horizon < 1L) {
+      stop("The protected horizon must be a positive number of days.",
+           call. = FALSE)
+    }
+    capped <- paste0("DATEADD(day, ", horizon, ", c.tar_lo)")
+    hi_expr <- paste0("CASE WHEN ", capped, " < c.tar_hi THEN ", capped,
+                      " ELSE c.tar_hi END")
+  }
   paste0(
     "(SELECT c.subject_id, c.cohort_start_date, c.cohort_end_date, ",
-    "c.tar_lo, c.tar_hi FROM (",
+    "c.tar_lo, ", hi_expr, " AS tar_hi FROM (",
     "SELECT r.subject_id, r.cohort_start_date, r.cohort_end_date, ",
     "CASE WHEN r.req_lo > isl.op_start THEN r.req_lo ELSE isl.op_start END ",
     "AS tar_lo, CASE WHEN r.req_hi < isl.op_end THEN r.req_hi ELSE ",
@@ -5331,6 +5350,14 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
                                             scoped = !is.null(scope))
   } else if (!assign) {
     .dsomopRequireStandardStatistics()
+  }
+  # An always-protected view (a threshold view of one protected histogram)
+  # without its mechanism returns a stable unavailable status after only the
+  # parent admission: its raw tail support is never re-tested (B09).
+  if (!is.null(release_route) &&
+      identical(release_route$protection, "unavailable")) {
+    return(.omopToolsReleaseUnavailable(handle, sanitized, release_contract,
+                                        release_route, snap))
   }
   release_protected <- !is.null(release_route) &&
     release_route$protection %in% .DSOMOP_RELEASE_PROTECTED &&

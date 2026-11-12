@@ -36,7 +36,8 @@
 .DSOMOP_TOOLS_ADAPTER_VERSION <- 1L
 # The public release grids of tools_release.R (.dsomopReleaseGrid): durations,
 # days supply and counts per person.
-.DSOMOP_TOOLS_DAY_BREAKS <- c(0, 30, 90, 180, 365, 730, 1095, 1825, 3650,
+.DSOMOP_TOOLS_DAY_BREAKS <- c(0, 1, 7, 14, 21, 28, 30, 60, 90, 120, 180,
+                              270, 365, 545, 730, 1095, 1460, 1825, 3650,
                               7300, 10957)
 .DSOMOP_TOOLS_SUPPLY_BREAKS <- c(0, 7, 14, 30, 60, 90, 180, 365)
 .DSOMOP_TOOLS_COUNT_BREAKS <- c(0:20, 25, 30, 40, 50, 75, 100)
