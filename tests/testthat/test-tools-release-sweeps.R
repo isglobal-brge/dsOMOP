@@ -216,7 +216,11 @@ test_that("incidence person-time is protected or unavailable on every route", {
   auto365 <- out
   label <- attr(out, "dsomop_protection")
   expect_identical(label$protection, "realised_sticky")
-  expect_true(all(is.na(out$outcomes)))
+  # Recurrent counts are restored as their own whole-person K=10 estimand.
+  expect_true(all(is.finite(out$outcomes)))
+  expect_true(all(out$outcomes >= out$person_outcomes))
+  expect_true(all(out$outcomes <= 10 * out$person_outcomes))
+  expect_identical(label$components[[1L]]$recurrent_cap, 10L)
   # The same effective window (366..390 all end at 390) replays exactly.
   out <- .release_run(h, "dsomop:incidence.rate", list(
     outcome_concept_id = "4000002", tar_end_offset = "371"), scope = "sw_t")

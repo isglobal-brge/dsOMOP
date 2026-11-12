@@ -59,7 +59,7 @@ test_that("B03: incidence strata reconcile to the persons-at-risk total", {
                tolerance = 1e-9)
   expect_equal(sum(by_gender$persons_at_risk), all$persons_at_risk,
                tolerance = 1e-6)
-  expect_true("N_strata" %in% names(attr(by_gender, "dsomop_protection")$
+  expect_true("N_strata:gender" %in% names(attr(by_gender, "dsomop_protection")$
                                       components[[1L]]$allocation_fraction))
 })
 
@@ -177,11 +177,16 @@ test_that("B10: events beyond the protected horizon never count", {
                          format(as.Date("2000-01-01") + 3649))
   capture <- NULL
   real_build <- .dsomopReleaseBuildC6
-  testthat::local_mocked_bindings(.dsomopReleaseBuildC6 = function(
-      policy, protection, owner, sub) {
-    capture <<- sub
-    real_build(policy, protection, owner, sub)
-  })
+  real_tree <- .dsomopReleaseBuildC6Tree
+  testthat::local_mocked_bindings(
+    .dsomopReleaseBuildC6 = function(policy, protection, owner, sub) {
+      capture <<- sub
+      real_build(policy, protection, owner, sub)
+    },
+    .dsomopReleaseBuildC6Tree = function(policy, protection, owner, sub, ...) {
+      capture <<- sub
+      real_tree(policy, protection, owner, sub, ...)
+    })
   pars <- list(outcome_concept_id = "4000002", tar_start_offset = "0",
                tar_end_offset = "0", tar_anchor_start = "start",
                tar_anchor_end = "end")
