@@ -153,9 +153,11 @@
 
 #' Evaluate a type-checked predicate over a frame (three-valued: NA = UNKNOWN)
 #'
-#' The NA-preserving R mask of the predicate grammar, .evalFilterMask(), on a
-#' copy of the referenced columns under private lower-case aliases (assigned
-#' names may carry upper-case letters, amendment A-6).
+#' The NA-preserving R mask of the predicate grammar on a copy of the
+#' referenced columns under private lower-case aliases (assigned names may
+#' carry upper-case letters, amendment A-6). Integer64 leaves use exact
+#' comparisons against public numeric literals; other leaves use
+#' .evalFilterMask().
 #' @keywords internal
 .verbPredicateMask <- function(pred, df) {
   refs <- unique(unlist(.verbPredicateRefs(pred)))
@@ -171,9 +173,69 @@
     node[["var"]] <- unname(aliases[[node[["var"]]]])
     node
   }
-  mask <- .evalFilterMask(rename(pred), frame)
+  mask <- .verbExactPredicateMask(rename(pred), frame)
   if (length(mask) == 1L && nrow(df) != 1L) mask <- rep(mask, nrow(df))
   as.logical(mask)
+}
+
+# bit64's mixed comparisons coerce numeric literals to integer64, truncating
+# fractions; generic membership can also compare its underlying double bits.
+# Keep each observed integer exact and transform only the public threshold.
+.verbInteger64Compare <- function(x, op, value) {
+  value <- as.numeric(.verbScalar(value))
+  if (op %in% c("==", "!=")) {
+    out <- if (value != trunc(value) || value <= -2^63 || value >= 2^63)
+      rep(FALSE, length(x)) else x == bit64::as.integer64(value)
+    if (identical(op, "!=")) out <- !out
+  } else {
+    threshold <- if (op %in% c("<", ">=")) ceiling(value) else floor(value)
+    out <- if (threshold <= -2^63) rep(op %in% c(">", ">="), length(x)) else
+      if (threshold >= 2^63) rep(op %in% c("<", "<="), length(x)) else {
+        exact <- bit64::as.integer64(threshold)
+        switch(op, "<" = x < exact, "<=" = x <= exact, ">" = x > exact, ">=" = x >= exact)
+      }
+  }
+  out[is.na(x)] <- NA
+  out
+}
+
+.verbInteger64Predicate <- function(pred, x) {
+  op <- pred[["op"]]
+  if (identical(op, "is_null")) return(is.na(x))
+  if (identical(op, "not_null")) return(!is.na(x))
+  if (op %in% c("in", "not_in")) {
+    values <- vapply(.jsonArrayItems(pred[["value"]]), function(v) as.numeric(.verbScalar(v)), 0)
+    # Fractional and out-of-range literals cannot equal an integer64 value.
+    values <- values[values == trunc(values) & values > -2^63 & values < 2^63]
+    out <- bit64::match(x, bit64::as.integer64(values), nomatch = 0L) > 0L
+    if (identical(op, "not_in")) out <- !out
+    out[is.na(x)] <- NA
+    return(out)
+  }
+  if (identical(op, "between")) {
+    return(.verbInteger64Compare(x, ">=", pred[["value"]][["lower"]]) &
+             .verbInteger64Compare(x, "<=", pred[["value"]][["upper"]]))
+  }
+  .verbInteger64Compare(x, op, pred[["value"]])
+}
+
+# Preserve the shared predicate grammar and SQL UNKNOWN rules while selecting
+# the exact comparison path for integer64 leaves only.
+.verbExactPredicateMask <- function(pred, frame) {
+  if ("and" %in% names(pred)) {
+    out <- rep(TRUE, nrow(frame))
+    for (part in .jsonArrayItems(pred[["and"]])) out <- out & .verbExactPredicateMask(part, frame)
+    return(out)
+  }
+  if ("or" %in% names(pred)) {
+    out <- rep(FALSE, nrow(frame))
+    for (part in .jsonArrayItems(pred[["or"]])) out <- out | .verbExactPredicateMask(part, frame)
+    return(out)
+  }
+  if ("not" %in% names(pred)) return(!.verbExactPredicateMask(pred[["not"]], frame))
+  value <- frame[[pred[["var"]]]]
+  if (inherits(value, "integer64")) return(.verbInteger64Predicate(pred, value))
+  .evalFilterMask(pred, frame)
 }
 
 # Exact (case-preserving) variables of a predicate.

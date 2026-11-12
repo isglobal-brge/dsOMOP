@@ -7,8 +7,10 @@
 .verbPredicateMask(pred, df)
 }
 \description{
-The NA-preserving R mask of the predicate grammar, .evalFilterMask(), on a
-copy of the referenced columns under private lower-case aliases (assigned
-names may carry upper-case letters, amendment A-6).
+The NA-preserving R mask of the predicate grammar on a copy of the
+referenced columns under private lower-case aliases (assigned names may
+carry upper-case letters, amendment A-6). Integer64 leaves use exact
+comparisons against public numeric literals; other leaves use
+.evalFilterMask().
 }
 \keyword{internal}

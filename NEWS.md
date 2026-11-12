@@ -13,7 +13,9 @@ fills its entries. Classes follow design-2.10.3 section 5.
   32 bits; bit64 is now a required dependency. Evaluated columns are checked
   against their inferred type before publication. Expression meaning is
   independent of JSON member order, and repeated public cut labels group
-  their intervals.
+  their intervals. Integer64 mutation and expression-filter predicates compare
+  fractional and out-of-range public literals exactly, preserving UNKNOWN
+  semantics for missing observations and avoiding rounded membership matches.
 
 - (A-20; WS-5 review B1–B4, B6–B7, N1–N2) Era `min_days` uses the
   normalised recorded span even when stockpiling; persistence and carry do

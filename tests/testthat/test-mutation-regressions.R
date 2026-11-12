@@ -305,3 +305,90 @@ test_that("nested results are type-checked before a parent can coerce them", {
                "inferred type 'integer'", class = "dsomop_plan_rejection")
   expect_false(published)
 })
+
+test_that("integer64 predicate comparisons preserve fractional and negative literals", {
+  withr::local_options(.mfix_options)
+  ordinary <- c(-2, -1, 0, 1, NA)
+  x <- .mfix_frame(big = bit64::as.integer64(ordinary))
+  for (op in c("==", "!=", "<", "<=", ">", ">=")) {
+    for (literal in list(-2.5, -1.5, -0.5, 0.5, 1, 1.5, 2.5, TRUE, FALSE, -1e20, 1e20)) {
+      pred <- list(var = "big", op = op, value = literal)
+      actual <- omopMutateDS(x, .mfix_req(list(pred = pred)))$answer
+      expected <- do.call(op, list(ordinary, literal))
+      expect_identical(actual, expected, info = paste(op, literal))
+    }
+  }
+  for (op in c("in", "not_in")) {
+    for (literals in list(list(-1.5, 0.5, 1.5), list(-1.5, -1, 1), list(-1e20, 1e20),
+                          list(TRUE, FALSE))) {
+      pred <- list(var = "big", op = op, value = literals)
+      expected <- ordinary %in% unlist(literals)
+      if (op == "not_in") expected <- !expected
+      expected[is.na(ordinary)] <- NA
+      expect_identical(omopMutateDS(x, .mfix_req(list(pred = pred)))$answer, expected)
+    }
+  }
+  for (bounds in list(c(-1.5, 0.5), c(-1.5, -0.5), c(-1e20, 1e20))) {
+    pred <- list(var = "big", op = "between", value = list(lower = bounds[1], upper = bounds[2]))
+    expect_identical(omopMutateDS(x, .mfix_req(list(pred = pred)))$answer,
+                     ordinary >= bounds[1] & ordinary <= bounds[2])
+  }
+})
+
+test_that("integer64 predicates compare signed64 boundaries and large values exactly", {
+  withr::local_options(.mfix_options)
+  x <- .mfix_frame(big = bit64::as.integer64(c("9223372036854775807", "-9223372036854775807",
+                                             "9007199254740993", "9007199254740992", NA)))
+  pred_result <- function(op, value) {
+    omopMutateDS(x, .mfix_req(list(pred = list(var = "big", op = op, value = value))))$answer
+  }
+  for (bound in c(-2^63, 2^63, -1e20, 1e20)) {
+    expect_identical(pred_result("==", bound), c(FALSE, FALSE, FALSE, FALSE, NA))
+    expect_identical(pred_result("!=", bound), c(TRUE, TRUE, TRUE, TRUE, NA))
+    for (op in c("<", "<=", ">", ">=")) {
+      truth <- if (op %in% c("<", "<=")) bound > 0 else bound < 0
+      expect_identical(pred_result(op, bound), c(rep(truth, 4), NA))
+    }
+  }
+  expect_identical(pred_result("==", 9007199254740992), c(FALSE, FALSE, FALSE, TRUE, NA))
+  expect_identical(pred_result(">", 9007199254740992), c(TRUE, FALSE, TRUE, FALSE, NA))
+  expect_identical(pred_result("<", 9007199254740994), c(FALSE, TRUE, TRUE, TRUE, NA))
+  expect_identical(pred_result("in", list(9007199254740992, 2^63, -2^63)),
+                   c(FALSE, FALSE, FALSE, TRUE, NA))
+  expect_identical(pred_result("not_in", list(9007199254740992, 2^63, -2^63)),
+                   c(TRUE, TRUE, TRUE, FALSE, NA))
+  expect_identical(pred_result("between", list(lower = -2^63, upper = 2^63)),
+                   c(TRUE, TRUE, TRUE, TRUE, NA))
+})
+
+test_that("integer64 predicates drive conditional branches and assigned-frame filters", {
+  withr::local_options(.mfix_options)
+  x <- .mfix_frame(big = bit64::as.integer64(c(-2, -1, 0, 1, NA)), small = 1:5)
+  less <- list(var = "big", op = "<", value = 1.5)
+  zero_or_less <- list(var = "big", op = "<=", value = 0.5)
+  positive <- list(var = "big", op = ">", value = 0.5)
+  z <- .mfix_mut(x, list(ifelse = list(test = less, yes = .mfix_lit("yes"), no = .mfix_lit("no"))))
+  expect_identical(z$answer, c("yes", "yes", "yes", "yes", NA))
+  z <- .mfix_mut(x, list(case_when = list(cases = list(
+    list(when = zero_or_less, then = .mfix_lit("low")),
+    list(when = positive, then = .mfix_lit("high"))), `else` = .mfix_lit("other"))))
+  expect_identical(z$answer, c("low", "low", "low", "high", NA))
+  combined <- list(or = list(list(and = list(less, list(var = "small", op = ">=", value = 3))),
+                             list(var = "big", op = "is_null")))
+  expect_identical(.mfix_mut(x, list(pred = combined))$answer, c(FALSE, FALSE, TRUE, TRUE, TRUE))
+  expect_identical(.mfix_mut(x, list(pred = list(not = less)))$answer,
+                   c(FALSE, FALSE, FALSE, FALSE, NA))
+  # The result is an assigned patient frame; filtering still uses exact values
+  # and its own final distinct-person publication gate.
+  assigned <- .mfix_mut(x, .mfix_col("big"))
+  expect_s3_class(assigned$answer, "integer64")
+  kept <- omopFilterDS(assigned, expr = list(var = "answer", op = "<", value = 1.5))
+  expect_identical(as.character(kept$answer), c("-2", "-1", "0", "1"))
+  kept <- omopFilterDS(assigned, expr = list(var = "answer", op = "in", value = list(-2, -1, 0, 1.5)))
+  expect_identical(as.character(kept$answer), c("-2", "-1", "0"))
+  kept <- omopFilterDS(assigned, expr = list(or = list(
+    list(var = "answer", op = ">", value = -0.5), list(var = "answer", op = "is_null"))))
+  expect_identical(as.character(kept$answer), c("0", "1", NA))
+  expect_error(omopFilterDS(assigned, expr = list(var = "answer", op = "==", value = 1.5)),
+               "insufficient individuals")
+})
