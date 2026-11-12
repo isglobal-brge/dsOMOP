@@ -48,7 +48,7 @@
 
 #' Band annual ages without aggregate suppression
 #' @param ages Annual ages; missing and negative values yield missing bands.
-#' @param age_breaks Increasing non-negative integer lower bounds. NULL uses the
+#' @param age_breaks Increasing integer lower bounds starting at zero. NULL uses the
 #'   controller's default public grid without imposing its aggregate width policy.
 #' @return Character vector of age bands, including an open-ended final band.
 #' @keywords internal
@@ -59,8 +59,8 @@
   }
   breaks <- suppressWarnings(as.numeric(unlist(age_breaks, use.names = FALSE)))
   if (length(breaks) < 2L || anyNA(breaks) || any(!is.finite(breaks)) ||
-      any(breaks != floor(breaks)) || any(breaks < 0) || any(diff(breaks) <= 0)) {
-    stop("age_breaks must be strictly increasing non-negative integer bounds.",
+      any(breaks != floor(breaks)) || breaks[1L] != 0 || any(diff(breaks) <= 0)) {
+    stop("age_breaks must be strictly increasing integer bounds starting at zero.",
          call. = FALSE)
   }
   ages <- suppressWarnings(as.numeric(ages))

@@ -30,6 +30,7 @@ test_that("assigned age bands are pure and the aggregate policy is unchanged", {
   })
   expect_error(.bandAges(20, c(0, 18, 18)), "strictly increasing")
   expect_error(.bandAges(20, c(0, 18.5, 40)), "integer")
+  expect_error(.bandAges(20, c(18, 19, 40)), "starting at zero")
 })
 
 test_that("baseline keeps requested birth components and only drops internally added birth year", {
