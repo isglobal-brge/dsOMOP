@@ -1,0 +1,181 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+vendor-release-routes: ............................duckdb keeps downloaded extensions and secrets in a temporary directory:
+i /tmp/RtmpiZ3Nyd/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+........1.2.3.4.5.6.7.8.9.a.b.c.d.e.f.g.h.i.j.k.l.m.n[vendor-versions] postgresql server PostgreSQL 14.24 (Ubuntu 14.24-0ubuntu0.22.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+........o.p.q.r.s.t.u.v.w.x.y.z.A.B.C.D.E.F.G.H.I.J.KNOTICE:  drop cascades to table dsomop_it_780617_a3befbe8_results.achilles_results
+
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to table dsomop_it_780617_a3befbe8_vocab.concept
+drop cascades to table dsomop_it_780617_a3befbe8_vocab.concept_ancestor
+
+NOTICE:  drop cascades to 11 other objects
+DETAIL:  drop cascades to table dsomop_it_780617_a3befbe8_cdm.cdm_source
+drop cascades to table dsomop_it_780617_a3befbe8_cdm.person
+drop cascades to table dsomop_it_780617_a3befbe8_cdm.observation_period
+drop cascades to table dsomop_it_780617_a3befbe8_cdm.condition_occurrence
+drop cascades to table dsomop_it_780617_a3befbe8_cdm.drug_exposure
+drop cascades to table dsomop_it_780617_a3befbe8_cdm.procedure_occurrence
+drop cascades to table dsomop_it_780617_a3befbe8_cdm.measurement
+drop cascades to table dsomop_it_780617_a3befbe8_cdm.observation
+drop cascades to table dsomop_it_780617_a3befbe8_cdm.visit_occurrence
+drop cascades to table dsomop_it_780617_a3befbe8_cdm.device_exposure
+drop cascades to table dsomop_it_780617_a3befbe8_cdm.death
+
+[vendor-versions] mysql server 8.4.11
+........L.M.N.O.P.Q.R.S.T.U.V.W.X.Y.Z.F.F.F.F.F.F.F.F[vendor-versions] mariadb server 10.6.23-MariaDB-0ubuntu0.22.04.1
+........F.F.F.F.F.F.F.F.F.F.F.F.F.F.F.F.F.F.F.F.F.F.F
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Failure ('test-vendor-release-routes.R:296:3'): DuckDB gives the SQLite pr
+Expected `a` to equal `r`.
+Differences:
+`attr(actual, 'dsomop_protection')$read_snapshot`:   "snapshot_transaction"    
+`attr(expected, 'dsomop_protection')$read_snapshot`: "serializable_transaction"
+
+duckdb dsomop:achilles.3
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expectVrEngine(.vrEngineHandle(conn, "duckdb"), "duckdb") at test-vendor-release-routes.R:296:3
+ 2.   └─dsOMOP (local) .expectVrSameAnswers(.vrReference(), answers, dbms) at test-vendor-release-routes.R:280:3
+ 3.     └─testthat::expect_equal(a, r, tolerance = 1e-09, info = info) at test-vendor-release-routes.R:246:5
+
+── 2. Failure ('test-vendor-release-routes.R:296:3'): DuckDB gives the SQLite pr
+Expected `a` to equal `r`.
+Differences:
+`attr(actual, 'dsomop_protection')$read_snapshot`:   "snapshot_transaction"    
+`attr(expected, 'dsomop_protection')$read_snapshot`: "serializable_transaction"
+
+duckdb dsomop:achilles.10
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expectVrEngine(.vrEngineHandle(conn, "duckdb"), "duckdb") at test-vendor-release-routes.R:296:3
+ 2.   └─dsOMOP (local) .expectVrSameAnswers(.vrReference(), answers, dbms) at test-vendor-release-routes.R:280:3
+ 3.     └─testthat::expect_equal(a, r, tolerance = 1e-09, info = info) at test-vendor-release-routes.R:246:5
+
+── 3. Failure ('test-vendor-release-routes.R:296:3'): DuckDB gives the SQLite pr
+Expected `a` to equal `r`.
+Differences:
+`attr(actual, 'dsomop_protection')$read_snapshot`:   "snapshot_transaction"    
+`attr(expected, 'dsomop_protection')$read_snapshot`: "serializable_transaction"
+
+duckdb dsomop:achilles.101
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expectVrEngine(.vrEngineHandle(conn, "duckdb"), "duckdb") at test-vendor-release-routes.R:296:3
+ 2.   └─dsOMOP (local) .expectVrSameAnswers(.vrReference(), answers, dbms) at test-vendor-release-routes.R:280:3
+ 3.     └─testthat::expect_equal(a, r, tolerance = 1e-09, info = info) at test-vendor-release-routes.R:246:5
+
+── 4. Failure ('test-vendor-release-routes.R:296:3'): DuckDB gives the SQLite pr
+Expected `a` to equal `r`.
+Differences:
+`attr(actual, 'dsomop_protection')$read_snapshot`:   "snapshot_transaction"    
+`attr(expected, 'dsomop_protection')$read_snapshot`: "serializable_transaction"
+
+duckdb dsomop:achilles.103
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expectVrEngine(.vrEngineHandle(conn, "duckdb"), "duckdb") at test-vendor-release-routes.R:296:3
+ 2.   └─dsOMOP (local) .expectVrSameAnswers(.vrReference(), answers, dbms) at test-vendor-release-routes.R:280:3
+ 3.     └─testthat::expect_equal(a, r, tolerance = 1e-09, info = info) at test-vendor-release-routes.R:246:5
+
+── 5. Failure ('test-vendor-release-routes.R:296:3'): DuckDB gives the SQLite pr
+Expected `a` to equal `r`.
+Differences:
+`attr(actual, 'dsomop_protection')$read_snapshot`:   "snapshot_transaction"    
+`attr(expected, 'dsomop_protection')$read_snapshot`: "serializable_transaction"
+
+duckdb dsomop:achilles.105
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expectVrEngine(.vrEngineHandle(conn, "duckdb"), "duckdb") at test-vendor-release-routes.R:296:3
+ 2.   └─dsOMOP (local) .expectVrSameAnswers(.vrReference(), answers, dbms) at test-vendor-release-routes.R:280:3
+ 3.     └─testthat::expect_equal(a, r, tolerance = 1e-09, info = info) at test-vendor-release-routes.R:246:5
+
+── 6. Failure ('test-vendor-release-routes.R:296:3'): DuckDB gives the SQLite pr
+Expected `a` to equal `r`.
+Differences:
+`attr(actual, 'dsomop_protection')$read_snapshot`:   "snapshot_transaction"    
+`attr(expected, 'dsomop_protection')$read_snapshot`: "serializable_transaction"
+
+duckdb dsomop:achilles.107
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expectVrEngine(.vrEngineHandle(conn, "duckdb"), "duckdb") at test-vendor-release-routes.R:296:3
+ 2.   └─dsOMOP (local) .expectVrSameAnswers(.vrReference(), answers, dbms) at test-vendor-release-routes.R:280:3
+ 3.     └─testthat::expect_equal(a, r, tolerance = 1e-09, info = info) at test-vendor-release-routes.R:246:5
+
+── 7. Failure ('test-vendor-release-routes.R:296:3'): DuckDB gives the SQLite pr
+Expected `a` to equal `r`.
+Differences:
+`attr(actual, 'dsomop_protection')$read_snapshot`:   "snapshot_transaction"    
+`attr(expected, 'dsomop_protection')$read_snapshot`: "serializable_transaction"
+
+duckdb dsomop:achilles.203
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expectVrEngine(.vrEngineHandle(conn, "duckdb"), "duckdb") at test-vendor-release-routes.R:296:3
+ 2.   └─dsOMOP (local) .expectVrSameAnswers(.vrReference(), answers, dbms) at test-vendor-release-routes.R:280:3
+ 3.     └─testthat::expect_equal(a, r, tolerance = 1e-09, info = info) at test-vendor-release-routes.R:246:5
+
+── 8. Failure ('test-vendor-release-routes.R:296:3'): DuckDB gives the SQLite pr
+Expected `a` to equal `r`.
+Differences:
+`attr(actual, 'dsomop_protection')$read_snapshot`:   "snapshot_transaction"    
+`attr(expected, 'dsomop_protection')$read_snapshot`: "serializable_transaction"
+
+duckdb dsomop:achilles.406
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expectVrEngine(.vrEngineHandle(conn, "duckdb"), "duckdb") at test-vendor-release-routes.R:296:3
+ 2.   └─dsOMOP (local) .expectVrSameAnswers(.vrReference(), answers, dbms) at test-vendor-release-routes.R:280:3
+ 3.     └─testthat::expect_equal(a, r, tolerance = 1e-09, info = info) at test-vendor-release-routes.R:246:5
+
+── 9. Failure ('test-vendor-release-routes.R:296:3'): DuckDB gives the SQLite pr
+Expected `a` to equal `r`.
+Differences:
+`attr(actual, 'dsomop_protection')$read_snapshot`:   "snapshot_transaction"    
+`attr(expected, 'dsomop_protection')$read_snapshot`: "serializable_transaction"
+
+duckdb dsomop:achilles.506
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expectVrEngine(.vrEngineHandle(conn, "duckdb"), "duckdb") at test-vendor-release-routes.R:296:3
+ 2.   └─dsOMOP (local) .expectVrSameAnswers(.vrReference(), answers, dbms) at test-vendor-release-routes.R:280:3
+ 3.     └─testthat::expect_equal(a, r, tolerance = 1e-09, info = info) at test-vendor-release-routes.R:246:5
+
+── 10. Failure ('test-vendor-release-routes.R:296:3'): DuckDB gives the SQLite p
+Expected `a` to equal `r`.
+Differences:
+`attr(actual, 'dsomop_protection')$read_snapshot`:   "snapshot_transaction"    
+`attr(expected, 'dsomop_protection')$read_snapshot`: "serializable_transaction"
+
+duckdb dsomop:achilles.715
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expectVrEngine(.vrEngineHandle(conn, "duckdb"), "duckdb") at test-vendor-release-routes.R:296:3
+ 2.   └─dsOMOP (local) .expectVrSameAnswers(.vrReference(), answers, dbms) at test-vendor-release-routes.R:280:3
+ 3.     └─testthat::expect_equal(a, r, tolerance = 1e-09, info = info) at test-vendor-release-routes.R:246:5
+  ... and 82 more
+
+
+Maximum number of 10 failures reached, some test results may be missing.
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                         file blocks failed errors
+ test-vendor-release-routes.R      4     92      0
+
+FAILING TESTS
+test-vendor-release-routes.R | DuckDB gives the SQLite protected answers | failed=23 error=FALSE
+test-vendor-release-routes.R | PostgreSQL gives the SQLite protected answers | failed=23 error=FALSE
+test-vendor-release-routes.R | MySQL gives the SQLite protected answers | failed=23 error=FALSE
+test-vendor-release-routes.R | MariaDB gives the SQLite protected answers | failed=23 error=FALSE
+
+RESULT failed: 92 errors: 0 skipped: 0 passed: 148 
