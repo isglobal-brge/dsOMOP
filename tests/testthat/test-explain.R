@@ -230,21 +230,29 @@ test_that("operations are advertised only when their compilers are installed", {
   expect_identical(.recipeLanguageCapability(NULL)$reducers, character(0))
 })
 
-test_that("a v2 plan is validated by execution but not executed yet", {
+test_that("v2 execution reaches the native compiler only after complete validation", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
+  compiled <- 0L
+  testthat::local_mocked_bindings(.planExecuteNative = function(ctx, ir, out_symbols, own_context) {
+    compiled <<- compiled + 1L
+    expect_true(.isPlanContext(ctx))
+    expect_identical(attr(ir, "source_version"), 2L)
+    list()
+  })
   b <- .explain_example("plan-v2-example-B.json")
   # the unit test CDM has no drug_exposure.days_supply: a supply fallback is a
   # site finding there (shown by the next block of this test)
   b$events$statin_rx$end <- NULL
-  err <- tryCatch(.planExecute(handle, b, list()), dsomop_plan_rejection = function(e) e)
-  expect_s3_class(err, "dsomop_ir_validation_error")
-  expect_match(conditionMessage(err), "does not execute them yet")
+  expect_identical(.planExecute(handle, b, list()), list())
+  expect_identical(compiled, 1L)
   bad <- .explain_example("plan-v2-example-B.json")
   bad$outputs$cc_table$lineage <- "forged"
   err <- tryCatch(.planExecute(handle, bad, list()), dsomop_plan_rejection = function(e) e)
   expect_match(conditionMessage(err), "plan-v2.json")
+  expect_identical(compiled, 1L)
   err <- tryCatch(.planExecute(handle, .explain_example("plan-v2-example-B.json"), list()),
                   dsomop_plan_rejection = function(e) e)
   expect_match(conditionMessage(err), "statin_rx/end/fallback.*days_supply")
+  expect_identical(compiled, 1L)
 })
