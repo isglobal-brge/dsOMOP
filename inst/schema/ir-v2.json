@@ -177,6 +177,82 @@
           "default": "union"
         }
       }
+    },
+    "legacy_names": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "outputs": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "populations": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "outcomes": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "states": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "columns": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "description": "original v1 names of re-encoded identifiers, keyed by IR name (outcomes/states/columns first by IR output name)"
     }
   },
   "$defs": {
@@ -493,6 +569,19 @@
             "unavailable"
           ],
           "default": "error"
+        },
+        "legacy_concept_scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "concept_set_ref"
+          ],
+          "properties": {
+            "concept_set_ref": {
+              "$ref": "#/$defs/name"
+            }
+          },
+          "description": "the v1 output-level concept set that also restricts this event (intersection with the event's own concept set)"
         }
       }
     },
@@ -1733,6 +1822,15 @@
             },
             "coverage": {
               "$ref": "#/$defs/coverage"
+            },
+            "legacy_episodes": {
+              "enum": [
+                "cohort_rows",
+                "observation_periods"
+              ]
+            },
+            "legacy_index_anchor": {
+              "const": "scope_cohort"
             }
           }
         },
@@ -1795,6 +1893,15 @@
             },
             "coverage": {
               "$ref": "#/$defs/coverage"
+            },
+            "legacy_episodes": {
+              "enum": [
+                "cohort_rows",
+                "observation_periods"
+              ]
+            },
+            "legacy_index_anchor": {
+              "const": "scope_cohort"
             }
           }
         },
@@ -2294,8 +2401,64 @@
                     },
                     "window": {
                       "$ref": "#/$defs/window"
+                    },
+                    "legacy_containing_period": {
+                      "const": true
                     }
-                  }
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "required": [
+                          "legacy_containing_period"
+                        ]
+                      },
+                      "then": {
+                        "properties": {
+                          "window": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "required": [
+                                  "start",
+                                  "end"
+                                ],
+                                "properties": {
+                                  "start": {
+                                    "type": "null"
+                                  },
+                                  "end": {
+                                    "const": -1
+                                  },
+                                  "anchor": {
+                                    "const": "index"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "start",
+                                  "end"
+                                ],
+                                "properties": {
+                                  "start": {
+                                    "const": 1
+                                  },
+                                  "end": {
+                                    "type": "null"
+                                  },
+                                  "anchor": {
+                                    "const": "index"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
                 },
                 {
                   "type": "object",
@@ -2792,8 +2955,34 @@
         "legacy_cohort_end_cap": {
           "type": "boolean",
           "default": false
+        },
+        "legacy_single_outcome": {
+          "const": true
+        },
+        "legacy_states": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/name"
+          }
+        },
+        "legacy_state_step": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "effective validated v1 state step (default 0.01 day); at most nine decimals and effective_step * (states - 1) < 1 day are semantic checks; mutually exclusive with state_step"
         }
-      }
+      },
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "state_step",
+              "legacy_state_step"
+            ]
+          }
+        }
+      ]
     },
     "options_intervals": {
       "type": "object",
@@ -2887,6 +3076,28 @@
               "last",
               "exposed_days"
             ]
+          }
+        },
+        "source_analyses": {
+          "type": "object",
+          "default": {},
+          "description": "Per-source analysis selection: resolved source name -> nonempty unique subset of analyses; an omitted source inherits the output's analyses (A-14)",
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "binary",
+                "count",
+                "mean",
+                "last",
+                "exposed_days"
+              ]
+            }
           }
         },
         "legacy_composite": {
@@ -3047,6 +3258,28 @@
               "last",
               "exposed_days"
             ]
+          }
+        },
+        "source_analyses": {
+          "type": "object",
+          "default": {},
+          "description": "Per-source analysis selection: resolved source name -> nonempty unique subset of analyses; an omitted source inherits the output's analyses (A-14)",
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "binary",
+                "count",
+                "mean",
+                "last",
+                "exposed_days"
+              ]
+            }
           }
         },
         "legacy_composite": {
@@ -3252,6 +3485,45 @@
         "legacy_split": {
           "type": "boolean",
           "default": false
+        },
+        "legacy_columns": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/column_name"
+          },
+          "description": "v1 event_level projection; absent = default projection, [] = explicitly empty (mandatory identity/concept columns still added)"
+        },
+        "legacy_temporal": {
+          "$ref": "#/$defs/legacy_temporal"
+        },
+        "legacy_automatic_features": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "format",
+            "source"
+          ],
+          "properties": {
+            "format": {
+              "enum": [
+                "wide",
+                "features"
+              ]
+            },
+            "source": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "event"
+              ],
+              "properties": {
+                "event": {
+                  "$ref": "#/$defs/name"
+                }
+              }
+            }
+          }
         }
       },
       "allOf": [
@@ -4042,6 +4314,116 @@
           },
           "additionalProperties": {
             "$ref": "#/$defs/legacy_inclusion_criterion"
+          }
+        }
+      }
+    },
+    "legacy_temporal_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        },
+        "end": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "start": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "properties": {
+            "end": {
+              "type": "integer"
+            }
+          }
+        }
+      ]
+    },
+    "legacy_temporal": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "index_window": {
+          "$ref": "#/$defs/legacy_temporal_window"
+        },
+        "event_select": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "order",
+            "n",
+            "by"
+          ],
+          "properties": {
+            "order": {
+              "enum": [
+                "first",
+                "last"
+              ]
+            },
+            "n": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "by": {
+              "enum": [
+                "grain",
+                "concept"
+              ]
+            }
+          }
+        },
+        "min_gap": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "days",
+            "by",
+            "keep"
+          ],
+          "properties": {
+            "days": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "by": {
+              "enum": [
+                "grain",
+                "concept"
+              ]
+            },
+            "keep": {
+              "enum": [
+                "first",
+                "last"
+              ]
+            }
           }
         }
       }

@@ -24,7 +24,7 @@ test_that("the schema artefacts exist, parse, lint and match SHA256SUMS", {
   expect_true(all(c("plan-v2.json", "ir-v2.json", "mutate-v1.json",
                     "examples/plan-v2-example-A.json", "examples/plan-v2-example-B.json",
                     "probes/plan-v2-probes.json", "probes/mutate-v1-probes.json",
-                    "probes/plan-v1-probes.json", "digest-vectors.json") %in% sums$path))
+                    "probes/plan-v1-probes.json", "digest-vectors.json", "normalized-vectors.json") %in% sums$path))
   for (i in seq_len(nrow(sums))) {
     path <- file.path(d, sums$path[i])
     expect_true(file.exists(path), info = sums$path[i])
@@ -184,13 +184,14 @@ test_that("the vendored client copies are byte-identical", {
   if (!nzchar(client_dir)) client_dir <- Find(dir.exists, file.path(siblings, "inst", "schema"))
   skip_if(is.null(client_dir) || !nzchar(client_dir), "dsOMOPClient schema directory not reachable")
   for (rel in c("plan-v2.json", "mutate-v1.json", "examples/plan-v2-example-A.json", "examples/plan-v2-example-B.json",
-                "probes/plan-v2-probes.json", "probes/mutate-v1-probes.json", "probes/plan-v1-probes.json", "digest-vectors.json")) {
+                "probes/plan-v2-probes.json", "probes/mutate-v1-probes.json", "probes/plan-v1-probes.json", "digest-vectors.json",
+                "normalized-vectors.json", "normalized/plan-v2-example-A.json", "normalized/plan-v2-example-B.json")) {
     expect_identical(.ws0_sha256_file(file.path(client_dir, rel)), .ws0_sha256_file(file.path(d, rel)), info = rel)
   }
   client_root <- Find(dir.exists, siblings)
   server_root <- Find(dir.exists, file.path(tp, "..", ".."))
   skip_if(is.null(client_root) || is.null(server_root), "source trees not reachable")
-  for (f in c("R/json_schema.R", "R/semantic_digest.R", "inst/column_classes.csv")) {
+  for (f in c("R/json_schema.R", "R/semantic_digest.R", "R/plan_normalize_v2.R", "inst/column_classes.csv")) {
     expect_identical(.ws0_sha256_file(file.path(client_root, f)), .ws0_sha256_file(file.path(server_root, f)), info = f)
   }
 })

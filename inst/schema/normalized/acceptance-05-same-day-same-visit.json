@@ -1,0 +1,259 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "events": {
+    "mi": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          4329847
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "pci_index_visit": {
+      "table": "procedure_occurrence",
+      "concept_set": {
+        "concepts": [
+          4283095
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "visit": {
+        "index": true
+      },
+      "concept_col": null,
+      "where": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "chest_pain_index_visit": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          77670
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "visit": {
+        "index": true
+      },
+      "concept_col": null,
+      "where": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "inpatient": {
+      "table": "visit_occurrence",
+      "concept_set": {
+        "concepts": [
+          9201
+        ],
+        "include_descendants": false,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    }
+  },
+  "populations": {
+    "mi_all": {
+      "kind": "index",
+      "index": {
+        "source": {
+          "event": "mi"
+        },
+        "select": "all",
+        "end": {
+          "strategy": "event_end",
+          "days": null,
+          "pad": 0
+        },
+        "n": 1,
+        "offset": 0,
+        "restrict_to_observation": true
+      },
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      },
+      "parent": null,
+      "where": null
+    }
+  },
+  "variables": {
+    "n_same_day_mi": {
+      "source": {
+        "event": "mi"
+      },
+      "reducer": {
+        "fn": "count",
+        "window": {
+          "start": 0,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "pci_same_visit": {
+      "source": {
+        "event": "pci_index_visit"
+      },
+      "reducer": {
+        "fn": "binary",
+        "value": null,
+        "window": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "chest_pain_same_visit": {
+      "source": {
+        "event": "chest_pain_index_visit"
+      },
+      "reducer": {
+        "fn": "binary",
+        "value": null,
+        "window": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "inpatient_30": {
+      "source": {
+        "event": "inpatient"
+      },
+      "reducer": {
+        "fn": "count",
+        "window": {
+          "start": 0,
+          "end": 30,
+          "anchor": "index"
+        },
+        "distinct": "visit",
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    }
+  },
+  "outputs": {
+    "episodes": {
+      "rows": "mi_all",
+      "format": "wide",
+      "grain": "episode",
+      "result_symbol": "D_episodes",
+      "collapse": null,
+      "columns": [
+        "n_same_day_mi",
+        "pci_same_visit",
+        "chest_pain_same_visit",
+        "inpatient_30"
+      ],
+      "sources": [],
+      "options": {
+        "date_handling": {
+          "mode": "relative",
+          "reference": "index",
+          "bin_width": null,
+          "date_columns": null
+        },
+        "time_window": null
+      }
+    }
+  },
+  "options": {
+    "translate_concepts": true,
+    "block_sensitive": true,
+    "factor_concepts": true
+  },
+  "concept_sets": {},
+  "intervals": {},
+  "publish": [
+    "episodes"
+  ]
+}

@@ -690,10 +690,11 @@ CIRCE = {
     "InclusionRules": [], "EndStrategy": None, "CensoringCriteria": [],
     "CollapseSettings": {"CollapseType": "ERA", "EraPad": 0}, "CensorWindow": {}, "cdmVersionRange": ">=5.0.0"}
 p12 = plan(
-    concept_sets={"t2dm": {"concepts": [201820], "include_descendants": True, "include_mapped": False, "exclude": None}},
-    events={"t2dm_dx": ev("condition_occurrence", "t2dm")},
+    # A-9 (CR-9): the importer's deterministic names — .sanitize_name("Type 2 diabetes") and <cs>_dx
+    concept_sets={"type_2_diabetes": {"concepts": [201820], "include_descendants": True, "include_mapped": False, "exclude": None}},
+    events={"type_2_diabetes_dx": ev("condition_occurrence", "type_2_diabetes")},
     populations={"t2dm_first": {"kind": "index", "label": "Type 2 diabetes (Circe)",
-                                "index": {"source": {"event": "t2dm_dx"}, "select": "first_eligible"},
+                                "index": {"source": {"event": "type_2_diabetes_dx"}, "select": "first_eligible"},
                                 "coverage": {"policy": "unique", "on_ambiguous": "drop", "on_missing": "drop", "gap": 0},
                                 "where": {"observed": {"before": 365, "after": 0}}}},
     variables={"age_group": {"derived": {"kind": "age", "reference": "index", "bands": True}},
@@ -983,10 +984,12 @@ for num, name, p, recipe_r, readme in recipes:
         if v.startswith("plan-"):
             assert V.is_valid(json.load(open(os.path.join(d, "variants", v)))), v
     index_lines.append("| %02d | %02d-%s | %s | %s |" % (num, num, name, ", ".join(p["outputs"].keys()), rows))
+SCORE_REFERENCE_SECTION = '## Paired score reference (CR-2 / amendment A-2)\n\n`score-reference.json` (written by `tools/ws0/acceptance_expected.R` from\n`tests/fixtures/score_reference.R`, plain SQL + base R, no engine) freezes the\nCharlson, CHADS2 and CHA2DS2-VASc scores of every member of cohort 1 (index\n2020-01-01) and cohort 1002 (index 2019-07-01) under both semantics:\n\n- `legacy`: v1 adapter (IR flag `legacy_all_time_conditions`): every condition\n  row counts, age at the explicit `reference_date` (v1 has no default);\n- `native`: v2 (A-2): condition rows dated on or before the reference date,\n  `reference_date = NULL` resolving to the episode index date, age at that date.\n\nCases: cohort 1 with fixed reference dates 2020-01-01 and 2030-01-01 (the age\npoints move: `pins.age_reference_shift`), cohort 1002 with the native\nindex-date resolution (heart failure dated 2019-07-10 drops out:\n`pins.index_resolution`) and with a fixed 2020-01-01. `pins.charlson_history`\nrecords person 1011 (legacy 2, native 1). `test-ws0-score-reference.R`\nrecomputes the file from the fixture and checks that the current v1 engine\nproduces the `legacy` columns and still refuses a missing age reference; the\n`native` columns are the WS-4 target.\n'
 with open(os.path.join(OUT, "README.md"), "w") as f:
     f.write("\n".join(index_lines) + "\n\nEach directory holds `recipe.R` (public-client recipe in the frozen "
             "2.10.3 API; runs once WS-8 lands), `plan.json` (the validated v2 plan, the normative target "
             "the client must emit after normalisation), `README.md` (the semantics the expected results "
             "follow) and `expected.json` (hand-computed results on the extended reach fixture at "
             "nfilter.subset = 5: every output has at least five persons).\n")
+    f.write("\n" + SCORE_REFERENCE_SECTION)
 print("wrote", len(recipes), "recipes under", OUT)

@@ -147,6 +147,19 @@ fills its entries. Classes follow design-2.10.3 section 5.
   A-5 native survival / recurrent component schemas, A-6 one identifier grammar
   in the mutation AST, A-7 `omop_censor(when_index_source =)`.
 
+- A-9 recipe 12 uses the importer's deterministic Circe names
+  (`type_2_diabetes`, `type_2_diabetes_dx`); A-10 nine closed IR-only variants
+  carry the v1 semantics the wire cannot express (`legacy_columns`,
+  `legacy_temporal`, `legacy_automatic_features`, `legacy_single_outcome`,
+  `legacy_states`, `legacy_state_step`, `legacy_episodes`/`legacy_index_anchor`,
+  `observed_days.legacy_containing_period`, `legacy_names`,
+  `legacy_concept_scope`); A-11 the pinned v2 normal form
+  (`R/plan_normalize_v2.R`, vendored byte-identically, with the normalised
+  fixtures of `inst/schema/normalized/`); A-12/A-13 client signature lines;
+  A-14 execution plan selection for 2.10.1-style recipes, `source_analyses`
+  on temporal and person-period outputs, and the windowed-features corpus row
+  reclassified `newly_permitted`.
+
 ## Plan IR, role registry, explain and capabilities (WS-2)
 
 - `R/ir.R`: `.irPrepare()` (the frozen sequence), `.irNormalize()`,
@@ -188,7 +201,8 @@ fills its entries. Classes follow design-2.10.3 section 5.
 ## Contracts shipped by WS-0
 
 - `inst/schema/plan-v2.json`, `ir-v2.json`, `mutate-v1.json`, the canonical
-  examples, the probe corpus and the semantic-digest vectors;
+  examples, the probe corpus, the semantic-digest vectors and the normalised
+  fixtures (`normalized/`, `normalized-vectors.json`); `R/plan_normalize_v2.R`;
   `inst/contracts/reducers.csv`, `column_classes.csv`;
   `inst/ohdsi/operator_classes.csv`, `episode_event_fields.csv`,
   `cost_domains.csv`; `inst/boundaries.csv` (audited WS-1 publication boundaries;
