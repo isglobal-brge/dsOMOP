@@ -171,6 +171,9 @@ def add_tests(paths, s_dir):
         files = [src]
         if os.path.basename(src).startswith("test-ir-results"):
             files += sorted(glob.glob(os.path.join(SERVER_ROOT, "tests", "testthat", "fixtures", "ir-v1-results*.json")))
+            # Hybrid tests come from 2.10.2, before the class fixture existed.
+            # The added A-19 test checks the reviewed current dispositions.
+            files.append(os.path.join(SERVER_ROOT, "tests", "testthat", "fixtures", "v1-corpus-classes.csv"))
         for f in files:
             sub = "fixtures" if f != src else ""
             dest = os.path.join(s_dir, "tests", "testthat", sub)
