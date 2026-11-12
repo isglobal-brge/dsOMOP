@@ -142,21 +142,31 @@ test_that("a TAR sweep no longer locates event days through SE, counts or time",
     expect_identical(attr(r, "dsomop_protection")$protection,
                      "realised_sticky")
   }
-  # Standard mode releases no exact person-time, estimate or SE at all.
+  # Standard mode releases no exact person-time, estimate or SE at all: with
+  # the DP service its person-time block is the protected one of the same
+  # effective window (a labelled mixed frame), without it the block is
+  # unavailable.
+  time_fields <- c("person_days", "estimate", "ci_lo", "ci_hi",
+                   "log_estimate", "se_log_estimate")
   withr::local_options(list(dsomop.tools.mode = "standard"))
   suppressWarnings(.omopAnalysisRegistry(h, force = TRUE))
-  std <- .release_run(h, "dsomop:cm.effect_estimate", list(
+  std_run <- function() .release_run(h, "dsomop:cm.effect_estimate", list(
     outcome_concept_id = "4000002", model_type = "poisson",
     tar_start_offset = "0", tar_end_offset = "110",
     tar_anchor_start = "start", tar_anchor_end = "start"),
     scope = list("sw_t", "sw_c"))
-  if (nrow(std)) {
-    expect_true(all(is.na(std[, c("person_days", "estimate", "ci_lo",
-                                  "ci_hi", "log_estimate",
-                                  "se_log_estimate")])))
-  }
+  std <- std_run()
+  expect_identical(attr(std, "dsomop_protection")$protection, "mixed")
+  expect_identical(attr(std, "dsomop_protection")$blocks$person_time,
+                   "realised_sticky")
+  expect_equal(std[, time_fields], sweep[[which(95:125 == 110)]][, time_fields],
+               tolerance = 1e-9)
+  withr::local_options(list(dsomop.dp.enabled = FALSE))
+  .release_restart()
+  off <- std_run()
+  if (nrow(off)) expect_true(all(is.na(off[, time_fields])))
   expect_true("se_log_estimate" %in%
-                attr(std, "dsomop_protection")$masked_fields)
+                attr(off, "dsomop_protection")$masked_fields)
 })
 
 test_that("day-scaling variants cannot recover exact arm sizes from person-time", {
@@ -181,13 +191,19 @@ test_that("day-scaling variants cannot recover exact arm sizes from person-time"
                  min(max(comp$time, 0), shifted$persons[[1L]] * 3650),
                  tolerance = 1e-6)
   }
-  # Standard mode: person-days and MDRR are unavailable on this route.
+  # Standard mode: person-days and MDRR are the protected ones of the same
+  # question (DP service), or unavailable (no DP service); never exact.
   withr::local_options(list(dsomop.tools.mode = "standard"))
   suppressWarnings(.omopAnalysisRegistry(h, force = TRUE))
   std <- release(60)
-  if (nrow(std)) {
-    expect_true(all(is.na(std$person_days)))
-    expect_true(all(is.na(std$mdrr)))
+  expect_equal(std$person_days, base$person_days, tolerance = 1e-9)
+  expect_equal(std$mdrr, base$mdrr, tolerance = 1e-9)
+  withr::local_options(list(dsomop.dp.enabled = FALSE))
+  .release_restart()
+  off <- release(60)
+  if (nrow(off)) {
+    expect_true(all(is.na(off$person_days)))
+    expect_true(all(is.na(off$mdrr)))
   }
 })
 
@@ -197,6 +213,7 @@ test_that("incidence person-time is protected or unavailable on every route", {
   on.exit(cleanup_handle(h), add = TRUE)
   out <- .release_run(h, "dsomop:incidence.rate", list(
     outcome_concept_id = "4000002", tar_end_offset = "365"), scope = "sw_t")
+  auto365 <- out
   label <- attr(out, "dsomop_protection")
   expect_identical(label$protection, "realised_sticky")
   expect_true(all(is.na(out$outcomes)))
@@ -208,13 +225,23 @@ test_that("incidence person-time is protected or unavailable on every route", {
   expect_identical(.release_values(out), .release_values(again))
   withr::local_options(list(dsomop.tools.mode = "standard"))
   suppressWarnings(.omopAnalysisRegistry(h, force = TRUE))
-  std <- .release_run(h, "dsomop:incidence.rate", list(
+  std_run <- function() .release_run(h, "dsomop:incidence.rate", list(
     outcome_concept_id = "4000002", tar_end_offset = "365"), scope = "sw_t")
-  if (nrow(std)) {
-    expect_true(all(is.na(std$person_days)))
-    expect_true(all(is.na(std$rate)))
+  # With the DP service: the protected person-time of the same question.
+  std <- std_run()
+  expect_identical(attr(std, "dsomop_protection")$protection, "mixed")
+  expect_null(attr(std, "dsomop_protection")$masked_fields)
+  expect_equal(std$person_days, auto365$person_days, tolerance = 1e-9)
+  expect_equal(std$rate, auto365$rate, tolerance = 1e-9)
+  # Without it: unavailable.
+  withr::local_options(list(dsomop.dp.enabled = FALSE))
+  .release_restart()
+  off <- std_run()
+  if (nrow(off)) {
+    expect_true(all(is.na(off$person_days)))
+    expect_true(all(is.na(off$rate)))
   }
-  expect_setequal(attr(std, "dsomop_protection")$masked_fields,
+  expect_setequal(attr(off, "dsomop_protection")$masked_fields,
                   c("person_days", "rate"))
 })
 
@@ -236,17 +263,31 @@ test_that("SCCS window sweeps never reach exact conditional-Poisson scalars", {
         .release_add_condition(h, p, 4000002L, format(ex + o))
       }
     }
-    for (w in c(20, 25, 30, 35, 40)) {
-      r <- .release_run(h, "dsomop:sccs.incidence_rate_ratio", list(
+    # The released scalars are post-processing of the protected q-gridded
+    # event histogram (auto) or its mixed standard frame, on the public window
+    # grid (20 -> 21, 25 -> 28, 30/35/40 -> 30); never the exact fit.
+    fields <- c("irr", "ci_lo", "ci_hi", "log_irr", "se_log_irr")
+    windows <- c(20, 25, 30, 35, 40)
+    sweep <- lapply(windows, function(w) {
+      .release_run(h, "dsomop:sccs.incidence_rate_ratio", list(
         exposure_concept_id = "1112807", outcome_concept_id = "4000002",
         window = as.character(w)))
-      if (nrow(r)) {
-        expect_true(all(is.na(r[, c("irr", "ci_lo", "ci_hi", "log_irr",
-                                    "se_log_irr")])), info = mode)
+    })
+    for (i in seq_along(windows)) {
+      r <- sweep[[i]]
+      expect_identical(attr(r, "dsomop_protection")$protection,
+                       if (identical(mode, "auto")) "realised_sticky" else
+                         "mixed", info = mode)
+      exact <- .omopSccsIrrFn()(h, list(scoped_cohort = NULL), list(
+        exposure_concept_id = "1112807", outcome_concept_id = "4000002",
+        window = as.character(windows[[i]])))
+      if (nrow(r) && is.finite(r$se_log_irr) && nrow(exact)) {
+        expect_false(isTRUE(all.equal(r$se_log_irr, exact$se_log_irr)),
+                     info = mode)
       }
-      expect_true("se_log_irr" %in%
-                    attr(r, "dsomop_protection")$masked_fields, info = mode)
     }
+    expect_identical(.release_values(sweep[[3L]])[, fields],
+                     .release_values(sweep[[5L]])[, fields], info = mode)
     cleanup_handle(h)
   }
 })
@@ -273,11 +314,13 @@ test_that("the protected Poisson rate ratio is post-processing of the displayed 
   expect_equal(log(t$estimate), t$log_estimate, tolerance = 1e-9)
   expect_true(t$ci_lo < t$estimate && t$estimate < t$ci_hi)
   expect_identical(c$estimate, t$estimate)
-  # A Cox hazard ratio has no protected mechanism: unavailable, not relabelled.
+  # A Cox request releases the grouped-time Cox hazard ratio of the protected
+  # exit-time x status basis (test-tools-release-survival.R), never this rate
+  # ratio relabelled.
   params$model_type <- "cox"
   cox <- .release_run(h, "dsomop:cm.effect_estimate", params,
                       scope = list("sw_t", "sw_c"))
-  expect_true(all(is.na(cox[, c("estimate", "ci_lo", "ci_hi", "log_estimate",
-                                "se_log_estimate")])))
+  expect_match(attr(cox, "dsomop_protection")$estimand, "grouped-time Cox")
+  expect_false(isTRUE(all.equal(cox$estimate, r$estimate)))
   expect_identical(cox$persons, r$persons)
 })

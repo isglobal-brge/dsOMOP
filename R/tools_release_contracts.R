@@ -753,9 +753,10 @@
                                             "comparator_person_days",
                                             effect_fields))
   }
-  # Effects without a protected mechanism: their exact scalars are unavailable
-  # on every route (window sweeps of exact SEs recover outcome counts and event
-  # days); their counts keep the established controls.
+  # Exact SCCS scalars are unavailable on every route (window sweeps of exact
+  # SEs recover outcome counts and event days); their counts keep the
+  # established controls. The protected q-gridded route is set in
+  # tools_release_survival.R.
   for (id in c("dsomop:sccs.incidence_rate_ratio")) {
     out[[id]] <- contract("C9", NULL, fixed_basis = FALSE,
                           masked_always = c("irr", "ci_lo", "ci_hi",
@@ -806,6 +807,8 @@
     out[[paste0("dsomop:", id)]] <- contract("C7",
                                              .omopReleaseRunToolsHistogram)
   }
+  # Protected SCCS IRR and standard-mode person-time (tools_release_survival.R).
+  out <- .omopToolsReleaseSurvivalContracts(out)
   # Record-weighted QueryLibrary summaries (tools_release_records.R).
   c(out, .omopReleaseRecordSummaryContracts())
 }
@@ -1141,13 +1144,18 @@
                        stringsAsFactors = FALSE)
     } else {
       model_type <- params$model_type %||% "cox"
+      cox <- NULL
       rr <- if (identical(model_type, "poisson")) {
         .dsomopReleaseRateRatio(t_row, c_row, built$noise_sd, floor)
       } else {
-        # A Cox hazard ratio has no protected mechanism here; a descriptive
-        # rate ratio is not relabelled as one.
-        c(estimate = NA_real_, ci_lo = NA_real_, ci_hi = NA_real_,
-          log_estimate = NA_real_, se_log_estimate = NA_real_)
+        # The grouped-time Cox hazard ratio from the protected exit-time x
+        # status basis (tools_release_survival.R); a descriptive rate ratio is
+        # never relabelled as a hazard ratio.
+        cox <- .omopReleaseGroupedCox(handle, cohorts, out_src, tar,
+                                      outcome_key, route, built,
+                                      list(target = ta$data,
+                                           comparator = co$data))
+        cox$rr
       }
       row <- function(label, r) data.frame(
         arm = label, model_type = model_type, persons = r$n_display,
@@ -1158,14 +1166,22 @@
       df <- rbind(row("target", t_row), row("comparator", c_row))
     }
     rownames(df) <- NULL
-    list(df = df, built = list(built),
-         extra = if (identical(view, "effect") &&
-                     !identical(params$model_type %||% "cox", "poisson")) {
-           list(unavailable_reason = paste0(
-             "A Cox hazard ratio has no protected mechanism: its estimate, CI ",
-             "and SE are unavailable on the protected route. Use ",
-             "model_type = 'poisson' for the protected rate ratio."))
-         } else list())
+    is_cox <- identical(view, "effect") &&
+      !identical(params$model_type %||% "cox", "poisson")
+    extra <- list()
+    if (is_cox) {
+      extra$estimand <- paste0(
+        "grouped-time Cox (Breslow ties) on public exit bins, capped at ",
+        .DSOMOP_RELEASE_TIME_CAP, " days; not the raw Efron/continuous ",
+        "estimator")
+      if (!is.null(cox$reason)) {
+        extra$unavailable_reason <- paste0(
+          "The protected grouped-time Cox hazard ratio is unavailable (",
+          cox$reason, ").")
+      }
+    }
+    list(df = df, built = c(list(built), if (is_cox) list(cox$built)),
+         extra = extra)
   }
 }
 
