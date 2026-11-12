@@ -98,6 +98,12 @@
     if (!all_local(spec$allOf %||% list(), function(branch) {
       walk(value, branch)
     })) return(FALSE)
+    if (!is.null(spec[["if"]])) {
+      branch <- if (.jsv_quiet(spec[["if"]], value, schema, "")) {
+        spec[["then"]]
+      } else spec[["else"]]
+      if (!is.null(branch) && !walk(value, branch)) return(FALSE)
+    }
     if (is.list(value) && !is.null(names(value))) {
       props <- spec$properties %||% list()
       for (name in intersect(names(value), names(props))) {

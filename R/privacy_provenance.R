@@ -610,11 +610,21 @@
     ))
   }
   safe <- stats::setNames(logical(length(populations)), ids)
-  for (id in ids) {
+  resolved <- character(0)
+  visiting <- character(0)
+  resolve <- function(id) {
+    if (id %in% resolved) return(isTRUE(safe[[id]]))
+    if (id %in% visiting || !id %in% ids) return(FALSE)
+    visiting <<- c(visiting, id)
+    on.exit(visiting <<- setdiff(visiting, id), add = TRUE)
     population <- populations[[id]]
-    if (!is.list(population)) next
+    if (!is.list(population)) return(FALSE)
     kind <- tolower(population$kind %||% "criteria")
-    if (!kind %in% c("criteria", "setop", "index")) next
+    if (!kind %in% c("criteria", "setop", "index")) return(FALSE)
+    local <- is.null(population$cohort_definition_id) &&
+      .dsomopDpFilterTreePersonLocal(population$filter_tree)
+    parent <- population$parent %||% population$parent_id
+    if (!is.null(parent)) local <- local && resolve(parent)
     if (identical(kind, "setop") || !is.null(population$setop)) {
       members <- as.character(unlist(
         population$setop$members %||% character(0), use.names = FALSE
@@ -624,17 +634,16 @@
       valid_setop <- length(members) >= 2L && !anyNA(members) &&
         all(nzchar(members)) && !anyDuplicated(members) &&
         op %in% c("union", "intersect", "setdiff")
-      safe[[id]] <- valid_setop && all(members %in% ids) &&
-        all(vapply(members, function(member) {
-          isTRUE(safe[[member]])
-        }, logical(1L)))
-      next
+      local <- local && valid_setop && all(vapply(
+        members, resolve, logical(1L)
+      ))
     }
-    local <- is.null(population$cohort_definition_id) &&
-      .dsomopDpFilterTreePersonLocal(population$filter_tree)
     if (identical(id, "base")) local <- local && base_safe
-    safe[[id]] <- local
+    safe[[id]] <<- local
+    resolved <<- c(resolved, id)
+    local
   }
+  for (id in ids) resolve(id)
   if (!"base" %in% names(safe)) safe <- c(base = base_safe, safe)
   safe
 }
