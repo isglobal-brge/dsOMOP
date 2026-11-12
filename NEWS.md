@@ -115,6 +115,11 @@ fills its entries. Classes follow design-2.10.3 section 5.
   reviewed start/end date pair"; corpus class `newly_permitted`, amendment
   A-20 item 4.)
 
+- `omopFilterDS(expr =)` admits every comparison of the predicate grammar
+  (`< <= > >=`, `between`, null tests and logic) on numeric, integer, date and
+  boolean columns, and equality / IN on text columns; the excluded rows stay
+  private and only the result's distinct persons are checked.
+
 ## Newly refused
 
 ### Structural
@@ -371,6 +376,40 @@ fills its entries. Classes follow design-2.10.3 section 5.
   roster and phase (candidate or final); windows with independent bounds; a
   missing required anchor makes a window undefined (criteria UNKNOWN, also for
   absence and `count == 0`; reducers NA).
+
+## Standalone verbs of language 2.0 (WS-9)
+
+- New assign method `omopMutateDS(x, exprs)` (design 2.11, 4.6; listed in
+  `DATASHIELD`): derives columns of an `omop.table` from the closed mutation
+  AST of `inst/schema/mutate-v1.json` -- column references, typed literals,
+  `+ - * /` (division by zero or a non-finite result is `NA`; integer results
+  outside the 32-bit range are `NA`), date - date (integer days), date +/-
+  integer, three-valued predicates, `ifelse` / `case_when` (the first
+  non-FALSE test decides: TRUE takes its value, UNKNOWN yields `NA`; no case
+  gives `else` or `NA`), `coalesce` (one type; integer and numeric unify to
+  numeric) and `cut` with public, strictly increasing breaks (text labels,
+  `NA` outside the breaks). The request is data: it is validated against the
+  frozen schema and type-checked against the frame -- references resolve to
+  input columns or earlier assignments, every expression has a static type --
+  before any row is evaluated; nothing is evaluated as R code. Person, episode
+  and set keys and `dsomop_protected` columns can be neither read nor
+  written; class-1 names are refused; an existing non-protected column may be
+  overwritten. The result passes the standalone publication boundary (its
+  distinct persons must reach `nfilter.subset`, constant message) and
+  carries no DP provenance. Text literals and labels keep the
+  `nfilter.string` length limit; expression nesting keeps the
+  `dsomop.max_filter_depth` cap.
+- `omopFilterDS(x, var, op, value, expr = NULL)`: the `expr` form filters with
+  the plan-v2 predicate grammar (`== != < <= > >= in not_in is_null not_null
+  between and or not`), validated against `plan-v2.json` and type-checked
+  before any row is read, three-valued (only TRUE rows are kept), released
+  through the same boundary; protected columns are refused. The legacy form is
+  unchanged.
+- The capability block advertises `status.accessor`, `verb.mutate` and
+  `verb.filter_expr` with their own endpoints, whether or not every plan
+  compiler is installed (it advertised nothing while a compiler was missing).
+  A deployment that lists `verb.mutate` or `verb.filter_expr` in
+  `dsomop.recipe_operations_disabled` refuses that verb.
 
 ## Plan IR, role registry, explain and capabilities (WS-2)
 

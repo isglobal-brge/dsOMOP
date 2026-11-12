@@ -8,7 +8,7 @@ omopMergeDS,assign,.publishOutputs,WS-1,implemented,test-boundary-audit.R
 omopFilterDS,assign,.publishOutputs,WS-1,implemented,test-boundary-audit.R
 omopSelectDS,assign,.publishOutputs,WS-1,implemented,test-boundary-audit.R
 omopBindRowsDS,assign,.publishOutputs,WS-1,implemented,test-boundary-audit.R
-omopMutateDS,assign,.publishOutputs,WS-9,skeleton,new in 2.10.3 (design 2.11)
+omopMutateDS,assign,.publishOutputs,WS-9,implemented,new in 2.10.3 (design 2.11); test-verbs-v2.R
 omopAnalysisRunAssignDS,assign,.publishOutputs,WS-1,implemented,test-boundary-audit.R
 omopAsFactorColumnsDS,assign,inherits the published frame,WS-1,implemented,no new person rows; test-boundary-audit.R
 omopInitDS,assign,none (handle only),WS-1,implemented,no patient rows; test-boundary-audit.R

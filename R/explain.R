@@ -45,8 +45,13 @@
   event.episode_members = ".compileEpisodeMembers",
   event.cost = ".compileCost",
   status.accessor = "omopPlanStatusDS",
-  verb.mutate = "omopMutateDS"
+  verb.mutate = "omopMutateDS",
+  verb.filter_expr = ".omopFilterExpr"
 )
+
+# The status transport and the standalone verbs do not run through the plan
+# compilers: each needs only its own endpoint.
+.RECIPE_STANDALONE_OPERATIONS <- c("status.accessor", "verb.mutate", "verb.filter_expr")
 
 .recipeFunctionInstalled <- function(name) {
   is.function(get0(name, envir = asNamespace("dsOMOP"), inherits = FALSE))
@@ -55,13 +60,13 @@
 #' Operations this server executes (section 4.4, minus disabled ones)
 #' @keywords internal
 .recipeAvailableOperations <- function() {
-  if (!all(vapply(.RECIPE_CORE_FUNCTIONS, .recipeFunctionInstalled, logical(1)))) {
-    return(character(0))
-  }
   ok <- vapply(.RECIPE_OPERATIONS, function(op) {
     needs <- .RECIPE_OPERATION_FUNCTIONS[[op]]
     is.null(needs) || all(vapply(needs, .recipeFunctionInstalled, logical(1)))
   }, logical(1))
+  if (!all(vapply(.RECIPE_CORE_FUNCTIONS, .recipeFunctionInstalled, logical(1)))) {
+    ok <- ok & .RECIPE_OPERATIONS %in% .RECIPE_STANDALONE_OPERATIONS
+  }
   setdiff(.RECIPE_OPERATIONS[ok], .irDisabledOperations())
 }
 

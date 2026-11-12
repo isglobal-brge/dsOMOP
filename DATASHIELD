@@ -10,6 +10,7 @@ AssignMethods:
   omopFilterDS,
   omopSelectDS,
   omopBindRowsDS,
+  omopMutateDS,
   omopAnalysisRunAssignDS,
   omopDpPlanExecuteDS
 AggregateMethods:
