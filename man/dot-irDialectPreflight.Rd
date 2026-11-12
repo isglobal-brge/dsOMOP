@@ -6,14 +6,25 @@
 \usage{
 .irDialectPreflight(ir, handle)
 }
+\arguments{
+\item{ir}{The IR (semantically valid).}
+
+\item{handle}{CDM handle (or context / profile) to preflight against.}
+}
 \value{
-The dialect profile (invisibly), or NULL when the typed SQL
-  helpers are not installed.
+The probed dialect profile, invisibly.
 }
 \description{
-Calls WS-3's \code{.sqlDialectPreflight(handle, .sqlPlanConstructs(ops),
-session_tables = ...)}. A lowered v1 plan is executed by the v1 executors
-in this release stage and needs exactly what they need, so no typed
-construct is required of it (session temp tables keep their own refusal).
+Calls WS-3's \code{.sqlDialectPreflight(h, .sqlPlanConstructs(ops),
+session_tables = ...)} (\code{R/sql_expr.R}): once per output, over the
+part of the plan the output depends on (\code{.irOutputClosure()}), so that
+the typed \code{dialect_unsupported} rejection names the output, then once
+for the whole plan, which refuses whatever no single output accounts for.
+The database is probed once. A plan with populations is taken to reuse a
+roster in more than one statement (session temp tables), the conservative
+reading until the compilers decide where rosters are materialised (design
+section 6.4). A lowered v1 plan is executed by the v1 executors in this
+release stage and needs exactly what they need, so no typed construct is
+required of it (v1 temp tables keep their own refusal).
 }
 \keyword{internal}

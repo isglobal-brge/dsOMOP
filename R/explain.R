@@ -76,10 +76,8 @@
 .recipeLanguageCapability <- function(handle = NULL) {
   operations <- .recipeAvailableOperations()
   dialect <- NULL
-  capability <- get0(".sqlDialectCapability", envir = asNamespace("dsOMOP"),
-                     inherits = FALSE)
-  if (!is.null(handle) && is.function(capability)) {
-    dialect <- tryCatch(capability(handle), error = function(e) NULL)
+  if (!is.null(handle)) {
+    dialect <- tryCatch(.sqlDialectCapability(handle), error = function(e) NULL)
   }
   list(
     version = 2L,
@@ -115,8 +113,7 @@
   for (o in names(ir[["outputs"]])) {
     node <- ir[["outputs"]][[o]]
     cols <- list()
-    vars <- unlist(node[["columns"]] %||% list(), use.names = FALSE)
-    for (v in intersect(vars, names(ir[["variables"]]))) {
+    for (v in .irOutputVariables(ir, o)) {
       def <- ir[["variables"]][[v]]
       if (!is.null(def[["raw"]])) {
         col_df <- bp[["columns"]][[def[["raw"]][["table"]]]]
@@ -216,7 +213,7 @@
   site_findings <- character(0)
   unavailable <- character(0)
   roles <- list()
-  dialect <- NULL
+  dialect <- list(status = "not_checked")
   if (!is.null(handle)) {
     site <- tryCatch(.irSiteErrors(ir, handle),
                      error = function(e) list(errors = conditionMessage(e), unavailable = character(0)))
@@ -227,12 +224,12 @@
     }
     dialect <- tryCatch({
       profile <- .irDialectPreflight(ir, handle)
-      if (is.null(profile)) list(status = "not_checked") else
-        list(status = "ok", family = profile[["family"]],
-             temporary_materialization = profile[["temporary_materialization"]],
-             runtime = profile[["runtime"]])
+      list(status = "ok", family = profile[["family"]],
+           temporary_materialization = profile[["temporary_materialization"]],
+           runtime = profile[["runtime"]])
     }, dsomop_dialect_unsupported = function(e) {
-      list(status = "dialect_unsupported", construct = e[["construct"]], family = e[["family"]])
+      list(status = "dialect_unsupported", output = e[["output"]],
+           construct = e[["construct"]], family = e[["family"]])
     }, error = function(e) list(status = "error", message = conditionMessage(e)))
   }
   list(

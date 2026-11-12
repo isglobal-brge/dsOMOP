@@ -109,9 +109,72 @@ test_that("the capability block declares the language (A-E7)", {
   reducers_csv <- utils::read.csv(system.file("contracts", "reducers.csv", package = "dsOMOP"),
                                   stringsAsFactors = FALSE)
   expect_setequal(.RECIPE_REDUCERS, reducers_csv$fn)
-  if (is.function(get0(".sqlDialectCapability", envir = asNamespace("dsOMOP")))) {
-    expect_identical(rl$dialect$family, "sqlite")
+  expect_identical(rl$dialect, .sqlDialectCapability(handle))
+  expect_identical(rl$dialect$family, "sqlite")
+  # every operation the language names has a construct mapping in R/sql_expr.R
+  expect_identical(.sqlPlanConstructs(.RECIPE_OPERATIONS),
+                   .sqlPlanConstructs(names(.SQL_OPERATION_CONSTRUCTS)))
+  expect_setequal(names(.SQL_OPERATION_CONSTRUCTS), .RECIPE_OPERATIONS)
+})
+
+test_that("the dialect preflight names the output that needs a missing construct", {
+  a <- .irPrepare(.explain_example("plan-v2-example-A.json"))
+  # SQL Server cannot keep a roster across statements: the first output in
+  # evaluation order is named
+  err <- tryCatch(.irDialectPreflight(a, "sql server"),
+                  dsomop_dialect_unsupported = function(e) e)
+  expect_s3_class(err, "dsomop_plan_rejection")
+  expect_identical(err$construct, "session_table")
+  expect_identical(err$output, .irOrder(a)$outputs[[1L]])
+  expect_identical(err$family, "sqlserver")
+  expect_s3_class(.irDialectPreflight(a, "postgresql"), "dsomop_sql_dialect")
+  # a construct only the second output's dependencies need names that output
+  # (first_line's columns read the episode_course interval, which needs window
+  # frames; the episodes output reads no interval)
+  acc <- system.file("plans", "acceptance", "14-oncology-episodes", "plan.json",
+                     package = "dsOMOP")
+  if (!nzchar(acc)) {
+    acc <- testthat::test_path("..", "..", "inst", "plans", "acceptance",
+                               "14-oncology-episodes", "plan.json")
   }
+  p14 <- .irPrepare(jsonlite::fromJSON(acc, simplifyVector = FALSE))
+  expect_identical(.irOrder(p14)$outputs, c("episodes", "first_line"))
+  testthat::local_mocked_bindings(
+    .sqlHelperAvailable = function(h, construct) construct != "window_frames")
+  err <- tryCatch(.irDialectPreflight(p14, "postgresql"),
+                  dsomop_dialect_unsupported = function(e) e)
+  expect_identical(err$output, "first_line")
+  expect_identical(err$construct, "window_frames")
+  expect_match(conditionMessage(err), "output 'first_line' needs")
+  # the whole-plan check refuses what no output's closure accounts for
+  testthat::local_mocked_bindings(
+    .sqlHelperAvailable = function(h, construct) construct != "session_table",
+    .irOutputClosure = function(ir, o) {
+      ir$populations <- .irEmptyObject()
+      ir
+    })
+  err <- tryCatch(.irDialectPreflight(a, "postgresql"),
+                  dsomop_dialect_unsupported = function(e) e)
+  expect_identical(err$construct, "session_table")
+  expect_null(err$output)
+  # a lowered v1 plan needs only what the v1 executors need
+  v1 <- .irPrepare(list(cohort = list(type = "cohort_table", cohort_definition_id = 1L),
+                        outputs = list(demo = list(type = "baseline",
+                                                   columns = list("gender_concept_id")))))
+  expect_s3_class(.irDialectPreflight(v1, "sql server"), "dsomop_sql_dialect")
+})
+
+test_that("explain reports the dialect preflight outcome with the output", {
+  symbol <- .explain_handle()
+  out <- omopPlanExplainDS(symbol, .explain_example("plan-v2-example-A.json"))
+  expect_identical(out$dialect$status, "ok")
+  expect_identical(out$dialect$family, "sqlite")
+  testthat::local_mocked_bindings(
+    .sqlHelperAvailable = function(h, construct) construct != "window_frames")
+  out <- omopPlanExplainDS(symbol, .explain_example("plan-v2-example-A.json"))
+  expect_identical(out$dialect$status, "dialect_unsupported")
+  expect_identical(out$dialect$output, "baseline")
+  expect_identical(out$dialect$construct, "window_frames")
 })
 
 test_that("operations are advertised only when their compilers are installed", {

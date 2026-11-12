@@ -329,6 +329,106 @@
     unlist(opts[["source_outputs"]] %||% list(), use.names = FALSE))
 }
 
+#' Variables an output projects
+#'
+#' Its \code{columns}; when \code{columns} is null, every variable for
+#' \code{wide} and the other variable-driven formats (\code{sparse},
+#' \code{temporal_covariates}, \code{person_period}: the conservative reading
+#' until their compilers fix it), and none for formats whose columns come from
+#' their sources, roster or inputs (\code{survival}, \code{long},
+#' \code{intervals}, \code{membership}, \code{dictionary}, \code{joined}) --
+#' as the WS-0 acceptance expectations show for \code{wide} and
+#' \code{survival}.
+#'
+#' @param ir The IR.
+#' @param o Output name.
+#' @return Character vector of variable names (in \code{columns} order, or in
+#'   plan order).
+#' @keywords internal
+.irOutputVariables <- function(ir, o) {
+  node <- ir[["outputs"]][[o]]
+  vars <- names(ir[["variables"]] %||% list())
+  cols <- node[["columns"]]
+  if (!is.null(cols)) {
+    return(intersect(as.character(unlist(cols, use.names = FALSE)), vars))
+  }
+  if (isTRUE(node[["format"]] %in% c("survival", "long", "intervals", "membership",
+                                      "dictionary", "joined"))) {
+    return(character(0))
+  }
+  vars
+}
+
+# Names reachable from `start` through deps(name), restricted to `pool`.
+.irReach <- function(start, deps, pool) {
+  seen <- character(0)
+  queue <- intersect(as.character(start), pool)
+  while (length(queue)) {
+    n <- queue[[1L]]
+    queue <- queue[-1L]
+    if (n %in% seen) next
+    seen <- c(seen, n)
+    queue <- c(queue, setdiff(intersect(as.character(deps(n)), pool), seen))
+  }
+  seen
+}
+
+#' The part of an IR one output depends on
+#'
+#' The output, the outputs it joins or describes, its \code{rows} population
+#' with parents, set-op members and match arms, the variables it projects
+#' (\code{.irOutputVariables()}), and every event, interval and concept set
+#' these reference (transitively).
+#'
+#' @param ir The IR (references resolved).
+#' @param o Output name.
+#' @return The IR restricted to those nodes, publishing the kept outputs.
+#' @keywords internal
+.irOutputClosure <- function(ir, o) {
+  outs <- ir[["outputs"]] %||% list()
+  pops <- ir[["populations"]] %||% list()
+  vars <- ir[["variables"]] %||% list()
+  ev <- ir[["events"]] %||% list()
+  iv <- ir[["intervals"]] %||% list()
+  keep_o <- .irReach(o, function(n) .irOutputDeps(ir, n), names(outs))
+  rows <- vapply(outs[keep_o], function(x) x[["rows"]] %||% "", "")
+  keep_p <- .irReach(rows, function(n) .irPopulationDeps(ir, n), names(pops))
+  keep_v <- unique(unlist(lapply(keep_o, function(n) .irOutputVariables(ir, n)),
+                          use.names = FALSE))
+  keep_v <- intersect(names(vars), as.character(keep_v))
+  keep_e <- character(0)
+  keep_i <- character(0)
+  pending <- c(pops[keep_p], vars[keep_v], outs[keep_o])
+  while (length(pending)) {
+    refs <- .irCollectRefs(unname(pending))
+    kinds <- vapply(refs, function(r) r[["kind"]], "")
+    targets <- vapply(refs, function(r) r[["name"]], "")
+    new_e <- setdiff(intersect(targets[kinds == "event"], names(ev)), keep_e)
+    new_e <- setdiff(.irReach(new_e, function(n) .irEventDeps(ir, n), names(ev)), keep_e)
+    new_i <- setdiff(intersect(targets[kinds == "interval"], names(iv)), keep_i)
+    keep_e <- c(keep_e, new_e)
+    keep_i <- c(keep_i, new_i)
+    pending <- c(ev[new_e], iv[new_i])
+  }
+  cs_refs <- unlist(lapply(ev[keep_e], function(e) {
+    if (is.character(e[["concept_set"]])) e[["concept_set"]]
+  }), use.names = FALSE)
+  pick <- function(map, keep) {
+    map <- map %||% list()
+    out <- map[names(map) %in% keep]
+    if (!length(out)) .irEmptyObject() else out
+  }
+  sub <- ir
+  sub[["concept_sets"]] <- pick(ir[["concept_sets"]], cs_refs)
+  sub[["events"]] <- pick(ev, keep_e)
+  sub[["intervals"]] <- pick(iv, keep_i)
+  sub[["populations"]] <- pick(pops, keep_p)
+  sub[["variables"]] <- pick(vars, keep_v)
+  sub[["outputs"]] <- pick(outs, keep_o)
+  sub[["publish"]] <- as.list(.irSortNames(keep_o))
+  sub
+}
+
 #' Evaluation order of an IR (design section 6.1)
 #'
 #' Concept sets, events (including adapters) and intervals in reference

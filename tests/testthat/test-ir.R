@@ -323,6 +323,54 @@ test_that(".irNode resolves typed references and refuses dangling ones", {
   expect_identical(err$field, "/intervals/nope")
 })
 
+.ir_shipped_v2_plans <- function() {
+  acc <- system.file("plans", "acceptance", package = "dsOMOP")
+  if (!nzchar(acc)) acc <- testthat::test_path("..", "..", "inst", "plans", "acceptance")
+  files <- c(.ir_schema_file("examples", "plan-v2-example-A.json"),
+             .ir_schema_file("examples", "plan-v2-example-B.json"),
+             Sys.glob(file.path(acc, "*", "plan.json")))
+  stats::setNames(lapply(files, jsonlite::fromJSON, simplifyVector = FALSE),
+                  ifelse(basename(files) == "plan.json", basename(dirname(files)),
+                         sub("[.]json$", "", basename(files))))
+}
+
+test_that("an output's closure keeps every node it references", {
+  plans <- .ir_shipped_v2_plans()
+  expect_gte(length(plans), 17L)
+  for (p in names(plans)) {
+    ir <- .irPrepare(plans[[p]])
+    covered <- character(0)
+    for (o in names(ir$outputs)) {
+      sub <- .irOutputClosure(ir, o)
+      # the closure passes the reference rules on its own: nothing it
+      # depends on was left out
+      expect_identical(.irSemanticErrors(sub), character(0), info = paste(p, o))
+      expect_true(o %in% names(sub$outputs), info = paste(p, o))
+      ops <- .irOperations(sub)
+      expect_true(all(ops %in% .irOperations(ir)), info = paste(p, o))
+      covered <- union(covered, ops)
+    }
+    # in the shipped plans every node serves an output: the outputs account
+    # for every operation but the plan-level publish roots
+    expect_setequal(setdiff(covered, "publish.roots"),
+                    setdiff(.irOperations(ir), "publish.roots"))
+  }
+  tte <- .irOutputClosure(.irPrepare(plans[["plan-v2-example-A"]]), "tte")
+  expect_named(tte$outputs, "tte")
+  expect_length(tte$variables, 0L)
+  expect_named(tte$populations, "new_users")
+})
+
+test_that("an output projects its columns, or every variable only when wide", {
+  acc <- .ir_shipped_v2_plans()[["02-active-comparator"]]
+  ir <- .irPrepare(acc)
+  expect_null(ir$outputs$baseline$columns)
+  expect_identical(.irOutputVariables(ir, "baseline"), names(ir$variables))
+  expect_identical(.irOutputVariables(ir, "tte"), character(0))
+  a <- .irPrepare(.ir_json("examples", "plan-v2-example-A.json"))
+  expect_identical(.irOutputVariables(a, "baseline"), c("age", "sex", "hba1c_base"))
+})
+
 # --- section 5: lowering, one test per row ------------------------------------------
 
 test_that("v1 cohort_table lowers to a scope and the cohort's rows", {

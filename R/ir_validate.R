@@ -582,27 +582,40 @@
 
 #' Dialect preflight of an IR (design sections 6.1, 6.3 and 9)
 #'
-#' Calls WS-3's \code{.sqlDialectPreflight(handle, .sqlPlanConstructs(ops),
-#' session_tables = ...)}. A lowered v1 plan is executed by the v1 executors
-#' in this release stage and needs exactly what they need, so no typed
-#' construct is required of it (session temp tables keep their own refusal).
+#' Calls WS-3's \code{.sqlDialectPreflight(h, .sqlPlanConstructs(ops),
+#' session_tables = ...)} (\code{R/sql_expr.R}): once per output, over the
+#' part of the plan the output depends on (\code{.irOutputClosure()}), so that
+#' the typed \code{dialect_unsupported} rejection names the output, then once
+#' for the whole plan, which refuses whatever no single output accounts for.
+#' The database is probed once. A plan with populations is taken to reuse a
+#' roster in more than one statement (session temp tables), the conservative
+#' reading until the compilers decide where rosters are materialised (design
+#' section 6.4). A lowered v1 plan is executed by the v1 executors in this
+#' release stage and needs exactly what they need, so no typed construct is
+#' required of it (v1 temp tables keep their own refusal).
 #'
-#' @return The dialect profile (invisibly), or NULL when the typed SQL
-#'   helpers are not installed.
+#' @param ir The IR (semantically valid).
+#' @param handle CDM handle (or context / profile) to preflight against.
+#' @return The probed dialect profile, invisibly.
 #' @keywords internal
 .irDialectPreflight <- function(ir, handle) {
-  ns <- asNamespace("dsOMOP")
-  preflight <- get0(".sqlDialectPreflight", envir = ns, inherits = FALSE)
-  constructs_of <- get0(".sqlPlanConstructs", envir = ns, inherits = FALSE)
-  if (!is.function(preflight) || !is.function(constructs_of)) return(invisible(NULL))
+  profile <- .sqlDialectProfile(handle, probe = TRUE)
   if (identical(attr(ir, "source_version"), 1L)) {
-    return(invisible(preflight(handle, constructs = character(0),
-                               session_tables = FALSE)))
+    return(invisible(.sqlDialectPreflight(profile, constructs = character(0),
+                                          session_tables = FALSE)))
   }
-  ops <- .irOperations(ir)
-  constructs <- tryCatch(constructs_of(ops), error = function(e) constructs_of(character(0)))
-  session_tables <- length(ir[["populations"]] %||% list()) > 0L
-  invisible(preflight(handle, constructs = constructs, session_tables = session_tables))
+  needs <- function(part) {
+    list(constructs = .sqlPlanConstructs(.irOperations(part)),
+         session_tables = length(part[["populations"]] %||% list()) > 0L)
+  }
+  for (o in .irOrder(ir)[["outputs"]]) {
+    n <- needs(.irOutputClosure(ir, o))
+    .sqlDialectPreflight(profile, constructs = n[["constructs"]],
+                         session_tables = n[["session_tables"]], output = o)
+  }
+  n <- needs(ir)
+  invisible(.sqlDialectPreflight(profile, constructs = n[["constructs"]],
+                                 session_tables = n[["session_tables"]]))
 }
 
 #' Semantic and handle-dependent validation (step 4)
