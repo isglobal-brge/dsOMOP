@@ -313,9 +313,21 @@ and plan hashes and output shapes match. The independent age/base-`cut` oracle
 in `test-ir-results.R` supplies the semantic check without using production
 banding code. A bounded run at reference-proof commit `be96740`, before the
 visit-filter and effective-column guards, passed all 6,913 checks for these eight cases, 21 reference-output cases and their metadata
-guards; the full compatibility suite remains part of the full server run.
+guards. The final full server suite then passed the complete 1,156-case
+compatibility replay on `9b3cb5d`.
 
 ## Validation and durable evidence
+
+Both full current suites pass on the final production sources: server 45,412
+assertions with 11 skips and client 4,902 assertions with seven skips, with zero
+failures or errors. All enabled PostgreSQL, MariaDB and MySQL integration tests
+run without skips. The server skips comprise missing CommonDataModel, SqlRender,
+Arrow, Node and Python dependencies plus one macOS-only check; the client skips
+require ggplot2. The client emits four existing adapter-cleanup warnings.
+The [full-suite verification](ws2c-result-evidence/final-suite-verification.json)
+records source hashes, complete-run options, exact totals, log hashes and the
+547 runtime/test/contract files verified against the tested snapshots. These
+passes do not waive the separate CR-25 compatibility gap.
 
 The two pristine baseline runs pass server 14,003/14,002 assertions respectively
 with 14 skips each, and client 4,156 assertions with seven skips each; all have
