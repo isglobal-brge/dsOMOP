@@ -248,7 +248,7 @@ test_that("closed legacy empty operands obey union intersection and difference i
 test_that("the legacy empty exception refuses open shapes and remains IR-only", {
   invalid <- list(
     false = list(legacy_empty = FALSE), missing_mode = list(legacy_episodes = NULL),
-    null_without_mode = list(legacy_empty = NULL, legacy_episodes = NULL),
+    null_without_mode = list(legacy_empty = NULL),
     null_with_mode = list(legacy_empty = NULL),
     wrong_mode = list(legacy_episodes = "cohort_rows"), wrong_kind = list(kind = "index"),
     parent = list(parent = "people"), where = list(where = .ws6f_has_members(5L)),
@@ -261,6 +261,7 @@ test_that("the legacy empty exception refuses open shapes and remains IR-only", 
     tryCatch({
       node <- .irNamedNode(ctx$ir, "population", "empty")
       for (field in names(invalid[[variant]])) node[field] <- invalid[[variant]][field]
+      if (identical(variant, "null_without_mode")) node$legacy_episodes <- NULL
       expect_error(.compilePopulation(ctx, node), info = variant)
       expect_length(ctx$compile_temp_tables, 0L, info = variant)
     }, finally = .planContextClose(ctx))
