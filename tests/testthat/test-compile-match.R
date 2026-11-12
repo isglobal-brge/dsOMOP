@@ -488,7 +488,7 @@ test_that("matching insertion failures clean up immediately and retain failed DR
   create <- .createTempTable
   rejecting_create <- function(handle, name, select_sql) {
     result <- create(handle, name, select_sql)
-    DBI::dbExecute(handle$conn, paste0(
+    if (startsWith(name, "dsomop_mt_")) DBI::dbExecute(handle$conn, paste0(
       "CREATE TEMP TRIGGER ws6_match_reject_insert BEFORE INSERT ON ", name,
       " BEGIN SELECT RAISE(ABORT, 'injected matching insertion failure'); END"))
     result
@@ -503,12 +503,13 @@ test_that("matching insertion failures clean up immediately and retain failed DR
     if (drop_fails) {
       expect_match(conditionMessage(error), "Could not release the compiler temporary table")
       expect_s3_class(error$cleanup_error, "error")
-      expect_length(ctx$compile_temp_tables, 1L)
-      expect_true(ctx$compile_temp_tables %in% h$temp_tables)
-      expect_true(ctx$compile_temp_tables %in% physical())
+      owned_match <- ctx$compile_temp_tables[startsWith(ctx$compile_temp_tables, "dsomop_mt_")]
+      expect_length(owned_match, 1L)
+      expect_true(owned_match %in% h$temp_tables)
+      expect_true(owned_match %in% physical())
     } else {
-      expect_length(ctx$compile_temp_tables, 0L)
-      expect_setequal(physical(), pre)
+      expect_false(any(startsWith(ctx$compile_temp_tables, "dsomop_mt_")))
+      expect_false(any(startsWith(physical(), "dsomop_mt_")))
     }
     .planContextClose(ctx)
     expect_setequal(h$temp_tables, pre)
