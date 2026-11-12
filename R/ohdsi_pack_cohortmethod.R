@@ -1478,44 +1478,34 @@
 #' @keywords internal
 .omopCmKmSubjectFrame <- function(handle, cohort, arm, out_src,
                                   tar_start_offset, tar_end_offset) {
-  ranked <- .rankedCohortSql(cohort, handle)
-  members_sql <- paste0(
-    "(SELECT q.subject_id, q.cohort_start_date, q.cohort_end_date FROM (",
-    "SELECT r.subject_id, r.cohort_start_date, r.cohort_end_date, ",
-    "ROW_NUMBER() OVER (PARTITION BY r.subject_id ORDER BY ",
-    "r.cohort_start_date, r.cohort_end_date, r.cohort_row_id) AS person_rank ",
-    "FROM ", ranked, " r) q WHERE q.person_rank = 1)"
-  )
-  members <- .executeQuery(handle, paste0(
-    "SELECT subject_id, cohort_start_date, cohort_end_date FROM ", members_sql,
-    " ORDER BY subject_id"))
+  # The shared observed window (.omopObservedTarSql): the TAR
+  # [start + offset, end + offset] intersected with the observation period
+  # containing the canonical first index, as the half-open [tar_lo, tar_hi).
+  observed <- .omopObservedTarSql(handle, cohort, list(
+    start = tar_start_offset, end = tar_end_offset,
+    anchor_start = "start", anchor_end = "end"))
+  members <- .executeQuery(handle, .sql_translate(paste0(
+    "SELECT w.subject_id, w.tar_lo, w.tar_hi FROM ", observed, " w ",
+    "ORDER BY w.subject_id"), handle$target_dialect))
   if (!is.data.frame(members) || nrow(members) == 0) return(data.frame())
-
-  members$tar_start <- as.Date(members$cohort_start_date) +
-    as.integer(tar_start_offset)
-  members$tar_end <- as.Date(members$cohort_end_date) +
-    as.integer(tar_end_offset)
+  names(members) <- tolower(names(members))
+  members$tar_start <- as.Date(members$tar_lo)
+  # Last observed day of the half-open window.
+  members$tar_end <- as.Date(members$tar_hi) - 1L
 
   members$outcome_date <- as.Date(NA)
   if (!is.null(out_src)) {
-    tar_lo <- paste0(
-      "DATEADD(day, ", as.integer(tar_start_offset),
-      ", m.cohort_start_date)"
-    )
-    tar_hi <- paste0(
-      "DATEADD(day, ", as.integer(tar_end_offset),
-      ", m.cohort_end_date)"
-    )
     ev <- .executeQuery(handle, .sql_translate(paste0(
-      "SELECT m.subject_id, MIN(o.", out_src$date_col,
-      ") AS outcome_date FROM ", members_sql, " m ",
+      "SELECT w.subject_id, MIN(o.", out_src$date_col,
+      ") AS outcome_date FROM ", observed, " w ",
       "INNER JOIN ", out_src$table, " o ON o.", out_src$person_col,
-      " = m.subject_id AND o.", out_src$concept_col, " IN (",
-      out_src$id_list, ") AND o.", out_src$date_col, " >= ", tar_lo,
-      " AND o.", out_src$date_col, " <= ", tar_hi,
-      " GROUP BY m.subject_id"),
+      " = w.subject_id AND o.", out_src$concept_col, " IN (",
+      out_src$id_list, ") AND o.", out_src$date_col, " >= w.tar_lo",
+      " AND o.", out_src$date_col, " < w.tar_hi",
+      " GROUP BY w.subject_id"),
       handle$target_dialect))
     if (is.data.frame(ev) && nrow(ev) > 0) {
+      names(ev) <- tolower(names(ev))
       first_out <- stats::setNames(as.Date(ev$outcome_date),
                                    as.character(ev$subject_id))
       hit <- first_out[as.character(members$subject_id)]
@@ -1523,8 +1513,9 @@
     }
   }
 
-  # Event iff the FIRST qualifying outcome falls inside the TAR window; the
-  # follow-up endpoint is the earlier of that outcome and the TAR end (censor).
+  # Event iff the FIRST qualifying outcome falls inside the observed window;
+  # the follow-up endpoint is the earlier of that outcome and the window's last
+  # observed day (censor).
   in_tar <- !is.na(members$outcome_date) &
     members$outcome_date >= members$tar_start &
     members$outcome_date <= members$tar_end

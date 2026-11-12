@@ -284,13 +284,11 @@
 #' @return Data frame (person_days, events) — one row per subject in the subgroup.
 #' @keywords internal
 .omopCmSubgroupSubjectFrame <- function(handle, cohort, out_src, tar, predicate) {
+  # The shared observed window (.omopObservedTarSql), half-open [lo, hi); the
+  # subgroup predicate is evaluated on the canonical first episode (alias coh).
   first <- .omopFirstCohortEpisodeSql(handle, cohort)
-  anchor <- function(a) {
-    if (identical(a, "end")) "cohort_end_date" else "cohort_start_date"
-  }
-  tar_lo <- paste0("DATEADD(day, ", tar$start, ", coh.", anchor(tar$anchor_start), ")")
-  tar_hi <- paste0("DATEADD(day, ", tar$end, ", coh.", anchor(tar$anchor_end), ")")
-  pdays  <- .omopDateDiffDays(handle, tar_hi, tar_lo)
+  observed <- .omopObservedTarSql(handle, cohort, tar)
+  pdays  <- .omopDateDiffDays(handle, "w.tar_hi", "w.tar_lo")
 
   outcome_join <- ""
   out_event_expr <- "0"
@@ -298,26 +296,32 @@
     outcome_join <- paste0(
       " LEFT JOIN ", out_src$table, " o ON o.", out_src$person_col,
       " = coh.subject_id AND o.", out_src$concept_col, " IN (",
-      out_src$id_list, ") AND o.", out_src$date_col, " >= ", tar_lo,
-      " AND o.", out_src$date_col, " <= ", tar_hi)
+      out_src$id_list, ") AND o.", out_src$date_col, " >= w.tar_lo",
+      " AND o.", out_src$date_col, " < w.tar_hi")
     out_event_expr <- paste0("COUNT(o.", out_src$concept_col, ")")
   }
-  conditions <- c(paste0(tar_hi, " >= ", tar_lo), predicate)
+  conditions <- c(predicate)
   conditions <- conditions[!vapply(conditions, is.null, logical(1))]
-  where <- paste0(" WHERE ", paste(conditions, collapse = " AND "))
+  where <- if (length(conditions)) {
+    paste0(" WHERE ", paste(conditions, collapse = " AND "))
+  } else ""
   sql <- .omopCmSpliceBirthDate(handle, .sql_translate(paste0(
     "SELECT coh.subject_id AS subject_id, ",
     "MAX(", pdays, ") AS person_days, ",
     out_event_expr, " AS events ",
-    "FROM ", first, " coh", outcome_join, where,
+    "FROM ", first, " coh INNER JOIN ", observed,
+    " w ON w.subject_id = coh.subject_id", outcome_join, where,
     " GROUP BY coh.subject_id"),
     handle$target_dialect))
   res <- .executeQuery(handle, sql)
   if (is.null(res) || nrow(res) == 0) {
-    return(data.frame(person_days = numeric(0), events = numeric(0)))
+    return(data.frame(person_days = numeric(0), events = numeric(0),
+                      person_id = character(0), stringsAsFactors = FALSE))
   }
+  names(res) <- tolower(names(res))
   data.frame(person_days = as.numeric(res$person_days),
              events      = as.numeric(res$events),
+             person_id   = .dsomopReleasePersonIdText(res$subject_id),
              stringsAsFactors = FALSE)
 }
 

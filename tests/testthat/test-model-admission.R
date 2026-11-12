@@ -186,8 +186,10 @@ test_that("exp2: 1-2 outcomes cannot be recovered from the calibration mean", {
     DBI::dbExecute(h$conn, paste0(
       "DELETE FROM condition_occurrence WHERE condition_concept_id IN ",
       "(4000002, 201820)"))
-    g06_cohort(h, "g06_plp_t", 1:113, start = "2021-01-01",
-               end = "2021-01-01")
+    # Index 2021-03-01: the snapped look-back window [-390, -1] must lie
+    # inside the fixture observation periods (2020-01-01 onwards).
+    g06_cohort(h, "g06_plp_t", 1:113, start = "2021-03-01",
+               end = "2021-03-01")
     add(1:40, 201820L, "2020-06-01")
     P <- list(outcome_concept_id = "4000002", covariate_domain_code = "0",
               max_covariates = "1")
@@ -234,7 +236,7 @@ test_that("exp8: PLP AUC and mean risk no longer solve a 2-person case cell", {
   withr::with_options(g06_opts(), {
     add <- g06_condition_inserter(h)
     DBI::dbExecute(h$conn, "DELETE FROM condition_occurrence")
-    g06_cohort(h, "g06_pa", 1:117, start = "2021-01-01", end = "2021-01-01")
+    g06_cohort(h, "g06_pa", 1:117, start = "2021-03-01", end = "2021-03-01")
     add(c(1, 2, 50:89), 201820L, "2020-06-01")   # 42 persons, cases 1 and 2
     add(1:5, 4000002L, "2021-06-01")              # 5 outcome persons
     P <- list(outcome_concept_id = "4000002", max_covariates = "1")
@@ -260,7 +262,7 @@ test_that("a supported PLP model still fits and releases its scalars", {
   withr::with_options(g06_opts(), {
     add <- g06_condition_inserter(h)
     DBI::dbExecute(h$conn, "DELETE FROM condition_occurrence")
-    g06_cohort(h, "g06_pb", 1:120, start = "2021-01-01", end = "2021-01-01")
+    g06_cohort(h, "g06_pb", 1:120, start = "2021-03-01", end = "2021-03-01")
     # Covariate in 10 of 25 cases and 30 of 95 non-cases (all cells >= 3).
     add(c(1:10, 26:55), 201820L, "2020-06-01")
     add(1:25, 4000002L, "2021-06-01")

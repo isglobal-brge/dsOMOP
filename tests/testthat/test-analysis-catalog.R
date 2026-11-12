@@ -1722,7 +1722,8 @@ test_that("person-level incidence counts recurrent outcomes without person-time 
 
   first <- aggregate()
   expect_equal(as.numeric(first$persons), 10)
-  expect_equal(as.numeric(first$person_days), 100)
+  # Half-open observed windows (2.10.3): 1 to 11 January is 11 days.
+  expect_equal(as.numeric(first$person_days), 110)
   expect_equal(as.numeric(first$outcomes), 20)
 
   for (pid in 1:10) add_event(pid, 7L)

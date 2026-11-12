@@ -1027,9 +1027,13 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #' Build one person-level TAR/outcome row from the canonical index episode
 #'
 #' The returned relation has one row per person and pre-aggregates outcome rows
-#' inside that person's selected time-at-risk window. Consequently, repeated
-#' outcome events increase `outcomes` but can never fan out `person_days`.
-#' Episodes whose requested TAR ends before it starts are omitted.
+#' inside that person's observed time-at-risk window
+#' (\code{\link{.omopObservedTarSql}}: the requested window intersected with
+#' the observation period containing the index, half-open). Consequently,
+#' repeated outcome events increase `outcomes` but can never fan out
+#' `person_days`, outcomes outside observation never count, and persons whose
+#' index lies outside every observation period, or whose observed window is
+#' empty, are omitted.
 #'
 #' @param handle CDM handle.
 #' @param cohort Validated cohort table name.
@@ -1042,24 +1046,21 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
                                            tar_start, tar_end,
                                            anchor_start = "start",
                                            anchor_end = "end") {
-  first <- .omopFirstCohortEpisodeSql(handle, cohort)
-  anchor <- function(value) {
-    if (identical(value, "end")) "cohort_end_date" else "cohort_start_date"
-  }
-  tar_lo <- paste0("DATEADD(day, ", as.integer(tar_start), ", coh.",
-                   anchor(anchor_start), ")")
-  tar_hi <- paste0("DATEADD(day, ", as.integer(tar_end), ", coh.",
-                   anchor(anchor_end), ")")
-  pdays <- .omopDateDiffDays(handle, tar_hi, tar_lo)
+  observed <- .omopObservedTarSql(handle, cohort, list(
+    start = tar_start, end = tar_end, anchor_start = anchor_start,
+    anchor_end = anchor_end))
+  pdays <- .omopDateDiffDays(handle, "w.tar_hi", "w.tar_lo")
 
   outcomes <- "0"
   person_outcomes <- "0"
   if (!is.null(out_src)) {
+    # Event eligibility and time use exactly the same observed half-open
+    # window [tar_lo, tar_hi).
     predicate <- paste0(
-      "o.", out_src$person_col, " = coh.subject_id AND o.",
+      "o.", out_src$person_col, " = w.subject_id AND o.",
       out_src$concept_col, " IN (", out_src$id_list, ") AND o.",
-      out_src$date_col, " >= ", tar_lo, " AND o.", out_src$date_col,
-      " <= ", tar_hi)
+      out_src$date_col, " >= w.tar_lo AND o.", out_src$date_col,
+      " < w.tar_hi")
     outcomes <- paste0("(SELECT COUNT(o.", out_src$concept_col, ") FROM ",
                        out_src$table, " o WHERE ", predicate, ")")
     person_outcomes <- paste0(
@@ -1068,10 +1069,88 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   }
 
   paste0(
-    "(SELECT coh.subject_id, coh.cohort_start_date, coh.cohort_end_date, ",
+    "(SELECT w.subject_id, w.cohort_start_date, w.cohort_end_date, ",
     pdays, " AS person_days, ", outcomes, " AS outcomes, ",
-    person_outcomes, " AS person_outcomes FROM ", first, " coh ",
-    "WHERE ", tar_hi, " >= ", tar_lo, ")"
+    person_outcomes, " AS person_outcomes FROM ", observed, " w)"
+  )
+}
+
+#' Coalesced observation-period islands of every person
+#'
+#' Overlapping or adjacent observation periods merge into one island; disjoint
+#' periods stay separate (a gap is never bridged with \code{MAX(end)}). Each
+#' island is half-open \code{[op_start, op_end)}: the inclusive OMOP end date
+#' is converted once by adding one day. Periods with a missing start or end
+#' contribute no observed time.
+#'
+#' @param handle CDM handle.
+#' @return SQL for a derived table (person_id, op_start, op_end).
+#' @keywords internal
+.omopObservationIslandsSql <- function(handle) {
+  obs <- .qualifyTable(handle, "observation_period")
+  paste0(
+    "(SELECT g.person_id, MIN(g.s) AS op_start, MAX(g.e) AS op_end FROM (",
+    "SELECT f.person_id, f.s, f.e, SUM(f.new_island) OVER (PARTITION BY ",
+    "f.person_id ORDER BY f.s, f.e ROWS UNBOUNDED PRECEDING) AS island FROM (",
+    "SELECT o.person_id, o.s, o.e, CASE WHEN MAX(o.e) OVER (PARTITION BY ",
+    "o.person_id ORDER BY o.s, o.e ROWS BETWEEN UNBOUNDED PRECEDING AND 1 ",
+    "PRECEDING) >= o.s THEN 0 ELSE 1 END AS new_island FROM (",
+    "SELECT op.person_id, op.observation_period_start_date AS s, ",
+    "DATEADD(day, 1, op.observation_period_end_date) AS e FROM ", obs, " op ",
+    "WHERE op.observation_period_start_date IS NOT NULL AND ",
+    "op.observation_period_end_date IS NOT NULL) o) f) g ",
+    "GROUP BY g.person_id, g.island)"
+  )
+}
+
+#' Observed time-at-risk window of each person's canonical first episode
+#'
+#' The shared observed-time helper of the CohortMethod, incidence and
+#' interaction ports (2.10.3). The requested window is the closed day interval
+#' \code{[anchor_start + start, anchor_end + end]}, converted once to the
+#' half-open \code{[lo, hi)} with \code{hi = anchor_end + end + 1}. It is
+#' intersected with the coalesced observation-period island that contains the
+#' canonical first cohort index; a person whose index lies in no observation
+#' period has no risk contribution, and a window that is empty after the
+#' intersection is omitted. Event eligibility and time must both use the
+#' returned \code{tar_lo}/\code{tar_hi}. Released person-time is additionally
+#' bounded by the public horizon (\code{.DSOMOP_RELEASE_TIME_CAP} days) in
+#' protected releases; internal fits may use the whole observed window.
+#'
+#' @param handle CDM handle.
+#' @param cohort Validated cohort table.
+#' @param tar List with \code{start}, \code{end} (integer day offsets) and
+#'   \code{anchor_start}, \code{anchor_end} ("start" or "end").
+#' @return SQL for a derived table (subject_id, cohort_start_date,
+#'   cohort_end_date, tar_lo, tar_hi).
+#' @keywords internal
+.omopObservedTarSql <- function(handle, cohort, tar) {
+  first <- .omopFirstCohortEpisodeSql(handle, cohort)
+  anchor <- function(value) {
+    if (identical(value, "end")) "cohort_end_date" else "cohort_start_date"
+  }
+  start <- as.integer(tar$start %||% 0L)
+  end <- as.integer(tar$end %||% 0L)
+  if (is.na(start) || is.na(end)) {
+    stop("Time-at-risk offsets must be integers.", call. = FALSE)
+  }
+  requested_lo <- paste0("DATEADD(day, ", start, ", coh.",
+                         anchor(tar$anchor_start %||% "start"), ")")
+  requested_hi <- paste0("DATEADD(day, ", end + 1L, ", coh.",
+                         anchor(tar$anchor_end %||% "end"), ")")
+  islands <- .omopObservationIslandsSql(handle)
+  paste0(
+    "(SELECT c.subject_id, c.cohort_start_date, c.cohort_end_date, ",
+    "c.tar_lo, c.tar_hi FROM (",
+    "SELECT r.subject_id, r.cohort_start_date, r.cohort_end_date, ",
+    "CASE WHEN r.req_lo > isl.op_start THEN r.req_lo ELSE isl.op_start END ",
+    "AS tar_lo, CASE WHEN r.req_hi < isl.op_end THEN r.req_hi ELSE ",
+    "isl.op_end END AS tar_hi FROM (",
+    "SELECT coh.subject_id, coh.cohort_start_date, coh.cohort_end_date, ",
+    requested_lo, " AS req_lo, ", requested_hi, " AS req_hi FROM ", first,
+    " coh) r INNER JOIN ", islands, " isl ON isl.person_id = r.subject_id ",
+    "AND isl.op_start <= r.cohort_start_date AND r.cohort_start_date < ",
+    "isl.op_end) c WHERE c.tar_hi > c.tar_lo)"
   )
 }
 
@@ -5254,7 +5333,11 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     .dsomopRequireStandardStatistics()
   }
   release_protected <- !is.null(release_route) &&
-    release_route$protection %in% .DSOMOP_RELEASE_PROTECTED
+    release_route$protection %in% .DSOMOP_RELEASE_PROTECTED &&
+    !isTRUE(release_contract$mixed)
+  release_overlay <- !is.null(release_route) &&
+    release_route$protection %in% .DSOMOP_RELEASE_PROTECTED &&
+    isTRUE(release_contract$mixed)
 
   kind <- entry$compute$kind %||% "sql"
 
@@ -5435,6 +5518,12 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     df, entry, assign = FALSE, phase = "final"
   )
   df <- .omopAnalysisNormalizePoolingOutput(df, entry)
+  if (release_overlay) {
+    out <- .omopToolsReleaseOverlay(handle, ctx, sanitized, df,
+                                    release_contract, release_route, snap)
+    for (name in names(release_meta)) attr(out, name) <- release_meta[[name]]
+    return(out)
+  }
   out <- .dsomopToolsLabel(df, entry,
                            release_route$protection %||% "standard")
   for (name in names(release_meta)) attr(out, name) <- release_meta[[name]]

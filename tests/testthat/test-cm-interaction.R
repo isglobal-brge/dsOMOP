@@ -37,12 +37,13 @@ cmix_opts <- function() {
        nfilter.levels.max = 40)
 }
 
-# An all-person arm with a fixed wide TAR (index 2018-01-01 .. 2030-12-31), so the
+# An all-person arm with a fixed wide TAR (index 2020-01-01 .. 2024-12-31, inside
+# the fixture's observation periods since 2.10.3 truncates TAR to them), so the
 # per-subject person-days are well-defined and every fixture person is in-arm.
 cmix_allpersons <- function(h, name) {
   DBI::dbExecute(h$conn, paste0(
     "CREATE TEMP TABLE ", name, " AS SELECT person_id AS subject_id, ",
-    "'2018-01-01' AS cohort_start_date, '2030-12-31' AS cohort_end_date ",
+    "'2020-01-01' AS cohort_start_date, '2024-12-31' AS cohort_end_date ",
     "FROM person"))
   register_test_temp(h, name)
   name
@@ -52,7 +53,7 @@ cmix_allpersons <- function(h, name) {
 cmix_persons <- function(h, name, first, last) {
   DBI::dbExecute(h$conn, paste0(
     "CREATE TEMP TABLE ", name, " AS SELECT person_id AS subject_id, ",
-    "'2018-01-01' AS cohort_start_date, '2030-12-31' AS cohort_end_date ",
+    "'2020-01-01' AS cohort_start_date, '2024-12-31' AS cohort_end_date ",
     "FROM person WHERE person_id BETWEEN ", as.integer(first), " AND ",
     as.integer(last)))
   register_test_temp(h, name)

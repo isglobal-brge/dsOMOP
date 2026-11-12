@@ -789,12 +789,15 @@
 #'   \code{cell} (public cell key); optional \code{stratum_order}.
 #' @param data_strata_keys For data-dependent strata, the stratum keys to
 #'   release (after support admission); NULL selects every supported stratum.
+#' @param n_only Draw only the person totals (a first pass that ranks
+#'   data-dependent strata on released values; the noise is deterministic, so a
+#'   second full pass reproduces the same totals).
 #' @return List: \code{strata} (data frame of displayed per-stratum results),
 #'   \code{bins} (displayed histogram per stratum), \code{export} (signed
 #'   components for pooling) and \code{meta}.
 #' @keywords internal
 .dsomopReleaseBuild <- function(policy, protection, owner, sub,
-                                data_strata_keys = NULL) {
+                                data_strata_keys = NULL, n_only = FALSE) {
   keys <- .dsomopReleaseKeys(policy)
   support <- .dsomopReleaseSupport()
   J <- .DSOMOP_RELEASE_LATTICE
@@ -843,8 +846,9 @@
   alloc_h <- switch(owner$family, H = frac$H$H, HM = frac$HM$H, M = NA_real_)
   alloc_s <- switch(owner$family, H = NA_real_, HM = frac$HM$S, M = frac$M$S)
   alloc_q <- switch(owner$family, H = NA_real_, HM = frac$HM$Q, M = frac$M$Q)
-  has_h <- owner$family %in% c("H", "HM")
-  has_m <- owner$family %in% c("HM", "M") && !is.null(owner$bounds)
+  has_h <- owner$family %in% c("H", "HM") && !isTRUE(n_only)
+  has_m <- owner$family %in% c("HM", "M") && !is.null(owner$bounds) &&
+    !isTRUE(n_only)
 
   # Strata to release.
   exact_n <- table(factor(sub$stratum))
@@ -1020,6 +1024,15 @@
   if (identical(mode, "standard")) {
     return(list(protection = "standard", mode = mode))
   }
+  # A contract without a protected mechanism (an effect with no bounded
+  # sufficient statistics) always takes the standard route with its masked
+  # fields; DP-only mode refuses it like any standard statistic.
+  if (is.null(contract$run) && !isTRUE(contract$mixed)) {
+    .dsomopRequireStandardStatistics()
+    return(list(protection = "standard", mode = mode))
+  }
+  # A mixed frame's binary rows are standard statistics.
+  if (isTRUE(contract$mixed)) .dsomopRequireStandardStatistics()
   ready <- .dsomopToolsDpReady(handle)
   if (!isTRUE(ready$ready)) {
     if (identical(mode, "dp")) {
@@ -1069,6 +1082,20 @@
     cap <- max(1L, o$cap)
     frac <- .DSOMOP_RELEASE_FRACTIONS
     alloc <- list(N = frac$N)
+    if (identical(o$family, "C6")) {
+      alloc <- list(N = frac$N, status = frac$C6$status, time = frac$C6$time)
+      sens <- list(N = cap, status = cap,
+                   time = cap * .DSOMOP_RELEASE_TIME_CAP)
+      sd <- lapply(names(alloc), function(f) {
+        .dsomopReleaseNoiseSd(e * alloc[[f]], sens[[f]])
+      })
+      names(sd) <- names(alloc)
+      return(list(owner = o$id, estimand = o$estimand, family = "C6",
+                  horizon_days = .DSOMOP_RELEASE_TIME_CAP,
+                  contribution_cap = cap, allocation_fraction = alloc,
+                  allocation_epsilon = lapply(alloc, function(a) a * e),
+                  sensitivity = sens, noise_sd = sd))
+    }
     if (o$family %in% c("H", "HM")) {
       alloc$H <- if (identical(o$family, "H")) frac$H$H else frac$HM$H
     }
@@ -1230,4 +1257,162 @@
     "noisy components, not exact sufficient statistics. dsOMOPClient >= ",
     "2.10.3 pools the signed components of compatible protected releases."))
   entry
+}
+
+# --- C6: person-time status components ---------------------------------------
+
+#' Build, noise and display person-time components (incidence, arms)
+#'
+#' One row per person and stratum: a first-outcome status (event / no event)
+#' and the observed time at risk in whole days. Per stratum the components are
+#' the shared person total (0.2e, sensitivity \code{cap}), the status pair
+#' (0.3e, sensitivity \code{cap}, projected onto the displayed total) and the
+#' observed-time sum with each person's time clipped to the public horizon
+#' \code{T = 3650} days (0.5e, sensitivity \code{cap * T}). Rates, proportions,
+#' rate ratios and the MDRR are post-processing of these components only.
+#' Public strata (a complete partition such as gender) are displayed top-down
+#' from their total; independent strata (two comparison arms) one by one.
+#'
+#' @param policy DP policy.
+#' @param protection Protected route.
+#' @param owner Owner spec (\code{strata}: "root", a public partition, or
+#'   list(kind = "independent", keys)).
+#' @param sub Data frame: person_id, stratum, event (0/1), time (days).
+#' @return List: \code{strata} (displayed persons, events, time, noise SDs),
+#'   \code{export} (signed components) and \code{owner}.
+#' @keywords internal
+.dsomopReleaseBuildC6 <- function(policy, protection, owner, sub) {
+  keys <- .dsomopReleaseKeys(policy)
+  support <- .dsomopReleaseSupport()
+  frac <- .DSOMOP_RELEASE_FRACTIONS
+  T_cap <- .DSOMOP_RELEASE_TIME_CAP
+  cap <- max(1L, owner$cap)
+  if (!is.data.frame(sub) ||
+      !all(c("person_id", "stratum", "event", "time") %in% names(sub))) {
+    stop("A person-time substrate lacks its columns.", call. = FALSE)
+  }
+  sub <- sub[!is.na(sub$person_id) & !is.na(sub$stratum), , drop = FALSE]
+  sub$person_id <- .dsomopReleasePersonIdText(sub$person_id)
+  sub$event <- as.integer(!is.na(sub$event) & as.numeric(sub$event) > 0)
+  sub$time <- pmin(T_cap, pmax(0, floor(suppressWarnings(as.numeric(sub$time)))))
+  sub$time[is.na(sub$time)] <- 0
+  key <- paste(sub$person_id, sub$stratum, sep = "\u001f")
+  if (anyDuplicated(key)) {
+    stop("A person-time substrate lists one person twice in one stratum.",
+         call. = FALSE)
+  }
+  if (!identical(owner$strata$kind, "independent") &&
+      anyDuplicated(sub$person_id)) {
+    stop("A person-time partition lists one person in two strata.",
+         call. = FALSE)
+  }
+  strata_keys <- owner$strata$keys
+  if (length(setdiff(unique(sub$stratum), strata_keys))) {
+    stop("A person-time substrate has a stratum outside its public domain.",
+         call. = FALSE)
+  }
+  tokens <- if (nrow(sub)) .dsomopReleasePersonTokens(keys, policy,
+                                                      sub$person_id) else
+    character(0)
+  noisy <- function(family, coordinate, value, allocation, sensitivity,
+                    map_tokens, contributions, owner_id = owner$id) {
+    fp <- if (identical(protection, "realised_sticky")) {
+      .dsomopReleaseFingerprint(keys, owner_id, family, coordinate,
+                                map_tokens, contributions)
+    } else NULL
+    .dsomopReleaseNoisyComponent(policy, keys, protection, list(
+      owner = owner_id, population = owner$population, family = family,
+      coordinate = coordinate, value = value, allocation = allocation,
+      sensitivity = sensitivity, fingerprint = fp))
+  }
+  rows <- lapply(strata_keys, function(s) {
+    in_s <- sub$stratum == s
+    tok <- tokens[in_s]
+    ev <- sub$event[in_s]
+    tm <- sub$time[in_s]
+    n <- noisy("N", paste0("stratum=", s), sum(in_s), frac$N, cap, tok,
+               rep(1, sum(in_s)), owner_id = .DSOMOP_RELEASE_N_OWNER)
+    e1 <- noisy("status", paste0("stratum=", s, "|status=event"), sum(ev),
+                frac$C6$status, cap, tok[ev == 1L], rep(1, sum(ev)))
+    e0 <- noisy("status", paste0("stratum=", s, "|status=no_event"),
+                sum(1L - ev), frac$C6$status, cap, tok[ev == 0L],
+                rep(1, sum(1L - ev)))
+    t <- noisy("T", paste0("stratum=", s), sum(tm), frac$C6$time,
+               cap * T_cap, tok, tm)
+    data.frame(stratum = s, n_noisy = n, event_noisy = e1,
+               no_event_noisy = e0, time_noisy = t,
+               n_exact_supported = sum(in_s) >= support$floor,
+               stringsAsFactors = FALSE)
+  })
+  st <- do.call(rbind, rows)
+  if (identical(owner$strata$kind, "public") && nrow(st) > 1L) {
+    root <- max(0, sum(st$n_noisy))
+    st$n_display <- .dsomopReleaseSimplex(st$n_noisy, root)
+  } else {
+    st$n_display <- pmax(0, st$n_noisy)
+  }
+  st$events_display <- vapply(seq_len(nrow(st)), function(i) {
+    .dsomopReleaseSimplex(c(st$event_noisy[[i]], st$no_event_noisy[[i]]),
+                          st$n_display[[i]])[[1L]]
+  }, numeric(1L))
+  st$time_display <- pmin(pmax(st$time_noisy, 0), st$n_display * T_cap)
+  e <- policy$release_epsilon
+  sd <- list(
+    N = .dsomopReleaseNoiseSd(e * frac$N, cap),
+    status = .dsomopReleaseNoiseSd(e * frac$C6$status, cap),
+    time = .dsomopReleaseNoiseSd(e * frac$C6$time, cap * T_cap))
+  for (col in c("n_display", "events_display", "time_display")) {
+    st[[col]] <- .dsomopReleaseRound(st[[col]])
+  }
+  # Status cells are reconciled to their stratum's one noisy total before export.
+  export <- lapply(seq_len(nrow(st)), function(i) {
+    h <- c(st$event_noisy[[i]], st$no_event_noisy[[i]])
+    list(stratum = st$stratum[[i]], n = st$n_noisy[[i]],
+         status = h + (st$n_noisy[[i]] - sum(h)) / 2,
+         time = st$time_noisy[[i]])
+  })
+  list(owner = c(owner, list(family = "C6")), protection = protection,
+       strata = st, noise_sd = sd,
+       export = list(protocol = .DSOMOP_RELEASE_PROTOCOL, owner = owner$id,
+                     population = owner$population, family = "C6",
+                     horizon_days = T_cap, cap = cap,
+                     allocation = list(N = frac$N, status = frac$C6$status,
+                                       time = frac$C6$time),
+                     reconciliation = "status_cells_sum_to_stratum_N",
+                     components = export))
+}
+
+#' Protected rate ratio of two arms and its approximate uncertainty
+#'
+#' \code{RR = (E_t / T_t) / (E_c / T_c)} from displayed protected components
+#' (the Poisson maximum-likelihood rate ratio of a single binary exposure with a
+#' log person-time offset). The variance of log RR adds the Poisson sampling
+#' term \code{1/E} and the public noise variances of the event and time
+#' components (delta method); it carries no repeated-query coverage guarantee
+#' under the heuristic route.
+#'
+#' @param target,comparator One-row displayed strata (events_display,
+#'   time_display) of each arm.
+#' @param sd Public noise SDs (status, time).
+#' @param min_events Minimum displayed events per arm for a ratio.
+#' @return Named numeric c(estimate, ci_lo, ci_hi, log_estimate,
+#'   se_log_estimate).
+#' @keywords internal
+.dsomopReleaseRateRatio <- function(target, comparator, sd, min_events) {
+  na <- c(estimate = NA_real_, ci_lo = NA_real_, ci_hi = NA_real_,
+          log_estimate = NA_real_, se_log_estimate = NA_real_)
+  et <- target$events_display; tt <- target$time_display
+  ec <- comparator$events_display; tc <- comparator$time_display
+  if (!all(is.finite(c(et, tt, ec, tc))) || et < min_events ||
+      ec < min_events || tt <= 0 || tc <= 0) {
+    return(na)
+  }
+  log_rr <- log((et / tt) / (ec / tc))
+  var <- 1 / et + sd$status^2 / et^2 + sd$time^2 / tt^2 +
+    1 / ec + sd$status^2 / ec^2 + sd$time^2 / tc^2
+  se <- sqrt(var)
+  .dsomopReleaseRound(c(estimate = exp(log_rr),
+                        ci_lo = exp(log_rr - 1.96 * se),
+                        ci_hi = exp(log_rr + 1.96 * se),
+                        log_estimate = log_rr, se_log_estimate = se))
 }

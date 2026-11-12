@@ -70,58 +70,58 @@
 #'   persons, person_days, outcomes).
 #' @keywords internal
 .omopCmEffectArmData <- function(handle, cohort, arm, out_src, tar) {
-  first <- .omopFirstCohortEpisodeSql(handle, cohort)
-  anchor <- function(a) {
-    if (identical(a, "end")) "cohort_end_date" else "cohort_start_date"
-  }
-  tar_lo  <- paste0("DATEADD(day, ", tar$start, ", coh.", anchor(tar$anchor_start), ")")
-  tar_hi  <- paste0("DATEADD(day, ", tar$end, ", coh.", anchor(tar$anchor_end), ")")
-  full_days <- .omopDateDiffDays(handle, tar_hi, tar_lo)
+  # The shared observed window (.omopObservedTarSql): requested TAR intersected
+  # with the observation period containing the index, half-open [lo, hi).
+  observed <- .omopObservedTarSql(handle, cohort, tar)
+  full_days <- .omopDateDiffDays(handle, "w.tar_hi", "w.tar_lo")
 
   outcome_join <- ""
   event_days_expr <- "NULL"
   if (!is.null(out_src)) {
-    in_window <- paste0("o.", out_src$date_col, " >= ", tar_lo,
-                        " AND o.", out_src$date_col, " <= ", tar_hi)
+    in_window <- paste0("o.", out_src$date_col, " >= w.tar_lo",
+                        " AND o.", out_src$date_col, " < w.tar_hi")
     outcome_join <- paste0(
       " LEFT JOIN ", out_src$table, " o ON o.", out_src$person_col,
-      " = coh.subject_id AND o.", out_src$concept_col, " IN (",
+      " = w.subject_id AND o.", out_src$concept_col, " IN (",
       out_src$id_list, ") AND ", in_window)
     # FIRST in-window event per subject, as a day offset from the TAR start.
     event_days_expr <- paste0(
       "MIN(CASE WHEN o.", out_src$concept_col, " IS NOT NULL THEN ",
-      .omopDateDiffDays(handle, paste0("o.", out_src$date_col), tar_lo),
+      .omopDateDiffDays(handle, paste0("o.", out_src$date_col), "w.tar_lo"),
       " END)")
   }
 
   sql <- .sql_translate(paste0(
-    "SELECT coh.subject_id AS subject_id, ",
+    "SELECT w.subject_id AS subject_id, ",
     "MAX(", full_days, ") AS full_days, ",
     event_days_expr, " AS event_days ",
-    "FROM ", first, " coh", outcome_join,
-    " WHERE ", tar_hi, " >= ", tar_lo,
-    " GROUP BY coh.subject_id"),
+    "FROM ", observed, " w", outcome_join,
+    " GROUP BY w.subject_id"),
     handle$target_dialect)
   raw <- .executeQuery(handle, sql)
   if (!is.data.frame(raw) || nrow(raw) == 0) {
     return(list(data = data.frame(arm = integer(0), tar_days = numeric(0),
-                                  event = integer(0)),
+                                  event = integer(0), person_id = character(0),
+                                  stringsAsFactors = FALSE),
                 persons = 0, person_days = 0, outcomes = 0))
   }
+  names(raw) <- tolower(names(raw))
 
   full <- as.numeric(raw$full_days)
   ev_days <- as.numeric(raw$event_days)
   event <- as.integer(!is.na(ev_days))
-  # Censored: full TAR; event: time to first event. Clamp both to [1, full_tar].
+  # Censored: full observed TAR (whole days of [lo, hi)); event: days to the
+  # first event plus the event day. Clamp both to [1, full].
   full_clamped <- pmax(full, 1)
   tar_days <- ifelse(event == 1L,
-                     pmin(pmax(ev_days, 1), full_clamped),
+                     pmin(pmax(ev_days + 1, 1), full_clamped),
                      full_clamped)
 
   list(
     data = data.frame(arm = rep(as.integer(arm), length(tar_days)),
                       tar_days = as.numeric(tar_days),
                       event = event,
+                      person_id = .dsomopReleasePersonIdText(raw$subject_id),
                       stringsAsFactors = FALSE),
     persons     = nrow(raw),
     person_days = sum(tar_days, na.rm = TRUE),

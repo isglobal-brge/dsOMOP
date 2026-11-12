@@ -696,6 +696,70 @@
     out[[paste0("dsomop:achilles.", x[[1L]])]] <- contract(
       "C7", .omopReleaseRunDrugField(x[[2L]]), masked_scoped = dist)
   }
+  rate_fields <- c("person_days", "rate")
+  effect_fields <- c("estimate", "ci_lo", "ci_hi", "log_estimate",
+                     "se_log_estimate")
+  for (id in c("dsomop:incidence.rate")) {
+    out[[id]] <- contract("C6", .omopReleaseIncidenceRun, fixed_basis = FALSE,
+                          masked_always = rate_fields)
+  }
+  for (id in c("dsomop:cm.mdrr", "dsomop:ohdsi.cohort_method.cm_result")) {
+    out[[id]] <- contract("C6", .omopReleaseCmArmsRun("mdrr"),
+                          fixed_basis = FALSE,
+                          masked_always = c("person_days", "mdrr"))
+  }
+  out[["dsomop:cm.effect_estimate"]] <- contract(
+    "C9", .omopReleaseCmArmsRun("effect"), fixed_basis = FALSE,
+    masked_always = c("person_days", effect_fields))
+  for (id in c("dsomop:cm.interaction_estimate",
+               "dsomop:ohdsi.cohort_method.cm_interaction_result")) {
+    out[[id]] <- contract("C9", .omopReleaseInteractionRun,
+                          fixed_basis = FALSE,
+                          masked_always = c("target_person_days",
+                                            "comparator_person_days",
+                                            effect_fields))
+  }
+  # Effects without a protected mechanism: their exact scalars are unavailable
+  # on every route (window sweeps of exact SEs recover outcome counts and event
+  # days); their counts keep the established controls.
+  for (id in c("dsomop:sccs.incidence_rate_ratio")) {
+    out[[id]] <- contract("C9", NULL, fixed_basis = FALSE,
+                          masked_always = c("irr", "ci_lo", "ci_hi",
+                                            "log_irr", "se_log_irr"))
+  }
+  for (id in c("dsomop:cm.diagnostics_summary",
+               "dsomop:ohdsi.cohort_method.cm_diagnostics_summary")) {
+    out[[id]] <- contract("C9", NULL, fixed_basis = FALSE,
+                          masked_always = "mdrr")
+  }
+  out[["dsomop:fe.continuous"]] <- contract(
+    "C7", .omopReleaseRunFeContinuous, fixed_basis = FALSE,
+    masked_scoped = dist)
+  out[["dsomop:fe.comorbidity_index"]] <- contract(
+    "C7", .omopReleaseRunComorbidityIndex, fixed_basis = FALSE,
+    masked_scoped = dist)
+  out[["dsomop:cohortdx.time_distribution"]] <- contract(
+    "C7", .omopReleaseRunTimeDistribution, fixed_basis = FALSE,
+    masked_scoped = dist)
+  out[["dsomop:cm.followup_distribution"]] <- contract(
+    "C7", .omopReleaseRunFollowup, fixed_basis = FALSE, masked_scoped = dist)
+  out[["dsomop:ohdsi.cohort_diagnostics.temporal_covariate_value_dist"]] <-
+    contract("C7", .omopReleaseRunTemporalDist, fixed_basis = FALSE,
+             masked_scoped = dist)
+  out[["dsomop:txpath.duration_eras"]] <- contract(
+    "C7", .omopReleaseRunDurationEras, fixed_basis = FALSE,
+    masked_scoped = dist)
+  out[["dsomop:char.time_to_event"]] <- contract(
+    "C8", .omopReleaseRunTimeToEvent, fixed_basis = FALSE)
+  # Mixed frames: safe binary prevalence rows keep their established controls;
+  # their distribution rows are overlaid with protected components.
+  mixed <- function(overlay) {
+    c(contract("mixed", NULL, fixed_basis = FALSE, masked_scoped = dist),
+      list(mixed = TRUE, overlay = overlay))
+  }
+  out[["dsomop:fe.table1"]] <- mixed(.omopReleaseOverlayTable1)
+  out[["dsomop:char.target_covariates"]] <-
+    mixed(.omopReleaseOverlayTargetCovariates)
   for (id in c("condition.duration_stats", "drug.duration_stats",
                "drug.days_supply_stats", "drug_era.exposure_count_stats",
                "condition_era.eras_per_person_stats", "visit.duration_stats",
@@ -766,4 +830,880 @@
     reference_epsilon = route$policy$release_epsilon,
     owners = lapply(result$built, function(b) b$export))
   df
+}
+
+# --- C6: incidence and CohortMethod person-time ------------------------------------
+
+# Public product strata (e.g. gender x age band x calendar year).
+.omopReleaseProductStrata <- function(dims) {
+  if (length(dims) == 0L) {
+    return(list(kind = "public", keys = "all",
+                labels = data.frame(stratum = "all", label = "all",
+                                    stringsAsFactors = FALSE)))
+  }
+  grid <- expand.grid(lapply(dims, function(d) seq_along(d$keys)),
+                      KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
+  keys <- apply(grid, 1L, function(idx) paste(vapply(seq_along(dims), function(j) {
+    dims[[j]]$keys[[idx[[j]]]]
+  }, character(1L)), collapse = "|"))
+  labels <- apply(grid, 1L, function(idx) paste(vapply(seq_along(dims), function(j) {
+    dims[[j]]$labels[[idx[[j]]]]
+  }, character(1L)), collapse = "|"))
+  list(kind = "public", keys = unname(keys),
+       labels = data.frame(stratum = unname(keys), label = unname(labels),
+                           stringsAsFactors = FALSE))
+}
+
+.omopReleaseIncidenceRun <- function(handle, ctx, params, route, snap) {
+  if (is.null(ctx$scoped_cohort)) {
+    return(list(df = data.frame(), built = list()))
+  }
+  cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
+    handle$target_dialect))
+  person <- .qualifyTable(handle, "person")
+  tar_start <- as.integer(params$tar_start_offset %||% "0")
+  tar_end <- as.integer(params$tar_end_offset %||% "0")
+  anchor_start <- params$tar_anchor_start %||% "start"
+  anchor_end <- params$tar_anchor_end %||% "end"
+  by_age <- identical(params$strat_by_age %||% "0", "1")
+  by_gender <- identical(params$strat_by_gender %||% "0", "1")
+  by_year <- identical(params$strat_by_year %||% "0", "1")
+  band <- as.integer(params$age_band_years %||% "10")
+  out_src <- .omopOutcomeSource(handle, params$outcome_concept_id,
+                                params$domain_code %||% "0")
+  substrate <- .omopPersonOutcomeSubstrateSql(
+    handle, cohort, out_src, tar_start, tar_end, anchor_start, anchor_end)
+  anchor <- if (identical(anchor_start, "end")) "c.cohort_end_date" else
+    "c.cohort_start_date"
+  birth_dt <- .omopYearStartDateSql(handle, "p.year_of_birth")
+  age_days <- .omopDateDiffDays(handle, anchor, "p.birth_dt")
+  sql <- .sql_translate(paste0(
+    "SELECT c.subject_id AS person_id, c.person_days AS t, ",
+    "c.person_outcomes AS e, p.gender_concept_id AS gender, ",
+    .omopFloorDivideSql(age_days, 365L), " AS age, ",
+    .omopYearExpr(handle, anchor), " AS yr FROM ", substrate, " c ",
+    "INNER JOIN ", person, " p ON p.person_id = c.subject_id"),
+    handle$target_dialect)
+  raw <- .omopReleaseFetch(handle, gsub("p.birth_dt", birth_dt, sql,
+                                        fixed = TRUE))
+  year_max <- .dsomopToolsReferenceYear()
+  dims <- list()
+  if (by_gender) {
+    genders <- .dsomopToolsGenders()
+    dims$gender <- list(keys = paste0("gender=", genders$gender_concept_id),
+                        labels = genders$gender_name)
+  }
+  bands <- seq.int(0L, 110L, by = band)
+  if (by_age) {
+    dims$age <- list(keys = c(paste0("age=", bands), "age=unknown"),
+                     labels = c(as.character(bands), "unknown"))
+  }
+  years <- seq.int(1970L, year_max)
+  if (by_year) {
+    dims$year <- list(keys = c("year=before_1970", paste0("year=", years),
+                               "year=unknown"),
+                      labels = c("before 1970", as.character(years),
+                                 "unknown"))
+  }
+  strata <- .omopReleaseProductStrata(dims)
+  stratum_of <- function(r) {
+    parts <- character(0)
+    if (by_gender) parts <- c(parts, .omopReleaseGenderKey(r$gender))
+    if (by_age) {
+      a <- suppressWarnings(as.integer(r$age))
+      parts <- c(parts, ifelse(is.na(a) | a < 0L, "age=unknown",
+                               paste0("age=", pmin((a %/% band) * band,
+                                                   max(bands)))))
+    }
+    if (by_year) {
+      y <- suppressWarnings(as.integer(r$yr))
+      parts <- c(parts, ifelse(is.na(y) | y > year_max, "year=unknown",
+                               ifelse(y < 1970L, "year=before_1970",
+                                      paste0("year=", y))))
+    }
+    if (length(parts) == 0L) return(rep("all", nrow(r)))
+    do.call(paste, c(as.list(data.frame(matrix(parts, nrow = nrow(r)),
+                                        stringsAsFactors = FALSE)), sep = "|"))
+  }
+  sub <- if (nrow(raw)) data.frame(
+    person_id = raw$person_id, stratum = stratum_of(raw),
+    event = suppressWarnings(as.numeric(raw$e)),
+    time = suppressWarnings(as.numeric(raw$t)),
+    stringsAsFactors = FALSE) else
+    data.frame(person_id = character(0), stratum = character(0),
+               event = numeric(0), time = numeric(0))
+  owner <- list(
+    id = paste0("incidence/first-outcome-person-time/outcome=",
+                params$outcome_concept_id %||% "none", "/domain=",
+                params$domain_code %||% "0", "/tar=", tar_start, ",",
+                tar_end, ",", anchor_start, ",", anchor_end, "/strata=",
+                paste(names(dims), collapse = "+"),
+                if (by_age) paste0("/band=", band) else "", "/v1"),
+    population = NULL, strata = strata, cap = 1L,
+    estimand = paste0("persons at risk, persons with a first outcome and ",
+                      "observed person-days (each person's observed window ",
+                      "clipped to ", .DSOMOP_RELEASE_TIME_CAP, " days)"))
+  owner$population <- owner$id
+  built <- .dsomopReleaseBuildC6(route$policy, route$protection, owner, sub)
+  st <- built$strata
+  lab <- strata$labels[match(st$stratum, strata$labels$stratum), ,
+                       drop = FALSE]
+  persons <- st$n_display
+  events <- st$events_display
+  time <- st$time_display
+  df <- data.frame(
+    stratum = lab$label, persons_at_risk = persons, person_days = time,
+    outcomes = NA_real_, person_outcomes = events,
+    proportion = .dsomopReleaseRound(ifelse(persons > 0, events / persons,
+                                            NA_real_)),
+    rate = .dsomopReleaseRound(ifelse(time > 0, events / time, NA_real_)),
+    stringsAsFactors = FALSE)
+  list(df = df, built = list(built))
+}
+
+# The two CohortMethod arms as independent strata of one owner.
+.omopReleaseArmStrata <- function() {
+  list(kind = "independent", keys = c("arm=target", "arm=comparator"),
+       labels = data.frame(stratum = c("arm=target", "arm=comparator"),
+                           arm = c("target", "comparator"),
+                           stringsAsFactors = FALSE))
+}
+
+.omopReleaseCmArmsRun <- function(view) {
+  force(view)
+  function(handle, ctx, params, route, snap) {
+    cohorts <- .omopTwoPopCohorts(handle, ctx)
+    if (is.null(cohorts)) return(list(df = data.frame(), built = list()))
+    tar <- list(
+      start = as.integer(params$tar_start_offset %||% "1"),
+      end = as.integer(params$tar_end_offset %||% "0"),
+      anchor_start = params$tar_anchor_start %||% "start",
+      anchor_end = params$tar_anchor_end %||% "end")
+    out_src <- .omopOutcomeSource(handle, params$outcome_concept_id,
+                                  params$outcome_domain_code %||% "0")
+    owner_base <- paste0("outcome=", params$outcome_concept_id %||% "none",
+                         "/domain=", params$outcome_domain_code %||% "0",
+                         "/tar=", tar$start, ",", tar$end, ",",
+                         tar$anchor_start, ",", tar$anchor_end)
+    if (identical(view, "effect")) {
+      ta <- .omopCmEffectArmData(handle, cohorts$a, 1L, out_src, tar)
+      co <- .omopCmEffectArmData(handle, cohorts$b, 0L, out_src, tar)
+      sub <- rbind(
+        data.frame(person_id = ta$data$person_id, stratum = rep("arm=target",
+                                                                nrow(ta$data)),
+                   event = ta$data$event, time = ta$data$tar_days,
+                   stringsAsFactors = FALSE),
+        data.frame(person_id = co$data$person_id,
+                   stratum = rep("arm=comparator", nrow(co$data)),
+                   event = co$data$event, time = co$data$tar_days,
+                   stringsAsFactors = FALSE))
+      id <- paste0("cohortmethod/arms-time-to-first-outcome/", owner_base,
+                   "/v1")
+      estimand <- paste0("per arm: persons, persons with a first outcome and ",
+                         "time to first outcome or censoring in the observed ",
+                         "window (clipped to ", .DSOMOP_RELEASE_TIME_CAP,
+                         " days)")
+    } else {
+      arm_sub <- function(cohort, label) {
+        substrate <- .omopPersonOutcomeSubstrateSql(
+          handle, cohort, out_src, tar$start, tar$end, tar$anchor_start,
+          tar$anchor_end)
+        raw <- .omopReleaseFetch(handle, paste0(
+          "SELECT s.subject_id AS person_id, s.person_days AS t, ",
+          "s.person_outcomes AS e FROM ", substrate, " s"))
+        data.frame(person_id = raw$person_id %||% character(0),
+                   stratum = rep(label, nrow(raw)),
+                   event = suppressWarnings(as.numeric(raw$e)),
+                   time = suppressWarnings(as.numeric(raw$t)),
+                   stringsAsFactors = FALSE)
+      }
+      sub <- rbind(arm_sub(cohorts$a, "arm=target"),
+                   arm_sub(cohorts$b, "arm=comparator"))
+      id <- paste0("cohortmethod/arms-first-outcome-person-time/", owner_base,
+                   "/v1")
+      estimand <- paste0("per arm: persons, persons with a first outcome and ",
+                         "observed person-days (each clipped to ",
+                         .DSOMOP_RELEASE_TIME_CAP, " days)")
+    }
+    owner <- list(id = id, population = id, strata = .omopReleaseArmStrata(),
+                  cap = 1L, estimand = estimand)
+    built <- .dsomopReleaseBuildC6(route$policy, route$protection, owner, sub)
+    st <- built$strata
+    t_row <- st[st$stratum == "arm=target", , drop = FALSE]
+    c_row <- st[st$stratum == "arm=comparator", , drop = FALSE]
+    floor <- .dsomopReleaseSupport()$floor
+    if (identical(view, "mdrr")) {
+      alpha <- suppressWarnings(as.numeric(params$alpha %||% "0.05"))
+      power <- suppressWarnings(as.numeric(params$power %||% "0.8"))
+      two_sided <- !identical(params$two_sided %||% "1", "0")
+      ok <- t_row$n_display >= floor && c_row$n_display >= floor &&
+        t_row$time_display > 0 && c_row$time_display > 0
+      mdrr <- if (isTRUE(ok)) .dsomopReleaseRound(.omopCmMdrr(
+        t_row$events_display + c_row$events_display, t_row$time_display,
+        c_row$time_display, alpha = alpha, power = power,
+        two_sided = two_sided)) else NA_real_
+      df <- data.frame(arm = c("target", "comparator"),
+                       persons = c(t_row$n_display, c_row$n_display),
+                       person_days = c(t_row$time_display,
+                                       c_row$time_display),
+                       outcomes = c(t_row$events_display,
+                                    c_row$events_display),
+                       mdrr = rep(as.numeric(mdrr), 2L),
+                       stringsAsFactors = FALSE)
+    } else {
+      model_type <- params$model_type %||% "cox"
+      rr <- if (identical(model_type, "poisson")) {
+        .dsomopReleaseRateRatio(t_row, c_row, built$noise_sd, floor)
+      } else {
+        # A Cox hazard ratio has no protected mechanism here; a descriptive
+        # rate ratio is not relabelled as one.
+        c(estimate = NA_real_, ci_lo = NA_real_, ci_hi = NA_real_,
+          log_estimate = NA_real_, se_log_estimate = NA_real_)
+      }
+      row <- function(label, r) data.frame(
+        arm = label, model_type = model_type, persons = r$n_display,
+        person_days = r$time_display, outcomes = r$events_display,
+        estimate = rr[["estimate"]], ci_lo = rr[["ci_lo"]],
+        ci_hi = rr[["ci_hi"]], log_estimate = rr[["log_estimate"]],
+        se_log_estimate = rr[["se_log_estimate"]], stringsAsFactors = FALSE)
+      df <- rbind(row("target", t_row), row("comparator", c_row))
+    }
+    rownames(df) <- NULL
+    list(df = df, built = list(built),
+         extra = if (identical(view, "effect") &&
+                     !identical(params$model_type %||% "cox", "poisson")) {
+           list(unavailable_reason = paste0(
+             "A Cox hazard ratio has no protected mechanism: its estimate, CI ",
+             "and SE are unavailable on the protected route. Use ",
+             "model_type = 'poisson' for the protected rate ratio."))
+         } else list())
+  }
+}
+
+# CohortMethod interaction: the complete subgroup family is admitted as one
+# decision on its exact support (the standard family rule), then every level's
+# arm components are protected and the Poisson rate ratio derived from them.
+.omopReleaseInteractionRun <- function(handle, ctx, params, route, snap) {
+  cohorts <- .omopTwoPopCohorts(handle, ctx)
+  if (is.null(cohorts)) return(list(df = data.frame(), built = list()))
+  model_type <- tolower(params$model_type %||% "poisson")
+  tar <- list(
+    start = as.integer(params$tar_start_offset %||% "1"),
+    end = as.integer(params$tar_end_offset %||% "0"),
+    anchor_start = params$tar_anchor_start %||% "start",
+    anchor_end = params$tar_anchor_end %||% "end")
+  out_src <- .omopOutcomeSource(handle, params$outcome_concept_id,
+                                params$outcome_domain_code %||% "0")
+  subgroups <- .omopCmInteractionSubgroups(handle, params)
+  frame_of <- function(cohort, predicate) {
+    fr <- .omopCmSubgroupSubjectFrame(handle, cohort, out_src, tar, predicate)
+    list(frame = fr, persons = nrow(fr),
+         outcomes = sum(fr$events, na.rm = TRUE),
+         outcome_persons = sum(fr$events > 0, na.rm = TRUE),
+         person_days = sum(fr$person_days, na.rm = TRUE))
+  }
+  arms <- list(target = frame_of(cohorts$a, NULL),
+               comparator = frame_of(cohorts$b, NULL))
+  level_counts <- lapply(subgroups, function(sg) {
+    if (is.null(sg$predicate)) return(arms)
+    list(target = frame_of(cohorts$a, sg$predicate),
+         comparator = frame_of(cohorts$b, sg$predicate))
+  })
+  family <- .omopCmInteractionFamilyCheck(level_counts, arms)
+  if (!isTRUE(family$releasable)) {
+    return(list(df = data.frame(), built = list(),
+                extra = list(subgroup_family = "withheld")))
+  }
+  floor <- .dsomopReleaseSupport()$floor
+  built_all <- list()
+  rows <- lapply(seq_along(subgroups), function(i) {
+    sg <- subgroups[[i]]
+    lv <- level_counts[[i]]
+    to_sub <- function(fr, label) data.frame(
+      person_id = fr$frame$person_id %||% character(0),
+      stratum = rep(label, nrow(fr$frame)),
+      event = as.numeric(fr$frame$events > 0),
+      time = as.numeric(fr$frame$person_days), stringsAsFactors = FALSE)
+    sub <- rbind(to_sub(lv$target, "arm=target"),
+                 to_sub(lv$comparator, "arm=comparator"))
+    id <- paste0("cohortmethod/interaction-first-outcome-person-time/outcome=",
+                 params$outcome_concept_id %||% "none", "/domain=",
+                 params$outcome_domain_code %||% "0", "/tar=", tar$start, ",",
+                 tar$end, ",", tar$anchor_start, ",", tar$anchor_end,
+                 "/level=", sg$label, "/v1")
+    owner <- list(id = id, population = id, strata = .omopReleaseArmStrata(),
+                  cap = 1L, estimand = paste0(
+                    "per arm within subgroup '", sg$label, "': persons, ",
+                    "persons with a first outcome and observed person-days ",
+                    "(each clipped to ", .DSOMOP_RELEASE_TIME_CAP, " days)"))
+    built <- .dsomopReleaseBuildC6(route$policy, route$protection, owner, sub)
+    built_all[[length(built_all) + 1L]] <<- built
+    st <- built$strata
+    t_row <- st[st$stratum == "arm=target", , drop = FALSE]
+    c_row <- st[st$stratum == "arm=comparator", , drop = FALSE]
+    rr <- if (identical(model_type, "poisson")) {
+      .dsomopReleaseRateRatio(t_row, c_row, built$noise_sd, floor)
+    } else c(estimate = NA_real_, ci_lo = NA_real_, ci_hi = NA_real_,
+             log_estimate = NA_real_, se_log_estimate = NA_real_)
+    data.frame(
+      subgroup_label = sg$label, model_type = model_type,
+      target_persons = t_row$n_display, comparator_persons = c_row$n_display,
+      target_outcomes = t_row$events_display,
+      comparator_outcomes = c_row$events_display,
+      target_person_days = t_row$time_display,
+      comparator_person_days = c_row$time_display,
+      estimate = rr[["estimate"]], ci_lo = rr[["ci_lo"]],
+      ci_hi = rr[["ci_hi"]], log_estimate = rr[["log_estimate"]],
+      se_log_estimate = rr[["se_log_estimate"]], stringsAsFactors = FALSE)
+  })
+  df <- do.call(rbind, rows)
+  rownames(df) <- NULL
+  list(df = df, built = built_all,
+       extra = list(subgroup_family = "released"))
+}
+
+# --- C7/C8: native distributions -----------------------------------------------
+
+# Data-dependent strata ranked on their released person totals only: a first
+# pass draws the totals, the display keeps the top N (stable public ids break
+# ties), and the full components are drawn for those rows.
+.omopReleaseTopStrata <- function(route, owner, sub, top_n) {
+  first <- .dsomopReleaseBuild(route$policy, route$protection, owner, sub,
+                               n_only = TRUE)
+  st <- first$strata
+  if (nrow(st) == 0L) return(first)
+  ids <- suppressWarnings(as.numeric(sub("^[a-z_]+=", "", st$stratum)))
+  ord <- order(-st$n_display, ids, st$stratum, method = "radix",
+               na.last = TRUE)
+  keep <- utils::head(st$stratum[ord], max(0L, as.integer(top_n)))
+  .dsomopReleaseBuild(route$policy, route$protection, owner, sub,
+                      data_strata_keys = keep)
+}
+
+.omopReleaseMetricRow <- function(built, metric) {
+  st <- built$strata
+  cbind(data.frame(metric = rep(metric, nrow(st)), stringsAsFactors = FALSE),
+        data.frame(count_value = st$n_display, n_persons = st$n_display),
+        .omopReleaseDistColumns(st)[, -1L, drop = FALSE])
+}
+
+# One bounded value per person: the person-weighted mean of episode values.
+.omopReleasePersonMeans <- function(vals) {
+  if (!is.data.frame(vals) || nrow(vals) == 0L) {
+    return(data.frame(person_id = character(0), stratum = character(0),
+                      v = numeric(0), stringsAsFactors = FALSE))
+  }
+  names(vals) <- tolower(names(vals))
+  v <- suppressWarnings(as.numeric(vals$v))
+  keep <- !is.na(v) & !is.na(vals$person_id)
+  if (!any(keep)) return(.omopReleaseEmptyValues())
+  agg <- stats::aggregate(v ~ person_id, data = data.frame(
+    person_id = .dsomopReleasePersonIdText(vals$person_id[keep]),
+    v = v[keep], stringsAsFactors = FALSE), FUN = mean)
+  data.frame(person_id = agg$person_id, stratum = rep("root", nrow(agg)),
+             v = agg$v, stringsAsFactors = FALSE)
+}
+
+.omopReleaseAgeAtIndexValues <- function(handle, ctx) {
+  cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  person <- .qualifyTable(handle, "person")
+  .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
+    handle$target_dialect))
+  age_at <- .omopDateDiffDays(handle, "c.cohort_start_date", "p.birth_dt")
+  sql <- .sql_translate(paste0(
+    "SELECT c.subject_id AS person_id, ", .omopFloorDivideSql(age_at, 365L),
+    " AS v FROM ", cohort, " c INNER JOIN ", person,
+    " p ON p.person_id = c.subject_id"), handle$target_dialect)
+  sql <- gsub("p.birth_dt", .omopYearStartDateSql(handle, "p.year_of_birth"),
+              sql, fixed = TRUE)
+  .omopReleasePersonMeans(.executeQuery(handle, sql))
+}
+
+.omopReleaseAgeAtIndexOwner <- function() {
+  .dsomopReleaseOwner(
+    id = "cohort/age-at-index-years/v1", family = "HM",
+    grid = .dsomopReleaseGrid("age_5y"), bounds = c(0, 110),
+    estimand = paste0("age in whole years at cohort entry (person mean over ",
+                      "episodes), clipped to [0, 110]"))
+}
+
+.omopReleaseTimeInCohortValues <- function(handle, ctx) {
+  cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
+    handle$target_dialect))
+  end_col <- .omopCohortEndDateCol(handle, cohort)
+  diff <- .omopDateDiffDays(handle, paste0("c.", end_col), "c.cohort_start_date")
+  .omopReleasePersonMeans(.executeQuery(handle, .sql_translate(paste0(
+    "SELECT c.subject_id AS person_id, ", diff, " AS v FROM ", cohort, " c"),
+    handle$target_dialect)))
+}
+
+.omopReleaseDurationOwner <- function(id, estimand,
+                                      grid = .dsomopReleaseGrid("duration_days")) {
+  .dsomopReleaseOwner(id = id, family = "HM", grid = grid,
+                      bounds = c(grid$lower, grid$upper), estimand = estimand)
+}
+
+# Per (concept, person) values of a domain within the scoped cohort.
+.omopReleaseConceptValues <- function(handle, ctx, domain_code, value_kind) {
+  cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  concept <- .qualifyTable(handle, "concept",
+                           handle$vocab_schema %||% handle$cdm_schema)
+  src <- .omopCovariateSource(handle, domain_code)
+  .omopDiagAssertPersons(handle, ctx, src$table, "e", src$person_col)
+  value_sql <- if (identical(value_kind, "value") && !is.na(src$value_col)) {
+    paste0("AVG(CAST(e.", src$value_col, " AS FLOAT))")
+  } else "COUNT(*)"
+  where <- if (identical(value_kind, "value") && !is.na(src$value_col)) {
+    paste0(" WHERE e.", src$value_col, " IS NOT NULL")
+  } else ""
+  .omopReleaseFetch(handle, paste0(
+    "SELECT pp.covariate_id, cc.concept_name AS covariate_name, pp.person_id, ",
+    "pp.v FROM (SELECT e.", src$concept_col, " AS covariate_id, e.",
+    src$person_col, " AS person_id, ", value_sql, " AS v FROM ", src$table,
+    " e INNER JOIN (SELECT DISTINCT subject_id FROM ", cohort,
+    ") c ON c.subject_id = e.", src$person_col, where, " GROUP BY e.",
+    src$concept_col, ", e.", src$person_col, ") pp LEFT JOIN ", concept,
+    " cc ON cc.concept_id = pp.covariate_id"))
+}
+
+.omopReleaseConceptOwner <- function(id, value_kind, estimand) {
+  grid <- if (identical(value_kind, "value")) .dsomopReleaseGrid("signed_125") else
+    .dsomopReleaseGrid("count_per_person")
+  .dsomopReleaseOwner(
+    id = id, family = "HM", grid = grid, strata = list(kind = "data"),
+    cap = .DSOMOP_RELEASE_MULTI_CAP,
+    bounds = if (is.null(grid$lower)) NULL else c(grid$lower, grid$upper),
+    estimand = paste0(estimand, "; each person counted in at most ",
+                      .DSOMOP_RELEASE_MULTI_CAP, " concepts (lowest concept ",
+                      "ids)", if (is.null(grid$lower)) paste0(
+                        "; no public scale, so the mean and SD are ",
+                        "unavailable and quantiles come from a public ",
+                        "1-2-5 histogram") else ""))
+}
+
+.omopReleaseConceptSubstrate <- function(raw) {
+  if (!is.data.frame(raw) || nrow(raw) == 0L) {
+    return(data.frame(person_id = character(0), stratum = character(0),
+                      stratum_order = numeric(0), v = numeric(0)))
+  }
+  sub <- data.frame(person_id = raw$person_id,
+                    stratum = paste0("concept=", raw$covariate_id),
+                    stratum_order = suppressWarnings(as.numeric(
+                      raw$covariate_id)),
+                    v = suppressWarnings(as.numeric(raw$v)),
+                    stringsAsFactors = FALSE)
+  sub[!is.na(sub$stratum_order), , drop = FALSE]
+}
+
+.omopReleaseConceptRows <- function(built, raw, extra_cols = list()) {
+  st <- built$strata
+  ids <- suppressWarnings(as.numeric(sub("^concept=", "", st$stratum)))
+  names_by_id <- stats::setNames(as.character(raw$covariate_name),
+                                 as.character(raw$covariate_id))
+  base <- data.frame(covariate_id = ids,
+                     covariate_name = unname(names_by_id[as.character(ids)]),
+                     count_value = st$n_display, n_persons = st$n_display,
+                     stringsAsFactors = FALSE)
+  out <- cbind(base, .omopReleaseDistColumns(st)[, -1L, drop = FALSE])
+  for (name in rev(names(extra_cols))) {
+    out <- cbind(stats::setNames(data.frame(rep(extra_cols[[name]],
+                                                nrow(out)),
+                                            stringsAsFactors = FALSE), name),
+                 out)
+  }
+  out <- out[order(-out$count_value, out$covariate_id, method = "radix"), ,
+             drop = FALSE]
+  rownames(out) <- NULL
+  out
+}
+
+.omopReleaseRunFeContinuous <- function(handle, ctx, params, route, snap) {
+  if (is.null(ctx$scoped_cohort)) return(list(df = data.frame(), built = list()))
+  metric <- params$metric %||% "measurement_value"
+  if (identical(metric, "age") || identical(metric, "time_in_cohort")) {
+    if (identical(metric, "age")) {
+      owner <- .omopReleaseAgeAtIndexOwner()
+      sub <- .omopReleaseAgeAtIndexValues(handle, ctx)
+    } else {
+      owner <- .omopReleaseDurationOwner(
+        "cohort/time-in-cohort-days/v1",
+        "days in cohort (person mean over episodes), clipped to [0, 10957]")
+      sub <- .omopReleaseTimeInCohortValues(handle, ctx)
+    }
+    built <- .dsomopReleaseBuild(route$policy, route$protection, owner, sub)
+    st <- built$strata
+    df <- cbind(data.frame(metric = metric, covariate_id = NA_integer_,
+                           covariate_name = metric, count_value = st$n_display,
+                           n_persons = st$n_display, stringsAsFactors = FALSE),
+                .omopReleaseDistColumns(st)[, -1L, drop = FALSE])
+    return(list(df = df, built = list(built)))
+  }
+  domain <- params$domain_code %||% "3"
+  raw <- .omopReleaseConceptValues(handle, ctx, domain, "value")
+  owner <- .omopReleaseConceptOwner(
+    paste0("fe/person-mean-value-by-concept/domain=", domain, "/v1"), "value",
+    "per-person mean value of each concept in the cohort")
+  built <- .omopReleaseTopStrata(route, owner,
+                                 .omopReleaseConceptSubstrate(raw),
+                                 as.integer(params$top_n %||% "50"))
+  df <- .omopReleaseConceptRows(built, raw, list(metric = metric))
+  list(df = df, built = list(built))
+}
+
+.omopComorbiditySeeds <- function(index_type) {
+  switch(tolower(index_type %||% "charlson"),
+    "dcsi"        = c(443767L, 4209145L, 4271003L, 321822L, 4030518L),
+    "chads2"      = c(316139L, 320128L, 201820L, 381591L, 313217L),
+    "cha2ds2vasc" = c(316139L, 320128L, 201820L, 381591L, 313217L, 321822L),
+    "hfrs"        = c(316139L, 4182210L, 201820L, 192671L, 198199L),
+    c(4329847L, 316139L, 381591L, 4182210L, 4063381L, 255573L, 201820L,
+      192671L, 4030518L, 443392L, 4178338L, 432851L, 4212540L, 439727L))
+}
+
+.omopReleaseComorbidity <- function(handle, ctx, route, index_type) {
+  cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  cond <- .qualifyTable(handle, "condition_occurrence")
+  seeds <- .omopComorbiditySeeds(index_type)
+  .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
+    handle$target_dialect))
+  comp <- vapply(seeds, function(s) {
+    ids <- .resolveConceptSet(handle, list(concepts = s,
+                                           include_descendants = TRUE))
+    if (length(ids) == 0) ids <- s
+    paste0("(CASE WHEN EXISTS (SELECT 1 FROM ", cond, " co WHERE ",
+           "co.person_id = c.subject_id AND co.condition_concept_id IN (",
+           paste(ids, collapse = ", "), ")) THEN 1 ELSE 0 END)")
+  }, character(1L))
+  raw <- .omopReleaseFetch(handle, paste0(
+    "SELECT c.subject_id AS person_id, ", paste(comp, collapse = " + "),
+    " AS v FROM (SELECT DISTINCT subject_id FROM ", cohort, ") c"))
+  # The public grid spans exactly the index's possible scores, one bin each.
+  grid <- list(id = paste0("integer-score-0-", length(seeds), "-v1"),
+               breaks = seq.int(0L, length(seeds)), lower = 0,
+               upper = length(seeds), unit = "points")
+  owner <- .dsomopReleaseOwner(
+    id = paste0("fe/component-burden-score/", tolower(index_type %||%
+                                                         "charlson"), "/v1"),
+    family = "HM", grid = grid, bounds = c(0, length(seeds)),
+    estimand = paste0(tolower(index_type %||% "charlson"),
+                      " component-burden score per person (0 to ",
+                      length(seeds), ")"))
+  sub <- data.frame(person_id = raw$person_id %||% character(0),
+                    stratum = rep("root", nrow(raw)),
+                    v = suppressWarnings(as.numeric(raw$v)),
+                    stringsAsFactors = FALSE)
+  .dsomopReleaseBuild(route$policy, route$protection, owner, sub)
+}
+
+.omopReleaseRunComorbidityIndex <- function(handle, ctx, params, route, snap) {
+  if (is.null(ctx$scoped_cohort)) return(list(df = data.frame(), built = list()))
+  index_type <- params$index_type %||% "charlson"
+  built <- .omopReleaseComorbidity(handle, ctx, route, index_type)
+  list(df = .omopReleaseMetricRow(built, paste0(index_type, "_index")),
+       built = list(built))
+}
+
+.omopReleaseRunTimeDistribution <- function(handle, ctx, params, route, snap) {
+  if (is.null(ctx$scoped_cohort)) return(list(df = data.frame(), built = list()))
+  cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  metric <- params$metric %||% "time_in_cohort"
+  .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
+    handle$target_dialect))
+  if (metric %in% c("prior_observation", "post_observation")) {
+    observation <- .temporalObservationSqlContract(handle, cohort)
+    invalid <- suppressWarnings(as.numeric(
+      .executeQuery(handle, observation$invalid)[[1L]][[1L]]))
+    if (length(invalid) != 1L || is.na(invalid) || invalid != 0) {
+      stop("Every cohort episode must have exactly one observation_period ",
+           "covering its index date.", call. = FALSE)
+    }
+    source_sql <- observation$observed
+    value_expr <- if (identical(metric, "prior_observation")) {
+      .omopDateDiffDays(handle, "c.cohort_start_date",
+                        "c.observation_period_start_date")
+    } else {
+      .omopDateDiffDays(handle, "c.observation_period_end_date",
+                        "c.cohort_start_date")
+    }
+  } else {
+    ranked <- .rankedCohortSql(cohort, handle)
+    source_sql <- paste0(
+      "SELECT r.cohort_row_id, r.subject_id AS person_id, ",
+      "r.cohort_start_date, r.cohort_end_date FROM ", ranked, " r")
+    value_expr <- .omopDateDiffDays(handle, "c.cohort_end_date",
+                                    "c.cohort_start_date")
+  }
+  vals <- .executeQuery(handle, .sql_translate(paste0(
+    "SELECT x.person_id, x.v FROM (SELECT c.person_id, ", value_expr,
+    " AS v FROM (", source_sql, ") c) x WHERE x.v IS NOT NULL"),
+    handle$target_dialect))
+  owner <- .omopReleaseDurationOwner(
+    paste0("cohortdx/", metric, "-days/v1"),
+    paste0(gsub("_", " ", metric), " in days (person mean over episodes), ",
+           "clipped to [0, 10957]"))
+  built <- .dsomopReleaseBuild(route$policy, route$protection, owner,
+                               .omopReleasePersonMeans(vals))
+  list(df = .omopReleaseMetricRow(built, metric), built = list(built))
+}
+
+.omopReleaseRunFollowup <- function(handle, ctx, params, route, snap) {
+  if (is.null(ctx$scoped_cohort)) return(list(df = data.frame(), built = list()))
+  cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  tar_start <- as.integer(params$tar_start_offset %||% "0")
+  tar_end <- as.integer(params$tar_end_offset %||% "0")
+  anchor_start <- params$tar_anchor_start %||% "start"
+  anchor_end <- params$tar_anchor_end %||% "end"
+  end_col <- .omopCohortEndDateCol(handle, cohort)
+  anchor <- function(a) if (identical(a, "end")) end_col else "cohort_start_date"
+  .assertMinPersons(handle = handle, sql = .sql_translate(paste0(
+    "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
+    handle$target_dialect))
+  lo <- paste0("DATEADD(day, ", tar_start, ", c.", anchor(anchor_start), ")")
+  hi <- paste0("DATEADD(day, ", tar_end, ", c.", anchor(anchor_end), ")")
+  vals <- .executeQuery(handle, .sql_translate(paste0(
+    "SELECT c.subject_id AS person_id, ", .omopDateDiffDays(handle, hi, lo),
+    " AS v FROM ", cohort, " c"), handle$target_dialect))
+  owner <- .omopReleaseDurationOwner(
+    paste0("cohortmethod/time-at-risk-days/tar=", tar_start, ",", tar_end,
+           ",", anchor_start, ",", anchor_end, "/v1"),
+    paste0("requested time-at-risk length in days (person mean over ",
+           "episodes), clipped to [0, ", .DSOMOP_RELEASE_TIME_CAP, "]"),
+    grid = .dsomopReleaseGrid("tar_days"))
+  built <- .dsomopReleaseBuild(route$policy, route$protection, owner,
+                               .omopReleasePersonMeans(vals))
+  list(df = .omopReleaseMetricRow(built, "time_at_risk"), built = list(built))
+}
+
+.omopReleaseRunTemporalDist <- function(handle, ctx, params, route, snap) {
+  if (is.null(ctx$scoped_cohort)) return(list(df = data.frame(), built = list()))
+  cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  concept <- .qualifyTable(handle, "concept",
+                           handle$vocab_schema %||% handle$cdm_schema)
+  domain <- params$domain_code %||% "3"
+  src <- .omopCovariateSource(handle, domain)
+  value_kind <- params$value_kind %||% "value"
+  start_d <- as.integer(params$temporal_start_days %||% "-365")
+  end_d <- as.integer(params$temporal_end_days %||% "-1")
+  win_pred <- .ohdsiCohortDxWindowPredicate(
+    handle, paste0("e.", src$date_col), start_d, end_d)
+  cov_pred <- .ohdsiCohortDxCovariatePredicate(
+    handle, paste0("e.", src$concept_col), params$covariate_ids)
+  extra <- paste0(" AND ", win_pred,
+                  if (nzchar(cov_pred)) paste0(" AND ", cov_pred) else "")
+  .omopDiagAssertPersons(handle, ctx, src$table, "e", src$person_col)
+  event_id_col <- .eventPrimaryKeyColumn(.buildBlueprint(handle),
+                                         src$table_name)
+  if (is.null(event_id_col)) {
+    stop("Temporal covariate distributions require a stable OMOP event key.",
+         call. = FALSE)
+  }
+  use_value <- identical(value_kind, "value") && !is.na(src$value_col)
+  matched <- paste0(
+    "SELECT DISTINCT e.", event_id_col, " AS event_id, e.", src$concept_col,
+    " AS covariate_id, e.", src$person_col, " AS person_id",
+    if (use_value) paste0(", e.", src$value_col, " AS raw_value") else "",
+    " FROM ", src$table, " e INNER JOIN ", cohort, " c ON c.subject_id = e.",
+    src$person_col, " WHERE 1 = 1", extra)
+  per_person <- if (use_value) {
+    paste0("SELECT me.covariate_id, me.person_id, AVG(CAST(me.raw_value AS ",
+           "FLOAT)) AS v FROM (", matched, ") me WHERE me.raw_value IS NOT ",
+           "NULL GROUP BY me.covariate_id, me.person_id")
+  } else {
+    paste0("SELECT me.covariate_id, me.person_id, COUNT(*) AS v FROM (",
+           matched, ") me GROUP BY me.covariate_id, me.person_id")
+  }
+  raw <- .omopReleaseFetch(handle, paste0(
+    "SELECT pp.covariate_id, cc.concept_name AS covariate_name, pp.person_id, ",
+    "pp.v FROM (", per_person, ") pp LEFT JOIN ", concept,
+    " cc ON cc.concept_id = pp.covariate_id"))
+  kind <- if (use_value) "value" else "count"
+  window <- paste0("[", start_d, ",", end_d, "]")
+  owner <- .omopReleaseConceptOwner(
+    paste0("cohortdx/temporal-", kind, "-by-concept/domain=", domain,
+           "/window=", start_d, ",", end_d, "/covariates=",
+           params$covariate_ids %||% "all", "/v1"), kind,
+    paste0("per-person ", if (use_value) "mean value" else "record count",
+           " of each concept in the index-relative window ", window))
+  built <- .omopReleaseTopStrata(route, owner,
+                                 .omopReleaseConceptSubstrate(raw),
+                                 as.integer(params$top_n %||% "50"))
+  rows <- .omopReleaseConceptRows(built, raw, list(time_window = window))
+  list(df = rows, built = list(built))
+}
+
+.omopReleaseRunDurationEras <- function(handle, ctx, params, route, snap) {
+  if (is.null(ctx$scoped_cohort)) return(list(df = data.frame(), built = list()))
+  cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  concept <- .qualifyTable(handle, "concept",
+                           handle$vocab_schema %||% handle$cdm_schema)
+  domain <- params$domain_code %||% "1"
+  src <- .omopCovariateSource(handle, domain)
+  filter_pred <- .omopTxPathFilterPredicate(
+    handle, paste0("e.", src$concept_col), params$filter_treatments)
+  .omopDiagAssertPersons(handle, ctx, src$table, "e", src$person_col,
+                         where_sql = if (nzchar(filter_pred)) filter_pred else
+                           NULL)
+  end_col <- switch(as.character(domain), "1" = "drug_exposure_end_date",
+                    src$date_col)
+  dur <- .omopDateDiffDays(
+    handle, paste0("COALESCE(e.", end_col, ", e.", src$date_col, ")"),
+    paste0("e.", src$date_col))
+  where <- paste0("e.", src$concept_col, " IS NOT NULL",
+                  if (nzchar(filter_pred)) paste0(" AND ", filter_pred) else "")
+  raw <- .omopReleaseFetch(handle, paste0(
+    "SELECT pp.covariate_id, cc.concept_name AS covariate_name, pp.person_id, ",
+    "pp.v FROM (SELECT e.", src$concept_col, " AS covariate_id, e.",
+    src$person_col, " AS person_id, AVG(CAST(", dur, " AS FLOAT)) AS v FROM ",
+    src$table, " e INNER JOIN (SELECT DISTINCT subject_id FROM ", cohort,
+    ") c ON c.subject_id = e.", src$person_col, " WHERE ", where,
+    " GROUP BY e.", src$concept_col, ", e.", src$person_col, ") pp LEFT JOIN ",
+    concept, " cc ON cc.concept_id = pp.covariate_id"))
+  grid <- .dsomopReleaseGrid("duration_days")
+  owner <- .dsomopReleaseOwner(
+    id = paste0("txpath/era-duration-days-by-treatment/domain=", domain,
+                "/filter=", params$filter_treatments %||% "none", "/v1"),
+    family = "HM", grid = grid, strata = list(kind = "data"),
+    cap = .DSOMOP_RELEASE_MULTI_CAP, bounds = c(grid$lower, grid$upper),
+    estimand = paste0("per-person mean era duration in days of each ",
+                      "treatment, clipped to [0, 10957]; each person counted ",
+                      "in at most ", .DSOMOP_RELEASE_MULTI_CAP,
+                      " treatments (lowest concept ids)"))
+  built <- .omopReleaseTopStrata(route, owner,
+                                 .omopReleaseConceptSubstrate(raw),
+                                 as.integer(params$top_n %||% "50"))
+  rows <- .omopReleaseConceptRows(built, raw)
+  rows$n_persons <- NULL
+  list(df = rows, built = list(built))
+}
+
+# C8: the first outcome event per person relative to the canonical index, on a
+# public signed grid whose bin width is the requested time scale (edge bins
+# hold every earlier or later first event).
+.omopReleaseRunTimeToEvent <- function(handle, ctx, params, route, snap) {
+  if (is.null(ctx$scoped_cohort)) return(list(df = data.frame(), built = list()))
+  cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort")
+  out_src <- .omopOutcomeSource(handle, params$outcome_concept_id,
+                                params$domain_code %||% "0")
+  if (is.null(out_src)) return(list(df = data.frame(), built = list()))
+  scale <- as.integer(params$time_scale %||% "1")
+  if (!scale %in% c(1L, 30L, 365L)) scale <- 1L
+  .omopDiagAssertPersons(handle, ctx, out_src$table, "o", out_src$person_col,
+                         where_sql = paste0("o.", out_src$concept_col,
+                                            " IN (", out_src$id_list, ")"))
+  first <- .omopFirstCohortEpisodeSql(handle, cohort)
+  offset <- .omopDateDiffDays(handle, paste0("MIN(o.", out_src$date_col, ")"),
+                              "c.cohort_start_date")
+  raw <- .omopReleaseFetch(handle, paste0(
+    "SELECT c.subject_id AS person_id, ", offset, " AS v FROM ", first,
+    " c INNER JOIN ", out_src$table, " o ON o.", out_src$person_col,
+    " = c.subject_id AND o.", out_src$concept_col, " IN (", out_src$id_list,
+    ") GROUP BY c.subject_id, c.cohort_start_date"))
+  span <- if (scale == 1L) 365L else 3650L
+  breaks <- seq.int(-span, span - scale, by = scale)
+  grid <- list(id = paste0("signed-day-offset-", scale, "d-", span, "-v1"),
+               breaks = breaks, lower = NULL, upper = NULL, unit = "days")
+  owner <- .dsomopReleaseOwner(
+    id = paste0("characterization/first-outcome-day-offset/outcome=",
+                params$outcome_concept_id, "/domain=",
+                params$domain_code %||% "0", "/scale=", scale, "/v1"),
+    family = "H", grid = grid,
+    estimand = paste0("day offset of each person's first outcome event from ",
+                      "the cohort index, in ", scale, "-day bins over [",
+                      -span, ", ", span, ") (edge bins hold earlier and ",
+                      "later events)"))
+  sub <- data.frame(person_id = raw$person_id %||% character(0),
+                    stratum = rep("root", nrow(raw)),
+                    v = suppressWarnings(as.numeric(raw$v)),
+                    stringsAsFactors = FALSE)
+  built <- .dsomopReleaseBuild(route$policy, route$protection, owner, sub)
+  counts <- built$bins[["root"]]
+  df <- data.frame(day_offset = as.numeric(breaks),
+                   num_events = .dsomopReleaseRound(counts),
+                   persons = .dsomopReleaseRound(counts))
+  list(df = df, built = list(built))
+}
+
+# --- Mixed frames: protected distribution rows over standard binary rows -------
+
+.omopReleaseOverlayTable1 <- function(handle, ctx, params, route, snap, df) {
+  if (!is.data.frame(df) || nrow(df) == 0L) return(list(df = df, built = list()))
+  built <- list()
+  for (metric in c("charlson_index", "age")) {
+    rows <- which(df$unit == "dist" & df$characteristic == metric)
+    if (length(rows) == 0L) next
+    b <- if (identical(metric, "age")) {
+      .dsomopReleaseBuild(route$policy, route$protection,
+                          .omopReleaseAgeAtIndexOwner(),
+                          .omopReleaseAgeAtIndexValues(handle, ctx))
+    } else .omopReleaseComorbidity(handle, ctx, route, "charlson")
+    built[[length(built) + 1L]] <- b
+    st <- b$strata
+    df$avg_value[rows] <- st$mean
+    df$stdev_value[rows] <- st$sd
+    df$p10_value[rows] <- st$p10
+    df$p25_value[rows] <- st$p25
+    df$median_value[rows] <- st$median
+    df$p75_value[rows] <- st$p75
+    df$p90_value[rows] <- st$p90
+  }
+  list(df = df, built = built)
+}
+
+.omopReleaseOverlayTargetCovariates <- function(handle, ctx, params, route,
+                                                snap, df) {
+  if (!is.data.frame(df) || nrow(df) == 0L || !any(df$kind == "continuous")) {
+    return(list(df = df, built = list()))
+  }
+  raw <- .omopReleaseConceptValues(handle, ctx, "3", "value")
+  owner <- .omopReleaseConceptOwner(
+    "fe/person-mean-value-by-concept/domain=3/v1", "value",
+    "per-person mean value of each concept in the cohort")
+  cont <- which(df$kind == "continuous")
+  keys <- paste0("concept=", df$covariate_id[cont])
+  b <- .dsomopReleaseBuild(route$policy, route$protection, owner,
+                           .omopReleaseConceptSubstrate(raw),
+                           data_strata_keys = keys)
+  st <- b$strata
+  at <- match(keys, st$stratum)
+  for (col in c("avg_value", "stdev_value", "p10_value", "p25_value",
+                "median_value", "p75_value", "p90_value")) {
+    src <- switch(col, avg_value = st$mean, stdev_value = st$sd,
+                  p10_value = st$p10, p25_value = st$p25,
+                  median_value = st$median, p75_value = st$p75,
+                  p90_value = st$p90)
+    df[[col]][cont] <- src[at]
+  }
+  list(df = df, built = list(b))
+}
+
+#' Overlay the protected distribution rows of a mixed frame
+#'
+#' The frame's binary prevalence rows were released under their established
+#' standard controls; its distribution rows' summary fields are replaced by
+#' the protected components of their owners. The label is top-level "mixed"
+#' with the protection of each block.
+#'
+#' @keywords internal
+.omopToolsReleaseOverlay <- function(handle, ctx, params, df, contract, route,
+                                     snap) {
+  result <- contract$overlay(handle, ctx, params, route, snap, df)
+  out <- result$df
+  label <- .omopToolsReleaseLabel(route, result$built, contract, snap, list(
+    protection = "mixed",
+    blocks = list(binary = "standard", distribution = route$protection)))
+  attr(out, "dsomop_protection") <- label
+  attr(out, "dsomop_release") <- list(
+    protocol = .DSOMOP_RELEASE_PROTOCOL,
+    contract = .DSOMOP_RELEASE_CONTRACT_VERSION,
+    entry = contract$name, protection = "mixed",
+    reference_epsilon = route$policy$release_epsilon,
+    owners = lapply(result$built, function(b) b$export))
+  out
 }

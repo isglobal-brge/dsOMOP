@@ -111,15 +111,23 @@ test_that("(b) returns per-arm banded counts and a finite HR + CI", {
       v <- df[[col]]
       expect_true(all(v %% 5 == 0 | is.na(v)))
     }
-    # The fitted estimate is finite, positive and the CI brackets it.
-    expect_true(is.finite(df$estimate[1]) && df$estimate[1] > 0)
-    expect_true(df$ci_lo[1] <= df$estimate[1] && df$estimate[1] <= df$ci_hi[1])
-    # exp(log_estimate) reproduces the estimate; exp(log +/- 1.96 SE) the CI.
-    expect_equal(exp(df$log_estimate[1]), df$estimate[1], tolerance = 1e-8)
-    expect_equal(exp(df$log_estimate[1] - 1.96 * df$se_log_estimate[1]),
-                 df$ci_lo[1], tolerance = 1e-8)
-    # The estimate is replicated identically across both arm rows.
-    expect_equal(df$estimate[1], df$estimate[2])
+    # 2.10.3: window sweeps of exact SEs and person-time recover outcome
+    # counts and event days, so the released standard route has no exact
+    # person-time, estimate, CI or SE (the protected route derives a rate
+    # ratio from protected components; test-tools-release-sweeps.R).
+    expect_true(all(is.na(df[, c("person_days", "estimate", "ci_lo", "ci_hi",
+                                 "log_estimate", "se_log_estimate")])))
+    # The in-session fit itself is unchanged: finite, positive, CI brackets it.
+    raw <- .omopCmEffectFn()(h, list(scoped_cohorts = c("cme_target",
+                                                         "cme_comparator")),
+                             EFF_PARAMS)
+    expect_true(is.finite(raw$estimate[1]) && raw$estimate[1] > 0)
+    expect_true(raw$ci_lo[1] <= raw$estimate[1] &&
+                  raw$estimate[1] <= raw$ci_hi[1])
+    expect_equal(exp(raw$log_estimate[1]), raw$estimate[1], tolerance = 1e-8)
+    expect_equal(exp(raw$log_estimate[1] - 1.96 * raw$se_log_estimate[1]),
+                 raw$ci_lo[1], tolerance = 1e-8)
+    expect_equal(raw$estimate[1], raw$estimate[2])
     expect_false(any(grepl("_source_value$", names(df))))
   })
 })
@@ -141,11 +149,12 @@ test_that("(c) the released log_estimate equals a hand-fit Cox/Poisson", {
     fit <- .omopCmEffectFit(rbind(ta$data, co$data), "cox")
     expect_true(is.finite(fit$log_estimate))
 
-    df <- .omopAnalysisRun(h, "dsomop:cm.effect_estimate", params = EFF_PARAMS,
-                           scope = list("cme_target", "cme_comparator"))
-    # The gate does not touch the non-count estimate columns.
-    expect_equal(df$log_estimate[1], fit$log_estimate, tolerance = 1e-8)
-    expect_equal(df$se_log_estimate[1], fit$se_log_estimate, tolerance = 1e-8)
+    # The in-session estimate equals the hand fit (released routes mask it).
+    raw <- .omopCmEffectFn()(h, list(scoped_cohorts = c("cme_target",
+                                                         "cme_comparator")),
+                             EFF_PARAMS)
+    expect_equal(raw$log_estimate[1], fit$log_estimate, tolerance = 1e-8)
+    expect_equal(raw$se_log_estimate[1], fit$se_log_estimate, tolerance = 1e-8)
   })
 })
 
@@ -184,7 +193,8 @@ test_that("(c) person-level effect frames use one coherent longitudinal episode"
   expect_equal(nrow(frame$data), 10L)
   expect_equal(frame$persons, 10L)
   expect_equal(frame$outcomes, 0)
-  expect_true(all(frame$data$tar_days == 10))
+  # Half-open observed windows (2.10.3): 1 to 11 January is 11 whole days.
+  expect_true(all(frame$data$tar_days == 11))
 })
 
 # ---------------------------------------------------------------------------- #

@@ -196,7 +196,7 @@ test_that("(b) fe.prevalence runs for condition + drug domains", {
   })
 })
 
-test_that("(b) fe.continuous returns un-masked stats for a >= nfilter_dist cohort", {
+test_that("(b) fe.continuous computes per-covariate stats; the standard route masks scoped ones", {
   h <- p1bc_handle()
   on.exit(cleanup_handle(h))
   withr::with_options(p1bc_opts(dist = 10), {
@@ -211,7 +211,19 @@ test_that("(b) fe.continuous returns un-masked stats for a >= nfilter_dist cohor
     wrow <- bw[bw$covariate_id == 3025315, ]
     expect_equal(nrow(wrow), 1L)
     expect_equal(wrow$count_value, 10)            # 13 banded down to 10
-    expect_false(is.na(wrow$median_value))        # >= nfilter_dist -> released
+    # 2.10.3: exact scoped moments and quantiles are demonstrated-disclosive
+    # (two scopes differing by one person recover that person's value), so the
+    # standard route releases them as NA; the protected route releases
+    # protected components instead (test-tools-release.R).
+    expect_true(is.na(wrow$median_value))
+    expect_identical(attr(bw, "dsomop_protection")$masked_reason,
+                     "protected_mechanism_unavailable")
+    # The in-session computation itself is unchanged.
+    entry <- .omopAnalysisResolve(h, "dsomop:fe.continuous")
+    raw <- entry$compute$fn(h, list(scoped_cohort = allp),
+                            list(metric = "measurement_value",
+                                 domain_code = "3"))
+    expect_false(is.na(raw$median_value[raw$covariate_id == 3025315]))
     expect_true(all(c("p10_value", "p25_value", "p75_value", "p90_value") %in%
                     names(bw)))
     # Min/max are NEVER released by a dist entry.
