@@ -7,6 +7,14 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- (WS-2f review B2–B3, N1–N3) A v1 criteria `base` explicitly depends on
+  its plan cohort's person seed while retaining fresh observation-period
+  episodes and independent filter anchors. Malformed numeric cohort arrays
+  refuse before database work; valid scalar IDs and owned-name wrappers
+  retain their historical behavior. Validation and preview check the closed
+  envelope before reading fields and treat native plans through their IR.
+  Explain includes interval and adapter long-output projections and exact
+  date classes, and extension role types use the blueprint's database type.
 - (A-25) Historical v1 population references to handle-owned cohort names
   retain their population-local person scope, independent filter anchoring
   and recurrent index episodes. Canonical names are carried in the closed
