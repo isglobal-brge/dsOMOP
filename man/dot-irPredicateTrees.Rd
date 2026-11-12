@@ -13,12 +13,14 @@
 list of list(path, tree, kind = "criteria" | "predicate", context),
   context = list(kind = "event" | "episode_members" | "cost", event) for an
   event's predicates, list(kind = "source", source) for a reducer
-  predicate, list(kind = "population", population) for criteria.
+  predicate, list(kind = "population", population) for criteria,
+  list(kind = "legacy_raw", output) for a raw-table filter.
 }
 \description{
 Positional over each node map, so a population and an event of the same
 name are distinct positions. Trees: population criteria (with their
 embedded person predicates), event predicates, adapter-local predicates
-(episode members, cost) and reducer predicates.
+(episode members, cost), reducer predicates and a lowered v1 output's
+\code{legacy_raw_filter} (amendment A-16).
 }
 \keyword{internal}

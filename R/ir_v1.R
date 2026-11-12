@@ -367,11 +367,19 @@
       },
       person_level = {
         tables <- out[["tables"]] %||% list()
+        has_custom <- !is.null(custom) && length(custom) > 0L
         for (tbl in names(tables)) {
           entry <- tables[[tbl]]
-          if (!.v1IsObject(entry) || is.null(entry[["features"]])) next
-          check(entry[["filters"]], tbl, paste0(p, "/tables/", tbl, "/filters"))
-          check(custom, tbl, paste0(p, "/filters/custom"))
+          features <- .v1IsObject(entry) && !is.null(entry[["features"]])
+          # every table, raw or features, extracts with its own filters ANDed
+          # with the output-level custom filter, validated as one tree
+          entry_filters <- if (features) entry[["filters"]]
+          has_entry <- !is.null(entry_filters) && length(entry_filters) > 0L
+          table_filters <- if (!has_custom) entry_filters else if (!has_entry) custom else
+            list(and = list(entry_filters, custom))
+          check(table_filters, tbl, paste0(p, if (has_custom) "/filters/custom" else
+            paste0("/tables/", tbl, "/filters")))
+          if (!features) next
           specs <- entry[["features"]]
           for (i in seq_along(specs)) {
             check(specs[[i]][["filter"]], tbl, paste0(p, "/tables/", tbl, "/features/", i - 1L, "/filter"))

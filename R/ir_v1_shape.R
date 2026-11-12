@@ -200,6 +200,10 @@
     if (x < 1) paste0(path, ": a v1 cohort_definition_id must be a positive integer (0 is refused)")
   })
 }
+# The plan cohort's cohort_definition_id: a results-cohort reference (>= 1,
+# A-10) when the cohort is a cohort_table; otherwise the optional identifier
+# of an inline spec, any non-negative integer (A-16).
+.v1sPlanCohortId <- function() .v1sScalar("integer")
 
 #' Findings of a v1 row filter (the custom DSL of \code{.assertCustomFilterSafe()})
 #'
@@ -457,7 +461,12 @@
             table = .v1sStr(), concept_set = .v1sConceptSet(),
             temporal = .v1sObj(index_window = .v1sWindow(), calendar = .v1sObj(start = .v1sStr(), end = .v1sStr())),
             # the historical .applyInclusionCriteria() contract (review B2)
-            occurrence = .v1sObj(type = .v1sStr(c("at_least", "at_most", "exactly")),
+            # type matched exactly, as the executor's switch() does (A-15)
+            occurrence = .v1sObj(type = .v1sScalar("string", .check = function(x, path) {
+                                   if (!x %in% c("at_least", "at_most", "exactly")) {
+                                     paste0(path, ": Unknown occurrence type: '", x, "'.")
+                                   }
+                                 }),
                                  count = .v1sScalar("integer", .check = function(x, path) {
                                    if (x < 0) paste0(path, ": occurrence$count must be one non-negative integer.")
                                  })))))
@@ -484,13 +493,19 @@
     version = .v1sScalar("integer"),
     # the executor reads `spec` only without a filter_tree (it then ignores
     # it, even in the legacy flat-array form): validated where it is read
-    cohort = .v1sObj(type = .v1sStr(c("cohort_table", "spec")), cohort_definition_id = .v1sCohortId(),
+    cohort = .v1sObj(type = .v1sStr(c("cohort_table", "spec")), cohort_definition_id = .v1sPlanCohortId(),
                      spec = .v1sOpaque(), filter_tree = .v1sFilterTree(),
                      episode_policy = .v1sStr(.V1_EPISODE_POLICIES),
                      .check = function(x, path) {
-                       if (is.null(x[["filter_tree"]]) && !is.null(x[["spec"]])) {
-                         .v1ShapeErrors(x[["spec"]], .v1sSpec(), paste0(path, "/spec"))
-                       }
+                       id <- x[["cohort_definition_id"]]
+                       c(if (!is.null(id) && identical(.v1Text(x[["type"]]), "cohort_table")) {
+                           .v1ShapeErrors(id, .v1sCohortId(), paste0(path, "/cohort_definition_id"))
+                         } else if (!is.null(id) && id < 0) {
+                           paste0(path, "/cohort_definition_id: an inline spec's cohort_definition_id is a non-negative integer")
+                         },
+                         if (is.null(x[["filter_tree"]]) && !is.null(x[["spec"]])) {
+                           .v1ShapeErrors(x[["spec"]], .v1sSpec(), paste0(path, "/spec"))
+                         })
                      }),
     anchor = .v1sObj(table = .v1sStr(), id_col = .v1sStr()),
     outputs = .v1sMap(.v1sOutput()),

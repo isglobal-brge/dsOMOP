@@ -767,8 +767,16 @@
       if (!is.null(out[["select_n"]])) opts[["select_n"]] <- .v1Int(out[["select_n"]])
       opts[["anchor"]] <- "index"
       anchor <- .v1Int(out[["anchor"]] %||% 0L)
-      # the v1 nearest-selection offset in days from the index (CR-16)
-      if (!identical(anchor, 0L)) opts[["legacy_anchor_offset"]] <- anchor
+      # the v1 offset in days from the index orders event_select = nearest
+      # only (A-16): a zero offset is the native anchor, an offset under any
+      # other selection is ignored by the executor and stays advisory
+      if (!identical(anchor, 0L)) {
+        if (identical(opts[["event_select"]], "nearest")) {
+          opts[["legacy_anchor_offset"]] <- anchor
+        } else {
+          .v1Annex(st, path, ignored_anchor_offset = anchor)
+        }
+      }
       node[["options"]] <- opts
     },
     temporal_covariates =, person_period = {
@@ -938,7 +946,8 @@
     }
     if (!is.null(spec[["inclusion_criteria"]])) ls[["inclusion_criteria"]] <- .v1Inclusion(spec[["inclusion_criteria"]])
     # the plan cohort id of an inline spec names its table and fills the
-    # cohort_membership id column (CR-16)
+    # cohort_membership id column (A-16): present only when supplied, any
+    # non-negative integer, never defaulted
     if (!is.null(cohort[["cohort_definition_id"]])) ls[["cohort_definition_id"]] <- .v1Int(cohort[["cohort_definition_id"]])
     if (length(ls) == 0L) ls <- structure(list(), names = character(0))
     node <- list(kind = "index", label = "Base population",
@@ -987,11 +996,13 @@
       if (!is.null(t[["calendar"]])) t[["calendar"]] <- lapply(.v1Compact(t[["calendar"]]), .v1Text)
       crit[["temporal"]] <- t
     }
-    if (.v1IsObject(crit[["occurrence"]])) {
-      occ <- .v1Compact(crit[["occurrence"]])
-      crit[["occurrence"]] <- list(type = tolower(.v1Text(occ[["type"]]) %||% "at_least"),
-                                   count = .v1Int(occ[["count"]] %||% 1L))
-    }
+    # A-15: the effective occurrence object, type kept as the exact text the
+    # executor matches, count an integer; omitted members and an omitted
+    # occurrence are the defaults (at_least, 1), so omitted and explicit
+    # defaults share one normal form and one digest
+    occ <- if (.v1IsObject(crit[["occurrence"]])) .v1Compact(crit[["occurrence"]]) else list()
+    crit[["occurrence"]] <- list(type = .v1Text(occ[["type"]]) %||% "at_least",
+                                 count = .v1Int(occ[["count"]] %||% 1L))
     out[[key]] <- crit
   }
   if (length(out) == 0L) structure(list(), names = character(0)) else out
@@ -1083,7 +1094,11 @@
   if (identical(.v1Text(cohort[["type"]]), "cohort_table") && !is.null(cohort[["cohort_definition_id"]])) {
     cohort_sources <- c(cohort_sources, list(.v1Int(cohort[["cohort_definition_id"]])))
   }
-  cohort_sources <- lapply(cohort_sources, function(s) .v1Int(.v1Scalar(s)))
+  # results-cohort ids stay integers, owned cohort temp-table names strings
+  cohort_sources <- lapply(cohort_sources, function(s) {
+    s <- .v1Scalar(s)
+    if (is.character(s)) s else .v1Int(s)
+  })
   ir_scope <- list()
   ir_scope["cohort"] <- list(if (length(cohort_sources)) cohort_sources[[1L]])
   # every source v1 folds into one scope cohort (CR-16)

@@ -19,7 +19,7 @@
 # purpose (.B10_CORRECTIONS, not v1 lowering changes): the corrected column is
 # compared with the design's rule, recomputed from the fixture, every baseline
 # value the correction keeps must still be equal, and every other value of the
-# pin is compared as above. CR-17 asks WS-0 to record them in
+# pin is compared as above. CR-19 asks WS-0 to record them in
 # v1-corpus-classes.csv.
 
 # >>> b10-canonical: verbatim copy of the block in tools/ws2/capture_results.R

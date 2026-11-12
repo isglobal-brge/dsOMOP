@@ -15,11 +15,13 @@
 Invisibly TRUE.
 }
 \description{
-Step 4 for a v1 plan, after the IR's own site checks: the tables, the
-results cohort table and the custom filters its executors would check
-while running (\code{.planLegacyFindings()},
-\code{.planV1FilterSiteErrors()}), refused with the typed codes the
-publication status transports (\code{unavailable_table} for an absent
-table, \code{validation_error} otherwise).
+Step 4 for a v1 plan, before the IR's own site checks
+(\code{.irValidate()}): the findings of \code{.planV1SiteFindings()}. A
+plan-declaration error keeps the untyped error the 2.10.2 executor raised
+before any query (its message and its transport are unchanged; condition
+class \code{dsomop_v1_declaration_error}); the
+other findings are refused with the typed codes the publication status
+transports (\code{validation_error}, then \code{unavailable_table} for
+absent tables).
 }
 \keyword{internal}

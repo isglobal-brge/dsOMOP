@@ -4,12 +4,16 @@
 \alias{.irExplain}
 \title{Explain payload of a validated IR (design section 6.15)}
 \usage{
-.irExplain(ir, handle = NULL)
+.irExplain(ir, handle = NULL, v1_plan = NULL)
 }
 \arguments{
 \item{ir}{The IR (through steps 1 to 3 and the semantic rules).}
 
 \item{handle}{CDM handle, or NULL for a site-free explanation.}
+
+\item{v1_plan}{For a lowered v1 IR, the v1 plan it was lowered from: its
+executors' site findings (\code{.planV1SiteFindings()}) come first in
+\code{site_findings}, as execution checks them first.}
 }
 \value{
 Named list (see Details).

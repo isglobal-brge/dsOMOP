@@ -4,12 +4,16 @@
 \alias{.irValidate}
 \title{Semantic and handle-dependent validation (step 4)}
 \usage{
-.irValidate(ir, handle = NULL)
+.irValidate(ir, handle = NULL, v1_plan = NULL)
 }
 \arguments{
 \item{ir}{The IR (schema-valid).}
 
 \item{handle}{CDM handle, or NULL for the pure semantic rules only.}
+
+\item{v1_plan}{For a lowered v1 IR, the v1 plan it was lowered from (the
+parsed JSON form that passed the closed envelope), checked against the
+v1 executors' site requirements when a handle is given.}
 }
 \value{
 Invisibly, a list(operations, unavailable, unavailable_outputs,
@@ -25,12 +29,13 @@ site cannot serve under \code{on_missing_table = "error"}
 (\code{unavailable_table}); the dialect preflight
 (\code{dialect_unsupported}). All run before any query, for native and
 lowered v1 plans alike (a lowered plan's legacy semantics are in its
-compatibility variants, never an exemption from a stage; its v1-specific
-site requirements are checked by \code{.irPrepare()} as well). Sources
-served under \code{on_missing_table = "unavailable"} are never a refusal:
-their events and the outputs reading them are reported
-(\code{unavailable}, \code{unavailable_outputs}).
-\code{insufficient_support} is never raised here: support exists only for
-computed outputs, at publication.
+compatibility variants, never an exemption from a stage). A lowered v1
+plan first meets the site requirements of the v1 executors that run it,
+with their own rules and messages (\code{.planV1SiteCheck()} on
+\code{v1_plan}), then the IR's site checks. Sources served under
+\code{on_missing_table = "unavailable"} are never a refusal: their events
+and the outputs reading them are reported (\code{unavailable},
+\code{unavailable_outputs}). \code{insufficient_support} is never raised
+here: support exists only for computed outputs, at publication.
 }
 \keyword{internal}

@@ -181,13 +181,15 @@
 #' Positional over each node map, so a population and an event of the same
 #' name are distinct positions. Trees: population criteria (with their
 #' embedded person predicates), event predicates, adapter-local predicates
-#' (episode members, cost) and reducer predicates.
+#' (episode members, cost), reducer predicates and a lowered v1 output's
+#' \code{legacy_raw_filter} (amendment A-16).
 #'
 #' @param ir The IR.
 #' @return list of list(path, tree, kind = "criteria" | "predicate", context),
 #'   context = list(kind = "event" | "episode_members" | "cost", event) for an
 #'   event's predicates, list(kind = "source", source) for a reducer
-#'   predicate, list(kind = "population", population) for criteria.
+#'   predicate, list(kind = "population", population) for criteria,
+#'   list(kind = "legacy_raw", output) for a raw-table filter.
 #' @keywords internal
 .irPredicateTrees <- function(ir) {
   out <- list()
@@ -212,6 +214,13 @@
   for (i in seq_along(pops)) {
     push(paste0("/populations/", names(pops)[[i]], "/where"), pops[[i]][["where"]], "criteria",
          list(kind = "population", population = names(pops)[[i]]))
+  }
+  # A-16: the v1 person_level custom filter over the raw person/death tables
+  # (typed by the v1 executors' own checks, .planV1SiteCheck())
+  outs <- ir[["outputs"]] %||% list()
+  for (i in seq_along(outs)) {
+    push(paste0("/outputs/", names(outs)[[i]], "/legacy_raw_filter"), outs[[i]][["legacy_raw_filter"]],
+         "predicate", list(kind = "legacy_raw", output = names(outs)[[i]]))
   }
   vars <- ir[["variables"]] %||% list()
   for (i in seq_along(vars)) {
@@ -583,6 +592,13 @@
         check_map(ln[[kind]][[o]], pool, path)
       }
     }
+  }
+
+  # A-16 scope cohort sources: scope.cohort is the first source v1 folds in
+  sources <- ir[["scope"]][["legacy_cohort_sources"]]
+  if (length(sources) &&
+      !identical(as.character(unlist(sources[[1L]])), as.character(unlist(ir[["scope"]][["cohort"]])))) {
+    add("/scope/legacy_cohort_sources: scope.cohort must be the first cohort source")
   }
 
   # 7. caps --------------------------------------------------------------------

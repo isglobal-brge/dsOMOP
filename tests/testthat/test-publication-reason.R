@@ -70,7 +70,10 @@ test_that("the shared handler transports the adapter reason without the conditio
                    reason = reason, field = "events/members")
   })
   target <- new.env(parent = emptyenv())
-  plan <- list(outputs = list(first = list(), second = list()))
+  # a plan that passes the validation sequence, which runs before the context
+  # and before .planExecute() (WS-2: an invalid plan is refused there first)
+  people <- list(type = "person_level", tables = list(person = list("gender_concept_id")))
+  plan <- list(outputs = list(first = people, second = people))
   for (reason in c("adapter_person_mismatch", "cost_currency_mixed")) {
     status <- .omopPlanExecuteDS("publication_reason", plan,
       list(first = "A", second = "B"), target_env = target)

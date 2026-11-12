@@ -2,7 +2,7 @@
 % Please edit documentation in R/ir_v1.R
 \name{.planV1FilterSiteErrors}
 \alias{.planV1FilterSiteErrors}
-\title{The custom-filter checks the v1 executors make against the site}
+\title{The column and custom-filter checks the v1 executors make against the site}
 \usage{
 .planV1FilterSiteErrors(plan, handle)
 }
@@ -20,6 +20,9 @@ with the table's filterable columns, the handle and the table, exactly as
 the executor calls it (event and feature streams after the legacy
 start/end date sentinel resolution, \code{.resolveFilterDateColumns()};
 survival outcome filters as \code{.compileLongitudinalSurvivalSql()};
-interval source filters as their stream extraction).
+interval source filters as their stream extraction), and the person
+columns of a baseline output with the rules and messages of
+\code{.extractBaseline()} (unknown and blocked columns), which the
+executor would otherwise only meet after materialising the cohort.
 }
 \keyword{internal}

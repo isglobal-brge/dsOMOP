@@ -222,5 +222,6 @@ test_that("NOT is part of both v1 grammars, with native three-valued logic", {
   expect_identical(where_ev$not$op, "in")
   bad <- plan
   bad$cohort$filter_tree <- list(not = list(type = "sex", params = list(value = "F")), and = list())
-  expect_error(.planV1Envelope(.irJsonForm(bad)), "unknown or malformed")
+  # the closed envelope runs the executor's own filter-tree validator (WS-2 review B1)
+  expect_error(.planV1Envelope(.irJsonForm(bad)), "cannot mix AND/OR/NOT groups")
 })

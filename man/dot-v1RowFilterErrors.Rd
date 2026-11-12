@@ -7,7 +7,7 @@
 .v1RowFilterErrors(x, path)
 }
 \description{
-Closed at every node on raw member names (and/or groups, leaves
+Closed at every node on raw member names (and/or/not groups, leaves
 \code{{var, op, value, safe_scope}}, a value_bin operand
 \code{{lower, upper}}, a safe scope), then the legacy validator itself
 with the filter's own columns as its column list; the site's filterable

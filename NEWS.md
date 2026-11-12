@@ -112,10 +112,21 @@ fills its entries. Classes follow design-2.10.3 section 5.
   wide/features/sparse grain and index-window couplings; set-op members
   declared after the set operation; `episode_policy` with `index_event`;
   tables, results-cohort tables and custom-filter columns this site does not
-  provide (`unavailable_table`, `validation_error`); and the session temporary
-  tables the v1 executors need on SQL families without them
-  (`dialect_unsupported`).
-- (A-10) A v1 `cohort_definition_id` of 0 is refused, naming the field.
+  provide (`unavailable_table`, `validation_error`), the custom filter of a
+  person_level output over its raw person/death tables, unknown or blocked
+  baseline person columns (with the executors' own messages: "Baseline
+  person column(s) not found", "Disclosive: ... are blocked"); and the
+  session temporary tables the v1 executors need on SQL families without
+  them (`dialect_unsupported`). An unknown v1 output type keeps the
+  executor's "Unsupported output type" wording. The plan-declaration error
+  of an output that needs a cohort keeps the executor's untyped error.
+- (A-15) A v1 inclusion `occurrence` is the executor's `{type, count}`
+  object, its type matched exactly (`at_least`, `at_most`, `exactly`): any
+  other member or type is refused at validation, where 2.10.2 refused it
+  only while running.
+- (A-10) A v1 results-cohort `cohort_definition_id` of 0 is refused, naming
+  the field; the optional identifier of an inline cohort spec may be 0
+  (A-16).
 - A plan cannot carry resolved workspace frames: `scope.tables_frames` is
   refused; scope tables come only from the endpoint's scope arguments.
 - A v1 baseline `derived` value other than `age_at_index`,
@@ -272,9 +283,19 @@ fills its entries. Classes follow design-2.10.3 section 5.
   `on_missing_table = "unavailable"` are reported with the outputs that read
   them, never refused. `omopPlanPreviewDS()` and `ds.omop.plan.validate()`
   report the same findings in `validation$errors`. Native and lowered v1
-  plans pass every stage, the site checks (every predicate typed against its
-  source: events, adapters, criteria person predicates, reducers) and the
-  dialect preflight included.
+  plans pass every stage, the site checks and the dialect preflight
+  included. Each plan meets the site rules of the engine that executes it: a
+  native plan the compilers' own metadata rules (WS-4's `.eventSiteCheck()`
+  for every event and adapter source with the reducer predicates over its
+  rows, `.predicateTableCatalogue()` for criteria person predicates); a
+  lowered v1 plan first the v1 executors' own checks, with their messages
+  (tables, results cohort, filter trees, custom filters including the raw
+  person/death tables of a person_level output, the baseline person-column
+  contract), then the IR's typed checks over the column names the v1
+  executors accept. A v1 event over a present table without an event role
+  (`event_level` over `person`) is a legacy row source; it is never a native
+  event table. A v1 plan-declaration error (an output that needs a cohort)
+  keeps the executor's untyped error.
 - (A-11) Every default is expanded by the frozen normaliser shared with
   dsOMOPClient, `.planNormalizeV2()` (`R/plan_normalize_v2.R`), for language
   2.0 plans and lowered v1 plans alike; grain and collapse rules use its
@@ -286,10 +307,14 @@ fills its entries. Classes follow design-2.10.3 section 5.
   `legacy_automatic_features`, `legacy_single_outcome`, `legacy_states` /
   `legacy_state_step`, `legacy_episodes` / `legacy_index_anchor`,
   `legacy_containing_period`, `legacy_names` and `legacy_concept_scope`, and
-  the corrections of change requests CR-15 (the inline-spec occurrence
-  `{type, count}`) and CR-16 (`legacy_raw_filter`, `legacy_anchor_offset`,
-  the inline-spec cohort id, `scope.legacy_cohort_sources`, the sparse
-  automatic builder). One shared `.planSemanticDigest()` binds them; advisory
+  amendments A-15 (the inline-spec occurrence: the effective `{type, count}`
+  object, the type matched exactly as the executor does) and A-16
+  (`legacy_raw_filter`; `legacy_anchor_offset` only for a non-zero offset
+  under `event_select = "nearest"`, other offsets advisory; the inline-spec
+  `cohort_definition_id >= 0` as supplied, passed to `.cohortCreate()` as
+  `cohort_id` by the legacy-spec adapter; `scope.legacy_cohort_sources` with
+  the materialised `combine` and `scope.cohort` as its first source; the
+  sparse automatic builder). One shared `.planSemanticDigest()` binds them; advisory
   v1 fields go to a server-private annex that explain lists
   (`legacy_annex`) and no digest covers. The `legacy_residue` attribute and
   `.irSemanticDigest()` are retired. v1 plans keep running on the v1
@@ -297,8 +322,11 @@ fills its entries. Classes follow design-2.10.3 section 5.
   roots (they are the outputs the execution maps, as in 2.10.2).
 - Validation runs on the plan as it arrived, before the server injects the
   resolved scope frames and before the execution context and the DP seal
-  exist; the context carries the validated IR (`ctx$validation`) and the
-  resolved frames (`ctx$scopes`).
+  exist. The context of a language 2.0 plan carries its validated,
+  normalised IR (`ctx$ir`, read by the native publication and DP
+  contracts); a v1 plan's carries the plan its executors and the legacy
+  publication contracts read, with the lowered IR in `ctx$validation`; the
+  resolved frames are `ctx$scopes`.
 - `R/roles.R`: `.roleOf(handle, table)`, the role registry of design 6.2;
   role records keep each column's value type for typed site checks.
 - New aggregate method `omopPlanExplainDS(omop_symbol, plan)`: the normalised
@@ -312,6 +340,12 @@ fills its entries. Classes follow design-2.10.3 section 5.
 - `tests/testthat/fixtures/ir-v1-corpus.json`: every distinct v1 plan of the
   pinned 2.10.2 suites, bound to its frozen corpus class; `ir-v1-golden.json`
   pins their normalised IR documents as regression snapshots.
+  `ir-v1-results.json` pins the 2.10.2 results of the safe-class plans the
+  baseline suite executed on the default fixture; `test-ir-results.R`
+  re-executes them with this code and requires identical results, except
+  the two reviewed F-26 age-band corrections, checked against the design's
+  rule (`tools/ws2/capture_results.R` and `compare_results.py` capture and
+  compare every suite call against the baseline).
 
 ## Contracts shipped by WS-0
 

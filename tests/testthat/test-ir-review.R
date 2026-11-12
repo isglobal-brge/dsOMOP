@@ -551,3 +551,202 @@ test_that("A-10: a v1 plan without outputs has no IR and publishes nothing", {
   expect_null(.irPrepare(plan, h))
   expect_length(.planExecute(h, plan, list()), 0L)
 })
+
+# --- A-15 / A-16: the compatibility variants carry the executed semantics -------
+# Direct v1-executor results next to the IR each plan lowers to: a result
+# difference is a document (and digest) difference, and the forms the executor
+# treats alike share one normal form and one digest.
+
+.rv_run <- function(h, plan, name) {
+  withr::with_options(list(nfilter.subset = 0L, dsomop.query_strict = TRUE),
+    .planExecute(h, plan, stats::setNames(list(paste0("rv_", name)), name)))[[name]]
+}
+.rv_digest <- function(plan) .planSemanticDigest(.irDocument(.irPrepare(plan)))[["sha256"]]
+
+test_that("A-15: omitted and explicit default occurrences are one IR; the type is matched exactly", {
+  crit <- function(occ = NULL) {
+    x <- list(table = "condition_occurrence", concept_set = list(201820L))
+    if (!is.null(occ)) x$occurrence <- occ
+    list(cohort = list(type = "spec", spec = list(type = "condition", concept_set = list(201820L),
+                                                    inclusion_criteria = list(c1 = x))),
+         outputs = list(m = list(type = "cohort_membership")))
+  }
+  expect_identical(.rv_digest(crit()), .rv_digest(crit(list(type = "at_least", count = 1L))))
+  expect_identical(.rv_digest(crit()), .rv_digest(crit(list(count = 1L))))
+  expect_false(identical(.rv_digest(crit()), .rv_digest(crit(list(type = "at_least", count = 0L)))))
+  lowered <- .irPrepare(crit(list(type = "at_most", count = 2L)))$populations$base$index$source$legacy_spec
+  expect_identical(lowered$inclusion_criteria$c1$occurrence, list(type = "at_most", count = 2L))
+  # the executor's switch() matches the type exactly
+  err <- .rv_refused(.irPrepare(crit(list(type = "AT_MOST", count = 1L))))
+  expect_match(conditionMessage(err), "Unknown occurrence type: 'AT_MOST'", fixed = TRUE)
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  expect_error(.cohortCreate(h, crit(list(type = "AT_MOST", count = 1L))$cohort$spec, mode = "temporary"),
+               "Unknown occurrence type")
+})
+
+test_that("A-15: every operator, zero included, gives the executor's rows through the adapter", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  .buildBlueprint(h)
+  rows <- function(sql) DBI::dbGetQuery(h$conn, paste0(
+    "SELECT subject_id, cohort_start_date, cohort_end_date FROM (", sql,
+    ") q ORDER BY subject_id, cohort_start_date, cohort_end_date"))
+  sizes <- integer(0)
+  for (occ in list(list(type = "at_least", count = 0L), list(type = "at_least", count = 2L),
+                   list(type = "at_most", count = 0L), list(type = "at_most", count = 1L),
+                   list(type = "exactly", count = 0L), list(type = "exactly", count = 2L))) {
+    spec <- list(type = "condition", concept_set = list(201820L),
+                 inclusion_criteria = list(any_dx = list(table = "condition_occurrence", occurrence = occ)))
+    plan <- list(cohort = list(type = "spec", spec = spec), outputs = list(m = list(type = "cohort_membership")))
+    lowered <- .irPrepare(plan)$populations$base$index$source$legacy_spec
+    direct <- withr::with_options(list(nfilter.subset = 0L), .cohortCreate(h, spec, mode = "temporary"))
+    want <- rows(paste0("SELECT * FROM ", direct))
+    .dropTempTable(h, direct)
+    fr <- withr::with_options(list(nfilter.subset = 0L), .adaptLegacySpec(h, lowered))
+    got <- rows(fr$select_body)
+    .dropTempTable(h, attr(fr, "temp_table"))
+    expect_identical(got, want, info = paste(unlist(occ), collapse = " "))
+    sizes <- c(sizes, nrow(want))
+  }
+  # the operators select different rows on this fixture (the comparison is not vacuous)
+  expect_gt(length(unique(sizes)), 1L)
+})
+
+test_that("A-16: an inline spec's id is absent, zero or positive as supplied, through the adapter too", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  spec <- list(type = "condition", concept_set = list(201820L))
+  plan <- function(id = NULL) {
+    cohort <- list(type = "spec", spec = spec)
+    if (!is.null(id)) cohort$cohort_definition_id <- id
+    list(cohort = cohort, outputs = list(m = list(type = "cohort_membership")))
+  }
+  ids <- list(absent = NULL, zero = 0L, five = 5L)
+  lowered <- lapply(ids, function(id) .irPrepare(plan(id))$populations$base$index$source$legacy_spec)
+  expect_null(lowered$absent$cohort_definition_id)
+  expect_identical(lowered$zero$cohort_definition_id, 0L)
+  expect_identical(lowered$five$cohort_definition_id, 5L)
+  digests <- vapply(ids, function(id) .rv_digest(plan(id)), "")
+  expect_identical(anyDuplicated(digests), 0L)
+  rows_of <- function(t) DBI::dbGetQuery(h$conn, paste0(
+    "SELECT subject_id, cohort_start_date, cohort_end_date FROM ", t,
+    " ORDER BY subject_id, cohort_start_date, cohort_end_date"))
+  for (nm in names(ids)) {
+    id <- ids[[nm]]
+    # the id names the session cohort (dsomop_cohort_<id>, 0 when absent);
+    # one such cohort at a time, as for the v1 executor
+    direct <- withr::with_options(list(nfilter.subset = 0L),
+      .cohortCreate(h, spec, mode = "temporary", cohort_id = id))
+    want <- list(name = direct, rows = rows_of(direct))
+    .dropTempTable(h, direct)
+    expect_identical(want$name, paste0("dsomop_cohort_", id %||% 0L), info = nm)
+    fr <- withr::with_options(list(nfilter.subset = 0L), .adaptLegacySpec(h, lowered[[nm]]))
+    table <- attr(fr, "temp_table")
+    expect_identical(table, want$name, info = nm)
+    expect_identical(rows_of(table), want$rows, info = nm)
+    .dropTempTable(h, table)
+  }
+  # the executed membership id column is the supplied id; without one the
+  # v1 executor fails while running, as in 2.10.2 (the legacy outcome is kept)
+  expect_true(all(.rv_run(h, plan(5L), "m")$cohort_definition_id == 5L))
+  expect_true(all(.rv_run(h, plan(0L), "m")$cohort_definition_id == 0L))
+  expect_error(.rv_run(h, plan(), "m"))
+  # a negative id is refused before lowering, as before any query
+  expect_s3_class(.rv_refused(.irPrepare(plan(-1L))), "dsomop_ir_validation_error")
+  # a results-cohort reference of 0 stays refused (A-10)
+  err <- .rv_refused(.irPrepare(list(cohort = list(type = "cohort_table", cohort_definition_id = 0L),
+                                     outputs = list(m = list(type = "cohort_membership")))))
+  expect_match(conditionMessage(err), "0 is refused")
+})
+
+test_that("A-16: a nearest offset of either sign is in the IR; zero and other selections are not", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  iv <- function(select, anchor = NULL) {
+    out <- list(type = "intervals_long", tables = "condition_occurrence",
+                window = list(start = -36500L, end = 36500L), event_select = select, select_n = 1L)
+    if (!is.null(anchor)) out$anchor <- anchor
+    list(cohort = list(type = "cohort_table", cohort_definition_id = 1L), outputs = list(iv = out))
+  }
+  opts <- function(p) .irPrepare(p)$outputs$iv$options
+  expect_identical(opts(iv("nearest", 9000L))$legacy_anchor_offset, 9000L)
+  expect_identical(opts(iv("nearest", -9000L))$legacy_anchor_offset, -9000L)
+  late <- .rv_run(h, iv("nearest", 9000L), "iv")
+  early <- .rv_run(h, iv("nearest", -9000L), "iv")
+  expect_false(identical(late, early))
+  expect_false(identical(.rv_digest(iv("nearest", 9000L)), .rv_digest(iv("nearest", -9000L))))
+  # omitted and zero offsets: one normal form, one digest, one result
+  expect_null(opts(iv("nearest", 0L))$legacy_anchor_offset)
+  expect_identical(.rv_digest(iv("nearest")), .rv_digest(iv("nearest", 0L)))
+  expect_identical(.rv_run(h, iv("nearest"), "iv"), .rv_run(h, iv("nearest", 0L), "iv"))
+  # under another selection the executor ignores the offset: advisory annex only
+  ir <- .irPrepare(iv("first", 9000L))
+  expect_null(ir$outputs$iv$options$legacy_anchor_offset)
+  expect_identical(attr(ir, "legacy_annex")[["outputs/iv"]][["ignored_anchor_offset"]], 9000L)
+  expect_identical(.rv_digest(iv("first")), .rv_digest(iv("first", 9000L)))
+  expect_identical(.rv_run(h, iv("first"), "iv"), .rv_run(h, iv("first", 9000L), "iv"))
+})
+
+test_that("A-16: folded scope cohort sources keep their order and operator", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  scoped <- function(combine) list(
+    cohort = list(type = "cohort_table", cohort_definition_id = 1L),
+    scope = list(cohort = 2L, combine = combine),
+    outputs = list(m = list(type = "cohort_membership")))
+  ir <- .irPrepare(scoped("intersect"))
+  expect_identical(ir$scope$cohort, 2L)
+  expect_identical(ir$scope$legacy_cohort_sources, list(2L, 1L))
+  expect_identical(ir$scope$combine, "intersect")
+  union <- .rv_run(h, scoped("union"), "m")
+  inter <- .rv_run(h, scoped("intersect"), "m")
+  expect_false(identical(union, inter))
+  expect_false(identical(.rv_digest(scoped("union")), .rv_digest(scoped("intersect"))))
+  # the default operator is materialised: absent and "union" are one IR
+  no_op <- scoped("union")
+  no_op$scope$combine <- NULL
+  expect_identical(.rv_digest(no_op), .rv_digest(scoped("union")))
+  # owned temp-table names stay names
+  named <- list(scope = list(cohort = list("dsomop_cohort_7", 2L)),
+                outputs = list(m = list(type = "cohort_membership")))
+  expect_identical(.irPrepare(named)$scope$legacy_cohort_sources, list("dsomop_cohort_7", 2L))
+  # the validator ties scope.cohort to the first source
+  bad <- .irDocument(ir)
+  bad$scope$cohort <- 1L
+  expect_match(paste(.irSemanticErrors(structure(bad, class = "dsomop_ir", source_version = 1L)), collapse = " "),
+               "scope.cohort must be the first cohort source", fixed = TRUE)
+})
+
+test_that("A-16: a person_level custom filter restricts its raw tables; unread sparse specs stay unread", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  pl <- function(custom = NULL) {
+    out <- list(type = "person_level", tables = list(person = list("gender_concept_id", "year_of_birth")))
+    if (!is.null(custom)) out$filters <- list(custom = custom)
+    list(outputs = list(p = out))
+  }
+  women <- list(var = "gender_concept_id", op = "==", value = 8532L)
+  ir <- .irPrepare(pl(women))
+  expect_identical(ir$outputs$p$legacy_raw_filter, list(var = "gender_concept_id", op = "==", value = 8532L))
+  all_rows <- .rv_run(h, pl(), "p")
+  filtered <- .rv_run(h, pl(women), "p")
+  expect_lt(nrow(filtered), nrow(all_rows))
+  expect_gt(nrow(filtered), 0L)
+  expect_false(identical(.rv_digest(pl()), .rv_digest(pl(women))))
+  # the executor's own refusal of an identifier filter, before any query
+  err <- .rv_refused(.irPrepare(pl(list(var = "person_id", op = "==", value = 1L)), h))
+  expect_match(conditionMessage(err), "/outputs/p/filters/custom: Disclosive: filter on column 'person_id'", fixed = TRUE)
+  # sparse: the legacy automatic builder never reads feature specs
+  sparse <- function(features = NULL) {
+    rep <- list(format = "sparse")
+    if (!is.null(features)) rep$features <- features
+    list(cohort = list(type = "cohort_table", cohort_definition_id = 1L),
+         outputs = list(s = list(type = "event_level", table = "condition_occurrence", representation = rep)))
+  }
+  specs <- list(list(name = "n_dx", type = "count", concept_set = list(201820L)))
+  ir <- .irPrepare(sparse(specs))
+  expect_identical(ir$outputs$s$legacy_automatic_features$format, "sparse")
+  expect_identical(.rv_digest(sparse()), .rv_digest(sparse(specs)))
+  expect_identical(.rv_run(h, sparse(), "s"), .rv_run(h, sparse(specs), "s"))
+})
