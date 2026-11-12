@@ -10,6 +10,8 @@
 From the reducer's result type: an exact-date-preserving reducer is class
 2; a reducer returning an observed value takes its value column's class
 (a physical column of the source table; the normalised \code{value} is
-class 3); counts, flags and statistics are class 3.
+class 3; the date columns of an event or an interval's course rows --
+\code{start_date}, \code{end_date}, \code{end_recorded} -- are exact
+dates, class 2); counts, flags and statistics are class 3.
 }
 \keyword{internal}
