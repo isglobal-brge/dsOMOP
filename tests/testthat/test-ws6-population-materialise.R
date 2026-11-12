@@ -7,6 +7,7 @@ withr::defer(.ws4_cleanup(.ws6_freeze_backends), testthat::teardown_env())
   ctx <- .ws4_ctx(h, .ws6_plan(populations = list(p = list(kind = "criteria"))))
   d <- .compileDialect(ctx)
   long_key <- paste(rep("origin:", 120L), collapse = "")
+  high_keys <- c("9223372036854775807", "9223372036854775806", "9223372036854775805")
   columns <- list(cohort_row_id = .fragmentColumn("bigint", FALSE, "episode_key"),
                    subject_id = .fragmentColumn("bigint", FALSE, "person_key"),
                    index_date = .fragmentColumn("date", FALSE, "start"),
@@ -18,7 +19,9 @@ withr::defer(.ws4_cleanup(.ws6_freeze_backends), testthat::teardown_env())
   source <- .fragment("ws6_freeze_input", "candidates", "episode", paste0(
     "SELECT p.person_id AS subject_id, ROW_NUMBER() OVER (ORDER BY p.person_id) AS cohort_row_id, ",
     .sqlDateLiteral(d, "2020-01-01"), " AS index_date, ", .compileTextLiteral(long_key), " AS index_key, ",
-    .sqlIntegerLiteral(d, "9223372036854775807"), " AS source_key, CASE WHEN p.person_id = 2 THEN ",
+    "CASE WHEN p.person_id = 1 THEN ", .sqlIntegerLiteral(d, high_keys[[1L]]),
+    " WHEN p.person_id = 2 THEN ", .sqlIntegerLiteral(d, high_keys[[2L]]),
+    " ELSE ", .sqlIntegerLiteral(d, high_keys[[3L]]), " END AS source_key, CASE WHEN p.person_id = 2 THEN ",
     .compileTypedNull(d, "numeric"), " ELSE ", .predicateNumericLiteral(1 / 3), " END AS sampling_weight ",
     "FROM ", .qualifyTable(h, "person"), " p WHERE p.person_id IN (1, 2, 3)"),
     columns = columns, unique_key = "cohort_row_id",
@@ -32,7 +35,7 @@ withr::defer(.ws4_cleanup(.ws6_freeze_backends), testthat::teardown_env())
                   private_columns = c("index_key", "source_key"), ordering = "cohort_row_id")
   attr(f, "population") <- "p"
   attr(f, "index_sources") <- "fixture"
-  list(ctx = ctx, fragment = f, long_key = long_key)
+  list(ctx = ctx, fragment = f, long_key = long_key, high_keys = high_keys)
 }
 
 test_that("population snapshots retain typed rows without a fetch, count or memory cap", {
@@ -52,12 +55,24 @@ test_that("population snapshots retain typed rows without a fetch, count or memo
     expect_identical(attr(frozen, "index_sources"), "fixture", info = b)
     .fragmentRegister(ctx, frozen)
     expect_error(.populationFreezeFragment(ctx, frozen), "before registration")
-    read <- function() .fetchFragment(ctx, frozen, "cohort_row_id")
+    # DuckDB's default driver maps BIGINT to R doubles. Check the stored
+    # identities using a lossless SQL text projection, before that conversion.
+    read <- function() {
+      columns <- vapply(names(frozen$columns), function(column) {
+        if (identical(column, "source_key")) paste0(.sqlLosslessKeyText(ctx$handle, "t.source_key"),
+                                                    " AS source_key") else paste0("t.", column)
+      }, "")
+      sql <- .buildStatement(ctx, frozen, select = paste0("SELECT ", paste(columns, collapse = ", "),
+        " FROM ", frozen$name, " t ORDER BY t.cohort_row_id"), dialect = ctx)
+      rows <- .executeQuery(h, sql)
+      rows$index_date <- as.Date(as.character(rows$index_date))
+      rows
+    }
     before <- read()
     expect_equal(as.numeric(before$cohort_row_id), 1:3, info = b)
     expect_equal(as.numeric(before$subject_id), 1:3, info = b)
     expect_identical(as.character(before$index_key), rep(x$long_key, 3L), info = b)
-    expect_identical(as.character(before$source_key), rep("9223372036854775807", 3L), info = b)
+    expect_identical(as.character(before$source_key), x$high_keys, info = b)
     expect_equal(as.numeric(before$sampling_weight), c(1 / 3, NA, 1 / 3), tolerance = 0, info = b)
     expect_identical(format(before$index_date, "%Y-%m-%d"), rep("2020-01-01", 3L), info = b)
     # A database update would both change membership and renumber the live CTE.
@@ -66,7 +81,8 @@ test_that("population snapshots retain typed rows without a fetch, count or memo
     # Reusing the relation twice must work on MySQL, including its numeric
     # fraction and NULL transport; bigint identities keep their separate type.
     sql <- .buildStatement(ctx, frozen, select = paste0(
-      "SELECT a.cohort_row_id, a.source_key, a.sampling_weight, b.index_key FROM ", frozen$name,
+      "SELECT a.cohort_row_id, ", .sqlLosslessKeyText(h, "a.source_key"),
+      " AS source_key, a.sampling_weight, b.index_key FROM ", frozen$name,
       " a INNER JOIN ", frozen$name, " b ON a.subject_id = b.subject_id ORDER BY a.cohort_row_id"), dialect = ctx)
     twice <- .executeQuery(h, sql)
     expect_identical(as.character(twice$source_key), as.character(before$source_key), info = b)

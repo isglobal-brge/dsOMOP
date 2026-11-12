@@ -46,11 +46,12 @@
   tryCatch({
     .createTempTable(handle, table, empty)
     if (identical(.sqlFamily(h), "mysql")) {
-      # CTAS over typed NULL otherwise gives CHAR(255) and DECIMAL(38,10).
-      # Origin keys can be longer, and sampling weights need double precision.
-      modify <- vapply(columns[types %in% c("text", "numeric")], function(column) {
-        paste0("MODIFY COLUMN ", column, " ",
-               if (identical(types[[column]], "text")) "LONGTEXT CHARACTER SET utf8mb4" else "DOUBLE")
+      # CTAS over typed NULL otherwise gives CHAR(255) and DECIMAL(38,10),
+      # and MariaDB infers INT from CAST(NULL AS SIGNED). Keep the declared
+      # bigint width, unbounded origin keys and double-precision weights.
+      modify <- vapply(columns[types %in% c("bigint", "text", "numeric")], function(column) {
+        paste0("MODIFY COLUMN ", column, " ", switch(types[[column]],
+          bigint = "BIGINT", text = "LONGTEXT CHARACTER SET utf8mb4", numeric = "DOUBLE"))
       }, "")
       if (length(modify)) .executeStatement(handle, paste0("ALTER TABLE ", table, " ",
                                                           paste(modify, collapse = ", ")))
