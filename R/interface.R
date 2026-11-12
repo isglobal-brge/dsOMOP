@@ -804,8 +804,7 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
       # It refuses every requested family without exposing its private details.
       roots <- as.character(unlist(plan$publish %||% names(out), use.names = FALSE))
       if (!length(roots)) stop(e)
-      for (root in roots) ctx$rejected[[root]] <- list(code = e$code,
-                                                     message = .publishMessage(e$code))
+      for (root in roots) ctx$rejected[[root]] <- .rejectionEntry(e)
       list()
     })
   .publishOutputs(ctx, outputs, out)

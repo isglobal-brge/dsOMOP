@@ -191,6 +191,20 @@ fills its entries. Classes follow design-2.10.3 section 5.
   A-14 execution plan selection for 2.10.1-style recipes, `source_analyses`
   on temporal and person-period outputs, and the windowed-features corpus row
   reclassified `newly_permitted`.
+- A-15 the `legacy_spec` inclusion `occurrence` is the executor's historical
+  `{type: at_least | at_most | exactly, count >= 0}` object (defaults
+  `at_least`, 1), not `{min, max}`; A-16 five further IR-only variants carry
+  the v1 semantics the executor audit found (`legacy_raw_filter`, the
+  nearest-only non-zero `legacy_anchor_offset`, `legacy_spec.cohort_definition_id
+  >= 0`, scope `legacy_cohort_sources` with the materialised `combine`,
+  `legacy_automatic_features` format `sparse`); probes I41-I60 and the wire
+  refusals P64-P66.
+- A-18 a rejected status entry may carry a third closed field `reason`
+  (`adapter_person_mismatch`, `cost_currency_mixed`), present only with
+  `validation_error`: every status writer builds its entry with
+  `.rejectionEntry()`, which copies the reason from the condition only under
+  those conditions and never its raw message, field path or state;
+  `.validatePlanStatus()` admits exactly that field and vocabulary.
 
 ## Concept sets, events, adapters and predicates (WS-4)
 
@@ -199,8 +213,8 @@ fills its entries. Classes follow design-2.10.3 section 5.
   (`concept_ancestor`), then the `'Maps to'` sources of the set, minus the
   exclusion; (A-15) an object-valued `exclude` is expanded with its own flags
   before it is removed, a bare vector still means exact ids. The RxNorm
-  ingredient map of drug concepts (`cs_ingredient_map`) serves eras grouped
-  `by = "ingredient"`.
+  ingredient map of drug concepts (fragment identity `("map", "ingredient")`)
+  serves eras grouped `by = "ingredient"`.
 - `R/compile_event.R`: one event compiler in three stages: the table's roles
   from the role registry (the event's own end policy, the original recorded
   end and supply kept for era overrides and supply reducers, the scoping
@@ -225,11 +239,29 @@ fills its entries. Classes follow design-2.10.3 section 5.
   reviewed `cost_domain_id` mapping; one amount field; a source mixing
   currencies without `currency` is refused, `cost_currency_mixed`); both
   carry the parent event identity (`parent_source_ns`, `parent_event_id`).
-  These refusals are plan rejections transported as `validation_error`.
+  These refusals are plan rejections transported as `validation_error` with
+  their closed `reason` (A-18). An unavailable adapter keeps the declared
+  columns, unique key, source identity, ordering and private columns of the
+  available one (A-17).
 - `R/compile_predicate.R` (the language-2.0 predicate grammar in SQL, with
-  the Kleene `any`/`all` table) and `R/compile_statement.R` (deterministic
-  fragment names, the fragment registry of the execution context and
-  `.buildStatement()`: one WITH chain in dependency order, typed-SQL checked).
+  the Kleene `any`/`all` table) and `R/compile_statement.R` (the fragment
+  registry of the execution context and `.buildStatement()`: one WITH chain
+  in dependency order, typed-SQL checked). (A-17) Fragment SQL identifiers
+  are allocated per execution context from the structured identity (prefix,
+  name, stage): every identity of the plan is preallocated in canonical
+  order, so the allocation is deterministic and independent of compilation
+  order; a readable name is kept only when no other identity reads the same
+  under the dialect's identifier comparison and limit (PostgreSQL 63 bytes,
+  Oracle 30), otherwise a stem plus a ten-digit SHA-256 prefix and the first
+  free `_2`, `_3`, ... are used. A final fragment never shares an identifier
+  with a stage, and events differing only by case never collide.
+- Language-2.0 plans compile their event sources (adapters included) in the
+  private execution context before the refusal that they are not executed
+  yet, so the section 11 adapter refusals reach the status, and the
+  analyst's error, with their reason; nothing is published. Covered end to
+  end on PostgreSQL through `omopPlanExecuteDS` under both commit policies
+  and through `ds.omop.plan.execute()` over DSLite under both
+  `on_small_site` settings.
 
 ## Intervals, anchors and coverage (WS-5)
 

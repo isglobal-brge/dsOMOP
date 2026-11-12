@@ -175,8 +175,63 @@
             "intersect"
           ],
           "default": "union"
+        },
+        "legacy_cohort_sources": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "cohort_table"
+                  },
+                  "cohort_definition_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            ]
+          },
+          "description": "every cohort source v1 folds into the one scope cohort with the materialised scope.combine, in fold order; scope.cohort is the first entry (checked by the IR validator)"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "legacy_cohort_sources"
+            ]
+          },
+          "then": {
+            "required": [
+              "cohort",
+              "combine"
+            ],
+            "properties": {
+              "cohort": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "legacy_names": {
       "type": "object",
@@ -3035,8 +3090,34 @@
         "anchor": {
           "$ref": "#/$defs/anchor",
           "default": "index"
+        },
+        "legacy_anchor_offset": {
+          "type": "integer",
+          "not": {
+            "const": 0
+          },
+          "description": "the v1 intervals_long anchor as a non-zero day offset from the index (either sign), present only with event_select = nearest, which orders by ABS(start_days_from_index - offset); omitted and zero offsets lower to anchor index with this field absent"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "legacy_anchor_offset"
+            ]
+          },
+          "then": {
+            "required": [
+              "event_select"
+            ],
+            "properties": {
+              "event_select": {
+                "const": "nearest"
+              }
+            }
+          }
+        }
+      ]
     },
     "options_temporal": {
       "type": "object",
@@ -3508,7 +3589,8 @@
             "format": {
               "enum": [
                 "wide",
-                "features"
+                "features",
+                "sparse"
               ]
             },
             "source": {
@@ -3524,6 +3606,10 @@
               }
             }
           }
+        },
+        "legacy_raw_filter": {
+          "$ref": "#/$defs/predicate",
+          "description": "the v1 person_level output-level custom filter, ANDed into every raw person/death table of the output before the outer merge"
         }
       },
       "allOf": [
@@ -4257,14 +4343,23 @@
         "occurrence": {
           "type": "object",
           "additionalProperties": false,
+          "default": {
+            "type": "at_least",
+            "count": 1
+          },
           "properties": {
-            "min": {
-              "type": "integer",
-              "minimum": 0
+            "type": {
+              "enum": [
+                "at_least",
+                "at_most",
+                "exactly"
+              ],
+              "default": "at_least"
             },
-            "max": {
+            "count": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "default": 1
             }
           }
         }
@@ -4315,6 +4410,11 @@
           "additionalProperties": {
             "$ref": "#/$defs/legacy_inclusion_criterion"
           }
+        },
+        "cohort_definition_id": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "the v1 plan cohort's cohort_definition_id of an inline spec (names its temporary cohort, fills the cohort_membership id column); present only when supplied, never defaulted"
         }
       }
     },

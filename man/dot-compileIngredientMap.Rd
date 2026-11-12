@@ -15,7 +15,8 @@ The registered reference fragment (grain none).
 \description{
 Design section 6.5: \code{concept_ancestor} restricted to ancestors with
 \code{concept_class_id = 'Ingredient'} and \code{vocabulary_id} RxNorm or
-RxNorm Extension; one fragment per plan (\code{cs_ingredient_map}), joined
+RxNorm Extension; one fragment per plan (identity \code{("map", "ingredient")},
+readable \code{map_ingredient}; \code{cs_ingredient_map} in design 6.7), joined
 by eras grouped \code{by = "ingredient"} (\code{descendant_concept_id} =
 the drug concept, \code{ingredient_concept_id} = its ingredient). A drug
 concept with several ingredient ancestors maps to each of them.

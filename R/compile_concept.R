@@ -189,7 +189,8 @@
 #'
 #' Design section 6.5: \code{concept_ancestor} restricted to ancestors with
 #' \code{concept_class_id = 'Ingredient'} and \code{vocabulary_id} RxNorm or
-#' RxNorm Extension; one fragment per plan (\code{cs_ingredient_map}), joined
+#' RxNorm Extension; one fragment per plan (identity \code{("map", "ingredient")},
+#' readable \code{map_ingredient}; \code{cs_ingredient_map} in design 6.7), joined
 #' by eras grouped \code{by = "ingredient"} (\code{descendant_concept_id} =
 #' the drug concept, \code{ingredient_concept_id} = its ingredient). A drug
 #' concept with several ingredient ancestors maps to each of them.
@@ -198,7 +199,8 @@
 #' @return The registered reference fragment (grain none).
 #' @keywords internal
 .compileIngredientMap <- function(ctx) {
-  existing <- .fragmentGet(ctx, "cs_ingredient_map")
+  nm <- .fragmentName("map", "ingredient", ctx = ctx)
+  existing <- .fragmentGet(ctx, nm)
   if (!is.null(existing)) return(existing)
   handle <- ctx[["handle"]]
   bp <- .buildBlueprint(handle)
@@ -218,7 +220,7 @@
     "WHERE c.concept_class_id = 'Ingredient' ",
     "AND c.vocabulary_id IN ('RxNorm', 'RxNorm Extension')")
   f <- .fragment(
-    name = "cs_ingredient_map", kind = "concept", grain = "none",
+    name = nm, kind = "concept", grain = "none",
     select_body = body,
     columns = list(
       descendant_concept_id = .fragmentColumn("integer", FALSE, "concept"),

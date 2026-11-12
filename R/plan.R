@@ -2909,6 +2909,12 @@
   # any query. A v1 plan then runs on the v1 executors below, unchanged.
   ir <- .irPrepare(plan, handle)
   if (identical(attr(ir, "source_version"), 2L)) {
+    # The event stage of language-2.0 execution (design 6.1, WS-4): the event
+    # sources of the requested roots compile in the private context, so the
+    # data-dependent adapter refusals of section 11 are raised, with their
+    # reason (A-18), before any output is materialised. The later stages
+    # (intervals, populations, variables, outputs) replace the refusal below.
+    .planCompileSources(.compileContext(ctx, ir), names(out_symbols))
     .irReject(paste0("this server validates language 2.0 plans but does not ",
                      "execute them yet; use omopPlanExplainDS"))
   }
@@ -3766,7 +3772,7 @@
       if (!inherits(e, "dsomop_plan_rejection") ||
           !e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",
                          "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
-      ctx$rejected[[out_name]] <- list(code = e$code, message = .publishMessage(e$code))
+      ctx$rejected[[out_name]] <- .rejectionEntry(e)
       results[[out_name]] <<- NULL
     })
   }
@@ -3799,7 +3805,7 @@
       if (!inherits(e, "dsomop_plan_rejection") ||
           !e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",
                          "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
-      ctx$rejected[[out_name]] <- list(code = e$code, message = .publishMessage(e$code))
+      ctx$rejected[[out_name]] <- .rejectionEntry(e)
       results[[out_name]] <<- NULL
     })
   }
