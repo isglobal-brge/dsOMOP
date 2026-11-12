@@ -3831,7 +3831,7 @@
       if (!inherits(e, "dsomop_plan_rejection") ||
           !e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",
                          "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
-      ctx$rejected[[out_name]] <- list(code = e$code, message = .publishMessage(e$code))
+      ctx$rejected[[out_name]] <- .rejectionEntry(e)
       results[[out_name]] <<- NULL
     })
   }
@@ -3864,7 +3864,7 @@
       if (!inherits(e, "dsomop_plan_rejection") ||
           !e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",
                          "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
-      ctx$rejected[[out_name]] <- list(code = e$code, message = .publishMessage(e$code))
+      ctx$rejected[[out_name]] <- .rejectionEntry(e)
       results[[out_name]] <<- NULL
     })
   }

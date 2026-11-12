@@ -207,9 +207,31 @@
               }
             ]
           },
-          "description": "every cohort source v1 folds into the one scope cohort (scope.cohort and a results-cohort plan cohort), in fold order; scope.cohort is the first"
+          "description": "every cohort source v1 folds into the one scope cohort with the materialised scope.combine, in fold order; scope.cohort is the first entry (checked by the IR validator)"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "legacy_cohort_sources"
+            ]
+          },
+          "then": {
+            "required": [
+              "cohort",
+              "combine"
+            ],
+            "properties": {
+              "cohort": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "legacy_names": {
       "type": "object",
@@ -3071,9 +3093,31 @@
         },
         "legacy_anchor_offset": {
           "type": "integer",
-          "description": "the v1 intervals_long anchor: days from the index that event_select = nearest orders by (0 is the native anchor index)"
+          "not": {
+            "const": 0
+          },
+          "description": "the v1 intervals_long anchor as a non-zero day offset from the index (either sign), present only with event_select = nearest, which orders by ABS(start_days_from_index - offset); omitted and zero offsets lower to anchor index with this field absent"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "legacy_anchor_offset"
+            ]
+          },
+          "then": {
+            "required": [
+              "event_select"
+            ],
+            "properties": {
+              "event_select": {
+                "const": "nearest"
+              }
+            }
+          }
+        }
+      ]
     },
     "options_temporal": {
       "type": "object",
@@ -3565,7 +3609,7 @@
         },
         "legacy_raw_filter": {
           "$ref": "#/$defs/predicate",
-          "description": "the v1 person_level output-level custom filter, which also restricts each raw person/death table of the output"
+          "description": "the v1 person_level output-level custom filter, ANDed into every raw person/death table of the output before the outer merge"
         }
       },
       "allOf": [
@@ -4369,8 +4413,8 @@
         },
         "cohort_definition_id": {
           "type": "integer",
-          "minimum": 1,
-          "description": "the v1 plan cohort id of an inline spec (names its temporary cohort, fills the cohort_membership id column)"
+          "minimum": 0,
+          "description": "the v1 plan cohort's cohort_definition_id of an inline spec (names its temporary cohort, fills the cohort_membership id column); present only when supplied, never defaulted"
         }
       }
     },
