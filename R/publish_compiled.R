@@ -92,6 +92,9 @@
     ctx$publication_shapes[[id]] <- candidate$grain
   }
   for (candidate in compiled$publication_candidates) {
+    # an unavailable root is decided as a family, availability before support
+    # (.publishResolveAvailability())
+    if (identical(compiled$status, "unavailable")) candidate$status <- "unavailable"
     component <- compiled$components[[candidate$component]]
     if (is.null(component$frame)) .sqlAssertTypedSql(ctx, component$statement)
     if (!identical(ctx$output_mode, "staged")) {
