@@ -732,7 +732,7 @@
   if (is.integer(x)) return("BIGINT")
   if (is.numeric(x)) return("DOUBLE")
   if (is.raw(x) || is.list(x)) return("LONGBLOB")
-  "TEXT"
+  "LONGTEXT CHARACTER SET utf8mb4"
 }
 
 #' Materialize a temporary table from a consistent read (MySQL, MariaDB)
@@ -763,6 +763,10 @@
   create <- paste0("CREATE TEMPORARY TABLE ", name, " (", columns, ")")
   .dsomopSnapshotGuard(handle, create)
   .dsomopSnapshotRun(handle, function(conn) DBI::dbExecute(conn, create))
+  # CREATE TEMPORARY TABLE survives rollback. Own it before appending so a
+  # failed transfer remains visible to compiler/operation cleanup and retries.
+  handle$temp_connection <- conn
+  handle$temp_tables <- unique(c(handle$temp_tables, name))
   if (nrow(rows)) {
     .dsomopSnapshotRun(handle, function(conn) {
       DBI::dbAppendTable(conn, name, rows)

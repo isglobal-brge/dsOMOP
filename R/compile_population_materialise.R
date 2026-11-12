@@ -2,12 +2,18 @@
 # A deterministic ORDER BY does not make a CTE immutable when the underlying
 # CDM changes between statements. Freeze the selected relation inside the
 # database once, retaining its fragment contract and consumer metadata. This
-# path neither counts nor fetches patient rows into R and has no memory-row cap.
+# native path neither counts nor fetches patient rows into R. The MySQL-family
+# request-snapshot path uses the existing private R transfer so materialisation
+# reads the pinned snapshot instead of INSERT ... SELECT current rows. Neither
+# path imposes a memory-row cap, counts rows for admission or truncates results.
 
 #' Freeze a private population relation inside the database
 #'
 #' Takes an unregistered fragment whose dependencies are registered in the
-#' context. No patient rows are counted or fetched into R. The returned
+#' context. The native path does not fetch patient rows into R. MySQL-family
+#' request snapshots privately transfer the consistent SELECT through R before
+#' filling the session table; this requires memory for the complete relation.
+#' Neither path counts rows for admission or applies a memory-row cap. The returned
 #' fragment retains its contract and attributes, including candidate identity,
 #' but reads a context-owned session table with no fragment dependencies.
 #' The caller registers it. MySQL reuse carries the private typed-payload
@@ -44,20 +50,28 @@
   assign("compile_temp_tables", unique(c(ctx[["compile_temp_tables"]] %||% character(0), table)),
          envir = ctx)
   tryCatch({
-    .createTempTable(handle, table, empty)
-    if (identical(.sqlFamily(h), "mysql")) {
-      # CTAS over typed NULL otherwise gives CHAR(255) and DECIMAL(38,10),
-      # and MariaDB infers INT from CAST(NULL AS SIGNED). Keep the declared
-      # bigint width, unbounded origin keys and double-precision weights.
-      modify <- vapply(columns[types %in% c("bigint", "text", "numeric")], function(column) {
-        paste0("MODIFY COLUMN ", column, " ", switch(types[[column]],
-          bigint = "BIGINT", text = "LONGTEXT CHARACTER SET utf8mb4", numeric = "DOUBLE"))
-      }, "")
-      if (length(modify)) .executeStatement(handle, paste0("ALTER TABLE ", table, " ",
-                                                          paste(modify, collapse = ", ")))
+    if (.dsomopReadSnapshotActive(handle) &&
+        identical(handle$read_snapshot$kind, "consistent_snapshot_transaction")) {
+      # ALTER TABLE can end the transaction, and INSERT ... SELECT is a
+      # current/locking read. Use the existing ordinary consistent SELECT
+      # materialiser, whose private transfer has no row-count admission gate.
+      .createTempTable(handle, table, sql)
+    } else {
+      .createTempTable(handle, table, empty)
+      if (identical(.sqlFamily(h), "mysql")) {
+        # CTAS over typed NULL otherwise gives CHAR(255) and DECIMAL(38,10),
+        # and MariaDB infers INT from CAST(NULL AS SIGNED). Keep the declared
+        # bigint width, unbounded origin keys and double-precision weights.
+        modify <- vapply(columns[types %in% c("bigint", "text", "numeric")], function(column) {
+          paste0("MODIFY COLUMN ", column, " ", switch(types[[column]],
+            bigint = "BIGINT", text = "LONGTEXT CHARACTER SET utf8mb4", numeric = "DOUBLE"))
+        }, "")
+        if (length(modify)) .executeStatement(handle, paste0("ALTER TABLE ", table, " ",
+                                                            paste(modify, collapse = ", ")))
+      }
+      .executeStatement(handle, paste0("INSERT INTO ", table, " (", paste(columns, collapse = ", "),
+                                       ") ", sql))
     }
-    .executeStatement(handle, paste0("INSERT INTO ", table, " (", paste(columns, collapse = ", "),
-                                     ") ", sql))
     f$select_body <- paste0("SELECT ", paste(paste0("t.", columns, " AS ", columns), collapse = ", "),
                             " FROM ", table, " t")
     f$dependencies <- character(0)

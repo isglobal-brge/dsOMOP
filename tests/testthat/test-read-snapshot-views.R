@@ -315,3 +315,44 @@ test_that("actual request capability and all finalizers survive snapshot exit", 
   expect_identical(calls, c("aTRUE", "bTRUE", "aFALSE", "bFALSE"))
   expect_null(h$read_snapshot)
 })
+
+
+for (engine in c("mariadb", "mysql")) local({
+  dbms <- engine
+  test_that(paste(dbms, "certifies sources of WS6 bounded matching and population freezing"), {
+    f <- .snapshotViewFixture(dbms, "MyISAM", nested = TRUE)
+    on.exit(f$cleanup(), add = TRUE)
+    f$grant_metadata()
+    h <- f$handle
+    ctx <- .ws4_ctx(h, .ws6_plan(populations = list(p = list(kind = "criteria"))))
+    on.exit(.planContextClose(ctx), add = TRUE, after = FALSE)
+    source <- .fragment("snapshot_ws6_source", "roster", "person",
+      paste("SELECT person_id AS subject_id FROM", f$declared),
+      columns = list(subject_id = .fragmentColumn("bigint", FALSE, "person_key")),
+      unique_key = "subject_id", person_lineage = list(person_col = "subject_id", via_roster = NULL))
+    # .matchFetchBounded directly streams DBI results; its own certification
+    # must reject even when no earlier population materialisation read them.
+    expect_error(.dsomopWithReadSnapshot(h, .matchFetchBounded(ctx, source,
+      "SELECT subject_id FROM snapshot_ws6_source", cap = 10L)), class = "dsomop_snapshot_unavailable")
+    expect_null(h$read_snapshot)
+    expect_error(.dsomopWithReadSnapshot(h, .populationFreezeFragment(ctx, source)),
+      class = "dsomop_snapshot_unavailable")
+    expect_null(h$read_snapshot)
+    expect_length(ctx$compile_temp_tables, 0L)
+    expect_length(h$temp_tables, 0L)
+    # Restoring a certifiable dependency restores both protected routes.
+    DBI::dbExecute(f$admin, paste("ALTER TABLE", f$physical, "ENGINE=InnoDB"))
+    .dsomopWithReadSnapshot(h, {
+      rows <- .matchFetchBounded(ctx, source, "SELECT subject_id FROM snapshot_ws6_source", cap = 10L)
+      expect_identical(as.character(rows$subject_id), as.character(1:3))
+      frozen <- .populationFreezeFragment(ctx, source)
+      .fragmentRegister(ctx, frozen)
+      expect_identical(as.character(.executeQuery(h, .buildStatement(ctx, frozen, dialect = ctx))$subject_id),
+        as.character(1:3))
+      .compileReleaseTempTables(ctx)
+      TRUE
+    })
+    expect_null(h$read_snapshot)
+    expect_length(h$temp_tables, 0L)
+  })
+})

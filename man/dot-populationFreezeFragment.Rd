@@ -16,7 +16,10 @@ The frozen, unregistered fragment.
 }
 \description{
 Takes an unregistered fragment whose dependencies are registered in the
-context. No patient rows are counted or fetched into R. The returned
+context. The native path does not fetch patient rows into R. MySQL-family
+request snapshots privately transfer the consistent SELECT through R before
+filling the session table; this requires memory for the complete relation.
+Neither path counts rows for admission or applies a memory-row cap. The returned
 fragment retains its contract and attributes, including candidate identity,
 but reads a context-owned session table with no fragment dependencies.
 The caller registers it. MySQL reuse carries the private typed-payload
