@@ -37,6 +37,10 @@ def sha(path):
 
 
 def snapshot(side, revision):
+    run(["df", "-h", "/workspace"])
+    if shutil.disk_usage("/workspace").free < 15 * 1024**3:
+        raise RuntimeError("At least 15 GiB free is required before copying a source snapshot; "
+                           "follow design/astra-dev/CLEANUP.md")
     path = ARTIFACTS / side
     if path.exists():
         raise RuntimeError(f"Refusing to replace existing snapshot {path}")
@@ -113,7 +117,13 @@ def main():
         failed, errors, skipped, passed = map(int, totals[-1])
         evidence["runs"][side] = {"failed": failed, "errors": errors, "skipped": skipped,
             "passed": passed, "snapshot_path": str(path.relative_to(ROOT)), "source_sha256": manifest, "raw_log_sha256": sha(EVIDENCE / f"{side}-full.log")}
+        # Every source byte is pinned by the Git object and the manifest, and
+        # the pod retains its mirror. Delete only this run's freshly-created,
+        # disposable local snapshot after its evidence log has been written.
+        removed_bytes = int(run(["du", "-sb", str(path)], capture_output=True).stdout.split()[0])
+        evidence["runs"][side]["removed_snapshot"] = {"path": str(path), "bytes": removed_bytes}
         (EVIDENCE / "verification.json").write_text(json.dumps(evidence, indent=2) + "\n")
+        shutil.rmtree(path)
         print(result.stdout, flush=True)
         if failed or errors or skipped:
             raise RuntimeError(f"Replay did not pass cleanly for {side}")

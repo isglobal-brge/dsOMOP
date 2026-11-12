@@ -48,8 +48,11 @@ Reproduce on the test pod from a checkout of this commit:
 python3 tools/ws2/a25-replay.py 14e634ee819ec7aba678c9f9ddc7f082a51bd0a6
 ```
 
-The runner creates narrow snapshots inside the assigned worktree, runs them
-through `rtest.sh`, and refuses to overwrite an existing snapshot. After one
+The runner checks `df -h /workspace` and requires at least 15 GiB free before
+creating narrow snapshots inside the assigned worktree. It runs them through
+`rtest.sh`, refuses to overwrite an existing snapshot, and removes each new
+local snapshot after recording its source manifest and evidence log; the
+verification records the removed path and its byte size. After one
 successful baseline capture, `--current-only <commit>` reuses its locally saved
 RDS and captures another immutable current source. It copies that baseline RDS
 into the new snapshot and writes result captures outside the parent pod mirror
