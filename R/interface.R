@@ -1686,6 +1686,9 @@ omopCdmVersionDS <- function(omop_symbol) {
 omopPlanPreviewDS <- function(omop_symbol, plan) {
   handle <- .getHandle(omop_symbol)
   plan <- .ds_arg(plan)
+  # Audit extraction reads output fields too: it must follow the same closed
+  # envelope as validation and preview, before any metadata or result query.
+  .irValidateEnvelope(.irJsonForm(plan))
   # Preview is the cheapest, most-repeated data-touching op and is the primary
   # differencing signal, so the data controller must be able to see the
   # sequence of preview calls (banding alone cannot stop iterative probing).

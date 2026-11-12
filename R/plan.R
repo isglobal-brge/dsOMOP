@@ -99,19 +99,23 @@
 #' @keywords internal
 .planValidate <- function(handle, plan) {
   wire <- .planWirePart(plan)
-  # A-25 names have a pure syntax/registry preflight. Keep the legacy
-  # diagnostics for unrelated invalid inputs, without querying metadata for
-  # a malformed or unowned population reference.
-  cohort_error <- tryCatch({
+  # Every traversal, including supplemental v1 diagnostics, follows the
+  # incoming version's closed envelope. Malformed inputs need no site work.
+  envelope_error <- tryCatch({
     json <- .irJsonForm(wire[["plan"]])
-    if (!identical(.irPlanVersion(json), 2L)) .planV1CohortPreflight(json, handle)
+    .irValidateEnvelope(json)
+    version <- .irPlanVersion(json)
+    if (!identical(version, 2L)) .planV1CohortPreflight(json, handle)
     NULL
   }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e))
-  if (!is.null(cohort_error)) {
-    return(list(valid = FALSE, errors = cohort_error, warnings = character(0),
+  if (!is.null(envelope_error)) {
+    return(list(valid = FALSE, errors = envelope_error, warnings = character(0),
                 available_tables = character(0)))
   }
-  legacy <- .planLegacyFindings(handle, plan)
+  legacy <- if (!identical(version, 2L)) .planLegacyFindings(handle, json) else {
+    list(errors = character(0), missing_tables = character(0),
+         warnings = character(0), available_tables = character(0))
+  }
   # The frozen validation sequence (design-2.10.3 section 4.5) -- closed
   # envelope, normalisation, ir-v2.json, semantic and site rules, dialect
   # preflight -- reported here as validation errors, raised as typed
@@ -120,8 +124,11 @@
     .irPrepare(wire[["plan"]], handle = handle, scope_tables = wire[["scope_tables"]])
     NULL
   }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e),
-  # the v1 plan-declaration errors are among the legacy findings already
-  dsomop_v1_declaration_error = function(e) NULL)
+  dsomop_v1_declaration_error = function(e) conditionMessage(e))
+  if (identical(version, 2L) && is.null(ir_error)) {
+    bp <- .buildBlueprint(handle)
+    legacy[["available_tables"]] <- bp$tables$table_name[bp$tables$present_in_db]
+  }
   errors <- unique(c(legacy[["errors"]], legacy[["missing_tables"]], ir_error))
   list(
     valid = length(errors) == 0,
@@ -408,8 +415,12 @@
 #'   estimates for the executed output.
 #' @keywords internal
 .planPreview <- function(handle, plan) {
-  bp <- .buildBlueprint(handle)
+  wire <- .planWirePart(plan)
+  json <- .irJsonForm(wire[["plan"]])
+  .irValidateEnvelope(json)
   validation <- .planValidate(handle, plan)
+  native <- identical(.irPlanVersion(json), 2L)
+  bp <- .buildBlueprint(handle)
   cohort_errors <- validation$errors[grepl(
     "no executable cohort source|Plan cohort cannot execute",
     validation$errors
@@ -440,7 +451,8 @@
   # unrestricted output.  Scoped/filtered counts are reported as unavailable
   # instead of presenting the source-table population as if it described the
   # requested output.
-  plan_is_scoped <- !is.null(plan$cohort) || !is.null(plan$scope) ||
+  plan_is_scoped <- wire[["scope_tables"]] > 0L ||
+    !is.null(plan$cohort) || !is.null(plan$scope) ||
     .planHasMultiPopulation(plan)
   preview_person_count <- function(tbl_row, col_df, restricted,
                                    unavailable_reason) {
@@ -505,7 +517,7 @@
   outputs <- plan$outputs %||% list()
   for (out_name in names(outputs)) {
     out <- outputs[[out_name]]
-    out_type <- out$type %||% "event_level"
+    out_type <- if (native) out$format else out$type %||% "event_level"
     out_preview <- list(type = out_type)
 
     if (out_type == "person_level" && !is.null(out$tables)) {
