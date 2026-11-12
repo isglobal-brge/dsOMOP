@@ -123,24 +123,80 @@
 }
 
 # Shortest decimal digits that parse back to exactly `x` (correctly rounded
-# parse through jsonlite). Returns list(digits = "<no leading/trailing zeros>",
-# n = <decimal exponent: value = 0.digits * 10^n>) for a finite x > 0.
+# parse through jsonlite), following ECMAScript Number::toString: the
+# smallest precision d at which a d-digit decimal lies inside x's rounding
+# interval, and among the d-digit candidates the one closest to x. The
+# nearest d-digit decimal (sprintf, ties to even) is tried first; when it
+# does not round-trip, its two neighbours are tried, because at a power of
+# two the rounding interval is asymmetric and a neighbour can round-trip
+# while the nearest candidate does not (2^-24 -> 5.960464477539063e-8).
+# Returns list(digits = "<no leading/trailing zeros>", n = <decimal
+# exponent: value = 0.digits * 10^n>) for a finite x > 0.
+.jcsDecimalStep <- function(mant_digits, e, delta) {
+  # mant_digits: the d decimal digits of a mantissa d.ddd (as one string); e:
+  # its decimal exponent. Returns the same-precision neighbour mantissa
+  # (digits, exponent) shifted by delta in the last place, carrying across
+  # a power-of-ten boundary.
+  d <- nchar(mant_digits)
+  digits <- as.integer(strsplit(mant_digits, "", fixed = TRUE)[[1L]])
+  i <- d
+  if (delta > 0L) {
+    repeat {
+      if (i == 0L) { digits <- c(1L, digits); e <- e + 1L; break }
+      digits[i] <- digits[i] + 1L
+      if (digits[i] < 10L) break
+      digits[i] <- 0L; i <- i - 1L
+    }
+  } else {
+    if (all(digits[-1L] == 0L) && digits[1L] == 1L) {
+      digits <- rep(9L, d); e <- e - 1L   # 1.000 -> 9.999 x 10^(e-1)
+    } else {
+      repeat {
+        digits[i] <- digits[i] - 1L
+        if (digits[i] >= 0L) break
+        digits[i] <- 9L; i <- i - 1L
+      }
+    }
+  }
+  if (length(digits) > d) digits <- digits[seq_len(d)]
+  list(digits = paste(digits, collapse = ""), e = e)
+}
+.jcsRoundTrips <- function(mant_digits, e, x) {
+  s <- paste0(substring(mant_digits, 1L, 1L),
+              if (nchar(mant_digits) > 1L) paste0(".", substring(mant_digits, 2L)) else "",
+              "e", e)
+  # R's own parser is not correctly rounded, but it is within a few ulp: a
+  # candidate further away than that can never round-trip, so the exact
+  # (correctly rounded, strtod-based) jsonlite parse is only paid near x.
+  ulp <- max(abs(x) * .Machine$double.eps, 4.9406564584124654e-324)
+  cheap <- suppressWarnings(as.numeric(s))
+  if (is.na(cheap) || abs(cheap - x) > max(1e-12 * abs(x), 4 * ulp)) return(FALSE)
+  parsed <- tryCatch(jsonlite::fromJSON(s), error = function(err) NA_real_)
+  is.numeric(parsed) && length(parsed) == 1L && identical(as.numeric(parsed), x)
+}
 .jcsShortestDigits <- function(x) {
-  s <- NULL
+  chosen <- NULL
   for (d in 1:17) {
     cand <- sprintf(paste0("%.", d - 1L, "e"), x)
-    parsed <- jsonlite::fromJSON(cand)
-    if (identical(as.numeric(parsed), x)) { s <- cand; break }
+    parts <- strsplit(cand, "e", fixed = TRUE)[[1L]]
+    mant <- gsub(".", "", parts[1L], fixed = TRUE); e <- as.integer(parts[2L])
+    if (.jcsRoundTrips(mant, e, x)) { chosen <- list(digits = mant, e = e); break }
+    for (delta in c(1L, -1L)) {
+      nb <- .jcsDecimalStep(mant, e, delta)
+      if (.jcsRoundTrips(nb$digits, nb$e, x)) { chosen <- nb; break }
+    }
+    if (!is.null(chosen)) break
   }
-  if (is.null(s)) s <- sprintf("%.16e", x)
-  parts <- strsplit(s, "e", fixed = TRUE)[[1L]]
-  mant <- parts[1L]; e <- as.integer(parts[2L])
-  digits <- gsub(".", "", mant, fixed = TRUE)
+  if (is.null(chosen)) {
+    cand <- sprintf("%.16e", x); parts <- strsplit(cand, "e", fixed = TRUE)[[1L]]
+    chosen <- list(digits = gsub(".", "", parts[1L], fixed = TRUE), e = as.integer(parts[2L]))
+  }
+  digits <- chosen$digits
   lead <- nchar(regmatches(digits, regexpr("^0*", digits)))
   digits <- substring(digits, lead + 1L)
   digits <- sub("0+$", "", digits)
   # mantissa d.ddd means value = d.ddd * 10^e = 0.dddd * 10^(e + 1)
-  list(digits = digits, n = e + 1L - lead)
+  list(digits = digits, n = chosen$e + 1L - lead)
 }
 
 # RFC 8785 section 3.2.2.3 / ECMAScript Number::toString.

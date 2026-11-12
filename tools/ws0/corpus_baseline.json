@@ -1,0 +1,5 @@
+{
+ "dsOMOP": "30b7905617dbe3de5d06699c324095635c68011f",
+ "dsOMOPClient": "7eb2f6c8c2b49e5492e1f778916b84319626341d",
+ "note": "the 2.10.2 release commits (merge base of feat/2.10.3-ws0 with main) whose tests/testthat/ the v1 corpus describes; never move these pins: a reclassification is a corpus_decisions.csv change (CR-7)"
+}

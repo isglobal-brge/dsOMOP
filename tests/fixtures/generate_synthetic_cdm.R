@@ -20,7 +20,7 @@
 
 generate_synthetic_cdm <- function(n_persons = 10000L, seed = 20261112L,
                                    dir = NULL, conn = NULL,
-                                   field_level_csv = NULL) {
+                                   field_level_csv = NULL, schema = NULL) {
   n_persons <- as.integer(n_persons)
   if (is.null(field_level_csv)) {
     field_level_csv <- system.file("ohdsi", "OMOP_CDMv5.3_Field_Level.csv", package = "dsOMOP")
@@ -219,7 +219,41 @@ generate_synthetic_cdm <- function(n_persons = 10000L, seed = 20261112L,
     for (nm in names(cdm)) utils::write.csv(cdm[[nm]], file.path(dir, paste0(nm, ".csv")), row.names = FALSE, na = "")
   }
   if (!is.null(conn)) {
-    for (nm in names(cdm)) DBI::dbWriteTable(conn, nm, cdm[[nm]], overwrite = TRUE)
+    # SQLite keeps ISO-8601 text (the reach fixture convention); every other
+    # DBMS gets typed DATE / TIMESTAMP columns, as load_reach_fixture_pg does.
+    typed <- !inherits(conn, "SQLiteConnection")
+    for (nm in names(cdm)) {
+      df <- cdm[[nm]]
+      if (typed) for (col in names(df)) {
+        if (grepl("_date$", col) && is.character(df[[col]])) df[[col]] <- as.Date(df[[col]])
+        if (grepl("_datetime$", col) && is.character(df[[col]])) df[[col]] <- as.POSIXct(df[[col]], tz = "UTC")
+      }
+      target <- if (is.null(schema)) nm else DBI::Id(schema = schema, table = nm)
+      DBI::dbWriteTable(conn, target, df, overwrite = TRUE)
+    }
   }
   invisible(cdm)
+}
+
+# Backend-independent cardinality / scenario signature of a loaded synthetic CDM
+# (row counts per table plus a few typed-date scenario queries), used to prove
+# that a PostgreSQL load equals the in-memory frames and a SQLite load.
+synthetic_cdm_signature <- function(conn, schema = NULL, tables = NULL) {
+  q <- function(sql) {
+    if (!is.null(schema)) sql <- gsub("\\bFROM ([a-z_]+)", paste0("FROM ", schema, ".\\1"), sql, perl = TRUE)
+    DBI::dbGetQuery(conn, sql)
+  }
+  if (is.null(tables)) tables <- c("person", "observation_period", "visit_occurrence", "condition_occurrence", "drug_exposure",
+                                   "procedure_occurrence", "measurement", "observation", "death", "drug_era", "condition_era",
+                                   "location", "care_site", "provider", "cdm_source", "concept", "concept_ancestor",
+                                   "concept_relationship", "vocabulary", "domain", "concept_class", "cohort_definition", "cohort")
+  counts <- vapply(tables, function(t) as.integer(q(paste0("SELECT COUNT(*) AS n FROM ", t))$n), integer(1))
+  list(counts = counts, scenarios = list(
+    persons_dead = as.integer(q("SELECT COUNT(*) AS n FROM death")$n),
+    op_end_after_start = as.integer(q("SELECT COUNT(*) AS n FROM observation_period WHERE observation_period_end_date >= observation_period_start_date")$n),
+    drugs_null_end = as.integer(q("SELECT COUNT(*) AS n FROM drug_exposure WHERE drug_exposure_end_date IS NULL")$n),
+    eras_per_person = as.integer(q("SELECT COUNT(DISTINCT person_id) AS n FROM drug_era")$n),
+    inpatient = as.integer(q("SELECT COUNT(*) AS n FROM visit_occurrence WHERE visit_concept_id = 9201")$n),
+    cdm_version = as.character(q("SELECT cdm_version FROM cdm_source")$cdm_version),
+    max_person = as.integer(q("SELECT MAX(person_id) AS n FROM person")$n)))
 }

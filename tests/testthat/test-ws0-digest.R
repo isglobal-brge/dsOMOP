@@ -83,6 +83,39 @@ test_that("numbers follow RFC 8785 Appendix B and the review's counterexamples",
   expect_identical(ord, c(3L, 2L, 1L))
 })
 
+test_that("powers of two take the shortest round-trip decimal, not the nearest one (re-review B1)", {
+  # 2^-24: the rounding interval below a power of two is half as wide as the one above it, so the
+  # nearest sixteen-digit decimal (5.9604644775390625e-8 rounded) does not round-trip but its
+  # upper neighbour does; ECMAScript prints the sixteen-digit neighbour.
+  expect_identical(dsOMOP:::.jcsNumber(2^-24), "5.960464477539063e-8")
+  expect_identical(dsOMOP:::.jcsNumber(.ws0_dbl("3e70000000000000")), "5.960464477539063e-8")
+  expect_identical(dsOMOP:::.jcsNumber(-2^-24), "-5.960464477539063e-8")
+  for (case in list(c("0060000000000000", "7.120236347223045e-307"), c("0100000000000000", "7.291122019556398e-304"),
+                    c("0420000000000000", "8.209073602596753e-289"), c("0660000000000000", "5.641232424577593e-278"))) {
+    expect_identical(dsOMOP:::.jcsNumber(.ws0_dbl(case[1])), case[2], info = case[1])
+  }
+  # every power of two and both adjacent doubles
+  for (k in c(-1074L, -1073L, -1022L, -1021L, -60L, -24L, -3L, -1L, 0L, 1L, 10L, 53L, 70L, 100L, 1000L, 1023L)) {
+    x <- 2^k
+    for (v in c(x, x * (1 + .Machine$double.eps), x * (1 - .Machine$double.eps / 2))) {
+      s <- dsOMOP:::.jcsNumber(v)
+      expect_identical(as.numeric(jsonlite::fromJSON(s)), v, info = sprintf("2^%d", k))
+    }
+  }
+  # the decimal-neighbour step carries across powers of ten in both directions
+  expect_identical(dsOMOP:::.jcsDecimalStep("9999", 3L, 1L), list(digits = "1000", e = 4L))
+  expect_identical(dsOMOP:::.jcsDecimalStep("1000", 3L, -1L), list(digits = "9999", e = 2L))
+  expect_identical(dsOMOP:::.jcsDecimalStep("1050", 0L, -1L), list(digits = "1049", e = 0L))
+  expect_identical(dsOMOP:::.jcsDecimalStep("1", 0L, 1L), list(digits = "2", e = 0L))
+  expect_identical(dsOMOP:::.jcsDecimalStep("9", 0L, 1L), list(digits = "1", e = 1L))
+  # the valid plan of the re-review: example A with a 2^-24 unit factor
+  a <- jsonlite::fromJSON(system.file("schema", "examples", "plan-v2-example-A.json", package = "dsOMOP"), simplifyVector = FALSE)
+  a$events$hba1c$unit$convert[["8753"]]$factor <- 2^-24
+  d <- dsOMOP:::.planSemanticDigest(a)
+  expect_true(grepl('"factor":5.960464477539063e-8', d$payload, fixed = TRUE))
+  expect_identical(d$sha256, "101a26cd7a125eefec08cb556361c7ae33e81d737fa0abe27e9c85d43aab905d")
+})
+
 test_that("the differential number corpus agrees with the Python reference", {
   path <- testthat::test_path("fixtures", "es6-number-corpus.csv")
   skip_if(!file.exists(path), "differential corpus not generated")
