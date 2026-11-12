@@ -188,3 +188,50 @@ test_that("N3 safe v1 validation keeps useful historical diagnostics", {
   expect_false(age$valid)
   expect_match(paste(age$errors, collapse = " "), "invalid age_breaks", fixed = TRUE)
 })
+
+test_that("N3 preview traverses validated named atomic objects consistently", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .setHandle("ws2f_object_preview", handle)
+  on.exit(.removeHandle("ws2f_object_preview"), add = TRUE)
+  plans <- list(
+    list(cohort = list(type = "cohort_table", cohort_definition_id = 1L),
+      outputs = list(x = c(type = "event_level", table = "person"))),
+    list(version = 2L,
+      meta = list(language_version = "2.0", semantic_version = "2.0.0", generated_by = "ws2f"),
+      populations = list(base = list(kind = "criteria")),
+      variables = list(sex = list(raw = list(table = "person", column = "gender_concept_id"))),
+      outputs = list(x = c(rows = "base", format = "wide", grain = "person")))
+  )
+  for (plan in plans) {
+    canonical <- .irJsonForm(plan)
+    expect_true(.planValidate(handle, plan)$valid)
+    expect_identical(.planValidate(handle, plan), .planValidate(handle, canonical))
+    expected <- .planPreview(handle, canonical)
+    expect_identical(.planPreview(handle, plan), expected)
+    expect_identical(omopPlanPreviewDS("ws2f_object_preview", plan), expected)
+    expect_identical(omopPlanPreviewDS("ws2f_object_preview", canonical), expected)
+  }
+})
+
+test_that("N3 internal frame scopes remain declared and restricted during preview", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  .buildBlueprint(handle)
+  local_mocked_bindings(.executeQuery = function(...) stop("unexpected result query"))
+  frame <- data.frame(person_id = 1:6)
+  for (frames in list(frame, list(frame))) {
+    plan <- list(scope = list(tables_frames = frames), outputs = list(
+      demo = list(type = "baseline", columns = "gender_concept_id"),
+      people = list(type = "event_level", table = "person", columns = "gender_concept_id")))
+    expect_identical(.planWirePart(plan)$scope_tables, 1L)
+    validation <- .planValidate(handle, plan)
+    expect_true(validation$valid)
+    expect_length(validation$errors, 0L)
+    preview <- .planPreview(handle, plan)
+    expect_true(preview$validation$valid)
+    expect_false(preview$outputs$people$n_persons_available)
+    expect_true(is.na(preview$outputs$people$n_persons))
+    expect_false(preview$outputs$people$n_persons_banded)
+  }
+})

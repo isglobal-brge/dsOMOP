@@ -112,7 +112,16 @@
     return(list(valid = FALSE, errors = envelope_error, warnings = character(0),
                 available_tables = character(0)))
   }
-  legacy <- if (!identical(version, 2L)) .planLegacyFindings(handle, json) else {
+  legacy <- if (!identical(version, 2L)) {
+    legacy_plan <- json
+    if (wire[["scope_tables"]] > 0L) {
+      # Resolved frames are server context, not wire fields. Supplemental
+      # declaration checks still need to know that they supply the cohort.
+      legacy_plan$scope <- legacy_plan$scope %||% list()
+      legacy_plan$scope$tables_frames <- plan[["scope"]][["tables_frames"]]
+    }
+    .planLegacyFindings(handle, legacy_plan)
+  } else {
     list(errors = character(0), missing_tables = character(0),
          warnings = character(0), available_tables = character(0))
   }
@@ -124,7 +133,9 @@
     .irPrepare(wire[["plan"]], handle = handle, scope_tables = wire[["scope_tables"]])
     NULL
   }, dsomop_plan_rejection = function(e) e$errors %||% conditionMessage(e),
-  dsomop_v1_declaration_error = function(e) conditionMessage(e))
+  # Declaration diagnostics above include the resolved server-side scope;
+  # the wire-only preparation cannot observe those frames itself.
+  dsomop_v1_declaration_error = function(e) NULL)
   if (identical(version, 2L) && is.null(ir_error)) {
     bp <- .buildBlueprint(handle)
     legacy[["available_tables"]] <- bp$tables$table_name[bp$tables$present_in_db]
@@ -419,6 +430,9 @@
   json <- .irJsonForm(wire[["plan"]])
   .irValidateEnvelope(json)
   validation <- .planValidate(handle, plan)
+  # Traverse the same object whose shapes were checked: in-process named
+  # atomic vectors represent JSON objects, too. Keep scope_tables separately.
+  plan <- json
   native <- identical(.irPlanVersion(json), 2L)
   settings <- .omopDisclosureSettings()
   if (native) {
