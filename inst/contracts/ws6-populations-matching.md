@@ -66,6 +66,10 @@ not output variables or a replacement for the declared immutable identity.
 `origin_source` and `origin_key` retain the original consumer association
 separately from that identity. Ordinary indices carry their source/key;
 adapter indices carry their parent source/key. Derivations preserve them.
+Unindexed person rows, including final cohort-seeded person rows, carry the
+private `origin_source = "(persons)"` marker. Their public `index_source`
+and `index_key` remain NULL. A missing required episode origin still fails
+closed; it does not imply a person association.
 Matched cases retain them and their original `index_visit_id`, although their
 new `index_source` is `match:<population>`. Controls have no index-event
 visit or parent association. Preserve both origin columns together; do not
@@ -128,6 +132,19 @@ one identity refuses with `setop_identity_conflict` rather than choosing a
 member. Effective coverage compatibility is checked statically through
 nested set operations and matches.
 
+The start-date column's `nullable` contract is independent of A-11's
+`indexed` flag. A mixed union is indexed and can retain undated person
+rows: union combines member nullability, intersection/difference inherit
+the left contract, and child candidate/selected/final fragments preserve it.
+
+A-21's closed `legacy_empty = TRUE` criteria variant with
+`legacy_episodes = "observation_periods"` compiles to typed empty candidate,
+selected and final-roster relations, with NULL coverage and segments. Its
+parent, criteria and cohort seed must be absent or NULL, and a named-cohort
+compatibility reference is forbidden. The lowerer keeps an ignored episode
+policy in its advisory annex. Other unsupported compatibility variants
+remain refused by the native compiler; this property is still IR-only.
+
 ## Coverage and the candidate-to-final handoff
 
 Compile coverage once per `(population, suffix)` on its raw candidates.
@@ -179,8 +196,10 @@ and stream identities and passing allocated `names =` to reducer helpers.
 
 ## Exact matching and output responsibilities
 
-The controls template is instantiated once for the complete frozen case
-roster, with `cand_key` per `(case row, person)` and index equal to case time.
+Only rows with a defined start date enter the frozen case relation, before
+case ranks or pairs are assigned. Mixed unions retain their person rows in
+the source roster. The controls template is instantiated once for the complete
+frozen dated-case roster, with `cand_key` per `(case row, person)` and index equal to case time.
 The template's own population metadata, coverage and candidate-anchor
 identities apply. Its parent or results-cohort seed narrows candidate persons.
 One template cannot also be an ordinary roster or serve a second matching

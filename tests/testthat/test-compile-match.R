@@ -279,6 +279,58 @@ test_that("greedy selection without replacement and the allocation rollback of a
   expect_true(any(diff(sort(unique(bd$set_id))) > 1))
 })
 
+test_that("mixed-union matching excludes undated persons and preserves all dated case ranks", {
+  variants <- .ws6_m_variants[c("default", "between_drop")]
+  plan <- .ws6_m_plan(variants)
+  plan$populations$indexed <- plan$populations$cases
+  plan$populations$plain <- list(kind = "criteria")
+  plan$populations$cases <- list(kind = "setop", setop = list(op = "union", members = list("indexed", "plain")))
+  ref_conn <- .ws6_m_backends$sqlite$handle$conn
+  want <- lapply(variants, function(s) .ws6_ref_match(ref_conn, s))
+  all_cases <- want$default[want$default$is_case == 1, , drop = FALSE]
+  people <- nrow(DBI::dbGetQuery(ref_conn, "SELECT person_id FROM person"))
+  zero_rank <- all_cases$set_id[all_cases$person_id == 7007]
+  expect_length(zero_rank, 1L)
+  for (b in names(.ws6_m_backends)) {
+    h <- .ws6_m_backends[[b]]$handle
+    ctx <- .ws4_ctx(h, plan)
+    expect_length(.irSemanticErrors(ctx$ir), 0L)
+    expect_silent(.irValidate(ctx$ir, h))
+    expect_true(.populationIndexed(ctx$ir, "cases"), info = b)
+    mixed <- .compilePopulationByName(ctx, "cases")
+    input <- .fetchFragment(ctx, mixed$roster, "cohort_row_id")
+    expect_equal(sum(is.na(input$cohort_start_date)), people, info = b)
+    expect_equal(sum(!is.na(input$cohort_start_date)), nrow(all_cases), info = b)
+    for (v in names(variants)) {
+      got <- .ws6_roster(ctx, v)
+      expect_false(anyNA(got$index_date), info = paste(b, v))
+      expect_false(anyNA(got$end_date), info = paste(b, v))
+      expect_equal(.ws6_m_sorted(got), .ws6_m_sorted(want[[v]]), info = paste(b, v))
+      frozen <- .fragmentGet(ctx, .fragmentName("mt", v, "cases", ctx = ctx))
+      cases <- .fetchFragment(ctx, frozen, "set_rank")
+      expect_false(anyNA(cases$t), info = paste(b, v))
+      expect_identical(as.numeric(cases$set_rank), as.numeric(seq_len(nrow(all_cases))), info = paste(b, v))
+      expect_identical(as.numeric(cases$subject_id), as.numeric(all_cases$person_id), info = paste(b, v))
+      pairs <- .fetchFragment(ctx, .compilePopulationByName(ctx, v)$pairs, "set_rank")
+      expect_true(all(pairs$set_rank %in% cases$set_rank), info = paste(b, v))
+      expect_false(zero_rank %in% as.numeric(pairs$set_rank), info = paste(b, v))
+      if (identical(v, "default")) {
+        zero <- got[got$set_id == zero_rank, , drop = FALSE]
+        expect_identical(zero$person_id, 7007, info = b)
+        expect_identical(zero$index_date, "2020-03-01", info = b)
+        expect_identical(zero$is_case, 1, info = b)
+        expect_identical(zero$w, 1, info = b)
+      } else {
+        expect_false(zero_rank %in% got$set_id, info = b)
+        kept <- got[got$is_case == 1, , drop = FALSE]
+        expect_identical(kept$set_id, as.numeric(all_cases$set_id[match(kept$person_id, all_cases$person_id)]), info = b)
+        expect_true(any(diff(sort(unique(got$set_id))) > 1), info = b)
+      }
+    }
+    .planContextClose(ctx)
+  }
+})
+
 test_that("seed sensitivity and seed, order and dialect reproducibility", {
   plan <- .ws6_m_plan(.ws6_m_variants[c("default", "seed2")])
   ctx <- .ws4_ctx(.ws6_m_backends$sqlite$handle, plan)

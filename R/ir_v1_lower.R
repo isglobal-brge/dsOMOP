@@ -966,9 +966,8 @@
     node
   } else if (!identical(pid, "base") && is.null(pop[["filter_tree"]]) &&
              is.null(pop[["cohort_definition_id"]])) {
-    # a non-base v1 criteria population with neither filter_tree nor cohort id
-    # resolves to no person: an empty observation-period roster (CR-21), a
-    # private empty intermediate 2.10.2 executed (re-review R3)
+    # A-21: a bare non-base v1 criteria population denotes no person, with
+    # an empty observation-period roster. Its episode policy is advisory.
     if (!is.null(pop[["episode_policy"]])) .v1Annex(st, path, unread_episode_policy = pop[["episode_policy"]])
     list(kind = "criteria", legacy_episodes = "observation_periods", legacy_empty = TRUE)
   } else {

@@ -4,10 +4,13 @@
 \alias{.populationColumnSpec}
 \title{Column contract of a population roster (design section 6.9)}
 \usage{
-.populationColumnSpec(indexed = TRUE)
+.populationColumnSpec(indexed = TRUE, start_nullable = !isTRUE(indexed))
 }
 \arguments{
 \item{indexed}{Logical; whether the roster's rows are indexed episodes.}
+
+\item{start_nullable}{Logical; whether start dates can be NULL, separately
+from indexedness (a mixed union is indexed but retains person rows).}
 }
 \value{
 Named list of \code{.fragmentColumn()} records, without

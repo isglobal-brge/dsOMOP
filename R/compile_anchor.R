@@ -121,7 +121,8 @@
 #' \code{any_of}; \code{"cohort:<id>"} for a results cohort,
 #' \code{"legacy_spec"} for a legacy spec), a criteria population's parent's
 #' (or \code{"cohort:<id>"}, or \code{"(persons)"} without either), the
-#' union over a set operation's members, \code{"match:<pop>"} for a matched
+#' union over a union's members or the left member for intersect/setdiff,
+#' \code{"match:<pop>"} for a matched
 #' population. NULL when the population is unknown or a member cannot be
 #' resolved: a consumer then needs the rows' own metadata. Tags that are not
 #' plan names can never equal an adapter's parent namespace.
@@ -168,6 +169,9 @@
     },
     setop = {
       members <- unlist(p[["setop"]][["members"]])
+      # Intersection and difference retain only the left member's origins.
+      # Right operands restrict persons, never consumer associations.
+      if (!identical(p[["setop"]][["op"]], "union")) members <- head(members, 1L)
       parts <- lapply(members, function(m) .irPopulationIndexSources(ir, m, seen))
       if (!length(parts) || any(vapply(parts, is.null, logical(1)))) NULL else unique(unlist(parts))
     },

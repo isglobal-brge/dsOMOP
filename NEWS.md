@@ -16,6 +16,13 @@ fills its entries. Classes follow design-2.10.3 section 5.
   cohort-end cap; the v1 adapter retains `legacy_cohort_end_cap` and opt-in
   death censoring. The unused legacy survival and interval extractors were
   removed after moving their checks to the active adapter (F-6).
+- (WS-6 review B1-B3, N1) Person associations survive intersection,
+  difference and mixed unions, including cohort-seeded people. Mixed unions
+  and their children declare nullable start dates independently of indexed
+  status. Matching admits only dated cases, retaining dated zero-control
+  cases and stable case-rank gaps under the requested insufficient policy.
+  The closed A-21 `legacy_empty` variant compiles to typed empty relations;
+  it remains unavailable on the language-2.0 wire.
 - (A-20; WS-5 review B1–B4, B6–B7, N1–N2) Era `min_days` uses the
   normalised recorded span even when stockpiling; persistence and carry do
   not satisfy the threshold. Direct-event coverage applies the interval

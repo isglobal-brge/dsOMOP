@@ -1974,6 +1974,11 @@
                 "required": [
                   "legacy_episodes"
                 ],
+                "not": {
+                  "required": [
+                    "legacy_cohort_table"
+                  ]
+                },
                 "properties": {
                   "parent": {
                     "type": "null"
