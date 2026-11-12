@@ -949,12 +949,16 @@ omopDpStatusDS <- function() {
 #' (\code{dsomop.tools.enabled}) and an available DP service.
 #'
 #' @inheritParams omopPlanExecuteDS
+#' @param commit_policy Character; \code{"server"} follows the server's
+#'   strictness setting. \code{"all_or_none"} refuses the entire execution if
+#'   any output is refused, as requested by a client skipping a small site.
 #' @return A bounded publication status; sealed outputs are assigned into the
 #'   caller's environment under the symbols reported in its inventory.
 #' @export
 omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
                                 output_mode = "memory",
-                                scope = NULL, combine = "union", ...) {
+                                scope = NULL, combine = "union", ...,
+                                commit_policy = "server") {
   .dsomopRequireCommunityTool(dp_routes = TRUE)
   if (!identical(.ds_arg(output_mode), "memory")) {
     stop("DP preparation creates in-memory tables only ",
@@ -984,6 +988,7 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
   .omopPlanExecuteDS(
     omop_symbol, plan, out, output_mode = "memory", scope = scope,
     combine = combine, ..., target_env = parent.frame(),
+    commit_policy = commit_policy,
     seal_factory = .dsomopDpPublicationSeal
   )
 }

@@ -998,8 +998,10 @@ test_that("DP preparation seals plan outputs while plan loading stays DP-free", 
   session$plan <- plan
   eval(quote(omopPlanExecuteDS(handle_symbol, plan, list(ages = "D_ages"))),
        envir = session)
-  eval(quote(omopDpPlanExecuteDS(handle_symbol, plan, list(ages = "DP_ages"))),
-       envir = session)
+  prepared_status <- eval(quote(omopDpPlanExecuteDS(
+    handle_symbol, plan, list(ages = "DP_ages"), commit_policy = "server"
+  )), envir = session)
+  expect_identical(prepared_status$status, "ok")
   loaded <- get("D_ages", envir = session, inherits = FALSE)
   prepared <- get("DP_ages", envir = session, inherits = FALSE)
   expect_null(attr(loaded, "dsomop_dp_provenance", exact = TRUE))
@@ -1013,6 +1015,18 @@ test_that("DP preparation seals plan outputs while plan loading stays DP-free", 
   expect_identical(released$statistic, "count")
   expect_identical(omopDpReleaseDS(prepared, list(statistic = "count")),
                    released)
+
+  # The client includes commit_policy in every execution call. It is an
+  # explicit publication policy, never a named scope input from `...`.
+  all_or_none <- eval(quote(omopDpPlanExecuteDS(
+    handle_symbol, plan, list(ages = "DP_all_or_none"), commit_policy = "all_or_none"
+  )), envir = session)
+  expect_identical(all_or_none$status, "ok")
+  expect_silent(.dsomopDpVerifyPersonLocal(get("DP_all_or_none", session)))
+  expect_error(eval(quote(omopDpPlanExecuteDS(
+    handle_symbol, plan, list(ages = "DP_invalid_policy"), commit_policy = "relaxed"
+  )), envir = session), "commit_policy")
+  expect_false(exists("DP_invalid_policy", envir = session, inherits = FALSE))
 
   # Preparing for DP is a community-tool operation that needs DP.
   withr::with_options(list(dsomop.tools.enabled = FALSE), expect_error(
