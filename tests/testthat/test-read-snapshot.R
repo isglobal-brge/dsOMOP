@@ -61,7 +61,7 @@ for (engine in c("postgresql", "mariadb", "mysql")) local({
     expect_equal(as.integer(.executeQuery(h, paste0("SELECT year_of_birth FROM ",
       table, " WHERE person_id = 1"))[[1L]]), 2010L)
     expect_null(h$read_snapshot)
-    # Exact signed 64-bit IDs, duplicate multiplicities and bucket boundaries.
+    # Exact signed 64-bit IDs, duplicate memberships and bucket boundaries.
     DBI::dbExecute(fixture$admin, paste0("UPDATE ", table,
       " SET person_id = -9223372036854775807 WHERE person_id = 1"))
     DBI::dbExecute(fixture$admin, paste0("UPDATE ", table,
@@ -123,4 +123,19 @@ test_that("option-free native adapters use serializable or native transactions",
     expect_error(suppressMessages(.dsomopSnapshotGuard(h, dangerous)), "read snapshot was lost")
     expect_true(ctx$aborted)
   }
+})
+
+for (engine in c("mysql", "mariadb")) local({
+  dbms <- engine
+  test_that(paste(dbms, "cannot claim a snapshot over a nontransactional source"), {
+    config <- .dsomopVendorTestConfig(dbms)
+    skip_if(is.null(config), "Vendor host not configured")
+    fixture <- .dsomopVendorCreateFixture(config)
+    on.exit(fixture$cleanup(), add = TRUE)
+    DBI::dbExecute(fixture$admin, paste0("ALTER TABLE ",
+      .qualifyTable(fixture$handle, "person"), " ENGINE = MyISAM"))
+    expect_error(suppressMessages(.dsomopWithReadSnapshot(fixture$handle, 1)),
+                  "nontransactional tables")
+    expect_null(fixture$handle$read_snapshot)
+  })
 })

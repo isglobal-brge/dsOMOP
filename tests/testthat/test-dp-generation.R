@@ -1,5 +1,5 @@
 # The data generation of the fixed synopses (dsOMOP 2.10.3, review R02 / §5):
-# a keyed digest of the exact multiset of person identifiers, recomputed
+# a keyed digest of the exact set of person identifiers, recomputed
 # inside every fixed-synopsis request's own read snapshot, cached nowhere (no
 # per-handle, per-session or negative cache). Ports of Astra's re-review
 # generation probes (astra-scratch/rereview-root/.../test-rereview-generation.R)
@@ -84,15 +84,15 @@ test_that("the membership digest is stable across stream page sizes", {
   expect_identical(
     .dsomopDpMembershipHash(h, "stream", page = 5L)[c("n", "digest")],
     streamed[c("n", "digest")])
-  # Duplicated person rows count with their multiplicity (a multiset).
+  # Duplicated person rows do not change membership or redraw noise.
   DBI::dbExecute(h$conn, "CREATE TABLE person_dup AS SELECT * FROM person")
   DBI::dbExecute(h$conn, "DROP TABLE person")
   DBI::dbExecute(h$conn, paste(
     "CREATE TABLE person AS SELECT * FROM person_dup UNION ALL",
     "SELECT * FROM person_dup WHERE person_id = 7"))
   dup <- .dsomopDpMembershipHash(h, "stream")
-  expect_identical(dup$n, "38")
-  expect_false(identical(dup$digest, streamed$digest))
+  expect_identical(dup$n, "37")
+  expect_identical(dup$digest, streamed$digest)
 })
 
 test_that("Astra probe: the same current data replays on an old and a recreated handle", {

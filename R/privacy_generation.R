@@ -1,6 +1,6 @@
 # Module: the data generation of the fixed synopses (dsOMOP 2.10.3, R02 / §5)
 #
-# A fixed synopsis is keyed on a secret digest of the exact multiset of
+# A fixed synopsis is keyed on a secret digest of the exact set of
 # person identifiers of the CDM person table, recomputed inside each request
 # that uses the fixed route, within that request's read snapshot
 # (read_snapshot.R), and passed to its builders as a request-local value.
@@ -11,7 +11,7 @@
 # contribution fingerprints (tools_release.R) still redraw any component whose
 # bounded contributions changed.
 #
-# The digest hashes canonical ordered (person_id, multiplicity) records in
+# The digest hashes canonical ordered distinct person_id records with unit weight in
 # fixed public identifier buckets, then hashes the ordered bucket digests.
 # This is a cryptographic hash tree, not XOR or sums of hashes. The four
 # native adapters compute the leaves in SQL; other engines stream bounded
@@ -20,7 +20,7 @@
 .DSOMOP_DP_GENERATION_SOURCE <- "person_membership_digest"
 .DSOMOP_DP_GENERATION_BASIS <- paste0(
   "HMAC under the noise root of SHA-256 digests of canonically ordered ",
-  "person_id and multiplicity records in fixed public identifier buckets, ",
+  "distinct person_id records with unit weight in fixed public identifier buckets, ",
   "recomputed inside each fixed-synopsis request's own read snapshot; ",
   "nothing is cached between requests and the digest is never released")
 .DSOMOP_DP_GENERATION_RESIDUAL <- paste0(
@@ -51,8 +51,8 @@
 # Public buckets use exact decimal truncation toward zero, including 64-bit
 # identifiers that cannot be represented by an R double. A bucket has at most
 # 19,999 distinct signed integer IDs (the zero bucket); all other buckets
-# have 10,000. Multiplicity is framed in each record, so duplicate rows cannot
-# cancel. Decimal integers and colon/newline separators are unambiguous.
+# have 10,000. Repeated person rows represent the same membership and are
+# deduplicated before hashing. Decimal integers and separators are unambiguous.
 .dsomopDpMembershipBucket <- function(ids) {
   negative <- startsWith(ids, "-")
   digits <- sub("^-", "", ids)
@@ -68,7 +68,7 @@
 .dsomopDpMembershipSql <- function(handle) {
   dbms <- .normalizeDBMS(handle$dbms %||% "")
   person <- .qualifyTable(handle, "person")
-  rows <- paste0("SELECT person_id AS p, COUNT(*) AS k FROM ", person,
+  rows <- paste0("SELECT person_id AS p, 1 AS k FROM ", person,
                  " WHERE person_id IS NOT NULL GROUP BY person_id")
   if (identical(dbms, "postgresql")) {
     return(paste0(
@@ -136,7 +136,7 @@
   }
   repeat {
     sql <- paste0("SELECT TOP ", page,
-      " person_id AS p, COUNT(*) AS k FROM ", person,
+      " person_id AS p, 1 AS k FROM ", person,
       " WHERE person_id IS NOT NULL",
       if (!is.null(last)) paste0(" AND person_id > ", last),
       " GROUP BY person_id ORDER BY person_id")

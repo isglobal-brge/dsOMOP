@@ -18,10 +18,11 @@
 #     public atom basis draws its noise from (corpus, automatic data
 #     generation, owner, atom) and the component's contribution fingerprint,
 #     so every view is post-processing of one protected vector per data
-#     state; the generation is a keyed fingerprint of the connected
-#     database's per-table row counts and largest identifiers, derived per R
-#     session and held in memory (privacy_state.R), so it needs no custodial
-#     configuration and redraws everything when rows are added or removed;
+#     state; the generation is a keyed ordered person-membership digest,
+#     recomputed inside each request's read snapshot (privacy_generation.R).
+#     Person additions/removals redraw the vector. Clinical-only changes keep
+#     the generation but change affected component fingerprints; there is no
+#     joint guarantee over evolving data and no cross-request cache;
 #   * realised contributions ("realised_sticky"): any other supported scope
 #     keys each component's noise on a secret fingerprint of the bounded
 #     contributions of the people it contains, so different formulations of
@@ -586,11 +587,10 @@
 #' \code{fixed_synopsis} keys the noise on (corpus, automatic data generation,
 #' privacy epoch, owner, population, family, coordinate, profile) and on the
 #' secret fingerprint of the component's realised bounded contributions: the
-#' generation redraws every fixed synopsis at once when rows are added or
-#' removed, and the fingerprint redraws a component whose contributions
-#' changed although the generation did not (an in-place edit, or a change
-#' while the session is open), so a component's noise is never reused for
-#' different contributions. \code{realised_sticky} keys it on the owner,
+#' generation changes when person membership changes. The fingerprint changes
+#' a component's key when its bounded contributions change even if membership
+#' does not. Distinct discrete draws can coincide; comparisons across edits
+#' can reveal component change/equality patterns and have no joint guarantee. \code{realised_sticky} keys it on the owner,
 #' family, coordinate and the contribution fingerprint, never on the data
 #' generation.
 #'

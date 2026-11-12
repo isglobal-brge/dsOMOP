@@ -54,8 +54,10 @@
 #' @return One of \code{"repeatable_read_transaction"} (PostgreSQL),
 #'   \code{"consistent_snapshot_transaction"} (MySQL, MariaDB),
 #'   \code{"snapshot_transaction"} (DuckDB), \code{"serializable_transaction"}
-#'   (SQLite) or \code{"not_isolated"} (any other engine: its statements are
-#'   not read from one snapshot).
+#'   (SQLite), \code{"sqlserver_serializable_transaction"},
+#'   \code{"oracle_serializable_transaction"},
+#'   \code{"redshift_snapshot_transaction"}, or \code{"not_isolated"}
+#'   (an engine without a native adapter: statements can see different states).
 #' @keywords internal
 .dsomopReadSnapshotKind <- function(handle) {
   dbms <- tryCatch(.normalizeDBMS(handle$dbms %||% ""),
@@ -109,6 +111,7 @@
   ctx <- new.env(parent = emptyenv())
   ctx$kind <- kind
   ctx$dbms <- tryCatch(.normalizeDBMS(handle$dbms), error = function(e) "")
+  ctx$schemas <- unique(c(handle$cdm_schema, handle$vocab_schema, handle$results_schema))
   ctx$memo <- new.env(parent = emptyenv())
   ctx$savepoints <- 0L
   ctx$aborted <- FALSE
@@ -155,6 +158,20 @@
           "SELECT CAST(transaction_timestamp() AS TEXT) AS t"))$t[[1L]]
       },
       consistent_snapshot_transaction = {
+        schemas <- ctx$schemas
+        schemas <- schemas[!is.na(schemas) & nzchar(schemas)]
+        if (length(schemas)) {
+          schema_sql <- paste(DBI::dbQuoteString(conn, schemas), collapse = ", ")
+          nontransactional <- DBI::dbGetQuery(conn, paste0(
+            "SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema IN (",
+            schema_sql, ") AND table_type = 'BASE TABLE' AND UPPER(engine) <> 'INNODB'"))$n[[1L]]
+          if (as.numeric(nontransactional) > 0) {
+            stop(structure(list(message = paste0(
+              "This source contains nontransactional tables and cannot provide ",
+              "a request-consistent read snapshot; no result was released."), call = NULL),
+              class = c("dsomop_snapshot_unavailable", "error", "condition")))
+          }
+        }
         # The session isolation applies to the consistent-snapshot
         # transaction below (a session setting, never a database option).
         variable <- if (identical(ctx$dbms, "mariadb")) "tx_isolation" else "transaction_isolation"
@@ -205,6 +222,7 @@
     if (!is.null(ctx$restore_isolation_sql)) {
       try(DBI::dbExecute(conn, ctx$restore_isolation_sql), silent = TRUE)
     }
+    if (inherits(e, "dsomop_snapshot_unavailable")) stop(e)
     .dsomopSnapshotLost("the request snapshot could not be opened")
   })
   invisible(TRUE)
