@@ -5129,31 +5129,18 @@
   result
 }
 
-#' Compute a comorbidity score
+#' Reviewed concept categories of the simple-weighted comorbidity scores
 #'
-#' Checks condition tables for the presence of category-defining concepts
-#' and computes a weighted sum per person. Supports simple weighted (Charlson,
-#' CHADS2, CHA2DS2-VASc), tiered (DCSI), and weighted binary (HFRS) modes.
+#' The FeatureExtraction-traced seeds and integer weights of Charlson,
+#' CHADS2 and CHA2DS2-VASc (before local descendant expansion), shared by
+#' the v1 adapter (\code{.computeComorbidityScore()}) and the native
+#' language 2.0 score variables (\code{.comorbidityDefinition()}, A-2).
 #'
-#' @param handle CDM handle
-#' @param score_type Character; "charlson", "chads2", "chadsvasc", "dcsi", "hfrs"
-#' @param person_ids Integer vector of person IDs
-#' @return Data frame with person_id and score columns
+#' @param score_type One of \code{"charlson"}, \code{"chads2"},
+#'   \code{"chadsvasc"}.
+#' @return Named list of list(concepts, weight).
 #' @keywords internal
-.computeComorbidityScore <- function(handle, score_type, person_ids = NULL,
-                                     reference_date = NULL) {
-  if (is.null(person_ids) || length(person_ids) == 0) return(NULL)
-
-  # --- Score definitions ---
-  # Concept seeds and analysis IDs are traced to OHDSI FeatureExtraction
-  # v3.14.0, commit 53266f0233c2ee7cae127e8669ad35b0d60406ae.
-  #
-  # This is a dsOMOP adapter, not an upstream-equivalent implementation:
-  # FeatureExtraction uses condition_era, cohort-relative windows and
-  # index-specific inclusion/exclusion rules. dsOMOP reads condition_occurrence,
-  # uses its explicit reference_date where age is required, and applies the
-  # local vocabulary/descendant rules below.
-
+.comorbidityCategories <- function(score_type) {
   # Charlson Comorbidity Index (analysis_id = 901)
   # Source: FeatureExtraction/inst/sql/sql_server/CharlsonIndex.sql
   if (score_type == "charlson") {
@@ -5210,6 +5197,41 @@
                                         317305L, 321886L, 314659L,
                                         321887L, 437312L, 134057L), weight = 1L)
     )
+  } else {
+    stop("Unknown simple-weighted score type: '", score_type, "'.", call. = FALSE)
+  }
+  categories
+}
+
+#' Compute a comorbidity score
+#'
+#' Checks condition tables for the presence of category-defining concepts
+#' and computes a weighted sum per person. Supports simple weighted (Charlson,
+#' CHADS2, CHA2DS2-VASc), tiered (DCSI), and weighted binary (HFRS) modes.
+#'
+#' @param handle CDM handle
+#' @param score_type Character; "charlson", "chads2", "chadsvasc", "dcsi", "hfrs"
+#' @param person_ids Integer vector of person IDs
+#' @return Data frame with person_id and score columns
+#' @keywords internal
+.computeComorbidityScore <- function(handle, score_type, person_ids = NULL,
+                                     reference_date = NULL) {
+  if (is.null(person_ids) || length(person_ids) == 0) return(NULL)
+
+  # --- Score definitions ---
+  # Concept seeds and analysis IDs are traced to OHDSI FeatureExtraction
+  # v3.14.0, commit 53266f0233c2ee7cae127e8669ad35b0d60406ae.
+  #
+  # This is a dsOMOP adapter, not an upstream-equivalent implementation:
+  # FeatureExtraction uses condition_era, cohort-relative windows and
+  # index-specific inclusion/exclusion rules. dsOMOP reads condition_occurrence,
+  # uses its explicit reference_date where age is required, and applies the
+  # local vocabulary/descendant rules below.
+
+  # Charlson (analysis_id = 901), CHADS2 (903), CHA2DS2-VASc (904): the
+  # FeatureExtraction-traced categories of .comorbidityCategories().
+  if (score_type %in% c("charlson", "chads2", "chadsvasc")) {
+    categories <- .comorbidityCategories(score_type)
 
   # DCSI (analysis_id = 902) — vocabulary-resolved via concept_relationship
   } else if (score_type == "dcsi") {

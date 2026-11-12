@@ -2966,14 +2966,14 @@
     on.exit(.planContextClose(ctx), add = TRUE)
   }
   if (identical(attr(ir, "source_version"), 2L)) {
-    # The event stage of language-2.0 execution (design 6.1, WS-4): the event
-    # sources of the requested roots compile in the private context, so the
-    # data-dependent adapter refusals of section 11 are raised, with their
-    # reason (A-18), before any output is materialised. The later stages
-    # (intervals, populations, variables, outputs) replace the refusal below.
+    # Language-2.0 execution (design 6.1): the event sources of the requested
+    # roots compile first in the private context, so the data-dependent adapter
+    # refusals of section 11 are raised, with their reason (A-18), before any
+    # output is materialised; then populations, variables and outputs
+    # (.planExecuteNative(), R/compile_output.R) produce one CompiledOutput per
+    # root for the publication boundary.
     .planCompileSources(.compileContext(ctx, ir), names(out_symbols))
-    .irReject(paste0("this server validates language 2.0 plans but does not ",
-                     "execute them yet; use omopPlanExplainDS"))
+    return(.planExecuteNative(ctx, ir, out_symbols, own_context))
   }
 
   temp_tables_before <- unique(handle$temp_tables %||% character(0))
