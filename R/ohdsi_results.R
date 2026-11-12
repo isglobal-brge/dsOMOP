@@ -20,12 +20,13 @@
 #' \describe{
 #'   \item{\code{statistics}}{the coupled statistic columns, masked together;}
 #'   \item{\code{person}}{distinct-person bases, each of which must reach
-#'     \code{nfilter.subset};}
+#'     \code{max(nfilter.subset, nfilter.tab)};}
 #'   \item{\code{event}}{event counts with an event floor of
 #'     \code{nfilter.tab} (an event count never establishes distinct people);}
 #'   \item{\code{person_complement}}{pairs \code{c(total, part)} whose difference
 #'     is a distinct-person basis (for example the non-outcome class of a
-#'     prediction population) that must reach \code{nfilter.subset};}
+#'     prediction population) that must reach
+#'     \code{max(nfilter.subset, nfilter.tab)};}
 #'   \item{\code{event_complement}}{pairs \code{c(total, part)} whose difference
 #'     is an event count with the \code{nfilter.tab} floor.}
 #' }
@@ -93,9 +94,12 @@
 #' Mask coupled statistics that rest on an unsupported private basis
 #'
 #' Applied to RAW (unbanded) rows, after small-cell suppression and before the
-#' person gate bands the counts. For each row, every person basis must reach
-#' \code{nfilter.subset}, every event basis \code{nfilter.tab}, and every
-#' complement its own floor. A basis column that the physical table does not
+#' person gate bands the counts. For each row, every person basis and person
+#' complement must reach \code{max(nfilter.subset, nfilter.tab)} (a private
+#' basis column bypasses the public small-cell suppression, so it must meet the
+#' tabular floor itself), every event basis and event complement
+#' \code{nfilter.tab}; recurrent events never stand in for people. A basis
+#' column that the physical table does not
 #' provide, or a missing / non-finite / negative value, fails the row. A failed
 #' row keeps its dimensions and its own supported counts; only the coupled
 #' statistics (for example rr, the CI bounds, p, log_rr and se_log_rr) become
@@ -113,7 +117,7 @@
   statistics <- intersect(basis$statistics, names(result))
   if (length(statistics) == 0L) return(result)
   settings <- .omopDisclosureSettings()
-  person_floor <- settings$nfilter_subset
+  person_floor <- max(settings$nfilter_subset, settings$nfilter_tab)
   event_floor <- settings$nfilter_tab
   value_of <- function(column) {
     if (!column %in% names(result)) return(rep(NA_real_, nrow(result)))
@@ -649,8 +653,9 @@
 #'
 #' Behaviour, mirroring the "no hints" fail-closed policy:
 #' \itemize{
-#'   \item rows whose person count is below \code{nfilter.subset} (or NA) are
-#'     DROPPED — the same threshold and row-drop semantics as the raw-CDM gate;
+#'   \item rows whose person count is below
+#'     \code{max(nfilter.subset, nfilter.tab)} (or NA) are DROPPED — the same
+#'     threshold and row-drop semantics as the raw-CDM gate;
 #'   \item if the result carries count columns but NONE of the tool's person
 #'     columns (a person-less count basis, e.g. record/event/outcome counts with
 #'     no person denominator), it is rejected (emptied) when
@@ -709,9 +714,11 @@
     return(result)
   }
 
-  # Drop every row whose person basis is below nfilter.subset (NA -> dropped),
-  # the same threshold + row-drop the raw-CDM distinct-person gate enforces.
-  threshold <- .omopDisclosureSettings()$nfilter_subset
+  # Drop every row whose person basis is below max(nfilter.subset,
+  # nfilter.tab) (NA -> dropped), the same threshold + row-drop the raw-CDM
+  # distinct-person gate and the Achilles reader enforce.
+  settings <- .omopDisclosureSettings()
+  threshold <- max(settings$nfilter_subset, settings$nfilter_tab)
   keep <- rep(TRUE, nrow(result))
   for (col in present_person) {
     vals <- suppressWarnings(as.numeric(result[[col]]))

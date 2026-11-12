@@ -324,7 +324,7 @@ test_that("person-gate drops companion (monthly) cells below the person threshol
   })
 })
 
-test_that("companion person-counts are cached per analysis on the handle", {
+test_that("companion person-counts are recomputed on every read (B07)", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
@@ -343,7 +343,11 @@ test_that("companion person-counts are cached per analysis on the handle", {
   withr::with_options(list(nfilter.tab = 3), {
     .achillesGetResults(handle, c(420L))
     expect_equal(calls, 1L)
-    expect_true(!is.null(handle$achilles_gate_cache[["420"]]))
+    # A release decision never rests on support remembered from an earlier
+    # read: the next read recomputes the basis, and nothing is cached.
+    .achillesGetResults(handle, c(420L))
+    expect_equal(calls, 2L)
+    expect_null(handle$achilles_gate_cache)
   })
 })
 
@@ -598,7 +602,6 @@ test_that("G-03: an in-period 420 cell from 2 people stays withheld", {
     expect_false("202006" %in% result$stratum_1)
   })
   # Support exactly at the threshold is released (banded).
-  handle$achilles_gate_cache <- NULL
   withr::with_options(list(nfilter.tab = 2, nfilter.subset = 2,
                            dsomop.nfilter.band = 5), {
     result <- .achillesGetResults(handle, 420L)
@@ -777,6 +780,77 @@ test_that("G-03: 505 counts in-period deaths and keeps the NULL type group", {
                                  companion$stratum_1 == "32817"]
   expect_equal(typed, 12)
   expect_equal(companion$n_persons[is.na(companion$stratum_1)], 2)
+})
+
+# --- B07 (2.10.3 review): support is never remembered across reads -------------
+
+.b07_handle <- function(persons) {
+  h <- create_test_handle(n_persons = 15)
+  DBI::dbExecute(h$conn, "DELETE FROM condition_occurrence")
+  DBI::dbExecute(h$conn, "DELETE FROM achilles_results WHERE analysis_id = 420")
+  # Five in-period June-2020 records for each listed person.
+  for (p in persons) {
+    for (k in 1:5) .release_add_condition(h, p, 201820L, "2020-06-01")
+  }
+  DBI::dbExecute(h$conn, sprintf(paste(
+    "INSERT INTO achilles_results VALUES (420, '202006', NULL, NULL, NULL,",
+    "NULL, %d)"), 5L * length(persons)))
+  .buildBlueprint(h, force = TRUE)
+  h
+}
+
+.b07_copy <- function(h) {
+  h2 <- new.env(parent = emptyenv())
+  for (name in ls(h, all.names = TRUE)) {
+    assign(name, get(name, envir = h, inherits = FALSE), envir = h2)
+  }
+  h2
+}
+
+test_that("B07: a refresh that drops a cell below the floor withholds it at once", {
+  withr::local_options(list(nfilter.tab = 3, nfilter.subset = 3,
+                            dsomop.nfilter.band = 5))
+  h <- .b07_handle(1:3)
+  on.exit(cleanup_handle(h))
+  before <- .achillesGetResults(h, 420L)
+  expect_equal(before$count_value[before$stratum_1 == "202006"], 15)
+  # The review's probe: person 3's records go and the stored count follows,
+  # with a forced blueprint and catalogue refresh.
+  DBI::dbExecute(h$conn, "DELETE FROM condition_occurrence WHERE person_id = 3")
+  DBI::dbExecute(h$conn,
+                 "UPDATE achilles_results SET count_value = 10 WHERE analysis_id = 420")
+  .buildBlueprint(h, force = TRUE)
+  suppressWarnings(.omopAnalysisRegistry(h, force = TRUE))
+  current <- .achillesCompanionPersonCounts(h, 420L)
+  expect_equal(current$n_persons[current$stratum_1 == "202006"], 2)
+  # The handle that read the 3-person cell withholds the 2-person cell...
+  expect_equal(nrow(.achillesGetResults(h, 420L)), 0L)
+  # ...and so does a new handle on the same database.
+  expect_equal(nrow(.achillesGetResults(.b07_copy(h), 420L)), 0L)
+  expect_null(h$achilles_gate_cache)
+})
+
+test_that("B07: no refresh is needed: decreases and increases apply on the next read", {
+  withr::local_options(list(nfilter.tab = 3, nfilter.subset = 3,
+                            dsomop.nfilter.band = 5))
+  h <- .b07_handle(1:2)
+  on.exit(cleanup_handle(h))
+  # Two people: withheld on this handle and on a copy.
+  expect_equal(nrow(.achillesGetResults(h, 420L)), 0L)
+  h2 <- .b07_copy(h)
+  expect_equal(nrow(.achillesGetResults(h2, 420L)), 0L)
+  # A third person crosses the floor: released on the next read of either.
+  for (k in 1:5) .release_add_condition(h, 3L, 201820L, "2020-06-01")
+  DBI::dbExecute(h$conn,
+                 "UPDATE achilles_results SET count_value = 15 WHERE analysis_id = 420")
+  expect_equal(.achillesGetResults(h, 420L)$count_value, 15)
+  expect_equal(.achillesGetResults(h2, 420L)$count_value, 15)
+  # Back below the floor (no blueprint refresh): withheld again on both.
+  DBI::dbExecute(h$conn, "DELETE FROM condition_occurrence WHERE person_id = 1")
+  DBI::dbExecute(h$conn,
+                 "UPDATE achilles_results SET count_value = 10 WHERE analysis_id = 420")
+  expect_equal(nrow(.achillesGetResults(h, 420L)), 0L)
+  expect_equal(nrow(.achillesGetResults(h2, 420L)), 0L)
 })
 
 test_that("G-03: 2102 is persons by device and month, served by the reader", {
