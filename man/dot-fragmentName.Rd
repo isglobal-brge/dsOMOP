@@ -2,24 +2,27 @@
 % Please edit documentation in R/compile_statement.R
 \name{.fragmentName}
 \alias{.fragmentName}
-\title{Deterministic fragment name within the 64-character name grammar}
+\title{The SQL identifier of a fragment identity}
 \usage{
-.fragmentName(prefix, name, suffix = NULL)
+.fragmentName(prefix, name, suffix = NULL, ctx = NULL)
 }
 \arguments{
-\item{prefix}{Fragment prefix (e.g. \code{"ev"}, \code{"cs"}).}
+\item{prefix}{Fragment family.}
 
 \item{name}{Node name (plan grammar).}
 
-\item{suffix}{Optional stage suffix (e.g. \code{"src"}, \code{"norm"}).}
+\item{suffix}{Stage name, or NULL for the final fragment.}
+
+\item{ctx}{Optional execution context.}
 }
 \value{
-One fragment name.
+One fragment identifier.
 }
 \description{
-\code{<prefix>_<name>[_<suffix>]}. A name that would exceed the grammar is
-shortened deterministically: the stem keeps its leading characters and
-gains the first ten hexadecimal digits of the SHA-256 of the full name, so
-two distinct node names never share a fragment name.
+With an execution context (every compiler call), the identifier allocated
+for \code{(prefix, name, suffix)} in that context (amendment A-17). Without
+one, the context-free form for tests and documentation: the readable name
+when it fits the name grammar, otherwise a stem plus the first ten
+hexadecimal digits of the identity's hash.
 }
 \keyword{internal}

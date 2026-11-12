@@ -9,34 +9,215 @@
 # built through the typed SQL helpers of R/sql_expr.R, so the builder never
 # translates SQL; the finished statement passes .sqlAssertTypedSql().
 
-#' Deterministic fragment name within the 64-character name grammar
+# --- Fragment SQL identifiers (amendment A-17) ---------------------------------
+#
+# A fragment's identity is structured: (prefix, name, suffix), where suffix
+# names a stage ("src", "norm", ...) and NULL marks the final fragment. SQL
+# identifiers are allocated per execution context from these identities,
+# never by concatenating strings at the call site (the concatenation collides:
+# ("ev", "a", "src") and ("ev", "a_src") both read "ev_a_src"), so:
+#   * every identity the plan can need is preallocated at once, in canonical
+#     order (radix order of an unambiguous encoding), from the IR through the
+#     identity generators of .fragmentIdentityGenerators(): the allocation is
+#     deterministic for the plan and independent of compilation order;
+#   * a readable name <prefix>_<name>[_<suffix>] is reserved when no other
+#     identity of the plan reads the same under the dialect's identifier
+#     comparison (case-folded), it fits .NAME_PATTERN and the dialect's
+#     identifier limit (PostgreSQL 63 bytes, Oracle 30, ...), and it is not a
+#     CDM table name a CTE could shadow;
+#   * every other identity gets a readable stem plus the first ten
+#     hexadecimal digits of SHA-256 over its encoding, then the first free
+#     _2, _3, ... on a residual collision, the stem shortened so the hash and
+#     the counter are never truncated;
+#   * the completed allocation is checked again under the dialect equivalence
+#     before any SQL is emitted. Distinct identities are never merged or
+#     refused because their readable names collide; an identity no generator
+#     declared is a compiler defect and fails closed.
+
+#' A structured fragment identity
 #'
-#' \code{<prefix>_<name>[_<suffix>]}. A name that would exceed the grammar is
-#' shortened deterministically: the stem keeps its leading characters and
-#' gains the first ten hexadecimal digits of the SHA-256 of the full name, so
-#' two distinct node names never share a fragment name.
-#'
-#' @param prefix Fragment prefix (e.g. \code{"ev"}, \code{"cs"}).
+#' @param prefix Fragment family (e.g. \code{"ev"} for events and adapters).
 #' @param name Node name (plan grammar).
-#' @param suffix Optional stage suffix (e.g. \code{"src"}, \code{"norm"}).
-#' @return One fragment name.
+#' @param suffix Stage name, or NULL for the final fragment.
+#' @return list(prefix, name, suffix).
 #' @keywords internal
-.fragmentName <- function(prefix, name, suffix = NULL) {
-  if (!.isScalarString(prefix) || !.isScalarString(name)) {
-    stop("A fragment name needs a prefix and a node name.", call. = FALSE)
+.fragmentIdentity <- function(prefix, name, suffix = NULL) {
+  ok <- function(x) is.character(x) && length(x) == 1L && !is.na(x) &&
+    grepl("^[A-Za-z][A-Za-z0-9_]*$", x)
+  if (!ok(prefix) || !ok(name) || (!is.null(suffix) && !ok(suffix))) {
+    stop("A fragment identity is (prefix, name, suffix) in the plan name grammar.",
+         call. = FALSE)
   }
-  full <- paste(c(prefix, name, suffix), collapse = "_")
-  if (nchar(full) <= 64L && grepl(.NAME_PATTERN, full)) return(full)
-  hash <- substr(paste(as.character(openssl::sha256(charToRaw(enc2utf8(full)))),
-                       collapse = ""), 1L, 10L)
-  tail <- paste(c(hash, suffix), collapse = "_")
-  room <- 64L - nchar(prefix) - nchar(tail) - 2L
-  stem <- gsub("[^A-Za-z0-9_]", "_", name)
-  out <- paste0(prefix, "_", substr(stem, 1L, max(1L, room)), "_", tail)
-  if (!grepl(.NAME_PATTERN, out)) {
-    stop("Cannot derive a fragment name for '", name, "'.", call. = FALSE)
+  list(prefix = prefix, name = name, suffix = suffix)
+}
+
+# Unambiguous encoding of an identity (canonical JSON of the triple).
+.fragmentIdentityKey <- function(id) {
+  .jcsCanonical(list(id$prefix, id$name, id$suffix))
+}
+
+#' Identity generators of the fragment families (amendment A-17)
+#'
+#' One function per prefix, mapping an IR to the identities its compiler can
+#' register for that plan. WS-4: \code{ev} (table events: stages
+#' \code{src}, \code{norm} and the final fragment; adapters: \code{src} and
+#' the final fragment) and \code{map} (vocabulary maps). Later compilers add
+#' their families here (e.g. intervals, anchors, coverage, populations,
+#' output rosters); a fragment family without a generator cannot be named.
+#'
+#' @return Named list of functions(ir) -> list of identities.
+#' @keywords internal
+.fragmentIdentityGenerators <- function() {
+  list(ev = .eventFragmentIdentities, map = .mapFragmentIdentities)
+}
+
+#' Identities of the event and adapter fragments of a plan
+#' @keywords internal
+.eventFragmentIdentities <- function(ir) {
+  out <- list()
+  for (e in names(ir[["events"]] %||% list())) {
+    node <- ir[["events"]][[e]]
+    adapter <- !is.null(node[["episode_members"]]) || !is.null(node[["cost"]])
+    for (stage in if (adapter) "src" else c("src", "norm")) {
+      out[[length(out) + 1L]] <- .fragmentIdentity("ev", e, stage)
+    }
+    out[[length(out) + 1L]] <- .fragmentIdentity("ev", e)
   }
   out
+}
+
+#' Identities of the vocabulary-map fragments (the RxNorm ingredient map)
+#' @keywords internal
+.mapFragmentIdentities <- function(ir) {
+  list(.fragmentIdentity("map", "ingredient"))
+}
+
+#' Identifier length limit of a SQL family
+#'
+#' The dialect's limit on unquoted identifiers, capped by the 64-character
+#' plan name grammar every fragment name also satisfies.
+#' @keywords internal
+.fragmentIdentifierLimit <- function(family) {
+  limit <- switch(family,
+    postgresql = 63L, redshift = 127L, oracle = 30L, mysql = 64L,
+    sqlserver = 128L, bigquery = 300L, snowflake = 255L, spark = 128L,
+    sqlite = 64L, duckdb = 64L, 64L)
+  min(limit, 64L)
+}
+
+# Names a CTE must never take (a CTE named like a base table would shadow it
+# inside the statement): every CDM/vocabulary table and the results cohort
+# tables, case-folded.
+.fragmentReservedNames <- function() {
+  cached <- .irCache[["fragment_reserved_names"]]
+  if (!is.null(cached)) return(cached)
+  path <- system.file("ohdsi", "cdm_columns.csv", package = "dsOMOP")
+  tables <- if (nzchar(path)) {
+    unique(utils::read.csv(path, colClasses = "character")$table_name)
+  } else character(0)
+  out <- tolower(unique(c(tables, "cohort", "cohort_definition", "cohort_attribute")))
+  assign("fragment_reserved_names", out, envir = .irCache)
+  out
+}
+
+#' Allocate SQL identifiers for a set of fragment identities
+#'
+#' Pure and deterministic: the result depends only on the set of identities
+#' and the SQL family (see the module notes above, amendment A-17).
+#'
+#' @param identities List of \code{.fragmentIdentity()} records.
+#' @param family SQL family (\code{.sqlFamily()}).
+#' @return Named character vector: identity key -> allocated identifier.
+#' @keywords internal
+.fragmentAllocate <- function(identities, family) {
+  if (!length(identities)) return(stats::setNames(character(0), character(0)))
+  keys <- vapply(identities, .fragmentIdentityKey, "")
+  keep <- !duplicated(keys)
+  identities <- identities[keep]
+  keys <- keys[keep]
+  ord <- order(keys, method = "radix")
+  identities <- identities[ord]
+  keys <- keys[ord]
+  limit <- .fragmentIdentifierLimit(family)
+  reserved <- .fragmentReservedNames()
+  readable <- vapply(identities, function(id) {
+    paste(c(id$prefix, id$name, id$suffix), collapse = "_")
+  }, "")
+  folded <- tolower(readable)
+  clash <- duplicated(folded) | duplicated(folded, fromLast = TRUE)
+  ok <- !clash & nchar(readable) <= limit & grepl(.NAME_PATTERN, readable) &
+    !folded %in% reserved
+  out <- stats::setNames(rep(NA_character_, length(keys)), keys)
+  out[ok] <- readable[ok]
+  used <- folded[ok]
+  for (i in which(!ok)) {
+    hash <- .fragmentHash(keys[[i]])
+    stem <- gsub("[^A-Za-z0-9_]", "_", readable[[i]])
+    k <- 1L
+    repeat {
+      tail <- paste0("_", hash, if (k > 1L) paste0("_", k))
+      cand <- paste0(substr(stem, 1L, limit - nchar(tail)), tail)
+      if (!tolower(cand) %in% c(used, reserved)) break
+      k <- k + 1L
+    }
+    out[[i]] <- cand
+    used <- c(used, tolower(cand))
+  }
+  # The completed allocation, checked under the dialect's identifier comparison.
+  if (anyNA(out) || anyDuplicated(tolower(out)) || any(nchar(out) > limit) ||
+      !all(grepl(.NAME_PATTERN, out)) || any(tolower(out) %in% reserved)) {
+    stop("Fragment identifier allocation failed its distinctness check.", call. = FALSE)
+  }
+  out
+}
+
+# First ten hexadecimal digits of SHA-256 over an identity's encoding.
+.fragmentHash <- function(key) {
+  substr(paste(as.character(openssl::sha256(charToRaw(enc2utf8(key)))), collapse = ""),
+         1L, 10L)
+}
+
+# The allocation of one execution context (preallocated from its IR on first
+# use, memoised).
+.fragmentAllocation <- function(ctx) {
+  if (!is.environment(ctx)) {
+    stop("Fragment identifiers are allocated per execution context.", call. = FALSE)
+  }
+  alloc <- ctx[["fragment_allocation"]]
+  if (!is.null(alloc)) return(alloc)
+  ir <- ctx[["ir"]]
+  identities <- unlist(lapply(.fragmentIdentityGenerators(), function(gen) gen(ir)),
+                       recursive = FALSE)
+  alloc <- .fragmentAllocate(identities, .sqlFamily(.compileDialect(ctx)))
+  assign("fragment_allocation", alloc, envir = ctx)
+  alloc
+}
+
+#' The SQL identifier of a fragment identity
+#'
+#' With an execution context (every compiler call), the identifier allocated
+#' for \code{(prefix, name, suffix)} in that context (amendment A-17). Without
+#' one, the context-free form for tests and documentation: the readable name
+#' when it fits the name grammar, otherwise a stem plus the first ten
+#' hexadecimal digits of the identity's hash.
+#'
+#' @param prefix Fragment family.
+#' @param name Node name (plan grammar).
+#' @param suffix Stage name, or NULL for the final fragment.
+#' @param ctx Optional execution context.
+#' @return One fragment identifier.
+#' @keywords internal
+.fragmentName <- function(prefix, name, suffix = NULL, ctx = NULL) {
+  id <- .fragmentIdentity(prefix, name, suffix)
+  key <- .fragmentIdentityKey(id)
+  if (is.null(ctx)) return(unname(.fragmentAllocate(list(id), "sqlite")[[key]]))
+  alloc <- .fragmentAllocation(ctx)
+  hit <- alloc[key]
+  if (length(hit) != 1L || is.na(hit)) {
+    stop("Fragment identity ", key, " was not declared by an identity generator ",
+         "(.fragmentIdentityGenerators()); it cannot be named.", call. = FALSE)
+  }
+  unname(hit)
 }
 
 # The fragment store of an execution context (created on first use).
@@ -287,4 +468,29 @@
 #' @keywords internal
 .compileNoTableFrom <- function(h) {
   if (.sqlFamily(h) %in% c("oracle", "mysql")) " FROM DUAL" else ""
+}
+
+#' The compilation context of a plan execution
+#'
+#' Compilers read the validated IR from \code{ctx$ir}, register fragments and
+#' memos in the context and allocate identifiers per context. A publication
+#' context (\code{.planContext()}) keeps the incoming plan as it was received,
+#' so the compilers work in a child context bound to it: the handle and the
+#' probed dialect of the execution, the normalised IR, its own fragment store.
+#' Memoised in the execution context.
+#'
+#' @param ctx The execution context (\code{.planContext()}).
+#' @param ir The validated IR (\code{.irPrepare()}).
+#' @return The compilation context (environment).
+#' @keywords internal
+.compileContext <- function(ctx, ir) {
+  existing <- ctx[["compile_context"]]
+  if (is.environment(existing) && identical(existing[["ir"]], ir)) return(existing)
+  cctx <- new.env(parent = emptyenv())
+  cctx$handle <- ctx[["handle"]]
+  cctx$ir <- ir
+  cctx$dialect <- ctx[["dialect"]] %||% .sqlDialectProfile(ctx[["handle"]], probe = TRUE)
+  cctx$execution <- ctx
+  assign("compile_context", cctx, envir = ctx)
+  cctx
 }

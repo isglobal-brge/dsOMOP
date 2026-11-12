@@ -2960,16 +2960,24 @@
   } else {
     .irPrepare(wire[["plan"]], handle, scope_tables = wire[["scope_tables"]])
   }
-  if (identical(attr(ir, "source_version"), 2L)) {
-    .irReject(paste0("this server validates language 2.0 plans but does not ",
-                     "execute them yet; use omopPlanExplainDS"))
-  }
+  # the context exists only after validation (WS-1): created here when the
+  # caller brought none
   own_context <- is.null(ctx)
   if (own_context) {
     validated <- list(ir = ir, wire = .irJsonForm(wire[["plan"]]))
     ctx <- .planContext(handle, .planContextIr(validated, plan), output_mode)
     ctx$validation <- validated
     on.exit(.planContextClose(ctx), add = TRUE)
+  }
+  if (identical(attr(ir, "source_version"), 2L)) {
+    # The event stage of language-2.0 execution (design 6.1, WS-4): the event
+    # sources of the requested roots compile in the private context, so the
+    # data-dependent adapter refusals of section 11 are raised, with their
+    # reason (A-18), before any output is materialised. The later stages
+    # (intervals, populations, variables, outputs) replace the refusal below.
+    .planCompileSources(.compileContext(ctx, ir), names(out_symbols))
+    .irReject(paste0("this server validates language 2.0 plans but does not ",
+                     "execute them yet; use omopPlanExplainDS"))
   }
 
   temp_tables_before <- unique(handle$temp_tables %||% character(0))
