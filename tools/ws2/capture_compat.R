@@ -28,7 +28,7 @@
 #   Rscript tools/ws2/capture_compat.R diff <run-a.json> <run-b.json> [id regex]
 #       For every case whose outcomes differ between two runs (e.g. the
 #       baseline and the current code), the first differing path of the two
-#       lossless canonical results, or the two refusals. The fixture keeps only
+#       canonical results, or the two refusals. The fixture keeps only
 #       the sha256 of a baseline result; this recomputes the full forms.
 #
 # Plans are written in the TRANSPORT form: the JSON a client sends, decoded
@@ -39,7 +39,10 @@
 # Per case the run records:
 #   outcome   `ok` with the canonical result -- the b10-canonical .b10_canon()
 #             below (copied from tools/ws2/capture_results.R at cb5907c) at 17
-#             significant digits, so the comparison is lossless -- or `error`
+#             significant digits (lossless for doubles). Date/POSIX objects
+#             still use formatted values here; the replay test explicitly
+#             refuses those types pending numeric-payload baseline recapture,
+#             rather than claiming an exact temporal comparison -- or `error`
 #             with the condition classes, the message (volatile temp-table
 #             suffixes neutralised) and:
 #               refused_before_query  TRUE when no data statement had been

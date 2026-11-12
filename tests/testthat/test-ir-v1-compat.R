@@ -17,10 +17,11 @@
 # decodes the transport JSON (section A: the field's template with the
 # variant literal substituted):
 #   - baseline `ok`: .planExecute() succeeds and the sha256 of the b10
-#     canonical form of its value at 17 significant digits (lossless) equals
+#     canonical form of its value at 17 significant digits equals
 #     the baseline's; on a mismatch the failure lists the rows and columns of
 #     both, and tools/ws2/capture_compat.R (run on both builds, then diff)
-#     recomputes the full canonical difference;
+#     recomputes the full canonical difference. Date/POSIX objects are refused
+#     before hashing until an independent numeric-payload capture pins them;
 #   - baseline `error`: the current code refuses the plan; where the case
 #     carries `typed_refusal` (the R1 malformed shapes 2.10.2 refused with an R
 #     error) the refusal inherits dsomop_plan_rejection;
