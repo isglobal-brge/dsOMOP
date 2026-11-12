@@ -249,15 +249,16 @@
 # conversion. Empty nested arrays contribute no value; objects stay closed.
 .v1sIntegerVector <- function(.check = NULL) {
   .v1sCustom(function(x, path) {
-    walk <- function(value, p) {
+    walk <- function(value, p, depth = 1L) {
+      if (depth > 64L) return(paste0(p, ": integer-vector nesting is too deep"))
       if (is.list(value) && is.null(names(value))) {
         return(unlist(lapply(seq_along(value), function(i) {
           if (is.null(value[[i]])) paste0(p, "/", i - 1L, ": an array item cannot be null")
-          else walk(value[[i]], paste0(p, "/", i - 1L))
+          else walk(value[[i]], paste0(p, "/", i - 1L), depth + 1L)
         }), use.names = FALSE))
       }
       if (is.atomic(value) && length(value) != 1L) {
-        return(walk(as.list(value), p))
+        return(walk(as.list(value), p, depth))
       }
       .v1ShapeErrors(value, .v1sScalar("integer"), p)
     }

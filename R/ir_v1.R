@@ -133,7 +133,9 @@
 #' @keywords internal
 .planV1EnvelopeErrors <- function(plan) {
   if (!.v1IsObject(plan)) return("/: a v1 plan must be a JSON object")
-  errors <- .v1ShapeErrors(plan, .v1PlanShape(), "")
+  errors <- tryCatch(.v1ShapeErrors(plan, .v1PlanShape(), ""), error = function(e) {
+    paste0("/: the v1 plan has a malformed value (", conditionMessage(e), ")")
+  })
   if (!is.null(plan[["version"]]) && !identical(.v1AsInteger(plan[["version"]]), 1L)) {
     errors <- c(errors, "/version: a v1 plan carries no version or version 1")
   }
