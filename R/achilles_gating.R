@@ -17,7 +17,7 @@
 #     dropping record cells whose sibling person count_value < nfilter.tab. No
 #     CDM query needed.
 #   * "companion": no precomputed person sibling exists (monthly analyses, 505,
-#     1818). Compute a targeted, cached COUNT(DISTINCT person_id) grouped by
+#     1818). Compute a targeted COUNT(DISTINCT person_id), on every read, by
 #     the same strata directly from the CDM domain table, over exactly the
 #     records the upstream analysis counts (events inside an observation
 #     period, with the analysis's own event restrictions), then drop record
