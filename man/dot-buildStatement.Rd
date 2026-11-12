@@ -26,6 +26,11 @@ dependency order, each CTE named by its fragment, followed by the final
 fragment's SELECT body. With \code{select} given, the final fragment is
 itself hoisted and \code{select} (a SELECT reading it by name) becomes the
 main query. The statement is checked with \code{.sqlAssertTypedSql()} when
-a dialect is given.
+a dialect is given. On actual MySQL, stockpile fragments carrying the
+private \code{mysql_stockpile_source} attribute are read once into a
+statement-local JSON payload and reconstructed with typed JSON_TABLE rows
+inside a lateral query. This permits repeated consumers without reopening
+a session temporary table; final ordering remains explicit in the outer
+SELECT. Payloads never leave the database or become persistent state.
 }
 \keyword{internal}
