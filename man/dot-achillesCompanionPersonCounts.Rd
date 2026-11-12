@@ -13,15 +13,26 @@
 }
 \value{
 data.frame with the join-stratum columns + \code{n_persons}; empty
-  frame if not companion-gated or the domain table is absent.
+  frame if the analysis is not companion-gated or its basis is unavailable.
 }
 \description{
 For record-count analyses with NO precomputed person sibling (monthly
-220/420/620/720/820/1820/2102; death 505; measurement range 1818), compute a
-targeted COUNT(DISTINCT person_id) grouped by the same gate strata directly
-from the CDM domain table. Returned strata are emitted as text and built to
-be join-compatible with the record analysis's stratum_1 (and stratum_2/3 for
-1818): concept ids and YYYYMM month keys match achilles_results.stratum_*
-storage.
+220/420/620/720/820/1820; death 505; measurement range 1818), compute a
+targeted \code{COUNT(DISTINCT d.person_id)} grouped by the same gate strata
+directly from the CDM domain table, over the records the upstream analysis
+counts: a correlated \code{EXISTS} keeps an event only when its date lies
+inside one of the person's observation periods (endpoints included). EXISTS
+rather than a join means duplicate or overlapping observation periods can
+never inflate the person basis, and out-of-period events (which the stored
+record count excludes) can never lend support to an in-period cell. Returned
+strata are emitted as text and built to be join-compatible with the record
+analysis's stratum columns: concept ids and YYYYMM month keys match
+\code{achilles_results.stratum_*} storage.
+}
+\details{
+Fail closed: a missing domain table, observation_period table or required
+column, or a failing query, returns an empty frame with the contracted
+stratum columns, so every record cell of the analysis is withheld; there is
+never a fallback to an un-restricted count.
 }
 \keyword{internal}

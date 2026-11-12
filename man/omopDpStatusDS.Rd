@@ -15,13 +15,16 @@ Public DP service status, including the custodial \code{exclusive}
   exploration) never depends on either.
 }
 \description{
-Returns the public fixed-per-release mechanism contract. Secret key material
-and protected snapshot fingerprints are never returned. The only DP state is
-the noise root: answers are deterministic in the root, the question, the
-protected statistic and a private automatic database version, and status
-declares \code{release_binding = "seed_data_versioned_v1"} and
-\code{persistent_state = "noise_root_only"}. A damaged root fails closed.
-There is no cumulative privacy budget or privacy call quota.
+Returns the public protected-release contract (dsOMOP 2.10.3): the
+mechanism, the reference calibration, the guarantee scope of each route
+(\code{fixed_synopsis}: the declared bounded vector before the exact
+support gate; \code{realised_sticky}: heuristic realised-contribution
+reuse), the statistics with a fixed-synopsis contract and the registered
+public scales. Secret key material, fingerprints and person tokens are never
+returned. The only DP state is the noise root (\code{persistent_state =
+"noise_root_only"}); a damaged root fails closed. There is no privacy
+accountant, budget or call quota: \code{privacy_call_quota = "none"} and
+\code{history_based_admission = FALSE}.
 DP serves only the OHDSI community tools, so the status requires them to be
 enabled (\code{dsomop.tools.enabled}). It derives the service identity from
 the session's connected OMOP resource when no explicit

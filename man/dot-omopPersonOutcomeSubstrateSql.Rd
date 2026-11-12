@@ -30,8 +30,12 @@ SQL for a derived person-level outcome substrate.
 }
 \description{
 The returned relation has one row per person and pre-aggregates outcome rows
-inside that person's selected time-at-risk window. Consequently, repeated
-outcome events increase `outcomes` but can never fan out `person_days`.
-Episodes whose requested TAR ends before it starts are omitted.
+inside that person's observed time-at-risk window
+(\code{\link{.omopObservedTarSql}}: the requested window intersected with
+the observation period containing the index, half-open). Consequently,
+repeated outcome events increase `outcomes` but can never fan out
+`person_days`, outcomes outside observation never count, and persons whose
+index lies outside every observation period, or whose observed window is
+empty, are omitted.
 }
 \keyword{internal}

@@ -11,7 +11,8 @@
   person_columns = character(0),
   statistic_columns = character(0),
   unit = "admin",
-  release = "public"
+  release = "public",
+  statistic_basis = NULL
 )
 }
 \description{
@@ -20,5 +21,26 @@ names every column that may leave the server, the dimensions that may be used
 for filtering/ordering, and the row-level person basis required before any
 statistic is released. Tables without a reviewed public contract remain
 available only when the server administrator disables strict query mode.
+}
+\details{
+\code{statistic_basis} is the PRIVATE support contract of a coupled statistic
+family (an effect estimate with its CI, p-value, log estimate and SE, or a
+model's performance scalars). It names the columns each statistic depends on
+beyond the row's own person basis:
+\describe{
+  \item{\code{statistics}}{the coupled statistic columns, masked together;}
+  \item{\code{person}}{distinct-person bases, each of which must reach
+    \code{nfilter.subset};}
+  \item{\code{event}}{event counts with an event floor of
+    \code{nfilter.tab} (an event count never establishes distinct people);}
+  \item{\code{person_complement}}{pairs \code{c(total, part)} whose difference
+    is a distinct-person basis (for example the non-outcome class of a
+    prediction population) that must reach \code{nfilter.subset};}
+  \item{\code{event_complement}}{pairs \code{c(total, part)} whose difference
+    is an event count with the \code{nfilter.tab} floor.}
+}
+These basis columns are always read internally (even when a caller selects
+a single statistic) and are released only when they are themselves public
+contract columns that the caller asked for.
 }
 \keyword{internal}

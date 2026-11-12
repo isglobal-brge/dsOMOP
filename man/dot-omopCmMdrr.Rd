@@ -14,9 +14,9 @@
 )
 }
 \arguments{
-\item{outcomes}{Numeric; total outcomes across both arms (raw).}
+\item{outcomes}{Numeric; total released outcomes across both arms.}
 
-\item{target_days, comparator_days}{Numeric; person-days per arm (raw).}
+\item{target_days, comparator_days}{Numeric; released person-days per arm.}
 
 \item{alpha}{Numeric; type-I error (default 0.05).}
 
@@ -47,5 +47,12 @@ person-time are BANDED FIRST (the same \code{nfilter_band} the gate uses) and
 whenever any input is suppressed (below \code{nfilter_tab}, NA, or a zero
 person-time) — mirroring \code{\link{.omopAnalysisReconcileRatio}} so the
 released MDRR never rests on un-banded counts.
+
+Callers pass the RELEASED arm statistics of
+\code{\link{.omopCmReleasableArmStats}} (via
+\code{\link{.omopCmReleasedMdrr}}): \code{D} is
+\code{band(target outcomes) + band(comparator outcomes)}, never the band of
+the raw total, whose carry bit would reveal hidden arm information. Banding
+is idempotent, so re-banding released values here changes nothing.
 }
 \keyword{internal}

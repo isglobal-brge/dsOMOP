@@ -12,9 +12,10 @@ resource coordinates and cdm_source metadata (cdm_source_name,
 cdm_release_date, cdm_version, vocabulary_version). Explicit values win.
 Complete source rows are canonically sorted; incomplete or absent source
 metadata falls back to sorted vocabulary versions, then resource identity
-alone. Data reloads need no epoch bump: the private database version of
-every answer tracks them (\code{.dsomopDpDataVersion}), and a custodial
-snapshot_id replaces that automatic version. The noise root is the only
-persistent DP state; ephemeral state directories are test-only.
+alone. Without a custodial snapshot_id the releases are realised-sticky:
+a reload redraws exactly the components whose bounded contributions
+changed (dsOMOP 2.10.3); a fixed-synopsis release needs the custodian's
+snapshot_id, which must change with every data generation. The noise root
+is the only persistent DP state; ephemeral state directories are test-only.
 }
 \keyword{internal}
