@@ -50,10 +50,10 @@ excess stock at each fill; it does not shorten earlier effective intervals.
 The normalised recorded end travels separately through effective
 materialisation and course marks. A retained-course flag in the marks avoids
 reading the stockpile temporary table again through a course-existence join.
-On MySQL, the effective-source CTE uses `DISTINCT` over its already-unique
-rows to prevent merging into separate consumer branches. This allows one
-statement to reuse the course, recorded and effective relations while reading
-the physical stockpile table once.
+On MySQL, the statement builder supplies those effective rows through the
+typed statement-local payload described below. A shared CTE alone does not
+prevent MySQL from reopening the temporary table when several consumers
+reuse the course, recorded and effective relations.
 
 ## Source quality and consumer association
 
