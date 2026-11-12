@@ -95,12 +95,12 @@ test_that("unavailable raw mode aliases preserve declared types and date policie
       expect_identical(got$frame$canonical_date, got$frame$alias_date, info = info)
       expect_identical(got$frame$canonical_concept, got$frame$alias_concept, info = info)
       expect_true(all(is.na(got$frame$alias_concept)), info = info)
-      expect_type(got$frame$raw_integer, "integer", info = info)
+      expect_type(got$frame$raw_integer, "integer")
       expect_true(all(is.na(got$frame$raw_integer)), info = info)
       if (policy == "remove") {
         expect_false("alias_date" %in% names(got$frame), info = info)
       } else {
-        expect_type(got$frame$alias_date, if (policy == "relative") "integer" else "character", info = info)
+        expect_type(got$frame$alias_date, if (policy == "relative") "integer" else "character")
         expect_true(all(is.na(got$frame$alias_date)), info = info)
       }
     }
