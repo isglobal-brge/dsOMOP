@@ -4,7 +4,7 @@
 \alias{.resolveCohortArg}
 \title{Resolve the unified cohort scope argument for an exploration aggregate}
 \usage{
-.resolveCohortArg(handle, cohort = NULL, cohort_table = NULL)
+.resolveCohortArg(handle, cohort = NULL, cohort_table = NULL, ctx = NULL)
 }
 \arguments{
 \item{handle}{CDM handle.}

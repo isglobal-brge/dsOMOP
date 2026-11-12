@@ -4,7 +4,7 @@
 \alias{.applyInclusionCriteria}
 \title{Apply inclusion criteria to filter a cohort}
 \usage{
-.applyInclusionCriteria(handle, cohort_temp, criteria)
+.applyInclusionCriteria(handle, cohort_temp, criteria, ctx = NULL)
 }
 \arguments{
 \item{handle}{CDM handle}
@@ -12,6 +12,8 @@
 \item{cohort_temp}{Character; cohort temp table name}
 
 \item{criteria}{List of inclusion criterion specs}
+
+\item{ctx}{Server-created private execution context, or NULL for standalone use.}
 }
 \value{
 Character; filtered cohort temp table name

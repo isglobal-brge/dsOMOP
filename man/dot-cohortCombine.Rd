@@ -4,7 +4,14 @@
 \alias{.cohortCombine}
 \title{Combine two cohorts using set operations}
 \usage{
-.cohortCombine(handle, op, cohort_table_a, cohort_table_b, new_name = NULL)
+.cohortCombine(
+  handle,
+  op,
+  cohort_table_a,
+  cohort_table_b,
+  new_name = NULL,
+  ctx = NULL
+)
 }
 \arguments{
 \item{handle}{CDM handle}
@@ -16,6 +23,8 @@
 \item{cohort_table_b}{Character; second cohort temp table}
 
 \item{new_name}{Character; name for result temp table}
+
+\item{ctx}{Server-created private execution context, or NULL for standalone use.}
 }
 \value{
 Character; result temp table name

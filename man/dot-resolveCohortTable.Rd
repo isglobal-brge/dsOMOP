@@ -4,13 +4,15 @@
 \alias{.resolveCohortTable}
 \title{Resolve a cohort reference to a server-side cohort temp table (population scope)}
 \usage{
-.resolveCohortTable(handle, cohort)
+.resolveCohortTable(handle, cohort, ctx = NULL)
 }
 \arguments{
 \item{handle}{CDM handle.}
 
 \item{cohort}{A cohort temp-table name (character), a cohort_definition_id
 (numeric), or \code{NULL}.}
+
+\item{ctx}{Server-created private execution context, or NULL for standalone use.}
 }
 \value{
 Character cohort temp table name, or \code{NULL} when \code{cohort} is

@@ -12,7 +12,9 @@
   key,
   pseudonymization = NULL,
   semantic_contract = NULL,
-  bundle_contract = NULL
+  bundle_contract = NULL,
+  ctx = NULL,
+  already_tokenized = FALSE
 )
 }
 \arguments{
