@@ -1,6 +1,6 @@
 # Keep the public surface explicit. The core endpoints never consult DP or the
-# community-tools setting; the community-tool endpoints are disabled unless the
-# custodian enables them, and follow exclusive DP when a custodian opts in.
+# community-tools setting. Community tools are enabled by default; their
+# final releases follow exclusive DP when that optional mode is selected.
 .dp_core_endpoints <- c(
   "omopTableStatsDS", "omopColumnStatsDS", "omopDomainCoverageDS",
   "omopMissingnessDS", "omopValueCountsDS", "omopConceptPrevalenceDS",
@@ -18,8 +18,11 @@
 # The analysis catalog and the query library choose a protection route per
 # question (tools_auto.R): in DP-only mode their run path refuses every
 # standard statistic, before any scope or data is touched, and still answers
-# the reviewed questions that have a DP release.
-.dp_routed_endpoints <- c("omopQueryExecDS", "omopAnalysisRunDS")
+# the reviewed questions that have a DP release. Assign loaders prepare private
+# inputs and also proceed to argument validation; test-e2e-fix1.R checks their
+# fixed release, aggregate-as-assign refusal and tools-disabled gate.
+.dp_routed_endpoints <- c("omopQueryExecDS", "omopAnalysisRunDS",
+                           "omopAnalysisRunAssignDS")
 
 .dp_exclusive_local_policy <- function(enabled = TRUE, exclusive = TRUE,
                                         .local_envir = parent.frame()) {
@@ -49,7 +52,7 @@
   as.call(c(list(as.name(endpoint)), arguments))
 }
 
-test_that("exclusive DP rejects every community-tool endpoint first", {
+test_that("exclusive DP rejects standard endpoints and permits routed preparation", {
   .dp_exclusive_local_policy()
   expect_identical(.dsomopToolsMode(), "dp")
   for (endpoint in setdiff(.dp_exclusive_endpoints, .dp_routed_endpoints)) {
