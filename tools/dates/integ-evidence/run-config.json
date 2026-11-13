@@ -1,0 +1,103 @@
+{
+  "dsOMOP": {
+    "filter": "^(date-component-transport|date-range|date-review-fixes|date-system-outputs|date-system-policies|dates-system|compile-output|compile-reduce|compile-anchor|compile-interval|extraction|output-contracts|plan|analysis-catalog|assignment-policy|disclosure|concept-label-presentation|concept-label-contract|factor-harmonization|staging-contract|staging-csv|publication|publication-compiled|publication-integration|explain|ir|sql-expr|ws0-normalize|ws0-schema)$",
+    "timeout_seconds": 1500,
+    "files": [
+      "test-analysis-catalog.R",
+      "test-assignment-policy.R",
+      "test-compile-anchor.R",
+      "test-compile-interval.R",
+      "test-compile-output.R",
+      "test-compile-reduce.R",
+      "test-concept-label-contract.R",
+      "test-concept-label-presentation.R",
+      "test-date-component-transport.R",
+      "test-date-range.R",
+      "test-date-review-fixes.R",
+      "test-date-system-outputs.R",
+      "test-date-system-policies.R",
+      "test-dates-system.R",
+      "test-disclosure.R",
+      "test-explain.R",
+      "test-extraction.R",
+      "test-factor-harmonization.R",
+      "test-ir.R",
+      "test-output-contracts.R",
+      "test-plan.R",
+      "test-publication-compiled.R",
+      "test-publication-integration.R",
+      "test-publication.R",
+      "test-sql-expr.R",
+      "test-staging-contract.R",
+      "test-staging-csv.R",
+      "test-ws0-normalize.R",
+      "test-ws0-schema.R"
+    ],
+    "RTEST_WITH": "/workspace/dsomop/wt/int/dsOMOPClient",
+    "RTEST_ENV": "R_LIBS_USER=/root/rt/labels-deps DSOMOP_TEST_POSTGRES_HOST=omopdb DSOMOP_TEST_MARIADB_HOST=127.0.0.1 DSOMOP_TEST_MYSQL_HOST=127.0.0.1 DSOMOP_TEST_MYSQL_PORT=3307",
+    "initial_source_commits": {
+      "dsOMOP": "0649f1a6a6a2871e570f23df19ce7e034c8a2c73",
+      "dsOMOPClient": "7188cde5d0c7d553bf07f3da6bbd9fea5eac7044"
+    },
+    "rerun": {
+      "filter": "^(explain|publication-compiled|sql-expr)$",
+      "files": [
+        "test-explain.R",
+        "test-publication-compiled.R",
+        "test-sql-expr.R"
+      ],
+      "source_commits": {
+        "dsOMOP": "ee92a528cc8e07884f4fe79aa38f8d09109f0419",
+        "dsOMOPClient": "30a9794b4fe30c7b04f30390686157bf67ff4a63"
+      },
+      "timeout_seconds": 900
+    }
+  },
+  "dsOMOPClient": {
+    "filter": "^(date-range|date-review-fixes|dates-system|v2-execution|v2-constructors|v2-plan|v2-merge|v2-editor-roundtrip|v2-explain-lint|v2-composition-review|v2-lossless-transport|recipe|recipe-schema|recipe-declarative|plan-dsl|concept-label-api|concept-label-federation|concept-label-analysis|concept-label-contract|concept-label-legacy|factor-harmonization-client|staged-harmonization-regression|ws0-normalize|ws0-schema)$",
+    "timeout_seconds": 1500,
+    "files": [
+      "test-concept-label-analysis.R",
+      "test-concept-label-api.R",
+      "test-concept-label-contract.R",
+      "test-concept-label-federation.R",
+      "test-concept-label-legacy.R",
+      "test-date-range.R",
+      "test-date-review-fixes.R",
+      "test-dates-system.R",
+      "test-factor-harmonization-client.R",
+      "test-plan-dsl.R",
+      "test-recipe-declarative.R",
+      "test-recipe-schema.R",
+      "test-recipe.R",
+      "test-staged-harmonization-regression.R",
+      "test-v2-composition-review.R",
+      "test-v2-constructors.R",
+      "test-v2-editor-roundtrip.R",
+      "test-v2-execution.R",
+      "test-v2-explain-lint.R",
+      "test-v2-lossless-transport.R",
+      "test-v2-merge.R",
+      "test-v2-plan.R",
+      "test-ws0-normalize.R",
+      "test-ws0-schema.R"
+    ],
+    "RTEST_WITH": "/workspace/dsomop/wt/int/dsOMOP",
+    "RTEST_ENV": "R_LIBS_USER=/root/rt/labels-deps",
+    "initial_source_commits": {
+      "dsOMOP": "0649f1a6a6a2871e570f23df19ce7e034c8a2c73",
+      "dsOMOPClient": "7188cde5d0c7d553bf07f3da6bbd9fea5eac7044"
+    },
+    "rerun": {
+      "filter": "^concept-label-api$",
+      "files": [
+        "test-concept-label-api.R"
+      ],
+      "source_commits": {
+        "dsOMOP": "ee92a528cc8e07884f4fe79aa38f8d09109f0419",
+        "dsOMOPClient": "30a9794b4fe30c7b04f30390686157bf67ff4a63"
+      },
+      "timeout_seconds": 900
+    }
+  }
+}
