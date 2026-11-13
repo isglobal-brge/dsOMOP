@@ -47,3 +47,25 @@ test_that("canonical person token fast path preserves the framed HMAC contract",
   expect_error(.dsomopReleaseCanonicalPersonTokens(keys, policy, ""), "identifier")
   expect_error(.dsomopReleaseCanonicalPersonTokens(keys, policy, NA_character_), "identifier")
 })
+
+test_that("two-digit rational coins match arbitrary precision including bit consumption", {
+  baseline <- new.env(parent = environment(.dsomopDpBitStream))
+  sys.source(test_path("../../tools/e2e-fix3/baseline-sampler.R"), baseline)
+  key <- as.raw(0:31)
+  denominators <- c("1", "2", "3", "4294967295", "4294967296", "4294967297",
+                    "9007199254740993", "144115188075855872", "18446744073709551615",
+                    "18446744073709551616", paste0("1", strrep("0", 100)))
+  for (d in denominators) {
+    numerators <- list(.dsomopBigInteger(0), .dsomopBigInteger(1),
+                       .dsomopBigDivide(d, 2), .dsomopBigSubtract(d, 1),
+                       .dsomopBigInteger(d), .dsomopBigAdd(d, 1))
+    for (n in numerators) {
+      for (i in seq_len(12)) {
+        old <- baseline$.dsomopDpBitStream(key, list(d = d, n = as.character(n)), i)
+        new <- .dsomopDpBitStream(key, list(d = d, n = as.character(n)), i)
+        expect_identical(.dsomopDpBernoulli(n, d, new), baseline$.dsomopDpBernoulli(n, d, old))
+        expect_identical(attr(new, "take")(16), vapply(seq_len(16), function(j) old(), integer(1)))
+      }
+    }
+  }
+})

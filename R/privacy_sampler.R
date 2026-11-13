@@ -66,6 +66,34 @@
 .dsomopDpBernoulli <- function(numerator, denominator, bits) {
   numerator <- .dsomopBigInteger(numerator)
   denominator <- .dsomopBigInteger(denominator)
+  # Two base-2^32 digits cover the common rates without allocating bigint
+  # objects for every bit. Each intermediate is an integer of magnitude below
+  # 2^33, exactly representable by an R double. Larger inputs retain the
+  # arbitrary-precision path below; sampling probabilities never round.
+  if (numerator$sign >= 0L && denominator$sign > 0L &&
+      length(numerator$limbs) <= 4L && length(denominator$limbs) <= 4L) {
+    a <- c(numerator$limbs, rep(0, 4L - length(numerator$limbs)))
+    b <- c(denominator$limbs, rep(0, 4L - length(denominator$limbs)))
+    lo <- a[[1L]] + 65536 * a[[2L]]
+    hi <- a[[3L]] + 65536 * a[[4L]]
+    dlo <- b[[1L]] + 65536 * b[[2L]]
+    dhi <- b[[3L]] + 65536 * b[[4L]]
+    base <- 4294967296
+    repeat {
+      if (hi < 0 || (hi == 0 && lo <= 0)) return(FALSE)
+      if (hi > dhi || (hi == dhi && lo >= dlo)) return(TRUE)
+      lo <- 2 * lo
+      carry <- as.numeric(lo >= base)
+      lo <- lo - carry * base
+      hi <- 2 * hi + carry
+      if (bits() == 1L) {
+        lo <- lo - dlo
+        borrow <- as.numeric(lo < 0)
+        lo <- lo + borrow * base
+        hi <- hi - dhi - borrow
+      }
+    }
+  }
   repeat {
     if (numerator$sign <= 0L) return(FALSE)
     if (.dsomopBigCompare(numerator, denominator) >= 0L) return(TRUE)

@@ -2,6 +2,11 @@
 
 Security release: the P0 fixes of the OHDSI-tools audit.
 
+- Reduce protected-release overhead by reusing canonical person text and fixed
+  SHA-256 framing, consuming consecutive sampler bits in blocks, and using exact
+  two-digit arithmetic for small rational coins. Larger coins retain arbitrary
+  precision. Fingerprints, random bits and signed release components are unchanged;
+  no cross-request cache or additional dependency is introduced.
 - Corrected concurrent DP-root creation logging: only the worker that durably
   creates the private root reports creation. Other workers reuse the same root
   automatically; no administrator provisioning is needed.
