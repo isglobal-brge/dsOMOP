@@ -135,7 +135,8 @@ test_that("the capability block declares the language (A-E7)", {
   expect_identical(rl$schema_id, "https://isglobal-brge.github.io/dsOMOP/schema/plan-v2.json")
   expect_true(is.character(rl$operations))
   expect_true(all(rl$operations %in% .RECIPE_OPERATIONS))
-  expect_identical(length(.RECIPE_OPERATIONS), 44L)
+  expect_identical(length(.RECIPE_OPERATIONS), 46L)
+  expect_true(all(c("date.presentation", "date.elapsed") %in% rl$operations))
   expect_identical(length(.RECIPE_REDUCERS), 35L)
   reducers_csv <- utils::read.csv(system.file("contracts", "reducers.csv", package = "dsOMOP"),
                                   stringsAsFactors = FALSE)

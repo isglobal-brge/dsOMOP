@@ -17,7 +17,7 @@
   "output.dictionary", "output.joined", "output.concept_labels", "publish.roots",
   "event.episode_members", "event.cost", "reducer.supply_days",
   "reducer.covered_days.effective_supply", "status.accessor", "verb.mutate",
-  "verb.filter_expr"
+  "verb.filter_expr", "date.presentation", "date.elapsed"
 )
 
 # Every helper rendered for one family, with the construct it belongs to.

@@ -199,7 +199,10 @@ test_that("CSV staged roster keys match decimal doubles from frames and SQL", {
     expect_identical(descriptor$metadata$format, "csv")
     rows <- NULL
     .publishReadChunks(descriptor, function(chunk) rows <<- rbind(rows, chunk))
-    expect_identical(rows$rowId, c("100000", "100001", "999999", "1000000", "1000001"))
+    # A-28 restores the manifest-bound source type before consuming CSV chunks.
+    expect_identical(rows$rowId, keys)
+    expect_identical(.publishKeys(rows, "rowId"), .publishKeys(data.frame(
+      rowId = c("100000", "100001", "999999", "1000000", "1000001")), "rowId"))
     expect_true(ctx$prepared[["out/out"]]$passed)
     status <- .publishCommit(ctx)
     expect_identical(status$status, "ok")
@@ -229,7 +232,9 @@ test_that("DuckDB BIGINT roster keys retain lineage through CSV staging", {
   expect_identical(descriptor$metadata$format, "csv")
   rows <- NULL
   .publishReadChunks(descriptor, function(chunk) rows <<- rbind(rows, chunk))
-  expect_identical(rows$rowId, c("100000", "1000000", "3000000000"))
+  expect_identical(rows$rowId, frame$rowId)
+  expect_identical(.publishKeys(rows, "rowId"), .publishKeys(data.frame(
+    rowId = c("100000", "1000000", "3000000000")), "rowId"))
   expect_true(ctx$prepared[["out/out"]]$passed)
   status <- .publishCommit(ctx)
   expect_identical(status$status, "ok")
