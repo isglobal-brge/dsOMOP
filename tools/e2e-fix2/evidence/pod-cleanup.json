@@ -1,0 +1,22 @@
+[
+  {
+    "path": "/root/rt/wt/p0/dsOMOP/tools/e2e-fix2/harness-probe",
+    "bytes": 154906
+  },
+  {
+    "path": "/root/rt/lib/wt_p0_dsOMOP_tools_e2e-fix2_harness-probe",
+    "bytes": 0
+  },
+  {
+    "path": "/tmp/e2e-fix2-before.rds",
+    "bytes": 4011
+  },
+  {
+    "path": "/tmp/e2e-fix2-after.rds",
+    "bytes": 4011
+  },
+  {
+    "path": "/tmp/e2e-fix1-profile.out",
+    "bytes": 255389
+  }
+] 
