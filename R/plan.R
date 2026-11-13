@@ -4111,6 +4111,7 @@
         attr(value, "omop_concept_cols") <- NULL
         attr(value, "omop_concept_reference") <- NULL
         attr(value, "omop_column_contract") <- NULL
+        attr(value, "omop_reference_support") <- NULL
       }
       if (component == root) results[[root]] <- value else results[[root]][[component]] <- value
     }

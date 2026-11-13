@@ -782,7 +782,7 @@ test_that("A-19 item 3: DP preparation seals the plan output, plan loading stays
                      info = "values, columns, types and every other attribute identical to 2.10.2")
     expect_identical(prepared$assigned_volatile$raw_token_sha256, pins[[2L]]$assigned_volatile$raw_token_sha256,
                      info = "raw person tokens")
-    # Only the producer-bound capsule fields may differ: 2.10.3 seals each
+    # 2.10.3 changes producer-bound capsule fields: it seals each
     # publication candidate under its component name ("plan/<type>/<format>/
     # <output>") where 2.10.2 sealed the primary component as ".../primary";
     # lineage_id and mac derive from the producer. The security release also

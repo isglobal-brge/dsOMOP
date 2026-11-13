@@ -543,6 +543,37 @@ test_that("safe-class v1 plans reproduce their 2.10.2 results on the default fix
       fail(paste0(info, ": refused: ", conditionMessage(got)))
       next
     }
+    if (identical(pin$id, "r006")) {
+      # A-27 corrects this translated column from text to an unordered factor.
+      # Assert the new class and identity contract before comparing the full
+      # historical text view; frozen values, rows and other attributes remain
+      # exact. This exception applies only to this named baseline capture.
+      expect_identical(pin$key,
+        "dsOMOP:test-output-contracts.R:baseline with concept translation works")
+      frame <- got$demo
+      column <- frame$gender_concept_id
+      expect_identical(class(column), c("dsomop_concept_factor", "factor"))
+      expect_false(is.ordered(column))
+      expect_identical(levels(column), "MALE")
+      expect_setequal(names(attributes(frame)),
+        c("names", "row.names", "class", "omop_concept_cols", "omop_concepts"))
+      expect_identical(attr(frame, "omop_concept_cols"), "gender_concept_id")
+      contracts <- attr(frame, "omop_concepts")
+      expect_identical(names(contracts), "gender_concept_id")
+      contract <- contracts$gender_concept_id
+      expect_identical(contract$ids, rep("8507", nrow(frame)))
+      expect_identical(contract$resolved$ids, "8507")
+      expect_identical(contract$resolved$labels, "MALE")
+      expect_identical(contract$resolved$levels, "MALE")
+      expect_identical(contract$records[["8507"]]$origin, "vocabulary")
+      expect_identical(contract$records[["8507"]]$label, "MALE")
+      expect_null(contract$declared)
+      expect_null(contract$owner)
+      frame$gender_concept_id <- as.character(column)
+      attr(frame, "omop_concept_cols") <- NULL
+      attr(frame, "omop_concepts") <- NULL
+      got$demo <- frame
+    }
     got <- .b10_value(.b10_attach_staged(got))
     expect_identical(got$volatile$raw_token_sha256, pin$volatile$raw_token_sha256,
                      info = paste(info, "raw person tokens"))
