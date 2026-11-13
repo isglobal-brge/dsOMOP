@@ -306,8 +306,16 @@
     stop("Temporal covariate distributions require a stable OMOP event key.",
          call. = FALSE)
   }
+  use_value <- identical(value_kind, "value") && !is.na(src$value_col)
+  conv <- if (use_value) .omopReleaseUnitConversionSql(
+    src, .dsomopReleaseMeasurementScales(),
+    has_unit = .omopReleaseHasUnit(handle, src)) else NULL
+  # Values are reduced within concept x unit (after the public unit
+  # conversions of the measurement scale registry); never across units.
   matched_value <- if (!is.na(src$value_col)) {
-    paste0(", e.", src$value_col, " AS raw_value")
+    paste0(", e.", src$value_col, " AS raw_value",
+           if (use_value) paste0(", ", conv$value, " AS conv_value, ",
+                                 conv$unit, " AS unit_concept_id") else "")
   } else {
     ""
   }
@@ -319,12 +327,12 @@
     " WHERE 1 = 1", extra
   )
 
-  if (identical(value_kind, "value") && !is.na(src$value_col)) {
+  if (use_value) {
     per_person <- paste0(
-      "SELECT me.covariate_id, me.person_id, ",
-      "AVG(CAST(me.raw_value AS FLOAT)) AS v FROM (", matched, ") me ",
+      "SELECT me.covariate_id, me.unit_concept_id, me.person_id, ",
+      "AVG(CAST(me.conv_value AS FLOAT)) AS v FROM (", matched, ") me ",
       "WHERE me.raw_value IS NOT NULL ",
-      "GROUP BY me.covariate_id, me.person_id"
+      "GROUP BY me.covariate_id, me.unit_concept_id, me.person_id"
     )
   } else {
     per_person <- paste0(
@@ -334,9 +342,13 @@
   }
   vsql <- .sql_translate(paste0(
     "SELECT pp.covariate_id, cc.concept_name AS covariate_name, ",
+    if (use_value) "pp.unit_concept_id, uu.concept_name AS unit_name, " else
+      "",
     "pp.person_id, pp.v ",
     "FROM (", per_person, ") pp",
-    " LEFT JOIN ", concept, " cc ON cc.concept_id = pp.covariate_id"),
+    " LEFT JOIN ", concept, " cc ON cc.concept_id = pp.covariate_id",
+    if (use_value) paste0(" LEFT JOIN ", concept,
+                          " uu ON uu.concept_id = pp.unit_concept_id") else ""),
     handle$target_dialect)
   raw <- .executeQuery(handle, vsql)
   if (!is.data.frame(raw) || nrow(raw) == 0) return(data.frame())
@@ -344,9 +356,18 @@
   raw$v <- suppressWarnings(as.numeric(raw$v))
   raw <- raw[!is.na(raw$v), , drop = FALSE]
   if (nrow(raw) == 0) return(data.frame())
+  if (use_value) {
+    raw$unit_concept_id <- suppressWarnings(as.numeric(raw$unit_concept_id))
+    raw$unit_concept_id[is.na(raw$unit_concept_id)] <- 0
+    raw$unit_name <- ifelse(raw$unit_concept_id == 0, "unknown",
+                            as.character(raw$unit_name))
+  } else {
+    raw$unit_concept_id <- NA_real_
+    raw$unit_name <- NA_character_
+  }
 
   win_label <- paste0("[", start_d, ",", end_d, "]")
-  parts <- split(raw, raw$covariate_id)
+  parts <- split(raw, paste(raw$covariate_id, raw$unit_concept_id))
   rows <- lapply(parts, function(p) {
     v  <- p$v
     qs <- stats::quantile(v, c(.10, .25, .5, .75, .90), names = FALSE, type = 7)
@@ -354,6 +375,8 @@
       time_window    = win_label,
       covariate_id   = p$covariate_id[1],
       covariate_name = p$covariate_name[1],
+      unit_concept_id = p$unit_concept_id[1],
+      unit_name      = p$unit_name[1],
       count_value    = length(v),
       n_persons      = length(unique(as.character(p$person_id))),
       min_value      = min(v),   # stripped by the gate
@@ -365,9 +388,13 @@
       stringsAsFactors = FALSE)
   })
   out <- do.call(rbind, rows)
-  .omopBandedTopN(
+  out$unit_order <- ifelse(is.na(out$unit_concept_id), -1,
+                           out$unit_concept_id)
+  out <- .omopBandedTopN(
     out, support_cols = "n_persons", top_n = top_n,
-    key_cols = c("time_window", "covariate_id"))
+    key_cols = c("time_window", "covariate_id", "unit_order"))
+  out$unit_order <- NULL
+  out
 }
 
 # --- time_series --------------------------------------------------------------

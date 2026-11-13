@@ -14,8 +14,8 @@
 \item{params}{Sanitized params (see \code{\link{.omopPlpModelParams}}).}
 }
 \value{
-list(risk, outcome, n_predictors, population_size, n_outcomes,
-  covariate_ids) or NULL.
+list(fitted, admission, risk, outcome, n_predictors,
+  population_size, n_outcomes, covariate_ids, effective_params) or NULL.
 }
 \description{
 The single R-in-session kernel shared by the four fitted-model PLP entries.
@@ -40,7 +40,17 @@ outcome counts). Steps:
 The design matrix, the fitted coefficients and the per-subject predicted risks
 are all in-session ONLY — this kernel returns them to the SAME-session aggregate
 emitters, which release nothing per-subject. Returns \code{NULL} when there is
-no scope, no outcome, an empty/degenerate population, or the model cannot be fit
-(the caller then emits a gate-safe empty/NA frame, fail-closed).
+no scope, no outcome or an empty population (the caller then emits a
+gate-safe empty frame, fail-closed).
+}
+\details{
+Model admission (\code{\link{.omopModelAdmitBinaryDesign}}) inspects every
+candidate predictor's present and absent cells WITHIN the outcome and the
+non-outcome class. When the outcome classes are not admissible, no predictor
+is admissible, or the fit fails, the kernel still returns the population
+design counts with \code{fitted = FALSE} and no risk vector: PLP has no
+intercept-only release contract, so the model scalars are then unavailable
+(NA) and the calibration and threshold tables are empty. The number of
+candidate predictors (\code{max_covariates}) is snapped to its public grid.
 }
 \keyword{internal}

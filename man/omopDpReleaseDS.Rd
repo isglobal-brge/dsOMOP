@@ -2,28 +2,40 @@
 % Please edit documentation in R/privacy.R
 \name{omopDpReleaseDS}
 \alias{omopDpReleaseDS}
-\title{Release one sticky, person-bounded privacy statistic (Aggregate)}
+\title{Release one protected, person-bounded statistic (Aggregate)}
 \usage{
 omopDpReleaseDS(x, spec)
 }
 \arguments{
 \item{x}{A server-created, pseudonymous \code{omop.table} produced by an
-OHDSI community tool (for example an analysis-catalog loader) and carrying
-its authenticated person-local provenance capsule. Tables loaded through
-plans, recipes or manipulation never carry DP provenance.}
+OHDSI community tool (for example an analysis-catalog loader) or explicit
+DP preparation, carrying its authenticated person-local provenance capsule.
+Ordinary plan loading and manipulation never carry DP provenance.}
 
-\item{spec}{Typed DP statistic specification, usually JSON-encoded by
+\item{spec}{Typed statistic specification, usually JSON-encoded by
 dsOMOPClient.}
 }
 \value{
-A deterministic sticky noisy aggregate with per-release mechanism
-  metadata, persisted before return and replayed byte-identically for the same
-  public identity. New identities require a public storage reservation.
+The protected payload: displayed values, the signed components for
+  pooling, allocations, sensitivities, noise scales and the guarantee scope.
 }
 \description{
-The answer is a deterministic function of the secret noise root, the public
-request, the protected statistic and a private automatic database version:
-repeating a request returns the same answer without stored state, and a
-database reload re-draws every answer at once. Provenance and typed
-admission are always required.
+The typed channel of the OHDSI community tools (dsOMOP 2.10.3). It requires
+the community tools to be enabled (\code{dsomop.tools.enabled}), checked
+before any argument is decoded or any provenance, handle or data is read,
+and every attempt is written to the redacted audit log (operation, public
+statistic, protection class and a generic outcome; never contribution
+fingerprints, person tokens or data-derived details). The answer is a
+deterministic function of the secret noise root and either a fixed public
+basis (counts, capped record counts and registered-scale bounded means of
+unscoped pinned loader tables, keyed on live person membership re-read in
+the release snapshot and checked against the authenticated loader origin:
+\code{protection = "fixed_synopsis"}) or the realised bounded
+contributions of the people each component contains
+(\code{protection = "realised_sticky"}, a heuristic disclosure control
+without a joint differential-privacy guarantee). Equivalent requests, dummy
+levels, clamp-only outer breaks, harmless cap variants and lineage
+cosmetics replay the same components; there is no budget, quota or
+history-dependent admission. DP-only mode accepts only fixed-synopsis
+releases.
 }

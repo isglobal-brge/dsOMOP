@@ -351,12 +351,8 @@ test_that("cohort criteria fail closed instead of becoming unfiltered", {
         index_window = list(start = -30.5, end = 0))))),
     "integer day offset"
   )
-  expect_error(
-    .applyInclusionCriteria(handle, base,
-      list(list(table = "measurement", temporal = list(calendar = list(
-        start = "2020-01-01", end = "2020-01-10"))))),
-    "at least 30 days"
-  )
+  expect_silent(.validateTemporalSpec(list(calendar = list(
+    start = "2020-01-01", end = "2020-01-10"))))
 })
 
 test_that("persistent cohort identifiers and overwrite fail closed", {

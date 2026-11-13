@@ -1,0 +1,6 @@
+  id select_type      table partitions  type possible_keys     key key_len  ref
+1  1     PRIMARY <derived2>       <NA>   ALL          <NA>    <NA>    <NA> <NA>
+2  2     DERIVED     person       <NA> index       PRIMARY PRIMARY       8 <NA>
+      rows filtered                           Extra
+1 11860975      100 Using temporary; Using filesort
+2 11860975      100                     Using index

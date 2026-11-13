@@ -343,7 +343,8 @@
       spec$population_id, "population_id"
     )
     if (!is.character(population_id) ||
-        !grepl("^[A-Za-z0-9][A-Za-z0-9._:@+/-]{0,255}$", population_id)) {
+        !grepl("^[A-Za-z0-9][A-Za-z0-9._:@+/-]{0,255}\\z", population_id,
+               perl = TRUE)) {
       stop("DP population_id must be one valid public compatibility label.",
            call. = FALSE)
     }
@@ -380,19 +381,29 @@
       common$value_type <- "number"
     }
   }
+  # The registered complete public basis of a categorical variable (public
+  # metadata: the capsule's declared domains, custodian options, built-ins).
+  capsule <- attr(x, "dsomop_dp_provenance", exact = TRUE)
+  domain_of <- function() {
+    domain <- .dsomopTypedDomain(capsule, variable)
+    if (length(domain) > policy$max_levels) {
+      stop("The registered public domain of '", variable, "' exceeds the ",
+           "server-owned level cap.", call. = FALSE)
+    }
+    domain
+  }
   if (statistic == "categorical_histogram") {
     levels <- .dsomopDpSpecAtomic(spec$levels, "levels")
     if (length(levels) < 1L || length(levels) > policy$max_levels) {
       stop("Categorical DP levels exceed the server-owned level cap.",
            call. = FALSE)
     }
-    levels <- enc2utf8(as.character(levels))
-    if (any(!nzchar(levels)) || any(nchar(levels, type = "bytes") > 256L) ||
-        anyDuplicated(levels)) {
-      stop("Categorical DP levels must be unique, non-empty public labels.",
-           call. = FALSE)
-    }
-    levels <- sort(levels, method = "radix")
+    domain <- domain_of()
+    # Requested levels are a view of the complete registered domain:
+    # duplicates and order are normalized, invalid labels refused publicly.
+    levels <- .dsomopTypedDomainView(levels, domain, variable,
+                                     "categorical DP levels")
+    common$domain <- domain
     reducer <- common$reducer
     if (!reducer %in% c(
       "presence", "mode", "first", "last", "records", "any"
@@ -411,6 +422,8 @@
     }
     common$levels <- levels
     common$reducer <- reducer
+    # A per-person cap only matters for multi-label and record reducers.
+    if (!reducer %in% c("presence", "records")) common$max_contributions <- 1L
   } else if (statistic == "bounded_record_count") {
     if (!identical(common$reducer, "records")) {
       stop("bounded_record_count requires reducer='records'.", call. = FALSE)
@@ -426,19 +439,21 @@
       stop("bounded_distinct uses server-owned canonical value ordering, not ",
            "order_by.", call. = FALSE)
     }
-    levels <- .dsomopDpSpecAtomic(spec$levels, "levels")
-    if (length(levels) < 1L || length(levels) > policy$max_levels) {
-      stop("bounded_distinct levels exceed the server-owned level cap.",
-           call. = FALSE)
+    # A distinct-label cardinality is over the fixed complete domain U: its
+    # levels may only restate U, never select a sub-domain (B05).
+    domain <- domain_of()
+    levels <- .dsomopDpSpecAtomic(spec$levels, "levels", required = FALSE)
+    if (!is.null(levels)) {
+      levels <- .dsomopTypedDomainView(levels, domain, variable,
+                                       "bounded_distinct levels")
+      if (!identical(levels, domain)) {
+        stop("bounded_distinct counts distinct labels over the complete ",
+             "registered public domain of '", variable, "'; its levels may ",
+             "only restate that domain.", call. = FALSE)
+      }
     }
-    levels <- enc2utf8(as.character(levels))
-    if (any(!nzchar(levels)) || any(nchar(levels, type = "bytes") > 256L) ||
-        anyDuplicated(levels)) {
-      stop("bounded_distinct levels must be unique, non-empty public labels.",
-           call. = FALSE)
-    }
-    levels <- sort(levels, method = "radix")
-    common$levels <- levels
+    common$domain <- domain
+    common$levels <- domain
   } else if (statistic == "numeric_histogram") {
     breaks <- .dsomopDpBreaks(spec$breaks, common$value_type, policy)
     reducer <- common$reducer
@@ -454,6 +469,7 @@
     }
     common$breaks <- breaks
     common$reducer <- reducer
+    if (!identical(reducer, "records")) common$max_contributions <- 1L
   } else if (statistic == "bounded_mean") {
     if (!identical(common$value_type, "number")) {
       stop("bounded_mean currently requires a numeric column.", call. = FALSE)
@@ -479,6 +495,7 @@
     common$upper <- upper
     common$span <- span
     common$reducer <- reducer
+    common$max_contributions <- 1L
   } else if (statistic == "binary_rate") {
     positive <- .dsomopDpSpecAtomic(spec$positive, "positive")
     positive <- sort(unique(enc2utf8(as.character(positive))), method = "radix")
@@ -489,6 +506,10 @@
            "server-owned level cap.",
            call. = FALSE)
     }
+    domain <- domain_of()
+    positive <- .dsomopTypedDomainView(positive, domain, variable,
+                                       "binary_rate positive values")
+    common$domain <- domain
     reducer <- common$reducer
     if (!reducer %in% c("any", "all", "first", "last")) {
       stop("Unsupported binary-rate longitudinal reducer.", call. = FALSE)
@@ -505,8 +526,16 @@
       stop("binary_rate denominator must be all_persons or nonmissing.",
            call. = FALSE)
     }
+    if (reducer %in% c("any", "all") &&
+        length(domain) > .DSOMOP_TYPED_MAX_PATTERN_DOMAIN) {
+      stop("public_domain_too_large: an any/all binary rate needs the ",
+           "complete label-set basis of '", variable, "', available for ",
+           "registered domains of at most ", .DSOMOP_TYPED_MAX_PATTERN_DOMAIN,
+           " labels; use reducer first or last.", call. = FALSE)
+    }
     common$positive <- positive
     common$denominator <- denominator_contract
+    common$max_contributions <- 1L
   }
   if (statistic %in% c("categorical_histogram", "numeric_histogram",
                        "bounded_mean", "binary_rate") &&
@@ -515,364 +544,6 @@
          call. = FALSE)
   }
   common
-}
-
-.dsomopDpCategorical <- function(input, common) {
-  variable <- common$variable
-  value_type <- "categorical_utf8_v1"
-  values <- enc2utf8(as.character(input$x[[variable]]))
-  levels <- common$levels
-  reducer <- common$reducer
-  cap <- if (reducer %in% c("presence", "records")) {
-    common$max_contributions
-  } else 1L
-  groups <- .dsomopDpOrderedGroups(input$token)
-  selected_cell <- unlist(lapply(groups, function(indices) {
-    candidate <- values[indices]
-    if (reducer == "presence") {
-      candidate <- sort(unique(candidate[!is.na(candidate) &
-                                         candidate %in% levels]),
-                        method = "radix")
-      candidate <- utils::head(candidate, cap)
-    } else if (reducer == "records") {
-      indices <- indices[
-        !is.na(values[indices]) & values[indices] %in% levels &
-          !is.na(common$order_value[indices])
-      ]
-      if (length(indices)) {
-        indices <- indices[order(
-          common$order_value[indices], values[indices], method = "radix"
-        )]
-        candidate <- values[utils::head(indices, cap)]
-      } else candidate <- character(0)
-    } else if (reducer == "mode") {
-      candidate <- candidate[!is.na(candidate) & candidate %in% levels]
-      if (length(candidate)) {
-        frequencies <- table(candidate)
-        candidate <- sort(
-          names(frequencies)[frequencies == max(frequencies)],
-          method = "radix"
-        )[[1L]]
-      }
-    } else {
-      index <- .dsomopDpPickIndex(
-        indices, values, common$order_value, reducer == "last"
-      )
-      candidate <- if (length(index)) values[[index]] else character(0)
-      candidate <- candidate[candidate %in% levels]
-    }
-    if (length(candidate)) match(candidate, levels) else integer(0)
-  }), use.names = FALSE)
-  counts <- tabulate(as.integer(selected_cell), nbins = length(levels))
-  snapshot <- list(counts = as.numeric(counts))
-  semantic <- list(
-    statistic = "categorical_histogram", variable = variable,
-    value_type = value_type, levels = levels, reducer = reducer,
-    max_contributions = cap, order_by = common$order_by
-  )
-  payload_fn <- function(epsilon, policy, release_context) {
-    noisy <- vapply(
-      seq_along(counts), function(index) .dsomopDpNoisyInteger(
-        counts[[index]], policy, release_context,
-        sprintf("histogram-cell-%08d", index), epsilon, cap
-      ), numeric(1L)
-    )
-    list(
-      statistic = "categorical_histogram", levels = levels,
-      counts = as.numeric(noisy), reducer = reducer,
-      max_contributions = cap, value_type = value_type
-    )
-  }
-  list(semantic = semantic, snapshot = snapshot,
-       sensitivity = list(l1 = cap, unit = "person"), payload_fn = payload_fn)
-}
-
-.dsomopDpBoundedRecordCount <- function(input, common) {
-  groups <- .dsomopDpOrderedGroups(input$token)
-  cap <- common$max_contributions
-  true_count <- sum(vapply(
-    groups, function(indices) min(length(indices), cap), integer(1L)
-  ))
-  semantic <- list(
-    statistic = "bounded_record_count", unit = "record",
-    reducer = "records", max_contributions = cap
-  )
-  snapshot <- list(count = as.numeric(true_count))
-  payload_fn <- function(epsilon, policy, release_context) {
-    list(
-      statistic = "bounded_record_count",
-      noisy_count = .dsomopDpNoisyInteger(
-        true_count, policy, release_context, "bounded-record-count",
-        epsilon, cap
-      ),
-      reducer = "records", max_contributions = cap
-    )
-  }
-  list(
-    semantic = semantic, snapshot = snapshot,
-    sensitivity = list(l1 = cap, unit = "person"), payload_fn = payload_fn
-  )
-}
-
-.dsomopDpBoundedDistinct <- function(input, common) {
-  values <- enc2utf8(as.character(input$x[[common$variable]]))
-  levels <- common$levels
-  cap <- common$max_contributions
-  groups <- .dsomopDpOrderedGroups(input$token)
-  selected <- unlist(lapply(groups, function(indices) {
-    candidate <- sort(unique(values[indices][
-      !is.na(values[indices]) & values[indices] %in% levels
-    ]), method = "radix")
-    utils::head(candidate, cap)
-  }), use.names = FALSE)
-  true_count <- length(unique(selected))
-  semantic <- list(
-    statistic = "bounded_distinct", variable = common$variable,
-    value_type = "categorical_utf8_v1", levels = levels,
-    reducer = "distinct", max_contributions = cap,
-    selection_order = "canonical_utf8_value_radix"
-  )
-  snapshot <- list(count = as.numeric(true_count))
-  payload_fn <- function(epsilon, policy, release_context) {
-    list(
-      statistic = "bounded_distinct",
-      noisy_count = .dsomopDpNoisyInteger(
-        true_count, policy, release_context, "bounded-distinct-cardinality",
-        epsilon, cap
-      ),
-      reducer = "distinct", max_contributions = cap,
-      domain_size = length(levels),
-      selection_order = "canonical_utf8_value_radix",
-      value_type = "categorical_utf8_v1"
-    )
-  }
-  list(
-    semantic = semantic, snapshot = snapshot,
-    sensitivity = list(l1 = cap, unit = "person"), payload_fn = payload_fn
-  )
-}
-
-.dsomopDpNumericHistogram <- function(input, common) {
-  variable <- common$variable
-  numeric <- .dsomopDpNumericValues(input$x[[variable]])
-  breaks <- common$breaks
-  reducer <- common$reducer
-  selected <- numeric(0)
-  if (reducer == "records") {
-    groups <- .dsomopDpOrderedGroups(input$token)
-    selected <- as.numeric(unlist(lapply(groups, function(indices) {
-      indices <- indices[!is.na(numeric$value[indices])]
-      if (!is.null(common$order_value)) {
-        indices <- indices[!is.na(common$order_value[indices])]
-        indices <- indices[order(common$order_value[indices],
-                                 numeric$value[indices], method = "radix")]
-      } else {
-        indices <- indices[order(numeric$value[indices], method = "radix")]
-      }
-      indices <- utils::head(indices, common$max_contributions)
-      numeric$value[indices]
-    }), use.names = FALSE))
-    cap <- common$max_contributions
-  } else {
-    reduced <- .dsomopDpReduceOne(
-      input$token, numeric$value, reducer, common$order_value
-    )
-    selected <- as.numeric(reduced$value)
-    cap <- 1L
-  }
-  selected <- pmin(breaks$numeric[[length(breaks$numeric)]],
-                   pmax(breaks$numeric[[1L]], selected))
-  cell <- findInterval(selected, breaks$numeric, rightmost.closed = TRUE,
-                       all.inside = TRUE)
-  counts <- tabulate(cell, nbins = length(breaks$numeric) - 1L)
-  semantic <- list(
-    statistic = "numeric_histogram", variable = variable,
-    value_type = numeric$type, breaks = breaks$public, reducer = reducer,
-    max_contributions = cap, order_by = common$order_by,
-    interval_contract = "left_closed_right_open_last_closed"
-  )
-  snapshot <- list(counts = as.numeric(counts))
-  payload_fn <- function(epsilon, policy, release_context) {
-    noisy <- vapply(
-      seq_along(counts), function(index) .dsomopDpNoisyInteger(
-        counts[[index]], policy, release_context,
-        sprintf("histogram-cell-%08d", index), epsilon, cap
-      ), numeric(1L)
-    )
-    list(
-      statistic = "numeric_histogram", breaks = breaks$public,
-      counts = as.numeric(noisy), reducer = reducer,
-      max_contributions = cap, value_type = numeric$type,
-      interval_contract = "left_closed_right_open_last_closed"
-    )
-  }
-  list(semantic = semantic, snapshot = snapshot,
-       sensitivity = list(l1 = cap, unit = "person"), payload_fn = payload_fn)
-}
-
-.dsomopDpBoundedMean <- function(input, policy, common) {
-  variable <- common$variable
-  numeric <- .dsomopDpNumericValues(input$x[[variable]])
-  lower <- common$lower
-  upper <- common$upper
-  span <- common$span
-  reducer <- common$reducer
-  reduced <- .dsomopDpReduceOne(
-    input$token, numeric$value, reducer, common$order_value
-  )
-  clipped <- pmin(upper, pmax(lower, as.numeric(reduced$value)))
-  grid <- policy$numeric_grid
-  quantized <- round((clipped - lower) / span * grid)
-  if (anyNA(quantized) || any(!is.finite(quantized))) {
-    stop("The bounded mean could not be represented on its public grid.",
-         call. = FALSE)
-  }
-  true_count <- length(quantized)
-  # Saturating an integer sufficient statistic is post-processing and remains
-  # grid-sensitive by at most one person's contribution. It also avoids a
-  # data-dependent overflow error becoming an observable release side channel.
-  true_sum <- min(sum(quantized), 2^53 - 1)
-  semantic <- list(
-    statistic = "bounded_mean", variable = variable,
-    value_type = numeric$type, lower = lower, upper = upper,
-    reducer = reducer, order_by = common$order_by, numeric_grid = grid
-  )
-  snapshot <- list(
-    count = as.numeric(true_count), sum_grid = as.numeric(true_sum)
-  )
-  payload_fn <- function(epsilon, policy, release_context) {
-    noisy_count <- .dsomopDpNoisyInteger(
-      true_count, policy, release_context, "mean-count", epsilon / 2, 1
-    )
-    noisy_sum <- .dsomopDpNoisyInteger(
-      true_sum, policy, release_context, "mean-sum-grid", epsilon / 2, grid
-    )
-    noisy_sum <- min(noisy_sum, noisy_count * grid)
-    estimate <- if (noisy_count > 0) {
-      lower + span * noisy_sum / (noisy_count * grid)
-    } else NULL
-    list(
-      statistic = "bounded_mean", noisy_count = noisy_count,
-      noisy_sum_grid = noisy_sum, value = estimate, lower = lower,
-      upper = upper, numeric_grid = grid, reducer = reducer,
-      value_type = numeric$type
-    )
-  }
-  list(
-    semantic = semantic, snapshot = snapshot,
-    sensitivity = list(count = 1, sum_grid = grid,
-                       allocation = "sequential_half_epsilon", unit = "person"),
-    payload_fn = payload_fn
-  )
-}
-
-.dsomopDpBinaryRate <- function(input, common) {
-  variable <- common$variable
-  value_type <- "categorical_utf8_v1"
-  values <- enc2utf8(as.character(input$x[[variable]]))
-  positive <- common$positive
-  reducer <- common$reducer
-  denominator_contract <- common$denominator
-  groups <- .dsomopDpOrderedGroups(input$token)
-  binary <- as.logical(unlist(lapply(groups, function(indices) {
-    observed <- values[indices]
-    nonmissing <- !is.na(observed)
-    if (denominator_contract == "nonmissing" && !any(nonmissing)) {
-      return(logical(0))
-    }
-    observed <- observed[nonmissing]
-    hit <- if (length(observed) == 0L) {
-      FALSE
-    } else if (reducer == "any") {
-      any(observed %in% positive)
-    } else if (reducer == "all") {
-      all(observed %in% positive)
-    } else {
-      index <- .dsomopDpPickIndex(
-        indices, values, common$order_value, reducer == "last"
-      )
-      length(index) == 1L && values[[index]] %in% positive
-    }
-    hit
-  }), use.names = FALSE))
-  numerator <- sum(binary)
-  denominator <- length(binary)
-  semantic <- list(
-    statistic = "binary_rate", variable = variable,
-    value_type = value_type, positive = positive, reducer = reducer,
-    denominator = denominator_contract, order_by = common$order_by
-  )
-  snapshot <- list(
-    numerator = as.numeric(numerator), denominator = as.numeric(denominator)
-  )
-  payload_fn <- function(epsilon, policy, release_context) {
-    noisy_denominator <- .dsomopDpNoisyInteger(
-      denominator, policy, release_context, "rate-denominator",
-      epsilon / 2, 1
-    )
-    noisy_numerator <- .dsomopDpNoisyInteger(
-      numerator, policy, release_context, "rate-numerator",
-      epsilon / 2, 1
-    )
-    noisy_numerator <- min(noisy_numerator, noisy_denominator)
-    estimate <- if (noisy_denominator > 0) {
-      noisy_numerator / noisy_denominator
-    } else NULL
-    list(
-      statistic = "binary_rate", noisy_numerator = noisy_numerator,
-      noisy_denominator = noisy_denominator, value = estimate,
-      reducer = reducer, denominator = denominator_contract,
-      value_type = value_type
-    )
-  }
-  list(
-    semantic = semantic, snapshot = snapshot,
-    sensitivity = list(numerator = 1, denominator = 1,
-                       allocation = "sequential_half_epsilon", unit = "person"),
-    payload_fn = payload_fn
-  )
-}
-
-.dsomopDpAnalysis <- function(x, spec, policy) {
-  common <- .dsomopDpParseSpec(x, spec, policy)
-  input <- .dsomopDpValidateInput(x, policy)
-  common$order_value <- .dsomopDpOrderVector(input$x, common$order_by)
-  statistic <- common$statistic
-  if (statistic == "count") {
-    people <- sort(unique(input$token), method = "radix")
-    true_count <- length(people)
-    analysis <- list(
-      semantic = list(statistic = "count", unit = "distinct_person"),
-      snapshot = list(count = as.numeric(true_count)),
-      sensitivity = list(l1 = 1, unit = "person"),
-      payload_fn = function(epsilon, policy, release_context) list(
-        statistic = "count",
-        noisy_count = .dsomopDpNoisyInteger(
-          true_count, policy, release_context, "distinct-person-count",
-          epsilon, 1
-        )
-      )
-    )
-  } else if (statistic == "bounded_record_count") {
-    analysis <- .dsomopDpBoundedRecordCount(input, common)
-  } else if (statistic == "categorical_histogram") {
-    analysis <- .dsomopDpCategorical(input, common)
-  } else if (statistic == "numeric_histogram") {
-    analysis <- .dsomopDpNumericHistogram(input, common)
-  } else if (statistic == "bounded_distinct") {
-    analysis <- .dsomopDpBoundedDistinct(input, common)
-  } else if (statistic == "bounded_mean") {
-    analysis <- .dsomopDpBoundedMean(input, policy, common)
-  } else {
-    analysis <- .dsomopDpBinaryRate(input, common)
-  }
-  analysis$semantic <- c(list(
-    protocol = .DSOMOP_DP_PROTOCOL,
-    adjacency = policy$adjacency,
-    lineage_id = input$lineage_id,
-    contribution_contract = "deterministic_person_bounding_v1"
-  ), analysis$semantic)
-  analysis
 }
 
 # The DP service derives its public identity from the connected resource. The
@@ -900,18 +571,38 @@
 
 #' Sticky privacy-noise service status (Aggregate)
 #'
-#' Returns the public fixed-per-release mechanism contract. Secret key material
-#' and protected snapshot fingerprints are never returned. The only DP state is
-#' the noise root: answers are deterministic in the root, the question, the
-#' protected statistic and a private automatic database version, and status
-#' declares \code{release_binding = "seed_data_versioned_v1"} and
-#' \code{persistent_state = "noise_root_only"}. A damaged root fails closed.
-#' There is no cumulative privacy budget or privacy call quota.
+#' Returns the public protected-release contract (dsOMOP 2.10.3): the
+#' mechanism, the reference calibration, the guarantee scope of each route
+#' (\code{fixed_synopsis}: the declared bounded vector before the exact
+#' support gate; \code{realised_sticky}: heuristic realised-contribution
+#' reuse), the statistics with a fixed-synopsis contract and the registered
+#' public scales. Secret key material, fingerprints and person tokens are never
+#' returned. The only DP state is the noise root (\code{persistent_state =
+#' "noise_root_only"}); a damaged root fails closed. There is no privacy
+#' accountant, budget or call quota: \code{privacy_call_quota = "none"} and
+#' \code{history_based_admission = FALSE}.
 #' DP serves only the OHDSI community tools, so the status requires them to be
 #' enabled (\code{dsomop.tools.enabled}). It derives the service identity from
 #' the session's connected OMOP resource when no explicit
-#' \code{dsomop.dp.domain}/\code{dsomop.dp.snapshot_id} are configured.
+#' \code{dsomop.dp.domain} is configured. The public \code{snapshot_id} is
+#' display metadata only (the deprecated \code{dsomop.dp.snapshot_id} option
+#' replaces it; it enters no hash, provenance check or admission); fixed
+#' synopses are keyed on the person-membership generation read inside each
+#' request's snapshot, described by \code{data_generation},
+#' \code{data_generation_basis} and \code{data_generation_residual} (what it
+#' cannot see); \code{read_snapshot} is the read consistency of this server's
+#' requests. The generation itself is never returned.
 #'
+#' The caller declares the protected-release payload protocol it implements
+#' (\code{client_contract}, sent by dsOMOPClient 2.10.3 and later). Clients of
+#' dsOMOP 2.10.2 and earlier call without it; they cannot validate or pool the
+#' protected components, so the call is refused with an explicit upgrade
+#' message (R08) instead of a status they would reject with an opaque contract
+#' error. Their per-server analysis catalogue results are unaffected.
+#'
+#' @param client_contract The client's protected-release payload protocol
+#'   (\code{"dsomop-protected-release-v1"}), or a list of protocols. Absent
+#'   for clients older than dsOMOPClient 2.10.3.
 #' @return Public DP service status, including the custodial \code{exclusive}
 #'   flag (default FALSE) and \code{tools_mode}, the effective protection mode
 #'   of the OHDSI community tools (\code{"auto"} by default, \code{"standard"}
@@ -919,27 +610,63 @@
 #'   \code{"dp"}). The core (loading tables, filters, factors, dsOMOP's own
 #'   exploration) never depends on either.
 #' @export
-omopDpStatusDS <- function() {
+omopDpStatusDS <- function(client_contract = NULL) {
   .dsomopRequireCommunityTool(dp_routes = TRUE)
+  .dsomopDpRequireCurrentClient(client_contract)
   state <- .dsomopDpState()
   .dsomopDpEnsureRuntime(.dsomopDpSessionHandle())
   status <- .dsomopDpPublicStatus(initialize = TRUE)
   status$exclusive <- .dsomopDpExclusive()
   status$tools_mode <- .dsomopToolsMode()
   status$supported_statistics <- .DSOMOP_DP_STATISTICS
+  status$release_protocol <- .DSOMOP_RELEASE_PROTOCOL
+  status$release_contract <- .DSOMOP_RELEASE_CONTRACT_VERSION
+  status$guarantee_scopes <- as.list(.DSOMOP_RELEASE_GUARANTEE)
+  status$fixed_synopsis_statistics <- c("count", "bounded_record_count",
+                                        "bounded_mean")
+  status$public_scales <- .dsomopTypedScales()
+  status$history_based_admission <- FALSE
   status$longitudinal_contract <- "deterministic_person_bounding_v1"
   status$person_local_provenance_required <- TRUE
   status$provenance_protocol <- .DSOMOP_DP_PROVENANCE_PROTOCOL
   status$ohdsi_querylibrary <- .dsomopDpQueryLibraryStatus()
+  # Read consistency of this server's requests (read_snapshot.R).
+  status$read_snapshot <- .dsomopReadSnapshotKind(state$dp_handle)
   state$dp_status <- status
   status
+}
+
+#' Refuse DP status calls from clients older than dsOMOPClient 2.10.3
+#'
+#' Clients of dsOMOP 2.10.2 and earlier do not declare the protected-release
+#' payload protocol; the status they would receive describes a contract they
+#' reject with an opaque field error. This refusal tells the analyst what to
+#' do. It depends only on the call's public argument.
+#'
+#' @param client_contract The caller's declared protocol(s), possibly
+#'   DataSHIELD-encoded.
+#' @return Invisible TRUE for a current client.
+#' @keywords internal
+.dsomopDpRequireCurrentClient <- function(client_contract) {
+  declared <- tryCatch(unlist(.ds_arg(client_contract), use.names = FALSE),
+                       error = function(e) NULL)
+  if (is.character(declared) && .DSOMOP_RELEASE_PROTOCOL %in% declared) {
+    return(invisible(TRUE))
+  }
+  stop("This server runs dsOMOP ", utils::packageVersion("dsOMOP"), ", whose ",
+       "DP releases are protected components (contract ",
+       .DSOMOP_RELEASE_PROTOCOL, ") that dsOMOPClient 2.10.2 and older cannot ",
+       "validate or pool. Upgrade dsOMOPClient to 2.10.3 or later to use ",
+       "ds.omop.dp.status() and ds.omop.dp.release() on this server; with an ",
+       "older client the analysis catalogue keeps returning per-server ",
+       "results, without pooling of protected results.", call. = FALSE)
 }
 
 #' Prepare person-local tables for differential-privacy releases (Assign)
 #'
 #' Community-tool counterpart of \code{\link{omopPlanExecuteDS}} for the sticky
-#' DP channel. It runs the same typed plan through the core plan engine, which
-#' is unchanged and never uses DP, and then seals each person-local output with
+#' DP channel. It runs the same typed plan through the core plan engine. The DP
+#' adapter seals each accepted person-local component privately before publication with
 #' the authenticated provenance capsule that \code{\link{omopDpReleaseDS}}
 #' requires: the canonical lineage of the plan and the dataset identity of the
 #' connected resource. Ordinary table loading (\code{omopPlanExecuteDS}) never
@@ -949,18 +676,33 @@ omopDpStatusDS <- function() {
 #' (\code{dsomop.tools.enabled}) and an available DP service.
 #'
 #' @inheritParams omopPlanExecuteDS
-#' @return Invisible TRUE (sealed outputs are assigned into the caller's
-#'   environment under the requested symbols).
+#' @param commit_policy Character; \code{"server"} follows the server's
+#'   strictness setting. \code{"all_or_none"} refuses the entire execution if
+#'   any output is refused, as requested by a client skipping a small site.
+#' @return A bounded publication status; sealed outputs are assigned into the
+#'   caller's environment under the symbols reported in its inventory.
 #' @export
 omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
                                 output_mode = "memory",
-                                scope = NULL, combine = "union", ...) {
+                                scope = NULL, combine = "union", ...,
+                                commit_policy = "server") {
   .dsomopRequireCommunityTool(dp_routes = TRUE)
   if (!identical(.ds_arg(output_mode), "memory")) {
     stop("DP preparation creates in-memory tables only ",
          "(output_mode = 'memory').", call. = FALSE)
   }
   handle <- .getHandle(omop_symbol)
+  # The caller's environment receives the sealed outputs.
+  env <- parent.frame()
+  extra <- list(...)
+  # The plan's reads and the sealing share one request snapshot.
+  .dsomopWithReadSnapshot(handle, .dsomopDpPlanExecuteSealed(
+    handle, omop_symbol, plan, out, scope, combine, extra, env, commit_policy))
+}
+
+# The body of omopDpPlanExecuteDS, inside its request snapshot.
+.dsomopDpPlanExecuteSealed <- function(handle, omop_symbol, plan, out, scope,
+                                       combine, extra, env, commit_policy) {
   ready <- .dsomopToolsDpReady(handle)
   if (!isTRUE(ready$ready)) {
     stop("Preparing a table for DP releases needs the differential-privacy ",
@@ -968,7 +710,6 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
   }
   decoded_plan <- .ds_arg(plan)
   decoded_out <- .ds_arg(out)
-  extra <- list(...)
   scope_value <- .omopAnalysisScopeFromDots(.ds_arg(scope), extra)
   if (!is.null(scope_value)) {
     combine_value <- .ds_arg(combine)
@@ -981,80 +722,65 @@ omopDpPlanExecuteDS <- function(omop_symbol, plan, out,
     outputs = names(decoded_out), scope_present = !is.null(scope_value)
   ))
 
-  # The core plan engine assigns its outputs into its caller's environment:
-  # call it as if from that environment, then seal what it created there.
-  env <- parent.frame()
-  do.call(omopPlanExecuteDS,
-          c(list(omop_symbol, plan, out, "memory", scope, combine), extra),
-          envir = env)
-
-  dataset_identity <- .dsomopDpDatasetIdentity(handle)
-  seal <- function(symbol, output_name, component = NULL) {
-    if (!exists(symbol, envir = env, inherits = FALSE)) return(FALSE)
-    value <- get(symbol, envir = env, inherits = FALSE)
-    if (!is.data.frame(value)) return(FALSE)
-    sealed <- .dsomopDpSealPlanOutput(
-      value, decoded_plan, output_name,
-      dataset_identity = dataset_identity, component = component
-    )
-    assign(symbol, sealed, envir = env)
-    !is.null(attr(sealed, "dsomop_dp_provenance", exact = TRUE))
-  }
-  for (output_name in names(decoded_out)) {
-    symbol <- as.character(decoded_out[[output_name]])[[1L]]
-    sealed <- c(
-      seal(symbol, output_name),
-      seal(paste0(symbol, ".msdata"), output_name, "msdata"),
-      seal(paste0(symbol, ".transitionRef"), output_name, "transition_ref"),
-      seal(paste0(symbol, ".events"), output_name, "events"),
-      seal(paste0(symbol, ".riskSets"), output_name, "risk_sets")
-    )
-    if (!any(sealed)) {
-      spec <- decoded_plan$outputs[[output_name]]
-      hint <- if (identical(tolower(spec$type %||% ""), "baseline") &&
-                  "age_at_index" %in% tolower(spec$derived %||% character(0))) {
-        paste0(" Its age at index is protected using other persons' ages; ",
-               "derive no age_at_index and use an age at a public reference ",
-               "year (omop_variable_age(year = ...)) instead.")
-      } else {
-        paste0(" It must be a person-local table whose population the plan ",
-               "defines (not, for example, a plan scoped by a workspace ",
-               "table or a persistent cohort).")
-      }
-      stop("Plan output '", output_name, "' cannot be prepared for DP ",
-           "releases.", hint, call. = FALSE)
-    }
-  }
-  invisible(TRUE)
+  do.call(.omopPlanExecuteDS,
+          c(list(omop_symbol, plan, out, output_mode = "memory", scope = scope,
+                 combine = combine, target_env = env,
+                 commit_policy = commit_policy,
+                 seal_factory = .dsomopDpPublicationSeal), extra))
 }
 
-#' Release one sticky, person-bounded privacy statistic (Aggregate)
+#' Release one protected, person-bounded statistic (Aggregate)
 #'
-#' The answer is a deterministic function of the secret noise root, the public
-#' request, the protected statistic and a private automatic database version:
-#' repeating a request returns the same answer without stored state, and a
-#' database reload re-draws every answer at once. Provenance and typed
-#' admission are always required.
+#' The typed channel of the OHDSI community tools (dsOMOP 2.10.3). It requires
+#' the community tools to be enabled (\code{dsomop.tools.enabled}), checked
+#' before any argument is decoded or any provenance, handle or data is read,
+#' and every attempt is written to the redacted audit log (operation, public
+#' statistic, protection class and a generic outcome; never contribution
+#' fingerprints, person tokens or data-derived details). The answer is a
+#' deterministic function of the secret noise root and either a fixed public
+#' basis (counts, capped record counts and registered-scale bounded means of
+#' unscoped pinned loader tables, keyed on live person membership re-read in
+#' the release snapshot and checked against the authenticated loader origin:
+#' \code{protection = "fixed_synopsis"}) or the realised bounded
+#' contributions of the people each component contains
+#' (\code{protection = "realised_sticky"}, a heuristic disclosure control
+#' without a joint differential-privacy guarantee). Equivalent requests, dummy
+#' levels, clamp-only outer breaks, harmless cap variants and lineage
+#' cosmetics replay the same components; there is no budget, quota or
+#' history-dependent admission. DP-only mode accepts only fixed-synopsis
+#' releases.
 #'
 #' @param x A server-created, pseudonymous \code{omop.table} produced by an
-#'   OHDSI community tool (for example an analysis-catalog loader) and carrying
-#'   its authenticated person-local provenance capsule. Tables loaded through
-#'   plans, recipes or manipulation never carry DP provenance.
-#' @param spec Typed DP statistic specification, usually JSON-encoded by
+#'   OHDSI community tool (for example an analysis-catalog loader) or explicit
+#'   DP preparation, carrying its authenticated person-local provenance capsule.
+#'   Ordinary plan loading and manipulation never carry DP provenance.
+#' @param spec Typed statistic specification, usually JSON-encoded by
 #'   dsOMOPClient.
-#' @return A deterministic sticky noisy aggregate with per-release mechanism
-#'   metadata, persisted before return and replayed byte-identically for the same
-#'   public identity. New identities require a public storage reservation.
+#' @return The protected payload: displayed values, the signed components for
+#'   pooling, allocations, sensitivities, noise scales and the guarantee scope.
 #' @export
 omopDpReleaseDS <- function(x, spec) {
+  # Every attempt, including one the community-tool gate refuses, is written
+  # to the redacted audit log (public fields only; observational, never used
+  # for admission).
+  audit <- list(statistic = NA_character_, protection = NA_character_,
+                contract = .DSOMOP_RELEASE_CONTRACT_VERSION,
+                outcome = "refused")
+  on.exit(.omopAuditLog("omopDpReleaseDS", audit), add = TRUE)
+  .dsomopRequireCommunityTool(dp_routes = TRUE)
   spec <- .ds_arg(spec)
+  if (is.list(spec) && is.character(spec$statistic) &&
+      length(spec$statistic) == 1L &&
+      tolower(spec$statistic) %in% .DSOMOP_DP_STATISTICS) {
+    audit$statistic <- tolower(spec$statistic)
+  }
   .dsomopDpEnsureRuntime(.dsomopDpSessionHandle())
   policy <- .dsomopDpPolicy()
-  analysis <- .dsomopDpAnalysis(x, spec, policy)
-  .dsomopDpRelease(
-    policy = policy, semantic = analysis$semantic,
-    bounded_snapshot = analysis$snapshot,
-    sensitivity = analysis$sensitivity,
-    payload_fn = analysis$payload_fn
-  )
+  payload <- .dsomopTypedRelease(x, spec, policy)
+  audit$protection <- payload$protection
+  audit$settings <- payload[intersect(
+    c("reducer", "max_contributions", "denominator", "value_type", "scale"),
+    names(payload))]
+  audit$outcome <- "released"
+  payload
 }

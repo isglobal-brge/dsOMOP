@@ -298,7 +298,7 @@
          default = "0", choices = c("0", "1", "2", "3", "4"),
          description = "Predictor (covariate) domain (0 condition,1 drug,2 procedure,3 measurement,4 observation)."),
     list(name = "max_covariates", type = "int", required = FALSE, default = "20",
-         description = "Cap on the number of top-prevalence binary predictors in the design matrix (keeps the GLM well-posed)."),
+         description = "Cap on the number of top-prevalence binary predictors in the design matrix (keeps the GLM well-posed). Snapped to the public grid 10, 20, 50, 100 (nearest, ties to the smaller; capped by dsomop.max_feature_specs)."),
     list(name = "covariate_start_offset", type = "int", required = FALSE,
          default = "-365",
          description = "Baseline covariate-window start (days from cohort index)."),
@@ -336,14 +336,23 @@
 #' The design matrix, the fitted coefficients and the per-subject predicted risks
 #' are all in-session ONLY — this kernel returns them to the SAME-session aggregate
 #' emitters, which release nothing per-subject. Returns \code{NULL} when there is
-#' no scope, no outcome, an empty/degenerate population, or the model cannot be fit
-#' (the caller then emits a gate-safe empty/NA frame, fail-closed).
+#' no scope, no outcome or an empty population (the caller then emits a
+#' gate-safe empty frame, fail-closed).
+#'
+#' Model admission (\code{\link{.omopModelAdmitBinaryDesign}}) inspects every
+#' candidate predictor's present and absent cells WITHIN the outcome and the
+#' non-outcome class. When the outcome classes are not admissible, no predictor
+#' is admissible, or the fit fails, the kernel still returns the population
+#' design counts with \code{fitted = FALSE} and no risk vector: PLP has no
+#' intercept-only release contract, so the model scalars are then unavailable
+#' (NA) and the calibration and threshold tables are empty. The number of
+#' candidate predictors (\code{max_covariates}) is snapped to its public grid.
 #'
 #' @param handle CDM handle.
 #' @param ctx Run-path ctx (carries \code{scoped_cohort}).
 #' @param params Sanitized params (see \code{\link{.omopPlpModelParams}}).
-#' @return list(risk, outcome, n_predictors, population_size, n_outcomes,
-#'   covariate_ids) or NULL.
+#' @return list(fitted, admission, risk, outcome, n_predictors,
+#'   population_size, n_outcomes, covariate_ids, effective_params) or NULL.
 #' @keywords internal
 .omopPlpFitModel <- function(handle, ctx, params) {
   if (is.null(ctx$scoped_cohort)) return(NULL)
@@ -355,7 +364,13 @@
   if (is.null(out_src)) return(NULL)
 
   cov_src   <- .omopCovariateSource(handle, params$covariate_domain_code %||% "0")
-  max_cov   <- max(as.integer(params$max_covariates %||% "20"), 1L)
+  # The number of candidate predictors is a public release parameter: snap it to
+  # its fixed grid before the design is built (never from the data).
+  grid_max_cov <- .omopModelGridParam(params$max_covariates, "features",
+                                      default = "20", name = "max_covariates")
+  max_cov   <- grid_max_cov$effective
+  effective_params <- .omopModelEffectiveParams(list(
+    max_covariates = grid_max_cov))
   cov_start <- as.integer(params$covariate_start_offset %||% "-365")
   cov_end   <- as.integer(params$covariate_end_offset %||% "-1")
   tar_start <- as.integer(params$tar_start_offset %||% "1")
@@ -400,6 +415,28 @@
                !is.na(pop$outcome), , drop = FALSE]
   if (nrow(pop) == 0) return(NULL)
 
+  # The population design counts do not depend on the model; they are returned
+  # (and released under the standard gates) even when no model is admitted.
+  unfitted <- function(admission) {
+    list(
+      fitted          = FALSE,
+      admission       = admission,
+      risk            = NULL,
+      outcome         = pop$outcome,
+      n_predictors    = 0L,
+      population_size = nrow(pop),
+      n_outcomes      = sum(pop$outcome == 1L),
+      covariate_ids   = integer(0),
+      effective_params = effective_params
+    )
+  }
+  # The outcome classes are validated before any predictor is inspected; an
+  # inadmissible response never falls back to an intercept-only model.
+  if (is.null(.omopModelAdmitBinaryDesign(matrix(0L, nrow(pop), 0L),
+                                          y = pop$outcome))) {
+    return(unfitted("response_not_admissible"))
+  }
+
   # Top-K most prevalent binary covariates over the target population (distinct
   # persons per concept). Restricting to top-K is the ridge-style well-posedness
   # control. The pop SELECT is reused as a derived table to scope the covariates.
@@ -418,14 +455,17 @@
     " GROUP BY e.", cov_src$concept_col,
     " ORDER BY n_persons DESC")
   cov_top <- .executeQuery(handle, .sql_translate(cov_sql, handle$target_dialect))
-  if (!is.data.frame(cov_top) || nrow(cov_top) == 0) return(NULL)
+  if (!is.data.frame(cov_top) || nrow(cov_top) == 0) {
+    return(unfitted("no_candidate_predictor"))
+  }
   cov_top$covariate_id <- suppressWarnings(as.integer(cov_top$covariate_id))
   cov_top <- cov_top[!is.na(cov_top$covariate_id), , drop = FALSE]
+  # Banded support ranks the candidates; ties use the stable public concept id.
   cov_top <- .omopBandedTopN(
     cov_top, support_cols = "n_persons", top_n = max_cov,
     key_cols = "covariate_id")
   cov_ids <- cov_top$covariate_id
-  if (length(cov_ids) == 0) return(NULL)
+  if (length(cov_ids) == 0) return(unfitted("no_candidate_predictor"))
 
   # Per-(subject, covariate) presence over the target population, pulled long and
   # pivoted to a 0/1 design matrix in R (one column per kept covariate concept).
@@ -445,14 +485,17 @@
   ok <- !is.na(row_of) & !is.na(col_of)
   if (any(ok)) X[cbind(row_of[ok], col_of[ok])] <- 1L
 
-  # Model admission (DataSHIELD glm rules): each predictor needs nfilter.tab
-  # persons with and without it (this also drops constant columns), and the
-  # dimension stays within nfilter.glm * n. Rare outcome classes are handled
-  # by the release guards of each PLP output (their scalars are masked).
-  keep <- .omopModelAdmitBinaryDesign(X)
+  # Model admission (DataSHIELD glm rules, strengthened): each predictor needs
+  # nfilter.tab persons with and without it WITHIN the outcome class AND within
+  # the non-outcome class (a supported marginal is not enough: the model scalars
+  # would otherwise solve a small case-by-covariate cell), and the dimension
+  # stays within nfilter.glm * n. NULL (inadmissible response) or an empty set
+  # never becomes an intercept-only model: PLP has no such release contract.
+  keep <- .omopModelAdmitBinaryDesign(X, y = pop$outcome)
+  if (is.null(keep)) return(unfitted("response_not_admissible"))
+  if (length(keep) == 0L) return(unfitted("no_admissible_predictor"))
   X <- X[, keep, drop = FALSE]
   cov_ids <- cov_ids[keep]
-  if (ncol(X) == 0) return(NULL)
 
   # Fit the prediction model IN-SESSION. Top-K restriction keeps it well-posed;
   # suppress the perfect-separation / non-convergence warnings (handled by the
@@ -461,20 +504,39 @@
   fit <- tryCatch(
     suppressWarnings(stats::glm(outcome ~ ., data = dat, family = stats::binomial())),
     error = function(e) NULL)
-  if (is.null(fit)) return(NULL)
+  if (is.null(fit)) return(unfitted("fit_failed"))
   risk <- tryCatch(
     suppressWarnings(as.numeric(stats::predict(fit, type = "response"))),
     error = function(e) NULL)
-  if (is.null(risk) || length(risk) != nrow(pop) || any(is.na(risk))) return(NULL)
+  if (is.null(risk) || length(risk) != nrow(pop) || any(is.na(risk))) {
+    return(unfitted("fit_failed"))
+  }
 
   list(
+    fitted          = TRUE,
+    admission       = "admitted",
     risk            = risk,            # in-session ONLY; never released per-subject
     outcome         = pop$outcome,
     n_predictors    = ncol(X),
     population_size = nrow(pop),
     n_outcomes      = sum(pop$outcome == 1L),
-    covariate_ids   = cov_ids
+    covariate_ids   = cov_ids,
+    effective_params = effective_params
   )
+}
+
+# Record the effective (gridded) model parameters and the admission status of a
+# PLP run on its raw output frame; the run path carries the attribute through
+# the gate to the released frame. Only the coarse status leaves the server
+# ("admitted" or "not_admitted"); the internal reason (inadmissible outcome
+# classes, no admissible predictor, failed fit) is a data-dependent detail.
+.omopPlpAnnotate <- function(df, m) {
+  status <- if (identical(m$admission, "admitted")) "admitted" else
+    "not_admitted"
+  attr(df, "dsomop_effective_params") <- c(
+    m$effective_params, list(model_admission = status)
+  )
+  df
 }
 
 #' AUROC from predicted risk vs binary outcome (rank-based, in-session)
@@ -539,18 +601,21 @@
     # discrimination metric on a sub-threshold class is disclosive (it rests on
     # ranking a tiny set against the rest). Mirrors the propensity-AUC guard in
     # ohdsi_pack_cohortmethod.R. No per-subject risk is ever returned.
+    # The guards apply to the post-admission classes; an unadmitted model has
+    # no discrimination metric (never an intercept-only substitute).
     n_neg <- m$population_size - m$n_outcomes
-    too_small <- m$population_size < sub || m$n_outcomes < sub || n_neg < sub
+    too_small <- !isTRUE(m$fitted) || m$population_size < sub ||
+      m$n_outcomes < sub || n_neg < sub
     auroc <- if (too_small) NA_real_ else .omopPlpAuroc(m$risk, m$outcome)
     auprc <- if (too_small) NA_real_ else .omopPlpAuprc(m$risk, m$outcome)
 
     # population_size is a distinct-person count -> unit="person", suppressed +
     # banded by the gate. The metrics ride alongside it as derived scalars.
-    data.frame(
+    .omopPlpAnnotate(data.frame(
       metric          = c("AUROC", "AUPRC"),
       value           = c(auroc, auprc),
       population_size = c(m$population_size, m$population_size),
-      stringsAsFactors = FALSE)
+      stringsAsFactors = FALSE), m)
   }
 
   .omopAnalysisEntry(
@@ -578,6 +643,62 @@
   )
 }
 
+#' Release rule of the PLP calibration bins (pure, in-session)
+#'
+#' Takes the raw per-bin frame (bin, mean_predicted, expected_outcomes =
+#' sum of the bin's predicted risks, n_persons, n_outcomes, observed_rate) and
+#' returns the releasable frame:
+#' \itemize{
+#'   \item \code{mean_predicted} is a continuous summary of individual predicted
+#'     risks: NA below \code{nfilter_dist} persons (a small homogeneous bin's
+#'     mean is one person's risk), and NA unless the bin has at least
+#'     \code{nfilter.tab} outcome persons AND \code{nfilter.tab} non-outcome
+#'     persons. With an intercept, the predicted risks of a group sum to its
+#'     outcome count, so a bin mean over 1-2 outcomes (or 1-2 non-outcomes)
+#'     reproduces that small count exactly.
+#'   \item Even with supported classes it is released only at the precision of
+#'     the banded counts: \code{band(expected outcomes) / band(bin persons)}.
+#'     Neither one bin (a single-bin table is the overall mean risk, i.e. the
+#'     exact prevalence) nor the sum over all bins (the exact outcome total of a
+#'     logistic fit with intercept) then pins an outcome count more precisely
+#'     than its band. A banded-to-0 expected count is coupled away (NA).
+#'   \item \code{observed_rate} is reconciled from the BANDED outcome and person
+#'     counts (\code{\link{.omopAnalysisReconcileRatio}}, which also bands
+#'     \code{n_outcomes} in place) and coupled away when the banded outcome
+#'     count is 0. \code{n_outcomes} is banded in-fn but not a gate count column,
+#'     so a safe zero-outcome low-risk bin is reported rather than dropped; the
+#'     gate drops a sparse bin on its \code{n_persons} basis.
+#' }
+#'
+#' @param df Raw per-bin frame.
+#' @return The frame without \code{expected_outcomes}, masked as above.
+#' @keywords internal
+.omopPlpCalibrationRelease <- function(df) {
+  settings <- .omopDisclosureSettings()
+  nfd <- settings$nfilter_dist %||% 10L
+  thr <- settings$nfilter_tab
+  bw  <- settings$nfilter_band
+  n_persons <- suppressWarnings(as.numeric(df$n_persons))
+  n_outcomes <- suppressWarnings(as.numeric(df$n_outcomes))
+  non_outcomes <- n_persons - n_outcomes
+  supported <- !is.na(n_persons) & n_persons >= nfd &
+    !is.na(n_outcomes) & n_outcomes >= thr &
+    !is.na(non_outcomes) & non_outcomes >= thr
+  banded_expected <- vapply(suppressWarnings(as.numeric(df$expected_outcomes)),
+                            .bandCount, numeric(1), band_width = bw)
+  banded_persons <- vapply(n_persons, .bandCount, numeric(1), band_width = bw)
+  released <- supported & !is.na(banded_expected) & banded_expected > 0 &
+    !is.na(banded_persons) & banded_persons > 0
+  df$mean_predicted <- ifelse(released, banded_expected / banded_persons,
+                              NA_real_)
+  df$expected_outcomes <- NULL
+  df <- .omopAnalysisReconcileRatio(
+    df, numerator_col = "n_outcomes", denominator_col = "n_persons",
+    ratio_col = "observed_rate", scale = 1)
+  df$observed_rate[is.na(df$n_outcomes) | df$n_outcomes == 0] <- NA_real_
+  df
+}
+
 # --- Native PLP (fitted): calibration ----------------------------------------
 
 #' \code{dsomop:plp.calibration} entry (PatientLevelPrediction calibration)
@@ -595,6 +716,8 @@
   fn <- function(handle, ctx, params) {
     m <- .omopPlpFitModel(handle, ctx, params)
     if (is.null(m)) return(data.frame())
+    # An unadmitted model has no calibration table.
+    if (!isTRUE(m$fitted)) return(.omopPlpAnnotate(data.frame(), m))
 
     # Bin the in-session predicted risk into deciles; per bin report the mean
     # predicted risk, the bin person count (banded), and the outcome count
@@ -605,7 +728,7 @@
     br <- stats::quantile(m$risk, probs = seq(0, 1, length.out = n_bins + 1L),
                           names = FALSE, type = 7)
     br <- unique(br)
-    if (length(br) < 2L) return(data.frame())
+    if (length(br) < 2L) return(.omopPlpAnnotate(data.frame(), m))
     bin <- findInterval(m$risk, br, rightmost.closed = TRUE, all.inside = TRUE)
 
     parts <- lapply(sort(unique(bin)), function(b) {
@@ -613,6 +736,7 @@
       data.frame(
         bin            = b,
         mean_predicted = mean(m$risk[idx]),
+        expected_outcomes = sum(m$risk[idx]),
         n_persons      = sum(idx),
         n_outcomes     = sum(m$outcome[idx] == 1L),
         observed_rate  = NA_real_,
@@ -620,32 +744,7 @@
     })
     df <- do.call(rbind, parts)
 
-    # mean_predicted is a CONTINUOUS summary of the in-session predicted risk over
-    # the bin's persons. A surviving bin only needs nfilter_tab persons, but a
-    # continuous summary that rests on fewer than nfilter_dist values can collapse
-    # to (or tightly approximate) an INDIVIDUAL predicted risk — exactly the
-    # propensity/risk-score leak the task forbids (a homogeneous small bin's mean
-    # IS one person's risk). Mask it to NA below nfilter_dist, the same standard the
-    # continuous (dist) kernels use for avg/quantile stats. Done BEFORE the
-    # reconcile bands n_persons (so the test is on the RAW bin person count).
-    nfd <- .omopDisclosureSettings()$nfilter_dist %||% 10L
-    df$mean_predicted[is.na(df$n_persons) | df$n_persons < nfd] <- NA_real_
-
-    # Reconcile observed_rate = n_outcomes / n_persons over BANDED counts (NA when
-    # either side is suppressed). This ALSO bands n_outcomes in place — the bin
-    # outcome count is a legitimately-small/zero number in a low-risk decile (a
-    # zero-outcome bin is NOT disclosive), so it is banded here but NOT declared a
-    # gate count_col (that would small-cell-DROP every low-risk bin). The gate
-    # drops a sparse bin only on the n_persons person basis.
-    df <- .omopAnalysisReconcileRatio(
-      df, numerator_col = "n_outcomes", denominator_col = "n_persons",
-      ratio_col = "observed_rate", scale = 1)
-    # Couple the rate away wherever the banded outcome count is 0 (a raw count in
-    # [nfilter_tab, nfilter_band) bands to 0; reconcile would still report rate 0,
-    # betraying the small count). Same in-fn coupling as the gate applies to
-    # binary prevalences.
-    df$observed_rate[is.na(df$n_outcomes) | df$n_outcomes == 0] <- NA_real_
-    df
+    .omopPlpAnnotate(.omopPlpCalibrationRelease(df), m)
   }
 
   .omopAnalysisEntry(
@@ -693,6 +792,8 @@
   fn <- function(handle, ctx, params) {
     m <- .omopPlpFitModel(handle, ctx, params)
     if (is.null(m)) return(data.frame())
+    # An unadmitted model has no threshold table.
+    if (!isTRUE(m$fitted)) return(.omopPlpAnnotate(data.frame(), m))
 
     y <- m$outcome
     pos <- sum(y == 1L); neg <- sum(y == 0L)
@@ -750,7 +851,7 @@
     }
     df$fp <- band_or_na(df$fp)
     df$fn <- band_or_na(df$fn)
-    df
+    .omopPlpAnnotate(df, m)
   }
 
   .omopAnalysisEntry(
@@ -809,9 +910,12 @@
     # nfilter_band) bands to 0, and a derived value over a banded-to-0 numerator
     # must be coupled away (NA), not reported as 0 (the gate's binary-prevalence
     # coupling, applied in-fn here — the sanctioned place for a derived value).
+    # An unadmitted model reports its design counts with zero predictors and
+    # no EVP (n_predictors is 0, so the guard below already NAs it).
     n_out_banded <- if (m$n_outcomes < thr) NA_real_ else
       .bandCount(m$n_outcomes, settings$nfilter_band)
-    evp <- if (is.na(n_out_banded) || n_out_banded == 0 || m$n_predictors == 0)
+    evp <- if (!isTRUE(m$fitted) || is.na(n_out_banded) ||
+               n_out_banded == 0 || m$n_predictors == 0)
       NA_real_ else n_out_banded / m$n_predictors
 
     df <- data.frame(
@@ -828,7 +932,7 @@
     # Couple incidence away when the banded outcome count is 0 (reconcile leaves a
     # banded-to-0 numerator's ratio at 0, which would still betray the small count).
     df$outcome_incidence[is.na(df$n_outcomes) | df$n_outcomes == 0] <- NA_real_
-    df
+    .omopPlpAnnotate(df, m)
   }
 
   .omopAnalysisEntry(

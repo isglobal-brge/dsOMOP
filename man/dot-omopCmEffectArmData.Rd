@@ -4,7 +4,7 @@
 \alias{.omopCmEffectArmData}
 \title{Build the per-subject time-at-risk + outcome-event frame for ONE arm (in-session)}
 \usage{
-.omopCmEffectArmData(handle, cohort, arm, out_src, tar)
+.omopCmEffectArmData(handle, cohort, arm, out_src, tar, horizon = NULL)
 }
 \arguments{
 \item{handle}{CDM handle.}
@@ -16,6 +16,9 @@
 \item{out_src}{Resolved \code{\link{.omopOutcomeSource}} (or NULL: no outcome).}
 
 \item{tar}{Named list of TAR params (start/end offset, start/end anchor).}
+
+\item{horizon}{Public contribution horizon in days of protected releases
+(NULL: the whole observed window, for in-session fits).}
 }
 \value{
 list(data = <per-subject frame: arm, tar_days, event>,

@@ -55,7 +55,7 @@
 #' @param cohort_table The legacy \code{cohort_table} argument (or NULL).
 #' @return Character cohort temp table name, or NULL.
 #' @keywords internal
-.resolveCohortArg <- function(handle, cohort = NULL, cohort_table = NULL) {
+.resolveCohortArg <- function(handle, cohort = NULL, cohort_table = NULL, ctx = NULL) {
   cohort <- .ds_arg(cohort)
   cohort_table <- .ds_arg(cohort_table)
   # A list-wrapped scalar (from JSON transport) collapses to its first element.
@@ -64,7 +64,7 @@
     cohort_table <- if (length(cohort_table)) cohort_table[[1]] else NULL
   }
   scope <- cohort %||% cohort_table
-  .resolveCohortTable(handle, scope)
+  .resolveCohortTable(handle, scope, ctx = ctx)
 }
 
 # --- Handle management ---
@@ -162,7 +162,7 @@
 #' Cohort-episode keys retained for longitudinal joins but never filterable
 #' @keywords internal
 .EPISODE_KEY_COLS <- function() {
-  c("cohort_row_id", "row_id", "rowid", "rowId")
+  c("cohort_row_id", "row_id", "rowid", "rowId", "set_id")
 }
 
 #' OMOP CDM row-level identifier columns
@@ -689,7 +689,11 @@ omopInitDS <- function(resource_symbol,
 #'
 #' @param omop_symbol Character; the OMOP handle symbol
 #' @param plan List; the extraction plan
-#' @param out Named character vector; output_name -> symbol_name mapping
+#' @param out Named character vector; output_name -> symbol_name mapping.
+#'   A language-2 plan with an explicit empty \code{publish} array accepts an
+#'   empty mapping (transported as the JSON object \code{\{\}}). Full plan
+#'   validation still runs; no output is materialized or assigned, and the
+#'   publication status is \code{ok} with empty inventories.
 #' @param output_mode Character; "memory" (default) or "staged"
 #' @param scope Optional recipe-level scope: \code{omop.table} symbol(s) (which
 #'   cannot ride in the plan JSON, so they are spliced in by name here) and/or a
@@ -702,7 +706,12 @@ omopInitDS <- function(resource_symbol,
 #'   \code{scope_table_1}, ... without gaps. They are combined internally with
 #'   a literal \code{scope}; no generic aggregate \code{c()} or \code{list()}
 #'   method is required.
-#' @return Invisible TRUE (outputs are assigned into caller's environment)
+#' @param commit_policy Character; \code{"server"} applies the server's strict
+#'   mode, while \code{"all_or_none"} refuses the whole execution if any
+#'   final component fails support. This policy cannot relax disclosure gates.
+#' @return A server-authenticated publication status. Outputs are assigned into
+#'   the caller's environment; the client reads the bounded inventory with
+#'   \code{\link{omopPlanStatusDS}} before deleting its execution-status symbol.
 #' @examples
 #' \dontrun{
 #' omopPlanExecuteDS("omop", plan, out = c(cohort = "my_cohort"))
@@ -712,7 +721,20 @@ omopInitDS <- function(resource_symbol,
 #' @export
 omopPlanExecuteDS <- function(omop_symbol, plan, out,
                                output_mode = "memory",
-                               scope = NULL, combine = "union", ...) {
+                               scope = NULL, combine = "union", ...,
+                               commit_policy = "server") {
+  target_env <- parent.frame()
+  handle <- .getHandle(omop_symbol)
+  .dsomopWithReadSnapshot(handle,
+    .omopPlanExecuteDS(omop_symbol, plan, out, output_mode, scope, combine, ...,
+                       target_env = target_env, commit_policy = commit_policy))
+}
+
+#' Execute a plan with a server-only publication/sealing context
+#' @keywords internal
+.omopPlanExecuteDS <- function(omop_symbol, plan, out, output_mode = "memory",
+                               scope = NULL, combine = "union", ...,
+                               target_env, commit_policy = "server", seal_factory = NULL) {
   handle <- .getHandle(omop_symbol)
   plan <- .ds_arg(plan)
   out <- .ds_arg(out)
@@ -724,8 +746,19 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   if (!is.list(out) && !is.character(out)) {
     stop("out must be a named output-to-symbol mapping.", call. = FALSE)
   }
-  if (length(out) == 0L || is.null(names(out)) || any(!nzchar(names(out))) ||
-      anyDuplicated(names(out))) {
+  # An explicitly empty publication root list (publish = [], section 4.1)
+  # releases nothing, so its out mapping is empty; every other plan maps at
+  # least one output.
+  no_roots <- is.list(plan) &&
+    (identical(plan[["version"]], 2L) || identical(plan[["version"]], 2)) &&
+    !is.null(plan[["publish"]]) && is.null(names(plan[["publish"]])) &&
+    length(plan[["publish"]]) == 0L
+  if (no_roots && length(out) > 0L) {
+    stop("out must be empty when publish = [].", call. = FALSE)
+  }
+  if ((length(out) == 0L && !no_roots) ||
+      (length(out) > 0L && (is.null(names(out)) || any(!nzchar(names(out))) ||
+                            anyDuplicated(names(out))))) {
     stop("out must have unique, non-empty output names.", call. = FALSE)
   }
   symbols <- vapply(out, function(sym) {
@@ -741,16 +774,8 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
     stop("Output symbols must be unique and cannot target OMOP resources or ",
          "reserved handle names.", call. = FALSE)
   }
-  expanded <- unlist(lapply(symbols, function(sym) paste0(
-    sym, c("", ".covariates", ".covariateRef", ".temporalCovariates",
-           ".timeRef", ".personRef", ".personPeriods", ".events",
-           ".riskSets", ".msdata", ".transitionRef")
-  )), use.names = FALSE)
-  if (anyDuplicated(expanded)) {
-    stop("Output symbols collide after sparse/temporal suffix expansion.",
-         call. = FALSE)
-  }
   out <- stats::setNames(as.list(symbols), names(out))
+  if (any(!names(out) %in% names(plan$outputs))) stop("Unknown requested plan output.", call. = FALSE)
 
   # Recipe-level scope. omop.table SYMBOL sources are spliced in by name (DSI
   # resolves them to server-side frames) because they cannot cross in the plan
@@ -762,123 +787,74 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   scope <- .omopAnalysisScopeFromDots(scope, list(...))
   combine <- .ds_arg(combine)
   if (is.list(combine)) combine <- combine[[1]]
+  # The fold operator of resolved scope tables is part of the plan the server
+  # validates (and of its IR); the resolved frames themselves are not.
   if (!is.null(scope)) {
     if (is.null(plan$scope)) plan$scope <- list()
-    plan$scope$tables_frames <- scope
     plan$scope$combine <- plan$scope$combine %||% combine
   }
 
-  # Never serialize resolved workspace frames into an audit record. Preserve
-  # the JSON-safe recipe definition, but replace the injected frame payload by
-  # non-sensitive structural metadata.
-  audit_plan <- plan
-  if (is.list(audit_plan$scope) && !is.data.frame(audit_plan$scope)) {
-    audit_plan$scope$tables_frames <- NULL
-  }
+  # Never serialize resolved workspace frames into an audit record.
   .omopAuditLog(
     "omopPlanExecuteDS",
-    list(outputs = names(out), plan = audit_plan,
+    list(outputs = names(out), plan = plan,
          scope_present = !is.null(scope),
          scope_table_count = .omopAnalysisScopeTableCount(scope))
   )
-  outputs <- .planExecute(handle, plan, out, output_mode = output_mode)
-
-  # Validate that requested outputs were produced
-  missing <- setdiff(names(out), names(outputs))
-  if (length(missing) > 0) {
-    warning("Plan did not produce outputs: ",
-            paste(missing, collapse = ", "), call. = FALSE)
+  commit_policy <- .ds_arg(commit_policy)
+  if (!.isScalarString(commit_policy) || !commit_policy %in% c("server", "all_or_none")) {
+    stop("commit_policy must be 'server' or 'all_or_none'.", call. = FALSE)
   }
-
-  assign_env <- parent.frame()
-  concept_cols <- attr(outputs, "omop_concept_cols") %||% list()
-  person_key <- .personKey(handle)
-  pseudonymization <- .personKeyPublicContract(handle)
-
-  for (nm in names(out)) {
-    sym <- out[[nm]]
-    result <- outputs[[nm]]
-    if (is.null(result)) next
-
-    # Staged descriptors: assign directly (no data to strip)
-    if (inherits(result, "FlowerDatasetDescriptor")) {
-      assign(sym, result, envir = assign_env)
-      next
+  # The single frozen validation sequence (design 4.5) runs on the plan as it
+  # arrived -- a plan carrying scope.tables_frames is refused by its closed
+  # envelope -- before the server injects the resolved workspace frames,
+  # before the execution context and the DP seal exist and before any query.
+  validation <- tryCatch(
+    list(ir = .irPrepare(plan, handle,
+                         scope_tables = .omopAnalysisScopeTableCount(scope) %||% 0L),
+         wire = .irJsonForm(plan)),
+    dsomop_plan_rejection = function(e) list(error = e))
+  # Resolved frames are server state: they reach the v1 executors through the
+  # execution plan and the context, never through the client's plan.
+  if (!is.null(scope)) plan$scope$tables_frames <- scope
+  # The context carries the plan its executors and publication read: the
+  # validated, normalised IR of a language 2.0 plan; for a v1 plan, which the
+  # v1 executors and the legacy publication and DP contracts read in its own
+  # fields, the execution plan (its validated IR is ctx$validation$ir).
+  ctx <- .planContext(handle, .planContextIr(validation, plan), output_mode, target_env)
+  if (.dsomopReadSnapshotActive(handle)) {
+    # Publication remains provisional until the outer request validates and
+    # rolls back its read snapshot. A late failure must revoke assigned rows
+    # as well as the publication status, including already sealed DP rows.
+    snapshot <- handle$read_snapshot
+    snapshot$finalizers[[length(snapshot$finalizers) + 1L]] <- function(success) {
+      on.exit(.planContextClose(ctx), add = TRUE)
+      if (!isTRUE(success)) .publishAbort(ctx)
     }
-
-    # Pseudonymize person/subject keys (per-resource reversible token, kept under
-    # their original names so joins/set-ops and the output contract still work)
-    # and drop every other row-level identifier, before data enters the
-    # DataSHIELD environment. Output gating (cell/subset suppression by dsBase
-    # and dsOMOP nfilter) remains the authoritative disclosure barrier.
-    result <- .pseudonymizeIdentifiers(
-      result, person_key, pseudonymization = pseudonymization
-    )
-
-    # Multi-state outputs carry an expanded transition risk set and a public
-    # graph dictionary. Keep both as first-class tables/descriptors because
-    # data-frame attributes do not survive Parquet interchange.
-    if (is.list(result) && !is.data.frame(result) &&
-        all(c("msdata", "transition_ref") %in% names(result))) {
-      msdata <- result$msdata
-      transition_ref <- result$transition_ref
-      assign(paste0(sym, ".msdata"), msdata, envir = assign_env)
-      assign(paste0(sym, ".transitionRef"), transition_ref,
-             envir = assign_env)
-
-    # Recurrent-event outputs have an event stream and a separate episode risk
-    # set. Keep both as first-class protected tables (or staged descriptors).
-    } else if (is.list(result) && !is.data.frame(result) &&
-        all(c("events", "risk_sets") %in% names(result))) {
-      events <- result$events
-      risk_sets <- result$risk_sets
-      assign(paste0(sym, ".events"), events, envir = assign_env)
-      assign(paste0(sym, ".riskSets"), risk_sets, envir = assign_env)
-
-    # Temporal covariates: split into four symbols, preserving the explicit
-    # cohort-episode -> pseudonymous-person map needed by longitudinal models.
-    } else if (is.list(result) && !is.data.frame(result) &&
-        "temporalCovariates" %in% names(result)) {
-      if (!is.null(result$personPeriods)) {
-        assign(paste0(sym, ".personPeriods"),
-               result$personPeriods, envir = assign_env)
-      }
-      assign(paste0(sym, ".temporalCovariates"),
-             result$temporalCovariates, envir = assign_env)
-      assign(paste0(sym, ".covariateRef"),
-             result$covariateRef, envir = assign_env)
-      assign(paste0(sym, ".timeRef"),
-             result$timeRef, envir = assign_env)
-      if (!is.null(result$personRef)) {
-        assign(paste0(sym, ".personRef"),
-               result$personRef, envir = assign_env)
-      }
-    # Sparse outputs: split list into data-frame symbols, including the
-    # complete row-to-pseudonymous-person map.
-    } else if (is.list(result) && !is.data.frame(result) &&
-        all(c("covariates", "covariateRef") %in% names(result))) {
-      assign(paste0(sym, ".covariates"),
-             result$covariates, envir = assign_env)
-      assign(paste0(sym, ".covariateRef"),
-             result$covariateRef, envir = assign_env)
-      if (!is.null(result$personRef)) {
-        assign(paste0(sym, ".personRef"),
-               result$personRef, envir = assign_env)
-      }
-    } else {
-      # Tag the concept-id columns by their landed (possibly renamed) names so
-      # the factor harmonization layer recognises them post-rename. Stamped
-      # here, after identifier stripping ([ drops frame attributes), as the
-      # last step before the symbol is created.
-      cc <- intersect(as.character(concept_cols[[nm]]), names(result))
-      if (length(cc) > 0L) {
-        attr(result, "omop_concept_cols") <- cc
-      }
-      assign(sym, result, envir = assign_env)
-    }
+  } else {
+    on.exit(.planContextClose(ctx), add = TRUE)
   }
-
-  invisible(TRUE)
+  ctx$validation <- validation[c("ir", "wire")]
+  ctx$scopes <- scope
+  ctx$commit_policy <- commit_policy
+  refuse <- function(e) {
+    if (!e$code %in% c("coverage_ambiguous", "join_cardinality", "match_candidates_exceeded",
+                       "dialect_unsupported", "unavailable_table", "validation_error")) stop(e)
+    # A shared roster/dialect failure can precede individual root execution.
+    # It refuses every requested family without exposing its private details.
+    roots <- as.character(unlist(plan$publish %||% names(out), use.names = FALSE))
+    if (!length(roots)) stop(e)
+    for (root in roots) ctx$rejected[[root]] <- .rejectionEntry(e)
+    list()
+  }
+  outputs <- if (!is.null(validation$error)) {
+    refuse(validation$error)
+  } else {
+    if (!is.null(seal_factory)) ctx$seal <- seal_factory(ctx)
+    tryCatch(.planExecute(handle, plan, out, output_mode = output_mode, ctx = ctx),
+             dsomop_plan_rejection = refuse)
+  }
+  .publishOutputs(ctx, outputs, out)
 }
 
 #' Create a cohort (Assign)
@@ -1026,6 +1002,7 @@ omopCohortFromTableDS <- function(x, omop_symbol, new_name = NULL) {
   .omopAuditLog("omopCohortFromTableDS",
                 list(n_rows = if (is.data.frame(x)) nrow(x) else NA,
                      new_name = new_name))
+  x <- .publishStandalone(x, handle, caller = "omopCohortFromTableDS", already_tokenized = TRUE)
   result <- .cohortFromTokenFrame(handle, x, new_name = new_name)
   if (!is.character(result) || length(result) != 1L || is.na(result) ||
       !result %in% (handle$temp_tables %||% character(0))) {
@@ -1260,9 +1237,12 @@ omopRelationshipGraphDS <- function(omop_symbol) {
 omopTableStatsDS <- function(omop_symbol, table,
                              stats = c("rows", "persons")) {
   handle <- .getHandle(omop_symbol)
-  stats <- .ds_arg(stats)
-  if (is.list(stats)) stats <- unlist(stats)
-  .profileTableStats(handle, table, stats)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    stats <- .ds_arg(stats)
+    if (is.list(stats)) stats <- unlist(stats)
+    .profileTableStats(handle, table, stats)
+  })
 }
 
 #' Get column statistics (Aggregate)
@@ -1294,12 +1274,15 @@ omopColumnStatsDS <- function(omop_symbol, table, column, concept_id = NULL,
                               concept_col = NULL, cohort = NULL,
                               cohort_table = NULL) {
   handle <- .getHandle(omop_symbol)
-  concept_id <- .ds_arg(concept_id)
-  concept_col <- .ds_arg(concept_col)
-  if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  .profileColumnStats(handle, table, column, concept_id = concept_id,
-                      concept_col = concept_col, cohort_table = cohort_table)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    concept_id <- .ds_arg(concept_id)
+    concept_col <- .ds_arg(concept_col)
+    if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    .profileColumnStats(handle, table, column, concept_id = concept_id,
+                        concept_col = concept_col, cohort_table = cohort_table)
+  })
 }
 
 #' Get cross-table domain coverage (Aggregate)
@@ -1318,7 +1301,10 @@ omopColumnStatsDS <- function(omop_symbol, table, column, concept_id = NULL,
 #' @export
 omopDomainCoverageDS <- function(omop_symbol) {
   handle <- .getHandle(omop_symbol)
-  .profileDomainCoverage(handle)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    .profileDomainCoverage(handle)
+  })
 }
 
 #' Get missingness rates (Aggregate)
@@ -1344,10 +1330,13 @@ omopMissingnessDS <- function(omop_symbol, table,
                               columns = NULL, cohort = NULL,
                               cohort_table = NULL) {
   handle <- .getHandle(omop_symbol)
-  columns <- .ds_arg(columns)
-  if (is.list(columns)) columns <- as.character(unlist(columns))
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  .profileMissingness(handle, table, columns, cohort_table = cohort_table)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    columns <- .ds_arg(columns)
+    if (is.list(columns)) columns <- as.character(unlist(columns))
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    .profileMissingness(handle, table, columns, cohort_table = cohort_table)
+  })
 }
 
 #' Get value counts (Aggregate)
@@ -1381,15 +1370,19 @@ omopValueCountsDS <- function(omop_symbol, table, column,
                               concept_col = NULL, cohort = NULL,
                               cohort_table = NULL) {
   handle <- .getHandle(omop_symbol)
-  concept_id <- .ds_arg(concept_id)
-  concept_col <- .ds_arg(concept_col)
-  if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  # Small-count suppression is mandatory for this aggregate endpoint and is not
-  # client-configurable: a caller must never be able to disable disclosure control.
-  .profileValueCounts(handle, table, column, top_n, suppress_small = TRUE,
-                      concept_id = concept_id, concept_col = concept_col,
-                      cohort_table = cohort_table)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    concept_id <- .ds_arg(concept_id)
+    concept_col <- .ds_arg(concept_col)
+    if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    # Small-count suppression is mandatory for this aggregate endpoint and is
+    # not client-configurable: a caller must never be able to disable
+    # disclosure control.
+    .profileValueCounts(handle, table, column, top_n, suppress_small = TRUE,
+                        concept_id = concept_id, concept_col = concept_col,
+                        cohort_table = cohort_table)
+  })
 }
 
 #' Search concepts (Aggregate)
@@ -1737,20 +1730,23 @@ omopCdmVersionDS <- function(omop_symbol) {
 #' @export
 omopPlanPreviewDS <- function(omop_symbol, plan) {
   handle <- .getHandle(omop_symbol)
-  plan <- .ds_arg(plan)
-  # Preview is the cheapest, most-repeated data-touching op and is the primary
-  # differencing signal, so the data controller must be able to see the
-  # sequence of preview calls (banding alone cannot stop iterative probing).
-  outputs <- plan$outputs %||% list()
-  preview_tables <- unique(unlist(lapply(outputs, function(o) {
-    # event_level outputs carry a scalar $table; person_level outputs carry a
-    # named $tables list. Use [[ exact-match to avoid $ partial matching
-    # ($table matching $tables and leaking column names into the audit detail).
-    c(o[["table"]], names(o[["tables"]]))
-  }), use.names = FALSE))
-  .omopAuditLog("omopPlanPreviewDS",
-                list(n_outputs = length(outputs), tables = preview_tables))
-  .planPreview(handle, plan)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    plan <- .ds_arg(plan)
+    # Preview is the cheapest, most-repeated data-touching op and is the primary
+    # differencing signal, so the data controller must be able to see the
+    # sequence of preview calls (banding alone cannot stop iterative probing).
+    outputs <- plan$outputs %||% list()
+    preview_tables <- unique(unlist(lapply(outputs, function(o) {
+      # event_level outputs carry a scalar $table; person_level outputs carry a
+      # named $tables list. Use [[ exact-match to avoid $ partial matching
+      # ($table matching $tables and leaking column names into the audit detail).
+      c(o[["table"]], names(o[["tables"]]))
+    }), use.names = FALSE))
+    .omopAuditLog("omopPlanPreviewDS",
+                  list(n_outputs = length(outputs), tables = preview_tables))
+    .planPreview(handle, plan)
+  })
 }
 
 #' List cohort definitions (Aggregate)
@@ -1827,12 +1823,15 @@ omopConceptPrevalenceDS <- function(omop_symbol, table = NULL, concept_col = NUL
                                      offset = 0L, global = FALSE,
                                      cohort = NULL) {
   handle <- .getHandle(omop_symbol)
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  offset <- as.integer(.ds_arg(offset) %||% 0L)
-  global <- isTRUE(.ds_arg(global))
-  .profileConceptPrevalence(handle, table, concept_col, metric, top_n,
-                            cohort_table, window, offset = offset,
-                            global = global)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    offset <- as.integer(.ds_arg(offset) %||% 0L)
+    global <- isTRUE(.ds_arg(global))
+    .profileConceptPrevalence(handle, table, concept_col, metric, top_n,
+                              cohort_table, window, offset = offset,
+                              global = global)
+  })
 }
 
 #' Get a disclosure-safe 2-way cross-tabulation (Aggregate)
@@ -1879,37 +1878,42 @@ omopCrossTabDS <- function(omop_symbol, table, row_col, col_col,
                            cohort_table = NULL, stratify_by = NULL,
                            band_margins = FALSE, cohort = NULL) {
   handle <- .getHandle(omop_symbol)
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  count_mode <- .ds_arg(count_mode)
-  if (!is.character(count_mode) || length(count_mode) != 1L) {
-    count_mode <- "persons"
-  }
-  row_concept_ids <- .ds_arg(row_concept_ids)
-  col_concept_ids <- .ds_arg(col_concept_ids)
-  if (!is.null(row_concept_ids)) {
-    row_concept_ids <- as.integer(unlist(row_concept_ids))
-  }
-  if (!is.null(col_concept_ids)) {
-    col_concept_ids <- as.integer(unlist(col_concept_ids))
-  }
-  stratify_by <- .ds_arg(stratify_by)
-  if (!is.null(stratify_by)) stratify_by <- as.character(unlist(stratify_by))[1]
-  band_margins <- isTRUE(.ds_arg(band_margins))
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    count_mode <- .ds_arg(count_mode)
+    if (!is.character(count_mode) || length(count_mode) != 1L) {
+      count_mode <- "persons"
+    }
+    row_concept_ids <- .ds_arg(row_concept_ids)
+    col_concept_ids <- .ds_arg(col_concept_ids)
+    if (!is.null(row_concept_ids)) {
+      row_concept_ids <- as.integer(unlist(row_concept_ids))
+    }
+    if (!is.null(col_concept_ids)) {
+      col_concept_ids <- as.integer(unlist(col_concept_ids))
+    }
+    stratify_by <- .ds_arg(stratify_by)
+    if (!is.null(stratify_by)) {
+      stratify_by <- as.character(unlist(stratify_by))[1]
+    }
+    band_margins <- isTRUE(.ds_arg(band_margins))
 
-  # Audit-log the call sequence (cross-query differencing defence). Never logs
-  # cell values — only the call shape, which the data controller reviews.
-  .omopAuditLog("omopCrossTabDS",
-                list(table = table, row_col = row_col, col_col = col_col,
-                     count_mode = count_mode, stratify_by = stratify_by,
-                     band_margins = band_margins))
+    # Audit-log the call sequence (cross-query differencing defence). Never logs
+    # cell values — only the call shape, which the data controller reviews.
+    .omopAuditLog("omopCrossTabDS",
+                  list(table = table, row_col = row_col, col_col = col_col,
+                       count_mode = count_mode, stratify_by = stratify_by,
+                       band_margins = band_margins))
 
-  .profileCrossTab(handle, table, row_col, col_col,
-                   count_mode = count_mode,
-                   row_concept_ids = row_concept_ids,
-                   col_concept_ids = col_concept_ids,
-                   cohort_table = cohort_table,
-                   stratify_by = stratify_by,
-                   band_margins = band_margins)
+    .profileCrossTab(handle, table, row_col, col_col,
+                     count_mode = count_mode,
+                     row_concept_ids = row_concept_ids,
+                     col_concept_ids = col_concept_ids,
+                     cohort_table = cohort_table,
+                     stratify_by = stratify_by,
+                     band_margins = band_margins)
+  })
 }
 
 #' Get numeric range (p05/p95) for two-pass histogram pooling (Aggregate)
@@ -1943,12 +1947,15 @@ omopNumericRangeDS <- function(omop_symbol, table, value_col,
                                 concept_id = NULL, concept_col = NULL,
                                 cohort = NULL) {
   handle <- .getHandle(omop_symbol)
-  concept_id <- .ds_arg(concept_id)
-  concept_col <- .ds_arg(concept_col)
-  if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  .profileNumericRange(handle, table, value_col, cohort_table, window,
-                       concept_id = concept_id, concept_col = concept_col)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    concept_id <- .ds_arg(concept_id)
+    concept_col <- .ds_arg(concept_col)
+    if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    .profileNumericRange(handle, table, value_col, cohort_table, window,
+                         concept_id = concept_id, concept_col = concept_col)
+  })
 }
 
 #' Get numeric histogram (Aggregate)
@@ -1985,14 +1992,17 @@ omopNumericHistogramDS <- function(omop_symbol, table, value_col,
                                     concept_id = NULL, concept_col = NULL,
                                     cohort = NULL) {
   handle <- .getHandle(omop_symbol)
-  breaks <- .ds_arg(breaks)
-  concept_id <- .ds_arg(concept_id)
-  concept_col <- .ds_arg(concept_col)
-  if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  .profileNumericHistogram(handle, table, value_col, bins,
-                           cohort_table, window, breaks,
-                           concept_id = concept_id, concept_col = concept_col)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    breaks <- .ds_arg(breaks)
+    concept_id <- .ds_arg(concept_id)
+    concept_col <- .ds_arg(concept_col)
+    if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    .profileNumericHistogram(handle, table, value_col, bins,
+                             cohort_table, window, breaks,
+                             concept_id = concept_id, concept_col = concept_col)
+  })
 }
 
 #' Get numeric quantiles (Aggregate)
@@ -2029,14 +2039,17 @@ omopNumericQuantilesDS <- function(omop_symbol, table, value_col,
                                     rounding = 2L, concept_id = NULL,
                                     concept_col = NULL, cohort = NULL) {
   handle <- .getHandle(omop_symbol)
-  probs <- .ds_arg(probs)
-  concept_id <- .ds_arg(concept_id)
-  concept_col <- .ds_arg(concept_col)
-  if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  .profileNumericQuantiles(handle, table, value_col, probs,
-                           cohort_table, window, rounding,
-                           concept_id = concept_id, concept_col = concept_col)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    probs <- .ds_arg(probs)
+    concept_id <- .ds_arg(concept_id)
+    concept_col <- .ds_arg(concept_col)
+    if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    .profileNumericQuantiles(handle, table, value_col, probs,
+                             cohort_table, window, rounding,
+                             concept_id = concept_id, concept_col = concept_col)
+  })
 }
 
 #' Get date counts (Aggregate)
@@ -2064,9 +2077,12 @@ omopDateCountsDS <- function(omop_symbol, table, date_col = NULL,
                               granularity = "year", cohort_table = NULL,
                               window = NULL, cohort = NULL) {
   handle <- .getHandle(omop_symbol)
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  .profileDateCounts(handle, table, date_col, granularity,
-                     cohort_table, window)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    .profileDateCounts(handle, table, date_col, granularity,
+                       cohort_table, window)
+  })
 }
 
 #' Get concept drilldown (Aggregate)
@@ -2091,8 +2107,11 @@ omopDateCountsDS <- function(omop_symbol, table, date_col = NULL,
 omopConceptDrilldownDS <- function(omop_symbol, table, concept_id,
                                    concept_col = NULL) {
   handle <- .getHandle(omop_symbol)
-  .profileConceptDrilldown(handle, table, as.integer(concept_id),
-                           concept_col = concept_col)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    .profileConceptDrilldown(handle, table, as.integer(concept_id),
+                             concept_col = concept_col)
+  })
 }
 
 #' Locate concept across tables (Aggregate)
@@ -2113,9 +2132,12 @@ omopConceptDrilldownDS <- function(omop_symbol, table, concept_id,
 #' @export
 omopLocateConceptDS <- function(omop_symbol, concept_ids) {
   handle <- .getHandle(omop_symbol)
-  concept_ids <- .ds_arg(concept_ids)
-  if (is.list(concept_ids)) concept_ids <- as.integer(unlist(concept_ids))
-  .profileLocateConcept(handle, as.integer(concept_ids))
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    concept_ids <- .ds_arg(concept_ids)
+    if (is.list(concept_ids)) concept_ids <- as.integer(unlist(concept_ids))
+    .profileLocateConcept(handle, as.integer(concept_ids))
+  })
 }
 
 #' Get safe numeric cutpoints (Aggregate)
@@ -2147,9 +2169,12 @@ omopSafeCutpointsDS <- function(omop_symbol, table, column,
                                  concept_id = NULL, n_bins = 10L,
                                  concept_col = NULL) {
   handle <- .getHandle(omop_symbol)
-  concept_col <- .ds_arg(concept_col)
-  .profileSafeCutpoints(handle, table, column, concept_id, as.integer(n_bins),
-                        concept_col = concept_col)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    concept_col <- .ds_arg(concept_col)
+    .profileSafeCutpoints(handle, table, column, concept_id, as.integer(n_bins),
+                          concept_col = concept_col)
+  })
 }
 
 # --- Achilles aggregate methods ---
@@ -2211,9 +2236,12 @@ omopAchillesAnalysesDS <- function(omop_symbol, domain = NULL) {
 omopAchillesResultsDS <- function(omop_symbol, analysis_ids) {
   .dsomopRequireCommunityTool()
   handle <- .getHandle(omop_symbol)
-  analysis_ids <- .ds_arg(analysis_ids)
-  if (is.list(analysis_ids)) analysis_ids <- as.integer(unlist(analysis_ids))
-  .achillesGetResults(handle, analysis_ids)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    analysis_ids <- .ds_arg(analysis_ids)
+    if (is.list(analysis_ids)) analysis_ids <- as.integer(unlist(analysis_ids))
+    .achillesGetResults(handle, analysis_ids)
+  })
 }
 
 #' Get Achilles distribution results (Aggregate)
@@ -2235,9 +2263,49 @@ omopAchillesResultsDS <- function(omop_symbol, analysis_ids) {
 omopAchillesDistributionDS <- function(omop_symbol, analysis_ids) {
   .dsomopRequireCommunityTool()
   handle <- .getHandle(omop_symbol)
-  analysis_ids <- .ds_arg(analysis_ids)
-  if (is.list(analysis_ids)) analysis_ids <- as.integer(unlist(analysis_ids))
-  .achillesGetDistributions(handle, analysis_ids)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    analysis_ids <- .ds_arg(analysis_ids)
+    if (is.list(analysis_ids)) analysis_ids <- as.integer(unlist(analysis_ids))
+    .achillesReleaseDistributions(
+      .achillesGetDistributions(handle, analysis_ids))
+  })
+}
+
+#' Release precomputed Achilles distributions under the tools mode
+#'
+#' An imported exact distribution (mean, SD, percentiles) carries no
+#' person-level input from which protected components could be rebuilt, and
+#' arbitrary small noise must not be added to it without a verified
+#' contribution contract. In auto mode its summary fields are therefore
+#' unavailable (\code{protected_basis_unavailable}); the live
+#' \code{dsomop:achilles.<id>} analyses release protected components of the
+#' same estimands. Standard mode keeps the established whole-database
+#' summaries (these readers are never scoped); DP-only mode refuses the reader
+#' before it runs.
+#'
+#' @param df Frame from \code{.achillesGetDistributions}.
+#' @return \code{df}, possibly masked, with a \code{dsomop_protection} label.
+#' @keywords internal
+.achillesReleaseDistributions <- function(df) {
+  mode <- .dsomopToolsMode()
+  fields <- intersect(c("avg_value", "stdev_value", "median_value",
+                        "p10_value", "p25_value", "p75_value", "p90_value"),
+                      names(df))
+  label <- list(protection = "standard", mode = mode,
+                privacy_call_quota = "none",
+                history_based_admission = FALSE)
+  if (identical(mode, "auto") && length(fields)) {
+    if (nrow(df) > 0L) for (f in fields) df[[f]] <- rep(NA_real_, nrow(df))
+    label$masked_fields <- fields
+    label$masked_reason <- "protected_basis_unavailable"
+    label$note <- paste0(
+      "Imported exact distributions have no person-level basis for ",
+      "protected components; the live dsomop:achilles.<id> analyses release ",
+      "protected summaries of the same estimands.")
+  }
+  attr(df, "dsomop_protection") <- label
+  df
 }
 
 #' Get Achilles analysis catalog (Aggregate)
@@ -2278,7 +2346,10 @@ omopAchillesCatalogDS <- function(omop_symbol) {
 #' @keywords internal
 omopAchillesHeelDS <- function(omop_symbol) {
   handle <- .getHandle(omop_symbol)
-  .achillesGetHeelResults(handle)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    .achillesGetHeelResults(handle)
+  })
 }
 
 # --- OHDSI Results aggregate methods ---
@@ -2356,14 +2427,17 @@ omopOhdsiResultsDS <- function(omop_symbol, table_name, columns = NULL,
                                 limit = 5000L, tool_id = NULL) {
   .dsomopRequireCommunityTool()
   handle <- .getHandle(omop_symbol)
-  filters <- .ds_arg(filters)
-  order_by <- .ds_arg(order_by)
-  # The internal consumer adds contracted disclosure-basis columns to the SQL
-  # projection and removes them only after gating, so caller projection cannot
-  # bypass the person gate.
-  result <- .ohdsiGetResults(handle, table_name, columns = columns, filters,
-                             order_by, limit, tool_id)
-  result
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    filters <- .ds_arg(filters)
+    order_by <- .ds_arg(order_by)
+    # The internal consumer adds contracted disclosure-basis columns to the SQL
+    # projection and removes them only after gating, so caller projection cannot
+    # bypass the person gate.
+    result <- .ohdsiGetResults(handle, table_name, columns = columns, filters,
+                               order_by, limit, tool_id)
+    result
+  })
 }
 
 #' Get the pooling contract for a physical OHDSI result table (Aggregate)
@@ -2408,7 +2482,10 @@ omopOhdsiResultContractDS <- function(omop_symbol, table_name,
 omopOhdsiSummaryDS <- function(omop_symbol, tool_id) {
   .dsomopRequireCommunityTool()
   handle <- .getHandle(omop_symbol)
-  .ohdsiGetSummary(handle, tool_id)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    .ohdsiGetSummary(handle, tool_id)
+  })
 }
 
 # --- Query library methods ---
@@ -2778,7 +2855,9 @@ omopAnalysisRunDS <- function(omop_symbol, name, params = list(),
 omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
                                     scope = NULL, combine = "union",
                                     date_handling = NULL, ...) {
-  .dsomopRequireCommunityTool()
+  # Assignment prepares private server-side inputs; only final statistics
+  # select a standard or protected release route. Keep the tools-off gate.
+  .dsomopRequireCommunityTool(dp_routes = TRUE)
   handle <- .getHandle(omop_symbol)
   name <- .ds_arg(name)
   if (is.list(name)) name <- name[[1]]
@@ -3019,5 +3098,7 @@ omopAsFactorColumnsDS <- function(df, spec) {
   # Core outputs never inherit DP state from their inputs.
   attr(df, "dsomop_dp_provenance") <- NULL
   attr(df, "dsomop_dp_filter_state") <- NULL
+  attr(df, "dsomop_dp_release_persons") <- NULL
+  .publishUpdateOwnedValue(source, df)
   df
 }

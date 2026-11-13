@@ -1,0 +1,34 @@
+P0r3 final full server recovery verification
+Recovered at 2026-11-12T15:15:53.104692+00:00
+Original full run began 2026-11-12 13:52 UTC; pod log completed 2026-11-12 14:29:25 UTC.
+The local shared disk filled at 14:25 UTC. The pod run completed; this is a recovery of that full run, not a rerun.
+Server HEAD d399c759d9d3d52284140b4d01ddac7ffb94cc91; tree a899136aad43d2a07376506d9abcef55b1f44e16.
+Matching client HEAD 95282f6c439c8a3667e3770ebe810f3de79615d9.
+Both authorized p0c-hier source worktrees are clean.
+Verified 248 R/test source files against the pre-run frozen manifest, in all three locations: main p0 worktrees, p0c-hier worktrees, and pod p0c-hier mirrors. Every SHA-256 matched.
+Manifest SHA-256 fdca20d0a0be8b60fcff4014fc5b91ba40d7900349f8512181c71cc0107fbae9
+Detail log SHA-256 c32fa37b44872dff7f401b1f754a70f8ce1167dbc817517562447b5e9701d9de
+Detail log bytes 134834
+RESULT failed: 0 errors: 0 skipped: 10 passed: 20525
+Summary reporter has no warnings section or warning lines. 0 unexpected warnings.
+Ten skips: CommonDataModel unavailable (2), SqlRender unavailable (4), Arrow unavailable (2), Node.js unavailable (1), macOS-only case on Linux (1).
+No full-run rerun was needed because the original run completed on the pod.
+No files deleted or code modified by this recovery.
+Pod test runner is byte-identical to local tools/run-tests.R; SHA-256 3cea77302b664ba250a6b135a6a475ca74d1ac9521eea0cedbd9c137d4c0a9b8.
+Matching sibling installation evidence:
+2026-11-12 13:52:45.909695408 +0000 531 /root/rt/lib/wt_p0c-hier_dsOMOP.install.log
+** using staged installation
+** R
+** inst
+** byte-compile and prepare package for lazy loading
+** help
+*** installing help indices
+** building package indices
+** installing vignettes
+** testing if installed package can be loaded from temporary location
+** testing if installed package can be loaded from final location
+** testing if installed package keeps a record of temporary installation path
+* DONE (dsOMOPClient)
+Package: dsOMOPClient
+Version: 2.10.3
+Built: R 4.6.2; ; 2026-11-12 13:52:38 UTC; unix

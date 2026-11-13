@@ -5,12 +5,12 @@
 # contract the client's recipe_to_plan() produces (dsOMOPClient/R/recipe.R):
 #   - criteria populations resolved through the cohort filter machinery
 #     (.buildCohortFromFilters / .compileCohortFilterWhere);
-#   - set-op populations (union / intersect / setdiff) folded with .cohortCombine
-#     in dependency order, each result fail-closed gated (.assertMinPersons);
+#   - private set-op populations (union / intersect / setdiff) folded with
+#     .cohortCombine in dependency order without an intermediate support gate;
 #   - a unified recipe-level scope (a cohort ref and/or an omop.table frame),
 #     folded by .omopAnalysisResolveScope and INTERSECTED into every population;
-#   - per-output execution over its population_id's gated, scope-narrowed set,
-#     with pseudonymized identifiers and the per-output person gate intact.
+#   - output execution over its population_id's scope-narrowed set, with final
+#     publication enforcing person support and pseudonymized identifiers.
 #
 # Everything runs on the shared SQLite fixture (create_test_handle). The
 # fixture's randomised clinical facts are too tangled for clean female set-math,
@@ -180,7 +180,7 @@ test_that("maintainer headline query: declarative recipe compiles AND executes",
                                         population_id = "final"))
 
   # (a) COMPILES: recipe_to_plan serializes every population + stamps the output.
-  plan <- dsOMOPClient::recipe_to_plan(recipe)
+  plan <- dsOMOPClient::recipe_to_plan(recipe, version = 1)
   expect_s3_class(plan, "omop_plan")
   expect_setequal(names(plan$populations),
                   c("base", "A", "B", "union_AB", "hasMeasZ", "final"))
@@ -638,7 +638,7 @@ test_that("plan execution releases every intermediate temp and is repeatable", {
   })
 })
 
-test_that("failed plan population folds release all newly owned temps", {
+test_that("small private population folds succeed and release newly owned temps", {
   skip_if_not_installed("RSQLite")
   h <- .so_handle(n_persons = 30)
   on.exit(cleanup_handle(h))
@@ -657,22 +657,21 @@ test_that("failed plan population folds release all newly owned temps", {
   baseline <- h$temp_tables
 
   withr::with_options(list(nfilter.subset = 3), {
-    expect_error(.planExecute(h, plan, list()),
-                 "Disclosive|disclosure threshold|insufficient")
+    # The intersection is {12}; no declared output makes it a private input.
+    expect_length(.planExecute(h, plan, list()), 0L)
   })
   expect_identical(h$temp_tables, baseline)
 })
 
 # ---------------------------------------------------------------------------
-# (e) every output is banded + person-gated — including a multi-population run
-#     where the OUTPUT's own per-output gate (inside .extractTable) must also
-#     fire when its population is too small.
+# (e) small private populations are valid inputs. Publication gates the final
+#     materialization, including outputs from multi-population plans.
 # ---------------------------------------------------------------------------
 
-test_that("a too-small criteria population fails closed before any output", {
+test_that("small criteria populations are private until final publication", {
   skip_if_not_installed("RSQLite")
-  # A = women + diabetes restricted to just {2,4} (2 persons < nfilter): the
-  # population gate in .planResolvePopulations fails closed.
+  # A = women + diabetes restricted to {2,4} (2 persons < nfilter). It may
+  # participate in a private plan, but the final two-person output is refused.
   h <- .so_handle(); on.exit(cleanup_handle(h))
   for (p in c(2, 4)) .so_ins_cond(h$conn, p, 201820L)
   .buildBlueprint(h)
@@ -681,9 +680,22 @@ test_that("a too-small criteria population fails closed before any output", {
       base = list(id = "base"),
       A = .so_crit("A", .so_sexF, .so_has_cond(201820L))),
     outputs = list())
+  baseline <- h$temp_tables
   withr::with_options(list(nfilter.subset = 3), {
-    expect_error(.planResolvePopulations(h, plan, .buildBlueprint(h)),
-                 "Disclosive|disclosure threshold|insufficient")
+    expect_length(.planExecute(h, plan, list()), 0L)
+    expect_identical(h$temp_tables, baseline)
+    plan$outputs <- list(study = list(
+      type = "person_level", population_id = "A",
+      tables = list(person = c("person_id", "gender_concept_id"))))
+    ctx <- .planContext(h, plan)
+    on.exit(.planContextClose(ctx), add = TRUE)
+    private <- .planExecute(h, plan, list(study = "study_sym"), ctx = ctx)$study
+    expect_equal(length(unique(private$person_id)), 2L)
+    expect_error(.publishStandalone(private, handle = h,
+                                    caller = "recipe-setops-test",
+                                    already_tokenized = FALSE),
+                 "insufficient individuals")
+    expect_identical(h$temp_tables, baseline)
   })
 })
 

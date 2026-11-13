@@ -807,6 +807,11 @@
 #' @return A live DBI connection.
 #' @keywords internal
 .conn <- function(handle) {
+  # Inside a request's read snapshot the pinned connection serves every
+  # statement and is never silently replaced (read_snapshot.R).
+  if (.dsomopReadSnapshotActive(handle) && !is.null(handle$read_snapshot$conn)) {
+    return(.dsomopSnapshotConn(handle))
+  }
   rc <- handle$resource_client
   if (!is.null(rc)) {
     conn <- rc$getConnection()
@@ -913,6 +918,12 @@
 #' @return The value returned by \code{fn}.
 #' @keywords internal
 .withDbReconnect <- function(handle, fn) {
+  # Inside a request's read snapshot: the pinned connection, a SAVEPOINT per
+  # statement on PostgreSQL, and no reconnect (a lost connection ends the
+  # request instead of resuming on a new snapshot).
+  if (.dsomopReadSnapshotActive(handle) && !is.null(handle$read_snapshot$conn)) {
+    return(.dsomopSnapshotRun(handle, fn))
+  }
   # Fail closed when a query hits a missing object but dsOMOP is still tracking
   # session temp tables — i.e. a reconnect dropped the cohort/working tables.
   .stopIfTempTablesLost <- function(e) {
@@ -1239,6 +1250,7 @@
       is_untyped_identifier = logical(nrow(db_cols)),
       is_sensitive  = logical(nrow(db_cols)),
       is_blocked   = logical(nrow(db_cols)),
+      is_quasi_identifier = logical(nrow(db_cols)),
       stringsAsFactors = FALSE
     )
 
@@ -1285,6 +1297,11 @@
       col_df$is_sensitive[j] <- .detectSensitiveColumns(col_name)
       col_df$is_blocked[j] <- col_df$is_sensitive[j] ||
         col_df$is_untyped_identifier[j]
+      # Informational assignment classification; aggregate flags above retain
+      # their existing policy, including refusal of exact birth components.
+      col_df$is_quasi_identifier[j] <-
+        .assignmentQuasiIdentifier(col_name) &&
+        !.assignmentBlockedColumn(col_name, col_df[j, , drop = FALSE])
     }
 
     columns[[tbl_name]] <- col_df
@@ -1989,7 +2006,9 @@
                                  bp$tables$table_name[bp$tables$present_in_db]),
     database_support = .databaseSupportProfile(handle$dbms),
     disclosure = disclosure,
-    pseudonymization = .personKeyPublicContract(handle)
+    pseudonymization = .personKeyPublicContract(handle),
+    # Recipe-language declaration (design-2.10.3 section 4.4, defect A-E7).
+    recipe_language = .recipeLanguageCapability(handle)
   )
 }
 
@@ -2001,6 +2020,7 @@
 #' @return Data frame returned by DBI.
 #' @keywords internal
 .metadataQuery <- function(handle, sql) {
+  .dsomopSnapshotReadSql(handle, sql)
   .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql))
 }
 
@@ -2562,6 +2582,7 @@
     sql <- .renderSql(handle,
       "SELECT TOP 1 * FROM @qualified",
       qualified = qualified)
+    .dsomopSnapshotReadSql(handle, sql)
     result <- .coerce_integer64(
       .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql)))
     if (nrow(result) == 0) return(NULL)
@@ -2655,7 +2676,17 @@
          as.integer(max_tables), "); clean up temporary cohorts/outputs before ",
          "creating more.", call. = FALSE)
   }
-  .withDbReconnect(handle, function(active_conn) DBI::dbExecute(active_conn, sql))
+  if (.dsomopReadSnapshotActive(handle) &&
+      identical(handle$read_snapshot$kind, "consistent_snapshot_transaction")) {
+    # InnoDB reads CREATE ... SELECT with locking reads of the latest rows:
+    # inside a snapshot, fill the table from a consistent read instead.
+    .dsomopSnapshotMaterializeTemp(handle, name, select_sql)
+  } else {
+    .dsomopSnapshotGuard(handle, sql)
+    .withDbReconnect(handle, function(active_conn) {
+      DBI::dbExecute(active_conn, sql)
+    })
+  }
   active_conn <- .conn(handle)
   # The CREATE itself may have triggered .withDbReconnect(). Any names retained
   # above belonged to `conn`, not to the replacement session. Clear them before
@@ -2723,7 +2754,12 @@
   # Keep ownership until the database confirms the DROP.  Forgetting a table
   # after a failed DROP would make cleanup appear successful, prevent a retry,
   # and under-count the per-handle temporary-object cap.
-  DBI::dbExecute(conn, drop_sql)
+  if (.dsomopReadSnapshotActive(handle) && !is.null(handle$read_snapshot$conn)) {
+    .dsomopSnapshotGuard(handle, drop_sql)
+    .dsomopSnapshotRun(handle, function(conn) DBI::dbExecute(conn, drop_sql))
+  } else {
+    DBI::dbExecute(conn, drop_sql)
+  }
   handle$temp_tables <- setdiff(handle$temp_tables, name)
   if (length(handle$temp_tables) == 0L) handle$temp_connection <- NULL
   invisible(NULL)

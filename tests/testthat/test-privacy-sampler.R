@@ -174,30 +174,41 @@ test_that("keyed discrete Laplace is deterministic across fresh streams", {
   expect_match(as.character(small_epsilon), "^-?[0-9]+$")
 })
 
-test_that("noisy integer addition and clipping happen before numeric conversion", {
+test_that("protected noise is added exactly before numeric conversion", {
+  # dsOMOP 2.10.3: a protected component is the exact signed sum of its value
+  # and its discrete-Laplace noise (big-integer arithmetic, no clipping);
+  # views clip afterwards.
   policy <- list(
-    mechanism = "test", sampler = .DSOMOP_DP_SAMPLER,
-    privacy_epoch = 1L, keys = list(noise = .dp_sampler_key)
+    noise_root = list(key = .dp_sampler_key), domain = "sampler-test",
+    snapshot_id = "sampler-snapshot", privacy_epoch = 1L,
+    data_generation = strrep("3", 64L),
+    release_epsilon = 0.1, mechanism = "test", sampler = .DSOMOP_DP_SAMPLER
   )
-  with_noise <- function(noise, value = 100, lower = 0, upper = 2^53 - 1) {
+  component <- list(owner = "test/owner/v1", population = "sampler-test",
+                    family = "N", coordinate = "stratum=root", value = 100,
+                    allocation = 1, sensitivity = 1,
+                    fingerprint = strrep("ab", 32L))
+  with_noise <- function(noise, value = 100) {
     testthat::with_mocked_bindings(
-      .dsomopDpNoisyInteger(
-        value, policy, list(), "count", 0.1, 1, lower, upper
+      .dsomopReleaseNoisyComponent(
+        policy, .dsomopReleaseKeys(policy), "fixed_synopsis",
+        utils::modifyList(component, list(value = value))
       ),
       .dsomopDpDiscreteLaplace = function(...) noise,
       .package = "dsOMOP"
     )
   }
   big <- function(x) .dsomopBigInteger(x)
-  expect_identical(with_noise(.dsomopBigShiftLeft(1L, 100L)), 2^53 - 1)
-  expect_identical(with_noise(.dsomopBigNegate(.dsomopBigShiftLeft(1L, 100L))),
-                   0)
+  expect_identical(with_noise(big(1L), 2^53 - 1), 2^53)
   expect_identical(with_noise(
-    .dsomopBigAdd(.dsomopBigNegate(.dsomopBigShiftLeft(1L, 53L)), 2L), 2^53 - 1
-  ), 1)
-  expect_identical(with_noise(big(1L), 2^53 - 1), 2^53 - 1)
-  expect_identical(with_noise(big(-200L), lower = -10), -10)
-  expect_identical(with_noise(big(200L), upper = 120), 120)
+    .dsomopBigAdd(.dsomopBigNegate(.dsomopBigShiftLeft(1L, 53L)), 2L)
+  ), 102 - 2^53)
+  expect_equal(with_noise(.dsomopBigShiftLeft(1L, 100L)), 2^100)
+  expect_equal(with_noise(.dsomopBigNegate(.dsomopBigShiftLeft(1L, 100L))),
+               -2^100)
+  # Signed: a negative noisy component is kept for pooling.
+  expect_identical(with_noise(big(-200L)), -100)
+  expect_error(with_noise(big(1L), 2^53), "not exactly representable")
 })
 
 .dp_sampler_distribution <- function(epsilon, sensitivity, n = 10000L) {

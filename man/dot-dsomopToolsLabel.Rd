@@ -11,9 +11,10 @@
 
 \item{entry}{Catalog entry.}
 
-\item{protection}{"dp", "standard_fallback" or "standard".}
+\item{protection}{"standard_fallback", "standard" (or a protected route
+label set by a release contract).}
 
-\item{dp}{DP release metadata (DP only).}
+\item{dp}{Unused; kept for signature compatibility.}
 
 \item{extra}{Public extras (e.g. reference year).}
 }

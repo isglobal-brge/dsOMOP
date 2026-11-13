@@ -10,17 +10,23 @@
 \item{design}{Design matrix from \code{\link{.omopCmPropensityDesign}}.}
 }
 \value{
-Numeric vector of per-subject propensity scores (length = nrow(design)).
+Numeric vector of per-subject propensity scores (length =
+  nrow(design)) with attribute \code{dsomop_model_admission}.
 }
 \description{
 Fits \code{stats::glm(arm ~ covariates, family = binomial)} on the loaded
 design matrix IN THE SERVER-SIDE R SESSION and returns each subject's fitted
 propensity score (the predicted probability of being in the target arm).
-Covariate columns that are constant across all subjects (no contrast) are
-dropped before fitting so the glm is well posed; if NO covariate varies the
-model is intercept-only (every score equals the marginal target prevalence,
-which still yields a valid — if uninformative — distribution). The returned
-vector aligns row-for-row with \code{design}; the fitted model object is NOT
-returned (coefficients never leave R).
+Covariates are admitted by \code{\link{.omopModelAdmitBinaryDesign}} with the
+arm as the response: a covariate needs \code{nfilter.tab} persons with and
+without it WITHIN the target arm AND WITHIN the comparator arm (a supported
+marginal is not enough; the AUC would otherwise solve a small arm-by-covariate
+cell). An inadmissible arm vector (missing values, wrong length, an arm below
+\code{nfilter.tab}) stops: no model is released, and in particular no
+intercept-only substitute. When the arms are admissible but no covariate
+passes, the explicit intercept-only contract applies
+(\code{.DSOMOP_PS_INTERCEPT_ONLY_CONTRACT}). The returned vector aligns
+row-for-row with \code{design}; the fitted model object is NOT returned
+(coefficients never leave R).
 }
 \keyword{internal}

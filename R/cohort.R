@@ -123,12 +123,14 @@
 #' @param name Reserved for a future \code{cohort_definition} metadata writer.
 #'   This function currently writes cohort rows only and does not create or
 #'   update a \code{cohort_definition} record.
+#' @param ctx Server-created private execution context, or NULL for standalone use.
 #' @param overwrite Logical; overwrite existing cohort
 #' @return Character; temp table name or confirmation message
 #' @keywords internal
 .cohortCreate <- function(handle, spec, mode = "temporary",
                           cohort_id = NULL, name = NULL,
-                          overwrite = FALSE) {
+                          overwrite = FALSE, ctx = NULL) {
+  private <- .cohortPrivateContext(ctx)
   mode <- match.arg(mode, c("temporary", "persistent"))
   if (!is.list(spec)) {
     stop("Cohort spec must be a named list.", call. = FALSE)
@@ -247,9 +249,9 @@
     value_bin <- spec$value_bin
     if (!is.list(value_bin) || is.null(names(value_bin)) ||
         any(!nzchar(names(value_bin))) || anyDuplicated(names(value_bin)) ||
-        !setequal(names(value_bin), c("lower", "upper", "safe_scope")) ||
-        length(names(value_bin)) != 3L) {
-      stop("value_bin must contain exactly lower, upper, and safe_scope.",
+        !all(c("lower", "upper") %in% names(value_bin)) ||
+        length(setdiff(names(value_bin), c("lower", "upper", "safe_scope")))) {
+      stop("value_bin requires lower and upper, with optional safe_scope.",
            call. = FALSE)
     }
     if (!"value_as_number" %in% src_cols) {
@@ -258,26 +260,33 @@
     }
     lower <- suppressWarnings(as.numeric(value_bin$lower))
     upper <- suppressWarnings(as.numeric(value_bin$upper))
+    if (length(lower) != 1L || length(upper) != 1L ||
+        !is.finite(lower) || !is.finite(upper) || lower >= upper) {
+      stop("value_bin requires finite scalar lower/upper bounds with lower < upper.",
+           call. = FALSE)
+    }
     .assertSafeNumericBinContract(
       handle, table = source_table, column = "value_as_number",
       value = list(lower = lower, upper = upper),
       scope = value_bin$safe_scope
     )
-    scope_concept <- value_bin$safe_scope$concept_id %||% NULL
-    scope_concept_col <- value_bin$safe_scope$concept_col %||% NULL
-    if (length(concept_ids) == 0L) {
-      if (!is.null(scope_concept)) {
-        stop("value_bin concept scope does not match the cohort concept_set.",
-             call. = FALSE)
+    if (!is.null(value_bin$safe_scope)) {
+      scope_concept <- value_bin$safe_scope$concept_id %||% NULL
+      scope_concept_col <- value_bin$safe_scope$concept_col %||% NULL
+      if (length(concept_ids) == 0L) {
+        if (!is.null(scope_concept)) {
+          stop("value_bin concept scope does not match the cohort concept_set.",
+               call. = FALSE)
+        }
+      } else if (length(concept_ids) != 1L ||
+                 length(scope_concept) != 1L ||
+                 is.na(suppressWarnings(as.integer(scope_concept))) ||
+                 as.integer(scope_concept) != concept_ids[[1]] ||
+                 !identical(tolower(scope_concept_col %||% concept_col),
+                            tolower(concept_col))) {
+        stop("value_bin requires one concept and a matching server-issued ",
+             "concept scope.", call. = FALSE)
       }
-    } else if (length(concept_ids) != 1L ||
-               length(scope_concept) != 1L ||
-               is.na(suppressWarnings(as.integer(scope_concept))) ||
-               as.integer(scope_concept) != concept_ids[[1]] ||
-               !identical(tolower(scope_concept_col %||% concept_col),
-                          tolower(concept_col))) {
-      stop("value_bin requires one concept and a matching server-issued ",
-           "concept scope.", call. = FALSE)
     }
     where <- c(where, paste0(
       "value_as_number >= ", lower,
@@ -294,7 +303,7 @@
     "SELECT COUNT(DISTINCT sub.subject_id) AS n ",
     "FROM (", sql, ") sub"
   )
-  .assertMinPersons(handle = handle, sql = person_count_sql)
+  if (!private) .assertMinPersons(handle = handle, sql = person_count_sql)
 
   if (mode == "temporary") {
     temp_name <- paste0("dsomop_cohort_", as.integer(cohort_id %||% 0))
@@ -303,7 +312,7 @@
     # Apply inclusion criteria if specified
     if (!is.null(spec$inclusion_criteria)) {
       temp_name <- .applyInclusionCriteria(
-        handle, temp_name, spec$inclusion_criteria
+        handle, temp_name, spec$inclusion_criteria, ctx = ctx
       )
     }
     return(temp_name)
@@ -323,7 +332,7 @@
       build_temp <- paste0("dsomop_cohort_build_", as.integer(cohort_id))
       .createTempTable(handle, build_temp, sql)
       build_temp <- .applyInclusionCriteria(
-        handle, build_temp, spec$inclusion_criteria
+        handle, build_temp, spec$inclusion_criteria, ctx = ctx
       )
       on.exit(if (!is.null(build_temp)) .dropTempTable(handle, build_temp),
               add = TRUE)
@@ -351,6 +360,12 @@
     # Persistent replacement must be all-or-nothing.  In particular, never
     # reconnect between DELETE and INSERT: a reconnect would leave the old
     # cohort deleted outside the transaction that protects its replacement.
+    # A persistent write never runs inside a request's read snapshot, whose
+    # transaction it would end (read_snapshot.R).
+    if (.dsomopReadSnapshotActive(handle)) {
+      stop("A persistent cohort cannot be written inside a read-only ",
+           "release request.", call. = FALSE)
+    }
     conn <- .conn(handle)
     tryCatch(
       DBI::dbWithTransaction(conn, {
@@ -389,11 +404,13 @@
 #' @param op Character; "intersect", "union", or "setdiff"
 #' @param cohort_table_a Character; first cohort temp table
 #' @param cohort_table_b Character; second cohort temp table
+#' @param ctx Server-created private execution context, or NULL for standalone use.
 #' @param new_name Character; name for result temp table
 #' @return Character; result temp table name
 #' @keywords internal
 .cohortCombine <- function(handle, op, cohort_table_a, cohort_table_b,
-                           new_name = NULL) {
+                           new_name = NULL, ctx = NULL) {
+  private <- .cohortPrivateContext(ctx)
   cohort_table_a <- .validateIdentifier(cohort_table_a, "first cohort")
   cohort_table_b <- .validateIdentifier(cohort_table_b, "second cohort")
   owned <- unique(handle$temp_tables %||% character(0))
@@ -447,7 +464,7 @@
   person_count_sql <- paste0(
     "SELECT COUNT(DISTINCT subject_id) AS n FROM (", sql, ") AS combined"
   )
-  .assertMinPersons(handle = handle, sql = person_count_sql)
+  if (!private) .assertMinPersons(handle = handle, sql = person_count_sql)
 
   result_name <- new_name %||% paste0("dsomop_cohort_combined_",
                                        sample(1000:9999, 1))
@@ -463,9 +480,11 @@
 #' @param handle CDM handle
 #' @param cohort_temp Character; cohort temp table name
 #' @param criteria List of inclusion criterion specs
+#' @param ctx Server-created private execution context, or NULL for standalone use.
 #' @return Character; filtered cohort temp table name
 #' @keywords internal
-.applyInclusionCriteria <- function(handle, cohort_temp, criteria) {
+.applyInclusionCriteria <- function(handle, cohort_temp, criteria, ctx = NULL) {
+  private <- .cohortPrivateContext(ctx)
   if (is.null(criteria) || length(criteria) == 0) return(cohort_temp)
   if (!is.list(criteria)) {
     stop("inclusion_criteria must be a list of named criteria.",
@@ -662,7 +681,7 @@
   final_count_sql <- paste0(
     "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort_temp
   )
-  .assertMinPersons(handle = handle, sql = final_count_sql)
+  if (!private) .assertMinPersons(handle = handle, sql = final_count_sql)
 
   cohort_temp
 }
@@ -686,12 +705,14 @@
 #' fewer than \code{nfilter_subset} persons can never be used to scope a query.
 #'
 #' @param handle CDM handle.
+#' @param ctx Server-created private execution context, or NULL for standalone use.
 #' @param cohort A cohort temp-table name (character), a cohort_definition_id
 #'   (numeric), or \code{NULL}.
 #' @return Character cohort temp table name, or \code{NULL} when \code{cohort} is
 #'   \code{NULL}.
 #' @keywords internal
-.resolveCohortTable <- function(handle, cohort) {
+.resolveCohortTable <- function(handle, cohort, ctx = NULL) {
+  private <- .cohortPrivateContext(ctx)
   if (is.null(cohort)) return(NULL)
 
   # A bare cohort_definition_id: materialize from the cohort results table, then
@@ -714,7 +735,7 @@
 
     count_sql <- paste0(
       "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort_table)
-    .assertMinPersons(handle = handle, sql = count_sql)
+    if (!private) .assertMinPersons(handle = handle, sql = count_sql)
     return(cohort_table)
   }
 
@@ -730,7 +751,7 @@
   }
   count_sql <- paste0(
     "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort_table)
-  .assertMinPersons(handle = handle, sql = count_sql)
+  if (!private) .assertMinPersons(handle = handle, sql = count_sql)
   cohort_table
 }
 
@@ -757,13 +778,15 @@
 #'   connection).
 #' @param x A token-keyed \code{omop.table} data.frame (resolved from a session
 #'   symbol by DataSHIELD).
+#' @param ctx Server-created private execution context, or NULL for standalone use.
 #' @param new_name Character; the cohort temp table name to create. When NULL a
 #'   random name is generated. The client passes a deterministic name so the
 #'   returned handle points at a table it can name in later \code{cohort=} calls
 #'   (mirrors \code{.cohortCombine}).
 #' @return Character; the cohort temp table name.
 #' @keywords internal
-.cohortFromTokenFrame <- function(handle, x, new_name = NULL) {
+.cohortFromTokenFrame <- function(handle, x, new_name = NULL, ctx = NULL) {
+  private <- .cohortPrivateContext(ctx)
   if (!.is_omop.table(x)) {
     stop("omopCohortFromTableDS: input must be a dsOMOP table (omop.table).",
          call. = FALSE)
@@ -799,7 +822,7 @@
   # number of real persons; gate on it BEFORE writing any table (fail-closed).
   original_ids <- unique(.unhashPersonKey(tokens, person_key))
   original_ids <- original_ids[!is.na(original_ids)]
-  .assertMinPersons(n_persons = length(original_ids))
+  if (!private) .assertMinPersons(n_persons = length(original_ids))
 
   bp <- .buildBlueprint(handle)
   temp_name <- if (!is.null(new_name)) {
@@ -852,7 +875,24 @@
   # still clear the threshold, else it is unusable and unproducible.
   count_sql <- paste0(
     "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort_table)
-  .assertMinPersons(handle = handle, sql = count_sql)
+  if (!private) .assertMinPersons(handle = handle, sql = count_sql)
 
   cohort_table
+}
+
+#' Validate a private context for shared cohort primitives
+#'
+#' A missing context preserves the standalone cohort creation floor. Only an
+#' active server-created plan context may bypass that floor for private inputs;
+#' a list copied from a client field can never grant private execution.
+#'
+#' @param ctx A server-created plan context, or NULL.
+#' @return Whether the caller is executing privately.
+#' @keywords internal
+.cohortPrivateContext <- function(ctx = NULL) {
+  if (is.null(ctx)) return(FALSE)
+  if (!.isPlanContext(ctx) || !isTRUE(ctx$private)) {
+    stop("Invalid private execution context.", call. = FALSE)
+  }
+  TRUE
 }

@@ -63,7 +63,7 @@
 # Compile a recipe and execute its plan on a fresh handle. Returns the result
 # list (named by output). Used inside withr::with_options(nfilter.subset=...).
 .reach_run <- function(recipe) {
-  plan <- dsOMOPClient::recipe_to_plan(recipe)
+  plan <- dsOMOPClient::recipe_to_plan(recipe, version = 1)
   syms <- stats::setNames(paste0("D_", names(plan$outputs)), names(plan$outputs))
   h <- .reach_handle()
   on.exit(cleanup_handle(h))
@@ -263,7 +263,7 @@ test_that("reach C: blocked value_source is rejected at compile", {
     k$v(name = "smoke_freetext", table = "observation", concept_id = 4275495,
         value_source = "value_as_string", format = "last_value")),
     outputs = k$out("rec_bad", type = "wide"))
-  expect_error(dsOMOPClient::recipe_to_plan(recipe), "blocked|Disclos")
+  expect_error(dsOMOPClient::recipe_to_plan(recipe, version = 1), "blocked|Disclos")
 })
 
 # ----------------------------------------------------------------------------
@@ -302,12 +302,12 @@ test_that("reach SAFETY: gate fires on tiny intersection when re-enabled", {
     expect_true(nrow(res0[["o"]]) > 0)
   })
 
-  # Gate ON (strict threshold): the SAME recipe fails closed before producing
-  # the output (the population resolver gates each set-op result fail-closed).
+  # Gate ON (strict threshold): the same recipe is refused at publication
+  # because the final output has insufficient support.
   withr::with_options(list(nfilter.subset = 50), {
     expect_error(
       {
-        plan <- dsOMOPClient::recipe_to_plan(recipe)
+        plan <- dsOMOPClient::recipe_to_plan(recipe, version = 1)
         syms <- stats::setNames("D_o", "o")
         h <- .reach_handle(); on.exit(cleanup_handle(h))
         .planExecute(h, plan, syms)
@@ -317,26 +317,43 @@ test_that("reach SAFETY: gate fires on tiny intersection when re-enabled", {
 })
 
 # ----------------------------------------------------------------------------
-# SAFETY: a narrow age_range (width < 5) is rejected while the gate is ON.
+# SAFETY: narrow age ranges are allowed; only final publication support gates.
 # ----------------------------------------------------------------------------
-test_that("reach SAFETY: narrow age_range blocked while gate is ON", {
+test_that("reach SAFETY: narrow age_range release depends only on publication support", {
   skip_if_not_installed("RSQLite"); skip_if_not_installed("pkgload")
   skip_if(is.null(.reach_fixture_path), "reach fixture not found")
   skip_if_not(.reach_client_ready(), "working-tree dsOMOPClient not loadable")
   k <- C()
   f_age <- dsOMOPClient::omop_filter_age
   recipe <- k$r(
-    populations = k$pop("u", filters = list(f_age(min = 121, max = 122))),
-    variables = k$va_age(),
+    populations = k$pop("u", filters = list(f_age(
+      min = 30, max = 31, reference_date = "2020-07-01"))),
+    variables = k$va_age(reference_date = "2020-07-01"),
     outputs = k$out("n", type = "wide", population_id = "u"))
-  withr::with_options(list(nfilter.subset = 3), {
-    expect_error(
-      {
-        plan <- dsOMOPClient::recipe_to_plan(recipe)
-        syms <- stats::setNames("D_n", "n")
-        h <- .reach_handle(); on.exit(cleanup_handle(h))
-        .planExecute(h, plan, syms)
-      },
-      "age_range|Disclos|fingerprint")
+  plan <- dsOMOPClient::recipe_to_plan(recipe, version = 1)
+  syms <- c(n = "D_n")
+  h <- .reach_handle()
+  on.exit(cleanup_handle(h), add = TRUE)
+  .setLegacyTestPersonKey(h, "reach-narrow-age", .local_envir = environment())
+  # Twelve fixture persons were born in 1990. The same one-year range runs
+  # privately at both thresholds, including when its final support is too low.
+  for (threshold in c(3L, 13L)) local({
+    withr::local_options(list(nfilter.subset = threshold, dsomop.query_strict = TRUE))
+    ctx <- .planContext(h, plan)
+    on.exit(.planContextClose(ctx), add = TRUE)
+    outputs <- .planExecute(h, plan, syms, ctx = ctx)
+    expect_equal(nrow(outputs$n), 12L)
+    expect_true(all(outputs$n$age == 30L))
+    expect_identical(ls(ctx$target_env), character(0))
+    status <- .publishOutputs(ctx, outputs, syms)
+    if (threshold == 3L) {
+      expect_identical(status$status, "ok")
+      expect_equal(nrow(get("D_n", ctx$target_env)), 12L)
+    } else {
+      expect_identical(status$status, "refused")
+      expect_identical(status$rejected$n$code, "insufficient_support")
+      expect_identical(ls(ctx$target_env), character(0))
+    }
+    .publishAbort(ctx)
   })
 })

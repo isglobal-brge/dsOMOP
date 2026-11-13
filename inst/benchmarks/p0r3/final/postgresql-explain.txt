@@ -1,0 +1,13 @@
+                                                                                                         QUERY PLAN
+1                                                  GroupAggregate  (cost=2174126.61..2447759.93 rows=200 width=104)
+2                                                                        Group Key: ((dsomop_membership.p / 10000))
+3                                                     ->  Sort  (cost=2174126.61..2199001.73 rows=9950048 width=20)
+4                                                                         Sort Key: ((dsomop_membership.p / 10000))
+5                              ->  Subquery Scan on dsomop_membership  (cost=0.43..609504.99 rows=9950048 width=20)
+6                                                           ->  Group  (cost=0.43..485129.39 rows=9950048 width=12)
+7                                                                                       Group Key: person.person_id
+8                      ->  Index Only Scan using person_pkey on person  (cost=0.43..460254.27 rows=9950048 width=8)
+9                                                                               Index Cond: (person_id IS NOT NULL)
+10                                                                                                             JIT:
+11                                                                                                     Functions: 9
+12                                      Options: Inlining true, Optimization true, Expressions true, Deforming true

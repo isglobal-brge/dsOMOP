@@ -79,12 +79,118 @@
   list(username = username, password = password)
 }
 
+# The separated-namespace contract fixture: three persons, decoy same-named
+# tables in the CDM schema, and two results cohorts. Returns SQL statements
+# for the admin connection.
+.dsomopVendorContractStatements <- function(cdm, vocab, results) {
+  c(
+    paste0("CREATE TABLE ", cdm, ".cdm_source (",
+           "cdm_source_name VARCHAR(255), ",
+           "cdm_source_abbreviation VARCHAR(25), ",
+           "cdm_version VARCHAR(10), vocabulary_version VARCHAR(255))"),
+    paste0("CREATE TABLE ", cdm, ".person (",
+           "person_id BIGINT NOT NULL, gender_concept_id INTEGER NOT NULL, ",
+           "year_of_birth INTEGER NOT NULL, race_concept_id INTEGER NOT NULL, ",
+           "ethnicity_concept_id INTEGER NOT NULL)"),
+    paste0("CREATE TABLE ", cdm, ".observation_period (",
+           "observation_period_id BIGINT NOT NULL, person_id BIGINT NOT NULL, ",
+           "observation_period_start_date DATE NOT NULL, ",
+           "observation_period_end_date DATE NOT NULL, ",
+           "period_type_concept_id INTEGER NOT NULL)"),
+    paste0("CREATE TABLE ", cdm, ".condition_occurrence (",
+           "condition_occurrence_id BIGINT NOT NULL, person_id BIGINT NOT NULL, ",
+           "condition_concept_id INTEGER NOT NULL, ",
+           "condition_start_date DATE NOT NULL, condition_end_date DATE, ",
+           "condition_type_concept_id INTEGER NOT NULL, ",
+           "visit_occurrence_id BIGINT)"),
+    paste0("CREATE TABLE ", vocab, ".concept (",
+           "concept_id INTEGER NOT NULL, concept_name VARCHAR(255) NOT NULL, ",
+           "domain_id VARCHAR(20) NOT NULL, vocabulary_id VARCHAR(20) NOT NULL, ",
+           "concept_class_id VARCHAR(20) NOT NULL, standard_concept VARCHAR(1), ",
+           "concept_code VARCHAR(50) NOT NULL, valid_start_date DATE NOT NULL, ",
+           "valid_end_date DATE NOT NULL, invalid_reason VARCHAR(1))"),
+    paste0("CREATE TABLE ", vocab, ".concept_ancestor (",
+           "ancestor_concept_id INTEGER NOT NULL, ",
+           "descendant_concept_id INTEGER NOT NULL, ",
+           "min_levels_of_separation INTEGER NOT NULL, ",
+           "max_levels_of_separation INTEGER NOT NULL)"),
+    paste0("CREATE TABLE ", results, ".cohort_definition (",
+           "cohort_definition_id INTEGER NOT NULL, ",
+           "cohort_definition_name VARCHAR(255) NOT NULL, ",
+           "cohort_definition_description VARCHAR(1000), ",
+           "definition_type_concept_id INTEGER NOT NULL, ",
+           "cohort_definition_syntax VARCHAR(1000), ",
+           "subject_concept_id INTEGER NOT NULL, cohort_initiation_date DATE)"),
+    paste0("CREATE TABLE ", results, ".cohort (",
+           "cohort_definition_id INTEGER NOT NULL, subject_id BIGINT NOT NULL, ",
+           "cohort_start_date DATE NOT NULL, cohort_end_date DATE NOT NULL)"),
+
+    # Same-named decoys make namespace bleed observable. Correct routing must
+    # never read either object.
+    paste0("CREATE TABLE ", cdm, ".concept (",
+           "concept_id INTEGER, concept_name VARCHAR(255))"),
+    paste0("CREATE TABLE ", cdm, ".cohort (",
+           "cohort_definition_id INTEGER, subject_id BIGINT, ",
+           "cohort_start_date DATE, cohort_end_date DATE)"),
+
+    paste0("INSERT INTO ", cdm, ".cdm_source VALUES ",
+           "('Vendor integration fixture', 'DSOMOP_IT', '5.4', 'test')"),
+    paste0("INSERT INTO ", cdm, ".person VALUES ",
+           "(1, 8507, 1970, 8527, 38003564), ",
+           "(2, 8532, 1980, 8527, 38003564), ",
+           "(3, 8507, 1990, 8527, 38003564)"),
+    paste0("INSERT INTO ", cdm, ".observation_period VALUES ",
+           "(1, 1, '2019-01-01', '2022-12-31', 44814724), ",
+           "(2, 2, '2019-01-01', '2022-12-31', 44814724), ",
+           "(3, 3, '2019-01-01', '2022-12-31', 44814724)"),
+    paste0("INSERT INTO ", cdm, ".condition_occurrence VALUES ",
+           "(1, 1, 201820, '2020-01-01', '2020-01-03', 32020, NULL), ",
+           "(2, 1, 201820, '2020-02-01', '2020-02-03', 32020, NULL), ",
+           "(3, 2, 201820, '2020-03-01', '2020-03-03', 32020, NULL), ",
+           "(4, 3, 201820, '2021-01-01', '2021-01-03', 32020, NULL)"),
+    paste0("INSERT INTO ", vocab, ".concept VALUES ",
+           "(201820, 'Type 2 diabetes mellitus', 'Condition', 'SNOMED', ",
+           "'Clinical Finding', 'S', '44054006', '1970-01-01', ",
+           "'2099-12-31', NULL)"),
+    paste0("INSERT INTO ", vocab, ".concept_ancestor VALUES ",
+           "(201820, 201820, 0, 0)"),
+    paste0("INSERT INTO ", results, ".cohort_definition VALUES ",
+           "(7, 'All fixture persons', 'Integration test cohort', 0, ",
+           "'{}', 1147314, '2022-01-01'), ",
+           "(8, 'Recurrent fixture episodes', 'Longitudinal test cohort', 0, ",
+           "'{}', 1147314, '2022-01-01')"),
+    paste0("INSERT INTO ", results, ".cohort VALUES ",
+           "(7, 1, '2020-01-01', '2020-12-31'), ",
+           "(7, 2, '2020-01-01', '2020-12-31'), ",
+           "(7, 3, '2020-01-01', '2020-12-31'), ",
+           "(8, 1, '2020-01-01', '2020-01-31'), ",
+           "(8, 1, '2020-02-01', '2020-02-29'), ",
+           "(8, 2, '2020-01-01', '2020-01-31'), ",
+           "(8, 2, '2020-03-01', '2020-03-31'), ",
+           "(8, 3, '2020-01-01', '2020-01-31'), ",
+           "(8, 3, '2021-01-01', '2021-01-31')"),
+    paste0("CREATE VIEW ", results, ".longitudinal_cohort AS ",
+           "SELECT subject_id, cohort_start_date, cohort_end_date FROM ",
+           results, ".cohort WHERE cohort_definition_id = 8"),
+    paste0("CREATE VIEW ", results, ".full_cohort AS ",
+           "SELECT subject_id, cohort_start_date, cohort_end_date FROM ",
+           results, ".cohort WHERE cohort_definition_id = 7"),
+    paste0("INSERT INTO ", cdm, ".concept VALUES (999, 'WRONG SCHEMA')"),
+    paste0("INSERT INTO ", cdm, ".cohort VALUES ",
+           "(99, 999, '2020-01-01', '2020-12-31')")
+  )
+}
+
 .dsomopVendorExecuteAll <- function(conn, statements) {
   for (statement in statements) DBI::dbExecute(conn, statement)
   invisible(NULL)
 }
 
-.dsomopVendorCreateFixture <- function(config) {
+# Build an isolated vendor fixture: three generated namespaces, a distinct
+# least-privilege runtime login and an OMOP handle on them. `statements`, when
+# given, is function(cdm, vocab, results) returning the admin SQL that creates
+# and fills the fixture tables; the default is the namespace contract fixture.
+.dsomopVendorCreateFixture <- function(config, statements = NULL) {
   context <- new.env(parent = emptyenv())
   context$config <- config
   context$admin <- .dsomopVendorAdminConnection(config)
@@ -175,102 +281,12 @@
     vocab <- context$schemas[["vocab"]]
     results <- context$schemas[["results"]]
 
-    .dsomopVendorExecuteAll(context$admin, c(
-      paste0("CREATE TABLE ", cdm, ".cdm_source (",
-             "cdm_source_name VARCHAR(255), ",
-             "cdm_source_abbreviation VARCHAR(25), ",
-             "cdm_version VARCHAR(10), vocabulary_version VARCHAR(255))"),
-      paste0("CREATE TABLE ", cdm, ".person (",
-             "person_id BIGINT NOT NULL, gender_concept_id INTEGER NOT NULL, ",
-             "year_of_birth INTEGER NOT NULL, race_concept_id INTEGER NOT NULL, ",
-             "ethnicity_concept_id INTEGER NOT NULL)"),
-      paste0("CREATE TABLE ", cdm, ".observation_period (",
-             "observation_period_id BIGINT NOT NULL, person_id BIGINT NOT NULL, ",
-             "observation_period_start_date DATE NOT NULL, ",
-             "observation_period_end_date DATE NOT NULL, ",
-             "period_type_concept_id INTEGER NOT NULL)"),
-      paste0("CREATE TABLE ", cdm, ".condition_occurrence (",
-             "condition_occurrence_id BIGINT NOT NULL, person_id BIGINT NOT NULL, ",
-             "condition_concept_id INTEGER NOT NULL, ",
-             "condition_start_date DATE NOT NULL, condition_end_date DATE, ",
-             "condition_type_concept_id INTEGER NOT NULL, ",
-             "visit_occurrence_id BIGINT)"),
-      paste0("CREATE TABLE ", vocab, ".concept (",
-             "concept_id INTEGER NOT NULL, concept_name VARCHAR(255) NOT NULL, ",
-             "domain_id VARCHAR(20) NOT NULL, vocabulary_id VARCHAR(20) NOT NULL, ",
-             "concept_class_id VARCHAR(20) NOT NULL, standard_concept VARCHAR(1), ",
-             "concept_code VARCHAR(50) NOT NULL, valid_start_date DATE NOT NULL, ",
-             "valid_end_date DATE NOT NULL, invalid_reason VARCHAR(1))"),
-      paste0("CREATE TABLE ", vocab, ".concept_ancestor (",
-             "ancestor_concept_id INTEGER NOT NULL, ",
-             "descendant_concept_id INTEGER NOT NULL, ",
-             "min_levels_of_separation INTEGER NOT NULL, ",
-             "max_levels_of_separation INTEGER NOT NULL)"),
-      paste0("CREATE TABLE ", results, ".cohort_definition (",
-             "cohort_definition_id INTEGER NOT NULL, ",
-             "cohort_definition_name VARCHAR(255) NOT NULL, ",
-             "cohort_definition_description VARCHAR(1000), ",
-             "definition_type_concept_id INTEGER NOT NULL, ",
-             "cohort_definition_syntax VARCHAR(1000), ",
-             "subject_concept_id INTEGER NOT NULL, cohort_initiation_date DATE)"),
-      paste0("CREATE TABLE ", results, ".cohort (",
-             "cohort_definition_id INTEGER NOT NULL, subject_id BIGINT NOT NULL, ",
-             "cohort_start_date DATE NOT NULL, cohort_end_date DATE NOT NULL)"),
-
-      # Same-named decoys make namespace bleed observable. Correct routing must
-      # never read either object.
-      paste0("CREATE TABLE ", cdm, ".concept (",
-             "concept_id INTEGER, concept_name VARCHAR(255))"),
-      paste0("CREATE TABLE ", cdm, ".cohort (",
-             "cohort_definition_id INTEGER, subject_id BIGINT, ",
-             "cohort_start_date DATE, cohort_end_date DATE)"),
-
-      paste0("INSERT INTO ", cdm, ".cdm_source VALUES ",
-             "('Vendor integration fixture', 'DSOMOP_IT', '5.4', 'test')"),
-      paste0("INSERT INTO ", cdm, ".person VALUES ",
-             "(1, 8507, 1970, 8527, 38003564), ",
-             "(2, 8532, 1980, 8527, 38003564), ",
-             "(3, 8507, 1990, 8527, 38003564)"),
-      paste0("INSERT INTO ", cdm, ".observation_period VALUES ",
-             "(1, 1, '2019-01-01', '2022-12-31', 44814724), ",
-             "(2, 2, '2019-01-01', '2022-12-31', 44814724), ",
-             "(3, 3, '2019-01-01', '2022-12-31', 44814724)"),
-      paste0("INSERT INTO ", cdm, ".condition_occurrence VALUES ",
-             "(1, 1, 201820, '2020-01-01', '2020-01-03', 32020, NULL), ",
-             "(2, 1, 201820, '2020-02-01', '2020-02-03', 32020, NULL), ",
-             "(3, 2, 201820, '2020-03-01', '2020-03-03', 32020, NULL), ",
-             "(4, 3, 201820, '2021-01-01', '2021-01-03', 32020, NULL)"),
-      paste0("INSERT INTO ", vocab, ".concept VALUES ",
-             "(201820, 'Type 2 diabetes mellitus', 'Condition', 'SNOMED', ",
-             "'Clinical Finding', 'S', '44054006', '1970-01-01', ",
-             "'2099-12-31', NULL)"),
-      paste0("INSERT INTO ", vocab, ".concept_ancestor VALUES ",
-             "(201820, 201820, 0, 0)"),
-      paste0("INSERT INTO ", results, ".cohort_definition VALUES ",
-             "(7, 'All fixture persons', 'Integration test cohort', 0, ",
-             "'{}', 1147314, '2022-01-01'), ",
-             "(8, 'Recurrent fixture episodes', 'Longitudinal test cohort', 0, ",
-             "'{}', 1147314, '2022-01-01')"),
-      paste0("INSERT INTO ", results, ".cohort VALUES ",
-             "(7, 1, '2020-01-01', '2020-12-31'), ",
-             "(7, 2, '2020-01-01', '2020-12-31'), ",
-             "(7, 3, '2020-01-01', '2020-12-31'), ",
-             "(8, 1, '2020-01-01', '2020-01-31'), ",
-             "(8, 1, '2020-02-01', '2020-02-29'), ",
-             "(8, 2, '2020-01-01', '2020-01-31'), ",
-             "(8, 2, '2020-03-01', '2020-03-31'), ",
-             "(8, 3, '2020-01-01', '2020-01-31'), ",
-             "(8, 3, '2021-01-01', '2021-01-31')"),
-      paste0("CREATE VIEW ", results, ".longitudinal_cohort AS ",
-             "SELECT subject_id, cohort_start_date, cohort_end_date FROM ",
-             results, ".cohort WHERE cohort_definition_id = 8"),
-      paste0("CREATE VIEW ", results, ".full_cohort AS ",
-             "SELECT subject_id, cohort_start_date, cohort_end_date FROM ",
-             results, ".cohort WHERE cohort_definition_id = 7"),
-      paste0("INSERT INTO ", cdm, ".concept VALUES (999, 'WRONG SCHEMA')"),
-      paste0("INSERT INTO ", cdm, ".cohort VALUES ",
-             "(99, 999, '2020-01-01', '2020-12-31')")
-    ))
+    fixture_sql <- if (is.null(statements)) {
+      .dsomopVendorContractStatements(cdm, vocab, results)
+    } else {
+      statements(cdm, vocab, results)
+    }
+    .dsomopVendorExecuteAll(context$admin, fixture_sql)
 
     if (identical(config$dbms, "postgresql")) {
       DBI::dbExecute(context$admin, paste0(

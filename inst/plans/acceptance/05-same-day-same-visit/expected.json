@@ -1,0 +1,329 @@
+{
+  "recipe": "05-same-day-same-visit",
+  "fixture": "reach + extension (build_extended_reach_handle(100))",
+  "nfilter_subset": 5,
+  "fixture_keys": ["person_id", "index_date", "index_key"],
+  "key_policy": "rows are matched to engine output on the fixture keys (person_id is the fixture identity; the harness tokenises it with the fixture's person key); index_date/index_key identify the episode and are not released columns",
+  "outputs": {
+    "episodes": {
+      "name": "episodes",
+      "n_persons": 32,
+      "released_columns": ["row_id", "cohort_row_id", "person_id", "n_same_day_mi", "pci_same_visit", "chest_pain_same_visit", "inpatient_30"],
+      "comparison_columns": ["n_same_day_mi", "pci_same_visit", "chest_pain_same_visit", "inpatient_30"],
+      "oracle_only": [],
+      "columns": ["person_id", "index_date", "index_key", "n_same_day_mi", "pci_same_visit", "chest_pain_same_visit", "inpatient_30"],
+      "rows": [
+        {
+          "person_id": 1,
+          "index_date": "2019-07-01",
+          "index_key": "233",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 2,
+          "index_date": "2019-07-01",
+          "index_key": "234",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 3,
+          "index_date": "2019-07-01",
+          "index_key": "235",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 4,
+          "index_date": "2019-07-01",
+          "index_key": "236",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 5,
+          "index_date": "2019-07-01",
+          "index_key": "237",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 6,
+          "index_date": "2019-07-01",
+          "index_key": "238",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 7,
+          "index_date": "2019-07-01",
+          "index_key": "239",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 8,
+          "index_date": "2019-07-01",
+          "index_key": "240",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 9,
+          "index_date": "2019-07-01",
+          "index_key": "241",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 10,
+          "index_date": "2019-07-01",
+          "index_key": "242",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 11,
+          "index_date": "2019-07-01",
+          "index_key": "243",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 12,
+          "index_date": "2019-07-01",
+          "index_key": "244",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 13,
+          "index_date": "2019-07-01",
+          "index_key": "245",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 14,
+          "index_date": "2019-07-01",
+          "index_key": "246",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 15,
+          "index_date": "2019-07-01",
+          "index_key": "247",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 16,
+          "index_date": "2019-07-01",
+          "index_key": "248",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 17,
+          "index_date": "2019-07-01",
+          "index_key": "249",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 18,
+          "index_date": "2019-07-01",
+          "index_key": "250",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 19,
+          "index_date": "2019-07-01",
+          "index_key": "251",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 20,
+          "index_date": "2019-07-01",
+          "index_key": "252",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 21,
+          "index_date": "2019-07-01",
+          "index_key": "253",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 0,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 22,
+          "index_date": "2019-07-01",
+          "index_key": "254",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 0,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 23,
+          "index_date": "2019-07-01",
+          "index_key": "255",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 0,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 24,
+          "index_date": "2019-07-01",
+          "index_key": "256",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 0,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 25,
+          "index_date": "2019-07-01",
+          "index_key": "257",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 0,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 1007,
+          "index_date": "2020-01-01",
+          "index_key": "500007",
+          "n_same_day_mi": 2,
+          "pci_same_visit": 1,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 1
+        },
+        {
+          "person_id": 1007,
+          "index_date": "2020-01-01",
+          "index_key": "500008",
+          "n_same_day_mi": 2,
+          "pci_same_visit": 1,
+          "chest_pain_same_visit": 1,
+          "inpatient_30": 1
+        },
+        {
+          "person_id": 1011,
+          "index_date": "2020-02-01",
+          "index_key": "500017",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 0,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 1012,
+          "index_date": "2019-07-01",
+          "index_key": "500018",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 0,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 1019,
+          "index_date": "2019-12-20",
+          "index_key": "500026",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 0,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 1019,
+          "index_date": "2020-01-20",
+          "index_key": "500027",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 0,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 1020,
+          "index_date": "2020-02-10",
+          "index_key": "500028",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 0,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 1021,
+          "index_date": "2019-10-05",
+          "index_key": "500029",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 0,
+          "inpatient_30": 0
+        },
+        {
+          "person_id": 1022,
+          "index_date": "2020-05-15",
+          "index_key": "500030",
+          "n_same_day_mi": 1,
+          "pci_same_visit": 0,
+          "chest_pain_same_visit": 0,
+          "inpatient_30": 0
+        }
+      ]
+    }
+  },
+  "invariants": [
+    "one episode per MI row covered by exactly one observation period; two same-day rows are two episodes with distinct index keys",
+    "visit = index joins on the index row's visit_occurrence_id"
+  ]
+}

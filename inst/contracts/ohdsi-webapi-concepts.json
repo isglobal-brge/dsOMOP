@@ -1,0 +1,401 @@
+{
+ "source": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary",
+ "snapshot_version": "v5.0 27-FEB-25",
+ "cdm_vocabulary_version": "CDM v6.0.0",
+ "concepts": {
+  "1147127": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/1147127",
+   "retrieved": "2026-11-12T00:37:54Z",
+   "data": {
+    "CONCEPT_ID": 1147127,
+    "CONCEPT_NAME": "condition_occurrence.condition_occurrence_id",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "CDM183",
+    "DOMAIN_ID": "Metadata",
+    "VOCABULARY_ID": "CDM",
+    "CONCEPT_CLASS_ID": "Field",
+    "VALID_START_DATE": 1415664000000,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "1147094": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/1147094",
+   "retrieved": "2026-11-12T00:37:55Z",
+   "data": {
+    "CONCEPT_ID": 1147094,
+    "CONCEPT_NAME": "drug_exposure.drug_exposure_id",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "CDM150",
+    "DOMAIN_ID": "Metadata",
+    "VOCABULARY_ID": "CDM",
+    "CONCEPT_CLASS_ID": "Field",
+    "VALID_START_DATE": 1415664000000,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "1147082": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/1147082",
+   "retrieved": "2026-11-12T00:37:55Z",
+   "data": {
+    "CONCEPT_ID": 1147082,
+    "CONCEPT_NAME": "procedure_occurrence.procedure_occurrence_id",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "CDM138",
+    "DOMAIN_ID": "Metadata",
+    "VOCABULARY_ID": "CDM",
+    "CONCEPT_CLASS_ID": "Field",
+    "VALID_START_DATE": 1415664000000,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "1147115": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/1147115",
+   "retrieved": "2026-11-12T00:37:56Z",
+   "data": {
+    "CONCEPT_ID": 1147115,
+    "CONCEPT_NAME": "device_exposure.device_exposure_id",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "CDM171",
+    "DOMAIN_ID": "Metadata",
+    "VOCABULARY_ID": "CDM",
+    "CONCEPT_CLASS_ID": "Field",
+    "VALID_START_DATE": 1415664000000,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "1147138": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/1147138",
+   "retrieved": "2026-11-12T00:37:57Z",
+   "data": {
+    "CONCEPT_ID": 1147138,
+    "CONCEPT_NAME": "measurement.measurement_id",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "CDM194",
+    "DOMAIN_ID": "Metadata",
+    "VOCABULARY_ID": "CDM",
+    "CONCEPT_CLASS_ID": "Field",
+    "VALID_START_DATE": 1415664000000,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "1147165": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/1147165",
+   "retrieved": "2026-11-12T00:37:57Z",
+   "data": {
+    "CONCEPT_ID": 1147165,
+    "CONCEPT_NAME": "observation.observation_id",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "CDM221",
+    "DOMAIN_ID": "Metadata",
+    "VOCABULARY_ID": "CDM",
+    "CONCEPT_CLASS_ID": "Field",
+    "VALID_START_DATE": 1415664000000,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "1147070": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/1147070",
+   "retrieved": "2026-11-12T00:37:58Z",
+   "data": {
+    "CONCEPT_ID": 1147070,
+    "CONCEPT_NAME": "visit_occurrence.visit_occurrence_id",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "CDM126",
+    "DOMAIN_ID": "Metadata",
+    "VOCABULARY_ID": "CDM",
+    "CONCEPT_CLASS_ID": "Field",
+    "VALID_START_DATE": 1415664000000,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "1147049": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/1147049",
+   "retrieved": "2026-11-12T00:37:59Z",
+   "data": {
+    "CONCEPT_ID": 1147049,
+    "CONCEPT_NAME": "specimen.specimen_id",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "CDM105",
+    "DOMAIN_ID": "Metadata",
+    "VOCABULARY_ID": "CDM",
+    "CONCEPT_CLASS_ID": "Field",
+    "VALID_START_DATE": 1415664000000,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "1147332": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/1147332",
+   "retrieved": "2026-11-12T00:38:00Z",
+   "data": {
+    "CONCEPT_ID": 1147332,
+    "CONCEPT_NAME": "visit_occurrence",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "CDM388",
+    "DOMAIN_ID": "Metadata",
+    "VOCABULARY_ID": "CDM",
+    "CONCEPT_CLASS_ID": "Table",
+    "VALID_START_DATE": 1415664000000,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "1147210": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/1147210",
+   "retrieved": "2026-11-12T00:38:00Z",
+   "data": {
+    "CONCEPT_ID": 1147210,
+    "CONCEPT_NAME": "provider.specialty_source_value",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "CDM266",
+    "DOMAIN_ID": "Metadata",
+    "VOCABULARY_ID": "CDM",
+    "CONCEPT_CLASS_ID": "Field",
+    "VALID_START_DATE": 1415664000000,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "1147869": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/1147869",
+   "retrieved": "2026-11-12T00:38:01Z",
+   "data": {
+    "CONCEPT_ID": 1147869,
+    "CONCEPT_NAME": "visit_occurrence.visit_occurrence_id",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "CDM916",
+    "DOMAIN_ID": "Metadata",
+    "VOCABULARY_ID": "CDM",
+    "CONCEPT_CLASS_ID": "Field",
+    "VALID_START_DATE": 1539216000000,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "44818668": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/44818668",
+   "retrieved": "2026-11-12T00:38:02Z",
+   "data": {
+    "CONCEPT_ID": 44818668,
+    "CONCEPT_NAME": "United States dollar",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "USD",
+    "DOMAIN_ID": "Currency",
+    "VOCABULARY_ID": "Currency",
+    "CONCEPT_CLASS_ID": "Currency",
+    "VALID_START_DATE": 0,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "44818568": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/44818568",
+   "retrieved": "2026-11-12T00:38:03Z",
+   "data": {
+    "CONCEPT_ID": 44818568,
+    "CONCEPT_NAME": "Euro",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "EUR",
+    "DOMAIN_ID": "Currency",
+    "VOCABULARY_ID": "Currency",
+    "CONCEPT_CLASS_ID": "Currency",
+    "VALID_START_DATE": 0,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "44818570": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/44818570",
+   "retrieved": "2026-11-12T00:38:03Z",
+   "data": {
+    "CONCEPT_ID": 44818570,
+    "CONCEPT_NAME": "Falkland Islands pound",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "FKP",
+    "DOMAIN_ID": "Currency",
+    "VOCABULARY_ID": "Currency",
+    "CONCEPT_CLASS_ID": "Currency",
+    "VALID_START_DATE": 0,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "4172703": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/4172703",
+   "retrieved": "2026-11-12T00:38:04Z",
+   "data": {
+    "CONCEPT_ID": 4172703,
+    "CONCEPT_NAME": "=",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "276136004",
+    "DOMAIN_ID": "Meas Value Operator",
+    "VOCABULARY_ID": "SNOMED",
+    "CONCEPT_CLASS_ID": "Qualifier Value",
+    "VALID_START_DATE": 1012435200000,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "4171756": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/4171756",
+   "retrieved": "2026-11-12T00:38:05Z",
+   "data": {
+    "CONCEPT_ID": 4171756,
+    "CONCEPT_NAME": "<",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "276139006",
+    "DOMAIN_ID": "Meas Value Operator",
+    "VOCABULARY_ID": "SNOMED",
+    "CONCEPT_CLASS_ID": "Qualifier Value",
+    "VALID_START_DATE": 1012435200000,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "4172704": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/4172704",
+   "retrieved": "2026-11-12T00:38:06Z",
+   "data": {
+    "CONCEPT_ID": 4172704,
+    "CONCEPT_NAME": ">",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "276140008",
+    "DOMAIN_ID": "Meas Value Operator",
+    "VOCABULARY_ID": "SNOMED",
+    "CONCEPT_CLASS_ID": "Qualifier Value",
+    "VALID_START_DATE": 1012435200000,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "4171754": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/4171754",
+   "retrieved": "2026-11-12T00:38:06Z",
+   "data": {
+    "CONCEPT_ID": 4171754,
+    "CONCEPT_NAME": "<=",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "276137008",
+    "DOMAIN_ID": "Meas Value Operator",
+    "VOCABULARY_ID": "SNOMED",
+    "CONCEPT_CLASS_ID": "Qualifier Value",
+    "VALID_START_DATE": 1012435200000,
+    "VALID_END_DATE": 4102358400000
+   }
+  },
+  "4171755": {
+   "url": "https://atlas-demo.ohdsi.org/WebAPI/vocabulary/concept/4171755",
+   "retrieved": "2026-11-12T00:38:07Z",
+   "data": {
+    "CONCEPT_ID": 4171755,
+    "CONCEPT_NAME": ">=",
+    "STANDARD_CONCEPT": "S",
+    "STANDARD_CONCEPT_CAPTION": "Standard",
+    "INVALID_REASON": "V",
+    "INVALID_REASON_CAPTION": "Valid",
+    "CONCEPT_CODE": "276138003",
+    "DOMAIN_ID": "Meas Value Operator",
+    "VOCABULARY_ID": "SNOMED",
+    "CONCEPT_CLASS_ID": "Qualifier Value",
+    "VALID_START_DATE": 1012435200000,
+    "VALID_END_DATE": 4102358400000
+   }
+  }
+ },
+ "domains": [
+  "Condition",
+  "Condition Status",
+  "Condition/Device",
+  "Condition/Drug",
+  "Condition/Meas",
+  "Condition/Obs",
+  "Condition/Procedure",
+  "Cost",
+  "Currency",
+  "Device",
+  "Device/Drug",
+  "Device/Obs",
+  "Device/Procedure",
+  "Drug",
+  "Drug/Measurement",
+  "Drug/Obs",
+  "Drug/Procedure",
+  "Episode",
+  "Ethnicity",
+  "Gender",
+  "Geography",
+  "Language",
+  "Meas Value",
+  "Meas Value Operator",
+  "Meas/Procedure",
+  "Measurement",
+  "Measurement/Obs",
+  "Metadata",
+  "Modifier",
+  "Note",
+  "Obs/Procedure",
+  "Observation",
+  "Payer",
+  "Place of Service",
+  "Plan",
+  "Plan Stop Reason",
+  "Procedure",
+  "Provider",
+  "Race",
+  "Regimen",
+  "Relationship",
+  "Revenue Code",
+  "Route",
+  "Spec Anatomic Site",
+  "Spec Disease Status",
+  "Specimen",
+  "Sponsor",
+  "Type Concept",
+  "Unit",
+  "Visit"
+ ]
+}

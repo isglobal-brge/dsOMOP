@@ -1,0 +1,3 @@
+"scenario","model","sampler","n","level","replicates","finite","informative","finite_rate","informative_rate","coverage_given_finite","coverage_all","bias_log","rmse_log","mean_ci_log_width","oracle_bias_log","release_minus_oracle_bias_log"
+11,"sccs","law",2000,"all",100,65,0,0.65,0,0.815384615384615,0.53,-0.63343702410818,3.22078257192232,9.1881369040761,0.251832419788973,-0.880168751015195
+12,"sccs","law",2000,"all",100,100,56,1,0.56,1,1,0.00707401190574562,0.27372856777772,1.41083193355675,0.000750214848026982,0.00632379705771863

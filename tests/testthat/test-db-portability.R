@@ -1163,3 +1163,33 @@ test_that("Spark metadata uses SHOW and DESCRIBE without partition sentinels", {
   expect_equal(observed[[1]], "SHOW TABLES IN catalog.cdm")
   expect_equal(observed[[2]], "DESCRIBE TABLE catalog.cdm.person")
 })
+
+test_that("MariaDB and MySQL versions are read from the server's own token", {
+  at_least <- function(version, family, minimum) {
+    .databaseVersionAtLeast(version, minimum, family)
+  }
+  # Distribution builds append a package version after -MariaDB; it is never
+  # the server version (Ubuntu's 10.6 was read as 0.22.04 and refused).
+  expect_true(at_least("10.6.23-MariaDB-0ubuntu0.22.04.1", "mariadb",
+                       "10.2.0"))
+  expect_true(at_least("10.11.6-MariaDB-0+deb12u1", "mariadb", "10.2.0"))
+  expect_true(at_least("11.4.2-MariaDB-ubu2404", "mariadb", "10.2.0"))
+  expect_true(at_least("10.11.6-MariaDB", "mariadb", "10.2.0"))
+  # The MySQL-protocol 5.5.5- prefix stays skipped.
+  expect_true(at_least("5.5.5-10.11.6-MariaDB", "mariadb", "10.2.0"))
+  expect_true(at_least("5.5.5-10.4.12-MariaDB-1:10.4.12+maria~bionic",
+                       "mariadb", "10.2.0"))
+  expect_true(at_least("5.5.5-10.6.23", "mariadb", "10.2.0"))
+  expect_true(at_least("10.6.23", "mariadb", "10.2.0"))
+  expect_false(at_least("10.1.48-MariaDB-0ubuntu0.18.04.1", "mariadb",
+                        "10.2.0"))
+  expect_false(at_least("5.5.5-10.1.48-MariaDB", "mariadb", "10.2.0"))
+  # MySQL reads its leading version.
+  expect_true(at_least("8.0.36", "mysql", "8.0.0"))
+  expect_true(at_least("8.0.36-0ubuntu0.22.04.1", "mysql", "8.0.0"))
+  expect_true(at_least("8.4.2", "mysql", "8.0.0"))
+  expect_false(at_least("5.7.44-log", "mysql", "8.0.0"))
+  expect_false(at_least("", "mysql", "8.0.0"))
+  expect_false(at_least(NA_character_, "mariadb", "10.2.0"))
+  expect_false(at_least("MariaDB", "mariadb", "10.2.0"))
+})

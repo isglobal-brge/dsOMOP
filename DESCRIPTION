@@ -1,7 +1,7 @@
 Package: dsOMOP
 Type: Package
 Title: DataSHIELD Server-Side Integration for OMOP CDM Databases
-Version: 2.10.2
+Version: 2.10.3
 Authors@R: c(
     person("David", "Sarrat González", role = c("aut", "cre"), email = "david.sarrat@isglobal.org"),
     person("Xavier", "Escribà-Montagut", role = "aut"),
@@ -28,6 +28,7 @@ Encoding: UTF-8
 Depends:
     R (>= 4.1.0)
 Imports:
+    bit64,
     DBI,
     R6,
     resourcer,
@@ -47,7 +48,6 @@ Suggests:
     RPostgreSQL,
     duckdb,
     odbc,
-    bit64,
     bigrquery,
     testthat (>= 3.0.0),
     withr,
@@ -59,6 +59,8 @@ Suggests:
     survival,
     gnm
 AggregateMethods:
+    omopPlanStatusDS,
+    omopStagedRevokeDS,
     omopPingDS,
     omopGetCapabilitiesDS,
     omopDisclosureSettingsDS,
@@ -84,6 +86,7 @@ AggregateMethods:
     omopCdmSourceDS,
     omopCdmVersionDS,
     omopPlanPreviewDS,
+    omopPlanExplainDS,
     omopCohortListDS,
     omopCohortGetDefinitionDS,
     omopConceptPrevalenceDS,
@@ -127,6 +130,7 @@ AssignMethods:
     omopFilterDS,
     omopSelectDS,
     omopBindRowsDS,
+    omopMutateDS,
     omopAnalysisRunAssignDS,
     omopDpPlanExecuteDS
 Options:
@@ -161,7 +165,6 @@ Options:
     default.dsomop.dp.enabled=TRUE,
     default.dsomop.dp.exclusive=FALSE,
     default.dsomop.dp.domain="",
-    default.dsomop.dp.snapshot_id="",
     default.dsomop.dp.release_epsilon=0.1,
     default.dsomop.dp.privacy_epoch=1,
     default.dsomop.dp.max_levels=1000,

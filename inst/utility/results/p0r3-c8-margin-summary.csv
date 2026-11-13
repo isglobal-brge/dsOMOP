@@ -1,0 +1,3 @@
+"scenario","n","replicates","projection_calls","repairs_nonzero","repairs_above_1e_minus8_relative","replicates_with_material_repair","releases_with_material_repair","max_error_relative","max_initial_error_relative"
+4,2000,100,80400,79168,0,0,0,7.65948687471039e-11,1.48686918435533e-11
+5,10000,100,80400,79073,0,0,0,1.21142249095714e-11,5.65358072414746e-12

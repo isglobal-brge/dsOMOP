@@ -343,7 +343,7 @@ test_that("aggregate manifests exclude generic c/list exfiltration aliases", {
     expect_false(any(lhs %in% c("c", "list")))
     expect_false(any(rhs %in% c("base::c", "base::list")))
   }
-  expect_length(datashield, 56L)
+  expect_length(datashield, 59L)  # 2.10.3 adds omopPlanExplainDS, omopPlanStatusDS, omopStagedRevokeDS
   expect_setequal(datashield, described)
 })
 
@@ -387,9 +387,10 @@ test_that("DATASHIELD and DESCRIPTION publish the same server options", {
     "default.dsomop.dp.max_levels=1000",
     "default.dsomop.dp.numeric_grid=65535",
     "default.dsomop.dp.privacy_epoch=1",
-    "default.dsomop.dp.release_epsilon=0.1",
-    "default.dsomop.dp.snapshot_id=\"\""
+    "default.dsomop.dp.release_epsilon=0.1"
   )))
+  # The deprecated snapshot label is not a profile option (dsOMOP 2.10.3).
+  expect_false(any(grepl("snapshot_id", split_options(manifest[1, "Options"]))))
   # The OHDSI community tools are published enabled.
   expect_true("default.dsomop.tools.enabled=TRUE" %in%
                 split_options(manifest[1, "Options"]))

@@ -1,0 +1,190 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient"
+  },
+  "concept_sets": {
+    "mi": {
+      "concepts": [
+        4329847
+      ],
+      "include_descendants": true
+    },
+    "statins": {
+      "concepts": [
+        1539403,
+        1545958,
+        1551860
+      ],
+      "include_descendants": true
+    }
+  },
+  "events": {
+    "mi": {
+      "table": "condition_occurrence",
+      "concept_set": "mi"
+    },
+    "statin_rx": {
+      "table": "drug_exposure",
+      "concept_set": "statins",
+      "end": {
+        "fallback": "days_supply"
+      }
+    },
+    "diabetes": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          201826
+        ],
+        "include_descendants": true
+      }
+    }
+  },
+  "populations": {
+    "cases": {
+      "kind": "index",
+      "label": "First MI",
+      "index": {
+        "source": {
+          "event": "mi"
+        },
+        "select": "first_eligible",
+        "end": {
+          "strategy": "fixed",
+          "days": 0
+        }
+      },
+      "where": {
+        "observed": {
+          "before": 365
+        }
+      }
+    },
+    "eligible": {
+      "kind": "criteria",
+      "label": "Observed one year",
+      "where": {
+        "observed": {
+          "before": 365
+        }
+      }
+    },
+    "cc": {
+      "kind": "match",
+      "label": "Nested case-control",
+      "match": {
+        "cases": "cases",
+        "controls": "eligible",
+        "outcome": {
+          "event": "mi"
+        },
+        "match": [
+          "sex",
+          {
+            "age_band": 5
+          },
+          "calendar_year",
+          {
+            "strata": {
+              "source": {
+                "event": "diabetes"
+              },
+              "window": {
+                "start": null,
+                "end": -1
+              }
+            }
+          }
+        ],
+        "controls_per_case": 4,
+        "prior_outcome": "exclude",
+        "future_cases": "eligible",
+        "replacement": "between_sets",
+        "seed": 20261111,
+        "insufficient": "keep_available",
+        "missing_strata": "ineligible",
+        "max_candidates": 1000000
+      }
+    }
+  },
+  "variables": {
+    "set_id": {
+      "population_column": {
+        "name": "set_id"
+      }
+    },
+    "is_case": {
+      "population_column": {
+        "name": "is_case"
+      }
+    },
+    "w": {
+      "population_column": {
+        "name": "sampling_weight"
+      }
+    },
+    "age": {
+      "derived": {
+        "kind": "age",
+        "reference": "index",
+        "bands": false
+      }
+    },
+    "sex": {
+      "derived": {
+        "kind": "sex_mf"
+      }
+    },
+    "statin_365": {
+      "source": {
+        "event": "statin_rx"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": -1,
+          "anchor": "index"
+        }
+      }
+    },
+    "statin_days": {
+      "source": {
+        "event": "statin_rx"
+      },
+      "reducer": {
+        "fn": "covered_days",
+        "window": {
+          "start": -365,
+          "end": -1,
+          "anchor": "index"
+        }
+      }
+    }
+  },
+  "outputs": {
+    "cc_table": {
+      "rows": "cc",
+      "grain": "episode",
+      "format": "wide",
+      "columns": [
+        "set_id",
+        "is_case",
+        "w",
+        "age",
+        "sex",
+        "statin_365",
+        "statin_days"
+      ],
+      "options": {
+        "date_handling": {
+          "mode": "relative"
+        }
+      },
+      "result_symbol": "D_cc"
+    }
+  }
+}

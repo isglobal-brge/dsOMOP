@@ -1,0 +1,2134 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "events": {
+    "cond_dm": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          201820
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_prediabetes": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          201826
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_htn1": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          320128
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_htn2": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          316866
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_mi": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          4329847
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_mi2": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          312327
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_ckd": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          46271022
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_af": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          313217
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_hf": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          316139
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_hld": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          432867
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_obesity": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          433736
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_pregnancy": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          4299535
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_stroke": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          381316
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_stroke2": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          372924
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_sepsis": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          132797
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_cirrhosis": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          4064161
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_asthma": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          317009
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_copd": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          255573
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_chest_pain": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          77670
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_resp_inf": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          320136
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_prior_bleed": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          192671
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_major_bleed": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          4108832
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_malignancy": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          4112853
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_chronic_pain": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          436096
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_htn_comp": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          321318
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "cond_covar2": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          4000777
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "drug_metformin": {
+      "table": "drug_exposure",
+      "concept_set": {
+        "concepts": [
+          1503297
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "drug_insulin": {
+      "table": "drug_exposure",
+      "concept_set": {
+        "concepts": [
+          1596977
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "drug_statin": {
+      "table": "drug_exposure",
+      "concept_set": {
+        "concepts": [
+          1539403
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "drug_warfarin": {
+      "table": "drug_exposure",
+      "concept_set": {
+        "concepts": [
+          1310149
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "drug_acei": {
+      "table": "drug_exposure",
+      "concept_set": {
+        "concepts": [
+          1308216
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "drug_arb": {
+      "table": "drug_exposure",
+      "concept_set": {
+        "concepts": [
+          1367500
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "drug_beta_blocker": {
+      "table": "drug_exposure",
+      "concept_set": {
+        "concepts": [
+          1346823
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "drug_diuretic": {
+      "table": "drug_exposure",
+      "concept_set": {
+        "concepts": [
+          974166
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "drug_doac": {
+      "table": "drug_exposure",
+      "concept_set": {
+        "concepts": [
+          40228152
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "drug_sglt2": {
+      "table": "drug_exposure",
+      "concept_set": {
+        "concepts": [
+          1488000
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "proc_dialysis": {
+      "table": "procedure_occurrence",
+      "concept_set": {
+        "concepts": [
+          4032243
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "proc_pci": {
+      "table": "procedure_occurrence",
+      "concept_set": {
+        "concepts": [
+          4283095
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "proc_bariatric": {
+      "table": "procedure_occurrence",
+      "concept_set": {
+        "concepts": [
+          4322471
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "proc_cath": {
+      "table": "procedure_occurrence",
+      "concept_set": {
+        "concepts": [
+          4139525
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "hba1c": {
+      "table": "measurement",
+      "concept_set": {
+        "concepts": [
+          3004410
+        ],
+        "include_descendants": false,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "value": {
+        "column": "value_as_number"
+      },
+      "unit": {
+        "target": 8554,
+        "convert": {
+          "8753": {
+            "factor": 0.0915,
+            "offset": 2.15
+          }
+        },
+        "unknown": "missing",
+        "censored": "keep"
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "glucose": {
+      "table": "measurement",
+      "concept_set": {
+        "concepts": [
+          3004501
+        ],
+        "include_descendants": false,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "value": {
+        "column": "value_as_number"
+      },
+      "unit": {
+        "target": 8840,
+        "convert": {
+          "8753": {
+            "factor": 18.0182,
+            "offset": 0
+          }
+        },
+        "unknown": "missing",
+        "censored": "keep"
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "end": null,
+      "on_missing_table": "error"
+    }
+  },
+  "populations": {
+    "c1": {
+      "kind": "index",
+      "index": {
+        "source": {
+          "cohort_definition_id": 1
+        },
+        "select": "all",
+        "end": {
+          "strategy": "event_end",
+          "days": null,
+          "pad": 0
+        },
+        "n": 1,
+        "offset": 0,
+        "restrict_to_observation": true
+      },
+      "parent": null,
+      "where": null,
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      }
+    }
+  },
+  "variables": {
+    "cond_dm": {
+      "source": {
+        "event": "cond_dm"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_prediabetes": {
+      "source": {
+        "event": "cond_prediabetes"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_htn1": {
+      "source": {
+        "event": "cond_htn1"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_htn2": {
+      "source": {
+        "event": "cond_htn2"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_mi": {
+      "source": {
+        "event": "cond_mi"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_mi2": {
+      "source": {
+        "event": "cond_mi2"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_ckd": {
+      "source": {
+        "event": "cond_ckd"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_af": {
+      "source": {
+        "event": "cond_af"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_hf": {
+      "source": {
+        "event": "cond_hf"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_hld": {
+      "source": {
+        "event": "cond_hld"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_obesity": {
+      "source": {
+        "event": "cond_obesity"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_pregnancy": {
+      "source": {
+        "event": "cond_pregnancy"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_stroke": {
+      "source": {
+        "event": "cond_stroke"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_stroke2": {
+      "source": {
+        "event": "cond_stroke2"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_sepsis": {
+      "source": {
+        "event": "cond_sepsis"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_cirrhosis": {
+      "source": {
+        "event": "cond_cirrhosis"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_asthma": {
+      "source": {
+        "event": "cond_asthma"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_copd": {
+      "source": {
+        "event": "cond_copd"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_chest_pain": {
+      "source": {
+        "event": "cond_chest_pain"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_resp_inf": {
+      "source": {
+        "event": "cond_resp_inf"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_prior_bleed": {
+      "source": {
+        "event": "cond_prior_bleed"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_major_bleed": {
+      "source": {
+        "event": "cond_major_bleed"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_malignancy": {
+      "source": {
+        "event": "cond_malignancy"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_chronic_pain": {
+      "source": {
+        "event": "cond_chronic_pain"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_htn_comp": {
+      "source": {
+        "event": "cond_htn_comp"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "cond_covar2": {
+      "source": {
+        "event": "cond_covar2"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "drug_metformin": {
+      "source": {
+        "event": "drug_metformin"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "drug_insulin": {
+      "source": {
+        "event": "drug_insulin"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "drug_statin": {
+      "source": {
+        "event": "drug_statin"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "drug_warfarin": {
+      "source": {
+        "event": "drug_warfarin"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "drug_acei": {
+      "source": {
+        "event": "drug_acei"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "drug_arb": {
+      "source": {
+        "event": "drug_arb"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "drug_beta_blocker": {
+      "source": {
+        "event": "drug_beta_blocker"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "drug_diuretic": {
+      "source": {
+        "event": "drug_diuretic"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "drug_doac": {
+      "source": {
+        "event": "drug_doac"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "drug_sglt2": {
+      "source": {
+        "event": "drug_sglt2"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "proc_dialysis": {
+      "source": {
+        "event": "proc_dialysis"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "proc_pci": {
+      "source": {
+        "event": "proc_pci"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "proc_bariatric": {
+      "source": {
+        "event": "proc_bariatric"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "proc_cath": {
+      "source": {
+        "event": "proc_cath"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "age": {
+      "derived": {
+        "kind": "age",
+        "reference": "index",
+        "bands": false,
+        "reference_date": null,
+        "age_breaks": null
+      }
+    },
+    "sex": {
+      "derived": {
+        "kind": "sex_mf"
+      }
+    },
+    "hba1c_last": {
+      "source": {
+        "event": "hba1c"
+      },
+      "reducer": {
+        "fn": "last_value",
+        "value": "value",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "glucose_last": {
+      "source": {
+        "event": "glucose"
+      },
+      "reducer": {
+        "fn": "last_value",
+        "value": "value",
+        "window": {
+          "start": -365,
+          "end": 0,
+          "anchor": "index"
+        },
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "charlson": {
+      "derived": {
+        "kind": "charlson",
+        "reference_date": null
+      }
+    }
+  },
+  "outputs": {
+    "table1": {
+      "rows": "c1",
+      "format": "wide",
+      "grain": "episode",
+      "result_symbol": "D_table1",
+      "collapse": null,
+      "columns": [
+        "cond_dm",
+        "cond_prediabetes",
+        "cond_htn1",
+        "cond_htn2",
+        "cond_mi",
+        "cond_mi2",
+        "cond_ckd",
+        "cond_af",
+        "cond_hf",
+        "cond_hld",
+        "cond_obesity",
+        "cond_pregnancy",
+        "cond_stroke",
+        "cond_stroke2",
+        "cond_sepsis",
+        "cond_cirrhosis",
+        "cond_asthma",
+        "cond_copd",
+        "cond_chest_pain",
+        "cond_resp_inf",
+        "cond_prior_bleed",
+        "cond_major_bleed",
+        "cond_malignancy",
+        "cond_chronic_pain",
+        "cond_htn_comp",
+        "cond_covar2",
+        "drug_metformin",
+        "drug_insulin",
+        "drug_statin",
+        "drug_warfarin",
+        "drug_acei",
+        "drug_arb",
+        "drug_beta_blocker",
+        "drug_diuretic",
+        "drug_doac",
+        "drug_sglt2",
+        "proc_dialysis",
+        "proc_pci",
+        "proc_bariatric",
+        "proc_cath",
+        "age",
+        "sex",
+        "hba1c_last",
+        "glucose_last",
+        "charlson"
+      ],
+      "sources": [],
+      "options": {
+        "date_handling": {
+          "mode": "relative",
+          "reference": "index",
+          "bin_width": null,
+          "date_columns": null
+        },
+        "time_window": null
+      }
+    }
+  },
+  "options": {
+    "translate_concepts": true,
+    "block_sensitive": true,
+    "factor_concepts": true
+  },
+  "concept_sets": {},
+  "intervals": {},
+  "publish": [
+    "table1"
+  ]
+}

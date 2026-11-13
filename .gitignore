@@ -49,3 +49,4 @@ po/*~
 rsconnect/
 .Rproj.user
 errorReportSql.txt
+__pycache__/

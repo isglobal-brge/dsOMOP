@@ -119,15 +119,16 @@ test_that("(b) returns one banded IRR row with sufficient statistics", {
       v <- df[[col]]
       expect_true(all(v %% 5 == 0 | is.na(v)))
     }
-    # The IRR is finite, positive, and the CI brackets it.
-    expect_true(is.finite(df$irr) && df$irr > 0)
-    expect_true(df$ci_lo <= df$irr && df$irr <= df$ci_hi)
-    # exp(log_irr) reproduces the IRR; exp(log_irr +/- 1.96 SE) the CI.
-    expect_equal(exp(df$log_irr), df$irr, tolerance = 1e-8)
-    expect_equal(exp(df$log_irr - 1.96 * df$se_log_irr), df$ci_lo,
-                 tolerance = 1e-8)
-    # The exposed window has the elevated rate, so IRR > 1.
-    expect_true(df$irr > 1)
+    # 2.10.3: exact conditional-Poisson scalars have no protected mechanism
+    # and window sweeps of them locate event timing, so every released route
+    # masks them; the counts keep their standard controls.
+    expect_true(all(is.na(df[, c("irr", "ci_lo", "ci_hi", "log_irr",
+                                 "se_log_irr")])))
+    raw <- .omopSccsIrrFn()(h, list(scoped_cohort = NULL), IRR_PARAMS)
+    expect_true(is.finite(raw$irr) && raw$irr > 0)
+    expect_true(raw$ci_lo <= raw$irr && raw$irr <= raw$ci_hi)
+    expect_equal(exp(raw$log_irr), raw$irr, tolerance = 1e-8)
+    expect_true(raw$irr > 1)
     expect_false(any(grepl("_source_value$", names(df))))
   })
 })
@@ -153,10 +154,8 @@ test_that("(c) the released log_irr equals a hand-fit conditional Poisson", {
     fit <- .omopSccsIrrFit(cd$data)
     expect_true(is.finite(fit$log_irr))
 
-    df <- .omopAnalysisRun(h, "dsomop:sccs.incidence_rate_ratio",
-                           params = IRR_PARAMS)
-    # The released frame's log_irr is the in-session fit (the gate does not touch
-    # the non-count estimate columns).
+    df <- .omopSccsIrrFn()(h, list(scoped_cohort = NULL), IRR_PARAMS)
+    # The in-session log_irr is the hand fit (released routes mask it).
     expect_equal(df$log_irr, fit$log_irr, tolerance = 1e-8)
     expect_equal(df$se_log_irr, fit$se_log_irr, tolerance = 1e-8)
     # And the model family is the always-available stratified Poisson here (gnm is

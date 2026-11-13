@@ -1,0 +1,492 @@
+{
+  "recipe": "04-units-censored",
+  "fixture": "reach + extension (build_extended_reach_handle(100))",
+  "nfilter_subset": 5,
+  "fixture_keys": ["person_id", "index_date", "index_key"],
+  "key_policy": "rows are matched to engine output on the fixture keys (person_id is the fixture identity; the harness tokenises it with the fixture's person key); index_date/index_key identify the episode and are not released columns",
+  "outputs": {
+    "labs": {
+      "name": "labs",
+      "n_persons": 52,
+      "released_columns": ["row_id", "cohort_row_id", "person_id", "a1c_closest", "a1c_n_ge65", "a1c_n_uncensored", "a1c_n_known_unit", "a1c_max"],
+      "comparison_columns": ["a1c_closest", "a1c_n_ge65", "a1c_n_uncensored", "a1c_n_known_unit", "a1c_max"],
+      "oracle_only": [],
+      "columns": ["person_id", "index_date", "a1c_closest", "a1c_n_ge65", "a1c_n_uncensored", "a1c_n_known_unit", "a1c_max"],
+      "rows": [
+        {
+          "person_id": 1,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 2,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 3,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 4,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 5,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 6,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 7,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 8,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 9,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 10,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 11,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 12,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 13,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 14,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 15,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 16,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 17,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 18,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 19,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 20,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 21,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 22,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 23,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 24,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 25,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 26,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 27,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 28,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 29,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 30,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 31,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 32,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 33,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 34,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 35,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 36,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 37,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 38,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 39,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 40,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 41,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 42,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 43,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 44,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 45,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 46,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 47,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 48,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 49,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 50,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7.5,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7.5
+        },
+        {
+          "person_id": 1006,
+          "index_date": "2020-01-01",
+          "a1c_closest": 6.908,
+          "a1c_n_ge65": 5,
+          "a1c_n_uncensored": 5,
+          "a1c_n_known_unit": 6,
+          "a1c_max": 9
+        },
+        {
+          "person_id": 1009,
+          "index_date": "2020-01-01",
+          "a1c_closest": 7,
+          "a1c_n_ge65": 1,
+          "a1c_n_uncensored": 1,
+          "a1c_n_known_unit": 1,
+          "a1c_max": 7
+        }
+      ]
+    }
+  },
+  "invariants": [
+    "normalisation precedes predicates and reducers; NULL/unknown units give NA values",
+    "closest_value: minimum distance, NULL values skipped, ties resolved to the FIRST row by (date, source, key): 1006's 52 mmol/mol (key 500001) beats 7.9 % (key 500002) on 2019-12-20",
+    "censored = exclude drops only reviewed inequality operators"
+  ]
+}

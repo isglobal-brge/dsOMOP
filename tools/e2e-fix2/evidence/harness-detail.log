@@ -1,0 +1,8 @@
+harness: Harness contract regressions passed
+Administrator resolver ordering regression passed
+Signed-component redraw and measurement-request regressions passed
+...
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+RESULT failed: 0 errors: 0 skipped: 0 passed: 3 

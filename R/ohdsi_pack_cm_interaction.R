@@ -32,128 +32,215 @@
 # Additionally, IN-FN and fail-closed, the estimate + CI (and the log_estimate/se
 # behind them) are NA'd whenever EITHER arm's BANDED persons fall below
 # nfilter.subset (stricter than the gate's row-drop) so a released estimate always
-# rests on two arms that each clear the subset floor. Subgroup levels are capped
-# at nfilter.levels.max so a high-cardinality subgroup param cannot enumerate rare
-# strata. Per-subject frames are in-session only; subgroup labels are translated
+# rests on two arms that each clear the subset floor.
+#
+# Subgroup FAMILY rule (2.10.3): the levels of one subgroup definition form the
+# COMPLETE public partition of each arm (a concept's present/absent levels; male,
+# female and an explicit other/unknown level; age bands plus an explicit unknown
+# level). Before any level is released, every level AND its complement within
+# each arm must have zero or at least the threshold persons, outcome persons and
+# non-outcome persons (the model cells), and the levels must add up to the arm.
+# The family is released or withheld as ONE decision: releasing a supported
+# level next to the whole arm (or next to the other levels) would otherwise solve
+# a suppressed level by subtraction (overall minus "no" = "yes"). A family with
+# more levels than nfilter.levels.max is refused up front (the level count is
+# public); it is never truncated, because a truncated family is not a partition.
+# An absent concept is an error, never a silent "overall" level; the whole-arm
+# estimate is requested explicitly with subgroup_kind = "overall".
+# Per-subject frames are in-session only; subgroup labels are translated
 # concept names; no *_source_value is ever selected. Population is the scoped pair
 # (target+comparator, max_tables = 2L); requires_cohort stays FALSE (un-scoped is a
 # gate-safe empty frame, matching cm_result).
 
-#' Resolve the ordered subgroup levels for the interaction estimate
+#' Resolve the complete public subgroup family of the interaction estimate
 #'
 #' Effect modification is the treatment effect computed SEPARATELY within each
 #' level of a pre-specified subgroup. This builds those levels as a list of
 #' \code{list(label, predicate)} where \code{predicate} is a SQL boolean over the
 #' arm-cohort alias \code{coh} (a correlated EXISTS / person predicate that
 #' restricts EITHER arm's cohort to the subjects in that level), exactly the
-#' \code{coh.subject_id} idiom \code{\link{.omopCmAttritionSteps}} uses. Three
-#' subgroup kinds are supported (one selected by \code{subgroup_kind}):
+#' \code{coh.subject_id} idiom \code{\link{.omopCmAttritionSteps}} uses. The
+#' levels always form the COMPLETE public partition of an arm, so a released
+#' family can never be differenced against the whole arm to solve a withheld
+#' level:
 #' \itemize{
 #'   \item \code{"concept"}: a (descendant-expanded) \code{subgroup_concept_id} in
 #'     \code{subgroup_domain_code}. Two levels: present (EXISTS) and absent
-#'     (NOT EXISTS) — the classic "with vs without the comorbidity" modifier.
-#'   \item \code{"sex"}: the two gender levels (male 8507 / female 8532), each a
-#'     correlated EXISTS over \code{person}.
+#'     (its exact complement). A missing or unusable concept id is an error,
+#'     never a silent replacement by the whole arm.
+#'   \item \code{"sex"}: male (8507), female (8532) and an explicit
+#'     \code{"sex: other or unknown"} level defined as
+#'     \code{NOT(male_exists OR female_exists)}, which keeps persons with a NULL,
+#'     other or missing gender (SQL \code{NOT IN} would lose NULLs).
 #'   \item \code{"age"}: contiguous age-at-index bands from \code{age_breaks} (a
 #'     comma list of cut points, e.g. \code{"50,65,80"} -> \code{<50}, \code{50-64},
 #'     \code{65-79}, \code{>=80}), each a correlated EXISTS over \code{person} with
-#'     the year-of-birth age expression spliced post-translate (the
-#'     \code{within_age_bounds} pattern of \code{\link{.omopCmAttritionSteps}}).
+#'     the year-of-birth age expression spliced post-translate, plus an explicit
+#'     \code{"age: unknown"} residual level (the complement of every band) for
+#'     persons whose age is missing or unusable.
+#'   \item \code{"overall"}: one unrestricted level (the whole arm), requested
+#'     explicitly.
 #' }
-#' The number of levels is CAPPED at \code{nfilter.levels.max} so a high-
-#' cardinality subgroup param can never enumerate a long list of rare strata; an
-#' empty/invalid spec yields a single "overall" level (no restriction) so the
-#' entry degrades to the cm_result substrate rather than erroring.
+#' A family with more levels than \code{nfilter.levels.max} is refused before
+#' any data is read (the level count is public); it is never truncated.
 #'
 #' @param handle CDM handle.
 #' @param params Sanitized param literals.
 #' @return Ordered list of \code{list(label, predicate)} subgroup levels
-#'   (\code{predicate} NULL for the "overall" fallback level).
+#'   (\code{predicate} NULL for the \code{"overall"} level).
 #' @keywords internal
 .omopCmInteractionSubgroups <- function(handle, params) {
   cap <- .omopDisclosureSettings()$nfilter_levels_max
   kind <- tolower(params$subgroup_kind %||% "concept")
-
-  concept_exists <- function(concept_id, domain_code, negate) {
-    src <- .omopCovariateSource(handle, domain_code)
-    ids <- .resolveConceptSet(handle, list(concepts = as.integer(concept_id),
-                                           include_descendants = TRUE))
-    if (length(ids) == 0) {
-      ids <- suppressWarnings(as.integer(concept_id))
-      ids <- ids[!is.na(ids)]
-    }
-    if (length(ids) == 0) return(NULL)
-    idlist <- paste(ids, collapse = ", ")
-    sub <- paste0("EXISTS (SELECT 1 FROM ", src$table, " e WHERE e.",
-                  src$person_col, " = coh.subject_id AND e.", src$concept_col,
-                  " IN (", idlist, "))")
-    if (isTRUE(negate)) paste0("NOT ", sub) else sub
+  person <- .qualifyTable(handle, "person")
+  any_of <- function(predicates) {
+    paste0("(", paste(predicates, collapse = " OR "), ")")
   }
 
   levels <- list()
+  if (identical(kind, "overall")) {
+    levels <- list(list(label = "overall", predicate = NULL))
 
-  if (identical(kind, "concept") && !is.null(params$subgroup_concept_id)) {
-    dom <- params$subgroup_domain_code %||% "0"
-    label <- .omopCmInteractionConceptLabel(handle, params$subgroup_concept_id)
-    p_yes <- concept_exists(params$subgroup_concept_id, dom, negate = FALSE)
-    p_no  <- concept_exists(params$subgroup_concept_id, dom, negate = TRUE)
-    if (!is.null(p_yes)) {
-      levels[[length(levels) + 1L]] <- list(
-        label = paste0(label, ": yes"), predicate = p_yes)
-      levels[[length(levels) + 1L]] <- list(
-        label = paste0(label, ": no"), predicate = p_no)
+  } else if (identical(kind, "concept")) {
+    if (is.null(params$subgroup_concept_id)) {
+      stop("subgroup_kind = 'concept' requires subgroup_concept_id; use ",
+           "subgroup_kind = 'overall' for the whole-arm estimate.",
+           call. = FALSE)
     }
+    dom <- params$subgroup_domain_code %||% "0"
+    src <- .omopCovariateSource(handle, dom)
+    ids <- .resolveConceptSet(handle, list(
+      concepts = as.integer(params$subgroup_concept_id),
+      include_descendants = TRUE))
+    if (length(ids) == 0) {
+      ids <- suppressWarnings(as.integer(params$subgroup_concept_id))
+      ids <- ids[!is.na(ids)]
+    }
+    if (length(ids) == 0) {
+      stop("subgroup_concept_id does not resolve to a concept.", call. = FALSE)
+    }
+    label <- .omopCmInteractionConceptLabel(handle, params$subgroup_concept_id)
+    p_yes <- paste0("EXISTS (SELECT 1 FROM ", src$table, " e WHERE e.",
+                    src$person_col, " = coh.subject_id AND e.",
+                    src$concept_col, " IN (", paste(ids, collapse = ", "),
+                    "))")
+    levels <- list(
+      list(label = paste0(label, ": yes"), predicate = p_yes),
+      list(label = paste0(label, ": no"), predicate = paste0("NOT ", p_yes)))
 
   } else if (identical(kind, "sex")) {
-    person <- .qualifyTable(handle, "person")
     sex_exists <- function(gender_id) paste0(
       "EXISTS (SELECT 1 FROM ", person, " p WHERE p.person_id = coh.subject_id ",
       "AND p.gender_concept_id = ", gender_id, ")")
-    levels[[1L]] <- list(label = "sex: male",   predicate = sex_exists(8507L))
-    levels[[2L]] <- list(label = "sex: female", predicate = sex_exists(8532L))
+    male <- sex_exists(8507L)
+    female <- sex_exists(8532L)
+    levels <- list(
+      list(label = "sex: male",   predicate = male),
+      list(label = "sex: female", predicate = female),
+      list(label = "sex: other or unknown",
+           predicate = paste0("NOT ", any_of(c(male, female)))))
 
   } else if (identical(kind, "age")) {
     breaks <- suppressWarnings(as.integer(strsplit(
       as.character(params$age_breaks %||% ""), ",", fixed = TRUE)[[1]]))
     breaks <- sort(unique(breaks[!is.na(breaks)]))
-    person <- .qualifyTable(handle, "person")
+    if (length(breaks) == 0) {
+      stop("subgroup_kind = 'age' requires age_breaks.", call. = FALSE)
+    }
     # age at the cohort index date, year_of_birth-based (p.birth_dt spliced later).
     age_at  <- .omopDateDiffDays(handle, "coh.cohort_start_date", "p.birth_dt")
     age_yrs <- .omopFloorDivideSql(age_at, 365L)
     band_exists <- function(bounds) paste0(
       "EXISTS (SELECT 1 FROM ", person, " p WHERE p.person_id = coh.subject_id ",
       "AND ", paste(bounds, collapse = " AND "), ")")
-    if (length(breaks) > 0) {
-      lo <- breaks[1]
-      levels[[1L]] <- list(label = paste0("age: <", lo),
-                           predicate = band_exists(paste0(age_yrs, " < ", lo)))
-      if (length(breaks) >= 2) {
-        for (i in seq_len(length(breaks) - 1L)) {
-          a <- breaks[i]; b <- breaks[i + 1L]
-          levels[[length(levels) + 1L]] <- list(
-            label = paste0("age: ", a, "-", b - 1L),
-            predicate = band_exists(c(paste0(age_yrs, " >= ", a),
-                                      paste0(age_yrs, " < ", b))))
-        }
+    lo <- breaks[1]
+    levels[[1L]] <- list(label = paste0("age: <", lo),
+                         predicate = band_exists(paste0(age_yrs, " < ", lo)))
+    if (length(breaks) >= 2) {
+      for (i in seq_len(length(breaks) - 1L)) {
+        a <- breaks[i]; b <- breaks[i + 1L]
+        levels[[length(levels) + 1L]] <- list(
+          label = paste0("age: ", a, "-", b - 1L),
+          predicate = band_exists(c(paste0(age_yrs, " >= ", a),
+                                    paste0(age_yrs, " < ", b))))
       }
-      hi <- breaks[length(breaks)]
-      levels[[length(levels) + 1L]] <- list(
-        label = paste0("age: >=", hi),
-        predicate = band_exists(paste0(age_yrs, " >= ", hi)))
     }
+    hi <- breaks[length(breaks)]
+    levels[[length(levels) + 1L]] <- list(
+      label = paste0("age: >=", hi),
+      predicate = band_exists(paste0(age_yrs, " >= ", hi)))
+    bands <- vapply(levels, function(l) l$predicate, character(1))
+    levels[[length(levels) + 1L]] <- list(
+      label = "age: unknown", predicate = paste0("NOT ", any_of(bands)))
+
+  } else {
+    stop("Unsupported subgroup_kind.", call. = FALSE)
   }
 
-  if (length(levels) == 0) {
-    # No usable subgroup spec -> a single unrestricted "overall" level so the
-    # entry degrades to the cm_result substrate (one estimate over both arms)
-    # rather than erroring.
-    return(list(list(label = "overall", predicate = NULL)))
+  # The level count is public (it depends only on the request): a family larger
+  # than the dsBase level cap is refused, never truncated (a truncated family is
+  # not a partition, so the missing levels would follow by subtraction).
+  if (length(levels) > cap) {
+    stop("The subgroup family has more levels than the server ",
+         "nfilter.levels.max cap.", call. = FALSE)
   }
-  # Cap the level count (defence against a high-cardinality subgroup enumerating
-  # rare strata): the SAME server option the dsBase level gate uses, so a
-  # subgroup can never out-enumerate a categorical variable.
-  if (length(levels) > cap) levels <- levels[seq_len(cap)]
   levels
+}
+
+#' Whether a complete subgroup family may be released (one decision)
+#'
+#' Pure support logic, separate from the model fit. For every level and each
+#' arm, the level's persons, outcome persons and non-outcome persons (the cells
+#' of the arm-by-outcome model) and the same three counts of its complement
+#' within the arm must each be zero or at least the threshold (persons:
+#' \code{max(nfilter.tab, nfilter.subset)}; outcome cells: \code{nfilter.tab}),
+#' the dsBase small-cell convention (a count strictly between 0 and the
+#' threshold is disclosive). The levels must also add up to the arm (each person
+#' in exactly one level); otherwise the family is not a partition and is
+#' withheld.
+#'
+#' @param level_counts List, one element per level, of
+#'   \code{list(target = list(persons, outcome_persons), comparator = ...)}.
+#' @param arm_counts \code{list(target = ..., comparator = ...)} for the whole
+#'   arms, same fields.
+#' @return list(releasable, reason).
+#' @keywords internal
+.omopCmInteractionFamilyCheck <- function(level_counts, arm_counts) {
+  settings <- .omopDisclosureSettings()
+  person_thr <- max(settings$nfilter_tab, settings$nfilter_subset)
+  cell_thr <- settings$nfilter_tab
+  small <- function(x, thr) {
+    x <- suppressWarnings(as.numeric(x))
+    length(x) != 1L || is.na(x) || (x > 0 && x < thr)
+  }
+  cells_small <- function(persons, outcome_persons) {
+    small(persons, person_thr) || small(outcome_persons, cell_thr) ||
+      small(persons - outcome_persons, cell_thr)
+  }
+  withheld <- list(releasable = FALSE,
+                   reason = "subgroup_family_not_releasable")
+  multi <- length(level_counts) > 1L
+  for (arm in c("target", "comparator")) {
+    total <- arm_counts[[arm]]
+    persons <- vapply(level_counts, function(l) as.numeric(l[[arm]]$persons),
+                      numeric(1))
+    outcome_persons <- vapply(level_counts, function(l) {
+      as.numeric(l[[arm]]$outcome_persons)
+    }, numeric(1))
+    if (anyNA(persons) || anyNA(outcome_persons) ||
+        sum(persons) != as.numeric(total$persons) ||
+        sum(outcome_persons) != as.numeric(total$outcome_persons)) {
+      return(withheld)
+    }
+    for (i in seq_along(level_counts)) {
+      if (cells_small(persons[[i]], outcome_persons[[i]])) return(withheld)
+      if (multi && cells_small(total$persons - persons[[i]],
+                               total$outcome_persons - outcome_persons[[i]])) {
+        return(withheld)
+      }
+    }
+  }
+  list(releasable = TRUE, reason = NULL)
 }
 
 #' Translate a single subgroup concept id to its name (for the level label)
@@ -194,16 +281,18 @@
 #' @param tar A list with the TAR offsets/anchors (start/end/anchor_start/anchor_end).
 #' @param predicate SQL boolean over \code{coh} restricting to the subgroup (or
 #'   NULL for the unrestricted "overall" level).
+#' @param horizon Public contribution horizon in days of protected releases
+#'   (NULL: the whole observed window, for in-session fits).
 #' @return Data frame (person_days, events) — one row per subject in the subgroup.
 #' @keywords internal
-.omopCmSubgroupSubjectFrame <- function(handle, cohort, out_src, tar, predicate) {
-  first <- .omopFirstCohortEpisodeSql(handle, cohort)
-  anchor <- function(a) {
-    if (identical(a, "end")) "cohort_end_date" else "cohort_start_date"
-  }
-  tar_lo <- paste0("DATEADD(day, ", tar$start, ", coh.", anchor(tar$anchor_start), ")")
-  tar_hi <- paste0("DATEADD(day, ", tar$end, ", coh.", anchor(tar$anchor_end), ")")
-  pdays  <- .omopDateDiffDays(handle, tar_hi, tar_lo)
+.omopCmSubgroupSubjectFrame <- function(handle, cohort, out_src, tar, predicate,
+                                        horizon = NULL) {
+  # The shared observed window (.omopObservedTarSql), half-open [lo, hi), of
+  # the canonical first episode (alias coh; it carries that episode's dates,
+  # so the subgroup predicate is evaluated on it). The cohort table is read
+  # once: MySQL/MariaDB cannot reopen a temporary table within one query.
+  observed <- .omopObservedTarSql(handle, cohort, tar, horizon = horizon)
+  pdays  <- .omopDateDiffDays(handle, "coh.tar_hi", "coh.tar_lo")
 
   outcome_join <- ""
   out_event_expr <- "0"
@@ -211,26 +300,31 @@
     outcome_join <- paste0(
       " LEFT JOIN ", out_src$table, " o ON o.", out_src$person_col,
       " = coh.subject_id AND o.", out_src$concept_col, " IN (",
-      out_src$id_list, ") AND o.", out_src$date_col, " >= ", tar_lo,
-      " AND o.", out_src$date_col, " <= ", tar_hi)
+      out_src$id_list, ") AND o.", out_src$date_col, " >= coh.tar_lo",
+      " AND o.", out_src$date_col, " < coh.tar_hi")
     out_event_expr <- paste0("COUNT(o.", out_src$concept_col, ")")
   }
-  conditions <- c(paste0(tar_hi, " >= ", tar_lo), predicate)
+  conditions <- c(predicate)
   conditions <- conditions[!vapply(conditions, is.null, logical(1))]
-  where <- paste0(" WHERE ", paste(conditions, collapse = " AND "))
+  where <- if (length(conditions)) {
+    paste0(" WHERE ", paste(conditions, collapse = " AND "))
+  } else ""
   sql <- .omopCmSpliceBirthDate(handle, .sql_translate(paste0(
     "SELECT coh.subject_id AS subject_id, ",
     "MAX(", pdays, ") AS person_days, ",
     out_event_expr, " AS events ",
-    "FROM ", first, " coh", outcome_join, where,
+    "FROM ", observed, " coh", outcome_join, where,
     " GROUP BY coh.subject_id"),
     handle$target_dialect))
   res <- .executeQuery(handle, sql)
   if (is.null(res) || nrow(res) == 0) {
-    return(data.frame(person_days = numeric(0), events = numeric(0)))
+    return(data.frame(person_days = numeric(0), events = numeric(0),
+                      person_id = character(0), stringsAsFactors = FALSE))
   }
+  names(res) <- tolower(names(res))
   data.frame(person_days = as.numeric(res$person_days),
              events      = as.numeric(res$events),
+             person_id   = .dsomopReleasePersonIdText(res$subject_id),
              stringsAsFactors = FALSE)
 }
 
@@ -364,21 +458,40 @@
     settings   <- .omopDisclosureSettings()
     z          <- stats::qnorm(1 - alpha / 2)
 
+    # Per-arm in-session frame + aggregate counts. The counts are declared (the
+    # ONE gate bands them); the frames feed the fit.
+    counts <- function(cohort, predicate) {
+      fr <- .omopCmSubgroupSubjectFrame(handle, cohort, out_src, tar, predicate)
+      list(frame       = fr,
+           persons     = nrow(fr),
+           outcomes    = sum(fr$events, na.rm = TRUE),
+           outcome_persons = sum(fr$events > 0, na.rm = TRUE),
+           person_days = sum(fr$person_days, na.rm = TRUE))
+    }
+    # The whole arms and EVERY level of the complete family are counted before
+    # anything is fitted or released: the family is released or withheld as one
+    # decision (overall/level differencing would otherwise solve a withheld
+    # level).
+    arms <- list(target = counts(cohorts$a, NULL),
+                 comparator = counts(cohorts$b, NULL))
+    level_counts <- lapply(subgroups, function(sg) {
+      if (is.null(sg$predicate)) return(arms)
+      list(target = counts(cohorts$a, sg$predicate),
+           comparator = counts(cohorts$b, sg$predicate))
+    })
+    family <- .omopCmInteractionFamilyCheck(level_counts, arms)
+    if (!isTRUE(family$releasable)) {
+      out <- data.frame()
+      attr(out, "dsomop_release_notes") <- list(
+        subgroup_family = "withheld", reason = family$reason)
+      return(out)
+    }
+
     rows <- list()
-    for (sg in subgroups) {
-      # Per-arm in-session frame + aggregate counts WITHIN the subgroup. The
-      # counts are declared (the ONE gate bands them); the frames feed the fit.
-      counts <- function(cohort) {
-        fr <- .omopCmSubgroupSubjectFrame(handle, cohort, out_src, tar,
-                                          sg$predicate)
-        list(frame       = fr,
-             persons     = nrow(fr),
-             outcomes    = sum(fr$events, na.rm = TRUE),
-             outcome_persons = sum(fr$events > 0, na.rm = TRUE),
-             person_days = sum(fr$person_days, na.rm = TRUE))
-      }
-      ta <- counts(cohorts$a)
-      co <- counts(cohorts$b)
+    for (i in seq_along(subgroups)) {
+      sg <- subgroups[[i]]
+      ta <- level_counts[[i]]$target
+      co <- level_counts[[i]]$comparator
       # Outcome events can recur: each arm's outcome count needs nfilter.tab
       # distinct persons with an outcome. An unsupported count is suppressed
       # (the gate then drops the subgroup row) together with the estimate.
@@ -450,6 +563,7 @@
     if (length(rows) == 0) return(data.frame())
     out <- do.call(rbind, rows)
     rownames(out) <- NULL
+    attr(out, "dsomop_release_notes") <- list(subgroup_family = "released")
     out
   }
 }
@@ -492,8 +606,8 @@
            default = "0", choices = c("0", "1", "2", "3", "4"),
            description = "Outcome domain (0 condition,1 drug,2 procedure,3 measurement,4 observation)."),
       list(name = "subgroup_kind", type = "enum", required = FALSE,
-           default = "concept", choices = c("concept", "sex", "age"),
-           description = "Subgroup definition kind: a concept presence/absence, sex, or age bands."),
+           default = "concept", choices = c("concept", "sex", "age", "overall"),
+           description = "Subgroup definition kind: a concept presence/absence, sex (male, female, other or unknown), age bands (plus an unknown-age level), or overall (the whole arms). The complete family is released only when every level and its complement have enough persons and outcomes in both arms."),
       list(name = "subgroup_concept_id", type = "concept_id", required = FALSE,
            default = NULL,
            description = "Modifier concept id (subgroup_kind=concept; descendants expanded). Levels: present / absent."),

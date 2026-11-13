@@ -1,0 +1,202 @@
+{
+  "recipe": "14-oncology-episodes",
+  "fixture": "reach + extension (build_extended_reach_handle(100))",
+  "nfilter_subset": 5,
+  "fixture_keys": ["person_id", "index_date", "index_key"],
+  "key_policy": "rows are matched to engine output on the fixture keys (person_id is the fixture identity; the harness tokenises it with the fixture's person key); index_date/index_key identify the episode and are not released columns",
+  "outputs": {
+    "episodes": {
+      "name": "episodes",
+      "n_persons": 10,
+      "released_columns": ["row_id", "cohort_row_id", "person_id", "n_members", "n_member_drugs", "first_member_days", "n_specimens"],
+      "comparison_columns": ["n_members", "n_member_drugs", "first_member_days", "n_specimens"],
+      "oracle_only": [],
+      "columns": ["person_id", "index_date", "index_key", "n_members", "n_member_drugs", "first_member_days", "n_specimens"],
+      "rows": [
+        {
+          "person_id": 1,
+          "index_date": "2019-12-01",
+          "index_key": "101",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 2,
+          "index_date": "2019-12-01",
+          "index_key": "102",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 3,
+          "index_date": "2019-12-01",
+          "index_key": "103",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 4,
+          "index_date": "2019-12-01",
+          "index_key": "104",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 5,
+          "index_date": "2019-12-01",
+          "index_key": "105",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 6,
+          "index_date": "2019-12-01",
+          "index_key": "106",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 7,
+          "index_date": "2019-12-01",
+          "index_key": "107",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 8,
+          "index_date": "2019-12-01",
+          "index_key": "108",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 62,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 1015,
+          "index_date": "2019-03-01",
+          "index_key": "1",
+          "n_members": 4,
+          "n_member_drugs": 3,
+          "first_member_days": 0,
+          "n_specimens": 2
+        },
+        {
+          "person_id": 1015,
+          "index_date": "2019-10-01",
+          "index_key": "2",
+          "n_members": 2,
+          "n_member_drugs": 2,
+          "first_member_days": -172,
+          "n_specimens": 1
+        },
+        {
+          "person_id": 1016,
+          "index_date": "2019-05-01",
+          "index_key": "3",
+          "n_members": 1,
+          "n_member_drugs": 1,
+          "first_member_days": 0,
+          "n_specimens": 0
+        }
+      ]
+    },
+    "first_line": {
+      "name": "first_line",
+      "n_persons": 10,
+      "released_columns": ["row_id", "cohort_row_id", "person_id", "line_days", "n_member_drugs"],
+      "comparison_columns": ["line_days", "n_member_drugs"],
+      "oracle_only": [],
+      "columns": ["person_id", "index_date", "index_key", "line_days", "n_member_drugs"],
+      "rows": [
+        {
+          "person_id": 1,
+          "index_date": "2019-12-01",
+          "index_key": "101",
+          "line_days": 90,
+          "n_member_drugs": 1
+        },
+        {
+          "person_id": 2,
+          "index_date": "2019-12-01",
+          "index_key": "102",
+          "line_days": 90,
+          "n_member_drugs": 1
+        },
+        {
+          "person_id": 3,
+          "index_date": "2019-12-01",
+          "index_key": "103",
+          "line_days": 90,
+          "n_member_drugs": 1
+        },
+        {
+          "person_id": 4,
+          "index_date": "2019-12-01",
+          "index_key": "104",
+          "line_days": 90,
+          "n_member_drugs": 1
+        },
+        {
+          "person_id": 5,
+          "index_date": "2019-12-01",
+          "index_key": "105",
+          "line_days": 90,
+          "n_member_drugs": 1
+        },
+        {
+          "person_id": 6,
+          "index_date": "2019-12-01",
+          "index_key": "106",
+          "line_days": 90,
+          "n_member_drugs": 1
+        },
+        {
+          "person_id": 7,
+          "index_date": "2019-12-01",
+          "index_key": "107",
+          "line_days": 90,
+          "n_member_drugs": 1
+        },
+        {
+          "person_id": 8,
+          "index_date": "2019-12-01",
+          "index_key": "108",
+          "line_days": 90,
+          "n_member_drugs": 1
+        },
+        {
+          "person_id": 1015,
+          "index_date": "2019-03-01",
+          "index_key": "1",
+          "line_days": 214,
+          "n_member_drugs": 3
+        },
+        {
+          "person_id": 1016,
+          "index_date": "2019-05-01",
+          "index_key": "3",
+          "line_days": 123,
+          "n_member_drugs": 1
+        }
+      ]
+    }
+  },
+  "invariants": [
+    "members are joined by the parent episode identity and person; an event linked to two episodes counts once in each",
+    "first_line = the chronologically first episode per person; line_days = inclusive coverage of that episode (214 for 1015, 123 for 1016, 90 for persons 1..8)"
+  ]
+}

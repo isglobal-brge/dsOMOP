@@ -1,0 +1,11 @@
+{
+  "encoding": "dsomop-match-v1: SHA-256 over f(text,'dsomop-match-v1') || f(int,seed) || f(text,cases namespace) || f(int,subject_id) || f(date,cohort_start_date) || f(date|null,cohort_end_date) || f(text,index_source) || f(text|null,index_key) || f(int,control person_id); f(tag,v) = tag byte (0x00 null, 0x01 integer, 0x02 text, 0x03 date) || u32 big-endian byte length || bytes (integers as ASCII decimal, text UTF-8 NFC, dates YYYY-MM-DD, null = tag 0x00 with length 0)",
+  "vectors": [
+    {"seed": 1, "namespace": "cases", "subject_id": 17, "cohort_start_date": "2019-03-04", "cohort_end_date": "2019-03-04", "index_source": "mi", "index_key": "90210", "control": 42,
+     "sha256": "e0b03460f934298cdfaaa3cbe0e2a177a9e1651a4c867dbcc25d93d31b408fbe"},
+    {"seed": 2, "namespace": "cases", "subject_id": 17, "cohort_start_date": "2019-03-04", "cohort_end_date": "2019-03-04", "index_source": "mi", "index_key": "90210", "control": 42,
+     "sha256": "44d7f63d161214d4ea559db935f8336c992f5c43afc74662ade9b4ab96b138f6"},
+    {"seed": 1, "namespace": "cases", "subject_id": 17, "cohort_start_date": "2019-03-04", "cohort_end_date": null, "index_source": "legacy_spec", "index_key": null, "control": 43,
+     "sha256": "a7cefffc88efb9fcd49a7e155b0079ac7bff6fb9fe68fb2741d091764c28034b"}
+  ]
+}

@@ -10,7 +10,8 @@
   bp,
   base_cohort_table = NULL,
   base_person_ids = NULL,
-  index_cohort_table = base_cohort_table
+  index_cohort_table = base_cohort_table,
+  ctx = NULL
 )
 }
 \arguments{
@@ -41,8 +42,8 @@ Each population in \code{plan$populations} is EITHER criteria-defined
 OR a set-operation over OTHER populations (\code{setop = list(op, members)},
 folded with \code{\link{.cohortCombine}}). Set-op populations are resolved AFTER
 their members, so a single pass over a parent-before-child ordering suffices;
-a member that has not yet been resolved is an error (fail-closed). Every
-produced person set is gated with \code{\link{.assertMinPersons}} — a tiny
-intersection therefore fails closed before any output is produced.
+a member that has not yet been resolved is an error (fail-closed). With an
+execution context these are private inputs; support is checked on each
+final publication component.
 }
 \keyword{internal}

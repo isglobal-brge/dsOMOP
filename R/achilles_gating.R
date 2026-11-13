@@ -17,9 +17,15 @@
 #     dropping record cells whose sibling person count_value < nfilter.tab. No
 #     CDM query needed.
 #   * "companion": no precomputed person sibling exists (monthly analyses, 505,
-#     1818, 2102). Compute a targeted, cached COUNT(DISTINCT person_id) grouped
-#     by the same strata directly from the CDM domain table, then drop record
-#     cells where persons < nfilter.tab.
+#     1818). Compute a targeted COUNT(DISTINCT person_id), on every read, by
+#     the same strata directly from the CDM domain table, over exactly the
+#     records the upstream analysis counts (events inside an observation
+#     period, with the analysis's own event restrictions), then drop record
+#     cells whose person basis is below max(nfilter.tab, nfilter.subset).
+#
+# Analysis 2102 is not a record analysis: upstream it counts distinct PERSONS
+# by device_concept_id and calendar month, so it is gated as a person-unit
+# analysis on its own count (see .achilles_catalog_static()).
 
 #' Gating specification for record-unit Achilles analyses
 #'
@@ -51,7 +57,6 @@
     "720"  = list(strategy = "companion", join_strata = "stratum_1"),
     "820"  = list(strategy = "companion", join_strata = "stratum_1"),
     "1820" = list(strategy = "companion", join_strata = "stratum_1"),
-    "2102" = list(strategy = "companion", join_strata = "stratum_1"),
     "1818" = list(strategy = "companion",
                   join_strata = c("stratum_1", "stratum_2", "stratum_3"))
   )
@@ -67,19 +72,30 @@
 
 #' Build a composite stratum join key
 #'
-#' Normalizes one or more stratum columns into a single comparable character
-#' key so record rows and person-count rows can be matched. Missing strata
-#' become the empty string; parts are "\\x1f"-joined (a delimiter that cannot
-#' occur in a concept id or YYYYMM month) to avoid collisions between, e.g.,
-#' ("1","23") and ("12","3").
+#' Normalizes the contracted stratum columns into a single comparable character
+#' key so record rows and person-count rows can be matched. A NULL stratum value
+#' (a legitimate upstream group, e.g. a missing death type) becomes the empty
+#' string; parts are "\\x1f"-joined (a delimiter that cannot occur in a concept
+#' id or YYYYMM month) to avoid collisions between, e.g., ("1","23") and
+#' ("12","3").
+#'
+#' Every contracted column is required. A frame that lacks one of them (or a
+#' contract with no stratum columns at all) yields \code{NA} keys, which never
+#' match, so the affected record cells fail closed instead of being joined on a
+#' silently shortened key (for 1818, a key without the unit and range bucket
+#' would let one bucket borrow another bucket's person count).
 #'
 #' @param df Data frame containing the stratum columns.
-#' @param cols Character vector of stratum column names.
-#' @return Character vector, one composite key per row.
+#' @param cols Character vector of contracted stratum column names.
+#' @return Character vector, one composite key per row (\code{NA} when the
+#'   contract cannot be evaluated).
 #' @keywords internal
 .achillesStratumKey <- function(df, cols) {
-  cols <- intersect(cols, names(df))
-  if (length(cols) == 0) return(rep("", nrow(df)))
+  n <- if (is.data.frame(df)) nrow(df) else 0L
+  if (length(cols) == 0L || !is.data.frame(df) ||
+      !all(cols %in% names(df))) {
+    return(rep(NA_character_, n))
+  }
   parts <- lapply(cols, function(col) {
     v <- as.character(df[[col]])
     v[is.na(v)] <- ""
@@ -88,90 +104,160 @@
   do.call(paste, c(parts, list(sep = "\x1f")))
 }
 
+#' Companion person-basis contracts of the record-unit Achilles analyses
+#'
+#' One entry per companion-gated analysis: the CDM domain table, the event date
+#' that places a record inside an observation period, the stratum expressions
+#' (one per contracted \code{stratum_*} column, built on the domain alias
+#' \code{d}) and any further upstream event restriction. The records counted
+#' are exactly those of the upstream OHDSI Achilles SQL (OHDSI/Achilles
+#' \code{inst/sql/sql_server/analyses/<id>.sql}): events dated inside one of the
+#' person's observation periods, endpoints included.
+#'
+#' @param handle CDM handle (selects the dialect of the month key).
+#' @return Named list keyed by character analysis_id.
+#' @keywords internal
+.achillesCompanionSpecs <- function(handle) {
+  month <- function(table, date) {
+    list(table = table, date = date,
+         strata = list(stratum_1 = .omopMonthKeySql(handle, paste0("d.", date))),
+         where = character(0), columns = date)
+  }
+  list(
+    "220"  = month("visit_occurrence", "visit_start_date"),
+    "420"  = month("condition_occurrence", "condition_start_date"),
+    "620"  = month("procedure_occurrence", "procedure_date"),
+    "720"  = month("drug_exposure", "drug_exposure_start_date"),
+    "820"  = month("observation", "observation_date"),
+    "1820" = month("measurement", "measurement_date"),
+    # 505: death records by death type; a NULL type is its own upstream group.
+    "505"  = list(table = "death", date = "death_date",
+                  strata = list(stratum_1 = "d.death_type_concept_id"),
+                  where = character(0),
+                  columns = c("death_date", "death_type_concept_id")),
+    # 1818: measurement records by concept x unit x normal-range bucket, over
+    # records with a numeric value, a unit and both range bounds.
+    "1818" = list(table = "measurement", date = "measurement_date",
+                  strata = list(stratum_1 = "d.measurement_concept_id",
+                                stratum_2 = "d.unit_concept_id",
+                                stratum_3 = .achillesRangeBucketSql("d")),
+                  where = c("d.value_as_number IS NOT NULL",
+                            "d.unit_concept_id IS NOT NULL",
+                            "d.range_low IS NOT NULL",
+                            "d.range_high IS NOT NULL"),
+                  columns = c("measurement_date", "measurement_concept_id",
+                              "unit_concept_id", "value_as_number",
+                              "range_low", "range_high"))
+  )
+}
+
+#' Normal-range bucket of Achilles analysis 1818
+#'
+#' The exact CASE of OHDSI/Achilles analysis 1818 (stratum_3 labels are
+#' load-bearing: they are the strata stored in \code{achilles_results}). A
+#' companion that bucketed records differently would join a cell to another
+#' bucket's person count.
+#'
+#' @param alias Alias of the measurement table.
+#' @return Character; a SQL CASE expression.
+#' @keywords internal
+.achillesRangeBucketSql <- function(alias) {
+  v <- paste0(alias, ".value_as_number")
+  lo <- paste0(alias, ".range_low")
+  hi <- paste0(alias, ".range_high")
+  paste0(
+    "CASE WHEN ", v, " < ", lo, " THEN 'Below Range Low' ",
+    "WHEN ", v, " >= ", lo, " AND ", v, " <= ", hi, " THEN 'Within Range' ",
+    "WHEN ", v, " > ", hi, " THEN 'Above Range High' ",
+    "ELSE 'Other' END"
+  )
+}
+
 #' Compute companion distinct-person counts for a record-count analysis
 #'
 #' For record-count analyses with NO precomputed person sibling (monthly
-#' 220/420/620/720/820/1820/2102; death 505; measurement range 1818), compute a
-#' targeted COUNT(DISTINCT person_id) grouped by the same gate strata directly
-#' from the CDM domain table. Returned strata are emitted as text and built to
-#' be join-compatible with the record analysis's stratum_1 (and stratum_2/3 for
-#' 1818): concept ids and YYYYMM month keys match achilles_results.stratum_*
-#' storage.
+#' 220/420/620/720/820/1820; death 505; measurement range 1818), compute a
+#' targeted \code{COUNT(DISTINCT d.person_id)} grouped by the same gate strata
+#' directly from the CDM domain table, over the records the upstream analysis
+#' counts: a correlated \code{EXISTS} keeps an event only when its date lies
+#' inside one of the person's observation periods (endpoints included). EXISTS
+#' rather than a join means duplicate or overlapping observation periods can
+#' never inflate the person basis, and out-of-period events (which the stored
+#' record count excludes) can never lend support to an in-period cell. Returned
+#' strata are emitted as text and built to be join-compatible with the record
+#' analysis's stratum columns: concept ids and YYYYMM month keys match
+#' \code{achilles_results.stratum_*} storage.
+#'
+#' Fail closed: a missing domain table, observation_period table or required
+#' column, or a failing query, returns an empty frame with the contracted
+#' stratum columns, so every record cell of the analysis is withheld; there is
+#' never a fallback to an un-restricted count.
 #'
 #' @param handle CDM handle.
 #' @param analysis_id Integer; a companion-gated analysis id.
 #' @return data.frame with the join-stratum columns + \code{n_persons}; empty
-#'   frame if not companion-gated or the domain table is absent.
+#'   frame if the analysis is not companion-gated or its basis is unavailable.
 #' @keywords internal
 .achillesCompanionPersonCounts <- function(handle, analysis_id) {
   analysis_id <- as.integer(analysis_id)
-
-  companion_specs <- list(
-    "220"  = list(table = "visit_occurrence",     kind = "month", date = "visit_start_date"),
-    "420"  = list(table = "condition_occurrence", kind = "month", date = "condition_start_date"),
-    "620"  = list(table = "procedure_occurrence", kind = "month", date = "procedure_date"),
-    "720"  = list(table = "drug_exposure",        kind = "month", date = "drug_exposure_start_date"),
-    "820"  = list(table = "observation",          kind = "month", date = "observation_date"),
-    "1820" = list(table = "measurement",          kind = "month", date = "measurement_date"),
-    "2102" = list(table = "device_exposure",      kind = "month", date = "device_exposure_start_date"),
-    "505"  = list(table = "death",                kind = "concept", col = "death_type_concept_id"),
-    "1818" = list(table = "measurement",          kind = "range")
+  spec <- .achillesCompanionSpecs(handle)[[as.character(analysis_id)]]
+  strata_cols <- if (is.null(spec)) "stratum_1" else names(spec$strata)
+  empty <- as.data.frame(
+    c(stats::setNames(rep(list(character(0)), length(strata_cols)),
+                      strata_cols),
+      list(n_persons = numeric(0))),
+    stringsAsFactors = FALSE
   )
-
-  spec <- companion_specs[[as.character(analysis_id)]]
-  empty <- data.frame(stratum_1 = character(0), n_persons = numeric(0),
-                      stringsAsFactors = FALSE)
   if (is.null(spec)) return(empty)
 
   bp <- .buildBlueprint(handle)
-  if (!spec$table %in% bp$tables$table_name[bp$tables$present_in_db]) {
+  present <- bp$tables$table_name[bp$tables$present_in_db]
+  if (!all(c(spec$table, "observation_period") %in% present)) return(empty)
+  has_columns <- function(table, columns) {
+    cols <- bp$columns[[table]]
+    is.data.frame(cols) && all(columns %in% tolower(cols$column_name))
+  }
+  if (!has_columns(spec$table, unique(c("person_id", spec$columns))) ||
+      !has_columns("observation_period",
+                   c("person_id", "observation_period_start_date",
+                     "observation_period_end_date"))) {
     return(empty)
   }
 
   qualified <- .qualifyTable(handle, spec$table, handle$cdm_schema)
-  month_key <- .omopMonthKeySql(handle, spec$date %||% "event_date")
+  observation <- .qualifyTable(handle, "observation_period", handle$cdm_schema)
   text_cast <- function(expression) .omopTextCastSql(handle, expression, 64L)
-
-  sql <- switch(spec$kind,
-    "month" = paste0(
-      "SELECT ", text_cast(month_key), " AS stratum_1, ",
-      "COUNT(DISTINCT person_id) AS n_persons FROM ", qualified,
-      " WHERE ", spec$date, " IS NOT NULL",
-      " GROUP BY ", month_key
-    ),
-    "concept" = paste0(
-      "SELECT ", text_cast(spec$col), " AS stratum_1, ",
-      "COUNT(DISTINCT person_id) AS n_persons FROM ", qualified,
-      " WHERE ", spec$col, " IS NOT NULL",
-      " GROUP BY ", spec$col
-    ),
-    "range" = {
-      # Labels MUST match what real OHDSI Achilles analysis 1818 stores in
-      # stratum_3: 'Below Range Low' / 'Within Range' / 'Above Range High'
-      # (verified against OHDSI/Achilles inst/sql .../1818.sql). Any mismatch
-      # makes the gate join fail and fail-closed-drop every 1818 cell.
-      bucket <- paste0(
-        "CASE WHEN value_as_number < range_low THEN 'Below Range Low' ",
-        "WHEN value_as_number > range_high THEN 'Above Range High' ",
-        "ELSE 'Within Range' END"
-      )
-      paste0(
-        "SELECT ", text_cast("measurement_concept_id"), " AS stratum_1, ",
-        text_cast("unit_concept_id"), " AS stratum_2, ",
-        bucket, " AS stratum_3, ",
-        "COUNT(DISTINCT person_id) AS n_persons FROM ", qualified,
-        " WHERE value_as_number IS NOT NULL",
-        " AND range_low IS NOT NULL AND range_high IS NOT NULL",
-        " GROUP BY measurement_concept_id, unit_concept_id, ", bucket
-      )
-    }
+  event_date <- paste0("d.", spec$date)
+  in_period <- paste0(
+    "EXISTS (SELECT 1 FROM ", observation, " op",
+    " WHERE op.person_id = d.person_id",
+    " AND ", event_date, " >= op.observation_period_start_date",
+    " AND ", event_date, " <= op.observation_period_end_date)"
   )
+  # Group by the selected text expressions themselves: MySQL's
+  # ONLY_FULL_GROUP_BY does not treat CAST(x) as functionally dependent on x.
+  keys <- vapply(names(spec$strata), function(col) {
+    text_cast(spec$strata[[col]])
+  }, character(1L))
+  select <- c(paste0(keys, " AS ", names(spec$strata)),
+              "COUNT(DISTINCT d.person_id) AS n_persons")
+  where <- c(paste0(event_date, " IS NOT NULL"), spec$where, in_period)
+  sql <- .sql_translate(paste0(
+    "SELECT ", paste(select, collapse = ", "),
+    " FROM ", qualified, " d",
+    " WHERE ", paste(where, collapse = " AND "),
+    " GROUP BY ", paste(keys, collapse = ", ")
+  ), handle$target_dialect)
 
   result <- tryCatch(.executeQuery(handle, sql), error = function(e) empty)
-  for (col in intersect(c("stratum_1", "stratum_2", "stratum_3"), names(result))) {
+  if (!is.data.frame(result) ||
+      !all(c(strata_cols, "n_persons") %in% names(result))) {
+    return(empty)
+  }
+  for (col in strata_cols) {
     result[[col]] <- as.character(result[[col]])
   }
-  result
+  result[, c(strata_cols, "n_persons"), drop = FALSE]
 }
 
 #' Fetch raw (un-suppressed) achilles_results rows for given analysis IDs
@@ -201,13 +287,17 @@
   tryCatch(.executeQuery(handle, sql), error = function(e) empty)
 }
 
-#' Resolve distinct-person counts for one record-gated analysis (cached)
+#' Resolve distinct-person counts for one record-gated analysis
 #'
 #' Returns a data frame with the analysis's join-stratum columns plus an
 #' \code{n_persons} column. For "sibling" analyses the counts are read from the
 #' sibling x00 rows (fetched if absent) — no CDM query. For "companion"
-#' analyses they come from \code{.achillesCompanionPersonCounts}. Cached per
-#' analysis_id in \code{handle$achilles_gate_cache}.
+#' analyses they come from \code{.achillesCompanionPersonCounts}.
+#'
+#' The basis is recomputed on every read (dsOMOP 2.10.3): a release decision
+#' never rests on support remembered from an earlier read, so a CDM or results
+#' refresh that drops a cell below the person threshold withholds it at once,
+#' on cached and new handles alike. There is no per-handle support cache.
 #'
 #' @param handle CDM handle.
 #' @param analysis_id Integer; the record-unit analysis being gated.
@@ -216,11 +306,6 @@
 #' @return Data frame with \code{spec$join_strata} columns and \code{n_persons}.
 #' @keywords internal
 .achillesGatePersonCounts <- function(handle, analysis_id, spec, rows) {
-  if (is.null(handle$achilles_gate_cache)) handle$achilles_gate_cache <- list()
-  cache_key <- as.character(analysis_id)
-  cached <- handle$achilles_gate_cache[[cache_key]]
-  if (!is.null(cached)) return(cached)
-
   if (identical(spec$strategy, "sibling")) {
     sib <- spec$sibling
     sib_rows <- rows[!is.na(rows$analysis_id) & rows$analysis_id == sib, ,
@@ -233,7 +318,6 @@
   }
 
   counts$n_persons <- suppressWarnings(as.numeric(counts$n_persons))
-  handle$achilles_gate_cache[[cache_key]] <- counts
   counts
 }
 
@@ -271,7 +355,12 @@
     rec_key <- .achillesStratumKey(rows[is_rec, , drop = FALSE], spec$join_strata)
     cnt_key <- .achillesStratumKey(counts, spec$join_strata)
 
-    n_persons <- counts$n_persons[match(rec_key, cnt_key)]
+    # An unevaluable key (NA: a contracted stratum column is missing on either
+    # side) never matches, so its record cells are withheld.
+    basis <- if (is.data.frame(counts) && "n_persons" %in% names(counts)) {
+      suppressWarnings(as.numeric(counts$n_persons))
+    } else rep(NA_real_, length(cnt_key))
+    n_persons <- basis[match(rec_key, cnt_key, incomparables = NA)]
     keep[is_rec] <- !is.na(n_persons) & n_persons >= threshold
   }
 

@@ -1,0 +1,35 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+analysis-catalog: ............................................................................[dsomop-audit] 2026-11-12T22:53:00+0000 method=publication detail={"output":"result","component":"result","passed":true}
+................................................................[dsomop-audit] 2026-11-12T22:53:29+0000 method=publication detail={"output":"result","component":"result","passed":true}
+........................................................................................[dsomop-audit] 2026-11-12T22:53:45+0000 method=publication detail={"output":"result","component":"result","passed":true}
+..............[dsomop-audit] 2026-11-12T22:53:49+0000 method=omopAnalysisRunDS detail={"name":"dsomop:demo.__scope_dots_aggregate","params":[],"scope_present":true,"scope_table_count":2,"combine":"union"}
+[dsomop-audit] 2026-11-12T22:53:49+0000 method=omopAnalysisRunAssignDS detail={"name":"dsomop:demo.__scope_dots_assign","params":[],"scope_present":true,"scope_table_count":2,"combine":"union"}
+[dsomop-audit] 2026-11-12T22:53:49+0000 method=publication detail={"output":"result","component":"result","passed":true}
+..[dsomop-audit] 2026-11-12T22:53:49+0000 method=omopAnalysisRunDS detail={"name":"dsomop:demo.__scope_dots_aggregate","params":[],"scope_present":true,"scope_table_count":0,"combine":"union"}
+[dsomop-audit] 2026-11-12T22:53:49+0000 method=omopAnalysisRunAssignDS detail={"name":"dsomop:demo.__scope_dots_assign","params":[],"scope_present":true,"scope_table_count":0,"combine":"union"}
+[dsomop-audit] 2026-11-12T22:53:49+0000 method=publication detail={"output":"result","component":"result","passed":true}
+................................................................................................................................................
+dp-generation: ...........................................NULL
+............................[dsomop-audit] 2026-11-12T22:55:13+0000 method=publication detail={"output":"result","component":"result","passed":true}
+.....[dsomop-audit] 2026-11-12T22:55:13+0000 method=publication detail={"output":"result","component":"result","passed":true}
+....
+e2e-fix1: .W..[dsomop-audit] 2026-11-12T22:55:15+0000 method=omopAnalysisRunDS detail={"name":"dsomop:condition_era.length_stats","params":[],"scope_present":false,"scope_table_count":0,"combine":"union"}
+.[dsomop-audit] 2026-11-12T22:55:15+0000 method=omopAnalysisRunAssignDS detail={"name":"dsomop:achilles.3","params":[],"scope_present":false,"scope_table_count":0,"combine":"union"}
+...........
+state-secrets: ............................................S.......................................
+tools-release-astra: .......Warning: call dbDisconnect() when finished working with a connection
+....................
+tools-release-hierarchy: ...................................................................................................................................................................................................................................
+tools-release-pooling: .............................................
+tools-release-record-histogram: .............................................................
+tools-release: .........................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+
+══ Skipped ═════════════════════════════════════════════════════════════════════
+1. macOS state aliases remain valid after canonicalization ('test-state-secrets.R:253:3') - Reason: identical(Sys.info()[["sysname"]], "Darwin") is not TRUE
+
+══ Warnings ════════════════════════════════════════════════════════════════════
+1. DP-only sessions can prepare a pinned loader then release its fixed count ('test-e2e-fix1.R:10:11') - analysis catalog: some entries depend on resources not present: tables {care_site, provider, condition_era, device_exposure, cost, drug_era, payer_plan_period} 
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+RESULT failed: 0 errors: 0 skipped: 1 passed: 3223 

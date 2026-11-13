@@ -1,0 +1,117 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "events": {
+    "resp": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          320136
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "death": {
+      "table": "death",
+      "concept_set": null,
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    }
+  },
+  "populations": {
+    "c1": {
+      "kind": "index",
+      "index": {
+        "source": {
+          "cohort_definition_id": 1
+        },
+        "select": "all",
+        "end": {
+          "strategy": "event_end",
+          "days": null,
+          "pad": 0
+        },
+        "n": 1,
+        "offset": 0,
+        "restrict_to_observation": true
+      },
+      "parent": null,
+      "where": null,
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      }
+    }
+  },
+  "outputs": {
+    "recurrent": {
+      "rows": "c1",
+      "format": "survival",
+      "result_symbol": "D_recurrent",
+      "options": {
+        "outcomes": {
+          "resp": {
+            "event": "resp"
+          }
+        },
+        "tar": {
+          "start": 1,
+          "end": 90,
+          "anchor": "index"
+        },
+        "censor": [
+          "observation_end",
+          "death"
+        ],
+        "format": "recurrent_events",
+        "event_order": "all",
+        "complete": true,
+        "tars": {},
+        "entry": null,
+        "prior_outcome": null,
+        "washout_days": 0,
+        "tie_policy": "priority",
+        "same_day_priority": "event",
+        "gap_policy": "censor_at_gap",
+        "initial_state": "index",
+        "outcome_mode": "named"
+      },
+      "collapse": null,
+      "columns": null,
+      "sources": [],
+      "grain": "episode"
+    }
+  },
+  "options": {
+    "translate_concepts": true,
+    "block_sensitive": true,
+    "factor_concepts": true
+  },
+  "concept_sets": {},
+  "intervals": {},
+  "variables": {},
+  "publish": [
+    "recurrent"
+  ]
+}

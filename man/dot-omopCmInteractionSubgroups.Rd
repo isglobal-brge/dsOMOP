@@ -2,7 +2,7 @@
 % Please edit documentation in R/ohdsi_pack_cm_interaction.R
 \name{.omopCmInteractionSubgroups}
 \alias{.omopCmInteractionSubgroups}
-\title{Resolve the ordered subgroup levels for the interaction estimate}
+\title{Resolve the complete public subgroup family of the interaction estimate}
 \usage{
 .omopCmInteractionSubgroups(handle, params)
 }
@@ -13,7 +13,7 @@
 }
 \value{
 Ordered list of \code{list(label, predicate)} subgroup levels
-  (\code{predicate} NULL for the "overall" fallback level).
+  (\code{predicate} NULL for the \code{"overall"} level).
 }
 \description{
 Effect modification is the treatment effect computed SEPARATELY within each
@@ -21,23 +21,29 @@ level of a pre-specified subgroup. This builds those levels as a list of
 \code{list(label, predicate)} where \code{predicate} is a SQL boolean over the
 arm-cohort alias \code{coh} (a correlated EXISTS / person predicate that
 restricts EITHER arm's cohort to the subjects in that level), exactly the
-\code{coh.subject_id} idiom \code{\link{.omopCmAttritionSteps}} uses. Three
-subgroup kinds are supported (one selected by \code{subgroup_kind}):
+\code{coh.subject_id} idiom \code{\link{.omopCmAttritionSteps}} uses. The
+levels always form the COMPLETE public partition of an arm, so a released
+family can never be differenced against the whole arm to solve a withheld
+level:
 \itemize{
   \item \code{"concept"}: a (descendant-expanded) \code{subgroup_concept_id} in
     \code{subgroup_domain_code}. Two levels: present (EXISTS) and absent
-    (NOT EXISTS) — the classic "with vs without the comorbidity" modifier.
-  \item \code{"sex"}: the two gender levels (male 8507 / female 8532), each a
-    correlated EXISTS over \code{person}.
+    (its exact complement). A missing or unusable concept id is an error,
+    never a silent replacement by the whole arm.
+  \item \code{"sex"}: male (8507), female (8532) and an explicit
+    \code{"sex: other or unknown"} level defined as
+    \code{NOT(male_exists OR female_exists)}, which keeps persons with a NULL,
+    other or missing gender (SQL \code{NOT IN} would lose NULLs).
   \item \code{"age"}: contiguous age-at-index bands from \code{age_breaks} (a
     comma list of cut points, e.g. \code{"50,65,80"} -> \code{<50}, \code{50-64},
     \code{65-79}, \code{>=80}), each a correlated EXISTS over \code{person} with
-    the year-of-birth age expression spliced post-translate (the
-    \code{within_age_bounds} pattern of \code{\link{.omopCmAttritionSteps}}).
+    the year-of-birth age expression spliced post-translate, plus an explicit
+    \code{"age: unknown"} residual level (the complement of every band) for
+    persons whose age is missing or unusable.
+  \item \code{"overall"}: one unrestricted level (the whole arm), requested
+    explicitly.
 }
-The number of levels is CAPPED at \code{nfilter.levels.max} so a high-
-cardinality subgroup param can never enumerate a long list of rare strata; an
-empty/invalid spec yields a single "overall" level (no restriction) so the
-entry degrades to the cm_result substrate rather than erroring.
+A family with more levels than \code{nfilter.levels.max} is refused before
+any data is read (the level count is public); it is never truncated.
 }
 \keyword{internal}

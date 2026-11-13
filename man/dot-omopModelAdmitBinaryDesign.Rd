@@ -7,24 +7,39 @@
 .omopModelAdmitBinaryDesign(X, y = NULL)
 }
 \arguments{
-\item{X}{Numeric 0/1 matrix or data frame of candidate predictors.}
+\item{X}{Numeric 0/1 matrix or data frame of candidate predictors (one row
+per person).}
 
-\item{y}{Optional 0/1 response; when given, both classes need
-\code{nfilter.tab} persons or the model is not admitted.}
+\item{y}{Response/arm 0/1 vector aligned with the rows of \code{X}. Model
+releases must supply it. \code{NULL} keeps the legacy marginal-only check,
+which is not a model release contract.}
 }
 \value{
-Integer indices of the admitted columns of \code{X}, or NULL when
-  the response is not admissible.
+Integer indices of the admitted columns of \code{X} (possibly
+  empty), or NULL when the response is not admissible.
 }
 \description{
 The fitted community-tool models (Patient-Level Prediction, the CohortMethod
 propensity model) release only aggregates of their predictions, but they
 must still satisfy the checks dsBase applies before \code{ds.glm} returns
-anything: every binary predictor needs \code{nfilter.tab} persons with AND
-without it (a covariate almost everyone has singles out the few who lack
-it), and the number of parameters may not exceed \code{nfilter.glm} times
-the number of persons (a saturated model reproduces its data). Predictors
-are kept in their given order (most prevalent first) until the dimension
-cap is reached.
+anything, and more: a binary predictor is admitted only when it has
+\code{nfilter.tab} persons with AND without it WITHIN EACH class of the
+response (outcome / no outcome for PLP, target / comparator arm for the
+propensity model). A supported marginal is not enough: a covariate held by
+40 comparator persons but only 2 target persons passes the marginal rule,
+and the fitted model's scalars (AUC, mean predicted risk) then solve that
+2-person arm-by-covariate cell exactly. The number of parameters may not
+exceed \code{nfilter.glm} times the number of persons (a saturated model
+reproduces its data). Predictors are kept in their given order (most
+prevalent first, ties by public concept id) until the dimension cap is
+reached.
+}
+\details{
+The response is validated before any predictor is inspected: a response that
+is missing a value, has the wrong length, is not 0/1, or has a class below
+\code{nfilter.tab} persons is not admissible and the function returns NULL.
+A NULL is never permission to fit an intercept-only model instead; callers
+that release an intercept-only fit must declare it in their own contract
+(see \code{\link{.omopCmPropensityScores}}).
 }
 \keyword{internal}

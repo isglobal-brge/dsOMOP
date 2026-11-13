@@ -6,7 +6,25 @@
 \usage{
 .databaseVersionAtLeast(version, minimum, family)
 }
+\arguments{
+\item{version}{Version string reported by the server.}
+
+\item{minimum}{Minimum version, e.g. \code{"10.2.0"}.}
+
+\item{family}{\code{"mariadb"} or another engine family.}
+}
+\value{
+\code{TRUE} when the version is verified to be at least
+  \code{minimum}.
+}
 \description{
-Compare a vendor version string with a minimum version
+MariaDB reports its version either directly (\code{"10.6.23-MariaDB"},
+distribution builds append a package suffix such as
+\code{"-0ubuntu0.22.04.1"} or \code{"-0+deb12u1"}) or behind the
+\code{"5.5.5-"} replication-protocol prefix that MySQL client libraries
+show (\code{"5.5.5-10.11.6-MariaDB"}). The server version is the token
+immediately before \code{"-MariaDB"}; without that tag the protocol prefix
+is dropped and the first version is read. A package suffix such as
+\code{"0.22.04"} is never taken for the server version.
 }
 \keyword{internal}

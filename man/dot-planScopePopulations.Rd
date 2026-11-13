@@ -4,7 +4,7 @@
 \alias{.planScopePopulations}
 \title{Intersect a unified scope cohort into every resolved population}
 \usage{
-.planScopePopulations(handle, resolved, scope_cohort, bp)
+.planScopePopulations(handle, resolved, scope_cohort, bp, ctx = NULL)
 }
 \arguments{
 \item{handle}{CDM handle}

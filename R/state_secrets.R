@@ -362,9 +362,12 @@
 .ensureDsomopSecret <- function(
     name, path = .dsomopSecretPath(name), random_bytes = openssl::rand_bytes,
     require_existing = FALSE, replace_invalid = FALSE,
-    .sync = .dsomopSyncFile,
+    .sync = .dsomopSyncFile, .on_created = NULL,
     .allow_test_path = identical(
       Sys.getenv("DSOMOP_TEST_ALLOW_EPHEMERAL_STATE", unset = ""), "1")) {
+  if (!is.null(.on_created) && !is.function(.on_created)) {
+    stop("The secret creation observer must be a function.", call. = FALSE)
+  }
   if (!is.function(random_bytes)) {
     stop("random_bytes must be a secure random-byte function.", call. = FALSE)
   }
@@ -459,8 +462,15 @@
   Sys.chmod(temporary, mode = "0600")
   .dsomopValidateSecretFile(temporary)
   .dsomopRequireSync(temporary, .sync)
-  value <- .dsomopCommitSecretNoClobber(temporary, path)
+  # Only the successful no-clobber writer announces creation, after sync.
+  # Observing absence before acquiring the lock races with other workers.
+  created <- FALSE
+  value <- .dsomopCommitSecretNoClobber(temporary, path, .link = function(from, to) {
+    created <<- isTRUE(file.link(from, to))
+    created
+  })
   .dsomopRequireSync(dirname(path), .sync)
+  if (created && !is.null(.on_created)) .on_created()
   value
 }
 

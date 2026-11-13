@@ -1,0 +1,335 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient",
+    "client_version": "2.10.3"
+  },
+  "events": {
+    "episodes": {
+      "table": "episode",
+      "concept_set": {
+        "concepts": [
+          32531
+        ],
+        "include_descendants": false,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "members": {
+      "episode_members": {
+        "episode": {
+          "event": "episodes"
+        },
+        "tables": null,
+        "where": null,
+        "on_missing_table": "error"
+      }
+    },
+    "member_drugs": {
+      "episode_members": {
+        "episode": {
+          "event": "episodes"
+        },
+        "tables": [
+          "drug_exposure"
+        ],
+        "where": null,
+        "on_missing_table": "error"
+      }
+    },
+    "specimens": {
+      "table": "specimen",
+      "concept_set": {
+        "concepts": [
+          4001225
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    }
+  },
+  "populations": {
+    "onc": {
+      "kind": "index",
+      "label": "Treatment episodes",
+      "index": {
+        "source": {
+          "event": "episodes"
+        },
+        "select": "all",
+        "end": {
+          "strategy": "event_end",
+          "days": null,
+          "pad": 0
+        },
+        "n": 1,
+        "offset": 0,
+        "restrict_to_observation": true
+      },
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      },
+      "parent": null,
+      "where": null
+    },
+    "first_line": {
+      "kind": "index",
+      "label": "First treatment line",
+      "index": {
+        "source": {
+          "event": "episodes"
+        },
+        "select": "first",
+        "end": {
+          "strategy": "event_end",
+          "days": null,
+          "pad": 0
+        },
+        "n": 1,
+        "offset": 0,
+        "restrict_to_observation": true
+      },
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      },
+      "parent": null,
+      "where": null
+    }
+  },
+  "intervals": {
+    "episode_course": {
+      "source": {
+        "event": "episodes"
+      },
+      "gap": 0,
+      "end": "recorded_end",
+      "fallback": "none",
+      "persistence": 0,
+      "min_days": 0,
+      "by": "event",
+      "unmapped": "own_concept",
+      "stockpile": false
+    }
+  },
+  "variables": {
+    "n_members": {
+      "source": {
+        "event": "members"
+      },
+      "reducer": {
+        "fn": "count",
+        "value": null,
+        "window": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "n_member_drugs": {
+      "source": {
+        "event": "member_drugs"
+      },
+      "reducer": {
+        "fn": "count",
+        "value": null,
+        "window": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "first_member_days": {
+      "source": {
+        "event": "members"
+      },
+      "reducer": {
+        "fn": "first_date",
+        "value": null,
+        "window": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "n_specimens": {
+      "source": {
+        "event": "specimens"
+      },
+      "reducer": {
+        "fn": "count",
+        "window": {
+          "start": -30,
+          "end": 365,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "line_days": {
+      "source": {
+        "interval": "episode_course"
+      },
+      "reducer": {
+        "fn": "covered_days",
+        "window": {
+          "start": {
+            "anchor": "index",
+            "offset": 0
+          },
+          "end": {
+            "anchor": "index_end",
+            "offset": 0
+          },
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    }
+  },
+  "outputs": {
+    "episodes": {
+      "rows": "onc",
+      "format": "wide",
+      "grain": "episode",
+      "result_symbol": "D_onc",
+      "columns": [
+        "n_members",
+        "n_member_drugs",
+        "first_member_days",
+        "n_specimens"
+      ],
+      "collapse": null,
+      "sources": [],
+      "options": {
+        "date_handling": {
+          "mode": "relative",
+          "reference": "index",
+          "bin_width": null,
+          "date_columns": null
+        },
+        "time_window": null
+      }
+    },
+    "first_line": {
+      "rows": "first_line",
+      "format": "wide",
+      "grain": "episode",
+      "result_symbol": "D_first_line",
+      "columns": [
+        "line_days",
+        "n_member_drugs"
+      ],
+      "collapse": null,
+      "sources": [],
+      "options": {
+        "date_handling": {
+          "mode": "relative",
+          "reference": "index",
+          "bin_width": null,
+          "date_columns": null
+        },
+        "time_window": null
+      }
+    }
+  },
+  "options": {
+    "translate_concepts": true,
+    "block_sensitive": true,
+    "factor_concepts": true
+  },
+  "concept_sets": {},
+  "publish": [
+    "episodes",
+    "first_line"
+  ]
+}

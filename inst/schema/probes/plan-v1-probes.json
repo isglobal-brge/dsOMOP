@@ -1,0 +1,87 @@
+[
+  {
+    "id": "V01",
+    "label": "v1 plan with an unknown root field",
+    "schema": "v1-validator",
+    "owner": "WS-2",
+    "expect": "invalid",
+    "instance": {
+      "cohort": {
+        "type": "cohort_table",
+        "cohort_definition_id": 1
+      },
+      "already_gated": true,
+      "outputs": {
+        "demo": {
+          "type": "baseline",
+          "columns": [
+            "gender_concept_id"
+          ],
+          "derived": [
+            "age_at_index"
+          ]
+        }
+      },
+      "options": {
+        "translate_concepts": false,
+        "block_sensitive": true
+      }
+    }
+  },
+  {
+    "id": "V02",
+    "label": "v1 concept_dictionary output with an unknown field",
+    "schema": "v1-validator",
+    "owner": "WS-2",
+    "expect": "invalid",
+    "instance": {
+      "outputs": {
+        "dict": {
+          "type": "concept_dictionary",
+          "concept_ids": [
+            201820
+          ],
+          "already_gated": true
+        }
+      },
+      "options": {
+        "translate_concepts": true,
+        "block_sensitive": true
+      }
+    }
+  },
+  {
+    "id": "V03",
+    "label": "v1 baseline with the off-grid age grid 0,18,19,65 (assignment grid-shape validation)",
+    "schema": "v1-validator",
+    "owner": "WS-2",
+    "expect": "valid",
+    "instance": {
+      "cohort": {
+        "type": "cohort_table",
+        "cohort_definition_id": 1
+      },
+      "outputs": {
+        "demo": {
+          "type": "baseline",
+          "columns": [
+            "gender_concept_id"
+          ],
+          "derived": [
+            "age_at_index"
+          ],
+          "age_breaks": [
+            0,
+            18,
+            19,
+            65
+          ]
+        }
+      },
+      "options": {
+        "translate_concepts": false,
+        "block_sensitive": true
+      }
+    }
+  }
+]

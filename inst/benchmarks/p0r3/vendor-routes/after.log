@@ -1,0 +1,36 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+vendor-release-routes: .............................duckdb keeps downloaded extensions and secrets in a temporary directory:
+i /tmp/Rtmpf2t5Yp/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+............................................................................[vendor-versions] postgresql server PostgreSQL 14.24 (Ubuntu 14.24-0ubuntu0.22.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+............................................................................NOTICE:  drop cascades to table dsomop_it_784838_452d467c_results.achilles_results
+
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to table dsomop_it_784838_452d467c_vocab.concept
+drop cascades to table dsomop_it_784838_452d467c_vocab.concept_ancestor
+
+NOTICE:  drop cascades to 11 other objects
+DETAIL:  drop cascades to table dsomop_it_784838_452d467c_cdm.cdm_source
+drop cascades to table dsomop_it_784838_452d467c_cdm.person
+drop cascades to table dsomop_it_784838_452d467c_cdm.observation_period
+drop cascades to table dsomop_it_784838_452d467c_cdm.condition_occurrence
+drop cascades to table dsomop_it_784838_452d467c_cdm.drug_exposure
+drop cascades to table dsomop_it_784838_452d467c_cdm.procedure_occurrence
+drop cascades to table dsomop_it_784838_452d467c_cdm.measurement
+drop cascades to table dsomop_it_784838_452d467c_cdm.observation
+drop cascades to table dsomop_it_784838_452d467c_cdm.visit_occurrence
+drop cascades to table dsomop_it_784838_452d467c_cdm.device_exposure
+drop cascades to table dsomop_it_784838_452d467c_cdm.death
+
+[vendor-versions] mysql server 8.4.11
+............................................................................[vendor-versions] mariadb server 10.6.23-MariaDB-0ubuntu0.22.04.1
+............................................................................
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+RESULT failed: 0 errors: 0 skipped: 0 passed: 333 

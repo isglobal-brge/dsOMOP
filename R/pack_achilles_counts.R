@@ -14,9 +14,9 @@
 # person column and no second gate are needed. *_source_value columns are never
 # selected (the gate is only a backstop).
 #
-# The 16 entries (stable ids preserved so existing references keep resolving):
+# The 17 entries (stable ids preserved so existing references keep resolving):
 #   persons-with->=1 by concept   : dsomop:achilles.{200,400,600,700,800,1800,2100}
-#   persons by start month/concept: dsomop:achilles.{202,402,602,702,802,1802}
+#   persons by start month/concept: dsomop:achilles.{202,402,602,702,802,1802,2102}
 #   persons by visit start year   : dsomop:achilles.221
 #   persons with death by cause   : dsomop:achilles.500
 #   persons by death month        : dsomop:achilles.502
@@ -60,6 +60,10 @@
     "702"  = list(kind = "month",         table = "drug_exposure",        concept_col = "drug_concept_id",        date_col = "drug_exposure_start_date",   domain = "drug"),
     "802"  = list(kind = "month",         table = "observation",          concept_col = "observation_concept_id", date_col = "observation_date",           domain = "observation"),
     "1802" = list(kind = "month",         table = "measurement",          concept_col = "measurement_concept_id", date_col = "measurement_date",           domain = "measurement"),
+    # 2102 is upstream "Number of persons by device exposure start month, by
+    # device_concept_id" (a person analysis; the monthly device RECORD count is
+    # upstream 2120, which dsOMOP does not port).
+    "2102" = list(kind = "month",         table = "device_exposure",      concept_col = "device_concept_id",      date_col = "device_exposure_start_date", domain = "device"),
     # persons by visit start year.
     "221"  = list(kind = "year",          table = "visit_occurrence",     concept_col = "visit_concept_id",       date_col = "visit_start_date",           domain = "visit"),
     # death analyses.
@@ -199,6 +203,7 @@
     "702"  = "Number of persons by drug start month, by drug_concept_id",
     "802"  = "Number of persons by observation start month, by observation_concept_id",
     "1802" = "Number of persons by measurement start month, by measurement_concept_id",
+    "2102" = "Number of persons by device exposure start month, by device_concept_id",
     "221"  = "Number of persons by visit start year",
     "500"  = "Number of persons with death, by cause_concept_id",
     "502"  = "Number of persons by death month"

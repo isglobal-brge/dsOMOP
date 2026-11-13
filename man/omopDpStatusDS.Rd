@@ -4,7 +4,12 @@
 \alias{omopDpStatusDS}
 \title{Sticky privacy-noise service status (Aggregate)}
 \usage{
-omopDpStatusDS()
+omopDpStatusDS(client_contract = NULL)
+}
+\arguments{
+\item{client_contract}{The client's protected-release payload protocol
+(\code{"dsomop-protected-release-v1"}), or a list of protocols. Absent
+for clients older than dsOMOPClient 2.10.3.}
 }
 \value{
 Public DP service status, including the custodial \code{exclusive}
@@ -15,15 +20,33 @@ Public DP service status, including the custodial \code{exclusive}
   exploration) never depends on either.
 }
 \description{
-Returns the public fixed-per-release mechanism contract. Secret key material
-and protected snapshot fingerprints are never returned. The only DP state is
-the noise root: answers are deterministic in the root, the question, the
-protected statistic and a private automatic database version, and status
-declares \code{release_binding = "seed_data_versioned_v1"} and
-\code{persistent_state = "noise_root_only"}. A damaged root fails closed.
-There is no cumulative privacy budget or privacy call quota.
+Returns the public protected-release contract (dsOMOP 2.10.3): the
+mechanism, the reference calibration, the guarantee scope of each route
+(\code{fixed_synopsis}: the declared bounded vector before the exact
+support gate; \code{realised_sticky}: heuristic realised-contribution
+reuse), the statistics with a fixed-synopsis contract and the registered
+public scales. Secret key material, fingerprints and person tokens are never
+returned. The only DP state is the noise root (\code{persistent_state =
+"noise_root_only"}); a damaged root fails closed. There is no privacy
+accountant, budget or call quota: \code{privacy_call_quota = "none"} and
+\code{history_based_admission = FALSE}.
 DP serves only the OHDSI community tools, so the status requires them to be
 enabled (\code{dsomop.tools.enabled}). It derives the service identity from
 the session's connected OMOP resource when no explicit
-\code{dsomop.dp.domain}/\code{dsomop.dp.snapshot_id} are configured.
+\code{dsomop.dp.domain} is configured. The public \code{snapshot_id} is
+display metadata only (the deprecated \code{dsomop.dp.snapshot_id} option
+replaces it; it enters no hash, provenance check or admission); fixed
+synopses are keyed on the person-membership generation read inside each
+request's snapshot, described by \code{data_generation},
+\code{data_generation_basis} and \code{data_generation_residual} (what it
+cannot see); \code{read_snapshot} is the read consistency of this server's
+requests. The generation itself is never returned.
+}
+\details{
+The caller declares the protected-release payload protocol it implements
+(\code{client_contract}, sent by dsOMOPClient 2.10.3 and later). Clients of
+dsOMOP 2.10.2 and earlier call without it; they cannot validate or pool the
+protected components, so the call is refused with an explicit upgrade
+message (R08) instead of a status they would reject with an opaque contract
+error. Their per-server analysis catalogue results are unaffected.
 }

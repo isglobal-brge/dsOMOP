@@ -1,0 +1,24 @@
+table_name,event_source,person_col,event_key,start_col,end_col,end_fallback,domain_concept_col,alt_domain_concept_col,type_concept_col,value_col,value_concept_col,unit_col,operator_col,range_low_col,range_high_col,quantity_col,supply_col,qualifier_col,role_concept_cols,visit_occurrence_col,visit_detail_col,notes
+condition_occurrence,TRUE,person_id,condition_occurrence_id,condition_start_date,condition_end_date,,condition_concept_id,,condition_type_concept_id,,,,,,,,,,status:condition_status_concept_id,visit_occurrence_id,visit_detail_id,
+drug_exposure,TRUE,person_id,drug_exposure_id,drug_exposure_start_date,drug_exposure_end_date,days_supply,drug_concept_id,,drug_type_concept_id,,,,,,,quantity,days_supply,,route:route_concept_id,visit_occurrence_id,visit_detail_id,ingredient mapping for eras
+procedure_occurrence,TRUE,person_id,procedure_occurrence_id,procedure_date,procedure_end_date,,procedure_concept_id,,procedure_type_concept_id,,,,,,,quantity,,,modifier:modifier_concept_id,visit_occurrence_id,visit_detail_id,end is COALESCE(procedure_end_date; procedure_date)
+device_exposure,TRUE,person_id,device_exposure_id,device_exposure_start_date,device_exposure_end_date,,device_concept_id,,device_type_concept_id,,,,,,,quantity,,,,visit_occurrence_id,visit_detail_id,
+measurement,TRUE,person_id,measurement_id,measurement_date,,,measurement_concept_id,,measurement_type_concept_id,value_as_number,value_as_concept_id,unit_concept_id,operator_concept_id,range_low,range_high,,,,,visit_occurrence_id,visit_detail_id,point event
+observation,TRUE,person_id,observation_id,observation_date,,,observation_concept_id,,observation_type_concept_id,value_as_number,value_as_concept_id,unit_concept_id,,,,,,qualifier_concept_id,,visit_occurrence_id,visit_detail_id,point event; value_as_string is never released
+visit_occurrence,TRUE,person_id,visit_occurrence_id,visit_start_date,visit_end_date,,visit_concept_id,,visit_type_concept_id,,,,,,,,,,admitted_from:admitted_from_concept_id;discharged_to:discharged_to_concept_id,visit_occurrence_id,,the visit link is the own key
+visit_detail,TRUE,person_id,visit_detail_id,visit_detail_start_date,visit_detail_end_date,,visit_detail_concept_id,,visit_detail_type_concept_id,,,,,,,,,,admitted_from:admitted_from_concept_id;discharged_to:discharged_to_concept_id,visit_occurrence_id,visit_detail_id,the visit_detail link is the own key
+observation_period,TRUE,person_id,observation_period_id,observation_period_start_date,observation_period_end_date,,,,period_type_concept_id,,,,,,,,,,,,,no domain concept; an explicit concept_col may scope period_type_concept_id
+death,TRUE,person_id,person_id,death_date,,,cause_concept_id,,death_type_concept_id,,,,,,,,,,,,,one row per person
+specimen,TRUE,person_id,specimen_id,specimen_date,,,specimen_concept_id,,specimen_type_concept_id,,,unit_concept_id,,,,quantity,,,anatomic_site:anatomic_site_concept_id,,,point event
+note,TRUE,person_id,note_id,note_date,,,note_type_concept_id,note_class_concept_id,,,,,,,,,,,,visit_occurrence_id,visit_detail_id,metadata only; text; title and source are never released
+payer_plan_period,TRUE,person_id,payer_plan_period_id,payer_plan_period_start_date,payer_plan_period_end_date,,payer_concept_id,,,,,,,,,,,,plan:plan_concept_id,,,
+condition_era,TRUE,person_id,condition_era_id,condition_era_start_date,condition_era_end_date,,condition_concept_id,,,,,,,,,,,,,,,recorded span only
+drug_era,TRUE,person_id,drug_era_id,drug_era_start_date,drug_era_end_date,,drug_concept_id,,,,,,,,,,,,,,,recorded span only
+dose_era,TRUE,person_id,dose_era_id,dose_era_start_date,dose_era_end_date,,drug_concept_id,,,dose_value,,unit_concept_id,,,,,,,,,,recorded span only
+episode,TRUE,person_id,episode_id,episode_start_date,episode_end_date,,episode_concept_id,,episode_type_concept_id,,,,,,,,,,object:episode_object_concept_id,,,members through the episode_members adapter
+cost,FALSE,,,,,,,,,,,,,,,,,,,,,not an event source; bounded cost adapter
+provider,FALSE,,,,,,,,,,,,,,,,,,,,,not an event source
+care_site,FALSE,,,,,,,,,,,,,,,,,,,,,not an event source
+location,FALSE,,,,,,,,,,,,,,,,,,,,,not an event source
+fact_relationship,FALSE,,,,,,,,,,,,,,,,,,,,,not an event source
+episode_event,FALSE,,,,,,,,,,,,,,,,,,,,,not an event source; bounded episode_members adapter

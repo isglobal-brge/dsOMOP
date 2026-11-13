@@ -247,12 +247,9 @@ test_that("calendar windows reject injection, invalid dates, and reversed ranges
     "no usable date column"
   )
   withr::with_options(list(nfilter.subset = 3), {
-    expect_error(
-      .compileTemporalWhere(handle,
+    expect_silent(.compileTemporalWhere(handle,
         list(calendar = list(start = "2020-01-01", end = "2020-01-15")),
-        "t", "condition_start_date"),
-      "at least 30 days"
-    )
+        "t", "condition_start_date"))
   })
 })
 
@@ -266,12 +263,9 @@ test_that("compileSelect validates time_window dates and disclosure width", {
     "valid date"
   )
   withr::with_options(list(nfilter.subset = 3), {
-    expect_error(
-      .compileSelect(handle, "measurement", time_window = list(
+    expect_silent(.compileSelect(handle, "measurement", time_window = list(
         date_column = "measurement_date", start_date = "2020-01-01",
-        end_date = "2020-01-15")),
-      "at least 30 days"
-    )
+        end_date = "2020-01-15")))
   })
 })
 
@@ -279,10 +273,7 @@ test_that("date widths are inclusive and use the server policy", {
   withr::with_options(list(nfilter.subset = 3,
                            dsomop.nfilter.date_range = 30), {
     expect_silent(.validateDateBounds("2024-01-01", "2024-01-30", "window"))
-    expect_error(
-      .validateDateBounds("2024-01-01", "2024-01-29", "window"),
-      "at least 30 days"
-    )
+    expect_silent(.validateDateBounds("2024-01-01", "2024-01-29", "window"))
   })
 })
 

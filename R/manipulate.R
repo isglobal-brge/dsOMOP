@@ -7,8 +7,8 @@
 #   (a) admits ONLY omop.table inputs (.is_omop.table), so a client cannot
 #       smuggle an arbitrary data.frame into the gated path;
 #   (b) re-gates the RESULT on the number of DISTINCT person tokens via the
-#       shared, fail-closed .assertMinPersons (it stop()s below
-#       nfilter.subset and never returns a too-small frame);
+#       shared publication boundary (it stops below nfilter.subset and
+#       rejects malformed person lineage);
 #   (c) re-stamps the omop.table class additively and restores the
 #       `dsomop_protected` / `omop_concept_cols` attributes that base-R
 #       subsetting (`[`) and `merge()` drop.
@@ -114,9 +114,16 @@
 #' @keywords internal
 .retagOmopTable <- function(result, ...) {
   sources <- list(...)
+  allow_sensitive <- getOption("dsomop.allow_sensitive_columns",
+    getOption("default.dsomop.allow_sensitive_columns", FALSE))
+  if (!isTRUE(allow_sensitive) &&
+      any(vapply(names(result), .assignmentBlockedColumn, logical(1L)))) {
+    stop("Disclosive: assigned result contains blocked columns.", call. = FALSE)
+  }
   # Core outputs never inherit DP state from their inputs.
   attr(result, "dsomop_dp_provenance") <- NULL
   attr(result, "dsomop_dp_filter_state") <- NULL
+  attr(result, "dsomop_dp_release_persons") <- NULL
   pseudonymization <- do.call(
     .assertOmopTablePseudonymization,
     c(sources, list(caller = ".retagOmopTable"))
@@ -228,8 +235,6 @@ omopMergeDS <- function(x, y, by = "person_id", type = "inner") {
 
   result <- merge(x, y, by = by, all.x = (type == "left"), all.y = FALSE)
 
-  # Fail-closed re-gate on DISTINCT person tokens of the join result.
-  .assertMinPersons(n_persons = .omopDistinctPersons(result))
   result <- .retagOmopTable(result, x, y)
   # Base merge suffixes overlapping non-key columns. Preserve concept metadata
   # on the landed names so downstream harmonization cannot lose its allow-list.
@@ -246,32 +251,51 @@ omopMergeDS <- function(x, y, by = "person_id", type = "inner") {
       suffixed_concepts
     )
   }
-  result
+  .publishStandalone(result, caller = "omopMergeDS",
+                     already_tokenized = TRUE)
 }
 
 #' Filter the rows of an omop.table (Assign)
 #'
 #' @description
-#' Applies a categorical membership/equality filter to a server-side omop.table
-#' and re-gates both sides of the split on distinct persons. Numeric/date
-#' thresholds are rejected here because arbitrary repeated cut points form a
-#' disclosure oracle; express those filters in a recipe using controller-sized
-#' age/date ranges or protected numeric bins. Protected identifiers are always
-#' rejected.
+#' Applies a membership/equality filter (\code{var}, \code{op}, \code{value})
+#' or, from 2.10.3, a closed language-2 predicate (\code{expr}, design
+#' section 2.11) to a server-side omop.table. The predicate is data: it is
+#' validated against the frozen plan-v2 predicate grammar and type-checked
+#' against the frame's columns before any row is read, and evaluated with
+#' three-valued logic (only rows where it is TRUE are kept). The publication
+#' boundary validates the result's exact person lineage and final support. The
+#' excluded rows stay private. Protected identifiers cannot be used as filter
+#' columns.
 #'
 #' @param x A server-side omop.table data.frame.
 #' @param var Character; an existing, non-protected column to filter on.
 #' @param op Character; one of \code{"=="}, \code{"!="}, \code{"in"}, or
-#'   \code{"not_in"}, on a low-cardinality categorical column.
+#'   \code{"not_in"}.
 #' @param value Category value(s).
+#' @param expr A JSON-encoded predicate tree of the plan-v2 grammar
+#'   (\code{==}, \code{!=}, \code{<}, \code{<=}, \code{>}, \code{>=},
+#'   \code{in}, \code{not_in}, \code{is_null}, \code{not_null},
+#'   \code{between}, \code{and}, \code{or}, \code{not}) instead of
+#'   \code{var}/\code{op}/\code{value}.
 #' @return The filtered omop.table (re-assigned to the caller's symbol).
 #' @export
-omopFilterDS <- function(x, var, op, value) {
+omopFilterDS <- function(x, var = NULL, op = NULL, value = NULL, expr = NULL) {
   if (!.is_omop.table(x)) {
     stop("omopFilterDS: input must be a dsOMOP table (omop.table).",
          call. = FALSE)
   }
   .omopTablePseudonymization(x, caller = "omopFilterDS")
+  if (!is.null(expr)) {
+    if (!is.null(var) || !is.null(op) || !is.null(value)) {
+      stop("omopFilterDS: give expr or var/op/value, not both.", call. = FALSE)
+    }
+    result <- .retagOmopTable(.omopFilterExpr(x, expr), x)
+    return(.publishStandalone(result, caller = "omopFilterDS", already_tokenized = TRUE))
+  }
+  if (is.null(var) || is.null(op) || is.null(value)) {
+    stop("omopFilterDS: give var, op and value (or expr).", call. = FALSE)
+  }
   var <- .validateIdentifier(.ds_arg(var), "filter column")
   op <- .ds_arg(op)
   op <- match.arg(as.character(op), c("==", "!=", "in", "not_in"))
@@ -299,27 +323,6 @@ omopFilterDS <- function(x, var, op, value) {
   }
 
   col <- x[[var]]
-  # Concept identifiers are category codes stored as numbers: equality and
-  # membership on them are categorical selections, under the same controls.
-  concept_cols <- union(
-    grep("_concept_id$", names(x), value = TRUE),
-    as.character(attr(x, "omop_concept_cols") %||% character(0))
-  )
-  concept_code <- var %in% concept_cols && is.numeric(col)
-  if (!concept_code && !is.factor(col) && !is.character(col) &&
-      !is.logical(col)) {
-    stop("omopFilterDS: arbitrary numeric/date thresholds are not allowed; ",
-         "use a recipe filter with disclosure-safe bins or ranges.",
-         call. = FALSE)
-  }
-  settings <- .omopDisclosureSettings()
-  n_levels <- length(unique(col[!is.na(col)]))
-  n_persons <- .omopDistinctPersons(x)
-  if (n_levels > settings$nfilter_levels_max || n_persons < 1L ||
-      n_levels / n_persons > settings$nfilter_levels_density) {
-    stop("Disclosive: categorical filter column has unsafe cardinality.",
-         call. = FALSE)
-  }
   # Coerce the comparison value to the column's type so a string-typed value
   # cannot silently coerce a numeric column to character (which would change
   # comparison semantics). Character/factor columns validate value length.
@@ -337,15 +340,9 @@ omopFilterDS <- function(x, var, op, value) {
   result <- x[keep, , drop = FALSE]
   rownames(result) <- NULL
 
-  # Gate both observable outcomes of the split. The excluded side is skipped
-  # only when it is empty (the operation selected the complete population).
-  .assertMinPersons(n_persons = .omopDistinctPersons(result))
-  excluded <- x[!keep, , drop = FALSE]
-  if (nrow(excluded) > 0L) {
-    .assertMinPersons(n_persons = .omopDistinctPersons(excluded))
-  }
   result <- .retagOmopTable(result, x)
-  result
+  .publishStandalone(result, caller = "omopFilterDS",
+                     already_tokenized = TRUE)
 }
 
 #' Coerce/validate a filter value against the target column type
@@ -402,11 +399,9 @@ omopSelectDS <- function(x, cols) {
   }
   result <- x[, keep, drop = FALSE]
 
-  # Defensive re-gate (projection cannot lower the person count, but keep the
-  # gate so every verb fails closed identically).
-  .assertMinPersons(n_persons = .omopDistinctPersons(result))
   result <- .retagOmopTable(result, x)
-  result
+  .publishStandalone(result, caller = "omopSelectDS",
+                     already_tokenized = TRUE)
 }
 
 #' Row-bind two schema-identical omop.table frames (Assign)
@@ -448,9 +443,7 @@ omopBindRowsDS <- function(x, y) {
   result <- rbind(x, y)
   rownames(result) <- NULL
 
-  # Fail-closed re-gate on DISTINCT person tokens: this is the check that blocks
-  # the doubling bypass (duplicates collapse to the same distinct count).
-  .assertMinPersons(n_persons = .omopDistinctPersons(result))
   result <- .retagOmopTable(result, x, source_y)
-  result
+  .publishStandalone(result, caller = "omopBindRowsDS",
+                     already_tokenized = TRUE)
 }

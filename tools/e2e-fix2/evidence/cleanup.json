@@ -1,0 +1,202 @@
+[
+  {
+    "path": "/workspace/dsomop/wt/p0/dsOMOP/tools/e2e-fix2/harness-probe",
+    "bytes": 154906
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-G16-plans-gibleed.txt",
+    "bytes": 989
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-rock-Rserve-before-restart.log",
+    "bytes": 179792
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-scenario-G.txt",
+    "bytes": 332771
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-rock.log",
+    "bytes": 1456
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-admin-setup.txt",
+    "bytes": 5827
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-rock-packages-initial.txt",
+    "bytes": 614
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-rock-packages-initial.txt",
+    "bytes": 614
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-scenario-E.txt",
+    "bytes": 51243
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-scenario-G-old.txt",
+    "bytes": 10183
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-rock-Rserve-after-restart.log",
+    "bytes": 187205
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-omopdb-load.txt",
+    "bytes": 4507
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-G-audit-lines.txt",
+    "bytes": 114660
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-steps.log",
+    "bytes": 550265
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-rock-Rserve-before-restart.log",
+    "bytes": 200771
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-rock-srv-logs.tgz",
+    "bytes": 18029
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-omopdb-load.txt",
+    "bytes": 4507
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-rock-srv-logs.tgz",
+    "bytes": 15491
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-G16-plans-gibleed.txt",
+    "bytes": 989
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-V-verdicts.csv",
+    "bytes": 2140
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-opal-srv-logs-extracted",
+    "bytes": 10594428
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-opal.log",
+    "bytes": 184688
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-opal-srv-logs.tgz",
+    "bytes": 418037
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-G16-plans-big.txt",
+    "bytes": 1663
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-G-audit-lines.txt",
+    "bytes": 113917
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-dp-root-before-upgrade.txt",
+    "bytes": 339
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-scenario-G.txt",
+    "bytes": 332217
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-method-audit-calls.csv",
+    "bytes": 6581
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-G-old-verdicts.csv",
+    "bytes": 5583
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-opal-srv-logs.tgz",
+    "bytes": 354308
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-scenario-D.txt",
+    "bytes": 16989
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-path.txt",
+    "bytes": 47244
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-steps.log",
+    "bytes": 508213
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-G-verdicts.csv",
+    "bytes": 31344
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-rock-srv-logs-extracted",
+    "bytes": 245674
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-scenario-G-old.txt",
+    "bytes": 10166
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-opal-srv-logs-extracted",
+    "bytes": 8872775
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-opal.log",
+    "bytes": 167765
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-scenario-C.txt",
+    "bytes": 5547
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-G-old-verdicts.csv",
+    "bytes": 5583
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-path.txt",
+    "bytes": 22664
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-rock.log",
+    "bytes": 1456
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-scenario-F.txt",
+    "bytes": 5565
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-admin-setup.txt",
+    "bytes": 5795
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-method-audit.csv",
+    "bytes": 6119
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-datashield-log.txt",
+    "bytes": 138934
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-scenario-C.txt",
+    "bytes": 5547
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-rock-Rserve-after-restart.log",
+    "bytes": 208184
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/upgrade-rock-srv-logs-extracted",
+    "bytes": 217256
+  },
+  {
+    "path": "/workspace/dsomop/design/astra-dev/e2e-fix2-evidence/fresh-G-verdicts.csv",
+    "bytes": 29116
+  }
+]

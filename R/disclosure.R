@@ -64,12 +64,12 @@
 #'     banding does not provide cumulative privacy guarantees. See
 #'     \code{\link{.bandCount}}.}
 #'   \item{\code{nfilter_age_range} (default 5)}{Minimum inclusive width, in
-#'     years, accepted for age-range and closed age-group filters while
-#'     disclosure filtering is enabled. Controlled by
+#'     years, for aggregate age-grid policy. Declared for compatibility and
+#'     inert on assignment predicates. Controlled by
 #'     \code{dsomop.nfilter.age_range}.}
 #'   \item{\code{nfilter_date_range} (default 30)}{Minimum inclusive width, in
-#'     calendar days, accepted for bounded date filters while disclosure
-#'     filtering is enabled. Controlled by
+#'     calendar days, retained for compatibility with aggregate policy. Inert
+#'     on assignment predicates. Controlled by
 #'     \code{dsomop.nfilter.date_range}.}
 #'   \item{\code{max_feature_specs} (default 1000),
 #'     \code{max_pivot_concepts} (default 1000),
@@ -300,37 +300,160 @@
 #' The fitted community-tool models (Patient-Level Prediction, the CohortMethod
 #' propensity model) release only aggregates of their predictions, but they
 #' must still satisfy the checks dsBase applies before \code{ds.glm} returns
-#' anything: every binary predictor needs \code{nfilter.tab} persons with AND
-#' without it (a covariate almost everyone has singles out the few who lack
-#' it), and the number of parameters may not exceed \code{nfilter.glm} times
-#' the number of persons (a saturated model reproduces its data). Predictors
-#' are kept in their given order (most prevalent first) until the dimension
-#' cap is reached.
+#' anything, and more: a binary predictor is admitted only when it has
+#' \code{nfilter.tab} persons with AND without it WITHIN EACH class of the
+#' response (outcome / no outcome for PLP, target / comparator arm for the
+#' propensity model). A supported marginal is not enough: a covariate held by
+#' 40 comparator persons but only 2 target persons passes the marginal rule,
+#' and the fitted model's scalars (AUC, mean predicted risk) then solve that
+#' 2-person arm-by-covariate cell exactly. The number of parameters may not
+#' exceed \code{nfilter.glm} times the number of persons (a saturated model
+#' reproduces its data). Predictors are kept in their given order (most
+#' prevalent first, ties by public concept id) until the dimension cap is
+#' reached.
 #'
-#' @param X Numeric 0/1 matrix or data frame of candidate predictors.
-#' @param y Optional 0/1 response; when given, both classes need
-#'   \code{nfilter.tab} persons or the model is not admitted.
-#' @return Integer indices of the admitted columns of \code{X}, or NULL when
-#'   the response is not admissible.
+#' The response is validated before any predictor is inspected: a response that
+#' is missing a value, has the wrong length, is not 0/1, or has a class below
+#' \code{nfilter.tab} persons is not admissible and the function returns NULL.
+#' A NULL is never permission to fit an intercept-only model instead; callers
+#' that release an intercept-only fit must declare it in their own contract
+#' (see \code{\link{.omopCmPropensityScores}}).
+#'
+#' @param X Numeric 0/1 matrix or data frame of candidate predictors (one row
+#'   per person).
+#' @param y Response/arm 0/1 vector aligned with the rows of \code{X}. Model
+#'   releases must supply it. \code{NULL} keeps the legacy marginal-only check,
+#'   which is not a model release contract.
+#' @return Integer indices of the admitted columns of \code{X} (possibly
+#'   empty), or NULL when the response is not admissible.
 #' @keywords internal
 .omopModelAdmitBinaryDesign <- function(X, y = NULL) {
   settings <- .omopDisclosureSettings()
   thr <- settings$nfilter_tab
   n <- NROW(X)
   if (!is.null(y)) {
-    y <- as.integer(y)
-    if (sum(y == 1L, na.rm = TRUE) < thr || sum(y == 0L, na.rm = TRUE) < thr) {
+    y_num <- suppressWarnings(as.numeric(y))
+    if (length(y_num) != n || anyNA(y_num) || any(!y_num %in% c(0, 1))) {
       return(NULL)
     }
+    y <- as.integer(y_num)
+    if (sum(y == 1L) < thr || sum(y == 0L) < thr) return(NULL)
   }
   if (NCOL(X) == 0L || n == 0L) return(integer(0))
   X <- as.matrix(X)
-  present <- colSums(X == 1, na.rm = TRUE)
+  bad <- is.na(X) | !(X == 0 | X == 1)
+  bad[is.na(bad)] <- TRUE
+  valid <- colSums(bad) == 0L
+  is_one <- !bad & X == 1
+  present <- colSums(is_one)
   absent <- n - present
-  admitted <- unname(which(present >= thr & absent >= thr))
+  admissible <- valid & present >= thr & absent >= thr
+  if (!is.null(y)) {
+    # Present and absent cells WITHIN each response class (the 2 x 2 table of
+    # predictor by response), not only the predictor's marginal.
+    for (cls in c(0L, 1L)) {
+      in_cls <- y == cls
+      present_cls <- colSums(is_one[in_cls, , drop = FALSE])
+      absent_cls <- sum(in_cls) - present_cls
+      admissible <- admissible & present_cls >= thr & absent_cls >= thr
+    }
+  }
+  admitted <- unname(which(admissible))
   # Intercept plus predictors must stay within nfilter.glm * n.
   max_predictors <- max(floor(settings$nfilter_glm * n) - 1L, 0L)
   utils::head(admitted, max_predictors)
+}
+
+# Fixed public release grids of the fitted-model parameters (2.10.3 P0 spec,
+# section 6.1). They depend only on server configuration, never on the data or
+# on earlier requests.
+.DSOMOP_MODEL_FEATURE_GRID <- c(10L, 20L, 50L, 100L)
+.DSOMOP_MODEL_BIN_GRID <- c(5L, 10L, 20L)
+
+#' Public release grid of one fitted-model parameter
+#'
+#' \code{"features"} (the number of candidate predictors of an in-session
+#' model: \code{top_k}, \code{max_covariates}) uses the grid 10, 20, 50, 100
+#' intersected with the server-owned maximum number of feature specifications
+#' (\code{dsomop.max_feature_specs}); \code{"bins"} (prediction-score histogram
+#' and calibration bins) uses 5, 10, 20. An empty admissible grid makes the
+#' model contract unavailable.
+#'
+#' @param kind \code{"features"} or \code{"bins"}.
+#' @return Sorted integer grid (possibly empty).
+#' @keywords internal
+.omopModelReleaseGrid <- function(kind = c("features", "bins")) {
+  kind <- match.arg(kind)
+  if (identical(kind, "bins")) return(.DSOMOP_MODEL_BIN_GRID)
+  max_features <- suppressWarnings(as.numeric(
+    .omopDisclosureSettings()$max_feature_specs %||% Inf
+  ))
+  if (length(max_features) != 1L || is.na(max_features)) max_features <- Inf
+  .DSOMOP_MODEL_FEATURE_GRID[.DSOMOP_MODEL_FEATURE_GRID <= max_features]
+}
+
+#' Snap a value to a finite public grid
+#'
+#' \code{snap_G(x) = argmin_g (|x - g|, g)}: the nearest grid value, ties to the
+#' smaller one, with saturation at both ends. Only the request and the public
+#' grid enter; never the data.
+#'
+#' @param x One finite number.
+#' @param grid Non-empty numeric grid.
+#' @return The snapped grid value.
+#' @keywords internal
+.omopSnapToPublicGrid <- function(x, grid) {
+  grid <- sort(unique(as.numeric(grid)), method = "radix")
+  if (length(grid) == 0L) {
+    stop("The public release grid of this parameter is empty.", call. = FALSE)
+  }
+  x <- suppressWarnings(as.numeric(x))
+  if (length(x) != 1L || is.na(x) || !is.finite(x)) {
+    stop("A gridded release parameter must be one finite number.",
+         call. = FALSE)
+  }
+  distance <- abs(grid - x)
+  grid[[order(distance, grid, method = "radix")[[1L]]]]
+}
+
+#' Resolve one fitted-model parameter to its public release grid
+#'
+#' @param value Requested value (sanitized literal or number), or NULL.
+#' @param kind \code{"features"} or \code{"bins"}.
+#' @param default Value used when the request is NULL.
+#' @param name Parameter name, for messages.
+#' @return list(requested, effective, grid); \code{effective} is the integer
+#'   grid value the model is computed with.
+#' @keywords internal
+.omopModelGridParam <- function(value, kind, default, name) {
+  grid <- .omopModelReleaseGrid(kind)
+  if (length(grid) == 0L) {
+    stop("The ", name, " release grid is empty under the server's ",
+         "dsomop.max_feature_specs; this model is unavailable on this server.",
+         call. = FALSE)
+  }
+  requested <- if (is.null(value)) default else value
+  list(
+    requested = as.character(requested),
+    effective = as.integer(.omopSnapToPublicGrid(requested, grid)),
+    grid = as.integer(grid)
+  )
+}
+
+#' Public record of the effective (snapped) model parameters of one run
+#'
+#' Attached to a released frame as the \code{dsomop_effective_params}
+#' attribute so the client sees which public grid value was computed.
+#'
+#' @param params Named list of \code{\link{.omopModelGridParam}} results.
+#' @return list(requested, effective, rule).
+#' @keywords internal
+.omopModelEffectiveParams <- function(params) {
+  list(
+    requested = lapply(params, function(p) p$requested),
+    effective = lapply(params, function(p) p$effective),
+    rule = "nearest_public_grid_value_ties_to_smaller_saturating"
+  )
 }
 
 #' Validate canonical age-group labels against a server age grid
@@ -401,6 +524,7 @@
     # a renewed connection that dropped the cohort temp table FAILS CLOSED here
     # rather than counting against a vanished table and waving the result past.
     sql <- .sql_translate(sql, handle$target_dialect)
+    .dsomopSnapshotReadSql(handle, sql)
     result <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql))
     n <- as.numeric(result[[1]][1])
   } else if (!is.null(n_persons)) {
@@ -677,93 +801,25 @@
 
 # --- Filter safety policy ---
 #
-# Filters narrow the population. An overly specific filter can isolate a
-# single individual (targeted probing). The classification below prevents
-# this by limiting filter granularity:
-#   - "allowed": broad categories (sex, age_group) - low fingerprinting risk
-#   - "constrained": narrower ranges validated for minimum width
-#     (server-configured inclusive age/date widths)
-#   - "blocked": arbitrary thresholds or custom SQL - too specific
+# Known assignment predicates are structurally validated by their compilers.
+# Their granularity does not determine disclosure: only the published object's
+# own genuine-person support is gated. Aggregate endpoints keep their controls.
 
-#' Classify a filter operation by safety level
+#' Classify a filter operation
 #'
-#' Filters are classified based on fingerprinting risk. Narrow filters
-#' (e.g., exact value thresholds) can isolate individuals; broad filters
-#' (e.g., sex, age group) cannot. Constrained filters are allowed only
-#' if their parameters meet minimum-width requirements.
-#'
-#' @param filter_type Character; filter type from the DSL
-#' @param filter_params List; filter parameters
-#' @return Character; \code{"allowed"}, \code{"constrained"}, or \code{"blocked"}
+#' @param filter_type Character; filter type from the DSL.
+#' @param filter_params List; structurally validated filter parameters.
+#' @return "constrained" for a known filter type, "blocked" otherwise.
 #' @keywords internal
 .classifyFilter <- function(filter_type, filter_params = list()) {
-  # Always allowed: categorical with known small domains (low fingerprint risk)
-  always_allowed <- c("sex", "cohort", "concept_set", "value_bin")
-
-  # Constrained: allowed only after validating minimum range width.
-  # `value_threshold` is the legacy classification name retained for reviewed
-  # membership/null predicates; public client-authored numeric thresholds are
-  # blocked and numeric ranges use authenticated value_bin contracts. age_group is
-  # constrained (not always-allowed) so its bands get the same minimum as
-  # age_range -- otherwise groups like c("87-87") would target a single birth
-  # year and evade the age_range anti-fingerprinting width gate.
-  constrained <- c("age_range", "age_group", "has_concept", "date_range",
-                    "min_count",
-                    "not_has_concept", "concept_count", "prior_observation",
-                    "followup", "visit_count", "has_measurement",
-                    "missing_measurement", "value_threshold")
-
-  # Blocked: arbitrary SQL could fingerprint individuals
-  blocked <- c("custom")
-
-  if (filter_type %in% always_allowed) return("allowed")
-  if (filter_type %in% blocked) return("blocked")
-  if (filter_type %in% constrained) {
-    # The minimum range-width gates (age, date) are anti-fingerprinting defenses.
-    # They scale with the disclosure threshold: when the per-person gate is fully
-    # disabled (nfilter_subset == 0, e.g. a trusted/reach context the data
-    # controller has opted into) the width minimums relax to 0, so degenerate or
-    # deliberately-empty ranges can run. Under any positive threshold the
-    # configured minimums (defaults: age 5y, date 30d) apply.
-    settings <- .omopDisclosureSettings()
-    gate_on <- settings$nfilter_subset > 0
-    if (filter_type == "age_range" && gate_on) {
-      # Ages are integer years and both bounds are inclusive: 20--24 is the
-      # standard five-year epidemiological band (five possible ages).
-      range_width <- (filter_params$max %||% 150) -
-        (filter_params$min %||% 0) + 1
-      if (range_width < settings$nfilter_age_range) return("blocked")
-    }
-    if (filter_type == "age_group" && gate_on) {
-      groups <- filter_params$groups
-      if (!.ageGroupsOnGrid(groups, settings$age_breaks)) return("blocked")
-    }
-    if (filter_type == "date_range" && gate_on) {
-      if (!is.null(filter_params$start) && !is.null(filter_params$end)) {
-        inclusive_days <- as.numeric(
-          as.Date(filter_params$end) - as.Date(filter_params$start)
-        ) + 1
-        if (!is.finite(inclusive_days) ||
-            inclusive_days < settings$nfilter_date_range) return("blocked")
-      }
-    }
-    if (gate_on && !is.null(filter_params$window)) {
-      window <- filter_params$window
-      if (!is.list(window)) return("blocked")
-      start <- suppressWarnings(as.numeric(window$start))
-      end <- suppressWarnings(as.numeric(window$end))
-      if (!is.null(window$start) && !is.null(window$end)) {
-        if (length(start) != 1L || length(end) != 1L ||
-            !is.finite(start) || !is.finite(end) ||
-            start != floor(start) || end != floor(end) || start > end ||
-            (end - start + 1) < settings$nfilter_date_range) {
-          return("blocked")
-        }
-      }
-    }
-    return("constrained")
-  }
-  "blocked"  # Unknown filters are blocked
+  known <- c("sex", "cohort", "concept_set", "value_bin", "age_range",
+             "age_group", "has_concept", "date_range", "min_count",
+             "not_has_concept", "concept_count", "prior_observation",
+             "followup", "visit_count", "has_measurement",
+             "missing_measurement", "value_threshold")
+  if (length(filter_type) == 1L && !is.na(filter_type) &&
+      filter_type %in% known) return("constrained")
+  "blocked"
 }
 
 #' Validate a filter before execution
@@ -781,7 +837,7 @@
   if (classification == "blocked") {
     stop(
       "Disclosive: filter type '", filter_type,
-      "' is not allowed (could fingerprint individuals).",
+      "' is not allowed (unknown filter type).",
       call. = FALSE
     )
   }
@@ -805,6 +861,7 @@
   settings <- .omopDisclosureSettings()
   threshold <- settings$nfilter_subset
 
+  .dsomopSnapshotReadSql(handle, post_sql)
   post_result <- .coerce_integer64(
     .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, post_sql)))
   post_n <- as.numeric(post_result[[1]][1])

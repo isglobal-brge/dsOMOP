@@ -17,10 +17,11 @@ pair (\code{ctx$scoped_cohorts}; both arms self-gated by
 \code{\link{.omopTwoPopCohorts}}), the sibling kernels are called in this one fn
 and their outputs reduced to scalars:
 \itemize{
-  \item \strong{mdrr}: total outcomes + per-arm person-time are counted exactly
-    as \code{\link{.omopCmResultFn}} does (descendant-expanded outcome set, TAR
-    window), then passed to \code{\link{.omopCmMdrr}} VERBATIM — which bands
-    each input and is NA on any suppressed input.
+  \item \strong{mdrr}: per-arm persons, person-time and outcomes are counted
+    exactly as \code{\link{.omopCmResultFn}} does (descendant-expanded outcome
+    set, TAR window), then passed to \code{\link{.omopCmReleasedMdrr}}
+    VERBATIM — NA unless EACH arm is separately supported, and otherwise
+    computed from the released (banded) arm statistics only.
   \item \strong{max_sdm}: \code{max(abs(SMD))} over
     \code{\link{.omopTwoArmCovariateSmd}} (each SMD is already NA when either
     arm is suppressed, so the max is over disclosure-safe SMDs only; NA when no

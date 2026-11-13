@@ -9,16 +9,25 @@
 \arguments{
 \item{df}{Data frame containing the stratum columns.}
 
-\item{cols}{Character vector of stratum column names.}
+\item{cols}{Character vector of contracted stratum column names.}
 }
 \value{
-Character vector, one composite key per row.
+Character vector, one composite key per row (\code{NA} when the
+  contract cannot be evaluated).
 }
 \description{
-Normalizes one or more stratum columns into a single comparable character
-key so record rows and person-count rows can be matched. Missing strata
-become the empty string; parts are "\\x1f"-joined (a delimiter that cannot
-occur in a concept id or YYYYMM month) to avoid collisions between, e.g.,
-("1","23") and ("12","3").
+Normalizes the contracted stratum columns into a single comparable character
+key so record rows and person-count rows can be matched. A NULL stratum value
+(a legitimate upstream group, e.g. a missing death type) becomes the empty
+string; parts are "\\x1f"-joined (a delimiter that cannot occur in a concept
+id or YYYYMM month) to avoid collisions between, e.g., ("1","23") and
+("12","3").
+}
+\details{
+Every contracted column is required. A frame that lacks one of them (or a
+contract with no stratum columns at all) yields \code{NA} keys, which never
+match, so the affected record cells fail closed instead of being joined on a
+silently shortened key (for 1818, a key without the unit and range bucket
+would let one bucket borrow another bucket's person count).
 }
 \keyword{internal}

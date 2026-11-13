@@ -35,44 +35,25 @@ dsOMOP's own exploration statistics. It runs under the standard DataSHIELD
 disclosure controls (`nfilter.*`) only, and never initializes, consults or
 depends on DP in any configuration.
 
-DP concerns only the integrated OHDSI community tools: Achilles results, OHDSI
-results tables, the analysis catalog and the query library. They are enabled
-by default (`dsomop.tools.enabled`, default `TRUE`) and need no configuration.
-Their protection mode is the custodial option `dsomop.tools.mode`:
+The protected-release service concerns the integrated OHDSI community tools:
+Achilles results, OHDSI results tables, the analysis catalog, query library and
+typed release channel. Tools and protection are enabled by default and need no
+privacy configuration. The default `"auto"` mode selects the registered
+protected route; known-disclosive exact fallbacks are unavailable.
 
-- `"auto"` (default): every output that the standard DataSHIELD controls
-  protect adequately (counts, prevalence, Table 1, incidence, characterization,
-  survival and model summaries) runs under those controls, without DP. The
-  query-library questions that release person-level distributions are answered
-  by reviewed replacements: per-person durations and per-person counts
-  (condition, drug, visit and observation-period durations, days supply, eras
-  per person, exposures per era) become histograms of one value per person over
-  fixed public bins, and the demographic distributions (year of birth, birth
-  month, gender by age decade) complete public partitions, both released with
-  sticky discrete-Laplace noise (epsilon-DP for the add/remove-one-person
-  neighbour, sensitivity 1). If the DP service is disabled or not available,
-  the same tables are released under the standard controls instead, so these
-  questions always get an answer. Values without a public scale (measurement
-  values per unit, quantities, costs per currency, all-concept era lengths)
-  use the standard person-supported summary.
-- `"standard"`: the original summaries (counts, means, SDs) under the standard
-  controls only; no DP anywhere.
-- `"dp"`: DP only. Questions without a DP release are refused, as is every
-  other standard statistic of the tools. `dsomop.dp.exclusive = TRUE` (with DP
-  enabled) selects this mode.
+Supported complete public bases use `fixed_synopsis`; flexible scopes use
+`realised_sticky`, a heuristic disclosure control without a finite transcript-DP
+guarantee. Results identify their route, effective public grid, contribution
+bounds and unavailable fields. Standard fields retain their DataSHIELD controls;
+`"standard"` is an optional mode, while `"dp"` accepts only supported fixed
+synopses. Neither mode changes the independent controls on core operations.
 
-The typed sticky DP channel (`omopDpReleaseDS()`) accepts only tables the
-community tools prepared and sealed: `omopDpPlanExecuteDS()` runs a typed
-plan or recipe through the same plan engine as table loading and seals its
-person-local outputs. The analyst chooses the population and variables (for
-example an age at a public reference year); the custodian owns every privacy
-setting.
-
-Every catalog result carries the attribute `dsomop_protection` (`"standard"`,
-`"dp"` or `"standard_fallback"`, with the estimand and, for DP, epsilon,
-sensitivity and the noise standard deviation). Standard outputs implement
-statistical disclosure control, not DP; a session that mixes standard and DP
-outputs has no overall DP guarantee.
+The typed release channel accepts only approved, sealed person-local inputs.
+Private preparation remains permissive; final publication applies the relevant
+`nfilter` and protected-release gates. There are no call limits, budgets,
+privacy accountants or history-dependent answers. The only persistent secret
+state is the pseudonymisation key and DP noise root. See
+[disclosure guarantees and limits](DISCLOSURE_CONTROL.md).
 
 ## Installation
 
@@ -80,118 +61,48 @@ To install the server-side package `dsOMOP`, follow the steps below. This guide 
 
 ### Prerequisites
 
-Use the most restrictive DataSHIELD privacy-control level that supports the
-reviewed methods deployed at your site. `dsOMOP` does **not** require the global
-privacy level to be changed to `permissive` (or `banana`) for wide outputs.
-Weakening that global setting would also affect unrelated DataSHIELD packages
-and can invalidate the assumptions made by `dsOMOP`'s own controls.
-
-The server administrator should instead:
-
-- allowlist only the `dsOMOP` methods that have been reviewed for the local
-  deployment;
-- configure the DataSHIELD and `dsomop.*` thresholds through the installed
-  package's `DESCRIPTION` fields or the server administration panel
-  (`DATASHIELD` is the source-tree mirror and is not shipped in tarballs);
-- give the ordinary analysis database identity read access to the CDM and only
-  the minimum temporary-table permissions required by the selected backend;
-- keep persistent cohort writes disabled unless a separately reviewed results
-  schema and database role are configured.
+The package supplies its declared DataSHIELD methods and default options.
+Ordinary database access uses the resource's existing credentials and backend
+permissions. Persistent cohort writes are disabled by default. No change to
+global privacy levels, database TLS settings or privacy thresholds is needed
+for the release's automatic protection.
 
 ### Persistent server identity
 
-Set `DSOMOP_STATE_DIR` to an absolute, owner-only directory on a durable volume
-shared by every worker that represents the same logical node. `configure` only
-prepares directories; it never generates secrets while installing a package or
-building a reusable image. Package `.onLoad()` never reads or generates the
-pseudonym root and runs no checks that could fail (R test-loads a package while
-installing it); the lifecycle settings are validated when used. On first use
-by an actual OMOP handle, compatibility mode validates an injected secret or,
-when none is supplied, creates and atomically persists a 256-bit pseudonym root under
-`$DSOMOP_STATE_DIR/secrets` (mode `0600`, parent mode `0700`). Install and
-development/image loads therefore cannot bake a node identity into an image.
+On first use, dsOMOP automatically creates private state under the R service
+user's `~/.dsomop`: directories use mode `0700` and secret files mode `0600`.
+The pseudonym root is generated only when an actual OMOP handle first needs it;
+the DP noise root is generated on first protected use. Installation and package
+loading do not create or embed secrets. Concurrent workers converge on the same
+durable root, and subsequent calls and service restarts reuse it automatically.
+No administrator provisioning or key rotation is required for ordinary use.
 
-Choose the lifecycle provider explicitly in deployed services with
-`DSOMOP_PSEUDONYM_PROVIDER=file`, `injected`, or `scoped`. The default `auto`
-uses a root or resource-scoped key when configured and otherwise creates the
-durable file-backed root. `file` rejects simultaneously configured injected
-keys; `injected` requires
-`DSOMOP_PSEUDONYM_ROOT`; and `scoped` requires exact
-`DSOMOP_PSEUDONYM_KEY_<resource-hash>` values. Environment variables and the
-equivalent `dsomop.pseudonym_*` R options may not disagree. For production file
-custody, set `DSOMOP_PSEUDONYM_REQUIRE_EXISTING=true` after provisioning the
-root. If the volume is absent or empty, first use then fails before creating a
-directory, lock, or replacement key. The file provider also requires atomic
-same-directory hard links for its no-replace commit; use `injected` or `scoped`
-custody when the shared filesystem cannot provide that primitive.
-The bootstrap also requires a successful durability sync of the candidate key
-before commit and of the containing directory after the no-clobber commit. A
-missing or failing sync primitive is an error: dsOMOP does not return key
-material whose persistence across a crash has not been established.
+Existing valid per-resource keys and roots are retained. Pseudonym keys are
+resource-separated, and raw secret bytes are neither stored in DataSHIELD
+handles nor returned to analysts. Public key IDs, provider and epoch identify
+incompatible saved objects without revealing the secret. Manipulation preserves
+the `dsomop_pseudonymization` contract; merge and row binding reject incompatible
+keys, epochs, protocols or resource scopes. Historical objects lacking that
+contract are recreated from their resource rather than accepted on the strength
+of token-looking strings.
 
-Alternatively inject the root through the service secret manager as
-`DSOMOP_PSEUDONYM_ROOT`; use either 64 hexadecimal characters (32 bytes) or a
-non-hex text secret of at least 32 bytes. It is validated on first handle use
-and is not copied to disk. Inject it into every service worker and restart, not
-only into the `R CMD INSTALL`/`configure` environment. A different key is
-derived for every OMOP resource to prevent cross-resource linkage. A scoped
-`DSOMOP_PSEUDONYM_KEY_<resource-hash>` remains available when a custodian needs
-an exact per-resource key. Here `<resource-hash>` is the first 32 lowercase hex
-characters of SHA-256 over the UTF-8 stable resource identity (normally the
-resource URL, then its name/server fallback). Injected exact keys are likewise
-never copied into the dsOMOP state directory. Prefer the root setting unless
-there is a deliberate need to manage each resource key independently.
+Optional deployments can use `DSOMOP_STATE_DIR`, the `file`, `injected` or
+`scoped` pseudonym providers, `DSOMOP_PSEUDONYM_ROOT`, or resource-specific
+`DSOMOP_PSEUDONYM_KEY_<resource-hash>` values. The default provider is `auto`.
+Explicit option/environment conflicts, weak secrets, unsafe paths and failed
+durability checks fail closed. `DSOMOP_PSEUDONYM_REQUIRE_EXISTING=true` is an
+optional pre-provisioned-root policy, not an installation prerequisite.
+The historical global `DSOMOP_PSEUDONYM_KEY` and raw-key handles remain rejected
+unless the explicit legacy-global compatibility opt-in is enabled; this path
+retains its cross-resource linkage risk.
 
-For token compatibility, the historical `DSOMOP_PSEUDONYM_KEY` setting retains
-its old meaning: one exact global token key. It is not resource-separated and
-therefore permits cross-resource linkage. It is rejected by default, including
-when a stale legacy setting coexists with a root. A controller may temporarily
-enable it only through the explicit administrative opt-in
-`DSOMOP_ALLOW_LEGACY_GLOBAL_PSEUDONYMS=true` (or
-`options(dsomop.allow_legacy_global_pseudonyms = TRUE)`) while completing a
-reviewed migration. The capability report exposes this opt-in as
-`pseudonymization$legacy_global_opt_in`; migrate deliberately to
-`DSOMOP_PSEUDONYM_ROOT` when invalidating/reissuing existing tokens is
-acceptable. Existing valid per-resource files under the selected state root are
-retained. If the state directory itself is moved, the custodian must move its
-`keys/` and `secrets/` contents with it rather than expecting an automatic search
-of old paths.
-
-The same rule applies to historical serialized handles that contain raw
-`handle$person_key` bytes. They are rejected by default, and malformed/weak
-legacy material is always rejected: the compatibility path requires exactly 32
-raw bytes plus the explicit legacy-global administrative opt-in above. dsOMOP
-cannot safely infer the original resource scope from those bytes, so it never
-silently migrates such a handle; recreate it from its resource when that scope
-cannot be proven.
-
-Back up the state volume together with the service configuration. Deleting or
-rotating the pseudonym root invalidates tokens stored in live/saved DataSHIELD
-objects; replicas with different roots will also produce incompatible join
-keys. The per-resource derivation includes the stable resource URL/name, so a
-rename or repointing also needs an explicit token-migration decision. The
-default `~/.dsomop` is persistent only if that home directory itself survives
-container or pod replacement.
-
-Raw key bytes are not cached in the DataSHIELD session handle, so saving a
-workspace does not copy the pseudonymization secret into that workspace. The
-injected secret or durable state volume must still be available when the
-workspace is restored. The capability report exposes only a non-secret,
-resolved-key `key_id`, provider, and positive integer epoch so workers and
-artifacts can reject incompatible tokens without disclosing the root. Configure
-`DSOMOP_PSEUDONYM_EPOCH` (default `1`) identically on all replicas, and advance
-it only as part of a coordinated key rotation. The epoch is a lifecycle marker,
-not a key derivation or rotation mechanism by itself. Live/restored handles pin
-provider, `key_id`, epoch, and require-existing policy and fail closed if that
-contract changes.
-
-Every person-bearing in-memory `omop.table` also carries a public, non-secret
-`dsomop_pseudonymization` contract (token protocol, key-contract version,
-`key_id`, epoch and resource-scope flag). Unary manipulation preserves and
-validates it. `omopMergeDS()` and `omopBindRowsDS()` require exact equality, so
-tables from different keys, epochs, protocols or scopes cannot be combined.
-Older workspace objects lacking the contract fail closed and must be recreated;
-matching token-looking strings are not treated as proof of compatibility.
+State persistence follows the service user's filesystem. Ordinary restart and
+package upgrade preserve the existing keys; replacing a container with an empty
+home is a different storage lifecycle and is not covered by that guarantee.
+Moving or deleting existing state changes key continuity. Root loss or rotation
+invalidates existing tokens, and unsafe or substituted roots fail closed.
+`DSOMOP_PSEUDONYM_EPOCH` defaults to 1 and is an optional lifecycle marker;
+changing it does not itself rotate or derive a key.
 
 ### Sticky noise
 
@@ -205,11 +116,10 @@ or reroll controls.
 The DP path accepts only server-created, person-tokened `omop.table` objects
 produced by an OHDSI community tool (for example an analysis-catalog loader)
 with an authenticated, content-bound, person-local provenance capsule. A copied
-class or attribute is not sufficient. Since 2.8.0, tables loaded through plans
-or recipes, and the results of filters, factors, merges and row binding, never
-carry DP provenance: the core does not take part in DP. Ordinary DataSHIELD
-disclosure gates continue to apply while data are selected, linked and
-formatted.
+class or attribute is not sufficient. Ordinary plan/recipe loads do not carry
+DP provenance. The dedicated `omopDpPlanExecuteDS()` preparation path seals
+approved person-local plan outputs; final releases validate that provenance
+and apply their disclosure gates.
 
 Before adding noise, dsOMOP deterministically collapses or caps repeated
 longitudinal records for each person. A release uses one of seven reviewed
@@ -229,13 +139,13 @@ learned from an exact result. Reducers such as presence, records, first, last,
 minimum, maximum, mean, median, mode, any and all are admitted only where their
 primitive defines deterministic person-level bounding.
 
-Epsilon is a fixed, server-owned value per semantic release
-(`dsomop.dp.release_epsilon` / `DSOMOP_DP_RELEASE_EPSILON`). The client cannot
-submit epsilon, delta, a seed, nonce, epoch, reset or force-reroll flag. A
-primitive may split the release epsilon internally—for example between the
-count and sum of a bounded mean or between a binary-rate numerator and
-denominator—but the public result reports the complete per-release mechanism
-contract.
+The reference calibration is a fixed server-owned value
+(`dsomop.dp.release_epsilon` / `DSOMOP_DP_RELEASE_EPSILON`, default 0.1).
+Canonical components receive fixed allocations; this is not an independent
+epsilon for every request or cell. The client cannot submit epsilon, delta, a
+seed, nonce, epoch, reset or force-reroll flag. Metadata reports the complete
+component contract and distinguishes fixed-vector guarantees from heuristic
+reuse.
 
 Since dsOMOP 2.6.1, the noise sampler
 `dsomop-dp-exact-discrete-laplace-v1` uses the exact integer/rational algorithm
@@ -253,50 +163,46 @@ that a finite key supplies information-theoretic infinite randomness. See
 exactness argument, and [SAMPLER_DIAGNOSIS.md](SAMPLER_DIAGNOSIS.md) for the
 original defect.
 
-Since 2.10.0 dsOMOP stores nothing but the secret noise root. Every answer is a
-deterministic function of that root, the canonical question, the protected
-statistic and a private automatic database version (the largest identifier of
-each present clinical table, keyed with the root and never released). The same
-question on the same data returns the same answer, byte for byte, after
-restarts and on every R server that shares the root, without a store, capacity
-limit or lock. A database reload that adds rows changes the version, so every
-answer re-draws at once and nobody can tell which statistics changed. An
-in-place edit that adds no row with a larger identifier keeps the version and
-re-draws only the statistics it changed: repeating a question across such an
-edit shows whether its statistic changed, never by how much (the conditional
-equality of [isglobal-brge/dsOMOP#20](https://github.com/isglobal-brge/dsOMOP/issues/20)),
-so custodians rotate the epoch after in-place edits. Each database version is
-a new release for privacy accounting.
+Since 2.10.0 the only persistent DP secret is the noise root (the core also
+retains its pseudonymisation key). Protected components are determined by the
+root, their public owner/profile and bounded contribution fingerprints; fixed
+routes additionally use a person-membership digest recomputed inside each
+request's database snapshot. No per-handle/session generation or failed-read
+cache selects answers. Equivalent supported formulations replay under the same
+current data, corpus and secrets. Changes to membership globally redraw fixed
+components; clinical edits with unchanged membership redraw changed components.
+Change/equality patterns remain informative and have no joint transcript-DP
+claim. See [DISCLOSURE_CONTROL.md](DISCLOSURE_CONTROL.md).
 
-The public question includes authenticated dataset/query lineage, the typed
-statistic, public bounds/reducer/contribution contract, policy hash, domain,
-public snapshot, privacy epoch, mechanism and sensitivity. Display names and
-row order are not part of it. The keyed fingerprint of the bounded statistic
-selects the noise but is never returned, nor are raw PRF material and the
-database version. Component labels, samplers, sensitivities, epsilon
-allocations and clipping are unchanged.
+Display names, request spelling, scope names, row order and lineage cosmetics
+are part of no key. Contribution fingerprints, person tokens and raw PRF
+material are never returned. Protection labels report the owner, effective
+parameters, allocations, sensitivities, noise scales and guarantee scope.
 
-There is no cumulative epsilon budget or privacy call quota. A repeated
-question returns its answer instead of fresh noise, so averaging repeats gains
-nothing; different questions compose as usual. Invalid inputs, unproved
-provenance, a damaged root and requests outside the reviewed primitives still
-fail closed.
+There is no cumulative epsilon budget, privacy call quota or history-dependent
+admission. A repeated question returns its answer instead of fresh noise, so
+averaging repeats gains nothing; different questions compose as usual, and the
+realised-contribution route is a heuristic disclosure control, not a joint
+differential-privacy guarantee. Invalid inputs, unproved provenance, a damaged
+root and requests outside the reviewed primitives still fail closed.
 
-The release protocol is `dsomop-dp-release-v3`, with privacy contract
-`fixed_per_release_seed_data_versioned_v1`. Status reports
-`release_binding = "seed_data_versioned_v1"`,
+The DP service protocol remains `dsomop-dp-release-v3` (policy schema 4, exact
+sampler `dsomop-dp-exact-discrete-laplace-v1`, mechanism
+`dsomop-sticky-discrete-laplace-prf-v2`). Since 2.10.3 the privacy contract is
+`protected_release_fixed_basis_or_realised_v1`; status reports
+`release_protocol = "dsomop-protected-release-v1"`,
+`release_binding = "fixed_basis_or_realised_contributions_v1"`,
 `persistent_state = "noise_root_only"`, `service_capacity = "none"`,
-`history_dependent = FALSE` and `privacy_call_quota = "none"`. The exact
-sampler `dsomop-dp-exact-discrete-laplace-v1`, the mechanism
-`dsomop-sticky-discrete-laplace-prf-v2` and policy schema 4 are unchanged.
-Explicit DP releases need dsOMOPClient 2.10.0, which accepts this contract and
-the first-answer contract of servers 2.7.1 to 2.9.x; the analysis-catalog DP
-questions work with any client.
+`history_dependent = FALSE`, `history_based_admission = FALSE` and
+`privacy_call_quota = "none"`. Typed releases need dsOMOPClient 2.10.3, which
+validates and pools protected components; older clients refuse the new
+contract. The analysis-catalog questions work with any client (older clients
+display protected entries but do not pool them).
 
 dsOMOP 2.7.1 to 2.9.x kept a permanent first-answer store instead
-(`DSOMOP_STATE_DIR/release-bindings/`). 2.10.0 no longer reads it, so upgrading
-re-draws previously asked questions once, and the custodian can archive or
-remove those files afterwards. `omopInitializeReleaseStore()` remains only as a
+(`DSOMOP_STATE_DIR/release-bindings/`). 2.10.0 no longer reads it, so that historical
+upgrade re-drew previously asked questions once. Those files are no longer
+part of the active service. `omopInitializeReleaseStore()` remains only as a
 deprecated no-op; `dsomop.dp.release_store_id` and
 `dsomop.dp.release_store_bytes` are ignored.
 
@@ -320,11 +226,11 @@ by default (`dsomop.dp.enabled`); custodians can opt out with
 and environment settings must agree. Since dsOMOP 2.8.0 the custodial option
 `dsomop.dp.exclusive` defaults to `FALSE` (profile fallback
 `default.dsomop.dp.exclusive = FALSE`) and, when a custodian sets it, applies
-only to the community-tool endpoints: with DP enabled they then refuse with a
-message directing analysts to `omopDpReleaseDS` (`ds.omop.dp.release` on the
-client). dsOMOP 2.7.x applied this gate to its own standard statistics too;
-2.8.0 does not. Analysts cannot set this policy or bypass the noise through a
-client option. `omopDpStatusDS()` reports the configured `exclusive` flag; the
+only to the community-tool endpoints. With DP enabled, exclusive mode admits
+registered fixed-synopsis catalogue/query routes and eligible typed releases;
+it refuses standard, realised-only and unsupported tool routes. dsOMOP's own
+standard statistics retain their separate controls. Analysts cannot set this
+policy or bypass the noise through a client option. `omopDpStatusDS()` reports the configured `exclusive` flag; the
 flag is read on each request and does not change the DP mechanism, policy
 hash, sticky noise, or release identity.
 
@@ -334,100 +240,98 @@ always available under the standard controls, whatever the DP settings. See
 [DISCLOSURE_CONTROL.md](DISCLOSURE_CONTROL.md) for the endpoint list and the
 scope of the gate.
 
-### Custodian release state and freshness
+### Automatic release state and freshness
 
-When `dsomop.dp.domain` / `DSOMOP_DP_DOMAIN` and
-`dsomop.dp.snapshot_id` / `DSOMOP_DP_SNAPSHOT_ID` are unset or have empty
-package defaults, initialization derives them from the connected resource.
-Each explicitly configured value takes precedence. The domain is a SHA-256
+No privacy setting needs configuring. When `dsomop.dp.domain` /
+`DSOMOP_DP_DOMAIN` is unset or has an empty package default, initialization
+derives it from the connected resource; an explicitly configured value takes
+precedence. The public `snapshot_id` status label is a digest of that domain;
+the deprecated `dsomop.dp.snapshot_id` / `DSOMOP_DP_SNAPSHOT_ID` only replaces
+that display label, and no answer or admission depends on it. The domain is a SHA-256
 hash of versioned, canonical database coordinates: normalized DBMS, lowercase
 host, effective port, database (canonical absolute file path for SQLite/DuckDB),
 and effective CDM and vocabulary schemas. Credentials, transport settings,
 resource display names, results schemas and temporary schemas are excluded.
 SQLite's implicit and explicit `main` schema have the same identity.
 
-Snapshot precedence is **explicit configuration → complete `cdm_source` →
-fallback**. The snapshot hashes the resource identity and the source fields
-`cdm_source_name`, `cdm_release_date`, `cdm_version` and `vocabulary_version`,
-converted to text. One complete row retains the `dsomop-dp-cdm-snapshot-v1`
-contract; multiple complete rows are all canonically sorted and hashed under
-`dsomop-dp-cdm-snapshot-multi-v1`.
+An optional explicit `snapshot_id` is printed as display metadata. With no
+valid label, status derives one from the canonical corpus domain only. No
+metadata query, noise key, provenance admission or identity decision depends on
+the label. Clearing or changing it during a session or after restoring a sealed
+table changes neither protection nor values.
 
-Missing/unreadable tables, zero rows, or missing/blank fields fall back to all
-canonically sorted `vocabulary_id`/`vocabulary_version` pairs from `vocabulary`
-(including the `None` row), plus resource identity, under
-`dsomop-dp-cdm-snapshot-fallback-v1`. If vocabulary metadata is also unavailable
-or incomplete, resource identity alone is hashed under
-`dsomop-dp-cdm-snapshot-resource-only-v1`. Each explicit identifier wins
-independently, and an explicit snapshot skips metadata derivation.
+Unscoped questions over complete registered public bases use a generation
+computed from canonical person membership inside each request's pinned database
+snapshot. It detects insertions, withdrawals and balanced replacement of person
+identifiers without clinical COUNT/MAX scans or cross-request state. Clinical
+edits with unchanged membership retain a component-change residual: the
+fingerprint prevents intentional reuse of old noise for changed bounded inputs,
+but does not hide which components changed or establish evolving-data DP.
+`snapshot_id` has no security or answer effect. Epoch rotation is optional
+administrative hardening, never required after a load. Record summaries with
+data-enumerated strata use the honestly labelled heuristic route, retain
+weighted histograms without scales, and are unavailable in DP-exclusive mode.
+See [DISCLOSURE_CONTROL.md](DISCLOSURE_CONTROL.md#the-automatic-data-generation-of-the-fixed-synopses).
 
-Reloads that add rows need no custodian action. Without an explicit snapshot,
-each R session reads the private database version once (one `MAX()` over the
-primary key of each present clinical table, an index lookup) and keys every
-answer with it, so such a reload re-draws every answer from the next session
-on, even when the `cdm_source` metadata did not change. After an in-place edit
-that adds no row with a larger identifier, bump `dsomop.dp.privacy_epoch` /
-`DSOMOP_DP_PRIVACY_EPOCH` and restart sessions; otherwise only the changed
-statistics re-draw, which shows which ones changed. A custodian who sets
-`dsomop.dp.snapshot_id` declares versions explicitly: the database is then not
-read, and the snapshot or the epoch must change with every reload. Rotating
-the snapshot or the epoch re-draws every answer, like a reload.
+Protected recurrent event-time views retain both events and distinct contributors
+among the same K=10 kept occurrences. Their complete interval-presence vector has
+sensitivity 3K; static epsilon fractions are N/R .2 each, A/B/C .1 each and P .3.
+Coarse person counts select their own canonical intervals, never sums of daily
+person counts. A versioned radial projection enforces feasible event/person
+bounds and interval relationships; retreat toward its event-mass anchor can add
+bias. First-event requests remain a separate estimand with unchanged allocations.
 
-In-memory databases and unavailable/ambiguous resource coordinates still fail
-closed with instructions to configure both identifiers. Conflicting option and
-environment values still fail closed. No generic shared fallback domain is used.
+Without a configured domain, in-memory databases and unavailable/ambiguous
+resource coordinates fail closed because no unambiguous identity is available.
+An explicit domain is an optional identity override for those special resources.
+Conflicting option and environment values still fail closed. No generic shared fallback domain is used.
 Connecting (`omopInitDS()`) never initializes DP; DP binds to the connected
 resource when a community tool first uses it. Policy changes during a session
-fail closed. Use a separate session for a different derived resource; DSLite
-server sessions keep separate policies within their shared R process. For
-replicas and database aliases of one logical dataset, configure matching
-explicit identifiers if canonical connection coordinates differ.
+fail closed. Different derived resources have separate sessions; DSLite
+server sessions keep separate policies within their shared R process. Optional
+explicit identities represent replicas or aliases whose canonical coordinates
+differ.
 
-The only DP state is the noise root, `DSOMOP_STATE_DIR/secrets/dp_noise_root`
-(or under `dsomop.state_dir`; the default `~/.dsomop` is suitable only when the
-home is persistent). First use creates it from the operating system's CSPRNG
-and logs a custodian `message()`. Keep the state directory on persistent
-storage: every answer re-draws if the root is lost. Directories must be
-owner-only `0700` and files `0600`; existing owner, symlink and hard-link
-checks apply. A damaged, unsafe or substituted root is never replaced: DP fails
-closed with one stable analyst error and a custodian diagnostic in the server
-log. `DSOMOP_TEST_ALLOW_EPHEMERAL_STATE=1` is for tests only.
+The only DP state is the noise root, automatically created at
+`~/.dsomop/secrets/dp_noise_root` under the R service user's home (or an
+optional configured state directory). First use draws from the operating-system
+CSPRNG, creates private directories/files and logs creation once. A damaged,
+unsafe or substituted root fails closed with a stable analyst error and a reason
+in the server log. Root continuity follows the service filesystem; loss of the
+root changes future draws. The test-only ephemeral-state override is not a
+production setting.
 
-A custodian may instead inject exactly 32 raw CSPRNG bytes or 64 hexadecimal
-characters through `dsomop.dp.noise_root` / `DSOMOP_DP_NOISE_ROOT`; passphrases
-are rejected. Nothing is then written for DP, and R servers given the same
-root, domain, snapshot, epoch and mechanism configuration return the same
-answers on the same data, so replicas of one logical node share nothing else.
-Distinct nodes must use distinct roots and domains; compare public
-noise-domain fingerprints during readiness checks. Root bytes are never put in
-OMOP handles or returned to analysts, and package loading remains key-free.
-Back up the root (or its secret-manager configuration): restoring it restores
-every answer.
+Optional injection through `dsomop.dp.noise_root` / `DSOMOP_DP_NOISE_ROOT`
+accepts exactly 32 raw CSPRNG bytes or 64 hexadecimal characters, never a
+passphrase. With injection, no DP secret file is written. The same root, domain,
+epoch, mechanism and data reproduce the same answers. Automatically created
+roots separate independent nodes; root bytes never enter handles or responses.
 
-The guarantee is conditional: within one root, domain, snapshot, epoch and
-database version, a repeated valid question returns the same canonical bytes,
-so repeats add no observation. Different questions, database versions and
+The guarantee is conditional: within one root, domain and epoch, and on
+unchanged data, a repeated valid question returns the same canonical bytes,
+so repeats add no observation. Different questions, data changes and
 rotations compose; there is no finite lifetime privacy accountant or full
 temporal-transcript DP claim. Administrative timing, validation failures,
 availability and other DataSHIELD outputs remain outside this repeated-payload
-guarantee. Retain the method allowlist, person contribution bounds and reviewed
-output contracts.
+guarantee. Method allowlists, person contribution bounds and reviewed output
+contracts remain part of the security boundary.
 
 Non-secret configuration is available through matching `dsomop.dp.*` options
-and `DSOMOP_DP_*` environment variables, including enablement, domain, public
-snapshot identifier, fixed release epsilon, privacy epoch and the server caps
+and `DSOMOP_DP_*` environment variables, including enablement, domain, the
+fixed release epsilon, privacy epoch and the
+server caps
 for levels, contributions and numeric quantization. Explicit option and
 environment values must agree. `omopDpStatusDS()` is suitable as a production
-readiness check after the persistent state volume and final profile have been
-mounted.
+readiness check for the active service and published profile.
 
 The DataSHIELD method allowlist is part of the security boundary. An
 `omop.table` class or a `dsomop_protected` attribute protects calls handled by
 `dsOMOP`; it cannot make arbitrary methods from other server packages safe.
-Review the complete server method allowlist together with the effective privacy
-options before exposing a resource to analysts.
+The effective server-wide method allowlist and privacy options define this
+boundary across packages.
 
-Never register `c=base::c` or `list=base::list` as **aggregate** methods. In
+`c=base::c` and `list=base::list` are unsafe **aggregate** methods and are
+absent from dsOMOP's manifest. In
 particular, an aggregate `list` alias lets a caller evaluate `list(x)` and
 return an arbitrary server object without passing through a dsOMOP disclosure
 gate. dsOMOP transports multiple cohort references through bounded scalar
@@ -437,16 +341,16 @@ An assign-only constructor can be reviewed separately because it does not
 itself return its result, but dsOMOP does not require generic constructors for
 this workflow.
 
-This check must cover the effective allowlist for the whole DataSHIELD server,
-not only dsOMOP's manifest. Installing dsFlower, dsVert, or any other package
+The boundary covers the effective allowlist for the whole DataSHIELD server,
+including methods from other packages. Installing dsFlower, dsVert, or any other package
 that exposes either generic constructor in aggregate mode reopens the same
-server-wide exfiltration path even though dsOMOP omits it. Remove those aliases
-from the package/server configuration and verify the effective registry before
-granting analyst access.
+server-wide exfiltration path even though dsOMOP omits it. The client
+connection preflight refuses these aliases; direct DSI callers remain outside
+that client-side defense.
 
 Third-party analysis packs are a separate administrator trust boundary and are
-disabled by default. To enable one, set an exact package/version pin, for
-example `options(dsomop.analysis_pack_allowlist = c(myPack = "1.2.3"))`.
+disabled by default. Optional enablement uses an exact package/version pin,
+for example `options(dsomop.analysis_pack_allowlist = c(myPack = "1.2.3"))`.
 Discovery ignores every unpinned or version-mismatched package. Enabled entries
 must declare a closed versioned output contract; both raw and final aggregate
 or assign results pass the external-pack firewall. This controls catalog
@@ -491,20 +395,34 @@ You can then install the `dsOMOP` package using the following command:
 dsadmin.install_github_package(o, 'dsOMOP', username='isglobal-brge', ref='main')
 ```
 
-#### Upgrading on Opal
+#### Upgrading to 2.10.3 on Opal
 
-Opal publishes a package's DataSHIELD methods and options in the profile when
-the package is first installed, but not when an installed package is upgraded:
-the profile keeps the previous version's list. After every upgrade of dsOMOP,
-publish its settings again, in the GUI (Administration > DataSHIELD >
-Packages > dsOMOP > Publish) or from the R console:
-```R
-dsadmin.publish_package(o, 'dsOMOP')
-```
-Otherwise analysts get errors such as `No such DataSHIELD 'ASSIGN' method with
-name: omopInitDS`. Analysts can check every server with
-`dsOMOPClient::ds.omop.server.version(conns)`, which compares the version whose
-methods the profile publishes with the version installed.
+The release pairs dsOMOP 2.10.3 with dsOMOPClient 2.10.3. It includes the
+OHDSI protected-release corrections and recipe language 2. Existing secrets are
+reused automatically; no state-directory setting, privacy tuning, epoch bump,
+ETL hook or TLS change is part of this upgrade.
+
+Opal distinguishes the installed R package from the DataSHIELD profile. On an
+upgrade, the profile retains the old methods and options until the package
+settings are published (Administration > DataSHIELD > Packages > dsOMOP >
+Publish, also available as `dsadmin.publish_package(o, 'dsOMOP')`). This is the
+ordinary Opal package-publication lifecycle. `ds.omop.server.version(conns)`
+reports installed and published versions and distinguishes a stale profile from
+an old package. Language-2 execution refuses a profile missing its protocol
+before assignment; publication of an installed 2.10.3 makes that protocol
+available without another upgrade.
+
+Supported legacy recipes retain their v1 execution path. Language-2 plans need
+the publication protocol at every site; corrected and newly refused v1 shapes
+and their migration paths are listed in [NEWS.md](NEWS.md). New protected
+payloads are not pooled with pre-2.10.3 payloads; `type = "split"` retains
+per-site results during a mixed-version transition. Older typed clients receive
+a clear upgrade refusal. The new client alone cannot repair an old server.
+
+Protected answers can change with the repaired component contracts and grids.
+Historical releases are not retracted. Fixed-vector and heuristic guarantees,
+exact support gates and the remaining adaptive-inference limits are described
+in [DISCLOSURE_CONTROL.md](DISCLOSURE_CONTROL.md#upgrading-to-2103).
 
 ## Creating OMOP CDM resources
 
@@ -537,11 +455,11 @@ These resources contain the following parameters:
 - PostgreSQL TLS options `sslmode`, `sslrootcert`, `sslcert` and `sslkey`.
   Without `sslmode` no mode reaches libpq, whose default (`prefer`, or
   `PGSSLMODE` when the R server sets it) uses TLS only when the database offers
-  it. Set `require`, `verify-ca` or `verify-full` to enforce it.
+  it. Optional modes `require`, `verify-ca` and `verify-full` enforce TLS.
 - MySQL/MariaDB TLS options `ssl_required`, `ssl_ca`, `ssl_cert` and `ssl_key`.
   TLS is required, with a verified server certificate, only when
-  `ssl_required=true` or TLS material is set; configure `ssl_ca` when the
-  server CA is not already in the connector trust store. dsOMOP disables
+  `ssl_required=true` or TLS material is set; an optional `ssl_ca` supplies a
+  server CA that is not already in the connector trust store. dsOMOP disables
   RMariaDB option-file groups so a host-level client configuration cannot
   change this. Required TLS sessions must negotiate TLS 1.2 or TLS 1.3.
 - SQL Server, Synapse and PDW through Microsoft's ODBC drivers connect with
@@ -553,7 +471,7 @@ parameters: they are supplied separately as the resource identity and secret.
 BigQuery and file-backed engines use the service account's configured cloud or
 filesystem identity instead.
 
-To configure a resource for dsOMOP, ensure that you have the above details accurately filled out to establish a successful connection to your OMOP CDM database.
+The resource uses these connection details to access the OMOP CDM database.
 
 Resources created with the dsOMOP 1.x form (format `omop.cdm.db`, URL
 `postgresql://host:port/db//dsomop::/schema:cdm/vocabulary_schema:vocab`, also

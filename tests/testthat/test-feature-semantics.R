@@ -61,13 +61,14 @@ test_that("in-memory feature date filters compare typed ISO bounds", {
   expect_match(sql, "measurement_datetime < '2020-02-01'")
 
   missing_date <- data.frame(event_date = as.Date(c(NA, "2020-01-01")))
-  expect_equal(
-    .evalFilterMask(
-      list(var = "event_date", op = "not_in", value = "2020-02-01"),
-      missing_date
-    ),
-    c(FALSE, TRUE)
+  # 2.10.3 (design 6.6): NOT IN over a missing operand is UNKNOWN, as in SQL;
+  # the row is still dropped because only TRUE rows are kept.
+  mask <- .evalFilterMask(
+    list(var = "event_date", op = "not_in", value = "2020-02-01"),
+    missing_date
   )
+  expect_equal(mask, c(NA, TRUE))
+  expect_equal(mask %in% TRUE, c(FALSE, TRUE))
 })
 
 test_that("first and latest values use OMOP date and primary-key ordering", {

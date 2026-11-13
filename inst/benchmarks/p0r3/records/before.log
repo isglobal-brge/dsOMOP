@@ -1,0 +1,180 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+tools-release-records: ............................................................................................................................................................................................................................................................................................................................duckdb keeps downloaded extensions and secrets in a temporary directory:
+i /tmp/RtmpBbmRmV/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+..1..2..3..4..5..6..7..8NOTICE:  drop cascades to table dsomop_it_774677_5f13addf_results.achilles_results
+
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to table dsomop_it_774677_5f13addf_vocab.concept
+drop cascades to table dsomop_it_774677_5f13addf_vocab.concept_ancestor
+
+NOTICE:  drop cascades to 11 other objects
+DETAIL:  drop cascades to table dsomop_it_774677_5f13addf_cdm.cdm_source
+drop cascades to table dsomop_it_774677_5f13addf_cdm.person
+drop cascades to table dsomop_it_774677_5f13addf_cdm.observation_period
+drop cascades to table dsomop_it_774677_5f13addf_cdm.condition_occurrence
+drop cascades to table dsomop_it_774677_5f13addf_cdm.drug_exposure
+drop cascades to table dsomop_it_774677_5f13addf_cdm.procedure_occurrence
+drop cascades to table dsomop_it_774677_5f13addf_cdm.measurement
+drop cascades to table dsomop_it_774677_5f13addf_cdm.observation
+drop cascades to table dsomop_it_774677_5f13addf_cdm.visit_occurrence
+drop cascades to table dsomop_it_774677_5f13addf_cdm.device_exposure
+drop cascades to table dsomop_it_774677_5f13addf_cdm.death
+
+..9..a..b..c..d..e..f..g
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Failure ('test-tools-release-records.R:578:3'): record summaries run on SQ
+Expected `answers[[i]]$values` to equal `reference[[i]]$values`.
+Differences:
+`attr(actual, 'dsomop_protection')$read_snapshot`:   "snapshot_transaction"    
+`attr(expected, 'dsomop_protection')$read_snapshot`: "serializable_transaction"
+
+duckdb dsomop:observation_period.length_stats
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expect_records_engine(...) at test-tools-release-records.R:578:3
+ 2.   └─testthat::expect_equal(...) at test-tools-release-records.R:561:5
+
+── 2. Failure ('test-tools-release-records.R:578:3'): record summaries run on SQ
+Expected `answers[[i]]$values` to equal `reference[[i]]$values`.
+Differences:
+`attr(actual, 'dsomop_protection')$read_snapshot`:   "snapshot_transaction"    
+`attr(expected, 'dsomop_protection')$read_snapshot`: "serializable_transaction"
+
+duckdb dsomop:observation_period.length_months_stats
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expect_records_engine(...) at test-tools-release-records.R:578:3
+ 2.   └─testthat::expect_equal(...) at test-tools-release-records.R:561:5
+
+── 3. Failure ('test-tools-release-records.R:578:3'): record summaries run on SQ
+Expected `answers[[i]]$values` to equal `reference[[i]]$values`.
+Differences:
+`attr(actual, 'dsomop_protection')$read_snapshot`:   "snapshot_transaction"    
+`attr(expected, 'dsomop_protection')$read_snapshot`: "serializable_transaction"
+
+duckdb dsomop:measurement.value_stats
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expect_records_engine(...) at test-tools-release-records.R:578:3
+ 2.   └─testthat::expect_equal(...) at test-tools-release-records.R:561:5
+
+── 4. Failure ('test-tools-release-records.R:578:3'): record summaries run on SQ
+Expected `answers[[i]]$values` to equal `reference[[i]]$values`.
+Differences:
+`attr(actual, 'dsomop_protection')$read_snapshot`:   "snapshot_transaction"    
+`attr(expected, 'dsomop_protection')$read_snapshot`: "serializable_transaction"
+
+duckdb dsomop:drug.quantity_stats
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expect_records_engine(...) at test-tools-release-records.R:578:3
+ 2.   └─testthat::expect_equal(...) at test-tools-release-records.R:561:5
+
+── 5. Failure ('test-tools-release-records.R:600:3'): PostgreSQL gives the SQLit
+Expected `answers[[i]]$values` to equal `reference[[i]]$values`.
+Differences:
+attr(actual, 'dsomop_protection')$read_snapshot vs attr(expected, 'dsomop_protection')$read_snapshot
+- "repeatable_read_transaction"
++ "serializable_transaction"
+
+postgresql dsomop:observation_period.length_stats
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expect_records_vendor("postgresql") at test-tools-release-records.R:600:3
+ 2.   └─dsOMOP (local) .expect_records_engine(...) at test-tools-release-records.R:596:3
+ 3.     └─testthat::expect_equal(...) at test-tools-release-records.R:561:5
+
+── 6. Failure ('test-tools-release-records.R:600:3'): PostgreSQL gives the SQLit
+Expected `answers[[i]]$values` to equal `reference[[i]]$values`.
+Differences:
+attr(actual, 'dsomop_protection')$read_snapshot vs attr(expected, 'dsomop_protection')$read_snapshot
+- "repeatable_read_transaction"
++ "serializable_transaction"
+
+postgresql dsomop:observation_period.length_months_stats
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expect_records_vendor("postgresql") at test-tools-release-records.R:600:3
+ 2.   └─dsOMOP (local) .expect_records_engine(...) at test-tools-release-records.R:596:3
+ 3.     └─testthat::expect_equal(...) at test-tools-release-records.R:561:5
+
+── 7. Failure ('test-tools-release-records.R:600:3'): PostgreSQL gives the SQLit
+Expected `answers[[i]]$values` to equal `reference[[i]]$values`.
+Differences:
+attr(actual, 'dsomop_protection')$read_snapshot vs attr(expected, 'dsomop_protection')$read_snapshot
+- "repeatable_read_transaction"
++ "serializable_transaction"
+
+postgresql dsomop:measurement.value_stats
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expect_records_vendor("postgresql") at test-tools-release-records.R:600:3
+ 2.   └─dsOMOP (local) .expect_records_engine(...) at test-tools-release-records.R:596:3
+ 3.     └─testthat::expect_equal(...) at test-tools-release-records.R:561:5
+
+── 8. Failure ('test-tools-release-records.R:600:3'): PostgreSQL gives the SQLit
+Expected `answers[[i]]$values` to equal `reference[[i]]$values`.
+Differences:
+attr(actual, 'dsomop_protection')$read_snapshot vs attr(expected, 'dsomop_protection')$read_snapshot
+- "repeatable_read_transaction"
++ "serializable_transaction"
+
+postgresql dsomop:drug.quantity_stats
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expect_records_vendor("postgresql") at test-tools-release-records.R:600:3
+ 2.   └─dsOMOP (local) .expect_records_engine(...) at test-tools-release-records.R:596:3
+ 3.     └─testthat::expect_equal(...) at test-tools-release-records.R:561:5
+
+── 9. Failure ('test-tools-release-records.R:604:3'): MySQL gives the SQLite rec
+Expected `answers[[i]]$values` to equal `reference[[i]]$values`.
+Differences:
+attr(actual, 'dsomop_protection')$read_snapshot vs attr(expected, 'dsomop_protection')$read_snapshot
+- "consistent_snapshot_transaction"
++ "serializable_transaction"
+
+mysql dsomop:observation_period.length_stats
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expect_records_vendor("mysql") at test-tools-release-records.R:604:3
+ 2.   └─dsOMOP (local) .expect_records_engine(...) at test-tools-release-records.R:596:3
+ 3.     └─testthat::expect_equal(...) at test-tools-release-records.R:561:5
+
+── 10. Failure ('test-tools-release-records.R:604:3'): MySQL gives the SQLite re
+Expected `answers[[i]]$values` to equal `reference[[i]]$values`.
+Differences:
+attr(actual, 'dsomop_protection')$read_snapshot vs attr(expected, 'dsomop_protection')$read_snapshot
+- "consistent_snapshot_transaction"
++ "serializable_transaction"
+
+mysql dsomop:observation_period.length_months_stats
+Backtrace:
+    ▆
+ 1. └─dsOMOP (local) .expect_records_vendor("mysql") at test-tools-release-records.R:604:3
+ 2.   └─dsOMOP (local) .expect_records_engine(...) at test-tools-release-records.R:596:3
+ 3.     └─testthat::expect_equal(...) at test-tools-release-records.R:561:5
+  ... and 6 more
+
+
+Maximum number of 10 failures reached, some test results may be missing.
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                         file blocks failed errors
+ test-tools-release-records.R      4     16      0
+
+FAILING TESTS
+test-tools-release-records.R | record summaries run on SQLite and DuckDB with equal answers | failed=4 error=FALSE
+test-tools-release-records.R | PostgreSQL gives the SQLite record-summary answers | failed=4 error=FALSE
+test-tools-release-records.R | MySQL gives the SQLite record-summary answers | failed=4 error=FALSE
+test-tools-release-records.R | MariaDB gives the SQLite record-summary answers | failed=4 error=FALSE
+
+RESULT failed: 16 errors: 0 skipped: 0 passed: 348 

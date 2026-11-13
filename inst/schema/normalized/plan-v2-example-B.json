@@ -1,0 +1,291 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "dsOMOPClient"
+  },
+  "concept_sets": {
+    "mi": {
+      "concepts": [
+        4329847
+      ],
+      "include_descendants": true,
+      "include_mapped": false,
+      "exclude": null
+    },
+    "statins": {
+      "concepts": [
+        1539403,
+        1545958,
+        1551860
+      ],
+      "include_descendants": true,
+      "include_mapped": false,
+      "exclude": null
+    }
+  },
+  "events": {
+    "mi": {
+      "table": "condition_occurrence",
+      "concept_set": "mi",
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    },
+    "statin_rx": {
+      "table": "drug_exposure",
+      "concept_set": "statins",
+      "end": {
+        "fallback": "days_supply"
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "on_missing_table": "error"
+    },
+    "diabetes": {
+      "table": "condition_occurrence",
+      "concept_set": {
+        "concepts": [
+          201826
+        ],
+        "include_descendants": true,
+        "include_mapped": false,
+        "exclude": null
+      },
+      "concept_col": null,
+      "where": null,
+      "visit": null,
+      "value": null,
+      "unit": null,
+      "end": null,
+      "on_missing_table": "error"
+    }
+  },
+  "populations": {
+    "cases": {
+      "kind": "index",
+      "label": "First MI",
+      "index": {
+        "source": {
+          "event": "mi"
+        },
+        "select": "first_eligible",
+        "end": {
+          "strategy": "fixed",
+          "days": 0,
+          "pad": 0
+        },
+        "n": 1,
+        "offset": 0,
+        "restrict_to_observation": true
+      },
+      "where": {
+        "observed": {
+          "before": 365,
+          "after": null,
+          "gap": null
+        }
+      },
+      "parent": null,
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      }
+    },
+    "eligible": {
+      "kind": "criteria",
+      "label": "Observed one year",
+      "where": {
+        "observed": {
+          "before": 365,
+          "after": null,
+          "gap": null
+        }
+      },
+      "parent": null,
+      "cohort_definition_id": null,
+      "episode_policy": null,
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      }
+    },
+    "cc": {
+      "kind": "match",
+      "label": "Nested case-control",
+      "match": {
+        "cases": "cases",
+        "controls": "eligible",
+        "outcome": {
+          "event": "mi"
+        },
+        "match": [
+          "sex",
+          {
+            "age_band": 5
+          },
+          "calendar_year",
+          {
+            "strata": {
+              "source": {
+                "event": "diabetes"
+              },
+              "window": {
+                "start": null,
+                "end": -1,
+                "anchor": "index"
+              }
+            }
+          }
+        ],
+        "controls_per_case": 4,
+        "prior_outcome": "exclude",
+        "future_cases": "eligible",
+        "replacement": "between_sets",
+        "seed": 20261111,
+        "insufficient": "keep_available",
+        "missing_strata": "ineligible",
+        "max_candidates": 1000000,
+        "at": "index"
+      }
+    }
+  },
+  "variables": {
+    "set_id": {
+      "population_column": {
+        "name": "set_id"
+      }
+    },
+    "is_case": {
+      "population_column": {
+        "name": "is_case"
+      }
+    },
+    "w": {
+      "population_column": {
+        "name": "sampling_weight"
+      }
+    },
+    "age": {
+      "derived": {
+        "kind": "age",
+        "reference": "index",
+        "bands": false,
+        "reference_date": null,
+        "age_breaks": null
+      }
+    },
+    "sex": {
+      "derived": {
+        "kind": "sex_mf"
+      }
+    },
+    "statin_365": {
+      "source": {
+        "event": "statin_rx"
+      },
+      "reducer": {
+        "fn": "binary",
+        "window": {
+          "start": -365,
+          "end": -1,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    },
+    "statin_days": {
+      "source": {
+        "event": "statin_rx"
+      },
+      "reducer": {
+        "fn": "covered_days",
+        "window": {
+          "start": -365,
+          "end": -1,
+          "anchor": "index"
+        },
+        "value": null,
+        "which": null,
+        "n": 1,
+        "side": "either",
+        "missing": "skip",
+        "distinct": null,
+        "p": null,
+        "agg": null,
+        "reference": null,
+        "predicate": null,
+        "reference_date": null,
+        "unit": "day",
+        "coverage": "recorded",
+        "fills": "start_in_window",
+        "observed_only": false
+      },
+      "broadcast": false
+    }
+  },
+  "outputs": {
+    "cc_table": {
+      "rows": "cc",
+      "grain": "episode",
+      "format": "wide",
+      "columns": [
+        "set_id",
+        "is_case",
+        "w",
+        "age",
+        "sex",
+        "statin_365",
+        "statin_days"
+      ],
+      "options": {
+        "date_handling": {
+          "mode": "relative",
+          "reference": "index",
+          "bin_width": null,
+          "date_columns": null
+        },
+        "time_window": null
+      },
+      "result_symbol": "D_cc",
+      "collapse": null,
+      "sources": []
+    }
+  },
+  "options": {
+    "translate_concepts": true,
+    "block_sensitive": true,
+    "factor_concepts": true
+  },
+  "intervals": {},
+  "publish": [
+    "cc_table"
+  ]
+}

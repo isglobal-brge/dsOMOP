@@ -948,6 +948,7 @@
     stop("chunk_size must be one integer from 1 to 1,000,000.",
          call. = FALSE)
   }
+  .dsomopSnapshotReadSql(handle, compiled$sql)
   result <- .withDbReconnect(handle, function(conn) {
     machine <- .newMultistateStreamTransformer(compiled, max_rows = max_rows)
     rs <- DBI::dbSendQuery(conn, compiled$sql)
@@ -1484,10 +1485,6 @@
     sql = output_sql,
     components = components,
     validation_sql = validation_sql,
-    population_gate_sql = paste0(
-      "WITH ", paste(risk_ctes, collapse = ", "),
-      " SELECT COUNT(DISTINCT subject_id) AS n_persons FROM risk_episodes"
-    ),
     columns = columns,
     semantics = list(
       grain = if (identical(format, "survival")) {
@@ -1617,25 +1614,14 @@
   )
 }
 
-# Run the disclosure precondition before either DBI fetch or incremental
-# staging. Keeping this separate prevents a caller from streaming the SQL while
-# accidentally omitting its fail-closed eligible-population gate.
+# Validate the compiled shape before private DBI fetch or incremental staging.
+# Publication checks support on each completed risk/event materialisation.
 .validateLongitudinalSurvivalSql <- function(handle, compiled) {
   if (!inherits(compiled, "dsomop_longitudinal_sql") ||
       !is.character(compiled$sql) || length(compiled$sql) != 1L) {
     stop("compiled must be a dsomop_longitudinal_sql contract.",
          call. = FALSE)
   }
-  # The compiler's risk CTEs are already rendered for the target dialect.
-  # Execute that gate once, then reuse the common fail-closed nfilter check;
-  # passing it back as SQL would translate PostgreSQL/MySQL expressions twice.
-  gate <- .executeQuery(handle, compiled$population_gate_sql)
-  n_persons <- if (nrow(gate) == 1L && ncol(gate) == 1L) {
-    suppressWarnings(as.numeric(gate[[1L]][1L]))
-  } else {
-    NA_real_
-  }
-  .assertMinPersons(n_persons = n_persons)
   invisible(TRUE)
 }
 

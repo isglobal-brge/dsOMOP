@@ -11,7 +11,8 @@ omopDpPlanExecuteDS(
   output_mode = "memory",
   scope = NULL,
   combine = "union",
-  ...
+  ...,
+  commit_policy = "server"
 )
 }
 \arguments{
@@ -19,7 +20,11 @@ omopDpPlanExecuteDS(
 
 \item{plan}{List; the extraction plan}
 
-\item{out}{Named character vector; output_name -> symbol_name mapping}
+\item{out}{Named character vector; output_name -> symbol_name mapping.
+A language-2 plan with an explicit empty \code{publish} array accepts an
+empty mapping (transported as the JSON object \code{\{\}}). Full plan
+validation still runs; no output is materialized or assigned, and the
+publication status is \code{ok} with empty inventories.}
 
 \item{output_mode}{Character; "memory" (default) or "staged"}
 
@@ -36,15 +41,19 @@ independently and contiguously named \code{scope_cohort_1}, ... and
 \code{scope_table_1}, ... without gaps. They are combined internally with
 a literal \code{scope}; no generic aggregate \code{c()} or \code{list()}
 method is required.}
+
+\item{commit_policy}{Character; \code{"server"} follows the server's
+strictness setting. \code{"all_or_none"} refuses the entire execution if
+any output is refused, as requested by a client skipping a small site.}
 }
 \value{
-Invisible TRUE (sealed outputs are assigned into the caller's
-  environment under the requested symbols).
+A bounded publication status; sealed outputs are assigned into the
+  caller's environment under the symbols reported in its inventory.
 }
 \description{
 Community-tool counterpart of \code{\link{omopPlanExecuteDS}} for the sticky
-DP channel. It runs the same typed plan through the core plan engine, which
-is unchanged and never uses DP, and then seals each person-local output with
+DP channel. It runs the same typed plan through the core plan engine. The DP
+adapter seals each accepted person-local component privately before publication with
 the authenticated provenance capsule that \code{\link{omopDpReleaseDS}}
 requires: the canonical lineage of the plan and the dataset identity of the
 connected resource. Ordinary table loading (\code{omopPlanExecuteDS}) never

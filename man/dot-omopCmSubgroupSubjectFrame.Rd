@@ -4,7 +4,14 @@
 \alias{.omopCmSubgroupSubjectFrame}
 \title{Fetch one arm's per-subject Surv/Poisson frame WITHIN a subgroup (in-session)}
 \usage{
-.omopCmSubgroupSubjectFrame(handle, cohort, out_src, tar, predicate)
+.omopCmSubgroupSubjectFrame(
+  handle,
+  cohort,
+  out_src,
+  tar,
+  predicate,
+  horizon = NULL
+)
 }
 \arguments{
 \item{handle}{CDM handle.}
@@ -17,6 +24,9 @@
 
 \item{predicate}{SQL boolean over \code{coh} restricting to the subgroup (or
 NULL for the unrestricted "overall" level).}
+
+\item{horizon}{Public contribution horizon in days of protected releases
+(NULL: the whole observed window, for in-session fits).}
 }
 \value{
 Data frame (person_days, events) — one row per subject in the subgroup.
