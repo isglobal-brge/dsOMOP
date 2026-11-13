@@ -1,0 +1,35 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+e2e-fix3-performance: 
+ROUTE fixed_synopsis 
+BASELINE
+   user  system elapsed 
+ 15.108   0.411  15.520 
+CURRENT
+   user  system elapsed 
+ 12.465   0.054  12.521 
+WARM BASELINE
+   user  system elapsed 
+ 12.718   0.068  12.787 
+WARM CURRENT
+   user  system elapsed 
+ 12.360   0.086  12.447 
+.
+ROUTE realised_sticky 
+BASELINE
+   user  system elapsed 
+ 12.061   0.067  12.129 
+CURRENT
+   user  system elapsed 
+ 11.648   0.054  11.702 
+WARM BASELINE
+   user  system elapsed 
+ 12.484   0.049  12.534 
+WARM CURRENT
+   user  system elapsed 
+ 11.727   0.052  11.781 
+.
+e2e-fix3: ......................................................................................................................................
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+RESULT failed: 0 errors: 0 skipped: 0 passed: 136 
