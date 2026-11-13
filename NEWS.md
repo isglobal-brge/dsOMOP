@@ -1,4 +1,4 @@
-# dsOMOP 2.10.3 (2026-11-13)
+# dsOMOP 2.10.4 (2026-11-13)
 
 - Corrected: derived sex is a factor with the public `F`, `M` domain, including
   an unused level at a site. Assigned age bands, birth-year bands, panel age
@@ -81,6 +81,66 @@
   trends or `"start"`/`"end"` for Date bounds. Native interval/panel/survival
   endpoint columns are added alongside unchanged internal day offsets when a
   recipe date spec requests presentation.
+
+## Concept labels and categorical outputs
+
+- Corrected: concept-valued outputs are unordered factors by semantic type,
+  including renamed reducers, dictionaries and staged components. Vocabulary
+  labels and generated names reconcile by concept ID across retained sites;
+  absent categories retain their declared levels. Presentation-only requests
+  may use different vocabulary versions. Computation continues to use IDs.
+- Newly permitted: `labels` and `column_names` maps on `omop_variable()` and
+  `omop_recipe()`, with variable maps taking precedence. Equal concept labels
+  deliberately merge categories; column names must be unique valid R names.
+  Use `options = list(translate_concepts = FALSE)` for numeric concept IDs and
+  untranslated generated names. Ordinary age/calendar categories still reconcile.
+- Newly permitted: `ds.omop.table(data, column, conns)` pools concept counts
+  while preserving the complete permitted category contract, including unused
+  zero-count levels and labels containing commas. Failed or suppressed site
+  counts are never filled with zeros. Actual missing values stay missing.
+- Corrected: concept model frames retain shared levels during subsetting.
+  CSV staging distinguishes literal `"NA"` and leading backslashes from missing
+  values through the descriptor's `backslash-v1` encoding. Consumers must use
+  the descriptor-aware reader. Existing descriptors retain legacy decoding.
+- Newly refused: malformed/empty label maps, colliding explicit column names,
+  translation with `factor_concepts = FALSE`, and servers lacking the concept
+  presentation capability. Remove that flag or disable translation explicitly;
+  use matching 2.10.4 packages for the new presentation contract. Reconciliation
+  failures roll back all sites and cannot be bypassed with small-site skipping.
+
+## Native execution and compatibility
+
+- Corrected: native outputs and reducers complete the integrated language-2
+  path, preserving BIGINT values for empty/all-NULL streams, population
+  membership, interval coverage, survival censoring and panel source identity.
+  Concept reconciliation retains authenticated person lineage and snapshot
+  provenance when resealing. Final publication and aggregate gates still apply.
+- Corrected: v1 lowering retains supported legacy empty populations, owned
+  cohort references, output shapes and score semantics in the compatibility
+  layer. Native v2 keeps explicit coverage, anchors, censoring and grain rules.
+  Unsupported or ambiguous forms fail with a typed reason; use explicit native
+  declarations when migrating. See the population and extraction vignettes.
+
+## Upgrading from 2.10.3
+
+Install dsOMOP and dsOMOPClient 2.10.4 together, publish dsOMOP's methods and
+Options on Opal, and check `ds.omop.server.version()`. Existing valid secrets
+are reused automatically; no privacy setting, state provisioning, epoch bump,
+ETL hook or TLS change is needed. Re-execute recipes to recreate categorical
+columns. Use `as.character()` for factor labels, never numeric factor codes for
+arithmetic. Legacy date offsets and annual `omop_age()` retain their meaning;
+choose the native date/age helpers explicitly for new semantics. The protected
+release protocol introduced in 2.10.3 is unchanged; pooling still requires
+compatible contracts and logical source identities.
+
+Release verification: [recipe/publication contract run 43515122503](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43515122503)
+passed fresh and upgrade paths on Opal 5.7.6 and 6.1.3;
+[full e2e run 43515127555](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43515127555)
+passed both fresh and upgrade jobs. Both tested harness commit
+`17e5df40f4718bdece091f68d3003c764f061854`. These are evidence for that
+candidate, not a claim of live execution on every supported SQL dialect.
+
+# dsOMOP 2.10.3 (2026-11-13)
 
 Security release: the P0 fixes of the OHDSI-tools audit.
 
@@ -343,182 +403,631 @@ Security release: the P0 fixes of the OHDSI-tools audit.
   `history_based_admission = FALSE`); clients older than 2.10.3 refuse typed
   releases from it.
 
-## Recipe language 2 and concept presentation
+## Recipe language integration
 
-Recipe language 2 adds a typed plan graph, explicit coverage, events, eras,
-anchors, matching, reducers and composable outputs. This release includes the
-recipe-language-2 work. Required support is documented in README; the installed
-capability block remains authoritative while compilers are integrated.
+Recipe language 2.0: a typed plan graph (`plan-v2.json`), publication as the
+only disclosure gate on assignment paths, explicit coverage, eras, anchors,
+matching and adapters. The integrated compiler, client constructors and
+publication contracts ship together; the entries below describe corrected, newly permitted and newly
+refused behavior, including migration paths.
 
-## Corrected
+## Corrected (results that were wrong and now follow the documented rule)
 
-- Protected concept reconciliation retains the authenticated release-person
-  map and snapshot provenance when resealing. Outputs without concept fields
-  or generated concept names retain their existing metadata and values.
-- BIGINT reducers preserve exact decimal values, including empty and all-NULL
-  streams. Existing recipes need no driver options or changes.
+- (WS-9 re-review R1–R2) Mutation and expression-filter predicates compare
+  factor labels as text, including leading zeros. Datetime scalar, membership
+  and range thresholds consistently use civil midnight in the input timezone;
+  inclusive day ranges respect daylight-saving calendar boundaries.
 
-- (A-27 review F2/P1) `ds.omop.table()` preserves arbitrary permitted labels,
-  including commas, through temporary protected analysis copies with lossless
-  category tokens. Counts map back to the exact public level contract, including
-  unused declarations and deliberate merges; actual missing values stay missing.
-  Existing disclosure checks remain in force. Use matching server/client builds
-  and this helper for free-text pooled tables; direct dsBase label transport
-  remains comma-delimited. No recipe changes are needed.
+- (WS-9 review B3–B4; A-23) Mutation branches and coalescing use a common
+  physical type, preserving integer64 values and datetime classes/timezones.
+  Integer arithmetic is exact before overflow checks and promotes beyond
+  32 bits; bit64 is now a required dependency. Evaluated columns are checked
+  against their inferred type before publication. Expression meaning is
+  independent of JSON member order, and repeated public cut labels group
+  their intervals. Integer64 mutation and expression-filter predicates compare
+  fractional and out-of-range public literals exactly, preserving UNKNOWN
+  semantics for missing observations and avoiding rounded membership matches.
 
-- (A-27 review fixes) CSV staging preserves literal `"NA"` labels separately
-  from actual missing cells, including reconciliation rewrites. New CSV
-  descriptors declare `csv_encoding = "backslash-v1"`; server-side readers
-  must decode through `.publishReadChunks()` (a leading backslash escapes
-  literal `NA` and leading backslashes). Existing descriptors retain their
-  legacy decoding. Unicode whitespace-only recodes are now rejected on both
-  boundaries; replace them with a nonempty label. Valid text is unchanged.
+- (WS-6 review B1-B3, N1) Person associations survive intersection,
+  difference and mixed unions, including cohort-seeded people. Mixed unions
+  and their children declare nullable start dates independently of indexed
+  status. Matching admits only dated cases, retaining dated zero-control
+  cases and stable case-rank gaps under the requested insufficient policy.
+  The closed A-21 `legacy_empty` variant compiles to typed empty relations;
+  it remains unavailable on the language-2.0 wire.
+- (A-20; WS-5 review B1–B4, B6–B7, N1–N2) Era `min_days` uses the
+  normalised recorded span even when stockpiling; persistence and carry do
+  not satisfy the threshold. Direct-event coverage applies the interval
+  quality policy, unavailable reducers return NA, and visit/episode
+  associations restrict anchors and streams before interval construction.
+  Private fetches are bounded, compiler temporary tables follow execution
+  context cleanup, and duplicate observed periods preserve segment keys.
+  On MySQL, downstream consumers may reuse a stockpiled interval's course,
+  recorded rows and effective rows in one statement without reopening its
+  session temporary table.
+  The compiler handoff is recorded in
+  `inst/contracts/ws5-interval-anchor-coverage.md`.
+- (WS-6; A-20) The language-2.0 population compiler freezes raw candidates,
+  final rosters, matching case identities/strata and observation-period
+  records in private session tables. Source changes between statements cannot
+  renumber a retained episode or reassign its coverage component. Coverage is
+  compiled once on candidates and its selected component is transferred to
+  final rows; observed segments retain the original recorded periods.
+- (WS-6; A-20) Population criteria use the same visit/parent association as
+  anchors and streams. Rosters preserve `index_visit_id` and the separate
+  `origin_source`/`origin_key` through parents, set operations and matched
+  cases. Person-scoped adapter criteria count each physical event once;
+  visit-qualified era identities remain distinct when dates coincide.
+- (A-E10; WS-6) `set_id` and `cohort_row_id` are reviewed analytic keys and
+  survive identifier handling. Each matched row retains its own person's
+  lineage. Matching excludes same-time outcomes, uses the complete bounded
+  eligible pool and full case identity, and returns tentative controls when
+  an insufficient case is dropped. Case weights are 1; controls have
+  `N_c / m_c` weights under `between_sets` and NA under `none`. A released
+  `N_c / m_c` weight reveals eligible-pool information and is assigned data
+  subject to final publication support and downstream DataSHIELD controls.
+  The WS-7 handoff is `inst/contracts/ws6-populations-matching.md`.
+- Publication validates one genuine person per final row through direct keys or
+  an immutable roster. Composite families commit together; support is counted
+  on the materialized component, including streamed staged files.
+- Without an explicit `publish`, only outputs named in `out` are released;
+  other computed outputs remain private. For example,
+  `out = c(conditions = "cond_df")` publishes only `cond_df`, preserving the
+  2.10.2 behavior and agreeing with client status validation.
+- Roster keys use the same decimal representation for doubles, integers,
+  BIGINT values and CSV-staged characters. Large keys such as `100000` no
+  longer cause a false `lineage_malformed` refusal through scientific notation.
+- Output names come from the committed inventory and never overwrite occupied
+  symbols. Tokenization, DP sealing, assignments and manifest publication share
+  verified rollback; staged readers require exact committed membership.
+- `omopPlanStatusDS()` transports bounded execution status before client cleanup;
+  `omopStagedRevokeDS()` revokes execution-owned symbols and staged files.
+  Strict/non-strict behavior and small-site skipping are decided before commit.
+- DP preparation follows the full normalized graph and authenticated scopes;
+  matching taints descendants and sealing completes before publication.
+- Publication contexts carry the probed SQL dialect profile. Native compiled
+  statements pass the typed SQL check before execution, and shared dialect
+  refusals use the bounded publication status transport. Invalid publication
+  policy errors name the `commit_policy` argument.
 
-- (A-27) Concept factors preserve their federation level contract during
-  model-frame subsetting, including locally absent categories in `ds.glm`.
-  Translated legacy dictionaries use the declared concept schema in both
-  memory and staged execution; they do not expose an observed ID inventory.
+- (B-8) Before 2.10.3, `parent_id` recorded provenance but did not restrict
+  membership; from 2.10.3 a child population is a subset of its parent, as
+  `print()` has always shown. A child without an index inherits its parent's
+  episodes before filtering; a child with its own index, or a set-operation
+  child, restricts its own episodes to the parent's persons.
+- (A-E1) A specified concept set that resolves to no concept now matches no
+  row (`{concepts = 123, exclude = 123}` yields zero counts); it was treated
+  as unrestricted in feature extraction. A v1 feature specification whose
+  declared set resolves to nothing selects no row of the shared stream and
+  counts zero; the language-2.0 concept-set node has the explicit states
+  `all` (no set declared), `set` and `none` (SQL `1 = 0`, never unrestricted).
+- (A-E4) Cohort unions keep distinct same-date index events of different
+  sources or keys; they collapsed on (subject, start, end). The language-2.0
+  compiler deduplicates full origin identities and preserves left-hand
+  episodes in person-based intersections and differences.
+- (A-E3) Index-event concept sets accept `exclude`, resolved by the shared
+  concept-set resolver like every other concept set; they were refused with
+  "Unknown index-event concept-set field(s): exclude".
+- (B-20) On CDM 5.4, an index event on `procedure_occurrence` with an
+  `EndDate` end strategy ends at `procedure_end_date` when it is recorded (role
+  registry, design section 6.2); 2.10.2 always used `procedure_date`.
+- (A-9) The plan code no longer claims that windowed population filters
+  without a cohort index fall back to the server wall clock: they need an
+  explicit `reference_date` and fail closed without one (behaviour unchanged).
+- The `base` population of a multi-population v1 plan, declared without
+  criteria, is every person, as in a single-population plan; without a plan
+  cohort and a scope it restricted its outputs to no person.
 
-- (A-27/CR-28) Concept-valued results are unordered factors by declared
-  semantic class, including aliased reducers and nested/staged references.
-  Vocabulary labels and generated concept names reconcile by ID across
-  retained sites; missing names fall back to decimal IDs, duplicate automatic
-  labels/names are disambiguated, and absent categories retain zero-count
-  levels. Computations and joins still use internal IDs. For numeric IDs
-  and untranslated generated names, use
-  `options = list(translate_concepts = FALSE)`.
+## Newly permitted (previously refused by an intermediate or granularity gate)
 
+- (WS-6) The language-2.0 compiler evaluates complete criteria and candidate
+  anchors for `first_eligible`, allowing a later eligible episode after an
+  earlier candidate fails. `first`, `last` and `nth` retain the legacy
+  selection-before-criteria order. Private populations, set-operation inputs
+  and matching pools have no minimum-person gate; `keep_available` can retain
+  a case with no controls, with publication support checked on final rows.
+- (B-20) Index events may come from any table with an event role record in
+  the role registry (`inst/ohdsi/roles-5.3.csv`, `roles-5.4.csv`): besides the
+  seven tables of 2.10.2, `visit_detail`, `observation_period`, `death`,
+  `specimen`, `note`, `payer_plan_period`, the era tables and, on CDM 5.4,
+  `episode`. Tables that are never event sources (`cost`, `episode_event`,
+  `provider`, `care_site`, `location`, `fact_relationship`) stay refused.
+- A baseline `age_breaks` grid is validated by shape only: any strictly
+  increasing integer grid starting at 0 (for example `c(0, 18, 19, 65)`) is a
+  valid assigned grid; the aggregate on-grid/coarsening rule of
+  `.computeAgeGroups()` no longer applies to it at validation (design 4.5 b).
 
-- Publication counts distinct genuine persons on the final materialisation,
-  validates every row's direct or roster lineage, and commits complete output
-  families atomically. Dynamic inventories reserve fresh symbols; tokenisation,
-  DP sealing, staged files and manifests have verified rollback. Status is read
-  through `omopPlanStatusDS` before cleanup; revoked staged components cannot
-  be opened. A partial `out` mapping publishes only mapped roots unless
-  `publish` is explicit. Explicitly empty publication roots remain private.
-- Parent populations restrict membership. A child without its own index
-  inherits the parent's episode roster before evaluating its criteria. Unions
-  retain distinct same-date events by full source identity. A specified concept
-  set resolving to no concepts matches no rows, never every concept. Concept
-  exclusions and domain concept-column sentinels resolve consistently.
-- Candidate eligibility, observation coverage and index selection have explicit
-  order. Ambiguous coverage defaults to private dropping; missing coverage does
-  not manufacture observation. CDM 5.4 procedures use their recorded end role.
-- Event values, units and ranges are normalized before predicates and reducers.
-  Missing tables use explicit unavailable semantics. SQL predicates retain
-  three-valued logic, including NOT. Episode-member and cost adapters validate
-  person agreement and currency; typed adapter failures travel through status.
-- Eras distinguish recorded coverage, course envelopes and effective stockpiled
-  supply. `min_days` uses recorded span; persistence and carry do not satisfy
-  it. Direct-event coverage follows the interval quality policy. Observed-day
-  segments, visit/episode associations and unavailable reducers retain their
-  declared semantics. MySQL consumers can reuse stockpile relations without
-  reopening a temporary table. Private fetches and cleanup are bounded.
-- Native score history ends at the reference date (index by default); the v1
-  adapter keeps its historical all-time condition selection. Native survival
-  uses explicit censoring, while v1 retains its cohort-end cap and old component
-  shapes. Dense panels retain source/concept identities and carry-forward keys.
-- One closed validation and normalisation pipeline handles v1 compatibility and
-  native v2. The shared semantic digest binds result-affecting legacy variants,
-  version tuple and native defaults, excluding only declared advisory fields.
-  Typed SQL helpers probe runtime capabilities and refuse unsupported constructs
-  before execution. Runtime/driver evidence is separate from SQL snapshots.
-
-## Newly permitted
-
-- (A-27/CR-28) Append `labels` and `column_names` to `omop_variable()` and
-  `omop_recipe()`. Variable maps override recipe maps. Equal explicit value
-  labels deliberately merge categories; explicit column names address stable
-  untranslated keys and never merge columns. Maps require native rendering.
-  Presentation-only federations may use different vocabulary versions;
-  comparable newest releases win, otherwise UTF-8 byte order breaks ties.
-
-
-- Small or empty private intermediates, narrow windows and age ranges, numeric
-  row predicates and off-grid assigned age bands. Only final independently
-  accessible patient components need `nfilter.subset` persons. Aggregate
-  endpoints retain their admission, suppression, grid and banding controls.
-- Assigned tables may carry exact birth components and exact age. An assigned
-  `age_breaks = c(0, 18, 19, 65)` grid may retain a one-person `18-18` band;
-  informational quasi-identifier lint does not change admission.
-- Index sources cover every reviewed event-role table, including visit detail,
-  observation periods, death, specimen, note, payer periods, eras and CDM 5.4
-  episodes. Point-event interval outputs use start=end. No start role still
-  means refusal. Indexed windowed features may default to episode grain;
-  an unindexed population or explicit incompatible person grain stays invalid.
-- Advanced event/reducer recipes and the equivalent simple study layer, typed
-  parameters and composition, explicit publication roots, and protected
-  server-side mutation/filter expressions, subject to advertised operations.
-- `on_small_site = "skip"` keeps successful sites and commits nothing at a site
-  with a small family. Non-strict `"error"` returns passing families with a
-  partial warning. Only `insufficient_support` is skippable.
+- Small private intermediates (populations, set-operation members, candidate
+  rosters) run; only the released object's minimum persons is checked.
+- Windows under 30 days, age ranges under 5 years and off-grid age bands on
+  assignment paths; numeric filter operators; point tables in interval
+  outputs; exact birth components and exact age in assigned tables
+  (`year_of_birth`, `month_of_birth`, `day_of_birth`, `birth_datetime`);
+  aggregate endpoints keep their own controls.
+- (F-1) A row concept-set filter without a concept column (the
+  table-agnostic `concept_id` sentinel emitted by 2.10.1 clients) matches the
+  table's domain concept column, resolved like the `start_date`/`end_date`
+  sentinels; it was refused as an unknown column.
+- NOT groups (`{"not": ...}`) in v1 row filters and population filter trees,
+  as in the language-2.0 predicate and criteria grammars (design 6.6), with
+  SQL three-valued logic: a negated UNKNOWN stays UNKNOWN and only TRUE rows
+  and persons are kept. The closed v1 envelope, the v1-to-IR lowering and the
+  DP lineage accept them.
+- `omopFilterDS()` no longer applies the `nfilter_levels_max` and
+  `nfilter_levels_density` cardinality gates, following the publication-only
+  disclosure rule in design section 7.2. Filtered results still need the
+  minimum number of distinct persons at publication.
+- `omopFilterDS(expr =)` admits every comparison of the predicate grammar
+  (`< <= > >=`, `between`, null tests and logic) on numeric, integer, date and
+  boolean columns, and equality / IN on text columns; the excluded rows stay
+  private and only the result's distinct persons are checked.
+- (A-E6) Observation-period coverage follows the default policy (`unique`,
+  `on_ambiguous = "drop"`, design sections 1.3 and 6.13) instead of aborting
+  the plan: a v1 index-event candidate whose index date is covered by two
+  observation periods is dropped privately before the primary-limit selection
+  (2.10.2: "Candidate index events cannot have overlapping covering
+  observation_period records"); temporal panels drop, with their events, the
+  episodes without exactly one covering period (2.10.2: "Every cohort episode
+  must have exactly one observation_period covering its index date"); baseline
+  drops an episode covered by several periods and keeps an uncovered episode
+  with NA observation fields. Aggregate endpoints keep their own controls.
+- `intervals_long` accepts point-event tables (measurement, observation,
+  death, specimen, note, 5.3 procedures) as intervals with `end = start`
+  (defect A-16); a table without a start role is still refused. (2.10.2: "no
+  reviewed start/end date pair"; corpus class `newly_permitted`, amendment
+  A-20 item 4.)
 
 ## Newly refused
 
-- (A-27/CR-28) Translation with `factor_concepts = FALSE`, malformed maps,
-  invalid or colliding effective explicit names, old servers without
-  `output.concept_labels`, and incomplete/disclosure-unsafe shared factor
-  contracts fail clearly. Remove `factor_concepts = FALSE` or explicitly
-  disable translation. Reconciliation failures roll back the federation;
-  `on_small_site = "skip"` cannot bypass them.
-
-
 ### Structural
+- (WS-9 review B5; A-23) Class-1 source columns are refused by mutation and
+  expression-filter validation before row evaluation, including when the
+  administrator allows their direct projection. Protected-key restrictions
+  remain in force; class-2 columns remain available.
+- (WS-6) Set-operation members must share one effective coverage policy,
+  including policies inherited through nested set operations or matching;
+  mismatches are refused before site queries. A union carrying contradictory
+  metadata for one origin identity fails with `setop_identity_conflict`.
+  A matching controls template has one instantiation per plan and cannot
+  also serve as an ordinary roster or another match's template.
+- (WS-6) Matching fetches at most the effective candidate cap plus one row;
+  overflow fails with `match_candidates_exceeded` before selection. No pool
+  is truncated or reported as an insufficient case. Snapshot/materialisation
+  failures release operation-owned tables, retaining failed drops for
+  execution-context cleanup to retry.
+- Unknown fields anywhere in a plan, mixed population shapes, legacy
+  constructs on the wire, `tie_policy = "error"`.
+- Every plan passes one validation sequence before any query (design 4.5):
+  the closed envelope of its version, normalisation (a v1 plan is lowered to
+  the compatibility IR), `ir-v2.json` and the semantic rules. A v1 plan with an
+  unknown field at the root, in an output (including `concept_dictionary` and
+  `cohort_membership` outputs) or in any nested object is refused with the
+  field's path; `already_gated` was accepted at the root and in a dictionary
+  output. A null-valued known field still counts as absent; an unknown member
+  is refused even when its value is null. Every nested object is closed
+  (output `options`, visit filters, concept-set objects of survival outcomes,
+  `value_bin` operands, safe scopes, inclusion criteria, ...).
+- v1 plans are refused before any query, with the typed codes the status
+  transports, for what the v1 executors refused only while running: invalid
+  temporal specs, filter trees, custom filters, index end strategies,
+  multi-state graphs, interval windows and selections, survival censoring and
+  TAR, date handling and person_period grain; person_level raw tables other
+  than person/death and feature time windows there; event_level
+  wide/features/sparse grain and index-window couplings; set-op members
+  declared after the set operation; `episode_policy` with `index_event`;
+  tables, results-cohort tables and custom-filter columns this site does not
+  provide (`unavailable_table`, `validation_error`), the custom filter of a
+  person_level output over its raw person/death tables, unknown or blocked
+  baseline person columns (with the executors' own messages: "Baseline
+  person column(s) not found", "Disclosive: ... are blocked"); and the
+  session temporary tables the v1 executors need on SQL families without
+  them (`dialect_unsupported`). Typed site checks refuse what 2.10.2 left to
+  SQL coercion: a predicate literal whose type does not match its column (a
+  text literal on a numeric or concept column, a non-ISO date) and a
+  `concept_col` that is not a filterable concept column (2.10.2 accepted any
+  existing column, class-1 columns included). An unknown v1 output type
+  keeps the executor's "Unsupported output type" wording. The plan-declaration error
+  of an output that needs a cohort keeps the executor's untyped error.
+- (A-15) A v1 inclusion `occurrence` is the executor's `{type, count}`
+  object, its type matched exactly (`at_least`, `at_most`, `exactly`): any
+  other member or type is refused at validation, where 2.10.2 refused it
+  only while running.
+- (A-10) A v1 results-cohort `cohort_definition_id` of 0 is refused, naming
+  the field; the optional identifier of an inline cohort spec may be 0
+  (A-16).
+- A plan cannot carry resolved workspace frames: `scope.tables_frames` is
+  refused; scope tables come only from the endpoint's scope arguments.
+- A v1 baseline `derived` value other than `age_at_index`,
+  `prior_observation` or `future_observation` is refused: unknown names were
+  dropped silently, and `cohort_start_date`, `cohort_end_date`,
+  `observation_period_start_date` and `observation_period_end_date` released
+  exact dates outside the absolute-date policy.
+- A v1 criteria population other than `base` without `filter_tree`,
+  `cohort_definition_id` or `index_event` (it resolved to no person) and a
+  difference of a population with itself (always empty) are refused.
+- (A-E2) v1 set-operation populations carrying `filter_tree`,
+  `cohort_definition_id`, `index_event` or `episode_policy` are refused (the
+  first two were silently ignored), and a population of an unknown `kind` is
+  refused instead of being read as a criteria population.
+- A v1 output targeting a population the multi-population plan does not
+  declare (`base` included), and a dictionary whose `source_outputs` name
+  missing outputs, are refused at validation (the output was skipped with a
+  warning).
+- A plan `version` other than none, 1 or 2 is refused. Language 2.0 plans are
+  validated and explained (`omopPlanExplainDS`) but not executed by this build
+  until the 2.0 compilers are installed; `recipe_language.operations` is empty
+  until then, so 2.10.3 clients emit v1.
+- Validation failures are plan-level errors under `dsomop.query_strict = FALSE`
+  as well (design 7.3); per-output failures of the v1 executors keep their
+  non-strict behaviour.
 
-- Unknown fields at every nesting level, mixed population shapes, unsupported
-  versions, incompatible grain/index policies and native-wire legacy variants
-  fail before queries. Existing execution-time refusals are validated earlier
-  with typed errors. `scope.tables_frames` cannot be supplied on the wire.
-- A v1 results-cohort selector of zero is refused; an optional inline cohort
-  label of zero remains distinct and permitted. Historical empty v1 criteria
-  populations keep their private empty semantics (A-21), rather than acquiring
-  an invented population. Handle-owned cohort names retain their historical,
-  population-local compatibility representation (A-25).
-- Ignored set-operation modifiers, unknown population kinds and missing output
-  population/reference dependencies now fail validation. Unknown baseline
-  derived fields and absolute-date fields outside the date policy are refused.
-  Class-1 sources and incompatible predicate/concept-column types fail closed.
-- `tie_policy = "error"` remains a refusal. Missing tables, join cardinality,
-  requested coverage ambiguity errors and bounded resource failures are never
-  treated as small-site skips. Adapter errors include the closed reasons
-  `adapter_person_mismatch`, `cost_currency_mixed`, `stockpile_row_cap` and
-  `reducer_row_cap` under `validation_error`.
-
-### Publication and verbs
-
-- Small final patient components, including zero-row components, refuse their
-  entire root family; reference companions cannot escape. Malformed lineage is
-  an error; `set_id` alone cannot establish person support. Invalid or missing
-  status and failed cleanup are technical failures with federation rollback.
-- Verbs revalidate class-1 columns in their results. Mutation cannot read or
-  write protected keys, use class-1 references or create class-1 aliases. Its
-  closed AST retains operational caps and invalidates DP provenance. In-place
-  federation replacement requires verified restoration on failures, including
-  missing acknowledgements; unresolved rollback copies are retained for retry.
-- DP preparation rejects matching descendants, unsealed external frames and
-  persistent-cohort scopes as `not_person_local`. Eligible outputs seal before
-  commit. No query budget, accountant or persistent answer store is introduced.
+### Publication
+- Orphan, conflicting or nonunique roster mappings fail closed. A set identifier
+  alone is never person lineage; reference companions cannot escape a refused
+  patient family. Uncommitted, altered and revoked staged descriptors are refused.
+- Final patient components with fewer than `nfilter.subset` persons,
+  including empty sparse or recurrent components, are refused at
+  publication; safe-result equivalence applies only to results that satisfy
+  the final publication contract.
+- The in-memory row-filter mask follows the SQL truth table (design 6.6):
+  `in` / `not_in` over a missing value are UNKNOWN rather than FALSE, `not`
+  keeps UNKNOWN, and a filter column the evaluated rows do not carry is
+  refused instead of matching nothing (the kept rows of 2.10.2 filters are
+  unchanged; only TRUE rows are kept).
+- Manipulation verbs revalidate class-1 sensitive columns in their results.
+  If a frame was loaded with `dsomop.allow_sensitive_columns = TRUE` and the
+  administrator later disables that option, a verb result retaining blocked
+  columns is now refused (design section 7.6).
 
 ### Dialect
+- A v2 plan that needs an SQL construct the server's database family cannot
+  run is refused at preflight, before any query, with the typed
+  `dialect_unsupported` rejection naming the output and the construct:
+  session temporary tables for a roster reused by several statements on SQL
+  Server/Synapse/PDW, Oracle, Redshift, BigQuery, Snowflake and
+  Spark/Databricks; window functions on a SQLite runtime that cannot execute
+  the 1-PRECEDING frame (the runtime is probed, never inferred from the
+  package version); MySQL below 8.0 and MariaDB below 10.2. The SQL SHA-256
+  push-down is never required: matching computes its order in R where the
+  family lacks it, as on SQLite.
 
-- A plan needing an unavailable typed helper or cross-statement temporary
-  materialisation refuses with `dialect_unsupported`. MySQL ≥8.0 and MariaDB
-  ≥10.2 are required; SQLite window-frame support is probed at runtime.
-  SQL-contract-only backends do not imply executable recipe parity.
+## Upgrading clients and servers
 
-## Upgrade and release verification
+- Pair dsOMOP 2.10.3 with dsOMOPClient 2.10.3 for the publication-status
+  protocol. The new client requires `omopPlanStatusDS` and
+  `omopStagedRevokeDS`; a 2.10.1 server lacks them.
+  `ds.omop.server.version()` reports missing methods. On Opal, package
+  installation and profile publication are separate steps;
+  the profile exposes the new methods after publication of the package settings.
+- A 2.10.1 client against a 2.10.3 server still fails closed on a strict
+  publication refusal: no output is published. The assign call now returns
+  status `refused`, so the old client reports that requested outputs did not
+  materialize instead of receiving the previous constant `Disclosive` error.
+- A federation that still has a server older than 2.10.3 receives, from
+  dsOMOPClient 2.10.3, the legacy execution call of dsOMOPClient 2.10.2 on
+  every site for a v1 plan (language-2 plans are refused before any
+  assignment). This server runs that call, positional and without
+  `commit_policy`, under the documented default `commit_policy = "server"`:
+  its own strict mode decides, as for the DP preparation (WS-8 review B1).
+- `omopPlanExecuteDS()` and `omopDpPlanExecuteDS()` accept an empty out
+  mapping exactly when the plan's `publish` is an explicit empty array:
+  the full plan is validated, nothing is materialized or assigned and the
+  status is `ok` with empty inventories (A-22; WS-8 review B6). Invalid unused
+  declarations still refuse the plan. Any other plan still needs a non-empty
+  mapping.
 
-Install matching dsOMOP/dsOMOPClient 2.10.3 versions. On Opal, republish both
-methods and Options after installation (Administration > DataSHIELD > Packages
-> dsOMOP > Publish), then check `ds.omop.server.version()`. The client requires
-published `omopPlanStatusDS` and `omopStagedRevokeDS`; 2.10.1 lacks them. A
-2.10.1 client against this server retains safe v1 plans, but a strict refusal
-can appear as missing requested outputs after status `refused`.
+## Design amendments applied by WS-0 (design/2.10.3/amendments.md)
 
-The O1–O12 harness checks fresh/upgrade paths on pinned Opal 6.1.3 and 5.7.6,
-including the strict/non-strict × error/skip matrix and unchanged aggregate
-policy. Native acceptance and two-version Opal results are release gates, not
-claims made by these documentation changes. Roxygen remains 7.3.3.
+- A-1 results-cohort index sources (namespace `cohort:<n>`, `event_end` =
+  `cohort_end_date`), A-2 `omop_score()` conditions on or before the reference
+  date (v1 adapter all-time, IR flag `legacy_all_time_conditions`), A-3
+  `person_period` carry-forward keyed by source and per-identity column names,
+  A-4 reviewed `episode_event` field concepts (visit 1147070, specimen 1147049),
+  A-5 native survival / recurrent component schemas, A-6 one identifier grammar
+  in the mutation AST, A-7 `omop_censor(when_index_source =)`.
+
+- A-9 recipe 12 uses the importer's deterministic Circe names
+  (`type_2_diabetes`, `type_2_diabetes_dx`); A-10 nine closed IR-only variants
+  carry the v1 semantics the wire cannot express (`legacy_columns`,
+  `legacy_temporal`, `legacy_automatic_features`, `legacy_single_outcome`,
+  `legacy_states`, `legacy_state_step`, `legacy_episodes`/`legacy_index_anchor`,
+  `observed_days.legacy_containing_period`, `legacy_names`,
+  `legacy_concept_scope`); A-11 the pinned v2 normal form
+  (`R/plan_normalize_v2.R`, vendored byte-identically, with the normalised
+  fixtures of `inst/schema/normalized/`); A-12/A-13 client signature lines;
+  A-14 execution plan selection for 2.10.1-style recipes and `source_analyses`
+  on temporal and person-period outputs. A-24 corrects the exact frozen
+  windowed-features corpus row `#1` to `unchanged_invalid`: its implicit
+  `base` is unindexed. Neither compatibility, the features preset nor root
+  cohort scope supplies an index. Its explicit v1 omitted-grain refusal
+  permits attempted native rendering, which refuses the unindexed fixture
+  before assignment. The separate indexed, per-variable-window variant
+  defaults to episode grain and passes server semantic validation; real
+  execution remains gated on native compiler integration. Explicit
+  incompatible grain and the corresponding `wide` grain refusal remain
+  ordinary v1 refusals; explicit episode grain retains v1 selection when
+  the complete recipe is v1-expressible.
+- A-15 the `legacy_spec` inclusion `occurrence` is the executor's historical
+  `{type: at_least | at_most | exactly, count >= 0}` object (defaults
+  `at_least`, 1), not `{min, max}`; A-16 five further IR-only variants carry
+  the v1 semantics the executor audit found (`legacy_raw_filter`, the
+  nearest-only non-zero `legacy_anchor_offset`, `legacy_spec.cohort_definition_id
+  >= 0`, scope `legacy_cohort_sources` with the materialised `combine`,
+  `legacy_automatic_features` format `sparse`); probes I41-I60 and the wire
+  refusals P64-P66.
+- A-18 a rejected status entry may carry a third closed field `reason`
+  (`adapter_person_mismatch`, `cost_currency_mixed` and, amendment A-20 (j),
+  `stockpile_row_cap`, `reducer_row_cap`), present only with
+  `validation_error`: every status writer builds its entry with
+  `.rejectionEntry()`, which copies the reason from the condition only under
+  those conditions and never its raw message, field path or state;
+  `.validatePlanStatus()` admits exactly that field and vocabulary.
+
+## Concept sets, events, adapters and predicates (WS-4)
+
+- `R/compile_concept.R`: `.compileConceptSet()` resolves a concept-set node
+  once per plan (memoised on its canonical JSON): concepts, then descendants
+  (`concept_ancestor`), then the `'Maps to'` sources of the set, minus the
+  exclusion; (A-15) an object-valued `exclude` is expanded with its own flags
+  before it is removed, a bare vector still means exact ids. The RxNorm
+  ingredient map of drug concepts (fragment identity `("map", "ingredient")`)
+  serves eras grouped `by = "ingredient"`.
+- `R/compile_event.R`: one event compiler in three stages: the table's roles
+  from the role registry (the event's own end policy, the original recorded
+  end and supply kept for era overrides and supply reducers, the scoping
+  concept, value/unit/operator/range sources, the visit link, the other
+  filterable columns), unit normalisation (one affine map per source unit
+  applied to the value and the reference ranges; unknown units `missing`
+  (NA, `unit_unknown = 1`) or `exclude`; reviewed inequality operators
+  (`inst/ohdsi/operator_classes.csv`) kept or excluded, NULL and unknown
+  operators counting as equality), then the `where` predicate over the
+  normalised columns. The configured value column and `value` bind to the
+  normalised value; `value_source` / `unit_source` keep the source values.
+  Predicates are typed against the column (ISO dates, integer concept ids,
+  finite numbers, text in equality and IN only) and refuse identifiers,
+  class-1 columns and roles the table lacks. `on_missing_table =
+  "unavailable"` compiles to a typed unavailable source; `"error"` refuses
+  with `unavailable_table`. Visit-type restrictions use the visit link;
+  index-visit events are joined by the consumer.
+- `R/compile_adapters.R`: `episode_members` (rows linked through
+  `episode_event` by the reviewed field mapping of amendment A-4; one row per
+  episode-member link; a member of another person is refused,
+  `adapter_person_mismatch`) and `cost` (cost rows of a table event by the
+  reviewed `cost_domain_id` mapping; one amount field; a source mixing
+  currencies without `currency` is refused, `cost_currency_mixed`); both
+  carry the parent event identity (`parent_source_ns`, `parent_event_id`).
+  These refusals are plan rejections transported as `validation_error` with
+  their closed `reason` (A-18). An unavailable adapter keeps the declared
+  columns, unique key, source identity, ordering and private columns of the
+  available one (A-17).
+- `R/compile_predicate.R` (the language-2.0 predicate grammar in SQL, with
+  the Kleene `any`/`all` table) and `R/compile_statement.R` (the fragment
+  registry of the execution context and `.buildStatement()`: one WITH chain
+  in dependency order, typed-SQL checked). (A-17) Fragment SQL identifiers
+  are allocated per execution context from the structured identity (prefix,
+  name, stage): every identity of the plan is preallocated in canonical
+  order, so the allocation is deterministic and independent of compilation
+  order; a readable name is kept only when no other identity reads the same
+  under the dialect's identifier comparison and limit (PostgreSQL 63 bytes,
+  Oracle 30), otherwise a stem plus a ten-digit SHA-256 prefix and the first
+  free `_2`, `_3`, ... are used. A final fragment never shares an identifier
+  with a stage, and events differing only by case never collide.
+- Language-2.0 plans compile their event sources (adapters included) in the
+  private execution context before the refusal that they are not executed
+  yet, so the section 11 adapter refusals reach the status, and the
+  analyst's error, with their reason; nothing is published. Covered end to
+  end on PostgreSQL through `omopPlanExecuteDS` under both commit policies
+  and through `ds.omop.plan.execute()` over DSLite under both
+  `on_small_site` settings.
+
+## Standalone verbs of language 2.0 (WS-9)
+
+- New assign method `omopMutateDS(x, exprs)` (design 2.11, 4.6; listed in
+  `DATASHIELD`): derives columns of an `omop.table` from the closed mutation
+  AST of `inst/schema/mutate-v1.json` -- column references, typed literals,
+  `+ - * /` (division by zero or a non-finite result is `NA`; integer results
+  outside the 32-bit range are `NA`), date - date (integer days), date +/-
+  integer, three-valued predicates, `ifelse` / `case_when` (the first
+  non-FALSE test decides: TRUE takes its value, UNKNOWN yields `NA`; no case
+  gives `else` or `NA`), `coalesce` (one type; integer and numeric unify to
+  numeric) and `cut` with public, strictly increasing breaks (text labels,
+  `NA` outside the breaks). The request is data: it is validated against the
+  frozen schema and type-checked against the frame -- references resolve to
+  input columns or earlier assignments, every expression has a static type --
+  before any row is evaluated; nothing is evaluated as R code. Person, episode
+  and set keys and `dsomop_protected` columns can be neither read nor
+  written; class-1 names are refused; an existing non-protected column may be
+  overwritten. The result passes the standalone publication boundary (its
+  distinct persons must reach `nfilter.subset`, constant message) and
+  carries no DP provenance. Text literals and labels keep the
+  `nfilter.string` length limit; expression nesting keeps the
+  `dsomop.max_filter_depth` cap.
+- `omopFilterDS(x, var, op, value, expr = NULL)`: the `expr` form filters with
+  the plan-v2 predicate grammar (`== != < <= > >= in not_in is_null not_null
+  between and or not`), validated against `plan-v2.json` and type-checked
+  before any row is read, three-valued (only TRUE rows are kept), released
+  through the same boundary; protected columns are refused. The legacy form is
+  unchanged.
+- The capability block advertises `status.accessor`, `verb.mutate` and
+  `verb.filter_expr` with their own endpoints, whether or not every plan
+  compiler is installed (it advertised nothing while a compiler was missing).
+  A deployment that lists `verb.mutate` or `verb.filter_expr` in
+  `dsomop.recipe_operations_disabled` refuses that verb.
+## Intervals, anchors and coverage (WS-5)
+
+- `R/compile_interval.R`: eras (`omop_era()`) normalise each source row to a
+  closed recorded interval by the era's own `end`/`fallback` from the event's
+  original recorded-end and supply roles (never its coalesced end; `end =
+  "start"` makes point records, `fallback = "none"` ignores the supply), apply
+  one private data-quality policy (NULL start, end before start, an invalid
+  supply as the only end source), and form courses by gaps and islands with a
+  running maximum of prior ends per (person, group) (a record starts a new era
+  when start > previous maximum end + gap + 1; `persistence` extends course
+  construction only; `min_days` filters by the recorded span). Grouping
+  `by = "event"`, `"concept"` or RxNorm `"ingredient"` (unmapped concepts kept
+  or dropped); era identities are group-qualified (`<group>:<era_no>`). The
+  recorded intervals stay separate from the course: [1,2] + [10,11] with gap 30
+  is one 11-day course and 4 covered days. `stockpile = TRUE` adds an
+  effective-supply relation from a bounded deterministic iterator over the
+  whole recorded history (supply precedence: positive supply, recorded length,
+  one day; carry capped by `dsomop.max_stockpile_days`, default 90); the fills
+  [1,30] and [15,44] cover 44 recorded and 60 effective days. Reducer bases:
+  `covered_days` (union length of the selected relation clipped to the window,
+  optionally intersected with the episode's observed segments, the PDC
+  numerator) and `supply_days` (`start_in_window` or `clipped`).
+- `R/compile_coverage.R`: observation-period coverage per population,
+  `unique`, `earliest` or `union` with `on_ambiguous` (`drop` or the typed
+  `coverage_ambiguous` failure), `on_missing` (`drop` or `keep` with NULL
+  bounds) and `gap`; missing coverage is resolved before ambiguity; under
+  `union` the index must lie inside an actual recorded period (records [1,2]
+  and [10,11] with gap 7 leave an index on day 5 uncovered). Eligibility spans
+  (`opc_<pop>`) and actually observed segments (`seg_<pop>_rec`, associated
+  through the selected component) are separate fragments: a gap allowance
+  satisfies continuity but never adds observed days.
+- `R/compile_anchor.R`: anchors (`index`, `index_end`, `observation_start`,
+  `observation_end`, dates, and source anchors selecting one complete row by
+  `(start_date, source_ns, row key)` with `first`, `last`, `nth`,
+  `latest_end`, `field`, `scope = "episode"` and `search` windows) compiled per
+  roster and phase (candidate or final); windows with independent bounds; a
+  missing required anchor makes a window undefined (criteria UNKNOWN, also for
+  absence and `count == 0`; reducers NA).
+
+## Plan IR, role registry, explain and capabilities (WS-2)
+
+- `R/ir.R`: `.irPrepare()` (the frozen sequence), `.irNormalize()`,
+  `.irValidate()`, `.irOrder()`, `.irNode()`; failures are typed
+  `dsomop_plan_rejection` conditions naming fields, outputs and constructs
+  only, with the codes the publication status transports: `validation_error`
+  (plan findings), `unavailable_table` (an event source this site cannot
+  serve under `on_missing_table = "error"`) and `dialect_unsupported`
+  (preflight, naming the output). Sources served under
+  `on_missing_table = "unavailable"` are reported with the outputs that read
+  them, never refused. `omopPlanPreviewDS()` and `ds.omop.plan.validate()`
+  report the same findings in `validation$errors`. Native and lowered v1
+  plans pass every stage, the site checks and the dialect preflight
+  included. Each plan meets the site rules of the engine that executes it: a
+  native plan the compilers' own metadata rules (WS-4's `.eventSiteCheck()`
+  for every event and adapter source with the reducer predicates over its
+  rows, `.predicateTableCatalogue()` for criteria person predicates); a
+  lowered v1 plan first the v1 executors' own checks, with their messages
+  (tables, results cohort, filter trees, custom filters including the raw
+  person/death tables of a person_level output, the baseline person-column
+  contract), then the IR's typed checks over the column names the v1
+  executors accept. A v1 event over a present table without an event role
+  (`event_level` over `person`) is a legacy row source; it is never a native
+  event table. A v1 plan-declaration error (an output that needs a cohort)
+  keeps the executor's untyped error.
+- (A-11) Every default is expanded by the frozen normaliser shared with
+  dsOMOPClient, `.planNormalizeV2()` (`R/plan_normalize_v2.R`), for language
+  2.0 plans and lowered v1 plans alike; grain and collapse rules use its
+  indexedness rule (`intersect`/`setdiff` follow their first member). WS-2's
+  interim `R/ir_defaults.R` is removed from both packages.
+- (A-10) v1 plans lower to the compatibility IR of design section 5 with
+  every result-affecting v1 field in the IR document: the legacy variants of
+  section 4.5 plus `legacy_columns`, `legacy_temporal`,
+  `legacy_automatic_features`, `legacy_single_outcome`, `legacy_states` /
+  `legacy_state_step`, `legacy_episodes` / `legacy_index_anchor`,
+  `legacy_containing_period`, `legacy_names` and `legacy_concept_scope`, and
+  amendments A-15 (the inline-spec occurrence: the effective `{type, count}`
+  object, the type matched exactly as the executor does) and A-16
+  (`legacy_raw_filter`; `legacy_anchor_offset` only for a non-zero offset
+  under `event_select = "nearest"`, other offsets advisory; the inline-spec
+  `cohort_definition_id >= 0` as supplied, passed to `.cohortCreate()` as
+  `cohort_id` by the legacy-spec adapter; `scope.legacy_cohort_sources` with
+  the materialised `combine` and `scope.cohort` as its first source; the
+  sparse automatic builder). One shared `.planSemanticDigest()` binds them; advisory
+  v1 fields go to a server-private annex that explain lists
+  (`legacy_annex`) and no digest covers. The `legacy_residue` attribute and
+  `.irSemanticDigest()` are retired. v1 plans keep running on the v1
+  executors in this release stage; a lowered v1 plan names no publication
+  roots (they are the outputs the execution maps, as in 2.10.2).
+- Validation runs on the plan as it arrived, before the server injects the
+  resolved scope frames and before the execution context and the DP seal
+  exist. The context of a language 2.0 plan carries its validated,
+  normalised IR (`ctx$ir`, read by the native publication and DP
+  contracts); a v1 plan's carries the plan its executors and the legacy
+  publication contracts read, with the lowered IR in `ctx$validation`; the
+  resolved frames are `ctx$scopes`.
+- `R/roles.R`: `.roleOf(handle, table)`, the role registry of design 6.2;
+  role records keep each column's value type for typed site checks.
+- New aggregate method `omopPlanExplainDS(omop_symbol, plan)`: the normalised
+  plan, role records, column classes (exact-date-preserving reducers are
+  class 2), effective defaults, publication roots, the advisory annex and
+  the dialect preflight; no counts, no SQL.
+- (A-E7) `omopGetCapabilitiesDS()` reports `recipe_language`: version 2,
+  semantic version 2.0.0, the schema id, the operations and reducers this
+  server executes and the dialect block. New option
+  `dsomop.recipe_operations_disabled` (none by default) withdraws operations.
+- `tests/testthat/fixtures/ir-v1-corpus.json`: every distinct v1 plan of the
+  pinned 2.10.2 suites, bound to its frozen corpus class; `ir-v1-golden.json`
+  pins their normalised IR documents as regression snapshots.
+  `ir-v1-results.json` pins the 2.10.2 results of the safe-class plans the
+  baseline suite executed on the default fixture; `test-ir-results.R`
+  re-executes them with this code and requires identical results, except
+  the two reviewed F-26 age-band corrections, checked against the design's
+  rule (`tools/ws2/capture_results.R` and `compare_results.py` capture and
+  compare every suite call against the baseline).
+
+## Contracts shipped by WS-0
+
+- `inst/schema/plan-v2.json`, `ir-v2.json`, `mutate-v1.json`, the canonical
+  examples, the probe corpus, the semantic-digest vectors and the normalised
+  fixtures (`normalized/`, `normalized-vectors.json`); `R/plan_normalize_v2.R`;
+  `inst/contracts/reducers.csv`, `column_classes.csv`;
+  `inst/ohdsi/operator_classes.csv`, `episode_event_fields.csv`,
+  `cost_domains.csv`; `inst/boundaries.csv` (audited WS-1 publication boundaries;
+  WS-2/WS-9 entries remain pending);
+  `inst/plans/acceptance/` (the fifteen acceptance recipes with validated
+  plans and hand-computed expected results); `R/types.R`,
+  `R/json_schema.R`, `R/semantic_digest.R`; the adversarial extension of
+  the reach fixture and the synthetic CDM generator under `tests/fixtures/`
+  (PostgreSQL loads with typed dates through `conn`/`schema`).
+- `inst/plans/acceptance/score-reference.json`: paired v1/v2 Charlson, CHADS2
+  and CHA2DS2-VASc expectations with fixed and index-resolved reference dates
+  (CR-2 / A-2); `tests/testthat/fixtures/v1-corpus-classes.csv`: one explicit
+  reviewed disposition per test block of both 2.10.2 suites (helper-built
+  plans included, mixed blocks split; `tools/ws0/corpus_decisions.csv`), keyed
+  by `package:file:<test description>` against the pinned 2.10.2 commits of
+  `tools/ws0/corpus_baseline.json` (CR-7): live test edits never move or break
+  the corpus; a reclassification is a decisions-file change.
+- Semantic digest: the ECMAScript shortest round-trip decimal is found for
+  every finite double (powers of two have asymmetric rounding intervals;
+  `2^-24` serialises as `5.960464477539063e-8`), checked against the Python
+  reference on 11,045 doubles including every power of two and its neighbours.
+- `R/types.R`: roster-mode publication candidates must agree with the
+  fragment's declared person lineage and key roles; the roster fragment name
+  (`person_lineage$via_roster`) and the roster namespace (`lineage$roster_id`)
+  stay distinct.
+
+## SQL dialect layer
+
+- (A-E8) New SQL never relies on regex translation of `DATEADD`/`DATEDIFF`,
+  which handles only literal offsets and identifier operands and passes
+  column or arithmetic forms through untranslated (SQLite then fails on
+  `DATEADD(day, t.days_supply - 1, t.start)`). The typed helpers of
+  `R/sql_expr.R` (`.sqlDateAddDays`, `.sqlDateDiffDays`, `.sqlYear`,
+  `.sqlMonthKey`, `.sqlCalendarFloor`, `.sqlCalendarAdvance`, `.sqlMakeDate`,
+  `.sqlDateLiteral`, `.sqlIntegerLiteral`, `.sqlLeast`, `.sqlGreatest`,
+  `.sqlNullsLast`, `.sqlRowNumber`, `.sqlLosslessKey`, `.sqlSha256Hex`, with
+  `.sqlWindow`, `.sqlMonth`, `.sqlDateText` and `.sqlLosslessKeyText`)
+  accept expressions as operands and have one semantics in every family:
+  NULL-ignoring `LEAST`/`GREATEST`, NULL (never an error or a normalised
+  date) for invalid date components, explicit window frames only. The
+  built-in translator leaves their output unchanged, and
+  `.sqlAssertTypedSql()` refuses the OHDSI spellings in new statements. The
+  v1 SQL paths, their helpers and the translator are unchanged.
+- Required support (design section 9): executable on PostgreSQL, SQLite,
+  DuckDB, MySQL >= 8.0 and MariaDB >= 10.2; SQL Server/Synapse/PDW, Oracle,
+  Redshift, BigQuery, Snowflake and Spark/Databricks are implemented and
+  verified by rendered-SQL snapshots (SQL contract only). The dialect profile
+  (`.sqlDialectProfile()`) gives the capability `dialect` block its family,
+  temporary materialisation, SHA-256 and window-frame availability and the
+  runtime version, and records the driver for the conformance report.
+- MariaDB servers whose version string carries a distribution suffix, such as
+  Ubuntu 22.04's `10.6.23-MariaDB-0ubuntu0.22.04.1`, are no longer refused
+  as below MariaDB 10.2: the version tagged `-MariaDB` is read instead of the
+  last dotted number (`0.22.04`). This affected every MariaDB connection and
+  the longitudinal SQL floor.
 
 # dsOMOP 2.10.2
 

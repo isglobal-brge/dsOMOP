@@ -1,8 +1,8 @@
-# Disclosure control in 2.10.3
+# Disclosure control in 2.10.4
 
 This is the recipe-language-2 release contract (design §§7.1–7.8 and approved
-amendments, including A-23). Native execution remains subject to the installed
-capabilities during integration. Core plans, recipes and verbs use the
+amendments, including A-23). Native execution is subject to the installed
+capabilities at every site. Core plans, recipes and verbs use the
 DataSHIELD publication rule below; explicitly prepared DP outputs additionally
 use authenticated person-local provenance and sealing.
 
@@ -81,7 +81,7 @@ settings. Factor harmonisation uses retained sites and published components.
 | Class | Examples | Assignment | Aggregate endpoints |
 |---|---|---|---|
 | 1: blocked | Direct identifiers, untyped extension identifiers, `*_source_value`, `value_as_string`, `value_source_value`, `sig`, `stop_reason`, note text/title/NLP, narrative fields, addresses/geo, provider/care-site identifying fields, lot/device identifiers; `*_source_concept_id` by default | Refused by the shared assignment predicate. The existing `block_sensitive = FALSE` path additionally needs the administrator's `dsomop.allow_sensitive_columns`. Renaming or declaring a categorical type cannot evade it. | Existing blocking/admission rules remain. |
-| 2: quasi-identifiers | Birth year/month/day/datetime, `dob`/birth-date extensions, exact age, birth-year bands of width ≥1, exact dates under the absolute-date policy | Projected when requested; support is the only disclosure gate. Explain/lint reports INFO `quasi_identifier`. | Existing admission, grid, coarsening, suppression and banding remain. |
+| 2: quasi-identifiers | Birth year/month/day/datetime, `dob`/birth-date extensions, exact age, birth-year bands of width ≥1, exact dates and native date-derived forms | Projected when requested; support is the only disclosure gate. Explain/lint reports INFO `quasi_identifier`. | Existing admission, grid, coarsening, suppression and banding remain. |
 | 3: ordinary | Other reviewed columns | Ordinary publication policy. | Existing endpoint policy. |
 
 Assignment classification is separate from the blueprint's aggregate
@@ -96,8 +96,9 @@ Assigned age groups use a pure banding helper: an increasing integer grid with
 at least two lower bounds starting at zero is valid. There is no width floor,
 server-grid restriction or per-band suppression. A qualifying assigned object
 may therefore retain a one-person `18-18` band for `c(0, 18, 19, 65)`. Age is
-annual reference-year minus birth-year, not a fabricated birthday. Absolute
-dates still require the existing absolute-date policy. Birth fields may appear
+annual reference-year minus birth-year, not a fabricated birthday. Exact
+date assignment needs no absolute-date permission; all date-derived forms
+retain class-2 provenance and aggregate controls. Birth fields may appear
 in person predicates; unrestricted text predicates remain forbidden.
 
 ## Standalone verbs and operational caps
@@ -106,7 +107,7 @@ The verb result is a new release, checked on its own distinct-person support.
 Filtering keeps TRUE rows only; UNKNOWN is not TRUE. No intermediate population,
 30-day window, five-year age-range, filter-level cardinality or density gate
 can reject a qualifying final assignment. Class-1 blocking, protected keys,
-date policy, lineage and resource constraints still apply.
+date semantics, lineage and resource constraints still apply.
 
 Mutation accepts only the closed `mutate-v1.json` AST: references, typed
 literals, arithmetic, predicates, `ifelse`, `case_when`, `coalesce`, public

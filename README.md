@@ -395,9 +395,9 @@ You can then install the `dsOMOP` package using the following command:
 dsadmin.install_github_package(o, 'dsOMOP', username='isglobal-brge', ref='main')
 ```
 
-#### Upgrading to 2.10.3 on Opal
+#### Upgrading to 2.10.4 on Opal
 
-The release pairs dsOMOP 2.10.3 with dsOMOPClient 2.10.3. It includes the
+The release pairs dsOMOP 2.10.4 with dsOMOPClient 2.10.4. It includes the
 OHDSI protected-release corrections and recipe language 2. Existing secrets are
 reused automatically; no state-directory setting, privacy tuning, epoch bump,
 ETL hook or TLS change is part of this upgrade.
@@ -409,7 +409,7 @@ Publish, also available as `dsadmin.publish_package(o, 'dsOMOP')`). This is the
 ordinary Opal package-publication lifecycle. `ds.omop.server.version(conns)`
 reports installed and published versions and distinguishes a stale profile from
 an old package. Language-2 execution refuses a profile missing its protocol
-before assignment; publication of an installed 2.10.3 makes that protocol
+before assignment; publication of an installed 2.10.4 makes that protocol
 available without another upgrade.
 
 Supported legacy recipes retain their v1 execution path. Language-2 plans need
@@ -423,6 +423,25 @@ Protected answers can change with the repaired component contracts and grids.
 Historical releases are not retracted. Fixed-vector and heuristic guarantees,
 exact support gates and the remaining adaptive-inference limits are described
 in [DISCLOSURE_CONTROL.md](DISCLOSURE_CONTROL.md#upgrading-to-2103).
+
+### New presentation in 2.10.4
+
+Concept-valued outputs use shared labelled factors. `labels` can merge concept
+categories deliberately; `column_names` renames generated columns without
+merging them. `ds.omop.table()` retains unused public levels and exact labels
+when pooling. Native `omop_date_spec()`, `omop_date_parts()` and `omop_age_at()`
+provide calendar factors, numeric coordinates, Date bounds and anchored ages.
+No absolute-date permission is needed for assignment; final person support and
+aggregate controls remain. Re-run recipes after upgrading to recreate factors;
+use explicit numeric representations for date arithmetic. See
+[NEWS.md](NEWS.md) for migrations and the client extraction vignette for examples.
+
+Release verification: [recipe/publication contract run 43515122503](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43515122503)
+passed fresh and upgrade paths on Opal 5.7.6 and 6.1.3;
+[full e2e run 43515127555](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43515127555)
+passed both fresh and upgrade jobs. Both tested harness commit
+`17e5df40f4718bdece091f68d3003c764f061854`. These are evidence for that
+candidate, not a claim of live execution on every supported SQL dialect.
 
 ## Creating OMOP CDM resources
 
@@ -479,10 +498,10 @@ Resources created with the dsOMOP 1.x form (format `omop.cdm.db`, URL
 2.x resource, with the same checks. The form only creates 2.x resources;
 re-create old ones with it whenever convenient.
 
-### Database support contract for 2.10.3
+### Database support contract for 2.10.4
 
-The following matrix is **required release support**, not a claim that every
-integration build already passes it. A plan is admitted only when every typed
+The following matrix separates executable backend support from rendered SQL
+contracts. The release evidence below records the tested environments. A plan is admitted only when every typed
 SQL helper it needs is available in the site's dialect and its materialisation
 needs fit the backend. Unsupported constructs fail at preflight with
 `dialect_unsupported`, naming the construct. `recipe_explain()` and the
@@ -524,9 +543,9 @@ probes the runtime window-frame support. MySQL requires ≥8.0 and MariaDB ≥10
 the release CI targets PostgreSQL 16, MySQL 8.4 and MariaDB 11.4. The development
 test pod uses PostgreSQL 14, MySQL 8.4.11 and MariaDB 10.6; passing there does
 not replace the release CI matrix. DuckDB execution is optional when installed.
-The Opal harness pins 6.1.3 and 5.7.6, uses Rock with R ≥4.2, and records actual
-Opal/R/database/driver versions in its artifacts. Neither matrix entry is
-reported as passing before its run completes.
+The recipe-contract Opal harness pins 6.1.3 and 5.7.6 and records actual
+Opal/R/database/driver versions in its artifacts. Both fresh and upgrade paths
+passed in the cited release run.
 
 Database execution uses DBI: RPostgres (RPostgreSQL fallback), RSQLite, duckdb,
 RMariaDB, odbc, ROracle or bigrquery as appropriate. DatabaseConnector is not a
