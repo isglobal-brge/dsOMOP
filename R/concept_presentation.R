@@ -63,7 +63,6 @@
 
 .conceptPresent <- function(ctx, frame, columns) {
   if (!.reduceTranslate(ctx)) return(frame)
-  attr(frame, "omop_presentation_handle") <- .conceptHandleKey(ctx)
   contracts <- list()
   for (col in intersect(names(columns), names(frame))) {
     if (!.conceptColumn(columns[[col]])) next
@@ -115,6 +114,9 @@
     attr(frame, "omop_generated_columns") <- generated
     attr(frame, "omop_column_names") <- mapping
     names(frame) <- unname(mapping)
+  }
+  if (length(contracts) || length(generated)) {
+    attr(frame, "omop_presentation_handle") <- .conceptHandleKey(ctx)
   }
   frame
 }
@@ -251,7 +253,8 @@
     # Rows, keys and numeric measures are untouched; deliberate merges are
     # restricted to the recodes already bound by the source plan's lineage.
     df <- .dsomopDpSetFilterState(df, .dsomopDpFilterState(original, provenance = provenance, policy = policy))
-    df <- .dsomopDpSealInheritedLineage(df, provenance, provenance$producer, policy)
+    df <- .dsomopDpSealInheritedLineage(df, provenance, provenance$producer, policy,
+                                         source = original)
   }
   if (is.null(table_column)) .publishUpdateOwnedValue(original, df)
   df

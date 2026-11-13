@@ -14,7 +14,7 @@
   "output.long.event_log", "output.survival", "output.survival.censor_source",
   "output.intervals", "output.temporal_covariates", "output.person_period",
   "output.person_period.partition", "output.sparse", "output.membership",
-  "output.dictionary", "output.joined", "publish.roots",
+  "output.dictionary", "output.joined", "output.concept_labels", "publish.roots",
   "event.episode_members", "event.cost", "reducer.supply_days",
   "reducer.covered_days.effective_supply", "status.accessor", "verb.mutate",
   "verb.filter_expr"

@@ -2,6 +2,7 @@
 # completes, including its final validation and rollback.
 
 .publication_snapshot_fixture <- function(.local_envir = parent.frame()) {
+  force(.local_envir)
   h <- create_test_handle(n_persons = 24)
   withr::defer(cleanup_handle(h), envir = .local_envir)
   .setHandle("publication_snapshot", h)
@@ -40,7 +41,7 @@
 
 test_that("publication preserves the sealed person identity and established snapshot", {
   .release_state()
-  h <- .publication_snapshot_fixture()
+  h <- .publication_snapshot_fixture(.local_envir = environment())
   plan <- .publication_snapshot_plan()
   target <- new.env(parent = environment())
   ordinary <- suppressMessages(evalq(omopPlanExecuteDS(
@@ -69,7 +70,7 @@ for (boundary in c("validation", "rollback")) local({
     test_that(paste("publication revokes", if (dp) "sealed" else "ordinary",
                     "rows after final snapshot", phase, "failure"), {
       .release_state()
-      h <- .publication_snapshot_fixture()
+      h <- .publication_snapshot_fixture(.local_envir = environment())
       plan <- .publication_snapshot_plan()
       target <- new.env(parent = environment())
       target$rows <- "unrelated pre-existing value"

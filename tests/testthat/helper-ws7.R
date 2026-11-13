@@ -43,6 +43,7 @@
 # A scoped pseudonymisation key and staging directory for real publication of
 # the compiled outputs (memory and staged), as test-publication-compiled.R.
 .ws7_keys <- function(handles, .local_envir = parent.frame()) {
+  force(.local_envir)
   base <- withr::local_tempdir(.local_envir = .local_envir)
   Sys.chmod(base, "0700")
   identity <- paste0("test://ws7/", basename(base))
