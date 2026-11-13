@@ -408,8 +408,9 @@ settings are published (Administration > DataSHIELD > Packages > dsOMOP >
 Publish, also available as `dsadmin.publish_package(o, 'dsOMOP')`). This is the
 ordinary Opal package-publication lifecycle. `ds.omop.server.version(conns)`
 reports installed and published versions and distinguishes a stale profile from
-an old package. A stale profile is refused before assignment; publishing an
-already installed 2.10.3 makes its protocol available without another upgrade.
+an old package. Language-2 execution refuses a profile missing its protocol
+before assignment; publication of an installed 2.10.3 makes that protocol
+available without another upgrade.
 
 Supported legacy recipes retain their v1 execution path. Language-2 plans need
 the publication protocol at every site; corrected and newly refused v1 shapes
@@ -457,8 +458,8 @@ These resources contain the following parameters:
   it. Optional modes `require`, `verify-ca` and `verify-full` enforce TLS.
 - MySQL/MariaDB TLS options `ssl_required`, `ssl_ca`, `ssl_cert` and `ssl_key`.
   TLS is required, with a verified server certificate, only when
-  `ssl_required=true` or TLS material is set; an optional `ssl_ca` supplies the
-  server CA is not already in the connector trust store. dsOMOP disables
+  `ssl_required=true` or TLS material is set; an optional `ssl_ca` supplies a
+  server CA that is not already in the connector trust store. dsOMOP disables
   RMariaDB option-file groups so a host-level client configuration cannot
   change this. Required TLS sessions must negotiate TLS 1.2 or TLS 1.3.
 - SQL Server, Synapse and PDW through Microsoft's ODBC drivers connect with
