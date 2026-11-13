@@ -1,5 +1,12 @@
 # dsOMOP 2.10.3 (2026-11-13)
 
+- Corrected: large protected releases reuse a request-local OpenSSL HMAC
+  context for person tokens and streams contribution chunks when system headers
+  are available. Hash framing,
+  token bytes and complete release results are unchanged; builds without those
+  headers automatically use the existing R openssl implementation. No new
+  persistent state or owner configuration is needed.
+
 ## Date presentation (A-28 / CR-29)
 
 - Corrected (DATES-B4): year-bearing custom factors include every year in a
