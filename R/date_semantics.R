@@ -239,7 +239,12 @@
   if(p=="custom") {
     hasyear<-any(tokens[names(tokens)=="directive"] %in% c("Y","G"))
     if(hasyear) {
-      years<-unique(c(.dateY(lo),.dateY(hi),if(length(public)) .dateY(as.Date(unlist(s$level_range)))))
+      years<-unique(c(.dateY(lo),.dateY(hi)))
+      # Public levels include every intervening year, even with no observed rows.
+      if(!is.null(s$level_range)) {
+        range_years<-.dateY(as.Date(unlist(s$level_range)))
+        years<-union(years,seq.int(range_years[1L],range_years[2L]))
+      }
       if(length(s$labels)) years<-union(years,.dateKeyYears(names(unlist(s$labels)),tokens=tokens))
       # ISO week-years can cross calendar boundaries; keep this calendar sorted.
       years<-sort(unique(c(years-1L,years,years+1L)))
