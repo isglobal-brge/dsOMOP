@@ -182,7 +182,15 @@
 # Every staged descriptor -> list(descriptor, staged_file)
 .b10_attach_staged <- function(x) {
   if (inherits(x, "FlowerDatasetDescriptor")) {
-    return(structure(list(descriptor = unclass(x), staged_file = .b10_read_staged(x)),
+    descriptor <- unclass(x)
+    # A-27's lossless CSV escape protocol is an explicit descriptor addition.
+    # Assert it independently, then compare every historical descriptor field
+    # and the unchanged fixture bytes/content against the immutable capture.
+    if (exists(".irPrepare", mode = "function") && identical(x$metadata$format, "csv")) {
+      expect_identical(descriptor$metadata$csv_encoding, "backslash-v1")
+      descriptor$metadata$csv_encoding <- NULL
+    }
+    return(structure(list(descriptor = descriptor, staged_file = .b10_read_staged(x)),
                      class = c("b10_staged", class(x))))
   }
   if (is.list(x) && !is.data.frame(x)) {

@@ -445,7 +445,9 @@ test_that("v1 cohort_table lowers to a scope and the cohort's rows", {
   out <- ir$outputs$demo
   expect_identical(c(out$format, out$grain), c("wide", "episode"))
   expect_identical(unlist(out$columns), c("gender_concept_id", "race_concept_id"))
-  expect_identical(ir$variables$gender_concept_id, list(raw = list(table = "person", column = "gender_concept_id")))
+  expect_identical(ir$variables$gender_concept_id, list(raw = list(table = "person", column = "gender_concept_id"),
+                        labels = setNames(list(), character()),
+                        column_names = setNames(list(), character())))
 })
 
 test_that("v1 inline cohort spec lowers to the closed legacy_spec variant", {

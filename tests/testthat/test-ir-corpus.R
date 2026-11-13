@@ -60,6 +60,16 @@ test_that("every corpus plan belongs to a reviewed block of the frozen classific
   "v1-352"                      # a dictionary over outputs the plan does not declare
 )
 
+# A-27/CR-28 newly refuses these four frozen translation/factor conflicts.
+# Keep the historical class rows and IR snapshots unchanged.
+.IRC_A27_CONFLICTS <- c("v1-125", "v1-126", "v1-244", "v1-246")
+.irc_expect_a27_conflict <- function(rec, got) {
+  expect_identical(rec$plan$options$translate_concepts, TRUE, info = rec$id)
+  expect_identical(rec$plan$options$factor_concepts, FALSE, info = rec$id)
+  expect_identical(got$outcome, "refused", info = rec$id)
+  expect_match(got$message, "factor_concepts = FALSE conflicts with concept translation", fixed = TRUE)
+}
+
 test_that("validation outcomes agree with each block's class and the baseline's run", {
   corpus <- .irc_fixture("ir-v1-corpus.json")
   rows <- utils::read.csv(testthat::test_path("fixtures", "v1-corpus-classes.csv"),
@@ -70,6 +80,10 @@ test_that("validation outcomes agree with each block's class and the baseline's 
     classes <- unique(.irc_classes(rec, rows))
     got <- .irc_outcome(rec$plan)
     info <- paste(rec$id, paste(classes, collapse = ","), got$message %||% "")
+    if (rec$id %in% .IRC_A27_CONFLICTS) {
+      .irc_expect_a27_conflict(rec, got)
+      next
+    }
     # every plan the baseline executor ran is accepted: its result is the
     # unchanged v1 executor's (test-ir-results.R compares those results)
     if (isTRUE(rec$executed)) expect_true(got$outcome %in% accepted, info = info)
@@ -96,6 +110,12 @@ test_that("every corpus plan reproduces its golden IR document, digest and annex
     rec <- corpus[[i]]
     want <- golden[[i]]
     got <- .irc_outcome(rec$plan)
+    if (rec$id %in% .IRC_A27_CONFLICTS) {
+      expect_identical(want$outcome, "ir", info = rec$id)
+      expect_identical(.planSemanticDigest(want$ir)$sha256, want$digest, info = rec$id)
+      .irc_expect_a27_conflict(rec, got)
+      next
+    }
     expect_identical(got$outcome, want$outcome, info = rec$id)
     if (identical(want$outcome, "ir") && identical(got$outcome, "ir")) {
       doc <- .irDocument(got$ir)

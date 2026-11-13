@@ -182,7 +182,15 @@
 # Every staged descriptor -> list(descriptor, staged_file)
 .b10_attach_staged <- function(x) {
   if (inherits(x, "FlowerDatasetDescriptor")) {
-    return(structure(list(descriptor = unclass(x), staged_file = .b10_read_staged(x)),
+    descriptor <- unclass(x)
+    # A-27's lossless CSV escape protocol is an explicit descriptor addition.
+    # Assert it independently, then compare every historical descriptor field
+    # and the unchanged fixture bytes/content against the immutable capture.
+    if (exists(".irPrepare", mode = "function") && identical(x$metadata$format, "csv")) {
+      expect_identical(descriptor$metadata$csv_encoding, "backslash-v1")
+      descriptor$metadata$csv_encoding <- NULL
+    }
+    return(structure(list(descriptor = descriptor, staged_file = .b10_read_staged(x)),
                      class = c("b10_staged", class(x))))
   }
   if (is.list(x) && !is.data.frame(x)) {
@@ -641,7 +649,7 @@
   node
 }
 .a19_drop_attr <- function(node, attr) {
-  if (is.list(node$attrs)) node$attrs[[attr]] <- NULL
+  if (is.list(node$attrs)) for (name in attr) node$attrs[[name]] <- NULL
   if (!length(node$attrs)) node$attrs <- NULL
   node
 }
@@ -754,9 +762,10 @@ test_that("A-19 item 3: DP preparation seals the plan output, plan loading stays
   expect_null(attr(loaded$bound$D_ages, "dsomop_dp_provenance", exact = TRUE))
   capsule <- attr(prepared$bound$DP_ages, "dsomop_dp_provenance", exact = TRUE)
   expect_false(is.null(capsule))
-  expect_identical(.a19_drop_attr(.a19_at(prepared$assigned$values, "DP_ages"), "dsomop_dp_provenance"),
+  expect_identical(.a19_drop_attr(.a19_at(prepared$assigned$values, "DP_ages"),
+                                  c("dsomop_dp_provenance", "dsomop_dp_release_persons")),
                    .a19_at(loaded$assigned$values, "D_ages"),
-                   info = "the prepared rows are the loaded rows; only the seal differs")
+                   info = "the prepared rows are the loaded rows; only authenticated provenance metadata differs")
   expect_identical(prepared$assigned_volatile$raw_token_sha256, loaded$assigned_volatile$raw_token_sha256)
   if (.a19_baseline_build()) {
     .a19_baseline_reproduces(desc, list(loaded, prepared))
@@ -768,18 +777,32 @@ test_that("A-19 item 3: DP preparation seals the plan output, plan loading stays
     expect_silent(.dsomopDpVerifyPersonLocal(prepared$bound$DP_ages))
     want <- .a19_at(pins[[2L]]$assigned$values, "DP_ages")
     got <- .a19_at(prepared$assigned$values, "DP_ages")
-    expect_identical(.a19_drop_attr(got, "dsomop_dp_provenance"), .a19_drop_attr(want, "dsomop_dp_provenance"),
+    expect_identical(.a19_drop_attr(got, c("dsomop_dp_provenance", "dsomop_dp_release_persons")),
+                     .a19_drop_attr(want, "dsomop_dp_provenance"),
                      info = "values, columns, types and every other attribute identical to 2.10.2")
     expect_identical(prepared$assigned_volatile$raw_token_sha256, pins[[2L]]$assigned_volatile$raw_token_sha256,
                      info = "raw person tokens")
     # Only the producer-bound capsule fields may differ: 2.10.3 seals each
     # publication candidate under its component name ("plan/<type>/<format>/
     # <output>") where 2.10.2 sealed the primary component as ".../primary";
-    # lineage_id and mac derive from the producer. The DP contract fields are
-    # identical.
+    # lineage_id and mac derive from the producer. The security release also
+    # authenticates release-person identity, public domains/scales, generation,
+    # and the read snapshot under v3; all older policy fields remain identical.
     cw <- .b10_decode(want$attrs$dsomop_dp_provenance)
-    expect_identical(names(capsule), names(cw))
-    stable <- setdiff(names(cw), c("producer", "lineage_id", "mac"))
+    added <- c("release_person_namespace", "release_persons_sha256", "public_domains",
+               "public_scales", "data_generation", "read_snapshot")
+    expect_identical(names(capsule), c(setdiff(names(cw), "mac"), added, "mac"))
+    expect_identical(cw$protocol, "dsomop-dp-person-local-provenance-v2")
+    expect_identical(capsule$protocol, "dsomop-dp-person-local-provenance-v3")
+    persons <- attr(prepared$bound$DP_ages, "dsomop_dp_release_persons", exact = TRUE)
+    expect_setequal(names(persons), unique(as.character(prepared$bound$DP_ages$person_id)))
+    expect_identical(capsule$release_persons_sha256,
+                     .dsomopDpReleasePersonsDigest(capsule$release_person_namespace, persons))
+    expect_identical(capsule$read_snapshot, "serializable_transaction")
+    tampered <- prepared$bound$DP_ages
+    attr(tampered, "dsomop_dp_release_persons")[[1L]] <- "tampered"
+    expect_error(.dsomopDpVerifyPersonLocal(tampered))
+    stable <- setdiff(names(cw), c("protocol", "producer", "lineage_id", "mac"))
     expect_identical(capsule[stable], cw[stable], info = "DP contract fields of the capsule")
   }
 })
