@@ -12,7 +12,7 @@ test_that("A27 aliased education and cause-of-death preserve concept lineage", {
   plan$options <- list(labels = list('0' = 'unknown', '45000123' = 'declared only'))
   plan$variables$education$labels <- list('0' = 'education unknown')
   run <- .ws7_ctx(h, plan)
-  on.exit(.ws7_close(run))
+  on.exit(.ws7_close(run), add = TRUE)
   pop <- .ws7_population(run, 't', .ws7_scenario_frame(c(7001, 7003, 7004, 7005, 7006, 7007)))
   result <- .ws7_publish(run, list(t = pop), threshold = 1L)
   expect_identical(result$status$status, 'ok')
@@ -81,7 +81,7 @@ test_that('A27 all native format components preserve classes and staged factors'
   h <- .cl_backends$sqlite$handle; .ws7_keys(list(h))
   p <- .cl_formats_plan()
   results <- lapply(c('memory','staged'), function(mode) {
-    run <- .ws7_ctx(h,p,mode); on.exit(.ws7_close(run))
+    run <- .ws7_ctx(h,p,mode); on.exit(.ws7_close(run), add = TRUE)
     pop <- .ws7_population(run,'t',.ws7_scenario_frame(c(7001,7003,7004,7005,7006,7007)))
     result <- .ws7_publish(run,list(t=pop),threshold=1L)
     expect_identical(result$status$status,'ok')
