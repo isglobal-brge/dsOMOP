@@ -35,7 +35,7 @@ test_that("B1 selected reducer and raw dates obey variable and recipe policies",
     expect_true(is.na(.ws7_value(f,7001,"last")))
     expect_true(is.na(.ws7_value(f,7004,"last_value")))
   }
-  # A variable can explicitly allow dates beyond the recipe's cutoff.
+  # A variable can tighten the recipe's allow policy without changing siblings.
   plan$variables$last$date_spec <- list(future="allow")
   plan$options$date_spec$as_of <- NULL
   plan$options$date_spec$future <- "allow"
@@ -75,8 +75,8 @@ test_that("B2 yearless patterns follow precisely the 2000 through 2399 calendar"
   }
   # Year-bearing patterns still order chronologically across disjoint years.
   spec <- .dateEffective(list(precision="custom",pattern="%a %Y"))
-  value <- .datePresent(list(lo=as.Date(c("2022-01-01","2020-01-01")),hi=as.Date(c("2022-01-01","2020-01-01"))),spec)
-  expect_identical(levels(value),c("Wed 2020","Sat 2022"))
+  value <- .datePresent(list(lo=as.Date(c("2026-01-01","2020-01-01","2025-01-01")),hi=as.Date(c("2026-01-01","2020-01-01","2025-01-01"))),spec)
+  expect_identical(levels(value),c("Wed 2020","Wed 2025","Thu 2026"))
 })
 
 test_that("B3 hand-authored plans tokenize percent escapes and validate rendered label keys", {
