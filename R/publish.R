@@ -298,6 +298,7 @@
         as.data.frame(stats::setNames(rep(list(character(0)), length(descriptor$metadata$columns)),
                                       descriptor$metadata$columns))
       })
+      chunk <- .stagedDecodeCsv(chunk, descriptor$metadata$csv_encoding)
       callback(chunk)
       if (nrow(chunk) < 50000L) break
     }

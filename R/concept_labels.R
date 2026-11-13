@@ -26,7 +26,8 @@
       anyNA(names(x)) || any(!nzchar(names(x))) || anyDuplicated(names(x))))) {
     stop(path, " must map unique keys to character strings.", call. = FALSE)
   }
-  if (anyNA(x) || any(!nzchar(trimws(x))) || anyNA(iconv(x, to = "UTF-8"))) {
+  if (anyNA(x) || anyNA(iconv(x, to = "UTF-8")) ||
+      any(grepl("^[\\p{Z}\\s\\x{0085}]*$", enc2utf8(x), perl = TRUE))) {
     stop(path, " labels must be nonempty UTF-8 strings.", call. = FALSE)
   }
   if (names_map) {

@@ -152,13 +152,14 @@
           properties = arrow::ParquetWriterProperties$create(column_names = names(frame)))
       }
       writer$WriteTable(table)
-    } else utils::write.table(frame, pending, sep = ",", row.names = FALSE,
-                              col.names = first, append = !first, na = "NA", qmethod = "double")
+    } else .stagedWriteCsv(frame, pending,
+                              col.names = first, append = !first)
     first <<- FALSE
   })
   if (!is.null(writer)) { writer$Close(); writer <- NULL; sink$close(); sink <- NULL }
   Sys.chmod(pending, "0600")
   updated <- descriptor
+  if (updated$metadata$format == "csv") updated$metadata$csv_encoding <- "backslash-v1"
   meta$names <- as.list(new_names)
   updated$metadata$columns <- unname(new_names[names(old_names)])
   updated$metadata$column_types <- types
@@ -239,6 +240,7 @@
 }
 
 .conceptRewritePrivate <- function(original, updated, transform) {
+  if (updated$metadata$format == "csv") updated$metadata$csv_encoding <- "backslash-v1"
   path <- original$metadata$file
   pending <- tempfile(".concept-", tmpdir = dirname(path))
   on.exit(unlink(pending), add = TRUE)
@@ -258,8 +260,8 @@
           properties = arrow::ParquetWriterProperties$create(column_names = names(frame)))
       }
       writer$WriteTable(table)
-    } else utils::write.table(frame, pending, sep = ",", row.names = FALSE,
-      col.names = first, append = !first, na = "NA", qmethod = "double")
+    } else .stagedWriteCsv(frame, pending,
+      col.names = first, append = !first)
     first <<- FALSE
   })
   if (!is.null(writer)) { writer$Close(); writer <- NULL; sink$close(); sink <- NULL }

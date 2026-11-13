@@ -2026,8 +2026,7 @@
       # Restrict formatting to the writer; chunk transforms and tokenisation
       # must continue to see the caller's numeric options.
       old_options <- options(scipen = 999)
-      tryCatch(utils::write.table(chunk, output_path,
-                  sep = ",", row.names = FALSE,
+      tryCatch(.stagedWriteCsv(chunk, output_path,
                   col.names = (n_rows == 0L),
                   append = (n_rows > 0L)),
                finally = options(old_options))
@@ -2051,7 +2050,7 @@
     column_types <- empty_column_types
     if (use_parquet) open_parquet_writer(empty)
     if (!use_parquet) {
-      utils::write.table(empty, output_path, sep = ",", row.names = FALSE,
+      .stagedWriteCsv(empty, output_path,
                   col.names = TRUE)
     }
   }
@@ -2089,6 +2088,7 @@
   list(
     file = output_path,
     format = fmt,
+    csv_encoding = if (!use_parquet) "backslash-v1" else NULL,
     layout = layout,
     parts = NULL,
     n_rows = n_rows,

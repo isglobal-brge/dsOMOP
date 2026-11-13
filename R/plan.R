@@ -1940,6 +1940,7 @@
       row_count_policy = "banded_lower_bound",
       columns = file_info$columns,
       column_types = file_info$column_types %||% NULL,
+      csv_encoding = file_info$csv_encoding %||% NULL,
       pseudonymization = pseudonymization,
       semantic_contract = semantic_contract,
       bundle_contract = bundle_contract
@@ -2198,7 +2199,7 @@
     # CSV is read as characters for lossless lineage checks. Keep numeric keys
     # in the same decimal form as integer and BIGINT keys, regardless of scipen.
     old_options <- options(scipen = 999)
-    tryCatch(utils::write.csv(df, output_path, row.names = FALSE),
+    tryCatch(.stagedWriteCsv(df, output_path),
              finally = options(old_options))
   }
   if (existing_bytes + file.info(output_path)$size > max_bytes) {
@@ -2210,6 +2211,7 @@
   file_info <- list(
     file    = output_path,
     format  = ext,
+    csv_encoding = if (!use_parquet) "backslash-v1" else NULL,
     layout  = "file",
     parts   = NULL,
     n_rows  = nrow(df),

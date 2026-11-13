@@ -4,6 +4,14 @@ test_that("A27 maps validate exact IDs and preserve free text", {
                    c('1' = 'a', '1' = 'b'), c('1' = ' '), c('1' = NA_character_), 1L)) {
     expect_error(.conceptMap(bad, 'labels'), 'labels')
   }
+  whitespace <- c('', ' ', '\t\r\n', '\f', '\v', '\u0085', '\u00a0',
+                  '\u1680', '\u2000', '\u2003', '\u2028', '\u2029', '\u202f', '\u205f', '\u3000')
+  for (label in whitespace) {
+    expect_error(.conceptMap(setNames(label, '1'), 'labels'), 'nonempty UTF-8')
+    expect_error(.conceptMap(setNames(list(label), '1'), 'labels', wire = TRUE), 'nonempty UTF-8')
+    valid <- paste0(label, 'yes', label)
+    expect_identical(unname(.conceptMap(setNames(valid, '1'), 'labels')), valid)
+  }
   expect_error(.conceptMap(list('x'), 'labels', wire = TRUE), 'object')
   expect_identical(.conceptMap(setNames(list('yes'), '1'), 'labels', wire = TRUE), c('1' = 'yes'))
   for (bad in c('if', 'two words', '1name', '')) {
