@@ -59,8 +59,8 @@ test_that("D23 D24 native unindexed reducers and event-relative date roles", {
   h<-.date_backends$sqlite$handle
   p<-.ws7_scenario_plan(list(first=list(source=list(event="lab"),reducer=list(fn="first_date"),date_spec=list(precision="day"))))
   p$populations$t<-list(kind="criteria")
-  frame<-.ws7_scenario_frame();frame$cohort_start_date[]<-as.Date(NA)
-  f<-.ws7_scenario_run(h,p,frame=frame)$frame
+  p$outputs$o$grain<-"person"
+  f<-.ws7_scenario_run(h,p,frame=NULL)$frame
   expect_s3_class(f$first,"Date");expect_false(all(is.na(f$first)))
   p<-.ws7_scenario_plan(list(),output=list(format="membership"))
   p$options<-list(date_spec=list(precision="relative_days",anchor=list(source=list(event="lab"),which="first")))
@@ -93,7 +93,7 @@ test_that("D38 paired invalid endpoints and D41 joined metadata remain typed", {
   expect_true(is.ordered(f$d));expect_identical(as.character(f$d),rep("2024-Q1",8));expect_true(is.integer(f$age))
   for(fmt in c("sparse","temporal_covariates","dictionary")) {
     p<-.ws7_scenario_plan(list(d=.date_var("index")),output=list(format=fmt,columns=list("d")))
-    if(fmt=="dictionary")p$outputs$o$options<-list() else p$outputs$o$options<-list(sources=list(list(event="lab")),analyses=list("binary"))
+    if(fmt=="dictionary")p$outputs$o$options<-structure(list(),names=character()) else p$outputs$o$options<-list(sources=list(list(event="lab")),analyses=list("binary"))
     if(fmt=="temporal_covariates")p$outputs$o$options$window<-list(start=0L,end=30L,anchor="index")
     expect_error(.ws7_scenario_run(h,p),"no roster date-variable slot")
   }
