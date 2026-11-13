@@ -1,6 +1,13 @@
-# dsOMOP 2.10.3
+# dsOMOP 2.10.3 (2026-11-13)
 
 Security release: the P0 fixes of the OHDSI-tools audit.
+
+- Release 2.10.3 pairs both packages, including recipe language 2 and the
+  publication protocol. Existing valid secrets are reused; ordinary operation
+  needs no privacy settings, state provisioning, epoch bump, ETL hook or TLS
+  change. Opal's installed package and published profile remain distinct;
+  the version check identifies a stale profile. README upgrade notes describe
+  compatible pooling, legacy execution and changed-answer behavior.
 
 - Reduce protected-release overhead by reusing canonical person text and fixed
   SHA-256 framing, consuming consecutive sampler bits in blocks, and using exact
@@ -258,8 +265,9 @@ Security release: the P0 fixes of the OHDSI-tools audit.
 
 Recipe language 2.0: a typed plan graph (`plan-v2.json`), publication as the
 only disclosure gate on assignment paths, explicit coverage, eras, anchors,
-matching and adapters. This section is the WS-0 skeleton; each workstream
-fills its entries. Classes follow design-2.10.3 section 5.
+matching and adapters. The integrated compiler, client constructors and
+publication contracts ship together; the entries below describe corrected, newly permitted and newly
+refused behavior, including migration paths.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
@@ -546,14 +554,15 @@ fills its entries. Classes follow design-2.10.3 section 5.
 - Pair dsOMOP 2.10.3 with dsOMOPClient 2.10.3 for the publication-status
   protocol. The new client requires `omopPlanStatusDS` and
   `omopStagedRevokeDS`; a 2.10.1 server lacks them.
-  `ds.omop.server.version()` reports missing methods. After upgrading an
-  Opal server, publish dsOMOP's settings again so the profile exposes them.
+  `ds.omop.server.version()` reports missing methods. On Opal, package
+  installation and profile publication are separate steps;
+  the profile exposes the new methods after publication of the package settings.
 - A 2.10.1 client against a 2.10.3 server still fails closed on a strict
   publication refusal: no output is published. The assign call now returns
   status `refused`, so the old client reports that requested outputs did not
   materialize instead of receiving the previous constant `Disclosive` error.
-- A federation that still has a server older than 2.10.4 receives, from
-  dsOMOPClient 2.10.4, the legacy execution call of dsOMOPClient 2.10.2 on
+- A federation that still has a server older than 2.10.3 receives, from
+  dsOMOPClient 2.10.3, the legacy execution call of dsOMOPClient 2.10.2 on
   every site for a v1 plan (language-2 plans are refused before any
   assignment). This server runs that call, positional and without
   `commit_policy`, under the documented default `commit_policy = "server"`:

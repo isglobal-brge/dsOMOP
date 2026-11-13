@@ -122,8 +122,8 @@ The intended deployment remains DataSHIELD's layered controls and governance:
 approved access and uses, custodian-selected methods, output checks and audit.
 This revision removes the tested dsOMOP exact-output bypasses and cheap
 cosmetic-variant averaging attacks; it does not replace the rest of that
-system. Custodians must assess the combined Opal method profile, including
-overlapping dsBase/core functions and available auxiliary information. Shared
+system. Its boundary includes the combined Opal method profile, overlapping
+dsBase/core functions and available auxiliary information. Shared
 Rock credentials are not distinct analyst identities for privacy accounting or
 reliable individual attribution.
 
@@ -442,8 +442,8 @@ still carry the documented equality/overlap residual.
 
 The gate covers the registered community-tool surface. It does not alter
 internal profiling helpers, controller-only `omopAchillesHeelDS`, or
-methods from other DataSHIELD packages. Custodians must review those separately
-in the deployed method allowlist. It also does not make metadata admission or
+methods from other DataSHIELD packages, whose contracts remain outside this
+community-tool gate. It also does not make metadata admission or
 assignment side channels differentially private, retract earlier releases, or
 provide a finite cumulative privacy budget.
 
@@ -466,11 +466,11 @@ never queries CDM/vocabulary metadata to obtain this label, so a display change
 cannot alter database reads, snapshot availability or provenance admission.
 
 Without a configured domain, in-memory databases and unavailable/ambiguous
-resource coordinates still fail closed with instructions to configure the
-domain. Conflicting option and
-environment values still fail closed. No generic shared fallback domain is used.
-Initialize the resource with `omopInitDS()` before calling DP status when using
-derived defaults.
+resource coordinates fail closed because no unambiguous identity is available.
+An explicit domain is an optional override for those special resources.
+Conflicting option and environment values still fail closed. No generic shared
+fallback domain is used.
+`omopInitDS()` establishes the resource from which DP status derives defaults.
 
 Before 2.10.3 the noise of a typed release depended on the canonical request
 semantic, the keyed fingerprint of the exact bounded statistic and a private
@@ -498,20 +498,23 @@ database version for that route only.
   administrative noise-profile version. Rotation redraws all components and
   adds a disclosure; it is not required after data loads and resets no history.
 
-Security-policy changes during a session fail closed; snapshot display labels are excluded. Use a separate session for a
-different derived resource; DSLite server sessions keep separate policies
-within their shared R process. For replicas and database aliases of one
-logical dataset, configure matching explicit identifiers if canonical
-connection coordinates differ.
+Security-policy changes during a session fail closed; snapshot display labels
+are excluded. Different derived resources have separate sessions; DSLite
+sessions retain separate policies within their shared R process. Optional
+explicit identities represent replicas or aliases with different coordinates.
 
-The only DP state is the noise root, `DSOMOP_STATE_DIR/secrets/dp_noise_root`
-(or under `dsomop.state_dir`); mount the state directory across restarts. First
-use creates the root from the operating-system CSPRNG and logs a custodian
-message. Owner, mode, symlink and hard-link checks apply; a damaged, unsafe or
+The only DP state is the noise root, automatically created at
+`~/.dsomop/secrets/dp_noise_root` under the R service user's home, or under an
+optional `DSOMOP_STATE_DIR` / `dsomop.state_dir`. First use creates the root
+from the operating-system CSPRNG, sets private directory/file permissions and
+logs creation once. Concurrent workers and ordinary service restarts reuse it
+automatically; no provisioning or post-load rotation is required. Owner, mode,
+symlink and hard-link checks apply; a damaged, unsafe or
 substituted root is never replaced and fails closed with one stable analyst
 error and the reason in the server log. A custodian may instead inject the root
 through `dsomop.dp.noise_root` / `DSOMOP_DP_NOISE_ROOT`; then nothing is written
-for DP. The default `~/.dsomop` is suitable only when the home is persistent.
+for DP. Persistence follows the service filesystem; container replacement with an
+empty home does not preserve prior roots.
 `DSOMOP_TEST_ALLOW_EPHEMERAL_STATE=1` permits temporary paths in tests only; it
 does not supply a resource identity or bypass policy checks.
 
@@ -633,8 +636,9 @@ with first-answer servers and records each server's contract. Sampler,
 mechanism, canonical JSON and policy schema 4 are unchanged.
 
 Changing the sampler changes the policy hash and sticky release identity, so an
-upgraded query can receive a new draw. All replicas of one logical node must
-use the same version. This repair does not retroactively protect old releases
+upgraded query can receive a new draw. Replay across replicas depends on the
+same version, root, domain and mechanism. This repair does not retroactively
+protect old releases
 or erase their contribution to privacy loss.
 
 Since 2.10.3 the same protocol advertises the protected-release privacy
@@ -647,3 +651,28 @@ route, the fixed-synopsis statistics, the registered public scales and
 these releases from their signed components; older clients refuse them, and no
 client pools them with servers of the per-release contract. The sampler,
 mechanism identifier and canonical JSON are unchanged.
+
+## Upgrading to 2.10.3
+
+The paired server/client release uses automatic private roots, resource identity
+and request-local membership generations. Existing valid secrets are retained;
+no custodian configuration, manual epoch rotation, database trigger, ETL hook or
+TLS requirement is introduced. Persistent state remains the DP noise root and
+pseudonymisation key; no answer cache, privacy accountant, call quota, budget or
+per-user/session admission history is added. Intermediate preparation remains
+private and permissive; final publication applies its `nfilter` and protected
+contract checks.
+
+The repaired component ownership, public grids and projections can change
+answers relative to 2.10.2. New protected payloads require dsOMOPClient 2.10.3
+and compatible server contracts for pooling. Mixed-version sites remain visible
+through split results. The installed package and published Opal profile are
+reported separately; ordinary package-settings publication exposes the new
+methods after an upgrade. No extra privacy setup follows publication.
+
+These changes close the enumerated exact-output and cosmetic-variant defects;
+they do not retract earlier releases or remove the residual risks documented
+above. Fixed-synopsis epsilon describes a bounded vector before exact support
+gates, and realised-contribution reuse remains heuristic. Clinical edits with
+unchanged person membership, overlapping scopes, other packages' methods and
+auxiliary information remain outside a finite evolving-transcript DP guarantee.
