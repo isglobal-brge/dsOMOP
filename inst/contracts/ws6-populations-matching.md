@@ -206,6 +206,15 @@ retain parent scoping and fail closed on missing required provenance.
 One template cannot also be an ordinary roster or serve a second matching
 node in the same plan.
 
+Matching strata use the complete declared window, including source anchors
+and nested search windows (A-20(b)). An omitted anchor remains case-time
+relative. Source anchors have separate identities on the cases' final
+roster and the controls template's candidate roster; both sides resolve
+against their own person and row key. Template-only criterion anchors do
+not become case-side anchors. Undefined anchors retain UNKNOWN strata and
+the requested `missing_strata` policy. Built-in and unbounded windows keep
+their ordinary semantics.
+
 Eligibility requires actual recorded coverage at case time, survival to that
 time, the declared outcome-history and strata rules, and TRUE template
 criteria. An outcome exactly at case time excludes a control even under

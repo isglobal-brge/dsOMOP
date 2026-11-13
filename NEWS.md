@@ -7,6 +7,10 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- (A-20 integration) Matching strata accept their declared source anchors
+  and nested search windows. Anchors resolve separately on final cases and
+  instantiated controls; an earlier compiler check incorrectly refused these
+  supported plans. Existing declarations now work without changes.
 - (A-26; WS-2c B1) V1 membership outputs retain their effective root
   cohort identifier in the semantic IR, digest, explain and output closure,
   independently of the population supplying the rows. Signed identifiers,

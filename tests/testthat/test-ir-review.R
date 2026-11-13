@@ -1137,14 +1137,15 @@ test_that("A-20(b): matching template criteria retain their candidate source anc
   x <- .rv_example("plan-v2-example-B.json")
   window <- list(start = NULL, end = -1L,
                  anchor = list(source = list(event = "statin_rx"), which = "last"))
-  # WS-6 enforces section 6.10: strata are evaluated at the case time.
-  # Source anchors belong to template criteria, where A-20(b) inventories
-  # them on the instantiated candidate roster.
-  bad <- x
-  bad$populations$cc$match$match <- c(bad$populations$cc$match$match,
+  # A-20(b): a strata source anchor resolves separately on final cases and
+  # instantiated controls. A template criterion belongs only to controls.
+  strata <- x
+  strata$populations$cc$match$match <- c(strata$populations$cc$match$match,
     list(list(strata = list(source = list(event = "diabetes"), window = window))))
-  expect_error(.irPrepare(bad), "strata window anchors at the case time",
-               class = "dsomop_plan_rejection")
+  strata_ir <- .irPrepare(strata)
+  strata_anchors <- .irOrder(strata_ir)$anchors
+  expect_identical(strata_anchors$final$cases, strata_anchors$candidate$eligible)
+  expect_length(strata_anchors$final$cases, 1L)
   template <- x$populations$cc$match$controls
   x$populations[[template]]$where <- list(and = list(
     x$populations[[template]]$where,
@@ -1156,6 +1157,7 @@ test_that("A-20(b): matching template criteria retain their candidate source anc
   want <- .jcsCanonical(list(source = list(event = "statin_rx"), which = "last", n = 1L, field = "start",
                              scope = "person", search = NULL))
   expect_true(want %in% got)
+  expect_length(.irOrder(ir)$anchors$final$cases, 0L)
 })
 
 # --- A-19 open item (i): private set-op intermediates are not gated in execution ---

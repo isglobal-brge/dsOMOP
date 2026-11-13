@@ -19,8 +19,9 @@ controls template is instantiated once per plan (A-20 c), so it cannot also
 be an ordinary roster (output rows, parent, set-op member, match cases) or
 the template of a second match; the cases and the template of a match share
 one coverage policy (one observation semantics for the matched roster, as
-set-op members do); a strata window anchors at the case time (built-in or
-date anchors, never a source anchor); \code{episode_policy} applies to a
+set-op members do). Strata windows resolve against the cases' final roster
+and the controls' candidate roster, including source/search anchors under
+A-20(b). \code{episode_policy} applies to a
 criteria population seeded from a results cohort without a parent, and is
 required there when its criteria depend on the episode's index.
 }
