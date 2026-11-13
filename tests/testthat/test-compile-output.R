@@ -487,7 +487,9 @@ test_that("dictionary source outputs remain static dependencies through public e
         .publishReadChunks(frame, function(x) chunks[[length(chunks) + 1L]] <<- x)
         frame <- do.call(rbind, chunks)
       }
-      expect_identical(as.integer(frame$concept_id), .WS7$LAB, info = paste(b, mode))
+      expect_true(is.factor(frame$concept_id), info = paste(b, mode))
+      expect_identical(as.character(frame$concept_id), "ws7 lab", info = paste(b, mode))
+      expect_identical(frame$concept_name, as.character(frame$concept_id), info = paste(b, mode))
       expect_identical(as.character(frame$source), "lab", info = paste(b, mode))
     }
     rm(list = paste0("handle_", sym), envir = .dsomop_env)
