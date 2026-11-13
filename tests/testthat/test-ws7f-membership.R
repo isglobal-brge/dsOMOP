@@ -228,10 +228,11 @@ test_that("A-26 lowered membership compiler preserves the complete baseline matr
           expect_identical(.irPrepare(plan, h)$outputs$members$grain, "person", info = info)
           frame <- expected$result$members[c("subject_id", "cohort_definition_id")]
           names(frame)[names(frame) == "subject_id"] <- "person_id"
-          # This DuckDB fixture's default DBI connection transports BIGINT
-          # roster person keys as doubles. Preserve that declared native
-          # transport independently of the frozen v1 integer frame.
-          if (identical(h$dbms, "duckdb")) frame$person_id <- as.double(frame$person_id)
+          # Native roster BIGINTs use exact decimal text at the reducer
+          # fetch boundary (1d51f26), independently of DBI vendor transport.
+          # Keep the immutable v1 oracle and its public parity checks below;
+          # adapt only the expected native person-key representation here.
+          frame$person_id <- as.character(frame$person_id)
           expect_identical(supplied$roster$person_id, frame$person_id, info = info)
           frame$index_source <- rep("cohort:1", nrow(frame))
           expect_identical(actual$result$frame, frame, info = info)
