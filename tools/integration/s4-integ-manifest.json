@@ -1,0 +1,44 @@
+{
+  "dsOMOP": {
+    "branch": "feat/2.10.3",
+    "refs": {
+      "HEAD": "990973b37290e9404fb5a93c5de3afb10cbcaf27",
+      "main": "c89050807655de0ed6c41d4ca3a858cf9f0c27c0",
+      "2.10.3": "c89050807655de0ed6c41d4ca3a858cf9f0c27c0",
+      "feat/2.10.3-labels": "4a6e825584f2c1a0143ea0c54d62fb1be3ff0bd1",
+      "feat/2.10.3-ws10": "a96392ef220bea7c9bf5f1f4b3638b5f18ddadb1"
+    },
+    "commits": [
+      "35551cd Merge concept labels and A27 presentation contract into integration",
+      "52ef925 Merge WS10 documentation while retaining A27 migration notes",
+      "761f7bc Integrate 2.10.3 security release with amended publication and label contracts",
+      "250dc25 Consolidate security and recipe notes under the 2.10.3 release",
+      "6141379 Preserve authenticated label lineage and isolate publication test key scopes",
+      "1018294 Retain membership metadata compatibility and document the integrated extractor",
+      "45841d6 Keep scoped key restoration when label fixtures close publication contexts",
+      "ee807cf Assert the exact A27 normalization delta against frozen IR snapshots",
+      "3677714 Preserve v1 private result metadata while tagging public frames",
+      "5f03cd6 Keep presentation bookkeeping out of untranslated private v1 returns",
+      "458ce14 Reconcile frozen integration assertions with A27 and security provenance",
+      "990973b Verify the translated baseline factor and retain private sparse result fidelity"
+    ]
+  },
+  "dsOMOPClient": {
+    "branch": "feat/2.10.3",
+    "refs": {
+      "HEAD": "a5918c60985418eb4e50fb01a08ddb6bd5ce5264",
+      "main": "b4ad0396305b0e88cec477aa682fddc6b8423f96",
+      "2.10.3": "b4ad0396305b0e88cec477aa682fddc6b8423f96",
+      "feat/2.10.3-labels": "024e14703cf59fd7f74ae52ac5ab8a6b800a4fbf",
+      "feat/2.10.3-ws10": "2bbab80af759de09c01e2027f0cbe7358f0eb91a"
+    },
+    "commits": [
+      "950b926 Merge concept labels and A27 presentation contract into integration",
+      "419dc25 Merge WS10 documentation while retaining A27 migration notes",
+      "b5aab2e Integrate 2.10.3 security client and exercise real capability negotiation",
+      "d946bb2 Consolidate release notes and declare numeric output in transport fixtures",
+      "3d8ad38 Align integration regressions with the amended concept presentation contract",
+      "a5918c6 Complete descendant fixtures and parameterized A27 naming assertions"
+    ]
+  }
+}

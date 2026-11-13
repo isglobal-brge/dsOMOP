@@ -1,0 +1,116 @@
+{
+  "dsOMOP": {
+    "full_suite_commit": "45841d64c1a8363ff07bbe2b713177327cc9d578",
+    "final_code_commit": "990973b37290e9404fb5a93c5de3afb10cbcaf27",
+    "changes": [
+      {
+        "path": "R/plan.R",
+        "before": "cc770e4880b8db614512ef75be6d2610d95a9ae00d26a87ca4c20bcce17d228b",
+        "after": "4f766a07007e6fc5e6e154be6ea371ee69f9b4dd59d029acfaa93c49cd9266c7",
+        "kind": "runtime"
+      },
+      {
+        "path": "R/publish.R",
+        "before": "d2b815d504f684667f8c01dc137e955125fffe21fdb0314d18d3dc70a74f3865",
+        "after": "64db175f7f47878a202924e23cc5f2bacdf06644247d6be5d891514a5ca3b82f",
+        "kind": "runtime"
+      },
+      {
+        "path": "tests/testthat/test-ir-corpus.R",
+        "before": "8b2a33ecac2aad0bd533e9c5efc2592350f897341da13a05a45c3057c03cdf83",
+        "after": "37a58a803662d0921524e9c5df4b27cd733c13d54d8b8232651422bc39d0050f",
+        "kind": "test"
+      },
+      {
+        "path": "tests/testthat/test-ir-results-a19.R",
+        "before": "316a5ec87b0fe893e73467ecd57d23126382bbaf6328bd03f60c35561631a647",
+        "after": "e10af5461d1a876906aa0b8fb329cd3f6910a3595520f73dfeb0cdafed24b99a",
+        "kind": "test"
+      },
+      {
+        "path": "tests/testthat/test-ir-results.R",
+        "before": "9c2d86b1573f543ddb91ee25aa4f748f3cd7c1bae91b432bfcc88875ac254455",
+        "after": "61b4701604d66cdb2ae3ac83eea861c425e52cee3daca63b774ffb969fac0064",
+        "kind": "test"
+      },
+      {
+        "path": "tests/testthat/test-ir.R",
+        "before": "909bba8ef47581c375566f7961418aaa1c8dc45d312777c9721fba53cf655c30",
+        "after": "f11a660638dbedac01c528408b0a37b641d4815a950401b33040a4895ef741c5",
+        "kind": "test"
+      },
+      {
+        "path": "tests/testthat/test-publication-integration.R",
+        "before": "48d42f9df217879ec46e9808b75acf125eec1f08c417eab0aeaecd256a8646bc",
+        "after": "bb52d44a0326e3f794651039460c955438d749993668c6054a306db86f6476db",
+        "kind": "test"
+      }
+    ]
+  },
+  "dsOMOPClient": {
+    "full_suite_commit": "d946bb2fe5ccca303ae93d4759d74183e7be78c9",
+    "final_code_commit": "a5918c60985418eb4e50fb01a08ddb6bd5ce5264",
+    "changes": [
+      {
+        "path": "R/plan.R",
+        "before": "a817c607bf89231039c7c2a585fb10ebb1e8f5fefce34f9d76482f2a7dfe21a6",
+        "after": "4c2d7f895d2bd963c98bbf9911788b628cee6a9106af76b30909c67078c91d42",
+        "kind": "comment"
+      },
+      {
+        "path": "tests/testthat/test-dp-exclusive-client.R",
+        "before": "72bd9a5ce31c3464bf446a5f74035bf40367bfb3bd6ad45d6e461455ce1a8bbf",
+        "after": "e25ec1982c0ad5e8d133e4312894534d715bd819a1132ed5325239ddcf8ec843",
+        "kind": "test"
+      },
+      {
+        "path": "tests/testthat/test-plan-dsl.R",
+        "before": "d53d322b02bc44c75f1926a084ae761b943ca89241f0b5f70ee65fbe706fc784",
+        "after": "1657de6afdad46799a3a0ae09a28704bda313c4ffd31143dc875e5f752db57a4",
+        "kind": "test"
+      },
+      {
+        "path": "tests/testthat/test-recipe-setops.R",
+        "before": "f86d021fc99f47a9a2bcc0b4ac1b7c0e3e2997c03072d63eb59f3c5fe2b31f28",
+        "after": "96da79ebb4923747b8ebf77b24b33dafe704688db3e2fd90719fbade8b129af5",
+        "kind": "test"
+      },
+      {
+        "path": "tests/testthat/test-staged-harmonization-regression.R",
+        "before": "38d7041e9d5772faf05208616188fdf9583fbdab54aa263d88f85c38c3fc1b0a",
+        "after": "f1f0f315a3cc939b902fe11b0bdf76966a34ef2317ad2088ea475e65269fe6b9",
+        "kind": "test"
+      },
+      {
+        "path": "tests/testthat/test-v1-2.10.2-payloads.R",
+        "before": "dfbec8d6a51954812328e9ca07d768ad1e397ba939945a07b9f96da2caf8fe93",
+        "after": "8713180f7d8d79de5d08060d5fb28a9441aa2f234bc68b17f704abd7f388cf45",
+        "kind": "test"
+      },
+      {
+        "path": "tests/testthat/test-v2-golden-formals.R",
+        "before": "0f7a4b27823ef88084f0968a63df6ace3210f4615e07cb669f26f340cf9db508",
+        "after": "09d064d9256ae1b1ff1f398822a872ee561ccdf5645cb85ff956f362affc95bb",
+        "kind": "test"
+      },
+      {
+        "path": "tests/testthat/test-v2-plan.R",
+        "before": "5f42851b75d2ac0d8a86f8dcceb563ffaecacfc7cfb918370ea080e7d876069e",
+        "after": "fd221c1cc8bd2c6990c678cd609a8fed43ffc785c15816039e74410d5beadeb7",
+        "kind": "test"
+      },
+      {
+        "path": "tests/testthat/test-v2-protocol.R",
+        "before": "1f941dd4095b408e36591220041ad544ae8dcaffc56f98bc2aaa1f73e8aa1b3b",
+        "after": "497e2df5376bc52d53b709f748dec9e47992cb6f6b6a8d313334124708c03e05",
+        "kind": "test"
+      },
+      {
+        "path": "tests/testthat/test-ws7-client-acceptance.R",
+        "before": "87e92ebde0a14fe4a233e1d5a12dc5385d3fc4f18977cfcc1833390349e97805",
+        "after": "58e0939e242156633b2b3bd0f774af6ca8e95b41fae79900b4e0f07fc60aa741",
+        "kind": "test"
+      }
+    ]
+  }
+}
