@@ -1,0 +1,17 @@
+{
+  "server_commit": "860c31fee8d32bea6aaefad76d8d237c19c0209b",
+  "client_commit": "30a9794b4fe30c7b04f30390686157bf67ff4a63",
+  "filter": "^e2e4-mdrr$|^tools-release$|^tools-release-survival$|^tools-release-sweeps$|^tools-release-pooling$|^tools-release-client-survival$",
+  "files": [
+    "test-e2e4-mdrr.R",
+    "test-tools-release.R",
+    "test-tools-release-survival.R",
+    "test-tools-release-sweeps.R",
+    "test-tools-release-pooling.R",
+    "test-tools-release-client-survival.R"
+  ],
+  "passed": 3035,
+  "failed": 0,
+  "errors": 0,
+  "skipped": 0
+}

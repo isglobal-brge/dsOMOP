@@ -1,0 +1,15 @@
+Before and after repair:
+RTEST_WITH=/workspace/dsomop/wt/int/dsOMOPClient /workspace/dsomop/tools/rtest.sh /workspace/dsomop/wt/int/dsOMOP '^e2e4-mdrr$' 600
+
+Final committed server 860c31f / client 30a9794:
+RTEST_WITH=/workspace/dsomop/wt/int/dsOMOPClient /workspace/dsomop/tools/rtest.sh /workspace/dsomop/wt/int/dsOMOP '^e2e4-mdrr$|^tools-release$|^tools-release-survival$|^tools-release-sweeps$|^tools-release-pooling$|^tools-release-client-survival$' 1500
+
+Temporary harness package (source efb5be5; removed after evidence capture):
+/workspace/dsomop/tools/rtest.sh /workspace/dsomop/wt/int/dsOMOP/tools/e2e4-fix2/probe '^harness$' 300
+
+Harness clone:
+Rscript scripts/tests/g-contract.R
+python3 scripts/tests/o-candidate.py
+python3 scripts/o/check_candidate.py
+python3 docs/e2e4-fix2/extract.py /workspace/dsomop/design/astra-dev/e2e4-fix2-inputs
+python3 docs/e2e4-fix2/audit.py /workspace/dsomop/design/astra-dev/e2e4-fix2-inputs

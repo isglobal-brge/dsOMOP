@@ -1,0 +1,19 @@
+[
+  {
+    "path": "/workspace/dsomop/wt/int/dsOMOP/tools/e2e4-fix2/probe",
+    "bytes": 332021,
+    "reason": "own temporary harness package; pod result and full log retained"
+  },
+  {
+    "path": "/root/rt/wt/int/dsOMOP/tools/e2e4-fix2/probe",
+    "bytes": 340642,
+    "measurement": "du -sb",
+    "reason": "own completed harness probe; evidence log preserved locally"
+  },
+  {
+    "path": "/root/rt/lib/wt_int_dsOMOP_tools_e2e4-fix2_probe",
+    "bytes": 10,
+    "measurement": "du -sb",
+    "reason": "own completed harness probe; evidence log preserved locally"
+  }
+]

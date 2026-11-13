@@ -1,0 +1,23 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+e2e4-mdrr: ...1
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Error ('test-e2e4-mdrr.R:41:7'): unavailable protected MDRR has a stable r
+Error in `expect_match(label$unavailable_reason, "protected.*MDRR.*unavailable")`: `object` must be a character vector, not `NULL`.
+Backtrace:
+    ▆
+ 1. └─testthat::expect_match(object = label$unavailable_reason) at test-e2e4-mdrr.R:41:7
+ 2.   └─testthat:::check_character(object)
+ 3.     └─testthat:::stop_input_type(...)
+ 4.       └─rlang::abort(message, ..., call = call, arg = arg)
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+             file blocks failed errors
+ test-e2e4-mdrr.R      1      0      1
+
+FAILING TESTS
+test-e2e4-mdrr.R | unavailable protected MDRR has a stable reason on every route and alias | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 1 skipped: 0 passed: 3 
