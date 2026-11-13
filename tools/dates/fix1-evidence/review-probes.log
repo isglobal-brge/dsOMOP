@@ -1,0 +1,18 @@
+review-dates: ...............W..
+FUTURE FIRST FOUR ROWS
+  anchor first last value
+1   <NA>  <NA> <NA>  <NA>
+2   <NA>  <NA> <NA>  <NA>
+3   <NA>  <NA> <NA>  <NA>
+4   <NA>  <NA> <NA>  <NA>
+......
+CUSTOM WEEKDAY LEVELS
+[1] "Sat" "Sun" "Mon" "Tue" "Wed" "Thu" "Fri"
+....
+
+══ Warnings ════════════════════════════════════════════════════════════════════
+1. independent complete VA table and full-recipe release refusal ('test-review-dates.R:35:3') - object 'dsOexec.5UU0Oe' not found
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+RESULT failed: 0 errors: 0 skipped: 0 passed: 27 

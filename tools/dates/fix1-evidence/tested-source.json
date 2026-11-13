@@ -1,0 +1,21 @@
+{
+  "server": {
+    "commit": "0bf57c47ecfab279393f92e02a7a3e8d10f33272",
+    "files": {
+      "R/date_semantics.R": "d2c3c6b6d2ab8c2b9450e8f794d67bb3cd42e7e4b3ead2bb52b85c0e662e6355",
+      "tests/testthat/test-date-review-fixes.R": "a1a66adad72164303000e0119a2e9a0fb3e5b68edf2c3c32b54ff92637269660",
+      "NEWS.md": "5899ce6f88a68040d33148ae13addd338f9d350cb9647860ed4d23d775c77c9e",
+      "DESCRIPTION": "e9a5ada2fe9157752144d3e2c7553ae0df4fe09116cdf2d938f28e48b7e57c9c",
+      "R/compile_dates.R": "09d50afa77e16124938c623a7b4acdf6e2522810dc9a7b3b1167188c5def79ba"
+    }
+  },
+  "client": {
+    "commit": "cba4f62dd233c1f0667d2908baf49286bfc9ab99",
+    "files": {
+      "R/date_semantics.R": "d2c3c6b6d2ab8c2b9450e8f794d67bb3cd42e7e4b3ead2bb52b85c0e662e6355",
+      "tests/testthat/test-date-review-fixes.R": "968f5d5e4e96fa341deb81ad66fa851a9f34af424a69a77d437f5078d922f31f",
+      "NEWS.md": "0fc38aedf215bdc33297d6ba0ea034a373e553ff5c4f9eafdd46c5c9df31d15a",
+      "DESCRIPTION": "28c7041d31113c8745f5aa190e25508740a9c0d279399d87a685e99975b6d5e7"
+    }
+  }
+}
