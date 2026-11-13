@@ -44,6 +44,7 @@ test_that("A27 disclosure checks identity before recode merges and fails closed"
   ctx <- list(handle = h, ir = list(options = list(labels = list('1' = 'yes', '2' = 'yes')), variables = list()))
   df <- .conceptPresent(ctx, data.frame(person_id = paste0('p', 1:4), answer = c(1,1,1,2)), list(answer = .fragmentColumn('integer', TRUE, 'concept')))
   withr::local_options(list(nfilter.tab = 2, nfilter.levels.max = 40, nfilter.levels.density = 1))
+  expect_error(omopAsFactorColumnsDS(df,list()), 'concept presentation protocol')
   report <- omopFactorLevelsDS(df)
   expect_identical(report$unsafe, 'answer')
   expect_length(report$concepts, 0L)

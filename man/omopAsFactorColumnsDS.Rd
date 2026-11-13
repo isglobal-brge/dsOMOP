@@ -7,15 +7,16 @@
 omopAsFactorColumnsDS(df, spec)
 }
 \arguments{
-\item{df}{A data frame previously assigned server-side by
-\code{\link{omopPlanExecuteDS}}.}
+\item{df}{A data frame or staged descriptor previously assigned server-side
+by \code{\link{omopPlanExecuteDS}}.}
 
-\item{spec}{A JSON-encoded named list mapping each concept-id column to the
-shared character levels to impose (decoded via \code{\link{.ds_arg}}).}
+\item{spec}{An encoded complete A-27 presentation contract, or the legacy
+column-to-level list for an untagged object (decoded via
+\code{\link{.ds_arg}}).}
 }
 \value{
-The data frame with the specified concept-id columns recoded as
-  harmonized factors; the value is re-assigned to the original symbol.
+The data frame or staged descriptor with harmonized factors and
+  generated names; the value is re-assigned to the original symbol.
 }
 \description{
 Rebuilds A-27 factors from their retained internal IDs, using one ordered

@@ -86,6 +86,9 @@
 }
 
 .conceptRelevelStaged <- function(descriptor, spec) {
+  if (!identical(as.integer(spec$concept_protocol), 1L)) {
+    stop("A complete concept presentation protocol is required for this staged output.", call. = FALSE)
+  }
   report <- .conceptStageReport(descriptor)
   meta <- .conceptStageData(descriptor)
   .conceptCheckEvidence(report, spec, !is.null(meta$handle))

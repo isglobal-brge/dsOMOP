@@ -7,15 +7,17 @@
 omopFactorLevelsDS(df)
 }
 \arguments{
-\item{df}{A data frame previously assigned server-side by
-\code{\link{omopPlanExecuteDS}}.}
+\item{df}{A data frame or staged descriptor previously assigned server-side
+by \code{\link{omopPlanExecuteDS}}.}
 }
 \value{
-A named list with three elements: \code{levels} (named list mapping
+A named list with \code{levels} (named list mapping
   each safe concept-id column to its character levels), \code{unsafe}
   (character vector of concept-id columns that failed the disclosure gate),
   and \code{nfilter_levels_max} (the server's level cap, so the client can
-  reconcile heterogeneous caps).
+  reconcile heterogeneous caps). A-27 reports also carry the concept
+  protocol, permitted ID/name/version candidates, generated/reference naming
+  identities, stable keys and evidence binding.
 }
 \description{
 A-27 outputs carry declared semantic classes and private ID mappings.

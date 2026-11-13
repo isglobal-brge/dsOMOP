@@ -2804,13 +2804,15 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 #' by ID and broadcasts a complete contract through omopAsFactorColumnsDS.
 #' Older untagged objects retain the legacy factor transport.
 #'
-#' @param df A data frame previously assigned server-side by
-#'   \code{\link{omopPlanExecuteDS}}.
-#' @return A named list with three elements: \code{levels} (named list mapping
+#' @param df A data frame or staged descriptor previously assigned server-side
+#'   by \code{\link{omopPlanExecuteDS}}.
+#' @return A named list with \code{levels} (named list mapping
 #'   each safe concept-id column to its character levels), \code{unsafe}
 #'   (character vector of concept-id columns that failed the disclosure gate),
 #'   and \code{nfilter_levels_max} (the server's level cap, so the client can
-#'   reconcile heterogeneous caps).
+#'   reconcile heterogeneous caps). A-27 reports also carry the concept
+#'   protocol, permitted ID/name/version candidates, generated/reference naming
+#'   identities, stable keys and evidence binding.
 #' @seealso \code{\link{omopAsFactorColumnsDS}}, \code{\link{.assertSafeLevels}}
 #' @export
 omopFactorLevelsDS <- function(df) {
@@ -2870,12 +2872,13 @@ omopFactorLevelsDS <- function(df) {
 #' Staged files are rewritten privately and their existing manifest updated.
 #' The legacy spec shape remains supported for older untagged objects.
 #'
-#' @param df A data frame previously assigned server-side by
-#'   \code{\link{omopPlanExecuteDS}}.
-#' @param spec A JSON-encoded named list mapping each concept-id column to the
-#'   shared character levels to impose (decoded via \code{\link{.ds_arg}}).
-#' @return The data frame with the specified concept-id columns recoded as
-#'   harmonized factors; the value is re-assigned to the original symbol.
+#' @param df A data frame or staged descriptor previously assigned server-side
+#'   by \code{\link{omopPlanExecuteDS}}.
+#' @param spec An encoded complete A-27 presentation contract, or the legacy
+#'   column-to-level list for an untagged object (decoded via
+#'   \code{\link{.ds_arg}}).
+#' @return The data frame or staged descriptor with harmonized factors and
+#'   generated names; the value is re-assigned to the original symbol.
 #' @seealso \code{\link{omopFactorLevelsDS}}
 #' @export
 omopAsFactorColumnsDS <- function(df, spec) {
@@ -2887,6 +2890,10 @@ omopAsFactorColumnsDS <- function(df, spec) {
          call. = FALSE)
   }
   spec <- .ds_arg(spec)
+  tagged <- !is.null(attr(df, "omop_concepts")) || !is.null(attr(df, "omop_generated_columns"))
+  if (tagged && !identical(as.integer(spec$concept_protocol), 1L)) {
+    stop("A complete concept presentation protocol is required for this output.", call. = FALSE)
+  }
   if (identical(as.integer(spec$concept_protocol), 1L)) return(.conceptRelevel(df, spec))
   if (!is.list(spec) || length(spec) == 0L) {
     return(df)
