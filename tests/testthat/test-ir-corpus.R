@@ -99,8 +99,22 @@ test_that("every corpus plan reproduces its golden IR document, digest and annex
     expect_identical(got$outcome, want$outcome, info = rec$id)
     if (identical(want$outcome, "ir") && identical(got$outcome, "ir")) {
       doc <- .irDocument(got$ir)
-      expect_identical(.jcsCanonical(doc), .jcsCanonical(want$ir), info = rec$id)
-      expect_identical(.planSemanticDigest(doc)$sha256, want$digest, info = rec$id)
+      # The frozen pre-A27 document and digest stay intact as the baseline.
+      # A-27 adds exactly two empty maps to options and each variable; spell
+      # out that amendment independently instead of re-normalizing with the
+      # implementation being tested or regenerating the historical fixture.
+      expect_identical(.planSemanticDigest(want$ir)$sha256, want$digest, info = rec$id)
+      amended <- want$ir
+      empty <- stats::setNames(list(), character())
+      amended$options$labels <- empty
+      amended$options$column_names <- empty
+      for (name in names(amended$variables)) {
+        amended$variables[[name]]$labels <- empty
+        amended$variables[[name]]$column_names <- empty
+      }
+      expect_identical(.jcsCanonical(doc), .jcsCanonical(amended), info = rec$id)
+      expect_identical(.planSemanticDigest(doc)$sha256,
+                       .planSemanticDigest(amended)$sha256, info = rec$id)
       annex <- attr(got$ir, "legacy_annex")
       expect_identical(if (is.null(annex)) "null" else .jcsCanonical(annex),
                        if (is.null(want$annex)) "null" else .jcsCanonical(want$annex), info = rec$id)
