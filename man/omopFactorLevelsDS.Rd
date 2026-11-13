@@ -2,7 +2,7 @@
 % Please edit documentation in R/interface.R
 \name{omopFactorLevelsDS}
 \alias{omopFactorLevelsDS}
-\title{Report disclosure-safe levels of concept-id columns}
+\title{Report disclosure-safe concept identities for federation reconciliation}
 \usage{
 omopFactorLevelsDS(df)
 }
@@ -18,25 +18,15 @@ A named list with three elements: \code{levels} (named list mapping
   reconcile heterogeneous caps).
 }
 \description{
-Aggregate-mode helper for the client-side concept-factor coordination layer.
-Scans a previously extracted data frame for columns whose name ends in
-\code{_concept_id} (both raw integer ids and translated character names keep
-this suffix) and, for each one, reports its distinct non-missing values as
-character levels — but only if that level set passes the server's disclosure
-gate (\code{\link{.assertSafeLevels}}: at most \code{nfilter.levels.max}
-distinct levels and density at or below \code{nfilter.levels.density}).
-}
-\details{
-The client collects each server's safe levels, computes their union in one
-deterministic order, and broadcasts that shared ordering back via
-\code{\link{omopAsFactorColumnsDS}} so the federated factor is harmonized
-across all sites. High-cardinality clinical columns that fail the gate are
-returned in \code{unsafe} so the client leaves them untouched (raw).
-
-Only the distinct category labels leave the server, never row-level data,
-and only after passing the same disclosure threshold that governs
-\code{ds.asFactor}/\code{ds.levels}. The result is returned natively
-(aggregate results are not JSON-encoded on the return path).
+A-27 outputs carry declared semantic classes and private ID mappings.
+This existing aggregate transport reports only policy-permitted ID/name/
+vocabulary-version candidates and public declared levels, including
+generated-column identities on numeric-only outputs. Observed IDs pass
+per-person support, cardinality and density checks before any metadata is
+returned. No rows, counts or person keys are disclosed. Staged descriptors
+use their manifest-bound presentation contract. The client resolves labels
+by ID and broadcasts a complete contract through omopAsFactorColumnsDS.
+Older untagged objects retain the legacy factor transport.
 }
 \seealso{
 \code{\link{omopAsFactorColumnsDS}}, \code{\link{.assertSafeLevels}}

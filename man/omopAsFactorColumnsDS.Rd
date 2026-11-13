@@ -2,7 +2,7 @@
 % Please edit documentation in R/interface.R
 \name{omopAsFactorColumnsDS}
 \alias{omopAsFactorColumnsDS}
-\title{Recode concept-id columns to a harmonized factor}
+\title{Apply a complete shared concept presentation contract}
 \usage{
 omopAsFactorColumnsDS(df, spec)
 }
@@ -18,35 +18,15 @@ The data frame with the specified concept-id columns recoded as
   harmonized factors; the value is re-assigned to the original symbol.
 }
 \description{
-Assign-mode counterpart to \code{\link{omopFactorLevelsDS}}. Given the union
-of disclosure-safe levels computed across the federation by the client, this
-rebuilds the named concept-id columns of a server-side data frame as factors
-that share one identical level ordering across every site. Identical level
-coding is what makes pooled \code{ds.glm} / \code{ds.glmSLMA} and
-\code{ds.table} behave correctly on the federated factor.
-}
-\details{
-A value present on only some sites becomes an empty level on the sites that
-lack it — valid base R, and the modelling functions handle it (pooled
-estimation uses the global data; study-level meta-analysis yields per-study
-\code{NA} without crashing). Columns absent from this server are silently
-skipped, so the same broadcast spec works for every site.
-
-Recoding is representation-only: every original observed local level must
-pass the same per-level person-support, density, and level-cap gate as
-\code{\link{omopFactorLevelsDS}}, and the shared contract must cover every
-observed value. If any requested present column fails those conditions, the
-complete call silently returns the original frame byte-for-byte. This
-fail-quiet, all-or-nothing behavior prevents category-presence probes while
-guaranteeing that recoding never creates new missing values. A column with
-no observed values may still be recoded to the public contract, and safe
-levels present only at another site remain valid empty levels locally.
-
-The level cap is re-enforced here independently of the client: a column whose
-requested level count exceeds \code{nfilter.levels.max} is rejected, so a
-buggy or hostile client cannot coerce a disclosive factor onto the server.
-On validation error the original data frame keeps its prior value (the
-assignment is not applied), so the column safely remains raw.
+Rebuilds A-27 factors from their retained internal IDs, using one ordered
+union at every retained site. Absent local categories are unused levels;
+only explicit user recodes may merge identities. Generated names are
+validated against the complete component schema. Incomplete coverage,
+unsafe levels and invalid names fail and trigger federation rollback.
+Vocabulary evidence is rechecked before assignment. Verified protected
+lineage is preserved only through this checked identity-preserving route.
+Staged files are rewritten privately and their existing manifest updated.
+The legacy spec shape remains supported for older untagged objects.
 }
 \seealso{
 \code{\link{omopFactorLevelsDS}}

@@ -3,7 +3,7 @@
 
 # The frozen operation and reducer vocabularies of section 4.4.
 .RECIPE_OPERATIONS <- c(
-  "concept_set", "event", "event.unit", "event.on_missing_table", "interval",
+  "output.concept_labels", "concept_set", "event", "event.unit", "event.on_missing_table", "interval",
   "interval.ingredient", "interval.stockpile", "population.index",
   "population.first_eligible", "population.any_of", "population.criteria",
   "population.parent", "population.setop", "population.match",
@@ -394,6 +394,8 @@
     defaults = .irEffectiveDefaults(ir),
     roles = roles,
     column_classes = .irOutputColumnClasses(ir, handle),
+    concept_presentation = .conceptExplain(ir),
+    concept_classes = .conceptExplainClasses(ir, handle),
     site_findings = site_findings,
     unavailable = unavailable,
     unavailable_outputs = unavailable_outputs,

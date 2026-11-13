@@ -2154,6 +2154,15 @@
   # first byte is written: person/subject keys become authenticated resource-
   # scoped tokens and every other OMOP row/entity identifier is removed.
   if (!already_tokenized) df <- .pseudonymizeIdentifiers(df, key, pseudonymization)
+  if (.isPlanContext(ctx) && !.dsomopDpIsV2(ctx$ir) && is.null(attr(df, "omop_concepts"))) {
+    parts <- strsplit(output_name, ".", fixed = TRUE)[[1L]]
+    root <- parts[[1L]]
+    component <- if (length(parts) > 1L) tail(parts, 1L) else root
+    columns <- .conceptLegacyColumns(ctx, df, root, component)
+    attr(df, "omop_concept_reference") <- component %in% c("covariateRef", "analysisRef", "timeRef") ||
+      identical(ctx$ir$outputs[[root]]$type, "concept_dictionary")
+    df <- .conceptPresent(ctx, df, columns)
+  }
   max_rows <- suppressWarnings(as.numeric(
     getOption("dsomop.max_staged_rows", 50000000L)
   ))
@@ -2209,10 +2218,11 @@
       paste(typeof(col), paste(class(col), collapse = "/"), sep = "|")
     }, character(1))
   )
-  .buildStagedDescriptor(output_name, file_info, token,
+  descriptor <- .buildStagedDescriptor(output_name, file_info, token,
                          pseudonymization = pseudonymization,
                          semantic_contract = semantic_contract,
                          bundle_contract = bundle_contract)
+  .conceptStageCapture(df, descriptor)
 }
 
 #' Does this plan declare more than the implicit unrestricted base population?
@@ -3229,13 +3239,8 @@
   # away. Carried out of here as an attribute on the returned list (see tail).
   concept_cols_by_output <- list()
   options <- plan$options %||% list()
-  translate <- options$translate_concepts %||% TRUE
-  # Staged datasets are an interoperability boundary. Preserve standard OMOP
-  # concept IDs so every long output can stream and downstream OHDSI tools can
-  # join vocabulary tables without loading or mutating the fact dataset. Human
-  # labels belong in a separate concept-reference component, not in-place in a
-  # potentially massive event stream.
-  if (staged) translate <- FALSE
+  # A-27: compatibility computations use IDs; publication applies presentation.
+  translate <- FALSE
   block_sensitive <- options$block_sensitive %||% TRUE
 
   # Concept expansion cache: expand each unique concept set once
@@ -3943,7 +3948,7 @@
         stop("concept_dictionary is derived from other outputs and cannot ",
              "apply filters$custom directly.", call. = FALSE)
       }
-      results[[out_name]] <- if (staged) {
+      results[[out_name]] <- if (staged || !isFALSE(plan$options$translate_concepts)) {
         .buildDeclaredConceptDictionary(
           handle,
           outputs = outputs,
@@ -4045,6 +4050,13 @@
           } else {
             stop("Invalid SQL-backed temporal component.", call. = FALSE)
           }
+          if (!is.null(component$concept_support_sql)) {
+            support <- .executeQuery(handle, component$concept_support_sql)
+            total <- .executeQuery(handle, component$concept_total_sql)[[1L]][[1L]]
+            attr(desc, "omop_reference_support") <- list(
+              counts = setNames(as.integer(support$n), as.character(support$conceptId)),
+              total = as.integer(total))
+          }
           component_results[[comp_name]] <- desc
           staged_descriptors[[full_name]] <- desc
         }
@@ -4087,11 +4099,9 @@
     status <- .publishOutputs(ctx, results, out_symbols)
     if (exists(ctx$id, .publicationRegistry, inherits = FALSE)) rm(list = ctx$id, envir = .publicationRegistry)
     if (status$status == "refused") .publishReject(status$rejected[[1L]]$code)
-    if (staged) {
-      for (root in names(status$published)) for (component in names(status$published[[root]])) {
-        descriptor <- get(status$published[[root]][[component]]$symbol, ctx$target_env)
-        if (component == root) results[[root]] <- descriptor else results[[root]][[component]] <- descriptor
-      }
+    for (root in names(status$published)) for (component in names(status$published[[root]])) {
+      value <- get(status$published[[root]][[component]]$symbol, ctx$target_env)
+      if (component == root) results[[root]] <- value else results[[root]][[component]] <- value
     }
     results <- results[intersect(names(results), names(status$published))]
     attr(results, "omop_concept_cols") <- concept_cols_by_output

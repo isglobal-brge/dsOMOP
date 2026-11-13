@@ -7,6 +7,20 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- (A-27) Concept factors preserve their federation level contract during
+  model-frame subsetting, including locally absent categories in `ds.glm`.
+  Translated legacy dictionaries use the declared concept schema in both
+  memory and staged execution; they do not expose an observed ID inventory.
+
+- (A-27/CR-28) Concept-valued results are unordered factors by declared
+  semantic class, including aliased reducers and nested/staged references.
+  Vocabulary labels and generated concept names reconcile by ID across
+  retained sites; missing names fall back to decimal IDs, duplicate automatic
+  labels/names are disambiguated, and absent categories retain zero-count
+  levels. Computations and joins still use internal IDs. For numeric IDs
+  and untranslated generated names, use
+  `options = list(translate_concepts = FALSE)`.
+
 - (WS-7 review B4 follow-up) Reducers fetch declared BIGINT columns as exact
   decimal text before DBI conversion, preserving adjacent large integers and
   the signed minimum in mode and distinct counts. SQL ordering remains numeric
@@ -186,6 +200,13 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Newly permitted (previously refused by an intermediate or granularity gate)
 
+- (A-27/CR-28) Append `labels` and `column_names` to `omop_variable()` and
+  `omop_recipe()`. Variable maps override recipe maps. Equal explicit value
+  labels deliberately merge categories; explicit column names address stable
+  untranslated keys and never merge columns. Maps require native rendering.
+  Presentation-only federations may use different vocabulary versions;
+  comparable newest releases win, otherwise UTF-8 byte order breaks ties.
+
 - (A-11, A-12) Native reducers support first/last/nth selection with
   `missing = "keep"`, distinct day/visit/concept counts, unioned coverage,
   supply and observed days, and three-valued `any`/`all`; `all` over an
@@ -251,6 +272,13 @@ fills its entries. Classes follow design-2.10.3 section 5.
   A-20 item 4.)
 
 ## Newly refused
+
+- (A-27/CR-28) Translation with `factor_concepts = FALSE`, malformed maps,
+  invalid or colliding effective explicit names, old servers without
+  `output.concept_labels`, and incomplete/disclosure-unsafe shared factor
+  contracts fail clearly. Remove `factor_concepts = FALSE` or explicitly
+  disable translation. Reconciliation failures roll back the federation;
+  `on_small_site = "skip"` cannot bypass them.
 
 ### Structural
 - (WS-9 review B5; A-23) Class-1 source columns are refused by mutation and

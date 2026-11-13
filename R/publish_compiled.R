@@ -101,6 +101,8 @@
       frame <- component$frame
       if (is.null(frame)) frame <- .executeQuery(ctx$handle, component$statement)
       frame <- .publicationCompiledFrame(frame, component$fragment, candidate$output)
+      attr(frame, "omop_column_contract") <- component$fragment$columns
+      attr(frame, "omop_concept_reference") <- identical(candidate$grain, "none")
       .publishPrepare(ctx, candidate, frame)
       next
     }
@@ -136,12 +138,16 @@
         semantic_contract = contracts$semantic, bundle_contract = contracts$bundle)
     } else {
       frame <- transform(component$frame)
+      attr(frame, "omop_concept_reference") <- identical(candidate$grain, "none")
+      frame <- .conceptPresent(ctx, frame, component$fragment$columns)
       descriptor <- .stageDataFrame(frame, dataset, directory, ctx$staging_token,
         key, pseudonymization = pseudonymization,
         semantic_contract = contracts$semantic, bundle_contract = contracts$bundle,
         ctx = ctx, already_tokenized = TRUE)
       ctx$owned$files <- union(ctx$owned$files, descriptor$metadata$file)
     }
+    descriptor <- .conceptStagePresent(ctx, descriptor, component$fragment$columns,
+      candidate$output, candidate$component, identical(candidate$grain, "none"))
     # The component is now fully materialised privately. Count its own stored
     # tokens, resolving roster keys through the immutable equivalent token
     # namespace; no separate count query or raw-to-token comparison is used.

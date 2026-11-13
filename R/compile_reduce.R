@@ -863,6 +863,12 @@
   if (!identical(cons$roster$name, roster$name)) {
     stop("The variable consumer belongs to another roster.", call. = FALSE)
   }
+  record <- .compileVariableRecord(ctx, node, name, cons)
+  for (col in names(record$columns)) attr(record$columns[[col]], "concept_owner") <- name
+  record
+}
+
+.compileVariableRecord <- function(ctx, node, name, cons) {
   if (!is.null(node[["source"]])) return(.reduceSourceVariable(ctx, node, name, cons))
   if (!is.null(node[["derived"]])) return(.reduceDerivedVariable(ctx, node, name, cons))
   if (!is.null(node[["raw"]])) return(.reduceRawVariable(ctx, node, name, cons))
@@ -926,6 +932,7 @@
     return(.reduceEraVariable(ctx, node, name, cons, src))
   }
   value_col <- NULL
+  value_concept <- FALSE
   value_type <- "numeric"
   needs_value <- fn %in% .REDUCER_VALUE_FNS || identical(fn, "mode") ||
     (identical(fn, "n_distinct") && !is.null(r[["value"]]))
@@ -937,6 +944,7 @@
   if (needs_value && (src$available || declared)) {
     res <- .predicateResolve(src$catalogue, requested, paste0(field, "/value"))
     value_col <- res$column
+    value_concept <- isTRUE(res$concept)
     value_type <- if (res$type %in% c("integer", "bigint")) res$type else
       if (identical(res$type, "text")) "text" else if (identical(res$type, "date")) "date" else
         "numeric"
@@ -949,6 +957,9 @@
   out_names <- .reduceColumnNames(name, r)
   columns <- stats::setNames(lapply(out_names, function(c) .fragmentColumn(type, TRUE, "measure")),
                              out_names)
+  if (value_concept && fn %in% c("first_value", "last_value", "nth_value", "closest_value", "mode", "min", "max")) {
+    for (col in names(columns)) attr(columns[[col]], "concept") <- TRUE
+  }
   if (!src$available) return(.reduceUnavailable(ctx, cons, name, columns))
   window <- r[["window"]]
   h <- .compileDialect(ctx)
@@ -1419,11 +1430,11 @@
     }),
     race = , ethnicity = {
       col <- paste0(kind, "_concept_id")
-      translate <- .reduceTranslate(ctx)
-      one(if (translate) "text" else "integer", function(roster) {
-        ids <- suppressWarnings(as.integer(person_col(roster, col)))
-        if (translate) .reduceConceptNames(ctx, ids) else ids
+      record <- one("integer", function(roster) {
+        suppressWarnings(as.integer(person_col(roster, col)))
       })
+      record$columns[[name]]$role <- "concept"
+      record
     },
     demo_missingness = one("integer", function(roster) {
       p <- .reducePersonFrame(ctx, cons)
@@ -1725,10 +1736,10 @@
     }
   }
   if (identical(ftype, "bigint")) ftype <- "numeric"
-  concept <- grepl("_concept_id$", column)
-  translate <- concept && .reduceTranslate(ctx)
-  out_type <- if (translate) "text" else ftype
-  columns <- stats::setNames(list(.fragmentColumn(out_type, TRUE, "measure")), name)
+  concept <- .conceptDeclaredColumn(column, col_df)
+  translate <- FALSE
+  out_type <- ftype
+  columns <- stats::setNames(list(.fragmentColumn(out_type, TRUE, if (concept) "concept" else "measure")), name)
   qualified <- .reduceTable(ctx, table)
   person_key <- if (identical(table, "person")) "person_id" else
     (.roleOf(ctx[["handle"]], table)[["person"]] %||% "person_id")

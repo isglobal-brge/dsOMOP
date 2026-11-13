@@ -500,7 +500,9 @@
   }
   pairs <- if (length(pairs)) do.call(rbind, pairs) else
     data.frame(source = character(0), concept_id = integer(0), stringsAsFactors = FALSE)
-  info <- if (nrow(pairs)) .vocabLookupConcepts(ctx[["handle"]], unique(pairs$concept_id)) else NULL
+  vocab_bp <- .buildBlueprint(ctx[["handle"]])
+  vocab_present <- "concept" %in% vocab_bp$tables$table_name[vocab_bp$tables$present_in_db]
+  info <- if (nrow(pairs) && vocab_present) .vocabLookupConcepts(ctx[["handle"]], unique(pairs$concept_id)) else NULL
   pick <- function(col) {
     if (is.null(info) || !col %in% names(info)) return(rep(NA_character_, nrow(pairs)))
     as.character(info[[col]][match(pairs$concept_id, info$concept_id)])
@@ -1828,6 +1830,8 @@
         if (!is.null(sel) && identical(a, "exposed_days")) event_any <- event_any | values > 0L
         frame[[col]] <- if (a %in% c("mean", "last")) as.numeric(values) else as.integer(values)
         columns[[col]] <- if (a %in% c("mean", "last")) .fragmentColumn("numeric", TRUE, "measure") else int()
+        if (!single && !is.na(cid)) attr(columns[[col]], "concept_name") <- list(
+          id = as.character(cid), prefix = paste0(idn$name, "_"), suffix = paste0("_", a), owner = idn$name, declared = TRUE)
       }
       if (!is.null(sp$carry)) {
         col <- paste0(stem, "_carry")
@@ -1853,6 +1857,8 @@
         } else unavailable <- TRUE
         frame[[col]] <- values
         columns[[col]] <- .fragmentColumn("numeric", TRUE, "measure")
+        if (!single && !is.na(cid)) attr(columns[[col]], "concept_name") <- list(
+          id = as.character(cid), prefix = paste0(idn$name, "_"), suffix = "_carry", owner = idn$name, declared = TRUE)
       }
     }
   }
@@ -2274,6 +2280,13 @@
     if ("visit_type" %in% derived) {
       frame$visit_type <- as.integer(rows$visit_type)
       columns$visit_type <- .fragmentColumn("integer", TRUE, "concept")
+    }
+    for (oc in others) {
+      classifications <- vapply(.outputSources(node), function(ref) {
+        catalogue <- .reduceSource(ctx, ref)$catalogue
+        isTRUE(catalogue$columns[[oc]]$concept)
+      }, logical(1))
+      if (length(classifications) && all(classifications)) attr(columns[[oc]], "concept") <- TRUE
     }
     if ("concept_name" %in% derived) {
       frame$concept_name <- .reduceConceptNames(ctx, as.integer(rows$concept_id))
