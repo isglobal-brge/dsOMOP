@@ -270,6 +270,12 @@ capability block remains authoritative while compilers are integrated.
 
 ## Corrected
 
+- Protected concept reconciliation retains the authenticated release-person
+  map and snapshot provenance when resealing. Outputs without concept fields
+  or generated concept names retain their existing metadata and values.
+- BIGINT reducers preserve exact decimal values, including empty and all-NULL
+  streams. Existing recipes need no driver options or changes.
+
 - (A-27 review F2/P1) `ds.omop.table()` preserves arbitrary permitted labels,
   including commas, through temporary protected analysis copies with lossless
   category tokens. Counts map back to the exact public level contract, including

@@ -2160,8 +2160,8 @@
     root <- parts[[1L]]
     component <- if (length(parts) > 1L) tail(parts, 1L) else root
     columns <- .conceptLegacyColumns(ctx, df, root, component)
-    attr(df, "omop_concept_reference") <- component %in% c("covariateRef", "analysisRef", "timeRef") ||
-      identical(ctx$ir$outputs[[root]]$type, "concept_dictionary")
+    attr(df, "omop_concept_reference") <- if (component %in% c("covariateRef", "analysisRef", "timeRef") ||
+      identical(ctx$ir$outputs[[root]]$type, "concept_dictionary")) TRUE else NULL
     df <- .conceptPresent(ctx, df, columns)
   }
   max_rows <- suppressWarnings(as.numeric(

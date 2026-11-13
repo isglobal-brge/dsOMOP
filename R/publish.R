@@ -428,7 +428,7 @@
     if (is.data.frame(value)) {
       columns <- attr(value, "omop_column_contract")
       if (is.null(columns) && !.dsomopDpIsV2(ctx$ir)) columns <- .conceptLegacyColumns(ctx, value, pc$output, pc$component)
-      attr(value, "omop_concept_reference") <- identical(pc$grain, "none")
+      attr(value, "omop_concept_reference") <- if (identical(pc$grain, "none")) TRUE else NULL
       if (!is.null(columns)) value <- .conceptPresent(ctx, value, columns)
     }
     if (inherits(value, "FlowerDatasetDescriptor") && !.dsomopDpIsV2(ctx$ir)) {
