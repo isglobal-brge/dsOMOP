@@ -130,7 +130,6 @@ test_that("A-20(b): matching templates inventory nested search anchors in their 
   expect_setequal(key(anchors$final[[cases]]), expected)
   expect_setequal(key(anchors$final$cc), expected)
   expect_length(anchors$candidate$eligible, 2L)
-  expect_length(anchors$final[[cases]], 2L)
   expect_length(anchors$final$cc, 2L)
   expect_length(anchors$final[[cases]], 2L)
   expect_length(anchors$candidate[[cases]], 0L)

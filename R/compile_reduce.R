@@ -141,10 +141,20 @@
 #' @return data.frame.
 #' @keywords internal
 .reduceFetch <- function(ctx, f, order = NULL, field = "/outputs") {
+  h <- .compileDialect(ctx)
+  # Cast only the final transport projection: DBI doubles can round BIGINTs,
+  # and integer64 uses the signed minimum as its missing-value sentinel.
+  # The fragment and all upstream SQL retain their declared numeric types.
+  projection <- vapply(names(f$columns), function(col) {
+    expr <- paste0("rf.", col)
+    if (identical(f$columns[[col]]$type, "bigint")) expr <- .sqlLosslessKeyText(h, expr)
+    paste0(expr, " AS ", col)
+  }, "")
   sql <- .buildStatement(ctx, f, select = paste0(
-    "SELECT * FROM ", f$name,
-    if (length(order)) paste0(" ORDER BY ", paste(order, collapse = ", "))),
-    dialect = .compileDialect(ctx))
+    "SELECT ", paste(projection, collapse = ", "), " FROM ", f$name, " rf",
+    # Qualify against the original columns, never the decimal-text aliases.
+    if (length(order)) paste0(" ORDER BY ", paste0("rf.", order, collapse = ", "))),
+    dialect = h)
   rows <- .reduceFetchSql(ctx, sql, field)
   .reduceTypeFrame(rows, f)
 }
