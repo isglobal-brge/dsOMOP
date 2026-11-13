@@ -493,7 +493,11 @@
 #' @return Character vector of 64-character hex tokens.
 #' @keywords internal
 .dsomopReleasePersonTokens <- function(keys, policy, ids) {
-  text <- .dsomopReleasePersonIdText(ids)
+  .dsomopReleaseCanonicalPersonTokens(keys, policy, .dsomopReleasePersonIdText(ids))
+}
+
+# Internal entry for builders that have already normalized person identifiers.
+.dsomopReleaseCanonicalPersonTokens <- function(keys, policy, text) {
   if (anyNA(text) || any(!nzchar(text))) {
     stop("Protected releases need a person identifier for every row.",
          call. = FALSE)
@@ -1037,8 +1041,10 @@
   # release; failures use the generic disclosure error.
   n_total <- length(unique(sub$person_id))
   if (n_total < support$floor) .dsomopReleaseDisclosive()
-  tokens <- if (nrow(sub)) .dsomopReleasePersonTokens(keys, policy,
-                                                      sub$person_id) else
+  # Person IDs are already canonical above. Hash them once, without repeating
+  # the million-row text normalization in the general token entry point.
+  tokens <- if (nrow(sub)) .dsomopReleaseCanonicalPersonTokens(keys, policy,
+                                                               sub$person_id) else
     character(0)
   cap <- max(1L, owner$cap)
   frac <- .DSOMOP_RELEASE_FRACTIONS
@@ -1050,8 +1056,8 @@
     !isTRUE(n_only)
 
   # Strata to release.
-  exact_n <- table(factor(sub$stratum))
   if (identical(owner$strata$kind, "data")) {
+    exact_n <- table(factor(sub$stratum))
     supported <- names(exact_n)[as.numeric(exact_n) >= support$floor]
     strata_keys <- if (is.null(data_strata_keys)) supported else
       intersect(as.character(data_strata_keys), supported)
@@ -1071,7 +1077,9 @@
   token_order <- order(tokens, method = "radix")
   tokens <- tokens[token_order]
   sub <- sub[token_order, , drop = FALSE]
-  unit_records <- paste0(nchar(tokens, type = "bytes"), ":", tokens, ":1")
+  # SHA-256 tokens have exactly 64 ASCII bytes. Keep the identical framing,
+  # avoiding a length scan and integer-to-text conversion for every row.
+  unit_records <- paste0("64:", tokens, ":1")
 
   noisy <- function(family, coordinate, value, allocation, sensitivity,
                     map_rows, contributions, owner_id = owner$id,
@@ -1674,8 +1682,10 @@
     stop("A person-time substrate has a stratum outside its public domain.",
          call. = FALSE)
   }
-  tokens <- if (nrow(sub)) .dsomopReleasePersonTokens(keys, policy,
-                                                      sub$person_id) else
+  # Person IDs are already canonical above. Hash them once, without repeating
+  # the million-row text normalization in the general token entry point.
+  tokens <- if (nrow(sub)) .dsomopReleaseCanonicalPersonTokens(keys, policy,
+                                                               sub$person_id) else
     character(0)
   # Status and time belong to their own scientific owners (first-outcome
   # status of this outcome definition; observed person-time of this time

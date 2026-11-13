@@ -7,26 +7,43 @@
 .dsomopDpBitStream <- function(key, context, coordinate, draw = 0L) {
   coordinate <- .dsomopBigDecimal(coordinate)
   draw <- .dsomopBigInteger(draw)
-  buffer <- raw(0L)
+  buffer <- integer(0L)
   position <- 1L
-  function() {
-    if (position > length(buffer)) {
-      digest <- .dsomopDpHmacRaw(key, .dsomopDpCanonicalJson(list(
-        protocol = "dsomop-dp-hmac-bit-stream-v1",
-        context = context,
-        coordinate = coordinate,
-        draw = .dsomopBigDecimal(draw)
-      )))
-      # rawToBits uses least-significant bit first within each byte. Consume
-      # all 256 bits, then advance an arbitrary-precision block counter.
-      buffer <<- rawToBits(digest)
-      position <<- 1L
-      draw <<- .dsomopBigAdd(draw, 1L)
-    }
-    bit <- as.integer(buffer[[position]])
+  refill <- function() {
+    digest <- .dsomopDpHmacRaw(key, .dsomopDpCanonicalJson(list(
+      protocol = "dsomop-dp-hmac-bit-stream-v1",
+      context = context,
+      coordinate = coordinate,
+      draw = .dsomopBigDecimal(draw)
+    )))
+    # Preserve the original least-significant-bit-first order in each byte.
+    buffer <<- as.integer(rawToBits(digest))
+    position <<- 1L
+    draw <<- .dsomopBigAdd(draw, 1L)
+  }
+  next_bit <- function() {
+    if (position > length(buffer)) refill()
+    bit <- buffer[[position]]
     position <<- position + 1L
     bit
   }
+  # Uniform-integer sampling consumes a known number of bits. Copy the same
+  # consecutive bits in blocks, avoiding an R closure call for every bit.
+  # This request-local cursor is shared with scalar Bernoulli draws; neither
+  # unused bits nor the arbitrary-precision block counter are discarded.
+  attr(next_bit, "take") <- function(n) {
+    out <- integer(n)
+    filled <- 0L
+    while (filled < n) {
+      if (position > length(buffer)) refill()
+      count <- min(n - filled, length(buffer) - position + 1L)
+      out[filled + seq_len(count)] <- buffer[position - 1L + seq_len(count)]
+      position <<- position + count
+      filled <- filled + count
+    }
+    out
+  }
+  next_bit
 }
 
 # Uniform integer in [0, n), using bit rejection rather than reduction modulo n.
@@ -34,11 +51,11 @@
   n <- .dsomopBigInteger(n)
   if (.dsomopBigCompare(n, 1L) == 0L) return(.dsomopBigInteger(0L))
   width <- .dsomopBigBitLength(.dsomopBigSubtract(n, 1L))
+  take <- attr(bits, "take", exact = TRUE)
   repeat {
     # Most significant bit first, as value <- 2 * value + bit.
-    value <- .dsomopBigFromBits(
-      vapply(seq_len(width), function(i) bits(), integer(1L))
-    )
+    value <- .dsomopBigFromBits(if (is.function(take)) take(width) else
+      vapply(seq_len(width), function(i) bits(), integer(1L)))
     if (.dsomopBigCompare(value, n) < 0L) return(value)
   }
 }
