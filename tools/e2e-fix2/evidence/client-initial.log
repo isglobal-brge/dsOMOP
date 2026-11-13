@@ -1,0 +1,9 @@
+FAILURES BY FILE
+            file blocks failed errors
+ test-versions.R      1      2      0
+
+FAILING TESTS
+test-versions.R | protocol advice distinguishes a current partial profile from an old installation | failed=2 error=FALSE
+
+RESULT failed: 2 errors: 0 skipped: 0 passed: 3060 
+RESULT failed: 2 errors: 0 skipped: 0 passed: 3060 

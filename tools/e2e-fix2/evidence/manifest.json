@@ -1,0 +1,12 @@
+{
+  "server": "87bc430",
+  "client": "398f759",
+  "harness": "091e103",
+  "harness_test_source_sha256": {
+    "scripts/common.R": "bf33a33cd8754be80b5f094fc09b81039fa0b4bdbf16efccd044120ae5195afb",
+    "scripts/scenario_G.R": "cc92b0d655f1c9222353f253ea9d5817ed961e20d56a71c0ec105f5389c184a2",
+    "scripts/g_contract.R": "33e6c2b420083fe95e38347ab1893d79efa9de8c44745f9459adeaf67df7adeb",
+    "scripts/omopbig.sh": "c1b48d34c059746bb59c403af890595bf1fe28b6277e697422214172682dc76c",
+    "scripts/tests/g-contract.R": "0b65a23d344c831f68c944edacfce9a1fa2d7eddf3bb0b7bb66b158899f8fa09"
+  }
+}
