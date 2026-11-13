@@ -1,5 +1,12 @@
 # dsOMOP 2.10.3 (2026-11-13)
 
+- Corrected: an unavailable protected MDRR now carries an explanatory
+  `unavailable_reason` in its protection label, including the CohortMethod
+  aliases, diagnostics summary and standard-mode protected block. The reason
+  depends only on the protected result; counts, noise and support gates are
+  unchanged. Re-run the analysis to receive the label; no recipe changes
+  are needed.
+
 - Corrected: large protected releases reuse a request-local OpenSSL HMAC
   context for person tokens and streams contribution chunks when system headers
   are available. Hash framing,
