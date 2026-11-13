@@ -176,6 +176,7 @@
     .irReject(paste0("output '", name, "' carries the v1 compatibility variant ", legacy[[1L]],
                      ", which runs on the v1 executors"), field = paste0("/outputs/", name))
   }
+  .dateCheckOutputSlots(ctx, node)
   co <- switch(node[["format"]] %||% "",
     wide = .compileWideOutput(ctx, node, name, inputs),
     long = .compileLongOutput(ctx, node, name, inputs),

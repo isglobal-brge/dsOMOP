@@ -160,13 +160,18 @@
   list(frame=frame,columns=columns)
 }
 
-.dateOutputCovariates <- function(ctx,node,inputs,co) {
-  fmt<-node$format
-  if(fmt %in% c("wide","long")) return(co)
+.dateOutputVariables <- function(ctx,node) {
+  if(node$format %in% c("wide","long")) return(character())
   vars<-.irOutputVariables(ctx$ir,.compileNodeName(node,"output"))
-  vars<-vars[vapply(ctx$ir$variables[vars],function(v)!is.null(v$date_spec)||(v$derived$kind %||% "") %in% .DATE_KINDS,logical(1))]
+  vars[vapply(ctx$ir$variables[vars],function(v)!is.null(v$date_spec)||(v$derived$kind %||% "") %in% .DATE_KINDS,logical(1))]
+}
+.dateCheckOutputSlots <- function(ctx,node) {
+  if(length(.dateOutputVariables(ctx,node)) && node$format %in% c("sparse","temporal_covariates","dictionary")) .dateReject(paste0("Format '",node$format,"' has no roster date-variable slot; use a wide typed companion output and join it for analysis."))
+  invisible(NULL)
+}
+.dateOutputCovariates <- function(ctx,node,inputs,co) {
+  vars<-.dateOutputVariables(ctx,node)
   if(!length(vars)) return(co)
-  if(fmt %in% c("sparse","temporal_covariates","dictionary")) .dateReject(paste0("Format '",fmt,"' has no roster date-variable slot; use a wide typed companion output and join it for analysis."))
   pop<-inputs$population;name<-.compileNodeName(node,"output")
   cons<-.reduceConsumer(ctx,name,pop$roster,pop$coverage,node$grain)
   for(v in vars) {
