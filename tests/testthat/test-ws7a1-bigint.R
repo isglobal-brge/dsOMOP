@@ -43,7 +43,7 @@ test_that("compiled modes retain full signed BIGINT domain across vendors", {
         f <- .fragment("ws7a1_fetch", "stream", "none", paste0(
           "SELECT measurement_id AS event_id, r2_amount AS amount, ",
           "value_as_number AS num, measurement_date AS day, r2_text AS label FROM ", table,
-          " WHERE measurement_id IN (970001, 970002, 970003)"), columns)
+          " WHERE measurement_id IN (970001, 970002, 970003)"), columns, private_columns = "event_id")
         .fragmentRegister(run$cctx, f)
         rows <- .reduceFetch(run$cctx, f, order = "event_id")
         expect_identical(names(rows), names(columns))
@@ -59,7 +59,7 @@ test_that("compiled modes retain full signed BIGINT domain across vendors", {
         numeric <- .fragment("ws7a1_numeric", "stream", "none", paste0(
           "SELECT a.event_id, a.amount + 1 AS amount, a.num, a.day, a.label FROM ",
           f$name, " a INNER JOIN ", f$name, " z ON a.amount = z.amount ",
-          "WHERE a.amount < ", v[[1L]]), columns, dependencies = f$name)
+          "WHERE a.amount < ", v[[1L]]), columns, dependencies = f$name, private_columns = "event_id")
         .fragmentRegister(run$cctx, numeric)
         calculated <- .reduceFetch(run$cctx, numeric, order = "amount")
         expect_identical(calculated$event_id, "970002")
@@ -123,9 +123,12 @@ test_that("public BIGINT mode agrees with stored SQL integers in both publicatio
         on.exit(.publishAbort(ctx), add = TRUE)
         got <- target$released
         if (inherits(got, "FlowerDatasetDescriptor")) {
+          expect_identical(got$metadata$column_types[["nd"]], "integer|integer")
+          expect_identical(got$metadata$column_types[["m"]], "character|character")
           chunks <- list()
           .publishReadChunks(got, function(x) chunks[[length(chunks) + 1L]] <<- x)
           got <- do.call(rbind, chunks)
+          got$nd <- as.integer(got$nd)
         }
         expect_equal(nrow(got), 5L)
         expect_length(unique(got$person_id), 5L)
@@ -146,4 +149,80 @@ test_that("public BIGINT mode agrees with stored SQL integers in both publicatio
     }
   })
   expect_identical(length(issues), 0L, info = paste(capture.output(str(issues)), collapse = "\n"))
+})
+
+# B4: stable private and public types for the same declared BIGINT plan.
+test_that("All-NULL and empty BIGINT streams retain their publication type", {
+  withr::local_options(list(dsomop.allowed_cdm_extensions = list(measurement = "a1_amount")))
+  backends <- .ws7_scenario_backends()
+  on.exit(.ws4_cleanup(backends), add = TRUE)
+  expect_setequal(names(backends), c("sqlite", "duckdb", "postgresql", "mariadb", "mysql"))
+  for (b in names(backends)) local({
+    h <- backends[[b]]$handle
+    table <- .qualifyTable(h, "measurement", h$cdm_schema)
+    DBI::dbExecute(h$conn, paste0("ALTER TABLE ", table, " ADD COLUMN a1_amount BIGINT"))
+    h$blueprint <- h$role_registry <- NULL
+    .ws7_keys(list(h))
+    handle_name <- paste0("ws7a2_null_schema_", b)
+    .setHandle(handle_name, h)
+    on.exit(rm(list = paste0("handle_", handle_name), envir = .dsomop_env), add = TRUE)
+    restore <- .ws7_seed_cohort(h, .ws7_scenario_frame(c(7001, 7003, 7004, 7005, 7006)))
+    on.exit(restore(), add = TRUE)
+    plan <- .ws7_scenario_plan(list(
+      m = list(source = list(event = "lab"), reducer = list(fn = "mode", value = "a1_amount")),
+      nd = list(source = list(event = "lab"), reducer = list(fn = "n_distinct", value = "a1_amount"))))
+    for (case in c("populated", "all_null", "empty")) {
+      if (case == "populated") DBI::dbExecute(h$conn,
+        paste0("UPDATE ", table, " SET a1_amount = CASE measurement_id WHEN 970001 THEN -9223372036854775808 ELSE NULL END"))
+      if (case == "all_null") DBI::dbExecute(h$conn, paste0("UPDATE ", table, " SET a1_amount = NULL"))
+      if (case == "empty") DBI::dbExecute(h$conn, paste0("DELETE FROM ", table))
+      local({
+        run <- .ws7_ctx(h, plan)
+        on.exit(.ws7_close(run), add = TRUE)
+        f <- .fragment("astra_a1_null_fetch", "stream", "none",
+          paste0("SELECT a1_amount AS amount FROM ", table), list(amount = .fragmentColumn("bigint", TRUE, "measure")))
+        .fragmentRegister(run$cctx, f)
+        rows <- .reduceFetch(run$cctx, f)
+        message("NULL_FETCH backend=", b, " case=", case, " rows=", nrow(rows), " type=", typeof(rows$amount))
+        expect_identical(typeof(rows$amount), "character", info = paste(b, case))
+        if (case == "empty") expect_identical(rows$amount, character(0))
+        if (case == "all_null") {
+          expect_gt(nrow(rows), 0L)
+          expect_identical(rows$amount, rep(NA_character_, nrow(rows)))
+        }
+      })
+      for (mode in c("memory", "staged")) local({
+        target <- new.env(parent = emptyenv())
+        status <- withr::with_options(list(nfilter.subset = 5L),
+          .omopPlanExecuteDS(handle_name, plan, list(o = "released"), output_mode = mode, target_env = target))
+        expect_identical(status$status, "ok")
+        ctx <- get(attr(status, "execution_id"), .publicationRegistry)
+        on.exit(.publishAbort(ctx), add = TRUE)
+        got <- target$released
+        if (inherits(got, "FlowerDatasetDescriptor")) {
+          schema <- got$metadata$column_types[["m"]]
+          expect_identical(got$metadata$column_types[["nd"]], "integer|integer")
+          chunks <- list()
+          .publishReadChunks(got, function(x) chunks[[length(chunks) + 1L]] <<- x)
+          got <- do.call(rbind, chunks)
+          got$nd <- as.integer(got$nd)
+        } else schema <- paste(typeof(got$m), class(got$m), sep = "|")
+        message("NULL_PUBLIC backend=", b, " case=", case, " mode=", mode, " status=", status$status,
+          " rows=", nrow(got), " mode_schema=", schema, " missing=", sum(is.na(got$m)))
+        expect_equal(nrow(got), 5L)
+        expect_length(unique(got$person_id), 5L)
+        expect_true(all(grepl("^p2", got$person_id)))
+        expect_identical(schema, "character|character", info = paste(b, case, mode))
+        if (case == "populated") {
+          expect_identical(got$m, c("-9223372036854775808", rep(NA_character_, 4L)))
+          expect_identical(got$nd, c(1L, rep(0L, 4L)))
+        } else {
+          expect_true(all(is.na(got$m)))
+          expect_identical(got$nd, rep(0L, 5L))
+        }
+        expect_true(ctx$closed)
+        expect_length(ctx$compile_context$compile_temp_tables, 0L)
+      })
+    }
+  })
 })

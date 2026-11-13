@@ -166,6 +166,9 @@
     type <- f$columns[[col]]$type
     x <- rows[[col]]
     rows[[col]] <- switch(type,
+      # The final SQL projection already preserves exact BIGINT decimal text.
+      # Drivers may still return logical vectors for all-NULL or empty results.
+      bigint = as.character(x),
       date = if (inherits(x, "Date")) x else as.Date(substr(as.character(x), 1L, 10L)),
       integer = if (is.character(x)) x else if (is.logical(x) && all(is.na(x))) {
         rep(NA_integer_, length(x))

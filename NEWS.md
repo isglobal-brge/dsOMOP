@@ -10,7 +10,9 @@ fills its entries. Classes follow design-2.10.3 section 5.
 - (WS-7 review B4 follow-up) Reducers fetch declared BIGINT columns as exact
   decimal text before DBI conversion, preserving adjacent large integers and
   the signed minimum in mode and distinct counts. SQL ordering remains numeric
-  and NULLs remain missing. Existing recipes need no changes or driver options.
+  and NULLs remain missing. All-NULL and empty BIGINT streams retain the same
+  character representation and published mode schema as populated streams.
+  Existing recipes need no changes or driver options.
 - (WS-7 review B1–B4, N1) Panels reject duplicate generated, reserved and
   carry column names before reading panel values. Person-grain sparse
   outputs select first/last episodes from the complete roster, including
