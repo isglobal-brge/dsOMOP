@@ -98,3 +98,33 @@ test_that("D38 paired invalid endpoints and D41 joined metadata remain typed", {
     expect_error(.ws7_scenario_run(h,p),"no roster date-variable slot")
   }
 })
+
+test_that("D31 all native age units agree with independent birthday fixtures", {
+  p<-.ws7_scenario_plan(setNames(lapply(c("days","weeks","months","years","decimal_years"),function(u).date_var("index",kind="age_at",unit=u)),c("days","weeks","months","years","decimal_years")))
+  f<-.ws7_scenario_run(.date_backends$sqlite$handle,p)$frame
+  expect_identical(.ws7_value(f,7001,"days"),18271L)
+  expect_equal(.ws7_value(f,7001,"weeks"),18271/7)
+  expect_identical(.ws7_value(f,7001,"months"),600L)
+  expect_identical(.ws7_value(f,7001,"years"),50L)
+  expect_equal(.ws7_value(f,7001,"decimal_years"),50+9/366)
+})
+
+test_that("D39 mixed native and legacy dates resolve policies per column", {
+  p<-.ws7_scenario_plan(list(native=.date_var("index"),legacy=list(raw=list(table="death",column="death_date"))))
+  h<-.date_backends$sqlite$handle
+  a<-.ws7_scenario_run(h,p)$frame
+  expect_s3_class(a$native,"Date");expect_true(is.integer(a$legacy))
+  p$outputs$o$options<-list(date_handling=list(mode="relative",date_columns=list("legacy")))
+  b<-.ws7_scenario_run(h,p)$frame
+  expect_identical(a$native,b$native);expect_identical(a$legacy,b$legacy)
+  n<-.planNormalizeV2(p);expect_identical(.planNormalizeV2(n),n)
+  p$outputs$o$options$date_handling$date_columns<-list("native")
+  expect_error(.planNormalizeV2(p),"date_policy_conflict")
+  p$options<-list(date_spec=list(precision="month"));p$outputs$o$options$date_handling$date_columns<-list("legacy")
+  expect_error(.planNormalizeV2(p),"date_policy_conflict")
+  p$options<-NULL;p$outputs$o$options<-NULL;p$variables$legacy$date_spec<-list(precision="month")
+  c<-.ws7_scenario_run(h,p)$frame
+  expect_true(is.ordered(c$legacy))
+  p$variables$bad<-list(source=list(event="lab"),reducer=list(fn="count"),date_spec=list(precision="month"))
+  expect_error(.ws7_scenario_run(h,p),"numeric measures are not timestamps")
+})
