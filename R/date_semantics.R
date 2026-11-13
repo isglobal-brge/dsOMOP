@@ -174,6 +174,7 @@
 .DATE_MONTHS <- c("January","February","March","April","May","June","July","August","September","October","November","December")
 .DATE_DAYS <- c("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday")
 .dateRender <- function(d,p,tokens=.datePatternTokens(p)) {
+  if(!length(d)) return(character())
   w<-.dateWeek(d);m<-.dateM(d);u<-.dateW(d)
   values<-list(Y=sprintf("%04d",.dateY(d)),m=sprintf("%02d",m),d=sprintf("%02d",.dateD(d)),j=sprintf("%03d",as.integer(d-.dateMake(.dateY(d),1,1))+1L),G=sprintf("%04d",w$year),V=sprintf("%02d",w$number),u=as.character(u),b=substr(.DATE_MONTHS[m],1,3),B=.DATE_MONTHS[m],a=substr(.DATE_DAYS[u],1,3),A=.DATE_DAYS[u],"%"=rep("%",length(d)))
   out<-rep("",length(d))

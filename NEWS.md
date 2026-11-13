@@ -4,7 +4,8 @@
 
 - Corrected (DATES-B4): year-bearing custom factors include every year in a
   declared `level_range`, including unused middle years and ISO boundary weeks.
-  Empty or disjoint observed dates no longer cause valid public keys to refuse
+  Empty inputs stay empty, including patterns with literal separators. Empty
+  or disjoint observed dates no longer cause valid public keys to refuse
   publication. Re-execute affected recipes; no declaration changes are needed.
 
 - Corrected (DATES-B1–B3): native date reducers and raw date columns apply the
