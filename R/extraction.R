@@ -644,10 +644,6 @@
 
   if (mode == "binned") {
     bin_width <- date_handling$bin_width %||% "month"
-    if (nrow(df) == 0L) {
-      for (col in date_columns) df[[col]] <- character(0)
-      return(df)
-    }
     for (col in date_columns) {
       col_dates <- as_date(df[[col]], col)
       df[[col]] <- switch(bin_width,
@@ -660,6 +656,9 @@
         }
       )
     }
+    domains <- attr(df, "omop_category_columns") %||% list()
+    for (col in date_columns) domains[[col]] <- list(calendar = list(category = "legacy_date_bin", precision = bin_width))
+    attr(df, "omop_category_columns") <- domains
     return(df)
   }
 }

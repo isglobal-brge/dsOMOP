@@ -11,7 +11,17 @@
 # A-27 uses the existing descriptor and controlled factor transport. The
 # descriptor's presentation capsule stays server-side and is manifest-bound.
 .conceptStageCapture <- function(df, descriptor) {
+  # Ordinary categorical columns also need their complete domain in CSV and
+  # Parquet. This capsule is private and bound by the descriptor manifest.
   contracts <- attr(df, "omop_concepts") %||% list()
+  controlled <- names(contracts)
+  mapping <- attr(df, "omop_column_names")
+  if (length(mapping)) controlled <- unname(mapping[controlled])
+  # Reconciled concept/date labels can change later. Only their own current
+  # capsule may restore them, otherwise an old domain would turn new labels NA.
+  factors <- df[setdiff(names(df)[vapply(df, is.factor, logical(1))], controlled)]
+  if (length(factors)) descriptor$metadata$factor_domains <- .conceptEncode(
+    lapply(factors, function(x) list(levels = levels(x), ordered = is.ordered(x))))
   generated <- attr(df, "omop_generated_columns") %||% list()
   if (!length(contracts) && !length(generated)) return(descriptor)
   keys <- intersect(.PERSON_KEY_COLS(), names(df))
@@ -154,7 +164,7 @@
         writer <<- arrow::ParquetFileWriter$create(schema = table$schema, sink = sink,
           properties = arrow::ParquetWriterProperties$create(column_names = names(frame)))
       }
-      writer$WriteTable(table)
+      writer$WriteTable(table, chunk_size = max(1L, nrow(frame)))
     } else .stagedWriteCsv(frame, pending,
                               col.names = first, append = !first)
     first <<- FALSE
@@ -262,7 +272,7 @@
         writer <<- arrow::ParquetFileWriter$create(schema = table$schema, sink = sink,
           properties = arrow::ParquetWriterProperties$create(column_names = names(frame)))
       }
-      writer$WriteTable(table)
+      writer$WriteTable(table, chunk_size = max(1L, nrow(frame)))
     } else .stagedWriteCsv(frame, pending,
       col.names = first, append = !first)
     first <<- FALSE

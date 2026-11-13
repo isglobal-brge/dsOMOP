@@ -371,6 +371,7 @@
           week = ifelse(is.na(x), NA_character_,
                         format(x - (as.integer(format(x, "%u")) - 1L), "%Y-%m-%d")))
         columns[[d]] <- .fragmentColumn("text", TRUE, columns[[d]]$role)
+        attr(columns[[d]], "category_domain") <- list(calendar = list(category = "legacy_date_bin", precision = width))
       }
     })
   list(frame = frame, columns = columns)
@@ -1748,16 +1749,19 @@
     frame$age_band <- as.integer(age %/% width)
     columns$age <- int()
     columns$age_band <- int()
+    attr(columns$age_band, "category_domain") <- list(calendar = list(category = "age_band_index", width = width))
   }
   bins_cal <- opts[["bins"]][["calendar"]]
   part_cal <- opts[["partition"]][["calendar"]]
   if (identical(bins_cal, "year") || identical(part_cal, "year")) {
     frame$calendar_year <- as.integer(format(ps, "%Y"))
     columns$calendar_year <- int()
+    attr(columns$calendar_year, "category_domain") <- list(calendar = list(category = "calendar_year"))
   }
   if (identical(part_cal, "month")) {
     frame$calendar_month <- as.integer(format(ps, "%m"))
     columns$calendar_month <- int()
+    attr(columns$calendar_month, "category_domain") <- list(levels = as.character(1:12), calendar = list(category = "month_of_year"))
   }
   # period lookup of dated rows
   period_of <- function(rows) {

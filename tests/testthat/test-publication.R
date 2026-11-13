@@ -247,3 +247,16 @@ test_that("zero-row patient components fail while reference-only outputs are exe
                    data.frame(label = character(0)), already_tokenized = TRUE)
   expect_identical(.publication_test_commit(ctx)$status, "ok")
 })
+
+
+test_that("vectorised publication keys retain scalar-format tuples exactly", {
+  columns <- list(
+    as.integer(c(-2147483647, -1, 0, 1, 2147483647)),
+    c(-2147483647, -1, 0, 1, 2147483647),
+    c(1, 1.25, 100000, 100000.5, 1e-9, 1e16, -1e20, Inf, -Inf),
+    rep(c(1.25, 100000, 100000.5, 1e16), 10))
+  for (x in columns) {
+    expected <- vapply(x, format, "", scientific = FALSE, trim = TRUE, digits = 15L)
+    expect_identical(.publishKeys(data.frame(key = x), "key"), paste0(nchar(expected, type = "bytes"), ":", expected))
+  }
+})

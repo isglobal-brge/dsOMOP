@@ -73,3 +73,16 @@
   result[valid] <- labels[index[valid]]
   result
 }
+
+# Public age domain is independent of the observed people, including empty bands.
+.ageBandLevels <- function(age_breaks = NULL) {
+  if (is.null(age_breaks)) age_breaks <- getOption("dsomop.age_breaks",
+    getOption("default.dsomop.age_breaks", seq(0L, 85L, 5L)))
+  breaks <- as.numeric(unlist(age_breaks, use.names = FALSE))
+  .bandAges(breaks, age_breaks)
+}
+
+.ageBandDomain <- function(age_breaks = NULL) {
+  levels <- .ageBandLevels(age_breaks)
+  list(levels = levels, calendar = list(category = "age_band", levels = as.list(levels)))
+}

@@ -107,9 +107,16 @@
   if (nrow(frame) == 0L) return(character(0))
   values <- lapply(frame[columns], function(x) {
     if (is.numeric(x) && !inherits(x, "integer64")) {
-      # Format separately so a fractional neighbour cannot add trailing zeros
-      # to an integral key, and never coerce integer64 through a double.
-      vapply(x, format, character(1L), scientific = FALSE, trim = TRUE, digits = 15L)
+      # Ordinary integer keys have exactly the same scalar decimal spelling.
+      # Vectorise them: formatting each row separately dominated large panels.
+      if (all(is.finite(x) & x == trunc(x) & abs(x) <= .Machine$integer.max)) {
+        return(as.character(as.integer(x)))
+      }
+      # Format remaining distinct values separately so fractional neighbours
+      # cannot add trailing zeros. Never coerce integer64 through a double.
+      distinct <- unique(x)
+      rendered <- vapply(distinct, format, character(1L), scientific = FALSE, trim = TRUE, digits = 15L)
+      unname(rendered[match(x, distinct)])
     } else as.character(x)
   })
   if (!length(values)) .publishReject("lineage_malformed")
@@ -429,11 +436,9 @@
     if (is.data.frame(value)) {
       translate <- .reduceTranslate(ctx)
       attr(value, "omop_concept_reference") <- if (translate && identical(pc$grain, "none")) TRUE else NULL
-      if (translate || .dateNeedsPresentation(ctx$ir)) {
-        columns <- attr(value, "omop_column_contract")
-        if (is.null(columns) && !.dsomopDpIsV2(ctx$ir)) columns <- .conceptLegacyColumns(ctx, value, pc$output, pc$component)
-        if (!is.null(columns)) value <- .conceptPresent(ctx, value, columns)
-      }
+      columns <- attr(value, "omop_column_contract")
+      if (is.null(columns) && !.dsomopDpIsV2(ctx$ir)) columns <- .conceptLegacyColumns(ctx, value, pc$output, pc$component)
+      if (!is.null(columns)) value <- .conceptPresent(ctx, value, columns)
     }
     if (inherits(value, "FlowerDatasetDescriptor") && !.dsomopDpIsV2(ctx$ir)) {
       value <- .conceptStagePresent(ctx, value, root = pc$output, component = pc$component, reference = identical(pc$grain, "none"))
@@ -795,7 +800,16 @@ omopStagedRevokeDS <- function(exec_symbol) {
   for (col in intersect(names(frame), names(types))) {
     signature <- strsplit(types[[col]], "|", fixed = TRUE)[[1L]]
     classes <- strsplit(signature[2L], "/", fixed = TRUE)[[1L]]
-    if ("factor" %in% classes) next # Restored with the controlled level contract.
+    if ("factor" %in% classes) {
+      domains <- .ds_arg(descriptor$metadata$factor_domains %||% list())
+      domain <- domains[[col]]
+      if (!is.null(domain)) {
+        levels <- as.character(unlist(domain$levels, use.names = FALSE))
+        frame[[col]] <- if (isTRUE(domain$ordered)) .dateOrdered(as.character(frame[[col]]), levels) else
+          .conceptFactor(as.character(frame[[col]]), levels)
+      }
+      next # A-27/date columns are then restored with their reconciled contract.
+    }
     x <- frame[[col]]
     frame[[col]] <- if ("Date" %in% classes) as.Date(x) else
       if ("integer64" %in% classes) bit64::as.integer64(x) else

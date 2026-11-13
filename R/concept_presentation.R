@@ -62,6 +62,19 @@
 }
 
 .conceptPresent <- function(ctx, frame, columns) {
+  for (col in intersect(names(frame), names(columns))) {
+    domain <- attr(columns[[col]], "category_domain")
+    if (!is.null(domain)) {
+      values <- as.character(frame[[col]])
+      if (!is.null(domain$calendar)) {
+        levels <- domain$levels %||% as.character(sort(unique(frame[[col]][!is.na(frame[[col]])])))
+        ranks <- if (is.null(domain$levels) && all(grepl("^-?[0-9]+$", levels))) as.numeric(levels) else NULL
+        frame[[col]] <- .dateFactor(values, levels, domain$calendar, order = ranks,
+          public = domain$levels %||% character())
+      } else frame[[col]] <- if (isTRUE(domain$ordered))
+        .dateOrdered(values, domain$levels) else .conceptFactor(values, domain$levels)
+    }
+  }
   frame <- .dateCapture(frame, columns)
   if (!.reduceTranslate(ctx)) return(frame)
   contracts <- attr(frame, "omop_concepts") %||% list()
@@ -272,6 +285,8 @@
   columns <- setNames(lapply(frame, function(x) .fragmentColumn(
     if (inherits(x, "Date")) "date" else if (is.character(x) || is.factor(x)) "text" else "numeric")), names(frame))
   if (length(existing)) columns[intersect(names(existing), names(columns))] <- existing[intersect(names(existing), names(columns))]
+  domains <- attr(frame, "omop_category_columns") %||% list()
+  for (col in intersect(names(columns), names(domains))) attr(columns[[col]], "category_domain") <- domains[[col]]
   out <- ctx$ir$outputs[[root]]
   if (is.null(out)) return(columns)
   bp <- .buildBlueprint(ctx$handle)
@@ -299,7 +314,15 @@
     entry <- out$tables[[table]]
     if (is.list(entry) && !is.null(entry$features)) features(entry$features, table) else raw(entry, table)
   }
-  if (identical(type, "baseline")) raw(out$columns, "person")
+  if (identical(type, "baseline")) {
+    raw(out$columns, "person")
+    if ("age_group" %in% names(columns) && "age_at_index" %in% unlist(out$derived))
+      attr(columns$age_group, "category_domain") <- .ageBandDomain(out$age_breaks)
+  }
+  if (identical(type, "person_level")) for (d in .normalizeDerivedColumnSpecs(out$derived_columns)) {
+    if (!d$name %in% names(columns)) next
+    if (identical(d$kind, "sex_mf")) attr(columns[[d$name]], "category_domain") <- list(levels = c("F", "M"), ordered = FALSE)
+  }
   if (identical(type, "event_level")) {
     format <- out$representation$format %||% "long"
     if (format == "long") raw(out$columns, out$table)

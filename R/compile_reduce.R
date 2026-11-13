@@ -1399,8 +1399,9 @@
     columns <- stats::setNames(list(.fragmentColumn("integer", TRUE, "measure")), name)
     return(.reduceUnavailable(ctx, cons, name, columns))
   }
-  one <- function(type, fun) {
+  one <- function(type, fun, domain = NULL) {
     columns <- stats::setNames(list(.fragmentColumn(type, TRUE, "measure")), name)
+    if (!is.null(domain)) attr(columns[[name]], "category_domain") <- domain
     list(stream = NULL, reducer = NULL, declared_empty_value = NA, columns = columns,
          available = TRUE,
          evaluate = function() {
@@ -1438,12 +1439,12 @@
         }
         age <- annual_age(roster, ref_year)
         if (bands) .bandAges(age, d[["age_breaks"]]) else age
-      })
+      }, if (bands) .ageBandDomain(d[["age_breaks"]]))
     },
     sex_mf = one("text", function(roster) {
       g <- suppressWarnings(as.integer(person_col(roster, "gender_concept_id")))
       ifelse(g %in% 8507L, "M", ifelse(g %in% 8532L, "F", NA_character_))
-    }),
+    }, list(levels = c("F", "M"), ordered = FALSE)),
     race = , ethnicity = {
       col <- paste0(kind, "_concept_id")
       record <- one("integer", function(roster) {
@@ -1468,7 +1469,7 @@
       one("integer", function(roster) {
         yob <- suppressWarnings(as.integer(person_col(roster, "year_of_birth")))
         as.integer((yob %/% width) * width)
-      })
+      }, list(calendar = list(category = "birth_year_band", width = width)))
     },
     died = {
       before <- d[["before"]]

@@ -737,8 +737,7 @@
     age_breaks <- suppressWarnings(as.integer(contract$age_breaks))
     if (length(age_breaks) < 2L || anyNA(age_breaks) ||
         any(!is.finite(age_numeric)) || any(age_numeric != age_breaks) ||
-        age_breaks[[1L]] != 0L || any(diff(age_breaks) <= 0L) ||
-        !all(age_breaks %in% as.integer(settings$age_breaks))) {
+        age_breaks[[1L]] != 0L || any(diff(age_breaks) <= 0L)) {
       fail(" age_breaks")
     }
   }

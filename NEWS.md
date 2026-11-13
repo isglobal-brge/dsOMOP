@@ -1,5 +1,23 @@
 # dsOMOP 2.10.3 (2026-11-13)
 
+- Corrected: derived sex is a factor with the public `F`, `M` domain, including
+  an unused level at a site. Assigned age bands, birth-year bands, panel age
+  and calendar categories, and legacy binned dates are ordered factors at
+  publication. Values and private arithmetic stay unchanged; concept recodes
+  and date categories retain the existing federation reconciliation and
+  disclosure gates. Re-run recipes to recreate these columns. Code that needs
+  their labels should use `as.character()`; use explicit numeric date
+  representations for arithmetic rather than factor codes.
+- Corrected: staged CSV and Parquet preserve ordinary factor levels and order,
+  including unused levels. Parquet presentation rewrites now supply Arrow's
+  required row-group size. Staged v1 age-band validation accepts the same
+  strictly increasing public breakpoints as in-memory assignment; it no longer
+  incorrectly applies the aggregate age grid. Re-run affected recipes; no
+  owner configuration is needed.
+- Corrected: publication formats ordinary integer lineage keys in a vectorized
+  operation, avoiding per-row formatting overhead in large panels. Key bytes,
+  lineage validation and publication thresholds are unchanged.
+
 - Corrected: an unavailable protected Poisson rate ratio now carries an
   explanatory `unavailable_reason`, including the standard-mode protected
   block. The label depends only on protected results; estimates, noise and
