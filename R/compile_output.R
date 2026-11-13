@@ -199,7 +199,7 @@
         roster <- .reduceRosterFrame(ctx, inputs$population$roster)
         if ("cohort_start_date" %in% names(roster)) index <- roster$cohort_start_date[match(as.character(part$frame$cohort_row_id), as.character(roster$cohort_row_id))]
       }
-      if (!is.null(ctx$ir$options$date_spec) && !is.null(index)) {
+      if (node$format %in% c("intervals", "person_period", "survival") && !is.null(ctx$ir$options$date_spec) && !is.null(index)) {
         endpoints <- c(start_days_from_index="start_date", end_days_from_index="end_date",
           period_start_days="period_start_date", period_end_days="period_end_date",
           entry_days_from_index="entry_date", exit_days_from_index="exit_date",
@@ -212,7 +212,8 @@
         }
       }
       role_anchor <- NULL
-      if (!is.null(inputs$population) && identical(ctx$ir$options$date_spec$precision, "relative_days")) {
+      pending_dates <- any(vapply(part$fragment$columns, function(col) identical(col$type, "date") && is.null(attr(col, "date_spec")), logical(1)))
+      if (pending_dates && !is.null(inputs$population) && identical(ctx$ir$options$date_spec$precision, "relative_days")) {
         pop <- inputs$population
         cons <- .reduceConsumer(ctx, name, pop$roster, pop$coverage, node$grain %||% "episode")
         role_anchor <- .dateRoleAnchor(ctx, cons, part$frame, ctx$ir$options$date_spec)

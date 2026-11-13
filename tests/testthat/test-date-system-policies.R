@@ -78,3 +78,21 @@ test_that("D39 mixed native and legacy dates resolve policies per column", {
   p$variables$bad<-list(source=list(event="lab"),reducer=list(fn="count"),date_spec=list(precision="month"))
   expect_error(.ws7_scenario_run(h,p),"numeric measures are not timestamps")
 })
+
+test_that("D39 D41 final presentation does not reinterpret numeric names or repeat joined presentation", {
+  h<-.date_policy_backends$sqlite$handle
+  p<-.ws7_scenario_plan(list(start_days_from_index=list(source=list(event="lab"),reducer=list(fn="count"))))
+  p$options<-list(date_spec=list(precision="month"))
+  f<-.ws7_scenario_run(h,p)$frame
+  expect_false("start_date" %in% names(f));expect_true(is.integer(f$start_days_from_index))
+  p<-.ws7_scenario_plan(list(age=.date_policy_var("index",kind="age_at")))
+  p$outputs<-list(a=list(rows="t",format="intervals",options=list(sources=list(list(event="drug")))),b=list(rows="t",format="wide",columns=list("age")),o=list(rows="t",format="joined",options=list(from=list(list(output="a"),list(output="b")),how="left",cardinality="many_to_one")))
+  p$options<-list(date_spec=list(precision="month"));p$publish<-list("o")
+  f<-.ws7_scenario_run(h,p)$frame
+  expect_true(is.ordered(f$start_date));expect_true(is.integer(f$age))
+  p<-.ws7_scenario_plan(list(d=list(raw=list(table="death",column="death_date"))),output=list(grain="person"))
+  p$options<-list(date_spec=list(precision="relative_days"))
+  f<-.ws7_scenario_run(h,p,frame=.ws7_scenario_frame(c(7001L,7001L),index=c("2020-01-10","2020-02-10")))$frame
+  expect_equal(nrow(f),1L)
+  expect_identical(f$d,as.integer(as.Date("2015-01-01")-as.Date("2020-01-10")))
+})
