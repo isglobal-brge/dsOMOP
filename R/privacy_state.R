@@ -40,6 +40,14 @@
 }
 
 .dsomopDpHmac <- function(key, value) {
+  # OpenSSL's string path hashes the same UTF-8 bytes and returns hex directly.
+  # Avoid copying large framed contribution chunks to R raw vectors and back.
+  if (is.character(value) && length(value) == 1L && !is.na(value)) {
+    if (!is.raw(key) || length(key) != 32L) {
+      stop("The DP root is unavailable.", call. = FALSE)
+    }
+    return(as.character(openssl::sha256(enc2utf8(value), key = key)))
+  }
   .dsomopDpHex(.dsomopDpHmacRaw(key, value))
 }
 
@@ -271,10 +279,9 @@
     created <- FALSE
     root <- tryCatch({
       path <- .dsomopSecretPath("dp_noise_root")
-      created <- !file.exists(path) && !.dsomopIsSymlink(path)
       .ensureDsomopSecret(
         "dp_noise_root", path = path, require_existing = FALSE,
-        replace_invalid = FALSE
+        replace_invalid = FALSE, .on_created = function() created <<- TRUE
       )
     }, error = function(e) {
       message("[dsomop-dp-state] Custodian recovery required: ",

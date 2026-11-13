@@ -2,6 +2,12 @@
 
 Security release: the P0 fixes of the OHDSI-tools audit.
 
+- Corrected concurrent DP-root creation logging: only the worker that durably
+  creates the private root reports creation. Other workers reuse the same root
+  automatically; no administrator provisioning is needed.
+- Contribution HMACs avoid copying UTF-8 input through R raw vectors; the
+  cryptographic bytes, signed components and deterministic answers are unchanged.
+
 - Corrected DP-only admission for analysis assign loaders: private server-side
   preparation can now create the sealed inputs needed by fixed typed releases.
   The tools-disabled gate, publication controls and final protected-release
