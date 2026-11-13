@@ -258,7 +258,7 @@
                           class = .roleColumnClass(def[["raw"]][["column"]], col_df))
       } else if (!is.null(def[["derived"]])) {
         kind <- def[["derived"]][["kind"]]
-        cls <- if (kind %in% c("age", "birth_year_band")) 2L else 3L
+        cls <- if (kind %in% c("age", "birth_year_band", .DATE_KINDS)) 2L else 3L
         cols[[v]] <- list(source = paste0("derived:", kind), class = cls)
       } else if (!is.null(def[["reducer"]])) {
         cols[[v]] <- list(source = paste0("reducer:", def[["reducer"]][["fn"]]),

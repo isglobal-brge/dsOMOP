@@ -628,11 +628,11 @@ test_that("date handling fails closed for unsafe or incomplete specifications", 
     "year, month, or week"
   )
   withr::with_options(list(dsomop.allow_absolute_dates = FALSE), {
-    expect_error(
-      .applyDateHandling(df,
-        list(mode = "remove", date_columns = "condition_start_date")),
-      "omits date column"
-    )
+    # A-28 corrects assignment: explicitly disjoint columns retain exact Dates.
+    out <- .applyDateHandling(df,
+      list(mode = "remove", date_columns = "condition_start_date"))
+    expect_identical(out$cohort_start_date, df$cohort_start_date)
+    expect_false("condition_start_date" %in% names(out))
   })
 })
 

@@ -297,7 +297,7 @@
       add("/events/", e, "/legacy_concept_scope/concept_set_ref: dangling concept set '", scope_ref, "'")
     }
   }
-  refs <- .irCollectRefs(ir[c("events", "intervals", "populations", "variables", "outputs")])
+  refs <- .irCollectRefs(ir[c("events", "intervals", "populations", "variables", "outputs", "options")])
   for (r in refs) {
     pool <- if (identical(r[["kind"]], "event")) names(ev) else names(iv)
     if (!r[["name"]] %in% pool) add(r[["path"]], ": dangling ", r[["kind"]], " reference '", r[["name"]], "'")

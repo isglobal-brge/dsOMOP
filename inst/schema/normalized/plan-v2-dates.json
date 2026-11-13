@@ -1,0 +1,144 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "A28 acceptance"
+  },
+  "populations": {
+    "base": {
+      "kind": "criteria",
+      "parent": null,
+      "where": null,
+      "cohort_definition_id": null,
+      "episode_policy": null,
+      "coverage": {
+        "policy": "unique",
+        "on_ambiguous": "drop",
+        "on_missing": "drop",
+        "gap": 0
+      }
+    }
+  },
+  "variables": {
+    "day": {
+      "derived": {
+        "kind": "calendar_date",
+        "reference": {
+          "date": "0004-02-29"
+        }
+      },
+      "labels": {},
+      "column_names": {},
+      "broadcast": false,
+      "date_spec": {
+        "partial": "none",
+        "invalid": "na",
+        "future": "allow",
+        "precision": "day",
+        "representation": "auto"
+      }
+    },
+    "age": {
+      "derived": {
+        "kind": "age_at",
+        "reference": {
+          "date": "2024-06-01"
+        },
+        "bands": true,
+        "unit": "years",
+        "age_breaks": [
+          0,
+          5,
+          10,
+          15,
+          20,
+          25,
+          30,
+          35,
+          40,
+          45,
+          50,
+          55,
+          60,
+          65,
+          70,
+          75,
+          80,
+          85,
+          90,
+          95,
+          100
+        ]
+      },
+      "labels": {},
+      "column_names": {},
+      "broadcast": false,
+      "date_spec": {
+        "partial": "none",
+        "invalid": "na",
+        "future": "allow"
+      }
+    },
+    "part": {
+      "derived": {
+        "kind": "date_part",
+        "reference": {
+          "kind": "date_components",
+          "year": {
+            "kind": "integer",
+            "value": 2024
+          },
+          "month": {
+            "kind": "integer",
+            "value": 2
+          },
+          "which": "first",
+          "n": 1,
+          "scope": "person"
+        },
+        "part": "month"
+      },
+      "labels": {},
+      "column_names": {},
+      "broadcast": false,
+      "date_spec": {
+        "partial": "none",
+        "invalid": "na",
+        "future": "allow",
+        "representation": "auto"
+      }
+    }
+  },
+  "outputs": {
+    "o": {
+      "rows": "base",
+      "format": "wide",
+      "collapse": null,
+      "columns": [
+        "day",
+        "age",
+        "part"
+      ],
+      "sources": [],
+      "options": {
+        "time_window": null
+      },
+      "result_symbol": null,
+      "grain": "person"
+    }
+  },
+  "options": {
+    "translate_concepts": true,
+    "block_sensitive": true,
+    "factor_concepts": true,
+    "labels": {},
+    "column_names": {}
+  },
+  "concept_sets": {},
+  "events": {},
+  "intervals": {},
+  "publish": [
+    "o"
+  ]
+}

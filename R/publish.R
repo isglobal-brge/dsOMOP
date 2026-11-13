@@ -66,7 +66,8 @@
 # entry, present only with validation_error: the section 11 adapter refusals
 # and (A-20 (j)) the bounded realisations of the interval helpers.
 .REJECTION_REASONS <- c("adapter_person_mismatch", "cost_currency_mixed",
-                        "stockpile_row_cap", "reducer_row_cap")
+                        "stockpile_row_cap", "reducer_row_cap", "date_spec_invalid", "date_source_invalid",
+                        "date_pattern_invalid", "date_policy_conflict", "date_parts_names")
 
 # The bounded status entry for a dsomop_plan_rejection condition: {code,
 # message} with the constant message per code, plus `reason` only when the
@@ -277,7 +278,7 @@
 #' @keywords internal
 .publishReadChunks <- function(descriptor, callback) {
   consume <- callback
-  callback <- function(frame) consume(.conceptCollectChunk(frame, descriptor))
+  callback <- function(frame) consume(.conceptCollectChunk(.publishRestoreTypes(frame, descriptor), descriptor))
   path <- descriptor$metadata$file
   if (descriptor$metadata$format == "parquet") {
     reader <- arrow::ParquetFileReader$create(path)
@@ -428,7 +429,7 @@
     if (is.data.frame(value)) {
       translate <- .reduceTranslate(ctx)
       attr(value, "omop_concept_reference") <- if (translate && identical(pc$grain, "none")) TRUE else NULL
-      if (translate) {
+      if (translate || .dateNeedsPresentation(ctx$ir)) {
         columns <- attr(value, "omop_column_contract")
         if (is.null(columns) && !.dsomopDpIsV2(ctx$ir)) columns <- .conceptLegacyColumns(ctx, value, pc$output, pc$component)
         if (!is.null(columns)) value <- .conceptPresent(ctx, value, columns)
@@ -785,4 +786,21 @@ omopStagedRevokeDS <- function(exec_symbol) {
   if (!exists(symbol, ctx$target_env, inherits = FALSE)) stop("Replacement target is unavailable.", call. = FALSE)
   ctx$rollback[[symbol]] <- get(symbol, ctx$target_env, inherits = FALSE)
   invisible(symbol)
+}
+
+# CSV is a transport container. Restore its closed, manifest-bound column types
+# before releveling or feeding a private materialisation to downstream analysis.
+.publishRestoreTypes <- function(frame, descriptor) {
+  types <- unlist(descriptor$metadata$column_types, use.names = TRUE)
+  for (col in intersect(names(frame), names(types))) {
+    signature <- strsplit(types[[col]], "|", fixed = TRUE)[[1L]]
+    classes <- strsplit(signature[2L], "/", fixed = TRUE)[[1L]]
+    if ("factor" %in% classes) next # Restored with the controlled level contract.
+    x <- frame[[col]]
+    frame[[col]] <- if ("Date" %in% classes) as.Date(x) else
+      if ("integer64" %in% classes) bit64::as.integer64(x) else
+      switch(signature[1L], integer=as.integer(x), double=as.numeric(x),
+             logical=as.logical(x), character=as.character(x), x)
+  }
+  frame
 }

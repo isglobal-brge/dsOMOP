@@ -162,7 +162,7 @@
 }
 
 .conceptNeedsPresentation <- function(plan) {
-  !isFALSE(plan$options$translate_concepts) || .conceptHasMaps(plan)
+  !isFALSE(plan$options$translate_concepts) || .conceptHasMaps(plan) || .dateNeedsPresentation(plan)
 }
 
 .conceptValidatePlan <- function(plan, wire = FALSE) {
@@ -235,7 +235,7 @@
 }
 
 .conceptValidateResolution <- function(shared, records) {
-  if (length(records) && identical(records[[1L]]$kind, "date")) return(.dateValidateResolution(shared, records))
+  if (identical(shared$kind, "date") || length(records) && identical(records[[1L]]$kind, "date")) return(.dateValidateResolution(shared, records))
   ids <- as.character(unlist(shared$ids, use.names = FALSE))
   labels <- as.character(unlist(shared$labels, use.names = FALSE))
   levels <- as.character(unlist(shared$levels, use.names = FALSE))

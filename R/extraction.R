@@ -554,8 +554,7 @@
 #'     \item{\code{"binned"}}{Truncates dates to year/month/week. Reduces
 #'       temporal precision while preserving broad trends.}
 #'     \item{\code{"absolute"}}{Returns raw dates unchanged.
-#'       \strong{Requires server authorization}:
-#'       \code{dsomop.allow_absolute_dates = TRUE}. Raw dates are
+#'       Requires no owner option on assignment paths (A-28). Raw dates are
 #'       quasi-identifiers per OMOP Privacy Guidance.}
 #'   }
 #' @param index_date_col Character; column with index dates (for relative mode)

@@ -1,5 +1,35 @@
 # dsOMOP 2.10.3 (2026-11-13)
 
+## Date presentation (A-28 / CR-29)
+
+- Newly permitted: `omop_date_spec()`, `omop_date()`, `omop_date_components()`,
+  `omop_date_parts()`, `omop_time_between()` and `omop_age_at()` compose native
+  calendar dates, periods, partial dates, date parts and independently anchored
+  ages. Variable fields override recipe defaults. Calendar, fiscal, ISO/CDC and
+  explicitly profiled epi weeks support ordered factors, numeric coordinates
+  and inclusive period bounds. English names and validated custom patterns are
+  locale independent. Date factors reconcile through the existing controlled
+  factor transport, including public zero-count categories.
+- Corrected: exact-date assignment needs no `dsomop.allow_absolute_dates`
+  setting. All date-derived forms retain class-2 provenance, and publication,
+  protected lineage and aggregate admission remain enforced. Native presentation
+  cannot be erased by an omitted legacy date policy. Numeric measures stay
+  numeric. Legacy `first_date`/`last_date` offsets and `omop_age()` annual ages
+  keep their existing meaning when the new APIs are absent.
+- Newly refused: unsafe/custom patterns (use `%G-W%V` for ISO weeks), incomplete
+  epi profiles, irrelevant spec fields, duplicate part names and overlapping
+  explicit legacy/native date policies. Express native policies in `date_spec`.
+  Formats without a roster date slot refuse a date variable rather than
+  encoding a Date/factor into a numeric sparse matrix.
+- Migration: replace fixed-anchor offsets plus `mutate()`/`cut()` with
+  `omop_date("first_visit", omop_date_spec(precision="quarter"))`; replace
+  annual ages with `omop_age_at("death")` for completed years. Incomplete birth
+  dates give NA unless an explicit imputation or `unit="annual_years"` is chosen.
+  Coarsened labels are ordered factors; request `representation="number"` for
+  trends or `"start"`/`"end"` for Date bounds. Native interval/panel/survival
+  endpoint columns are added alongside unchanged internal day offsets when a
+  recipe date spec requests presentation.
+
 Security release: the P0 fixes of the OHDSI-tools audit.
 
 - Release 2.10.3 pairs both packages, including recipe language 2 and the

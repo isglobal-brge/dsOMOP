@@ -592,7 +592,7 @@
   }
   for (p in names(pops)) {
     candidate[[p]] <- .irUniqueAnchors(c(.irCollectAnchors(pops[[p]][["where"]]), templates[[p]]))
-    used <- cases[[p]] %||% list()
+    used <- c(cases[[p]] %||% list(), .irCollectAnchors(ir$options$date_spec))
     for (o in names(ir[["outputs"]])) {
       out <- ir[["outputs"]][[o]]
       if (!identical(out[["rows"]], p)) next

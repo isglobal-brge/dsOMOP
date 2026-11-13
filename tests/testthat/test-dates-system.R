@@ -84,3 +84,28 @@ test_that("D39-D40 inheritance and public missing periods", {
   expect_identical(levels(a),c("2024-01","2024-02","2024-03"));expect_identical(levels(a),levels(b))
   expect_identical(as.integer(table(a)),c(1L,0L,0L))
 })
+
+test_that("D01 D06 D14 domain edges retain padded keys and valid period ends", {
+  expect_identical(as.character(.dp("0001-01-01",.ds(representation="factor"))),"0001-01-01")
+  expect_identical(.dateMonthEnd(9999L,12L),as.Date("9999-12-31"))
+  expect_identical(.dp("9999-12-01",.ds(precision="month",representation="end")),as.Date("9999-12-31"))
+  expect_identical(as.character(.dp("0001-01-01",.ds(precision="iso_week"))),"0001-W01")
+  expect_true(is.finite(.dp("9999-12-31",.ds(precision="iso_week",representation="number",numeric="decimal_year"))))
+})
+
+test_that("D40 empty date factors carry a public calendar contract", {
+  s<-.ds(precision="month");f<-data.frame(person_id=1:5);f$d<-.dp(rep(NA_character_,5),s)
+  col<-.fragmentColumn("text",TRUE,"measure");attr(col,"date_spec")<-s
+  f<-.dateCapture(f,list(d=col));c<-attr(f,"omop_concepts")$d
+  expect_identical(c$kind,"date");expect_length(c$resolved$levels,0)
+  expect_identical(c$calendar,s)
+  expect_silent(.dateValidateResolution(c$resolved,c$records))
+  altered<-c$resolved;altered$calendar$precision<-"year"
+  nonempty<-.dateCapture(data.frame(d=.dp("2024-01-01",s)),list(d=col))
+  expect_error(.dateValidateResolution(altered,attr(nonempty,"omop_concepts")$d$records),"Changed")
+})
+
+test_that("D36 invalid large integer components are silent typed missing values", {
+  expect_silent(x<-.dateComponents(1e12,2L,1L,.ds()))
+  expect_s3_class(x$lo,"Date");expect_true(is.na(x$lo))
+})

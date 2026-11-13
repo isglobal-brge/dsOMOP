@@ -612,6 +612,19 @@ probe("P_A27_2", "array concept map refused", R, A, lambda b: b.setdefault("opti
 probe("P_A27_3", "null concept map member refused", R, A, lambda b: b.setdefault("options", {}).__setitem__("labels", {"1": None}))
 probe("P_A27_4", "noncanonical concept key refused", R, A, lambda b: b.setdefault("options", {}).__setitem__("labels", {"01": "yes"}))
 probe("P_A27_5", "generated-name overrides", OK, A, lambda b: b.setdefault("options", {}).__setitem__("column_names", {"education_45000123": "educated"}))
+# A-28 closed-wire acceptance and refusal probes.
+date_example = {"version":2, "meta":{"language_version":"2.0","semantic_version":"2.0.0","generated_by":"A28 acceptance"},
+  "populations":{"base":{"kind":"criteria"}},
+  "variables":{"day":{"derived":{"kind":"calendar_date","reference":{"date":"0004-02-29"}}},
+    "age":{"derived":{"kind":"age_at","reference":{"date":"2024-06-01"},"bands":True}},
+    "part":{"derived":{"kind":"date_part","reference":{"kind":"date_components","year":{"kind":"integer","value":2024},"month":{"kind":"integer","value":2}},"part":"month"}}},
+  "outputs":{"o":{"rows":"base","format":"wide"}}}
+probe("A28-01", "native date sources, age and part", OK, date_example, lambda b:None)
+probe("A28-02", "unknown native date spec field", R, date_example, lambda b:b["variables"]["day"].update(date_spec={"sql":"now()"}))
+probe("A28-03", "unknown calendar precision", R, date_example, lambda b:b["variables"]["day"].update(date_spec={"precision":"hour"}))
+probe("A28-04", "no arbitrary component operand", R, date_example, lambda b:b["variables"]["part"]["derived"]["reference"].update(year={"kind":"sql","value":"year()"}))
+probe("A28-05", "native broadcast must be boolean", R, date_example, lambda b:b["variables"]["day"].update(broadcast=1))
+dump(date_example, os.path.join(OUT,"examples","plan-v2-dates.json"))
 dump(probes, os.path.join(OUT, "probes", "plan-v2-probes.json"))
 
 # the three ACTUAL v1 inputs of section 4.5 (WS-2 executes them through the corrected v1 validator;
@@ -733,6 +746,7 @@ if os.path.isdir(acceptance_dir):
         path = os.path.join(acceptance_dir, d, "plan.json")
         if os.path.exists(path):
             norm_fixtures.append(("acceptance-" + d, os.path.relpath(path, OUT), json.load(open(path))))
+norm_fixtures.append(("plan-v2-dates", "examples/plan-v2-dates.json", date_example))
 norm_vectors = []
 for label, source, obj in norm_fixtures:
     n = normalize(obj, plan)

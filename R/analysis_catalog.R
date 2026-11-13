@@ -5243,14 +5243,6 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
       getOption("dsomop.default_date_handling", "remove")
     )
   }
-  if (identical(dh$mode, "absolute")) {
-    allow <- getOption("dsomop.allow_absolute_dates",
-      getOption("default.dsomop.allow_absolute_dates", FALSE))
-    if (!isTRUE(allow)) {
-      stop("Absolute date handling is not permitted by the server.",
-           call. = FALSE)
-    }
-  }
   if (identical(dh$mode, "relative")) {
     date_cols <- grep("_date$|_datetime$", names(assigned), value = TRUE)
     if (length(date_cols) > 0L) {

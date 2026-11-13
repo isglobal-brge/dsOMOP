@@ -794,7 +794,7 @@
 # Column type of a reducer's values.
 .reduceValueType <- function(fn, value_type = "numeric") {
   if (fn %in% .REDUCER_INTEGER_FNS) return("integer")
-  if (identical(fn, "mode")) return(value_type)
+  if (identical(fn, "mode") || (value_type == "date" && fn %in% c("first_value", "last_value", "nth_value", "closest_value", "min", "max"))) return(value_type)
   "numeric"
 }
 
@@ -1282,6 +1282,14 @@
   have <- tolower(col_df$column_name)
   want <- c("year_of_birth", "month_of_birth", "day_of_birth", "gender_concept_id",
             "race_concept_id", "ethnicity_concept_id")
+  for (col in extra_columns) {
+    row <- col_df[match(col, have), , drop = FALSE]
+    if (!col %in% have || .assignmentBlockedColumn(col, col_df) ||
+        col %in% c(.identifierColumns(), .PERSON_KEY_COLS()) ||
+        !grepl("int", row$db_datatype, ignore.case = TRUE)) {
+      .dateReject("Components require permitted registered integer columns.", "date_source_invalid")
+    }
+  }
   want <- union(want, extra_columns)
   cols <- vapply(want, function(c) if (c %in% have) paste0("p.", c) else .compileTypedNull(h, "integer"), "")
   name <- .reduceName(ctx, cons, "pp")

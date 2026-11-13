@@ -40120,5 +40120,317 @@
         "tte"
       ]
     }
+  },
+  {
+    "id": "A28-01",
+    "label": "native date sources, age and part",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A28 acceptance"
+      },
+      "populations": {
+        "base": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "day": {
+          "derived": {
+            "kind": "calendar_date",
+            "reference": {
+              "date": "0004-02-29"
+            }
+          }
+        },
+        "age": {
+          "derived": {
+            "kind": "age_at",
+            "reference": {
+              "date": "2024-06-01"
+            },
+            "bands": true
+          }
+        },
+        "part": {
+          "derived": {
+            "kind": "date_part",
+            "reference": {
+              "kind": "date_components",
+              "year": {
+                "kind": "integer",
+                "value": 2024
+              },
+              "month": {
+                "kind": "integer",
+                "value": 2
+              }
+            },
+            "part": "month"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "base",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "A28-02",
+    "label": "unknown native date spec field",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A28 acceptance"
+      },
+      "populations": {
+        "base": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "day": {
+          "derived": {
+            "kind": "calendar_date",
+            "reference": {
+              "date": "0004-02-29"
+            }
+          },
+          "date_spec": {
+            "sql": "now()"
+          }
+        },
+        "age": {
+          "derived": {
+            "kind": "age_at",
+            "reference": {
+              "date": "2024-06-01"
+            },
+            "bands": true
+          }
+        },
+        "part": {
+          "derived": {
+            "kind": "date_part",
+            "reference": {
+              "kind": "date_components",
+              "year": {
+                "kind": "integer",
+                "value": 2024
+              },
+              "month": {
+                "kind": "integer",
+                "value": 2
+              }
+            },
+            "part": "month"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "base",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "A28-03",
+    "label": "unknown calendar precision",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A28 acceptance"
+      },
+      "populations": {
+        "base": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "day": {
+          "derived": {
+            "kind": "calendar_date",
+            "reference": {
+              "date": "0004-02-29"
+            }
+          },
+          "date_spec": {
+            "precision": "hour"
+          }
+        },
+        "age": {
+          "derived": {
+            "kind": "age_at",
+            "reference": {
+              "date": "2024-06-01"
+            },
+            "bands": true
+          }
+        },
+        "part": {
+          "derived": {
+            "kind": "date_part",
+            "reference": {
+              "kind": "date_components",
+              "year": {
+                "kind": "integer",
+                "value": 2024
+              },
+              "month": {
+                "kind": "integer",
+                "value": 2
+              }
+            },
+            "part": "month"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "base",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "A28-04",
+    "label": "no arbitrary component operand",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A28 acceptance"
+      },
+      "populations": {
+        "base": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "day": {
+          "derived": {
+            "kind": "calendar_date",
+            "reference": {
+              "date": "0004-02-29"
+            }
+          }
+        },
+        "age": {
+          "derived": {
+            "kind": "age_at",
+            "reference": {
+              "date": "2024-06-01"
+            },
+            "bands": true
+          }
+        },
+        "part": {
+          "derived": {
+            "kind": "date_part",
+            "reference": {
+              "kind": "date_components",
+              "year": {
+                "kind": "sql",
+                "value": "year()"
+              },
+              "month": {
+                "kind": "integer",
+                "value": 2
+              }
+            },
+            "part": "month"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "base",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "A28-05",
+    "label": "native broadcast must be boolean",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A28 acceptance"
+      },
+      "populations": {
+        "base": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "day": {
+          "derived": {
+            "kind": "calendar_date",
+            "reference": {
+              "date": "0004-02-29"
+            }
+          },
+          "broadcast": 1
+        },
+        "age": {
+          "derived": {
+            "kind": "age_at",
+            "reference": {
+              "date": "2024-06-01"
+            },
+            "bands": true
+          }
+        },
+        "part": {
+          "derived": {
+            "kind": "date_part",
+            "reference": {
+              "kind": "date_components",
+              "year": {
+                "kind": "integer",
+                "value": 2024
+              },
+              "month": {
+                "kind": "integer",
+                "value": 2
+              }
+            },
+            "part": "month"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "base",
+          "format": "wide"
+        }
+      }
+    }
   }
 ]

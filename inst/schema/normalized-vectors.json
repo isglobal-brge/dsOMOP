@@ -17,38 +17,38 @@
     {
       "label": "acceptance-01-characterisation",
       "source": "../plans/acceptance/01-characterisation/plan.json",
-      "normalized_sha256": "8b73e8155d44dc99fef8ef918c90b325b1c9bbde0d72fee91d3f586ff0fb1178",
-      "digest_sha256": "6d61ee36d0943a663a04173c61d56bbc7d89e83c03bdce2f9f72fb42eed1ab05"
+      "normalized_sha256": "b577c8ee6df55c8def0a70f920aca90ed75d677d31f5acb00650e0e07345a9d2",
+      "digest_sha256": "9d634e6614d10680aa381c48567a9f519f511d009c2fed0da28b859acf47096c"
     },
     {
       "label": "acceptance-02-active-comparator",
       "source": "../plans/acceptance/02-active-comparator/plan.json",
-      "normalized_sha256": "1395a0028297ddc7bf1d0d2fa3866ece6d0ec05ae91acb97d6970ba613bee751",
-      "digest_sha256": "0d9809866df0d91f7eaffb392e32fe9ee8fe275b59c1e9a85dc7f02460aa5f0e"
+      "normalized_sha256": "4695c184a4f9bb314d12ae8c3b477308768a427d8734cc0cde8933102bcfc4ae",
+      "digest_sha256": "6034f2eb02d5c106471bc05121c88116a7a0af745eebfe4ae4a07312a6e24680"
     },
     {
       "label": "acceptance-03-distinct-days",
       "source": "../plans/acceptance/03-distinct-days/plan.json",
-      "normalized_sha256": "59fbf57917e256a2e8129aafdc1cc3044e6ded0615c329e95d09322b7fce9f9e",
-      "digest_sha256": "80980b225d87114436b077df054852996fde760e7215b38f3482df8b9c5ab114"
+      "normalized_sha256": "d9cf22842f2c363e8281f942b992aab92936704d5fdca23e5eb08336546cf75a",
+      "digest_sha256": "bf0f32c4bcf5505ba117487a034f7e9a212da217299a3cc0191ff3f9706ceb44"
     },
     {
       "label": "acceptance-04-units-censored",
       "source": "../plans/acceptance/04-units-censored/plan.json",
-      "normalized_sha256": "b698c99e2170e8c6532d9ab4fef57431cf74b10e437bc361ba339f16804cd42d",
-      "digest_sha256": "8770bdbfa551d022cb215f27ccae7436142693a5631e1b349f938200fa8748af"
+      "normalized_sha256": "8a667a4882d4ca089fe857e1941ee63787e02e19ce932ef6fc26fc9322ba34ac",
+      "digest_sha256": "081447f69193d8715fc405f5bcc0c8d53752cc4796e4c6b5c248507852288c74"
     },
     {
       "label": "acceptance-05-same-day-same-visit",
       "source": "../plans/acceptance/05-same-day-same-visit/plan.json",
-      "normalized_sha256": "01459604770d800ecdc907f9dcaacbcaded7d95c1ba9acfba8ac7d56b5e05074",
-      "digest_sha256": "3211545279edc2ce8c4f5419fdabecd6cf2fecf5088fd2aabe3b298a7e42a73b"
+      "normalized_sha256": "c97a148940026538ae02b7eea815c7614bb07772388794d7cb43c91a87ba34db",
+      "digest_sha256": "8091accc5912c4d5f56334b0611d8848470aad63fc5fa9051f6f49d8098f8c8c"
     },
     {
       "label": "acceptance-06-coverage-persistence",
       "source": "../plans/acceptance/06-coverage-persistence/plan.json",
-      "normalized_sha256": "a9730979050aca2a48eae95613fd5a97f21b6f1442da82166920abcdc88a3f62",
-      "digest_sha256": "9e323a6fab3c49bc08ec7b4c74b9dceced04bfc62e91cfe419a094c971d7ae4b"
+      "normalized_sha256": "4cab1f0e570a71732f4a67553080b5cb4aed59128b3ab2a70bfa5323275443df",
+      "digest_sha256": "4d0224fb5c8079ed67e05e1e405519ccd7dec04064cc8549bc40e36946b60de8"
     },
     {
       "label": "acceptance-07-monthly-panel",
@@ -71,8 +71,8 @@
     {
       "label": "acceptance-10-matching",
       "source": "../plans/acceptance/10-matching/plan.json",
-      "normalized_sha256": "b83a025051a37d70f3c5b38ecebdc944e0ddcc6d20e262260b4358e17db31956",
-      "digest_sha256": "41e363849e398a1c095656433c79df6e1224cdc358c4170f4a82ad86be95a647"
+      "normalized_sha256": "a0d8998c19371bad9e7843f4182c3cc099726990c9de55eaca0211c091af0470",
+      "digest_sha256": "0e572377569cbf845a35bbce8cd54ded3518c7549fd74d369e7e3a5ee50b1777"
     },
     {
       "label": "acceptance-11-incidence-years",
@@ -83,26 +83,32 @@
     {
       "label": "acceptance-12-circe-baseline",
       "source": "../plans/acceptance/12-circe-baseline/plan.json",
-      "normalized_sha256": "a0faa025eb4e50105402388b0be7a81c9bb2000620e3d3a62d248381f8687707",
-      "digest_sha256": "f9bd3e9c551609045bbc3872750f2ab52c22a1278d6b3e0ccc62dc217404af6a"
+      "normalized_sha256": "ffd3255ab332308cb9f176bb2312e28b4e49239a03d8ffc0a5bf3028849ea208",
+      "digest_sha256": "747ef9497344488a5b0605db843d8bea2f41ba428339320db31334054e654684"
     },
     {
       "label": "acceptance-13-parametrised",
       "source": "../plans/acceptance/13-parametrised/plan.json",
-      "normalized_sha256": "59fbf57917e256a2e8129aafdc1cc3044e6ded0615c329e95d09322b7fce9f9e",
-      "digest_sha256": "80980b225d87114436b077df054852996fde760e7215b38f3482df8b9c5ab114"
+      "normalized_sha256": "d9cf22842f2c363e8281f942b992aab92936704d5fdca23e5eb08336546cf75a",
+      "digest_sha256": "bf0f32c4bcf5505ba117487a034f7e9a212da217299a3cc0191ff3f9706ceb44"
     },
     {
       "label": "acceptance-14-oncology-episodes",
       "source": "../plans/acceptance/14-oncology-episodes/plan.json",
-      "normalized_sha256": "be4512264d79213f82b530fa6d6d5d2d93ff670df1368adf313cd0d474ec26cb",
-      "digest_sha256": "8cf0facab10aac9fd6030b3340e9ab5df027573777d5d195363db0b272ef25b8"
+      "normalized_sha256": "1f6f6dd6d27ec964e9c05cc4306c5e40b83fb8a787d2916c390e413fd3794ca2",
+      "digest_sha256": "7fb3467a55b6be0776abe3b89e69ff802c344197718c582109b1cb1d649c9fbb"
     },
     {
       "label": "acceptance-15-costs-adherence",
       "source": "../plans/acceptance/15-costs-adherence/plan.json",
-      "normalized_sha256": "194384221b55ab6ff7a75544d511557bd5e783506aa3aa074ca16cb651714de7",
-      "digest_sha256": "8986ec4864d158c1ddf599363c7102fffcdea925df7048006a0e88d3b7a59082"
+      "normalized_sha256": "64fb943a2f36001239a6dc6812e6a751c2a35bf674b1e4cb23f91ea169ef92ce",
+      "digest_sha256": "f662747f0f56f2fb0873e38aa1d37e75271e06fb88e70c1c7b8df03d95a51f9c"
+    },
+    {
+      "label": "plan-v2-dates",
+      "source": "examples/plan-v2-dates.json",
+      "normalized_sha256": "3c2941259ab3d87ebee95013ead360e0332338a949a39c82dae29e9e040158cb",
+      "digest_sha256": "d0b9bb2a29b07e47341f234ecfdbddae6d27296fb927aa31128a87810aae1e15"
     }
   ]
 }

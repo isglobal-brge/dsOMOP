@@ -53,7 +53,7 @@
   for (col in names(meta$contracts)) {
     c <- meta$contracts[[col]]
     support <- unlist(meta$support[[col]], use.names = TRUE)
-    safe <- isTRUE(meta$reference) || (!length(support) ||
+    safe <- (identical(c$kind, "date") && all(names(support) %in% unlist(c$declared))) || isTRUE(meta$reference) || (!length(support) ||
       (all(support >= settings$nfilter_tab) && tryCatch({
         .assertSafeLevels(length(support), meta$total); TRUE
       }, error = function(e) FALSE)))
@@ -61,6 +61,7 @@
     ids <- union(names(support), as.character(unlist(c$declared, use.names = FALSE)))
     out$levels[[col]] <- ids
     out$concepts[[col]] <- unname(c$records[ids])
+    if (identical(c$kind, "date")) out$calendars[[col]] <- c$calendar
     if (length(c$reference_keys)) out$reference_names[[col]] <- unique(as.character(unlist(c$reference_keys,use.names=FALSE)))
   }
   for (key in names(meta$generated)) {
@@ -80,7 +81,7 @@
   for (col in names(meta$contracts)) {
     physical <- as.character(meta$names[[col]])
     levels <- as.character(unlist(meta$contracts[[col]]$resolved$levels, use.names = FALSE))
-    if (physical %in% names(frame)) frame[[physical]] <- if (identical(meta$contracts[[col]]$kind, "date")) ordered(as.character(frame[[physical]]), levels = levels) else .conceptFactor(as.character(frame[[physical]]), levels = levels)
+    if (physical %in% names(frame)) frame[[physical]] <- if (identical(meta$contracts[[col]]$kind, "date")) .dateOrdered(as.character(frame[[physical]]), levels = levels) else .conceptFactor(as.character(frame[[physical]]), levels = levels)
   }
   frame
 }
@@ -98,6 +99,7 @@
   mappings <- list()
   for (col in names(meta$contracts)) {
     shared <- spec$columns[[col]]
+    if (identical(meta$contracts[[col]]$kind, "date") && !identical(.jcsCanonical(shared$calendar), .jcsCanonical(meta$contracts[[col]]$calendar))) .dateReject("Changed staged calendar identity.")
     .conceptValidateResolution(shared, meta$contracts[[col]]$records)
     ids <- as.character(unlist(shared$ids, use.names = FALSE))
     labels <- as.character(unlist(shared$labels, use.names = FALSE))
@@ -105,7 +107,8 @@
     if (length(ids) != length(labels) || anyDuplicated(ids) || anyNA(labels) ||
         anyDuplicated(levels) || !setequal(unique(labels), levels) ||
         !all(report$levels[[col]] %in% ids)) stop("Invalid staged concept union.", call. = FALSE)
-    .assertSafeLevels(length(ids), if (isTRUE(meta$reference)) 0L else meta$total)
+    density_levels <- if (identical(meta$contracts[[col]]$kind,"date")) length(setdiff(ids,unlist(meta$contracts[[col]]$declared))) else length(ids)
+    .assertSafeLevels(density_levels, if (isTRUE(meta$reference)) 0L else meta$total)
     old <- meta$contracts[[col]]$resolved
     old_ids <- as.character(unlist(old$ids, use.names = FALSE))
     old_labels <- as.character(unlist(old$labels, use.names = FALSE))
@@ -138,7 +141,7 @@
       source <- as.character(frame[[col]])
       values <- unname(mappings[[col]][source])
       if (any(!is.na(source) & is.na(values))) stop("Staged factor coverage changed.", call. = FALSE)
-      frame[[col]] <- .conceptFactor(values, levels = as.character(unlist(spec$columns[[col]]$levels, use.names = FALSE)))
+      frame[[col]] <- if (identical(meta$contracts[[col]]$kind, "date")) .dateOrdered(values, levels = as.character(unlist(spec$columns[[col]]$levels, use.names = FALSE))) else .conceptFactor(values, levels = as.character(unlist(spec$columns[[col]]$levels, use.names = FALSE)))
     }
     frame <- .conceptReferenceNames(frame, meta$contracts)
     if ("concept_id" %in% names(mappings) && "concept_name" %in% names(frame)) frame$concept_name <- as.character(frame$concept_id)

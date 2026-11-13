@@ -4,7 +4,7 @@
 \alias{.reducePersonFrame}
 \title{The person row of every roster row (one fetch per output)}
 \usage{
-.reducePersonFrame(ctx, cons)
+.reducePersonFrame(ctx, cons, extra_columns = character())
 }
 \description{
 The person row of every roster row (one fetch per output)

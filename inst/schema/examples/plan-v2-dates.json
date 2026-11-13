@@ -1,0 +1,55 @@
+{
+  "version": 2,
+  "meta": {
+    "language_version": "2.0",
+    "semantic_version": "2.0.0",
+    "generated_by": "A28 acceptance"
+  },
+  "populations": {
+    "base": {
+      "kind": "criteria"
+    }
+  },
+  "variables": {
+    "day": {
+      "derived": {
+        "kind": "calendar_date",
+        "reference": {
+          "date": "0004-02-29"
+        }
+      }
+    },
+    "age": {
+      "derived": {
+        "kind": "age_at",
+        "reference": {
+          "date": "2024-06-01"
+        },
+        "bands": true
+      }
+    },
+    "part": {
+      "derived": {
+        "kind": "date_part",
+        "reference": {
+          "kind": "date_components",
+          "year": {
+            "kind": "integer",
+            "value": 2024
+          },
+          "month": {
+            "kind": "integer",
+            "value": 2
+          }
+        },
+        "part": "month"
+      }
+    }
+  },
+  "outputs": {
+    "o": {
+      "rows": "base",
+      "format": "wide"
+    }
+  }
+}

@@ -695,7 +695,7 @@ test_that("cohort_membership output has correct structure", {
   })
 })
 
-test_that("cohort_membership absolute dates require explicit authorization", {
+test_that("A-28 cohort_membership assignment permits exact dates without an owner option", {
   handle <- create_test_handle()
   on.exit(cleanup_handle(handle))
   .buildBlueprint(handle)
@@ -711,8 +711,8 @@ test_that("cohort_membership absolute dates require explicit authorization", {
   withr::with_options(list(nfilter.subset = 3,
                            dsomop.allow_absolute_dates = FALSE,
                            dsomop.query_strict = TRUE), {
-    expect_error(.planExecute(handle, plan, list(cm = "cm_df")),
-                 "Absolute date handling")
+    result <- .planExecute(handle, plan, list(cm = "cm_df"))$cm
+    expect_true(all(c("cohort_start_date", "cohort_end_date") %in% names(result)))
   })
   withr::with_options(list(nfilter.subset = 3,
                            dsomop.allow_absolute_dates = TRUE,
