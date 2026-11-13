@@ -91,10 +91,16 @@ consistent when source observation rows change between statements. An
 already compiled unfrozen observation source is promoted before native
 population coverage is materialised.
 
-These are operation-local snapshots of the specified relations, not a
-transaction-wide snapshot of every CDM table. In-database snapshot creation
-neither counts nor fetches patient rows into R and does not impose the R
-memory-row cap. R realisations retain their own explicit bounds.
+These are operation-local materialisations of the specified relations. When
+an enclosing request snapshot is active, its source certification and read
+snapshot also cover these relations. The native population materialisation
+stays in the database. Inside an active MySQL or MariaDB request snapshot,
+ordinary consistent SELECT results instead pass privately through R into a
+typed session table: ALTER TABLE can end the transaction, and INSERT ... SELECT
+can read newer committed rows. This fallback holds the complete relation in R
+and therefore requires memory proportional to its size. Neither population
+path counts rows for admission, truncates results or imposes the R memory-row
+cap. Explicit bounded matching realisations retain their separate bounds.
 
 Snapshot creation preserves the complete fragment contract and attributes,
 then replaces its SELECT with a read of the private table. On MySQL the

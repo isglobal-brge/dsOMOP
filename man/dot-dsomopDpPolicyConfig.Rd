@@ -7,14 +7,15 @@
 .dsomopDpPolicyConfig()
 }
 \description{
-Missing domain and snapshot_id values are SHA-256 fingerprints of canonical
-resource coordinates and cdm_source metadata (cdm_source_name,
-cdm_release_date, cdm_version, vocabulary_version). Explicit values win.
-Complete source rows are canonically sorted; incomplete or absent source
-metadata falls back to sorted vocabulary versions, then resource identity
-alone. Data reloads need no epoch bump: the private database version of
-every answer tracks them (\code{.dsomopDpDataVersion}), and a custodial
-snapshot_id replaces that automatic version. The noise root is the only
-persistent DP state; ephemeral state directories are test-only.
+A missing domain is the SHA-256 fingerprint of the canonical resource
+coordinates. The public \code{snapshot_id} is display metadata only, for
+clients that print it (derived from the canonical privacy domain without
+any metadata database read): since dsOMOP 2.10.3 it
+enters no key, policy hash, provenance check, route or admission. The
+deprecated \code{dsomop.dp.snapshot_id} option only replaces that label.
+Fixed synopses are keyed on the per-request person-membership generation
+(\code{.dsomopDpDataGeneration}), which needs no configuration. The noise
+root is the only persistent DP state; ephemeral state directories are
+test-only.
 }
 \keyword{internal}

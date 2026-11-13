@@ -1810,6 +1810,7 @@
 #' @return Data frame
 #' @keywords internal
 .executeQuery <- function(handle, sql) {
+  .dsomopSnapshotReadSql(handle, sql)
   result <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql))
   names(result) <- tolower(names(result))
   .coerce_integer64(result)
@@ -1950,6 +1951,7 @@
       unlink(output_path, recursive = TRUE)
     }
   }, add = TRUE)
+  if (!is.null(ctx)) .dsomopSnapshotReadSql(ctx$handle, sql)
   rs <- DBI::dbSendQuery(conn, sql)
 
   # Capture the result schema without consuming rows. A disclosure-safe query
@@ -2104,6 +2106,8 @@
 #' @return Number of affected rows (invisible)
 #' @keywords internal
 .executeStatement <- function(handle, sql) {
+  .dsomopSnapshotGuard(handle, sql)
+  .dsomopSnapshotReadSql(handle, sql)
   invisible(.withDbReconnect(handle, function(conn) DBI::dbExecute(conn, sql)))
 }
 

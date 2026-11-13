@@ -1,0 +1,14 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+scenario 4 interaction_cox n 2000 replicate 1 of 1 seconds 10.415 
+ scenario           model sampler    n  level replicates finite informative
+        4 interaction_cox     law 2000 group1          1      1           1
+        4 interaction_cox     law 2000 group2          1      1           1
+        4 interaction_cox     law 2000 group3          1      1           1
+ finite_rate informative_rate coverage_given_finite coverage_all     bias_log
+           1                1                     1            1  0.001260529
+           1                1                     1            1  0.024992066
+           1                1                     1            1 -0.009866802
+    rmse_log mean_ci_log_width oracle_bias_log release_minus_oracle_bias_log
+ 0.001260529         1.0324069     0.003215479                   -0.00195495
+ 0.024992066         0.9961153     0.095511153                   -0.07051909
+ 0.009866802         0.9472669     0.022889955                   -0.03275676

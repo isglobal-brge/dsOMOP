@@ -1,0 +1,4 @@
+"scenario","model","sampler","n","level","replicates","finite","informative","finite_rate","informative_rate","coverage_given_finite","coverage_all","bias_log","rmse_log","mean_ci_log_width","oracle_bias_log","release_minus_oracle_bias_log"
+4,"interaction_cox","law",2000,"group1",1,1,1,1,1,1,1,0.00126052870783561,0.00126052870783561,1.03240693537002,0.00321547860085136,-0.00195494989301576
+4,"interaction_cox","law",2000,"group2",1,1,1,1,1,1,1,0.0249920661898356,0.0249920661898356,0.996115329210163,0.0955111531701555,-0.0705190869803198
+4,"interaction_cox","law",2000,"group3",1,1,1,1,1,1,1,-0.00986680171416437,0.00986680171416437,0.94726694537307,0.0228899553010095,-0.0327567570151739

@@ -11,7 +11,8 @@
   tar_start,
   tar_end,
   anchor_start = "start",
-  anchor_end = "end"
+  anchor_end = "end",
+  horizon = NULL
 )
 }
 \arguments{
@@ -24,14 +25,21 @@
 \item{tar_start, tar_end}{Integer TAR offsets.}
 
 \item{anchor_start, anchor_end}{Either `"start"` or `"end"`.}
+
+\item{horizon}{Public contribution horizon in days of protected releases
+(NULL: the whole observed window).}
 }
 \value{
 SQL for a derived person-level outcome substrate.
 }
 \description{
 The returned relation has one row per person and pre-aggregates outcome rows
-inside that person's selected time-at-risk window. Consequently, repeated
-outcome events increase `outcomes` but can never fan out `person_days`.
-Episodes whose requested TAR ends before it starts are omitted.
+inside that person's observed time-at-risk window
+(\code{\link{.omopObservedTarSql}}: the requested window intersected with
+the observation period containing the index, half-open). Consequently,
+repeated outcome events increase `outcomes` but can never fan out
+`person_days`, outcomes outside observation never count, and persons whose
+index lies outside every observation period, or whose observed window is
+empty, are omitted.
 }
 \keyword{internal}

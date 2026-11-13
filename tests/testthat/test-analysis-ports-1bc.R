@@ -196,7 +196,7 @@ test_that("(b) fe.prevalence runs for condition + drug domains", {
   })
 })
 
-test_that("(b) fe.continuous returns un-masked stats for a >= nfilter_dist cohort", {
+test_that("(b) fe.continuous computes per-covariate stats; the standard route masks scoped ones", {
   h <- p1bc_handle()
   on.exit(cleanup_handle(h))
   withr::with_options(p1bc_opts(dist = 10), {
@@ -211,7 +211,19 @@ test_that("(b) fe.continuous returns un-masked stats for a >= nfilter_dist cohor
     wrow <- bw[bw$covariate_id == 3025315, ]
     expect_equal(nrow(wrow), 1L)
     expect_equal(wrow$count_value, 10)            # 13 banded down to 10
-    expect_false(is.na(wrow$median_value))        # >= nfilter_dist -> released
+    # 2.10.3: exact scoped moments and quantiles are demonstrated-disclosive
+    # (two scopes differing by one person recover that person's value), so the
+    # standard route releases them as NA; the protected route releases
+    # protected components instead (test-tools-release.R).
+    expect_true(is.na(wrow$median_value))
+    expect_identical(attr(bw, "dsomop_protection")$masked_reason,
+                     "protected_mechanism_unavailable")
+    # The in-session computation itself is unchanged.
+    entry <- .omopAnalysisResolve(h, "dsomop:fe.continuous")
+    raw <- entry$compute$fn(h, list(scoped_cohort = allp),
+                            list(metric = "measurement_value",
+                                 domain_code = "3"))
+    expect_false(is.na(raw$median_value[raw$covariate_id == 3025315]))
     expect_true(all(c("p10_value", "p25_value", "p75_value", "p90_value") %in%
                     names(bw)))
     # Min/max are NEVER released by a dist entry.
@@ -289,12 +301,12 @@ test_that("(b) plp.covariate_summary splits prevalence by an outcome concept set
   })
 })
 
-test_that("(b) cohort_overlap counts both / A-only / B-only / either", {
+test_that("(b) cohort_overlap counts the disjoint regions both / A-only / B-only", {
   h <- p1bc_handle()
   on.exit(cleanup_handle(h))
   withr::with_options(p1bc_opts(), {
     # diabetes = {1,3,5,7,9,11} (6); COPD = {5,7,9,13} (4).
-    # both = {5,7,9} = 3; a_only = {1,3,11} = 3; b_only = {13} = 1; either = 7.
+    # both = {5,7,9} = 3; a_only = {1,3,11} = 3; b_only = {13} = 1.
     a <- p1bc_diabetes(h, id = 1L)
     b <- p1bc_copd(h, id = 2L)
     df <- .omopAnalysisRun(h, "dsomop:cohortdx.cohort_overlap",
@@ -302,8 +314,10 @@ test_that("(b) cohort_overlap counts both / A-only / B-only / either", {
     expect_true(all(c("category", "n") %in% names(df)))
     # Long format: each surviving region is suppressed + banded independently.
     expect_true(all(df$n %% 5 == 0 | is.na(df$n)))
-    got <- stats::setNames(df$n, df$category)
-    expect_equal(unname(got[["either"]]), 5)        # 7 persons -> banded to 5
+    # Only the three disjoint regions: the redundant union is never released
+    # (union - a_only - b_only would pin a suppressed 'both').
+    expect_true(all(df$category %in% c("both", "a_only", "b_only")))
+    expect_false("either" %in% df$category)
     expect_false("b_only" %in% df$category)         # 1 person -> dropped
   })
 })

@@ -1240,6 +1240,7 @@
 }
 
 .sqlQueryOne <- function(handle, sql) {
+  .dsomopSnapshotReadSql(handle, sql)
   result <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, sql))
   if (!is.data.frame(result) || nrow(result) < 1L || ncol(result) < 1L) {
     return(NULL)

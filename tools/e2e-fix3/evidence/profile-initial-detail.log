@@ -1,0 +1,72 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+e2e-fix3-performance: 
+ROUTE fixed_synopsis 
+BASELINE
+   user  system elapsed 
+ 15.233   0.350  15.583 
+CURRENT
+   user  system elapsed 
+ 13.056   0.056  13.113 
+                                  self.time self.pct total.time total.pct
+"stringhash"                           3.66    26.75       3.68     26.90
+"paste"                                1.67    12.21       1.67     12.21
+"paste0"                               0.98     7.16       1.01      7.38
+"vapply"                               0.94     6.87       5.25     38.38
+".dsomopReleaseFingerprintFramed"      0.79     5.77       3.06     22.37
+"gc"                                   0.56     4.09       0.56      4.09
+"sub"                                  0.51     3.73       0.53      3.87
+"match"                                0.46     3.36       0.46      3.36
+"which"                                0.43     3.14       0.46      3.36
+"anyNA"                                0.42     3.07       0.42      3.07
+"factor"                               0.24     1.75       0.25      1.83
+"FUN"                                  0.23     1.68      13.68    100.00
+"order"                                0.23     1.68       0.27      1.97
+"anyDuplicated.default"                0.18     1.32       0.18      1.32
+".dsomopBigInteger"                    0.15     1.10       0.41      3.00
+"structure"                            0.13     0.95       0.21      1.54
+"$"                                    0.13     0.95       0.13      0.95
+"anyDuplicated"                        0.12     0.88       0.30      2.19
+"unname"                               0.12     0.88       0.12      0.88
+"rawstringhash"                        0.10     0.73       4.56     33.33
+"formals"                              0.10     0.73       0.13      0.95
+".local"                               0.08     0.58       0.65      4.75
+"stopifnot"                            0.07     0.51       0.86      6.29
+".dsomopBigMagnitudeCompare"           0.07     0.51       0.09      0.66
+"[.data.frame"                         0.06     0.44       0.08      0.58
+"grepl"                                0.06     0.44       0.06      0.44
+"unique.default"                       0.06     0.44       0.06      0.44
+"bits"                                 0.05     0.37       1.71     12.50
+".dsomopBigNew"                        0.05     0.37       0.42      3.07
+".dsomopReleaseBuild"                  0.04     0.29      13.12     95.91
+                                  total.time total.pct self.time self.pct
+"FUN"                                  13.68    100.00      0.23     1.68
+"eval"                                 13.68    100.00      0.01     0.07
+"doTryCatch"                           13.68    100.00      0.00     0.00
+"doWithOneRestart"                     13.68    100.00      0.00     0.00
+"lapply"                               13.68    100.00      0.00     0.00
+"source_file"                          13.68    100.00      0.00     0.00
+"system.time"                          13.68    100.00      0.00     0.00
+"test_code"                            13.68    100.00      0.00     0.00
+"test_dir"                             13.68    100.00      0.00     0.00
+"test_files"                           13.68    100.00      0.00     0.00
+"test_files_serial"                    13.68    100.00      0.00     0.00
+"test_that"                            13.68    100.00      0.00     0.00
+"testthat::test_local"                 13.68    100.00      0.00     0.00
+"tryCatch"                             13.68    100.00      0.00     0.00
+"tryCatchList"                         13.68    100.00      0.00     0.00
+"tryCatchOne"                          13.68    100.00      0.00     0.00
+"withCallingHandlers"                  13.68    100.00      0.00     0.00
+"withOneRestart"                       13.68    100.00      0.00     0.00
+"withRestarts"                         13.68    100.00      0.00     0.00
+"with_reporter"                        13.68    100.00      0.00     0.00
+".dsomopReleaseBuild"                  13.12     95.91      0.04     0.29
+"noisy"                                 6.38     46.64      0.01     0.07
+"vapply"                                5.25     38.38      0.94     6.87
+"rawstringhash"                         4.56     33.33      0.10     0.73
+"openssl::sha256"                       4.56     33.33      0.00     0.00
+".dsomopReleasePersonTokens"            4.02     29.39      0.00     0.00
+"stringhash"                            3.68     26.90      3.66    26.75
+".dsomopReleaseFingerprintFramed"       3.06     22.37      0.79     5.77
+".dsomopReleaseNoisyComponent"          2.80     20.47      0.00     0.00
+".dsomopDpDiscreteLaplace"              2.73     19.96      0.00     0.00
+.

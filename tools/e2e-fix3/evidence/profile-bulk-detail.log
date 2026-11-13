@@ -1,0 +1,152 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+e2e-fix3-performance: 
+ROUTE fixed_synopsis 
+BASELINE
+   user  system elapsed 
+ 15.830   0.361  16.192 
+CURRENT
+   user  system elapsed 
+ 13.111   0.053  13.165 
+                                  self.time self.pct total.time total.pct
+"stringhash"                           3.77    27.44       3.78     27.51
+"paste"                                2.38    17.32       2.40     17.47
+"paste0"                               0.97     7.06       1.00      7.28
+"vapply"                               0.83     6.04       5.82     42.36
+"gc"                                   0.58     4.22       0.58      4.22
+"sub"                                  0.50     3.64       0.51      3.71
+"match"                                0.49     3.57       0.49      3.57
+"anyNA"                                0.43     3.13       0.43      3.13
+"noisy"                                0.27     1.97       6.26     45.56
+"FUN"                                  0.26     1.89      13.74    100.00
+"as.integer"                           0.23     1.67       0.23      1.67
+".dsomopBigCompare"                    0.21     1.53       0.29      2.11
+"order"                                0.21     1.53       0.28      2.04
+"anyDuplicated.default"                0.17     1.24       0.17      1.24
+"which"                                0.15     1.09       0.22      1.60
+"structure"                            0.14     1.02       0.18      1.31
+"anyDuplicated"                        0.12     0.87       0.29      2.11
+"match.arg"                            0.12     0.87       0.18      1.31
+".dsomopDpBitStream"                   0.11     0.80       0.14      1.02
+"getClassDef"                          0.11     0.80       0.11      0.80
+".dsomopDpUniformInteger"              0.10     0.73       1.66     12.08
+".local"                               0.09     0.66       1.35      9.83
+".dsomopBigAdd"                        0.07     0.51       0.40      2.91
+"$"                                    0.07     0.51       0.07      0.51
+".dsomopReleaseFingerprintFramed"      0.06     0.44       2.93     21.32
+".dsomopBigNew"                        0.06     0.44       0.42      3.06
+".dsomopBigMagnitudeCompare"           0.06     0.44       0.09      0.66
+"[.data.frame"                         0.06     0.44       0.09      0.66
+".dsomopBigMultiply"                   0.05     0.36       0.16      1.16
+"stopifnot"                            0.05     0.36       0.11      0.80
+                                  total.time total.pct self.time self.pct
+"FUN"                                  13.74    100.00      0.26     1.89
+"doTryCatch"                           13.74    100.00      0.01     0.07
+"eval"                                 13.74    100.00      0.01     0.07
+"doWithOneRestart"                     13.74    100.00      0.00     0.00
+"lapply"                               13.74    100.00      0.00     0.00
+"source_file"                          13.74    100.00      0.00     0.00
+"system.time"                          13.74    100.00      0.00     0.00
+"test_code"                            13.74    100.00      0.00     0.00
+"test_dir"                             13.74    100.00      0.00     0.00
+"test_files"                           13.74    100.00      0.00     0.00
+"test_files_serial"                    13.74    100.00      0.00     0.00
+"test_that"                            13.74    100.00      0.00     0.00
+"testthat::test_local"                 13.74    100.00      0.00     0.00
+"tryCatch"                             13.74    100.00      0.00     0.00
+"tryCatchList"                         13.74    100.00      0.00     0.00
+"tryCatchOne"                          13.74    100.00      0.00     0.00
+"withCallingHandlers"                  13.74    100.00      0.00     0.00
+"withOneRestart"                       13.74    100.00      0.00     0.00
+"withRestarts"                         13.74    100.00      0.00     0.00
+"with_reporter"                        13.74    100.00      0.00     0.00
+".dsomopReleaseBuild"                  13.16     95.78      0.03     0.22
+"noisy"                                 6.26     45.56      0.27     1.97
+"vapply"                                5.82     42.36      0.83     6.04
+".dsomopReleasePersonTokens"            4.16     30.28      0.00     0.00
+"openssl::sha256"                       3.82     27.80      0.00     0.00
+"rawstringhash"                         3.82     27.80      0.00     0.00
+"stringhash"                            3.78     27.51      3.77    27.44
+".dsomopReleaseFingerprintFramed"       2.93     21.32      0.06     0.44
+".dsomopDpHmac"                         2.82     20.52      0.02     0.15
+".dsomopReleaseNoisyComponent"          2.82     20.52      0.00     0.00
+.
+ROUTE realised_sticky 
+BASELINE
+   user  system elapsed 
+ 12.982   0.070  13.054 
+CURRENT
+   user  system elapsed 
+ 12.824   0.155  12.979 
+                                  self.time self.pct total.time total.pct
+"stringhash"                           4.07    30.10       4.09     30.25
+"paste"                                1.93    14.28       1.93     14.28
+"paste0"                               1.75    12.94       1.76     13.02
+"FUN"                                  0.84     6.21      13.52    100.00
+"gc"                                   0.55     4.07       0.55      4.07
+".dsomopReleaseBuild"                  0.53     3.92      12.97     95.93
+"sub"                                  0.47     3.48       0.47      3.48
+"anyNA"                                0.43     3.18       0.43      3.18
+".dsomopBigAdd"                        0.41     3.03       0.71      5.25
+"structure"                            0.21     1.55       0.39      2.88
+"order"                                0.20     1.48       0.24      1.78
+"$"                                    0.15     1.11       0.15      1.11
+"anyDuplicated.default"                0.14     1.04       0.14      1.04
+"c"                                    0.13     0.96       0.13      0.96
+"anyDuplicated"                        0.11     0.81       0.25      1.85
+".dsomopBigInteger"                    0.08     0.59       0.58      4.29
+".dsomopReleaseFingerprintFramed"      0.07     0.52       2.99     22.12
+".local"                               0.07     0.52       0.26      1.92
+"match.arg"                            0.07     0.52       0.20      1.48
+"[.data.frame"                         0.07     0.52       0.09      0.67
+"eval"                                 0.06     0.44      13.52    100.00
+".dsomopBigNew"                        0.06     0.44       0.56      4.14
+"unique.default"                       0.06     0.44       0.06      0.44
+".dsomopBigMultiply"                   0.05     0.37       0.22      1.63
+".dsomopBigCompare"                    0.05     0.37       0.16      1.18
+".dsomopBigMagnitudeCompare"           0.05     0.37       0.08      0.59
+"which"                                0.04     0.30       0.14      1.04
+"is"                                   0.04     0.30       0.05      0.37
+"duplicated.default"                   0.04     0.30       0.04      0.30
+"vapply"                               0.03     0.22       5.00     36.98
+                                  total.time total.pct self.time self.pct
+"FUN"                                  13.52    100.00      0.84     6.21
+"eval"                                 13.52    100.00      0.06     0.44
+"doTryCatch"                           13.52    100.00      0.00     0.00
+"doWithOneRestart"                     13.52    100.00      0.00     0.00
+"lapply"                               13.52    100.00      0.00     0.00
+"source_file"                          13.52    100.00      0.00     0.00
+"system.time"                          13.52    100.00      0.00     0.00
+"test_code"                            13.52    100.00      0.00     0.00
+"test_dir"                             13.52    100.00      0.00     0.00
+"test_files"                           13.52    100.00      0.00     0.00
+"test_files_serial"                    13.52    100.00      0.00     0.00
+"test_that"                            13.52    100.00      0.00     0.00
+"testthat::test_local"                 13.52    100.00      0.00     0.00
+"tryCatch"                             13.52    100.00      0.00     0.00
+"tryCatchList"                         13.52    100.00      0.00     0.00
+"tryCatchOne"                          13.52    100.00      0.00     0.00
+"withCallingHandlers"                  13.52    100.00      0.00     0.00
+"withOneRestart"                       13.52    100.00      0.00     0.00
+"withRestarts"                         13.52    100.00      0.00     0.00
+"with_reporter"                        13.52    100.00      0.00     0.00
+".dsomopReleaseBuild"                  12.97     95.93      0.53     3.92
+"noisy"                                 5.28     39.05      0.01     0.07
+"vapply"                                5.00     36.98      0.03     0.22
+".dsomopReleasePersonTokens"            4.49     33.21      0.00     0.00
+"openssl::sha256"                       4.11     30.40      0.01     0.07
+"rawstringhash"                         4.10     30.33      0.00     0.00
+"stringhash"                            4.09     30.25      4.07    30.10
+".dsomopReleaseFingerprintFramed"       2.99     22.12      0.07     0.52
+".dsomopDpHmac"                         2.24     16.57      0.01     0.07
+".dsomopReleaseNoisyComponent"          2.06     15.24      0.01     0.07
+.
+privacy-sampler: ........................................................
+Sampler validation epsilon=0.1 sensitivity=1 n=10000: min_bin_p=0.0407017 symmetry_p=0.773731 mean_abs=10.052 expected_abs=9.98335276 abs_z=0.685903 tails=153
+...
+Sampler validation epsilon=0.25 sensitivity=1 n=10000: min_bin_p=0.0799634 symmetry_p=0.974471 mean_abs=3.9392 expected_abs=3.95863516 abs_z=0.483422 tails=151
+...
+Sampler validation epsilon=1 sensitivity=1 n=10000: min_bin_p=0.128513 symmetry_p=0.0811805 mean_abs=0.8269 expected_abs=0.850918128 abs_z=2.27226 tails=91
+...
+Sampler validation epsilon=4 sensitivity=1 n=10000: min_bin_p=0.321068 symmetry_p=0.590378 mean_abs=0.0354 expected_abs=0.0366435703 abs_z=0.64942 tails=9
+...
+Sampler validation epsilon=8 sensitivity=1 n=40000: min_bin_p=0.00897958 symmetry_p=0.361595 mean_abs=0.000775 expected_abs=0.000670925331 abs_z=0.803596 tails=1

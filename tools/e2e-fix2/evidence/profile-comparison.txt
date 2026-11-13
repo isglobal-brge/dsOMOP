@@ -1,0 +1,4 @@
+Baseline 87bc430 parent byte mechanism (before HMAC string-path change): 15.552 s elapsed, Rprof enabled.
+HMAC string path: 15.337 s elapsed, Rprof enabled.
+identical(readRDS(before), readRDS(after)): TRUE for the entire one-million-person built result.
+Shared test pod. Pure mechanism, not a live Opal run. Improvement insufficient to close G16.

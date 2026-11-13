@@ -1722,7 +1722,8 @@ test_that("person-level incidence counts recurrent outcomes without person-time 
 
   first <- aggregate()
   expect_equal(as.numeric(first$persons), 10)
-  expect_equal(as.numeric(first$person_days), 100)
+  # Half-open observed windows (2.10.3): 1 to 11 January is 11 days.
+  expect_equal(as.numeric(first$person_days), 110)
   expect_equal(as.numeric(first$outcomes), 20)
 
   for (pid in 1:10) add_event(pid, 7L)
@@ -1780,13 +1781,13 @@ test_that("two-population ports run un-scoped raise a clear requires-cohort erro
   }
 })
 
-test_that("cohort_overlap counts both/A-only/B-only/either, each banded", {
+test_that("cohort_overlap releases only the disjoint regions, each banded", {
   h <- acat_handle()
   on.exit(cleanup_handle(h))
   withr::with_options(list(nfilter.subset = 3, nfilter.tab = 3,
                            dsomop.nfilter.band = 5), {
     # Arm A = diabetes (persons 1,3,5,7,9,11); arm B = COPD (persons 5,7,9,13).
-    # both = {5,7,9} = 3; A-only = {1,3,11} = 3; B-only = {13} = 1; either = 7.
+    # both = {5,7,9} = 3; A-only = {1,3,11} = 3; B-only = {13} = 1.
     a <- .cohortCreate(h, list(type = "condition", concept_set = c(201820)),
                        mode = "temporary", cohort_id = 1)
     b <- .cohortCreate(h, list(type = "condition", concept_set = c(255573)),
@@ -1797,9 +1798,9 @@ test_that("cohort_overlap counts both/A-only/B-only/either, each banded", {
     # Long format: one (suppressed + banded) count per surviving region — each
     # region independently gated (differencing defence).
     expect_true(all(df$n %% 5 == 0 | is.na(df$n)))
-    got <- stats::setNames(df$n, df$category)
-    # 'either' (7 persons) clears threshold and bands DOWN to 5.
-    expect_equal(unname(got[["either"]]), 5)
+    # The redundant union ('either') is never released next to its parts.
+    expect_true(all(df$category %in% c("both", "a_only", "b_only")))
+    expect_false("either" %in% df$category)
     # 'b_only' (1 person) is below nfilter and is dropped entirely (no NA row).
     expect_false("b_only" %in% df$category)
   })

@@ -418,13 +418,14 @@
     `200` =, `400` =, `500` =, `600` =, `700` =, `800` =,
     `1800` =, `2100` = c("concept_id", "concept_name", "count_value"),
     `202` =, `402` =, `602` =, `702` =, `802` =,
-    `1802` = c("calendar_month", "concept_id", "concept_name", "count_value"),
+    `1802` =, `2102` = c("calendar_month", "concept_id", "concept_name",
+                         "count_value"),
     `221` = c("calendar_year", "count_value"),
     `502` = c("calendar_month", "count_value"),
     `201` =, `401` =, `505` =, `601` =, `701` =, `801` =,
     `1801` =, `2101` = c("concept_id", "concept_name", "count_value", "n_persons"),
     `220` =, `420` =, `620` =, `720` =, `820` =,
-    `1820` =, `2102` = c("calendar_month", "count_value", "n_persons"),
+    `1820` = c("calendar_month", "count_value", "n_persons"),
     `1818` = c("measurement_concept_id", "measurement_concept_name",
                "unit_concept_id", "unit_concept_name", "range_bucket",
                "count_value", "n_persons"),
@@ -534,9 +535,9 @@
   if (identical(id,
                 "dsomop:ohdsi.cohort_diagnostics.temporal_covariate_value_dist")) {
     return(.omopPoolingDistribution(
-      c("time_window", "covariate_id", "covariate_name", "count_value",
-        "n_persons", "avg_value", "stdev_value", "p10_value", "p25_value",
-        "median_value", "p75_value", "p90_value"),
+      c("time_window", "covariate_id", "covariate_name", "unit_concept_id",
+        "unit_name", "count_value", "n_persons", "avg_value", "stdev_value",
+        "p10_value", "p25_value", "median_value", "p75_value", "p90_value"),
       c("count_value", "n_persons"), "n_persons"
     ))
   }
@@ -610,9 +611,9 @@
   }
   if (id %in% c("dsomop:fe.continuous")) {
     return(.omopPoolingDistribution(
-      c("metric", "covariate_id", "covariate_name", "count_value",
-        "n_persons", "avg_value", "stdev_value", "p10_value", "p25_value",
-        "median_value", "p75_value", "p90_value"),
+      c("metric", "covariate_id", "covariate_name", "unit_concept_id",
+        "unit_name", "count_value", "n_persons", "avg_value", "stdev_value",
+        "p10_value", "p25_value", "median_value", "p75_value", "p90_value"),
       c("count_value", "n_persons"), "n_persons"
     ))
   }
@@ -642,11 +643,11 @@
     return(tab(columns, "sum_value", nonpoolable = setdiff(columns[5:13], "sum_value")))
   }
   if (id %in% c("dsomop:char.target_covariates")) {
-    columns <- c("kind", "covariate_id", "covariate_name", "sum_value",
-                 "average", "count_value", "avg_value", "stdev_value",
-                 "p10_value", "p25_value", "median_value", "p75_value",
-                 "p90_value")
-    return(tab(columns, "sum_value", nonpoolable = columns[5:13]))
+    columns <- c("kind", "covariate_id", "covariate_name", "unit_concept_id",
+                 "unit_name", "sum_value", "average", "count_value",
+                 "avg_value", "stdev_value", "p10_value", "p25_value",
+                 "median_value", "p75_value", "p90_value")
+    return(tab(columns, "sum_value", nonpoolable = columns[7:15]))
   }
   if (id %in% c("dsomop:cohortdx.cohort_overlap")) {
     return(tab(c("category", "n"), "n"))
@@ -845,8 +846,8 @@
       stop("Aggregate analysis '", id,
            "' has no typed pooling contract.", call. = FALSE)
     }
-    entry$meta$pooling_contract <-
-      .omopAnalysisValidatePoolingContract(contract, id)
+    contract <- .omopAnalysisValidatePoolingContract(contract, id)
+    entry <- .omopToolsReleasePoolingContract(entry, contract)
     entries[[id]] <- entry
   }
   for (id in names(entries)) {
@@ -859,6 +860,7 @@
            "'.", call. = FALSE)
     }
     entry$meta$pooling_contract <- entries[[target]]$meta$pooling_contract
+    entry$meta$release_pooling <- entries[[target]]$meta$release_pooling
     entries[[id]] <- entry
   }
   for (id in names(entries)) {

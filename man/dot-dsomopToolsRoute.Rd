@@ -12,8 +12,9 @@
 \item{entry}{Catalog entry (adapter "tools_auto").}
 }
 \value{
-List with protection ("dp", "standard_fallback" or "standard"),
-  shape, mode and, for DP, the policy.
+List with protection ("standard", or "pending_release_route" for
+  histogram/partition shapes and record-weighted summaries whose release
+  contract decides), shape and mode.
 }
 \description{
 Depends only on the custodial mode, the DP service state and the question;

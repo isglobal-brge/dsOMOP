@@ -123,6 +123,7 @@
   # Core outputs never inherit DP state from their inputs.
   attr(result, "dsomop_dp_provenance") <- NULL
   attr(result, "dsomop_dp_filter_state") <- NULL
+  attr(result, "dsomop_dp_release_persons") <- NULL
   pseudonymization <- do.call(
     .assertOmopTablePseudonymization,
     c(sources, list(caller = ".retagOmopTable"))

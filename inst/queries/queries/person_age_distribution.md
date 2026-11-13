@@ -13,11 +13,19 @@ Returns persons grouped into 10-year age bins based on year of birth relative
 to a reference year. Provides age distribution without revealing exact birth
 years.
 
+Aggregate release (dsOMOP 2.10.3): in auto mode the answer is a view of the
+one protected gender x birth-year basis (birth years 1900 to the custodial
+reference year, plus unknown); the requested reference year only relabels that
+basis (year-only age = reference year - year of birth), and all age groups are
+always released. In standard mode the requested year snaps to the custodial
+reference year (`dsomop.dp.reference_year`). The protection label reports the
+requested and effective values.
+
 ## Input
 
 | Parameter | Example | Mandatory | Notes |
 |-----------|---------|-----------|-------|
-| reference_year | 2024 | No | Year for age calculation (default current year) |
+| reference_year | 2024 | No | Year for age calculation (default current year); aggregate releases relabel the protected birth-year basis (see Description) |
 
 ## Output
 

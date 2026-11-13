@@ -142,9 +142,12 @@ test_that("(b) dist diagnostics return a single summarised row (>= nfilter_dist)
     expect_equal(nrow(td), 1L)
     expect_equal(td$metric, "time_in_cohort")
     expect_true(td$count_value %% 5 == 0)          # banded
-    # >= nfilter_dist (40 persons) -> summary stats present (not masked).
-    expect_false(is.na(td$median_value))
-    expect_true(td$median_value > 0)               # 2020-01-01 .. 2024-12-31
+    # 2.10.3: exact scoped quantiles are unavailable on the standard route.
+    expect_true(is.na(td$median_value))
+    raw <- .omopAnalysisResolve(h, "dsomop:cohortdx.time_distribution")$compute$fn(
+      h, list(scoped_cohort = "dsomop_ports_dist"),
+      list(metric = "time_in_cohort"))
+    expect_true(raw$median_value > 0)              # 2020-01-01 .. 2024-12-31
     expect_true(all(c("p10_value", "p25_value", "p75_value", "p90_value")
                     %in% names(td)))
 
@@ -152,7 +155,7 @@ test_that("(b) dist diagnostics return a single summarised row (>= nfilter_dist)
                            scope = "dsomop_ports_dist")
     expect_equal(nrow(fu), 1L)
     expect_equal(fu$metric, "time_at_risk")
-    expect_false(is.na(fu$median_value))
+    expect_true(is.na(fu$median_value))
   })
 })
 
@@ -247,10 +250,13 @@ test_that("(c) incidence.rate suppresses a sub-band stratum but keeps a big one"
     # MALE stratum (>= 5 outcome-persons) survives; FEMALE (2) is dropped.
     expect_true("MALE" %in% df$stratum)
     expect_false("FEMALE" %in% df$stratum)
-    # The surviving stratum carries a banded, non-NA rate.
+    # The surviving stratum carries banded counts; its exact person-days and
+    # rate are unavailable on the standard route (2.10.3: TAR sweeps of exact
+    # person-days recover exact arm sizes).
     male_row <- df[df$stratum == "MALE", ]
     expect_true(male_row$person_outcomes %% 5 == 0)
-    expect_false(is.na(male_row$rate))
+    expect_true(is.na(male_row$rate))
+    expect_true(is.na(male_row$person_days))
   })
 })
 

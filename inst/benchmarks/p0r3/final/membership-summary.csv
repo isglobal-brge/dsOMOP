@@ -1,0 +1,5 @@
+engine,version,persons,first_seconds,warm1_seconds,warm2_seconds
+postgresql,"PostgreSQL 14.24 (Ubuntu 14.24-0ubuntu0.22.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit",10000000,17.992,13.817,14.991
+mariadb,10.6.23-MariaDB-0ubuntu0.22.04.1,10000000,117.614,111.28,104.856
+mysql,8.4.11,10000000,50.7760000000001,54.1799999999999,52.225
+duckdb,v2.0.0,10000000,6.072,6.31999999999994,6.16700000000003

@@ -223,7 +223,9 @@
     }
     sealed <- .dsomopDpSealPlanOutput(
       value, ir, output, dataset_identity = dataset_identity,
-      component = candidate$component, scopes = ctx$scopes
+      component = candidate$component, scopes = ctx$scopes,
+      person_key = .personKey(ctx$handle),
+      read_snapshot = .dsomopReadSnapshotLabel(ctx$handle)
     )
     # A sealing failure is technical, not an invitation to publish unsealed
     # rows. The publication transaction owns and aborts all artefacts.

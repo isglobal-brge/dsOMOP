@@ -459,3 +459,50 @@ test_that("MySQL executes the separated OMOP database contract", {
 test_that("MariaDB executes the separated OMOP database contract", {
   .expectVendorDatabaseContract("mariadb")
 })
+
+# Every live Achilles catalogue entry on a real server (G-16: PostgreSQL
+# rejects a selected concept name that is not grouped), plus the G-03 reader
+# cells over a supported 40-person population with the small-support cases of
+# .achillesLiveFrames(). The server, driver and DBI versions are printed.
+.expectVendorAchillesLive <- function(dbms) {
+  config <- .dsomopVendorTestConfig(dbms)
+  testthat::skip_if(is.null(config), paste0(
+    "Set DSOMOP_TEST_", toupper(if (identical(dbms, "postgresql")) {
+      "POSTGRES"
+    } else {
+      dbms
+    }), "_HOST to run this vendor integration test."
+  ))
+  frames <- .achillesLiveFrames()
+  fixture <- .dsomopVendorCreateFixture(config, statements = function(
+      cdm, vocab, results) {
+    .achillesLiveStatements(frames, dbms, list(cdm = cdm, vocab = vocab,
+                                               results = results))
+  })
+  on.exit(fixture$cleanup(), add = TRUE)
+  handle <- fixture$handle
+  driver <- if (identical(dbms, "postgresql")) "RPostgres" else "RMariaDB"
+  server <- as.character(DBI::dbGetQuery(
+    .conn(handle), "SELECT VERSION() AS v"
+  )$v[[1L]])
+  message("[vendor-versions] ", dbms, " server ", server, "; ", driver, " ",
+          utils::packageVersion(driver), "; DBI ",
+          utils::packageVersion("DBI"))
+  expect_equal(handle$dbms, dbms)
+
+  rows <- .expectAchillesLiveCatalogue(handle, dbms, frames)
+  expect_true(all(rows > 0L))
+  .expectAchillesLiveReader(handle, dbms)
+}
+
+test_that("PostgreSQL executes every live Achilles catalogue entry", {
+  .expectVendorAchillesLive("postgresql")
+})
+
+test_that("MySQL executes every live Achilles catalogue entry", {
+  .expectVendorAchillesLive("mysql")
+})
+
+test_that("MariaDB executes every live Achilles catalogue entry", {
+  .expectVendorAchillesLive("mariadb")
+})

@@ -1,6 +1,45 @@
-# DP release status (2.10.0)
+# DP release status (2.10.3)
 
 The current server contract is `dsomop-dp-release-v3` /
+`protected_release_fixed_basis_or_realised_v1` with typed payload protocol
+`dsomop-protected-release-v1`, paired with dsOMOPClient 2.10.3. Protected
+fixed-synopsis releases use a canonical person-membership digest recomputed
+within each request's pinned snapshot, plus component fingerprints. There is no
+cross-request generation or failure cache and no clinical COUNT/MAX fingerprint.
+The secret stays in R. `snapshot_id` is display-only, including restored sealed
+tables. Person-set changes globally redraw fixed components; clinical edits
+with unchanged membership have the documented change-pattern residual. The
+fixed-vector guarantee is qualified to an unchanged source state before exact
+support admission; the evolving transcript has no finite epsilon claim.
+
+Realised-sticky releases reuse bounded contribution maps and make no joint DP
+claim. They include data-enumerated record summaries, which now retain weighted
+value H without registered scales. Interaction Cox and capped recurrent outputs
+are restored; public subgroup margins, Cox status parents and typed view masks
+have explicit contracts. Recurrent event-time `persons` is distinct contributors
+among the same K=10 kept occurrences, selected from a complete interval-presence
+vector (sensitivity 3K), never summed from finer person counts. Its static
+fractions are N/R .2 each, A/B/C .1 each and P .3. The versioned radial feasibility
+projection can add bias by retreating toward an event-mass anchor; it is not an
+L2 projection. First-event allocations are unchanged. DP-exclusive mode accepts
+only fixed-basis contracts.
+
+Status declares `history_dependent = FALSE`, `history_based_admission = FALSE`,
+`persistent_state = "noise_root_only"`,
+`release_binding = "fixed_basis_or_realised_contributions_v1"`,
+`privacy_call_quota = "none"` and `service_capacity = "none"`, plus the
+guarantee scopes, the fixed-synopsis typed statistics and the registered public
+scales. dsOMOPClient 2.10.3 validates and pools protected payloads and refuses
+federations that mix them with older contracts; older clients refuse typed
+releases from 2.10.3 servers.
+
+## Seed-only contract (2.10.0 to 2.10.2, superseded)
+
+Everything below is historical evidence, not current setup instructions.
+The earlier snapshot/epoch imperatives and retained-answer stores do not apply
+to 2.10.3; its active contract is described above and in DISCLOSURE_CONTROL.md.
+
+The 2.10.0 to 2.10.2 server contract was `dsomop-dp-release-v3` /
 `fixed_per_release_seed_data_versioned_v1`, paired with dsOMOPClient 2.10.0.
 Every answer is a deterministic function of the secret noise root, the public
 question, the keyed fingerprint of the bounded statistic and a private automatic
@@ -11,7 +50,7 @@ the same root, configuration and data; a reload that adds rows re-draws every
 answer at once. Typed admission and provenance/MAC checks remain mandatory, and
 primitives, sampler, mechanism and calibration are unchanged.
 
-Status declares `history_dependent = FALSE`,
+Status declared `history_dependent = FALSE`,
 `persistent_state = "noise_root_only"`,
 `release_binding = "seed_data_versioned_v1"`, `privacy_call_quota = "none"` and
 `service_capacity = "none"`. dsOMOPClient 2.10.0 accepts this contract and the
@@ -215,6 +254,9 @@ behind `DSOMOP_TEST_ALLOW_EPHEMERAL_STATE=1`.
 
 ## Derived identity and privacy argument
 
+(Historical, 2.6.x: the derived snapshot described here is the public
+`snapshot_id` label since 2.10.3; it no longer enters any key.)
+
 The enabled default is TRUE in the option reader, DESCRIPTION Options and
 DATASHIELD manifest. Explicit FALSE / `DSOMOP_DP_ENABLED=0`, conflicting-option
 checks and the session enablement-change guard remain effective.
@@ -256,7 +298,7 @@ process, held in package state independently of DSLite session/runtime state,
 naming both explicit options and requiring an epoch bump after every reload.
 The warning uses R's standard warning/log channel. A fallback snapshot cannot
 track data reloads: unchanged snapshot labels permit comparisons/differencing
-across reloads. Epoch rotation remains mandatory; it does not create a cumulative
+across reloads. That version required epoch rotation; it does not create a cumulative
 privacy budget or eliminate composition of distinct releases.
 
 Different resource domains select different HMAC subkeys under the same persistent
@@ -267,8 +309,9 @@ not reuse a noise stream. Discrete numeric draws can coincide by chance; the tes
 asserts separation of keys and IDs, rather than requiring unequal draws.
 
 The existing keyed bounded-statistic fingerprint remains in release keys.
-The derived snapshot follows metadata, not every data edit: custodians must bump
-`privacy_epoch` when data change without metadata changes. Metadata is reread at
+The historical derived snapshot followed metadata, not every data edit; that
+version instructed custodians to bump `privacy_epoch` after untracked edits.
+The 2.10.3 membership mechanism supersedes that requirement. Metadata is reread at
 policy validation; changes trigger the existing policy-change error. The
 mechanism, epsilon default 0.1, epsilon maximum 8, delta 0 and contribution/level
 caps are unchanged. This remains a per-release claim without a finite cumulative

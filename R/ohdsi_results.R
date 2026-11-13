@@ -13,6 +13,27 @@
 #' statistic is released. Tables without a reviewed public contract remain
 #' available only when the server administrator disables strict query mode.
 #'
+#' \code{statistic_basis} is the PRIVATE support contract of a coupled statistic
+#' family (an effect estimate with its CI, p-value, log estimate and SE, or a
+#' model's performance scalars). It names the columns each statistic depends on
+#' beyond the row's own person basis:
+#' \describe{
+#'   \item{\code{statistics}}{the coupled statistic columns, masked together;}
+#'   \item{\code{person}}{distinct-person bases, each of which must reach
+#'     \code{max(nfilter.subset, nfilter.tab)};}
+#'   \item{\code{event}}{event counts with an event floor of
+#'     \code{nfilter.tab} (an event count never establishes distinct people);}
+#'   \item{\code{person_complement}}{pairs \code{c(total, part)} whose difference
+#'     is a distinct-person basis (for example the non-outcome class of a
+#'     prediction population) that must reach
+#'     \code{max(nfilter.subset, nfilter.tab)};}
+#'   \item{\code{event_complement}}{pairs \code{c(total, part)} whose difference
+#'     is an event count with the \code{nfilter.tab} floor.}
+#' }
+#' These basis columns are always read internally (even when a caller selects
+#' a single statistic) and are released only when they are themselves public
+#' contract columns that the caller asked for.
+#'
 #' @keywords internal
 .ohdsiResultContract <- function(public_columns = character(0),
                                   filter_columns = character(0),
@@ -20,8 +41,30 @@
                                   person_columns = character(0),
                                   statistic_columns = character(0),
                                   unit = "admin",
-                                  release = "public") {
+                                  release = "public",
+                                  statistic_basis = NULL) {
   normalise <- function(x) unique(tolower(as.character(x %||% character(0))))
+  pairs <- function(x) {
+    lapply(x %||% list(), function(pair) {
+      pair <- normalise(pair)
+      if (length(pair) != 2L) {
+        stop("A statistic-basis complement must name exactly two columns.",
+             call. = FALSE)
+      }
+      pair
+    })
+  }
+  basis <- NULL
+  if (!is.null(statistic_basis)) {
+    basis <- list(
+      statistics = normalise(statistic_basis$statistics %||%
+                               statistic_columns),
+      person = normalise(statistic_basis$person),
+      event = normalise(statistic_basis$event),
+      person_complement = pairs(statistic_basis$person_complement),
+      event_complement = pairs(statistic_basis$event_complement)
+    )
+  }
   list(
     release = release,
     unit = unit,
@@ -30,8 +73,80 @@
     order_columns = normalise(filter_columns),
     count_columns = normalise(count_columns),
     person_columns = normalise(person_columns),
-    statistic_columns = normalise(statistic_columns)
+    statistic_columns = normalise(statistic_columns),
+    statistic_basis = basis
   )
+}
+
+#' Every column a statistic-support contract reads
+#'
+#' @param basis The \code{statistic_basis} element of a result contract, or
+#'   \code{NULL}.
+#' @return Character vector of basis column names (possibly empty).
+#' @keywords internal
+.ohdsiStatisticBasisColumns <- function(basis) {
+  if (is.null(basis)) return(character(0))
+  unique(c(basis$person, basis$event,
+           unlist(basis$person_complement, use.names = FALSE),
+           unlist(basis$event_complement, use.names = FALSE)))
+}
+
+#' Mask coupled statistics that rest on an unsupported private basis
+#'
+#' Applied to RAW (unbanded) rows, after small-cell suppression and before the
+#' person gate bands the counts. For each row, every person basis and person
+#' complement must reach \code{max(nfilter.subset, nfilter.tab)} (a private
+#' basis column bypasses the public small-cell suppression, so it must meet the
+#' tabular floor itself), every event basis and event complement
+#' \code{nfilter.tab}; recurrent events never stand in for people. A basis
+#' column that the physical table does not
+#' provide, or a missing / non-finite / negative value, fails the row. A failed
+#' row keeps its dimensions and its own supported counts; only the coupled
+#' statistics (for example rr, the CI bounds, p, log_rr and se_log_rr) become
+#' NA together, so no single member of the family survives to re-derive the
+#' others. No marker of the failure is released.
+#'
+#' @param result Data frame of raw result rows.
+#' @param basis The \code{statistic_basis} element of the table contract.
+#' @return \code{result} with unsupported statistic families masked.
+#' @keywords internal
+.ohdsiStatisticGate <- function(result, basis) {
+  if (is.null(basis) || !is.data.frame(result) || nrow(result) == 0L) {
+    return(result)
+  }
+  statistics <- intersect(basis$statistics, names(result))
+  if (length(statistics) == 0L) return(result)
+  settings <- .omopDisclosureSettings()
+  person_floor <- max(settings$nfilter_subset, settings$nfilter_tab)
+  event_floor <- settings$nfilter_tab
+  value_of <- function(column) {
+    if (!column %in% names(result)) return(rep(NA_real_, nrow(result)))
+    value <- suppressWarnings(as.numeric(result[[column]]))
+    value[!is.finite(value) | value < 0] <- NA_real_
+    value
+  }
+  supported <- function(value, floor) !is.na(value) & value >= floor
+  ok <- rep(TRUE, nrow(result))
+  for (column in basis$person) {
+    ok <- ok & supported(value_of(column), person_floor)
+  }
+  for (column in basis$event) {
+    ok <- ok & supported(value_of(column), event_floor)
+  }
+  for (pair in basis$person_complement) {
+    ok <- ok & supported(value_of(pair[[1L]]) - value_of(pair[[2L]]),
+                         person_floor)
+  }
+  for (pair in basis$event_complement) {
+    ok <- ok & supported(value_of(pair[[1L]]) - value_of(pair[[2L]]),
+                         event_floor)
+  }
+  if (any(!ok)) {
+    for (column in statistics) {
+      result[[column]][!ok] <- NA_real_
+    }
+  }
+  result
 }
 
 #' Reviewed public contracts for pre-computed OHDSI result tables
@@ -125,6 +240,14 @@
         person_columns = c("target_subjects", "comparator_subjects"),
         statistic_columns = c("rr", "ci_95_lb", "ci_95_ub", "p",
                                "log_rr", "se_log_rr"),
+        # The effect family depends on both arms' person populations and on
+        # both arms' outcome counts. CohortMethod does not publish outcome-
+        # contributing persons, so the outcome counts carry only the event
+        # floor; they never stand in for distinct people.
+        statistic_basis = list(
+          person = c("target_subjects", "comparator_subjects"),
+          event = c("target_outcomes", "comparator_outcomes")
+        ),
         unit = "record"
       )
     ),
@@ -140,6 +263,18 @@
         person_columns = "outcome_subjects",
         statistic_columns = c("rr", "ci_95_lb", "ci_95_ub", "p",
                                "log_rr", "se_log_rr"),
+        # An SCCS incidence-rate ratio compares exposed with unexposed time of
+        # the cases. outcome_subjects (cases) and covariate_subjects (cases
+        # having the exposure) are distinct-person bases; covariate_outcomes
+        # (outcomes during exposed time) and outcome_events minus it (outcomes
+        # outside exposed time) are recurrent EVENT counts with only an event
+        # floor: they never establish distinct exposed-event people. These
+        # private columns are read for the gate and never released.
+        statistic_basis = list(
+          person = c("outcome_subjects", "covariate_subjects"),
+          event = "covariate_outcomes",
+          event_complement = list(c("outcome_events", "covariate_outcomes"))
+        ),
         unit = "record"
       )
     ),
@@ -156,6 +291,13 @@
         person_columns = "population_size",
         statistic_columns = c("auc", "auprc", "calibration_in_large",
                                "calibration_intercept", "calibration_slope"),
+        # Discrimination and calibration scalars depend on BOTH outcome
+        # classes: outcome_count is the PLP outcome-person count and the
+        # non-outcome class is population_size minus it.
+        statistic_basis = list(
+          person = c("population_size", "outcome_count"),
+          person_complement = list(c("population_size", "outcome_count"))
+        ),
         unit = "record"
       )
     )
@@ -511,8 +653,9 @@
 #'
 #' Behaviour, mirroring the "no hints" fail-closed policy:
 #' \itemize{
-#'   \item rows whose person count is below \code{nfilter.subset} (or NA) are
-#'     DROPPED — the same threshold and row-drop semantics as the raw-CDM gate;
+#'   \item rows whose person count is below
+#'     \code{max(nfilter.subset, nfilter.tab)} (or NA) are DROPPED — the same
+#'     threshold and row-drop semantics as the raw-CDM gate;
 #'   \item if the result carries count columns but NONE of the tool's person
 #'     columns (a person-less count basis, e.g. record/event/outcome counts with
 #'     no person denominator), it is rejected (emptied) when
@@ -571,9 +714,11 @@
     return(result)
   }
 
-  # Drop every row whose person basis is below nfilter.subset (NA -> dropped),
-  # the same threshold + row-drop the raw-CDM distinct-person gate enforces.
-  threshold <- .omopDisclosureSettings()$nfilter_subset
+  # Drop every row whose person basis is below max(nfilter.subset,
+  # nfilter.tab) (NA -> dropped), the same threshold + row-drop the raw-CDM
+  # distinct-person gate and the Achilles reader enforce.
+  settings <- .omopDisclosureSettings()
+  threshold <- max(settings$nfilter_subset, settings$nfilter_tab)
   keep <- rep(TRUE, nrow(result))
   for (col in present_person) {
     vals <- suppressWarnings(as.numeric(result[[col]]))
@@ -927,8 +1072,16 @@
   # Always fetch the disclosure-basis columns internally.  Otherwise a caller
   # could project them away and bypass row suppression, then infer small cells
   # from the remaining dimensions.  Hidden basis columns are removed below.
+  # The private statistic-support basis is fetched the same way, whatever the
+  # caller selected (columns = "rr" still reads covariate_subjects). Basis
+  # columns the physical table lacks are simply absent and fail the statistic
+  # gate (NA statistics), never the whole table.
+  statistic_basis <- if (is.list(contract)) contract$statistic_basis else NULL
+  basis_cols <- intersect(.ohdsiStatisticBasisColumns(statistic_basis),
+                          actual_cols)
   output_cols <- select_cols
-  query_cols <- unique(c(select_cols, table_count_cols, table_person_cols))
+  query_cols <- unique(c(select_cols, table_count_cols, table_person_cols,
+                         basis_cols))
 
   # Express the row cap in OHDSI/SQL Server form, then translate it through the
   # package's dialect layer (TOP for SQL Server, FETCH FIRST for Oracle, LIMIT
@@ -1017,6 +1170,10 @@
   if (length(count_cols) > 0) {
     result <- .suppressSmallCounts(result, count_cols)
   }
+
+  # Coupled statistics (effect estimates, model scalars) need their private
+  # person/event basis on the RAW values, before the person gate bands them.
+  result <- .ohdsiStatisticGate(result, statistic_basis)
 
   # Fail-closed distinct-person gate (orthogonal to cell suppression): drop rows
   # backed by too few PERSONS, and reject a person-less count basis in strict

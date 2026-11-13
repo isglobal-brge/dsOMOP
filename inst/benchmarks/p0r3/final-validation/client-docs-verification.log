@@ -1,0 +1,83 @@
+RETROSPECTIVE VERIFICATION RECORD — NOT A CAPTURED RAW STDOUT LOG
+Recorded: 2026-11-12 13:20:04 UTC
+
+The original commands returned stdout in the agent's tool transcript, but
+stdout was not redirected to a retained log file. This record transcribes
+the observed results and describes the actual verification commands; it is
+not a new run. No additional tests were run to create this record.
+
+Source baseline: dsOMOPClient ce974d9bcc7d9b631ad9e67f9f1092c4623b2692
+Documentation commit: bf05c15
+Coordinator integration: main dsOMOPClient 95282f6
+Local worktree: /workspace/dsomop/wt/p0c-typed/dsOMOPClient
+Branch: fix/2.10.3-p0c-typed-client-docs
+
+Only roxygen comments changed in:
+  R/analysis.R
+  R/privacy.R
+  R/privacy_protected.R
+Generated documentation changed in:
+  man/ds.omop.analysis.run.Rd
+  man/ds.omop.dp.status.Rd
+  man/dot-dp_validate_protected_payload.Rd
+
+LOCAL NON-COMMENT COMPARISON
+The baseline files were read with:
+  git show ce974d9:R/analysis.R
+  git show ce974d9:R/privacy.R
+  git show ce974d9:R/privacy_protected.R
+They were retained under /tmp/p0-client-docs-before-ce974d9/.
+A Python assertion compared each baseline and edited file after removing
+lines whose left-stripped contents start with '#'. It printed:
+  Non-comment source lines identical in all three files.
+
+ISOLATED POD DOCUMENTATION STAGING
+Package: /root/rt/wt/p0c-typed/roxygen-legacy-docs/dsOMOPClient
+Baseline: /root/rt/wt/p0c-typed/roxygen-legacy-docs/before
+Script: /root/rt/wt/p0c-typed/roxygen-legacy-docs/regenerate.R
+Local script copy: /tmp/p0-client-docs-roxygen.R
+The source and baseline were transferred to this separate staging directory.
+No active main /root/rt/wt/p0 package mirror was synchronized or modified.
+
+Executed on the pod, twice:
+  Rscript /root/rt/wt/p0c-typed/roxygen-legacy-docs/regenerate.R
+
+The script required this exact version:
+  stopifnot(as.character(utils::packageVersion("roxygen2")) == "7.3.3")
+For each of the three R files, it required:
+  stopifnot(identical(parse(file.path(before, name), keep.source = FALSE),
+                      parse(file.path(pkg, "R", name), keep.source = FALSE)))
+It generated Rd with:
+  roxygen2::roxygenise(pkg, roclets = "rd")
+It compared man-file MD5 sums before and after regeneration and required
+the changed files to equal the expected set.
+
+OBSERVED FIRST RUN (EXIT 0)
+  IDENTICAL PARSED RUNTIME: analysis.R
+  IDENTICAL PARSED RUNTIME: privacy.R
+  IDENTICAL PARSED RUNTIME: privacy_protected.R
+  Loading dsOMOPClient
+  Writing 'ds.omop.analysis.run.Rd'
+  Writing 'ds.omop.dp.status.Rd'
+  Writing 'dot-dp_validate_protected_payload.Rd'
+  ROXYGEN: 7.3.3
+  CHANGED RD: dot-dp_validate_protected_payload.Rd, ds.omop.analysis.run.Rd, ds.omop.dp.status.Rd
+
+The status comment was then qualified to say "across multiple sites", so
+its missing-identifier statement does not apply to a single-site display.
+Only that comment was changed. The second run checked all three parsed
+source files again and required only ds.omop.dp.status.Rd to change.
+
+OBSERVED SECOND RUN (EXIT 0; FINAL COMMITTED CONTENT)
+  IDENTICAL PARSED RUNTIME: analysis.R
+  IDENTICAL PARSED RUNTIME: privacy.R
+  IDENTICAL PARSED RUNTIME: privacy_protected.R
+  Loading dsOMOPClient
+  Writing 'ds.omop.dp.status.Rd'
+  ROXYGEN: 7.3.3
+  CHANGED RD: ds.omop.dp.status.Rd
+
+Only the three intended Rd files were copied back from staging. NAMESPACE
+and DESCRIPTION were unchanged. git diff --check succeeded. Commit bf05c15
+contains precisely the three comment-only R changes and three generated Rd
+changes; the worktree was clean after committing. No R test suite was rerun.

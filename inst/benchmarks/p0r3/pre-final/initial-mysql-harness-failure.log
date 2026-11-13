@@ -1,0 +1,70 @@
+      engine
+1 postgresql
+                                                                                                                                   version
+1 PostgreSQL 14.24 (Ubuntu 14.24-0ubuntu0.22.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+   persons                        cache iteration elapsed_seconds
+1 10000000 cold_connection_first_digest         1          12.918
+  r_user_seconds r_system_seconds   method
+1          0.299            0.005 database
+                                                            digest
+1 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:34:12
+      engine
+1 postgresql
+                                                                                                                                   version
+1 PostgreSQL 14.24 (Ubuntu 14.24-0ubuntu0.22.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+   persons cache iteration elapsed_seconds r_user_seconds r_system_seconds
+1 10000000  warm         2          12.317          0.342            0.004
+    method                                                           digest
+1 database 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:34:26
+      engine
+1 postgresql
+                                                                                                                                   version
+1 PostgreSQL 14.24 (Ubuntu 14.24-0ubuntu0.22.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+   persons cache iteration elapsed_seconds r_user_seconds r_system_seconds
+1 10000000  warm         3          12.108           0.22                0
+    method                                                           digest
+1 database 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:34:39
+NOTICE:  drop cascades to table dsomop_it_626673_5edf2383_cdm.person
+
+   engine                          version  persons
+1 mariadb 10.6.23-MariaDB-0ubuntu0.22.04.1 10000000
+                         cache iteration elapsed_seconds r_user_seconds
+1 cold_connection_first_digest         1          86.883          0.191
+  r_system_seconds   method
+1            0.002 database
+                                                            digest
+1 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:36:24
+   engine                          version  persons cache iteration
+1 mariadb 10.6.23-MariaDB-0ubuntu0.22.04.1 10000000  warm         2
+  elapsed_seconds r_user_seconds r_system_seconds   method
+1          98.887          0.298            0.002 database
+                                                            digest
+1 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:38:03
+   engine                          version  persons cache iteration
+1 mariadb 10.6.23-MariaDB-0ubuntu0.22.04.1 10000000  warm         3
+  elapsed_seconds r_user_seconds r_system_seconds   method
+1         110.673          0.289            0.002 database
+                                                            digest
+1 22e864d346561295d6f212c6a7b47779d7bd4bd60492543e77001adfdfea1f13
+        timestamp_utc
+1 2026-11-12 11:39:55
+Error: Expression #1 of SELECT list is not in GROUP BY clause and contains nonaggregated column 'dsomop_membership.p' which is not functionally dependent on columns in GROUP BY clause; this is incompatible with sql_mode=only_full_group_by [1055]
+In addition: Warning messages:
+1: Cancelling previous query 
+2: Expired, result set already closed 
+3: Cancelling previous query 
+4: Expired, result set already closed 
+5: Cancelling previous query 
+6: Expired, result set already closed 
+Timing stopped at: 0.009 0.001 0.07
+Execution halted

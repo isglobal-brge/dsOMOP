@@ -2,7 +2,7 @@
 % Please edit documentation in R/tools_auto.R
 \name{.dsomopToolsFinalize}
 \alias{.dsomopToolsFinalize}
-\title{Release one run of a reviewed question}
+\title{Release one standard-route run of a reviewed question}
 \usage{
 .dsomopToolsFinalize(handle, df, entry, sanitized)
 }
@@ -19,9 +19,9 @@
 The released, labelled data frame.
 }
 \description{
-DP outputs are complete noisy tables of a public domain: the standard gate's
-suppression and banding do not apply to them. Every other output (standard
-summaries, standard partitions and the standard fallback of auto mode) goes
-through the unified gate. A missing protection marker means the gate.
+Protected histograms and partitions are released by their contract
+(tools_release.R) and never reach this function. Standard summaries,
+standard partitions and the standard fallback of auto mode go through the
+unified gate.
 }
 \keyword{internal}

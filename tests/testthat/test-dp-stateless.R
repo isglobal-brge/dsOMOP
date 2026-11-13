@@ -1,6 +1,8 @@
-# Seed-only DP (dsOMOP 2.10.0): every answer is a deterministic function of the
-# secret root, the question, the protected statistic and a private automatic
-# database version. Only the root persists.
+# Stateless protection (dsOMOP 2.10.0, contract of 2.10.3): every answer is a
+# deterministic function of the secret root, the canonical component, its
+# realised bounded contributions and, for a fixed synopsis, the automatic data
+# generation derived in memory per R session (test-dp-generation.R). Only the
+# root persists; nothing depends on earlier questions.
 
 .stateless_environment <- c(
   "DSOMOP_DP_ENABLED", "DSOMOP_DP_DOMAIN", "DSOMOP_DP_SNAPSHOT_ID",
@@ -71,18 +73,21 @@
   )
 }
 
-test_that("the DP service reports the seed-only contract", {
+test_that("the DP service reports the stateless protected-release contract", {
   .stateless_state()
   handle <- .stateless_handle()
   on.exit(cleanup_handle(handle), add = TRUE)
   .dsomopDpEnsureRuntime(handle)
-  status <- omopDpStatusDS()
-  expect_identical(status$release_binding, "seed_data_versioned_v1")
+  status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
+  expect_identical(status$release_binding,
+                   "fixed_basis_or_realised_contributions_v1")
   expect_identical(status$persistent_state, "noise_root_only")
   expect_identical(status$service_capacity, "none")
   expect_false(status$history_dependent)
+  expect_false(status$history_based_admission)
   expect_identical(status$privacy_contract,
-                   "fixed_per_release_seed_data_versioned_v1")
+                   "protected_release_fixed_basis_or_realised_v1")
+  expect_identical(status$release_protocol, "dsomop-protected-release-v1")
   expect_warning(expect_identical(omopInitializeReleaseStore(), NA_character_),
                  "stores no DP answers")
 })
@@ -92,7 +97,10 @@ test_that("answers are deterministic across restarts and only the root persists"
   handle <- .stateless_handle()
   on.exit(cleanup_handle(handle), add = TRUE)
   first <- .stateless_release(handle)
-  expect_identical(attr(first, "dsomop_protection")$protection, "dp")
+  # No custodial configuration: the automatic data generation keys the fixed
+  # synopsis, and it is derived again after the restart.
+  expect_identical(attr(first, "dsomop_protection")$protection,
+                   "fixed_synopsis")
   .stateless_restart()
   second <- .stateless_release(handle)
   expect_identical(second$n_persons, first$n_persons)
@@ -102,20 +110,46 @@ test_that("answers are deterministic across restarts and only the root persists"
   expect_false(dir.exists(file.path(state, "release-bindings")))
 })
 
-test_that("a database reload re-draws every answer at once", {
+test_that("a database reload redraws only the realised components whose people changed", {
   .stateless_state()
+  # The realised route (here: no data generation); a fixed synopsis redraws
+  # every component on a reload instead (test-dp-generation.R).
+  .release_without_generation()
   handle <- .stateless_handle()
   on.exit(cleanup_handle(handle), add = TRUE)
   before <- .stateless_release(handle)
-  # A new person anywhere changes the private database version.
+  # A new woman born in 1990 changes the realised maps of the female total
+  # and of her birth-year cell only (dsOMOP 2.10.3: no whole-database data
+  # version reseeds every answer).
   DBI::dbExecute(handle$conn, paste(
     "INSERT INTO person VALUES (900001, 8532, 1990, 1, 1, 8527, NULL)"))
   .stateless_restart()
   handle$blueprint <- NULL
   after <- .stateless_release(handle)
-  positive <- before$n_persons > 0 | after$n_persons > 0
-  # Cells far from the person also changed: no single statistic stands out.
-  expect_gt(mean(before$n_persons[positive] != after$n_persons[positive]), 0.5)
+  expect_identical(attr(after, "dsomop_protection")$protection,
+                   "realised_sticky")
+  components <- function(x) {
+    owner <- attr(x, "dsomop_release")$owners[[1L]]
+    stats::setNames(owner$components,
+                    vapply(owner$components, `[[`, character(1L), "stratum"))
+  }
+  b <- components(before)
+  a <- components(after)
+  expect_setequal(names(a), names(b))
+  # Exported strata are reconciled to the parent person total (which the new
+  # person changes), so every stratum shifts uniformly; the other strata keep
+  # their own draws: their contrasts and their cells' contrasts are unchanged.
+  others <- setdiff(names(b), "gender=8532")
+  expect_false(isTRUE(all.equal(a[["gender=8532"]]$n - a[[others[[1L]]]]$n,
+                                b[["gender=8532"]]$n - b[[others[[1L]]]]$n)))
+  for (k in seq_along(others)[-1L]) {
+    i <- others[[k]]; j <- others[[k - 1L]]
+    expect_equal(a[[i]]$n - a[[j]]$n, b[[i]]$n - b[[j]]$n, tolerance = 1e-9,
+                 info = i)
+  }
+  for (s in others) {
+    expect_equal(diff(a[[s]]$h), diff(b[[s]]$h), tolerance = 1e-9, info = s)
+  }
 })
 
 test_that("a damaged root fails closed instead of being replaced", {
@@ -142,27 +176,35 @@ test_that("a custodian-supplied root leaves no state on disk", {
   expect_length(list.files(state, recursive = TRUE, all.files = TRUE), 0L)
 })
 
-test_that("seed-only releases need the resource or a custodial snapshot", {
+test_that("seed-only releases need the resource or a custodial domain", {
   .stateless_state()
-  expect_error(.dsomopDpDataVersion(NULL, as.raw(1:32)),
-               "connected OMOP resource")
-  expect_match(.dsomopDpDataVersion(NULL, as.raw(1:32),
-                                    custodial_snapshot = TRUE),
-               "^[0-9a-f]{64}$")
+  # Without custodial identifiers the DP identity comes from the connected
+  # resource; the 2.10.0 MAX(id) database version is gone (fixed synopses use
+  # the automatic generation of exact counts and identifiers instead).
+  expect_error(.dsomopDpDerivedIdentity(NULL), "Cannot derive DP identity")
+  expect_false(exists(".dsomopDpDataVersion", envir = asNamespace("dsOMOP"),
+                      inherits = FALSE))
 })
 
-test_that("a clinical table without its identifier does not disable DP", {
+test_that("irrelevant tables and rows never redraw a realised release", {
   .stateless_state()
+  # A fixed synopsis redraws when any clinical table gains or loses rows
+  # (test-dp-generation.R); the realised route keys on contributions only.
+  .release_without_generation()
   handle <- .stateless_handle()
   on.exit(cleanup_handle(handle), add = TRUE)
+  # A clinical table without its standard identifier is simply irrelevant.
   DBI::dbExecute(handle$conn, "CREATE TABLE cost (cost_event_id INTEGER)")
-  key <- as.raw(1:32)
-  version <- .dsomopDpDataVersion(handle, key)
-  expect_match(version, "^[0-9a-f]{64}$")
-  expect_identical(.dsomopDpDataVersion(handle, key), version)
+  before <- .stateless_release(handle)
   DBI::dbExecute(handle$conn, "INSERT INTO cost VALUES (7)")
-  expect_identical(.dsomopDpDataVersion(handle, key), version)
   DBI::dbExecute(handle$conn, paste(
-    "INSERT INTO person VALUES (900001, 8532, 1990, 1, 1, 8527, NULL)"))
-  expect_false(identical(.dsomopDpDataVersion(handle, key), version))
+    "INSERT INTO condition_occurrence (condition_occurrence_id, person_id,",
+    "condition_concept_id, condition_start_date, condition_end_date,",
+    "condition_type_concept_id) VALUES (990001, 1, 201820, '2020-01-01',",
+    "'2020-01-01', 32020)"))
+  .stateless_restart()
+  handle$blueprint <- NULL
+  after <- .stateless_release(handle)
+  # Gender x birth-year contributions are unchanged: the same answer.
+  expect_identical(after$n_persons, before$n_persons)
 })

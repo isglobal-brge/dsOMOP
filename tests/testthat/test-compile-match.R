@@ -621,3 +621,40 @@ test_that("case ranks and strata stay fixed when source rows change between the 
   expect_identical(as.character(matched$subject_id), as.character(after$subject_id))
   expect_identical(as.character(matched$cohort_start_date), as.character(after$t))
 })
+
+
+test_that("vendor matching under a request snapshot matches the independent fixed-data oracle", {
+  backends <- .ws6_backends(extend = .ws6_match_extend, vendors = c("mariadb", "mysql"))
+  on.exit(.ws4_cleanup(backends), add = TRUE)
+  spec <- .ws6_m_variants$default
+  want <- .ws6_m_sorted(.ws6_ref_match(backends$sqlite$handle$conn, spec))
+  plan <- .ws6_m_plan(list(default = spec))
+  for (b in c("mariadb", "mysql")) {
+    config <- .dsomopVendorTestConfig(b)
+    if (is.null(config)) next
+    expect_true(b %in% names(backends), info = b)
+    h <- backends[[b]]$handle
+    writer <- .dsomopVendorAdminConnection(config)
+    on.exit(try(DBI::dbDisconnect(writer), silent = TRUE), add = TRUE)
+    ctx <- .ws4_ctx(h, plan)
+    on.exit(.planContextClose(ctx), add = TRUE, after = FALSE)
+    got <- .dsomopWithReadSnapshot(h, {
+      expect_equal(nrow(.executeQuery(h, paste("SELECT person_id FROM", .qualifyTable(h, "person"),
+        "WHERE person_id=7001"))), 1L, info = b)
+      DBI::dbExecute(writer, paste("UPDATE", .qualifyTable(h, "person"),
+        "SET gender_concept_id=8532, year_of_birth=1925 WHERE person_id=7001"))
+      rows <- .ws6_roster(ctx, "default")
+      expect_equal(.ws6_m_sorted(rows), want, info = b)
+      expect_identical(.ws6_roster(ctx, "default"), rows, info = b)
+      .compileReleaseTempTables(ctx)
+      expect_length(ctx$compile_temp_tables, 0L)
+      rows
+    })
+    expect_gt(nrow(got), 0L, label = b)
+    expect_null(h$read_snapshot)
+    expect_equal(as.integer(.executeQuery(h, paste("SELECT year_of_birth FROM", .qualifyTable(h, "person"),
+      "WHERE person_id=7001"))$year_of_birth), 1925L, info = b)
+    DBI::dbDisconnect(writer)
+    .planContextClose(ctx)
+  }
+})

@@ -121,6 +121,7 @@
 
   # Translate to target dialect (TOP -> LIMIT for sqlite/postgresql)
   translated <- .renderSql(handle, sql)
+  .dsomopSnapshotReadSql(handle, translated)
   result <- .withDbReconnect(handle, function(conn) DBI::dbGetQuery(conn, translated))
   names(result) <- tolower(names(result))
   .coerce_integer64(result)

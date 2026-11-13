@@ -1,0 +1,2 @@
+"scenario","model","n","replicate","seed","sampler","epsilon","truth_log","shared_empty_event_atoms","level","log_estimate","se","lo","hi","oracle","finite","informative","covered"
+1,"cox",500,1,2026121201,"crypto",0.1,0.405465108108164,115,"all",-0.0362386495963,0.536143740684,0.337199552036,2.7582683741,0.429851229238542,TRUE,FALSE,TRUE

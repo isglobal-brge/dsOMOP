@@ -98,7 +98,9 @@
   .dp_capsule(x)$lineage_id
 }
 
-.dp_test_table <- function(reverse_rows = FALSE) {
+.dp_test_table <- function(reverse_rows = FALSE, producer = "test/fixture",
+                           dataset_identity = .dp_dataset_identity(),
+                           data_generation = NULL) {
   value <- data.frame(
     person_id = c(1, 1, 1, 2, 2, 3, 3),
     category = c("c", "a", "b", "a", "c", "b", "b"),
@@ -113,10 +115,15 @@
   if (reverse_rows) value <- value[rev(seq_len(nrow(value))), , drop = FALSE]
   value <- .testPseudonymize(value)
   if (.dsomopDpEnabled()) {
-    value <- .dp_seal(value, producer = "test/fixture")
+    value <- .dp_seal(value, producer = producer, domains = .dp_domains,
+                      dataset_identity = dataset_identity,
+                      data_generation = data_generation)
   }
   value
 }
+
+# Public categorical domains the fixtures' producers declare (B05).
+.dp_domains <- list(category = c("a", "b", "c"), flag = c("no", "yes"))
 
 .dp_state_files <- function(state) {
   files <- list.files(
@@ -127,6 +134,35 @@
 }
 
 .dp_root_files <- c("secrets/dp_noise_root", "secrets/dp_noise_root.lock")
+
+# The internal components of one typed release (dsOMOP 2.10.3): the parsed
+# public specification, every component with its exact value, and each
+# release person's total bounded contribution outside the person total.
+.dp_analysis <- function(x, spec, policy = .dsomopDpPolicy()) {
+  common <- .dsomopDpParseSpec(x, spec, policy)
+  if (identical(common$statistic, "bounded_mean")) {
+    .dsomopTypedMeanScale(common)
+  }
+  input <- .dsomopDpValidateInput(x, policy)
+  common$order_value <- .dsomopDpOrderVector(input$x, common$order_by)
+  tokens <- .dsomopDpSealedReleaseTokens(x, input$token)
+  capsule <- attr(x, "dsomop_dp_provenance", exact = TRUE)
+  analysis <- .dsomopTypedAnalysis(input, common, policy, tokens, capsule)
+  analysis$common <- common
+  analysis$values <- stats::setNames(
+    vapply(analysis$components, function(c) c$value, numeric(1L)),
+    vapply(analysis$components, function(c) c$coordinate, character(1L)))
+  cells <- Filter(function(c) !identical(c$family, "N"), analysis$components)
+  token <- unlist(lapply(cells, `[[`, "tokens"), use.names = FALSE)
+  weight <- unlist(lapply(cells, `[[`, "contributions"), use.names = FALSE)
+  analysis$per_person <- if (length(token)) {
+    tapply(weight, token, sum)
+  } else numeric(0)
+  analysis
+}
+
+# A registered public scale for typed bounded means of the fixtures.
+.dp_mean_bounds <- list(lower = 0, upper = 100)
 
 test_that("DP canonical encoding has a stable KAT and normalizes object order", {
   expect_silent(.dsomopDpCanonicalSelfTest())
@@ -143,34 +179,31 @@ test_that("DP canonical encoding has a stable KAT and normalizes object order", 
                    .dsomopDpCanonicalJson(right))
 
   .dp_local_state()
-  policy <- .dsomopDpPolicy()
-  forward <- .dsomopDpAnalysis(
-    .dp_test_table(),
-    list(
-      statistic = "categorical_histogram",
-      variable = "category",
-      levels = c("c", "a", "b"),
-      reducer = "presence",
-      max_contributions = 2L,
-      population_id = "cohort-a"
-    ),
-    policy
+  forward_spec <- list(
+    statistic = "categorical_histogram",
+    variable = "category",
+    levels = c("c", "a", "b"),
+    reducer = "presence",
+    max_contributions = 2L,
+    population_id = "cohort-a"
   )
-  reverse <- .dsomopDpAnalysis(
-    .dp_test_table(reverse_rows = TRUE),
-    list(
-      max_contributions = 2L,
-      reducer = "presence",
-      levels = c("b", "c", "a"),
-      variable = "category",
-      statistic = "categorical_histogram",
-      population_id = "cohort-a"
-    ),
-    policy
+  reverse_spec <- list(
+    max_contributions = 2L,
+    reducer = "presence",
+    levels = c("b", "c", "a"),
+    variable = "category",
+    statistic = "categorical_histogram",
+    population_id = "cohort-a"
   )
-  expect_identical(forward$semantic, reverse$semantic)
-  expect_identical(forward$snapshot, reverse$snapshot)
-  expect_identical(forward$semantic$levels, c("a", "b", "c"))
+  forward <- .dp_analysis(.dp_test_table(), forward_spec)
+  reverse <- .dp_analysis(.dp_test_table(reverse_rows = TRUE), reverse_spec)
+  expect_identical(forward$values, reverse$values)
+  expect_identical(forward$owner, reverse$owner)
+  expect_identical(forward$common$levels, c("a", "b", "c"))
+  expect_identical(
+    suppressMessages(omopDpReleaseDS(.dp_test_table(), forward_spec)),
+    suppressMessages(omopDpReleaseDS(.dp_test_table(reverse_rows = TRUE),
+                                     reverse_spec)))
 })
 
 test_that("DP bootstrap settings can be supplied before namespace load", {
@@ -245,11 +278,12 @@ test_that("bootstrap validates the private root and stores nothing else", {
   expect_true(status$sticky_noise)
   expect_identical(status$protocol, "dsomop-dp-release-v3")
   expect_identical(status$privacy_contract,
-                   "fixed_per_release_seed_data_versioned_v1")
+                   "protected_release_fixed_basis_or_realised_v1")
   expect_identical(status$privacy_call_quota, "none")
   expect_identical(status$history_dependent, FALSE)
   expect_identical(status$persistent_state, "noise_root_only")
-  expect_identical(status$release_binding, "seed_data_versioned_v1")
+  expect_identical(status$release_binding,
+                   "fixed_basis_or_realised_contributions_v1")
   expect_identical(status$service_capacity, "none")
   expect_identical(status$privacy_guarantee,
                    .DSOMOP_PRIVACY_GUARANTEE)
@@ -288,7 +322,8 @@ test_that("DP releases require authenticated person-local provenance", {
   )
   sealed <- .dp_seal(raw, producer = "test/fixture")
   expect_silent(.dsomopDpVerifyPersonLocal(sealed))
-  expect_silent(omopDpReleaseDS(sealed, spec))
+  # The only output besides the answer is the redacted audit line.
+  expect_message(omopDpReleaseDS(sealed, spec), "method=omopDpReleaseDS")
 
   copied <- sealed
   copied$value[[1L]] <- 99L
@@ -1626,65 +1661,48 @@ test_that("protected fingerprints stay private and select the noise of each answ
   .dp_local_state(noise_root = as.raw(0:31))
   table <- .dp_test_table()
   spec <- list(statistic = "count", population_id = "cohort-a")
-  policy <- .dsomopDpPolicy()
-  first_analysis <- .dsomopDpAnalysis(table, spec, policy)
-  first_binding <- .dsomopDpSnapshotBinding(
-    policy, first_analysis$snapshot
-  )
-  first_id <- .dsomopDpReleaseId(
-    policy, first_analysis$semantic, first_binding
-  )
-  first <- omopDpReleaseDS(table, spec)
+  first <- suppressMessages(omopDpReleaseDS(table, spec))
+  expect_identical(first$protection, "realised_sticky")
 
   changed <- table
   people <- unique(changed$person_id)
   changed$person_id[changed$person_id == people[[3L]]] <- people[[2L]]
-  expect_error(omopDpReleaseDS(changed, spec), "provenance MAC does not match")
+  expect_error(suppressMessages(omopDpReleaseDS(changed, spec)),
+               "provenance MAC does not match")
   changed <- .dp_seal(changed, producer = "test/fixture")
-  changed_analysis <- .dsomopDpAnalysis(changed, spec, policy)
-  changed_binding <- .dsomopDpSnapshotBinding(
-    policy, changed_analysis$snapshot
-  )
-  changed_id <- .dsomopDpReleaseId(
-    policy, changed_analysis$semantic, changed_binding
-  )
-  second <- omopDpReleaseDS(changed, spec)
-
+  second <- suppressMessages(omopDpReleaseDS(changed, spec))
   expect_identical(.dp_lineage(changed), .dp_lineage(table))
-  expect_false(identical(first_binding$protected_fingerprint,
-                         changed_binding$protected_fingerprint))
-  expect_false(identical(first_id, changed_id))
+  # A changed realised person set is a different contribution map: its
+  # component is drawn from a different fingerprint.
+  first_map <- .dp_analysis(table, spec)$components[[1L]]
+  changed_map <- .dp_analysis(changed, spec)$components[[1L]]
+  keys <- .dsomopReleaseKeys(.dsomopDpPolicy())
+  fingerprint <- function(c) .dsomopReleaseFingerprint(
+    keys, c$owner, c$family, c$coordinate, c$tokens, c$contributions)
+  expect_false(identical(fingerprint(first_map), fingerprint(changed_map)))
+  expect_false(identical(first$components$signed, second$components$signed))
+
   # Display names and row order are part of neither the question nor the
   # protected statistic.
-  reordered <- .dsomopDpAnalysis(
-    .dp_test_table(reverse_rows = TRUE),
-    list(statistic = "count", population_id = "another-display-name"), policy
-  )
-  expect_identical(changed_analysis$semantic, first_analysis$semantic)
-  expect_identical(reordered$semantic, first_analysis$semantic)
-  expect_identical(omopDpReleaseDS(
+  expect_identical(suppressMessages(omopDpReleaseDS(
     .dp_test_table(reverse_rows = TRUE),
     list(statistic = "count", population_id = "another-display-name")
-  ), first)
-
-  expect_identical(serialize(omopDpReleaseDS(changed, spec), NULL,
-                             version = 3L),
+  )), first)
+  expect_identical(serialize(suppressMessages(omopDpReleaseDS(changed, spec)),
+                             NULL, version = 3L),
                    serialize(second, NULL, version = 3L))
   expect_true(all(vapply(list(first, second), function(value) {
     !any(c(
-      "seed", "noise_root", "raw_noise", "snapshot_hash",
-      "data_fingerprint", "protected_fingerprint", "semantic_query_id",
-      "query_id", "release_id", "noise_key_id", "data_version"
-    ) %in% names(value))
+      "seed", "noise_root", "raw_noise", "fingerprint", "contributions",
+      "tokens", "person_token", "semantic_query_id", "release_id",
+      "noise_key_id", "data_version"
+    ) %in% c(names(value), names(value$components)))
   }, logical(1L))))
-  encoded <- vapply(
-    list(first, second), .dsomopDpCanonicalJson, character(1L)
-  )
-  private_values <- c(
-    first_binding$protected_fingerprint,
-    changed_binding$protected_fingerprint,
-    first_id, changed_id, policy$data_version
-  )
+  encoded <- vapply(list(first, second), function(value) {
+    paste(deparse(value, control = "digits17"), collapse = "")
+  }, character(1L))
+  private_values <- c(fingerprint(first_map), fingerprint(changed_map),
+                      first_map$tokens, changed_map$tokens)
   expect_false(any(vapply(private_values, function(value) {
     any(grepl(value, encoded, fixed = TRUE))
   }, logical(1L))))
@@ -1701,10 +1719,10 @@ test_that("same root semantic query and snapshot replay across runtime reset", {
   )
 
   first <- omopDpReleaseDS(table, spec)
-  first_status <- omopDpStatusDS()
+  first_status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
   .dp_restart_runtime()
   second <- omopDpReleaseDS(table, spec)
-  second_status <- omopDpStatusDS()
+  second_status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
 
   expect_identical(second, first)
   expect_identical(second_status$noise_key_id, first_status$noise_key_id)
@@ -1747,12 +1765,14 @@ test_that("longitudinal DP primitives bound contributions and return fixed shape
     max_contributions = 2L,
     population_id = "cohort-a"
   )
-  categorical_analysis <- .dsomopDpAnalysis(
-    table, categorical_spec, policy
-  )
-  per_person <- table(categorical_analysis$snapshot$person)
-  expect_true(all(per_person <= 2L))
-  expect_identical(categorical_analysis$sensitivity$l1, 2L)
+  categorical_analysis <- .dp_analysis(table, categorical_spec, policy)
+  # At most k = 2 labels per person, on cells calibrated for the fixed public
+  # maximum K (dsOMOP 2.10.3: the noise amplitude never follows k).
+  expect_true(all(categorical_analysis$per_person <= 2))
+  expect_identical(categorical_analysis$family, "W")
+  expect_equal(unique(vapply(categorical_analysis$components,
+                             function(c) c$sensitivity, numeric(1L))),
+               policy$max_contributions)
 
   categorical <- omopDpReleaseDS(table, categorical_spec)
   expect_identical(categorical$levels, c("a", "b", "c"))
@@ -1763,11 +1783,10 @@ test_that("longitudinal DP primitives bound contributions and return fixed shape
     statistic = "bounded_record_count", reducer = "records",
     max_contributions = 2L, population_id = "cohort-a"
   )
-  record_count_analysis <- .dsomopDpAnalysis(
-    table, record_count_spec, policy
-  )
-  expect_identical(record_count_analysis$snapshot$count, 6)
-  expect_identical(record_count_analysis$sensitivity$l1, 2L)
+  record_count_analysis <- .dp_analysis(table, record_count_spec, policy)
+  multiplicity <- unname(record_count_analysis$values[-1L])
+  expect_identical(sum(pmin(seq_along(multiplicity), 2) * multiplicity), 6)
+  expect_identical(record_count_analysis$family, "H")
   record_count <- omopDpReleaseDS(table, record_count_spec)
   expect_identical(record_count$statistic, "bounded_record_count")
   expect_identical(record_count$reducer, "records")
@@ -1780,16 +1799,17 @@ test_that("longitudinal DP primitives bound contributions and return fixed shape
     max_contributions = 2L, order_by = "event_date",
     population_id = "cohort-a"
   )
-  categorical_records_analysis <- .dsomopDpAnalysis(
+  categorical_records_analysis <- .dp_analysis(
     table, categorical_records_spec, policy
   )
-  expect_identical(categorical_records_analysis$snapshot$counts, c(2, 3, 1))
-  expect_identical(categorical_records_analysis$sensitivity$l1, 2L)
+  # Cells a, b, c and Other of the complete basis.
+  expect_identical(unname(categorical_records_analysis$values), c(2, 3, 1, 0))
+  expect_true(all(categorical_records_analysis$per_person <= 2))
   expect_identical(
-    .dsomopDpAnalysis(
+    .dp_analysis(
       .dp_test_table(reverse_rows = TRUE), categorical_records_spec, policy
-    )$snapshot,
-    categorical_records_analysis$snapshot
+    )$values,
+    categorical_records_analysis$values
   )
   categorical_records <- omopDpReleaseDS(table, categorical_records_spec)
   expect_identical(categorical_records$reducer, "records")
@@ -1802,33 +1822,37 @@ test_that("longitudinal DP primitives bound contributions and return fixed shape
     event_date = as.Date("2020-01-01"), stringsAsFactors = FALSE
   )
   tied <- .dp_seal(
-    .testPseudonymize(tied_raw), producer = "test/canonical-record-order"
+    .testPseudonymize(tied_raw), producer = "test/canonical-record-order",
+    domains = .dp_domains["category"]
   )
   tied_reverse <- .dp_seal(
     .testPseudonymize(tied_raw[4:1, , drop = FALSE]),
-    producer = "test/canonical-record-order"
+    producer = "test/canonical-record-order",
+    domains = .dp_domains["category"]
   )
   tied_spec <- categorical_records_spec
   tied_spec$population_id <- "tied-order"
-  tied_forward <- .dsomopDpAnalysis(tied, tied_spec, policy)
-  tied_backward <- .dsomopDpAnalysis(tied_reverse, tied_spec, policy)
-  expect_identical(tied_forward$snapshot$counts, c(1, 1, 1))
-  expect_identical(tied_forward$snapshot, tied_backward$snapshot)
+  tied_forward <- .dp_analysis(tied, tied_spec, policy)
+  tied_backward <- .dp_analysis(tied_reverse, tied_spec, policy)
+  expect_identical(unname(tied_forward$values), c(1, 1, 1, 0))
+  expect_identical(tied_forward$values, tied_backward$values)
 
   distinct_spec <- list(
     statistic = "bounded_distinct", variable = "category",
     levels = c("c", "a", "b"), reducer = "distinct",
     max_contributions = 2L, population_id = "cohort-a"
   )
-  distinct_analysis <- .dsomopDpAnalysis(table, distinct_spec, policy)
-  expect_identical(distinct_analysis$snapshot$count, 3)
-  expect_identical(distinct_analysis$sensitivity$l1, 2L)
-  expect_identical(distinct_analysis$semantic$levels, c("a", "b", "c"))
+  distinct_analysis <- .dp_analysis(table, distinct_spec, policy)
+  expect_identical(unname(distinct_analysis$values), 3)
+  # Fixed sensitivity K for every k (spec: no private sensitivity downshift).
+  expect_equal(distinct_analysis$components[[1L]]$sensitivity,
+               policy$max_contributions)
+  expect_identical(distinct_analysis$common$levels, c("a", "b", "c"))
   expect_identical(
-    .dsomopDpAnalysis(
+    .dp_analysis(
       .dp_test_table(reverse_rows = TRUE), distinct_spec, policy
-    )$snapshot,
-    distinct_analysis$snapshot
+    )$values,
+    distinct_analysis$values
   )
   distinct <- omopDpReleaseDS(table, distinct_spec)
   expect_identical(distinct$statistic, "bounded_distinct")
@@ -1838,7 +1862,7 @@ test_that("longitudinal DP primitives bound contributions and return fixed shape
   distinct_cap_one <- distinct_spec
   distinct_cap_one$max_contributions <- 1L
   expect_identical(
-    .dsomopDpAnalysis(table, distinct_cap_one, policy)$snapshot$count,
+    unname(.dp_analysis(table, distinct_cap_one, policy)$values),
     2
   )
 
@@ -1874,17 +1898,17 @@ test_that("longitudinal DP primitives bound contributions and return fixed shape
   mean <- omopDpReleaseDS(table, list(
     statistic = "bounded_mean",
     variable = "measurement",
-    lower = 0,
-    upper = 10,
+    lower = .dp_mean_bounds$lower,
+    upper = .dp_mean_bounds$upper,
     reducer = "mean",
     population_id = "cohort-a"
   ))
   expect_true(all(c(
-    "noisy_count", "noisy_sum_grid", "value", "lower", "upper",
-    "numeric_grid", "reducer"
+    "noisy_count", "value", "sd", "lower", "upper", "scale", "reducer"
   ) %in% names(mean)))
   expect_identical(mean$value_type, "number")
-  if (!is.null(mean$value)) expect_true(mean$value >= 0 && mean$value <= 10)
+  expect_identical(mean$scale, "count_per_person")
+  if (!is.na(mean$value)) expect_true(mean$value >= 0 && mean$value <= 100)
 
   rate <- omopDpReleaseDS(table, list(
     statistic = "binary_rate",
@@ -1912,13 +1936,13 @@ test_that("analysts cannot control noise or select protected identifiers", {
     spec <- list(statistic = "count", population_id = "cohort-a")
     spec[[field]] <- if (field == "epsilon") 0.5 else "attacker-controlled"
     expect_error(
-      .dsomopDpAnalysis(table, spec, policy),
+      .dp_analysis(table, spec, policy),
       "server-owned",
       info = field
     )
   }
   expect_error(
-    .dsomopDpAnalysis(table, list(
+    .dp_analysis(table, list(
       statistic = "categorical_histogram",
       variable = "person_id",
       levels = as.character(table$person_id[[1L]]),
@@ -1933,42 +1957,44 @@ test_that("irrelevant ordering and unbounded public domains are rejected", {
   table <- .dp_test_table()
   policy <- .dsomopDpPolicy()
 
-  expect_error(.dsomopDpAnalysis(table, list(
+  expect_error(.dp_analysis(table, list(
     statistic = "categorical_histogram", variable = "category",
     levels = c("a", "b", "c"), reducer = "presence",
     order_by = "event_date", population_id = "cohort-a"
   ), policy), "order_by is only valid")
-  expect_error(.dsomopDpAnalysis(table, list(
+  expect_error(.dp_analysis(table, list(
     statistic = "categorical_histogram", variable = "category",
     levels = c("a", "b", "c"), reducer = "records",
     max_contributions = 2L, population_id = "cohort-a"
   ), policy), "require a public order_by")
-  expect_error(.dsomopDpAnalysis(table, list(
+  expect_error(.dp_analysis(table, list(
     statistic = "bounded_record_count", reducer = "presence",
     max_contributions = 2L, population_id = "cohort-a"
   ), policy), "requires reducer='records'")
-  expect_error(.dsomopDpAnalysis(table, list(
+  # A distinct cardinality is over the complete registered domain: its
+  # levels may only restate it (B05).
+  expect_error(.dp_analysis(table, list(
     statistic = "bounded_distinct", variable = "category",
-    reducer = "distinct", max_contributions = 2L,
+    levels = c("a", "b"), reducer = "distinct", max_contributions = 2L,
     population_id = "cohort-a"
-  ), policy), "field 'levels' is required")
-  expect_error(.dsomopDpAnalysis(table, list(
+  ), policy), "complete registered public domain")
+  expect_error(.dp_analysis(table, list(
     statistic = "bounded_distinct", variable = "category",
     levels = c("a", "b", "c"), reducer = "distinct",
     max_contributions = 2L, order_by = "event_date",
     population_id = "cohort-a"
   ), policy), "canonical value ordering")
-  expect_error(.dsomopDpAnalysis(table, list(
+  expect_error(.dp_analysis(table, list(
     statistic = "numeric_histogram", variable = "measurement",
     breaks = c(0, 5, 10), reducer = "mean",
     order_by = "event_date", population_id = "cohort-a"
   ), policy), "order_by is only valid")
-  expect_error(.dsomopDpAnalysis(table, list(
+  expect_error(.dp_analysis(table, list(
     statistic = "bounded_mean", variable = "measurement",
     lower = -.Machine$double.xmax, upper = .Machine$double.xmax,
     reducer = "mean", population_id = "cohort-a"
   ), policy), "finite positive span")
-  expect_error(.dsomopDpAnalysis(table, list(
+  expect_error(.dp_analysis(table, list(
     statistic = "binary_rate", variable = "flag",
     positive = paste0("level-", seq_len(policy$max_levels + 1L)),
     reducer = "any", denominator = "all_persons",
@@ -1989,7 +2015,8 @@ test_that("first and last admission is unchanged by resealed private values", {
   missing$measurement[] <- NA_real_
   inputs <- lapply(list(missing = missing, observed = observed,
                         empty = observed[FALSE, , drop = FALSE]), function(raw) {
-    .dp_seal(.testPseudonymize(raw), producer = "test/public-admission")
+    .dp_seal(.testPseudonymize(raw), producer = "test/public-admission",
+             domains = list(category = c("a", "b"), flag = c("no", "yes")))
   })
   expect_length(unique(vapply(inputs, .dp_lineage, character(1L))), 1L)
 
@@ -1999,7 +2026,7 @@ test_that("first and last admission is unchanged by resealed private values", {
     list(statistic = "numeric_histogram", variable = "measurement",
          breaks = c(0, 5, 10)),
     list(statistic = "bounded_mean", variable = "measurement",
-         lower = 0, upper = 10),
+         lower = 0, upper = 100),
     list(statistic = "binary_rate", variable = "flag", positive = "yes",
          denominator = "all_persons"),
     list(statistic = "binary_rate", variable = "flag", positive = "yes",
@@ -2038,12 +2065,14 @@ test_that("first and last admission is unchanged by resealed private values", {
     }
   }
   expect_length(.dp_state_files(state), 0L)
-  empty_categorical <- .dsomopDpAnalysis(
+  empty_categorical <- .dp_analysis(
     inputs$empty,
-    c(families[[1L]], list(reducer = "first", order_by = "event_date")),
-    .dsomopDpPolicy()
+    c(families[[1L]], list(reducer = "first", order_by = "event_date"))
   )
-  expect_identical(empty_categorical$snapshot$counts, c(0, 0))
+  # The person total and every cell of the complete basis (a, b, Other,
+  # Unknown) exist and are zero for an empty population: the shape never
+  # depends on private values.
+  expect_identical(unname(empty_categorical$values), c(0, 0, 0, 0, 0))
 })
 
 test_that("public DP requirements reject before private admission or release", {
@@ -2065,7 +2094,7 @@ test_that("public DP requirements reject before private admission or release", {
                             variable = "category", levels = c("a", "b"),
                             reducer = "distinct"),
     bounded_mean = list(statistic = "bounded_mean", variable = "measurement",
-                        lower = 0, upper = 10, reducer = "mean"),
+                        lower = 0, upper = 100, reducer = "mean"),
     binary_rate = list(statistic = "binary_rate", variable = "flag",
                        positive = "yes", reducer = "any")
   )
@@ -2077,8 +2106,11 @@ test_that("public DP requirements reject before private admission or release", {
             error = "requires reducer='records'"),
     invalid("bounded_record_count", order_by = "event_date",
             error = "does not use order_by"),
-    invalid("categorical_histogram", levels = c("a", "a"),
-            error = "unique, non-empty public labels"),
+    invalid("categorical_histogram", levels = c("a", ""),
+            error = "non-empty UTF-8 labels"),
+    # Labels outside the registered domain are refused publicly (B05).
+    invalid("categorical_histogram", levels = c("a", "zz_unregistered"),
+            error = "registered public domain"),
     invalid("categorical_histogram", reducer = "mean",
             error = "Unsupported categorical longitudinal reducer"),
     invalid("categorical_histogram", order_by = "event_date",
@@ -2096,7 +2128,9 @@ test_that("public DP requirements reject before private admission or release", {
     invalid("numeric_histogram", order_by = "event_date",
             error = "order_by is only valid"),
     invalid("bounded_distinct", levels = character(0),
-            error = "level cap"),
+            error = "non-empty UTF-8 labels"),
+    invalid("bounded_distinct", levels = "a",
+            error = "complete registered public domain"),
     invalid("bounded_distinct", reducer = "presence",
             error = "requires reducer='distinct'"),
     invalid("bounded_distinct", order_by = "event_date",
@@ -2109,6 +2143,8 @@ test_that("public DP requirements reject before private admission or release", {
             error = "Unsupported bounded-mean longitudinal reducer"),
     invalid("bounded_mean", order_by = "event_date",
             error = "order_by is only valid"),
+    # Caller-chosen bounds are a public refusal (dsOMOP 2.10.3).
+    invalid("bounded_mean", upper = 10, error = "public_scale_unavailable"),
     invalid("binary_rate", positive = character(0),
             error = "positive values must be non-empty"),
     invalid("binary_rate", denominator = "observed",
@@ -2128,7 +2164,7 @@ test_that("public DP requirements reject before private admission or release", {
   }
   testthat::local_mocked_bindings(
     .dsomopDpValidateInput = function(...) stop("Private input was inspected"),
-    .dsomopDpRelease = function(...) stop("The release was reached"),
+    .dsomopTypedAnalysis = function(...) stop("The release was reached"),
     .package = "dsOMOP"
   )
   for (case in cases) {
@@ -2139,14 +2175,15 @@ test_that("public DP requirements reject before private admission or release", {
 
 test_that("public status and release identify the exact sampler", {
   .dp_local_state(noise_root = as.raw(0:31), release_epsilon = 0.25)
-  status <- omopDpStatusDS()
+  status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
 
   expect_true(status$enabled)
   expect_true(status$ready)
   expect_true(status$sticky_noise)
   expect_identical(status$protocol, "dsomop-dp-release-v3")
   expect_identical(status$privacy_contract,
-                   "fixed_per_release_seed_data_versioned_v1")
+                   "protected_release_fixed_basis_or_realised_v1")
+  expect_identical(status$release_protocol, "dsomop-protected-release-v1")
   expect_identical(status$release_epsilon, 0.25)
   expect_identical(status$release_delta, 0)
   expect_identical(status$sampler, "dsomop-dp-exact-discrete-laplace-v1")
@@ -2155,8 +2192,10 @@ test_that("public status and release identify the exact sampler", {
   expect_identical(status$privacy_call_quota, "none")
   expect_false(status$history_dependent)
   expect_identical(status$persistent_state, "noise_root_only")
-  expect_identical(status$release_binding, "seed_data_versioned_v1")
+  expect_identical(status$release_binding,
+                   "fixed_basis_or_realised_contributions_v1")
   expect_identical(status$service_capacity, "none")
+  expect_false(status$history_based_admission)
   expect_setequal(status$supported_statistics, c(
     "count", "bounded_record_count", "categorical_histogram",
     "numeric_histogram", "bounded_distinct", "bounded_mean", "binary_rate"
@@ -2166,14 +2205,23 @@ test_that("public status and release identify the exact sampler", {
     .dp_test_table(), list(statistic = "count", population_id = "cohort-a")
   )
   expect_setequal(names(value), c(
-    "statistic", "noisy_count", "protocol", "mechanism", "adjacency",
-    "epsilon", "delta", "sensitivity", "privacy_contract", "sticky", "sampler"
+    "protocol", "release_contract", "statistic", "protection",
+    "guarantee_scope", "noise_reference_epsilon", "mechanism_epsilon",
+    "api_transcript_epsilon", "adjacency", "mechanism", "sampler",
+    "sticky", "allocation", "sensitivity", "noise_sd", "privacy_call_quota",
+    "history_based_admission", "source", "noisy_count", "components", "read_snapshot"
   ))
-  expect_identical(value$protocol, "dsomop-dp-release-v3")
-  expect_identical(value$privacy_contract,
-                   "fixed_per_release_seed_data_versioned_v1")
-  expect_identical(value$epsilon, 0.25)
-  expect_identical(value$delta, 0L)
+  expect_identical(value$protocol, "dsomop-protected-release-v1")
+  expect_identical(value$protection, "realised_sticky")
+  expect_identical(value$guarantee_scope,
+                   "heuristic_realised_contribution_reuse")
+  expect_identical(value$noise_reference_epsilon, 0.25)
+  # A heuristic realised release claims no mechanism or transcript epsilon.
+  expect_true(is.na(value$mechanism_epsilon))
+  expect_true(is.na(value$api_transcript_epsilon))
+  expect_equal(value$allocation$N, 0.05)
+  # No pure-DP delta is claimed for a heuristic release (B14).
+  expect_false("delta" %in% names(value))
   expect_identical(value$sticky, TRUE)
   expect_identical(value$sampler, status$sampler)
   expect_identical(value$mechanism, status$mechanism)
@@ -2182,7 +2230,7 @@ test_that("public status and release identify the exact sampler", {
 test_that("new public identities store nothing and have no privacy call quota", {
   skip_on_os("windows")
   state <- .dp_local_state()
-  expect_true(omopDpStatusDS()$ready)
+  expect_true(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$ready)
   raw <- .testPseudonymize(data.frame(
     person_id = 1:8, value = seq_len(8), stringsAsFactors = FALSE
   ))
@@ -2192,10 +2240,14 @@ test_that("new public identities store nothing and have no privacy call quota", 
   })
   expect_length(values, 128L)
   expect_true(all(vapply(
-    values, function(value) identical(value$epsilon, 0.1), logical(1L)
+    values, function(value) identical(value$noise_reference_epsilon, 0.1),
+    logical(1L)
   )))
+  # 128 lineages selecting the same people are one canonical component
+  # (dsOMOP 2.10.3, G-09): no fresh draws from lineage cosmetics.
+  expect_length(unique(lapply(values, `[[`, "noisy_count")), 1L)
   expect_identical(.dp_state_files(state), .dp_root_files)
-  status <- omopDpStatusDS()
+  status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
   expect_identical(status$privacy_call_quota, "none")
   expect_false(status$history_dependent)
 })
@@ -2203,7 +2255,7 @@ test_that("new public identities store nothing and have no privacy call quota", 
 test_that("a corrupt root fails closed and only a missing root is created", {
   skip_on_os("windows")
   state <- .dp_local_state()
-  first <- omopDpStatusDS()
+  first <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
   root_path <- file.path(state, "secrets", "dp_noise_root")
   original <- readBin(root_path, "raw", n = 32L)
 
@@ -2212,7 +2264,7 @@ test_that("a corrupt root fails closed and only a missing root is created", {
   Sys.chmod(root_path, mode = "0600")
   .dp_restart_runtime()
   expect_message(
-    expect_error(omopDpStatusDS(), .DSOMOP_DP_STATE_ERROR, fixed = TRUE),
+    expect_error(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL), .DSOMOP_DP_STATE_ERROR, fixed = TRUE),
     "exactly 32 raw bytes"
   )
   expect_identical(readBin(root_path, "raw", n = 32L), as.raw(1:3))
@@ -2220,13 +2272,13 @@ test_that("a corrupt root fails closed and only a missing root is created", {
   writeBin(original, root_path)
   Sys.chmod(root_path, mode = "0600")
   .dp_restart_runtime()
-  expect_identical(omopDpStatusDS()$noise_key_id, first$noise_key_id)
+  expect_identical(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$noise_key_id, first$noise_key_id)
 
   # A state directory without a root is a new service: its first use creates
   # one and tells the custodian.
   expect_identical(unlink(root_path, force = TRUE), 0L)
   .dp_restart_runtime()
-  expect_message(status <- omopDpStatusDS(), "created the DP noise root")
+  expect_message(status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL), "created the DP noise root")
   expect_false(identical(status$noise_key_id, first$noise_key_id))
   expect_true(file.exists(root_path))
 })
@@ -2234,7 +2286,7 @@ test_that("a corrupt root fails closed and only a missing root is created", {
 test_that("symbolic-link root substitution fails closed", {
   skip_on_os("windows")
   state <- .dp_local_state()
-  expect_true(omopDpStatusDS()$ready)
+  expect_true(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$ready)
   root_path <- file.path(state, "secrets", "dp_noise_root")
   target <- file.path(state, "attacker-controlled-key")
   writeBin(as.raw(0:31), target)
@@ -2244,7 +2296,7 @@ test_that("symbolic-link root substitution fails closed", {
   .dp_restart_runtime()
 
   expect_message(
-    expect_error(omopDpStatusDS(), .DSOMOP_DP_STATE_ERROR, fixed = TRUE),
+    expect_error(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL), .DSOMOP_DP_STATE_ERROR, fixed = TRUE),
     "must not be a symbolic link"
   )
   expect_identical(readBin(target, what = "raw", n = 32L), as.raw(0:31))
@@ -2253,14 +2305,14 @@ test_that("symbolic-link root substitution fails closed", {
 test_that("unsafe root permissions fail closed", {
   skip_on_os("windows")
   state <- .dp_local_state()
-  expect_true(omopDpStatusDS()$ready)
+  expect_true(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$ready)
   root_path <- file.path(state, "secrets", "dp_noise_root")
   Sys.chmod(root_path, mode = "0644")
   on.exit(try(Sys.chmod(root_path, mode = "0600"), silent = TRUE), add = TRUE)
   .dp_restart_runtime()
 
   expect_message(
-    expect_error(omopDpStatusDS(), .DSOMOP_DP_STATE_ERROR, fixed = TRUE),
+    expect_error(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL), .DSOMOP_DP_STATE_ERROR, fixed = TRUE),
     "mode 0600"
   )
   expect_identical(file.info(root_path)$size, 32)
@@ -2269,18 +2321,18 @@ test_that("unsafe root permissions fail closed", {
 test_that("an injected root writes no DP state and answers survive restarts", {
   skip_on_os("windows")
   state <- .dp_local_state(noise_root = as.raw(0:31))
-  status <- omopDpStatusDS()
+  status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
   value <- omopDpReleaseDS(
     .dp_test_table(), list(statistic = "count", population_id = "cohort-a")
   )
 
   expect_true(status$ready)
   expect_identical(status$noise_provider, "custodial_injected")
-  expect_identical(value$epsilon, status$release_epsilon)
+  expect_identical(value$noise_reference_epsilon, status$release_epsilon)
   expect_length(.dp_state_files(state), 0L)
 
   .dp_restart_runtime()
-  expect_identical(omopDpStatusDS()$noise_key_id, status$noise_key_id)
+  expect_identical(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$noise_key_id, status$noise_key_id)
   expect_length(.dp_state_files(state), 0L)
   # The display name is not part of the question.
   expect_identical(omopDpReleaseDS(.dp_test_table(), list(statistic = "count")),
@@ -2289,11 +2341,11 @@ test_that("an injected root writes no DP state and answers survive restarts", {
 
 test_that("noise-domain identity detects one root across semantic domains", {
   .dp_local_state(noise_root = as.raw(0:31))
-  first <- omopDpStatusDS()
+  first <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
 
   options(dsomop.dp.domain = "dsomop-dp-other-domain")
   .dp_restart_runtime()
-  second <- omopDpStatusDS()
+  second <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
 
   expect_identical(second$noise_key_id, first$noise_key_id)
   expect_identical(second$noise_domain_id, first$noise_domain_id)
@@ -2305,11 +2357,11 @@ test_that("a replaced injected root re-draws answers and the original restores t
   table <- .dp_test_table()
   spec <- list(statistic = "count", population_id = "cohort-a")
   first_value <- omopDpReleaseDS(table, spec)
-  first_status <- omopDpStatusDS()
+  first_status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
 
   options(dsomop.dp.noise_root = as.raw(32:63))
   .dp_restart_runtime()
-  expect_false(identical(omopDpStatusDS()$noise_key_id,
+  expect_false(identical(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$noise_key_id,
                          first_status$noise_key_id))
   # Provenance is keyed by the root as well: old capsules are not admitted.
   expect_error(omopDpReleaseDS(table, spec), "provenance MAC does not match")
@@ -2317,7 +2369,7 @@ test_that("a replaced injected root re-draws answers and the original restores t
 
   options(dsomop.dp.noise_root = as.raw(0:31))
   .dp_restart_runtime()
-  expect_identical(omopDpStatusDS()$noise_key_id, first_status$noise_key_id)
+  expect_identical(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$noise_key_id, first_status$noise_key_id)
   expect_identical(omopDpReleaseDS(table, spec), first_value)
 })
 
@@ -2418,13 +2470,13 @@ test_that("image load is key-free and first service use is complete", {
   expect_null(.pkg_state$dp_runtime)
 
   withr::local_options(list(dsomop.dp.enabled = TRUE))
-  expect_message(first <- omopDpStatusDS(), "created the DP noise root")
+  expect_message(first <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL), "created the DP noise root")
   expect_true(file.exists(root_path))
   expect_true(first$ready)
   expect_match(first$noise_domain_id, "^dpn_[0-9a-f]{40}$")
 
   .dp_restart_runtime()
-  expect_silent(restarted <- omopDpStatusDS())
+  expect_silent(restarted <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL))
   expect_identical(restarted$noise_domain_id, first$noise_domain_id)
   expect_identical(restarted$noise_key_id, first$noise_key_id)
 })
@@ -2433,7 +2485,7 @@ test_that("concurrent runtime use converges on the provisioned noise identity", 
   skip_on_os("windows")
   state <- .dp_local_state()
   statuses <- parallel::mclapply(
-    seq_len(4L), function(unused) omopDpStatusDS(),
+    seq_len(4L), function(unused) omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL),
     mc.cores = 2L, mc.preschedule = FALSE
   )
 
@@ -2446,7 +2498,7 @@ test_that("concurrent runtime use converges on the provisioned noise identity", 
     file.path(state, "secrets", "dp_noise_root")
   )$size, 32)
 
-  parent <- omopDpStatusDS()
+  parent <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
   expect_identical(parent$noise_domain_id, identities[[1L]])
 })
 
@@ -2462,7 +2514,7 @@ test_that("the central policy guard initializes status and empty nodes differ", 
   expect_true(file.exists(root_path))
 
   second_state <- .dp_local_state()
-  second_id <- omopDpStatusDS()$noise_domain_id
+  second_id <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$noise_domain_id
   expect_false(identical(second_id, first_id))
 })
 
@@ -2514,11 +2566,15 @@ test_that("derived resource policies separate keys and reject live changes", {
   .dsomopDpEnsureRuntime(second)
   other <- .dsomopDpPolicy()
   expect_false(identical(policy$domain, other$domain))
-  expect_false(identical(policy$keys$noise, other$keys$noise))
-  expect_false(identical(.dsomopDpSemanticId(policy, list(query = "same")),
-                         .dsomopDpSemanticId(other, list(query = "same"))))
+  expect_false(identical(policy$keys$provenance, other$keys$provenance))
+  for (key in c("person", "fingerprint", "noise")) {
+    expect_false(identical(.dsomopReleaseKeys(policy)[[key]],
+                           .dsomopReleaseKeys(other)[[key]]), info = key)
+  }
+  # A changed source label is display metadata only (review R01): no policy
+  # change, no refusal.
   DBI::dbExecute(second$conn, "UPDATE cdm_source SET vocabulary_version = 'next'")
-  expect_error(.dsomopDpPolicy(), "policy changed")
+  expect_identical(.dsomopDpPolicy()$policy_hash, other$policy_hash)
 })
 
 test_that("explicit identifiers take precedence over fallback metadata", {
@@ -2542,12 +2598,21 @@ test_that("derived identifiers respect partial overrides and conflicts", {
   .dsomopDpEnsureRuntime(handle)
   expect_identical(.dsomopDpPolicy()$domain, "dsomop-dp-test")
   expect_identical(.dsomopDpPolicy()$snapshot_id,
-                   .dsomopDpDerivedIdentity(handle)$snapshot_id)
+                   paste0("cdm_", .dsomopDpSha256(.dsomopFrame(
+                     "dsomop-dp-snapshot-label-v2", "dsomop-dp-test"))))
   withr::with_envvar(c(DSOMOP_DP_DOMAIN = "conflict"), {
     expect_error(.dsomopDpPolicy(), "Conflicting DP option")
   })
+  # A conflicting or malformed label is ignored (display metadata only): it
+  # can never refuse the service (review R01).
   withr::with_envvar(c(DSOMOP_DP_SNAPSHOT_ID = "conflict"), {
-    expect_error(.dsomopDpPolicy(), "Conflicting DP option")
+    expect_no_error(policy <- .dsomopDpPolicy())
+    expect_identical(policy$snapshot_id,
+                     paste0("cdm_", .dsomopDpSha256(.dsomopFrame(
+                     "dsomop-dp-snapshot-label-v2", "dsomop-dp-test"))))
+  })
+  withr::with_options(list(dsomop.dp.snapshot_id = "not a label!"), {
+    expect_no_error(.dsomopDpPolicy())
   })
 })
 
@@ -2573,7 +2638,9 @@ test_that("DSLite sessions isolate derived policies under a shared persistent ro
   second <- initialize(sessions[[2]])
   expect_false(identical(first$domain, second$domain))
   expect_identical(first$noise_root$key_id, second$noise_root$key_id)
-  expect_false(identical(first$keys$noise, second$keys$noise))
+  expect_false(identical(.dsomopReleaseKeys(first)$noise,
+                         .dsomopReleaseKeys(second)$noise))
+  expect_false(identical(first$keys$provenance, second$keys$provenance))
   expect_identical(initialize(sessions[[1]])$policy_hash, first$policy_hash)
 })
 
@@ -2618,8 +2685,8 @@ test_that("default-on initialization derives identity from a real SQLite resourc
   # Connecting never initializes DP; a community tool binds it when used.
   expect_null(.pkg_state$dp_runtime)
   .dsomopDpEnsureRuntime(handle)
-  expect_true(omopDpStatusDS()$enabled)
-  expect_true(omopDpStatusDS()$ready)
+  expect_true(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$enabled)
+  expect_true(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$ready)
   expect_match(.dsomopDpPolicy()$domain, "^resource_")
   expect_gt(nrow(omopQueryLibraryStickyCatalogDS()), 0L)
 })
@@ -2674,8 +2741,13 @@ test_that("fallback sorts vocabulary pairs across resources and restarts", {
   .dp_restart_runtime()
   expect_silent(.dsomopDpEnsureRuntime(handles[[2]]))
   expect_false(identical(.dsomopDpPolicy()$snapshot_id, first$snapshot_id))
+  # The label is display metadata (dsOMOP 2.10.3, review R01): a changed
+  # derived label within a session changes no policy and no admission.
+  before <- .dsomopDpPolicy()
   DBI::dbExecute(handles[[2]]$conn, "UPDATE vocabulary SET vocabulary_version = 'next'")
-  expect_error(.dsomopDpPolicy(), "policy changed")
+  expect_no_error(after <- .dsomopDpPolicy())
+  expect_identical(after$policy_hash, before$policy_hash)
+  expect_identical(after$snapshot_id, before$snapshot_id)
 })
 
 test_that("empty incomplete and blank source metadata use resource-only fallback without vocabulary", {
@@ -2696,7 +2768,7 @@ test_that("empty incomplete and blank source metadata use resource-only fallback
   expect_silent(.dsomopDpEnsureRuntime(handle))
   expect_identical(.dsomopDpPolicy()$snapshot_id, "etl-2026-08-01")
   handle$resource_client$getParsed <- function() list(dbms = "sqlite", database = ":memory:")
-  expect_error(.dsomopDpDerivedIdentity(handle), "dsomop.dp.domain and dsomop.dp.snapshot_id")
+  expect_error(.dsomopDpDerivedIdentity(handle), "configure dsomop.dp.domain")
 })
 
 test_that("DP status reports configured exclusivity in enabled and disabled modes", {
@@ -2706,11 +2778,11 @@ test_that("DP status reports configured exclusivity in enabled and disabled mode
       dsomop.dp.exclusive = NULL,
       default.dsomop.dp.exclusive = NULL
     ))
-    expect_identical(omopDpStatusDS()$exclusive, FALSE)
+    expect_identical(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$exclusive, FALSE)
 
     for (exclusive in c(TRUE, FALSE)) {
       withr::with_options(list(dsomop.dp.exclusive = exclusive), {
-        status <- omopDpStatusDS()
+        status <- omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)
         expect_identical(status$enabled, enabled)
         expect_identical(status$exclusive, exclusive)
         expect_identical(.pkg_state$dp_status$exclusive, exclusive)
@@ -2721,7 +2793,7 @@ test_that("DP status reports configured exclusivity in enabled and disabled mode
   check_status(FALSE)
 })
 
-test_that("all typed DP statistics remain sticky across exclusive channel modes", {
+test_that("exclusive mode keeps only the fixed-synopsis typed releases", {
   .dp_local_state(noise_root = as.raw(0:31))
   withr::local_options(list(dsomop.dp.exclusive = FALSE))
   input <- .dp_test_table()
@@ -2739,26 +2811,45 @@ test_that("all typed DP statistics remain sticky across exclusive channel modes"
          levels = c("a", "b", "c"), reducer = "distinct",
          max_contributions = 2L),
     list(statistic = "bounded_mean", variable = "measurement",
-         lower = 0, upper = 10, reducer = "mean"),
+         lower = 0, upper = 100, reducer = "mean"),
     list(statistic = "binary_rate", variable = "flag", positive = "yes",
          reducer = "any", denominator = "all_persons")
   )
-  release_all <- function() {
-    lapply(specs, function(spec) omopDpReleaseDS(input, spec))
+  release_all <- function(x, which = seq_along(specs)) {
+    lapply(specs[which], function(spec) {
+      suppressMessages(omopDpReleaseDS(x, spec))
+    })
   }
-  standard_mode <- release_all()
+  standard_mode <- release_all(input)
   expect_setequal(vapply(standard_mode, `[[`, character(1L), "statistic"),
-                  omopDpStatusDS()$supported_statistics)
+                  omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$supported_statistics)
+  expect_true(all(vapply(standard_mode, `[[`, character(1L), "protection") ==
+                    "realised_sticky"))
+  # Counts, capped record counts and registered-scale means of an unscoped
+  # pinned loader table are fixed synopses (keyed on the person-membership
+  # generation its loader request sealed with it).
+  dataset <- .release_session_dataset()
+  loader <- .dp_test_table(producer = "query/measurement.load/0123456789abcdef",
+                           dataset_identity = dataset,
+                           data_generation = .release_loader_generation())
+  fixed <- release_all(loader, c(1L, 2L, 6L))
+  expect_true(all(vapply(fixed, `[[`, character(1L), "protection") ==
+                    "fixed_synopsis"))
 
   withr::with_options(list(dsomop.dp.exclusive = TRUE), {
-    expect_true(omopDpStatusDS()$exclusive)
+    expect_true(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$exclusive)
     expect_error(omopAchillesResultsDS("unused", 1L), "DP-only mode")
-    expect_identical(release_all(), standard_mode)
+    # A heuristic realised release is never called DP: refused statically.
+    for (spec in specs) {
+      expect_error(suppressMessages(omopDpReleaseDS(input, spec)),
+                   "no fixed-synopsis protection", info = spec$statistic)
+    }
+    expect_identical(release_all(loader, c(1L, 2L, 6L)), fixed)
     # DP input can also be prepared after the exclusive gate is activated.
     expect_identical(.dp_test_table(), input)
   })
-  expect_false(omopDpStatusDS()$exclusive)
-  expect_identical(release_all(), standard_mode)
+  expect_false(omopDpStatusDS(.DSOMOP_RELEASE_PROTOCOL)$exclusive)
+  expect_identical(release_all(input), standard_mode)
 })
 
 .dp_primitive_specs <- function() list(
@@ -2774,13 +2865,15 @@ test_that("all typed DP statistics remain sticky across exclusive channel modes"
        levels = c("a", "b", "c"), reducer = "distinct",
        max_contributions = 2L),
   list(statistic = "bounded_mean", variable = "measurement",
-       lower = 0, upper = 10, reducer = "mean"),
+       lower = 0, upper = 100, reducer = "mean"),
   list(statistic = "binary_rate", variable = "flag", positive = "yes",
        reducer = "any", denominator = "all_persons")
 )
 
 .dp_primitive_input <- function(changed_persons = 0L, reverse = FALSE,
-                                   producer = "test/primitive-matrix") {
+                                   producer = "test/primitive-matrix",
+                                   dataset_identity = .dp_dataset_identity(),
+                                   data_generation = NULL) {
   raw <- data.frame(
     person_id = 1:8, category = rep(c("a", "b"), 4L),
     measurement = 1:8, flag = rep(c("yes", "no"), 4L),
@@ -2793,7 +2886,9 @@ test_that("all typed DP statistics remain sticky across exclusive channel modes"
     flag = rep("yes", changed_persons), stringsAsFactors = FALSE
   ))
   if (reverse) raw <- raw[rev(seq_len(nrow(raw))), , drop = FALSE]
-  .dp_seal(.testPseudonymize(raw), producer = producer)
+  .dp_seal(.testPseudonymize(raw), producer = producer, domains = .dp_domains,
+           dataset_identity = dataset_identity,
+           data_generation = data_generation)
 }
 
 test_that("all seven primitives are byte-deterministic and data edits re-draw them", {
@@ -2836,50 +2931,77 @@ test_that("all seven primitives are byte-deterministic and data edits re-draw th
                           version = 3L), first_bytes)
 })
 
-test_that("data, snapshot, epoch and public request changes get fresh contexts", {
+test_that("data and epoch changes re-key; lineage and snapshot cosmetics do not", {
   .dp_local_state(noise_root = as.raw(0:31))
-  contexts <- list()
+  # Observe the actual sampler input without replacing its draw. Distinct
+  # discrete-Laplace draws may coincide, so unequal released values are not
+  # a valid assertion that an epoch or contribution map changed the key.
+  sampler <- .dsomopDpDiscreteLaplace
+  last_context <- NULL
+  testthat::local_mocked_bindings(
+    .dsomopDpDiscreteLaplace = function(key, context, coordinate, epsilon,
+                                       sensitivity) {
+      last_context <<- context
+      sampler(key, context, coordinate, epsilon, sensitivity)
+    }, .package = "dsOMOP")
+  count <- list(statistic = "count")
   release <- function(changed_persons = 0L,
-                       producer = "test/primitive-matrix") {
+                      producer = "test/primitive-matrix") {
     input <- .dp_primitive_input(changed_persons, producer = producer)
-    policy <- .dsomopDpPolicy()
-    analysis <- .dsomopDpAnalysis(input, list(statistic = "count"), policy)
-    .dsomopDpRelease(policy, analysis$semantic, analysis$snapshot,
-      analysis$sensitivity, function(epsilon, policy, release_context) {
-        contexts[[length(contexts) + 1L]] <<- release_context
-        analysis$payload_fn(epsilon, policy, release_context)
-      })
+    out <- suppressMessages(omopDpReleaseDS(input, count))
+    list(signed = out$components$signed, context = last_context)
   }
-  last_id <- function() contexts[[length(contexts)]]$release_id
+  dataset <- .release_session_dataset()
+  fixed <- function() {
+    input <- .dp_primitive_input(
+      dataset_identity = dataset,
+      producer = "query/measurement.load/0123456789abcdef",
+      data_generation = .release_loader_generation())
+    out <- suppressMessages(omopDpReleaseDS(input, count))
+    expect_identical(out$protection, "fixed_synopsis")
+    list(signed = out$components$signed, context = last_context)
+  }
   first <- release()
-  first_id <- last_id()
-  # A repeat recomputes the same context and the same answer.
+  first_fixed <- fixed()
+  # A repeat recomputes the same answer.
   expect_identical(release(), first)
-  expect_identical(last_id(), first_id)
-  expect_length(contexts, 2L)
-
-  ids <- first_id
-  release(64L)
-  ids <- c(ids, last_id())
-  # Rotation is a public custodian publication decision, even with unchanged data.
-  options(dsomop.dp.privacy_epoch = 2L)
-  .dp_restart_runtime()
-  release()
-  ids <- c(ids, last_id())
+  expect_identical(fixed(), first_fixed)
+  # A changed realised person set is another contribution map.
+  expect_false(identical(.dsomopDpCanonicalJson(release(64L)$context),
+                         .dsomopDpCanonicalJson(first$context)))
+  # Another lineage selecting the same people is the same canonical component
+  # (dsOMOP 2.10.3, G-09).
+  expect_identical(release(producer = "test/independent-public-request"),
+                   first)
+  # The deprecated snapshot label keys nothing (dsOMOP 2.10.3): fixed
+  # synopses use the person-membership generation sealed with the table.
   options(dsomop.dp.snapshot_id = "etl-2026-08-02")
   .dp_restart_runtime()
-  release()
-  ids <- c(ids, last_id())
-  release(producer = "test/independent-public-request")
-  ids <- c(ids, last_id())
-  expect_length(unique(ids), 5L)
-
-  # The original configuration recomputes the original context.
-  options(dsomop.dp.privacy_epoch = 1L,
-          dsomop.dp.snapshot_id = "etl-2026-08-01")
+  expect_identical(release(), first)
+  expect_identical(fixed(), first_fixed)
+  # Rotation of the privacy epoch re-keys every component, even with
+  # unchanged data. The signed values can still coincide by chance.
+  options(dsomop.dp.snapshot_id = "etl-2026-08-01",
+          dsomop.dp.privacy_epoch = 2L)
+  .dp_restart_runtime()
+  rotated <- release()
+  rotated_fixed <- fixed()
+  expect_false(identical(.dsomopDpCanonicalJson(rotated$context),
+                         .dsomopDpCanonicalJson(first$context)))
+  expect_false(identical(.dsomopDpCanonicalJson(rotated_fixed$context),
+                         .dsomopDpCanonicalJson(first_fixed$context)))
+  expect_equal(rotated$context$profile$privacy_epoch, 2)
+  expect_equal(rotated_fixed$context$profile$privacy_epoch, 2)
+  expect_equal(rotated_fixed$context$generation$epoch, 2)
+  message("[typed-epoch] fixed signed counts: ", first_fixed$signed,
+          " -> ", rotated_fixed$signed, "; sampler context changed: ",
+          !identical(.dsomopDpCanonicalJson(rotated_fixed$context),
+                     .dsomopDpCanonicalJson(first_fixed$context)))
+  # The original configuration recomputes the original answers.
+  options(dsomop.dp.privacy_epoch = 1L)
   .dp_restart_runtime()
   expect_identical(release(), first)
-  expect_identical(last_id(), first_id)
+  expect_identical(fixed(), first_fixed)
 })
 
 test_that("a fresh R process recomputes the canonical complete primitive response", {

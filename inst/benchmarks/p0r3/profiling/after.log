@@ -1,0 +1,9 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+profiling: .......................................................................................................[dsomop-audit] 2026-11-12T13:27:59+0000 method=omopCrossTabDS detail={"table":"condition_occurrence","row_col":"person_id","col_col":"condition_concept_id","count_mode":"persons","stratify_by":null,"band_margins":false}
+.[dsomop-audit] 2026-11-12T13:27:59+0000 method=omopCrossTabDS detail={"table":"condition_occurrence","row_col":"condition_concept_id","col_col":"condition_type_concept_id","count_mode":"persons","stratify_by":"person_id","band_margins":false}
+...[dsomop-audit] 2026-11-12T13:27:59+0000 method=omopCrossTabDS detail={"table":"measurement","row_col":"value_as_number","col_col":"measurement_concept_id","count_mode":"persons","stratify_by":null,"band_margins":false}
+.........................................................................
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+RESULT failed: 0 errors: 0 skipped: 0 passed: 180 

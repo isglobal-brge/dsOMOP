@@ -1,0 +1,40 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+$kind
+[1] "public"
+
+$keys
+[1] "gender=8507" "gender=8532" "gender=8521" "gender=8551" "gender=8570"
+[6] "gender=0"   
+
+$labels
+      stratum gender_concept_id         gender_name
+1 gender=8507              8507                MALE
+2 gender=8532              8532              FEMALE
+3 gender=8521              8521               OTHER
+4 gender=8551              8551             UNKNOWN
+5 gender=8570              8570           AMBIGUOUS
+6    gender=0                 0 No matching concept
+
+   user  system elapsed 
+ 14.977   0.574  15.552 
+                        self.time self.pct total.time total.pct
+"stringhash"                 5.06    32.25       5.06     32.25
+"paste0"                     1.89    12.05       2.09     13.32
+"paste"                      1.80    11.47       1.94     12.36
+"charToRaw"                  0.77     4.91       0.77      4.91
+"sub"                        0.50     3.19       0.51      3.25
+"anyNA"                      0.46     2.93       0.46      2.93
+"match"                      0.46     2.93       0.46      2.93
+"order"                      0.37     2.36       0.42      2.68
+"[.data.frame"               0.34     2.17       0.65      4.14
+"unique.default"             0.29     1.85       0.29      1.85
+"is.na"                      0.28     1.78       0.28      1.78
+".dsomopBigAdd"              0.20     1.27       0.50      3.19
+"nchar"                      0.20     1.27       0.20      1.27
+"structure"                  0.19     1.21       0.24      1.53
+"anyDuplicated.default"      0.19     1.21       0.19      1.21
+"vapply"                     0.17     1.08       5.17     32.95
+".local"                     0.16     1.02       0.60      3.82
+"gc"                         0.14     0.89       0.14      0.89
+"anyDuplicated"              0.13     0.83       0.32      2.04
+"c"                          0.13     0.83       0.13      0.83

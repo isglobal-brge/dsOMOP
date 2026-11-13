@@ -15,7 +15,7 @@
 }
 \value{
 Data frame of the route's shape, with attribute
-  \code{dsomop_tools_protection} ("dp", "standard_fallback" or "standard").
+  \code{dsomop_tools_protection} ("standard_fallback" or "standard").
 }
 \description{
 Compute one run of a reviewed question

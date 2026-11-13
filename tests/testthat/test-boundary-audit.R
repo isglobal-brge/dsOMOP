@@ -95,7 +95,37 @@ test_that("person support gates occur only at audited boundaries", {
     ".prevalenceOneTable", ".profileConceptDrilldown", ".profileCrossTab"
   )
   publication <- c(".publishPrepare", ".publishPersons", ".publishStandalone")
-  expect_setequal(setdiff(gated, c(creation, aggregate, publication)), character(0))
+  # P0 protected aggregate routes retain the final requested cohort's gate.
+  # These are not recipe intermediates or gates on eligible contributors:
+  # R11 specifically requires a supported parent to release even when its
+  # incidence substrate has zero, one or two people (the actual endpoint
+  # regression is test-tools-release-r11-empty-incidence.R).
+  protected_parent <- c(
+    ".omopReleaseIncidenceRun", ".omopReleaseAgeAtIndexValues",
+    ".omopReleaseTimeInCohortValues", ".omopReleaseComorbidity",
+    ".omopReleaseRunTimeDistribution", ".omopReleaseRunFollowup"
+  )
+  expect_setequal(setdiff(gated, c(creation, aggregate, publication,
+                                 protected_parent)), character(0))
+  for (helper in protected_parent) {
+    body <- functions[[helper]]
+    # Every admitted helper has exactly this one unconditional parent gate.
+    # A second/conditional eligible-cell gate, a raw n_persons argument or a
+    # WHERE/GROUP BY on the derived substrate must fail this inventory audit.
+    expect_equal(sum(all.names(body, functions = TRUE, unique = FALSE) ==
+                       ".assertMinPersons"), 1L, info = helper)
+    statements <- as.list(body)[-1L]
+    gates <- Filter(function(expr) is.call(expr) &&
+      identical(expr[[1L]], as.name(".assertMinPersons")), statements)
+    expect_length(gates, 1L)
+    expect_identical(gates, list(quote(.assertMinPersons(
+      handle = handle, sql = .sql_translate(paste0(
+        "SELECT COUNT(DISTINCT subject_id) AS n FROM ", cohort),
+        handle$target_dialect)))), info = helper)
+    parent <- quote(cohort <- .validateIdentifier(ctx$scoped_cohort, "cohort"))
+    expect_true(any(vapply(statements, identical, logical(1L), y = parent)),
+                info = paste(helper, "must gate the requested parent cohort"))
+  }
   for (helper in creation) {
     expect_true(".cohortPrivateContext" %in% all.names(functions[[helper]]),
                 info = helper)

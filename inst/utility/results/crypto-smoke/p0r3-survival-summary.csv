@@ -1,0 +1,2 @@
+"scenario","model","sampler","n","level","replicates","finite","informative","finite_rate","informative_rate","coverage_given_finite","coverage_all","bias_log","rmse_log","mean_ci_log_width","oracle_bias_log","release_minus_oracle_bias_log"
+1,"cox","crypto",500,"all",1,1,0,1,0,1,1,-0.441703757704464,0.441703757704464,2.10168346347941,0.0243861211303777,-0.466089878834842

@@ -55,8 +55,14 @@
   .omopDiagAssertPersons(handle, ctx, person, "p", "person_id")
 
   # SELECT list: grouping cols, then a translated name per concept col, then the
-  # distinct-person count.
+  # distinct-person count. Every non-aggregate SELECT expression is also a
+  # GROUP BY expression: PostgreSQL, SQL Server, DuckDB, Oracle and BigQuery
+  # reject a joined concept_name that is selected but not grouped (SQLite and
+  # MySQL-family engines merely tolerate it). The exact expression is grouped,
+  # never its output alias (alias grouping is dialect dependent) and never a
+  # MIN/MAX(name) that would hide the omission.
   select_parts <- character(0)
+  group_parts <- group_cols
   concept_joins <- character(0)
   alias_i <- 0L
   for (gc in group_cols) {
@@ -66,8 +72,9 @@
     id_col <- concept_cols[[alias_name]]
     alias_i <- alias_i + 1L
     cj <- paste0("cj", alias_i)
-    select_parts <- c(select_parts,
-                      paste0(cj, ".concept_name AS ", alias_name))
+    name_expr <- paste0(cj, ".concept_name")
+    select_parts <- c(select_parts, paste0(name_expr, " AS ", alias_name))
+    group_parts <- c(group_parts, name_expr)
     concept_joins <- c(concept_joins,
                        paste0(" LEFT JOIN ", concept, " ", cj,
                               " ON ", cj, ".concept_id = ", id_col))
@@ -75,8 +82,9 @@
   select_parts <- c(select_parts,
                     "COUNT(DISTINCT p.person_id) AS count_value")
 
-  group_by <- if (length(group_cols) > 0) {
-    paste0(" GROUP BY ", paste(group_cols, collapse = ", "))
+  group_parts <- unique(group_parts)
+  group_by <- if (length(group_parts) > 0) {
+    paste0(" GROUP BY ", paste(group_parts, collapse = ", "))
   } else ""
   order_by <- if (length(group_cols) > 0) " ORDER BY count_value DESC" else ""
 

@@ -84,6 +84,12 @@ tools_handle <- function(n_persons = 60) {
   h
 }
 
+# The closed column schema of an entry: protected releases publish it in
+# release_pooling (their legacy contract is not_poolable for older clients).
+.tools_columns <- function(entry) {
+  entry$meta$release_pooling$columns %||% entry$meta$pooling_contract$columns
+}
+
 # The test CDM lacks some optional tables; the registry says so once per build.
 tools_run <- function(h, id, params = list()) {
   suppressWarnings(.omopAnalysisRun(h, paste0("dsomop:", id), params))
@@ -153,7 +159,7 @@ test_that("every reviewed question has a closed schema and pooling contract", {
       for (id in names(reviewed)) {
         entry <- registry[[paste0("dsomop:", id)]]
         expect_identical(entry$meta$adapter, "tools_auto", info = id)
-        expect_identical(names(entry$meta$pooling_contract$columns),
+        expect_identical(names(.tools_columns(entry)),
                          entry$meta$output_fields, info = paste(mode, id))
         shape <- .dsomopToolsShape(reviewed[[id]], mode)
         expect_identical(entry$meta$tools_shape, shape, info = paste(mode, id))
@@ -172,9 +178,9 @@ test_that("auto mode without DP releases the same tables under the standard gate
                .tools_summary_ids)) {
     out <- tools_run(h, id, .tools_params[[id]] %||% list())
     label <- attr(out, "dsomop_protection")
-    expected <- if (id %in% .tools_summary_ids) "standard" else
-      "standard_fallback"
-    expect_identical(label$protection, expected, info = id)
+    # Every reviewed question has a protected route; without the DP service
+    # auto mode releases its standard table under the gate.
+    expect_identical(label$protection, "standard_fallback", info = id)
     expect_identical(names(out),
                      .omopAnalysisResolve(h, paste0("dsomop:", id))$meta$output_fields,
                      info = id)
@@ -184,28 +190,44 @@ test_that("auto mode without DP releases the same tables under the standard gate
   }
 })
 
-test_that("auto mode with DP releases complete sticky noisy histograms", {
+test_that("auto mode distinguishes public histograms from enumerated record strata", {
   .tools_dp_state()
   h <- tools_handle()
   on.exit(cleanup_handle(h), add = TRUE)
   withr::local_options(list(dsomop.tools.mode = "auto"))
   out <- tools_run(h, "condition.duration_stats", list(concept_id = 201820))
   label <- attr(out, "dsomop_protection")
-  expect_identical(label$protection, "dp")
-  expect_equal(label$epsilon, 0.1)
-  expect_equal(label$sensitivity, 1)
+  # An unscoped question over a complete public basis is a fixed synopsis,
+  # keyed on the person-membership generation read inside this request.
+  expect_identical(label$protection, "fixed_synopsis")
+  expect_identical(label$guarantee_scope,
+                   "fixed_vector_before_exact_support_gate")
+  expect_equal(label$noise_reference_epsilon, 0.1)
+  expect_equal(label$mechanism_epsilon, 0.1)
+  expect_true(is.na(label$api_transcript_epsilon))
   expect_identical(label$adjacency, "add_remove_person")
-  expect_equal(label$noise_sd, .dsomopToolsNoiseSd(0.1), tolerance = 1e-12)
+  expect_identical(label$privacy_call_quota, "none")
+  expect_false(label$history_based_admission)
+  component <- label$components[[1L]]
+  expect_equal(component$allocation_epsilon$H, 0.08)
+  expect_equal(component$allocation_epsilon$N, 0.02)
+  expect_equal(component$noise_sd$H, .dsomopReleaseNoiseSd(0.08, 1),
+               tolerance = 1e-12)
   expect_equal(nrow(out), length(.DSOMOP_TOOLS_DAY_BREAKS))
   expect_identical(out$bin, seq_along(.DSOMOP_TOOLS_DAY_BREAKS))
-  expect_true(all(out$n_persons >= 0 & out$n_persons == floor(out$n_persons)))
+  expect_true(all(out$n_persons >= 0))
   expect_true(is.na(out$bin_upper[nrow(out)]))
+  # Displayed cells are the simplex projection onto the one noisy total.
+  release <- attr(out, "dsomop_release")
+  noisy_n <- release$owners[[1L]]$components[[1L]]$n
+  expect_equal(sum(out$n_persons), max(0, noisy_n), tolerance = 1e-8)
   again <- tools_run(h, "condition.duration_stats", list(concept_id = 201820))
   expect_identical(again$n_persons, out$n_persons)
 
   for (id in c(.tools_histogram_ids, .tools_partition_ids)) {
     res <- tools_run(h, id, .tools_params[[id]] %||% list())
-    expect_identical(attr(res, "dsomop_protection")$protection, "dp", info = id)
+    expect_identical(attr(res, "dsomop_protection")$protection,
+                     "fixed_synopsis", info = id)
   }
   year <- tools_run(h, "person.year_of_birth_distribution")
   expect_equal(nrow(year), .dsomopToolsReferenceYear() - 1900L + 2L)
@@ -218,9 +240,18 @@ test_that("auto mode with DP releases complete sticky noisy histograms", {
   by_gender <- tools_run(h, "observation_period.length_by_gender")
   expect_equal(nrow(by_gender), nrow(.dsomopToolsGenders()) *
                  length(.DSOMOP_TOOLS_DAY_BREAKS))
-  # Questions without a public scale stay standard in auto mode.
-  value <- tools_run(h, "measurement.value_stats", list(concept_id = 3025315))
-  expect_identical(attr(value, "dsomop_protection")$protection, "standard")
+  # Record summaries enumerate supported CDM strata. Public value scales do
+  # not make that stratum domain complete: these protected summaries use the
+  # realised-sticky route and make no fixed-vector DP claim.
+  for (id in .tools_summary_ids) {
+    res <- tools_run(h, id, .tools_params[[id]] %||% list())
+    summary_label <- attr(res, "dsomop_protection")
+    expect_identical(summary_label$protection, "realised_sticky", info = id)
+    expect_identical(summary_label$guarantee_scope,
+                     "heuristic_realised_contribution_reuse", info = id)
+    expect_true(is.na(summary_label$mechanism_epsilon), info = id)
+    expect_true(is.na(summary_label$api_transcript_epsilon), info = id)
+  }
 })
 
 test_that("each person changes exactly one cell of a DP histogram by one", {
@@ -293,16 +324,18 @@ test_that("standard mode answers the original summaries under the gate", {
   expect_equal(nrow(top), 1L)
 })
 
-test_that("DP-only mode refuses standard statistics and keeps DP questions", {
+test_that("DP-only mode keeps public histograms and refuses enumerated record strata", {
   .tools_dp_state()
   h <- tools_handle()
   on.exit(cleanup_handle(h), add = TRUE)
   withr::local_options(list(dsomop.tools.mode = "dp"))
   out <- tools_run(h, "condition.duration_stats", list(concept_id = 201820))
-  expect_identical(attr(out, "dsomop_protection")$protection, "dp")
-  expect_error(tools_run(h, "measurement.value_stats",
-                         list(concept_id = 3025315)),
-               "no differential-privacy release")
+  expect_identical(attr(out, "dsomop_protection")$protection,
+                   "fixed_synopsis")
+  for (id in .tools_summary_ids) {
+    expect_error(tools_run(h, id, .tools_params[[id]] %||% list()),
+                 "no fixed-synopsis protection", info = id)
+  }
   expect_error(tools_run(h, "demo.person_count_by_gender"),
                "DP-only mode")
   expect_error(.dsomopRequireCommunityTool(), "DP-only mode")
@@ -360,15 +393,21 @@ test_that("model admission follows the DataSHIELD glm rules", {
 })
 
 test_that("CohortMethod outcome releases need distinct outcome persons", {
-  withr::local_options(list(nfilter.tab = 3))
+  withr::local_options(list(nfilter.tab = 3, nfilter.subset = 3,
+                            dsomop.nfilter.band = 5))
   expect_identical(.omopCmOutcomeSupported(c(0, 2, 3, NA)),
                    c(FALSE, FALSE, TRUE, FALSE))
-  expect_true(is.na(.omopCmSupportedOutcomes(
-    list(outcomes = 100, outcome_persons = 1),
-    list(outcomes = 0, outcome_persons = 1))))
-  expect_equal(.omopCmSupportedOutcomes(
-    list(outcomes = 10, outcome_persons = 2),
-    list(outcomes = 4, outcome_persons = 1)), 14)
+  arm <- function(outcomes, outcome_persons, persons = 100,
+                  person_days = 1000) {
+    list(persons = persons, person_days = person_days, outcomes = outcomes,
+         outcome_persons = outcome_persons)
+  }
+  expect_true(is.na(.omopCmSupportedOutcomes(arm(100, 1), arm(0, 1))))
+  # Each arm needs its own outcome persons: a supported total of 3 outcome
+  # persons split 2 + 1 is not enough.
+  expect_true(is.na(.omopCmSupportedOutcomes(arm(10, 2), arm(4, 1))))
+  # Released total = band(13) + band(7) = 10 + 5, never band(20).
+  expect_equal(.omopCmSupportedOutcomes(arm(13, 13), arm(7, 7)), 15)
 })
 
 test_that("discovery releases reviewed capabilities, not occupancy", {
@@ -437,8 +476,7 @@ test_that("pooling keys identify every released row of a reviewed question", {
       registry <- suppressWarnings(.omopAnalysisRegistry(h, force = TRUE))
       for (id in names(.dsomopToolsReviewedQueries())) {
         entry <- registry[[paste0("dsomop:", id)]]
-        contract <- entry$meta$pooling_contract
-        roles <- vapply(contract$columns, `[[`, character(1L), "role")
+        roles <- vapply(.tools_columns(entry), `[[`, character(1L), "role")
         keys <- names(roles)[roles == "key"]
         out <- tools_run(h, id, .tools_params[[id]] %||% list())
         if (nrow(out) > 1L) {

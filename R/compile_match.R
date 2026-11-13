@@ -296,6 +296,7 @@
                                field = NULL) {
   sql <- .buildStatement(ctx, final, select = select, dialect = .compileDialect(ctx))
   n <- as.numeric(cap) + 1
+  .dsomopSnapshotReadSql(ctx[["handle"]], sql)
   rows <- .withDbReconnect(ctx[["handle"]], function(conn) {
     res <- DBI::dbSendQuery(conn, sql)
     on.exit(DBI::dbClearResult(res), add = TRUE)

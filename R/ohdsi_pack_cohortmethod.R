@@ -24,9 +24,10 @@
 #     metrics. Each is recomputed LIVE as a DERIVED scalar over the gated single-
 #     site aggregates the sibling ports already build (R-in-session: the sibling
 #     kernels are called in one fn and their outputs assembled into ONE row):
-#       * mdrr            -> .omopCmMdrr(total_outcomes, target_days,
-#                            comparator_days) VERBATIM (the cm_result kernel; bands
-#                            its inputs and is NA on any suppressed input).
+#       * mdrr            -> .omopCmReleasedMdrr(target, comparator) VERBATIM
+#                            (the cm_result kernel: NA unless each arm is
+#                            separately supported; computed from the released,
+#                            banded arm statistics only).
 #       * max_sdm         -> max(abs(SMD)) over .omopTwoArmCovariateSmd(target,
 #                            comparator) (the covariate-balance kernel; each SMD is
 #                            already NA when either arm is suppressed, so the max is
@@ -338,8 +339,15 @@
 #' person-time) — mirroring \code{\link{.omopAnalysisReconcileRatio}} so the
 #' released MDRR never rests on un-banded counts.
 #'
-#' @param outcomes Numeric; total outcomes across both arms (raw).
-#' @param target_days,comparator_days Numeric; person-days per arm (raw).
+#' Callers pass the RELEASED arm statistics of
+#' \code{\link{.omopCmReleasableArmStats}} (via
+#' \code{\link{.omopCmReleasedMdrr}}): \code{D} is
+#' \code{band(target outcomes) + band(comparator outcomes)}, never the band of
+#' the raw total, whose carry bit would reveal hidden arm information. Banding
+#' is idempotent, so re-banding released values here changes nothing.
+#'
+#' @param outcomes Numeric; total released outcomes across both arms.
+#' @param target_days,comparator_days Numeric; released person-days per arm.
 #' @param alpha Numeric; type-I error (default 0.05).
 #' @param power Numeric; target power (default 0.80).
 #' @param two_sided Logical; two-sided test (default TRUE).
@@ -420,19 +428,18 @@
     ta <- arm_row("target", cohorts$a)
     co <- arm_row("comparator", cohorts$b)
 
-    # MDRR is a SINGLE study-level value derived from the BANDED aggregates (NA
-    # when any input is suppressed). It is carried as a COLUMN on BOTH arm rows
-    # (NOT a separate row): a person-less mdrr row would have an NA distinct-person
-    # companion and be dropped by the gate's record branch, so the value rides on
-    # the arm rows that survive gating on their own person counts — i.e. the MDRR
-    # is released iff the arms it summarises are themselves releasable. The arm
-    # counts are declared (not pre-gated); the single gate bands them.
+    # MDRR is a SINGLE study-level value derived only from the RELEASED arm
+    # statistics (.omopCmReleasableArmStats): band(target outcomes) +
+    # band(comparator outcomes) and the banded person-days. It is carried as a
+    # COLUMN on BOTH arm rows (NOT a separate row) and is NA on both whenever
+    # EITHER arm is unsupported (its persons, outcome persons, outcomes or
+    # person-time below threshold): the old total-based MDRR rode on the
+    # surviving arm and constrained the suppressed arm's 1-2 outcome persons.
+    # The arm counts are declared (not pre-gated); the single gate bands them.
     # Outcomes are recurrent events: their support is the number of distinct
-    # persons with an outcome, not the arm size. An arm's outcome count (and the
-    # MDRR built from the total) needs nfilter.tab outcome persons.
-    total_out <- .omopCmSupportedOutcomes(ta, co)
-    mdrr <- .omopCmMdrr(total_out, ta$person_days, co$person_days,
-                        alpha = alpha, power = power, two_sided = two_sided)
+    # persons with an outcome, not the arm size.
+    mdrr <- .omopCmReleasedMdrr(ta, co, alpha = alpha, power = power,
+                                two_sided = two_sided)
     ta$mdrr <- as.numeric(mdrr)
     co$mdrr <- as.numeric(mdrr)
     ta$outcomes[!.omopCmOutcomeSupported(ta$outcome_persons)] <- NA_real_
@@ -472,12 +479,95 @@
   !is.na(x) & x >= .omopDisclosureSettings()$nfilter_tab
 }
 
-# Total outcomes across both arms, or NA when fewer than nfilter.tab distinct
-# persons contribute them.
+#' The released statistics of one CohortMethod arm (standard route)
+#'
+#' One arm's persons, person-time and outcome count as the final gate releases
+#' them, or unavailable. The arm is releasable only when EACH of its own bases
+#' passes separately: its person population (\code{nfilter.subset} and
+#' \code{nfilter.tab}), its distinct outcome-contributing persons
+#' (\code{nfilter.tab}), its outcome count and its person-time (the gate's
+#' \code{nfilter.tab} count floor). A supported total over both arms is not
+#' enough: one arm with 13 outcome persons cannot carry another with 2. Every
+#' released value is banded with the gate's \code{nfilter.band}; derived study
+#' statistics (the MDRR) are computed from these values only. A later protected
+#' route substitutes its released protected arm components here.
+#'
+#' @param arm List (or one-row frame) with \code{persons}, \code{person_days},
+#'   \code{outcomes} and \code{outcome_persons} (raw counts).
+#' @return List: \code{releasable} (logical) and the released \code{persons},
+#'   \code{person_days} and \code{outcomes} (\code{NA} when not releasable).
+#' @keywords internal
+.omopCmReleasableArmStats <- function(arm) {
+  unavailable <- list(releasable = FALSE, persons = NA_real_,
+                      person_days = NA_real_, outcomes = NA_real_)
+  if (!is.list(arm)) return(unavailable)
+  settings <- .omopDisclosureSettings()
+  band_width <- settings$nfilter_band
+  count_floor <- settings$nfilter_tab
+  person_floor <- max(settings$nfilter_tab, settings$nfilter_subset)
+  scalar <- function(x) {
+    x <- suppressWarnings(as.numeric(x %||% NA_real_))
+    if (length(x) != 1L || is.na(x) || !is.finite(x) || x < 0) NA_real_ else x
+  }
+  persons <- scalar(arm$persons)
+  person_days <- scalar(arm$person_days)
+  outcomes <- scalar(arm$outcomes)
+  outcome_persons <- scalar(arm$outcome_persons)
+  supported <- function(x, floor) !is.na(x) && x >= floor
+  if (!supported(persons, person_floor) ||
+      !supported(outcome_persons, count_floor) ||
+      !supported(outcomes, count_floor) ||
+      !supported(person_days, count_floor)) {
+    return(unavailable)
+  }
+  list(
+    releasable = TRUE,
+    persons = .bandCount(persons, band_width = band_width),
+    person_days = .bandCount(person_days, band_width = band_width),
+    outcomes = .bandCount(outcomes, band_width = band_width)
+  )
+}
+
+#' Total released outcomes of a two-arm comparison
+#'
+#' \code{band(target outcomes) + band(comparator outcomes)} when BOTH arms are
+#' separately releasable (\code{\link{.omopCmReleasableArmStats}}), else
+#' \code{NA}. It is never the band of the raw total.
+#'
+#' @param ta,co Raw arm counts (target, comparator).
+#' @return Numeric scalar or \code{NA_real_}.
+#' @keywords internal
 .omopCmSupportedOutcomes <- function(ta, co) {
-  persons <- sum(c(ta$outcome_persons, co$outcome_persons))
-  if (!isTRUE(.omopCmOutcomeSupported(persons))) return(NA_real_)
-  sum(c(ta$outcomes, co$outcomes), na.rm = TRUE)
+  target <- .omopCmReleasableArmStats(ta)
+  comparator <- .omopCmReleasableArmStats(co)
+  if (!isTRUE(target$releasable) || !isTRUE(comparator$releasable)) {
+    return(NA_real_)
+  }
+  target$outcomes + comparator$outcomes
+}
+
+#' MDRR of a two-arm comparison from its released arm statistics
+#'
+#' The single MDRR computation shared by \code{dsomop:cm.mdrr} (and its
+#' \code{ohdsi.cohort_method.cm_result} alias) and the diagnostics summary:
+#' \code{NA} unless both arms are separately releasable; otherwise
+#' \code{\link{.omopCmMdrr}} over the released total outcomes and the released
+#' person-days, so its exact inverse recovers only values the arm rows release.
+#'
+#' @param ta,co Raw arm counts (target, comparator).
+#' @inheritParams .omopCmMdrr
+#' @return Numeric scalar MDRR or \code{NA_real_}.
+#' @keywords internal
+.omopCmReleasedMdrr <- function(ta, co, alpha = 0.05, power = 0.80,
+                                two_sided = TRUE) {
+  target <- .omopCmReleasableArmStats(ta)
+  comparator <- .omopCmReleasableArmStats(co)
+  if (!isTRUE(target$releasable) || !isTRUE(comparator$releasable)) {
+    return(NA_real_)
+  }
+  .omopCmMdrr(target$outcomes + comparator$outcomes, target$person_days,
+              comparator$person_days, alpha = alpha, power = power,
+              two_sided = two_sided)
 }
 
 #' \code{dsomop:ohdsi.cohort_method.cm_result} entry (CohortMethod substrate + MDRR)
@@ -603,10 +693,11 @@
 #' \code{\link{.omopTwoPopCohorts}}), the sibling kernels are called in this one fn
 #' and their outputs reduced to scalars:
 #' \itemize{
-#'   \item \strong{mdrr}: total outcomes + per-arm person-time are counted exactly
-#'     as \code{\link{.omopCmResultFn}} does (descendant-expanded outcome set, TAR
-#'     window), then passed to \code{\link{.omopCmMdrr}} VERBATIM — which bands
-#'     each input and is NA on any suppressed input.
+#'   \item \strong{mdrr}: per-arm persons, person-time and outcomes are counted
+#'     exactly as \code{\link{.omopCmResultFn}} does (descendant-expanded outcome
+#'     set, TAR window), then passed to \code{\link{.omopCmReleasedMdrr}}
+#'     VERBATIM — NA unless EACH arm is separately supported, and otherwise
+#'     computed from the released (banded) arm statistics only.
 #'   \item \strong{max_sdm}: \code{max(abs(SMD))} over
 #'     \code{\link{.omopTwoArmCovariateSmd}} (each SMD is already NA when either
 #'     arm is suppressed, so the max is over disclosure-safe SMDs only; NA when no
@@ -667,11 +758,10 @@
     ta <- arm_substrate(cohorts$a)
     co <- arm_substrate(cohorts$b)
 
-    # (a) mdrr -- reuse the cm_result kernel verbatim (bands inputs; NA-on-suppress),
-    # with the outcome total supported by its distinct outcome persons.
-    total_out <- .omopCmSupportedOutcomes(ta, co)
-    mdrr <- .omopCmMdrr(total_out, ta$person_days, co$person_days,
-                        alpha = alpha, power = power, two_sided = two_sided)
+    # (a) mdrr -- the cm_result kernel verbatim: computed from the released arm
+    # statistics only, NA unless EACH arm is separately supported.
+    mdrr <- .omopCmReleasedMdrr(ta, co, alpha = alpha, power = power,
+                                two_sided = two_sided)
 
     # (b) max_sdm -- largest covariate imbalance over the banded-SMD kernel. Each
     # SMD is already NA where either arm is suppressed, so max(abs(.)) is over
@@ -1055,35 +1145,58 @@
   design
 }
 
+# The propensity model's explicit intercept-only release contract. When the
+# response (arm) is admissible but no candidate covariate passes the within-arm
+# admission, the model is the intercept-only propensity model: every score is
+# the target-arm prevalence, the preference score is 0.5 for everyone, and the
+# released aggregates (per-arm bin counts, equipoise, AUC 0.5) carry nothing
+# beyond the banded arm sizes. It is never inferred from a failed admission (an
+# inadmissible arm vector) or from a failed fit: those release no model.
+.DSOMOP_PS_INTERCEPT_ONLY_CONTRACT <- "admitted_when_no_covariate_passes"
+
 #' Fit the in-session propensity model and return per-subject scores
 #'
 #' Fits \code{stats::glm(arm ~ covariates, family = binomial)} on the loaded
 #' design matrix IN THE SERVER-SIDE R SESSION and returns each subject's fitted
 #' propensity score (the predicted probability of being in the target arm).
-#' Covariate columns that are constant across all subjects (no contrast) are
-#' dropped before fitting so the glm is well posed; if NO covariate varies the
-#' model is intercept-only (every score equals the marginal target prevalence,
-#' which still yields a valid — if uninformative — distribution). The returned
-#' vector aligns row-for-row with \code{design}; the fitted model object is NOT
-#' returned (coefficients never leave R).
+#' Covariates are admitted by \code{\link{.omopModelAdmitBinaryDesign}} with the
+#' arm as the response: a covariate needs \code{nfilter.tab} persons with and
+#' without it WITHIN the target arm AND WITHIN the comparator arm (a supported
+#' marginal is not enough; the AUC would otherwise solve a small arm-by-covariate
+#' cell). An inadmissible arm vector (missing values, wrong length, an arm below
+#' \code{nfilter.tab}) stops: no model is released, and in particular no
+#' intercept-only substitute. When the arms are admissible but no covariate
+#' passes, the explicit intercept-only contract applies
+#' (\code{.DSOMOP_PS_INTERCEPT_ONLY_CONTRACT}). The returned vector aligns
+#' row-for-row with \code{design}; the fitted model object is NOT returned
+#' (coefficients never leave R).
 #'
 #' @param design Design matrix from \code{\link{.omopCmPropensityDesign}}.
-#' @return Numeric vector of per-subject propensity scores (length = nrow(design)).
+#' @return Numeric vector of per-subject propensity scores (length =
+#'   nrow(design)) with attribute \code{dsomop_model_admission}.
 #' @keywords internal
 .omopCmPropensityScores <- function(design) {
   cov_cols <- grep("^cov_", names(design), value = TRUE)
-  # Model admission (DataSHIELD glm rules): keep covariates with nfilter.tab
-  # persons with and without them (which also drops constant columns), within
-  # the nfilter.glm dimension cap. Arm sizes are gated by the callers.
-  admitted <- .omopModelAdmitBinaryDesign(design[, cov_cols, drop = FALSE])
+  admitted <- .omopModelAdmitBinaryDesign(design[, cov_cols, drop = FALSE],
+                                          y = design$arm)
+  if (is.null(admitted)) {
+    stop("The propensity model is not admitted: its arms do not meet the ",
+         "disclosure thresholds.", call. = FALSE)
+  }
   varying <- cov_cols[admitted]
   if (length(varying) == 0) {
     fit <- stats::glm(arm ~ 1, data = design, family = stats::binomial())
+    status <- list(status = "intercept_only",
+                   contract = .DSOMOP_PS_INTERCEPT_ONLY_CONTRACT,
+                   n_admitted = 0L)
   } else {
     form <- stats::as.formula(paste("arm ~", paste(varying, collapse = " + ")))
     fit <- stats::glm(form, data = design, family = stats::binomial())
+    status <- list(status = "admitted", n_admitted = length(varying))
   }
-  as.numeric(stats::predict(fit, type = "response"))
+  scores <- as.numeric(stats::predict(fit, type = "response"))
+  attr(scores, "dsomop_model_admission") <- status
+  scores
 }
 
 #' Preference-score transform of a propensity score
@@ -1151,8 +1264,17 @@
     if (is.null(cohorts)) return(data.frame())
 
     domain <- params$domain_code %||% "0"
-    top_k  <- max(as.integer(params$top_k %||% "20"), 1L)
-    n_bins <- max(as.integer(params$n_bins %||% "10"), 2L)
+    # Public release grids (never data-dependent): candidate covariates
+    # 10/20/50/100 (capped by dsomop.max_feature_specs) and histogram bins
+    # 5/10/20, nearest grid value with ties to the smaller one.
+    grid_top_k  <- .omopModelGridParam(params$top_k, "features",
+                                       default = "20", name = "top_k")
+    grid_n_bins <- .omopModelGridParam(params$n_bins, "bins",
+                                       default = "10", name = "n_bins")
+    top_k  <- grid_top_k$effective
+    n_bins <- grid_n_bins$effective
+    effective_params <- .omopModelEffectiveParams(list(
+      top_k = grid_top_k, n_bins = grid_n_bins))
 
     # 1) Covariate universe (top-K prevalent over the pooled pair).
     cov_ids <- .omopCmPropensityCovariates(handle, cohorts$a, cohorts$b,
@@ -1163,10 +1285,17 @@
                                       domain_code = domain)
     if (is.null(design) || nrow(design) == 0) return(data.frame())
 
-    # 3) FIT the propensity glm IN-SESSION; read each subject's score.
+    # 3) FIT the propensity glm IN-SESSION; read each subject's score. An
+    #    unadmitted model (or a failed fit) releases nothing.
     ps <- tryCatch(.omopCmPropensityScores(design),
                    error = function(e) rep(NA_real_, nrow(design)))
-    if (length(ps) != nrow(design) || all(is.na(ps))) return(data.frame())
+    if (length(ps) != nrow(design) || anyNA(ps)) {
+      out <- data.frame()
+      attr(out, "dsomop_effective_params") <- c(
+        effective_params, list(model_admission = "not_admitted"))
+      return(out)
+    }
+    admission <- attr(ps, "dsomop_model_admission", exact = TRUE)
 
     arm  <- design$arm
     prev <- mean(arm == 1L)
@@ -1245,6 +1374,10 @@
     rows$auc       <- as.numeric(auc)
     rows <- rows[order(rows$arm, rows$ps_bin), , drop = FALSE]
     rownames(rows) <- NULL
+    attr(rows, "dsomop_effective_params") <- c(
+      effective_params,
+      list(model_admission = if (identical(admission$status, "intercept_only"))
+        "intercept_only" else "admitted"))
     rows
   }
 }
@@ -1279,9 +1412,9 @@
            choices = c("0", "1", "2", "3", "4"),
            description = "Covariate domain (0 condition,1 drug,2 procedure,3 measurement,4 observation)."),
       list(name = "top_k", type = "int", required = FALSE, default = "20",
-           description = "Number of top-prevalence covariates in the propensity model."),
+           description = "Number of top-prevalence covariates in the propensity model. Snapped to the public grid 10, 20, 50, 100 (nearest, ties to the smaller; capped by dsomop.max_feature_specs)."),
       list(name = "n_bins", type = "int", required = FALSE, default = "10",
-           description = "Number of fixed [0,1] preference-score histogram bins.")
+           description = "Number of fixed [0,1] preference-score histogram bins. Snapped to the public grid 5, 10, 20 (nearest, ties to the smaller).")
     ),
     compute = list(
       kind = "r", sql = NULL, fn = .omopCmPropensityFn(),
@@ -1345,44 +1478,34 @@
 #' @keywords internal
 .omopCmKmSubjectFrame <- function(handle, cohort, arm, out_src,
                                   tar_start_offset, tar_end_offset) {
-  ranked <- .rankedCohortSql(cohort, handle)
-  members_sql <- paste0(
-    "(SELECT q.subject_id, q.cohort_start_date, q.cohort_end_date FROM (",
-    "SELECT r.subject_id, r.cohort_start_date, r.cohort_end_date, ",
-    "ROW_NUMBER() OVER (PARTITION BY r.subject_id ORDER BY ",
-    "r.cohort_start_date, r.cohort_end_date, r.cohort_row_id) AS person_rank ",
-    "FROM ", ranked, " r) q WHERE q.person_rank = 1)"
-  )
-  members <- .executeQuery(handle, paste0(
-    "SELECT subject_id, cohort_start_date, cohort_end_date FROM ", members_sql,
-    " ORDER BY subject_id"))
+  # The shared observed window (.omopObservedTarSql): the TAR
+  # [start + offset, end + offset] intersected with the observation period
+  # containing the canonical first index, as the half-open [tar_lo, tar_hi).
+  observed <- .omopObservedTarSql(handle, cohort, list(
+    start = tar_start_offset, end = tar_end_offset,
+    anchor_start = "start", anchor_end = "end"))
+  members <- .executeQuery(handle, .sql_translate(paste0(
+    "SELECT w.subject_id, w.tar_lo, w.tar_hi FROM ", observed, " w ",
+    "ORDER BY w.subject_id"), handle$target_dialect))
   if (!is.data.frame(members) || nrow(members) == 0) return(data.frame())
-
-  members$tar_start <- as.Date(members$cohort_start_date) +
-    as.integer(tar_start_offset)
-  members$tar_end <- as.Date(members$cohort_end_date) +
-    as.integer(tar_end_offset)
+  names(members) <- tolower(names(members))
+  members$tar_start <- as.Date(members$tar_lo)
+  # Last observed day of the half-open window.
+  members$tar_end <- as.Date(members$tar_hi) - 1L
 
   members$outcome_date <- as.Date(NA)
   if (!is.null(out_src)) {
-    tar_lo <- paste0(
-      "DATEADD(day, ", as.integer(tar_start_offset),
-      ", m.cohort_start_date)"
-    )
-    tar_hi <- paste0(
-      "DATEADD(day, ", as.integer(tar_end_offset),
-      ", m.cohort_end_date)"
-    )
     ev <- .executeQuery(handle, .sql_translate(paste0(
-      "SELECT m.subject_id, MIN(o.", out_src$date_col,
-      ") AS outcome_date FROM ", members_sql, " m ",
+      "SELECT w.subject_id, MIN(o.", out_src$date_col,
+      ") AS outcome_date FROM ", observed, " w ",
       "INNER JOIN ", out_src$table, " o ON o.", out_src$person_col,
-      " = m.subject_id AND o.", out_src$concept_col, " IN (",
-      out_src$id_list, ") AND o.", out_src$date_col, " >= ", tar_lo,
-      " AND o.", out_src$date_col, " <= ", tar_hi,
-      " GROUP BY m.subject_id"),
+      " = w.subject_id AND o.", out_src$concept_col, " IN (",
+      out_src$id_list, ") AND o.", out_src$date_col, " >= w.tar_lo",
+      " AND o.", out_src$date_col, " < w.tar_hi",
+      " GROUP BY w.subject_id"),
       handle$target_dialect))
     if (is.data.frame(ev) && nrow(ev) > 0) {
+      names(ev) <- tolower(names(ev))
       first_out <- stats::setNames(as.Date(ev$outcome_date),
                                    as.character(ev$subject_id))
       hit <- first_out[as.character(members$subject_id)]
@@ -1390,8 +1513,9 @@
     }
   }
 
-  # Event iff the FIRST qualifying outcome falls inside the TAR window; the
-  # follow-up endpoint is the earlier of that outcome and the TAR end (censor).
+  # Event iff the FIRST qualifying outcome falls inside the observed window;
+  # the follow-up endpoint is the earlier of that outcome and the window's last
+  # observed day (censor).
   in_tar <- !is.na(members$outcome_date) &
     members$outcome_date >= members$tar_start &
     members$outcome_date <= members$tar_end

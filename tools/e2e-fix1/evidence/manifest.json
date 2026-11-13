@@ -1,0 +1,18 @@
+{
+  "dsOMOP": {
+    "commit": "b93a3c60851657f5c4c17fef429fded640217a67",
+    "branch": "fix/2.10.3-ohdsi-p0",
+    "tracked_files_equal_to_harness": 1682
+  },
+  "dsOMOPClient": {
+    "commit": "51a6032349d966a03dfcb97d60358c9a860248f8",
+    "branch": "fix/2.10.3-ohdsi-p0",
+    "tracked_files_equal_to_harness": 1309
+  },
+  "harness_commit": "238abcbc960e3c02ddc85ae59fb390e2f5c9bfdc",
+  "changed_product_sha256": {
+    "R/interface.R": "e67e49a0774f3dca3f45e3b9fa12b805583826606516365d3382e97ffbfa41fe",
+    "R/tools_release.R": "96f60ee29f8d50ba314ae74680c9b61013079a88522beaf5bed0f5771dd897a8",
+    "tests/testthat/test-e2e-fix1.R": "9f5c1ce3c3e095a2b0110850f6a626a821b74002848431728b55b6747665a1ae"
+  }
+}

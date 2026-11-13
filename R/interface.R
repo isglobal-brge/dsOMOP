@@ -723,8 +723,11 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
                                output_mode = "memory",
                                scope = NULL, combine = "union", ...,
                                commit_policy = "server") {
-  .omopPlanExecuteDS(omop_symbol, plan, out, output_mode, scope, combine, ...,
-                     target_env = parent.frame(), commit_policy = commit_policy)
+  target_env <- parent.frame()
+  handle <- .getHandle(omop_symbol)
+  .dsomopWithReadSnapshot(handle,
+    .omopPlanExecuteDS(omop_symbol, plan, out, output_mode, scope, combine, ...,
+                       target_env = target_env, commit_policy = commit_policy))
 }
 
 #' Execute a plan with a server-only publication/sealing context
@@ -823,7 +826,18 @@ omopPlanExecuteDS <- function(omop_symbol, plan, out,
   ctx <- .planContext(if (is.null(validation$error)) handle else NULL,
                       .planContextIr(validation, plan), output_mode, target_env)
   ctx$handle <- handle
-  on.exit(.planContextClose(ctx), add = TRUE)
+  if (.dsomopReadSnapshotActive(handle)) {
+    # Publication remains provisional until the outer request validates and
+    # rolls back its read snapshot. A late failure must revoke assigned rows
+    # as well as the publication status, including already sealed DP rows.
+    snapshot <- handle$read_snapshot
+    snapshot$finalizers[[length(snapshot$finalizers) + 1L]] <- function(success) {
+      on.exit(.planContextClose(ctx), add = TRUE)
+      if (!isTRUE(success)) .publishAbort(ctx)
+    }
+  } else {
+    on.exit(.planContextClose(ctx), add = TRUE)
+  }
   ctx$validation <- validation[c("ir", "wire")]
   ctx$scopes <- scope
   ctx$commit_policy <- commit_policy
@@ -1227,9 +1241,12 @@ omopRelationshipGraphDS <- function(omop_symbol) {
 omopTableStatsDS <- function(omop_symbol, table,
                              stats = c("rows", "persons")) {
   handle <- .getHandle(omop_symbol)
-  stats <- .ds_arg(stats)
-  if (is.list(stats)) stats <- unlist(stats)
-  .profileTableStats(handle, table, stats)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    stats <- .ds_arg(stats)
+    if (is.list(stats)) stats <- unlist(stats)
+    .profileTableStats(handle, table, stats)
+  })
 }
 
 #' Get column statistics (Aggregate)
@@ -1261,12 +1278,15 @@ omopColumnStatsDS <- function(omop_symbol, table, column, concept_id = NULL,
                               concept_col = NULL, cohort = NULL,
                               cohort_table = NULL) {
   handle <- .getHandle(omop_symbol)
-  concept_id <- .ds_arg(concept_id)
-  concept_col <- .ds_arg(concept_col)
-  if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  .profileColumnStats(handle, table, column, concept_id = concept_id,
-                      concept_col = concept_col, cohort_table = cohort_table)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    concept_id <- .ds_arg(concept_id)
+    concept_col <- .ds_arg(concept_col)
+    if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    .profileColumnStats(handle, table, column, concept_id = concept_id,
+                        concept_col = concept_col, cohort_table = cohort_table)
+  })
 }
 
 #' Get cross-table domain coverage (Aggregate)
@@ -1285,7 +1305,10 @@ omopColumnStatsDS <- function(omop_symbol, table, column, concept_id = NULL,
 #' @export
 omopDomainCoverageDS <- function(omop_symbol) {
   handle <- .getHandle(omop_symbol)
-  .profileDomainCoverage(handle)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    .profileDomainCoverage(handle)
+  })
 }
 
 #' Get missingness rates (Aggregate)
@@ -1311,10 +1334,13 @@ omopMissingnessDS <- function(omop_symbol, table,
                               columns = NULL, cohort = NULL,
                               cohort_table = NULL) {
   handle <- .getHandle(omop_symbol)
-  columns <- .ds_arg(columns)
-  if (is.list(columns)) columns <- as.character(unlist(columns))
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  .profileMissingness(handle, table, columns, cohort_table = cohort_table)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    columns <- .ds_arg(columns)
+    if (is.list(columns)) columns <- as.character(unlist(columns))
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    .profileMissingness(handle, table, columns, cohort_table = cohort_table)
+  })
 }
 
 #' Get value counts (Aggregate)
@@ -1348,15 +1374,19 @@ omopValueCountsDS <- function(omop_symbol, table, column,
                               concept_col = NULL, cohort = NULL,
                               cohort_table = NULL) {
   handle <- .getHandle(omop_symbol)
-  concept_id <- .ds_arg(concept_id)
-  concept_col <- .ds_arg(concept_col)
-  if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  # Small-count suppression is mandatory for this aggregate endpoint and is not
-  # client-configurable: a caller must never be able to disable disclosure control.
-  .profileValueCounts(handle, table, column, top_n, suppress_small = TRUE,
-                      concept_id = concept_id, concept_col = concept_col,
-                      cohort_table = cohort_table)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    concept_id <- .ds_arg(concept_id)
+    concept_col <- .ds_arg(concept_col)
+    if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    # Small-count suppression is mandatory for this aggregate endpoint and is
+    # not client-configurable: a caller must never be able to disable
+    # disclosure control.
+    .profileValueCounts(handle, table, column, top_n, suppress_small = TRUE,
+                        concept_id = concept_id, concept_col = concept_col,
+                        cohort_table = cohort_table)
+  })
 }
 
 #' Search concepts (Aggregate)
@@ -1704,24 +1734,25 @@ omopCdmVersionDS <- function(omop_symbol) {
 #' @export
 omopPlanPreviewDS <- function(omop_symbol, plan) {
   handle <- .getHandle(omop_symbol)
-  plan <- .ds_arg(plan)
-  # Audit extraction reads output fields too: it must follow the same closed
-  # envelope as validation and preview, before any metadata or result query.
-  plan <- .irJsonForm(plan)
+  # Validate the closed envelope before entering a read snapshot or auditing fields.
+  plan <- .irJsonForm(.ds_arg(plan))
   .irValidateEnvelope(plan)
-  # Preview is the cheapest, most-repeated data-touching op and is the primary
-  # differencing signal, so the data controller must be able to see the
-  # sequence of preview calls (banding alone cannot stop iterative probing).
-  outputs <- plan$outputs %||% list()
-  preview_tables <- unique(unlist(lapply(outputs, function(o) {
-    # event_level outputs carry a scalar $table; person_level outputs carry a
-    # named $tables list. Use [[ exact-match to avoid $ partial matching
-    # ($table matching $tables and leaking column names into the audit detail).
-    c(o[["table"]], names(o[["tables"]]))
-  }), use.names = FALSE))
-  .omopAuditLog("omopPlanPreviewDS",
-                list(n_outputs = length(outputs), tables = preview_tables))
-  .planPreview(handle, plan)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    # Preview is the cheapest, most-repeated data-touching op and is the primary
+    # differencing signal, so the data controller must be able to see the
+    # sequence of preview calls (banding alone cannot stop iterative probing).
+    outputs <- plan$outputs %||% list()
+    preview_tables <- unique(unlist(lapply(outputs, function(o) {
+      # event_level outputs carry a scalar $table; person_level outputs carry a
+      # named $tables list. Use [[ exact-match to avoid $ partial matching
+      # ($table matching $tables and leaking column names into the audit detail).
+      c(o[["table"]], names(o[["tables"]]))
+    }), use.names = FALSE))
+    .omopAuditLog("omopPlanPreviewDS",
+                  list(n_outputs = length(outputs), tables = preview_tables))
+    .planPreview(handle, plan)
+  })
 }
 
 #' List cohort definitions (Aggregate)
@@ -1798,12 +1829,15 @@ omopConceptPrevalenceDS <- function(omop_symbol, table = NULL, concept_col = NUL
                                      offset = 0L, global = FALSE,
                                      cohort = NULL) {
   handle <- .getHandle(omop_symbol)
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  offset <- as.integer(.ds_arg(offset) %||% 0L)
-  global <- isTRUE(.ds_arg(global))
-  .profileConceptPrevalence(handle, table, concept_col, metric, top_n,
-                            cohort_table, window, offset = offset,
-                            global = global)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    offset <- as.integer(.ds_arg(offset) %||% 0L)
+    global <- isTRUE(.ds_arg(global))
+    .profileConceptPrevalence(handle, table, concept_col, metric, top_n,
+                              cohort_table, window, offset = offset,
+                              global = global)
+  })
 }
 
 #' Get a disclosure-safe 2-way cross-tabulation (Aggregate)
@@ -1850,37 +1884,42 @@ omopCrossTabDS <- function(omop_symbol, table, row_col, col_col,
                            cohort_table = NULL, stratify_by = NULL,
                            band_margins = FALSE, cohort = NULL) {
   handle <- .getHandle(omop_symbol)
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  count_mode <- .ds_arg(count_mode)
-  if (!is.character(count_mode) || length(count_mode) != 1L) {
-    count_mode <- "persons"
-  }
-  row_concept_ids <- .ds_arg(row_concept_ids)
-  col_concept_ids <- .ds_arg(col_concept_ids)
-  if (!is.null(row_concept_ids)) {
-    row_concept_ids <- as.integer(unlist(row_concept_ids))
-  }
-  if (!is.null(col_concept_ids)) {
-    col_concept_ids <- as.integer(unlist(col_concept_ids))
-  }
-  stratify_by <- .ds_arg(stratify_by)
-  if (!is.null(stratify_by)) stratify_by <- as.character(unlist(stratify_by))[1]
-  band_margins <- isTRUE(.ds_arg(band_margins))
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    count_mode <- .ds_arg(count_mode)
+    if (!is.character(count_mode) || length(count_mode) != 1L) {
+      count_mode <- "persons"
+    }
+    row_concept_ids <- .ds_arg(row_concept_ids)
+    col_concept_ids <- .ds_arg(col_concept_ids)
+    if (!is.null(row_concept_ids)) {
+      row_concept_ids <- as.integer(unlist(row_concept_ids))
+    }
+    if (!is.null(col_concept_ids)) {
+      col_concept_ids <- as.integer(unlist(col_concept_ids))
+    }
+    stratify_by <- .ds_arg(stratify_by)
+    if (!is.null(stratify_by)) {
+      stratify_by <- as.character(unlist(stratify_by))[1]
+    }
+    band_margins <- isTRUE(.ds_arg(band_margins))
 
-  # Audit-log the call sequence (cross-query differencing defence). Never logs
-  # cell values — only the call shape, which the data controller reviews.
-  .omopAuditLog("omopCrossTabDS",
-                list(table = table, row_col = row_col, col_col = col_col,
-                     count_mode = count_mode, stratify_by = stratify_by,
-                     band_margins = band_margins))
+    # Audit-log the call sequence (cross-query differencing defence). Never logs
+    # cell values — only the call shape, which the data controller reviews.
+    .omopAuditLog("omopCrossTabDS",
+                  list(table = table, row_col = row_col, col_col = col_col,
+                       count_mode = count_mode, stratify_by = stratify_by,
+                       band_margins = band_margins))
 
-  .profileCrossTab(handle, table, row_col, col_col,
-                   count_mode = count_mode,
-                   row_concept_ids = row_concept_ids,
-                   col_concept_ids = col_concept_ids,
-                   cohort_table = cohort_table,
-                   stratify_by = stratify_by,
-                   band_margins = band_margins)
+    .profileCrossTab(handle, table, row_col, col_col,
+                     count_mode = count_mode,
+                     row_concept_ids = row_concept_ids,
+                     col_concept_ids = col_concept_ids,
+                     cohort_table = cohort_table,
+                     stratify_by = stratify_by,
+                     band_margins = band_margins)
+  })
 }
 
 #' Get numeric range (p05/p95) for two-pass histogram pooling (Aggregate)
@@ -1914,12 +1953,15 @@ omopNumericRangeDS <- function(omop_symbol, table, value_col,
                                 concept_id = NULL, concept_col = NULL,
                                 cohort = NULL) {
   handle <- .getHandle(omop_symbol)
-  concept_id <- .ds_arg(concept_id)
-  concept_col <- .ds_arg(concept_col)
-  if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  .profileNumericRange(handle, table, value_col, cohort_table, window,
-                       concept_id = concept_id, concept_col = concept_col)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    concept_id <- .ds_arg(concept_id)
+    concept_col <- .ds_arg(concept_col)
+    if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    .profileNumericRange(handle, table, value_col, cohort_table, window,
+                         concept_id = concept_id, concept_col = concept_col)
+  })
 }
 
 #' Get numeric histogram (Aggregate)
@@ -1956,14 +1998,17 @@ omopNumericHistogramDS <- function(omop_symbol, table, value_col,
                                     concept_id = NULL, concept_col = NULL,
                                     cohort = NULL) {
   handle <- .getHandle(omop_symbol)
-  breaks <- .ds_arg(breaks)
-  concept_id <- .ds_arg(concept_id)
-  concept_col <- .ds_arg(concept_col)
-  if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  .profileNumericHistogram(handle, table, value_col, bins,
-                           cohort_table, window, breaks,
-                           concept_id = concept_id, concept_col = concept_col)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    breaks <- .ds_arg(breaks)
+    concept_id <- .ds_arg(concept_id)
+    concept_col <- .ds_arg(concept_col)
+    if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    .profileNumericHistogram(handle, table, value_col, bins,
+                             cohort_table, window, breaks,
+                             concept_id = concept_id, concept_col = concept_col)
+  })
 }
 
 #' Get numeric quantiles (Aggregate)
@@ -2000,14 +2045,17 @@ omopNumericQuantilesDS <- function(omop_symbol, table, value_col,
                                     rounding = 2L, concept_id = NULL,
                                     concept_col = NULL, cohort = NULL) {
   handle <- .getHandle(omop_symbol)
-  probs <- .ds_arg(probs)
-  concept_id <- .ds_arg(concept_id)
-  concept_col <- .ds_arg(concept_col)
-  if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  .profileNumericQuantiles(handle, table, value_col, probs,
-                           cohort_table, window, rounding,
-                           concept_id = concept_id, concept_col = concept_col)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    probs <- .ds_arg(probs)
+    concept_id <- .ds_arg(concept_id)
+    concept_col <- .ds_arg(concept_col)
+    if (!is.null(concept_id)) concept_id <- as.integer(unlist(concept_id))
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    .profileNumericQuantiles(handle, table, value_col, probs,
+                             cohort_table, window, rounding,
+                             concept_id = concept_id, concept_col = concept_col)
+  })
 }
 
 #' Get date counts (Aggregate)
@@ -2035,9 +2083,12 @@ omopDateCountsDS <- function(omop_symbol, table, date_col = NULL,
                               granularity = "year", cohort_table = NULL,
                               window = NULL, cohort = NULL) {
   handle <- .getHandle(omop_symbol)
-  cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
-  .profileDateCounts(handle, table, date_col, granularity,
-                     cohort_table, window)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    cohort_table <- .resolveCohortArg(handle, cohort, cohort_table)
+    .profileDateCounts(handle, table, date_col, granularity,
+                       cohort_table, window)
+  })
 }
 
 #' Get concept drilldown (Aggregate)
@@ -2062,8 +2113,11 @@ omopDateCountsDS <- function(omop_symbol, table, date_col = NULL,
 omopConceptDrilldownDS <- function(omop_symbol, table, concept_id,
                                    concept_col = NULL) {
   handle <- .getHandle(omop_symbol)
-  .profileConceptDrilldown(handle, table, as.integer(concept_id),
-                           concept_col = concept_col)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    .profileConceptDrilldown(handle, table, as.integer(concept_id),
+                             concept_col = concept_col)
+  })
 }
 
 #' Locate concept across tables (Aggregate)
@@ -2084,9 +2138,12 @@ omopConceptDrilldownDS <- function(omop_symbol, table, concept_id,
 #' @export
 omopLocateConceptDS <- function(omop_symbol, concept_ids) {
   handle <- .getHandle(omop_symbol)
-  concept_ids <- .ds_arg(concept_ids)
-  if (is.list(concept_ids)) concept_ids <- as.integer(unlist(concept_ids))
-  .profileLocateConcept(handle, as.integer(concept_ids))
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    concept_ids <- .ds_arg(concept_ids)
+    if (is.list(concept_ids)) concept_ids <- as.integer(unlist(concept_ids))
+    .profileLocateConcept(handle, as.integer(concept_ids))
+  })
 }
 
 #' Get safe numeric cutpoints (Aggregate)
@@ -2118,9 +2175,12 @@ omopSafeCutpointsDS <- function(omop_symbol, table, column,
                                  concept_id = NULL, n_bins = 10L,
                                  concept_col = NULL) {
   handle <- .getHandle(omop_symbol)
-  concept_col <- .ds_arg(concept_col)
-  .profileSafeCutpoints(handle, table, column, concept_id, as.integer(n_bins),
-                        concept_col = concept_col)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    concept_col <- .ds_arg(concept_col)
+    .profileSafeCutpoints(handle, table, column, concept_id, as.integer(n_bins),
+                          concept_col = concept_col)
+  })
 }
 
 # --- Achilles aggregate methods ---
@@ -2182,9 +2242,12 @@ omopAchillesAnalysesDS <- function(omop_symbol, domain = NULL) {
 omopAchillesResultsDS <- function(omop_symbol, analysis_ids) {
   .dsomopRequireCommunityTool()
   handle <- .getHandle(omop_symbol)
-  analysis_ids <- .ds_arg(analysis_ids)
-  if (is.list(analysis_ids)) analysis_ids <- as.integer(unlist(analysis_ids))
-  .achillesGetResults(handle, analysis_ids)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    analysis_ids <- .ds_arg(analysis_ids)
+    if (is.list(analysis_ids)) analysis_ids <- as.integer(unlist(analysis_ids))
+    .achillesGetResults(handle, analysis_ids)
+  })
 }
 
 #' Get Achilles distribution results (Aggregate)
@@ -2206,9 +2269,49 @@ omopAchillesResultsDS <- function(omop_symbol, analysis_ids) {
 omopAchillesDistributionDS <- function(omop_symbol, analysis_ids) {
   .dsomopRequireCommunityTool()
   handle <- .getHandle(omop_symbol)
-  analysis_ids <- .ds_arg(analysis_ids)
-  if (is.list(analysis_ids)) analysis_ids <- as.integer(unlist(analysis_ids))
-  .achillesGetDistributions(handle, analysis_ids)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    analysis_ids <- .ds_arg(analysis_ids)
+    if (is.list(analysis_ids)) analysis_ids <- as.integer(unlist(analysis_ids))
+    .achillesReleaseDistributions(
+      .achillesGetDistributions(handle, analysis_ids))
+  })
+}
+
+#' Release precomputed Achilles distributions under the tools mode
+#'
+#' An imported exact distribution (mean, SD, percentiles) carries no
+#' person-level input from which protected components could be rebuilt, and
+#' arbitrary small noise must not be added to it without a verified
+#' contribution contract. In auto mode its summary fields are therefore
+#' unavailable (\code{protected_basis_unavailable}); the live
+#' \code{dsomop:achilles.<id>} analyses release protected components of the
+#' same estimands. Standard mode keeps the established whole-database
+#' summaries (these readers are never scoped); DP-only mode refuses the reader
+#' before it runs.
+#'
+#' @param df Frame from \code{.achillesGetDistributions}.
+#' @return \code{df}, possibly masked, with a \code{dsomop_protection} label.
+#' @keywords internal
+.achillesReleaseDistributions <- function(df) {
+  mode <- .dsomopToolsMode()
+  fields <- intersect(c("avg_value", "stdev_value", "median_value",
+                        "p10_value", "p25_value", "p75_value", "p90_value"),
+                      names(df))
+  label <- list(protection = "standard", mode = mode,
+                privacy_call_quota = "none",
+                history_based_admission = FALSE)
+  if (identical(mode, "auto") && length(fields)) {
+    if (nrow(df) > 0L) for (f in fields) df[[f]] <- rep(NA_real_, nrow(df))
+    label$masked_fields <- fields
+    label$masked_reason <- "protected_basis_unavailable"
+    label$note <- paste0(
+      "Imported exact distributions have no person-level basis for ",
+      "protected components; the live dsomop:achilles.<id> analyses release ",
+      "protected summaries of the same estimands.")
+  }
+  attr(df, "dsomop_protection") <- label
+  df
 }
 
 #' Get Achilles analysis catalog (Aggregate)
@@ -2249,7 +2352,10 @@ omopAchillesCatalogDS <- function(omop_symbol) {
 #' @keywords internal
 omopAchillesHeelDS <- function(omop_symbol) {
   handle <- .getHandle(omop_symbol)
-  .achillesGetHeelResults(handle)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    .achillesGetHeelResults(handle)
+  })
 }
 
 # --- OHDSI Results aggregate methods ---
@@ -2327,14 +2433,17 @@ omopOhdsiResultsDS <- function(omop_symbol, table_name, columns = NULL,
                                 limit = 5000L, tool_id = NULL) {
   .dsomopRequireCommunityTool()
   handle <- .getHandle(omop_symbol)
-  filters <- .ds_arg(filters)
-  order_by <- .ds_arg(order_by)
-  # The internal consumer adds contracted disclosure-basis columns to the SQL
-  # projection and removes them only after gating, so caller projection cannot
-  # bypass the person gate.
-  result <- .ohdsiGetResults(handle, table_name, columns = columns, filters,
-                             order_by, limit, tool_id)
-  result
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    filters <- .ds_arg(filters)
+    order_by <- .ds_arg(order_by)
+    # The internal consumer adds contracted disclosure-basis columns to the SQL
+    # projection and removes them only after gating, so caller projection cannot
+    # bypass the person gate.
+    result <- .ohdsiGetResults(handle, table_name, columns = columns, filters,
+                               order_by, limit, tool_id)
+    result
+  })
 }
 
 #' Get the pooling contract for a physical OHDSI result table (Aggregate)
@@ -2379,7 +2488,10 @@ omopOhdsiResultContractDS <- function(omop_symbol, table_name,
 omopOhdsiSummaryDS <- function(omop_symbol, tool_id) {
   .dsomopRequireCommunityTool()
   handle <- .getHandle(omop_symbol)
-  .ohdsiGetSummary(handle, tool_id)
+  # One read snapshot for every source read of this release (R03).
+  .dsomopWithReadSnapshot(handle, {
+    .ohdsiGetSummary(handle, tool_id)
+  })
 }
 
 # --- Query library methods ---
@@ -2749,7 +2861,9 @@ omopAnalysisRunDS <- function(omop_symbol, name, params = list(),
 omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
                                     scope = NULL, combine = "union",
                                     date_handling = NULL, ...) {
-  .dsomopRequireCommunityTool()
+  # Assignment prepares private server-side inputs; only final statistics
+  # select a standard or protected release route. Keep the tools-off gate.
+  .dsomopRequireCommunityTool(dp_routes = TRUE)
   handle <- .getHandle(omop_symbol)
   name <- .ds_arg(name)
   if (is.list(name)) name <- name[[1]]
@@ -2987,6 +3101,7 @@ omopAsFactorColumnsDS <- function(df, spec, table_column = NULL) {
   # Core outputs never inherit DP state from their inputs.
   attr(df, "dsomop_dp_provenance") <- NULL
   attr(df, "dsomop_dp_filter_state") <- NULL
+  attr(df, "dsomop_dp_release_persons") <- NULL
   .publishUpdateOwnedValue(source, df)
   df
 }

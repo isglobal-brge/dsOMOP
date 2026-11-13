@@ -93,10 +93,8 @@
                   date_col = "measurement_date",
                   name = "Number of measurement records by measurement start month",
                   domain = "measurement"),
-    "2102" = list(kind = "month", table = "device_exposure",
-                  date_col = "device_exposure_start_date",
-                  name = "Number of device records by device start month",
-                  domain = "device"),
+    # 2102 is NOT a record analysis: upstream it counts distinct persons by
+    # device concept and start month, so it lives in pack_achilles_counts.R.
     # 505: death record count by death_type_concept_id (concept-translated).
     "505"  = list(kind = "death_type", table = "death",
                   concept_col = "death_type_concept_id",
@@ -150,7 +148,7 @@
     # (achilles_gating.R:127-130). An empty frame passes through the gate as a
     # no-result (disclosure-safe), whereas letting the SELECT hit a missing table
     # would surface a raw "no such table: <name>" SQL error that needlessly leaks
-    # which CDM tables are absent. (e.g. device_exposure absent -> 2101/2102.)
+    # which CDM tables are absent. (e.g. device_exposure absent -> 2101.)
     bp <- .buildBlueprint(handle)
     if (!spec$table %in% bp$tables$table_name[bp$tables$present_in_db]) {
       return(data.frame())

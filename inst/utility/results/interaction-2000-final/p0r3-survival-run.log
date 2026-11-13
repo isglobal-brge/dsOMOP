@@ -1,0 +1,113 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+scenario 4 interaction_cox n 2000 replicate 1 of 100 seconds 14.111 
+scenario 4 interaction_cox n 2000 replicate 2 of 100 seconds 12.857 
+scenario 4 interaction_cox n 2000 replicate 3 of 100 seconds 11.874 
+scenario 4 interaction_cox n 2000 replicate 4 of 100 seconds 8.753 
+scenario 4 interaction_cox n 2000 replicate 5 of 100 seconds 11.53 
+scenario 4 interaction_cox n 2000 replicate 6 of 100 seconds 8.829 
+scenario 4 interaction_cox n 2000 replicate 7 of 100 seconds 15.476 
+scenario 4 interaction_cox n 2000 replicate 8 of 100 seconds 13.67 
+scenario 4 interaction_cox n 2000 replicate 9 of 100 seconds 12.899 
+scenario 4 interaction_cox n 2000 replicate 10 of 100 seconds 9.838 
+scenario 4 interaction_cox n 2000 replicate 11 of 100 seconds 11.771 
+scenario 4 interaction_cox n 2000 replicate 12 of 100 seconds 10.37 
+scenario 4 interaction_cox n 2000 replicate 13 of 100 seconds 6.801 
+scenario 4 interaction_cox n 2000 replicate 14 of 100 seconds 9.668 
+scenario 4 interaction_cox n 2000 replicate 15 of 100 seconds 6.565 
+scenario 4 interaction_cox n 2000 replicate 16 of 100 seconds 8.72 
+scenario 4 interaction_cox n 2000 replicate 17 of 100 seconds 6.248 
+scenario 4 interaction_cox n 2000 replicate 18 of 100 seconds 7.898 
+scenario 4 interaction_cox n 2000 replicate 19 of 100 seconds 9.54 
+scenario 4 interaction_cox n 2000 replicate 20 of 100 seconds 6.956 
+scenario 4 interaction_cox n 2000 replicate 21 of 100 seconds 11.038 
+scenario 4 interaction_cox n 2000 replicate 22 of 100 seconds 10.489 
+scenario 4 interaction_cox n 2000 replicate 23 of 100 seconds 11.016 
+scenario 4 interaction_cox n 2000 replicate 24 of 100 seconds 7.421 
+scenario 4 interaction_cox n 2000 replicate 25 of 100 seconds 8.014 
+scenario 4 interaction_cox n 2000 replicate 26 of 100 seconds 9.896 
+scenario 4 interaction_cox n 2000 replicate 27 of 100 seconds 7.212 
+scenario 4 interaction_cox n 2000 replicate 28 of 100 seconds 10.261 
+scenario 4 interaction_cox n 2000 replicate 29 of 100 seconds 7.247 
+scenario 4 interaction_cox n 2000 replicate 30 of 100 seconds 11.501 
+scenario 4 interaction_cox n 2000 replicate 31 of 100 seconds 11.74 
+scenario 4 interaction_cox n 2000 replicate 32 of 100 seconds 11.906 
+scenario 4 interaction_cox n 2000 replicate 33 of 100 seconds 8.667 
+scenario 4 interaction_cox n 2000 replicate 34 of 100 seconds 8.854 
+scenario 4 interaction_cox n 2000 replicate 35 of 100 seconds 6.6 
+scenario 4 interaction_cox n 2000 replicate 36 of 100 seconds 10.062 
+scenario 4 interaction_cox n 2000 replicate 37 of 100 seconds 8.165 
+scenario 4 interaction_cox n 2000 replicate 38 of 100 seconds 8.988 
+scenario 4 interaction_cox n 2000 replicate 39 of 100 seconds 12.352 
+scenario 4 interaction_cox n 2000 replicate 40 of 100 seconds 8.353 
+scenario 4 interaction_cox n 2000 replicate 41 of 100 seconds 10.052 
+scenario 4 interaction_cox n 2000 replicate 42 of 100 seconds 7.306 
+scenario 4 interaction_cox n 2000 replicate 43 of 100 seconds 9.936 
+scenario 4 interaction_cox n 2000 replicate 44 of 100 seconds 6.999 
+scenario 4 interaction_cox n 2000 replicate 45 of 100 seconds 8.751 
+scenario 4 interaction_cox n 2000 replicate 46 of 100 seconds 10.343 
+scenario 4 interaction_cox n 2000 replicate 47 of 100 seconds 8.043 
+scenario 4 interaction_cox n 2000 replicate 48 of 100 seconds 12.783 
+scenario 4 interaction_cox n 2000 replicate 49 of 100 seconds 9.459 
+scenario 4 interaction_cox n 2000 replicate 50 of 100 seconds 13.292 
+scenario 4 interaction_cox n 2000 replicate 51 of 100 seconds 8.95 
+scenario 4 interaction_cox n 2000 replicate 52 of 100 seconds 13.789 
+scenario 4 interaction_cox n 2000 replicate 53 of 100 seconds 9.022 
+scenario 4 interaction_cox n 2000 replicate 54 of 100 seconds 11.534 
+scenario 4 interaction_cox n 2000 replicate 55 of 100 seconds 8.605 
+scenario 4 interaction_cox n 2000 replicate 56 of 100 seconds 9.044 
+scenario 4 interaction_cox n 2000 replicate 57 of 100 seconds 9.37 
+scenario 4 interaction_cox n 2000 replicate 58 of 100 seconds 7.056 
+scenario 4 interaction_cox n 2000 replicate 59 of 100 seconds 9.443 
+scenario 4 interaction_cox n 2000 replicate 60 of 100 seconds 6.854 
+scenario 4 interaction_cox n 2000 replicate 61 of 100 seconds 9.535 
+scenario 4 interaction_cox n 2000 replicate 62 of 100 seconds 7.035 
+scenario 4 interaction_cox n 2000 replicate 63 of 100 seconds 7.716 
+scenario 4 interaction_cox n 2000 replicate 64 of 100 seconds 9.848 
+scenario 4 interaction_cox n 2000 replicate 65 of 100 seconds 7.444 
+scenario 4 interaction_cox n 2000 replicate 66 of 100 seconds 10.984 
+scenario 4 interaction_cox n 2000 replicate 67 of 100 seconds 7.595 
+scenario 4 interaction_cox n 2000 replicate 68 of 100 seconds 9.818 
+scenario 4 interaction_cox n 2000 replicate 69 of 100 seconds 7.227 
+scenario 4 interaction_cox n 2000 replicate 70 of 100 seconds 6.713 
+scenario 4 interaction_cox n 2000 replicate 71 of 100 seconds 8.087 
+scenario 4 interaction_cox n 2000 replicate 72 of 100 seconds 9.918 
+scenario 4 interaction_cox n 2000 replicate 73 of 100 seconds 7.241 
+scenario 4 interaction_cox n 2000 replicate 74 of 100 seconds 10.447 
+scenario 4 interaction_cox n 2000 replicate 75 of 100 seconds 7.336 
+scenario 4 interaction_cox n 2000 replicate 76 of 100 seconds 9.604 
+scenario 4 interaction_cox n 2000 replicate 77 of 100 seconds 7.313 
+scenario 4 interaction_cox n 2000 replicate 78 of 100 seconds 8.091 
+scenario 4 interaction_cox n 2000 replicate 79 of 100 seconds 9.702 
+scenario 4 interaction_cox n 2000 replicate 80 of 100 seconds 7.747 
+scenario 4 interaction_cox n 2000 replicate 81 of 100 seconds 11.021 
+scenario 4 interaction_cox n 2000 replicate 82 of 100 seconds 8.286 
+scenario 4 interaction_cox n 2000 replicate 83 of 100 seconds 10.168 
+scenario 4 interaction_cox n 2000 replicate 84 of 100 seconds 8.413 
+scenario 4 interaction_cox n 2000 replicate 85 of 100 seconds 12.036 
+scenario 4 interaction_cox n 2000 replicate 86 of 100 seconds 7.782 
+scenario 4 interaction_cox n 2000 replicate 87 of 100 seconds 12.048 
+scenario 4 interaction_cox n 2000 replicate 88 of 100 seconds 10.032 
+scenario 4 interaction_cox n 2000 replicate 89 of 100 seconds 18.942 
+scenario 4 interaction_cox n 2000 replicate 90 of 100 seconds 14.589 
+scenario 4 interaction_cox n 2000 replicate 91 of 100 seconds 20.689 
+scenario 4 interaction_cox n 2000 replicate 92 of 100 seconds 22.209 
+scenario 4 interaction_cox n 2000 replicate 93 of 100 seconds 17.396 
+scenario 4 interaction_cox n 2000 replicate 94 of 100 seconds 18.77 
+scenario 4 interaction_cox n 2000 replicate 95 of 100 seconds 10.549 
+scenario 4 interaction_cox n 2000 replicate 96 of 100 seconds 13.391 
+scenario 4 interaction_cox n 2000 replicate 97 of 100 seconds 13.599 
+scenario 4 interaction_cox n 2000 replicate 98 of 100 seconds 17.194 
+scenario 4 interaction_cox n 2000 replicate 99 of 100 seconds 21.784 
+scenario 4 interaction_cox n 2000 replicate 100 of 100 seconds 13.188 
+ scenario           model sampler    n  level replicates finite informative
+        4 interaction_cox     law 2000 group1        100    100         100
+        4 interaction_cox     law 2000 group2        100    100          99
+        4 interaction_cox     law 2000 group3        100    100          97
+ finite_rate informative_rate coverage_given_finite coverage_all     bias_log
+           1             1.00                  0.99         0.99 -0.040489193
+           1             0.99                  0.99         0.99 -0.023689464
+           1             0.97                  0.99         0.99 -0.006340433
+  rmse_log mean_ci_log_width oracle_bias_log release_minus_oracle_bias_log
+ 0.1909042         0.9912760     0.001018317                  -0.041507510
+ 0.1952669         0.9929044    -0.006226962                  -0.017462502
+ 0.1997874         1.0126070    -0.012339788                   0.005999355
