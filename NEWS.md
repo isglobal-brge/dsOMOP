@@ -1,5 +1,11 @@
 # dsOMOP 2.10.3 (2026-11-13)
 
+- Corrected: an unavailable protected Poisson rate ratio now carries an
+  explanatory `unavailable_reason`, including the standard-mode protected
+  block. The label depends only on protected results; estimates, noise and
+  support gates are unchanged. Re-run the analysis to receive the explanation;
+  no recipe changes are needed.
+
 - Corrected: an unavailable protected MDRR now carries an explanatory
   `unavailable_reason` in its protection label, including the CohortMethod
   aliases, diagnostics summary and standard-mode protected block. The reason

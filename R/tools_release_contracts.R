@@ -1156,6 +1156,14 @@
         "do not support a finite MDRR (sufficient protected persons, positive ",
         "total outcomes and positive person-time in both arms are required).")
     }
+    if (identical(view, "effect") && !is_cox &&
+        !is.finite(rr[["estimate"]])) {
+      # This explanation uses only the protected result, never raw support.
+      extra$unavailable_reason <- paste0(
+        "The protected Poisson rate ratio is unavailable: the protected arm ",
+        "components do not support a finite rate ratio (sufficient protected ",
+        "outcomes and positive person-time in both arms are required).")
+    }
     if (is_cox) {
       extra$estimand <- paste0(
         "grouped-time Cox (Breslow ties) on public exit bins, capped at ",
