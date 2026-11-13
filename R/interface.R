@@ -2877,11 +2877,19 @@ omopFactorLevelsDS <- function(df) {
 #' @param spec An encoded complete A-27 presentation contract, or the legacy
 #'   column-to-level list for an untagged object (decoded via
 #'   \code{\link{.ds_arg}}).
+#' @param table_column Optional stable concept-column key for a temporary
+#'   in-memory table analysis copy. Its resolved categories receive lossless
+#'   ASCII tokens for dsBase transport; rows, missingness and protected lineage
+#'   are preserved. The caller must remove the copy after analysis.
 #' @return The data frame or staged descriptor with harmonized factors and
-#'   generated names; the value is re-assigned to the original symbol.
+#'   generated names. Table analysis returns a temporary protected copy; normal
+#'   harmonisation reassigns the value to the original symbol.
 #' @seealso \code{\link{omopFactorLevelsDS}}
 #' @export
-omopAsFactorColumnsDS <- function(df, spec) {
+omopAsFactorColumnsDS <- function(df, spec, table_column = NULL) {
+  if (!is.null(table_column) && inherits(df, "FlowerDatasetDescriptor")) {
+    stop("Table analysis requires an in-memory published concept factor.", call. = FALSE)
+  }
   if (inherits(df, "FlowerDatasetDescriptor") && !is.null(df$metadata$concept_presentation)) {
     return(.conceptRelevelStaged(df, .ds_arg(spec)))
   }
@@ -2894,7 +2902,10 @@ omopAsFactorColumnsDS <- function(df, spec) {
   if (tagged && !identical(as.integer(spec$concept_protocol), 1L)) {
     stop("A complete concept presentation protocol is required for this output.", call. = FALSE)
   }
-  if (identical(as.integer(spec$concept_protocol), 1L)) return(.conceptRelevel(df, spec))
+  if (identical(as.integer(spec$concept_protocol), 1L)) return(.conceptRelevel(df, spec, table_column))
+  if (!is.null(table_column)) {
+    stop("Table analysis requires a complete concept presentation protocol.", call. = FALSE)
+  }
   if (!is.list(spec) || length(spec) == 0L) {
     return(df)
   }

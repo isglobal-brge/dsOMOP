@@ -175,7 +175,13 @@
   out
 }
 
-.conceptRelevel <- function(df, spec) {
+.conceptRelevel <- function(df, spec, table_column = NULL) {
+  if (!is.null(table_column) &&
+      (!.is_omop.table(df) || !is.character(table_column) ||
+       length(table_column) != 1L || is.na(table_column) ||
+       !table_column %in% names(attr(df, "omop_concepts")))) {
+    stop("Table analysis requires a published concept column in an omop.table.", call. = FALSE)
+  }
   provenance <- NULL
   if (!is.null(attr(df, "dsomop_dp_provenance"))) {
     policy <- .dsomopDpPolicy()
@@ -215,6 +221,12 @@
     if (!is.null(reference_support)) .assertSafeLevels(length(ids), reference_support$total)
     values <- labels[match(c$ids, ids)]
     df[[col]] <- .conceptFactor(values, levels = levels)
+    if (identical(col, table_column)) {
+      # One token per resolved category, including deliberate recode merges.
+      # Only ASCII tokens cross dsBase's comma-delimited level transport.
+      # Relabelling levels preserves every factor code and actual NA exactly.
+      levels(df[[col]]) <- paste0("C", seq_along(levels))
+    }
     c$resolved <- shared
     contracts[[col]] <- c
   }
@@ -241,7 +253,7 @@
     df <- .dsomopDpSetFilterState(df, .dsomopDpFilterState(original, provenance = provenance, policy = policy))
     df <- .dsomopDpSealInheritedLineage(df, provenance, provenance$producer, policy)
   }
-  .publishUpdateOwnedValue(original, df)
+  if (is.null(table_column)) .publishUpdateOwnedValue(original, df)
   df
 }
 

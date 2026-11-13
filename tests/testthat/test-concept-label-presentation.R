@@ -156,8 +156,17 @@ test_that('A27 protected factor reconciliation verifies and preserves its seal',
   expect_identical(result$person_id,df$person_id)
   expect_identical(result$measure,df$measure)
   expect_identical(levels(result$education),c('education','cause'))
+  analysis <- omopAsFactorColumnsDS(df, spec, 'education')
+  expect_silent(.dsomopDpVerifyPersonLocal(analysis))
+  expect_identical(analysis$person_id, df$person_id)
+  expect_identical(analysis$measure, df$measure)
+  expect_identical(levels(analysis$education), c('C1','C2'))
+  expect_identical(as.integer(analysis$education), as.integer(result$education))
+  expect_error(omopAsFactorColumnsDS(df, spec, 'person_id'), 'published concept column')
+  expect_error(omopAsFactorColumnsDS(df, spec, c('education','measure')), 'published concept column')
   corrupt <- df; corrupt$measure[[1L]] <- 100
   expect_error(.conceptRelevel(corrupt,spec),'provenance|authentic|changed|integrity')
+  expect_error(omopAsFactorColumnsDS(corrupt,spec,'education'),'provenance|authentic|changed|integrity')
 })
 
 test_that('A27 absent vocabulary gives exact ID factors, zero and real missingness', {

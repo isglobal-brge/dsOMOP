@@ -4,7 +4,7 @@
 \alias{omopAsFactorColumnsDS}
 \title{Apply a complete shared concept presentation contract}
 \usage{
-omopAsFactorColumnsDS(df, spec)
+omopAsFactorColumnsDS(df, spec, table_column = NULL)
 }
 \arguments{
 \item{df}{A data frame or staged descriptor previously assigned server-side
@@ -13,10 +13,16 @@ by \code{\link{omopPlanExecuteDS}}.}
 \item{spec}{An encoded complete A-27 presentation contract, or the legacy
 column-to-level list for an untagged object (decoded via
 \code{\link{.ds_arg}}).}
+
+\item{table_column}{Optional stable concept-column key for a temporary
+in-memory table analysis copy. Its resolved categories receive lossless
+ASCII tokens for dsBase transport; rows, missingness and protected lineage
+are preserved. The caller must remove the copy after analysis.}
 }
 \value{
 The data frame or staged descriptor with harmonized factors and
-  generated names; the value is re-assigned to the original symbol.
+  generated names. Table analysis returns a temporary protected copy; normal
+  harmonisation reassigns the value to the original symbol.
 }
 \description{
 Rebuilds A-27 factors from their retained internal IDs, using one ordered
