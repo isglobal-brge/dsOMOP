@@ -1,0 +1,18 @@
+[
+  {
+    "package": "dsOMOP",
+    "branch": "feat/2.10.3-dates",
+    "runtime_commit": "a1450ae6075fc9c84b0721ef7540125b70a6ef8c",
+    "date_semantics_sha256": "2dbfa538e46949774baad7a4f56c41ff00cb1cebfbc47f163c3254642e47db12",
+    "version": "Version: 2.10.3",
+    "final_source_commit": "a1450ae6075fc9c84b0721ef7540125b70a6ef8c"
+  },
+  {
+    "package": "dsOMOPClient",
+    "branch": "feat/2.10.3-dates",
+    "runtime_commit": "6cc536d0ae4d2968a777a25c6bc12cd3b4260538",
+    "date_semantics_sha256": "2dbfa538e46949774baad7a4f56c41ff00cb1cebfbc47f163c3254642e47db12",
+    "version": "Version: 2.10.3",
+    "final_source_commit": "da95946096120854836191806c82f91db7528f17"
+  }
+]

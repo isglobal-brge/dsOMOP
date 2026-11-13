@@ -165,6 +165,7 @@
     if (is.null(x[[slot]])) x[slot] <- list(empty)
   }
   x <- .pnv2ApplyDefaults(root, x, root)
+  x <- .datePlanNormalize(x)
   if (is.null(x$publish)) x["publish"] <- list(.pnv2Array(names(x$outputs)))
   plan_cov <- x$options$coverage
   for (id in names(x$populations)) {

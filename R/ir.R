@@ -546,7 +546,7 @@
   if (!is.list(x)) return(out)
   nm <- names(x)
   if (!is.null(nm)) {
-    for (key in intersect(nm, c("anchor", "reference"))) {
+    for (key in intersect(nm, c("anchor", "reference", "from", "to"))) {
       a <- x[[key]]
       if (is.list(a) && !is.null(a[["source"]])) out <- c(out, list(a))
     }
@@ -592,7 +592,7 @@
   }
   for (p in names(pops)) {
     candidate[[p]] <- .irUniqueAnchors(c(.irCollectAnchors(pops[[p]][["where"]]), templates[[p]]))
-    used <- cases[[p]] %||% list()
+    used <- c(cases[[p]] %||% list(), .irCollectAnchors(ir$options$date_spec))
     for (o in names(ir[["outputs"]])) {
       out <- ir[["outputs"]][[o]]
       if (!identical(out[["rows"]], p)) next

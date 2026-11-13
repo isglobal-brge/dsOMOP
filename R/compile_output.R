@@ -176,6 +176,7 @@
     .irReject(paste0("output '", name, "' carries the v1 compatibility variant ", legacy[[1L]],
                      ", which runs on the v1 executors"), field = paste0("/outputs/", name))
   }
+  .dateCheckOutputSlots(ctx, node)
   co <- switch(node[["format"]] %||% "",
     wide = .compileWideOutput(ctx, node, name, inputs),
     long = .compileLongOutput(ctx, node, name, inputs),
@@ -189,6 +190,39 @@
     joined = .compileJoinedOutput(ctx, node, name, inputs),
     .irReject(paste0("unknown output format '", node[["format"]] %||% "", "'"),
               field = paste0("/outputs/", name, "/format")))
+  co <- .dateOutputCovariates(ctx, node, inputs, co)
+  for (component in names(co$components)) {
+    part <- co$components[[component]]
+    if (!is.null(part$frame)) {
+      index <- NULL
+      if (!is.null(inputs$population) && "cohort_row_id" %in% names(part$frame)) {
+        roster <- .reduceRosterFrame(ctx, inputs$population$roster)
+        if ("cohort_start_date" %in% names(roster)) index <- roster$cohort_start_date[match(as.character(part$frame$cohort_row_id), as.character(roster$cohort_row_id))]
+      }
+      if (node$format %in% c("intervals", "person_period", "survival") && !is.null(ctx$ir$options$date_spec) && !is.null(index)) {
+        endpoints <- c(start_days_from_index="start_date", end_days_from_index="end_date",
+          period_start_days="period_start_date", period_end_days="period_end_date",
+          entry_days_from_index="entry_date", exit_days_from_index="exit_date",
+          event_days_from_index="event_date", interval_start_days="interval_start_date", interval_end_days="interval_end_date")
+        for (old in intersect(names(endpoints), names(part$frame))) {
+          col <- endpoints[[old]]
+          if (col %in% names(part$frame)) .dateReject("Native endpoint name collides with an explicit variable.", "date_parts_names")
+          part$frame[[col]] <- index + part$frame[[old]]
+          part$fragment$columns[[col]] <- .fragmentColumn("date", TRUE, if(grepl("start|entry", col))"start" else "end")
+        }
+      }
+      role_anchor <- NULL
+      pending_dates <- any(vapply(part$fragment$columns, function(col) identical(col$type, "date") && is.null(attr(col, "date_spec")), logical(1)))
+      if (pending_dates && !is.null(inputs$population) && identical(ctx$ir$options$date_spec$precision, "relative_days")) {
+        pop <- inputs$population
+        cons <- .reduceConsumer(ctx, name, pop$roster, pop$coverage, node$grain %||% "episode")
+        role_anchor <- .dateRoleAnchor(ctx, cons, part$frame, ctx$ir$options$date_spec)
+      }
+      presented <- .dateApplyColumns(part$frame, part$fragment$columns, ctx$ir$options$date_spec, index, role_anchor)
+      part$frame <- presented$frame; part$fragment$columns <- presented$columns
+      co$components[[component]] <- part
+    }
+  }
   .assertCompiledOutput(co)
 }
 
@@ -287,7 +321,7 @@
 #' \code{relative}: whole days from the row's index (NA without one);
 #' \code{remove}: the columns are dropped; \code{binned}: the first day of the
 #' week (Monday), month or year as ISO text; \code{absolute}: dates unchanged,
-#' only when \code{dsomop.allow_absolute_dates} is TRUE. Only declared date
+#' on assignment paths. Only declared date
 #' columns are touched (an integer reducer named \code{*_date} is not a date).
 #'
 #' @param frame The component frame.
@@ -297,8 +331,13 @@
 #' @param output Output name (for rejections).
 #' @return list(frame, columns).
 #' @keywords internal
-.outputDateHandling <- function(frame, columns, index, dh, output) {
+.outputDateHandling <- function(frame, columns, index, dh, output, date_spec = NULL, role_anchor = NULL) {
+  native <- .dateApplyColumns(frame, columns, date_spec, index, role_anchor)
+  frame <- native$frame; columns <- native$columns
   dates <- names(columns)[vapply(columns, function(c) identical(c$type, "date"), logical(1))]
+  if (!length(dates)) return(list(frame = frame, columns = columns))
+  native <- names(columns)[vapply(columns, function(c) !is.null(attr(c, "date_spec")), logical(1))]
+  dates <- setdiff(dates, native)
   if (!length(dates)) return(list(frame = frame, columns = columns))
   mode <- dh[["mode"]] %||% "relative"
   requested <- as.character(unlist(dh[["date_columns"]] %||% list(), use.names = FALSE))
@@ -308,23 +347,10 @@
       .irReject(paste0("date_handling date_columns names no date column: ", unknown[[1L]]),
                 field = paste0("/outputs/", output, "/options/date_handling/date_columns"))
     }
-    allow <- isTRUE(getOption("dsomop.allow_absolute_dates",
-                              getOption("default.dsomop.allow_absolute_dates", FALSE)))
-    if (!allow && length(setdiff(dates, requested))) {
-      .irReject("date_handling date_columns omits date columns while absolute dates are disabled",
-                field = paste0("/outputs/", output, "/options/date_handling/date_columns"))
-    }
     dates <- requested
   }
   switch(mode,
-    absolute = {
-      allow <- isTRUE(getOption("dsomop.allow_absolute_dates",
-                                getOption("default.dsomop.allow_absolute_dates", FALSE)))
-      if (!allow) {
-        .irReject("absolute date handling is not permitted by the server",
-                  field = paste0("/outputs/", output, "/options/date_handling/mode"))
-      }
-    },
+    absolute = NULL,
     remove = {
       frame[dates] <- NULL
       columns <- columns[setdiff(names(columns), dates)]
@@ -384,7 +410,7 @@
   dh <- node[["options"]][["date_handling"]] %||% list(mode = "relative")
   index <- if ("cohort_start_date" %in% names(roster)) roster$cohort_start_date else
     as.Date(rep(NA_character_, nrow(roster)))
-  handled <- .outputDateHandling(frame, columns, index, dh, name)
+  handled <- .outputDateHandling(frame, columns, index, dh, name, ctx$ir$options$date_spec, .dateRoleAnchor(ctx, cons, frame, ctx$ir$options$date_spec))
   frame <- handled$frame
   columns <- handled$columns
   status <- if (all(vapply(records, function(r) isTRUE(r$available), logical(1)))) "ok" else
@@ -453,7 +479,7 @@
   }
   dh <- node[["options"]][["date_handling"]] %||% list(mode = "relative")
   handled <- .outputDateHandling(frame, columns, roster$cohort_start_date %||% frame$cohort_start_date,
-                                 dh, name)
+                                 dh, name, ctx$ir$options$date_spec, .dateRoleAnchor(ctx, cons, frame, ctx$ir$options$date_spec))
   grain <- node[["grain"]] %||% "episode"
   frame <- handled$frame
   columns <- handled$columns
@@ -2317,7 +2343,7 @@
     bcons <- .reduceConsumer(ctx, name, pop$roster, pop$coverage, "episode")
     for (v in vars) {
       vnode <- ir[["variables"]][[v]]
-      if (!is.null(vnode[["reducer"]]) && !isTRUE(unlist(vnode[["broadcast"]]))) {
+      if ((!is.null(vnode[["reducer"]]) || (vnode$derived$kind %||% "") %in% .DATE_KINDS) && !isTRUE(unlist(vnode[["broadcast"]]))) {
         .irReject(paste0("variable '", v, "' is a reducer; a long output takes it only with broadcast = TRUE"),
                   field = paste0("/variables/", v, "/broadcast"))
       }
@@ -2337,7 +2363,7 @@
   }
   # Broadcast raw variables may themselves be dates; apply the policy only
   # after every released column has been assembled.
-  handled <- .outputDateHandling(frame, columns, idx, opts[["date_handling"]] %||% list(mode = "relative"), name)
+  handled <- .outputDateHandling(frame, columns, idx, opts[["date_handling"]] %||% list(mode = "relative"), name, ctx$ir$options$date_spec, .dateRoleAnchor(ctx, cons, frame, ctx$ir$options$date_spec))
   frame <- handled$frame
   columns <- handled$columns
   .outputCheckNames(setdiff(names(columns), c("row_id", "cohort_row_id", "person_id")), name, grain)

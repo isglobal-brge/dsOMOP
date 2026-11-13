@@ -1,5 +1,49 @@
 # dsOMOP 2.10.3 (2026-11-13)
 
+## Date presentation (A-28 / CR-29)
+
+- Corrected (DATES-B4): year-bearing custom factors include every year in a
+  declared `level_range`, including unused middle years and ISO boundary weeks.
+  Empty inputs stay empty, including patterns with literal separators. Empty
+  or disjoint observed dates no longer cause valid public keys to refuse
+  publication. Re-execute affected recipes; no declaration changes are needed.
+
+- Corrected (DATES-B1–B3): native date reducers and raw date columns apply the
+  effective invalid/domain/future policy after selection and before presentation.
+  A selected date beyond `as_of` becomes NA; no earlier event is substituted.
+  Yearless custom factors use first appearance in exactly 2000–2399, and escaped
+  percent directives are literal text in validation, rendering and label keys.
+  Re-execute affected recipes to refresh values and ordered-factor contrasts;
+  no declaration changes are needed. Active `%Y-W%V` remains refused: use `%G-W%V`.
+
+- Newly permitted: `omop_date_spec()`, `omop_date()`, `omop_date_components()`,
+  `omop_date_parts()`, `omop_time_between()` and `omop_age_at()` compose native
+  calendar dates, periods, partial dates, date parts and independently anchored
+  ages. Variable fields override recipe defaults. Calendar, fiscal, ISO/CDC and
+  explicitly profiled epi weeks support ordered factors, numeric coordinates
+  and inclusive period bounds. English names and validated custom patterns are
+  locale independent. Date factors reconcile through the existing controlled
+  factor transport, including public zero-count categories.
+- Corrected: exact-date assignment needs no `dsomop.allow_absolute_dates`
+  setting. All date-derived forms retain class-2 provenance, and publication,
+  protected lineage and aggregate admission remain enforced. Native presentation
+  cannot be erased by an omitted legacy date policy. Numeric measures stay
+  numeric. Legacy `first_date`/`last_date` offsets and `omop_age()` annual ages
+  keep their existing meaning when the new APIs are absent.
+- Newly refused: unsafe/custom patterns (use `%G-W%V` for ISO weeks), incomplete
+  epi profiles, irrelevant spec fields, duplicate part names and overlapping
+  explicit legacy/native date policies. Express native policies in `date_spec`.
+  Formats without a roster date slot refuse a date variable rather than
+  encoding a Date/factor into a numeric sparse matrix.
+- Migration: replace fixed-anchor offsets plus `mutate()`/`cut()` with
+  `omop_date("first_visit", omop_date_spec(precision="quarter"))`; replace
+  annual ages with `omop_age_at("death")` for completed years. Incomplete birth
+  dates give NA unless an explicit imputation or `unit="annual_years"` is chosen.
+  Coarsened labels are ordered factors; request `representation="number"` for
+  trends or `"start"`/`"end"` for Date bounds. Native interval/panel/survival
+  endpoint columns are added alongside unchanged internal day offsets when a
+  recipe date spec requests presentation.
+
 Security release: the P0 fixes of the OHDSI-tools audit.
 
 - Release 2.10.3 pairs both packages, including recipe language 2 and the

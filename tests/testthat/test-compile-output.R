@@ -400,17 +400,13 @@ test_that("membership, dictionary, joined and date handling", {
     expect_identical(co$d$reference_components, "d")
     .ws7_close(run)
   }
-  # date handling: remove drops the raw date; binned truncates; absolute needs the server option
+  # A-28: assignment permits exact class-2 dates without an owner option.
+  withr::local_options(list(dsomop.allow_absolute_dates = FALSE))
   for (mode in c("remove", "binned", "absolute")) {
     p <- .ws7_scenario_plan(vars["dd"], output = list(columns = list("dd"), options = list(
       date_handling = if (mode == "binned") list(mode = mode, bin_width = "year") else list(mode = mode))))
-    if (mode == "absolute") {
-      .ws4_expect_rejection(.ws7_scenario_run(.ws7_out_backends$sqlite$handle, p, .ws7_scenario_frame(7001)),
-                            pattern = "absolute")
-      next
-    }
     f <- .ws7_scenario_run(.ws7_out_backends$sqlite$handle, p, .ws7_scenario_frame(7001))$frame
-    if (mode == "remove") expect_false("dd" %in% names(f)) else expect_identical(f$dd, "2015-01-01")
+    if (mode == "remove") expect_false("dd" %in% names(f)) else if (mode == "absolute") expect_identical(f$dd, as.Date("2015-01-01")) else expect_identical(f$dd, "2015-01-01")
   }
 })
 

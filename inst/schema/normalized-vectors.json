@@ -103,6 +103,12 @@
       "source": "../plans/acceptance/15-costs-adherence/plan.json",
       "normalized_sha256": "64fb943a2f36001239a6dc6812e6a751c2a35bf674b1e4cb23f91ea169ef92ce",
       "digest_sha256": "f662747f0f56f2fb0873e38aa1d37e75271e06fb88e70c1c7b8df03d95a51f9c"
+    },
+    {
+      "label": "plan-v2-dates",
+      "source": "examples/plan-v2-dates.json",
+      "normalized_sha256": "3c2941259ab3d87ebee95013ead360e0332338a949a39c82dae29e9e040158cb",
+      "digest_sha256": "d0b9bb2a29b07e47341f234ecfdbddae6d27296fb927aa31128a87810aae1e15"
     }
   ]
 }

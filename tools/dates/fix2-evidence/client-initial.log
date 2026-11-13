@@ -1,0 +1,9 @@
+FAILURES BY FILE
+              file blocks failed errors
+ test-date-range.R      1      0      1
+
+FAILING TESTS
+test-date-range.R | B4 custom ranges retain shared unused levels through final publication | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 1 skipped: 0 passed: 279 
+RESULT failed: 0 errors: 1 skipped: 0 passed: 279 

@@ -62,8 +62,9 @@
 }
 
 .conceptPresent <- function(ctx, frame, columns) {
+  frame <- .dateCapture(frame, columns)
   if (!.reduceTranslate(ctx)) return(frame)
-  contracts <- list()
+  contracts <- attr(frame, "omop_concepts") %||% list()
   for (col in intersect(names(columns), names(frame))) {
     if (!.conceptColumn(columns[[col]])) next
     owner <- attr(columns[[col]], "concept_owner")
@@ -125,6 +126,7 @@
   ids <- contract$ids
   if (length(ids) != nrow(df)) stop("Incomplete concept identity metadata.", call. = FALSE)
   observed <- unique(ids[!is.na(ids)])
+  if (identical(contract$kind, "date") && all(observed %in% contract$declared)) return(list(levels = contract$declared, safe = TRUE))
   if (isTRUE(attr(df, "omop_concept_reference"))) {
     support <- attr(df, "omop_reference_support")
     if (is.null(support)) return(list(levels = observed, safe = TRUE))
@@ -159,6 +161,7 @@
     permitted <- union(a$levels, c$declared)
     out$levels[[col]] <- permitted
     out$concepts[[col]] <- unname(c$records[permitted])
+    if (identical(c$kind, "date")) out$calendars[[col]] <- c$calendar
     if (length(c$reference_keys)) out$reference_names[[col]] <- unique(unname(c$reference_keys))
   }
   generated <- refreshed$generated
@@ -204,6 +207,7 @@
   for (col in names(contracts)) {
     c <- contracts[[col]]
     shared <- spec$columns[[col]]
+    if (identical(c$kind, "date") && !identical(.jcsCanonical(shared$calendar), .jcsCanonical(c$calendar))) .dateReject("Changed shared calendar identity.")
     .conceptValidateResolution(shared, c$records)
     ids <- as.character(unlist(shared$ids, use.names = FALSE))
     labels <- as.character(unlist(shared$labels, use.names = FALSE))
@@ -218,11 +222,12 @@
       stop("Concept reconciliation cannot certify complete disclosure-safe coverage.", call. = FALSE)
     }
     keys <- intersect(.PERSON_KEY_COLS(), names(df))
-    if (length(keys) && nrow(df)) .assertSafeLevels(length(ids), length(unique(df[[keys[[1L]]]])))
+    density_levels <- if (identical(c$kind, "date")) length(setdiff(ids, c$declared)) else length(ids)
+    if (length(keys) && nrow(df)) .assertSafeLevels(density_levels, length(unique(df[[keys[[1L]]]])))
     reference_support <- attr(df, "omop_reference_support")
     if (!is.null(reference_support)) .assertSafeLevels(length(ids), reference_support$total)
     values <- labels[match(c$ids, ids)]
-    df[[col]] <- .conceptFactor(values, levels = levels)
+    df[[col]] <- if (identical(c$kind, "date")) .dateOrdered(values, levels = levels) else .conceptFactor(values, levels = levels)
     if (identical(col, table_column)) {
       # One token per resolved category, including deliberate recode merges.
       # Only ASCII tokens cross dsBase's comma-delimited level transport.
@@ -320,6 +325,7 @@
   handle <- .getHandle(key)
   for (col in names(contracts)) {
     old <- contracts[[col]]$records
+    if (identical(contracts[[col]]$kind, "date")) next
     fresh <- .conceptVocabulary(handle, names(old))
     for (id in names(old)) if (old[[id]]$origin %in% c('variable','recipe')) {
       fresh[[id]]$origin <- old[[id]]$origin; fresh[[id]]$label <- old[[id]]$label

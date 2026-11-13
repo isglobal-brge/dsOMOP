@@ -3,7 +3,7 @@
 
 # The frozen operation and reducer vocabularies of section 4.4.
 .RECIPE_OPERATIONS <- c(
-  "output.concept_labels", "concept_set", "event", "event.unit", "event.on_missing_table", "interval",
+  "date.presentation", "date.elapsed", "output.concept_labels", "concept_set", "event", "event.unit", "event.on_missing_table", "interval",
   "interval.ingredient", "interval.stockpile", "population.index",
   "population.first_eligible", "population.any_of", "population.criteria",
   "population.parent", "population.setop", "population.match",
@@ -258,7 +258,7 @@
                           class = .roleColumnClass(def[["raw"]][["column"]], col_df))
       } else if (!is.null(def[["derived"]])) {
         kind <- def[["derived"]][["kind"]]
-        cls <- if (kind %in% c("age", "birth_year_band")) 2L else 3L
+        cls <- if (kind %in% c("age", "birth_year_band", .DATE_KINDS)) 2L else 3L
         cols[[v]] <- list(source = paste0("derived:", kind), class = cls)
       } else if (!is.null(def[["reducer"]])) {
         cols[[v]] <- list(source = paste0("reducer:", def[["reducer"]][["fn"]]),

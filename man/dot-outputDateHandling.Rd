@@ -4,7 +4,15 @@
 \alias{.outputDateHandling}
 \title{Apply an output's date handling to its date-typed columns}
 \usage{
-.outputDateHandling(frame, columns, index, dh, output)
+.outputDateHandling(
+  frame,
+  columns,
+  index,
+  dh,
+  output,
+  date_spec = NULL,
+  role_anchor = NULL
+)
 }
 \arguments{
 \item{frame}{The component frame.}
@@ -24,7 +32,7 @@ list(frame, columns).
 \code{relative}: whole days from the row's index (NA without one);
 \code{remove}: the columns are dropped; \code{binned}: the first day of the
 week (Monday), month or year as ISO text; \code{absolute}: dates unchanged,
-only when \code{dsomop.allow_absolute_dates} is TRUE. Only declared date
+on assignment paths. Only declared date
 columns are touched (an integer reducer named \code{*_date} is not a date).
 }
 \keyword{internal}

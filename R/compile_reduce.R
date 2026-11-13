@@ -90,6 +90,7 @@
 .reduceFragmentIdentities <- function(ir) {
   out <- list()
   for (o in names(ir[["outputs"]] %||% list())) {
+    for (source in .dateComponentSources(ir)) out[[length(out) + 1L]] <- .fragmentIdentity("rd", o, paste0("dc_", .dateSourceKey(source)))
     for (k in .REDUCE_OUTPUT_KINDS) out[[length(out) + 1L]] <- .fragmentIdentity("rd", o, k)
     for (v in .irOutputVariables(ir, o)) {
       for (k in .REDUCE_VARIABLE_KINDS) {
@@ -793,7 +794,7 @@
 # Column type of a reducer's values.
 .reduceValueType <- function(fn, value_type = "numeric") {
   if (fn %in% .REDUCER_INTEGER_FNS) return("integer")
-  if (identical(fn, "mode")) return(value_type)
+  if (identical(fn, "mode") || (value_type == "date" && fn %in% c("first_value", "last_value", "nth_value", "closest_value", "min", "max"))) return(value_type)
   "numeric"
 }
 
@@ -864,6 +865,7 @@
     stop("The variable consumer belongs to another roster.", call. = FALSE)
   }
   record <- .compileVariableRecord(ctx, node, name, cons)
+  record <- .datePresentRecord(record, node, ctx, name, cons)
   for (col in names(record$columns)) attr(record$columns[[col]], "concept_owner") <- name
   record
 }
@@ -948,12 +950,14 @@
     value_type <- if (res$type %in% c("integer", "bigint")) res$type else
       if (identical(res$type, "text")) "text" else if (identical(res$type, "date")) "date" else
         "numeric"
-    if (fn %in% .REDUCER_VALUE_FNS && !res$type %in% c("integer", "bigint", "numeric")) {
+    if (fn %in% .REDUCER_VALUE_FNS && !res$type %in% c("integer", "bigint", "numeric") &&
+        !(res$type == "date" && fn %in% c("first_value", "last_value", "nth_value", "closest_value", "min", "max"))) {
       .irReject(paste0("reducer '", fn, "' needs a numeric value column; '", requested, "' is ",
                        res$type), field = paste0(field, "/value"))
     }
   }
-  type <- .reduceValueType(fn, value_type)
+  native_date <- fn %in% c("first_date", "last_date") && !is.null(node$date_spec)
+  type <- if (native_date) "date" else .reduceValueType(fn, value_type)
   out_names <- .reduceColumnNames(name, r)
   columns <- stats::setNames(lapply(out_names, function(c) .fragmentColumn(type, TRUE, "measure")),
                              out_names)
@@ -986,7 +990,7 @@
     extra$pred <- list(expr = paste0("CASE WHEN (", pred, ") THEN 1 WHEN NOT (", pred,
                                      ") THEN 0 END"), type = "integer")
   }
-  anchor_needed <- fn %in% c("first_date", "last_date", "closest_value", "days_since",
+  anchor_needed <- !native_date && fn %in% c("first_date", "last_date", "closest_value", "days_since",
                              "days_until")
   anchor <- if (fn %in% c("days_since", "days_until")) r[["reference"]] else .reduceAnchor(r)
   if (anchor_needed) .anchorNormalize(anchor, paste0(field, "/reference"))
@@ -994,6 +998,7 @@
                           extra = extra)
   ordering <- .reduceSourceOrdering(src)
   kernel <- function(rows, keys, anchors = NULL) {
+    if (native_date) anchors <- rep(as.Date("1970-01-01"), length(keys))
     .reduceApply(fn, rows, keys, r, ordering, anchors, value_type)
   }
   evaluate <- function() {
@@ -1265,8 +1270,9 @@
 
 #' The person row of every roster row (one fetch per output)
 #' @keywords internal
-.reducePersonFrame <- function(ctx, cons) {
+.reducePersonFrame <- function(ctx, cons, extra_columns = character()) {
   memo <- .compileMemo(ctx, "reduce_person")
+  extra_columns <- unique(c(extra_columns, .datePersonColumns(ctx$ir)))
   key <- cons$output
   if (exists(key, envir = memo, inherits = FALSE)) return(get(key, envir = memo, inherits = FALSE))
   h <- .compileDialect(ctx)
@@ -1276,6 +1282,15 @@
   have <- tolower(col_df$column_name)
   want <- c("year_of_birth", "month_of_birth", "day_of_birth", "gender_concept_id",
             "race_concept_id", "ethnicity_concept_id")
+  for (col in extra_columns) {
+    row <- col_df[match(col, have), , drop = FALSE]
+    if (!col %in% have || .assignmentBlockedColumn(col, col_df) ||
+        col %in% c(.identifierColumns(), .PERSON_KEY_COLS()) ||
+        !grepl("int", row$db_datatype, ignore.case = TRUE)) {
+      .dateReject("Components require permitted registered integer columns.", "date_source_invalid")
+    }
+  }
+  want <- union(want, extra_columns)
   cols <- vapply(want, function(c) if (c %in% have) paste0("p.", c) else .compileTypedNull(h, "integer"), "")
   name <- .reduceName(ctx, cons, "pp")
   body <- paste0("SELECT r.", spec$key, " AS row_key, ",
@@ -1378,6 +1393,7 @@
 .reduceDerivedVariable <- function(ctx, node, name, cons) {
   d <- node[["derived"]]
   kind <- d[["kind"]]
+  if (kind %in% .DATE_KINDS) return(.reduceDateVariable(ctx, node, name, cons))
   field <- paste0("/variables/", name, "/derived")
   if (kind %in% c("died", "days_to_death") && is.null(.roleOf(ctx[["handle"]], "death"))) {
     columns <- stats::setNames(list(.fragmentColumn("integer", TRUE, "measure")), name)

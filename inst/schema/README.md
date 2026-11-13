@@ -23,3 +23,8 @@ Generated from the endorsed design (`design-2.10.3.endorsed.md`, SHA-256
   copies (without `ir-v2.json`).
 
 Changes need both reviewers (design section 12.1).
+
+A-28/CR-29 adds closed date_spec/date_source and four native derived variants.
+`tools/ws0/date_schema.py` is the approved amendment application. Omitted
+legacy date policies remain absent for native presentation; unchanged plans
+retain their previous normal forms and digests.

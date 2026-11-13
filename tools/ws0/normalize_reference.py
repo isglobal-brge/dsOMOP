@@ -123,6 +123,8 @@ def normalize(plan, schema):
         if x.get(slot) is None:
             x[slot] = {}
     x = apply_defaults(schema, x, schema)
+    from date_normalize import normalize_dates
+    x = normalize_dates(x)
     if x.get("publish") is None:
         x["publish"] = list(x["outputs"].keys())
     plan_cov = x["options"].get("coverage")

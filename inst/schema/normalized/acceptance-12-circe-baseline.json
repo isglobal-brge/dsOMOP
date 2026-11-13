@@ -109,13 +109,13 @@
       ],
       "sources": [],
       "options": {
+        "time_window": null,
         "date_handling": {
           "mode": "relative",
           "reference": "index",
           "bin_width": null,
           "date_columns": null
-        },
-        "time_window": null
+        }
       }
     }
   },
