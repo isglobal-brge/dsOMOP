@@ -123,15 +123,17 @@ test_that("A-20(b): matching templates inventory nested search anchors in their 
   ir <- .irPrepare(plan)
   key <- function(anchors) vapply(anchors, .jcsCanonical, "")
   anchors <- .irOrder(ir)$anchors
+  cases <- ir$populations$cc$match$cases
   expected <- key(list(ir$outputs$anchor_dates$options$anchors$a,
                        ir$outputs$anchor_dates$options$anchors$c))
   expect_setequal(key(anchors$candidate$eligible), expected)
-  cases <- ir$populations$cc$match$cases
   expect_setequal(key(anchors$final[[cases]]), expected)
   expect_setequal(key(anchors$final$cc), expected)
   expect_length(anchors$candidate$eligible, 2L)
   expect_length(anchors$final[[cases]], 2L)
   expect_length(anchors$final$cc, 2L)
+  expect_length(anchors$final[[cases]], 2L)
+  expect_length(anchors$candidate[[cases]], 0L)
   expect_length(anchors$final$eligible, 0L)
   expect_length(anchors$candidate$cc, 0L)
   # The complete dependency closure must keep both the outer and search sources.

@@ -1135,18 +1135,29 @@ test_that("A-20(b): every value of a long output's anchors map is a final anchor
 
 test_that("A-20(b): a matching template's candidate anchors include its strata windows", {
   x <- .rv_example("plan-v2-example-B.json")
-  strata <- list(strata = list(source = list(event = "diabetes"),
-                               window = list(start = NULL, end = -1L, anchor = list(source = list(event = "statin_rx"),
-                                                                                    which = "last"))))
-  x$populations$cc$match$match <- c(x$populations$cc$match$match, list(strata))
+  window <- list(start = NULL, end = -1L,
+                 anchor = list(source = list(event = "statin_rx"), which = "last"))
+  # A-20(b): a strata source anchor resolves separately on final cases and
+  # instantiated controls. A template criterion belongs only to controls.
+  strata <- x
+  strata$populations$cc$match$match <- c(strata$populations$cc$match$match,
+    list(list(strata = list(source = list(event = "diabetes"), window = window))))
+  strata_ir <- .irPrepare(strata)
+  strata_anchors <- .irOrder(strata_ir)$anchors
+  expect_identical(strata_anchors$final$cases, strata_anchors$candidate$eligible)
+  expect_length(strata_anchors$final$cases, 1L)
+  template <- x$populations$cc$match$controls
+  x$populations[[template]]$where <- list(and = list(
+    x$populations[[template]]$where,
+    list(has = list(source = list(event = "diabetes"), op = ">=", n = 1L,
+                    window = window))))
   ir <- .irPrepare(x)
   template <- ir$populations$cc$match$controls
   got <- vapply(.irOrder(ir)$anchors$candidate[[template]], .jcsCanonical, "")
   want <- .jcsCanonical(list(source = list(event = "statin_rx"), which = "last", n = 1L, field = "start",
                              scope = "person", search = NULL))
   expect_true(want %in% got)
-  cases <- ir$populations$cc$match$cases
-  expect_true(want %in% vapply(.irOrder(ir)$anchors$final[[cases]], .jcsCanonical, ""))
+  expect_length(.irOrder(ir)$anchors$final$cases, 0L)
 })
 
 # --- A-19 open item (i): private set-op intermediates are not gated in execution ---
