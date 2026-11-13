@@ -1,0 +1,20 @@
+* installing *source* package ‘dsOMOP’ ...
+** this is package ‘dsOMOP’ version ‘2.10.3’
+** using staged installation
+dsOMOP: request-local OpenSSL HMAC acceleration enabled
+** libs
+using C compiler: ‘cc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0’
+cc -I"/usr/share/R/include" -DNDEBUG -DDSOMOP_HAVE_OPENSSL       -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2  -c release_hmac.c -o release_hmac.o
+cc -shared -L/usr/lib/R/lib -Wl,-Bsymbolic-functions -flto=auto -ffat-lto-objects -flto=auto -Wl,-z,relro -o dsOMOP.so release_hmac.o -lcrypto -L/usr/lib/R/lib -lR
+installing to /root/rt/lib/wt_int_dsOMOPClient/00LOCK-dsOMOP/00new/dsOMOP/libs
+** R
+** inst
+** byte-compile and prepare package for lazy loading
+** help
+*** installing help indices
+** building package indices
+** testing if installed package can be loaded from temporary location
+** checking absolute paths in shared objects and dynamic libraries
+** testing if installed package can be loaded from final location
+** testing if installed package keeps a record of temporary installation path
+* DONE (dsOMOP)

@@ -1,0 +1,4 @@
+using C compiler: ‘cc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0’
+cc -I"/usr/share/R/include" -DNDEBUG       -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2  -c release_hmac.c -o release_hmac.o
+cc -shared -L/usr/lib/R/lib -Wl,-Bsymbolic-functions -flto=auto -ffat-lto-objects -flto=auto -Wl,-z,relro -o dsOMOP.so release_hmac.o -L/usr/lib/R/lib -lR
+Portable build returns fallback sentinel; malformed key refuses.\nRemoved owned portable build directory /tmp/dsomop-e2e4-portable-xsfK7q

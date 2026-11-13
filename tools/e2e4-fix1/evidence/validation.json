@@ -1,0 +1,9 @@
+{
+  "server_commit": "77c6e6c2fb6ea5c3212146f027707dffe777e22e",
+  "client_commit": "30a9794b4fe30c7b04f30390686157bf67ff4a63",
+  "server_filter": "^e2e4-hmac$|^e2e-fix3$|^tools-release$|^tools-release-(hierarchy|records|record-histogram|survival|time-to-event)$|^dp-generation$|^state-secrets$",
+  "client_filter": "^privacy-protected-client$|^v1-2.10.2-payloads$|^v2-protocol$|^publication-status$|^versions$",
+  "profile_filter": "^e2e4-(hmac|profile)$",
+  "profile_environment": "DSOMOP_E2E_PROFILE=1",
+  "full_suites_run": false
+}

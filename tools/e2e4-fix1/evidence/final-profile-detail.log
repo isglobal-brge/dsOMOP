@@ -1,0 +1,39 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+e2e4-hmac: ............................
+e2e4-profile: 
+ROUTE fixed_synopsis ITERATION 1 
+PORTABLE
+   user  system elapsed 
+ 14.695   0.345  15.040 
+ACCELERATED
+   user  system elapsed 
+  7.476   0.068   7.545 
+.
+ROUTE fixed_synopsis ITERATION 2 
+PORTABLE
+   user  system elapsed 
+ 11.482   0.042  11.525 
+ACCELERATED
+   user  system elapsed 
+  7.842   0.024   7.866 
+.
+ROUTE realised_sticky ITERATION 1 
+PORTABLE
+   user  system elapsed 
+ 11.384   0.013  11.397 
+ACCELERATED
+   user  system elapsed 
+  6.722   0.044   6.767 
+.
+ROUTE realised_sticky ITERATION 2 
+PORTABLE
+   user  system elapsed 
+ 12.699   0.012  12.712 
+ACCELERATED
+   user  system elapsed 
+  7.310   0.021   7.331 
+.
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+RESULT failed: 0 errors: 0 skipped: 0 passed: 32 
