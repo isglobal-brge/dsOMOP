@@ -86,6 +86,7 @@
                               owner = owner, resolved = resolved)
     if (col == "conceptId" && "covariateId" %in% names(frame)) {
       contracts[[col]]$reference_keys <- setNames(ids, as.character(frame$covariateId))
+      contracts[[col]]$resolved$naming_ids <- unique(ids[!is.na(ids)])
     }
   }
   if (length(contracts)) {
@@ -156,6 +157,7 @@
     permitted <- union(a$levels, c$declared)
     out$levels[[col]] <- permitted
     out$concepts[[col]] <- unname(c$records[permitted])
+    if (length(c$reference_keys)) out$reference_names[[col]] <- unique(unname(c$reference_keys))
   }
   generated <- refreshed$generated
   out$generated <- list()
@@ -314,7 +316,7 @@
 }
 
 .conceptEvidence <- function(report) {
-  as.character(openssl::sha256(charToRaw(.conceptEncode(report[c('concepts','generated','keys')]))))
+  as.character(openssl::sha256(charToRaw(.conceptEncode(report[c('concepts','generated','keys','reference_names')]))))
 }
 
 .conceptCheckEvidence <- function(report, spec, required = FALSE) {
@@ -333,10 +335,12 @@
   shared <- c$resolved
   vocabulary <- as.character(unlist(shared$vocabulary, use.names = FALSE))
   if (!length(vocabulary) && length(ids)) stop("Incomplete shared vocabulary names for sparse reference.", call. = FALSE)
-  all_ids <- as.character(unlist(shared$ids, use.names = FALSE))
+  shared_ids <- as.character(unlist(shared$ids, use.names = FALSE))
+  all_ids <- as.character(unlist(shared$naming_ids %||% unique(unname(c$reference_keys)), use.names = FALSE))
+  if (!all(all_ids %in% shared_ids) || !all(ids %in% all_ids)) stop("Incomplete sparse naming contract.", call. = FALSE)
   # Resolve over the full federation identity set before selecting local rows.
   # Otherwise a missing local concept would change collision suffixes.
-  tokens <- .conceptNameToken(vocabulary)
+  tokens <- .conceptNameToken(vocabulary[match(all_ids,shared_ids)])
   tokens <- .conceptFinalNames(all_ids, setNames(tokens,all_ids), character(), setNames(all_ids,all_ids))
   token <- tokens[match(ids,all_ids)]
   suffix <- c("binary", "count", "mean", "min", "max")[as.integer(frame$analysisId)]

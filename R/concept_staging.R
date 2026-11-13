@@ -61,6 +61,7 @@
     ids <- union(names(support), as.character(unlist(c$declared, use.names = FALSE)))
     out$levels[[col]] <- ids
     out$concepts[[col]] <- unname(c$records[ids])
+    if (length(c$reference_keys)) out$reference_names[[col]] <- unique(as.character(unlist(c$reference_keys,use.names=FALSE)))
   }
   for (key in names(meta$generated)) {
     g <- meta$generated[[key]]

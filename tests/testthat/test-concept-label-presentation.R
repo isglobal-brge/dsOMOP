@@ -198,3 +198,14 @@ test_that('A27 sparse reference names use vocabulary independently of recodes an
   expect_identical(report$unsafe,'conceptId')
   expect_length(report$concepts,0)
 })
+
+test_that('A27 declared-only value recodes cannot change sparse feature names', {
+  testthat::local_mocked_bindings(.conceptVocabulary=function(handle,ids) setNames(lapply(ids,function(id)
+    list(id=id,name='Same',vocabulary='v',version='1',origin='vocabulary',label='Same')),ids))
+  ctx <- list(handle=.cl_backends$sqlite$handle,ir=list(options=list(labels=list('2'='declared')),variables=list()))
+  frame <- data.frame(covariateId=1001,covariateName='1_binary',analysisId=1L,conceptId=1L)
+  value <- .conceptPresent(ctx,frame,list(conceptId=.fragmentColumn('integer',TRUE,'concept')))
+  expect_identical(value$covariateName,'same_binary')
+  expect_true('declared' %in% levels(value$conceptId))
+  expect_identical(attr(value,'omop_concepts')$conceptId$resolved$naming_ids,'1')
+})
