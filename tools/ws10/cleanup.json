@@ -1,0 +1,77 @@
+[
+  {
+    "path": "/workspace/dsomop/design/2.10.3/astra-scratch/ws8r-empty-full/dsOMOPClient/tests/testthat/fixtures/dsomop-2.10.2",
+    "regenerable_bytes_deleted": 8867,
+    "evidence_formats_retained": true
+  },
+  {
+    "path": "/workspace/dsomop/design/2.10.3/astra-scratch/ws9-simple-probes",
+    "regenerable_bytes_deleted": 9716052,
+    "evidence_formats_retained": true
+  },
+  {
+    "path": "/workspace/dsomop/design/2.10.3/astra-scratch/ws8r-protocol/dsOMOPClient/tests/testthat/fixtures/dsomop-2.10.2",
+    "regenerable_bytes_deleted": 8867,
+    "evidence_formats_retained": true
+  },
+  {
+    "path": "/workspace/dsomop/design/2.10.3/astra-scratch/ws8r-protocol/tagged-server",
+    "regenerable_bytes_deleted": 173060,
+    "evidence_formats_retained": true
+  },
+  {
+    "path": "/workspace/dsomop/design/2.10.3/astra-scratch/ws8r-empty-server/dsOMOPClient/tests/testthat/fixtures/dsomop-2.10.2",
+    "regenerable_bytes_deleted": 8867,
+    "evidence_formats_retained": true
+  },
+  {
+    "path": "/workspace/dsomop/design/2.10.3/astra-scratch/cr24-25-cr25-baseline",
+    "regenerable_bytes_deleted": 4367623,
+    "evidence_formats_retained": true
+  },
+  {
+    "path": "/workspace/dsomop/design/2.10.3/astra-scratch/ws2-rereview-lowering/baseline",
+    "regenerable_bytes_deleted": 4363860,
+    "evidence_formats_retained": true
+  },
+  {
+    "path": "/workspace/dsomop/design/2.10.3/astra-scratch/ws9r22-full-server/dsOMOPClient",
+    "regenerable_bytes_deleted": 9826839,
+    "evidence_formats_retained": true
+  },
+  {
+    "path": "/workspace/dsomop/design/2.10.3/astra-scratch/ws9r22-full-server/dsOMOP",
+    "regenerable_bytes_deleted": 6411465,
+    "evidence_formats_retained": true
+  },
+  {
+    "path": "/workspace/dsomop/design/2.10.3/astra-scratch/ws9-editor-probes/tests/testthat/fixtures/dsomop-2.10.2",
+    "regenerable_bytes_deleted": 8867,
+    "evidence_formats_retained": true
+  },
+  {
+    "path": "/workspace/dsomop/design/2.10.3/astra-scratch/ws8-root/baseline",
+    "regenerable_bytes_deleted": 8856366,
+    "evidence_formats_retained": true
+  },
+  {
+    "path": "/workspace/dsomop/design/2.10.3/astra-scratch/cr24-25-cr25-current",
+    "regenerable_bytes_deleted": 6279308,
+    "evidence_formats_retained": true
+  },
+  {
+    "path": "/workspace/dsomop/design/2.10.3/astra-scratch/ws2r2-root-server/dsOMOPClient",
+    "regenerable_bytes_deleted": 8969637,
+    "evidence_formats_retained": true
+  },
+  {
+    "path": "/workspace/dsomop/design/2.10.3/astra-scratch/ws2r2-root-server/dsOMOP",
+    "regenerable_bytes_deleted": 6828083,
+    "evidence_formats_retained": true
+  },
+  {
+    "path": "/workspace/dsomop/wt/ws10/dsOMOP/tools/ws10/harness",
+    "regenerable_bytes_deleted": 99041,
+    "reason": "Own scratch validation copies removed after evidence log was written"
+  }
+]
