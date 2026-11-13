@@ -716,9 +716,7 @@ omopStagedRevokeDS <- function(exec_symbol) {
       pc <- .publicationCandidate(root, component, "frame", lineage,
         requested_symbol = symbol,
         grain = if (reference) "none" else if (any(c(.EPISODE_KEY_COLS(), "rowId") %in% columns)) "episode" else "person")
-      # The private v1 return already carries these tags on its outer list.
-      # Copy them onto public frames, whose enclosing list is not assigned.
-      if (is.data.frame(frame) && !isTRUE(ctx$return_private)) {
+      if (is.data.frame(frame)) {
         cc <- intersect(attr(outputs, "omop_concept_cols")[[root]] %||% character(0), names(frame))
         if (length(cc)) attr(frame, "omop_concept_cols") <- cc
       }

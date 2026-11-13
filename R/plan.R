@@ -4103,6 +4103,15 @@
     if (status$status == "refused") .publishReject(status$rejected[[1L]]$code)
     for (root in names(status$published)) for (component in names(status$published[[root]])) {
       value <- get(status$published[[root]][[component]]$symbol, ctx$target_env)
+      # The untranslated private v1 return predates publication/presentation
+      # frame metadata. Keep its exact shape; the outer list below retains
+      # concept-column tags. Public assignments and translated results retain
+      # the complete metadata used for safe concept reconciliation.
+      if (isTRUE(ctx$return_private) && !.reduceTranslate(ctx) && is.data.frame(value)) {
+        attr(value, "omop_concept_cols") <- NULL
+        attr(value, "omop_concept_reference") <- NULL
+        attr(value, "omop_column_contract") <- NULL
+      }
       if (component == root) results[[root]] <- value else results[[root]][[component]] <- value
     }
     results <- results[intersect(names(results), names(status$published))]
