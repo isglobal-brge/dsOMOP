@@ -59,8 +59,15 @@
     # Missing builtin anchors are missing values, not a reason to lose a person.
     if(is.character(source)&&! .ANCHOR_BUILTINS[[source]] %in% names(roster)) d<-as.Date(rep(NA_character_,n)) else d<-.reduceAnchorDates(ctx,cons,source,"date source")
   }
-  d[!is.na(d)&(d<as.Date("0001-01-01")|d>as.Date("9999-12-31"))]<-NA
-  if(s$future=="na") d[!is.na(d)&d>as.Date(s$as_of)]<-NA
+  .dateTypedValues(d,s)
+}
+# Apply source policy after selection, before any coarsening or relative conversion.
+.dateTypedValues <- function(d,s) {
+  if(!inherits(d,"Date")) d<-as.Date(d)
+  days<-as.numeric(d)
+  bad<-!is.finite(days)|days!=trunc(days)|d<as.Date("0001-01-01")|d>as.Date("9999-12-31")
+  if(s$future=="na") bad<-bad|d>as.Date(s$as_of)
+  d[which(bad)]<-NA
   list(lo=d,hi=d)
 }
 .dateBirthSource <- function() list(kind="date_components",year=list(kind="column",name="year_of_birth"),month=list(kind="column",name="month_of_birth"),day=list(kind="column",name="day_of_birth"),which="first",n=1L,scope="person")
@@ -109,7 +116,7 @@
   s<-node$date_spec;old<-record$evaluate
   record$evaluate<-function() {
     out<-old();anchor<-if(identical(s$precision,"relative_days")) .dateExact(.dateSourceValues(ctx,cons,s$anchor,s)) else NULL
-    for(col in names(record$columns)) out[[col]]<-.datePresent(list(lo=out[[col]],hi=out[[col]]),s,anchor=anchor)
+    for(col in names(record$columns)) out[[col]]<-.datePresent(.dateTypedValues(out[[col]],s),s,anchor=anchor)
     out
   }
   for(col in names(record$columns)) {
@@ -143,17 +150,16 @@
     frame[[starts]][bad]<-NA;frame[[ends]][bad]<-NA
   }
   for(col in dates) {
-    d<-frame[[col]];if(!inherits(d,"Date")) d<-as.Date(d)
-    if(s$future=="na") d[!is.na(d)&d>as.Date(s$as_of)]<-NA
+    source<-.dateTypedValues(frame[[col]],s)
     anchor<-NULL
     if(identical(s$precision,"relative_days")) {
       if(!is.null(role_anchor)) anchor<-role_anchor
       else if(is.list(s$anchor)&&!is.null(s$anchor$date)) anchor<-as.Date(s$anchor$date)
       else if(identical(s$anchor,"index")) anchor<-index
       else .dateReject("Output date roles need an index or fixed anchor; use a date helper for an event anchor.")
-      if(is.null(anchor)) anchor<-as.Date(rep(NA_character_,length(d)))
+      if(is.null(anchor)) anchor<-as.Date(rep(NA_character_,length(source$lo)))
     }
-    frame[[col]]<-.datePresent(list(lo=d,hi=d),s,anchor=anchor)
+    frame[[col]]<-.datePresent(source,s,anchor=anchor)
     columns[[col]]$type<-.dateResultType(s,list(kind="calendar_date"))
     attr(columns[[col]],"date_spec")<-s;attr(columns[[col]],"privacy_class")<-2L
   }

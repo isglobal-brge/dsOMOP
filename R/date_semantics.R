@@ -11,14 +11,28 @@
   y <- suppressWarnings(as.Date(x, format = "%Y-%m-%d"))
   all(!is.na(y) & sprintf("%04d-%02d-%02d",as.integer(format(y,"%Y")),as.integer(format(y,"%m")),as.integer(format(y,"%d"))) == x & substr(x, 1, 4) != "0000")
 }
-.datePattern <- function(p) {
+.datePatternTokens <- function(p) {
   bad <- function() .dateReject("Use allowed calendar directives and ASCII separators; ISO weeks require %G-W%V.", "date_pattern_invalid")
   if (!is.character(p) || length(p) != 1L || is.na(p) || nchar(p, type="bytes") > 128L || !nzchar(p) || !grepl("%", p, fixed=TRUE)) bad()
-  rest <- gsub("%[YmdjGVubBaA%]", "", p)
-  if (grepl("[^a-zA-Z0-9 _/.,:()-]", rest) || grepl("%V",p,fixed=TRUE) != grepl("%G",p,fixed=TRUE) ||
-      (grepl("%V",p,fixed=TRUE) && grepl("%Y",p,fixed=TRUE))) bad()
-  p
+  chars <- strsplit(p,"",fixed=TRUE)[[1L]]; tokens <- character(); i <- 1L
+  while(i <= length(chars)) {
+    ch <- chars[i]
+    if(ch == "%") {
+      i <- i+1L
+      if(i > length(chars) || !chars[i] %in% c("Y","m","d","j","G","V","u","b","B","a","A","%")) bad()
+      tokens <- c(tokens,setNames(chars[i],"directive"))
+    } else {
+      if(!grepl("^[a-zA-Z0-9 _/.,:()-]$",ch)) bad()
+      tokens <- c(tokens,setNames(ch,"literal"))
+    }
+    i <- i+1L
+  }
+  directives <- tokens[names(tokens)=="directive"]
+  if(("V" %in% directives) != ("G" %in% directives) ||
+     ("V" %in% directives && "Y" %in% directives)) bad()
+  tokens
 }
+.datePattern <- function(p) { .datePatternTokens(p); p }
 .dateSpecCheck <- function(s) {
   if (is.null(s)) return(NULL)
   if (!is.list(s) || (length(s) && (is.null(names(s)) || anyDuplicated(names(s))))) .dateReject("date_spec must be a named declaration.")
@@ -159,11 +173,11 @@
 }
 .DATE_MONTHS <- c("January","February","March","April","May","June","July","August","September","October","November","December")
 .DATE_DAYS <- c("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday")
-.dateRender <- function(d,p) {
+.dateRender <- function(d,p,tokens=.datePatternTokens(p)) {
   w<-.dateWeek(d);m<-.dateM(d);u<-.dateW(d)
   values<-list(Y=sprintf("%04d",.dateY(d)),m=sprintf("%02d",m),d=sprintf("%02d",.dateD(d)),j=sprintf("%03d",as.integer(d-.dateMake(.dateY(d),1,1))+1L),G=sprintf("%04d",w$year),V=sprintf("%02d",w$number),u=as.character(u),b=substr(.DATE_MONTHS[m],1,3),B=.DATE_MONTHS[m],a=substr(.DATE_DAYS[u],1,3),A=.DATE_DAYS[u],"%"=rep("%",length(d)))
-  chars<-strsplit(p,"",fixed=TRUE)[[1]];out<-rep("",length(d));i<-1L
-  while(i<=length(chars)) { if(chars[i]=="%") {i<-i+1L;out<-paste0(out,values[[chars[i]]])} else out<-paste0(out,chars[i]);i<-i+1L }
+  out<-rep("",length(d))
+  for(i in seq_along(tokens)) out<-paste0(out,if(names(tokens)[i]=="directive") values[[tokens[i]]] else tokens[i])
   out[is.na(d)]<-NA_character_;out
 }
 .dateFactor <- function(keys,levels,s,order=NULL,public=levels) {
@@ -202,10 +216,11 @@
   if(p=="relative_days") {out<-as.integer(lo-anchor);out[is.na(hi)|lo!=hi]<-NA_integer_;return(out)}
   if(p=="day" && r!="factor") {lo[is.na(hi)|lo!=hi]<-NA;return(lo)}
   period<-.datePeriod(lo,s);endperiod<-.datePeriod(hi,s)
-  keys<-if(p=="custom") .dateRender(lo,s$pattern) else period$key
+  tokens<-if(p=="custom") .datePatternTokens(s$pattern) else NULL
+  keys<-if(p=="custom") .dateRender(lo,tokens=tokens) else period$key
   invalid<-is.na(lo)|is.na(hi)
   if(p=="custom") {
-    for(i in which(!invalid & lo!=hi)) if(length(unique(.dateRender(seq(lo[i],hi[i],by="day"),s$pattern)))!=1L) invalid[i]<-TRUE
+    for(i in which(!invalid & lo!=hi)) if(length(unique(.dateRender(seq(lo[i],hi[i],by="day"),tokens=tokens)))!=1L) invalid[i]<-TRUE
   } else invalid<-invalid|is.na(period$key)|period$key!=endperiod$key
   keys[invalid]<-NA_character_
   if(r %in% c("start","end")) {out<-period[[r]];out[invalid]<-NA;return(out)}
@@ -218,17 +233,24 @@
   public<-character()
   if(!is.null(s$level_range)) {
     days<-seq(as.Date(s$level_range[[1]]),as.Date(s$level_range[[2]]),by="day")
-    public<-if(p=="custom") .dateRender(days,s$pattern) else .datePeriod(days,s)$key
+    public<-if(p=="custom") .dateRender(days,tokens=tokens) else .datePeriod(days,s)$key
   }
   levels<-unique(c(keys[!is.na(keys)],public,names(unlist(s$labels))))
   if(p=="custom") {
-    hasyear<-grepl("%[YG]",s$pattern)
-    years<-if(hasyear) sort(unique(c(.dateY(lo),.dateY(hi),if(length(public)) .dateY(as.Date(unlist(s$level_range)))))) else 2000:2399
-    if(length(s$labels)) years<-union(years,.dateKeyYears(names(unlist(s$labels)),s$pattern))
-    years<-unique(c(years-1L,years,years+1L))
-    years<-years[!is.na(years)&years>=1L&years<=9999L]
+    hasyear<-any(tokens[names(tokens)=="directive"] %in% c("Y","G"))
+    if(hasyear) {
+      years<-unique(c(.dateY(lo),.dateY(hi),if(length(public)) .dateY(as.Date(unlist(s$level_range)))))
+      if(length(s$labels)) years<-union(years,.dateKeyYears(names(unlist(s$labels)),tokens=tokens))
+      # ISO week-years can cross calendar boundaries; keep this calendar sorted.
+      years<-sort(unique(c(years-1L,years,years+1L)))
+      years<-years[!is.na(years)&years>=1L&years<=9999L]
+    } else {
+      # A-28 fixes the first-appearance order to this exact Gregorian cycle.
+      years<-2000:2399
+      if(length(s$labels)) .dateKeyYears(names(unlist(s$labels)),tokens=tokens)
+    }
     calendar<-if(length(years)) do.call(c,lapply(years,function(y) seq(.dateMake(y,1,1),.dateMake(y,12,31),by="day"))) else as.Date(character())
-    rendered<-.dateRender(calendar,s$pattern);reference<-unique(rendered);levels<-levels[order(match(levels,reference),levels)]
+    rendered<-.dateRender(calendar,tokens=tokens);reference<-unique(rendered);levels<-levels[order(match(levels,reference),levels)]
     ranks<-as.numeric(calendar[match(levels,rendered)])
     if(anyNA(ranks)) .dateReject("Custom label keys are not valid rendered calendar dates.")
   } else {
@@ -323,14 +345,15 @@
   invisible(TRUE)
 }
 
-.dateKeyYears <- function(keys,pattern) {
-  chars<-strsplit(pattern,"",fixed=TRUE)[[1]];re<-"^";i<-1L;has<-FALSE
-  tokens<-c(Y="([0-9]{4})",G="([0-9]{4})",m="[0-9]{2}",d="[0-9]{2}",j="[0-9]{3}",V="[0-9]{2}",u="[1-7]",b="[A-Za-z]{3}",B="[A-Za-z]+",a="[A-Za-z]{3}",A="[A-Za-z]+","%"="%")
-  while(i<=length(chars)) {
-    ch<-chars[i]
-    if(ch=="%") {i<-i+1L;ch<-chars[i];re<-paste0(re,tokens[[ch]]);if(ch %in% c("Y","G"))has<-TRUE}
-    else re<-paste0(re,if(ch %in% c(".","(",")"))paste0("\\",ch) else ch)
-    i<-i+1L
+.dateKeyYears <- function(keys,pattern,tokens=.datePatternTokens(pattern)) {
+  re<-"^";has<-FALSE
+  expressions<-c(Y="([0-9]{4})",G="([0-9]{4})",m="[0-9]{2}",d="[0-9]{2}",j="[0-9]{3}",V="[0-9]{2}",u="[1-7]",b="[A-Za-z]{3}",B="[A-Za-z]+",a="[A-Za-z]{3}",A="[A-Za-z]+","%"="%")
+  for(i in seq_along(tokens)) {
+    ch<-tokens[i]
+    if(names(tokens)[i]=="directive") {
+      re<-paste0(re,expressions[[ch]])
+      if(ch %in% c("Y","G")) has<-TRUE
+    } else re<-paste0(re,if(ch %in% c(".","(",")"))paste0("\\",ch) else ch)
   }
   re<-paste0(re,"$")
   if(any(!grepl(re,keys))) .dateReject("Label keys must match the declared calendar pattern.")

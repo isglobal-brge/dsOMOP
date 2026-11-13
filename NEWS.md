@@ -2,6 +2,14 @@
 
 ## Date presentation (A-28 / CR-29)
 
+- Corrected (DATES-B1–B3): native date reducers and raw date columns apply the
+  effective invalid/domain/future policy after selection and before presentation.
+  A selected date beyond `as_of` becomes NA; no earlier event is substituted.
+  Yearless custom factors use first appearance in exactly 2000–2399, and escaped
+  percent directives are literal text in validation, rendering and label keys.
+  Re-execute affected recipes to refresh values and ordered-factor contrasts;
+  no declaration changes are needed. Active `%Y-W%V` remains refused: use `%G-W%V`.
+
 - Newly permitted: `omop_date_spec()`, `omop_date()`, `omop_date_components()`,
   `omop_date_parts()`, `omop_time_between()` and `omop_age_at()` compose native
   calendar dates, periods, partial dates, date parts and independently anchored
