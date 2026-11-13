@@ -843,7 +843,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_prediabetes": {
       "source": {
@@ -872,7 +874,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_htn1": {
       "source": {
@@ -901,7 +905,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_htn2": {
       "source": {
@@ -930,7 +936,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_mi": {
       "source": {
@@ -959,7 +967,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_mi2": {
       "source": {
@@ -988,7 +998,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_ckd": {
       "source": {
@@ -1017,7 +1029,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_af": {
       "source": {
@@ -1046,7 +1060,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_hf": {
       "source": {
@@ -1075,7 +1091,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_hld": {
       "source": {
@@ -1104,7 +1122,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_obesity": {
       "source": {
@@ -1133,7 +1153,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_pregnancy": {
       "source": {
@@ -1162,7 +1184,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_stroke": {
       "source": {
@@ -1191,7 +1215,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_stroke2": {
       "source": {
@@ -1220,7 +1246,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_sepsis": {
       "source": {
@@ -1249,7 +1277,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_cirrhosis": {
       "source": {
@@ -1278,7 +1308,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_asthma": {
       "source": {
@@ -1307,7 +1339,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_copd": {
       "source": {
@@ -1336,7 +1370,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_chest_pain": {
       "source": {
@@ -1365,7 +1401,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_resp_inf": {
       "source": {
@@ -1394,7 +1432,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_prior_bleed": {
       "source": {
@@ -1423,7 +1463,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_major_bleed": {
       "source": {
@@ -1452,7 +1494,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_malignancy": {
       "source": {
@@ -1481,7 +1525,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_chronic_pain": {
       "source": {
@@ -1510,7 +1556,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_htn_comp": {
       "source": {
@@ -1539,7 +1587,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "cond_covar2": {
       "source": {
@@ -1568,7 +1618,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "drug_metformin": {
       "source": {
@@ -1597,7 +1649,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "drug_insulin": {
       "source": {
@@ -1626,7 +1680,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "drug_statin": {
       "source": {
@@ -1655,7 +1711,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "drug_warfarin": {
       "source": {
@@ -1684,7 +1742,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "drug_acei": {
       "source": {
@@ -1713,7 +1773,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "drug_arb": {
       "source": {
@@ -1742,7 +1804,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "drug_beta_blocker": {
       "source": {
@@ -1771,7 +1835,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "drug_diuretic": {
       "source": {
@@ -1800,7 +1866,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "drug_doac": {
       "source": {
@@ -1829,7 +1897,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "drug_sglt2": {
       "source": {
@@ -1858,7 +1928,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "proc_dialysis": {
       "source": {
@@ -1887,7 +1959,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "proc_pci": {
       "source": {
@@ -1916,7 +1990,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "proc_bariatric": {
       "source": {
@@ -1945,7 +2021,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "proc_cath": {
       "source": {
@@ -1974,7 +2052,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "age": {
       "derived": {
@@ -1983,12 +2063,16 @@
         "bands": false,
         "reference_date": null,
         "age_breaks": null
-      }
+      },
+      "labels": {},
+      "column_names": {}
     },
     "sex": {
       "derived": {
         "kind": "sex_mf"
-      }
+      },
+      "labels": {},
+      "column_names": {}
     },
     "hba1c_last": {
       "source": {
@@ -2017,7 +2101,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "glucose_last": {
       "source": {
@@ -2046,13 +2132,17 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "charlson": {
       "derived": {
         "kind": "charlson",
         "reference_date": null
-      }
+      },
+      "labels": {},
+      "column_names": {}
     }
   },
   "outputs": {
@@ -2124,7 +2214,9 @@
   "options": {
     "translate_concepts": true,
     "block_sensitive": true,
-    "factor_concepts": true
+    "factor_concepts": true,
+    "labels": {},
+    "column_names": {}
   },
   "concept_sets": {},
   "intervals": {},

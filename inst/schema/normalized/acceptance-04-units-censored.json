@@ -215,7 +215,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "a1c_n_ge65": {
       "source": {
@@ -244,7 +246,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "a1c_n_uncensored": {
       "source": {
@@ -273,7 +277,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "a1c_n_known_unit": {
       "source": {
@@ -302,7 +308,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "a1c_max": {
       "source": {
@@ -331,7 +339,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     }
   },
   "outputs": {
@@ -363,7 +373,9 @@
   "options": {
     "translate_concepts": true,
     "block_sensitive": true,
-    "factor_concepts": true
+    "factor_concepts": true,
+    "labels": {},
+    "column_names": {}
   },
   "concept_sets": {},
   "intervals": {},

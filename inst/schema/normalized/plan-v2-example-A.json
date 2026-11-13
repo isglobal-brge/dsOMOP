@@ -9,7 +9,9 @@
   "options": {
     "translate_concepts": true,
     "block_sensitive": true,
-    "factor_concepts": true
+    "factor_concepts": true,
+    "labels": {},
+    "column_names": {}
   },
   "concept_sets": {
     "t2dm": {
@@ -200,12 +202,16 @@
         "reference_date": null,
         "bands": false,
         "age_breaks": null
-      }
+      },
+      "labels": {},
+      "column_names": {}
     },
     "sex": {
       "derived": {
         "kind": "sex_mf"
-      }
+      },
+      "labels": {},
+      "column_names": {}
     },
     "hba1c_base": {
       "source": {
@@ -234,7 +240,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     }
   },
   "outputs": {

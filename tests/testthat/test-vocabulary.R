@@ -209,13 +209,13 @@ test_that("explicit concept expansion and translation fail closed", {
   )
 
   testthat::local_mocked_bindings(
-    .vocabLookupConcepts = function(...) stop("lookup unavailable"),
+    .executeQuery = function(...) stop("lookup unavailable"),
     .package = "dsOMOP"
   )
   expect_error(
     .vocabTranslateColumns(
       handle, data.frame(condition_concept_id = 201820L)
     ),
-    "Concept translation failed"
+    "lookup unavailable"
   )
 })

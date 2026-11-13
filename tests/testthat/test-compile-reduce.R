@@ -188,10 +188,12 @@ test_that("derived, raw and population columns; native scores at the index (A-2)
     expect_identical(v(7001, "gender"), 8507L, info = b)
     expect_identical(unique(f$src), "cohort:1", info = b)
   }
-  # translate_concepts (default TRUE) names concept-valued raw and derived columns
+  # A-27 keeps private reducer values as IDs and carries their concept class;
+  # the publication boundary supplies the final labelled factors.
   plan2 <- .ws7_scenario_plan(list(gender = list(raw = list(table = "person", column = "gender_concept_id"))))
-  f <- .ws7_scenario_run(.ws7_red_backends$sqlite$handle, plan2)$frame
-  expect_type(f$gender, "character")
+  compiled <- .ws7_scenario_run(.ws7_red_backends$sqlite$handle, plan2)
+  expect_type(compiled$frame$gender, "integer")
+  expect_identical(compiled$compiled$components$o$fragment$columns$gender$role, "concept")
   # class-1 and identifier columns are refused
   bad <- .ws7_scenario_plan(list(psv = list(raw = list(table = "person", column = "person_source_value"))))
   .ws4_expect_rejection(.ws7_scenario_run(.ws7_red_backends$sqlite$handle, bad), pattern = "class-1")

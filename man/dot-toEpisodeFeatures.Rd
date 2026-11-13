@@ -10,7 +10,8 @@
   specs = NULL,
   roster,
   date_col = NULL,
-  default_concept_col = NULL
+  default_concept_col = NULL,
+  handle = NULL
 )
 }
 \arguments{
@@ -26,6 +27,8 @@ cohort episode, including episodes with no qualifying event.}
 \item{date_col}{Optional event date column.}
 
 \item{default_concept_col}{Optional default concept column.}
+
+\item{handle}{Optional OMOP handle for declared concept classes.}
 }
 \value{
 Data frame with one row per cohort episode.

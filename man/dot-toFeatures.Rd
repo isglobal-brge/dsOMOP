@@ -10,7 +10,8 @@
   specs = NULL,
   person_ids = NULL,
   date_col = NULL,
-  default_concept_col = NULL
+  default_concept_col = NULL,
+  handle = NULL
 )
 }
 \arguments{
@@ -27,6 +28,8 @@ records receive zero for occurrence features and NA for value features.}
 
 \item{default_concept_col}{Optional domain concept column resolved from the
 blueprint; individual specs may override it with \code{concept_col}.}
+
+\item{handle}{Optional OMOP handle for declared concept classes.}
 }
 \value{
 Data frame with one row per person

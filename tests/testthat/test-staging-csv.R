@@ -1,0 +1,17 @@
+test_that('CSV codec separates missingness from arbitrary literal text across chunks', {
+  text <- c('NA', NA_character_, '', '\\NA', '\\\\NA', ' a ',
+            'quoted \"text\", comma', 'line1\nline2', '\u2003x\u00a0')
+  frame <- data.frame(text=rep(text, length.out=50004L), key=seq_len(50004L))
+  path <- tempfile(fileext='.csv'); withr::defer(unlink(path))
+  .stagedWriteCsv(frame[1:25000,],path)
+  .stagedWriteCsv(frame[25001:nrow(frame),],path,col.names=FALSE,append=TRUE)
+  descriptor <- list(metadata=list(file=path,format='csv',columns=names(frame),csv_encoding='backslash-v1'))
+  chunks <- list()
+  .publishReadChunks(descriptor,function(x) chunks[[length(chunks)+1L]] <<- x)
+  expect_identical(vapply(chunks,nrow,0L),c(50000L,4L))
+  restored <- do.call(rbind,chunks)
+  expect_identical(restored$text,frame$text)
+  expect_identical(restored$key,as.character(frame$key))
+  expect_identical(table(restored$text,useNA='always'),table(frame$text,useNA='always'))
+  expect_error(.stagedDecodeCsv(restored,'unknown'), 'Unsupported')
+})

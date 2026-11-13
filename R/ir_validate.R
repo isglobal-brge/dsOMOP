@@ -659,7 +659,7 @@
 #' Operations of section 4.4 a plan uses
 #' @keywords internal
 .irOperations <- function(ir) {
-  ops <- character(0)
+  ops <- if (.conceptNeedsPresentation(ir)) "output.concept_labels" else character(0)
   op <- function(...) ops <<- c(ops, ...)
   if (length(ir[["concept_sets"]]) || any(vapply(ir[["events"]] %||% list(), function(e) !is.null(e[["concept_set"]]), logical(1)))) op("concept_set")
   for (e in ir[["events"]] %||% list()) {
@@ -1267,6 +1267,7 @@
 #'   failing stage.
 #' @keywords internal
 .irValidate <- function(ir, handle = NULL, v1_plan = NULL) {
+  tryCatch(.conceptValidatePlan(ir, wire = TRUE), error = function(e) .irReject(conditionMessage(e)))
   errors <- .irSemanticErrors(ir)
   if (length(errors)) .irRejectAll("plan fails the semantic rules", errors)
   ops <- .irOperations(ir)

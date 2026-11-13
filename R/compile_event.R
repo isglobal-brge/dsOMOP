@@ -411,7 +411,7 @@
     range_low = list(type = "numeric"), range_high = list(type = "numeric"),
     unit_unknown = list(type = "integer"))
   for (col in names(plan$others)) {
-    columns[[col]] <- list(type = plan$others[[col]], concept = grepl("_concept_id$", col))
+    columns[[col]] <- list(type = plan$others[[col]], concept = .conceptDeclaredColumn(col, plan$col_df))
   }
   aliases <- character(0)
   add_alias <- function(raw, to) if (!is.null(raw) && !raw %in% names(columns)) aliases[[raw]] <<- to

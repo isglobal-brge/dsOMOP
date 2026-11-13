@@ -276,6 +276,8 @@
 #' Read a private staged materialisation in bounded chunks
 #' @keywords internal
 .publishReadChunks <- function(descriptor, callback) {
+  consume <- callback
+  callback <- function(frame) consume(.conceptCollectChunk(frame, descriptor))
   path <- descriptor$metadata$file
   if (descriptor$metadata$format == "parquet") {
     reader <- arrow::ParquetFileReader$create(path)
@@ -296,6 +298,7 @@
         as.data.frame(stats::setNames(rep(list(character(0)), length(descriptor$metadata$columns)),
                                       descriptor$metadata$columns))
       })
+      chunk <- .stagedDecodeCsv(chunk, descriptor$metadata$csv_encoding)
       callback(chunk)
       if (nrow(chunk) < 50000L) break
     }
@@ -421,6 +424,15 @@
       if (!isTRUE(ctx$prepared[[id]]$already_tokenized)) {
         value <- .pseudonymizeIdentifiers(value, .personKey(ctx$handle), .personKeyPublicContract(ctx$handle))
       }
+    }
+    if (is.data.frame(value)) {
+      columns <- attr(value, "omop_column_contract")
+      if (is.null(columns) && !.dsomopDpIsV2(ctx$ir)) columns <- .conceptLegacyColumns(ctx, value, pc$output, pc$component)
+      attr(value, "omop_concept_reference") <- identical(pc$grain, "none")
+      if (!is.null(columns)) value <- .conceptPresent(ctx, value, columns)
+    }
+    if (inherits(value, "FlowerDatasetDescriptor") && !.dsomopDpIsV2(ctx$ir)) {
+      value <- .conceptStagePresent(ctx, value, root = pc$output, component = pc$component, reference = identical(pc$grain, "none"))
     }
     .publishInject(ctx, "tokenize")
     if (is.function(ctx$seal)) value <- ctx$seal(value, pc)

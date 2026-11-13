@@ -71,12 +71,16 @@
         "bands": true,
         "reference_date": null,
         "age_breaks": null
-      }
+      },
+      "labels": {},
+      "column_names": {}
     },
     "sex": {
       "derived": {
         "kind": "sex_mf"
-      }
+      },
+      "labels": {},
+      "column_names": {}
     },
     "prior_obs": {
       "derived": {
@@ -86,7 +90,9 @@
           "end": 0,
           "anchor": "index"
         }
-      }
+      },
+      "labels": {},
+      "column_names": {}
     }
   },
   "outputs": {
@@ -116,7 +122,9 @@
   "options": {
     "translate_concepts": true,
     "block_sensitive": true,
-    "factor_concepts": true
+    "factor_concepts": true,
+    "labels": {},
+    "column_names": {}
   },
   "intervals": {},
   "publish": [

@@ -2026,8 +2026,7 @@
       # Restrict formatting to the writer; chunk transforms and tokenisation
       # must continue to see the caller's numeric options.
       old_options <- options(scipen = 999)
-      tryCatch(utils::write.table(chunk, output_path,
-                  sep = ",", row.names = FALSE,
+      tryCatch(.stagedWriteCsv(chunk, output_path,
                   col.names = (n_rows == 0L),
                   append = (n_rows > 0L)),
                finally = options(old_options))
@@ -2051,7 +2050,7 @@
     column_types <- empty_column_types
     if (use_parquet) open_parquet_writer(empty)
     if (!use_parquet) {
-      utils::write.table(empty, output_path, sep = ",", row.names = FALSE,
+      .stagedWriteCsv(empty, output_path,
                   col.names = TRUE)
     }
   }
@@ -2089,6 +2088,7 @@
   list(
     file = output_path,
     format = fmt,
+    csv_encoding = if (!use_parquet) "backslash-v1" else NULL,
     layout = layout,
     parts = NULL,
     n_rows = n_rows,
@@ -2787,12 +2787,12 @@
         .toEpisodeFeatures(
           result, table, feature_specs, roster = feature_roster,
           date_col = feature_date_col,
-          default_concept_col = feature_concept_col
+          default_concept_col = feature_concept_col, handle = handle
         )
       } else {
         .toFeatures(
           result, table, feature_specs, person_ids = feature_person_ids,
-          date_col = feature_date_col, default_concept_col = feature_concept_col
+          date_col = feature_date_col, default_concept_col = feature_concept_col, handle = handle
         )
       }
       if (translate_concepts && is.data.frame(empty_feat)) {
@@ -2881,12 +2881,12 @@
       .toEpisodeFeatures(
         result, table, feature_specs, roster = feature_roster,
         date_col = feature_date_col,
-        default_concept_col = feature_concept_col
+        default_concept_col = feature_concept_col, handle = handle
       )
     } else {
       .toFeatures(
         result, table, feature_specs, person_ids = feature_person_ids,
-        date_col = feature_date_col, default_concept_col = feature_concept_col
+        date_col = feature_date_col, default_concept_col = feature_concept_col, handle = handle
       )
     },
     "sparse" = .toSparse(
@@ -3198,54 +3198,10 @@
          call. = FALSE)
   }
 
-  concept_name_map <- character(0)
-  numeric_concepts <- suppressWarnings(as.numeric(as.character(concepts)))
-  integer_concepts <- suppressWarnings(as.integer(as.character(concepts)))
-  exact_numeric <- length(concepts) > 0L & !is.na(integer_concepts) &
-    is.finite(numeric_concepts) & numeric_concepts == integer_concepts
-  if (isTRUE(translate_concepts) && !is.null(handle) && any(exact_numeric)) {
-    concept_rows <- tryCatch(
-      .vocabLookupConcepts(handle, unique(integer_concepts[exact_numeric])),
-      error = function(e) data.frame()
-    )
-    if (nrow(concept_rows) > 0L) {
-      concept_name_map <- stats::setNames(
-        as.character(concept_rows$concept_name),
-        as.character(concept_rows$concept_id)
-      )
-    }
-  }
-
-  label_for_concept <- stats::setNames(
-    vapply(concepts, function(concept) {
-      fallback <- .standardizeName(as.character(concept))
-      if (is.na(fallback) || !nzchar(fallback)) {
-        fallback <- paste0("concept_", concept)
-      }
-      if (!isTRUE(translate_concepts) || is.null(handle)) return(fallback)
-
-      numeric_id <- suppressWarnings(as.numeric(as.character(concept)))
-      integer_id <- suppressWarnings(as.integer(as.character(concept)))
-      if (length(numeric_id) != 1L || !is.finite(numeric_id) ||
-          is.na(integer_id) || numeric_id != integer_id) {
-        return(fallback)
-      }
-      readable_name <- unname(concept_name_map[as.character(integer_id)])
-      readable <- if (length(readable_name) == 1L && !is.na(readable_name)) {
-        .standardizeName(readable_name)
-      } else {
-        ""
-      }
-      if (is.na(readable) || !nzchar(readable)) readable <- "unknown"
-      paste0("concept_", integer_id, "__", readable)
-    }, character(1)),
-    as.character(concepts)
-  )
-  if (anyDuplicated(unname(label_for_concept))) {
-    stop("Wide concept labels are not unique; retain numeric concept IDs or ",
-         "narrow the concept set.", call. = FALSE)
-  }
-
+  # Stable untranslated keys survive until publication and federation naming.
+  label_for_concept <- setNames(vapply(concepts, function(id) .standardizeName(as.character(id)), ""), as.character(concepts))
+  contract <- list()
+  registry <- if (!is.null(handle)) .buildBlueprint(handle)$columns[[table]] else NULL
   for (concept in concepts) {
     concept_data <- df[df[[concept_col]] == concept, , drop = FALSE]
     concept_label <- unname(label_for_concept[[as.character(concept)]])
@@ -3253,6 +3209,16 @@
     for (vcol in value_cols) {
       if (vcol == ".seq") next
       col_name <- paste0(concept_label, ".", vcol)
+      desc <- .fragmentColumn(if (.conceptDeclaredColumn(vcol, registry)) "integer" else "numeric",
+                              TRUE, if (.conceptDeclaredColumn(vcol, registry)) "concept" else "measure")
+      attr(desc, "concept_name") <- list(id = as.character(concept), prefix = "", suffix = paste0(".", vcol), legacy = TRUE,
+                                         owner = NULL, declared = !is.null(expected_concepts))
+      observed_support <- if ("person_id" %in% names(concept_data)) length(unique(concept_data$person_id)) else 0L
+      permitted <- observed_support >= .omopDisclosureSettings()$nfilter_tab && tryCatch({
+        .assertSafeLevels(length(concepts), length(unique(df$person_id))); TRUE
+      }, error = function(e) FALSE)
+      attr(desc, "concept_name")$permitted <- permitted
+      contract[[col_name]] <- desc
       first_occ <- concept_data[concept_data$.seq == 1, c(group_cols, vcol),
                                 drop = FALSE]
       names(first_occ)[length(group_cols) + 1L] <- col_name
@@ -3265,6 +3231,10 @@
                                  sep = "\r"))
   wide <- wide[match(roster_key, landed_key), , drop = FALSE]
   rownames(wide) <- NULL
+  attr(wide, "omop_column_contract") <- contract
+  if (isTRUE(translate_concepts) && !is.null(handle)) {
+    wide <- .conceptPresent(list(handle = handle, ir = list()), wide, contract)
+  }
   wide
 }
 
@@ -3413,10 +3383,11 @@
 #' @param date_col Optional OMOP event date column resolved from the blueprint.
 #' @param default_concept_col Optional domain concept column resolved from the
 #'   blueprint; individual specs may override it with \code{concept_col}.
+#' @param handle Optional OMOP handle for declared concept classes.
 #' @return Data frame with one row per person
 #' @keywords internal
 .toFeatures <- function(df, table, specs = NULL, person_ids = NULL,
-                        date_col = NULL, default_concept_col = NULL) {
+                        date_col = NULL, default_concept_col = NULL, handle = NULL) {
   if (!"person_id" %in% names(df)) return(df)
 
   # Find concept column
@@ -3560,8 +3531,12 @@
     rep(NA_real_, length(persons))
   }
 
+  column_contract <- list()
+  registry <- if (!is.null(handle)) .buildBlueprint(handle)$columns[[table]] else NULL
+
   # Helper: generate one feature column
   .add_feature <- function(features, spec, concept_data, concept_str, df) {
+    before <- names(features)
     # Determine label
     if (!is.null(spec) && !is.null(spec$name) && nchar(spec$name) > 0) {
       label <- spec$name
@@ -3947,6 +3922,20 @@
       }
     }
 
+    for (col in setdiff(names(features), before)) {
+      desc <- .fragmentColumn("numeric", TRUE, "measure")
+      if (!is.null(spec_type) && spec_type %in% c("first_value", "latest_value", "min_value", "max_value") &&
+          .conceptDeclaredColumn(val_col, registry)) attr(desc, "concept") <- TRUE
+      if (is.null(spec_type)) {
+        support <- length(unique(concept_data$person_id))
+        attr(desc, "concept_name") <- list(id = concept_str, prefix = "", suffix = substring(col, nchar(label) + 1L),
+          legacy = TRUE, owner = NULL, declared = FALSE,
+          permitted = support >= .omopDisclosureSettings()$nfilter_tab && tryCatch({
+            .assertSafeLevels(length(unique(df[[concept_col]])), length(persons)); TRUE
+          }, error = function(e) FALSE))
+      }
+      column_contract[[col]] <<- desc
+    }
     features
   }
 
@@ -4104,6 +4093,7 @@
     stop("Features exceeded the server output-column cap after reduction.",
          call. = FALSE)
   }
+  if (length(column_contract)) attr(features, "omop_column_contract") <- column_contract
   features
 }
 
@@ -4121,11 +4111,12 @@
 #'   cohort episode, including episodes with no qualifying event.
 #' @param date_col Optional event date column.
 #' @param default_concept_col Optional default concept column.
+#' @param handle Optional OMOP handle for declared concept classes.
 #' @return Data frame with one row per cohort episode.
 #' @keywords internal
 .toEpisodeFeatures <- function(df, table, specs = NULL, roster,
                                date_col = NULL,
-                               default_concept_col = NULL) {
+                               default_concept_col = NULL, handle = NULL) {
   required_roster <- c("cohort_row_id", "person_id")
   if (!is.data.frame(roster) ||
       !all(required_roster %in% names(roster)) ||
@@ -4149,7 +4140,7 @@
     episode_df, table, specs,
     person_ids = roster$cohort_row_id,
     date_col = date_col,
-    default_concept_col = default_concept_col
+    default_concept_col = default_concept_col, handle = handle
   )
   zero_fill <- attr(features, "omop_zero_fill", exact = TRUE)
   names(features)[names(features) == "person_id"] <- "cohort_row_id"
@@ -4378,6 +4369,12 @@
       any(!covariates$rowId %in% person_ref$rowId)) {
     stop("Sparse covariates contain a rowId outside personRef.",
          call. = FALSE)
+  }
+  if (!is.null(concept_col)) {
+    ids <- unique(as.character(df[[concept_col]][!is.na(df[[concept_col]])]))
+    attr(covariateRef, "omop_reference_support") <- list(
+      counts = setNames(vapply(ids, function(id) length(unique(df$person_id[which(as.character(df[[concept_col]]) == id)])), 0L), ids),
+      total = length(unique(df$person_id)))
   }
   list(covariates = covariates, covariateRef = covariateRef,
        personRef = person_ref)
@@ -5951,6 +5948,13 @@
     }
   }
 
+  if (is.null(resolved_concepts)) {
+    ids <- as.character(concepts)
+    attr(covariate_ref, "omop_reference_support") <- list(
+      counts = setNames(vapply(ids, function(id) length(unique(events$person_id[
+        which(as.character(events[[concept_col]]) == id)])), 0L), ids),
+      total = length(unique(person_ref$person_id)))
+  }
   list(
     temporalCovariates = covariates,
     covariateRef = covariate_ref,
