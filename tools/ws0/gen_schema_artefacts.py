@@ -50,6 +50,9 @@ name_map = {"type": "object", "default": {},
 for node in [plan["properties"]["options"]] + plan["$defs"]["variable"]["oneOf"]:
     node["properties"]["labels"] = copy.deepcopy(label_map)
     node["properties"]["column_names"] = copy.deepcopy(name_map)
+# A-28 / CR-29: approved native date system.
+from date_schema import apply as apply_date_schema
+apply_date_schema(plan)
 mutate = by_id["https://isglobal-brge.github.io/dsOMOP/schema/mutate-v1.json"]
 examples = [b for b in blocks if b.get("version") == 2]
 assert len(examples) == 2, "expected the two canonical examples"

@@ -660,6 +660,9 @@
 #' @keywords internal
 .irOperations <- function(ir) {
   ops <- if (.conceptNeedsPresentation(ir)) "output.concept_labels" else character(0)
+  date_vars <- ir$variables
+  if (!is.null(ir$options$date_spec) || any(vapply(date_vars, function(v) !is.null(v$date_spec) || (v$derived$kind %||% "") %in% c("calendar_date", "date_part"), logical(1)))) ops <- c(ops, "date.presentation")
+  if (any(vapply(date_vars, function(v) (v$derived$kind %||% "") %in% c("time_between", "age_at"), logical(1)))) ops <- c(ops, "date.elapsed")
   op <- function(...) ops <<- c(ops, ...)
   if (length(ir[["concept_sets"]]) || any(vapply(ir[["events"]] %||% list(), function(e) !is.null(e[["concept_set"]]), logical(1)))) op("concept_set")
   for (e in ir[["events"]] %||% list()) {

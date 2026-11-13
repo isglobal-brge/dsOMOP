@@ -546,7 +546,7 @@
   if (!is.list(x)) return(out)
   nm <- names(x)
   if (!is.null(nm)) {
-    for (key in intersect(nm, c("anchor", "reference"))) {
+    for (key in intersect(nm, c("anchor", "reference", "from", "to"))) {
       a <- x[[key]]
       if (is.list(a) && !is.null(a[["source"]])) out <- c(out, list(a))
     }

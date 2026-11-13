@@ -62,8 +62,9 @@
 }
 
 .conceptPresent <- function(ctx, frame, columns) {
+  frame <- .dateCapture(frame, columns)
   if (!.reduceTranslate(ctx)) return(frame)
-  contracts <- list()
+  contracts <- attr(frame, "omop_concepts") %||% list()
   for (col in intersect(names(columns), names(frame))) {
     if (!.conceptColumn(columns[[col]])) next
     owner <- attr(columns[[col]], "concept_owner")
@@ -222,7 +223,7 @@
     reference_support <- attr(df, "omop_reference_support")
     if (!is.null(reference_support)) .assertSafeLevels(length(ids), reference_support$total)
     values <- labels[match(c$ids, ids)]
-    df[[col]] <- .conceptFactor(values, levels = levels)
+    df[[col]] <- if (identical(c$kind, "date")) ordered(values, levels = levels) else .conceptFactor(values, levels = levels)
     if (identical(col, table_column)) {
       # One token per resolved category, including deliberate recode merges.
       # Only ASCII tokens cross dsBase's comma-delimited level transport.
@@ -320,6 +321,7 @@
   handle <- .getHandle(key)
   for (col in names(contracts)) {
     old <- contracts[[col]]$records
+    if (identical(contracts[[col]]$kind, "date")) next
     fresh <- .conceptVocabulary(handle, names(old))
     for (id in names(old)) if (old[[id]]$origin %in% c('variable','recipe')) {
       fresh[[id]]$origin <- old[[id]]$origin; fresh[[id]]$label <- old[[id]]$label

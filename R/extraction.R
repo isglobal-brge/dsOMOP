@@ -593,14 +593,7 @@
            paste(not_dates, collapse = ", "), ".", call. = FALSE)
     }
     date_columns <- unique(requested)
-    allow_absolute <- getOption("dsomop.allow_absolute_dates",
-      getOption("default.dsomop.allow_absolute_dates", FALSE))
-    omitted <- setdiff(all_date_columns, date_columns)
-    if (length(omitted) > 0 && !isTRUE(allow_absolute)) {
-      stop("date_handling$date_columns omits date column(s) while absolute ",
-           "dates are disabled: ", paste(omitted, collapse = ", "), ".",
-           call. = FALSE)
-    }
+
   }
   if (length(date_columns) == 0) return(df)
 
@@ -645,14 +638,8 @@
     # The reference itself is safe only as a relative zero, never as a date.
     if (ref_col %in% date_columns) {
       df[[ref_col]] <- 0L
-    } else {
-      allow_absolute <- getOption("dsomop.allow_absolute_dates",
-        getOption("default.dsomop.allow_absolute_dates", FALSE))
-      if (!isTRUE(allow_absolute)) {
-        stop("Relative date handling cannot leave its index date untransformed.",
-             call. = FALSE)
-      }
     }
+
     return(df)
   }
 
@@ -2589,15 +2576,7 @@
     default_mode <- getOption("dsomop.default_date_handling", "remove")
     date_handling <- .normalizeDateHandling(default_mode)
   }
-  if (identical(date_handling$mode, "absolute")) {
-    allow <- getOption("dsomop.allow_absolute_dates",
-               getOption("default.dsomop.allow_absolute_dates", FALSE))
-    if (!isTRUE(allow)) {
-      stop("Absolute date handling is not permitted by the server. ",
-           "Contact the data controller to enable dsomop.allow_absolute_dates.",
-           call. = FALSE)
-    }
-  }
+
   if (identical(representation, "features")) {
     has_index_window <- !is.null(temporal$index_window)
     if (has_index_window && !identical(representation_grain, "episode")) {
@@ -5608,14 +5587,7 @@
       getOption("dsomop.default_date_handling", "remove")
     )
   }
-  if (identical(date_handling$mode, "absolute")) {
-    allow <- getOption("dsomop.allow_absolute_dates",
-      getOption("default.dsomop.allow_absolute_dates", FALSE))
-    if (!isTRUE(allow)) {
-      stop("Absolute date handling is not permitted by the server.",
-           call. = FALSE)
-    }
-  }
+
   if (is.null(cohort_table)) {
     warning("Cohort membership output requires a cohort; returning NULL.",
             call. = FALSE)

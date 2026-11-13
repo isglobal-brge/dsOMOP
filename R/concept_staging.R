@@ -80,7 +80,7 @@
   for (col in names(meta$contracts)) {
     physical <- as.character(meta$names[[col]])
     levels <- as.character(unlist(meta$contracts[[col]]$resolved$levels, use.names = FALSE))
-    if (physical %in% names(frame)) frame[[physical]] <- .conceptFactor(as.character(frame[[physical]]), levels = levels)
+    if (physical %in% names(frame)) frame[[physical]] <- if (identical(meta$contracts[[col]]$kind, "date")) ordered(as.character(frame[[physical]]), levels = levels) else .conceptFactor(as.character(frame[[physical]]), levels = levels)
   }
   frame
 }

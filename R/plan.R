@@ -3559,14 +3559,7 @@
             default_mode <- getOption("dsomop.default_date_handling", "remove")
             dh <- .normalizeDateHandling(default_mode)
           }
-          if (identical(dh$mode, "absolute")) {
-            allow <- getOption("dsomop.allow_absolute_dates",
-                       getOption("default.dsomop.allow_absolute_dates", FALSE))
-            if (!isTRUE(allow)) {
-              stop("Absolute date handling is not permitted by the server.",
-                   call. = FALSE)
-            }
-          }
+
 
           # Capture date column for days_from_index computation
           tbl_date_col <- .getDateColumn(bp, tolower(out$table))

@@ -300,6 +300,9 @@
 .outputDateHandling <- function(frame, columns, index, dh, output) {
   dates <- names(columns)[vapply(columns, function(c) identical(c$type, "date"), logical(1))]
   if (!length(dates)) return(list(frame = frame, columns = columns))
+  native <- names(columns)[vapply(columns, function(c) !is.null(attr(c, "date_spec")), logical(1))]
+  dates <- setdiff(dates, native)
+  if (!length(dates)) return(list(frame = frame, columns = columns))
   mode <- dh[["mode"]] %||% "relative"
   requested <- as.character(unlist(dh[["date_columns"]] %||% list(), use.names = FALSE))
   if (length(requested)) {
@@ -308,23 +311,10 @@
       .irReject(paste0("date_handling date_columns names no date column: ", unknown[[1L]]),
                 field = paste0("/outputs/", output, "/options/date_handling/date_columns"))
     }
-    allow <- isTRUE(getOption("dsomop.allow_absolute_dates",
-                              getOption("default.dsomop.allow_absolute_dates", FALSE)))
-    if (!allow && length(setdiff(dates, requested))) {
-      .irReject("date_handling date_columns omits date columns while absolute dates are disabled",
-                field = paste0("/outputs/", output, "/options/date_handling/date_columns"))
-    }
     dates <- requested
   }
   switch(mode,
-    absolute = {
-      allow <- isTRUE(getOption("dsomop.allow_absolute_dates",
-                                getOption("default.dsomop.allow_absolute_dates", FALSE)))
-      if (!allow) {
-        .irReject("absolute date handling is not permitted by the server",
-                  field = paste0("/outputs/", output, "/options/date_handling/mode"))
-      }
-    },
+    absolute = NULL,
     remove = {
       frame[dates] <- NULL
       columns <- columns[setdiff(names(columns), dates)]

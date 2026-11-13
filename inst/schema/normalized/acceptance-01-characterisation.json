@@ -2201,12 +2201,6 @@
       ],
       "sources": [],
       "options": {
-        "date_handling": {
-          "mode": "relative",
-          "reference": "index",
-          "bin_width": null,
-          "date_columns": null
-        },
         "time_window": null
       }
     }
