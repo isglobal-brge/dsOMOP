@@ -1,0 +1,59 @@
+dsOMOP v2.10.3 loaded. OMOP CDM resource resolver registered.
+date-component-transport: duckdb keeps downloaded extensions and secrets in a temporary directory:
+i /tmp/RtmpyUXwXR/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+..........
+date-range: ..............................1
+date-review-fixes: duckdb keeps downloaded extensions and secrets in a temporary directory:
+i /tmp/RtmpyUXwXR/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+......................................................................................................................
+date-system-outputs: duckdb keeps downloaded extensions and secrets in a temporary directory:
+i /tmp/RtmpyUXwXR/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+..........................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+date-system-policies: duckdb keeps downloaded extensions and secrets in a temporary directory:
+i /tmp/RtmpyUXwXR/duckdb
+This is removed when the R session ends.
+* Extensions are re-downloaded each session.
+* Secrets are lost.
+i Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+i Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+i See ?duckdb_storage for details and alternatives.
+....................................
+dates-system: ..............................................................................................................................................................
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Error ('test-date-range.R:11:7'): B4 custom public ranges order all years 
+<omop_date_error/dsomop_plan_rejection/error/condition>
+Error: date_spec_invalid: Custom label keys are not valid rendered calendar dates.
+Backtrace:
+    ▆
+ 1. └─dsOMOP:::.datePresent(list(lo = observed, hi = observed), spec) at test-date-range.R:11:7
+ 2.   └─dsOMOP:::.dateReject("Custom label keys are not valid rendered calendar dates.") at dsOMOP/R/date_semantics.R:260:5
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+              file blocks failed errors
+ test-date-range.R      1      0      1
+
+FAILING TESTS
+test-date-range.R | B4 custom public ranges order all years independently of observed dates | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 1 skipped: 0 passed: 1242 

@@ -1,0 +1,26 @@
+[
+  {
+    "source": "/workspace/dsomop/design/2.10.3/astra-dates-review-2-evidence/datesReview/DESCRIPTION",
+    "copy": "tools/dates/fix2-probes/DESCRIPTION",
+    "sha256": "9ba06b236537c10d8f9f1be3c66461856a96505b28b9c073b90cc9a1a70384e0",
+    "bytes": 316
+  },
+  {
+    "source": "/workspace/dsomop/design/2.10.3/astra-dates-review-2-evidence/datesReview/NAMESPACE",
+    "copy": "tools/dates/fix2-probes/NAMESPACE",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  },
+  {
+    "source": "/workspace/dsomop/design/2.10.3/astra-dates-review-2-evidence/datesReview/tests/testthat/test-review-date-range.R",
+    "copy": "tools/dates/fix2-probes/tests/testthat/test-review-date-range.R",
+    "sha256": "b87e528738d80ed524594379445dbb46866577179ddaa6d698673e78ac87dcc4",
+    "bytes": 2361
+  },
+  {
+    "source": "/workspace/dsomop/design/2.10.3/astra-dates-review-2-evidence/datesReview/tests/testthat/test-review-dates.R",
+    "copy": "tools/dates/fix2-probes/tests/testthat/test-review-dates.R",
+    "sha256": "a86d873a4f6c5c3923acbcdbdeed06aa7894bd19bbf4cd57daa6d2649d773880",
+    "bytes": 4493
+  }
+]
