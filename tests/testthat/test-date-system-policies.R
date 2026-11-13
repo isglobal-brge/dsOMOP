@@ -60,7 +60,7 @@ test_that("D31 all native age units agree with independent birthday fixtures", {
 })
 
 test_that("D39 mixed native and legacy dates resolve policies per column", {
-  p<-.ws7_scenario_plan(list(native=.date_policy_var("index"),legacy=list(raw=list(table="death",column="death_date"))))
+  p<-.ws7_scenario_plan(list(native=.date_policy_var("index"),legacy=list(raw=list(table="observation_period",column="observation_period_start_date"))))
   h<-.date_policy_backends$sqlite$handle
   a<-.ws7_scenario_run(h,p)$frame
   expect_s3_class(a$native,"Date");expect_true(is.integer(a$legacy))
@@ -90,7 +90,7 @@ test_that("D39 D41 final presentation does not reinterpret numeric names or repe
   p$options<-list(date_spec=list(precision="month"));p$publish<-list("o")
   f<-.ws7_scenario_run(h,p)$frame
   expect_true(is.ordered(f$start_date));expect_true(is.integer(f$age))
-  p<-.ws7_scenario_plan(list(d=list(raw=list(table="death",column="death_date"))),output=list(grain="person"))
+  p<-.ws7_scenario_plan(list(d=list(raw=list(table="observation_period",column="observation_period_start_date"))),output=list(grain="person"))
   p$options<-list(date_spec=list(precision="relative_days"))
   f<-.ws7_scenario_run(h,p,frame=.ws7_scenario_frame(c(7001L,7001L),index=c("2020-01-10","2020-02-10")))$frame
   expect_equal(nrow(f),1L)
