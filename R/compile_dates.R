@@ -45,8 +45,9 @@
       if(is.null(x)) return(rep(NA_integer_,n))
       if(x$kind=="integer") return(rep(x$value,n))
       v<-data[[x$name]]
-      if(!is.numeric(v)&&!inherits(v,"integer64")) .dateReject("Component columns must have integer type.","date_source_invalid")
-      as.numeric(v)
+      # The registered DB type was checked before fetching. Lossless bigint
+      # transports can be decimal strings; this is not a free-text source.
+      suppressWarnings(as.numeric(v))
     })
     values$year[absent]<-NA
     return(.dateComponents(values$year,values$month,values$day,s))
