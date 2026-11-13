@@ -61,6 +61,28 @@
         },
         "coverage": {
           "$ref": "#/$defs/coverage"
+        },
+        "labels": {
+          "type": "object",
+          "default": {},
+          "propertyNames": {
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "column_names": {
+          "type": "object",
+          "default": {},
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
@@ -2063,6 +2085,28 @@
             "broadcast": {
               "type": "boolean",
               "default": false
+            },
+            "labels": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "column_names": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         },
@@ -2267,6 +2311,28 @@
                   }
                 }
               ]
+            },
+            "labels": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "column_names": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         },
@@ -2296,6 +2362,28 @@
                   "$ref": "#/$defs/column_name"
                 }
               }
+            },
+            "labels": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "column_names": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         },
@@ -2321,6 +2409,28 @@
                     "sampling_weight"
                   ]
                 }
+              }
+            },
+            "labels": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "column_names": {
+              "type": "object",
+              "default": {},
+              "propertyNames": {
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
               }
             }
           }

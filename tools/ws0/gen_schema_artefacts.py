@@ -40,6 +40,16 @@ for _opt in ("options_temporal", "options_person_period"):
         "propertyNames": {"$ref": "#/$defs/name"},
         "additionalProperties": {"type": "array", "minItems": 1, "uniqueItems": True,
                                  "items": {"enum": ["binary", "count", "mean", "last", "exposed_days"]}}}
+# A-27 / CR-28: semantic concept presentation maps (never v1 wire fields).
+label_map = {"type": "object", "default": {},
+             "propertyNames": {"pattern": "^(0|[1-9][0-9]*)$"},
+             "additionalProperties": {"type": "string", "minLength": 1}}
+name_map = {"type": "object", "default": {},
+            "propertyNames": {"minLength": 1},
+            "additionalProperties": {"type": "string", "minLength": 1}}
+for node in [plan["properties"]["options"]] + plan["$defs"]["variable"]["oneOf"]:
+    node["properties"]["labels"] = copy.deepcopy(label_map)
+    node["properties"]["column_names"] = copy.deepcopy(name_map)
 mutate = by_id["https://isglobal-brge.github.io/dsOMOP/schema/mutate-v1.json"]
 examples = [b for b in blocks if b.get("version") == 2]
 assert len(examples) == 2, "expected the two canonical examples"
@@ -594,6 +604,11 @@ probes.append({"id": "P48", "label": "duplicate root member `version`", "schema"
 probes.append({"id": "P49", "label": "duplicate member inside a definition map (events.hba1c.table)", "schema": "plan-v2", "expect": R,
                "instance": None, "instance_text": base_text.replace('"hba1c": {"table": "measurement",', '"hba1c": {"table": "measurement", "table": "observation",', 1)})
 assert '"factor": 1e400' in probes[-3]["instance_text"] and '"version": "wrong"' in probes[-2]["instance_text"] and '"table": "observation"' in probes[-1]["instance_text"]
+probe("P_A27_1", "recipe concept recodes", OK, A, lambda b: b.setdefault("options", {}).__setitem__("labels", {"0": "unknown", "45000123": "yes"}))
+probe("P_A27_2", "array concept map refused", R, A, lambda b: b.setdefault("options", {}).__setitem__("labels", ["yes"]))
+probe("P_A27_3", "null concept map member refused", R, A, lambda b: b.setdefault("options", {}).__setitem__("labels", {"1": None}))
+probe("P_A27_4", "noncanonical concept key refused", R, A, lambda b: b.setdefault("options", {}).__setitem__("labels", {"01": "yes"}))
+probe("P_A27_5", "generated-name overrides", OK, A, lambda b: b.setdefault("options", {}).__setitem__("column_names", {"education_45000123": "educated"}))
 dump(probes, os.path.join(OUT, "probes", "plan-v2-probes.json"))
 
 # the three ACTUAL v1 inputs of section 4.5 (WS-2 executes them through the corrected v1 validator;

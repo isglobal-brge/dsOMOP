@@ -164,7 +164,9 @@
   "options": {
     "translate_concepts": true,
     "block_sensitive": true,
-    "factor_concepts": true
+    "factor_concepts": true,
+    "labels": {},
+    "column_names": {}
   },
   "concept_sets": {},
   "intervals": {},

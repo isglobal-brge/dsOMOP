@@ -166,17 +166,23 @@
     "set_id": {
       "population_column": {
         "name": "set_id"
-      }
+      },
+      "labels": {},
+      "column_names": {}
     },
     "is_case": {
       "population_column": {
         "name": "is_case"
-      }
+      },
+      "labels": {},
+      "column_names": {}
     },
     "w": {
       "population_column": {
         "name": "sampling_weight"
-      }
+      },
+      "labels": {},
+      "column_names": {}
     },
     "age": {
       "derived": {
@@ -185,12 +191,16 @@
         "bands": false,
         "reference_date": null,
         "age_breaks": null
-      }
+      },
+      "labels": {},
+      "column_names": {}
     },
     "sex": {
       "derived": {
         "kind": "sex_mf"
-      }
+      },
+      "labels": {},
+      "column_names": {}
     },
     "statin_365": {
       "source": {
@@ -219,7 +229,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     },
     "statin_days": {
       "source": {
@@ -248,7 +260,9 @@
         "fills": "start_in_window",
         "observed_only": false
       },
-      "broadcast": false
+      "broadcast": false,
+      "labels": {},
+      "column_names": {}
     }
   },
   "outputs": {
@@ -282,7 +296,9 @@
   "options": {
     "translate_concepts": true,
     "block_sensitive": true,
-    "factor_concepts": true
+    "factor_concepts": true,
+    "labels": {},
+    "column_names": {}
   },
   "intervals": {},
   "publish": [
