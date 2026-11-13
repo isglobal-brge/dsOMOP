@@ -7,6 +7,14 @@ fills its entries. Classes follow design-2.10.3 section 5.
 
 ## Corrected (results that were wrong and now follow the documented rule)
 
+- (A-27 review fixes) CSV staging preserves literal `"NA"` labels separately
+  from actual missing cells, including reconciliation rewrites. New CSV
+  descriptors declare `csv_encoding = "backslash-v1"`; server-side readers
+  must decode through `.publishReadChunks()` (a leading backslash escapes
+  literal `NA` and leading backslashes). Existing descriptors retain their
+  legacy decoding. Unicode whitespace-only recodes are now rejected on both
+  boundaries; replace them with a nonempty label. Valid text is unchanged.
+
 - (A-27) Concept factors preserve their federation level contract during
   model-frame subsetting, including locally absent categories in `ds.glm`.
   Translated legacy dictionaries use the declared concept schema in both
