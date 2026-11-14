@@ -2,7 +2,7 @@
 
 - Corrected (categorical review): prospective codebooks expand native nth-value
   columns and honor effective numeric, date and category presentation defaults,
-  overrides and untranslated concepts. Native wide outputs can select expanded
+  overrides and untranslated concepts. Native outputs can select expanded
   keys such as `answer_3` in the requested order.
 - Corrected: recipe hierarchy defaults are inactive for semantic flags and
   numeric/date categories, including `multiple="all"`. Explicit incompatible

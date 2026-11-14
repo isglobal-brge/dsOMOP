@@ -235,12 +235,15 @@
       part$frame<-categories$frame;part$fragment$columns<-categories$columns
       # A selected expanded reducer key projects only that key, in request order.
       selected_keys <- unlist(node$columns, use.names=FALSE)
-      expanded_selection <- length(setdiff(selected_keys, c(names(ctx$ir$variables), names(node$number_columns), names(node$category_columns)))) > 0L
-      if (expanded_selection && node$format == "wide") {
+      declared_columns <- unique(unlist(lapply(names(ctx$ir$variables),function(v)
+        .pnv2VariableColumns(v,ctx$ir$variables[[v]])),use.names=FALSE))
+      expanded_selection <- any(selected_keys %in% setdiff(declared_columns,names(ctx$ir$variables)))
+      if (expanded_selection) {
         selected <- unique(unlist(lapply(selected_keys, function(k) {
           if (k %in% names(ctx$ir$variables)) .pnv2VariableColumns(k, ctx$ir$variables[[k]]) else k
         }), use.names=FALSE))
-        keep <- unique(c(intersect(c("row_id","cohort_row_id","person_id"), names(part$frame)), selected))
+        structural <- setdiff(names(part$frame),c(declared_columns,names(node$number_columns),names(node$category_columns)))
+        keep <- unique(c(structural, selected))
         keep <- intersect(keep, names(part$frame))
         part$frame <- part$frame[keep]
         part$fragment$columns <- part$fragment$columns[keep]
