@@ -1,5 +1,10 @@
 # dsOMOP 2.10.5 (2026-11-14)
 
+- Corrected (membership/long codebook review): prospective existing date columns
+  honor recipe category defaults, with producer-specific applicability. Membership
+  schemas also include the declared roster's index provenance in publication order.
+  Rebuild affected codebooks; recipe declarations and published data do not change.
+
 - Corrected (generated date factor review): prospective codebooks apply recipe
   category defaults to generated date endpoints, including ordering, recodes,
   public levels, reference and contrasts in nested and joined outputs. Rebuild
