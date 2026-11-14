@@ -75,7 +75,9 @@ def normalize_numbers(plan):
             if d['method']=='time_to_threshold':
                 d.setdefault('op','ge');d.setdefault('reference',{'kind':'first_observation'})
         spec=v.get('number_spec')
-        if column_scope and d.get('kind')=='number_column':spec=overlay(spec,producers.get(d['column'],{}).get('number_spec'))
+        if column_scope and d.get('kind')=='number_column':
+            spec=overlay(spec,without_source(producers.get(d['column'],{}).get('number_spec')))
+            defaults=without_source(defaults)
         source=v.get('source',d.get('source',{}))
         eff=effective(spec,defaults) if spec is not None or defaults is not None else {}
         maps=[s for s in eff.get('pipeline',[]) if s['kind']=='event_unit']
@@ -85,9 +87,9 @@ def normalize_numbers(plan):
                 if spec is not None:raise ValueError('number_unit_conflict')
                 return v
             ev['unit']=maps[0]['spec']
-            payload=canonicalize(ev)
+            payload=canonicalize(dict(source=source["event"],event=ev))
             if isinstance(payload,str):payload=payload.encode()
-            key='num'+hashlib.sha256(payload).hexdigest()[:24]
+            key=source['event'] if source['event'].startswith('num') and len(source['event'])==27 else 'num'+hashlib.sha256(payload).hexdigest()[:24]
             plan['events'][key]=ev;source['event']=key
         if spec is not None:v['number_spec']=effective(spec,defaults)
         return v
@@ -99,3 +101,11 @@ def normalize_numbers(plan):
                     if 'event' in source:norm({'source':source,'reducer':{'fn':'mean'}},recipe)
         if 'number_columns' in out:out['number_columns']={n:norm(v,recipe,True) for n,v in out['number_columns'].items()}
     return plan
+
+
+def without_source(spec):
+    if spec is None:return None
+    spec=copy.deepcopy(spec)
+    if spec.get('unit',{}).get('kind')=='event_unit':spec.pop('unit')
+    if 'pipeline' in spec:spec['pipeline']=[s for s in spec['pipeline'] if s['kind']!='event_unit'] or [dict(kind='transform',method='identity')]
+    return spec

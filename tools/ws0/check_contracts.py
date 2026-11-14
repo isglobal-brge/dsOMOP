@@ -251,6 +251,17 @@ if C:
     check(open(os.path.join(S, "inst", "column_classes.csv"), "rb").read() == open(os.path.join(C, "inst", "column_classes.csv"), "rb").read(),
           "column corpus differs between packages")
 
+# A-29 independent normal forms, closed probes and shared admission checker.
+for nv in load(os.path.join(SCHEMA,"number-vectors.json")):
+    normalized = normref.normalize(nv["instance"], load(os.path.join(SCHEMA,"plan-v2.json")))
+    check(normalized == nv["normalized"], "numeric normal form: " + nv["label"])
+    check(gen.digest(normalized)[1] == nv["digest_sha256"], "numeric digest: " + nv["label"])
+for probe in load(os.path.join(SCHEMA,"probes","number-probes.json")):
+    check(schemas[probe["schema"]].is_valid(probe["instance"]) == (probe["expect"] == "valid"), "numeric probe: " + probe["id"])
+if C:
+    for filename in ("number_semantics.R","number_expression_types.R","plan_normalize_v2.R"):
+        check(open(os.path.join(S,"R",filename),"rb").read() == open(os.path.join(C,"R",filename),"rb").read(), "numeric shared file: " + filename)
+
 print(f"checked 3 schemas, 2 examples, {n_probes} probes, {n_plans} acceptance plans, {len(vec['vectors'])} digest vectors, {len(nvec['vectors'])} normalised fixtures, {len(NUMBERS) + 9} numbers, {n_corpus} corpus doubles")
 if failures:
     print("FAILURES:"); [print(" -", f) for f in failures]

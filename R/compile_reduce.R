@@ -908,7 +908,7 @@
 }
 
 .reduceTypedNA <- function(type, n) {
-  switch(type, integer = rep(NA_integer_, n), bigint = rep(NA_real_, n),
+  switch(type, integer = rep(NA_integer_, n), bigint = bit64::as.integer64(rep(NA_character_, n)),
          numeric = rep(NA_real_, n), text = rep(NA_character_, n),
          date = as.Date(rep(NA_character_, n)), boolean = rep(NA, n), rep(NA, n))
 }
@@ -1862,6 +1862,7 @@
   columns <- stats::setNames(list(.fragmentColumn(type, TRUE,
                                                   if (identical(col, "set_id")) "analytic_key" else "measure")),
                              name)
+  attr(columns[[name]],"number_structural") <- TRUE
   list(stream = NULL, reducer = NULL, declared_empty_value = NA, columns = columns,
        available = TRUE,
        evaluate = function() {

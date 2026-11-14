@@ -8,7 +8,7 @@
   if(fn %in% c("binary","any","all","abnormal_high","abnormal_low","cv")||identical(d$kind,"died"))return("1")
   if(fn %in% c("count","n_distinct","era_count")||(d$kind %||% "") %in% c("number_count","n_observation_periods"))return("count")
   if(fn %in% c("days_since","days_until","duration_sum","covered_days","supply_days","drug_duration","gap_max","gap_mean","era_days","first_era_days")||(d$kind %||% "") %in% c("observed_days","days_to_death","prior_obs","followup","obs_duration"))return("days")
-  if(fn=="time_since")return("months")
+  if(fn=="time_since")return(if(identical(r$unit,"month"))"months" else "days")
   if((d$kind %||% "") %in% c("time_between","age_at"))return(if(d$unit=="annual_years")"years" else d$unit)
   if(identical(node$date_spec$precision,"relative_days"))return("days")
   source<-node$source %||% d$source
@@ -28,7 +28,7 @@
   !fn %in% c("sum","count","n_distinct","sd","cv","slope","duration_sum","covered_days","supply_days","drug_duration","gap_max","gap_mean","era_count","era_days","first_era_days","days_since","days_until","time_since") &&
     !(node$derived$kind %||% "") %in% c("number_count","number_change","time_between","age_at","observed_days","obs_duration","prior_obs","followup")
 }
-.numberAnalyticColumn <- function(c) c$type %in% c("integer","bigint","numeric") && c$role %in% c("measure","value") && !isTRUE(attr(c,"concept"))
+.numberAnalyticColumn <- function(c) c$type %in% c("integer","bigint","numeric") && c$role %in% c("measure","value") && !isTRUE(attr(c,"concept")) && !isTRUE(attr(c,"number_structural"))
 .numberRecord <- function(record,node,ctx,name,cons) {
   spec<-node$number_spec
   if(is.null(spec)&&is.null(ctx$ir$options$number_spec)&&!(node$derived$kind %||% "") %in% .NUMBER_KINDS)return(record)
@@ -110,7 +110,7 @@
     }
     groups<-.reduceGroups(rows$row_key,keys)
     origins<-NULL
-    if(identical(d$method,"time_to_threshold")&&!identical(d$reference$kind,"first_observation"))origins<-.dateExact(.dateSourceValues(ctx,cons,d$reference,.dateEffective()))
+    if(identical(d$method,"time_to_threshold")&&!(is.list(d$reference)&&identical(d$reference$kind,"first_observation")))origins<-.dateExact(.dateSourceValues(ctx,cons,d$reference,.dateEffective()))
     v<-vapply(seq_along(groups),function(i) {
       if(!got$bounds$defined[i])return(NA_real_)
       r<-rows[groups[[i]],,drop=FALSE]
@@ -143,7 +143,8 @@
   } else if(!is.null(d$reducer)) .numberReject("Only event operands can be reduced after an expression.","number_dependency_invalid")
   empty<-setNames(lapply(records,function(r).reduceTypedNA(r$columns[[1]]$type,0L)),vapply(inputs,function(i)i$alias,""))
   probe<-.numberExpression(d$exprs,as.data.frame(empty),d$result)
-  r<-d$reducer;type<-if(is.null(r))if(is.integer(probe))"integer" else "numeric" else .reduceValueType(r$fn,if(is.integer(probe))"integer" else "numeric")
+  expression_type<-if(inherits(probe,"integer64"))"bigint" else if(is.integer(probe))"integer" else "numeric"
+  r<-d$reducer;type<-if(is.null(r))expression_type else .reduceValueType(r$fn,expression_type)
   out_names<-if(is.null(r))name else .reduceColumnNames(name,r)
   columns<-setNames(lapply(out_names,function(n).fragmentColumn(type,TRUE,"measure")),out_names)
   privacy<-max(c(3L,unlist(lapply(records,function(rec) attr(rec$columns[[1]],"privacy_class")))))
@@ -173,7 +174,7 @@
     rows<-.reduceWindowFilter(rows,bounds)
     roster<-.reduceRosterFrame(ctx,cons$roster);out<-data.frame(row_key=roster$cohort_row_id)
     anchor<-if(r$fn=="closest_value").reduceAnchorDates(ctx,cons,.reduceAnchor(r)) else NULL
-    v<-.reduceApply(r$fn,rows,roster$cohort_row_id,r,c("start_date","source_ns","event_id"),anchor,type)
+    v<-.reduceApply(r$fn,rows,roster$cohort_row_id,r,c("start_date","source_ns","event_id"),anchor,expression_type)
     for(j in seq_along(columns)) {x<-.reduceCoerce(v[[j]],type);if(r$fn=="cv")x<-x/100;x[!bounds$defined|!available]<-NA;out[[names(columns)[j]]]<-x}
     out
   }
@@ -192,9 +193,12 @@
 # Forks add source normalization but never rename a declared output source key.
 .numberLogicalSource <- function(ctx,name) {
   if(!grepl("^num[0-9a-f]{24}$",name))return(name)
-  ev<-ctx$ir$events[[name]];ev$unit<-NULL
+  ev<-ctx$ir$events[[name]]
   candidates<-setdiff(names(ctx$ir$events),grep("^num[0-9a-f]{24}$",names(ctx$ir$events),value=TRUE))
-  same<-Filter(function(n) {other<-ctx$ir$events[[n]];other$unit<-NULL;identical(.jcsCanonical(ev),.jcsCanonical(other))},candidates)
+  same<-Filter(function(n) {
+    key<-paste0("num",substr(as.character(openssl::sha256(charToRaw(.jcsCanonical(list(source=n,event=ev))))),1L,24L))
+    identical(key,name)
+  },candidates)
   if(length(same)==1L)same[[1L]] else name
 }
 

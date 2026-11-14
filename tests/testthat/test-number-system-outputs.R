@@ -105,7 +105,7 @@ test_that("N48 N58 N67 N72 native numeric rows and event expressions align witho
   vars<-list(raw=rows,doubled=list(derived=list(kind="number_derive",inputs=list(list(alias="x",variable=rows,stage="canonical")),exprs=req,unit="coordinate:doubled")))
   for(fmt in c("long","intervals"))for(b in names(.number_backends)) {
     out<-list(format=fmt,sources=list(list(event="lab")),columns=as.list(names(vars)),options=.pnv2EmptyObject())
-    if(fmt=="long")out$options<-list(columns_derived=list("value"))
+    if(fmt=="long")out$options<-list(columns_derived=list("value")) else {out$options<-list(sources=out$sources);out$sources<-NULL}
     p<-.ws7_scenario_plan(vars,output=out)
     f<-.ws7_scenario_run(.number_backends[[b]]$handle,p)$frame
     expect_gt(nrow(f),0L);expect_equal(f$doubled,2*f$raw,info=paste(b,fmt))
@@ -133,4 +133,147 @@ test_that("N46 N49 N66 final support gates preserve rare private categories and 
   expect_identical(.reduceOne("first_value",x,list(),value_type="bigint"),"9007199254740993")
   expect_identical(.reduceOne("min",x,list(),value_type="bigint"),"9007199254740993")
   expect_error(.reduceOne("mean",x,list(),value_type="bigint"),"retain raw/count")
+})
+
+test_that("N35 N73 independent index origin and elapsed class 2 compile", {
+  vars<-list(cross=list(derived=list(kind="number_change",source=list(event="lab"),value="value",method="time_to_threshold",missing="skip",reference="index",time_unit="weeks",threshold=5,op="ge")),elapsed=list(derived=list(kind="time_between",from=list(date="2020-01-01"),to=list(date="2020-01-15"),unit="days"),number_spec=list(unit=list(kind="fixed_unit",from="days",to="weeks",factor=1/7))))
+  for(b in names(.number_backends)) {
+    f<-.ws7_scenario_run(.number_backends[[b]]$handle,.ws7_scenario_plan(vars))$frame
+    expect_equal(f$elapsed,rep(2,nrow(f)))
+    expect_true(all(is.na(f$cross)|f$cross>=0))
+  }
+})
+test_that("N49 exact private count materializations survive identity and Parquet", {
+  skip_if_not_installed("arrow")
+  h<-.number_backends[[1]]$handle;.ws7_keys(list(h))
+  # Materialize the independently known count, without allocating 2^53 events.
+  testthat::local_mocked_bindings(.numberEventRecord=function(ctx,node,name,cons) {
+    list(columns=setNames(list(.fragmentColumn("bigint",TRUE,"measure")),name),available=TRUE,
+      declared_empty_value=0L,evaluate=function() {
+        out<-data.frame(row_key=.reduceRosterFrame(ctx,cons$roster)$cohort_row_id)
+        out[[name]]<-bit64::as.integer64(rep("9007199254740993",nrow(out)));out
+      })
+  })
+  v<-list(derived=list(kind="number_count",source=list(event="lab"),value="value",count_kind="nonmissing"))
+  p<-.ws7_scenario_plan(list(raw=v,identity=utils::modifyList(v,list(number_spec=list(pipeline=list(list(kind="transform",method="identity"))))),none=utils::modifyList(v,list(number_spec=list(rounding=list(method="none"))))))
+  for(mode in c("memory","staged"))local({
+    run<-.ws7_ctx(h,p,mode=mode);on.exit(.ws7_close(run),add=TRUE)
+    pop<-.ws7_population(run,"t",.ws7_scenario_frame())
+    got<-.ws7_publish(run,list(t=pop),threshold=5L)
+    expect_identical(got$status$status,"ok")
+    for(n in c("raw","identity","none")) {
+      expect_s3_class(got$values$o$o[[n]],"integer64")
+      expect_identical(as.character(got$values$o$o[[n]]),rep("9007199254740993",8))
+    }
+  })
+})
+
+test_that("N71 carry-forward expiry uses canonical event time before numeric display", {
+  h<-.ws4_reach_handle();on.exit(DBI::dbDisconnect(h$conn),add=TRUE)
+  .ws7_extend(h$conn);h$blueprint<-NULL;h$role_registry<-NULL
+  DBI::dbExecute(h$conn,"DELETE FROM measurement WHERE person_id = 7001 AND measurement_id <> 970004")
+  DBI::dbExecute(h$conn,"UPDATE measurement SET value_as_number = 9.96 WHERE measurement_id = 970004")
+  for(start in c(0L,5L,9L)) {
+    p<-.ws7_scenario_plan(.pnv2EmptyObject(),output=list(format="person_period",options=list(sources=list(list(event="lab")),analyses=list("mean"),window=list(start=start,end=start,anchor="index"),bins=list(width=1L),carry_forward=list(lab=list(lookback=10L,expire=7L)))))
+    p$options<-list(number_spec=list(rounding=list(method="decimals",digits=1)))
+    p$outputs$o$number_columns<-list(raw=list(derived=list(kind="number_column",column="lab_carry"),number_spec=list(pipeline=list(list(kind="transform",method="identity")))))
+    f<-.ws7_scenario_run(h,p,.ws7_scenario_frame(7001))$frame
+    expect_equal(f$raw,if(start<=7)9.96 else NA_real_)
+    expect_equal(f$lab_carry,if(start<=7)10 else NA_real_)
+    expect_equal(nrow(f),1L)
+  }
+})
+
+test_that("N55 N59 N68 prespecified selections precede scalar differences", {
+  b<-.number_svar("closest_value",list(unit=list(kind="fixed_unit",from="unit:8554",to="coordinate:lab",factor=2)),window=list(start=-9L,end=-9L,anchor="index"))
+  f<-.number_svar("closest_value",list(unit=list(kind="fixed_unit",from="unit:8554",to="coordinate:lab",factor=5)),window=list(start=0L,end=0L,anchor="index"))
+  req<-list(version=1L,assign=list(list(name="change",expr=list(op="-",args=list(list(col="f"),list(col="b"))))))
+  v<-list(derived=list(kind="number_derive",inputs=list(list(alias="b",variable=b,stage="canonical"),list(alias="f",variable=f,stage="canonical")),exprs=req,unit="coordinate:change"))
+  for(backend in names(.number_backends)) {
+    p<-.ws7_scenario_plan(list(change=v));p$events$lab$unit<-list(target=8554L)
+    got<-.ws7_scenario_run(.number_backends[[backend]]$handle,p)$frame
+    expect_equal(.ws7_value(got,7001,"change"),5)
+    expect_true(is.na(.ws7_value(got,7002,"change")))
+  }
+})
+test_that("N58 N59 N69 nested weighted sums use one identical complete-pair mask", {
+  h<-.ws4_reach_handle();on.exit(DBI::dbDisconnect(h$conn),add=TRUE)
+  .ws7_extend(h$conn);h$blueprint<-NULL;h$role_registry<-NULL
+  DBI::dbExecute(h$conn,"DELETE FROM measurement WHERE person_id = 7001 AND measurement_id = 970005")
+  DBI::dbExecute(h$conn,"UPDATE measurement SET value_as_number = CASE measurement_id WHEN 970001 THEN 2 WHEN 970002 THEN NULL WHEN 970003 THEN 8 WHEN 970004 THEN 4 END, range_high = CASE measurement_id WHEN 970001 THEN 1 WHEN 970002 THEN 100 WHEN 970003 THEN 3 WHEN 970004 THEN 0 END WHERE person_id = 7001")
+  leaf<-function(value)list(derived=list(kind="number_rows",source=list(event="lab"),value=value))
+  inputs<-list(list(alias="x",variable=leaf("value"),stage="canonical"),list(alias="w",variable=leaf("range_high"),stage="canonical"))
+  mask<-list(and=list(list(var="x",op="not_null"),list(var="w",op="not_null"),list(var="w",op=">=",value=0)))
+  make<-function(expr)list(derived=list(kind="number_derive",inputs=inputs,exprs=list(version=1L,assign=list(list(name="v",expr=list(ifelse=list(test=mask,yes=expr,no=list(lit=0)))))),unit="coordinate:weighted",reducer=list(fn="sum")))
+  numerator<-make(list(op="*",args=list(list(col="x"),list(col="w"))))
+  denominator<-make(list(col="w"))
+  weighted<-list(derived=list(kind="number_derive",inputs=list(list(alias="n",variable=numerator,stage="canonical"),list(alias="d",variable=denominator,stage="canonical")),exprs=list(version=1L,assign=list(list(name="ratio",expr=list(op="/",args=list(list(col="n"),list(col="d")))))),unit="coordinate:weighted_mean"))
+  got<-.ws7_scenario_run(h,.ws7_scenario_plan(list(weighted=weighted)))$frame
+  expect_equal(.ws7_value(got,7001,"weighted"),6.5)
+  expect_true(is.na(.ws7_value(got,7002,"weighted")))
+  expect_false(any(c("x","w","n","d") %in% names(got)))
+})
+
+test_that("N64 PDC intersects exposure with disjoint observation coverage before division", {
+  h<-.ws4_reach_handle();on.exit(DBI::dbDisconnect(h$conn),add=TRUE)
+  .ws7_extend(h$conn);h$blueprint<-NULL;h$role_registry<-NULL
+  DBI::dbExecute(h$conn,"DELETE FROM observation_period WHERE person_id = 7001")
+  DBI::dbWriteTable(h$conn,"observation_period",data.frame(observation_period_id=c(999901L,999902L),person_id=7001L,observation_period_start_date=c("2020-01-01","2020-01-09"),observation_period_end_date=c("2020-01-02","2020-01-10"),period_type_concept_id=44814724L),append=TRUE)
+  window<-list(start=-9L,end=0L,anchor="index")
+  covered<-list(source=list(event="drug"),reducer=list(fn="covered_days",observed_only=TRUE,window=window))
+  observed<-list(derived=list(kind="observed_days",window=window))
+  req<-list(version=1L,assign=list(list(name="pdc",expr=list(op="/",args=list(list(col="covered"),list(col="observed"))))))
+  pdc<-list(derived=list(kind="number_derive",inputs=list(list(alias="covered",variable=covered,stage="canonical"),list(alias="observed",variable=observed,stage="canonical")),exprs=req,unit="proportion"))
+  p<-.ws7_scenario_plan(list(covered=covered,observed=observed,pdc=pdc))
+  got<-.ws7_scenario_run(h,p)$frame
+  expect_equal(.ws7_value(got,7001,"covered"),4L)
+  expect_equal(.ws7_value(got,7001,"observed"),4L)
+  expect_equal(.ws7_value(got,7001,"pdc"),1)
+})
+
+test_that("N24 N39 generated unavailable measures and structural survival keys retain their contracts", {
+  col<-.numberGenerated(.fragmentColumn("integer",TRUE,"measure"),"count",available=FALSE)
+  got<-.numberOutputColumns(data.frame(n_case=NA_integer_),list(n_case=col),list(format="person_period"),"p","p",recipe=list(representation="present"))
+  expect_true(is.na(got$frame$n_case))
+  for(name in c("event","from","to","trans","state_visit_number","event_number","outcome_event_number","weight"))
+    expect_false(.numberEligibleColumn(.fragmentColumn("integer",TRUE,"measure"),name,list(format="survival")))
+})
+
+test_that("N74 original schema bindings reject invalid declarations and select generated columns", {
+  c<-.fragmentColumn("numeric",TRUE,"measure")
+  leaf<-function(key,component=NULL)list(derived=list(kind="number_column",column=key,component=component))
+  node<-list(format="person_period",number_columns=list(copy=leaf("days")))
+  expect_silent(.numberPreflightColumns(node,list(p=list(days=c))))
+  node$number_columns$copy<-leaf("unknown")
+  expect_error(.numberPreflightColumns(node,list(p=list(days=c))),"original numeric")
+  node$number_columns$copy<-leaf("days")
+  expect_error(.numberPreflightColumns(node,list(p=list(days=c),q=list(days=c))),"component explicitly")
+  node$number_columns$copy<-leaf("days","absent")
+  expect_error(.numberPreflightColumns(node,list(p=list(days=c))),"Unknown output component")
+  p<-.ws7_scenario_plan(.pnv2EmptyObject(),output=list(format="person_period",columns=list("days","copy"),number_columns=list(copy=leaf("days")),options=list(sources=list(list(event="lab")),bins=list(width=10L),window=list(start=0L,end=20L,anchor="index"),analyses=list("mean"))))
+  got<-.ws7_scenario_run(.number_backends[[1L]]$handle,p)$frame
+  expect_equal(got$copy,got$days)
+  expect_false("lab_mean" %in% names(got))
+  expect_true(all(c("person_id","cohort_row_id") %in% names(got)))
+})
+
+test_that("N28 temporal and coverage reducers retain their canonical identity before presentation", {
+  vars<-list()
+  for(fn in c("days_since","days_until","time_since","gap_max","gap_mean"))vars[[fn]]<-list(source=list(event="lab"),reducer=list(fn=fn))
+  for(fn in c("duration_sum","covered_days","supply_days","drug_duration"))vars[[fn]]<-list(source=list(event="drug"),reducer=list(fn=fn))
+  for(fn in c("era_count","era_days","first_era_days"))vars[[fn]]<-list(source=list(interval="course"),reducer=list(fn=fn))
+  p<-.ws7_scenario_plan(vars);p$intervals<-list(course=list(source=list(event="drug"),gap=0L))
+  for(backend in unique(c(names(.number_backends)[1L],intersect("postgres",names(.number_backends))))) {
+    h<-.number_backends[[backend]]$handle
+    canonical<-.ws7_scenario_run(h,p)$frame
+    identity<-p;identity$options<-list(number_spec=list(pipeline=list(list(kind="transform",method="identity"))))
+    got<-.ws7_scenario_run(h,identity)$frame
+    for(n in names(vars))expect_identical(got[[n]],canonical[[n]],info=paste(backend,n))
+    binned<-p;binned$options<-list(number_spec=list(representation="bins",breaks=list("-Inf",0,7,14,"Inf")))
+    bands<-.ws7_scenario_run(h,binned)$frame
+    for(n in names(vars)) {
+      expect_true(is.ordered(bands[[n]]),info=n)
+      expect_equal(as.character(bands[[n]]),as.character(.numberPresent(canonical[[n]],binned$options$number_spec)),info=n)
+    }
+  }
 })

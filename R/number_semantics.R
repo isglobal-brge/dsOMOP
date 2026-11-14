@@ -252,6 +252,7 @@
   normalize<-function(v,defaults=NULL,depth=0L,column_scope=FALSE) {
     if(depth>32L).numberReject("Numeric dependencies exceed the existing expression nesting bound.","number_dependency_invalid")
     d<-v$derived
+    if(identical(d$kind,"number_column")&&!column_scope) .numberReject("Column bindings are scoped to one output number_columns map.","number_dependency_invalid")
     if(!is.null(d$inputs)) {
       if(!is.null(d$reducer)) .numberReducerCheck(d$reducer)
       aliases<-vapply(d$inputs,function(i)i$alias,"");.numberNames(aliases)
@@ -265,7 +266,11 @@
     if(identical(d$kind,"number_rows")&&isTRUE(v$broadcast)) .numberReject("Event rows need explicit reduction for scalar outputs.","number_dependency_invalid")
     if(!is.null(d))v$derived<-d
     spec<-v$number_spec
-    if(column_scope && identical(d$kind,"number_column")) spec<-.numberOverlay(spec,producers[[d$column]]$number_spec)
+    if(column_scope && identical(d$kind,"number_column")) {
+      if(!is.null(spec)&&(identical(spec$unit$kind,"event_unit")||any(vapply(spec$pipeline %||% list(),function(p)p$kind=="event_unit",logical(1))))) .numberReject("Column copies already have normalized source units; remove the event-unit map.","number_unit_conflict")
+      spec<-.numberOverlay(spec,.numberWithoutSourceMap(producers[[d$column]]$number_spec))
+      defaults<-.numberWithoutSourceMap(defaults)
+    }
     # Recipe scalar defaults are resolved at the final analytic slot. Source
     # maps must fork before predicates/reduction, including private operands.
     source<-v$source %||% d$source
@@ -285,7 +290,9 @@
         map<-maps[[1L]]$spec
         if(!is.null(ev$unit)&&!identical(.jcsCanonical(ev$unit),.jcsCanonical(map))) .numberReject("Explicit source and numeric unit maps conflict.","number_unit_conflict")
         ev$unit<-map
-        key<-paste0("num",substr(as.character(openssl::sha256(charToRaw(.jcsCanonical(ev)))),1L,24L))
+        key<-source$event
+        if(!grepl("^num[0-9a-f]{24}$",key))key<-paste0("num",substr(as.character(openssl::sha256(charToRaw(.jcsCanonical(list(source=source$event,event=ev))))),1L,24L))
+        if(!is.null(plan$events[[key]])&&!identical(.jcsCanonical(plan$events[[key]]),.jcsCanonical(ev))) .numberReject("Numeric source identity collides with a declared event.","number_dependency_invalid")
         plan$events[[key]]<<-ev;source$event<-key
         if(!is.null(v$source))v$source<-source else v$derived$source<-source
       }
@@ -332,7 +339,7 @@
   if(!identical(.jcsCanonical(local %||% list()),.jcsCanonical(shared %||% list()))) .numberReject("Numeric column semantics differ across retained sites.","number_representation_conflict")
   invisible(TRUE)
 }
-.numberExplain <- function(plan) {
+.numberExplain <- function(plan,declared=plan) {
   if(!.numberHas(plan))return(character())
   lines<-c("Numeric presentation: source unit normalization before predicates and reduction; fixed conversion, then declared scalar stages, before sealing.",
     "Precedence: variable/wrapper > recipe > design; pipelines are atomic. Canonical inputs bypass transforms/rounds/categories and outer recipe defaults.",
@@ -344,6 +351,20 @@
     v<-plan$variables[[n]]
     if(is.null(v$number_spec)&&is.null(plan$options$number_spec)&&!(v$derived$kind %||% "") %in% .NUMBER_KINDS)next
     lines<-c(lines,paste0("Numeric variable '",n,"': ",.jcsCanonical(.pnv2Plain(v)),"; source/reducer grain retained; broadcast=",isTRUE(v$broadcast),"; date/class-2 lineage never declassified."))
+    explicit<-declared$variables[[n]]$number_spec
+    origin<-if(!is.null(explicit))"variable/wrapper" else if(!is.null(declared$options$number_spec))"recipe" else "design"
+    lines<-c(lines,paste0("  specification origin: ",origin,"; explicit declaration: ",.jcsCanonical(.pnv2Plain(explicit %||% list()))))
+    effective<-.numberEffective(v$number_spec,plan$options$number_spec)
+    state<-"numeric"
+    for(i in seq_along(effective$pipeline)) {
+      step<-effective$pipeline[[i]];before<-state
+      if(step$kind %in% c("bins","category"))state<-"ordered factor (contr.poly)"
+      if(step$kind %in% c("flag","present","missing"))state<-"integer 0/1"
+      levels<-.numberDeclaredLevels(step)
+      lines<-c(lines,paste0("  stage ",i," ",step$kind,": ",before," -> ",state,
+        if(length(levels))paste0("; complete public levels: ",paste(levels,collapse=" | ")),
+        if(step$kind=="event_unit")"; before source predicates and reduction" else "; private scalar presentation before sealing"))
+    }
   }
   for(n in names(plan$outputs))if(!is.null(plan$outputs[[n]]$number_columns))lines<-c(lines,paste0("Output '",n,"' original-frame numeric bindings: ",.jcsCanonical(plan$outputs[[n]]$number_columns),"; exact row identity; recipe display defaults inactive inside formulas."))
   lines
@@ -390,4 +411,26 @@
 .numberReducerCheck <- function(r) {
   if(!r$fn %in% c("first_value","last_value","nth_value","closest_value","mean","min","max","sum","sd","cv","median","quantile","mode","slope")||!is.null(r$value)||!is.null(r$unit)&&!identical(r$unit,"day")) .numberReject("Expression reducers require an admitted numeric reducer with value and unit omitted.","number_expression_invalid")
   invisible(r)
+}
+
+.numberWithoutSourceMap <- function(s) {
+  if(is.null(s))return(NULL)
+  if(identical(s$unit$kind,"event_unit"))s$unit<-NULL
+  if(!is.null(s$pipeline)) {
+    s$pipeline<-Filter(function(p)p$kind!="event_unit",s$pipeline)
+    if(!length(s$pipeline))s$pipeline<-list(list(kind="transform",method="identity"))
+  }
+  s
+}
+.numberExpressionUnit <- function(exprs,result,unit) {
+  paste0("coordinate:expr_",substr(as.character(openssl::sha256(charToRaw(.jcsCanonical(list(exprs=exprs,result=result,unit=unit))))),1L,48L))
+}
+
+.numberDeclaredLevels <- function(step) {
+  if(step$kind=="category")return(unlist(step$levels %||% step$labels,use.names=FALSE))
+  if(step$kind!="bins")return(character())
+  if(!is.null(step$labels))return(unlist(step$labels,use.names=FALSE))
+  b<-.numberBreaks(step$breaks)
+  token<-function(x)if(is.infinite(x))if(x<0)"-Inf" else "Inf" else .jcsNumber(x)
+  vapply(seq_len(length(b)-1L),function(i)paste0(if(step$closed=="left"&&is.finite(b[i]))"[" else "(",token(b[i]),",",token(b[i+1L]),if(step$closed=="right"&&is.finite(b[i+1L]))"]" else ")"),"")
 }

@@ -76,3 +76,9 @@ test_that("N38 N49 precision bounds and count widths are lossless", {
   expect_equal(.numberRoundOne(2^-1074,"significant",1),2^-1074)
   expect_equal(.numberRoundOne(.Machine$double.xmax,"significant",17),.Machine$double.xmax)
 })
+
+test_that("N13 N49 exact integer comparisons retain fractional public boundaries", {
+  x<-bit64::as.integer64(c("5","6",NA))
+  expect_identical(as.character(.numberPresent(x,S(representation="category",thresholds=c(5.5,6.5)))),c("low","normal",NA))
+  expect_identical(as.character(.numberPresent(x,S(representation="category"),ranges=list(low=c(5.5,5.5,NA),high=c(6.5,6.5,7)))),c("low","normal",NA))
+})

@@ -1,3 +1,28 @@
+# dsOMOP 2.10.5 (2026-11-14)
+
+- Newly permitted (A-29 / CR-30): native numeric presentation with declared
+  source and fixed units, ordered transforms, exact binary64 decimal rounding,
+  public bins and clinical categories, flags and value presence/missingness.
+  Numeric rows, counts, longitudinal changes, closed multi-input expressions
+  and output-local canonical column copies run before protection and release.
+  Numeric capabilities are negotiated before assignment; new declarations
+  require native language 2 and dsOMOP 2.10.5 at every selected site.
+- Newly permitted: numeric factor reconciliation retains the complete ordered
+  public domain, including unused levels. Memory and Parquet carry numeric
+  units, expression identity, domains and privacy lineage. Incompatible retained
+  contracts fail and roll back; a numeric sibling is required for arithmetic.
+- Corrected: A-29 CV results are dimensionless SD/mean. The compatibility route
+  without numeric declarations retains its percentage CV. To display a native
+  CV as a percent, explicitly apply an affine factor of 100.
+- Corrected: exact BIGINT selectors and integer count promotion avoid silent
+  binary64/32-bit loss. Identity and round(none) retain integer64; operations
+  requiring an inexact double conversion refuse with a bounded remedy.
+- Newly refused: explicit numeric presentation of identifiers, concept values,
+  Dates/factors, model weights or structural codes; factor-valued matrix cells;
+  implicit event broadcasts; and nonnumeric/foreign expression bindings.
+  Use registered numeric measures, explicit numeric date representations,
+  declared broadcasts/reducers, and typed wide/long companions as applicable.
+
 # dsOMOP 2.10.4 (2026-11-13)
 
 - Corrected: derived sex is a factor with the public `F`, `M` domain, including

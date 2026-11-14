@@ -38,6 +38,11 @@
                             ".compileOutput", ".planContext",
                             ".publishPrepare", ".publishCommit")
 .RECIPE_OPERATION_FUNCTIONS <- list(
+  number.presentation = c(".numberPresent", ".numberOutputColumns"),
+  number.rows = ".numberEventRecord", number.count = ".numberEventRecord",
+  number.change = c(".numberEventRecord", ".numberChangeValues"),
+  number.expression = c(".numberExpression", ".numberDerivedRecord", ".numberAstCheck"),
+  number.columns = ".numberOutputColumns",
   interval = ".compileInterval", interval.ingredient = ".compileInterval",
   interval.stockpile = ".compileInterval",
   population.coverage.union = ".compileInterval",

@@ -66,7 +66,12 @@
   vapply(seq_len(n),function(i)paste0(if(s$closed=="left"&&is.finite(b[i]))"[" else "(",.numberBoundary(b[i]),",",.numberBoundary(b[i+1L]),if(s$closed=="right"&&is.finite(b[i+1L]))"]" else ")"),"")
 }
 .numberCompare <- function(x,op,t) {
-  if(inherits(x,"integer64")) return(.verbInteger64Compare(x,switch(op,lt="<",le="<=",gt=">",ge=">=",eq="==",ne="!="),t))
+  if(inherits(x,"integer64")) {
+    symbol<-switch(op,lt="<",le="<=",gt=">",ge=">=",eq="==",ne="!=")
+    if(length(t)==1L)return(if(is.na(t))rep(NA,length(x)) else .verbInteger64Compare(x,symbol,t))
+    if(length(t)!=length(x)) .numberReject("Paired numeric bounds require identical row identity.","number_dependency_invalid")
+    return(vapply(seq_along(t),function(i)if(is.na(t[i]))NA else .verbInteger64Compare(x[i],symbol,t[i]),logical(1)))
+  }
   switch(op,lt=x<t,le=x<=t,gt=x>t,ge=x>=t,eq=x==t,ne=x!=t)
 }
 .numberExpression <- function(exprs,frame,result=NULL) {
@@ -81,13 +86,19 @@
   }
   frame[[result]]
 }
-.numberPresent <- function(x,s,unit="1",ranges=NULL,available=TRUE,offset_allowed=TRUE,canonical=FALSE) {
+.numberPresent <- function(x,s,unit="1",ranges=NULL,available=TRUE,offset_allowed=TRUE,canonical=FALSE,trace=FALSE) {
   if(!is.numeric(x)||inherits(x,c("Date","POSIXt","factor"))) .numberReject("Numeric presentation requires a registered numeric analytic value.","number_type_unsupported")
   x<-.numberClean(x);steps<-.numberEffective(s)$pipeline
+  stages<-list()
+  type<-function(v)if(is.factor(v))"ordered_factor" else if(inherits(v,"integer64"))"integer64" else if(is.integer(v))"integer" else "numeric"
   for(p in steps) {
+    before<-type(x);before_unit<-unit
     k<-p$kind
     if(canonical&&!k %in% c("event_unit","fixed_unit"))break
-    if(k=="event_unit")next # source phase has already applied this map
+    if(k=="event_unit") {
+      stages[[length(stages)+1L]]<-list(kind=k,input_type=before,result_type=before,unit=unit,phase="source before predicates/reduction")
+      next # source phase has already applied this map
+    }
     if(k=="fixed_unit") {
       if(unit!=p$from||!offset_allowed&&p$offset!=0) .numberReject("Fixed conversion needs matching declared units and zero offsets on sums/differences/durations.","number_unit_conflict")
       x<-.numberClean(.numberDouble(x)*p$factor+p$offset)
@@ -97,7 +108,7 @@
       x<-.numberTransformValues(x,p)
       if(p$method!="identity")ranges<-NULL
     } else if(k=="round")x<-.numberClean(.numberRoundValues(x,p))
-    else if(k=="expression") {x<-.numberExpression(p$exprs,data.frame(x=x),p$result);ranges<-NULL;unit<-p$unit %||% "coordinate:expression"}
+    else if(k=="expression") {x<-.numberExpression(p$exprs,data.frame(x=x),p$result);ranges<-NULL;unit<-p$unit %||% .numberExpressionUnit(p$exprs,p$result,unit)}
     else if(k=="bins") {
       b<-unlist(p$breaks);labels<-.numberBinLabels(p)
       at<-rep(NA_integer_,length(x))
@@ -114,7 +125,7 @@
           if(is.null(ranges)) .numberReject("Reference categories need selected paired ranges; select an observation or declare thresholds.","number_source_invalid")
           lo<-ranges$low;hi<-ranges$high
         } else {lo<-unlist(p$thresholds)[1L];hi<-unlist(p$thresholds)[2L]}
-        at<-ifelse(x<lo,1L,ifelse(x>hi,3L,2L))
+        at<-ifelse(.numberCompare(x,"lt",lo),1L,ifelse(.numberCompare(x,"gt",hi),3L,2L))
         bad<-is.na(x)|!is.finite(lo)|!is.finite(hi)|lo>hi
         at[which(bad)]<-NA_integer_;x<-ordered(labels[at],levels=labels)
       }
@@ -127,9 +138,11 @@
       x<-as.integer(hit)
     } else if(k=="present")x<-as.integer(!is.na(x))
     else if(k=="missing")x<-as.integer(is.na(x))
+    if(k %in% c("flag","present","missing"))unit<-"1"
+    stages[[length(stages)+1L]]<-list(kind=k,input_type=before,result_type=type(x),source_unit=before_unit,unit=unit,phase="private scalar before sealing")
   }
   if(length(available)==1L&&!isTRUE(available))x[]<-NA else if(length(available)>1L)x[!available %in% TRUE]<-NA
-  x
+  if(trace)list(value=x,stages=stages) else x
 }
 .numberChangeValues <- function(rows,d,origin=NULL) {
   d<-.numberChangeCheck(d);m<-d$method

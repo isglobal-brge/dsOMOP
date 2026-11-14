@@ -11,15 +11,16 @@
   canonical<-value;canonical_column<-column
   effective<-.numberEffective(s)
   ranges<-attr(value,"number_ranges")
-  value<-.numberPresent(.numberUnwrap(value),effective,unit=meta$unit,ranges=ranges,
-    available=meta$available,offset_allowed=meta$offset_allowed)
+  presented<-.numberPresent(.numberUnwrap(value),effective,unit=meta$unit,ranges=ranges,
+    available=meta$available,offset_allowed=meta$offset_allowed,trace=TRUE)
+  value<-presented$value
   result_unit<-meta$unit
   for(step in effective$pipeline) {
     if(step$kind=="fixed_unit")result_unit<-step$to
-    if(step$kind=="expression")result_unit<-step$unit %||% "coordinate:expression"
+    if(step$kind=="expression")result_unit<-step$unit %||% .numberExpressionUnit(step$exprs,step$result,result_unit)
     if(step$kind %in% c("present","missing","flag"))result_unit<-"1"
   }
-  contract<-list(unit=result_unit,source_unit=meta$unit,coordinates=meta$coordinates,pipeline=.numberWireFinite(effective$pipeline),source=meta$source,
+  contract<-list(unit=result_unit,source_unit=meta$unit,coordinates=meta$coordinates,pipeline=.numberWireFinite(effective$pipeline),stages=presented$stages,quantitative_poolable=!grepl("unresolved_source|mixed_coordinates",result_unit),source=meta$source,
     reducer=meta$reducer,derived=meta$derived,input_type=column$type,
     result_type=if(is.factor(value))"ordered_factor" else if(inherits(value,"integer64"))"integer64" else if(is.integer(value))"integer" else "numeric",
     privacy_class=attr(column,"privacy_class") %||% 3L,
@@ -109,8 +110,8 @@
   if(length(numbers))attr(frame,"omop_numbers")<-numbers
   frame
 }
-.numberGenerated <- function(column,unit,privacy=3L) {
-  attr(column,"number_origin")<-list(unit=unit,available=TRUE,offset_allowed=FALSE)
+.numberGenerated <- function(column,unit,privacy=3L,available=TRUE) {
+  attr(column,"number_origin")<-list(unit=unit,available=available,offset_allowed=FALSE)
   attr(column,"privacy_class")<-privacy;column
 }
 .numberEligibleColumn <- function(column,name,node) {
@@ -118,7 +119,7 @@
     long=c("event_number","visit_occurrence_id","event_id","unit_concept_id","operator_concept_id"),
     sparse=,temporal_covariates=c("covariate_id","analysis_id","time_id","start_day","end_day"),
     person_period=c("period_id","bin_id","time_id"),
-    survival=c("event","event_code","event_id","status","stratum_id","interval_number","transition_id","from_state","to_state","weight","sampling_weight"),character()))
+    survival=c("event","event_code","event_id","status","stratum_id","interval_number","transition_id","from_state","to_state","weight","sampling_weight","from","to","trans","state_visit_number","event_number","outcome_event_number"),character()))
   .numberAnalyticColumn(column)&&!name %in% structural
 }
 
@@ -130,7 +131,7 @@
   durations<-switch(node$format,
     long=c("start_days","end_days","days_from_index","days_since_previous","duration_days"),
     intervals=c("start_days_from_index","end_days_from_index","duration_days"),
-    survival=c("followup_days","time_at_risk","entry_days_from_index","exit_days_from_index","event_days_from_index","interval_start_days","interval_end_days"),character())
+    survival=c("followup_days","follow_up_days","Tstart","Tstop","time","time_at_risk","entry_days_from_index","exit_days_from_index","event_days_from_index","interval_start_days","interval_end_days"),character())
   for(n in names(columns)) {
     c<-columns[[n]]
     if(!is.null(attr(c,"number_origin"))||!is.null(attr(c,"number_contract")))next
@@ -150,4 +151,91 @@
   units<-unique(vapply(coordinates,function(c)c$unit,""))
   attr(column,"number_origin")<-list(unit=if(length(units)==1L)units else "mixed_coordinates",coordinates=coordinates,available=TRUE,offset_allowed=FALSE)
   column
+}
+
+# Bind copies to declared fragment schemas before output rows are fetched or
+# joined. The later evaluator uses the same keys and checks the actual types.
+.numberPreflightColumns <- function(node,schemas) {
+  map<-node$number_columns %||% list()
+  if(!length(map))return(invisible(NULL))
+  if(node$format %in% c("sparse","temporal_covariates","membership","dictionary"))
+    .numberReject("Use a typed wide/long/dense person_period frame for numeric column copies.","number_type_unsupported")
+  if(any(names(map) %in% unique(unlist(lapply(schemas,names)))))
+    .numberReject("Numeric additions must have new unique column names.","number_dependency_invalid")
+  selected<-unlist(node$columns,use.names=FALSE)
+  allowed<-unique(c(unlist(lapply(schemas,names)),unlist(lapply(schemas,function(s)attr(s,"number_variable_names"))),names(map)))
+  if(length(setdiff(selected,allowed)))
+    .numberReject("Select declared original columns or named numeric additions.","number_source_invalid")
+  bind<-function(v,depth=0L) {
+    if(depth>32L||isTRUE(v$broadcast)||!is.null(v$derived$reducer))
+      .numberReject("Output formulas preserve rows: no reduction/broadcast/cyclic dependencies.","number_dependency_invalid")
+    d<-v$derived
+    if(identical(d$kind,"number_column")) {
+      comp<-d$component
+      if(is.null(comp)) {
+        if(length(schemas)!=1L).numberReject("Name a patient frame component explicitly.","number_dependency_invalid")
+        comp<-names(schemas)[1L]
+      }
+      if(!comp %in% names(schemas)).numberReject("Unknown output component.","number_dependency_invalid")
+      column<-schemas[[comp]][[d$column]]
+      if(is.null(column)||!.numberEligibleColumn(column,d$column,node))
+        .numberReject("Bind an original numeric analytic key, never identifiers, event codes, weights, Dates or factors.","number_source_invalid")
+      return(comp)
+    }
+    if(!identical(d$kind,"number_derive"))
+      .numberReject("number_columns accepts column copies or formulas whose leaves are copies.","number_dependency_invalid")
+    components<-unique(vapply(d$inputs,function(i)bind(i$variable,depth+1L),""))
+    if(length(components)!=1L).numberReject("Formula inputs must belong to one component.","number_dependency_invalid")
+    components
+  }
+  invisible(lapply(map,bind))
+}
+.numberVariableSchema <- function(ctx,node,name,inputs,cons) {
+  columns<-list()
+  for(v in .irOutputVariables(ctx$ir,name)) {
+    rec<-.compileVariable(ctx,.irNamedNode(ctx$ir,"variable",v),inputs$population$roster,cons)
+    columns<-c(columns,rec$columns)
+  }
+  attr(columns,"number_variable_names")<-.irOutputVariables(ctx$ir,name)
+  columns
+}
+.numberPreflightOutput <- function(ctx,node,name,inputs) {
+  if(!length(node$number_columns))return(invisible(NULL))
+  if(node$format %in% c("sparse","temporal_covariates","membership","dictionary"))return(.numberPreflightColumns(node,list()))
+  # Panel identities include vocabulary expansion, and joined identities come
+  # from their declared input fragments; those builders check their inventory.
+  if(node$format %in% c("person_period","joined","wide"))return(invisible(NULL))
+  cons<-.reduceConsumer(ctx,name,inputs$population$roster,inputs$population$coverage,node$grain %||% "episode")
+  vars<-.numberVariableSchema(ctx,node,name,inputs,cons)
+  numeric<-function(keys)setNames(lapply(keys,function(k).fragmentColumn("numeric",TRUE,"measure")),keys)
+  opts<-node$options %||% list()
+  if(node$format=="survival") {
+    fmt<-opts$format %||% "survival";schemas<-list();tars<-.outputTarList(node,name)
+    for(t in names(tars)) {
+      family<-.survivalFamily(fmt,opts,t,name,length(opts$tars %||% list())>0L)
+      for(part in setdiff(names(family),"transition_ref"))schemas[[family[[part]]]]<-c(.survivalColumns(part,cons,fmt),vars)
+    }
+  } else {
+    columns<-c(.outputIdentityColumns(cons),vars)
+    if(node$format=="intervals")columns<-c(columns,numeric(c("start_days_from_index","end_days_from_index")))
+    if(node$format=="long") {
+      derived<-unlist(opts$columns_derived)
+      if(isTRUE(opts$event_log))columns<-c(columns,numeric(c("start_days","end_days","value"))) else {
+        for(ref in .outputSources(node)) {
+          src<-.reduceSource(ctx,ref)
+          for(key in .longOtherColumns(src)) {
+            col<-src$fragment$columns[[key]]
+            if(isTRUE(src$catalogue$columns[[key]]$concept))attr(col,"concept")<-TRUE
+            columns[[key]]<-col
+          }
+        }
+        columns<-c(columns,numeric(intersect(derived,c("value","days_from_index","days_since_previous","duration_days"))))
+        if("days_from_anchor" %in% derived)columns<-c(columns,numeric(paste0("days_from_",names(opts$anchors))))
+        if(length(opts$relations))columns<-c(columns,numeric(paste0("days_to_",names(opts$relations))))
+      }
+    }
+    attr(columns,"number_variable_names")<-attr(vars,"number_variable_names")
+    schemas<-setNames(list(columns),name)
+  }
+  .numberPreflightColumns(node,schemas)
 }
