@@ -363,7 +363,9 @@
 }
 
 .conceptEvidence <- function(report) {
-  as.character(openssl::sha256(charToRaw(.conceptEncode(report[c('concepts','generated','keys','reference_names','numbers')]))))
+  keys<-c("concepts","generated","keys","reference_names","numbers")
+  evidence<-setNames(lapply(keys,function(k)report[[k]]),keys)
+  as.character(openssl::sha256(charToRaw(.conceptEncode(evidence))))
 }
 
 .conceptCheckEvidence <- function(report, spec, required = FALSE) {
