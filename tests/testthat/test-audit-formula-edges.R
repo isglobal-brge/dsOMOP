@@ -21,11 +21,11 @@ test_that("Q14 adult boundaries and invalid input eligibility execute in the emi
   for(i in seq_along(ages))DBI::dbExecute(h$conn,"UPDATE person SET year_of_birth=?,month_of_birth=1,day_of_birth=1,gender_concept_id=? WHERE person_id=?",params=list(2020L-ages[i],sex[i],7000L+i))
   h$blueprint<-NULL;h$role_registry<-NULL
   p<-.audit_egfr_plan()
-  got<-.ws7_scenario_run(h,p)$frame
+  result<-.ws7_scenario_run(h,p);got<-result$frame
   # Independent power equation, not the builder's log/exp DAG.
   expected<-c(142*.9938^18*1.012,142*.9938^80,rep(NA_real_,6))
   expect_equal(got$egfr[match(7001:7008,got$pid)],expected,tolerance=1e-10)
-  expect_identical(attr(got,"omop_numbers")$egfr$privacy_class,2L)
+  expect_identical(attr(result$compiled$components$o$columns$egfr,"privacy_class"),2L)
   # An absent source stays unavailable, even if all other operands are valid.
   p$events$lab$on_missing_table<-"unavailable"
   DBI::dbExecute(h$conn,"DROP TABLE measurement");h$blueprint<-NULL;h$role_registry<-NULL

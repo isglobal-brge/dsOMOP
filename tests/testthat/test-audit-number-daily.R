@@ -66,9 +66,11 @@ test_that("Q15 temporal selection, stable ties, ranges and publication preserve 
     expect_identical(attr(got$values$o$o,"omop_numbers")$daily$privacy_class,2L)
   })
   # Many repeated episodes from one person cannot satisfy the final gate.
+  local({
   run<-.ws7_ctx(h,.audit_daily_plan());on.exit(.ws7_close(run),add=TRUE)
   rows<-.ws7_scenario_frame(rep(7001L,8),index=as.character(as.Date("2020-01-10")+0:7))
   pop<-.ws7_population(run,"t",rows)
   got<-.ws7_publish(run,list(t=pop),threshold=5L)
   expect_identical(got$status$status,"refused")
+  })
 })

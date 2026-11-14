@@ -330,7 +330,7 @@
 
   .omopAnalysisEntry(
     name        = name,
-    description = paste0("CohortMethod fitted comparative effect (live, ",
+    description = paste0("CohortMethod crude arm-only comparative effect (unadjusted; live, ",
                          "R-in-session): the hazard ratio (survival::coxph) or ",
                          "rate ratio (stats::glm Poisson) over a scoped ",
                          "target+comparator pair, with 95% CI and the ",
