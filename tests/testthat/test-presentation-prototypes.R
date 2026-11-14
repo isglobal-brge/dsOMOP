@@ -18,3 +18,19 @@ test_that("membership producer inventory is independent of patient rows", {
       c("cohort_definition_id","cohort_start_date","cohort_end_date","index_source"))
   }
 })
+
+
+test_that("native multi-state identities keep their declared lossless type", {
+  keys <- c("9007199254740993","9007199254740994")
+  dates <- as.Date(c("2020-01-01","2020-01-02"))
+  opts <- list(transitions=list(list(from="index",to="lab")),initial_state="index")
+  retained <- list(lab=data.frame(row_key=character(),start_date=as.Date(character()),event_id=integer()))
+  make <- function(ids).survivalMultistate(opts,keys,c(11L,22L),dates,dates,dates+10,
+    ids,retained,"lab","priority")$msdata
+  value <- make(1:2)
+  expect_type(value$cohort_row_id,"character")
+  expect_setequal(value$cohort_row_id,keys)
+  expect_identical(value$row_id,value$cohort_row_id)
+  expect_identical(value$person_id,c(11L,22L)[match(value$cohort_row_id,keys)])
+  expect_identical(make(integer())$cohort_row_id,character())
+})

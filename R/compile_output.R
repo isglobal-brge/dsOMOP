@@ -1360,7 +1360,7 @@
     entry_d <- as.integer(entry[[i]] - index[[i]])
     exit_d <- as.integer(exit[[i]] - index[[i]])
     stream[[length(stream) + 1L]] <- data.frame(
-      cohort_row_id = keys[[i]], person_id = person[[i]], stream_kind = 0L,
+      cohort_row_id = i, person_id = person[[i]], stream_kind = 0L,
       state_id = spec$initial_state_id, state_time = entry_d - 1, state_day = entry_d - 1L,
       within_day_order = 0L, within_day_count = 0L, risk_end_days = exit_d, stringsAsFactors = FALSE)
     ev <- .survivalEpisodeEvents(retained, outcome_names, keys[[i]])
@@ -1375,13 +1375,13 @@
       wdc <- stats::ave(seq_along(day), day, FUN = length)
       time <- if (identical(tie, "sequential")) day - (wdc - wdo) * spec$state_step else as.numeric(day)
       stream[[length(stream) + 1L]] <- data.frame(
-        cohort_row_id = keys[[i]], person_id = person[[i]], stream_kind = 1L,
+        cohort_row_id = i, person_id = person[[i]], stream_kind = 1L,
         state_id = as.integer(state_of[ev$outcome]), state_time = time, state_day = day,
         within_day_order = as.integer(wdo), within_day_count = as.integer(wdc),
         risk_end_days = exit_d, stringsAsFactors = FALSE)
     }
     stream[[length(stream) + 1L]] <- data.frame(
-      cohort_row_id = keys[[i]], person_id = person[[i]], stream_kind = 2L, state_id = NA_integer_,
+      cohort_row_id = i, person_id = person[[i]], stream_kind = 2L, state_id = NA_integer_,
       state_time = exit_d, state_day = exit_d, within_day_order = 0L, within_day_count = 0L,
       risk_end_days = exit_d, stringsAsFactors = FALSE)
   }
@@ -1389,7 +1389,12 @@
                                              max_rows = .reduceRowCap())
   ms <- if (length(stream)) machine$transform(do.call(rbind, stream)) else .emptyMultistateData()
   machine$assert_complete()
-  ms$person_id <- person[match(as.character(ms$cohort_row_id), as.character(keys))]
+  # The compatibility state machine uses numeric episode IDs. Feed it private
+  # row positions, then restore native lossless keys instead of coercing BIGINT
+  # identities through binary64 (including the empty result's type).
+  positions <- as.integer(ms$cohort_row_id)
+  ms$cohort_row_id <- keys[positions]
+  ms$person_id <- person[positions]
   ms$row_id <- ms$cohort_row_id
   ref <- .multistateTransitionReference(spec, tie)
   list(msdata = ms, transition_ref = ref)
