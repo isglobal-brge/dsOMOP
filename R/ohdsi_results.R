@@ -1176,6 +1176,14 @@
            call. = FALSE)
     }
   )
+  # SQLite cannot infer expression types from an empty result. The physical
+  # column types have already been checked, so restore its declared key types.
+  if (nrow(result) == 0L && identical(handle$target_dialect, "sqlite")) {
+    for (key in integer_keys) result[[key]] <- integer(0)
+    for (key in intersect(identity_cols, .ohdsiTextIdentityKeys())) {
+      result[[key]] <- character(0)
+    }
+  }
   .ohdsiValidateResultIdentity(result, identity_cols, table_count_cols)
   if (identical(handle$target_dialect, "sqlite")) {
     # Retain the established int32 representation where it is exact. Larger

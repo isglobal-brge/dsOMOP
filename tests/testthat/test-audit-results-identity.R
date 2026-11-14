@@ -60,7 +60,7 @@ test_that("identity physical types are checked without reading an empty table", 
 })
 
 test_that("strict SQLite identities refuse malformed storage before projection", {
-  local_options(dsomop.query_strict = TRUE)
+  withr::local_options(dsomop.query_strict = TRUE)
   h <- create_test_handle()
   on.exit(cleanup_handle(h))
   .buildBlueprint(h)
@@ -84,7 +84,7 @@ test_that("strict SQLite identities refuse malformed storage before projection",
 })
 
 test_that("valid SQLite BIGINT identities survive exactly and remain private when projected", {
-  local_options(dsomop.query_strict = TRUE)
+  withr::local_options(dsomop.query_strict = TRUE)
   h <- create_test_handle()
   on.exit(cleanup_handle(h))
   .buildBlueprint(h)
