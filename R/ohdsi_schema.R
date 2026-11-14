@@ -212,10 +212,20 @@
 # valid export. Only a constant reaches R; no keys/counts enter a diagnostic.
 .ohdsiValidateUniqueResultKeys <- function(handle, physical, keys) {
   if (!length(keys)) return(invisible(NULL))
-  sql <- paste0("SELECT TOP 1 1 AS invalid FROM ", physical$qualified_name,
-    " GROUP BY ", paste(keys, collapse = ", "), " HAVING COUNT(*) > 1")
-  bad <- tryCatch(nrow(.executeQuery(handle, .sql_translate(sql, handle$target_dialect))) > 0L,
-                  error = function(e) TRUE)
+  invalid <- paste0(keys, " IS NULL")
+  text_keys <- intersect(keys, .ohdsiTextIdentityKeys())
+  invalid <- c(invalid, paste0(text_keys, " = ''")[seq_along(text_keys)])
+  if (identical(handle$target_dialect, "sqlite")) {
+    kinds <- ifelse(keys %in% text_keys, "text", "integer")
+    invalid <- c(invalid, paste0("TYPEOF(", keys, ") <> '", kinds, "'"))
+  }
+  checks <- c(paste0("SELECT TOP 1 1 AS invalid FROM ", physical$qualified_name,
+      " WHERE ", paste(invalid, collapse = " OR ")),
+    paste0("SELECT TOP 1 1 AS invalid FROM ", physical$qualified_name,
+      " GROUP BY ", paste(keys, collapse = ", "), " HAVING COUNT(*) > 1"))
+  bad <- tryCatch(any(vapply(checks, function(sql) {
+    nrow(.executeQuery(handle, .sql_translate(sql, handle$target_dialect))) > 0L
+  }, logical(1))), error = function(e) TRUE)
   if (bad) stop("results_schema_integrity: required row identities are missing or invalid; ",
                 "use a complete supported physical export.", call. = FALSE)
   invisible(NULL)

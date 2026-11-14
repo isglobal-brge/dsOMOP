@@ -199,3 +199,34 @@ test_that("wrong optional physical types refuse before data access", {
   expect_identical(.ohdsiInspectResultSchema(h, "cm_result")$status, "unknown")
   expect_error(.ohdsiGetResults(h, "cm_result"), "unsupported_results_schema")
 })
+
+test_that("schema status gates discovery without reading unsupported result rows", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  DBI::dbExecute(h$conn, "ALTER TABLE cm_result RENAME COLUMN target_id TO target_comparator_id")
+  queries <- character()
+  real <- .executeQuery
+  local_mocked_bindings(.executeQuery = function(handle, sql, ...) {
+    queries <<- c(queries, sql)
+    real(handle, sql, ...)
+  })
+  status <- .ohdsiStatus(h)
+  expect_false(status$cohort_method$available)
+  expect_false(any(grepl("FROM [\"`]?cm_result", queries)))
+  expect_identical(status$cohort_method$schema_contracts$schema_status[
+    status$cohort_method$schema_contracts$table_name == "cm_result"], "recognized_unsupported")
+})
+
+test_that("invalid keys outside a caller slice cannot bypass whole-relation integrity", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  for (literal in c("NULL", "1.5", "'AUDIT_INVALID_ID'")) {
+    DBI::dbExecute(h$conn, paste0("UPDATE cm_result SET target_id = ", literal, " WHERE analysis_id = 2"))
+    expect_error(.ohdsiGetResults(h, "cm_result", columns = "rr", limit = 1L,
+      filters = list(analysis_id = 1L)), "^results_schema_integrity:")
+  }
+  DBI::dbExecute(h$conn, "UPDATE cm_result SET target_id = 1")
+  result <- .ohdsiGetResults(h, "cm_result")
+  expect_identical(attr(result, "dsomop.results_schema")$status, "supported")
+  expect_identical(attr(result, "dsomop.results_schema")$upstream_version, "unknown")
+})

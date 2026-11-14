@@ -510,7 +510,8 @@
       found$table_name[[i]], registry[[tool_id]]
     )
     length(canonical) == 1L &&
-      identical(registry[[tool_id]]$contracts[[canonical]]$release, "public")
+      identical(registry[[tool_id]]$contracts[[canonical]]$release, "public") &&
+      (is.null(found$schema_status) || identical(found$schema_status[[i]], "supported"))
   }, logical(1))
   found[keep, , drop = FALSE]
 }
@@ -543,11 +544,11 @@
     if (is.null(tid)) next
     tool <- registry[[tid]]
     qualified <- .qualifyTable(handle, actual_name, schema)
-    n <- tryCatch({
+    schema_contract <- .ohdsiInspectResultSchema(handle, actual_name, tid)
+    n <- if (identical(schema_contract$status, "supported")) tryCatch({
       sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified)
       as.integer(.executeQuery(handle, sql)$n[1])
-    }, error = function(e) 0L)
-    schema_contract <- .ohdsiInspectResultSchema(handle, actual_name, tid)
+    }, error = function(e) NA_integer_) else NA_integer_
     rows[[length(rows) + 1L]] <- data.frame(
       schema_status = schema_contract$status,
       layout_id = schema_contract$layout_id,
