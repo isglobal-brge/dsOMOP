@@ -243,11 +243,11 @@ choose the native date/age helpers explicitly for new semantics. The protected
 release protocol introduced in 2.10.3 is unchanged; pooling still requires
 compatible contracts and logical source identities.
 
-Release verification: [recipe/publication contract run 43515122503](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43515122503)
+Release verification: [recipe/publication contract run 43542378954](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43542378954)
 passed fresh and upgrade paths on Opal 5.7.6 and 6.1.3;
-[full e2e run 43515127555](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43515127555)
+[full e2e run 43542382006](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43542382006)
 passed both fresh and upgrade jobs. Both tested harness commit
-`17e5df40f4718bdece091f68d3003c764f061854`. These are evidence for that
+`2e9844a0333a0cffda7e84662a44b070fcc850e4`. These are evidence for that
 candidate, not a claim of live execution on every supported SQL dialect.
 
 # dsOMOP 2.10.3 (2026-11-13)
