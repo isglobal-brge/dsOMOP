@@ -40,3 +40,18 @@ test_that("C28 C38 private definedness survives repeated row alignment", {
   expect_identical(attr(twice,"category_defined"),c(FALSE,TRUE))
   expect_s3_class(twice,"dsomop_category_value")
 })
+
+test_that("R5 copy eligibility uses selector lineage, never text or factor values", {
+  ctx <- new.env(parent=emptyenv())
+  plain <- .fragmentColumn("text",TRUE,"measure")
+  input_only <- plain
+  attr(input_only,"category_input_contract") <- list(variable=list())
+  # Counts and indicators also have category_input_contract: it is not a result type.
+  for (column in list(plain,input_only,.fragmentColumn("integer",TRUE,"measure"))) {
+    for (value in list("label",factor("label"))) {
+      node <- list(category_columns=list(copy=list(derived=list(kind="category_column",column="answer"))))
+      expect_error(.categoryOutputColumns(ctx,data.frame(answer=value),list(answer=column),node,"w","w"),
+        "category_type_unsupported")
+    }
+  }
+})

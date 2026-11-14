@@ -21,7 +21,7 @@
       if(!is.null(d$component)&&d$component!=component)return(NULL)
       c<-original_columns[[d$column]]
       if(is.null(c)) .categoryReject("Bind an original stable column key; sibling/self references are not admitted.")
-      eligible<-.conceptColumn(c)||!is.null(attr(c,"category_domain"))||!is.null(attr(c,"number_contract")$levels)||.categoryFlag(list(),c)||!is.null(attr(c,"date_spec"))
+      eligible<-isTRUE(attr(c,"category_result"))||.conceptColumn(c)||!is.null(attr(c,"category_domain"))||!is.null(attr(c,"number_contract")$levels)||.categoryFlag(list(),c)||!is.null(attr(c,"date_spec"))
       if(!eligible) .categoryReject("Bind a declared category or semantic flag, not a structural ID or ordinary quantity.","category_type_unsupported")
       attr(c,"category_spec")<-.categoryEffective(v$category_spec,attr(c,"category_spec"))
       return(list(value=original[[d$column]],column=c))

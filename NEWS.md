@@ -1,5 +1,13 @@
 # dsOMOP 2.10.5 (2026-11-14)
 
+- Corrected (categorical composition review): final column selection and order
+  apply to output-local copies and expanded variables in both execution and
+  prospective codebooks. Structural columns remain present.
+- Corrected: output-local category copies accept categorical selector reductions
+  (including mode and vector nth), retaining consumed identity, missingness and
+  admission contracts while allowing independent presentation. Re-run affected
+  native recipes; no declaration changes are needed.
+
 - Corrected (categorical review): prospective codebooks expand native nth-value
   columns and honor effective numeric, date and category presentation defaults,
   overrides and untranslated concepts. Native outputs can select expanded

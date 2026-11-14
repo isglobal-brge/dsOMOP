@@ -276,3 +276,12 @@
   }
   spec
 }
+
+# Final native projection expands variable declarations in place, then retains
+# structural columns before the requested analytic keys and output-local copies.
+.categorySelectedColumns <- function(selected, variables, structural, available) {
+  selected <- unique(unlist(lapply(unlist(selected, use.names=FALSE), function(key) {
+    if (key %in% names(variables)) .pnv2VariableColumns(key, variables[[key]]) else key
+  }), use.names=FALSE))
+  intersect(unique(c(structural, selected)), available)
+}

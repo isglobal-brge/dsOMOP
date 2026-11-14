@@ -238,26 +238,17 @@
       declared_columns <- unique(unlist(lapply(.irOutputVariables(ctx$ir,name),function(v)
         .pnv2VariableColumns(v,ctx$ir$variables[[v]])),use.names=FALSE))
       expanded_selection <- any(selected_keys %in% setdiff(declared_columns,names(ctx$ir$variables)))
-      if (expanded_selection) {
-        selected <- unique(unlist(lapply(selected_keys, function(k) {
-          if (k %in% names(ctx$ir$variables)) .pnv2VariableColumns(k, ctx$ir$variables[[k]]) else k
-        }), use.names=FALSE))
-        structural <- setdiff(names(part$frame),c(declared_columns,names(node$number_columns),names(node$category_columns)))
-        keep <- unique(c(structural, selected))
-        keep <- intersect(keep, names(part$frame))
+      if (expanded_selection || !component %in% co$reference_components && !is.null(node$columns) &&
+          (length(node$number_columns) || length(node$category_columns))) {
+        additions <- c(names(node$number_columns), names(node$category_columns))
+        structural <- if (expanded_selection) names(part$frame) else
+          names(part$fragment$columns)[!vapply(names(part$fragment$columns), function(k)
+            .numberEligibleColumn(part$fragment$columns[[k]], k, node) ||
+              !is.null(attr(part$fragment$columns[[k]], "number_contract")), logical(1))]
+        structural <- setdiff(structural, c(declared_columns, additions))
+        keep <- .categorySelectedColumns(node$columns, ctx$ir$variables, structural, names(part$frame))
         part$frame <- part$frame[keep]
         part$fragment$columns <- part$fragment$columns[keep]
-      }
-      if(!is.null(node$columns)&&(length(node$number_columns)||length(node$category_columns))) {
-        selected<-unlist(node$columns,use.names=FALSE)
-        if(length(intersect(selected,names(ctx$ir$variables)))) {
-          cons<-.reduceConsumer(ctx,name,inputs$population$roster,inputs$population$coverage,node$grain %||% "episode")
-          for(v in intersect(selected,names(ctx$ir$variables)))selected<-union(selected,names(.compileVariable(ctx,.irNamedNode(ctx$ir,"variable",v),inputs$population$roster,cons)$columns))
-        }
-        structural<-names(part$fragment$columns)[!vapply(names(part$fragment$columns),function(k).numberEligibleColumn(part$fragment$columns[[k]],k,node)||!is.null(attr(part$fragment$columns[[k]],"number_contract")),logical(1))]
-        keep<-names(part$frame)[names(part$frame) %in% union(selected,structural)]
-        part$frame<-part$frame[keep]
-        part$fragment$columns<-part$fragment$columns[keep]
       }
       co$components[[component]] <- part
     }

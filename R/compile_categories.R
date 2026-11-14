@@ -128,6 +128,9 @@
   column<-.fragmentColumn(if(numeric)"integer" else "text",TRUE,"measure")
   attr(column,"privacy_class")<-attr(input_column,"privacy_class")
   attr(column,"category_input_contract")<-.categoryInputContract(ctx,input)
+  # Input lineage also exists on counts and indicators; only selectors return
+  # a categorical cell. Eligibility must be known before evaluating values.
+  if(!numeric)attr(column,"category_result")<-TRUE
   if(r$fn %in% c("any","all"))attr(column,"semantic_flag")<-TRUE
   columns<-setNames(rep(list(column),length(.reduceColumnNames(name,r))),.reduceColumnNames(name,r))
   evaluate<-function() {
