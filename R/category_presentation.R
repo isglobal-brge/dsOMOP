@@ -82,7 +82,8 @@
       producer_order<-if(identical(c$kind,"category"))unlist(c$category$producer_order,use.names=FALSE) else if(is.null(c$kind) || identical(c$kind,"date"))character() else lev;producer_ordered<-is.ordered(frame[[n]])
       if(is.null(c$kind)) {
         if(isFALSE(ctx$ir$options$translate_concepts)) .categoryReject("Enable translate_concepts for concept presentation.")
-        extra<-if(!length(s$recode$map))setdiff(unlist(s$levels,use.names=FALSE),lev) else character()
+        public_inputs<-c(if(!length(s$recode$map))unlist(s$levels,use.names=FALSE),names(s$recode$map))
+        extra<-setdiff(public_inputs,lev)
         if(length(extra)) {
           .categoryKeys(extra,concept=TRUE)
           rr<-.conceptVocabulary(ctx$handle,sub("^concept:","",extra))
