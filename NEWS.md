@@ -772,7 +772,7 @@ refused behavior, including migration paths.
   declarations still refuse the plan. Any other plan still needs a non-empty
   mapping.
 
-## Design amendments applied by WS-0 (design/2.10.3/amendments.md)
+## Recipe language design amendments
 
 - A-1 results-cohort index sources (namespace `cohort:<n>`, `event_end` =
   `cohort_end_date`), A-2 `omop_score()` conditions on or before the reference

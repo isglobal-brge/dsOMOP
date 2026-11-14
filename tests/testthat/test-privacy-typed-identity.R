@@ -1,4 +1,4 @@
-# regression review of dsOMOP 2.10.3 (regression-p0-review.md), typed-channel blocking
+# Typed-channel regression
 # findings: B01 sealed contributor identity, B02 canonical eligible
 # populations of fixed aliases, B04 injective framing, B05 registered numeric
 # bases. Each test is the review's reproduction (or its closest valid form
@@ -13,7 +13,7 @@
 # --- B01 ----------------------------------------------------------------------------
 
 test_that("B01: a typed answer is invariant to earlier handle key resolution", {
-  # Port of regression-scratch/typed-review/dsOMOP-probes/test-regression-handle-history.R
+  # Exercise pseudonym identity across handle histories.
   .release_state()
   key <- .testPseudonymKey()
   identity <- "test://regression-review/pseudonym-key-cache"

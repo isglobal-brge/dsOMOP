@@ -1,5 +1,4 @@
-# regression second-round model probes (regression-scratch/rereview-models,
-# test-regression-rereview-models.R) against the round-3 fixes: R06 (one
+# Model regression probes: R06 (one
 # canonical exit/status/arm basis), the C8 part of B03 (exit cells under the
 # C6 status parents), interaction Cox (R07) and the SCCS q-grid claims
 # (deviation 16). Defect witnesses are inverted to assert the fixed

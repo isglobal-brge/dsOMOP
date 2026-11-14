@@ -1,8 +1,8 @@
 # Independent rereview probes, actual server cryptography and payloads
-# (regression-scratch/rereview-typed, ported unchanged except: the client sources
+# The client sources
 # are skipped when the sibling dsOMOPClient is absent, the status fixture asks
 # as a dsOMOPClient 2.10.3 client (R08: older clients are refused), and the
-# public-client test loads the sibling client's namespace).
+# public-client test loads the sibling client's namespace.
 .regression_client <- function() {
   e <- new.env(parent = environment())
   for (f in c("privacy.R", "privacy_protected.R", "analysis.R")) {

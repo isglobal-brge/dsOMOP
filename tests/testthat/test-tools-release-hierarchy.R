@@ -92,7 +92,7 @@ test_that("the two-way adjustment meets consistent signed margins", {
 # --- Incidence ---------------------------------------------------------------------
 
 test_that("regression B03: adding a public age dimension preserves gender margins", {
-  # Port of regression-scratch/rereview-readers test-regression-rereview-readers.R.
+  # Exercise the same release with and without an extra public dimension.
   .release_state()
   h <- create_test_handle(n_persons = 2000)
   on.exit(cleanup_handle(h), add = TRUE)

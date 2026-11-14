@@ -1,10 +1,10 @@
-# regression literal original-size reproductions (regression-p0-review.md N03): the
+# Original-size regression reproductions: the
 # 12/13-person E1 adjacent-scope algebra and the original 1000-person
 # min_days / reference-year / SCCS attacker algorithms, run on the actual
 # endpoints. Their defect-witness assertions are inverted where the review
 # required the fix (B09: no standard min_days transition; B13: protected
 # measurement moments exist but the 7.85 equation has no solution). Fixtures
-# in tests/fixtures/regression (regression scratch data). Helpers in
+# in tests/fixtures/regression (synthetic data). Helpers in
 # helper-tools-release.R.
 
 .regression_fixture <- function(name) {
