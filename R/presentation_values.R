@@ -22,6 +22,8 @@
   FALSE
 }
 .categoryPresent <- function(ctx,frame,columns) {
+  # Vocabulary access exists only in server execution. Resolve those backend
+  # functions on demand; empty public prototypes never enter these branches.
   contracts <- attr(frame,"omop_concepts") %||% list()
   for(n in intersect(names(frame),names(columns))) {
     col <- columns[[n]];owner <- attr(col,"concept_owner")
@@ -87,11 +89,11 @@
         extra<-setdiff(public_inputs,lev)
         if(length(extra)) {
           .categoryKeys(extra,concept=TRUE)
-          rr<-.conceptVocabulary(ctx$handle,sub("^concept:","",extra))
+          rr<-get(".conceptVocabulary",mode="function")(ctx$handle,sub("^concept:","",extra))
           for(k in seq_along(extra)) {r<-rr[[k]];r$id<-extra[k];records[[extra[k]]]<-r}
           declared<-union(declared,extra)
         }
-        records<-.categoryVocabularyLabels(ctx$handle,records,s)
+        records<-get(".categoryVocabularyLabels",mode="function")(ctx$handle,records,s)
       }
     }
     if(!flag && identical(c$kind,"category") && (!is.null(s$label_style)||!is.null(s$language))) {
@@ -100,17 +102,17 @@
       for(key in names(records)) {
         r<-records[[key]];identity<-r$effective_id %||% key
         if(!grepl("^concept:",identity)||r$origin %in% c("variable","recipe","recode","producer","sentinel"))next
-        fresh<-.conceptVocabulary(ctx$handle,sub("^concept:","",identity))[[1L]]
+        fresh<-get(".conceptVocabulary",mode="function")(ctx$handle,sub("^concept:","",identity))[[1L]]
         fresh$id<-key;fresh$effective_id<-identity;records[[key]]<-fresh
       }
-      records<-.categoryVocabularyLabels(ctx$handle,records,s)
+      records<-get(".categoryVocabularyLabels",mode="function")(ctx$handle,records,s)
     }
     rollup <- NULL
     if(!is.null(s$rollup) && s$rollup$kind!="none") {
       if(!.categoryConceptProducer(list(producer=producer))) .categoryReject("Hierarchy rollup requires concept identities.")
-      rollup <- .categoryRollupMap(ctx$handle,s$rollup)
+      rollup <- get(".categoryRollupMap",mode="function")(ctx$handle,s$rollup)
       targets <- unique(unlist(rollup$mapping,use.names=FALSE))
-      target_records <- if(length(targets)).conceptVocabulary(ctx$handle,sub("^concept:","",targets)) else list()
+      target_records <- if(length(targets))get(".conceptVocabulary",mode="function")(ctx$handle,sub("^concept:","",targets)) else list()
       names(target_records) <- targets
       map <- .conceptMapOverlay(.conceptMap(ctx$ir$options$labels,"recipe",wire=TRUE),.conceptMap(node$labels,"variable",wire=TRUE))
       for(key in targets) {
@@ -118,7 +120,7 @@
         id <- sub("^concept:","",key)
         if(id %in% names(map)) {target_records[[key]]$origin<-"variable";target_records[[key]]$label<-map[[id]]}
       }
-      target_records <- .categoryVocabularyLabels(ctx$handle,target_records,s)
+      target_records <- get(".categoryVocabularyLabels",mode="function")(ctx$handle,target_records,s)
       # The declared hierarchy domain is public. Carry all its mapped source
       # identities, so consumed alias contracts cannot depend on local rows.
       for(key in setdiff(names(rollup$mapping),names(records)))if(length(rollup$mapping[[key]])) {
