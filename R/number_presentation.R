@@ -175,7 +175,7 @@
   if(any(names(map) %in% unique(unlist(lapply(schemas,names)))))
     .numberReject("Numeric additions must have new unique column names.","number_dependency_invalid")
   selected<-unlist(node$columns,use.names=FALSE)
-  allowed<-unique(c(unlist(lapply(schemas,names)),unlist(lapply(schemas,function(s)attr(s,"number_variable_names"))),names(map)))
+  allowed<-unique(c(unlist(lapply(schemas,names)),unlist(lapply(schemas,function(s)attr(s,"number_variable_names"))),names(map),names(node$category_columns)))
   if(length(setdiff(selected,allowed)))
     .numberReject("Select declared original columns or named numeric additions.","number_source_invalid")
   bind<-function(v,depth=0L) {
