@@ -90,7 +90,7 @@
   frame <- .numberCapture(frame, columns)
   if (!.reduceTranslate(ctx)) {
     frame<-.categoryPresent(ctx,frame,columns)
-    if(identical(attr(ctx$ir,"source_version"),2L)||length(.categoryCapabilities(ctx$ir)))attr(frame,"omop_codebook_schema")<-.categoryReleaseSchema(ctx,frame,columns)
+    if(!identical(attr(ctx$ir,"source_version"),1L)||length(.categoryCapabilities(ctx$ir)))attr(frame,"omop_codebook_schema")<-.categoryReleaseSchema(ctx,frame,columns)
     return(frame)
   }
   contracts <- attr(frame, "omop_concepts") %||% list()
@@ -150,7 +150,7 @@
   if (length(contracts) || length(generated)) {
     attr(frame, "omop_presentation_handle") <- .conceptHandleKey(ctx)
   }
-  if(identical(attr(ctx$ir,"source_version"),2L)||length(.categoryCapabilities(ctx$ir)))attr(frame,"omop_codebook_schema")<-.categoryReleaseSchema(ctx,frame,columns)
+  if(!identical(attr(ctx$ir,"source_version"),1L)||length(.categoryCapabilities(ctx$ir)))attr(frame,"omop_codebook_schema")<-.categoryReleaseSchema(ctx,frame,columns)
   frame
 }
 

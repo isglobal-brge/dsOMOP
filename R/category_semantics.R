@@ -174,7 +174,8 @@
   walk <- function(x) {
     if (!is.list(x)) return(invisible(NULL))
     if (!is.null(x$category_spec)) .categorySpecCheck(x$category_spec)
-    d<-x$derived
+    d<-x[["derived"]]
+    if(!is.list(d))d<-NULL
     if(identical(d$kind,"repeated")&&!inherits(plan,"omop_recipe")) {
       if(is.null(d$timepoints)==is.null(d$visits)) .categoryReject("Choose exactly timepoints or visits.","repeated_spec_invalid")
       if(!length(d$values)) .categoryReject("Repeated values cannot be empty.","repeated_spec_invalid")

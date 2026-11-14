@@ -117,6 +117,12 @@
         if(id %in% names(map)) {target_records[[key]]$origin<-"variable";target_records[[key]]$label<-map[[id]]}
       }
       target_records <- .categoryVocabularyLabels(ctx$handle,target_records,s)
+      # The declared hierarchy domain is public. Carry all its mapped source
+      # identities, so consumed alias contracts cannot depend on local rows.
+      for(key in setdiff(names(rollup$mapping),names(records)))if(length(rollup$mapping[[key]])) {
+        r<-target_records[[rollup$mapping[[key]][1L]]]
+        r$id<-key;r$effective_id<-key;records[[key]]<-r
+      }
       effective<-vapply(records,function(r)r$effective_id %||% r$id,"")
       targets_for<-lapply(effective,function(key)if(grepl("^special:",key))key else rollup$mapping[[key]])
       names(targets_for)<-names(records)
@@ -129,7 +135,7 @@
         r$id<-key;r$effective_id<-target;records[[key]]<-r
       }
       for(key in setdiff(targets,names(records)))records[[key]]<-target_records[[key]]
-      declared <- union(intersect(declared,names(records)),targets)
+      declared <- union(intersect(declared,names(records)),union(targets,intersect(names(rollup$mapping),names(records))))
     }
     effective_spec<-s
     if(is.list(s[["order"]]$metadata))effective_spec[["order"]]<-list(kind="category_order",keys=as.list(.categoryOrderCheck(s[["order"]])))
