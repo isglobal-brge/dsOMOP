@@ -207,11 +207,8 @@
         if ("cohort_start_date" %in% names(roster)) index <- roster$cohort_start_date[match(as.character(part$frame$cohort_row_id), as.character(roster$cohort_row_id))]
       }
       if (node$format %in% c("intervals", "person_period", "survival") && !is.null(ctx$ir$options$date_spec) && !is.null(index)) {
-        endpoints <- c(start_days_from_index="start_date", end_days_from_index="end_date",
-          period_start_days="period_start_date", period_end_days="period_end_date",
-          entry_days_from_index="entry_date", exit_days_from_index="exit_date",
-          event_days_from_index="event_date", interval_start_days="interval_start_date", interval_end_days="interval_end_date")
-        for (old in intersect(names(endpoints), names(part$frame))) {
+        endpoints <- .dateOutputEndpoints(node$format, names(part$frame), ctx$ir$options$date_spec)
+        for (old in names(endpoints)) {
           col <- endpoints[[old]]
           if (col %in% names(part$frame)) .dateReject("Native endpoint name collides with an explicit variable.", "date_parts_names")
           part$frame[[col]] <- index + part$frame[[old]]

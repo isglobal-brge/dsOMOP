@@ -1,5 +1,10 @@
 # dsOMOP 2.10.5 (2026-11-14)
 
+- Corrected (date/category schema review): prospective codebooks include native
+  date endpoints before final selection, with their effective presentation types
+  and order, including nested survival and joined outputs. Rebuild affected
+  codebooks; recipe declarations and published data do not change.
+
 - Corrected (categorical schema review): prospective codebooks enumerate closed
   panel source columns and apply the same required numeric-role rules as
   execution for selected panel and survival copies, including nested components.
