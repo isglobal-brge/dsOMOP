@@ -1,3 +1,17 @@
+# dsOMOP / dsOMOPClient 2.10.5 (development)
+
+* **Newly refused:** incidence `clean_window` values other than zero and
+  `fe.prevalence` `time_windows` values other than zero now fail with a bounded
+  setting-specific remedy before patient computation on ordinary, protected
+  and alias routes. These selectors previously did not implement the requested
+  science. Use a validated native risk/window recipe when that setting matters;
+  dropping a required window is not an equivalent analysis. Explicit null,
+  nonfinite/fractional values and malformed selectors are invalid settings.
+* **Corrected:** incidence discovery describes the first-target-episode,
+  full-window person-day estimand and separates contribution bounds from risk
+  windows. FE prevalence describes all-history events among scoped members,
+  without a cohort-relative date predicate.
+
 # dsOMOP 2.10.4 (2026-11-13)
 
 - Corrected: derived sex is a factor with the public `F`, `M` domain, including
