@@ -235,7 +235,7 @@
       part$frame<-categories$frame;part$fragment$columns<-categories$columns
       # A selected expanded reducer key projects only that key, in request order.
       selected_keys <- unlist(node$columns, use.names=FALSE)
-      declared_columns <- unique(unlist(lapply(names(ctx$ir$variables),function(v)
+      declared_columns <- unique(unlist(lapply(.irOutputVariables(ctx$ir,name),function(v)
         .pnv2VariableColumns(v,ctx$ir$variables[[v]])),use.names=FALSE))
       expanded_selection <- any(selected_keys %in% setdiff(declared_columns,names(ctx$ir$variables)))
       if (expanded_selection) {
