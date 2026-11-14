@@ -73,13 +73,14 @@
 }
 .categoryDomainCheck <- function(x,depth=0L) {
   if(inherits(x,"omop_concept_set")) {
-    x<-list(concepts=x$concepts,include_descendants=x$descendants,include_mapped=x$mapped,exclude=x$exclude)
+    x<-list(concepts=x$concepts,include_descendants=x$descendants,include_mapped=x$mapped,exclude=x$exclude,validity_policy=x$validity_policy)
     x<-x[!vapply(x,is.null,logical(1))]
   }
   if(!is.list(x)||is.null(names(x)))return(.categoryKeys(x,FALSE,TRUE))
   if(depth>16L) .categoryReject("Concept domain exclusions exceed the nesting bound.")
   x<-x[!vapply(x,is.null,logical(1))]
-  .categoryObject(x,c("concepts","include_descendants","include_mapped","exclude"),"concepts")
+  .categoryObject(x,c("concepts","include_descendants","include_mapped","exclude","validity_policy"),"concepts")
+  if (!is.null(x$validity_policy)) .ohdsiValidityPolicy(x$validity_policy)
   ids<-unlist(x$concepts,use.names=FALSE)
   if(!is.numeric(ids)||!length(ids)||anyNA(ids)||any(ids<0|ids>2147483647|ids!=trunc(ids))||anyDuplicated(ids)) .categoryReject("Use a nonempty public concept-set domain.")
   for(n in intersect(names(x),c("include_descendants","include_mapped"))) .categoryBool(x[[n]])
