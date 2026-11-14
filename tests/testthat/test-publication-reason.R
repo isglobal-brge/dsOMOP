@@ -15,14 +15,19 @@ test_that("a rejection entry carries the reason only for a vocabulary validation
                                reason = "adapter_person_mismatch"))
   expect_identical(.rejectionEntry(.reason_condition("cost_currency_mixed"))$reason,
                    "cost_currency_mixed")
-  # A-20 (j): the bounded realisations of the interval helpers
-  for (reason in c("stockpile_row_cap", "reducer_row_cap")) {
+  # A-20 (j) interval bounds and A-28's closed date refusal vocabulary.
+  for (reason in c("stockpile_row_cap", "reducer_row_cap", "date_spec_invalid",
+                   "date_source_invalid", "date_pattern_invalid",
+                   "date_policy_conflict", "date_parts_names")) {
     expect_identical(.rejectionEntry(.reason_condition(reason)),
                      list(code = "validation_error",
                           message = "Publication refused: validation_error.", reason = reason))
   }
   expect_identical(.REJECTION_REASONS, c("adapter_person_mismatch", "cost_currency_mixed",
-                                         "stockpile_row_cap", "reducer_row_cap"))
+                                         "stockpile_row_cap", "reducer_row_cap",
+                                         "date_spec_invalid", "date_source_invalid",
+                                         "date_pattern_invalid", "date_policy_conflict",
+                                         "date_parts_names"))
   # the raw message and the field path never travel
   expect_false(any(grepl("member|events/", unlist(entry))))
   # an unknown construct, another code or a malformed reason: the field is omitted
@@ -50,7 +55,9 @@ test_that(".validatePlanStatus admits the closed reason only with validation_err
   expect_true(.validatePlanStatus(good))
   good$rejected$x$reason <- "cost_currency_mixed"
   expect_true(.validatePlanStatus(good))
-  for (reason in c("stockpile_row_cap", "reducer_row_cap")) {
+  for (reason in c("stockpile_row_cap", "reducer_row_cap", "date_spec_invalid",
+                   "date_source_invalid", "date_pattern_invalid",
+                   "date_policy_conflict", "date_parts_names")) {
     ok <- good; ok$rejected$x$reason <- reason
     expect_true(.validatePlanStatus(ok))
   }
