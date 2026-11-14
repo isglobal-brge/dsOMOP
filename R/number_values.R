@@ -7,6 +7,25 @@
   }
   as.double(x)
 }
+# Validate the physical materialization boundary before any cast. BIGINT may
+# arrive as decimal text; fractional doubles must never be truncated into it.
+.numberMaterialize <- function(x,type) {
+  if(type=="bigint") {
+    if(inherits(x,"integer64"))return(x)
+    valid<-if(is.character(x))is.na(x)|grepl("^-?[0-9]+$",x) else
+      is.numeric(x)&(is.na(x)|is.finite(x)&x==trunc(x))
+    if(!all(valid)) .numberReject("Runtime numeric value disagrees with its declared integer type; retain a numeric representation.","number_type_unsupported")
+    y<-suppressWarnings(bit64::as.integer64(x))
+    if(any(!is.na(x)&is.na(y))||is.numeric(x)&&any(!is.na(x)&suppressWarnings(as.double(y))!=x))
+      .numberReject("Runtime integer cannot be materialized exactly; retain raw/count identity representation.","number_type_unsupported")
+    return(y)
+  }
+  if(!is.numeric(x)||is.factor(x)||inherits(x,"Date")) .numberReject("Runtime value disagrees with its declared numeric type.","number_type_unsupported")
+  if(type=="numeric")return(if(inherits(x,"integer64")) .numberDouble(x) else x)
+  if(type=="integer"&&!inherits(x,"integer64")&&any(!is.na(x)&(!is.finite(x)|x!=trunc(x))))
+    .numberReject("Runtime numeric value disagrees with its declared integer type; retain a numeric representation.","number_type_unsupported")
+  x
+}
 .numberClean <- function(x) {
   if(inherits(x,"integer64"))return(x)
   x[!is.finite(x)]<-NA
@@ -147,7 +166,10 @@
 .numberChangeValues <- function(rows,d,origin=NULL) {
   d<-.numberChangeCheck(d);m<-d$method
   rows<-rows[!is.na(rows$start_date),,drop=FALSE]
-  if(d$missing=="skip")rows<-rows[is.finite(rows$v),,drop=FALSE]
+  if(d$missing=="skip")rows<-rows[!is.na(.numberClean(rows$v)),,drop=FALSE]
+  # Threshold comparisons stay exact; every arithmetic method uses checked
+  # binary64 operands before integer64 operators or scalar vapply can run.
+  if(m!="time_to_threshold")rows$v<-.numberDouble(rows$v)
   if(!nrow(rows))return(NA_real_)
   if(m %in% c("difference","percent_change","ratio")) {
     if(nrow(rows)<2L)return(NA_real_)

@@ -744,7 +744,7 @@
                                  names = FALSE))
     },
     mode = .reduceMode(v, value_type),
-    slope = .reduceSlope(d, v),
+    slope = .reduceSlope(d, if(identical(value_type,"bigint")) .numberDouble(bit64::as.integer64(v)) else v),
     any = .reduceKleeneAny(as.integer(x[["pred"]])),
     all = .reduceKleeneAll(as.integer(x[["pred"]])),
     first_date = if (!n || is.na(anchor) || is.na(d[[1L]])) NA_integer_ else

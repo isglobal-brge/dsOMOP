@@ -2389,14 +2389,14 @@
     bcons <- .reduceConsumer(ctx, name, pop$roster, pop$coverage, "episode")
     for (v in vars) {
       vnode <- ir[["variables"]][[v]]
-      event_numeric <- identical(vnode$derived$kind,"number_rows") || identical(vnode$derived$kind,"number_derive") && is.null(vnode$derived$reducer)
-      if ((!is.null(vnode[["reducer"]]) || (vnode$derived$kind %||% "") %in% c(.DATE_KINDS,"number_count","number_change") || identical(vnode$derived$kind,"number_derive") && !event_numeric) && !isTRUE(unlist(vnode[["broadcast"]]))) {
-        .irReject(paste0("variable '", v, "' is a reducer; a long output takes it only with broadcast = TRUE"),
+      rec <- .compileVariable(ctx, .irNamedNode(ir, "variable", v), pop$roster, bcons)
+      if ((!is.null(vnode[["reducer"]]) || (vnode$derived$kind %||% "") %in% c(.DATE_KINDS,.NUMBER_KINDS)) &&
+          !isTRUE(rec$event_grain) && !isTRUE(unlist(vnode[["broadcast"]]))) {
+        .irReject(paste0("variable '", v, "' is scalar; a long output takes it only with broadcast = TRUE"),
                   field = paste0("/variables/", v, "/broadcast"))
       }
-      rec <- .compileVariable(ctx, .irNamedNode(ir, "variable", v), pop$roster, bcons)
       vals <- rec$evaluate()
-      vat <- if(isTRUE(rec$event_grain)) .numberMatchEventRows(rows,vals) else match(as.character(rows$row_key), as.character(vals$row_key))
+      vat <- if(isTRUE(rec$event_grain)) .numberMatchEventRows(ctx,rows,vals) else match(as.character(rows$row_key), as.character(vals$row_key))
       for (cn in names(rec$columns)) {
         if (cn %in% names(columns)) {
           .irReject(paste0("broadcast variable column '", cn, "' duplicates an output column"),
@@ -2554,7 +2554,7 @@
     rec <- .compileVariable(ctx,vnode,pop$roster,cons)
     if(!isTRUE(rec$event_grain)) .numberReject("Intervals require an event numeric projection; use reduced wide for scalar values.","number_dependency_invalid")
     if(any(vapply(srcs,function(s)!is.null(s$interval),logical(1)))) .numberReject("Numeric event columns cannot join back after interval collapse; use long event rows.","number_dependency_invalid")
-    vals <- rec$evaluate();at <- .numberMatchEventRows(rows,vals)
+    vals <- rec$evaluate();at <- .numberMatchEventRows(ctx,rows,vals)
     for(cn in names(rec$columns)) {
       if(cn %in% names(columns)) .numberReject("Numeric event column name collides with output schema.","number_dependency_invalid")
       frame[[cn]] <- vals[[cn]][at];columns[[cn]] <- rec$columns[[cn]]

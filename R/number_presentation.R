@@ -60,7 +60,7 @@
     if(any(vapply(operands,function(x)!is.numeric(x$value)||is.factor(x$value)||inherits(x$value,"Date"),logical(1)))) .numberReject("Presented operands must remain numeric; use a numeric sibling.","number_type_unsupported")
     values<-setNames(lapply(operands,function(x)x$value),vapply(d$inputs,function(i)i$alias,""))
     value<-.numberExpression(d$exprs,as.data.frame(values),d$result)
-    c<-.fragmentColumn(if(is.integer(value))"integer" else "numeric",TRUE,"measure")
+    c<-.fragmentColumn(if(inherits(value,"integer64"))"bigint" else if(is.integer(value))"integer" else "numeric",TRUE,"measure")
     if(any(vapply(operands,function(x)identical(attr(x$column,"privacy_class"),2L),logical(1))))attr(c,"privacy_class")<-2L
     meta<-list(unit=d$unit,available=Reduce(`&`,lapply(operands,function(x).numberColumnMeta(x$column)$available)),offset_allowed=TRUE,derived=d)
     spec<-.numberEffective(v$number_spec,if(!as_input)recipe else NULL)
@@ -144,7 +144,7 @@
   for(n in names(columns)) {
     c<-columns[[n]]
     if(!is.null(attr(c,"number_origin"))||!is.null(attr(c,"number_contract")))next
-    if(n %in% durations || node$format=="long"&&startsWith(n,"days_from_")&&n %in% paste0("days_from_",names(node$options$anchors)))columns[[n]]<-.numberGenerated(c,"days",2L)
+    if(n %in% durations || node$format=="long"&&startsWith(n,"days_from_")&&n %in% paste0("days_from_",names(node$options$anchors)) || node$format=="long"&&n %in% paste0("days_to_",names(node$options$relations)))columns[[n]]<-.numberGenerated(c,"days",2L)
     else if(node$format=="long"&&n %in% c("value","value_as_number","range_low","range_high"))columns[[n]]<-.numberGenerated(c,common)
   }
   columns

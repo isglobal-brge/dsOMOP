@@ -447,7 +447,7 @@
   vapply(seq_len(length(b)-1L),function(i)paste0(if(step$closed=="left"&&is.finite(b[i]))"[" else "(",token(b[i]),",",token(b[i+1L]),if(step$closed=="right"&&is.finite(b[i+1L]))"]" else ")"),"")
 }
 
-.numberDeclaredUnit <- function(plan,node) {
+.numberDeclaredUnit <- function(plan,node,value_role=NULL) {
   d<-node$derived;r<-node$reducer;fn<-r$fn %||% ""
   if(identical(d$kind,"number_derive")) {
     u<-d$unit
@@ -462,8 +462,15 @@
   if(identical(node$date_spec$precision,"relative_days"))return("days")
   source<-node$source %||% d$source
   ev<-plan$events[[source$event %||% ""]]
-  u<-if(!is.null(ev$unit))paste0("unit:",ev$unit$target) else if((ev$table %||% "") %in% c("measurement","observation"))"unresolved_source" else "1"
-  if(!is.null(ev$cost))u<-if(!is.null(ev$cost$currency))paste0("currency:",ev$cost$currency) else "unresolved_source"
+  value<-value_role %||% d$value %||% r$value %||% "value"
+  # A source map applies only to its measured value and paired ranges. Supply
+  # and unrelated numeric columns retain their registered coordinates.
+  measured<-value %in% c("value","range_low","range_high") ||
+    is.null(value_role)&&value %in% c(ev$value$column %||% "value_as_number")
+  u<-if(value %in% c("supply","days_supply"))"days" else if(measured) {
+    if(!is.null(ev$unit))paste0("unit:",ev$unit$target) else if((ev$table %||% "") %in% c("measurement","observation"))"unresolved_source" else "1"
+  } else if(value %in% c("value_source","range_low_source","range_high_source"))"unresolved_source" else "1"
+  if(measured&&!is.null(ev$cost))u<-if(!is.null(ev$cost$currency))paste0("currency:",ev$cost$currency) else "unresolved_source"
   if(identical(d$kind,"number_change")) {
     if(d$method=="percent_change")return("percent")
     if(d$method=="ratio")return("1")

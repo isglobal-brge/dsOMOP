@@ -1,5 +1,14 @@
 # Numeric computations remain private until the existing final publication gate.
-.numberSourceUnit <- function(ctx,node) .numberDeclaredUnit(ctx$ir,node)
+.numberSourceUnit <- function(ctx,node) {
+  source<-node$source %||% node$derived$source
+  value<-node$derived$value %||% node$reducer$value
+  role<-NULL
+  if(!is.null(source)&&!is.null(value)) {
+    src<-.reduceSource(ctx,source)
+    role<-.predicateResolve(src$catalogue,value,"numeric value")$column
+  }
+  .numberDeclaredUnit(ctx$ir,node,role)
+}
 .numberOffsetAllowed <- function(node) {
   fn<-node$reducer$fn %||% node$derived$reducer$fn %||% ""
   !fn %in% c("sum","count","n_distinct","sd","cv","slope","duration_sum","covered_days","supply_days","drug_duration","gap_max","gap_mean","era_count","era_days","first_era_days","days_since","days_until","time_since") &&
@@ -20,7 +29,7 @@
       available=isTRUE(record$available),offset_allowed=.numberOffsetAllowed(node))
     temporal_reducers<-c("days_since","days_until","time_since","duration_sum","covered_days","supply_days","drug_duration","gap_max","gap_mean","era_days","first_era_days","slope")
     temporal_derived<-c("number_change","time_between","age_at","observed_days","days_to_death","prior_obs","followup","obs_duration","age")
-    if((node$derived$kind %||% "") %in% temporal_derived||(node$reducer$fn %||% "") %in% temporal_reducers)attr(c,"privacy_class")<-2L
+    if((node$derived$kind %||% "") %in% temporal_derived||(node$reducer$fn %||% node$derived$reducer$fn %||% "") %in% temporal_reducers)attr(c,"privacy_class")<-2L
     record$columns[[col]]<-c
   }
   evaluate<-record$evaluate
@@ -28,7 +37,7 @@
   record$evaluate<-function() {
     frame<-evaluate()
     for(col in numeric_columns) {
-      if(record$columns[[col]]$type=="bigint")frame[[col]]<-bit64::as.integer64(frame[[col]])
+      frame[[col]]<-.numberMaterialize(frame[[col]],record$columns[[col]]$type)
       if(identical(node$reducer$fn,"cv"))frame[[col]]<-frame[[col]]/100
     }
     frame
@@ -120,7 +129,16 @@
     ids<-vapply(records[event],function(r).jcsCanonical(r$event_source),"")
     if(length(unique(ids))!=1L) .numberReject("Event operands require identical source/event identity and normalisation.","number_dependency_invalid")
   } else if(!is.null(d$reducer)) .numberReject("Only event operands can be reduced after an expression.","number_dependency_invalid")
-  empty<-setNames(lapply(records,function(r).reduceTypedNA(r$columns[[1]]$type,0L)),vapply(inputs,function(i)i$alias,""))
+  # Infer from the same selected prefix that runtime operands receive.
+  operand<-function(x,j) {
+    rec<-records[[j]];meta<-attr(rec$columns[[1]],"number_origin")
+    x<-.numberPresent(.numberUnwrap(x),inputs[[j]]$variable$number_spec %||% list(),
+      unit=meta$unit %||% .numberSourceUnit(ctx,inputs[[j]]$variable),ranges=attr(x,"number_ranges"),
+      available=rec$available,offset_allowed=meta$offset_allowed %||% TRUE,canonical=inputs[[j]]$stage=="canonical")
+    if(!is.numeric(x)||is.factor(x)||inherits(x,"Date")) .numberReject("Presented expression operands must remain numeric; select a numeric sibling.","number_type_unsupported")
+    x
+  }
+  empty<-setNames(lapply(seq_along(records),function(j)operand(.numberMaterialize(.reduceTypedNA(records[[j]]$columns[[1]]$type,0L),records[[j]]$columns[[1]]$type),j)),vapply(inputs,function(i)i$alias,""))
   probe<-.numberExpression(d$exprs,as.data.frame(empty),d$result)
   expression_type<-if(inherits(probe,"integer64"))"bigint" else if(is.integer(probe))"integer" else "numeric"
   r<-d$reducer;type<-if(is.null(r))expression_type else .reduceValueType(r$fn,expression_type)
@@ -139,11 +157,8 @@
       broadcast<-event_mode&&!event[j]
       at<-if(broadcast)match(base$row_key,vals[[j]]$row_key) else match(ids,identity(vals[[j]]))
       if(anyNA(at)||!broadcast&&(length(at)!=nrow(vals[[j]])||anyDuplicated(at))||broadcast&&anyDuplicated(vals[[j]]$row_key)) .numberReject("Numeric operands lack a one-to-one row identity.","number_dependency_invalid")
-      rec<-records[[j]];col<-names(rec$columns)[1L];meta<-attr(rec$columns[[1]],"number_origin")
-      x<-vals[[j]][[col]][at];s<-inputs[[j]]$variable$number_spec %||% list()
-      x<-.numberPresent(.numberUnwrap(x),s,unit=meta$unit %||% .numberSourceUnit(ctx,inputs[[j]]$variable),ranges=attr(x,"number_ranges"),available=rec$available,offset_allowed=meta$offset_allowed %||% TRUE,canonical=inputs[[j]]$stage=="canonical")
-      if(!is.numeric(x)||is.factor(x)||inherits(x,"Date")) .numberReject("Presented expression operands must remain numeric; select a numeric sibling.","number_type_unsupported")
-      frame[[inputs[[j]]$alias]]<-x
+      col<-names(records[[j]]$columns)[1L]
+      frame[[inputs[[j]]$alias]]<-operand(vals[[j]][[col]][at],j)
     }
     value<-.numberExpression(d$exprs,frame,d$result)
     if(!available)value[]<-NA
@@ -160,9 +175,17 @@
   list(stream=NULL,reducer=NULL,columns=columns,evaluate=evaluate,available=available,declared_empty_value=NA,
     event_grain=event_mode&&is.null(r),event_source=if(event_mode)records[[which(event)[1L]]]$event_source else NULL)
 }
-.numberMatchEventRows <- function(rows,values) {
-  keys<-intersect(c("row_key","event_id","source_ns"),intersect(names(rows),names(values)))
-  if(!all(c("row_key","event_id") %in% keys)) .numberReject("Event numeric columns require existing source-qualified event identity.","number_dependency_invalid")
+.numberMatchEventRows <- function(ctx,rows,values) {
+  keys<-c("row_key","event_id","source_ns")
+  if(!all(keys %in% intersect(names(rows),names(values)))) .numberReject("Event numeric columns require existing source-qualified event identity.","number_dependency_invalid")
+  # Only output projection may bridge a verified normalization fork. Formula
+  # operands retain their physical namespaces and strict source equality.
+  origin<-function(x) {
+    namespaces<-unique(as.character(x$source_ns))
+    mapped<-vapply(namespaces,function(n).numberLogicalSource(ctx,n),"")
+    x$source_ns<-mapped[match(x$source_ns,namespaces)];x
+  }
+  rows<-origin(rows);values<-origin(values)
   key<-function(x)do.call(paste,c(lapply(x[keys],as.character),sep="\r"))
   ids<-key(values)
   if(anyDuplicated(ids)) .numberReject("Numeric event inputs require one-to-one row identity.","number_dependency_invalid")
@@ -176,7 +199,9 @@
   candidates<-setdiff(names(ctx$ir$events),grep("^num[0-9a-f]{24}$",names(ctx$ir$events),value=TRUE))
   same<-Filter(function(n) {
     key<-paste0("num",substr(as.character(openssl::sha256(charToRaw(.jcsCanonical(list(source=n,event=ev))))),1L,24L))
-    identical(key,name)
+    original<-ctx$ir$events[[n]];fork<-ev
+    original$unit<-NULL;fork$unit<-NULL
+    identical(key,name)&&identical(.jcsCanonical(original),.jcsCanonical(fork))
   },candidates)
   if(length(same)==1L)same[[1L]] else name
 }
