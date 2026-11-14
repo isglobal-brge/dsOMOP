@@ -694,7 +694,8 @@
     day = length(unique(d[!is.na(d)])),
     visit = { vi <- x[["visit_id"]]; length(unique(vi[!is.na(vi)])) },
     concept = { ci <- x[["concept_id"]]; length(unique(ci[!is.na(ci)])) })
-  if(identical(value_type,"bigint")&&fn %in% c("first_value","last_value","nth_value","closest_value","min","max")) {
+  if(identical(value_type,"bigint")&&fn %in% c("first_value","last_value","nth_value","closest_value","min","max","mode")) {
+    if(fn=="mode")return(as.character(.reduceMode(bit64::as.integer64(v),"bigint")))
     indices<-x;indices$v<-seq_along(v);indices$v[is.na(v)]<-NA_integer_
     if(fn %in% c("min","max")) {
       exact<-bit64::as.integer64(v);exact<-exact[!is.na(exact)]

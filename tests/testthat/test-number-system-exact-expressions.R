@@ -172,3 +172,15 @@ test_that("native recursive checks preserve the legacy mutate boundary", {
   expect_identical(.mutateEval(expr,frame,c(x="numeric")),9007199254740992)
   expect_error(.numberExpression(list(version=1L,assign=list(list(name="y",expr=expr))),frame),"retain raw/count")
 })
+
+
+test_that("all compiled integer expression selectors preserve exact values", {
+  h<-astra2_handle();on.exit(DBI::dbDisconnect(h$conn))
+  for(fn in c("first_value","last_value","nth_value","min","max","mode")) {
+    r<-list(fn=fn);if(fn=="nth_value")r$n<-1L
+    v<-astra2_derive(astra2_rows(),astra2_large_expr(),r)
+    got<-.ws7_scenario_run(h,.ws7_scenario_plan(list(answer=v)))
+    expect_identical(as.character(.ws7_value(got$frame,7001,"answer")),"9007199254740993",info=fn)
+    expect_s3_class(got$frame$answer,"integer64")
+  }
+})
