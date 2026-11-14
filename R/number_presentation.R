@@ -121,10 +121,7 @@
   sources<-.outputSources(node)
   units<-vapply(sources,function(s).numberSourceUnit(ctx,list(source=s)),"")
   common<-if(length(unique(units))==1L)units[[1L]] else "unresolved_source"
-  durations<-switch(node$format,
-    long=c("start_days","end_days","days_from_index","days_since_previous","duration_days"),
-    intervals=c("start_days_from_index","end_days_from_index","duration_days"),
-    survival=c("followup_days","follow_up_days","Tstart","Tstop","time","time_at_risk","entry_days_from_index","exit_days_from_index","event_days_from_index","interval_start_days","interval_end_days"),character())
+  durations <- .numberOutputDurations(node$format)
   for(n in names(columns)) {
     c<-columns[[n]]
     if(!is.null(attr(c,"number_origin"))||!is.null(attr(c,"number_contract")))next

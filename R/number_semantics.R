@@ -523,3 +523,11 @@
     person_period=c("period_id","bin_id","time_id"),
     survival=c("event","event_code","event_id","status","stratum_id","interval_number","transition_id","from_state","to_state","weight","sampling_weight","from","to","trans","state_visit_number","event_number","outcome_event_number"),character()))
 }
+
+# Generated output measurements use this common eligibility/unit declaration.
+.numberOutputDurations <- function(format) {
+  switch(format,
+    long=c("start_days","end_days","days_from_index","days_since_previous","duration_days"),
+    intervals=c("start_days_from_index","end_days_from_index","duration_days"),
+    survival=c("followup_days","follow_up_days","Tstart","Tstop","time","time_at_risk","entry_days_from_index","exit_days_from_index","event_days_from_index","interval_start_days","interval_end_days"),character())
+}
