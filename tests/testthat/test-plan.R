@@ -344,6 +344,8 @@ test_that("empty staged date handling preserves the non-empty schema contract", 
       "empty_dates", basename(staging_dir)
     )
   )
+  # The public reader accepts committed manifest members, including empty files.
+  .writeStagingManifest(staging_dir, list(empty_dates = descriptor))
   if (identical(info$format, "parquet")) {
     expect_identical(descriptor$metadata$layout, "file")
     expect_identical(

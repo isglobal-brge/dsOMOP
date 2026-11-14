@@ -15,7 +15,13 @@
     port = as.integer(Sys.getenv("PGPORT", "5432")), dbname = Sys.getenv("PGDATABASE", "omop"),
     user = Sys.getenv("PGUSER", "omop"), password = Sys.getenv("PGPASSWORD", "omop"), sslmode = "disable")
   withr::defer(DBI::dbDisconnect(pg), envir = env)
-  dk <- DBI::dbConnect(duckdb::duckdb(), dbdir = file.path(directory, "numeric_cdm.duckdb"))
+  # Each matrix may create writable sidecar schemas. Parallel files cannot
+  # share a DuckDB writer, and must never mutate the pinned imported fixture.
+  snapshot <- withr::local_tempfile(fileext = ".duckdb", .local_envir = env)
+  if (!file.copy(file.path(directory, "numeric_cdm.duckdb"), snapshot)) {
+    stop("Could not create the test-local numeric DuckDB snapshot")
+  }
+  dk <- DBI::dbConnect(duckdb::duckdb(), dbdir = snapshot)
   withr::defer(DBI::dbDisconnect(dk, shutdown = TRUE), envir = env)
   list(postgresql = .ws4_handle_on(pg, "postgresql", "postgresql", "numeric_cdm"),
        duckdb = .ws4_handle_on(dk, "duckdb", "duckdb", "main"))

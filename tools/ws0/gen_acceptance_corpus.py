@@ -691,7 +691,7 @@ CIRCE = {
     "CollapseSettings": {"CollapseType": "ERA", "EraPad": 0}, "CensorWindow": {}, "cdmVersionRange": ">=5.0.0"}
 p12 = plan(
     # A-9 (CR-9): the importer's deterministic names — .sanitize_name("Type 2 diabetes") and <cs>_dx
-    concept_sets={"type_2_diabetes": {"concepts": [201820], "include_descendants": True, "include_mapped": False, "exclude": None}},
+    concept_sets={"type_2_diabetes": {"concepts": [201820], "include_descendants": True, "include_mapped": False, "exclude": None, "validity_policy": "ohdsi-import-1"}},
     events={"type_2_diabetes_dx": ev("condition_occurrence", "type_2_diabetes")},
     populations={"t2dm_first": {"kind": "index", "label": "Type 2 diabetes (Circe)",
                                 "index": {"source": {"event": "type_2_diabetes_dx"}, "select": "first_eligible"},
