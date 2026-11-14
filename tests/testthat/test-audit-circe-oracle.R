@@ -103,6 +103,8 @@ test_that("imported coverage override changes selected observation periods and e
     run <- .ws7_ctx(h, dsOMOPClient::recipe_to_plan(recipe, version = 2))
     on.exit(.ws7_close(run))
     rows <- .fetchFragment(run$cctx, .compilePopulationByName(run$cctx, "p")$roster, "subject_id")
+    rows$cohort_start_date <- as.character(rows$cohort_start_date)
+    rows$cohort_end_date <- as.character(rows$cohort_end_date)
     rows[, c("subject_id", "cohort_start_date", "cohort_end_date")]
   }
   unique <- members(r)
@@ -114,6 +116,6 @@ test_that("imported coverage override changes selected observation periods and e
   loaded <- dsOMOPClient::recipe_import_json(dsOMOPClient::recipe_export_json(r))
   expect_equal(members(loaded), expected, ignore_attr = TRUE)
   # Evaluate generated public constructors in their package namespace.
-  rebuilt <- eval(parse(text = dsOMOPClient::recipe_to_code(r)), asNamespace("dsOMOPClient"))
+  rebuilt <- eval(parse(text = dsOMOPClient::recipe_to_code(r)), new.env(parent = asNamespace("dsOMOPClient")))
   expect_equal(members(rebuilt), expected, ignore_attr = TRUE)
 })

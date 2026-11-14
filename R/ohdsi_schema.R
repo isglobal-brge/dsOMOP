@@ -123,6 +123,13 @@
 .ohdsiResultSchemaManifest <- function() {
   registry <- .ohdsi_tool_registry()
   identities <- .ohdsiIdentityManifest()
+  # Known legacy scalar measures excluded from the public release contract.
+  # These fields do not add dimensions or provide alternative person support.
+  nonreleased <- list(
+    incidence_summary = c(person_days = "number", incidence_proportion_p100p = "number",
+      incidence_rate_p100py = "number"),
+    sccs_result = c(covariate_eras = "number", covariate_days = "number",
+      outcome_observation_periods = "number"))
   out <- list()
   for (family in names(registry)) for (table in registry[[family]]$table_names) {
     contract <- registry[[family]]$contracts[[table]]
@@ -137,6 +144,7 @@
       required_columns = types, identity = keys,
       relationships = list(unique_row = keys, reference_layout = "inline"),
       optional_columns = contract$optional_types,
+      nonreleased_columns = nonreleased[[table]] %||% character(),
       private_basis = .ohdsiStatisticBasisColumns(contract$statistic_basis),
       suppression = "missing-only; negative counts unsupported",
       statistic_basis = contract$statistic_basis, person_basis = contract$person_columns,
@@ -195,10 +203,10 @@
   # identity/meaning of every row, even when callers project that column away.
   # Private statistic support columns are explicitly contracted numeric fields.
   allowed <- unique(c(names(contract$required_columns),
-    names(contract$optional_columns), contract$private_basis))
+    names(contract$optional_columns), names(contract$nonreleased_columns), contract$private_basis))
   if (length(setdiff(columns, allowed))) return(result)
   types <- stats::setNames(.ohdsiSchemaType(info$data_type), columns)
-  basis <- intersect(contract$private_basis, columns)
+  basis <- intersect(c(contract$private_basis, names(contract$nonreleased_columns)), columns)
   if (length(basis) && any(!types[basis] %in% c("integer", "number"))) return(result)
   required <- contract$required_columns
   if (length(setdiff(names(required), columns)) ||
