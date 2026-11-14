@@ -45,3 +45,16 @@ test_that("N39 N65 numeric matrices preserve their implicit zero convention", {
     expect_equal(got$frame$covariate_value,c(2,4))
   }
 })
+
+test_that("N04 N39 N65 mixed matrix coordinates apply matching fixed-unit defaults independently", {
+  c<-.numberGenerated(.fragmentColumn("numeric",TRUE,"measure"),"mixed_coordinates")
+  meta<-attr(c,"number_origin");meta$coordinates<-list(list(covariate_id=1L,analysis="count",unit="count"),list(covariate_id=2L,analysis="exposed_days",unit="days"));attr(c,"number_origin")<-meta
+  frame<-data.frame(covariate_id=c(1L,2L),covariate_value=c(2,14))
+  columns<-list(covariate_id=.fragmentColumn("integer",FALSE,"concept"),covariate_value=c)
+  spec<-list(unit=list(kind="fixed_unit",from="days",to="weeks",factor=1/7))
+  out<-.numberOutputColumns(frame,columns,list(format="temporal_covariates"),"o","o",spec)
+  expect_equal(out$frame$covariate_value,c(2,2))
+  contract<-attr(out$columns$covariate_value,"number_contract")
+  expect_identical(vapply(contract$coordinates,function(x)x$number$unit,""),c("count","weeks"))
+  expect_identical(contract$privacy_class,2L)
+})

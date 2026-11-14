@@ -80,6 +80,11 @@
     if(!.numberEligibleColumn(c,n,node)||node$format=="survival"&&is.null(attr(c,"number_origin")))next
     meta<-.numberColumnMeta(c);s<-meta$spec
     if(is.null(s)&&is.null(recipe)&&is.null(attr(c,"number_origin")))next
+    if(node$format %in% c("sparse","temporal_covariates")&&length(unique(vapply(meta$coordinates %||% list(),function(x)x$unit,"")))>1L) {
+      result<-.numberMatrixResolve(frame[[n]],c,s,meta,recipe,frame$covariate_id)
+      frame[[n]]<-result$value;columns[[n]]<-result$column
+      next
+    }
     # Source maps are applied on event streams, never on scalar/generated slots.
     default<-recipe
     if(is.null(s)&&!is.null(default$unit)&&default$unit$kind=="event_unit")default$unit<-NULL
@@ -242,4 +247,33 @@
     schemas<-setNames(list(columns),name)
   }
   .numberPreflightColumns(node,schemas)
+}
+
+# A matrix value column may contain several declared coordinates. Resolve
+# recipe fixed-unit defaults for each registry entry, including absent entries,
+# without inferring units or dictionaries from observed rows.
+.numberMatrixResolve <- function(value,column,s,meta,recipe,ids) {
+  output<-value;types<-character();coordinates<-meta$coordinates
+  for(i in seq_along(coordinates)) {
+    coordinate<-coordinates[[i]];local<-meta;local$unit<-coordinate$unit;local$coordinates<-NULL
+    default<-recipe
+    if(is.null(s)&&!is.null(default$unit)&&default$unit$kind=="event_unit")default$unit<-NULL
+    if(is.null(s)&&!is.null(default$unit)&&default$unit$kind=="fixed_unit"&&!identical(default$unit$from,local$unit))default$unit<-NULL
+    effective<-.numberEffective(s,default)
+    at<-which(as.character(ids)==as.character(coordinate$covariate_id))
+    c<-column
+    if(identical(coordinate$analysis,"exposed_days"))attr(c,"privacy_class")<-2L
+    result<-.numberResolvedColumn(value[at],c,effective,local)
+    if(is.factor(result$value)).numberReject("Matrix cells must remain numeric; use a typed wide/long companion for bins/categories.","number_type_unsupported")
+    zero<-.numberPresent(0,effective,unit=local$unit,available=TRUE,offset_allowed=local$offset_allowed)
+    if(length(zero)!=1L||is.na(zero)||zero!=0).numberReject("This presentation changes implicit matrix zeros; use dense person_period or a typed wide/long output.","number_type_unsupported")
+    output[at]<-result$value
+    contract<-attr(result$column,"number_contract")
+    types<-c(types,contract$result_type)
+    coordinates[[i]]$number<-contract
+    if(identical(contract$privacy_class,2L))attr(column,"privacy_class")<-2L
+  }
+  if(length(types)&&all(types=="integer"))output<-as.integer(output)
+  meta$coordinates<-coordinates
+  .numberResolvedColumn(output,column,list(pipeline=list(list(kind="transform",method="identity"))),meta)
 }
