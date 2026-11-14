@@ -34,3 +34,14 @@ test_that("N38 N47 N55 N59 N74 output binding refuses structural keys and propag
   expect_error(.numberPresent(factor("3"),list()),"numeric analytic")
   expect_error(.numberSpecCheck(list(representation="bins",breaks=c("1","2"))),"numeric")
 })
+
+test_that("N39 N65 numeric matrices preserve their implicit zero convention", {
+  frame<-data.frame(covariate_value=c(1,2))
+  columns<-list(covariate_value=.numberGenerated(.fragmentColumn("numeric",TRUE,"measure"),"count"))
+  for(format in c("sparse","temporal_covariates")) {
+    node<-list(format=format)
+    for(method in c("exp","log"))expect_error(.numberOutputColumns(frame,columns,node,"o","o",list(transform=list(method=method))),"implicit matrix zeros.*dense")
+    got<-.numberOutputColumns(frame,columns,node,"o","o",list(transform=list(method="affine",factor=2)))
+    expect_equal(got$frame$covariate_value,c(2,4))
+  }
+})

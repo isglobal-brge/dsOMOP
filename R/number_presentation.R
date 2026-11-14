@@ -86,7 +86,11 @@
     if(is.null(s)&&!is.null(default$unit)&&default$unit$kind=="fixed_unit"&&!identical(default$unit$from,meta$unit))default$unit<-NULL
     effective<-.numberEffective(s,default)
     result<-.numberResolvedColumn(frame[[n]],c,effective,meta)
-    if(node$format %in% c("sparse","temporal_covariates") && is.factor(result$value)) .numberReject("Matrix cells must remain numeric; use a typed wide/long companion for bins/categories.","number_type_unsupported")
+    if(node$format %in% c("sparse","temporal_covariates")) {
+      if(is.factor(result$value)) .numberReject("Matrix cells must remain numeric; use a typed wide/long companion for bins/categories.","number_type_unsupported")
+      zero<-.numberPresent(0,effective,unit=meta$unit,available=TRUE,offset_allowed=meta$offset_allowed)
+      if(length(zero)!=1L||is.na(zero)||zero!=0) .numberReject("This presentation changes implicit matrix zeros; use dense person_period or a typed wide/long output.","number_type_unsupported")
+    }
     frame[[n]]<-result$value;columns[[n]]<-result$column
   }
   for(n in names(additions))if(!is.null(additions[[n]])) {

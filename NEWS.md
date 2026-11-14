@@ -19,7 +19,8 @@
   requiring an inexact double conversion refuse with a bounded remedy.
 - Newly refused: explicit numeric presentation of identifiers, concept values,
   Dates/factors, model weights or structural codes; factor-valued matrix cells;
-  implicit event broadcasts; and nonnumeric/foreign expression bindings.
+  implicit event broadcasts; presentations that change implicit matrix zeros;
+  and nonnumeric/foreign expression bindings.
   Use registered numeric measures, explicit numeric date representations,
   declared broadcasts/reducers, and typed wide/long companions as applicable.
 
