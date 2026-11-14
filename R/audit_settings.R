@@ -30,9 +30,8 @@
   }
   value <- if (key %in% names(params)) params[[key]] else 0L
   # Catalogue integer transport admits decimal integer text, unlike JSON IDs.
-  valid <- !is.object(value) && length(value) == 1L &&
+  valid <- !is.object(value) && is.null(dim(value)) && length(value) == 1L &&
     (typeof(value) %in% c("integer", "double", "character")) && !is.na(value)
-  if (valid && is.character(value)) valid <- grepl("^[+-]?[0-9]+$", trimws(value))
   number <- if (valid) suppressWarnings(as.numeric(value)) else NA_real_
   if (!valid || !is.finite(number) || number != floor(number) ||
       number < -.Machine$integer.max || number > .Machine$integer.max) {

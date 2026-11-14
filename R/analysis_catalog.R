@@ -5340,6 +5340,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 .omopAnalysisRun <- function(handle, name, params = list(), scope = NULL,
                              combine = "union", assign = FALSE,
                              assign_date_handling = NULL) {
+  params <- .auditEffectiveSettings(name, params)
   # Reject unsupported public settings before opening a snapshot or preparing a
   # protected request. Canonical resolution also covers unique catalogue suffixes.
   entry <- .omopAnalysisResolve(handle, name)
