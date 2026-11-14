@@ -63,8 +63,9 @@ test_that("policy is schema-validated and preflight refuses before patient reads
 test_that("wire normalization and IR bind imported policy without changing native declarations", {
   native <- .ws4_plan(events = list(e = list(table = "condition_occurrence",
     concept_set = list(concepts = list(201820)))))
-  native$meta$example <- list(concepts = list(2147483647), validity_policy = "ohdsi-import-1")
-  expect_false(.ohdsiHasImportedValidity(native))
+  annotated <- native
+  annotated$meta$example <- list(concepts = list(2147483647), validity_policy = "ohdsi-import-1")
+  expect_false(.ohdsiHasImportedValidity(annotated))
   imported <- native
   imported$events$e$concept_set$validity_policy <- "ohdsi-import-1"
   ir <- .irPrepare(imported)

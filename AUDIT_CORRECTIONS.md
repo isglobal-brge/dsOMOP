@@ -20,6 +20,34 @@ Circe cohort import still refuses excluded items and nonuniform flags; registry
 import retains its separate uniform included/excluded expressions. Upstream
 Circe has a Death criterion; this bridge does not implement it.
 
+## Imported vocabulary semantics and inspection
+
+`recipe_circe_support()` lists the directional supported subset;
+`recipe_circe_check()` returns bounded structural diagnostics before importing
+or exporting. Native populations without a Circe adapter remain native recipes.
+The fixture at `tests/fixtures/phenotype-library` pins supported phenotype 304
+and (on the client) refused phenotype 10. The server compares phenotype 304's
+membership and dates with its unmodified upstream generated SQL on the same
+private synthetic PostgreSQL fixture using SqlRender 1.19.7. This is one tested
+phenotype, not general PhenotypeLibrary or HADES equivalence.
+
+Both import paths now attach `validity_policy = "ohdsi-import-1"` to executable
+concept definitions, including registry exclusions. All explicit concepts must
+resolve to valid public vocabulary entries; concept 0 needs its actual entry.
+Expansion removes invalid descendants and invalid mapped source concepts. A
+valid Maps-to relationship selects source concept_id_1 when target concept_id_2
+is selected; it does not map patient facts. Classification C is accepted.
+Native sets omit this marker and retain their existing behavior. Re-import old
+saved definitions to obtain the strict semantics; provenance alone does not
+change execution.
+
+The paired wire and IR schemas, legacy lowering, save/load, binding, merging,
+code generation and semantic digests preserve this policy. Execution requires
+`vocabulary.ohdsi_import_validity`; an incapable server refuses before patient
+access. Invalid explicit references receive a definition-only compatibility
+refusal without IDs, observed counts or patient examples. These changes do not
+complete A-31's separate codebook/declaration and full acceptance obligations.
+
 ## Effective scientific settings
 
 `dsomop:incidence.rate` and its CohortDiagnostics/CohortIncidence live aliases
@@ -63,7 +91,11 @@ listed in `R/ohdsi_schema.R` before completing optional columns. Integer identit
 columns must use an exact integer database type; reference names use declared
 text types. Rows with missing/invalid required identities refuse with a generic
 `results_schema_integrity` message, including when the caller projects only an
-effect estimate. Empty tables still undergo structural/type checks.
+effect estimate. Empty tables still undergo structural/type checks. SQLite
+values are checked against physical integer storage before DBI can coerce mixed
+values. Exact signed BIGINT identities, including values above 2^53, remain
+canonical decimal text rather than passing through a double. Optional missing
+columns use only their declared types; missing required keys are never padded.
 
 CohortMethod's target_comparator_id layout is recognized and refused as
 `unsupported_results_schema`: the reader has no versioned cm_target_comparator
