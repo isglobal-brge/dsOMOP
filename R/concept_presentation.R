@@ -195,6 +195,7 @@
     out$levels[[col]] <- permitted
     out$concepts[[col]] <- unname(c$records[permitted])
     if (identical(c$kind, "date")) out$calendars[[col]] <- c$calendar
+    if (identical(c$kind, "category")) out$categories[[col]] <- c$category
     if (length(c$reference_keys)) out$reference_names[[col]] <- unique(unname(c$reference_keys))
   }
   generated <- refreshed$generated
@@ -244,6 +245,7 @@
     c <- contracts[[col]]
     shared <- spec$columns[[col]]
     if (identical(c$kind, "date") && !identical(.jcsCanonical(shared$calendar), .jcsCanonical(c$calendar))) .dateReject("Changed shared calendar identity.")
+    if(identical(c$kind,"category")&&!identical(.jcsCanonical(shared$category),.jcsCanonical(c$category))) .categoryReject("Changed category contract.","category_domain_incompatible")
     .conceptValidateResolution(shared, c$records)
     ids <- as.character(unlist(shared$ids, use.names = FALSE))
     labels <- unname(.categoryNullableStrings(shared$labels))
@@ -383,7 +385,7 @@
 }
 
 .conceptEvidence <- function(report) {
-  keys<-c("concepts","generated","keys","reference_names","numbers","schema")
+  keys<-c("concepts","generated","keys","reference_names","numbers","schema","categories")
   evidence<-setNames(lapply(keys,function(k)report[[k]]),keys)
   as.character(openssl::sha256(charToRaw(.conceptEncode(evidence))))
 }

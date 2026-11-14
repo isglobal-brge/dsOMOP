@@ -43,16 +43,17 @@
     if(length(available)==1L)available<-rep(available,nrow(frame))
     if(length(available)!=nrow(frame)) .categoryReject("Incomplete private availability lineage.")
     if(flag) {
+      flag_value<-as.integer(as.logical(frame[[n]]))
       as <- s$binary$as %||% "integer"
       if(as!="factor") {
         if(identical(s$missing$na,"level") && !is.null(explicit$missing)) .categoryReject("Explicit Missing levels require binary factor representation.")
         irrelevant <- intersect(names(explicit),c("levels","order","ordered","reference","recode","rollup","label_style","language"))
         if(length(irrelevant)) .categoryReject("Factor operations require binary(as=factor).")
-        frame[[n]] <- if(as=="logical")as.logical(frame[[n]]) else as.integer(frame[[n]])
+        frame[[n]] <- if(as=="logical")as.logical(flag_value) else flag_value
         frame[[n]][!available] <- NA
         next
       }
-      ids <- ifelse(is.na(frame[[n]]),NA_character_,paste0("flag:",as.integer(frame[[n]])))
+      ids <- ifelse(is.na(flag_value),NA_character_,paste0("flag:",flag_value))
       lev <- c("flag:0","flag:1");lab<-unlist(s$binary$labels,use.names=FALSE)
       records <- setNames(lapply(seq_along(lev),function(i)list(id=lev[i],label=lab[i],origin="producer")),lev)
       declared <- lev;producer<-list(kind="flag");producer_order<-lev;producer_ordered<-FALSE
@@ -62,7 +63,7 @@
         pipeline <- c$number$pipeline
         if(any(vapply(pipeline,function(p)p$kind=="bins",logical(1))))"bin:" else "category:"
       } else if(identical(c$kind,"date"))"period:" else "concept:"
-      lev <- if(identical(c$kind,"category"))old_ids else paste0(prefix,if(identical(c$kind,"number"))seq_along(old_ids) else old_ids)
+      lev <- if(!length(old_ids))character() else if(identical(c$kind,"category"))old_ids else paste0(prefix,if(identical(c$kind,"number"))seq_along(old_ids) else old_ids)
       ids <- lev[match(c$ids,old_ids)];declared<-lev[match(c$declared,old_ids)]
       records <- setNames(lapply(seq_along(lev),function(i) {
         r<-c$records[[i]];r$id<-lev[i]
@@ -130,7 +131,7 @@
       declared<-union(declared,target_levels)
     }
     records<-lapply(records,function(r){r$kind<-"category";r$category<-contract;r})
-    resolved<-.categoryResolveRecords(unname(records),complete=FALSE)
+    resolved<-.categoryResolveRecords(unname(records),complete=FALSE,identity=contract)
     if(!is.null(explicit$levels) && (producer$kind!="concept" || length(s$recode$map)) && !setequal(unlist(explicit$levels,use.names=FALSE),resolved$keys)) .categoryReject("Declare the complete existing output domain; new literal levels require an explicit producer or recode label.","category_domain_incompatible")
     values<-resolved$labels[match(ids,resolved$ids)]
     values[!available]<-NA_character_
@@ -174,8 +175,9 @@
     if(length(candidates)){name<-sort(unique(enc2utf8(candidates)),method="radix")[1L];r$label_origin<-"synonym"}
     code<-if(!is.na(i)&&"concept_code" %in% names(data))as.character(data$concept_code[i]) else NA_character_
     vocab<-if(!is.na(i)&&"vocabulary_id" %in% names(data))as.character(data$vocabulary_id[i]) else NA_character_
-    if(is.na(code)||!nzchar(code))code<-name
-    r$name<-switch(style,name=name,code=code,code_name=paste(code,name,sep=" - "),vocabulary_code=if(is.na(vocab)||!nzchar(vocab))code else paste(vocab,code,sep=":"))
+    if(is.na(code)||!nzchar(code))code<-sub("^concept:","",k)
+    if(is.na(vocab)||!nzchar(vocab))vocab<-sub("^concept:","",k)
+    r$name<-switch(style,name=name,code=code,code_name=paste(code,name,sep=" - "),vocabulary_code=paste(vocab,code,sep=":"))
     r$label<-r$name;records[[k]]<-r
   }
   records

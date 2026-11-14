@@ -6811,6 +6811,28 @@
       },
       "required": [
         "kind"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "keys"
+          ],
+          "not": {
+            "required": [
+              "metadata"
+            ]
+          }
+        },
+        {
+          "required": [
+            "metadata"
+          ],
+          "not": {
+            "required": [
+              "keys"
+            ]
+          }
+        }
       ]
     },
     "category_recode": {
@@ -7208,6 +7230,28 @@
             "missing",
             "point",
             "value"
+          ],
+          "oneOf": [
+            {
+              "required": [
+                "timepoints"
+              ],
+              "not": {
+                "required": [
+                  "visits"
+                ]
+              }
+            },
+            {
+              "required": [
+                "visits"
+              ],
+              "not": {
+                "required": [
+                  "timepoints"
+                ]
+              }
+            }
           ]
         },
         {
@@ -7259,7 +7303,9 @@
           "const": "timepoint"
         },
         "offset": {
-          "type": "integer"
+          "type": "integer",
+          "minimum": -2147483647,
+          "maximum": 2147483647
         },
         "unit": {
           "enum": [
@@ -7275,7 +7321,17 @@
             "type": "integer"
           },
           "minItems": 2,
-          "maxItems": 2
+          "maxItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer",
+              "maximum": 0
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
         },
         "anchor": {
           "$ref": "#/$defs/date_source"

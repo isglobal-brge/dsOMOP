@@ -18,12 +18,29 @@
   inputs<-concept(domain);valid_input<-as.character(inputs$concept_id[is.na(inputs$invalid_reason)])
   relation<-setNames(rep(list(character()),length(domain)),domain)
   if(spec$kind!="icd10") {
-    ca<-read("concept_ancestor",c("ancestor_concept_id","descendant_concept_id","min_levels_of_separation","max_levels_of_separation"),paste0("descendant_concept_id IN (",.sqlIdList(domain),")"))
+    # Expand the required public ancestor subgraph, including ancestors of
+    # declared inputs. A cycle need not contain two declared input nodes.
+    fields<-c("ancestor_concept_id","descendant_concept_id","min_levels_of_separation","max_levels_of_separation")
+    frontier<-domain;seen<-character();parts<-list()
+    while(length(frontier)) {
+      rows<-read("concept_ancestor",fields,paste0("descendant_concept_id IN (",.sqlIdList(frontier),")"))
+      parts[[length(parts)+1L]]<-rows;seen<-union(seen,frontier)
+      frontier<-setdiff(as.character(rows$ancestor_concept_id),seen)
+    }
+    ca<-unique(do.call(rbind,parts))
     if(anyNA(ca$min_levels_of_separation)||anyNA(ca$max_levels_of_separation)||
-       any(ca$min_levels_of_separation<0|ca$max_levels_of_separation<ca$min_levels_of_separation)) .categoryReject("Malformed public ancestor distances.","category_domain_incompatible")
-    positive<-ca[ca$min_levels_of_separation>0,,drop=FALSE]
-    edges<-paste(positive$ancestor_concept_id,positive$descendant_concept_id,sep=":")
-    if(any(paste(positive$descendant_concept_id,positive$ancestor_concept_id,sep=":") %in% edges)) .categoryReject("Cyclic public hierarchy.","category_domain_incompatible")
+       any(ca$min_levels_of_separation<0|ca$max_levels_of_separation<ca$min_levels_of_separation)||
+       any(ca$min_levels_of_separation==0 & as.character(ca$ancestor_concept_id)!=as.character(ca$descendant_concept_id))) .categoryReject("Malformed public ancestor distances.","category_domain_incompatible")
+    positive<-ca[ca$max_levels_of_separation>0,,drop=FALSE]
+    graph<-split(as.character(positive$ancestor_concept_id),as.character(positive$descendant_concept_id))
+    finished<-character()
+    visit<-function(id,path=character()) {
+      if(id %in% path) .categoryReject("Cyclic public hierarchy.","category_domain_incompatible")
+      if(id %in% finished)return(NULL)
+      for(parent in graph[[id]])visit(parent,c(path,id))
+      finished<<-union(finished,id);NULL
+    }
+    for(id in names(graph))visit(id)
     targets<-concept(unique(c(domain,as.character(ca$ancestor_concept_id))))
     eligible<-is.na(targets$invalid_reason)
     if(spec$kind=="atc")eligible<-eligible & targets$vocabulary_id=="ATC" & targets$concept_class_id==paste("ATC",c("1st","2nd","3rd","4th","5th")[spec$level])

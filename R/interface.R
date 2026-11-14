@@ -3007,7 +3007,8 @@ omopAsFactorColumnsDS <- function(df, spec, table_column = NULL) {
   if (inherits(df, "FlowerDatasetDescriptor") && !is.null(df$metadata$concept_presentation)) {
     return(.conceptRelevelStaged(df, .ds_arg(spec)))
   }
-  if (!is.data.frame(df) || (!.is_omop.table(df) && is.null(attr(df, "omop_concepts")))) {
+  if (!is.data.frame(df) || (!.is_omop.table(df) && is.null(attr(df, "omop_concepts")) &&
+      !(isTRUE(attr(df,"omop_concept_reference")) && !is.null(attr(df,"omop_codebook_schema"))))) {
     stop("omopAsFactorColumnsDS: target must be a dsOMOP omop.table.",
          call. = FALSE)
   }

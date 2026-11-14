@@ -168,6 +168,10 @@
 #' @return A validated \code{CompiledOutput}.
 #' @keywords internal
 .compileOutput <- function(ctx, node, inputs) {
+  if(identical(node$format,"person_period")) {
+    repeated<-vapply(ctx$ir$variables[.irOutputVariables(ctx$ir,.compileNodeName(node,"output"))],function(v)identical(v$derived$kind,"repeated"),logical(1))
+    if(any(repeated)) .categoryReject("Repeated scalars need explicit period alignment; use wide or an explicitly broadcast long output.","repeated_grain_incompatible")
+  }
   name <- .compileNodeName(node, "output")
   legacy <- intersect(names(node), c("legacy_split", "legacy_columns", "legacy_temporal",
                                      "legacy_automatic_features", "legacy_raw_filter"))
@@ -193,6 +197,7 @@
               field = paste0("/outputs/", name, "/format")))
   co <- .dateOutputCovariates(ctx, node, inputs, co)
   co <- .numberOutputCovariates(ctx, node, inputs, co)
+  co <- .categoryOutputCovariates(ctx, node, inputs, co)
   for (component in names(co$components)) {
     part <- co$components[[component]]
     if (!is.null(part$frame)) {

@@ -1,3 +1,42 @@
+.categoryInputContract <- function(ctx,input) {
+  maps<-list()
+  walk<-function(x,path="input") {
+    if(!is.list(x))return(NULL)
+    if(!is.null(x$category_spec$rollup)&&x$category_spec$rollup$kind!="none")maps[[path]]<<-.categoryRollupMap(ctx$handle,x$category_spec$rollup)
+    for(i in seq_along(x))if(is.list(x[[i]]))walk(x[[i]],paste0(path,"/",names(x)[i] %||% i))
+  }
+  walk(input)
+  list(variable=input,maps=maps)
+}
+
+.categorySetIndicator <- function(ctx,raw,spec,key,missing="propagate",labels=NULL) {
+      s<-spec;mapping<-.categoryRollupMap(ctx$handle,s$rollup)$mapping
+      targets<-unique(unlist(mapping,use.names=FALSE))
+      public_labels<-.conceptMapOverlay(.conceptMap(ctx$ir$options$labels,"recipe",wire=TRUE),.conceptMap(labels,"input",wire=TRUE))
+      s$rollup<-NULL;s[["order"]]<-NULL;s$ordered<-NULL;s$reference<-NULL;s$binary<-NULL;s$label_style<-NULL;s$language<-NULL
+      meta<-list(spec=s,producer=list(kind="hierarchy_set"),producer_order=list(),producer_ordered=FALSE)
+      rr<-setNames(lapply(targets,function(key) {
+        id<-sub("^concept:","",key)
+        list(id=key,label=if(id %in% names(public_labels))public_labels[[id]] else key,
+          origin=if(id %in% names(public_labels))"variable" else "vocabulary",category=meta)
+      }),targets)
+      if(identical(s$missing$na,"level"))rr[["special:missing"]]<-list(id="special:missing",label=as.character(s$missing$labels[["missing"]]),origin="sentinel",category=meta)
+      if(identical(s$missing$unknown,"level"))rr[["special:unknown"]]<-list(id="special:unknown",label=as.character(s$missing$labels[["unknown"]]),origin="sentinel",category=meta)
+      resolution<-.categoryResolveRecords(unname(rr),identity=meta);aliases<-unlist(resolution$aliases,use.names=TRUE)
+      key<-if(key %in% names(aliases))aliases[[key]] else key
+      if(grepl("^special:",key)&&!key %in% resolution$keys) .categoryReject("Declare a sentinel before testing it.")
+      v<-vapply(seq_along(raw),function(i) {
+        set<-if(is.na(raw[i]))character() else mapping[[paste0("concept:",as.character(raw[i]))]]
+        effective<-unname(aliases[set])
+        if(!length(effective)||all(is.na(effective))) {
+          if(identical(s$missing$na,"level"))return(as.integer(key=="special:missing"))
+          return(if(missing=="zero")0L else NA_integer_)
+        }
+        as.integer(key %in% effective)
+      },1L)
+  v
+}
+
 .categoryEventRecord <- function(ctx,node,name,cons) {
   d<-node$derived;src<-.reduceSource(ctx,d$source)
   res<-.predicateResolve(src$catalogue,d$value,"category value")
@@ -28,42 +67,25 @@
   if(length(rec$columns)!=1L) .categoryReject("Indicators require exactly one typed operand.")
   cn<-names(rec$columns)[1L];column<-.fragmentColumn("integer",TRUE,"measure")
   attr(column,"semantic_flag")<-TRUE
+  attr(column,"category_input_contract")<-.categoryInputContract(ctx,input)
   attr(column,"privacy_class")<-attr(rec$columns[[cn]],"privacy_class")
   evaluate<-function() {
     rows<-rec$evaluate()
     if(identical(input$category_spec$rollup$multiple,"all")) {
-      s<-input$category_spec;mapping<-.categoryRollupMap(ctx$handle,s$rollup)$mapping
-      targets<-unique(unlist(mapping,use.names=FALSE))
-      public_labels<-.conceptMapOverlay(.conceptMap(ctx$ir$options$labels,"recipe",wire=TRUE),.conceptMap(input$labels,"input",wire=TRUE))
-      s$rollup<-NULL;s[["order"]]<-NULL;s$ordered<-NULL;s$reference<-NULL;s$binary<-NULL;s$label_style<-NULL;s$language<-NULL
-      meta<-list(spec=s,producer=list(kind="hierarchy_set"),producer_order=list(),producer_ordered=FALSE)
-      rr<-setNames(lapply(targets,function(key) {
-        id<-sub("^concept:","",key)
-        list(id=key,label=if(id %in% names(public_labels))public_labels[[id]] else key,
-          origin=if(id %in% names(public_labels))"variable" else "vocabulary",category=meta)
-      }),targets)
-      if(identical(s$missing$na,"level"))rr[["special:missing"]]<-list(id="special:missing",label=as.character(s$missing$labels[["missing"]]),origin="sentinel",category=meta)
-      if(identical(s$missing$unknown,"level"))rr[["special:unknown"]]<-list(id="special:unknown",label=as.character(s$missing$labels[["unknown"]]),origin="sentinel",category=meta)
-      resolution<-.categoryResolveRecords(unname(rr));aliases<-unlist(resolution$aliases,use.names=TRUE)
-      key<-if(d$key %in% names(aliases))aliases[[d$key]] else d$key
-      if(grepl("^special:",key)&&!key %in% resolution$keys) .categoryReject("Declare a sentinel before testing it.")
       raw<-rows[[cn]]
-      v<-vapply(seq_along(raw),function(i) {
-        set<-if(is.na(raw[i]))character() else mapping[[paste0("concept:",as.character(raw[i]))]]
-        effective<-unname(aliases[set])
-        if(!length(effective)||all(is.na(effective))) {
-          if(identical(s$missing$na,"level"))return(as.integer(key=="special:missing"))
-          return(if(d$missing=="zero")0L else NA_integer_)
-        }
-        as.integer(key %in% effective)
-      },1L)
-      if(!isTRUE(rec$available))v[]<-NA_integer_
-      out<-rows[setdiff(names(rows),cn)];out[[name]]<-.categoryValue(v,rep(isTRUE(rec$available),length(v)));attr(out[[name]],"category_canonical_missing")<-is.na(raw);return(out)
+      v<-.categorySetIndicator(ctx,raw,input$category_spec,d$key,d$missing,input$labels)
+      defined<-attr(raw,"category_defined") %||% rep(TRUE,length(v))
+      available<-isTRUE(rec$available) & defined
+      v[!available]<-NA_integer_
+      out<-rows[setdiff(names(rows),cn)];out[[name]]<-.categoryValue(v,available)
+      attr(out[[name]],"category_canonical_missing")<-is.na(raw);return(out)
     }
     # An isolated private context prevents outer defaults from changing the
     # explicitly requested identity test on the input.
     local<-list2env(as.list(ctx,all.names=TRUE),parent=parent.env(ctx));local$ir<-ctx$ir;local$ir$options$category_spec<-NULL
-    if(is.null(input$category_spec))input$category_spec<-list(order=list(kind="category_order",metadata="producer"))
+    if(.categoryFlag(input,rec$columns[[cn]]))input$category_spec<-.categoryEffective(input$category_spec,list(binary=list(kind="category_binary",as="factor",labels=c("no","yes"))))
+    if(.categoryFlag(input,rec$columns[[cn]]))input$category_spec$binary$as<-"factor"
+    else if(is.null(input$category_spec))input$category_spec<-list(order=list(kind="category_order",metadata="producer"))
     local$ir$variables[[dep]]<-input
     cols<-rec$columns;attr(cols[[cn]],"concept_owner")<-dep
     numeric<-.numberOutputColumns(rows,cols,list(format="long"),"input","input",recipe=NULL)
@@ -104,12 +126,14 @@
   numeric<-r$fn %in% c("count","n_distinct","any","all","sum")
   column<-.fragmentColumn(if(numeric)"integer" else "text",TRUE,"measure")
   attr(column,"privacy_class")<-attr(input_column,"privacy_class")
+  attr(column,"category_input_contract")<-.categoryInputContract(ctx,input)
   if(r$fn %in% c("any","all"))attr(column,"semantic_flag")<-TRUE
   columns<-setNames(rep(list(column),length(.reduceColumnNames(name,r))),.reduceColumnNames(name,r))
   evaluate<-function() {
     rows<-rec$evaluate();cn<-names(rec$columns)[1L]
     local<-list2env(as.list(ctx,all.names=TRUE),parent=parent.env(ctx));local$ir<-ctx$ir
     local$ir$options$category_spec<-NULL;local$ir$options$number_spec<-NULL
+    if(!flag&&is.null(input$category_spec))input$category_spec<-list(order=list(kind="category_order",metadata="producer"))
     local$ir$variables[[dep]]<-input
     cols<-rec$columns;attr(cols[[cn]],"concept_owner")<-dep
     presented<-.numberOutputColumns(rows,cols,list(format="long"),"input","input",recipe=NULL)
@@ -176,7 +200,7 @@
         }
         metadata<-list(spec=list(),producer=list(kind="category_reduce",input=contract$category %||% contract$number %||% contract$calendar),producer_order=as.list(effective),producer_ordered=is.ordered(presented[[cn]]))
         records<-setNames(lapply(seq_along(effective),function(j)list(kind="category",id=effective[j],label=labels[j],origin="producer",category=metadata)),effective)
-        c<-list(kind="category",category=metadata,ids=value,records=records,declared=character(),upstream_safe=upstream_safe,upstream_admitted=effective,resolved=.categoryResolveRecords(unname(records)))
+        c<-list(kind="category",category=metadata,ids=value,records=records,declared=character(),upstream_safe=upstream_safe,upstream_admitted=effective,resolved=.categoryResolveRecords(unname(records),identity=metadata))
         value<-.categoryFactor(c$resolved$labels[match(value,c$resolved$ids)],c$resolved)
         attr(value,"category_consumed")<-c
       }

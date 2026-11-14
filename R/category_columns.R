@@ -31,15 +31,23 @@
     if(is.null(operand))return(NULL)
     local<-list2env(as.list(ctx,all.names=TRUE),parent=parent.env(ctx));local$ir<-ctx$ir;local$ir$options$category_spec<-NULL
     col<-operand$column
-    attr(col,"category_spec")<-.categoryEffective(attr(col,"category_spec"),list(order=list(kind="category_order",metadata="producer")))
-    tmp<-data.frame(value=operand$value)
-    presented<-.conceptPresent(local,tmp,list(value=col))
-    contract<-attr(presented,"omop_concepts")$value
-    if(is.null(contract)||!identical(contract$kind,"category")) .categoryReject("Column indicators require a typed category identity.")
-    alias<-.categoryNullableStrings(contract$resolved$aliases)
-    key<-if(d$key %in% names(alias))alias[[d$key]] else d$key
-    if(grepl("^special:",key)&&!key %in% contract$resolved$keys) .categoryReject("Declare the sentinel before testing it.")
-    value<-as.integer(unname(alias[contract$ids])==key)
+    fallback<-if(.categoryFlag(list(),col))list(binary=list(kind="category_binary",as="factor",labels=c("no","yes"))) else list(order=list(kind="category_order",metadata="producer"))
+    attr(col,"category_spec")<-.categoryEffective(attr(col,"category_spec"),fallback)
+    spec<-attr(col,"category_spec")
+    if(.categoryFlag(list(),col)) {spec$binary$as<-"factor";attr(col,"category_spec")<-spec}
+    if(identical(spec$rollup$multiple,"all")) {
+      owner<-attr(col,"concept_owner")
+      value<-.categorySetIndicator(ctx,operand$value,spec,d$key,d$missing,if(length(owner))ctx$ir$variables[[owner]]$labels else NULL)
+    } else {
+      tmp<-data.frame(value=operand$value)
+      presented<-.conceptPresent(local,tmp,list(value=col))
+      contract<-attr(presented,"omop_concepts")$value
+      if(is.null(contract)||!identical(contract$kind,"category")) .categoryReject("Column indicators require a typed category identity.")
+      alias<-.categoryNullableStrings(contract$resolved$aliases)
+      key<-if(d$key %in% names(alias))alias[[d$key]] else d$key
+      if(grepl("^special:",key)&&!key %in% contract$resolved$keys) .categoryReject("Declare the sentinel before testing it.")
+      value<-as.integer(unname(alias[contract$ids])==key)
+    }
     available<-attr(col,"category_available") %||% attr(col,"number_origin")$available %||% TRUE
     defined<-attr(operand$value,"category_defined") %||% rep(TRUE,length(value))
     available<-available & defined
@@ -48,6 +56,7 @@
     out<-.fragmentColumn("integer",TRUE,"measure");attr(out,"semantic_flag")<-TRUE
     attr(out,"privacy_class")<-attr(col,"privacy_class");attr(out,"category_available")<-available
     attr(out,"category_spec")<-v$category_spec
+    attr(out,"category_input_contract")<-.categoryInputContract(ctx,d$variable)
     list(value=value,column=out)
   }
   additions<-lapply(map,evaluate)
@@ -55,4 +64,25 @@
     frame[[name]]<-additions[[name]]$value;columns[[name]]<-additions[[name]]$column
   }
   list(frame=frame,columns=columns)
+}
+
+.categoryOutputCovariates <- function(ctx,node,inputs,co) {
+  if(node$format %in% c("wide","long","intervals","joined"))return(co)
+  vars<-.irOutputVariables(ctx$ir,.compileNodeName(node,"output"))
+  if(!length(vars))return(co)
+  existing<-unique(unlist(lapply(co$components,function(part)names(part$fragment$columns)),use.names=FALSE))
+  vars<-setdiff(vars,existing)
+  if(!length(vars))return(co)
+  pop<-inputs$population
+  cons<-.reduceConsumer(ctx,.compileNodeName(node,"output"),pop$roster,pop$coverage,node$grain)
+  vars<-Filter(function(v) {
+    decl<-.irNamedNode(ctx$ir,"variable",v)
+    rec<-.compileVariable(ctx,decl,pop$roster,cons)
+    if(all(names(rec$columns) %in% existing))return(FALSE)
+    any(vapply(rec$columns,function(c).conceptColumn(c)||!is.null(attr(c,"category_domain"))||.categoryFlag(decl,c),logical(1))) ||
+      (decl$derived$kind %||% "") %in% c("repeated","category_reduce","category_indicators")
+  },vars)
+  if(!length(vars))return(co)
+  if(node$format %in% c("sparse","temporal_covariates","dictionary")) .categoryReject("Use a typed wide/long companion for categorical variables; matrix cells retain numeric analyses.","category_type_unsupported")
+  .dateOutputCovariates(ctx,node,inputs,co,vars)
 }

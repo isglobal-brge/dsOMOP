@@ -4,7 +4,7 @@
     if (is.list(v)) v <- lapply(v, objects)
     v
   }
-  json <- if(is.list(x)&&length(x$numbers)) .numberJson(objects(x)) else
+  json <- if(is.list(x)&&length(x$numbers)) .numberJson(.categoryMetadataPlain(objects(x))) else
     as.character(jsonlite::toJSON(objects(x), auto_unbox = TRUE, null = "null", digits = NA))
   paste0("B64:", sub("=+$", "", chartr("+/", "-_", gsub("[\r\n]", "", jsonlite::base64_enc(charToRaw(json))))))
 }
@@ -66,7 +66,7 @@
   for (col in names(meta$contracts)) {
     c <- meta$contracts[[col]]
     support <- unlist(meta$support[[col]], use.names = TRUE)
-    safe <- ((c$kind %||% "") %in% c("date","number") && all(names(support) %in% unlist(c$declared))) || isTRUE(meta$reference) || (!length(support) ||
+    safe <- (((c$kind %||% "") %in% c("date","number") || identical(c$kind,"category") && c$category$producer$kind %in% c("date","number","flag")) && all(names(support) %in% unlist(c$declared))) || isTRUE(meta$reference) || (!length(support) ||
       (all(support >= settings$nfilter_tab) && tryCatch({
         .assertSafeLevels(length(support), meta$total); TRUE
       }, error = function(e) FALSE)))
@@ -76,6 +76,7 @@
     out$levels[[col]] <- ids
     out$concepts[[col]] <- unname(c$records[ids])
     if (identical(c$kind, "date")) out$calendars[[col]] <- c$calendar
+    if (identical(c$kind, "category")) out$categories[[col]] <- c$category
     if (length(c$reference_keys)) out$reference_names[[col]] <- unique(as.character(unlist(c$reference_keys,use.names=FALSE)))
   }
   for (key in names(meta$generated)) {
@@ -117,6 +118,7 @@
   for (col in names(meta$contracts)) {
     shared <- spec$columns[[col]]
     if (identical(meta$contracts[[col]]$kind, "date") && !identical(.jcsCanonical(shared$calendar), .jcsCanonical(meta$contracts[[col]]$calendar))) .dateReject("Changed staged calendar identity.")
+    if(identical(meta$contracts[[col]]$kind,"category")&&!identical(.jcsCanonical(shared$category),.jcsCanonical(meta$contracts[[col]]$category))) .categoryReject("Changed staged category contract.","category_domain_incompatible")
     .conceptValidateResolution(shared, meta$contracts[[col]]$records)
     ids <- as.character(unlist(shared$ids, use.names = FALSE))
     labels <- unname(.categoryNullableStrings(shared$labels))
@@ -124,7 +126,7 @@
     if (length(ids) != length(labels) || anyDuplicated(ids) || (!identical(meta$contracts[[col]]$kind,"category") && anyNA(labels)) ||
         anyDuplicated(levels) || !setequal(unique(labels[!is.na(labels)]), levels) ||
         !all(report$levels[[col]] %in% ids)) stop("Invalid staged concept union.", call. = FALSE)
-    density_levels <- if ((meta$contracts[[col]]$kind %||% "") %in% c("date","number")) length(setdiff(ids,unlist(meta$contracts[[col]]$declared))) else length(ids)
+    density_levels <- if ((meta$contracts[[col]]$kind %||% "") %in% c("date","number","category")) length(setdiff(ids,unlist(meta$contracts[[col]]$declared))) else length(ids)
     .assertSafeLevels(density_levels, if (isTRUE(meta$reference)) 0L else meta$total)
     old <- meta$contracts[[col]]$resolved
     old_ids <- as.character(unlist(old$ids, use.names = FALSE))

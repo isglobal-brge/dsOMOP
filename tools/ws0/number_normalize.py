@@ -70,6 +70,9 @@ def normalize_numbers(plan):
         if 'inputs' in d:
             d.setdefault('result',d['exprs']['assign'][-1]['name'])
             for i in d['inputs']:i['variable']=norm(i['variable'],column_scope=column_scope)
+        if 'variable' in d:d['variable']=norm(d['variable'],column_scope=column_scope)
+        if d.get('kind')=='repeated':
+            for entry in d['values']:entry['variable']=norm(entry['variable'],column_scope=column_scope)
         if d.get('kind')=='number_change' and d['method'] in ('slope','time_to_threshold'):
             d.setdefault('time_unit','days')
             if d['method']=='time_to_threshold':

@@ -13,11 +13,11 @@
       semantic_type=if(!is.null(category))category$kind %||% "concept" else if(.categoryFlag(v,c))"flag" else c$role %||% "unresolved",
       r_type=if(is.ordered(value))"ordered_factor" else if(is.factor(value))"factor" else if(inherits(value,"Date"))"Date" else if(inherits(value,"integer64"))"integer64" else typeof(value),
       storage_type=typeof(value),unit=number$unit %||% "not_applicable",
-      derivation=list(variable=v,number=number,repeated=attr(c,"repeated_contract")),
+      derivation=list(variable=v,number=number,repeated=attr(c,"repeated_contract"),category_input=attr(c,"category_input_contract")),
       privacy_class=attr(c,"privacy_class") %||% if(!is.null(v$date_spec))2L else "unresolved",
       aggregate_policy="Existing endpoint admission and protection; unresolved for unrequested endpoints",
       missing_policy="Ordinary available NA follows the declaration; unavailable and undefined anchors remain NA",
       provenance=list(source="bound plan and admitted release schema"),completeness="reconciled")
   })
-  list(columns=cols,row_keys=names(columns)[vapply(columns,function(c)c$role %in% c("person_key","episode_key","analytic_key"),logical(1))])
+  list(columns=cols,row_grain=if("cohort_row_id" %in% names(frame))"episode" else if("person_id" %in% names(frame))"person" else "none",row_keys=names(columns)[vapply(columns,function(c)c$role %in% c("person_key","episode_key","analytic_key"),logical(1))])
 }

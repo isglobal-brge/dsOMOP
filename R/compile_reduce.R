@@ -1049,7 +1049,7 @@
       x <- .reduceCoerce(vals[[j]], columns[[j]]$type)
       x[!defined %in% TRUE] <- .reduceTypedNA(columns[[j]]$type, 1L)
       if(paired) {at<-as.integer(selected[[j]]);x<-.numberRangeValue(x,rows$range_low[at],rows$range_high[at])}
-      if(length(.categoryCapabilities(ctx$ir)))x<-.categoryValue(x,defined)
+      x<-.categoryValue(x,defined)
       out[[names(columns)[[j]]]] <- x
     }
     out

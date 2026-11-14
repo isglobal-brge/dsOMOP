@@ -187,7 +187,7 @@
       o$grain <- if (.pnv2PopulationIndexed(x$populations, o$rows)) "episode" else "person"
     }
     if (identical(o$format, "wide") && is.null(o$columns)) {
-      o["columns"] <- list(.pnv2Array(names(x$variables)))
+      o["columns"] <- list(.pnv2Array(c(names(x$variables),names(o$category_columns))))
     }
     if (identical(o$format, "survival")) {
       if (is.null(o$options)) o["options"] <- list(empty)

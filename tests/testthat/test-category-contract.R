@@ -33,3 +33,10 @@ test_that("C49 resolved category identities and order cannot be tampered", {
     expect_error(.categoryValidateResolution(bad,records),"category_domain_incompatible")
   }
 })
+
+test_that("C28 C38 private definedness survives repeated row alignment", {
+  x<-.categoryValue(c(NA_real_,1,NA_real_),c(FALSE,TRUE,TRUE))
+  twice<-x[c(3,1,2)][c(2,3)]
+  expect_identical(attr(twice,"category_defined"),c(FALSE,TRUE))
+  expect_s3_class(twice,"dsomop_category_value")
+})

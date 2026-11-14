@@ -1,8 +1,8 @@
 # Pure A-30 identity resolution, shared with the client. Records supplied here
 # have already passed the existing controlled factor-metadata protocol.
-.categoryResolveRecords <- function(records,complete=TRUE) {
-  if (!length(records)) .categoryReject("Missing category contract.", "category_domain_incompatible")
-  contracts <- lapply(records, function(r) r$category)
+.categoryResolveRecords <- function(records,complete=TRUE,identity=NULL) {
+  if (!length(records)&&is.null(identity)) .categoryReject("Missing category contract.", "category_domain_incompatible")
+  contracts <- if(length(records))lapply(records, function(r) r$category) else list(identity)
   if (length(unique(vapply(contracts,.jcsCanonical,""))) != 1L)
     .categoryReject("Category semantics differ across retained sites.","category_domain_incompatible")
   contract <- contracts[[1L]]; s <- contract$spec
@@ -68,6 +68,7 @@
     }
     labels[which(keys==key)[1L]]
   },""),domain)
+  explicit_keys<-unique(keys[vapply(rows,function(r)r$origin %in% c("variable","recipe","recode"),logical(1)) & !is.na(keys)])
   repeat {
     dup <- duplicated(effective_labels)|duplicated(effective_labels,fromLast=TRUE)
     if(!any(dup))break
@@ -75,9 +76,10 @@
     for(key in names(effective_labels)[dup]) {
       suffix <- if(grepl("^special:",key))sub("^special:","",key) else key
       # Ordinary explicitly supplied labels are never rewritten for a sentinel.
-      if(!grepl("^special:",key) && any(grepl("^special:",names(collision_labels)[collision_labels==collision_labels[[key]]])))next
+      if(!grepl("^special:",key) && (key %in% explicit_keys || any(grepl("^special:",names(collision_labels)[collision_labels==collision_labels[[key]]]))))next
       effective_labels[[key]] <- paste0(effective_labels[[key]]," [",suffix,"]")
     }
+    if(identical(collision_labels,effective_labels)) .categoryReject("Distinct explicitly labelled categories need distinct labels.","category_domain_incompatible")
   }
   order <- if(!is.null(s[["order"]])) .categoryOrderCheck(s[["order"]]) else NULL
   if (is.null(order) || identical(order,"producer")) {
@@ -121,7 +123,7 @@
   out
 }
 .categoryValidateResolution <- function(shared,records) {
-  if(!identical(shared$kind,"category") || !length(records) ||
+  if(!identical(shared$kind,"category") || length(records) &&
      !identical(.jcsCanonical(shared$category),.jcsCanonical(records[[1L]]$category)))
     .categoryReject("Changed shared category contract.","category_domain_incompatible")
   # Local records cannot attest foreign vocabulary labels; they can attest all
@@ -134,14 +136,18 @@
   .categoryKeys(ids);.categoryKeys(keys)
   if(anyDuplicated(ids) || !all(names(records) %in% ids) ||
      length(ids)!=length(labels) || anyDuplicated(levels) || length(keys)!=length(levels) ||
-     !identical(names(aliases),ids) || !all(aliases[!is.na(aliases)] %in% keys) ||
+     (length(ids)>0L&&!identical(names(aliases),ids)) || !all(aliases[!is.na(aliases)] %in% keys) ||
      !identical(unname(levels[match(aliases,keys)]),labels))
     .categoryReject("Incomplete shared category coverage.","category_domain_incompatible")
-  local <- .categoryResolveRecords(unname(records),complete=FALSE)
+  local <- .categoryResolveRecords(unname(records),complete=FALSE,identity=shared$category)
   expected_alias <- .categoryNullableStrings(local$aliases)
   if(!identical(unname(aliases[names(expected_alias)]),unname(expected_alias)) ||
      !identical(isTRUE(shared$ordered),isTRUE(local$ordered)))
     .categoryReject("Changed shared category identities or ordinal semantics.","category_domain_incompatible")
+  for(r in records)if(r$origin %in% c("variable","recipe","recode")) {
+    at<-match(r$id,ids);local_at<-match(r$id,local$ids)
+    if(!identical(labels[at],unname(local$labels[local_at]))) .categoryReject("Shared labels conflict with the declared recode.","category_domain_incompatible")
+  }
   s <- shared$category$spec
   order <- if(!is.null(s[["order"]])) .categoryOrderCheck(s[["order"]]) else NULL
   if(is.null(order)||identical(order,"producer")) {
