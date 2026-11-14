@@ -139,6 +139,10 @@
     frame[[n]]<-.categoryFactor(values,resolved)
     contracts[[n]]<-list(kind="category",category=contract,ids=ids,records=records,
       declared=declared,resolved=resolved,owner=owner)
+    if(!is.null(c$upstream_safe)) {
+      contracts[[n]]$upstream_safe<-c$upstream_safe
+      contracts[[n]]$upstream_admitted<-intersect(c$upstream_admitted,names(records))
+    }
   }
   if(length(contracts))attr(frame,"omop_concepts")<-contracts
   for(n in names(frame)) {

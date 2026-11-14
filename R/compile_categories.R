@@ -214,7 +214,12 @@
         records<-setNames(lapply(record_keys,function(key) {
           identity<-if(key %in% names(aliases))aliases[[key]] else key
           r<-contract$records[[key]] %||% list(origin="producer")
-          r$kind<-"category";r$id<-key;r$effective_id<-identity;r$label<-labels[match(identity,effective)];r$category<-metadata;r
+          r$kind<-"category";r$id<-key;r$effective_id<-identity;r$label<-labels[match(identity,effective)];r$category<-metadata
+          if(!grepl("^concept:",identity)) {
+            r$origin<-if(grepl("^special:",identity))"sentinel" else "producer"
+            r$name<-NULL;r$vocabulary<-NULL;r$version<-NULL
+          }
+          r
         }),record_keys)
         c<-list(kind="category",category=metadata,ids=value,records=records,declared=character(),upstream_safe=upstream_safe,upstream_admitted=record_keys,resolved=.categoryResolveRecords(unname(records),identity=metadata))
         value<-.categoryFactor(c$resolved$labels[match(value,c$resolved$ids)],c$resolved)
