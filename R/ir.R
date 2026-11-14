@@ -113,6 +113,15 @@
     if (is.atomic(x)) attributes(x) <- NULL
     x
   }
+  if(.numberHas(plan)) {
+    clean<-function(x) {
+      if(is.list(x))return(lapply(x,clean))
+      if(length(x)>1L)return(lapply(x,clean))
+      if(length(x)==1L&&(is.na(x)||is.numeric(x)&&!is.finite(x)))return(NULL)
+      x
+    }
+    return(jsonlite::fromJSON(.numberJson(clean(coerce(plan))),simplifyVector=FALSE))
+  }
   json <- jsonlite::toJSON(coerce(plan), auto_unbox = TRUE, null = "null",
                            na = "null", digits = NA)
   jsonlite::fromJSON(json, simplifyVector = FALSE)

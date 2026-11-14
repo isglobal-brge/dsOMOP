@@ -12,3 +12,12 @@ test_that("N28 N47 N62 N73 temporal numeric declarations retain class 2 through 
   columns<-got$compiled$components$o$fragment$columns
   for(n in names(vars))expect_identical(attr(columns[[n]],"number_contract")$privacy_class,2L,info=n)
 })
+
+test_that("N49 native parsing and staged numeric capsules preserve adjacent binary64 constants", {
+  constants<-list(factor=1/7,breaks=as.list(c(1.25-2^-52,1.25,1.25+2^-52)))
+  plan<-list(version=2L,options=list(number_spec=list(transform=list(list(method="affine",factor=1/7)))))
+  expect_identical(.irJsonForm(plan)$options$number_spec$transform[[1]]$factor,1/7)
+  decoded<-.ds_arg(.conceptEncode(list(numbers=list(x=constants))))
+  expect_identical(decoded$numbers$x$factor,1/7)
+  expect_identical(unlist(decoded$numbers$x$breaks),unlist(constants$breaks))
+})

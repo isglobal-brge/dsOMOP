@@ -4,7 +4,8 @@
     if (is.list(v)) v <- lapply(v, objects)
     v
   }
-  json <- as.character(jsonlite::toJSON(objects(x), auto_unbox = TRUE, null = "null", digits = NA))
+  json <- if(is.list(x)&&length(x$numbers)) .numberJson(objects(x)) else
+    as.character(jsonlite::toJSON(objects(x), auto_unbox = TRUE, null = "null", digits = NA))
   paste0("B64:", sub("=+$", "", chartr("+/", "-_", gsub("[\r\n]", "", jsonlite::base64_enc(charToRaw(json))))))
 }
 

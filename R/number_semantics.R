@@ -465,3 +465,27 @@
   }
   if(fn=="slope")paste0(u,"/days") else u
 }
+
+# Order-preserving JSON with exact round-tripping binary64 constants.
+.numberJson <- function(x) {
+  if (!is.list(x)) {
+    if (!is.null(x) && length(x) != 1L) {
+      parts <- vapply(seq_along(x), function(i) .numberJson(x[[i]]), "")
+      return(paste0("[", paste(parts, collapse = ","), "]"))
+    }
+    return(.jcsCanonical(x))
+  }
+  nms <- names(x)
+  if (is.null(nms)) {
+    return(paste0("[", paste(vapply(x, .numberJson, ""), collapse = ","), "]"))
+  }
+  if (!length(x)) return("{}")
+  if (anyNA(nms) || any(!nzchar(nms)) || anyDuplicated(nms)) {
+    stop("JSON object keys must be non-empty and unique.", call. = FALSE)
+  }
+  parts <- vapply(seq_along(x), function(i) {
+    paste0(.jcsCanonical(nms[[i]]), ":", .numberJson(x[[i]]))
+  }, "")
+  paste0("{", paste(parts, collapse = ","), "}")
+}
+
