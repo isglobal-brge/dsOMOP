@@ -215,8 +215,9 @@
           identity<-if(key %in% names(aliases))aliases[[key]] else key
           r<-contract$records[[key]] %||% list(origin="producer")
           r$kind<-"category";r$id<-key;r$effective_id<-identity;r$label<-labels[match(identity,effective)];r$category<-metadata
-          if(!grepl("^concept:",identity)) {
-            r$origin<-if(grepl("^special:",identity))"sentinel" else "producer"
+          recoded<-length(contract$category$spec$recode$map)>0L && identity %in% unlist(contract$category$spec$recode$levels,use.names=FALSE)
+          if(recoded || !grepl("^concept:",identity)) {
+            r$origin<-if(grepl("^special:",identity))"sentinel" else if(recoded)"recode" else "producer"
             r$name<-NULL;r$vocabulary<-NULL;r$version<-NULL
           }
           r
