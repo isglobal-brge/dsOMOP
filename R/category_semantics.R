@@ -235,3 +235,14 @@
   if(is.atomic(x)&&length(x)==1L&&is.na(x))return(NULL)
   x
 }
+
+.categoryDeclaredUnit <- function(plan,node) {
+  d<-node$derived
+  if(identical(d$kind,"category_indicators"))return("1")
+  if(identical(d$kind,"category_reduce"))return(if(d$reducer$fn %in% c("count","n_distinct","sum"))"count" else if(d$reducer$fn %in% c("any","all"))"1" else .categoryDeclaredUnit(plan,d$variable))
+  if(identical(d$kind,"repeated")) {
+    at<-match(d$value,vapply(d$values,function(x)x$name,""))
+    return(.categoryDeclaredUnit(plan,d$values[[at]]$variable))
+  }
+  .numberDeclaredUnit(plan,node)
+}

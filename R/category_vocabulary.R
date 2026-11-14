@@ -14,7 +14,12 @@
   }
   domain<-if(is.list(spec$domain)&&!is.null(names(spec$domain)))as.character(.resolveConceptSetNode(handle,spec$domain)$ids) else sub("^concept:","",.categoryKeys(spec$domain,FALSE,TRUE))
   if(!length(domain)) .categoryReject("Public rollup domain expands to no concepts.","category_domain_incompatible")
-  concept<-function(ids) read("concept",c("concept_id","vocabulary_id","concept_class_id","invalid_reason"),paste0("concept_id IN (",.sqlIdList(ids),")"))
+  concept<-function(ids) {
+    rows<-unique(read("concept",c("concept_id","vocabulary_id","concept_class_id","invalid_reason"),paste0("concept_id IN (",.sqlIdList(ids),")")))
+    valid<-rows[is.na(rows$invalid_reason),,drop=FALSE]
+    if(anyNA(valid[c("concept_id","vocabulary_id","concept_class_id")]) || anyDuplicated(valid$concept_id) || any(!nzchar(valid$vocabulary_id)|!nzchar(valid$concept_class_id))) .categoryReject("Malformed required public concept/class adapter records.","category_domain_incompatible")
+    rows
+  }
   inputs<-concept(domain);valid_input<-as.character(inputs$concept_id[is.na(inputs$invalid_reason)])
   relation<-setNames(rep(list(character()),length(domain)),domain)
   if(spec$kind!="icd10") {

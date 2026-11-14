@@ -215,7 +215,7 @@
           identity<-if(key %in% names(aliases))aliases[[key]] else key
           list(kind="category",id=key,effective_id=identity,label=labels[match(identity,effective)],origin="producer",category=metadata)
         }),record_keys)
-        c<-list(kind="category",category=metadata,ids=value,records=records,declared=character(),upstream_safe=upstream_safe,upstream_admitted=effective,resolved=.categoryResolveRecords(unname(records),identity=metadata))
+        c<-list(kind="category",category=metadata,ids=value,records=records,declared=character(),upstream_safe=upstream_safe,upstream_admitted=record_keys,resolved=.categoryResolveRecords(unname(records),identity=metadata))
         value<-.categoryFactor(c$resolved$labels[match(value,c$resolved$ids)],c$resolved)
         attr(value,"category_consumed")<-c
       }
