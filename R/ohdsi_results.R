@@ -985,8 +985,6 @@
   contract <- resolved$contract
   strict <- resolved$strict
   finish <- function(x) {
-    if (exists("schema_contract", envir = parent.env(environment()), inherits = FALSE))
-      attr(x, "dsomop.results_schema") <- schema_contract
     if (strict && is.null(columns) && is.data.frame(x)) {
       for (column in setdiff(contract$public_columns, names(x))) {
         if (!column %in% contract$optional_columns) {
@@ -1003,6 +1001,7 @@
       attr(x, "dsomop.disclosure_safe") <- FALSE
       attr(x, "dsomop.release_mode") <- "admin_development"
     }
+    attr(x, "dsomop.results_schema") <- schema_contract
     x
   }
 
