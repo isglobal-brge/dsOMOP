@@ -264,7 +264,7 @@
     at <- match(d$value, vapply(d$values,function(x)x$name,""))
     return(.categoryDeclaredConcept(d$values[[at]]$variable))
   }
-  if (identical(d$kind,"category_rows") || (v$reducer$value %||% "") %in% c("concept_id","value_as_concept_id") || grepl("_concept_id$",v$raw$column %||% "")) return(TRUE)
+  if ((d$kind %||% "") %in% c("race","ethnicity","category_rows") || (v$reducer$value %||% "") %in% c("concept_id","value_as_concept_id") || grepl("_concept_id$",v$raw$column %||% "")) return(TRUE)
   if ((d$kind %||% "") %in% c(.DATE_KINDS,.NUMBER_KINDS,"category_indicators","died") || !is.null(v$date_spec) || nzchar(fn)) return(FALSE)
   NA
 }

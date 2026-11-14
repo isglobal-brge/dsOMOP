@@ -380,3 +380,11 @@
 .dateNeedsPresentation <- function(plan) {
   !is.null(plan$options$date_spec) || any(vapply(plan$variables,function(v)!is.null(v$date_spec)||(v$derived$kind %||% "") %in% .DATE_KINDS,logical(1)))
 }
+
+# Pure result typing shared by execution and prospective schemas.
+.dateResultType <- function(s,d) {
+  if(d$kind %in% c("time_between","age_at")) return(if(isTRUE(d$bands))"text" else if(d$unit %in% c("weeks","decimal_years"))"numeric" else "integer")
+  probe<-list(lo=as.Date("2024-02-29"),hi=as.Date("2024-02-29"))
+  val<-.datePresent(probe,s,d$part,as.Date("1970-01-01"))
+  if(inherits(val,"Date"))"date" else if(is.factor(val))"text" else if(is.integer(val))"integer" else "numeric"
+}
