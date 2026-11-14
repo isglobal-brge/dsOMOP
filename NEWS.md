@@ -1,5 +1,13 @@
 # dsOMOP / dsOMOPClient 2.10.5 (development)
 
+- Corrected / newly refused: CKD-EPI 2021 eGFR rejects input-local source-unit
+  maps that differ from the age anchor's shared event normalization. Such maps
+  could select creatinine from a different date and use the wrong calendar age
+  or adult eligibility. Move `omop_unit()` normalization onto the event shared
+  by creatinine and `omop_age_at()`; retain explicit numeric coordinate
+  conversions on the creatinine input. Aligned shared maps and day-zero/index
+  age inputs remain supported.
+
 - Newly permitted: four exact-version client formula constructors (BMI,
   arithmetic MAP, ratio, and race-free CKD-EPI 2021 creatinine eGFR) expand into
   existing typed private operations. Declare source selection, canonical units
