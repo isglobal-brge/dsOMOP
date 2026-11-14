@@ -13,7 +13,8 @@
   calendar <- list(category = "age_band", levels = as.list(labels))
   expect_identical(class(column), c("dsomop_date_factor", "ordered", "factor"), info = info)
   expect_identical(levels(column), labels, info = info)
-  expect_setequal(names(attributes(column)), c("levels", "class", "omop_date_contract"), info = info)
+  expect_identical(sort(names(attributes(column))),
+    sort(c("levels", "class", "omop_date_contract")), info = info)
   expect_identical(attr(column, "omop_date_contract"),
     list(keys = values, levels = labels, labels = labels, spec = calendar,
          order = seq_along(labels), declared = labels), info = info)
