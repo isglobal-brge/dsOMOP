@@ -1,5 +1,10 @@
 # dsOMOP 2.10.5 (2026-11-14)
 
+- Corrected (categorical schema review): prospective codebooks enumerate closed
+  panel source columns and apply the same required numeric-role rules as
+  execution for selected panel and survival copies, including nested components.
+  Rebuild affected codebooks; no recipe declaration changes are needed.
+
 - Corrected (categorical composition review): final column selection and order
   apply to output-local copies and expanded variables in both execution and
   prospective codebooks. Structural columns remain present.

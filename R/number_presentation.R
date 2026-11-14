@@ -127,12 +127,8 @@
   attr(column,"privacy_class")<-privacy;column
 }
 .numberEligibleColumn <- function(column,name,node) {
-  structural<-c("cohort_definition_id",switch(node$format,
-    long=c("event_number","visit_occurrence_id","event_id","unit_concept_id","operator_concept_id"),
-    sparse=,temporal_covariates=c("covariate_id","analysis_id","time_id","start_day","end_day"),
-    person_period=c("period_id","bin_id","time_id"),
-    survival=c("event","event_code","event_id","status","stratum_id","interval_number","transition_id","from_state","to_state","weight","sampling_weight","from","to","trans","state_visit_number","event_number","outcome_event_number"),character()))
-  .numberAnalyticColumn(column)&&!name %in% structural
+
+  .numberAnalyticColumn(column)&&!name %in% .numberStructuralColumns(node$format)
 }
 
 .numberOutputOrigins <- function(ctx,node,columns) {
