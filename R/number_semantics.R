@@ -450,6 +450,7 @@
   if(fn %in% c("count","n_distinct","era_count")||(d$kind %||% "") %in% c("number_count","n_observation_periods"))return("count")
   if(fn %in% c("days_since","days_until","duration_sum","covered_days","supply_days","drug_duration","gap_max","gap_mean","era_days","first_era_days")||(d$kind %||% "") %in% c("observed_days","days_to_death","prior_obs","followup","obs_duration"))return("days")
   if(fn=="time_since")return(if(identical(r$unit,"month"))"months" else "days")
+  if(identical(d$kind,"age"))return("years")
   if((d$kind %||% "") %in% c("time_between","age_at"))return(if(d$unit=="annual_years")"years" else d$unit)
   if(identical(node$date_spec$precision,"relative_days"))return("days")
   source<-node$source %||% d$source

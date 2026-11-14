@@ -1,4 +1,5 @@
 test_that("N28 N47 N62 N73 temporal numeric declarations retain class 2 through expressions", {
+  expect_identical(.numberDeclaredUnit(list(),list(derived=list(kind="age"))),"years")
   h<-.ws4_reach_handle();on.exit(DBI::dbDisconnect(h$conn),add=TRUE)
   .ws7_extend(h$conn);h$blueprint<-NULL;h$role_registry<-NULL
   vars<-list()
