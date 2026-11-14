@@ -3,6 +3,7 @@
 
 # The frozen operation and reducer vocabularies of section 4.4.
 .RECIPE_OPERATIONS <- c(
+  "vocabulary.ohdsi_import_validity",
   "date.presentation", "date.elapsed", "output.concept_labels", "concept_set", "event", "event.unit", "event.on_missing_table", "interval",
   "interval.ingredient", "interval.stockpile", "population.index",
   "population.first_eligible", "population.any_of", "population.criteria",
@@ -37,6 +38,7 @@
                             ".compileOutput", ".planContext",
                             ".publishPrepare", ".publishCommit")
 .RECIPE_OPERATION_FUNCTIONS <- list(
+  vocabulary.ohdsi_import_validity = c(".ohdsiPreflightValidity", ".ohdsiExpandValidConcepts"),
   interval = ".compileInterval", interval.ingredient = ".compileInterval",
   interval.stockpile = ".compileInterval",
   population.coverage.union = ".compileInterval",

@@ -280,6 +280,12 @@
             }
           ],
           "default": null
+        },
+        "validity_policy": {
+          "type": "string",
+          "enum": [
+            "ohdsi-import-1"
+          ]
         }
       }
     },

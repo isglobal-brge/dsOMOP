@@ -241,6 +241,7 @@
   plan <- .irJsonForm(plan)
   version <- .irPlanVersion(plan)
   .irValidateEnvelope(plan)
+  .ohdsiPreflightValidity(handle, plan)
   if (!identical(version, 2L)) {
     outputs <- plan[["outputs"]]
     if (is.null(outputs) || (is.list(outputs) && length(outputs) == 0L)) {

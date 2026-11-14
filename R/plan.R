@@ -769,17 +769,17 @@
     age_range = c("min", "max", "reference_date"),
     age_group = c("groups", "reference_date"),
     cohort = "cohort_definition_id",
-    has_concept = c("concept_id", "concept_ids", "table", "concept_name",
+    has_concept = c("concept_set", "concept_id", "concept_ids", "table", "concept_name",
                     "window", "min_count", "reference_date"),
-    not_has_concept = c("concept_id", "concept_ids", "table", "concept_name",
+    not_has_concept = c("concept_set", "concept_id", "concept_ids", "table", "concept_name",
                         "window", "reference_date"),
-    concept_count = c("concept_id", "concept_ids", "table", "concept_name",
+    concept_count = c("concept_set", "concept_id", "concept_ids", "table", "concept_name",
                       "window", "min_count", "reference_date"),
     prior_observation = c("min_days", "reference_date"),
     followup = c("min_days", "reference_date"),
     visit_count = c("min_count", "visit_concept_id", "visit_concept_ids",
                     "window", "reference_date"),
-    has_measurement = c("concept_id", "concept_ids", "min_value", "max_value",
+    has_measurement = c("concept_set", "concept_id", "concept_ids", "min_value", "max_value",
                         "safe_scope", "window", "reference_date"),
     missing_measurement = c("concept_id", "concept_ids", "window",
                             "reference_date"),
@@ -1482,7 +1482,8 @@
     ))
 
   } else if (ftype == "has_concept") {
-    concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
+    concept_ids <- if (!is.null(params$concept_set)) .resolveConceptSet(handle, params$concept_set) else
+      .conceptIdList(params$concept_ids %||% params$concept_id)
     min_count <- integer_param(params$min_count, "min_count", default = 1L,
                                minimum = 1L)
     table_name <- tolower(params$table %||% "")
@@ -1510,7 +1511,8 @@
                   ") >= ", min_count))
 
   } else if (ftype == "not_has_concept") {
-    concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
+    concept_ids <- if (!is.null(params$concept_set)) .resolveConceptSet(handle, params$concept_set) else
+      .conceptIdList(params$concept_ids %||% params$concept_id)
     table_name <- tolower(params$table %||% "")
     if (!nzchar(table_name)) fail("table is required.")
     if (length(concept_ids) == 0) fail("concept_id(s) are required.")
@@ -1530,7 +1532,8 @@
                   concept_predicate, win, ")"))
 
   } else if (ftype == "concept_count") {
-    concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
+    concept_ids <- if (!is.null(params$concept_set)) .resolveConceptSet(handle, params$concept_set) else
+      .conceptIdList(params$concept_ids %||% params$concept_id)
     min_count <- integer_param(params$min_count, "min_count", default = 1L,
                                minimum = 1L)
     table_name <- tolower(params$table %||% "")
@@ -1615,7 +1618,8 @@
                   sub_where, win, ") >= ", min_count))
 
   } else if (ftype == "has_measurement") {
-    concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
+    concept_ids <- if (!is.null(params$concept_set)) .resolveConceptSet(handle, params$concept_set) else
+      .conceptIdList(params$concept_ids %||% params$concept_id)
     if (length(concept_ids) == 0) fail("concept_id(s) are required.")
     required <- c("person_id", "measurement_concept_id",
       if (!is.null(params$min_value) || !is.null(params$max_value))
@@ -1656,7 +1660,8 @@
                   sub_where, win, ")"))
 
   } else if (ftype == "missing_measurement") {
-    concept_ids <- .conceptIdList(params$concept_ids %||% params$concept_id)
+    concept_ids <- if (!is.null(params$concept_set)) .resolveConceptSet(handle, params$concept_set) else
+      .conceptIdList(params$concept_ids %||% params$concept_id)
     if (length(concept_ids) == 0) fail("concept_id(s) are required.")
     m_row <- table_row("measurement",
       c("person_id", "measurement_concept_id", "value_as_number"))
@@ -2493,7 +2498,7 @@
       # set (one shared resolver, .resolveConceptSet()).
       unknown_cs <- setdiff(names(cs),
                             c("concepts", "include_descendants",
-                              "include_mapped", "exclude"))
+                              "include_mapped", "exclude", "validity_policy"))
       if (length(unknown_cs) > 0L) {
         stop("Unknown index-event concept-set field(s): ",
              paste(unknown_cs, collapse = ", "), ".", call. = FALSE)
