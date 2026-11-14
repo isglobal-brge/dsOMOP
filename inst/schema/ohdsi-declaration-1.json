@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ohdsi-declaration-1",
+  "title": "Public route-specific OHDSI interoperability declaration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "compatibility",
+    "method_id",
+    "method_version",
+    "adapter_version",
+    "settings_digest",
+    "upstream",
+    "identity",
+    "study_roles",
+    "temporal_contract",
+    "era_contract",
+    "vocabulary_contract",
+    "estimation_contract"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "ohdsi-declaration-1"
+    },
+    "compatibility": {
+      "enum": [
+        "native",
+        "local_port",
+        "upstream_equivalent",
+        "unsupported",
+        "unresolved"
+      ]
+    },
+    "method_id": {
+      "type": "string"
+    },
+    "method_version": {
+      "type": "string"
+    },
+    "adapter_version": {
+      "type": "string"
+    },
+    "settings_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "upstream": {
+      "type": "object"
+    },
+    "identity": {
+      "type": "object"
+    },
+    "study_roles": {
+      "type": "object"
+    },
+    "temporal_contract": {
+      "type": "object"
+    },
+    "era_contract": {
+      "type": "object"
+    },
+    "vocabulary_contract": {
+      "type": "object"
+    },
+    "estimation_contract": {
+      "type": "object"
+    }
+  }
+}

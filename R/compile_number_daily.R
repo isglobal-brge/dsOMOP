@@ -6,7 +6,21 @@
   .numberChoice(d$missing,c("skip","propagate"))
   if(!(d$input$derived$kind %||% "") %in% c("number_rows","number_derive") || !is.null(d$input$derived$reducer))
     .numberReject("/derived/input: use numeric event rows or an unreduced same-event derive.","number_daily_input")
-  operand<-d$input;attr(operand,"name")<-.numberDependencyName(name,"daily")
+  # Apply the outer selection to every same-event leaf before expression
+  # evaluation, so ineligible rows cannot trigger arithmetic or alter collapse.
+  select<-function(v) {
+    if(identical(v$derived$kind,"number_rows"))v$derived$window<-r$window
+    if(!is.null(v$derived$inputs))v$derived$inputs<-lapply(v$derived$inputs,function(i){i$variable<-select(i$variable);i})
+    v
+  }
+  units<-function(v) {
+    if(identical(v$derived$kind,"number_rows") && .numberPresentedUnit(ctx$ir,v) %in% c("unresolved_source","mixed_coordinates","categorical"))
+      .numberReject("/derived/input: normalize each event quantity before declaring a common coordinate.","number_unit_conflict")
+    if(!is.null(v$derived$inputs))lapply(v$derived$inputs,function(i)units(i$variable))
+    invisible(NULL)
+  }
+  units(d$input)
+  operand<-select(d$input);attr(operand,"name")<-.numberDependencyName(name,"daily")
   rec<-.compileVariable(ctx,operand,cons$roster,cons)
   if(!isTRUE(rec$event_grain)||length(rec$columns)!=1L)
     .numberReject("/derived/input: daily collapse requires one aligned event stream.","number_daily_input")
@@ -34,6 +48,7 @@
   evaluate<-function() {
     roster<-.reduceRosterFrame(ctx,cons$roster);keys<-roster$cohort_row_id
     bounds<-.reduceBoundsR(ctx,cons,r$window,"daily input window")
+    if(!is.null(cons$time_window))bounds<-.reduceIntersectBounds(bounds,.reduceBoundsR(ctx,cons,cons$time_window))
     rows<-rec$evaluate()
     rows<-.reduceWindowFilter(rows,bounds)
     rows<-rows[!is.na(rows$start_date),,drop=FALSE]

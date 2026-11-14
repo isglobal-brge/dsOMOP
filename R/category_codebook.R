@@ -19,7 +19,7 @@
       privacy_class=attr(c,"privacy_class") %||% if(role %in% c("person_key","episode_key","analytic_key"))1L else if(!is.null(v$date_spec)||role %in% c("start","end"))2L else if((!is.null(c)&&.conceptColumn(c))||.categoryFlag(v,c)||role %in% c("measure","value"))3L else "unresolved",
       aggregate_policy="Existing endpoint admission and protection; unresolved for unrequested endpoints",
       missing_policy="Ordinary available NA follows the declaration; unavailable and undefined anchors remain NA",
-      provenance=list(source="bound plan and admitted release schema"),completeness="reconciled")
+      provenance=list(source="bound plan and admitted release schema",interoperability=.ohdsiDeclaration(.irDocument(ctx$ir),v,key)),completeness="reconciled")
   })
   list(columns=cols,row_grain=if("cohort_row_id" %in% names(frame))"episode" else if("person_id" %in% names(frame))"person" else "none",row_keys=names(columns)[vapply(columns,function(c)c$role %in% c("person_key","episode_key","analytic_key"),logical(1))])
 }

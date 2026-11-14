@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "study-bundle-1",
+  "title": "Public client study bundle; embedded plan also validates as plan-v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "study",
+    "bound_recipe",
+    "semantic_digest",
+    "library",
+    "formulas",
+    "phenotype_origins",
+    "codebooks",
+    "versions",
+    "publication",
+    "snapshot"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "study-bundle-1"
+    },
+    "study": {
+      "type": "object"
+    },
+    "bound_recipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "plan"
+      ],
+      "properties": {
+        "format": {
+          "const": "plan-v2"
+        },
+        "plan": {
+          "type": "object"
+        }
+      }
+    },
+    "semantic_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "library": {
+      "type": [
+        "object",
+        "array",
+        "null"
+      ]
+    },
+    "formulas": {
+      "type": [
+        "object",
+        "array",
+        "null"
+      ]
+    },
+    "phenotype_origins": {
+      "type": [
+        "object",
+        "array",
+        "null"
+      ]
+    },
+    "codebooks": {
+      "type": [
+        "object",
+        "array",
+        "null"
+      ]
+    },
+    "versions": {
+      "type": [
+        "object",
+        "array",
+        "null"
+      ]
+    },
+    "publication": {
+      "type": [
+        "object",
+        "array",
+        "null"
+      ]
+    },
+    "snapshot": {
+      "type": [
+        "object",
+        "array",
+        "null"
+      ]
+    }
+  }
+}

@@ -4,7 +4,7 @@
   p<-.ws7_scenario_plan(list(daily=list(derived=list(kind="number_daily",input=input,
     within_day=within,missing=missing,reducer=list(fn=outer))),
     raw=list(source=list(event="lab"),reducer=list(fn="mean"))))
-  p$events$lab$unit<-list(target=8554L,accepted=list(8554L),on_unmapped="missing")
+  p$events$lab$unit<-list(target=8554L,unknown="missing",censored="keep")
   p
 }
 .audit_daily_handle <- function() {
@@ -42,5 +42,33 @@ test_that("Q15 refuses scalar inputs and unresolved units without a fallback", {
   expect_error(.ws7_scenario_run(h,p),"number_unit_conflict")
   p<-.audit_daily_plan();p$variables$daily$derived$input<-list(source=list(event="lab"),reducer=list(fn="mean"))
   expect_error(.ws7_scenario_run(h,p),"number_daily_input")
-  expect_true("number.daily" %in% .irRequiredOperations(.planNormalizeV2(.audit_daily_plan())))
+  expect_true("number.daily" %in% .irOperations(.planNormalizeV2(.audit_daily_plan())))
+})
+
+test_that("Q15 temporal selection, stable ties, ranges and publication preserve people", {
+  h<-.audit_daily_handle();on.exit(DBI::dbDisconnect(h$conn));.ws7_keys(list(h))
+  p<-.audit_daily_plan("first",outer="first_value")
+  expect_equal(.ws7_value(.ws7_scenario_run(h,p)$frame,7001,"daily"),3)
+  DBI::dbExecute(h$conn,"CREATE TEMP TABLE daily_reordered AS SELECT * FROM measurement ORDER BY measurement_id DESC")
+  DBI::dbExecute(h$conn,"DELETE FROM measurement")
+  DBI::dbExecute(h$conn,"INSERT INTO measurement SELECT * FROM daily_reordered")
+  expect_equal(.ws7_value(.ws7_scenario_run(h,p)$frame,7001,"daily"),3)
+  p<-.audit_daily_plan();p$variables$daily$derived$reducer$window<-list(start=-8L,end=-8L,anchor="index")
+  expect_equal(.ws7_value(.ws7_scenario_run(h,p)$frame,7001,"daily"),15)
+  p<-.audit_daily_plan();p$variables$daily$number_spec<-list(representation="category",range="reference")
+  expect_error(.ws7_scenario_run(h,p),"range|reference")
+  for(mode in c("memory","staged"))local({
+    run<-.ws7_ctx(h,.audit_daily_plan(),mode=mode);on.exit(.ws7_close(run),add=TRUE)
+    pop<-.ws7_population(run,"t",.ws7_scenario_frame())
+    got<-.ws7_publish(run,list(t=pop),threshold=5L)
+    expect_identical(got$status$status,"ok")
+    expect_true(10 %in% got$values$o$o$daily)
+    expect_identical(attr(got$values$o$o,"omop_numbers")$daily$privacy_class,2L)
+  })
+  # Many repeated episodes from one person cannot satisfy the final gate.
+  run<-.ws7_ctx(h,.audit_daily_plan());on.exit(.ws7_close(run),add=TRUE)
+  rows<-.ws7_scenario_frame(rep(7001L,8),index=as.character(as.Date("2020-01-10")+0:7))
+  pop<-.ws7_population(run,"t",rows)
+  got<-.ws7_publish(run,list(t=pop),threshold=5L)
+  expect_identical(got$status$status,"refused")
 })

@@ -97,6 +97,7 @@
       if(!is.null(v$derived$variable))out<-c(out,expand(v$derived$variable,.numberDependencyName(n,if(identical(v$derived$kind,"category_reduce"))"operand" else "category")))
       for(entry in v$derived$values %||% list())out<-c(out,expand(entry$variable,.numberDependencyName(n,entry$name)))
       if(!is.null(v$derived$visits))out<-c(out,paste0(n,"visits"))
+      if(identical(v$derived$kind,"number_daily"))out<-c(out,expand(v$derived$input,.numberDependencyName(n,"daily")))
       for(i in v$derived$inputs %||% list()) out <- c(out,expand(i$variable,.numberDependencyName(n,i$alias)))
       out
     }
