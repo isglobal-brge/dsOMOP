@@ -50,8 +50,8 @@
       length(m$sha256) != 1L || !grepl("^[0-9a-f]{64}$", m$sha256))
     .categoryReject("Invalid ordinal metadata identity/version/hash.")
   keys <- .categoryKeys(m$keys)
-  digest <- as.character(openssl::sha256(charToRaw(.jcsCanonical(unname(as.list(keys))))))
-  if (!identical(digest, m$sha256)) .categoryReject("Ordinal metadata key hash does not match.")
+  digest <- paste0(as.character(openssl::sha256(charToRaw(.jcsCanonical(unname(as.list(keys)))))))
+  if (!identical(digest, paste0(m$sha256))) .categoryReject("Ordinal metadata key hash does not match.")
   keys
 }
 .categoryRecodeCheck <- function(x) {

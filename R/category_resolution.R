@@ -21,14 +21,21 @@
     translated <- Filter(function(r)identical(r$label_origin,"synonym"),rr)
     chosen <- .conceptChooseName(if(length(translated))translated else rr)
     list(id=id,label=chosen$name %||% sub("^concept:","",id),user=FALSE,
-      origin=if(length(translated))"synonym" else "concept_name_fallback")
+      origin=if(length(translated))"synonym" else "concept_name_fallback",version=chosen$version,rule=chosen$rule)
   })
   names(rows) <- ids
   keys <- vapply(by_id,function(rr)rr[[1L]]$effective_id %||% rr[[1L]]$id,"")
+  inherited <- .categoryNullableStrings(contract$producer_aliases)
+  hit <- ids %in% names(inherited); keys[hit] <- inherited[ids[hit]]
   labels <- setNames(vapply(rows,function(r)r$label,""),ids)
   recode <- s$recode
   if (!is.null(recode) && length(recode$map)) {
     map <- unlist(recode$map,use.names=TRUE)
+    canonical <- names(map); alias_hit <- canonical %in% names(inherited)
+    canonical[alias_hit] <- inherited[canonical[alias_hit]]
+    if(anyNA(canonical)) .categoryReject("An absent producer identity cannot be recoded.")
+    for(key in unique(canonical))if(length(unique(map[canonical==key]))>1L) .categoryReject("Conflicting recodes for aliases of an upstream merged category.")
+    names(map)<-canonical;map<-map[!duplicated(names(map))]
     hit <- keys %in% names(map); keys[hit] <- unname(map[keys[hit]])
     if (recode$unmatched=="missing") keys[!hit & !grepl("^special:",ids) & !vapply(by_id,function(rr)isTRUE(rr[[1L]]$domain_only),logical(1))] <- NA_character_
     lev <- unlist(recode$levels,use.names=FALSE)
@@ -48,6 +55,11 @@
     keys[ix] <- canonical
   }
   m <- s$missing
+  if (!is.null(m) && m$unknown!="keep" && "concept:0" %in% names(inherited)) {
+    group<-names(inherited)[!is.na(inherited) & inherited==inherited[["concept:0"]]]
+    if(length(grep("^concept:[1-9]",group)) && any(keys[ids %in% group]=="concept:0",na.rm=TRUE))
+      .categoryReject("Inherited zero/nonzero equivalence cannot become Unknown; recode the whole group or use unknown=keep.")
+  }
   if (!is.null(m)) {
     zero <- which(keys=="concept:0")
     if(m$unknown=="level") keys[zero] <- "special:unknown"
@@ -90,7 +102,7 @@
   else {
     # Explicit order covers premerge keys. Merged member blocks must be contiguous.
     required <- union(ids[!is.na(keys) & !grepl("^special:",ids) & keys==ids],domain)
-    merged <- which(!is.na(keys) & keys!=ids & mergeable)
+    merged <- which(!is.na(keys) & keys!=ids & (mergeable | ids %in% names(inherited)))
     required <- union(required,ids[merged])
     if((complete&&!setequal(order,required))||!all(required %in% order)) .categoryReject("Explicit order must cover the complete permitted domain; supply a complete public order.","category_domain_incompatible")
     mapped <- if(complete)order else intersect(order,union(ids,domain)); mapped[mapped %in% ids] <- keys[match(mapped[mapped %in% ids],ids)]
@@ -106,7 +118,7 @@
   list(kind="category",category=contract,ids=ids,labels=unname(effective_labels[keys]),
     levels=unname(effective_labels[domain]),keys=domain,aliases=setNames(keys,ids),ordered=ordered,
     reference=reference,contrasts=list(kind=if(ordered)"polynomial" else "treatment",reference=reference),
-    decisions=lapply(seq_along(ids),function(i)list(id=ids[i],label=unname(effective_labels[keys[i]]),rule="declared category identity")))
+    decisions=lapply(seq_along(ids),function(i)list(id=ids[i],label=unname(effective_labels[keys[i]]),rule=rows[[i]]$rule %||% "declared category identity",origin=rows[[i]]$origin,version=rows[[i]]$version,language=s$language %||% "en")))
 }
 .categoryFactor <- function(values,resolved) {
   out <- factor(values,levels=unlist(resolved$levels,use.names=FALSE),ordered=isTRUE(resolved$ordered))
@@ -128,10 +140,10 @@
     .categoryReject("Changed shared category contract.","category_domain_incompatible")
   # Local records cannot attest foreign vocabulary labels; they can attest all
   # semantic declarations and their own identity coverage.
-  ids <- unlist(shared$ids,use.names=FALSE)
-  keys <- unlist(shared$keys,use.names=FALSE)
+  ids <- as.character(unlist(shared$ids,use.names=FALSE))
+  keys <- as.character(unlist(shared$keys,use.names=FALSE))
   labels <- unname(.categoryNullableStrings(shared$labels))
-  levels <- unlist(shared$levels,use.names=FALSE)
+  levels <- as.character(unlist(shared$levels,use.names=FALSE))
   aliases <- .categoryNullableStrings(shared$aliases)
   .categoryKeys(ids);.categoryKeys(keys)
   if(anyDuplicated(ids) || !all(names(records) %in% ids) ||
@@ -170,4 +182,12 @@
      !identical(shared$contrasts$kind,if(isTRUE(shared$ordered))"polynomial" else "treatment"))
     .categoryReject("Changed shared category reference/contrasts.","category_domain_incompatible")
   invisible(TRUE)
+}
+
+# Only real equivalences belong in the producer declaration. Unmerged admitted
+# identities remain in records so an open local domain can be federated.
+.categoryMergedAliases <- function(aliases) {
+  aliases<-.categoryNullableStrings(aliases)
+  targets<-unique(aliases[!is.na(aliases)&aliases!=names(aliases)])
+  as.list(aliases[!is.na(aliases)&aliases %in% targets])
 }

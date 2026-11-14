@@ -105,8 +105,9 @@
     }
     v<-as.integer(identities==key)
     if(d$missing=="zero"&&isTRUE(rec$available))v[is.na(v)]<-0L
-    if(!isTRUE(rec$available))v[]<-NA_integer_
-    out<-rows[setdiff(names(rows),cn)];out[[name]]<-.categoryValue(v,rep(isTRUE(rec$available),length(v)));attr(out[[name]],"category_canonical_missing")<-attr(rows[[cn]],"category_canonical_missing") %||% is.na(rows[[cn]]);out
+    defined<-isTRUE(rec$available) & (attr(rows[[cn]],"category_defined") %||% rep(TRUE,length(v)))
+    v[!defined]<-NA_integer_
+    out<-rows[setdiff(names(rows),cn)];out[[name]]<-.categoryValue(v,defined);attr(out[[name]],"category_canonical_missing")<-attr(rows[[cn]],"category_canonical_missing") %||% is.na(rows[[cn]]);out
   }
   list(stream=rec$stream,reducer=NULL,declared_empty_value=NA,columns=setNames(list(column),name),
     evaluate=evaluate,available=rec$available,event_grain=rec$event_grain,event_source=rec$event_source)
@@ -196,10 +197,24 @@
         } else {
           old<-names(contract$records)
           effective<-if(identical(contract$kind,"number"))paste0("bin:",seq_along(old)) else paste0(if(identical(contract$kind,"date"))"period:" else "concept:",old)
-          labels<-contract$resolved$labels;aliases<-setNames(effective,old)
+          labels<-contract$resolved$labels;aliases<-setNames(effective,effective)
         }
-        metadata<-list(spec=list(),producer=list(kind="category_reduce",input=contract$category %||% contract$number %||% contract$calendar),producer_order=as.list(effective),producer_ordered=is.ordered(presented[[cn]]))
-        records<-setNames(lapply(seq_along(effective),function(j)list(kind="category",id=effective[j],label=labels[j],origin="producer",category=metadata)),effective)
+        producer_order<-contract$category$producer_order %||% list()
+        if(length(contract$category$spec$recode$map))producer_order<-contract$category$spec$recode$levels
+        declared_order<-contract$category$spec[["order"]]
+        if(!is.null(declared_order)) {
+          requested<-.categoryOrderCheck(declared_order)
+          if(!identical(requested,"producer")&&!identical(requested,"identity")) {
+            hit<-requested %in% names(aliases);requested[hit]<-aliases[requested[hit]]
+            producer_order<-as.list(unique(requested[!is.na(requested)]))
+          }
+        }
+        metadata<-list(spec=list(),producer=list(kind="category_reduce",input=contract$category %||% contract$number %||% contract$calendar),producer_order=producer_order,producer_ordered=is.ordered(presented[[cn]]),producer_aliases=.categoryMergedAliases(aliases))
+        record_keys<-union(effective,names(aliases)[!is.na(aliases)])
+        records<-setNames(lapply(record_keys,function(key) {
+          identity<-if(key %in% names(aliases))aliases[[key]] else key
+          list(kind="category",id=key,effective_id=identity,label=labels[match(identity,effective)],origin="producer",category=metadata)
+        }),record_keys)
         c<-list(kind="category",category=metadata,ids=value,records=records,declared=character(),upstream_safe=upstream_safe,upstream_admitted=effective,resolved=.categoryResolveRecords(unname(records),identity=metadata))
         value<-.categoryFactor(c$resolved$labels[match(value,c$resolved$ids)],c$resolved)
         attr(value,"category_consumed")<-c

@@ -660,7 +660,7 @@
 #' @keywords internal
 .irOperations <- function(ir) {
   ops <- if (.conceptNeedsPresentation(ir)) "output.concept_labels" else character(0)
-  ops <- c(ops, .numberCapabilities(ir), .categoryCapabilities(ir))
+  ops <- c(ops, .numberCapabilities(ir), .categoryCapabilities(ir), if(identical(attr(ir,"source_version"),2L))"output.codebook_metadata")
   date_vars <- .numberVariables(ir)
   if (!is.null(ir$options$date_spec) || any(vapply(date_vars, function(v) !is.null(v$date_spec) || (v$derived$kind %||% "") %in% c("calendar_date", "date_part"), logical(1)))) ops <- c(ops, "date.presentation")
   if (any(vapply(date_vars, function(v) (v$derived$kind %||% "") %in% c("time_between", "age_at"), logical(1)))) ops <- c(ops, "date.elapsed")

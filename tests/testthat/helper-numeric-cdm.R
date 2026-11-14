@@ -20,7 +20,7 @@
   list(postgresql = .ws4_handle_on(pg, "postgresql", "postgresql", "numeric_cdm"),
        duckdb = .ws4_handle_on(dk, "duckdb", "duckdb", "main"))
 }
-.numeric_run <- function(h, p, mode = "memory") {
+.numeric_run <- function(h, p, mode = "memory", chunk_check = NULL) {
   run <- .ws7_ctx(h, p, mode)
   on.exit(.ws7_close(run), add = TRUE)
   pop <- .compilePopulationByName(run$cctx, "p")
@@ -35,7 +35,7 @@
     v <- get(c$symbol, run$ctx$target_env)
     if (inherits(v, "FlowerDatasetDescriptor")) {
       testthat::expect_identical(v$metadata$format, "parquet")
-      chunks <- list(); .publishReadChunks(v, function(x) chunks[[length(chunks) + 1L]] <<- x)
+      chunks <- list(); .publishReadChunks(v, function(x) {if(!is.null(chunk_check))chunk_check(x);chunks[[length(chunks) + 1L]] <<- x})
       v <- do.call(rbind, chunks)
     }
     v

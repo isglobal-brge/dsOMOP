@@ -1,5 +1,10 @@
 # dsOMOP 2.10.5 (2026-11-14)
 
+- Native language-2 releases now carry codebook metadata for every real table,
+  including plain numeric and untranslated plans. They require
+  `output.codebook_metadata`; upgrade participating servers to 2.10.5.
+  Existing v1 plans retain their compatibility path.
+
 - Newly permitted (A-30 / CR-31): native category specifications add typed
   identity order, nominal recodes, hierarchy maps, language and code labels,
   explicit Missing/Unknown levels and semantic-flag representations. Category
@@ -13,6 +18,18 @@
   membership indicators. A mixed zero/nonzero user-label merge cannot become
   an Unknown sentinel: retain unknown=keep, use separate labels, or explicitly
   recode its identities before sentinel handling.
+
+- Corrected: native matrix and person-period outputs no longer implicitly
+  consume unrelated recipe variables. Select analytic columns explicitly;
+  use a typed wide companion for factor/logical matrix covariates.
+- Corrected: undefined anchors remain NA through repeated subsetting and
+  Missing presentation. Staged empty category contracts preserve nullable
+  references, declared levels and contrast specifications.
+- Newly permitted: prospective codebooks describe structural schema and
+  survival/reference component families locally; published codebooks retain
+  reconciled names, category provenance and mapping contracts.
+- Categorical binary presentation of abnormal-event reducers means at least
+  one abnormal event. Keep an unwrapped numeric sibling for event counts.
 
 - Corrected (A-29 review): independently normalized numeric siblings retain
   their original event-row binding in long and intervals outputs. BIGINT

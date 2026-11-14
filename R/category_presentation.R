@@ -70,9 +70,9 @@
         if(!is.null(c$kind))r$origin<-"producer"
         r
       }),lev)
-      producer<-list(kind=c$kind %||% "concept",calendar=c$calendar,number=c$number)
+      producer<-if(identical(c$kind,"category"))list(kind="category",input=c$category) else list(kind=c$kind %||% "concept",calendar=c$calendar,number=c$number)
       producer<-producer[!vapply(producer,is.null,logical(1))]
-      producer_order<-if(is.null(c$kind) || identical(c$kind,"date"))character() else lev;producer_ordered<-is.ordered(frame[[n]])
+      producer_order<-if(identical(c$kind,"category"))unlist(c$category$producer_order,use.names=FALSE) else if(is.null(c$kind) || identical(c$kind,"date"))character() else lev;producer_ordered<-is.ordered(frame[[n]])
       if(is.null(c$kind)) {
         if(isFALSE(ctx$ir$options$translate_concepts)) .categoryReject("Enable translate_concepts for concept presentation.")
         extra<-if(!length(s$recode$map))setdiff(unlist(s$levels,use.names=FALSE),lev) else character()
@@ -115,6 +115,7 @@
     if(is.list(s[["order"]]$metadata))effective_spec[["order"]]<-list(kind="category_order",keys=as.list(.categoryOrderCheck(s[["order"]])))
     contract<-list(spec=effective_spec,producer=producer,producer_order=as.list(producer_order),producer_ordered=producer_ordered)
     if(!is.null(rollup))contract$rollup<-rollup
+    if(!flag && identical(c$kind,"category"))contract$producer_aliases<-.categoryMergedAliases(c$resolved$aliases)
 
     # Open concept/period order is resolved only from admitted metadata later.
     # Keep observed identities private here; failure never includes their keys.
