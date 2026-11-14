@@ -218,7 +218,18 @@
 .numberOutputCovariates <- function(ctx,node,inputs,co) {
   if(node$format %in% c("wide","long","intervals","joined"))return(co)
   vars<-setdiff(.irOutputVariables(ctx$ir,.compileNodeName(node,"output")),.dateOutputVariables(ctx,node))
-  vars<-vars[vapply(ctx$ir$variables[vars],function(v)!is.null(v$number_spec)||(v$derived$kind %||% "") %in% .NUMBER_KINDS,logical(1))]
+  # Typed scalar numeric reducers are covariates even without an explicit
+  # number_spec. Defaults must not decide whether a requested column exists.
+  existing <- unique(unlist(lapply(co$components,function(part)names(part$fragment$columns))))
+  pop <- inputs$population
+  cons <- .reduceConsumer(ctx,.compileNodeName(node,"output"),pop$roster,pop$coverage,node$grain)
+  vars <- Filter(function(key) {
+    v <- ctx$ir$variables[[key]]
+    rec <- .compileVariable(ctx,.irNamedNode(ctx$ir,"variable",key),pop$roster,cons)
+    if(all(names(rec$columns) %in% existing))return(FALSE)
+    !is.null(v$number_spec) || (v$derived$kind %||% "") %in% .NUMBER_KINDS ||
+      any(vapply(rec$columns,.numberAnalyticColumn,logical(1)))
+  },vars)
   if(!length(vars))return(co)
   if(node$format %in% c("sparse","temporal_covariates","dictionary","membership")) .numberReject("Use a typed wide companion for numeric variable columns in this format.","number_type_unsupported")
   for(v in vars)if((ctx$ir$variables[[v]]$derived$kind %||% "") %in% c("number_rows","number_derive")&&is.null(ctx$ir$variables[[v]]$derived$reducer)) {

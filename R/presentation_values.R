@@ -264,3 +264,17 @@
     columns <- c(columns,index_source="character")
   columns
 }
+
+# Decorators attach date, number and category covariates in separate phases.
+# Their final slots follow the declared selection, independent of those phases;
+# structural/generated columns keep their producer positions.
+.presentationVariableOrder <- function(keys, variables, selected) {
+  selected <- unlist(selected,use.names=FALSE)
+  declared <- unlist(lapply(names(variables),function(k).pnv2VariableColumns(k,variables[[k]])),use.names=FALSE)
+  requested <- unique(unlist(lapply(selected,function(k) {
+    if(k %in% names(variables)).pnv2VariableColumns(k,variables[[k]]) else k
+  }),use.names=FALSE))
+  slots <- which(keys %in% intersect(declared,requested))
+  keys[slots] <- requested[requested %in% keys[slots]]
+  keys
+}

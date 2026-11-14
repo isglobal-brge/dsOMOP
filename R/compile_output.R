@@ -201,6 +201,9 @@
   for (component in names(co$components)) {
     part <- co$components[[component]]
     if (!is.null(part$frame)) {
+      ordered_keys <- .presentationVariableOrder(names(part$frame),ctx$ir$variables,node$columns)
+      part$frame <- part$frame[ordered_keys]
+      part$fragment$columns <- part$fragment$columns[ordered_keys]
       index <- NULL
       if (!is.null(inputs$population) && "cohort_row_id" %in% names(part$frame)) {
         roster <- .reduceRosterFrame(ctx, inputs$population$roster)
