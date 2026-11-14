@@ -1,5 +1,21 @@
 # dsOMOP 2.10.5 (2026-11-14)
 
+
+- Corrected (shared codebook presentation): prospective columns use the execution
+  numeric/date/category evaluators on empty public prototypes, including existing
+  and generated dates, canonical numeric copies and categorical copies. Membership
+  provenance and mixed covariate ordering share their execution declarations.
+  Rebuild existing codebooks; recipe syntax does not change.
+- Corrected (cross-format equivalence): requested plain numeric covariates no
+  longer disappear without an explicit number specification, mixed covariates
+  follow declared order, and untranslated reference tables retain the provenance
+  needed for codebook reconciliation. Existing recipes gain their requested
+  columns; downstream code should select columns by their declared names.
+- Corrected (native multi-state identity): restore lossless episode keys after
+  state-machine evaluation, including keys above 2^53 and empty results. Native
+  row keys are character strings; use them as opaque identifiers rather than
+  converting them to floating point. The v1 state machine is unchanged.
+
 - Corrected (membership/long codebook review): prospective existing date columns
   honor recipe category defaults, with producer-specific applicability. Membership
   schemas also include the declared roster's index provenance in publication order.
@@ -307,8 +323,6 @@ Security release: the P0 fixes of the OHDSI-tools audit.
   fixed-synopsis guarantees and utility costs.
 
 ## Corrected
-
-- Prospective codebooks now evaluate empty public prototypes through the same numeric, date and categorical presentation functions used for execution. Membership inventory and released type extraction are shared. Rebuild existing codebooks; recipes need no migration.
 
 - Snapshot source certification now checks generated-column expressions and
   their column dependencies, including behind nested definer views. Volatile,
