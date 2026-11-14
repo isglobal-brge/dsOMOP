@@ -1,0 +1,52 @@
+trying URL 'https://ohdsi.r-universe.dev/src/contrib/DatabaseConnector_8.0.0.tar.gz?sha256=47ab88aaaa308394048403265864dfbfdd9ffa4680ad392a28d8280ce9c63e8b&file=/DatabaseConnector_8.0.0.tar.gz'
+Content type 'application/gzip' length 1110691 bytes (1.1 MB)
+==================================================
+downloaded 1.1 MB
+
+* installing *source* package ‘DatabaseConnector’ ...
+** this is package ‘DatabaseConnector’ version ‘8.0.0’
+** using staged installation
+** R
+** inst
+** byte-compile and prepare package for lazy loading
+** help
+*** installing help indices
+** building package indices
+** installing vignettes
+** testing if installed package can be loaded from temporary location
+** testing if installed package can be loaded from final location
+** testing if installed package keeps a record of temporary installation path
+* DONE (DatabaseConnector)
+
+The downloaded source packages are in
+	‘/tmp/RtmpoPXk3x/downloaded_packages’
+Warning in untar2(tarfile, files, list, exdir, restore_times, allow_all) :
+  skipping pax global extended headers
+* installing *source* package ‘CommonDataModel’ ...
+** this is package ‘CommonDataModel’ version ‘1.1.0’
+** using staged installation
+** R
+** inst
+** byte-compile and prepare package for lazy loading
+** help
+*** installing help indices
+** building package indices
+** testing if installed package can be loaded from temporary location
+** testing if installed package can be loaded from final location
+** testing if installed package keeps a record of temporary installation path
+* DONE (CommonDataModel)
+Warning in untar2(tarfile, files, list, exdir, restore_times, allow_all) :
+  skipping pax global extended headers
+* installing *source* package ‘Eunomia’ ...
+** this is package ‘Eunomia’ version ‘2.2.0’
+** using staged installation
+** R
+** inst
+** byte-compile and prepare package for lazy loading
+** help
+*** installing help indices
+** building package indices
+** testing if installed package can be loaded from temporary location
+** testing if installed package can be loaded from final location
+** testing if installed package keeps a record of temporary installation path
+* DONE (Eunomia)

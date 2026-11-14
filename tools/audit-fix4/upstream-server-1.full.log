@@ -1,0 +1,51 @@
+dsOMOP v2.10.5 loaded. OMOP CDM resource resolver registered.
+audit-eunomia: ..attempting to download GiBleed
+trying URL 'https://raw.githubusercontent.com/OHDSI/EunomiaDatasets/main/datasets/GiBleed/GiBleed_5.3.zip'
+Content type 'application/zip' length 6861852 bytes (6.5 MB)
+==================================================
+downloaded 6.5 MB
+
+attempting to extract and load: /root/rt/audit-fix4-fixtures/GiBleed_5.3.zip to: /root/rt/audit-fix4-fixtures/GiBleed_5.3.sqlite
+..[dsomop-audit] 2026-11-14T15:49:37+0000 method=publication detail={"output":"output","component":"output","passed":true}
+...1[dsomop-audit] 2026-11-14T15:49:40+0000 method=publication detail={"output":"output","component":"output","passed":true}
+...2[dsomop-audit] 2026-11-14T15:49:41+0000 method=publication detail={"output":"output","component":"output","passed":false}
+..
+UPSTREAM_FIXTURE Eunomia=2.2.0 dataset=GiBleed CDM=5.3 archive_sha256=081b82e84c90e2904e02c26546e46412b01cce566071c77e0c4a355c2d0612f9
+
+audit-physical-exports: ....................
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Failure ('test-audit-eunomia.R:25:5'): Q35 actual pinned Eunomia GiBleed 5
+Expected `attr(f, "omop_numbers")$age$privacy_class` to be identical to 2L.
+Differences:
+`actual` is NULL
+`expected` is an integer vector (2)
+
+Backtrace:
+    ▆
+ 1. └─base::eval(...)
+ 2.   └─base::eval(...)
+ 3.     └─testthat::expect_identical(...) at test-audit-eunomia.R:25:5
+
+── 2. Failure ('test-audit-eunomia.R:25:5'): Q35 actual pinned Eunomia GiBleed 5
+Expected `attr(f, "omop_numbers")$age$privacy_class` to be identical to 2L.
+Differences:
+`actual` is NULL
+`expected` is an integer vector (2)
+
+Backtrace:
+    ▆
+ 1. └─base::eval(...)
+ 2.   └─base::eval(...)
+ 3.     └─testthat::expect_identical(...) at test-audit-eunomia.R:25:5
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                 file blocks failed errors
+ test-audit-eunomia.R      1      2      0
+
+FAILING TESTS
+test-audit-eunomia.R | Q35 actual pinned Eunomia GiBleed 5.3 runs the normal publication gate | failed=2 error=FALSE
+
+RESULT failed: 2 errors: 0 skipped: 0 passed: 32 

@@ -1,0 +1,14 @@
+FAILURES BY FILE
+                             file blocks failed errors
+ test-audit-method-declarations.R      2      0      2
+       test-audit-formula-edges.R      1      1      0
+        test-audit-number-daily.R      1      0      1
+
+FAILING TESTS
+test-audit-formula-edges.R | Q14 adult boundaries and invalid input eligibility execute in the emitted plan | failed=1 error=FALSE
+test-audit-method-declarations.R | Q13 canonical and alias discovery retain their actual method scope | failed=0 error=TRUE
+test-audit-method-declarations.R | Q13 ordinary results carry effective settings without observed inventories | failed=0 error=TRUE
+test-audit-number-daily.R | Q15 temporal selection, stable ties, ranges and publication preserve people | failed=0 error=TRUE
+
+RESULT failed: 1 errors: 3 skipped: 0 passed: 189 
+RESULT failed: 1 errors: 3 skipped: 0 passed: 189 

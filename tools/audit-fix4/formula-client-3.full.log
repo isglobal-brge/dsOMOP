@@ -1,0 +1,69 @@
+audit-formulas: ...............................12Registered S3 method overwritten by 'gamlss':
+  method   from
+  print.ri bit 
+
+Logging into the collaborating servers
+.[dsomop-audit] 2026-11-14T15:13:10+0000 method=omopPlanExecuteDS detail={"outputs":"o","plan":{"version":2,"meta":{"language_version":"2.0","semantic_version":"2.0.0","generated_by":"dsOMOPClient","client_version":"2.10.5"},"events":{"scr":{"table":"observation","concept_set":{"concepts":[45000120],"include_descendants":false},"value":{"column":"value_as_number"},"unit":{"target":8554,"convert":{},"unknown":"missing","censored":"keep"}}},"populations":{"p":{"kind":"index","index":{"source":{"event":"scr"},"select":"first"}}},"variables":{"egfr":{"derived":{"kind":"number_derive","inputs":[{"alias":"e","variable":{"derived":{"kind":"number_derive","inputs":[{"alias":"lo","variable":{"derived":{"kind":"number_derive","inputs":[{"alias":"q","variable":{"derived":{"kind":"number_derive","inputs":[{"alias":"scr","variable":{"source":{"event":"scr"},"reducer":{"fn":"first_value","value":"value","missing":"keep"},"number_spec":{"unit":{"kind":"fixed_unit","from":"unit:8554","to":"coordinate:idms_creatinine_mg_dl","factor":1,"offset":0}}},"stage":"presented"},{"alias":"age","variable":{"derived":{"kind":"age_at","reference":{"source":{"event":"scr"},"which":"first","field":"start","scope":"episode"},"unit":"years","bands":false},"broadcast":false},"stage":"presented"},{"alias":"f","variable":{"derived":{"kind":"number_derive","inputs":[{"alias":"i1","variable":{"derived":{"kind":"category_indicators","variable":{"raw":{"table":"person","column":"gender_concept_id"}},"key":"concept:8532","missing":"propagate"},"broadcast":false},"stage":"presented"}],"exprs":{"version":1,"assign":[{"name":"answer","expr":{"col":"i1"}}]},"unit":"1","result":"answer"},"broadcast":false},"stage":"presented"},{"alias":"m","variable":{"derived":{"kind":"number_derive","inputs":[{"alias":"i1","variable":{"derived":{"kind":"category_indicators","variable":{"raw":{"table":"person","column":"gender_concept_id"}},"key":"concept:8507","missing":"propagate"},"broadcast":false},"stage":"presented"}],"exprs":{"version":1,"assign":[{"name":"answer","expr":{"col":"i1"}}]},"unit...<truncated>
+PRIVATE SYNTHETIC DEBUG: validation_error: plan fails the site checks: /events/scr/unit: a unit conversion needs a unit column; table 'observation' has no unit role
+[dsomop-audit] 2026-11-14T15:13:15+0000 method=omopPlanExecuteDS detail={"outputs":"o","plan":{"version":2,"meta":{"language_version":"2.0","semantic_version":"2.0.0","generated_by":"dsOMOPClient","client_version":"2.10.5"},"events":{"scr":{"table":"observation","concept_set":{"concepts":[45000120],"include_descendants":false},"value":{"column":"value_as_number"},"unit":{"target":8554,"convert":{},"unknown":"missing","censored":"keep"}}},"populations":{"p":{"kind":"index","index":{"source":{"event":"scr"},"select":"first"}}},"variables":{"egfr":{"derived":{"kind":"number_derive","inputs":[{"alias":"e","variable":{"derived":{"kind":"number_derive","inputs":[{"alias":"lo","variable":{"derived":{"kind":"number_derive","inputs":[{"alias":"q","variable":{"derived":{"kind":"number_derive","inputs":[{"alias":"scr","variable":{"source":{"event":"scr"},"reducer":{"fn":"first_value","value":"value","missing":"keep"},"number_spec":{"unit":{"kind":"fixed_unit","from":"unit:8554","to":"coordinate:idms_creatinine_mg_dl","factor":1,"offset":0}}},"stage":"presented"},{"alias":"age","variable":{"derived":{"kind":"age_at","reference":{"source":{"event":"scr"},"which":"first","field":"start","scope":"episode"},"unit":"years","bands":false},"broadcast":false},"stage":"presented"},{"alias":"f","variable":{"derived":{"kind":"number_derive","inputs":[{"alias":"i1","variable":{"derived":{"kind":"category_indicators","variable":{"raw":{"table":"person","column":"gender_concept_id"}},"key":"concept:8532","missing":"propagate"},"broadcast":false},"stage":"presented"}],"exprs":{"version":1,"assign":[{"name":"answer","expr":{"col":"i1"}}]},"unit":"1","result":"answer"},"broadcast":false},"stage":"presented"},{"alias":"m","variable":{"derived":{"kind":"number_derive","inputs":[{"alias":"i1","variable":{"derived":{"kind":"category_indicators","variable":{"raw":{"table":"person","column":"gender_concept_id"}},"key":"concept:8507","missing":"propagate"},"broadcast":false},"stage":"presented"}],"exprs":{"version":1,"assign":[{"name":"answer","expr":{"col":"i1"}}]},"unit...<truncated>
+PRIVATE SYNTHETIC DEBUG: validation_error: plan fails the site checks: /events/scr/unit: a unit conversion needs a unit column; table 'observation' has no unit role
+[dsomop-audit] 2026-11-14T15:13:19+0000 method=omopPlanExecuteDS detail={"outputs":"o","plan":{"version":2,"meta":{"language_version":"2.0","semantic_version":"2.0.0","generated_by":"dsOMOPClient","client_version":"2.10.5"},"events":{"scr":{"table":"observation","concept_set":{"concepts":[45000120],"include_descendants":false},"value":{"column":"value_as_number"},"unit":{"target":8554,"convert":{},"unknown":"missing","censored":"keep"}}},"populations":{"p":{"kind":"index","index":{"source":{"event":"scr"},"select":"first"}}},"variables":{"egfr":{"derived":{"kind":"number_derive","inputs":[{"alias":"e","variable":{"derived":{"kind":"number_derive","inputs":[{"alias":"lo","variable":{"derived":{"kind":"number_derive","inputs":[{"alias":"q","variable":{"derived":{"kind":"number_derive","inputs":[{"alias":"scr","variable":{"source":{"event":"scr"},"reducer":{"fn":"first_value","value":"value","missing":"keep"},"number_spec":{"unit":{"kind":"fixed_unit","from":"unit:8554","to":"coordinate:idms_creatinine_mg_dl","factor":1,"offset":0}}},"stage":"presented"},{"alias":"age","variable":{"derived":{"kind":"age_at","reference":{"source":{"event":"scr"},"which":"first","field":"start","scope":"episode"},"unit":"years","bands":false},"broadcast":false},"stage":"presented"},{"alias":"f","variable":{"derived":{"kind":"number_derive","inputs":[{"alias":"i1","variable":{"derived":{"kind":"category_indicators","variable":{"raw":{"table":"person","column":"gender_concept_id"}},"key":"concept:8532","missing":"propagate"},"broadcast":false},"stage":"presented"}],"exprs":{"version":1,"assign":[{"name":"answer","expr":{"col":"i1"}}]},"unit":"1","result":"answer"},"broadcast":false},"stage":"presented"},{"alias":"m","variable":{"derived":{"kind":"number_derive","inputs":[{"alias":"i1","variable":{"derived":{"kind":"category_indicators","variable":{"raw":{"table":"person","column":"gender_concept_id"}},"key":"concept:8507","missing":"propagate"},"broadcast":false},"stage":"presented"}],"exprs":{"version":1,"assign":[{"name":"answer","expr":{"col":"i1"}}]},"unit...<truncated>
+PRIVATE SYNTHETIC DEBUG: validation_error: plan fails the site checks: /events/scr/unit: a unit conversion needs a unit column; table 'observation' has no unit role
+WWW3
+audit-study-bundle: .............
+
+══ Warnings ════════════════════════════════════════════════════════════════════
+1. Q14 independent power oracle agrees with actual private published formulas ('test-audit-formulas.R:73:5') - object 'dsOexec.0grHlE' not found
+
+2. Q14 independent power oracle agrees with actual private published formulas ('test-audit-formulas.R:73:5') - object 'dsOexec.0grHlE' not found
+
+3. Q14 independent power oracle agrees with actual private published formulas ('test-audit-formulas.R:73:5') - object 'dsOexec.0grHlE' not found
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Failure ('test-audit-formulas.R:34:5'): Q14 closed log-exp expansion and p
+Expected `.formulaInventory(restored)` to be identical to `.formulaInventory(r)`.
+Differences:
+`actual$/variables/egfr$male$sex_factor` is an integer vector (1)
+`expected$/variables/egfr$male$sex_factor` is a double vector (1)
+
+`class(actual$/variables/egfr$sha256)` is absent
+`class(expected$/variables/egfr$sha256)` is a character vector ('hash', 'sha256')
+
+`class(actual$/variables/egfr$original_expansion_sha256)` is absent
+`class(expected$/variables/egfr$original_expansion_sha256)` is a character vector ('hash', 'sha256')
+
+
+── 2. Error ('test-audit-formulas.R:32:5'): Q14 closed log-exp expansion and pro
+<omop_formula_error/error/condition>
+Error: formula_provenance_invalid: /provenance; retain the immutable definition and record edits as derivatives.
+Backtrace:
+    ▆
+ 1. └─get(paste0("recipe_import_", format))(path) at test-audit-formulas.R:32:5
+ 2.   └─dsOMOPClient:::.recipe_from_plain(.yaml_load_safe(yaml)) at dsOMOPClient/R/recipe.R:6634:3
+ 3.     └─dsOMOPClient:::.v2_restore(v) at dsOMOPClient/R/recipe.R:6419:9
+ 4.       ├─base::do.call(ctor, args) at dsOMOPClient/R/recipe_v2_io.R:316:3
+ 5.       └─dsOMOPClient:::.formulaRestore(variable = `<omp_vrbl>`, provenance = `<named list>`)
+ 6.         └─dsOMOPClient:::.formulaReject(...) at dsOMOPClient/R/formulas.R:177:3
+
+── 3. Error ('test-audit-formulas.R:73:5'): Q14 independent power oracle agrees 
+Error: Plan publication refused: site1:o [validation_error]; site2:o [validation_error]; site3:o [validation_error]. Execution-owned artifacts were revoked and removed.
+Backtrace:
+    ▆
+ 1. └─dsOMOPClient::ds.omop.plan.execute(...) at test-audit-formulas.R:73:5
+ 2.   └─dsOMOPClient:::.plan_execute_impl(...) at dsOMOPClient/R/plan.R:1879:3
+ 3.     └─base::tryCatch(...) at dsOMOPClient/R/plan.R:2067:3
+ 4.       └─base (local) tryCatchList(expr, classes, parentenv, handlers)
+ 5.         └─base (local) tryCatchOne(expr, names, parentenv, handlers[[1L]])
+ 6.           └─value[[3L]](cond)
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                  file blocks failed errors
+ test-audit-formulas.R      2      1      2
+
+FAILING TESTS
+test-audit-formulas.R | Q14 closed log-exp expansion and provenance survive JSON YAML and generated R | failed=1 error=TRUE
+test-audit-formulas.R | Q14 independent power oracle agrees with actual private published formulas | failed=0 error=TRUE
+
+RESULT failed: 1 errors: 2 skipped: 0 passed: 45 

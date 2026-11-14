@@ -1,0 +1,9 @@
+FAILURES BY FILE
+                          file blocks failed errors
+ test-audit-physical-exports.R      1      0      1
+
+FAILING TESTS
+test-audit-physical-exports.R | Q06 pinned actual CM 5.5.2 exports retain the existing protected projection | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 1 skipped: 0 passed: 539 
+RESULT failed: 0 errors: 1 skipped: 0 passed: 539 

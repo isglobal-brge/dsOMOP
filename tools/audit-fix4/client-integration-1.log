@@ -1,0 +1,9 @@
+FAILURES BY FILE
+                         file blocks failed errors
+ test-audit-growth-consumer.R      1      3      0
+
+FAILING TESTS
+test-audit-growth-consumer.R | Q21 actual published weight-for-age agrees with pinned WHO medians | failed=3 error=FALSE
+
+RESULT failed: 3 errors: 0 skipped: 0 passed: 1940 
+RESULT failed: 3 errors: 0 skipped: 0 passed: 1940 

@@ -1,0 +1,10 @@
+FAILURES BY FILE
+                             file blocks failed errors
+ test-audit-formula-portability.R      2      1      1
+
+FAILING TESTS
+test-audit-formula-portability.R | Q14 closed log-exp expansion and provenance survive JSON YAML and generated R | failed=0 error=TRUE
+test-audit-formula-portability.R | formula definitions retain exact binary64 coefficients in YAML | failed=1 error=FALSE
+
+RESULT failed: 1 errors: 1 skipped: 0 passed: 55 
+RESULT failed: 1 errors: 1 skipped: 0 passed: 55 

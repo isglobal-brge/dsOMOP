@@ -1,0 +1,45 @@
+audit-book: ..Registered S3 method overwritten by 'gamlss':
+  method   from
+  print.ri bit 
+
+Logging into the collaborating servers
+..
+RENDERED_LESSON_SHA256 a86526d9d8b69a583f80171618690227286a60bceb93fff4099d1b88f8109bc9 
+
+audit-consumer-surface: .
+CONSUMER_VERSION dsOMOP 2.10.5 
+.
+CONSUMER_VERSION dsOMOPClient 2.10.5 
+.
+CONSUMER_VERSION dsBase 6.3.5 
+.
+CONSUMER_VERSION dsBaseClient 6.3.5 
+.
+CONSUMER_VERSION DSLite 1.5.0 
+.
+CONSUMER_VERSION arrow 26.0.1 
+.
+CONSUMER_FORMALS ds.mean pairlist(x = NULL, type = "split", checks = FALSE, save.mean.Nvalid = FALSE, datasources = NULL) 
+.
+CONSUMER_FORMALS ds.quantileMean pairlist(x = NULL, type = "combine", datasources = NULL) 
+.
+CONSUMER_FORMALS ds.glm pairlist(formula = NULL, data = NULL, family = NULL, offset = NULL, weights = NULL, checks = FALSE, maxit = 20, CI = 0.95, viewIter = FALSE, viewVarCov = FALSE, viewCor = FALSE, datasources = NULL) 
+.
+CONSUMER_FORMALS ds.reShape pairlist(data.name = NULL, varying = NULL, v.names = NULL, timevar.name = "time", idvar.name = "id", drop = NULL, direction = NULL, sep = ".", newobj = "newObject", datasources = NULL) 
+.
+CONSUMER_FORMALS ds.lmerSLMA pairlist(formula = NULL, offset = NULL, weights = NULL, combine.with.metafor = TRUE, dataName = NULL, checks = FALSE, datasources = NULL, REML = TRUE, control_type = NULL, control_value = NULL, optimizer = NULL, verbose = 0, notify.of.progress = FALSE, assign = FALSE, newobj = NULL) 
+.
+CONSUMER_FORMALS ds.glmerSLMA pairlist(formula = NULL, offset = NULL, weights = NULL, combine.with.metafor = TRUE, dataName = NULL, checks = FALSE, datasources = NULL, family = NULL, control_type = NULL, control_value = NULL, nAGQ = 1L, verbose = 0, start_theta = NULL, start_fixef = NULL, notify.of.progress = FALSE, assign = FALSE, newobj = NULL) 
+.
+CONSUMER_FORMALS ds.getWGSR pairlist(sex = NULL, firstPart = NULL, secondPart = NULL, index = NULL, standing = NA, thirdPart = NA, newobj = NULL, datasources = NULL) 
+
+audit-formula-portability: Warning in intersect(prop_names, inst_names) :
+  closing unused connection 4 (/root/rt/audit-fix4-artifacts/audit-native-v2.html)
+.....................................
+audit-study-bundle: .................
+number-system-api: ............................................................
+number-system-wire: .............................................
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+RESULT failed: 0 errors: 0 skipped: 0 passed: 176 

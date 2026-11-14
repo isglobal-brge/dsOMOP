@@ -1,0 +1,119 @@
+also installing the dependencies ‘triebeard’, ‘urltools’, ‘dbplyr’
+
+trying URL 'https://cloud.r-project.org/src/contrib/triebeard_0.4.1.tar.gz'
+trying URL 'https://cloud.r-project.org/src/contrib/urltools_1.7.3.1.tar.gz'
+trying URL 'https://cloud.r-project.org/src/contrib/dbplyr_2.6.0.tar.gz'
+trying URL 'https://ohdsi.r-universe.dev/src/contrib/DatabaseConnector_8.0.0.tar.gz?sha256=47ab88aaaa308394048403265864dfbfdd9ffa4680ad392a28d8280ce9c63e8b&file=/DatabaseConnector_8.0.0.tar.gz'
+begin installing package ‘dbplyr’
+begin installing package ‘triebeard’
+* installing *source* package ‘dbplyr’ ...
+** this is package ‘dbplyr’ version ‘2.6.0’
+** package ‘dbplyr’ successfully unpacked and MD5 sums checked
+** using staged installation
+** R
+** inst
+** byte-compile and prepare package for lazy loading
+** help
+*** installing help indices
+*** copying figures
+** building package indices
+** installing vignettes
+** testing if installed package can be loaded from temporary location
+** testing if installed package can be loaded from final location
+** testing if installed package keeps a record of temporary installation path
+* DONE (dbplyr)
+* installing *source* package ‘triebeard’ ...
+** this is package ‘triebeard’ version ‘0.4.1’
+** package ‘triebeard’ successfully unpacked and MD5 sums checked
+** using staged installation
+** libs
+using C++ compiler: ‘g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0’
+make[1]: Entering directory '/tmp/RtmpgOYOye/R.INSTALL20e4a457c25318/triebeard/src'
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'    -I../inst/include -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c RcppExports.cpp -o RcppExports.o
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'    -I../inst/include -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c alter.cpp -o alter.o
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'    -I../inst/include -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c create.cpp -o create.o
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'    -I../inst/include -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c get.cpp -o get.o
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'    -I../inst/include -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c greedy_match.cpp -o greedy_match.o
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'    -I../inst/include -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c length.cpp -o length.o
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'    -I../inst/include -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c longest_match.cpp -o longest_match.o
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'    -I../inst/include -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c prefix_match.cpp -o prefix_match.o
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'    -I../inst/include -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c str.cpp -o str.o
+g++ -std=gnu++20 -shared -L/usr/lib/R/lib -Wl,-Bsymbolic-functions -flto=auto -ffat-lto-objects -flto=auto -Wl,-z,relro -o triebeard.so RcppExports.o alter.o create.o get.o greedy_match.o length.o longest_match.o prefix_match.o str.o -L/usr/lib/R/lib -lR
+make[1]: Leaving directory '/tmp/RtmpgOYOye/R.INSTALL20e4a457c25318/triebeard/src'
+installing to /root/rt/audit-fix4-deps/00LOCK-triebeard/00new/triebeard/libs
+** R
+** inst
+** byte-compile and prepare package for lazy loading
+** help
+*** installing help indices
+** building package indices
+** installing vignettes
+** testing if installed package can be loaded from temporary location
+** checking absolute paths in shared objects and dynamic libraries
+** testing if installed package can be loaded from final location
+** testing if installed package keeps a record of temporary installation path
+* DONE (triebeard)
+begin installing package ‘urltools’
+* installing *source* package ‘urltools’ ...
+** this is package ‘urltools’ version ‘1.7.3.1’
+** package ‘urltools’ successfully unpacked and MD5 sums checked
+** using staged installation
+** libs
+using C compiler: ‘cc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0’
+using C++ compiler: ‘g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0’
+make[1]: Entering directory '/tmp/RtmpJiokQg/R.INSTALL20e8f554eed447/urltools/src'
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'     -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c RcppExports.cpp -o RcppExports.o
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'     -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c compose.cpp -o compose.o
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'     -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c credentials.cpp -o credentials.o
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'     -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c encoding.cpp -o encoding.o
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'     -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c parameter.cpp -o parameter.o
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'     -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c parsing.cpp -o parsing.o
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'     -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c puny.cpp -o puny.o
+cc -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'     -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2  -c punycode.c -o punycode.o
+g++ -std=gnu++20 -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'     -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2   -c suffix.cpp -o suffix.o
+cc -I"/usr/share/R/include" -DNDEBUG  -I'/usr/local/lib/R/site-library/Rcpp/include'     -fpic  -g -O2 -ffile-prefix-map=/build/r-base-dFZsSi/r-base-4.6.2=. -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2  -c utf8.c -o utf8.o
+g++ -std=gnu++20 -shared -L/usr/lib/R/lib -Wl,-Bsymbolic-functions -flto=auto -ffat-lto-objects -flto=auto -Wl,-z,relro -o urltools.so RcppExports.o compose.o credentials.o encoding.o parameter.o parsing.o puny.o punycode.o suffix.o utf8.o -L/usr/lib/R/lib -lR
+make[1]: Leaving directory '/tmp/RtmpJiokQg/R.INSTALL20e8f554eed447/urltools/src'
+installing to /root/rt/audit-fix4-deps/00LOCK-urltools/00new/urltools/libs
+** R
+** data
+*** moving datasets to lazyload DB
+** inst
+** byte-compile and prepare package for lazy loading
+** help
+*** installing help indices
+** building package indices
+** installing vignettes
+** testing if installed package can be loaded from temporary location
+** checking absolute paths in shared objects and dynamic libraries
+** testing if installed package can be loaded from final location
+** testing if installed package keeps a record of temporary installation path
+* DONE (urltools)
+begin installing package ‘DatabaseConnector’
+make: *** [Makefile:19: DatabaseConnector.ts] Error 1
+make: Target 'all' not remade because of errors.
+* installing *source* package ‘DatabaseConnector’ ...
+** this is package ‘DatabaseConnector’ version ‘8.0.0’
+** using staged installation
+** R
+** inst
+** byte-compile and prepare package for lazy loading
+Error: .onLoad failed in loadNamespace() for 'rJava', details:
+  call: dyn.load(file, DLLpath = DLLpath, ...)
+  error: unable to load shared object '/usr/local/lib/R/site-library/rJava/libs/rJava.so':
+  libjvm.so: cannot open shared object file: No such file or directory
+Execution halted
+ERROR: lazy loading failed for package ‘DatabaseConnector’
+* removing ‘/root/rt/audit-fix4-deps/DatabaseConnector’
+
+The downloaded source packages are in
+	‘/tmp/RtmpHKR4Gu/downloaded_packages’
+Warning message:
+In install.packages("DatabaseConnector", lib = "/root/rt/audit-fix4-deps",  :
+  installation of package ‘DatabaseConnector’ failed
+Warning in untar2(tarfile, files, list, exdir, restore_times, allow_all) :
+  skipping pax global extended headers
+ERROR: dependency ‘DatabaseConnector’ is not available for package ‘CommonDataModel’
+Perhaps try a variation of:
+install.packages('DatabaseConnector')
+* removing ‘/root/rt/audit-fix4-deps/CommonDataModel’

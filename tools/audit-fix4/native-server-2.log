@@ -1,0 +1,13 @@
+FAILURES BY FILE
+                       file blocks failed errors
+ test-audit-study-recipes.R      3      0      3
+ test-audit-formula-edges.R      1      1      0
+
+FAILING TESTS
+test-audit-formula-edges.R | Q14 adult boundaries and invalid input eligibility execute in the emitted plan | failed=1 error=FALSE
+test-audit-study-recipes.R | Q16 independent visit schedules produce distinct baseline comparisons | failed=0 error=TRUE
+test-audit-study-recipes.R | Q17 eligible observation denominators and Q18 prior dates run as emitted | failed=0 error=TRUE
+test-audit-study-recipes.R | Q19 before and after reduction express different declared cleaning | failed=0 error=TRUE
+
+RESULT failed: 1 errors: 3 skipped: 0 passed: 61 
+RESULT failed: 1 errors: 3 skipped: 0 passed: 61 
