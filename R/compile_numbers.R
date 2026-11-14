@@ -1,28 +1,5 @@
 # Numeric computations remain private until the existing final publication gate.
-.numberSourceUnit <- function(ctx,node) {
-  d<-node$derived;r<-node$reducer;fn<-r$fn %||% ""
-  if(identical(d$kind,"number_derive")) {
-    u<-d$unit
-    return(if(identical(d$reducer$fn,"cv"))"1" else if(identical(d$reducer$fn,"slope"))paste0(u,"/days") else u)
-  }
-  if(fn %in% c("binary","any","all","abnormal_high","abnormal_low","cv")||identical(d$kind,"died"))return("1")
-  if(fn %in% c("count","n_distinct","era_count")||(d$kind %||% "") %in% c("number_count","n_observation_periods"))return("count")
-  if(fn %in% c("days_since","days_until","duration_sum","covered_days","supply_days","drug_duration","gap_max","gap_mean","era_days","first_era_days")||(d$kind %||% "") %in% c("observed_days","days_to_death","prior_obs","followup","obs_duration"))return("days")
-  if(fn=="time_since")return(if(identical(r$unit,"month"))"months" else "days")
-  if((d$kind %||% "") %in% c("time_between","age_at"))return(if(d$unit=="annual_years")"years" else d$unit)
-  if(identical(node$date_spec$precision,"relative_days"))return("days")
-  source<-node$source %||% d$source
-  ev<-ctx$ir$events[[source$event %||% ""]]
-  u<-if(!is.null(ev$unit))paste0("unit:",ev$unit$target) else if((ev$table %||% "") %in% c("measurement","observation"))"unresolved_source" else "1"
-  if(!is.null(ev$cost))u<-if(!is.null(ev$cost$currency))paste0("currency:",ev$cost$currency) else "unresolved_source"
-  if(identical(d$kind,"number_change")) {
-    if(d$method=="percent_change")return("percent")
-    if(d$method=="ratio")return("1")
-    if(d$method=="time_to_threshold")return(d$time_unit %||% "days")
-    if(d$method=="slope")return(paste0(u,"/",d$time_unit %||% "days"))
-  }
-  if(fn=="slope")paste0(u,"/days") else u
-}
+.numberSourceUnit <- function(ctx,node) .numberDeclaredUnit(ctx$ir,node)
 .numberOffsetAllowed <- function(node) {
   fn<-node$reducer$fn %||% node$derived$reducer$fn %||% ""
   !fn %in% c("sum","count","n_distinct","sd","cv","slope","duration_sum","covered_days","supply_days","drug_duration","gap_max","gap_mean","era_count","era_days","first_era_days","days_since","days_until","time_since") &&

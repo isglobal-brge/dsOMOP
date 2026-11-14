@@ -355,13 +355,18 @@
     origin<-if(!is.null(explicit))"variable/wrapper" else if(!is.null(declared$options$number_spec))"recipe" else "design"
     lines<-c(lines,paste0("  specification origin: ",origin,"; explicit declaration: ",.jcsCanonical(.pnv2Plain(explicit %||% list()))))
     effective<-.numberEffective(v$number_spec,plan$options$number_spec)
+    unit<-.numberDeclaredUnit(plan,v)
+    lines<-c(lines,paste0("  canonical source coordinate: ",unit))
     state<-"numeric"
     for(i in seq_along(effective$pipeline)) {
       step<-effective$pipeline[[i]];before<-state
+      if(step$kind=="fixed_unit")unit<-step$to
+      if(step$kind=="expression")unit<-step$unit %||% .numberExpressionUnit(step$exprs,step$result,unit)
+      if(step$kind %in% c("flag","present","missing"))unit<-"1"
       if(step$kind %in% c("bins","category"))state<-"ordered factor (contr.poly)"
       if(step$kind %in% c("flag","present","missing"))state<-"integer 0/1"
       levels<-.numberDeclaredLevels(step)
-      lines<-c(lines,paste0("  stage ",i," ",step$kind,": ",before," -> ",state,
+      lines<-c(lines,paste0("  stage ",i," ",step$kind,": ",before," -> ",state,"; coordinate ",unit,
         if(length(levels))paste0("; complete public levels: ",paste(levels,collapse=" | ")),
         if(step$kind=="event_unit")"; before source predicates and reduction" else "; private scalar presentation before sealing"))
     }
@@ -433,4 +438,29 @@
   b<-.numberBreaks(step$breaks)
   token<-function(x)if(is.infinite(x))if(x<0)"-Inf" else "Inf" else .jcsNumber(x)
   vapply(seq_len(length(b)-1L),function(i)paste0(if(step$closed=="left"&&is.finite(b[i]))"[" else "(",token(b[i]),",",token(b[i+1L]),if(step$closed=="right"&&is.finite(b[i+1L]))"]" else ")"),"")
+}
+
+.numberDeclaredUnit <- function(plan,node) {
+  d<-node$derived;r<-node$reducer;fn<-r$fn %||% ""
+  if(identical(d$kind,"number_derive")) {
+    u<-d$unit
+    return(if(identical(d$reducer$fn,"cv"))"1" else if(identical(d$reducer$fn,"slope"))paste0(u,"/days") else u)
+  }
+  if(fn %in% c("binary","any","all","abnormal_high","abnormal_low","cv")||identical(d$kind,"died"))return("1")
+  if(fn %in% c("count","n_distinct","era_count")||(d$kind %||% "") %in% c("number_count","n_observation_periods"))return("count")
+  if(fn %in% c("days_since","days_until","duration_sum","covered_days","supply_days","drug_duration","gap_max","gap_mean","era_days","first_era_days")||(d$kind %||% "") %in% c("observed_days","days_to_death","prior_obs","followup","obs_duration"))return("days")
+  if(fn=="time_since")return(if(identical(r$unit,"month"))"months" else "days")
+  if((d$kind %||% "") %in% c("time_between","age_at"))return(if(d$unit=="annual_years")"years" else d$unit)
+  if(identical(node$date_spec$precision,"relative_days"))return("days")
+  source<-node$source %||% d$source
+  ev<-plan$events[[source$event %||% ""]]
+  u<-if(!is.null(ev$unit))paste0("unit:",ev$unit$target) else if((ev$table %||% "") %in% c("measurement","observation"))"unresolved_source" else "1"
+  if(!is.null(ev$cost))u<-if(!is.null(ev$cost$currency))paste0("currency:",ev$cost$currency) else "unresolved_source"
+  if(identical(d$kind,"number_change")) {
+    if(d$method=="percent_change")return("percent")
+    if(d$method=="ratio")return("1")
+    if(d$method=="time_to_threshold")return(d$time_unit %||% "days")
+    if(d$method=="slope")return(paste0(u,"/",d$time_unit %||% "days"))
+  }
+  if(fn=="slope")paste0(u,"/days") else u
 }
