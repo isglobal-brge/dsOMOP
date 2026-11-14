@@ -1,0 +1,33 @@
+audit-circe-support: ..............................................................................................
+audit-concept-import: ...............................................................................................................................
+audit-vocabulary-policy: ...................................................
+recipe-circe: ......................................................................................................................................................................1
+v2-execution: ......................................
+v2-merge: ....................................................
+v2-plan: ..................................................................................................................
+v2-protocol: .........................................................................................................................................................................................................................................................................................................................................................................................................................
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Error ('test-recipe-circe.R:625:3'): Circe count windows and supported Age
+Error: unsupported_circe_construct: $.InclusionRules[1].expression.DemographicCriteriaList[1].Age; Use supported integer age bounds and one standard Female/Male concept. Inspect recipe_circe_check() for all structural issues.
+Backtrace:
+    ▆
+ 1. ├─testthat::expect_error(...) at test-recipe-circe.R:625:3
+ 2. │ └─testthat:::expect_condition_matching_(...)
+ 3. │   └─testthat:::quasi_capture(...)
+ 4. │     ├─testthat (local) .capture(...)
+ 5. │     │ └─base::withCallingHandlers(...)
+ 6. │     └─rlang::eval_bare(quo_get_expr(.quo), quo_get_env(.quo))
+ 7. └─dsOMOPClient::recipe_import_circe(age_expr("!eq", 65L))
+ 8.   └─dsOMOPClient:::.circe_require_supported(recipe_circe_check(expr)) at dsOMOPClient/R/recipe.R:7433:3
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                file blocks failed errors
+ test-recipe-circe.R      1      0      1
+
+FAILING TESTS
+test-recipe-circe.R | Circe count windows and supported Age operators are preserved | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 1 skipped: 0 passed: 1051 
