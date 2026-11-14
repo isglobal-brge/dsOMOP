@@ -9,11 +9,14 @@
   if(is.null(s))return(list(value=value,column=column))
   attr(column,"number_origin")<-meta
   canonical<-value;canonical_column<-column
+  defined<-attr(value,"category_defined")
+  if(!is.null(defined))meta$available<-meta$available & defined
   effective<-.numberEffective(s)
   ranges<-attr(value,"number_ranges")
   presented<-.numberPresent(.numberUnwrap(value),effective,unit=meta$unit,ranges=ranges,
     available=meta$available,offset_allowed=meta$offset_allowed,trace=TRUE)
   value<-presented$value
+  if(!is.null(defined))attr(value,"category_defined")<-defined
   result_unit<-meta$unit
   for(step in effective$pipeline) {
     if(step$kind=="fixed_unit")result_unit<-step$to
@@ -104,32 +107,13 @@
   }
   list(frame=frame,columns=columns,canonical=original,canonical_columns=original_columns)
 }
-.numberCapture <- function(frame,columns) {
-  contracts<-attr(frame,"omop_concepts") %||% list();numbers<-attr(frame,"omop_numbers") %||% list()
-  for(n in intersect(names(columns),names(frame))) {
-    c<-attr(columns[[n]],"number_contract")
-    if(is.null(c))next
-    numbers[[n]]<-c
-    if(!is.factor(frame[[n]]))next
-    labels<-levels(frame[[n]]);ids<-paste0("N",seq_along(labels))
-    records<-setNames(lapply(seq_along(labels),function(i)list(kind="number",id=ids[i],label=labels[i],number=c,order=i)),ids)
-    contracts[[n]]<-list(kind="number",number=c,ids=ids[match(as.character(frame[[n]]),labels)],records=records,declared=ids,resolved=.numberResolveRecords(unname(records),c))
-  }
-  if(length(contracts))attr(frame,"omop_concepts")<-contracts
-  if(length(numbers))attr(frame,"omop_numbers")<-numbers
-  frame
-}
 .numberGenerated <- function(column,unit,privacy=3L,available=TRUE) {
   attr(column,"number_origin")<-list(unit=unit,available=available,offset_allowed=FALSE)
   attr(column,"privacy_class")<-privacy;column
 }
 .numberEligibleColumn <- function(column,name,node) {
-  structural<-c("cohort_definition_id",switch(node$format,
-    long=c("event_number","visit_occurrence_id","event_id","unit_concept_id","operator_concept_id"),
-    sparse=,temporal_covariates=c("covariate_id","analysis_id","time_id","start_day","end_day"),
-    person_period=c("period_id","bin_id","time_id"),
-    survival=c("event","event_code","event_id","status","stratum_id","interval_number","transition_id","from_state","to_state","weight","sampling_weight","from","to","trans","state_visit_number","event_number","outcome_event_number"),character()))
-  .numberAnalyticColumn(column)&&!name %in% structural
+
+  .numberAnalyticColumn(column)&&!name %in% .numberStructuralColumns(node$format)
 }
 
 .numberOutputOrigins <- function(ctx,node,columns) {
@@ -137,10 +121,7 @@
   sources<-.outputSources(node)
   units<-vapply(sources,function(s).numberSourceUnit(ctx,list(source=s)),"")
   common<-if(length(unique(units))==1L)units[[1L]] else "unresolved_source"
-  durations<-switch(node$format,
-    long=c("start_days","end_days","days_from_index","days_since_previous","duration_days"),
-    intervals=c("start_days_from_index","end_days_from_index","duration_days"),
-    survival=c("followup_days","follow_up_days","Tstart","Tstop","time","time_at_risk","entry_days_from_index","exit_days_from_index","event_days_from_index","interval_start_days","interval_end_days"),character())
+  durations <- .numberOutputDurations(node$format)
   for(n in names(columns)) {
     c<-columns[[n]]
     if(!is.null(attr(c,"number_origin"))||!is.null(attr(c,"number_contract")))next
@@ -172,7 +153,7 @@
   if(any(names(map) %in% unique(unlist(lapply(schemas,names)))))
     .numberReject("Numeric additions must have new unique column names.","number_dependency_invalid")
   selected<-unlist(node$columns,use.names=FALSE)
-  allowed<-unique(c(unlist(lapply(schemas,names)),unlist(lapply(schemas,function(s)attr(s,"number_variable_names"))),names(map)))
+  allowed<-unique(c(unlist(lapply(schemas,names)),unlist(lapply(schemas,function(s)attr(s,"number_variable_names"))),names(map),names(node$category_columns)))
   if(length(setdiff(selected,allowed)))
     .numberReject("Select declared original columns or named numeric additions.","number_source_invalid")
   bind<-function(v,depth=0L) {

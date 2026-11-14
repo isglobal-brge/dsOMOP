@@ -417,10 +417,10 @@
   vars <- names(ir[["variables"]] %||% list())
   cols <- node[["columns"]]
   if (!is.null(cols)) {
-    return(union(intersect(as.character(unlist(cols, use.names = FALSE)), vars), intersect(.numberColumnDependencies(node$number_columns),vars)))
+    return(union(.pnv2ColumnVariables(as.character(unlist(cols, use.names = FALSE)), ir$variables), .pnv2ColumnVariables(c(.numberColumnDependencies(node$number_columns),.categoryColumnDependencies(node$category_columns)),ir$variables)))
   }
   if (isTRUE(node[["format"]] %in% c("survival", "long", "intervals", "membership",
-                                      "dictionary", "joined"))) {
+                                      "dictionary", "joined", "sparse", "temporal_covariates", "person_period"))) {
     return(character(0))
   }
   vars

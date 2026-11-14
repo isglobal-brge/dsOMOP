@@ -380,3 +380,23 @@
 .dateNeedsPresentation <- function(plan) {
   !is.null(plan$options$date_spec) || any(vapply(plan$variables,function(v)!is.null(v$date_spec)||(v$derived$kind %||% "") %in% .DATE_KINDS,logical(1)))
 }
+
+# Native endpoint expansion is ordered independently of source column order.
+# Execution and local codebooks consume the same public schema declaration.
+.dateOutputEndpoints <- function(format, columns, spec) {
+  if (is.null(spec) || !format %in% c("intervals", "person_period", "survival"))
+    return(setNames(character(), character()))
+  endpoints <- c(start_days_from_index="start_date", end_days_from_index="end_date",
+    period_start_days="period_start_date", period_end_days="period_end_date",
+    entry_days_from_index="entry_date", exit_days_from_index="exit_date",
+    event_days_from_index="event_date", interval_start_days="interval_start_date", interval_end_days="interval_end_date")
+  endpoints[intersect(names(endpoints), columns)]
+}
+
+# Pure result typing shared by execution and prospective schemas.
+.dateResultType <- function(s,d) {
+  if(d$kind %in% c("time_between","age_at")) return(if(isTRUE(d$bands))"text" else if(d$unit %in% c("weeks","decimal_years"))"numeric" else "integer")
+  probe<-list(lo=as.Date("2024-02-29"),hi=as.Date("2024-02-29"))
+  val<-.datePresent(probe,s,d$part,as.Date("1970-01-01"))
+  if(inherits(val,"Date"))"date" else if(is.factor(val))"text" else if(is.integer(val))"integer" else "numeric"
+}

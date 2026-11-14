@@ -259,6 +259,16 @@
       d$result<-.numberExpressionShape(d$exprs,d$result,aliases)
       d$inputs<-lapply(d$inputs,function(i){i$variable<-normalize(i$variable,NULL,depth+1L,column_scope);i})
     }
+    if(!is.null(d$variable))d$variable<-normalize(d$variable,NULL,depth+1L,column_scope)
+    if(identical(d$kind,"repeated")) {
+      d$values<-lapply(d$values,function(entry) {entry$variable<-normalize(entry$variable,NULL,depth+1L,column_scope);entry})
+      for(entry in d$values) {
+        operand<-entry$variable
+        while(!is.null(operand$derived$variable))operand<-operand$derived$variable
+        source<-operand$source %||% operand$derived$source
+        if(!is.null(source)&&!identical(.jcsCanonical(source),.jcsCanonical(d$source))) .categoryReject("Repeated values require one identical candidate stream; use a shared event unit map or separate bundles.","repeated_grain_incompatible")
+      }
+    }
     if(identical(d$kind,"number_change")) {
       d<-.numberChangeCheck(d)
       if(identical(d$reference,"first"))d$reference<-list(kind="first_observation")
@@ -277,6 +287,7 @@
     eff<-if(!is.null(spec)||!is.null(defaults)) .numberEffective(spec,defaults) else NULL
     maps<-Filter(function(p)p$kind=="event_unit",eff$pipeline %||% list())
     if(length(maps)) {
+      if(identical(d$kind,"repeated")) .categoryReject("Declare source-unit normalization on the shared repeated event, not the selected scalar.","repeated_grain_incompatible")
       if(is.null(source$event)) {
         if(!is.null(spec)) .numberReject("Source maps require a numeric event unit role.","number_unit_conflict")
       } else {
@@ -503,3 +514,20 @@
   paste0("{", paste(parts, collapse = ","), "}")
 }
 
+
+# Reserved numeric roles are structural in execution and public-plan schemas.
+.numberStructuralColumns <- function(format) {
+  c("cohort_definition_id",switch(format,
+    long=c("event_number","visit_occurrence_id","event_id","unit_concept_id","operator_concept_id"),
+    sparse=,temporal_covariates=c("covariate_id","analysis_id","time_id","start_day","end_day"),
+    person_period=c("period_id","bin_id","time_id"),
+    survival=c("event","event_code","event_id","status","stratum_id","interval_number","transition_id","from_state","to_state","weight","sampling_weight","from","to","trans","state_visit_number","event_number","outcome_event_number"),character()))
+}
+
+# Generated output measurements use this common eligibility/unit declaration.
+.numberOutputDurations <- function(format) {
+  switch(format,
+    long=c("start_days","end_days","days_from_index","days_since_previous","duration_days"),
+    intervals=c("start_days_from_index","end_days_from_index","duration_days"),
+    survival=c("followup_days","follow_up_days","Tstart","Tstop","time","time_at_risk","entry_days_from_index","exit_days_from_index","event_days_from_index","interval_start_days","interval_end_days"),character())
+}

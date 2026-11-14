@@ -94,6 +94,9 @@
     for (k in .REDUCE_OUTPUT_KINDS) out[[length(out) + 1L]] <- .fragmentIdentity("rd", o, k)
     expand <- function(v,n) {
       out <- n
+      if(!is.null(v$derived$variable))out<-c(out,expand(v$derived$variable,.numberDependencyName(n,if(identical(v$derived$kind,"category_reduce"))"operand" else "category")))
+      for(entry in v$derived$values %||% list())out<-c(out,expand(entry$variable,.numberDependencyName(n,entry$name)))
+      if(!is.null(v$derived$visits))out<-c(out,paste0(n,"visits"))
       for(i in v$derived$inputs %||% list()) out <- c(out,expand(i$variable,.numberDependencyName(n,i$alias)))
       out
     }
@@ -888,11 +891,19 @@
   record <- .compileVariableRecord(ctx, node, name, cons)
   record <- .datePresentRecord(record, node, ctx, name, cons)
   record <- .numberRecord(record, node, ctx, name, cons)
-  for (col in names(record$columns)) attr(record$columns[[col]], "concept_owner") <- name
+  for (col in names(record$columns)) {
+    attr(record$columns[[col]], "concept_owner") <- name
+    if(.categoryFlag(node,record$columns[[col]]))attr(record$columns[[col]],"semantic_flag")<-TRUE
+    attr(record$columns[[col]], "category_available") <- record$available
+  }
   record
 }
 
 .compileVariableRecord <- function(ctx, node, name, cons) {
+  if(identical(node$derived$kind,"category_reduce"))return(.categoryReduceRecord(ctx,node,name,cons))
+  if(identical(node$derived$kind,"repeated"))return(.repeatedRecord(ctx,node,name,cons))
+  if(identical(node$derived$kind,"category_rows"))return(.categoryEventRecord(ctx,node,name,cons))
+  if(identical(node$derived$kind,"category_indicators"))return(.categoryIndicatorRecord(ctx,node,name,cons))
   if ((node$derived$kind %||% "") %in% .NUMBER_KINDS) return(.numberDerivedRecord(ctx,node,name,cons))
   if (!is.null(node[["source"]])) return(.reduceSourceVariable(ctx, node, name, cons))
   if (!is.null(node[["derived"]])) return(.reduceDerivedVariable(ctx, node, name, cons))
@@ -903,15 +914,7 @@
 }
 
 # Output columns of a variable (nth_value with a vector n is suffixed).
-.reduceColumnNames <- function(name, r) {
-  if (identical(r[["fn"]], "nth_value")) {
-    n <- as.integer(unlist(r[["n"]] %||% 1L))
-    if (length(n) > 1L || (is.list(r[["n"]]) && is.null(names(r[["n"]])))) {
-      return(paste0(name, "_", n))
-    }
-  }
-  name
-}
+.reduceColumnNames <- function(name, r) .pnv2VariableColumns(name, list(reducer = r))
 
 .reduceTypedNA <- function(type, n) {
   switch(type, integer = rep(NA_integer_, n), bigint = bit64::as.integer64(rep(NA_character_, n)),
@@ -1036,11 +1039,13 @@
     vals <- kernel(rows, keys, anchors)
     selected <- if(paired) .numberRangeSelection(rows,keys,r,ordering,anchors) else NULL
     defined <- got$bounds$defined
+    if(anchor_needed)defined<-defined & !is.na(anchors)
     out <- data.frame(row_key = keys, stringsAsFactors = FALSE)
     for (j in seq_along(columns)) {
       x <- .reduceCoerce(vals[[j]], columns[[j]]$type)
       x[!defined %in% TRUE] <- .reduceTypedNA(columns[[j]]$type, 1L)
       if(paired) {at<-as.integer(selected[[j]]);x<-.numberRangeValue(x,rows$range_low[at],rows$range_high[at])}
+      if(length(.categoryCapabilities(ctx$ir)))x<-.categoryValue(x,defined)
       out[[names(columns)[[j]]]] <- x
     }
     out

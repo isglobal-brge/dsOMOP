@@ -22,6 +22,93 @@
   naming an intermediate does not change admission. Legacy mutate semantics
   and the closed expression grammar are unchanged.
 
+
+- Corrected (shared codebook presentation): prospective columns use the execution
+  numeric/date/category evaluators on empty public prototypes, including existing
+  and generated dates, canonical numeric copies and categorical copies. Membership
+  provenance and mixed covariate ordering share their execution declarations.
+  Rebuild existing codebooks; recipe syntax does not change.
+- Corrected (cross-format equivalence): requested plain numeric covariates no
+  longer disappear without an explicit number specification, mixed covariates
+  follow declared order, and untranslated reference tables retain the provenance
+  needed for codebook reconciliation. Existing recipes gain their requested
+  columns; downstream code should select columns by their declared names.
+- Corrected (native multi-state identity): restore lossless episode keys after
+  state-machine evaluation, including keys above 2^53 and empty results. Native
+  row keys are character strings; use them as opaque identifiers rather than
+  converting them to floating point. The v1 state machine is unchanged.
+
+- Corrected (membership/long codebook review): prospective existing date columns
+  honor recipe category defaults, with producer-specific applicability. Membership
+  schemas also include the declared roster's index provenance in publication order.
+  Rebuild affected codebooks; recipe declarations and published data do not change.
+
+- Corrected (generated date factor review): prospective codebooks apply recipe
+  category defaults to generated date endpoints, including ordering, recodes,
+  public levels, reference and contrasts in nested and joined outputs. Rebuild
+  affected codebooks; recipe declarations and published data do not change.
+
+- Corrected (date/category schema review): prospective codebooks include native
+  date endpoints before final selection, with their effective presentation types
+  and order, including nested survival and joined outputs. Rebuild affected
+  codebooks; recipe declarations and published data do not change.
+
+- Corrected (categorical schema review): prospective codebooks enumerate closed
+  panel source columns and apply the same required numeric-role rules as
+  execution for selected panel and survival copies, including nested components.
+  Rebuild affected codebooks; no recipe declaration changes are needed.
+
+- Corrected (categorical composition review): final column selection and order
+  apply to output-local copies and expanded variables in both execution and
+  prospective codebooks. Structural columns remain present.
+- Corrected: output-local category copies accept categorical selector reductions
+  (including mode and vector nth), retaining consumed identity, missingness and
+  admission contracts while allowing independent presentation. Re-run affected
+  native recipes; no declaration changes are needed.
+
+- Corrected (categorical review): prospective codebooks expand native nth-value
+  columns and honor effective numeric, date and category presentation defaults,
+  overrides and untranslated concepts. Native outputs can select expanded
+  keys such as `answer_3` in the requested order.
+- Corrected: recipe hierarchy defaults are inactive for semantic flags and
+  numeric/date categories, including `multiple="all"`. Explicit incompatible
+  hierarchy requests still refuse; use concept inputs and category indicators
+  when multiple hierarchy targets are intended.
+
+- Native language-2 releases now carry codebook metadata for every real table,
+  including plain numeric and untranslated plans. They require
+  `output.codebook_metadata`; upgrade participating servers to 2.10.5.
+  Existing v1 plans retain their compatibility path.
+
+- Newly permitted (A-30 / CR-31): native category specifications add typed
+  identity order, nominal recodes, hierarchy maps, language and code labels,
+  explicit Missing/Unknown levels and semantic-flag representations. Category
+  event projections, indicators and reductions preserve explicit identity.
+- Newly permitted: declared repeated time-point/visit columns and output-local
+  category copies; client codebooks use public plans and admitted release
+  metadata. These constructs require native language 2 and matching 2.10.5
+  capabilities. Use wide/long typed columns for factor analyses, with a numeric
+  sibling for quantitative arithmetic.
+- Newly refused: ambiguous hierarchy mappings require a declared priority or
+  membership indicators. A mixed zero/nonzero user-label merge cannot become
+  an Unknown sentinel: retain unknown=keep, use separate labels, or explicitly
+  recode its identities before sentinel handling.
+
+- Corrected: native matrix and person-period outputs no longer implicitly
+  consume unrelated recipe variables. Select analytic columns explicitly;
+  use a typed wide companion for factor/logical matrix covariates.
+- Corrected: explicit outer vocabulary styling and hierarchy stages use the
+  effective concept retained by category reduction, preserving original
+  admission evidence and upstream equivalences.
+- Corrected: undefined anchors remain NA through repeated subsetting and
+  Missing presentation. Staged empty category contracts preserve nullable
+  references, declared levels and contrast specifications.
+- Newly permitted: prospective codebooks describe structural schema and
+  survival/reference component families locally; published codebooks retain
+  reconciled names, category provenance and mapping contracts.
+- Categorical binary presentation of abnormal-event reducers means at least
+  one abnormal event. Keep an unwrapped numeric sibling for event counts.
+
 - Corrected (A-29 review): independently normalized numeric siblings retain
   their original event-row binding in long and intervals outputs. BIGINT
   longitudinal arithmetic now checks exact conversion before calculation;
