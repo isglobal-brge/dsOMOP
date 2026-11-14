@@ -31,7 +31,7 @@
 .numberAnalyticColumn <- function(c) c$type %in% c("integer","bigint","numeric") && c$role %in% c("measure","value") && !isTRUE(attr(c,"concept")) && !isTRUE(attr(c,"number_structural"))
 .numberRecord <- function(record,node,ctx,name,cons) {
   spec<-node$number_spec
-  if(is.null(spec)&&is.null(ctx$ir$options$number_spec)&&!(node$derived$kind %||% "") %in% .NUMBER_KINDS)return(record)
+  if(is.null(spec)&&!.numberHas(ctx$ir))return(record)
   for(col in names(record$columns)) {
     c<-record$columns[[col]]
     if(!.numberAnalyticColumn(c)) {
