@@ -1,0 +1,769 @@
+[
+  {
+    "id": "Nwire1",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "identity",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {}
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Nwire2",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "floor-shorthand",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "rounding": {
+              "method": "floor"
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Nwire3",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "floor-pipeline",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "pipeline": [
+              {
+                "kind": "round",
+                "method": "floor"
+              }
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Nwire4",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "bins",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "representation": "bins",
+            "grid": "count_1_2_5"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Nwire5",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "manual-category",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "representation": "category",
+            "thresholds": [
+              5,
+              10
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Nwire6",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "map",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "unit": {
+              "kind": "event_unit",
+              "spec": {
+                "target": 8840,
+                "convert": {
+                  "8713": {
+                    "factor": 1000,
+                    "offset": 0
+                  }
+                }
+              }
+            },
+            "rounding": {
+              "method": "decimals",
+              "digits": 1
+            }
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Nwire7",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "recipe-default",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {}
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      },
+      "options": {
+        "number_spec": {
+          "rounding": {
+            "method": "floor"
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "Nwire8",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "reset",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "pipeline": [
+              {
+                "kind": "transform",
+                "method": "identity"
+              }
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      },
+      "options": {
+        "number_spec": {
+          "rounding": {
+            "method": "floor"
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "Nwire9",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "derive",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "derived": {
+            "kind": "number_derive",
+            "inputs": [
+              {
+                "alias": "a",
+                "stage": "canonical",
+                "variable": {
+                  "source": {
+                    "event": "lab"
+                  },
+                  "reducer": {
+                    "fn": "mean"
+                  }
+                }
+              }
+            ],
+            "exprs": {
+              "version": 1,
+              "assign": [
+                {
+                  "name": "y",
+                  "expr": {
+                    "op": "*",
+                    "args": [
+                      {
+                        "col": "a"
+                      },
+                      {
+                        "lit": 2
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "unit": "coordinate:doubled"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Nwire10",
+    "schema": "plan-v2",
+    "expect": "valid",
+    "label": "columns",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide",
+          "number_columns": {
+            "copy": {
+              "derived": {
+                "kind": "number_column",
+                "column": "x"
+              },
+              "number_spec": {
+                "rounding": {
+                  "method": "floor"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "Nwire11",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "label": "unknown-spec",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "typo": 1
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Nwire12",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "label": "string-breaks",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "representation": "bins",
+            "breaks": [
+              "1",
+              "2"
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Nwire13",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "label": "code",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "pipeline": [
+              {
+                "kind": "expression",
+                "exprs": "x * 2"
+              }
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  },
+  {
+    "id": "Nwire14",
+    "schema": "plan-v2",
+    "expect": "invalid",
+    "label": "unknown-step",
+    "instance": {
+      "version": 2,
+      "meta": {
+        "language_version": "2.0",
+        "semantic_version": "2.0.0",
+        "generated_by": "A29-contract-fixture"
+      },
+      "events": {
+        "lab": {
+          "table": "measurement",
+          "concept_set": {
+            "concepts": [
+              3000963
+            ]
+          }
+        }
+      },
+      "populations": {
+        "p": {
+          "kind": "criteria"
+        }
+      },
+      "variables": {
+        "x": {
+          "source": {
+            "event": "lab"
+          },
+          "reducer": {
+            "fn": "mean"
+          },
+          "number_spec": {
+            "pipeline": [
+              {
+                "kind": "round",
+                "method": "floor",
+                "typo": true
+              }
+            ]
+          }
+        }
+      },
+      "outputs": {
+        "o": {
+          "rows": "p",
+          "format": "wide"
+        }
+      }
+    }
+  }
+]

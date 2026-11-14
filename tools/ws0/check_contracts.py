@@ -26,7 +26,7 @@ S = sys.argv[1]
 C = sys.argv[2] if len(sys.argv) > 2 else None
 SCHEMA = os.path.join(S, "inst", "schema")
 SUPPORTED = {"$ref", "type", "const", "enum", "properties", "required", "additionalProperties", "propertyNames",
-             "minProperties", "maxProperties", "items", "minItems", "maxItems", "uniqueItems", "oneOf", "anyOf",
+             "minProperties", "maxProperties", "items", "prefixItems", "minItems", "maxItems", "uniqueItems", "oneOf", "anyOf",
              "allOf", "not", "if", "then", "else", "pattern", "minLength", "maxLength", "minimum", "maximum",
              "exclusiveMinimum", "exclusiveMaximum",
              "$schema", "$id", "$comment", "title", "description", "default", "examples", "$defs", "deprecated",
@@ -49,7 +49,7 @@ def lint(node, path="#"):
         check(k in SUPPORTED, f"unsupported keyword {k} at {path}")
         if k in ("properties", "$defs"):
             for n, sub in v.items(): lint(sub, f"{path}/{k}/{n}")
-        elif k in ("oneOf", "anyOf", "allOf"):
+        elif k in ("prefixItems", "oneOf", "anyOf", "allOf"):
             for i, sub in enumerate(v): lint(sub, f"{path}/{k}/{i}")
         elif k in ("propertyNames", "additionalProperties", "items", "not", "if", "then", "else"):
             lint(v, f"{path}/{k}")
@@ -250,6 +250,29 @@ if C:
         check(open(os.path.join(S, "R", f), "rb").read() == open(os.path.join(C, "R", f), "rb").read(), f"vendored R file differs: {f}")
     check(open(os.path.join(S, "inst", "column_classes.csv"), "rb").read() == open(os.path.join(C, "inst", "column_classes.csv"), "rb").read(),
           "column corpus differs between packages")
+
+# A-29 independent normal forms, closed probes and shared admission checker.
+for nv in load(os.path.join(SCHEMA,"number-vectors.json")):
+    normalized = normref.normalize(nv["instance"], load(os.path.join(SCHEMA,"plan-v2.json")))
+    check(normalized == nv["normalized"], "numeric normal form: " + nv["label"])
+    check(gen.digest(normalized)[1] == nv["digest_sha256"], "numeric digest: " + nv["label"])
+for probe in load(os.path.join(SCHEMA,"probes","number-probes.json")):
+    check(schemas[probe["schema"]].is_valid(probe["instance"]) == (probe["expect"] == "valid"), "numeric probe: " + probe["id"])
+if C:
+    for filename in ("number_semantics.R","number_expression_types.R","plan_normalize_v2.R"):
+        check(open(os.path.join(S,"R",filename),"rb").read() == open(os.path.join(C,"R",filename),"rb").read(), "numeric shared file: " + filename)
+
+# A-30 independent categorical normal forms and closed wire probes.
+for cv in load(os.path.join(SCHEMA,"category-vectors.json")):
+    normalized = normref.normalize(cv["instance"], wire_schema)
+    check(normalized == cv["normalized"], "category normal form: " + cv["label"])
+    check(gen.digest(normalized)[1] == cv["digest_sha256"], "category digest: " + cv["label"])
+    check(normref.normalize(normalized, wire_schema) == normalized, "category fixed point: " + cv["label"])
+for probe in load(os.path.join(SCHEMA,"probes","category-probes.json")):
+    check(schemas[probe["schema"]].is_valid(probe["instance"]) == (probe["expect"] == "valid"), "category probe: " + probe["id"])
+if C:
+    for filename in ("category_semantics.R","category_resolution.R"):
+        check(open(os.path.join(S,"R",filename),"rb").read() == open(os.path.join(C,"R",filename),"rb").read(), "category shared file: " + filename)
 
 print(f"checked 3 schemas, 2 examples, {n_probes} probes, {n_plans} acceptance plans, {len(vec['vectors'])} digest vectors, {len(nvec['vectors'])} normalised fixtures, {len(NUMBERS) + 9} numbers, {n_corpus} corpus doubles")
 if failures:

@@ -8,7 +8,7 @@
 # depends on a JavaScript engine. It is NOT a general draft-2020-12 validator:
 # it implements exactly the keywords those schemas use -- $ref (local JSON
 # pointers), type, const, enum, properties, required, additionalProperties,
-# propertyNames, minProperties, maxProperties, items, minItems, maxItems,
+# propertyNames, minProperties, maxProperties, items, prefixItems, minItems, maxItems,
 # uniqueItems, oneOf, anyOf, allOf, not, if/then/else, pattern, minLength,
 # maxLength, minimum, maximum, exclusiveMinimum, exclusiveMaximum, and boolean
 # schemas. Annotation keywords ($schema, $id, $comment, title, description,
@@ -30,13 +30,13 @@
                               "deprecated", "readOnly", "writeOnly")
 .JSON_SCHEMA_KEYWORDS <- c("$ref", "type", "const", "enum", "properties",
                            "required", "additionalProperties", "propertyNames",
-                           "minProperties", "maxProperties", "items",
+                           "minProperties", "maxProperties", "items", "prefixItems",
                            "minItems", "maxItems", "uniqueItems", "oneOf",
                            "anyOf", "allOf", "not", "if", "then", "else",
                            "pattern", "minLength", "maxLength", "minimum",
                            "maximum", "exclusiveMinimum", "exclusiveMaximum")
 .JSON_SCHEMA_SUBSCHEMA_KEYS <- c("properties", "propertyNames", "additionalProperties",
-                                 "items", "oneOf", "anyOf", "allOf", "not",
+                                 "items", "prefixItems", "oneOf", "anyOf", "allOf", "not",
                                  "if", "then", "else", "$defs")
 
 #' Load a JSON Schema or a JSON instance without simplification
@@ -69,7 +69,7 @@
     node <- schema[[key]]
     if (key %in% c("properties", "$defs")) {
       for (nm in names(node)) .jsonSchemaLint(node[[nm]], paste0(path, "/", key, "/", nm))
-    } else if (key %in% c("oneOf", "anyOf", "allOf")) {
+    } else if (key %in% c("prefixItems", "oneOf", "anyOf", "allOf")) {
       for (i in seq_along(node)) .jsonSchemaLint(node[[i]], paste0(path, "/", key, "/", i - 1L))
     } else {
       .jsonSchemaLint(node, paste0(path, "/", key))
@@ -319,8 +319,12 @@
       canon <- vapply(items, .jcsCanonical, "")
       if (anyDuplicated(canon)) fail("items are not unique")
     }
+    prefix <- schema[["prefixItems"]] %||% list()
+    for (i in seq_len(min(length(items), length(prefix)))) {
+      if (!.jsv_node(prefix[[i]], items[[i]], root, paste0(path, "/", i - 1L), report)) ok <- FALSE
+    }
     if ("items" %in% keys) {
-      for (i in seq_along(items)) {
+      for (i in seq_along(items)[seq_along(items) > length(prefix)]) {
         if (!.jsv_node(schema[["items"]], items[[i]], root, paste0(path, "/", i - 1L), report)) ok <- FALSE
       }
     }

@@ -125,6 +125,8 @@ def normalize(plan, schema):
     x = apply_defaults(schema, x, schema)
     from date_normalize import normalize_dates
     x = normalize_dates(x)
+    from number_normalize import normalize_numbers
+    x = normalize_numbers(x)
     if x.get("publish") is None:
         x["publish"] = list(x["outputs"].keys())
     plan_cov = x["options"].get("coverage")
@@ -138,7 +140,7 @@ def normalize(plan, schema):
         if o.get("grain") is None:
             o["grain"] = "episode" if population_indexed(x["populations"], o.get("rows")) else "person"
         if o.get("format") == "wide" and o.get("columns") is None:
-            o["columns"] = list(x["variables"].keys())
+            o["columns"] = list(x["variables"].keys()) + list(o.get("category_columns", {}).keys())
         if o.get("format") == "survival":
             opts = o.setdefault("options", {})
             fmt = opts.get("format", "survival")

@@ -113,6 +113,15 @@
     if (is.atomic(x)) attributes(x) <- NULL
     x
   }
+  if(.numberHas(plan)) {
+    clean<-function(x) {
+      if(is.list(x))return(lapply(x,clean))
+      if(length(x)>1L)return(lapply(x,clean))
+      if(length(x)==1L&&(is.na(x)||is.numeric(x)&&!is.finite(x)))return(NULL)
+      x
+    }
+    return(jsonlite::fromJSON(.numberJson(clean(coerce(plan))),simplifyVector=FALSE))
+  }
   json <- jsonlite::toJSON(coerce(plan), auto_unbox = TRUE, null = "null",
                            na = "null", digits = NA)
   jsonlite::fromJSON(json, simplifyVector = FALSE)
@@ -409,10 +418,10 @@
   vars <- names(ir[["variables"]] %||% list())
   cols <- node[["columns"]]
   if (!is.null(cols)) {
-    return(intersect(as.character(unlist(cols, use.names = FALSE)), vars))
+    return(union(.pnv2ColumnVariables(as.character(unlist(cols, use.names = FALSE)), ir$variables), .pnv2ColumnVariables(c(.numberColumnDependencies(node$number_columns),.categoryColumnDependencies(node$category_columns)),ir$variables)))
   }
   if (isTRUE(node[["format"]] %in% c("survival", "long", "intervals", "membership",
-                                      "dictionary", "joined"))) {
+                                      "dictionary", "joined", "sparse", "temporal_covariates", "person_period"))) {
     return(character(0))
   }
   vars

@@ -2932,7 +2932,7 @@ omopAnalysisRunAssignDS <- function(omop_symbol, name, params = list(),
 omopFactorLevelsDS <- function(df) {
   if (inherits(df, "FlowerDatasetDescriptor") && !is.null(df$metadata$concept_presentation)) return(.conceptStageReport(df))
   if (is.data.frame(df) && (!is.null(attr(df, "omop_concepts")) ||
-      !is.null(attr(df, "omop_generated_columns")))) return(.conceptLevelReport(df))
+      !is.null(attr(df, "omop_generated_columns")) || !is.null(attr(df,"omop_numbers")) || !is.null(attr(df,"omop_codebook_schema")))) return(.conceptLevelReport(df))
   cap <- .omopDisclosureSettings()$nfilter_levels_max
   empty <- list(levels = list(), unsafe = character(0), nfilter_levels_max = cap)
   if (!is.data.frame(df) || !.is_omop.table(df)) {
@@ -3007,7 +3007,8 @@ omopAsFactorColumnsDS <- function(df, spec, table_column = NULL) {
   if (inherits(df, "FlowerDatasetDescriptor") && !is.null(df$metadata$concept_presentation)) {
     return(.conceptRelevelStaged(df, .ds_arg(spec)))
   }
-  if (!is.data.frame(df) || (!.is_omop.table(df) && is.null(attr(df, "omop_concepts")))) {
+  if (!is.data.frame(df) || (!.is_omop.table(df) && is.null(attr(df, "omop_concepts")) &&
+      !(isTRUE(attr(df,"omop_concept_reference")) && !is.null(attr(df,"omop_codebook_schema"))))) {
     stop("omopAsFactorColumnsDS: target must be a dsOMOP omop.table.",
          call. = FALSE)
   }
