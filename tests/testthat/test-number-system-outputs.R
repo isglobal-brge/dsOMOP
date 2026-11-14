@@ -225,6 +225,7 @@ test_that("N64 PDC intersects exposure with disjoint observation coverage before
   req<-list(version=1L,assign=list(list(name="pdc",expr=list(op="/",args=list(list(col="covered"),list(col="observed"))))))
   pdc<-list(derived=list(kind="number_derive",inputs=list(list(alias="covered",variable=covered,stage="canonical"),list(alias="observed",variable=observed,stage="canonical")),exprs=req,unit="proportion"))
   p<-.ws7_scenario_plan(list(covered=covered,observed=observed,pdc=pdc))
+  p$populations$t$coverage<-list(policy="union",gap=6L)
   got<-.ws7_scenario_run(h,p)$frame
   expect_equal(.ws7_value(got,7001,"covered"),4L)
   expect_equal(.ws7_value(got,7001,"observed"),4L)
@@ -241,7 +242,7 @@ test_that("N24 N39 generated unavailable measures and structural survival keys r
 
 test_that("N74 original schema bindings reject invalid declarations and select generated columns", {
   c<-.fragmentColumn("numeric",TRUE,"measure")
-  leaf<-function(key,component=NULL)list(derived=list(kind="number_column",column=key,component=component))
+  leaf<-function(key,component=NULL) {d<-list(kind="number_column",column=key);if(!is.null(component))d$component<-component;list(derived=d)}
   node<-list(format="person_period",number_columns=list(copy=leaf("days")))
   expect_silent(.numberPreflightColumns(node,list(p=list(days=c))))
   node$number_columns$copy<-leaf("unknown")
@@ -283,7 +284,7 @@ test_that("N36 mapped source mean precedes log, exact rounding and bins", {
   .ws7_extend(h$conn);h$blueprint<-NULL;h$role_registry<-NULL
   DBI::dbExecute(h$conn,"DELETE FROM measurement WHERE person_id = 7001 AND measurement_id NOT IN (970001,970003)")
   DBI::dbExecute(h$conn,"UPDATE measurement SET value_as_number = CASE measurement_id WHEN 970001 THEN 5 ELSE 15 END WHERE person_id = 7001")
-  s<-list(unit=list(kind="event_unit",spec=list(target=8840L,convert=list(`8554`=list(factor=2,offset=10)))),transform=list(method="log"),rounding=list(method="decimals",digits=2))
+  s<-list(unit=list(kind="event_unit",spec=list(target=8840L,convert=list(`8554`=list(factor=2,offset=10)))),transform=list(list(method="log")),rounding=list(method="decimals",digits=2))
   p<-.ws7_scenario_plan(list(logged=.number_svar("mean",s),band=.number_svar("mean",c(s,list(representation="bins",breaks=list(3,4,5))))))
   got<-.ws7_scenario_run(h,p)$frame
   expect_equal(.ws7_value(got,7001,"logged"),3.4)
