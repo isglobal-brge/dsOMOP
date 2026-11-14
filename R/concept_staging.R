@@ -108,9 +108,11 @@
     stop("A complete concept presentation protocol is required for this staged output.", call. = FALSE)
   }
   report <- .conceptStageReport(descriptor)
-  .numberValidateShared(report$numbers,spec$numbers)
   meta <- .conceptStageData(descriptor)
   .conceptCheckEvidence(report, spec, !is.null(meta$handle))
+  # Protocol-1 factor-only calls preserve numeric columns and their capsule.
+  # A supplied numeric reconciliation contract must still match exactly.
+  if ("numbers" %in% names(spec)) .numberValidateShared(report$numbers, spec$numbers)
   if (length(report$unsafe) || !setequal(names(meta$contracts), names(spec$columns))) {
     stop("Incomplete disclosure-safe staged concept contract.", call. = FALSE)
   }

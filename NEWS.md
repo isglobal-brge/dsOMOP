@@ -1,5 +1,20 @@
 # dsOMOP 2.10.5 (2026-11-14)
 
+- Corrected: pinned analysis loaders seal DP provenance after final publication
+  presentation, within the original read snapshot. Re-run affected loaders to
+  obtain a valid fixed-synopsis input; provenance verification remains strict.
+
+- Corrected (integration): SQL BIGINT selectors, including mode/min/max, retain
+  the full signed domain and stable character transport, including all-NULL and
+  empty streams. Re-run affected recipes to recover the signed minimum.
+- Corrected: staging cleanup remembers the validated root in which each owned
+  directory was created, so changing the staging base does not strand valid
+  outputs. Ownership, canonical paths, permissions and symlink checks still
+  apply to every root and directory; unsafe paths remain tracked for retry.
+- Corrected: protocol-1 factor-only conversions preserve unrelated numeric
+  values and metadata when no numeric reconciliation is requested. Explicit
+  numeric contracts and cross-site reconciliation still require exact matches.
+
 - Corrected (STG-R1-01): staging cleanup validates every committed descriptor
   before classifying expired or consumed output. Parseable malformed manifests
   preserve the entire directory and its ownership tracking. Re-run affected

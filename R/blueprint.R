@@ -670,6 +670,7 @@
   handle$temp_tables     <- character(0)
   handle$temp_connection <- NULL
   handle$staging_dirs    <- character(0)
+  handle$staging_bases   <- list()
   handle$dbms_version    <- NULL
   handle$physical_table_names <- list()
   .assertAnalyticDbmsSupport(handle, "dsOMOP connection")

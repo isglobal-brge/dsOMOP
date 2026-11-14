@@ -572,6 +572,18 @@
 
 # --- reducer kernels (pure R) ---------------------------------------------------------------------
 
+# Admit decimal SQL integers to binary64 only when the round-trip is exact.
+# In particular -2^63 is representable by binary64, but is bit64's NA sentinel.
+.reduceBigintDouble <- function(x) {
+  if (!is.character(x)) return(.numberDouble(x))
+  value <- suppressWarnings(as.double(x))
+  if (any(!is.na(x) & (!is.finite(value) | sprintf("%.0f", value) != x))) {
+    .numberReject("This binary64 operation cannot retain exact integers; retain raw/count identity representation.",
+                  "number_type_unsupported")
+  }
+  value
+}
+
 # Orderable ranks for lossless BIGINT keys. Decimal strings are compared by
 # sign and digit length before byte order, never converted to a double.
 .reduceKeyOrder <- function(x) {
@@ -690,7 +702,7 @@
     rows
   }
   numeric_v <- function() {
-    vv <- if(identical(value_type,"bigint")) .numberDouble(bit64::as.integer64(v)) else suppressWarnings(as.numeric(v))
+    vv <- if(identical(value_type,"bigint")) .reduceBigintDouble(v) else suppressWarnings(as.numeric(v))
     vv[!is.na(vv)]
   }
   distinct_count <- function(by) switch(by,
@@ -699,11 +711,14 @@
     visit = { vi <- x[["visit_id"]]; length(unique(vi[!is.na(vi)])) },
     concept = { ci <- x[["concept_id"]]; length(unique(ci[!is.na(ci)])) })
   if(identical(value_type,"bigint")&&fn %in% c("first_value","last_value","nth_value","closest_value","min","max","mode")) {
-    if(fn=="mode")return(as.character(.reduceMode(bit64::as.integer64(v),"bigint")))
+    if(fn=="mode")return(as.character(.reduceMode(v,"bigint")))
     indices<-x;indices$v<-seq_along(v);indices$v[is.na(v)]<-NA_integer_
     if(fn %in% c("min","max")) {
-      exact<-bit64::as.integer64(v);exact<-exact[!is.na(exact)]
-      return(if(length(exact))as.character(if(fn=="min")min(exact) else max(exact)) else NA_character_)
+      # SQL BIGINT includes the signed minimum, which bit64 reserves for NA.
+      # Select directly from decimal text using exact numeric ranks.
+      exact<-as.character(v[!is.na(v)])
+      ranks<-.reduceKeyOrder(exact)
+      return(if(length(exact))exact[[if(fn=="min")which.min(ranks) else which.max(ranks)]] else NA_character_)
     }
     at<-.reduceOne(fn,indices,r,anchor,"numeric")
     return(as.character(v[at]))
@@ -752,7 +767,7 @@
                                  names = FALSE))
     },
     mode = .reduceMode(v, value_type),
-    slope = .reduceSlope(d, if(identical(value_type,"bigint")) .numberDouble(bit64::as.integer64(v)) else v),
+    slope = .reduceSlope(d, if(identical(value_type,"bigint")) .reduceBigintDouble(v) else v),
     any = .reduceKleeneAny(as.integer(x[["pred"]])),
     all = .reduceKleeneAll(as.integer(x[["pred"]])),
     first_date = if (!n || is.na(anchor) || is.na(d[[1L]])) NA_integer_ else
@@ -918,7 +933,7 @@
 .reduceColumnNames <- function(name, r) .pnv2VariableColumns(name, list(reducer = r))
 
 .reduceTypedNA <- function(type, n) {
-  switch(type, integer = rep(NA_integer_, n), bigint = bit64::as.integer64(rep(NA_character_, n)),
+  switch(type, integer = rep(NA_integer_, n), bigint = rep(NA_character_, n),
          numeric = rep(NA_real_, n), text = rep(NA_character_, n),
          date = as.Date(rep(NA_character_, n)), boolean = rep(NA, n), rep(NA, n))
 }
@@ -930,7 +945,7 @@
     integer = if(any(!is.na(x)&suppressWarnings(abs(as.numeric(x)))>.Machine$integer.max)) bit64::as.integer64(x) else suppressWarnings(as.integer(x)),
     numeric = { y <- suppressWarnings(as.numeric(x)); y[!is.finite(y)] <- NA_real_; y },
     text = as.character(x),
-    bigint = if (is.character(x)) x else if (inherits(x, "integer64")) as.character(x) else x,
+    bigint = as.character(x),
     date = if (is.numeric(x)) as.Date(x, origin = "1970-01-01") else as.Date(x),
     x)
 }

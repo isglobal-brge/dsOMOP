@@ -228,9 +228,10 @@
     policy <- .dsomopDpPolicy()
     provenance <- .dsomopDpVerifyPersonLocal(df, policy = policy)
   }
-  .numberValidateShared(attr(df,"omop_numbers"), spec$numbers)
   original <- df
   .conceptCheckEvidence(.conceptLevelReport(df), spec, !is.null(attr(df, "omop_presentation_handle")))
+  # Legacy factor-only calls leave numeric values and semantics untouched.
+  if ("numbers" %in% names(spec)) .numberValidateShared(attr(df,"omop_numbers"), spec$numbers)
   refreshed <- .conceptRefresh(attr(df, "omop_concepts") %||% list(), attr(df, "omop_generated_columns") %||% list(), attr(df, "omop_presentation_handle"))
   attr(df, "omop_concepts") <- refreshed$contracts
   attr(df, "omop_generated_columns") <- refreshed$generated

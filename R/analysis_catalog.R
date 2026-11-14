@@ -5280,6 +5280,11 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   effective_schema <- function(value) {
     if (bare_schemas || is.null(value) || !nzchar(value)) "" else value
   }
+  # Presentation may change column attributes as well as values. Seal the
+  # final published frame inside this same loader snapshot, never its input.
+  assigned <- .publishStandalone(assigned, handle = handle,
+                                 caller = "omopAnalysisRunAssignDS",
+                                 already_tokenized = TRUE)
   assigned <- .dsomopDpBestEffort(
     assigned,
     .dsomopDpSealToolOutput(handle, .dsomopDpSealAnalysisAssign(
@@ -5307,9 +5312,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     )),
     "analysis output"
   )
-  .publishStandalone(assigned, handle = handle,
-                     caller = "omopAnalysisRunAssignDS",
-                     already_tokenized = TRUE)
+  assigned
 }
 
 #' THE single fail-closed run path for catalog analyses

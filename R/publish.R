@@ -359,8 +359,11 @@
     if (file.exists(path) || dir.exists(path)) unlink(path, recursive = TRUE)
     if (file.exists(path) || dir.exists(path)) failures <- c(failures, "file")
   }
-  if (!is.null(ctx$handle)) ctx$handle$staging_dirs <- setdiff(
-    ctx$handle$staging_dirs, ctx$owned$directories)
+  if (!is.null(ctx$handle)) {
+    ctx$handle$staging_dirs <- setdiff(ctx$handle$staging_dirs, ctx$owned$directories)
+    ctx$handle$staging_bases <- ctx$handle$staging_bases[
+      intersect(names(ctx$handle$staging_bases), ctx$handle$staging_dirs)]
+  }
   ctx$committed <- FALSE
   ctx$closed <- TRUE
   if (length(failures)) stop("Publication cleanup failed.", call. = FALSE)
@@ -486,6 +489,8 @@
     unlink(ctx$staging_dir, recursive = TRUE)
     if (dir.exists(ctx$staging_dir)) stop("Staging cleanup failed.", call. = FALSE)
     ctx$handle$staging_dirs <- setdiff(ctx$handle$staging_dirs, ctx$staging_dir)
+    ctx$handle$staging_bases <- ctx$handle$staging_bases[
+      intersect(names(ctx$handle$staging_bases), ctx$handle$staging_dirs)]
   }
   status <- list(status = if (length(rejected)) {
     if (length(published)) "partial" else "refused"
@@ -630,6 +635,7 @@ omopStagedRevokeDS <- function(exec_symbol) {
   ctx$staging_dir <- .createStagingDir(ctx$staging_token)
   ctx$owned$directories <- union(ctx$owned$directories, ctx$staging_dir)
   ctx$handle$staging_dirs <- union(ctx$handle$staging_dirs, ctx$staging_dir)
+  ctx$handle$staging_bases[[ctx$staging_dir]] <- dirname(ctx$staging_dir)
   ctx$private_dir <- file.path(ctx$staging_dir, ".private", ctx$id)
   if (!dir.create(ctx$private_dir, recursive = TRUE, mode = "0700")) {
     stop("Could not create private staging namespace.", call. = FALSE)

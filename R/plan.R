@@ -1798,7 +1798,25 @@
   }
   valid_location <- nzchar(expected) && identical(canonical_path, expected) &&
     grepl("^stg_[0-9a-f]{32}$", token)
-  if (!valid_location || .isSymbolicLink(canonical_path)) {
+  # A registered root can outlive the configured base. Recheck its filesystem
+  # identity before following it, including symlinks in its ancestor chain.
+  valid_base <- identical(normalizePath(base, winslash = "/", mustWork = FALSE), base) &&
+    !.isSymbolicLink(base)
+  ancestor <- base
+  while (valid_base) {
+    if (.isSymbolicLink(ancestor)) { valid_base <- FALSE; break }
+    parent <- dirname(ancestor)
+    if (identical(parent, ancestor)) break
+    ancestor <- parent
+  }
+  if (valid_base && (file.exists(base) || dir.exists(base))) {
+    info <- file.info(base)
+    valid_base <- isTRUE(info$isdir[[1L]])
+    if (.Platform$OS.type != "windows") valid_base <- valid_base &&
+      identical(as.integer(info$uid[[1L]]), .dsomopEffectiveUid()) &&
+      identical(as.integer(info$mode[[1L]]), as.integer(strtoi("700", base = 8L)))
+  }
+  if (!valid_location || !valid_base || .isSymbolicLink(canonical_path)) {
     return(list(state = "unsafe", path = canonical_path))
   }
   if (!file.exists(canonical_path) && !dir.exists(canonical_path)) {
@@ -1846,7 +1864,7 @@
   remaining <- tracked
   failures <- character(0)
   for (path in dirs) {
-    inspection <- .inspectOwnedStagingPath(path, base)
+    inspection <- .inspectOwnedStagingPath(path, handle$staging_bases[[path]] %||% base)
     canonical_path <- inspection$path
 
     # A previously removed, valid owned path is an idempotent success.
@@ -1870,6 +1888,7 @@
     }
   }
   handle$staging_dirs <- remaining
+  handle$staging_bases <- handle$staging_bases[intersect(names(handle$staging_bases), remaining)]
   if (length(failures) > 0L) {
     stop("Could not clean every owned staging directory: ",
          paste(unique(failures), collapse = "; "), call. = FALSE)
@@ -1889,7 +1908,7 @@
   }), use.names = FALSE)
   now <- Sys.time()
   removable <- vapply(tracked, function(path) {
-    state <- .inspectOwnedStagingPath(path, base)$state
+    state <- .inspectOwnedStagingPath(path, handle$staging_bases[[path]] %||% base)$state
     # Delegate absent/unsafe paths to the existing idempotence and safety checks.
     if (state != "directory") return(TRUE)
     if (path %in% active) return(FALSE)
