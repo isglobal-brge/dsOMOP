@@ -7,64 +7,20 @@
   }
   as.double(x)
 }
-# Validate the physical materialization boundary before any cast. BIGINT may
-# arrive as decimal text; fractional doubles must never be truncated into it.
-.numberMaterialize <- function(x,type) {
-  if(type=="bigint") {
-    if(inherits(x,"integer64"))return(x)
-    valid<-if(is.character(x))is.na(x)|grepl("^-?[0-9]+$",x) else
-      is.numeric(x)&(is.na(x)|is.finite(x)&x==trunc(x))
-    if(!all(valid)) .numberReject("Runtime numeric value disagrees with its declared integer type; retain a numeric representation.","number_type_unsupported")
-    y<-suppressWarnings(bit64::as.integer64(x))
-    if(any(!is.na(x)&is.na(y))||is.numeric(x)&&any(!is.na(x)&suppressWarnings(as.double(y))!=x))
-      .numberReject("Runtime integer cannot be materialized exactly; retain raw/count identity representation.","number_type_unsupported")
-    return(y)
-  }
-  if(!is.numeric(x)||is.factor(x)||inherits(x,"Date")) .numberReject("Runtime value disagrees with its declared numeric type.","number_type_unsupported")
-  if(type=="numeric")return(if(inherits(x,"integer64")) .numberDouble(x) else x)
-  if(type=="integer"&&!inherits(x,"integer64")&&any(!is.na(x)&(!is.finite(x)|x!=trunc(x))))
-    .numberReject("Runtime numeric value disagrees with its declared integer type; retain a numeric representation.","number_type_unsupported")
-  x
-}
 .numberClean <- function(x) {
   if(inherits(x,"integer64"))return(x)
   x[!is.finite(x)]<-NA
   x[which(x==0)]<-0L
   x
 }
-# Exact rational input / decimal step, nearest integer ties to even, followed
-# by the platform correctly-rounded decimal-to-binary64 conversion. All large
-# arithmetic uses the existing pure-R integer implementation, no new dependency.
-.numberRoundOne <- function(x,method,digits) {
-  if(is.na(x)||!is.finite(x))return(NA_real_)
-  if(x==0)return(0)
-  a<-abs(x);dy<-.dsomopDpDyadic(a)
-  numerator<-.dsomopBigShiftLeft(dy$odd,max(0L,dy$exponent))
-  denominator<-.dsomopBigShiftLeft(1,max(0L,-dy$exponent))
-  ten<-function(k).dsomopBigInteger(paste0("1",strrep("0",k)))
-  compare_power<-function(k) {
-    if(k>=0).dsomopBigCompare(numerator,.dsomopBigMultiply(denominator,ten(k))) else
-      .dsomopBigCompare(.dsomopBigMultiply(numerator,ten(-k)),denominator)
-  }
-  if(method=="significant") {
-    decade<-floor(log10(a)) # provisional only; exact comparisons settle boundaries
-    while(compare_power(decade)<0)decade<-decade-1L
-    while(compare_power(decade+1L)>=0)decade<-decade+1L
-    digits<-digits-1L-decade
-  }
-  if(digits>=0)numerator<-.dsomopBigMultiply(numerator,ten(digits)) else denominator<-.dsomopBigMultiply(denominator,ten(-digits))
-  q<-.dsomopBigDivide(numerator,denominator)
-  remainder<-.dsomopBigSubtract(numerator,.dsomopBigMultiply(q,denominator))
-  cmp<-.dsomopBigCompare(.dsomopBigMultiply(remainder,2),denominator)
-  if(cmp>0||cmp==0&&.dsomopBigIsOdd(q))q<-.dsomopBigAdd(q,1)
-  out<-suppressWarnings(as.numeric(paste0(if(x<0)"-" else "",.dsomopBigDecimal(q),"e",-digits)))
-  if(!is.finite(out))NA_real_ else if(out==0)0 else out
-}
+# Scalar rounding and expression evaluation are execution-only operations.
+# Resolve them when consuming values; empty prototypes use the same vector
+# operations without loading patient-row evaluators into the client.
 .numberRoundValues <- function(x,s) {
   if(s$method=="none")return(x)
   x<-.numberDouble(x)
   switch(s$method,floor=floor(x),ceiling=ceiling(x),trunc=trunc(x),
-    vapply(x,.numberRoundOne,numeric(1),method=s$method,digits=s$digits))
+    vapply(x,function(value)get(".numberRoundOne",mode="function")(value,s$method,s$digits),numeric(1)))
 }
 .numberTransformValues <- function(x,s) {
   if(s$method=="identity")return(x)
@@ -87,23 +43,11 @@
 .numberCompare <- function(x,op,t) {
   if(inherits(x,"integer64")) {
     symbol<-switch(op,lt="<",le="<=",gt=">",ge=">=",eq="==",ne="!=")
-    if(length(t)==1L)return(if(is.na(t))rep(NA,length(x)) else .verbInteger64Compare(x,symbol,t))
+    if(length(t)==1L)return(if(is.na(t))rep(NA,length(x)) else get(".verbInteger64Compare",mode="function")(x,symbol,t))
     if(length(t)!=length(x)) .numberReject("Paired numeric bounds require identical row identity.","number_dependency_invalid")
-    return(vapply(seq_along(t),function(i)if(is.na(t[i]))NA else .verbInteger64Compare(x[i],symbol,t[i]),logical(1)))
+    return(vapply(seq_along(t),function(i)if(is.na(t[i]))NA else get(".verbInteger64Compare",mode="function")(x[i],symbol,t[i]),logical(1)))
   }
   switch(op,lt=x<t,le=x<=t,gt=x>t,ge=x>=t,eq=x==t,ne=x!=t)
-}
-.numberExpression <- function(exprs,frame,result=NULL) {
-  result<-.numberExpressionShape(exprs,result,names(frame))
-  assignments<-.mutateValidate(exprs,frame,"numeric expression")
-  selected<-assignments[[match(result,vapply(assignments,function(a)a$name,""))]]
-  if(!selected$type %in% c("numeric","integer")) .numberReject("Expression result must be numeric; use native bins or flags for classification.","number_expression_invalid")
-  types<-vapply(frame,.verbColumnType,"")
-  for(a in assignments) {
-    if(a$type=="numeric")for(n in names(frame))if(inherits(frame[[n]],"integer64")) .numberDouble(frame[[n]])
-    frame[[a$name]]<-.mutateEval(a$expr,frame,types);types[[a$name]]<-a$type
-  }
-  frame[[result]]
 }
 .numberPresent <- function(x,s,unit="1",ranges=NULL,available=TRUE,offset_allowed=TRUE,canonical=FALSE,trace=FALSE) {
   if(!is.numeric(x)||inherits(x,c("Date","POSIXt","factor"))) .numberReject("Numeric presentation requires a registered numeric analytic value.","number_type_unsupported")
@@ -127,7 +71,7 @@
       x<-.numberTransformValues(x,p)
       if(p$method!="identity")ranges<-NULL
     } else if(k=="round")x<-.numberClean(.numberRoundValues(x,p))
-    else if(k=="expression") {x<-.numberExpression(p$exprs,data.frame(x=x),p$result);ranges<-NULL;unit<-p$unit %||% .numberExpressionUnit(p$exprs,p$result,unit)}
+    else if(k=="expression") {x<-get(".numberExpression",mode="function")(p$exprs,data.frame(x=x),p$result);ranges<-NULL;unit<-p$unit %||% .numberExpressionUnit(p$exprs,p$result,unit)}
     else if(k=="bins") {
       b<-unlist(p$breaks);labels<-.numberBinLabels(p)
       at<-rep(NA_integer_,length(x))
