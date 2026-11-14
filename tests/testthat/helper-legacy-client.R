@@ -1,5 +1,5 @@
 # The execution call of dsOMOPClient 2.10.2 (tag 2.10.2), for the WS-8 legacy
-# route (Astra's WS-8 review, B1): a federation with a site that predates the
+# route (regression WS-8 review, B1): a federation with a site that predates the
 # publication protocol sends this call, unchanged, to every site, including
 # 2.10.4 servers. The encoding is 2.10.2's R/session.R .ds_coerce_names() and
 # .ds_encode(), verbatim; the call is its exec_args (R/plan.R): positional, the

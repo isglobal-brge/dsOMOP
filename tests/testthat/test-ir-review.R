@@ -1,5 +1,4 @@
-# WS-2 cross-review regressions (design/2.10.3/astra-ws2-review.md): each
-# block reproduces one of Astra's probes (design/2.10.3/astra-scratch/ws2-*)
+# IR regressions: each block reproduces a failing case
 # with the contract it requires, plus controls that must keep passing.
 
 .rv_example <- function(name) {

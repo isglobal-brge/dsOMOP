@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "description": "v1 compatibility differential fixture (Astra WS-2 re-review R1/R3, amendment A-19 item 7): independent BASELINE (dsOMOP 2.10.2) outcomes of v1 plans whose scalar fields or predicate literals are written in a historically coercible or invalid form. A baseline `ok` must keep executing with an identical lossless canonical result; a baseline `error` may be refused (typed where `typed_refusal`). Replayed by tests/testthat/test-ir-v1-compat.R.",
+  "description": "v1 compatibility differential fixture (regression WS-2 re-review R1/R3, amendment A-19 item 7): independent BASELINE (dsOMOP 2.10.2) outcomes of v1 plans whose scalar fields or predicate literals are written in a historically coercible or invalid form. A baseline `ok` must keep executing with an identical lossless canonical result; a baseline `error` may be refused (typed where `typed_refusal`). Replayed by tests/testthat/test-ir-v1-compat.R.",
   "generated_by": "tools/ws2/capture_compat.R (run x2 at the baseline, then fixture)",
   "baseline": {
     "dsOMOP": "30b7905617dbe3de5d06699c324095635c68011f",

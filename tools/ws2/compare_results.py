@@ -96,20 +96,21 @@ tools/ws2/capture_results.R.
 """
 import argparse, collections, csv, datetime, glob, hashlib, json, os, re, shutil, subprocess, sys
 
+# Remote captures require DSOMOP_TEST_RUNNER, DSOMOP_SOURCE_ROOT and
+# DSOMOP_TEST_SSH_HOST; optional DSOMOP_TEST_SSH_PORT and DSOMOP_SSH_KEY.
 HERE = os.path.dirname(os.path.abspath(__file__))
 SERVER_ROOT = os.path.dirname(os.path.dirname(HERE))
-RTEST = "/workspace/dsomop/tools/rtest.sh"
+RTEST = os.environ.get("DSOMOP_TEST_RUNNER", "rtest.sh")
+SOURCE_ROOT = os.environ.get("DSOMOP_SOURCE_ROOT", os.path.dirname(SERVER_ROOT)).rstrip("/") + "/"
 POD_BASE = "/root/rt/ws2b-b10"
-SSH_KEY = os.path.expanduser("~/.ssh/runpod_cover")
+SSH_KEY = os.path.expanduser(os.environ.get("DSOMOP_SSH_KEY", "~/.ssh/id_ed25519"))
 SSH_OPTS = ["-i", SSH_KEY, "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
             "-o", "LogLevel=ERROR", "-o", "ServerAliveInterval=30"]
 
 
 # --------------------------------------------------------------------------- pod helpers
 def pod_target():
-    out = subprocess.run(["python3", "/workspace/astra/runpod/deckpod.py", "ssh-target"],
-                         check=True, capture_output=True, text=True).stdout.split()
-    return out[0], out[1]
+    return os.environ["DSOMOP_TEST_SSH_HOST"], os.environ.get("DSOMOP_TEST_SSH_PORT", "22")
 
 
 def ssh(cmd):
@@ -140,9 +141,9 @@ def snapshot(repo, commit, dest):
 
 
 def rtest_name(pkg_dir):
-    """rtest.sh's NAME of a package directory (the path without /workspace/dsomop/; a path
+    """rtest.sh's NAME of a package directory (the path without DSOMOP_SOURCE_ROOT; a path
     outside it keeps its leading slash)."""
-    return pkg_dir[len("/workspace/dsomop/"):] if pkg_dir.startswith("/workspace/dsomop/") else pkg_dir
+    return pkg_dir[len(SOURCE_ROOT):] if pkg_dir.startswith(SOURCE_ROOT) else pkg_dir
 
 
 def pod_name(pkg_dir):
@@ -1594,7 +1595,7 @@ def cmd_pin(a):
         version=1, canonical_digits=CANONICAL_DIGITS,
         description=("BASELINE (dsOMOP 2.10.2) canonical STAGED results of safe-class v1 plans with requested "
                      "roots on admissible fixtures, re-executed by tests/testthat/test-ir-results.R with the "
-                     "current code (review B10, Astra R5)."),
+                     "current code (review B10, regression R5)."),
         generated_by="tools/ws2/compare_results.py pin (capture: tools/ws2/capture_results.R)",
         baseline=provenance,
         selection=["a .planExecute() or omopPlanExecuteDS() call made directly by a test block of the 2.10.2 dsOMOP "

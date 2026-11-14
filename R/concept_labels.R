@@ -102,6 +102,7 @@
 }
 
 .conceptResolve <- function(records) {
+  if(length(records) && any(vapply(records,function(r)identical(r$kind,"number"),logical(1)))) return(.numberResolveRecords(records))
   if (length(records) && any(vapply(records, function(x) identical(x$kind, "date"), logical(1)))) return(.dateResolveRecords(records))
   ids <- unique(vapply(records, function(x) x$id, ""))
   ids <- ids[.conceptIdOrder(ids)]
@@ -235,6 +236,7 @@
 }
 
 .conceptValidateResolution <- function(shared, records) {
+  if (identical(shared$kind,"number") || length(records) && identical(records[[1L]]$kind,"number")) return(.numberValidateResolution(shared,records))
   if (identical(shared$kind, "date") || length(records) && identical(records[[1L]]$kind, "date")) return(.dateValidateResolution(shared, records))
   ids <- as.character(unlist(shared$ids, use.names = FALSE))
   labels <- as.character(unlist(shared$labels, use.names = FALSE))

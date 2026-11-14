@@ -229,8 +229,19 @@ test_that("B3 bounded costs keep cost values, empty identities and unavailable n
       f <- res$components$o$frame
       info <- paste(b, format, "unavailable")
       expect_identical(res$status, "unavailable", info = info)
-      expect_identical(res$components$o$fragment$columns,
-                       available[[format]]$components$o$fragment$columns, info = info)
+      actual_columns <- res$components$o$fragment$columns
+      expected_columns <- available[[format]]$components$o$fragment$columns
+      # A-29 keeps private availability on generated numeric origins. Public
+      # types/contracts stay identical; an unavailable source must stay NA.
+      if (format == "person_period") for (cn in c("costs_count", "costs_mean", "costs_last")) {
+        origin <- attr(actual_columns[[cn]], "number_origin")
+        expect_identical(origin$available, FALSE, info = paste(info, cn))
+        expect_identical(attr(expected_columns[[cn]], "number_origin")$available, TRUE,
+                         info = paste(info, cn))
+        origin$available <- TRUE
+        attr(actual_columns[[cn]], "number_origin") <- origin
+      }
+      expect_identical(actual_columns, expected_columns, info = info)
       expect_identical(names(f), names(available[[format]]$components$o$frame), info = info)
       if (format == "person_period") {
         expect_true(all(is.na(f[c("costs_count", "costs_mean", "costs_last")])), info = info)

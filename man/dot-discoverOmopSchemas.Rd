@@ -17,7 +17,7 @@
 The handle, invisibly
 }
 \description{
-Plug and play (David, 11 Nov 2026): a resource that leaves the CDM schema
+Plug and play: a resource that leaves the CDM schema
 empty uses the engine's default schema when that holds the person table,
 and otherwise the single schema that does (OHDSI Broadsea keeps its CDM in
 demo_cdm). Several candidates are never guessed between: the data owner

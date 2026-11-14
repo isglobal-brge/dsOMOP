@@ -1,9 +1,7 @@
 # The data generation of the fixed synopses (dsOMOP 2.10.3, review R02 / §5):
 # a keyed digest of the exact set of person identifiers, recomputed
 # inside every fixed-synopsis request's own read snapshot, cached nowhere (no
-# per-handle, per-session or negative cache). Ports of Astra's re-review
-# generation probes (astra-scratch/rereview-root/.../test-rereview-generation.R)
-# are marked. Helpers in helper-tools-release.R.
+# per-handle, per-session or negative cache). Helpers in helper-tools-release.R.
 
 # A test CDM in a database file, so separate connections ("workers") reach
 # the same data.
@@ -95,7 +93,7 @@ test_that("the membership digest is stable across stream page sizes", {
   expect_identical(dup$digest, streamed$digest)
 })
 
-test_that("Astra probe: the same current data replays on an old and a recreated handle", {
+test_that("regression probe: the same current data replays on an old and a recreated handle", {
   .release_state(snapshot_id = "")
   path <- tempfile(fileext = ".sqlite")
   h <- .gen_handle(path)
@@ -115,7 +113,7 @@ test_that("Astra probe: the same current data replays on an old and a recreated 
   expect_identical(current$n_persons, old$n_persons)
 })
 
-test_that("Astra probe: other handles cannot redraw an unchanged request", {
+test_that("regression probe: other handles cannot redraw an unchanged request", {
   .release_state(snapshot_id = "")
   path <- tempfile(fileext = ".sqlite")
   h <- .gen_handle(path)
@@ -133,7 +131,7 @@ test_that("Astra probe: other handles cannot redraw an unchanged request", {
   expect_null(h$read_snapshot)
 })
 
-test_that("Astra probe: a balanced person replacement is a new generation", {
+test_that("regression probe: a balanced person replacement is a new generation", {
   .release_state(snapshot_id = "")
   h <- create_test_handle(n_persons = 80)
   on.exit(cleanup_handle(h), add = TRUE)
@@ -300,7 +298,7 @@ test_that("fixed noise is keyed on the generation and the contributions", {
                    draw(g2, fp1, "realised_sticky"))
 })
 
-test_that("Astra probe: the snapshot label changes no admission and no answer", {
+test_that("regression probe: the snapshot label changes no admission and no answer", {
   .release_state(snapshot_id = "label-a")
   h <- create_test_handle(n_persons = 80)
   on.exit(cleanup_handle(h), add = TRUE)
@@ -315,7 +313,7 @@ test_that("Astra probe: the snapshot label changes no admission and no answer", 
   }
 })
 
-test_that("Astra probe: a restored sealed table survives a label change", {
+test_that("regression probe: a restored sealed table survives a label change", {
   .release_state(snapshot_id = "label-a")
   x <- .testPseudonymize(data.frame(person_id = seq_len(40),
                                     value = seq_len(40)))

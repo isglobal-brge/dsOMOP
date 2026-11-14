@@ -1,4 +1,4 @@
-# WS-8, Astra review B1 (server side): a federation with a dsOMOP 2.10.2 site
+# WS-8, regression review B1 (server side): a federation with a dsOMOP 2.10.2 site
 # runs a v1 plan as the legacy call of dsOMOPClient 2.10.2 on every site. A
 # 2.10.4 server accepts that call -- positional, without commit_policy -- and
 # applies the documented defaults: commit_policy = "server" (the server's own

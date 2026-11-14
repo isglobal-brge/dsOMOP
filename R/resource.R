@@ -716,8 +716,8 @@
 # working after an upgrade: their URL is rewritten into the 2.x form, then
 # parsed, validated and connected exactly like a 2.x resource. Nothing creates
 # them any more: the 2.x form (inst/resources/resource.js) only writes
-# "omop.dbi.db" (David, 11 Nov 2026: read the old resources, never declare new
-# ones). The 1.x form wrote <driver>://<host>:<port>/<database> for driver
+# "omop.dbi.db"; legacy resources remain readable. The 1.x form wrote
+# <driver>://<host>:<port>/<database> for driver
 # mariadb, mysql or postgresql, followed, when a schema was given, by
 # //dsomop:: and /schema:<cdm> and/or /vocabulary_schema:<vocab>; dsOMOP 1.x
 # read each schema with "/schema:([^/]+)" or "/vocabulary_schema:([^/]+)" after

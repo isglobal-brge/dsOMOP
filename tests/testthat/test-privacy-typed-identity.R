@@ -1,4 +1,4 @@
-# Astra review of dsOMOP 2.10.3 (astra-p0-review.md), typed-channel blocking
+# Typed-channel regression
 # findings: B01 sealed contributor identity, B02 canonical eligible
 # populations of fixed aliases, B04 injective framing, B05 registered numeric
 # bases. Each test is the review's reproduction (or its closest valid form
@@ -13,10 +13,10 @@
 # --- B01 ----------------------------------------------------------------------------
 
 test_that("B01: a typed answer is invariant to earlier handle key resolution", {
-  # Port of astra-scratch/typed-review/dsOMOP-probes/test-astra-handle-history.R
+  # Exercise pseudonym identity across handle histories.
   .release_state()
   key <- .testPseudonymKey()
-  identity <- "test://astra-review/pseudonym-key-cache"
+  identity <- "test://regression-review/pseudonym-key-cache"
   rid <- substr(as.character(openssl::sha256(charToRaw(identity))), 1L, 32L)
   scoped <- paste(format(key), collapse = "")
   names(scoped) <- paste0("DSOMOP_PSEUDONYM_KEY_", rid)
@@ -32,7 +32,7 @@ test_that("B01: a typed answer is invariant to earlier handle key resolution", {
   state$dp_handle <- h
   x <- .testPseudonymize(data.frame(person_id = seq_len(2000L),
                                     category = "a"))
-  x <- .dsomopDpSealPersonLocal(x, producer = "test/astra-review",
+  x <- .dsomopDpSealPersonLocal(x, producer = "test/regression-review",
                                 dataset_identity = .ti_dataset)
   expect_null(h$person_key_id)
   a <- .ti_release(x, statistic = "count")
@@ -144,7 +144,7 @@ test_that("B01: a CDM-namespace table shares the automatic person total", {
 }
 
 test_that("B02: fixed loader aliases share their person total", {
-  # Port of test-astra-typed-review.R "fixed loader aliases must share their
+  # Port of test-regression-typed-review.R "fixed loader aliases must share their
   # person total". Adapted per the review text: count and record-count(k=1)
   # are one eligible population and must be one N; the mean's denominator is
   # the declared nonmissing population of its variable, a different public
@@ -175,7 +175,7 @@ test_that("B02: fixed loader aliases share their person total", {
   # Realised route: the same people give the same N for all three.
   y <- .dsomopDpSealPersonLocal(.testPseudonymize(data.frame(
     person_id = seq_len(2000L), age = rep(50, 2000L))),
-    producer = "test/astra-review", dataset_identity = .ti_dataset)
+    producer = "test/regression-review", dataset_identity = .ti_dataset)
   r <- vapply(list(
     .ti_release(y, statistic = "count"),
     .ti_release(y, statistic = "bounded_record_count", reducer = "records",
@@ -232,12 +232,12 @@ test_that("B04: distinct-label maps are injective under delimiters and controls"
 # --- B05 ----------------------------------------------------------------------------
 
 test_that("B05: coarse bins are public sums of one typed numeric atom basis", {
-  # Port of test-astra-public-basis.R (first test); its exploratory sweep of
+  # Port of test-regression-public-basis.R (first test); its exploratory sweep of
   # empty interior cuts is reduced from 400 to 40 releases.
   .release_state()
   x <- .testPseudonymize(data.frame(person_id = seq_len(2000L),
     value = c(rep(0, 500L), rep(100, 1500L))))
-  x <- .dsomopDpSealPersonLocal(x, producer = "test/astra-empty-cut",
+  x <- .dsomopDpSealPersonLocal(x, producer = "test/regression-empty-cut",
                                 dataset_identity = .ti_dataset)
   release <- function(breaks) .ti_release(x, statistic = "numeric_histogram",
                                           variable = "value", breaks = breaks,

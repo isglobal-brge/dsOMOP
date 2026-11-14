@@ -3,6 +3,7 @@
 
 # The frozen operation and reducer vocabularies of section 4.4.
 .RECIPE_OPERATIONS <- c(
+  "number.presentation", "number.rows", "number.count", "number.change", "number.expression", "number.columns",
   "date.presentation", "date.elapsed", "output.concept_labels", "concept_set", "event", "event.unit", "event.on_missing_table", "interval",
   "interval.ingredient", "interval.stockpile", "population.index",
   "population.first_eligible", "population.any_of", "population.criteria",
@@ -37,6 +38,11 @@
                             ".compileOutput", ".planContext",
                             ".publishPrepare", ".publishCommit")
 .RECIPE_OPERATION_FUNCTIONS <- list(
+  number.presentation = c(".numberPresent", ".numberOutputColumns"),
+  number.rows = ".numberEventRecord", number.count = ".numberEventRecord",
+  number.change = c(".numberEventRecord", ".numberChangeValues"),
+  number.expression = c(".numberExpression", ".numberDerivedRecord", ".numberAstCheck"),
+  number.columns = ".numberOutputColumns",
   interval = ".compileInterval", interval.ingredient = ".compileInterval",
   interval.stockpile = ".compileInterval",
   population.coverage.union = ".compileInterval",
@@ -395,6 +401,7 @@
     roles = roles,
     column_classes = .irOutputColumnClasses(ir, handle),
     concept_presentation = .conceptExplain(ir),
+    number_presentation = .numberExplain(ir),
     concept_classes = .conceptExplainClasses(ir, handle),
     site_findings = site_findings,
     unavailable = unavailable,

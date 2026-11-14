@@ -1,5 +1,5 @@
 # Module: Protected survival, SCCS and standard-route person-time releases
-# (dsOMOP 2.10.3, Astra review section 6: "secure without losing features")
+# (dsOMOP 2.10.3, regression review section 6: "secure without losing features")
 #
 # * Grouped-time Cox (C8): a complete public histogram per arm of exit-time
 #   bins x status (event / censored / administratively censored) with one

@@ -1,4 +1,4 @@
-# dsOMOP 2.10.3 protected survival and SCCS releases (Astra review section 6):
+# dsOMOP 2.10.3 protected survival and SCCS releases (regression review section 6):
 # grouped-time Cox from the public exit-time x status basis, the q-gridded
 # conditional SCCS IRR, and the standard-mode person-time block. Helpers in
 # helper-tools-release.R.

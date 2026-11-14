@@ -23,24 +23,24 @@ test_that("mode orders integer ties exactly without reinterpreting text", {
 })
 
 test_that("compiled BIGINT mode is stable when another person's values change transport", {
-  withr::local_options(list(dsomop.allowed_cdm_extensions = list(measurement = c("astra_amount", "astra_text"))))
+  withr::local_options(list(dsomop.allowed_cdm_extensions = list(measurement = c("regression_amount", "regression_text"))))
   h <- .ws4_reach_handle()
   on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
   .ws7_extend(h$conn)
-  DBI::dbExecute(h$conn, "ALTER TABLE measurement ADD COLUMN astra_amount BIGINT")
-  DBI::dbExecute(h$conn, "ALTER TABLE measurement ADD COLUMN astra_text VARCHAR(64)")
-  DBI::dbExecute(h$conn, paste0("UPDATE measurement SET astra_amount = CASE measurement_id ",
+  DBI::dbExecute(h$conn, "ALTER TABLE measurement ADD COLUMN regression_amount BIGINT")
+  DBI::dbExecute(h$conn, "ALTER TABLE measurement ADD COLUMN regression_text VARCHAR(64)")
+  DBI::dbExecute(h$conn, paste0("UPDATE measurement SET regression_amount = CASE measurement_id ",
     "WHEN 970001 THEN 2 WHEN 970002 THEN 10 WHEN 970006 THEN 2147483648 ELSE NULL END, ",
-    "astra_text = CASE measurement_id WHEN 970001 THEN '2' WHEN 970002 THEN '10' ELSE NULL END"))
+    "regression_text = CASE measurement_id WHEN 970001 THEN '2' WHEN 970002 THEN '10' ELSE NULL END"))
   h$blueprint <- NULL
   h$role_registry <- NULL
   plan <- .ws7_scenario_plan(list(
-    amount_mode = list(source = list(event = "lab"), reducer = list(fn = "mode", value = "astra_amount")),
-    text_mode = list(source = list(event = "lab"), reducer = list(fn = "mode", value = "astra_text"))))
+    amount_mode = list(source = list(event = "lab"), reducer = list(fn = "mode", value = "regression_amount")),
+    text_mode = list(source = list(event = "lab"), reducer = list(fn = "mode", value = "regression_text"))))
   before <- .ws7_scenario_run(h, plan)$frame
   expect_identical(as.character(.ws7_value(before, 7001, "amount_mode")), "2")
   expect_identical(.ws7_value(before, 7001, "text_mode"), "10")
-  DBI::dbExecute(h$conn, "UPDATE measurement SET astra_amount = NULL WHERE person_id = 7003")
+  DBI::dbExecute(h$conn, "UPDATE measurement SET regression_amount = NULL WHERE person_id = 7003")
   after <- .ws7_scenario_run(h, plan)$frame
   expect_identical(as.character(.ws7_value(after, 7001, "amount_mode")), "2")
   expect_identical(as.character(.ws7_value(before, 7001, "amount_mode")),
@@ -48,7 +48,7 @@ test_that("compiled BIGINT mode is stable when another person's values change tr
   for (values in list(c("-2", "-10"),
                       c("9007199254740993", "9007199254740992"),
                       c("-9007199254740992", "-9007199254740993"))) {
-    DBI::dbExecute(h$conn, paste0("UPDATE measurement SET astra_amount = CASE measurement_id ",
+    DBI::dbExecute(h$conn, paste0("UPDATE measurement SET regression_amount = CASE measurement_id ",
       "WHEN 970001 THEN ", values[[1L]], " WHEN 970002 THEN ", values[[2L]], " ELSE NULL END"))
     got <- .ws7_scenario_run(h, plan)$frame
     expect_identical(as.character(.ws7_value(got, 7001, "amount_mode")), values[[2L]])
@@ -108,12 +108,12 @@ test_that("unavailable raw mode aliases preserve declared types and date policie
 })
 
 test_that("unavailable extension fallback preserves known date and blocked column contracts", {
-  withr::local_options(list(dsomop.allowed_cdm_extensions = list(note = "astra_amount")))
+  withr::local_options(list(dsomop.allowed_cdm_extensions = list(note = "regression_amount")))
   h <- .ws4_reach_handle()
   on.exit(DBI::dbDisconnect(h$conn), add = TRUE)
   .ws7_extend(h$conn)
   plan <- .ws7_scenario_plan(list(
-    amount = list(source = list(event = "notes"), reducer = list(fn = "mode", value = "astra_amount")),
+    amount = list(source = list(event = "notes"), reducer = list(fn = "mode", value = "regression_amount")),
     day = list(source = list(event = "notes"), reducer = list(fn = "mode", value = "note_date"))),
     events = list(notes = list(table = "note", on_missing_table = "unavailable")))
   got <- .ws7_scenario_run(h, plan)$frame

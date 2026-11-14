@@ -1,9 +1,7 @@
 # ==============================================================================
 # 2.10.3 P0 item G-06: fitted-model scalars and complement families.
 #
-# Regression tests for the attacks of the 2.10.5 OHDSI-tool audit
-# (design/2.10.5/scratch/ohdsi-b/exp/exp1, exp2, exp8, exp9 and
-# astra-scratch/small-support/*), run through the real analysis run path:
+# Regression tests for small-support attacks, run through the real analysis path:
 #   * exp2  PLP calibration with 1-2 outcomes: the single bin's mean predicted
 #           risk recovered the exact outcome count.
 #   * exp8  PLP AUC + mean risk solved a two-person case-by-covariate cell.

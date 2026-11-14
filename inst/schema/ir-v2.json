@@ -86,6 +86,9 @@
         },
         "date_spec": {
           "$ref": "#/$defs/date_spec"
+        },
+        "number_spec": {
+          "$ref": "#/$defs/number_spec"
         }
       }
     },
@@ -2428,6 +2431,9 @@
             },
             "date_spec": {
               "$ref": "#/$defs/date_spec"
+            },
+            "number_spec": {
+              "$ref": "#/$defs/number_spec"
             }
           }
         },
@@ -2717,6 +2723,9 @@
             },
             "date_spec": {
               "$ref": "#/$defs/date_spec"
+            },
+            "number_spec": {
+              "$ref": "#/$defs/number_spec"
             }
           }
         },
@@ -2771,6 +2780,9 @@
             },
             "date_spec": {
               "$ref": "#/$defs/date_spec"
+            },
+            "number_spec": {
+              "$ref": "#/$defs/number_spec"
             }
           }
         },
@@ -2822,6 +2834,9 @@
             },
             "date_spec": {
               "$ref": "#/$defs/date_spec"
+            },
+            "number_spec": {
+              "$ref": "#/$defs/number_spec"
             }
           }
         },
@@ -3008,8 +3023,44 @@
             "broadcast": {
               "type": "boolean",
               "default": false
+            },
+            "number_spec": {
+              "$ref": "#/$defs/number_spec"
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "derived": {
+              "$ref": "#/$defs/number_derived"
+            },
+            "number_spec": {
+              "$ref": "#/$defs/number_spec"
+            },
+            "broadcast": {
+              "type": "boolean",
+              "default": false
+            },
+            "labels": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "column_names": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "required": [
+            "derived"
+          ]
         }
       ]
     },
@@ -4005,6 +4056,16 @@
         "legacy_raw_filter": {
           "$ref": "#/$defs/predicate",
           "description": "the v1 person_level output-level custom filter, ANDed into every raw person/death table of the output before the outer merge"
+        },
+        "number_columns": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/variable"
+          }
         }
       },
       "allOf": [
@@ -5123,6 +5184,1504 @@
           }
         }
       }
+    },
+    "number_ast_expr": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "col"
+          ],
+          "properties": {
+            "col": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lit"
+          ],
+          "properties": {
+            "lit": {
+              "type": [
+                "number",
+                "string",
+                "boolean",
+                "null"
+              ]
+            },
+            "as": {
+              "enum": [
+                "numeric",
+                "integer",
+                "text",
+                "date",
+                "boolean"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "args"
+          ],
+          "properties": {
+            "op": {
+              "enum": [
+                "+",
+                "-",
+                "*",
+                "/"
+              ]
+            },
+            "args": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "$ref": "#/$defs/number_ast_expr"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pred"
+          ],
+          "properties": {
+            "pred": {
+              "$ref": "#/$defs/number_ast_predicate"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ifelse"
+          ],
+          "properties": {
+            "ifelse": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "test",
+                "yes",
+                "no"
+              ],
+              "properties": {
+                "test": {
+                  "$ref": "#/$defs/number_ast_predicate"
+                },
+                "yes": {
+                  "$ref": "#/$defs/number_ast_expr"
+                },
+                "no": {
+                  "$ref": "#/$defs/number_ast_expr"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "case_when"
+          ],
+          "properties": {
+            "case_when": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cases"
+              ],
+              "properties": {
+                "cases": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "when",
+                      "then"
+                    ],
+                    "properties": {
+                      "when": {
+                        "$ref": "#/$defs/number_ast_predicate"
+                      },
+                      "then": {
+                        "$ref": "#/$defs/number_ast_expr"
+                      }
+                    }
+                  }
+                },
+                "else": {
+                  "$ref": "#/$defs/number_ast_expr"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "coalesce"
+          ],
+          "properties": {
+            "coalesce": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/$defs/number_ast_expr"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cut"
+          ],
+          "properties": {
+            "cut": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "arg",
+                "breaks"
+              ],
+              "properties": {
+                "arg": {
+                  "$ref": "#/$defs/number_ast_expr"
+                },
+                "breaks": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 64,
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "right": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "labels": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "number_ast_predicate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "and"
+          ],
+          "properties": {
+            "and": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/number_ast_predicate"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "or"
+          ],
+          "properties": {
+            "or": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/number_ast_predicate"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "not"
+          ],
+          "properties": {
+            "not": {
+              "$ref": "#/$defs/number_ast_predicate"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/number_ast_predicate_leaf"
+        }
+      ],
+      "$comment": "copied from plan-v2.json#/$defs/predicate by tools/ws0/gen_schema_artefacts.py; `var` and `col` use the assigned-name grammar (amendment A-6)"
+    },
+    "number_ast_predicate_leaf": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "var",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "var": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            },
+            "op": {
+              "enum": [
+                "==",
+                "!=",
+                "<",
+                "<=",
+                ">",
+                ">="
+              ]
+            },
+            "value": {
+              "$ref": "#/$defs/number_ast_scalar"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "var",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "var": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            },
+            "op": {
+              "enum": [
+                "in",
+                "not_in"
+              ]
+            },
+            "value": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 10000,
+              "items": {
+                "$ref": "#/$defs/number_ast_scalar"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "var",
+            "op"
+          ],
+          "properties": {
+            "var": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            },
+            "op": {
+              "enum": [
+                "is_null",
+                "not_null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "var",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "var": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            },
+            "op": {
+              "const": "between"
+            },
+            "value": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lower",
+                "upper"
+              ],
+              "properties": {
+                "lower": {
+                  "$ref": "#/$defs/number_ast_scalar"
+                },
+                "upper": {
+                  "$ref": "#/$defs/number_ast_scalar"
+                },
+                "upper_inclusive": {
+                  "type": "boolean",
+                  "default": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "number_ast_scalar": {
+      "type": [
+        "number",
+        "string",
+        "boolean"
+      ]
+    },
+    "number_ast_column_name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "number_exprs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "assign"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "assign": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "expr"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+              },
+              "expr": {
+                "$ref": "#/$defs/number_ast_expr"
+              }
+            }
+          }
+        }
+      }
+    },
+    "number_unit": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "source"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "event_unit"
+            },
+            "spec": {
+              "$ref": "#/$defs/unit"
+            }
+          },
+          "required": [
+            "kind",
+            "spec"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "fixed_unit"
+            },
+            "from": {
+              "type": "string",
+              "minLength": 1
+            },
+            "to": {
+              "type": "string",
+              "minLength": 1
+            },
+            "factor": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "offset": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "from",
+            "to",
+            "factor"
+          ]
+        }
+      ]
+    },
+    "number_transform": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "identity"
+            }
+          },
+          "required": [
+            "method"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log"
+            }
+          },
+          "required": [
+            "method"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log10"
+            }
+          },
+          "required": [
+            "method"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log2"
+            }
+          },
+          "required": [
+            "method"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log1p"
+            }
+          },
+          "required": [
+            "method"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "sqrt"
+            }
+          },
+          "required": [
+            "method"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "abs"
+            }
+          },
+          "required": [
+            "method"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "exp"
+            }
+          },
+          "required": [
+            "method"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "expm1"
+            }
+          },
+          "required": [
+            "method"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "affine"
+            },
+            "factor": {
+              "type": "number"
+            },
+            "offset": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "method",
+            "factor"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "standardize"
+            },
+            "center": {
+              "type": "number"
+            },
+            "scale": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "method",
+            "center",
+            "scale"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "clip"
+            },
+            "lower": {
+              "type": "number"
+            },
+            "upper": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "method",
+            "lower",
+            "upper"
+          ]
+        }
+      ]
+    },
+    "number_round": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "enum": [
+            "none",
+            "decimals",
+            "significant",
+            "floor",
+            "ceiling",
+            "trunc"
+          ]
+        },
+        "digits": {
+          "type": "integer",
+          "minimum": -308,
+          "maximum": 308
+        }
+      },
+      "required": [
+        "method"
+      ]
+    },
+    "number_stage": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "event_unit"
+            },
+            "spec": {
+              "$ref": "#/$defs/unit"
+            }
+          },
+          "required": [
+            "kind",
+            "spec"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "fixed_unit"
+            },
+            "from": {
+              "type": "string",
+              "minLength": 1
+            },
+            "to": {
+              "type": "string",
+              "minLength": 1
+            },
+            "factor": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "offset": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "from",
+            "to",
+            "factor"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "identity"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log10"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log2"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log1p"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "sqrt"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "abs"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "exp"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "expm1"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "affine"
+            },
+            "factor": {
+              "type": "number"
+            },
+            "offset": {
+              "type": "number"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "factor",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "standardize"
+            },
+            "center": {
+              "type": "number"
+            },
+            "scale": {
+              "type": "number"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "center",
+            "scale",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "clip"
+            },
+            "lower": {
+              "type": "number"
+            },
+            "upper": {
+              "type": "number"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "lower",
+            "upper",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "enum": [
+                "none",
+                "decimals",
+                "significant",
+                "floor",
+                "ceiling",
+                "trunc"
+              ]
+            },
+            "digits": {
+              "type": "integer",
+              "minimum": -308,
+              "maximum": 308
+            },
+            "kind": {
+              "const": "round"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "expression"
+            },
+            "exprs": {
+              "$ref": "#/$defs/number_exprs"
+            },
+            "result": {
+              "$ref": "#/$defs/name"
+            },
+            "unit": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "exprs"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "bins"
+            },
+            "breaks": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "enum": [
+                      "-Inf",
+                      "Inf"
+                    ]
+                  }
+                ]
+              },
+              "minItems": 2
+            },
+            "grid": {
+              "enum": [
+                "count_1_2_5",
+                "proportion_quarters",
+                "signed_decades"
+              ]
+            },
+            "closed": {
+              "enum": [
+                "left",
+                "right"
+              ]
+            },
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "category"
+            },
+            "range": {
+              "enum": [
+                "reference",
+                "thresholds",
+                "bins"
+              ]
+            },
+            "thresholds": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 1,
+              "maxItems": 2
+            },
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            },
+            "category_map": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            },
+            "levels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "flag"
+            },
+            "op": {
+              "enum": [
+                "lt",
+                "le",
+                "gt",
+                "ge",
+                "eq",
+                "ne",
+                "inside",
+                "outside"
+              ]
+            },
+            "thresholds": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 1,
+              "maxItems": 2
+            },
+            "closed": {
+              "enum": [
+                "left",
+                "right"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "present"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "missing"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "number_spec": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "unit": {
+              "$ref": "#/$defs/number_unit"
+            },
+            "transform": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/number_transform"
+              },
+              "minItems": 1
+            },
+            "rounding": {
+              "$ref": "#/$defs/number_round"
+            },
+            "representation": {
+              "enum": [
+                "number",
+                "bins",
+                "category",
+                "flag",
+                "present",
+                "missing"
+              ]
+            },
+            "breaks": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "enum": [
+                      "-Inf",
+                      "Inf"
+                    ]
+                  }
+                ]
+              },
+              "minItems": 2
+            },
+            "grid": {
+              "enum": [
+                "count_1_2_5",
+                "proportion_quarters",
+                "signed_decades"
+              ]
+            },
+            "closed": {
+              "enum": [
+                "left",
+                "right"
+              ]
+            },
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            },
+            "range": {
+              "enum": [
+                "reference",
+                "thresholds",
+                "bins"
+              ]
+            },
+            "thresholds": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 1,
+              "maxItems": 2
+            },
+            "op": {
+              "enum": [
+                "lt",
+                "le",
+                "gt",
+                "ge",
+                "eq",
+                "ne",
+                "inside",
+                "outside"
+              ]
+            },
+            "category_map": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            },
+            "levels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            }
+          },
+          "required": []
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "pipeline": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/number_stage"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "pipeline"
+          ]
+        }
+      ]
+    },
+    "number_derived": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "number_rows"
+            },
+            "source": {
+              "$ref": "#/$defs/source_ref"
+            },
+            "value": {
+              "$ref": "#/$defs/column_name"
+            }
+          },
+          "required": [
+            "kind",
+            "source",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "number_count"
+            },
+            "source": {
+              "$ref": "#/$defs/source_ref"
+            },
+            "value": {
+              "$ref": "#/$defs/column_name"
+            },
+            "window": {
+              "$ref": "#/$defs/window"
+            },
+            "count_kind": {
+              "enum": [
+                "nonmissing",
+                "missing"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "source",
+            "value",
+            "count_kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "number_change"
+            },
+            "source": {
+              "$ref": "#/$defs/source_ref"
+            },
+            "value": {
+              "$ref": "#/$defs/column_name"
+            },
+            "window": {
+              "$ref": "#/$defs/window"
+            },
+            "method": {
+              "enum": [
+                "difference",
+                "percent_change",
+                "ratio",
+                "slope",
+                "time_to_threshold"
+              ]
+            },
+            "missing": {
+              "enum": [
+                "skip",
+                "keep"
+              ]
+            },
+            "reference": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/date_source"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "first_observation"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                }
+              ]
+            },
+            "time_unit": {
+              "enum": [
+                "days",
+                "weeks"
+              ]
+            },
+            "threshold": {
+              "type": "number"
+            },
+            "op": {
+              "enum": [
+                "ge",
+                "gt",
+                "le",
+                "lt"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "source",
+            "value",
+            "method",
+            "missing"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "number_derive"
+            },
+            "inputs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "alias": {
+                    "$ref": "#/$defs/name"
+                  },
+                  "variable": {
+                    "$ref": "#/$defs/variable"
+                  },
+                  "stage": {
+                    "enum": [
+                      "canonical",
+                      "presented"
+                    ]
+                  }
+                },
+                "required": [
+                  "alias",
+                  "variable",
+                  "stage"
+                ]
+              },
+              "minItems": 1
+            },
+            "exprs": {
+              "$ref": "#/$defs/number_exprs"
+            },
+            "unit": {
+              "type": "string",
+              "minLength": 1
+            },
+            "result": {
+              "$ref": "#/$defs/name"
+            },
+            "reducer": {
+              "$ref": "#/$defs/reducer"
+            }
+          },
+          "required": [
+            "kind",
+            "inputs",
+            "exprs",
+            "unit"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "number_column"
+            },
+            "column": {
+              "$ref": "#/$defs/name"
+            },
+            "component": {
+              "$ref": "#/$defs/name"
+            }
+          },
+          "required": [
+            "kind",
+            "column"
+          ]
+        }
+      ]
     }
   }
 }

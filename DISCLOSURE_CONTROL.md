@@ -460,12 +460,8 @@ disclosive are released from protected components instead of being withheld:
 
 Utility at the default reference e=.1 can be poor, especially with sparse
 outcomes, high censoring, narrow windows and extreme exposure fractions. Finite
-fits do not imply informative intervals. Runnable scripts, seeds and replicate
-summaries accompany this revision in `tools/p0r3-record-utility.R` and
-`inst/utility/p0r3-survival-utility.R`, with adjacent evidence directories;
-release reports distinguish finite/informative rates, unconditional/conditional
-coverage and log-effect bias/RMSE. The earlier unretained simulation numbers are
-not evidence for the revised mechanism. For record summaries, calibration alone
+fits do not imply informative intervals. Evaluate finite/informative rates,
+unconditional/conditional coverage and log-effect bias/RMSE for the study design. For record summaries, calibration alone
 gives N noise SD about 707.1, R SD 471.4 for mean+SD and 353.6 for mean-only;
 wide public bounds amplify moment error. These are scalar reference amplitudes,
 not a DP guarantee for data-enumerated strata.
@@ -720,11 +716,9 @@ DP initialization; executing a release still validates policy.
 The previous `hmac-inverse-cdf-52bit-v1` sampler transformed finite 52-bit
 uniforms. At epsilon 8 and sensitivity 1 its noise support was only [-4, 4],
 so neighbouring counts could have different output supports and violate pure
-DP. The endpoint reproduction and complete affected-statistic inventory are in
-[SAMPLER_DIAGNOSIS.md](SAMPLER_DIAGNOSIS.md).
+DP.
 
-The replacement `dsomop-dp-exact-discrete-laplace-v1` follows Canonne, Kamath
-and Steinke (2020), [The Discrete Gaussian for Differential Privacy, section
+The replacement `dsomop-dp-exact-discrete-laplace-v1` follows the algorithm in [The Discrete Gaussian for Differential Privacy, section
 5](https://arxiv.org/html/2004.00010v4#S5). All sampler probability decisions use
 exact integer/rational arithmetic. For rational x in [0, 1], successive exact
 Bernoulli(x/k) trials stop at their first failure; the parity of the stopping
