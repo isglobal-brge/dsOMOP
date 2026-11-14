@@ -3,6 +3,7 @@
 
 # The frozen operation and reducer vocabularies of section 4.4.
 .RECIPE_OPERATIONS <- c(
+  "number.presentation", "number.rows", "number.count", "number.change", "number.expression", "number.columns",
   "date.presentation", "date.elapsed", "output.concept_labels", "concept_set", "event", "event.unit", "event.on_missing_table", "interval",
   "interval.ingredient", "interval.stockpile", "population.index",
   "population.first_eligible", "population.any_of", "population.criteria",
