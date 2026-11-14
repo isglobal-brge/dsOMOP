@@ -119,7 +119,7 @@ test_that("normalization siblings project through checked origins in long and in
   expect_true(all(is.na(.ws7_scenario_run(h,p)$frame$mapped)))
   mixed<-review_derive(review_rows())
   mixed$derived$inputs[[2]]<-list(alias="z",variable=mapped(2),stage="canonical")
-  p<-.ws7_scenario_plan(list(mixed=mixed),output=list(format="long",sources=list(list(event="lab"))))
+  p<-.ws7_scenario_plan(list(mixed=mixed),output=list(format="long",sources=list(list(event="lab")),columns=list("mixed")))
   expect_error(.ws7_scenario_run(h,p),"identical source/event identity")
   rows<-data.frame(row_key="a",event_id="1",source_ns="lab")
   expect_error(.numberMatchEventRows(list(ir=list(events=list())),rows,rbind(rows,rows)),"one-to-one")
@@ -190,8 +190,10 @@ test_that("selected roles keep supply and unrelated coordinates independent of m
   leaf<-function(value)list(derived=list(kind="number_rows",source=list(event="drug"),value=value))
   days<-leaf("days_supply");weeks<-days
   weeks$number_spec<-list(unit=list(kind="fixed_unit",from="days",to="weeks",factor=1/7))
-  p<-.ws7_scenario_plan(list(days=days,weeks=weeks,quantity=leaf("quantity")),output=list(format="long",sources=list(list(event="drug"))))
+  p<-.ws7_scenario_plan(list(days=days,weeks=weeks,quantity=leaf("quantity")),output=list(format="long",sources=list(list(event="drug")),columns=list("days","weeks","quantity")))
   got<-.ws7_scenario_run(h,p)
+  expect_true(all(c("days","weeks","quantity") %in% names(got$frame)))
+  expect_gt(nrow(got$frame),0L)
   expect_true(all(got$frame$days==14));expect_true(all(got$frame$weeks==2));expect_true(all(got$frame$quantity==3))
   cs<-got$compiled$components$o$fragment$columns
   expect_identical(attr(cs$days,"number_contract")$unit,"days")
@@ -201,10 +203,11 @@ test_that("selected roles keep supply and unrelated coordinates independent of m
   DBI::dbExecute(h$conn,"UPDATE measurement SET quantity = 3")
   h$blueprint<-NULL;h$role_registry<-NULL
   other<-review_rows();other$derived$value<-"quantity"
-  p<-.ws7_scenario_plan(list(other=other),output=list(format="long",sources=list(list(event="lab"))))
+  p<-.ws7_scenario_plan(list(other=other),output=list(format="long",sources=list(list(event="lab")),columns=list("other")))
   p$events$lab$unit<-list(target=8840L,convert=list(`8554`=list(factor=2,offset=0)))
   got<-.ws7_scenario_run(h,p)
   expect_identical(attr(got$compiled$components$o$fragment$columns$other,"number_contract")$unit,"1")
+  expect_true("other" %in% names(got$frame))
   expect_true(all(got$frame$other==3))
   p$variables$other$number_spec<-list(unit=list(kind="fixed_unit",from="unit:8840",to="coordinate:x",factor=2))
   expect_error(.ws7_scenario_run(h,p),"matching declared units")
@@ -218,6 +221,7 @@ test_that("temporal reducers and relation copies keep class 2 through publicatio
   band<-function(v) {v$number_spec<-list(representation="bins",breaks=list("-Inf",0,7,"Inf"));v}
   wide<-.ws7_scenario_plan(list(slope=slope,nested=review_derive(review_derive(slope)),band=band(slope)),output=list(number_columns=list(copy=copy("slope"),nested_copy=review_derive(review_derive(copy("slope"))))))
   long<-.ws7_scenario_plan(.pnv2EmptyObject(),output=list(format="long",sources=list(list(event="lab")),options=list(relations=list(nextlab=list(source=list(event="lab"),within=list(0L,30L)))),number_columns=list(copy=copy("days_to_nextlab"),nested=review_derive(review_derive(copy("days_to_nextlab"))),band=band(copy("days_to_nextlab")))))
+  wide$outputs$o$columns<-list("slope","nested","band","copy","nested_copy")
   long$options<-list(number_spec=list(pipeline=list(list(kind="transform",method="identity"))))
   for(p in list(wide,long))for(mode in c("memory","staged"))local({
     run<-.ws7_ctx(h,p,mode=mode);on.exit(.ws7_close(run),add=TRUE)
@@ -226,6 +230,7 @@ test_that("temporal reducers and relation copies keep class 2 through publicatio
     expect_identical(got$status$status,"ok")
     f<-got$values$o$o;contracts<-attr(f,"omop_numbers")
     expected<-if(p$outputs$o$format=="wide")c("slope","nested","band","copy","nested_copy") else c("days_to_nextlab","copy","nested","band")
+    expect_true(all(expected %in% names(f)))
     for(n in expected)expect_equal(contracts[[n]]$privacy_class,2L,info=paste(mode,n))
     expect_true(is.ordered(f$band))
     expect_equal(contracts[[if(p$outputs$o$format=="wide")"slope" else "days_to_nextlab"]]$unit,if(p$outputs$o$format=="wide")"coordinate:test/days" else "days")
