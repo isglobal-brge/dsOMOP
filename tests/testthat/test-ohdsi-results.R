@@ -402,7 +402,7 @@ test_that("strict OHDSI projection refuses uncontracted physical layouts", {
   expect_error(.ohdsiGetResults(handle, "cohort_count"), "^unsupported_results_schema:")
   expect_error(
     .ohdsiGetResults(handle, "cohort_count", columns = "secret_metric"),
-    "no public disclosure contract"
+    "^unsupported_results_schema:"
   )
 })
 
