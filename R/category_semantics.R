@@ -254,3 +254,25 @@
   version<-attr(ir,"source_version") %||% ir[["version"]]
   identical(version,2L)||identical(version,2)
 }
+
+# Public producer identity, independent of observed values and factor storage.
+.categoryDeclaredConcept <- function(v) {
+  d <- v$derived; fn <- v$reducer$fn %||% d$reducer$fn %||% ""
+  if (fn %in% c("binary","count","n_distinct","sum","any","all","abnormal","abnormal_low","abnormal_high")) return(FALSE)
+  if (identical(d$kind,"category_reduce")) return(.categoryDeclaredConcept(d$variable))
+  if (identical(d$kind,"repeated")) {
+    at <- match(d$value, vapply(d$values,function(x)x$name,""))
+    return(.categoryDeclaredConcept(d$values[[at]]$variable))
+  }
+  if (identical(d$kind,"category_rows") || (v$reducer$value %||% "") %in% c("concept_id","value_as_concept_id") || grepl("_concept_id$",v$raw$column %||% "")) return(TRUE)
+  if ((d$kind %||% "") %in% c(.DATE_KINDS,.NUMBER_KINDS,"category_indicators","died") || !is.null(v$date_spec) || nzchar(fn)) return(FALSE)
+  NA
+}
+.categoryApplicableVocabulary <- function(spec, explicit, concept) {
+  if (isFALSE(concept)) {
+    irrelevant <- intersect(names(spec),c("label_style","language","rollup"))
+    if (length(intersect(irrelevant,names(explicit)))) .categoryReject("Vocabulary presentation requires concept identities.")
+    spec[irrelevant] <- NULL
+  }
+  spec
+}

@@ -1,5 +1,14 @@
 # dsOMOP 2.10.5 (2026-11-14)
 
+- Corrected (categorical review): prospective codebooks expand native nth-value
+  columns and honor effective numeric, date and category presentation defaults,
+  overrides and untranslated concepts. Native wide outputs can select expanded
+  keys such as `answer_3` in the requested order.
+- Corrected: recipe hierarchy defaults are inactive for semantic flags and
+  numeric/date categories, including `multiple="all"`. Explicit incompatible
+  hierarchy requests still refuse; use concept inputs and category indicators
+  when multiple hierarchy targets are intended.
+
 - Native language-2 releases now carry codebook metadata for every real table,
   including plain numeric and untranslated plans. They require
   `output.codebook_metadata`; upgrade participating servers to 2.10.5.

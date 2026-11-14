@@ -104,9 +104,10 @@
     digest=paste0(as.character(openssl::sha256(charToRaw(.jcsCanonical(relation))))))
 }
 .categoryPreflight <- function(ir,handle) {
-  walk<-function(x) {
+  walk<-function(x, defaults=NULL) {
     if(!is.list(x))return(invisible(NULL))
-    s<-.categoryEffective(x$category_spec,ir$options$category_spec)
+    s<-.categoryEffective(x$category_spec,defaults)
+    s<-.categoryApplicableVocabulary(s,x$category_spec,.categoryDeclaredConcept(x))
     if(identical(s$label_style,"source_code")) .categoryReject("Source-code presentation needs an independently admitted source-concept policy; use standard code.","category_source_forbidden")
     if(!is.null(s$rollup)&&s$rollup$kind!="none") .categoryRollupMap(handle,s$rollup)
     if(!is.null(s$missing)&&s$missing$unknown!="keep") {
@@ -118,5 +119,11 @@
     }
     for(y in x)if(is.list(y))walk(y)
   }
-  walk(ir);invisible(TRUE)
+  # Recipe defaults apply to final variables, never arbitrary nested operands.
+  for (v in ir$variables) walk(v,ir$options$category_spec)
+  for (o in ir$outputs) {
+    for (v in o$category_columns) walk(v,ir$options$category_spec)
+    for (v in o$number_columns) walk(v,ir$options$category_spec)
+  }
+  invisible(TRUE)
 }

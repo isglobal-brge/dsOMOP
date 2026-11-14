@@ -211,3 +211,21 @@
 .planNormalizedDigest <- function(plan, schema = NULL) {
   .planSemanticDigest(.planNormalizeV2(plan, schema))
 }
+
+# Native static result columns, shared by validation, execution and codebooks.
+.pnv2VariableColumns <- function(name, variable) {
+  r <- variable$reducer %||% variable$derived$reducer
+  if (identical(r$fn, "nth_value")) {
+    n <- as.integer(unlist(r$n %||% 1L))
+    if (length(n) > 1L || (is.list(r$n) && is.null(names(r$n))))
+      return(paste0(name, "_", n))
+  }
+  name
+}
+.pnv2ColumnVariables <- function(columns, variables) {
+  unique(unlist(lapply(columns, function(key) {
+    if (key %in% names(variables)) return(key)
+    names(variables)[vapply(names(variables), function(name)
+      key %in% .pnv2VariableColumns(name, variables[[name]]), logical(1))]
+  }), use.names = FALSE))
+}

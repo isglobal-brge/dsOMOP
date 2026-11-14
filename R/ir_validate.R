@@ -323,7 +323,7 @@
     out <- outs[[o]]
     if (!out[["rows"]] %in% names(pops)) add("/outputs/", o, "/rows: dangling population '", out[["rows"]], "'")
     for (v in unlist(out[["columns"]] %||% list(), use.names = FALSE)) {
-      if (!length(out$number_columns) && !length(out$category_columns) && !v %in% names(vars)) add("/outputs/", o, "/columns: dangling variable '", v, "'")
+      if (!length(out$number_columns) && !length(out$category_columns) && !length(.pnv2ColumnVariables(v, vars))) add("/outputs/", o, "/columns: dangling variable '", v, "'")
     }
     opts <- out[["options"]] %||% list()
     if (identical(out[["format"]], "joined")) {

@@ -34,16 +34,13 @@
       if(!is.null(explicit)) .categoryReject("Category presentation requires a declared concept, category or semantic flag.","category_type_unsupported")
       next
     }
-    if(!is.null(s$rollup) && s$rollup$kind!="none" && identical(s$rollup$multiple,"all")) .categoryReject("Multiple hierarchy targets require category_indicators.","category_type_unsupported")
     if(!is.null(s$binary) && !flag) {
       if(!is.null(explicit$binary)) .categoryReject("binary requires semantic flag lineage; use an explicit threshold flag.","category_type_unsupported")
       s$binary <- NULL
     }
-    if(!is.null(c) && !is.null(c$kind) && c$kind %in% c("date","number")) {
-      irrelevant <- intersect(names(s),c("label_style","language","rollup"))
-      if(length(intersect(irrelevant,names(explicit)))) .categoryReject("Vocabulary presentation requires concept identities.")
-      s[irrelevant] <- NULL
-    }
+    concept <- !flag && (is.null(c$kind) || identical(c$kind,"category") && .categoryConceptProducer(c$category))
+    s <- .categoryApplicableVocabulary(s, explicit, concept)
+    if(!is.null(s$rollup) && s$rollup$kind!="none" && identical(s$rollup$multiple,"all")) .categoryReject("Multiple hierarchy targets require category_indicators.","category_type_unsupported")
     available <- attr(col,"category_available") %||% attr(col,"number_origin")$available %||% TRUE
     defined<-attr(col,"category_defined") %||% attr(frame[[n]],"category_defined")
     if(!is.null(defined))available<-available & defined

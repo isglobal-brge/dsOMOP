@@ -910,15 +910,7 @@
 }
 
 # Output columns of a variable (nth_value with a vector n is suffixed).
-.reduceColumnNames <- function(name, r) {
-  if (identical(r[["fn"]], "nth_value")) {
-    n <- as.integer(unlist(r[["n"]] %||% 1L))
-    if (length(n) > 1L || (is.list(r[["n"]]) && is.null(names(r[["n"]])))) {
-      return(paste0(name, "_", n))
-    }
-  }
-  name
-}
+.reduceColumnNames <- function(name, r) .pnv2VariableColumns(name, list(reducer = r))
 
 .reduceTypedNA <- function(type, n) {
   switch(type, integer = rep(NA_integer_, n), bigint = bit64::as.integer64(rep(NA_character_, n)),

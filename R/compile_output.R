@@ -233,6 +233,18 @@
       part$frame <- numeric$frame; part$fragment$columns <- numeric$columns
       categories<-.categoryOutputColumns(ctx,part$frame,part$fragment$columns,node,component,names(co$components))
       part$frame<-categories$frame;part$fragment$columns<-categories$columns
+      # A selected expanded reducer key projects only that key, in request order.
+      selected_keys <- unlist(node$columns, use.names=FALSE)
+      expanded_selection <- length(setdiff(selected_keys, c(names(ctx$ir$variables), names(node$number_columns), names(node$category_columns)))) > 0L
+      if (expanded_selection && node$format == "wide") {
+        selected <- unique(unlist(lapply(selected_keys, function(k) {
+          if (k %in% names(ctx$ir$variables)) .pnv2VariableColumns(k, ctx$ir$variables[[k]]) else k
+        }), use.names=FALSE))
+        keep <- unique(c(intersect(c("row_id","cohort_row_id","person_id"), names(part$frame)), selected))
+        keep <- intersect(keep, names(part$frame))
+        part$frame <- part$frame[keep]
+        part$fragment$columns <- part$fragment$columns[keep]
+      }
       if(!is.null(node$columns)&&(length(node$number_columns)||length(node$category_columns))) {
         selected<-unlist(node$columns,use.names=FALSE)
         if(length(intersect(selected,names(ctx$ir$variables)))) {
