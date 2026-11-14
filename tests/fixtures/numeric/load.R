@@ -11,7 +11,7 @@ load_numeric_cdm <- function(directory) {
   archive <- file.path(directory, "Synthea27Nj_5.4.zip")
   if (!file.exists(archive)) utils::download.file(url, archive, mode = "wb", quiet = TRUE)
   actual <- local({ con <- file(archive, "rb"); on.exit(close(con)); as.character(openssl::sha256(con)) })
-  if (!identical(actual, sha)) stop("Numeric CDM archive checksum mismatch")
+  if (length(actual) != 1L || is.na(actual) || actual != sha) stop("Numeric CDM archive checksum mismatch")
   csvdir <- tempfile("csv-", tmpdir = directory)
   dir.create(csvdir)
   on.exit(unlink(csvdir, recursive = TRUE), add = TRUE)
@@ -37,7 +37,8 @@ load_numeric_cdm <- function(directory) {
     names(d) <- tolower(names(d))
     # Explicit CDM scalar types, including all-NULL and header-only columns.
     # vocabulary/domain/class/relationship identifiers are strings in the CDM.
-    text_ids <- c("vocabulary_id", "domain_id", "concept_class_id", "relationship_id")
+    text_ids <- c("vocabulary_id", "domain_id", "concept_class_id", "relationship_id",
+                  "source_vocabulary_id", "target_vocabulary_id", "unique_device_id")
     for (col in names(d)) {
       x <- d[[col]]
       if (grepl("_date$", col)) d[[col]] <- as.Date(x)
