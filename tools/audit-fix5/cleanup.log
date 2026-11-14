@@ -1,0 +1,21 @@
+{
+  "active_task_R_processes": 0,
+  "removed": [
+    {
+      "path": "/root/rt/wt/audit/dsOMOP",
+      "file_bytes": 25560684
+    },
+    {
+      "path": "/root/rt/wt/audit/dsOMOPClient",
+      "file_bytes": 19816730
+    },
+    {
+      "path": "/root/rt/lib/wt_audit_dsOMOP",
+      "file_bytes": 6180923
+    },
+    {
+      "path": "/root/rt/lib/wt_audit_dsOMOPClient",
+      "file_bytes": 11789558
+    }
+  ]
+}
