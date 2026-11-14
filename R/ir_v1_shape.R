@@ -452,6 +452,9 @@
 #' @keywords internal
 .v1FilterLeafErrors <- function(type, params, pp) {
   out <- character(0)
+  if (!is.null(params[["concept_set"]])) {
+    out <- c(out, .v1ShapeErrors(params[["concept_set"]], .v1sConceptSet(), paste0(pp, "/concept_set")))
+  }
   fail <- function(message) {
     out <<- c(out, paste0(pp, ": Population filter '", type, "' cannot be compiled: ", message))
   }
@@ -575,7 +578,8 @@
 })
 .v1sConceptSet <- function() {
   .v1sOneOf(.v1sObj(concepts = .v1sConceptIds(), include_descendants = .v1sBool(),
-                    include_mapped = .v1sBool(), exclude = .v1sConceptIds()),
+                    include_mapped = .v1sBool(), exclude = .v1sConceptIds(),
+                    validity_policy = .v1sStr("ohdsi-import-1")),
             .v1sConceptIds())
 }
 .v1sVisit <- function() .v1sObj(concept_ids = .v1sConceptIds(), visit_concept_id = .v1sConceptIds())

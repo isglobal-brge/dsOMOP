@@ -1,0 +1,68 @@
+dsOMOP v2.10.5 loaded. OMOP CDM resource resolver registered.
+audit-number-daily: 123
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Error ('test-audit-number-daily.R:20:5'): Q15 record and calendar-day weig
+<dsomop_ir_validation_error/dsomop_plan_rejection/error/condition>
+Error: validation_error: plan does not validate against plan-v2.json: /events/lab: matches 0 of the oneOf alternatives (exactly one required)
+Backtrace:
+    ▆
+ 1. └─.ws7_scenario_run(h, p) at test-audit-number-daily.R:20:5
+ 2.   └─.ws7_ctx(handle, plan) at tests/testthat/helper-ws7.R:542:3
+ 3.     └─dsOMOP:::.irValidateWire(plan) at tests/testthat/helper-ws7.R:73:3
+ 4.       └─dsOMOP:::.irRejectAll(...) at dsOMOP/R/ir.R:151:3
+ 5.         └─dsOMOP:::.irReject(...) at dsOMOP/R/ir.R:71:3
+
+── 2. Error ('test-audit-number-daily.R:30:3'): Q15 missing stages, input conver
+<dsomop_ir_validation_error/dsomop_plan_rejection/error/condition>
+Error: validation_error: plan does not validate against plan-v2.json: /events/lab: matches 0 of the oneOf alternatives (exactly one required)
+Backtrace:
+    ▆
+ 1. └─.ws7_scenario_run(h, .audit_daily_plan()) at test-audit-number-daily.R:30:3
+ 2.   └─.ws7_ctx(handle, plan) at tests/testthat/helper-ws7.R:542:3
+ 3.     └─dsOMOP:::.irValidateWire(plan) at tests/testthat/helper-ws7.R:73:3
+ 4.       └─dsOMOP:::.irRejectAll(...) at dsOMOP/R/ir.R:151:3
+ 5.         └─dsOMOP:::.irReject(...) at dsOMOP/R/ir.R:71:3
+
+── 3. Error ('test-audit-number-daily.R:42:3'): Q15 refuses scalar inputs and un
+Error: Fragment identity ["rd","o","s_num1f7fa09eb04184eb9e6ad447"] was not declared by an identity generator (.fragmentIdentityGenerators()); it cannot be named.
+Backtrace:
+     ▆
+  1. ├─testthat::expect_error(.ws7_scenario_run(h, p), "number_unit_conflict") at test-audit-number-daily.R:42:3
+  2. │ └─testthat:::expect_condition_matching_(...)
+  3. │   └─testthat:::quasi_capture(...)
+  4. │     ├─testthat (local) .capture(...)
+  5. │     │ └─base::withCallingHandlers(...)
+  6. │     └─rlang::eval_bare(quo_get_expr(.quo), quo_get_env(.quo))
+  7. └─.ws7_scenario_run(h, p)
+  8.   └─dsOMOP:::.planCompileOutputs(...) at tests/testthat/helper-ws7.R:545:3
+  9.     └─dsOMOP:::.compileOutput(cctx, node, inputs) at dsOMOP/R/compile_output.R:147:5
+ 10.       └─dsOMOP:::.compileWideOutput(ctx, node, name, inputs) at dsOMOP/R/compile_output.R:185:3
+ 11.         └─base::lapply(...) at dsOMOP/R/compile_output.R:423:3
+ 12.           └─dsOMOP (local) FUN(X[[i]], ...)
+ 13.             └─dsOMOP:::.compileVariable(...) at dsOMOP/R/compile_output.R:424:5
+ 14.               └─dsOMOP:::.compileVariableRecord(ctx, node, name, cons) at dsOMOP/R/compile_reduce.R:891:3
+ 15.                 └─dsOMOP:::.numberDerivedRecord(ctx, node, name, cons) at dsOMOP/R/compile_reduce.R:907:3
+ 16.                   └─dsOMOP:::.numberDailyRecord(ctx, node, name, cons) at dsOMOP/R/compile_numbers.R:125:3
+ 17.                     └─dsOMOP:::.compileVariable(ctx, operand, cons$roster, cons) at dsOMOP/R/compile_number_daily.R:10:3
+ 18.                       └─dsOMOP:::.compileVariableRecord(ctx, node, name, cons) at dsOMOP/R/compile_reduce.R:891:3
+ 19.                         └─dsOMOP:::.numberDerivedRecord(ctx, node, name, cons) at dsOMOP/R/compile_reduce.R:907:3
+ 20.                           └─dsOMOP:::.numberEventRecord(ctx, node, name, cons) at dsOMOP/R/compile_numbers.R:126:3
+ 21.                             ├─dsOMOP:::.reduceStream(...) at dsOMOP/R/compile_numbers.R:96:3
+ 22.                             │ └─dsOMOP:::.fragmentGet(ctx, name) at dsOMOP/R/compile_reduce.R:499:3
+ 23.                             │   └─dsOMOP:::.isScalarString(name) at dsOMOP/R/compile_statement.R:273:3
+ 24.                             └─dsOMOP:::.reduceName(ctx, cons, "s", name) at dsOMOP/R/types.R:40:20
+ 25.                               └─dsOMOP:::.fragmentName("rd", cons$output, suffix, ctx = ctx) at dsOMOP/R/compile_reduce.R:116:3
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                      file blocks failed errors
+ test-audit-number-daily.R      3      0      3
+
+FAILING TESTS
+test-audit-number-daily.R | Q15 record and calendar-day weights are distinct private computations | failed=0 error=TRUE
+test-audit-number-daily.R | Q15 missing stages, input conversion and final presentation do not commute | failed=0 error=TRUE
+test-audit-number-daily.R | Q15 refuses scalar inputs and unresolved units without a fallback | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 3 skipped: 0 passed: 0 

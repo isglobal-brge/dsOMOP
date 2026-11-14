@@ -286,6 +286,12 @@
             }
           ],
           "default": null
+        },
+        "validity_policy": {
+          "type": "string",
+          "enum": [
+            "ohdsi-import-1"
+          ]
         }
       }
     },
@@ -5507,6 +5513,41 @@
           "required": [
             "kind",
             "column"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "number_daily"
+            },
+            "input": {
+              "$ref": "#/$defs/variable"
+            },
+            "within_day": {
+              "enum": [
+                "mean",
+                "max",
+                "first"
+              ]
+            },
+            "missing": {
+              "enum": [
+                "skip",
+                "propagate"
+              ]
+            },
+            "reducer": {
+              "$ref": "#/$defs/reducer"
+            }
+          },
+          "required": [
+            "kind",
+            "input",
+            "within_day",
+            "missing",
+            "reducer"
           ]
         }
       ]

@@ -1,0 +1,26 @@
+audit-vocabulary-policy: ......1........
+v2-merge: ....................................................
+v2-params: .........................................................
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Error ('test-audit-vocabulary-policy.R:24:3'): both imported groups retain
+Error: omop_param(): type must be one of: concept_set, event, integer, number, string, date, window.
+Backtrace:
+    ▆
+ 1. ├─dsOMOPClient::omop_recipe(...) at test-audit-vocabulary-policy.R:24:3
+ 2. │ └─dsOMOPClient:::.recipe_arg_list(events) at dsOMOPClient/R/recipe.R:2693:3
+ 3. ├─dsOMOPClient::omop_event(...) at dsOMOPClient/R/recipe.R:2693:3
+ 4. │ └─dsOMOPClient:::.v2_event_concepts(...) at dsOMOPClient/R/lang_v2.R:306:3
+ 5. └─dsOMOPClient::omop_param("definition", type = "concept") at dsOMOPClient/R/lang_v2.R:306:3
+ 6.   └─dsOMOPClient:::.v2_choice(type, .V2_PARAM_TYPES, "omop_param(): type") at dsOMOPClient/R/params_v2.R:81:3
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                           file blocks failed errors
+ test-audit-vocabulary-policy.R      1      0      1
+
+FAILING TESTS
+test-audit-vocabulary-policy.R | both imported groups retain policy in wire, save/load, code, bind and merge | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 1 skipped: 0 passed: 123 

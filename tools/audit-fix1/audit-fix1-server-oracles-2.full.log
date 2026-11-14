@@ -1,0 +1,12 @@
+dsOMOP v2.10.5 loaded. OMOP CDM resource resolver registered.
+audit-circe-oracle: .......
+audit-settings: ......................................................................................................................................[dsomop-audit] 2026-11-14T13:12:14+0000 method=omopAnalysisRunDS detail={"name":"dsomop:incidence.rate","params":{"outcome_concept_id":"201820","tar_start_offset":"0","tar_end_offset":"0","tar_anchor_start":"start","tar_anchor_end":"end"},"scope_present":true,"scope_table_count":0,"combine":"union"}
+...........[dsomop-audit] 2026-11-14T13:12:17+0000 method=omopAnalysisRunDS detail={"name":"dsomop:incidence.rate","params":{"outcome_concept_id":"201820","tar_start_offset":"0","tar_end_offset":"0","tar_anchor_start":"start","tar_anchor_end":"end","clean_window":0},"scope_present":true,"scope_table_count":0,"combine":"union"}
+..[dsomop-audit] 2026-11-14T13:12:18+0000 method=omopAnalysisRunDS detail={"name":"dsomop:fe.prevalence","params":{"domain_code":"0"},"scope_present":true,"scope_table_count":0,"combine":"union"}
+..[dsomop-audit] 2026-11-14T13:12:20+0000 method=omopAnalysisRunDS detail={"name":"dsomop:fe.prevalence","params":{"domain_code":"0","time_windows":0},"scope_present":true,"scope_table_count":0,"combine":"union"}
+.....
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+🎯 Your tests hit the mark 🎯
+
+RESULT failed: 0 errors: 0 skipped: 0 passed: 161 

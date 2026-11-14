@@ -660,6 +660,7 @@
 #' @keywords internal
 .irOperations <- function(ir) {
   ops <- if (.conceptNeedsPresentation(ir)) "output.concept_labels" else character(0)
+  if (.ohdsiHasImportedValidity(ir)) ops <- c(ops, "vocabulary.ohdsi_import_validity")
   ops <- c(ops, .numberCapabilities(ir), .categoryCapabilities(ir), if(.categoryNative(ir))"output.codebook_metadata")
   date_vars <- .numberVariables(ir)
   if (!is.null(ir$options$date_spec) || any(vapply(date_vars, function(v) !is.null(v$date_spec) || (v$derived$kind %||% "") %in% c("calendar_date", "date_part"), logical(1)))) ops <- c(ops, "date.presentation")

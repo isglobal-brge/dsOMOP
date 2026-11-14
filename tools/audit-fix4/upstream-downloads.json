@@ -1,0 +1,17 @@
+{
+  "GiBleed_5.3.zip": {
+    "url": "https://raw.githubusercontent.com/OHDSI/EunomiaDatasets/3d349dcdd79cc346b8e36eb837e49feffe7f7497/datasets/GiBleed/GiBleed_5.3.zip",
+    "sha256": "081b82e84c90e2904e02c26546e46412b01cce566071c77e0c4a355c2d0612f9",
+    "bytes": 6861852
+  },
+  "Eunomia.tar.gz": {
+    "url": "https://api.github.com/repos/OHDSI/Eunomia/tarball/cccf503f2f52b9e02459be03bcd5f8c44031f576",
+    "sha256": "a94207eb30a23b162f6a7af237ed91f74193bf68fb2f645c321625f32d322ed2",
+    "bytes": 118371
+  },
+  "CommonDataModel.tar.gz": {
+    "url": "https://api.github.com/repos/OHDSI/CommonDataModel/tarball/b90ae94430e9a266891890a549ac188137fd7f00",
+    "sha256": "c70947e4eb06e983dca0a253c8c9a29134bdebeaf6da2292cea80a7bf75a683d",
+    "bytes": 15475594
+  }
+}

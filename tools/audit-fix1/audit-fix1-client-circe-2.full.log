@@ -1,0 +1,44 @@
+audit-circe-support: ...............................................................
+audit-concept-import: ..............................................................................................................................
+recipe-circe: ...........................................................................................................1.................................................2.........
+v2-plan: ..................................................................................................................
+v2-review: ............................................................................
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Error ('test-recipe-circe.R:406:3'): nested CriteriaGroups beyond one leve
+Error: unsupported_circe_construct: $.InclusionRules[1].expression.Groups; Nested CriteriaGroups are not supported. Inspect recipe_circe_check() for all structural issues.
+Backtrace:
+    ▆
+ 1. ├─testthat::expect_error(recipe_import_circe(circe), "nested CriteriaGroups") at test-recipe-circe.R:406:3
+ 2. │ └─testthat:::expect_condition_matching_(...)
+ 3. │   └─testthat:::quasi_capture(...)
+ 4. │     ├─testthat (local) .capture(...)
+ 5. │     │ └─base::withCallingHandlers(...)
+ 6. │     └─rlang::eval_bare(quo_get_expr(.quo), quo_get_env(.quo))
+ 7. └─dsOMOPClient::recipe_import_circe(circe)
+ 8.   └─dsOMOPClient:::.circe_require_supported(recipe_circe_check(expr)) at dsOMOPClient/R/recipe.R:7390:3
+
+── 2. Error ('test-recipe-circe.R:571:3'): Circe All fails closed until ERA coll
+Error: unsupported_circe_construct: $.ExpressionLimit; Use First downstream limits for First/Last entry selection. Inspect recipe_circe_check() for all structural issues.
+Backtrace:
+    ▆
+ 1. ├─testthat::expect_error(recipe_import_circe(all_json), "ERA collapse") at test-recipe-circe.R:571:3
+ 2. │ └─testthat:::expect_condition_matching_(...)
+ 3. │   └─testthat:::quasi_capture(...)
+ 4. │     ├─testthat (local) .capture(...)
+ 5. │     │ └─base::withCallingHandlers(...)
+ 6. │     └─rlang::eval_bare(quo_get_expr(.quo), quo_get_env(.quo))
+ 7. └─dsOMOPClient::recipe_import_circe(all_json)
+ 8.   └─dsOMOPClient:::.circe_require_supported(recipe_circe_check(expr)) at dsOMOPClient/R/recipe.R:7390:3
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                file blocks failed errors
+ test-recipe-circe.R      2      0      2
+
+FAILING TESTS
+test-recipe-circe.R | nested CriteriaGroups beyond one level fail closed | failed=0 error=TRUE
+test-recipe-circe.R | Circe All fails closed until ERA collapse is executable | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 2 skipped: 0 passed: 544 

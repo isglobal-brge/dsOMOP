@@ -1,0 +1,22 @@
+{
+  "repository": "OHDSI/PhenotypeLibrary",
+  "commit": "40106e4e2892d883c208b9df10ad56711da3e21d",
+  "fixtures": [
+    {
+      "id": "304",
+      "source": "https://raw.githubusercontent.com/OHDSI/PhenotypeLibrary/40106e4e2892d883c208b9df10ad56711da3e21d/inst/cohorts/304.json",
+      "sha256": "d674337d7d26bbc5680487749189a3e603b3857272eaab857b2ba64133999bfa",
+      "name": "Neurofibromatosis type 1 (FP)",
+      "status": "Accepted",
+      "peer_reviewers": "unknown",
+      "deprecation_status": "unknown",
+      "expected_bridge": "conditional",
+      "upstream_sql": {
+        "source": "https://raw.githubusercontent.com/OHDSI/PhenotypeLibrary/40106e4e2892d883c208b9df10ad56711da3e21d/inst/sql/sql_server/304.sql",
+        "sha256": "36e55cfc3984140eea2a001d84bcfddf9b5478bc770ce8f7dcc171ee2055b8b0"
+      }
+    }
+  ],
+  "package_version": "3.37.0",
+  "license": "Apache License (upstream DESCRIPTION)"
+}

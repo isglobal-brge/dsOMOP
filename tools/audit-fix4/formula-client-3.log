@@ -1,0 +1,10 @@
+FAILURES BY FILE
+                  file blocks failed errors
+ test-audit-formulas.R      2      1      2
+
+FAILING TESTS
+test-audit-formulas.R | Q14 closed log-exp expansion and provenance survive JSON YAML and generated R | failed=1 error=TRUE
+test-audit-formulas.R | Q14 independent power oracle agrees with actual private published formulas | failed=0 error=TRUE
+
+RESULT failed: 1 errors: 2 skipped: 0 passed: 45 
+RESULT failed: 1 errors: 2 skipped: 0 passed: 45 

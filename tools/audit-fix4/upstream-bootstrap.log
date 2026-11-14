@@ -1,0 +1,24 @@
+{
+  "GiBleed_5.3.zip": {
+    "url": "https://raw.githubusercontent.com/OHDSI/EunomiaDatasets/3d349dcdd79cc346b8e36eb837e49feffe7f7497/datasets/GiBleed/GiBleed_5.3.zip",
+    "sha256": "081b82e84c90e2904e02c26546e46412b01cce566071c77e0c4a355c2d0612f9",
+    "bytes": 6861852
+  },
+  "Eunomia.tar.gz": {
+    "url": "https://api.github.com/repos/OHDSI/Eunomia/tarball/cccf503f2f52b9e02459be03bcd5f8c44031f576",
+    "sha256": "a94207eb30a23b162f6a7af237ed91f74193bf68fb2f645c321625f32d322ed2",
+    "bytes": 118371
+  },
+  "CommonDataModel.tar.gz": {
+    "url": "https://api.github.com/repos/OHDSI/CommonDataModel/tarball/b90ae94430e9a266891890a549ac188137fd7f00",
+    "sha256": "c70947e4eb06e983dca0a253c8c9a29134bdebeaf6da2292cea80a7bf75a683d",
+    "bytes": 15475594
+  }
+}
+['GiBleed_5.3/', '__MACOSX/._GiBleed_5.3', 'GiBleed_5.3/SOURCE_TO_CONCEPT_MAP.csv', '__MACOSX/GiBleed_5.3/._SOURCE_TO_CONCEPT_MAP.csv', 'GiBleed_5.3/PROVIDER.csv', '__MACOSX/GiBleed_5.3/._PROVIDER.csv', 'GiBleed_5.3/OBSERVATION_PERIOD.csv', '__MACOSX/GiBleed_5.3/._OBSERVATION_PERIOD.csv', 'GiBleed_5.3/DRUG_EXPOSURE.csv', '__MACOSX/GiBleed_5.3/._DRUG_EXPOSURE.csv', 'GiBleed_5.3/CARE_SITE.csv', '__MACOSX/GiBleed_5.3/._CARE_SITE.csv', 'GiBleed_5.3/COST.csv', '__MACOSX/GiBleed_5.3/._COST.csv', 'GiBleed_5.3/CONCEPT_RELATIONSHIP.csv', '__MACOSX/GiBleed_5.3/._CONCEPT_RELATIONSHIP.csv', 'GiBleed_5.3/SPECIMEN.csv', '__MACOSX/GiBleed_5.3/._SPECIMEN.csv', 'GiBleed_5.3/DEATH.csv', '__MACOSX/GiBleed_5.3/._DEATH.csv', 'GiBleed_5.3/VOCABULARY.csv', '__MACOSX/GiBleed_5.3/._VOCABULARY.csv', 'GiBleed_5.3/DEVICE_EXPOSURE.csv', '__MACOSX/GiBleed_5.3/._DEVICE_EXPOSURE.csv', 'GiBleed_5.3/FACT_RELATIONSHIP.csv', '__MACOSX/GiBleed_5.3/._FACT_RELATIONSHIP.csv', 'GiBleed_5.3/DOSE_ERA.csv', '__MACOSX/GiBleed_5.3/._DOSE_ERA.csv', 'GiBleed_5.3/CONCEPT_CLASS.csv', '__MACOSX/GiBleed_5.3/._CONCEPT_CLASS.csv', 'GiBleed_5.3/CONCEPT.csv', '__MACOSX/GiBleed_5.3/._CONCEPT.csv', 'GiBleed_5.3/LOCATION.csv', '__MACOSX/GiBleed_5.3/._LOCATION.csv', 'GiBleed_5.3/DRUG_STRENGTH.csv', '__MACOSX/GiBleed_5.3/._DRUG_STRENGTH.csv', 'GiBleed_5.3/RELATIONSHIP.csv', '__MACOSX/GiBleed_5.3/._RELATIONSHIP.csv', 'GiBleed_5.3/MEASUREMENT.csv', '__MACOSX/GiBleed_5.3/._MEASUREMENT.csv', 'GiBleed_5.3/COHORT.csv', '__MACOSX/GiBleed_5.3/._COHORT.csv', 'GiBleed_5.3/NOTE_NLP.csv', '__MACOSX/GiBleed_5.3/._NOTE_NLP.csv', 'GiBleed_5.3/COHORT_ATTRIBUTE.csv', '__MACOSX/GiBleed_5.3/._COHORT_ATTRIBUTE.csv', 'GiBleed_5.3/CONDITION_OCCURRENCE.csv', '__MACOSX/GiBleed_5.3/._CONDITION_OCCURRENCE.csv', 'GiBleed_5.3/CONCEPT_SYNONYM.csv', '__MACOSX/GiBleed_5.3/._CONCEPT_SYNONYM.csv', 'GiBleed_5.3/DRUG_ERA.csv', '__MACOSX/GiBleed_5.3/._DRUG_ERA.csv', 'GiBleed_5.3/CDM_SOURCE.csv', '__MACOSX/GiBleed_5.3/._CDM_SOURCE.csv', 'GiBleed_5.3/VISIT_OCCURRENCE.csv', '__MACOSX/GiBleed_5.3/._VISIT_OCCURRENCE.csv', 'GiBleed_5.3/METADATA.csv', '__MACOSX/GiBleed_5.3/._METADATA.csv', 'GiBleed_5.3/PERSON.csv', '__MACOSX/GiBleed_5.3/._PERSON.csv', 'GiBleed_5.3/OBSERVATION.csv', '__MACOSX/GiBleed_5.3/._OBSERVATION.csv', 'GiBleed_5.3/VISIT_DETAIL.csv', '__MACOSX/GiBleed_5.3/._VISIT_DETAIL.csv', 'GiBleed_5.3/PAYER_PLAN_PERIOD.csv', '__MACOSX/GiBleed_5.3/._PAYER_PLAN_PERIOD.csv', 'GiBleed_5.3/DOMAIN.csv', '__MACOSX/GiBleed_5.3/._DOMAIN.csv', 'GiBleed_5.3/PROCEDURE_OCCURRENCE.csv', '__MACOSX/GiBleed_5.3/._PROCEDURE_OCCURRENCE.csv', 'GiBleed_5.3/CONCEPT_ANCESTOR.csv', '__MACOSX/GiBleed_5.3/._CONCEPT_ANCESTOR.csv', 'GiBleed_5.3/NOTE.csv', '__MACOSX/GiBleed_5.3/._NOTE.csv', 'GiBleed_5.3/CONDITION_ERA.csv', '__MACOSX/GiBleed_5.3/._CONDITION_ERA.csv']
+Warning in untar2(tarfile, files, list, exdir, restore_times, allow_all) :
+  skipping pax global extended headers
+ERROR: dependency ‘DatabaseConnector’ is not available for package ‘CommonDataModel’
+Perhaps try a variation of:
+install.packages('DatabaseConnector')
+* removing ‘/root/rt/audit-fix4-deps/CommonDataModel’

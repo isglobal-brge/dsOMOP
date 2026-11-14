@@ -22,7 +22,6 @@
   naming an intermediate does not change admission. Legacy mutate semantics
   and the closed expression grammar are unchanged.
 
-
 - Corrected (shared codebook presentation): prospective columns use the execution
   numeric/date/category evaluators on empty public prototypes, including existing
   and generated dates, canonical numeric copies and categorical copies. Membership
@@ -47,6 +46,101 @@
   category defaults to generated date endpoints, including ordering, recodes,
   public levels, reference and contrasts in nested and joined outputs. Rebuild
   affected codebooks; recipe declarations and published data do not change.
+
+- Corrected / newly refused: CKD-EPI 2021 eGFR rejects input-local source-unit
+  maps that differ from the age anchor's shared event normalization. Such maps
+  could select creatinine from a different date and use the wrong calendar age
+  or adult eligibility. Move `omop_unit()` normalization onto the event shared
+  by creatinine and `omop_age_at()`; retain explicit numeric coordinate
+  conversions on the creatinine input. Aligned shared maps and day-zero/index
+  age inputs remain supported.
+
+- Newly permitted: four exact-version client formula constructors (BMI,
+  arithmetic MAP, ratio, and race-free CKD-EPI 2021 creatinine eGFR) expand into
+  existing typed private operations. Declare source selection, canonical units
+  or explicit conversions, and the eGFR sex mapping/calendar-age anchor. Invalid
+  values yield typed NA; structural unit/anchor/version errors refuse. Formula
+  identity and derivative provenance survive JSON, YAML and generated R.
+- Newly permitted: `omop_number_daily()` selects original events, applies input
+  presentation, collapses within recorded concept-days, then applies the outer
+  numeric reducer and final presentation. Mean/max/first and skip/propagate are
+  explicit. Use this route for equal-day weighting instead of ordinary record
+  weighting. It requires the server's `number.daily` capability; old servers
+  refuse before assignment. No absent days, reference ranges or support counts
+  are invented.
+- Corrected: YAML and generated R retain small binary64 coefficients exactly,
+  including the eGFR age factor. Regenerate affected serialized recipes from
+  their original numeric declarations; already rounded coefficients cannot be
+  recovered from saved text.
+- Scope: broader A-31 deliverables are deferred as listed in
+  `POST_2.10.5_ROADMAP.md`. Real Opal acceptance belongs to integration e2e.
+
+- Corrected (audit prerequisite integration): imported vocabulary validity
+  remains executable in category rollup domains, including exclusions.
+  Use a server advertising vocabulary.ohdsi_import_validity for these domains.
+- Corrected: prospective generated-date columns apply category ordering defaults
+  consistently with publication. Rebuild affected codebooks.
+
+- Newly refused: physical OHDSI result layouts with uncontracted columns are
+  unknown and cannot be released or pooled. Use a listed supported export
+  layout; dropping columns from a request cannot establish schema compatibility.
+
+* **Corrected / newly refused:** physical-result discovery reports structural
+  fingerprints and layout status without inferring upstream package versions.
+  Per-tool status includes schema contracts, including admin-only and recognized
+  unsupported layouts. Duplicate inline result identities now refuse before
+  caller filters or row limits; re-export one row per contracted identity.
+  Optional columns with incompatible physical types refuse before row access.
+  These historical inline contracts do not certify a modern upstream export.
+
+* **Corrected:** imported-vocabulary capability and preflight traversal now
+  distinguishes declaration registries from advisory metadata. Event and
+  concept-set names such as `meta`, `metadata`, and `circe_provenance` retain
+  identical validation and capability requirements. Existing names remain
+  valid; use a capable server and valid vocabulary references for these plans.
+
+* **Corrected / newly refused:** both OHDSI import paths attach the executable
+  `ohdsi-import-1` vocabulary policy. Explicit included/excluded concepts must
+  exist as valid public vocabulary records (including concept 0); invalid
+  descendants and invalid mapped sources are excluded. Mapping follows valid
+  Maps-to sources toward selected targets; classification concepts are allowed.
+  Native declarations retain their existing behavior. Re-import old saved
+  definitions to opt into the stricter policy. Policy-bearing plans require
+  the paired server's `vocabulary.ohdsi_import_validity` capability; incapable
+  servers refuse without native fallback. Save/load, code generation, merge,
+  wire normalization and semantic digests retain the policy.
+
+* **Corrected:** physical result row identities now follow their declared text
+  or exact integer contract. Fractional, malformed and inexact numeric keys
+  refuse with a generic integrity message even when keys are projected away.
+  SQLite storage is checked before driver coercion; BIGINT keys remain exact
+  decimal text beyond the int32 range. Re-export malformed identities using
+  exact integer storage; do not round identifiers to repair an export.
+* **Corrected:** absent optional physical-result statistics and labels are
+  completed only under their closed column contract, with numeric or text NA
+  of the declared type, including empty results. Required identities and
+  support columns cannot be completed. Re-read supported exports to obtain
+  the corrected optional-column types.
+
+* **Newly refused:** incidence `clean_window` values other than zero and
+  `fe.prevalence` `time_windows` values other than zero now fail with a bounded
+  setting-specific remedy before patient computation on ordinary, protected
+  and alias routes. These selectors previously did not implement the requested
+  science. Use a validated native risk/window recipe when that setting matters;
+  dropping a required window is not an equivalent analysis. Explicit null,
+  nonfinite/fractional values and malformed selectors are invalid settings.
+* **Newly refused:** physical OHDSI readers and pooling discovery require the
+  inline identity columns of their reviewed layout. CohortMethod's
+  `target_comparator_id` lookup layout is recognized and refused until a
+  versioned adapter exists; target/comparator IDs cannot be filled with NA.
+  Missing row identities and unrecognized negative count encodings also refuse
+  with generic integrity/suppression messages. Use the documented supported
+  physical layout; live analysis remains a separate explicitly requested route.
+
+* **Corrected:** incidence discovery describes the first-target-episode,
+  full-window person-day estimand and separates contribution bounds from risk
+  windows. FE prevalence describes all-history events among scoped members,
+  without a cohort-relative date predicate.
 
 - Corrected (date/category schema review): prospective codebooks include native
   date endpoints before final selection, with their effective presentation types
@@ -121,7 +215,6 @@
 - Newly refused: scalar formulas in long output, including nested formulas,
   require explicit `broadcast = TRUE`, just like direct scalar reducers.
 
-
 - Newly permitted (A-29 / CR-30): native numeric presentation with declared
   source and fixed units, ordered transforms, exact binary64 decimal rounding,
   public bins and clinical categories, flags and value presence/missingness.
@@ -145,6 +238,12 @@
   and nonnumeric/foreign expression bindings.
   Use registered numeric measures, explicit numeric date representations,
   declared broadcasts/reducers, and typed wide/long companions as applicable.
+
+- Corrected: death reduction preserves zero-row population frames, including
+  populations emptied by eligibility criteria. Empty survival outputs now reach
+  the ordinary final support gate: default federation rollback, or explicit
+  small-site skipping with supported sites retained. Re-run affected recipes
+  with the corrected server; no recipe or owner configuration changes are needed.
 
 # dsOMOP 2.10.4 (2026-11-13)
 

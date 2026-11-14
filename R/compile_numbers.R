@@ -91,6 +91,7 @@
   extra<-list(v=list(expr=paste0("e.",res$column),type=res$type))
   paired<-rows_mode&&d$value %in% c("value","value_as_number")&&all(c("range_low","range_high") %in% names(src$fragment$columns))
   if("visit_id" %in% names(src$fragment$columns))extra$visit_id<-list(expr="e.visit_id",type="bigint",role="private")
+  if(rows_mode)for(k in intersect(c("concept_id","unit_concept_id"),names(src$fragment$columns)))extra[[k]]<-list(expr=paste0("e.",k),type="integer",role="private")
   if(paired)for(k in c("range_low","range_high"))extra[[k]]<-list(expr=paste0("e.",k),type="numeric")
   stream<-.reduceStream(ctx,cons,src,d$window,.reduceName(ctx,cons,"s",name),extra=extra,dated=d$kind=="number_change")
   ordering<-.reduceSourceOrdering(src)
@@ -101,7 +102,7 @@
     rows$v<-.numberClean(rows$v)
     rows<-rows[.reduceOrderRows(rows,c("row_key",intersect(ordering,names(rows)))),,drop=FALSE]
     if(rows_mode) {
-      out<-rows[intersect(c("row_key","event_id","source_ns","start_date","end_date","visit_id"),names(rows))]
+      out<-rows[intersect(c("row_key","event_id","source_ns","start_date","end_date","visit_id","concept_id","unit_concept_id"),names(rows))]
       out[[name]]<-if(paired).numberRangeValue(rows$v,rows$range_low,rows$range_high) else rows$v
       return(out)
     }
@@ -121,6 +122,7 @@
 }
 .numberDerivedRecord <- function(ctx,node,name,cons) {
   d<-node$derived
+  if(identical(d$kind,"number_daily"))return(.numberDailyRecord(ctx,node,name,cons))
   if((d$kind %||% "") %in% c("number_rows","number_count","number_change"))return(.numberEventRecord(ctx,node,name,cons))
   if(d$kind=="number_column") .numberReject("number_column is valid only inside output number_columns.","number_dependency_invalid")
   inputs<-d$inputs
@@ -170,7 +172,7 @@
     }
     value<-.numberExpression(d$exprs,frame,d$result)
     if(!available)value[]<-NA
-    if(is.null(r)) {out<-base[keys];out[[name]]<-value;return(out)}
+    if(is.null(r)) {out<-base[unique(c(keys,intersect(c("concept_id","unit_concept_id"),names(base))))];out[[name]]<-value;return(out)}
     rows<-base;rows$v<-value
     bounds<-.reduceBoundsR(ctx,cons,r$window,"numeric expression window")
     rows<-.reduceWindowFilter(rows,bounds)

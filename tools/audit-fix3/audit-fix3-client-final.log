@@ -1,0 +1,34 @@
+FAILURES BY FILE
+                       file blocks failed errors
+      test-recipe-library.R     24     48      0
+ test-audit-circe-support.R      1      0      1
+
+FAILING TESTS
+test-audit-circe-support.R | Circe export refuses unrepresentable native coverage while native edits compile | failed=0 error=TRUE
+test-recipe-library.R | demographics.baseline has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | demographics.death_cause has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | socioeconomic.education has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | socioeconomic.employment has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | socioeconomic.numeric_observation has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | comorbidity.charlson has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | comorbidity.chads2 has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | comorbidity.chadsvasc has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | comorbidity.dcsi has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | comorbidity.hfrs has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | comorbidity.condition_history has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | drug.era_summary has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | drug.adherence_components has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | cohort.new_users has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | cohort.active_comparator has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | outcome.incident_event has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | survival.first_event has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | survival.competing_risk has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | survival.recurrent_events has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | panel.measurements has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | panel.incidence has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | panel.sccs has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | longitudinal.event_log has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+test-recipe-library.R | matching.nested_case_control has a frozen plan, normalized payload and semantic digest | failed=2 error=FALSE
+
+RESULT failed: 48 errors: 1 skipped: 0 passed: 1460 
+RESULT failed: 48 errors: 1 skipped: 0 passed: 1460 

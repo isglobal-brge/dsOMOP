@@ -1,0 +1,9 @@
+FAILURES BY FILE
+                 file blocks failed errors
+ test-audit-eunomia.R      1      2      0
+
+FAILING TESTS
+test-audit-eunomia.R | Q35 actual pinned Eunomia GiBleed 5.3 runs the normal publication gate | failed=2 error=FALSE
+
+RESULT failed: 2 errors: 0 skipped: 0 passed: 32 
+RESULT failed: 2 errors: 0 skipped: 0 passed: 32 

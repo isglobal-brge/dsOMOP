@@ -1,0 +1,96 @@
+dsOMOP v2.10.5 loaded. OMOP CDM resource resolver registered.
+audit-formula-edges: .1.
+audit-method-declarations: ..................
+audit-number-daily: .......................[dsomop-audit] 2026-11-14T15:37:11+0000 method=publication detail={"output":"o","component":"o","passed":true}
+...[dsomop-audit] 2026-11-14T15:37:14+0000 method=publication detail={"output":"o","component":"o","passed":true}
+...[dsomop-audit] 2026-11-14T15:37:15+0000 method=publication detail={"output":"o","component":"o","passed":false}
+.
+audit-study-recipes: [dsomop-audit] 2026-11-14T15:37:18+0000 method=publication detail={"output":"o","component":"o","passed":true}
+....[dsomop-audit] 2026-11-14T15:37:19+0000 method=publication detail={"output":"o","component":"o","passed":true}
+....234.[dsomop-audit] 2026-11-14T15:37:29+0000 method=publication detail={"output":"o","component":"o","passed":true}
+..
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Failure ('test-audit-formula-edges.R:28:3'): Q14 adult boundaries and inva
+Expected `attr(result$compiled$components$o$columns$egfr, "privacy_class")` to be identical to 2L.
+Differences:
+`actual` is NULL
+`expected` is an integer vector (2)
+
+
+── 2. Error ('test-audit-study-recipes.R:42:5'): Q16 independent visit schedules
+<omop_number_error/dsomop_plan_rejection/error/condition>
+Error: number_spec_invalid: Use only the documented fields and required operands.
+Backtrace:
+     ▆
+  1. └─base::eval(...)
+  2.   └─base::eval(...)
+  3.     └─a$audit_numeric_studies(.audit_study_event()) at test-audit-study-recipes.R:42:5
+  4.       ├─dsOMOPClient (local) audit_expression(...)
+  5.       │ ├─dsOMOPClient::omop_number_derive(...)
+  6.       │ └─base::lapply(inputs, function(v) omop_number_input(v, "presented"))
+  7.       ├─dsOMOPClient::omop_number(...)
+  8.       │ └─dsOMOPClient:::.numberSpecArg(number_spec)
+  9.       ├─dsOMOPClient::omop_number_spec(...)
+ 10.       │ ├─base::as.list(environment())
+ 11.       │ └─base::as.list.environment(environment())
+ 12.       └─dsOMOPClient::omop_number_transform("clip", upper = 250)
+ 13.         ├─base::structure(...)
+ 14.         └─dsOMOPClient:::.numberTransformCheck(s)
+ 15.           └─dsOMOPClient:::.numberObject(...)
+ 16.             └─dsOMOPClient:::.numberReject("Use only the documented fields and required operands.")
+
+── 3. Error ('test-audit-study-recipes.R:48:3'): Q17 eligible observation denomi
+<omop_number_error/dsomop_plan_rejection/error/condition>
+Error: number_spec_invalid: Use only the documented fields and required operands.
+Backtrace:
+     ▆
+  1. └─a$audit_numeric_studies(.audit_study_event()) at test-audit-study-recipes.R:48:3
+  2.   ├─dsOMOPClient (local) audit_expression(...)
+  3.   │ ├─dsOMOPClient::omop_number_derive(...)
+  4.   │ └─base::lapply(inputs, function(v) omop_number_input(v, "presented"))
+  5.   ├─dsOMOPClient::omop_number(...)
+  6.   │ └─dsOMOPClient:::.numberSpecArg(number_spec)
+  7.   ├─dsOMOPClient::omop_number_spec(...)
+  8.   │ ├─base::as.list(environment())
+  9.   │ └─base::as.list.environment(environment())
+ 10.   └─dsOMOPClient::omop_number_transform("clip", upper = 250)
+ 11.     ├─base::structure(...)
+ 12.     └─dsOMOPClient:::.numberTransformCheck(s)
+ 13.       └─dsOMOPClient:::.numberObject(...)
+ 14.         └─dsOMOPClient:::.numberReject("Use only the documented fields and required operands.")
+
+── 4. Error ('test-audit-study-recipes.R:57:3'): Q19 before and after reduction 
+<omop_number_error/dsomop_plan_rejection/error/condition>
+Error: number_spec_invalid: Use only the documented fields and required operands.
+Backtrace:
+     ▆
+  1. └─a$audit_numeric_studies(.audit_study_event()) at test-audit-study-recipes.R:57:3
+  2.   ├─dsOMOPClient (local) audit_expression(...)
+  3.   │ ├─dsOMOPClient::omop_number_derive(...)
+  4.   │ └─base::lapply(inputs, function(v) omop_number_input(v, "presented"))
+  5.   ├─dsOMOPClient::omop_number(...)
+  6.   │ └─dsOMOPClient:::.numberSpecArg(number_spec)
+  7.   ├─dsOMOPClient::omop_number_spec(...)
+  8.   │ ├─base::as.list(environment())
+  9.   │ └─base::as.list.environment(environment())
+ 10.   └─dsOMOPClient::omop_number_transform("clip", upper = 250)
+ 11.     ├─base::structure(...)
+ 12.     └─dsOMOPClient:::.numberTransformCheck(s)
+ 13.       └─dsOMOPClient:::.numberObject(...)
+ 14.         └─dsOMOPClient:::.numberReject("Use only the documented fields and required operands.")
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                       file blocks failed errors
+ test-audit-study-recipes.R      3      0      3
+ test-audit-formula-edges.R      1      1      0
+
+FAILING TESTS
+test-audit-formula-edges.R | Q14 adult boundaries and invalid input eligibility execute in the emitted plan | failed=1 error=FALSE
+test-audit-study-recipes.R | Q16 independent visit schedules produce distinct baseline comparisons | failed=0 error=TRUE
+test-audit-study-recipes.R | Q17 eligible observation denominators and Q18 prior dates run as emitted | failed=0 error=TRUE
+test-audit-study-recipes.R | Q19 before and after reduction express different declared cleaning | failed=0 error=TRUE
+
+RESULT failed: 1 errors: 3 skipped: 0 passed: 61 

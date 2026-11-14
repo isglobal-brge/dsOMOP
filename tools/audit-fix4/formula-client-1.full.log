@@ -1,0 +1,61 @@
+audit-formulas: .......1Registered S3 method overwritten by 'gamlss':
+  method   from
+  print.ri bit 
+
+Logging into the collaborating servers
+2
+audit-number-daily: .....3..
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Error ('test-audit-formulas.R:25:3'): Q14 closed log-exp expansion and pro
+Error: variable 'variable 'egfr'_daily': a raw column of '' is an event row, not one value per person; use a long output (format = "long", sources =) or a reducer.
+Backtrace:
+     ▆
+  1. └─dsOMOPClient::recipe_to_plan(r, version = 2) at test-audit-formulas.R:25:3
+  2.   └─dsOMOPClient:::.recipe_to_plan_v2(recipe) at dsOMOPClient/R/recipe.R:3856:3
+  3.     ├─dsOMOPClient:::.v2_register_variable(...) at dsOMOPClient/R/plan_v2.R:1384:5
+  4.     │ └─dsOMOPClient:::.v2c_register(ctx, "variables", name, wire, "variable") at dsOMOPClient/R/plan_v2.R:1231:3
+  5.     └─dsOMOPClient:::.v2w_variable(ctx, v, vn) at dsOMOPClient/R/plan_v2.R:1384:5
+  6.       └─dsOMOPClient:::.v2w_variable_base(ctx, v, name) at dsOMOPClient/R/plan_v2.R:794:3
+  7.         └─dsOMOPClient:::.numberWireDerived(ctx, d, context) at dsOMOPClient/R/plan_v2.R:819:7
+  8.           └─dsOMOPClient:::.v2w_variable(ctx, d$input, paste0(context, "_daily")) at dsOMOPClient/R/numbers.R:242:3
+  9.             └─dsOMOPClient:::.v2w_variable_base(ctx, v, name) at dsOMOPClient/R/plan_v2.R:794:3
+ 10.               └─dsOMOPClient:::.v2_lower_legacy_variable(ctx, v, name, context) at dsOMOPClient/R/plan_v2.R:807:3
+ 11.                 └─dsOMOPClient:::.v2_stop(...) at dsOMOPClient/R/plan_v2.R:863:7
+
+── 2. Error ('test-audit-formulas.R:50:7'): Q14 independent power oracle agrees 
+Error: no such column: unit_concept_id
+Backtrace:
+     ▆
+  1. ├─DBI::dbExecute(...) at test-audit-formulas.R:50:7
+  2. └─DBI::dbExecute(...)
+  3.   ├─DBI::dbSendStatement(conn, statement, ...)
+  4.   └─DBI::dbSendStatement(conn, statement, ...)
+  5.     ├─DBI::dbSendQuery(conn, statement, ...)
+  6.     └─RSQLite::dbSendQuery(conn, statement, ...)
+  7.       └─RSQLite (local) .local(conn, statement, ...)
+  8.         ├─methods::new(...)
+  9.         │ ├─methods::initialize(value, ...)
+ 10.         │ └─methods::initialize(value, ...)
+ 11.         └─RSQLite:::result_create(conn@ptr, statement)
+
+── 3. Failure ('test-audit-number-daily.R:18:3'): Q15 daily declarations preserv
+Expected `merged$variables$b_daily$derived$input$derived$source$event` to be identical to "b_lab".
+Differences:
+`actual`:   "lab"  
+`expected`: "b_lab"
+
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                      file blocks failed errors
+     test-audit-formulas.R      2      0      2
+ test-audit-number-daily.R      1      1      0
+
+FAILING TESTS
+test-audit-formulas.R | Q14 closed log-exp expansion and provenance survive JSON YAML and generated R | failed=0 error=TRUE
+test-audit-formulas.R | Q14 independent power oracle agrees with actual private published formulas | failed=0 error=TRUE
+test-audit-number-daily.R | Q15 daily declarations preserve both stages through portable recipes | failed=1 error=FALSE
+
+RESULT failed: 1 errors: 2 skipped: 0 passed: 14 

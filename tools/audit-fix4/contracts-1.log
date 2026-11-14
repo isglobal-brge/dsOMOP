@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/workspace/dsomop/wt/audit/dsOMOP/tools/ws0/check_contracts.py", line 248, in <module>
+    check(open(os.path.join(SCHEMA, rel), "rb").read() == open(os.path.join(CS, rel), "rb").read(), f"client copy differs: {rel}")
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/workspace/dsomop/wt/audit/dsOMOP/inst/schema/study-bundle-1.json'

@@ -1,0 +1,28 @@
+audit-formula-portability: ..................................1.
+audit-number-daily: ..........
+audit-study-bundle: .............
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Error ('test-audit-formula-portability.R:27:52'): Q14 closed log-exp expan
+<omop_formula_error/error/condition>
+Error: formula_provenance_invalid: /provenance; retain the immutable definition and record edits as derivatives.
+Backtrace:
+    ▆
+ 1. └─base::eval(parse(text = recipe_to_code(r)), env) at test-audit-formula-portability.R:27:52
+ 2.   └─base::eval(parse(text = recipe_to_code(r)), env)
+ 3.     ├─dsOMOPClient::omop_recipe(...)
+ 4.     │ ├─dsOMOPClient:::.dateExpandBundles(.categoryExpandBundles(variables)) at dsOMOPClient/R/recipe.R:2705:3
+ 5.     │ └─dsOMOPClient:::.categoryExpandBundles(variables) at dsOMOPClient/R/recipe.R:2705:3
+ 6.     └─dsOMOPClient:::.formulaRestore(...) at dsOMOPClient/R/recipe.R:2705:3
+ 7.       └─dsOMOPClient:::.formulaReject(...) at dsOMOPClient/R/formulas.R:177:3
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                             file blocks failed errors
+ test-audit-formula-portability.R      1      0      1
+
+FAILING TESTS
+test-audit-formula-portability.R | Q14 closed log-exp expansion and provenance survive JSON YAML and generated R | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 1 skipped: 0 passed: 58 

@@ -70,6 +70,7 @@ def normalize_numbers(plan):
         if 'inputs' in d:
             d.setdefault('result',d['exprs']['assign'][-1]['name'])
             for i in d['inputs']:i['variable']=norm(i['variable'],column_scope=column_scope)
+        if d.get('kind')=='number_daily':d['input']=norm(d['input'],column_scope=column_scope)
         if 'variable' in d:d['variable']=norm(d['variable'],column_scope=column_scope)
         if d.get('kind')=='repeated':
             for entry in d['values']:entry['variable']=norm(entry['variable'],column_scope=column_scope)

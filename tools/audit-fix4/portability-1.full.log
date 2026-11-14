@@ -1,0 +1,36 @@
+audit-formula-portability: ................................12
+audit-number-daily: ..........
+audit-study-bundle: .............
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Error ('test-audit-formula-portability.R:23:5'): Q14 closed log-exp expans
+<omop_formula_error/error/condition>
+Error: formula_provenance_invalid: /provenance; retain the immutable definition and record edits as derivatives.
+Backtrace:
+    ▆
+ 1. └─get(paste0("recipe_import_", format))(path) at test-audit-formula-portability.R:23:5
+ 2.   └─dsOMOPClient:::.recipe_from_plain(.yaml_load_safe(yaml)) at dsOMOPClient/R/recipe.R:6634:3
+ 3.     └─dsOMOPClient:::.v2_restore(v) at dsOMOPClient/R/recipe.R:6419:9
+ 4.       ├─base::do.call(ctor, args) at dsOMOPClient/R/recipe_v2_io.R:316:3
+ 5.       └─dsOMOPClient:::.formulaRestore(variable = `<omp_vrbl>`, provenance = `<named list>`)
+ 6.         └─dsOMOPClient:::.formulaReject(...) at dsOMOPClient/R/formulas.R:177:3
+
+── 2. Failure ('test-audit-formula-portability.R:36:3'): formula definitions ret
+Expected `.numberJson(a)` to be identical to `.numberJson(b)`.
+Differences:
+actual vs expected
+- "{\"bmi\":{\"id\":\"dsomop.formula.bmi\",\"version\":\"1.0.0\",\"equation\":\"weight/(height*height)\",\"input_units\":{\"weight\":\"coordinate:kg\",\"height\":\"coordinate:metres\"},\"unit\":\"coordinate:kg_per_m2\",\"eligibility\":\"positive finite weight and height\",\"meaning\":\"body mass index\"},\"map\":{\"id\":\"dsomop.formula.map\",\"version\":\"1.0.0\",\"equation\":\"(systolic+2*diastolic)/3\",\"input_units\":{\"systolic\":\"coordinate:mmHg\",\"diastolic\":\"coordinate:mmHg\"},\"unit\":\"coordinate:mmHg\",\"eligibility\":\"positive finite pressures\",\"meaning\":\"usual arithmetic MAP approximation; not measured pressure\"},\"ratio\":{\"id\":\"dsomop.formula.ratio\",\"version\":\"1.0.0\",\"equation\":\"numerator/denominator\",\"eligibility\":\"finite operands; zero denominator and nonfinite arithmetic become NA; negative denominators allowed\"},\"egfr_ckdepi2021\":{\"id\":\"dsomop.formula.egfr_ckdepi2021\",\"version\":\"1.0.0\",\"equation\":\"142*min(Scr/k,1)^alpha*max(Scr/k,1)^(-1.200)*0.9938^age*sex_factor\",\"female\":{\"k\":0.7,\"alpha\":-0.241,\"sex_factor\":1.012},\"male\":{\"k\":0.9,\"alpha\":-0.302,\"sex_factor\":1},\"log_age_factor\":-0.0062192998139168326,\"unit\":\"coordinate:ml_min_1_73m2\",\"input_units\":{\"creatinine\":\"coordinate:idms_creatinine_mg_dl\",\"age\":\"years\"},\"eligibility\":\"age >=18 completed calendar years at creatinine measurement; positive finite standardized creatinine; exactly one explicitly mapped sex branch\",\"assay\":\"IDMS standardized creatinine; public protocol assumption, not inferred from values\",\"source\":\"https://www.kidney.org/professionals/ckd-epi-creatinine-equation-2021\",\"equation_version\":\"CKD-EPI 2021 creatinine; race-free\"}}"
++ "{\"bmi\":{\"id\":\"dsomop.formula.bmi\",\"version\":\"1.0.0\",\"equation\":\"weight/(height*height)\",\"input_units\":{\"weight\":\"coordinate:kg\",\"height\":\"coordinate:metres\"},\"unit\":\"coordinate:kg_per_m2\",\"eligibility\":\"positive finite weight and height\",\"meaning\":\"body mass index\"},\"map\":{\"id\":\"dsomop.formula.map\",\"version\":\"1.0.0\",\"equation\":\"(systolic+2*diastolic)/3\",\"input_units\":{\"systolic\":\"coordinate:mmHg\",\"diastolic\":\"coordinate:mmHg\"},\"unit\":\"coordinate:mmHg\",\"eligibility\":\"positive finite pressures\",\"meaning\":\"usual arithmetic MAP approximation; not measured pressure\"},\"ratio\":{\"id\":\"dsomop.formula.ratio\",\"version\":\"1.0.0\",\"equation\":\"numerator/denominator\",\"eligibility\":\"finite operands; zero denominator and nonfinite arithmetic become NA; negative denominators allowed\"},\"egfr_ckdepi2021\":{\"id\":\"dsomop.formula.egfr_ckdepi2021\",\"version\":\"1.0.0\",\"equation\":\"142*min(Scr/k,1)^alpha*max(Scr/k,1)^(-1.200)*0.9938^age*sex_factor\",\"female\":{\"k\":0.7,\"alpha\":-0.241,\"sex_factor\":1.012},\"male\":{\"k\":0.9,\"alpha\":-0.302,\"sex_factor\":1},\"log_age_factor\":-0.00621929981391683,\"unit\":\"coordinate:ml_min_1_73m2\",\"input_units\":{\"creatinine\":\"coordinate:idms_creatinine_mg_dl\",\"age\":\"years\"},\"eligibility\":\"age >=18 completed calendar years at creatinine measurement; positive finite standardized creatinine; exactly one explicitly mapped sex branch\",\"assay\":\"IDMS standardized creatinine; public protocol assumption, not inferred from values\",\"source\":\"https://www.kidney.org/professionals/ckd-epi-creatinine-equation-2021\",\"equation_version\":\"CKD-EPI 2021 creatinine; race-free\"}}"
+
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                             file blocks failed errors
+ test-audit-formula-portability.R      2      1      1
+
+FAILING TESTS
+test-audit-formula-portability.R | Q14 closed log-exp expansion and provenance survive JSON YAML and generated R | failed=0 error=TRUE
+test-audit-formula-portability.R | formula definitions retain exact binary64 coefficients in YAML | failed=1 error=FALSE
+
+RESULT failed: 1 errors: 1 skipped: 0 passed: 55 

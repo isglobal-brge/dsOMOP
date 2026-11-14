@@ -1,0 +1,9 @@
+FAILURES BY FILE
+                file blocks failed errors
+ test-recipe-circe.R      1      0      1
+
+FAILING TESTS
+test-recipe-circe.R | Circe count windows and supported Age operators are preserved | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 1 skipped: 0 passed: 1051 
+RESULT failed: 0 errors: 1 skipped: 0 passed: 1051 

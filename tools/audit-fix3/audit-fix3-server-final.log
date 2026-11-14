@@ -1,0 +1,9 @@
+FAILURES BY FILE
+                 file blocks failed errors
+ test-ohdsi-results.R      1      0      1
+
+FAILING TESTS
+test-ohdsi-results.R | strict OHDSI projection refuses uncontracted physical layouts | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 1 skipped: 0 passed: 2608 
+RESULT failed: 0 errors: 1 skipped: 0 passed: 2608 

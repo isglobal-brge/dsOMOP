@@ -1,0 +1,72 @@
+dsOMOP v2.10.5 loaded. OMOP CDM resource resolver registered.
+audit-formula-edges: .1.
+audit-method-declarations: W...2W3
+audit-number-daily: .......................[dsomop-audit] 2026-11-14T15:32:11+0000 method=publication detail={"output":"o","component":"o","passed":true}
+...[dsomop-audit] 2026-11-14T15:32:14+0000 method=publication detail={"output":"o","component":"o","passed":true}
+...[dsomop-audit] 2026-11-14T15:32:14+0000 method=publication detail={"output":"o","component":"o","passed":false}
+.4
+audit-settings: ......................................................................................................................................[dsomop-audit] 2026-11-14T15:32:16+0000 method=omopAnalysisRunDS detail={"name":"dsomop:incidence.rate","params":{"outcome_concept_id":"201820","tar_start_offset":"0","tar_end_offset":"0","tar_anchor_start":"start","tar_anchor_end":"end"},"scope_present":true,"scope_table_count":0,"combine":"union"}
+...........[dsomop-audit] 2026-11-14T15:32:17+0000 method=omopAnalysisRunDS detail={"name":"dsomop:incidence.rate","params":{"outcome_concept_id":"201820","tar_start_offset":"0","tar_end_offset":"0","tar_anchor_start":"start","tar_anchor_end":"end","clean_window":0},"scope_present":true,"scope_table_count":0,"combine":"union"}
+..[dsomop-audit] 2026-11-14T15:32:19+0000 method=omopAnalysisRunDS detail={"name":"dsomop:fe.prevalence","params":{"domain_code":"0"},"scope_present":true,"scope_table_count":0,"combine":"union"}
+..[dsomop-audit] 2026-11-14T15:32:20+0000 method=omopAnalysisRunDS detail={"name":"dsomop:fe.prevalence","params":{"domain_code":"0","time_windows":0},"scope_present":true,"scope_table_count":0,"combine":"union"}
+.....
+
+══ Warnings ════════════════════════════════════════════════════════════════════
+1. Q13 canonical and alias discovery retain their actual method scope ('test-audit-method-declarations.R:7:5') - analysis catalog: some entries depend on resources not present: tables {care_site, provider, condition_era, device_exposure, cost, drug_era, payer_plan_period} 
+
+2. Q13 ordinary results carry effective settings without observed inventories ('test-audit-method-declarations.R:20:3') - analysis catalog: some entries depend on resources not present: tables {care_site, provider, condition_era, device_exposure, cost, drug_era, payer_plan_period} 
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Failure ('test-audit-formula-edges.R:28:3'): Q14 adult boundaries and inva
+Expected `attr(got, "omop_numbers")$egfr$privacy_class` to be identical to 2L.
+Differences:
+`actual` is NULL
+`expected` is an integer vector (2)
+
+
+── 2. Error ('test-audit-method-declarations.R:12:5'): Q13 canonical and alias d
+Error in `match.arg(name, c("plan-v2", "ir-v2", "mutate-v1"))`: 'arg' should be one of "plan-v2", "ir-v2", "mutate-v1"
+Backtrace:
+    ▆
+ 1. ├─testthat::expect_true(...) at test-audit-method-declarations.R:12:5
+ 2. │ └─testthat::quasi_label(enquo(object), label)
+ 3. │   └─rlang::eval_bare(expr, quo_get_env(quo))
+ 4. ├─dsOMOP:::.jsonSchemaValidate(...)
+ 5. │ └─dsOMOP:::.jsv_node(...) at dsOMOP/R/json_schema.R:168:3
+ 6. └─dsOMOP:::.jsonSchemaPackaged("ohdsi-declaration-1") at dsOMOP/R/json_schema.R:200:3
+ 7.   └─base::match.arg(name, c("plan-v2", "ir-v2", "mutate-v1")) at dsOMOP/R/json_schema.R:85:3
+
+── 3. Error ('test-audit-method-declarations.R:20:3'): Q13 ordinary results carr
+Error: Analysis 'dsomop:fe.prevalence' requires a cohort/population scope (the cohort is the analysis population); pass cohort= or tables= so it has a population to compute over.
+Backtrace:
+    ▆
+ 1. └─dsOMOP:::.omopAnalysisRun(h, "dsomop:fe.prevalence", params = list(time_windows = 0L)) at test-audit-method-declarations.R:20:3
+ 2.   └─dsOMOP:::.omopAnalysisRunImpl(...) at dsOMOP/R/analysis_catalog.R:5650:3
+ 3.     └─dsOMOP:::.dsomopWithReadSnapshot(...) at dsOMOP/R/analysis_catalog.R:5352:5
+ 4.       └─base::tryCatch(...) at dsOMOP/R/read_snapshot.R:155:3
+ 5.         └─base (local) tryCatchList(expr, classes, parentenv, handlers)
+ 6.           └─base (local) tryCatchOne(expr, names, parentenv, handlers[[1L]])
+ 7.             └─value[[3L]](cond)
+
+── 4. Error ('test-audit-number-daily.R:48:1'): Q15 temporal selection, stable t
+Error: Could not release the compiler temporary table(s) dsomop_pop_cand_t_raw, dsomop_pop_op_periods, dsomop_pop_pop_t; they stay registered for a retry.
+Backtrace:
+    ▆
+ 1. └─.ws7_close(run)
+ 2.   └─dsOMOP:::.planContextClose(run$ctx) at tests/testthat/helper-ws7.R:86:3
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                             file blocks failed errors
+ test-audit-method-declarations.R      2      0      2
+       test-audit-formula-edges.R      1      1      0
+        test-audit-number-daily.R      1      0      1
+
+FAILING TESTS
+test-audit-formula-edges.R | Q14 adult boundaries and invalid input eligibility execute in the emitted plan | failed=1 error=FALSE
+test-audit-method-declarations.R | Q13 canonical and alias discovery retain their actual method scope | failed=0 error=TRUE
+test-audit-method-declarations.R | Q13 ordinary results carry effective settings without observed inventories | failed=0 error=TRUE
+test-audit-number-daily.R | Q15 temporal selection, stable ties, ranges and publication preserve people | failed=0 error=TRUE
+
+RESULT failed: 1 errors: 3 skipped: 0 passed: 189 
