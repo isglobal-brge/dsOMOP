@@ -133,3 +133,69 @@ test_that("only contracted optional columns are completed with their declared ty
     expect_true(all(is.na(cd$concept_name)))
   }
 })
+
+test_that("schema discovery describes layout status without inventing upstream versions", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  supported <- .ohdsiInspectResultSchema(h, "cm_result")
+  expect_identical(supported$status, "supported")
+  expect_identical(supported$upstream_version, "unknown")
+  expect_match(supported$structural_fingerprint, "^[0-9a-f]{64}$")
+  expect_identical(.ohdsiInspectResultSchema(h, "es_cm_result")$status, "admin_only")
+  expect_identical(.ohdsiInspectResultSchema(h, "cm_unregistered")$status, "unknown")
+  DBI::dbExecute(h$conn, "ALTER TABLE cm_result RENAME COLUMN target_id TO target_comparator_id")
+  recognized <- .ohdsiInspectResultSchema(h, "cm_result")
+  expect_identical(recognized$status, "recognized_unsupported")
+  expect_identical(recognized$upstream_version, "unknown")
+  expect_false(identical(recognized$structural_fingerprint, supported$structural_fingerprint))
+  status <- .ohdsiStatus(h)
+  expect_identical(status$cohort_method$schema_contracts$schema_status[
+    status$cohort_method$schema_contracts$table_name == "cm_result"], "recognized_unsupported")
+  expect_true(all(c("table_name", "schema_status", "layout_id", "upstream_version",
+    "structural_fingerprint") %in% names(status$cohort_method$schema_contracts)))
+  expect_false(any(c("n_rows", "qualified_name") %in% names(status$cohort_method$schema_contracts)))
+})
+
+test_that("physical fingerprints are metadata-only and independent of column order", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  before <- .ohdsiInspectResultSchema(h, "cm_result")
+  DBI::dbExecute(h$conn, "DELETE FROM cm_result")
+  expect_identical(.ohdsiInspectResultSchema(h, "cm_result"), before)
+  real <- .listColumnsRaw
+  local_mocked_bindings(.listColumnsRaw = function(...) {
+    info <- real(...)
+    info[rev(seq_len(nrow(info))), , drop = FALSE]
+  })
+  expect_identical(.ohdsiInspectResultSchema(h, "cm_result"), before)
+  manifest <- .ohdsiResultSchemaManifest()
+  expect_identical(manifest$cm_result$relationships$unique_row,
+    c("analysis_id", "target_id", "comparator_id", "outcome_id"))
+  expect_identical(manifest$cm_lookup$status, "recognized_unsupported")
+})
+
+test_that("duplicate identities refuse before projection filters and result limits", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  expect_gt(nrow(.ohdsiGetResults(h, "cm_result")), 0L)
+  DBI::dbExecute(h$conn, "INSERT INTO cm_result SELECT * FROM cm_result WHERE analysis_id = 2")
+  for (columns in list(NULL, "rr")) {
+    err <- tryCatch(.ohdsiGetResults(h, "cm_result", columns = columns,
+      filters = list(analysis_id = 1L), limit = 1L), error = identity)
+    expect_s3_class(err, "error")
+    expect_identical(conditionMessage(err), paste0(
+      "results_schema_integrity: required row identities are missing or invalid; ",
+      "use a complete supported physical export."))
+  }
+})
+
+test_that("wrong optional physical types refuse before data access", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  DBI::dbExecute(h$conn, "ALTER TABLE cm_result DROP COLUMN rr")
+  DBI::dbExecute(h$conn, "ALTER TABLE cm_result ADD COLUMN rr TEXT")
+  .buildBlueprint(h)
+  local_mocked_bindings(.executeQuery = function(...) stop("RESULT_ROWS_READ"))
+  expect_identical(.ohdsiInspectResultSchema(h, "cm_result")$status, "unknown")
+  expect_error(.ohdsiGetResults(h, "cm_result"), "unsupported_results_schema")
+})

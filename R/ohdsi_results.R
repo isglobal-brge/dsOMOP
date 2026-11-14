@@ -529,7 +529,8 @@
   empty <- data.frame(
     table_name = character(0), tool_id = character(0),
     tool_name = character(0), qualified_name = character(0),
-    n_rows = integer(0), stringsAsFactors = FALSE
+    n_rows = integer(0), schema_status = character(), layout_id = character(),
+    upstream_version = character(), structural_fingerprint = character(), stringsAsFactors = FALSE
   )
 
   schema <- .effectiveResultsSchema(handle)
@@ -546,7 +547,12 @@
       sql <- paste0("SELECT COUNT(*) AS n FROM ", qualified)
       as.integer(.executeQuery(handle, sql)$n[1])
     }, error = function(e) 0L)
+    schema_contract <- .ohdsiInspectResultSchema(handle, actual_name, tid)
     rows[[length(rows) + 1L]] <- data.frame(
+      schema_status = schema_contract$status,
+      layout_id = schema_contract$layout_id,
+      upstream_version = schema_contract$upstream_version,
+      structural_fingerprint = schema_contract$structural_fingerprint,
       table_name = actual_name, tool_id = tid,
       tool_name = tool$tool_name, qualified_name = qualified,
       n_rows = n, stringsAsFactors = FALSE
@@ -903,6 +909,7 @@
   )
   identity_cols <- .ohdsiIdentitySchema(resolved, actual_cols)
   .ohdsiIdentityTypes(handle, physical, identity_cols)
+  schema_contract <- .ohdsiInspectResultSchema(handle, physical$table_name, resolved$tool_id)
   required_basis <- unique(c(resolved$contract$count_columns,
                              resolved$contract$person_columns))
   missing_basis <- setdiff(required_basis, actual_cols)
@@ -913,6 +920,10 @@
          if (length(missing_basis) > 0L) paste0(": ",
            paste(missing_basis, collapse = ", ")) else "",
          ".", call. = FALSE)
+  }
+  if (isTRUE(resolved$strict) && !identical(schema_contract$status, "supported")) {
+    stop("unsupported_results_schema: physical columns do not match a supported result layout; ",
+         "use a listed supported export.", call. = FALSE)
   }
   entry <- list(meta = list(
     tool_id = resolved$tool_id,
@@ -973,6 +984,8 @@
   contract <- resolved$contract
   strict <- resolved$strict
   finish <- function(x) {
+    if (exists("schema_contract", envir = parent.env(environment()), inherits = FALSE))
+      attr(x, "dsomop.results_schema") <- schema_contract
     if (strict && is.null(columns) && is.data.frame(x)) {
       for (column in setdiff(contract$public_columns, names(x))) {
         if (!column %in% contract$optional_columns) {
@@ -1016,6 +1029,7 @@
 
   identity_cols <- .ohdsiIdentitySchema(resolved, actual_cols)
   .ohdsiIdentityTypes(handle, physical, identity_cols)
+  schema_contract <- .ohdsiInspectResultSchema(handle, physical$table_name, resolved$tool_id)
 
   if (strict) {
     table_count_cols <- contract$count_columns
@@ -1048,6 +1062,12 @@
       table_person_cols
     )
   }
+
+  if (isTRUE(resolved$strict) && !identical(schema_contract$status, "supported")) {
+    stop("unsupported_results_schema: physical columns do not match a supported result layout; ",
+         "use a listed supported export.", call. = FALSE)
+  }
+  .ohdsiValidateUniqueResultKeys(handle, physical, identity_cols)
 
   # Build SELECT columns
   if (is.null(columns)) {
@@ -1246,7 +1266,8 @@
 #' @return Named list with per-tool availability
 #' @keywords internal
 .ohdsiStatus <- function(handle) {
-  found <- .ohdsiFilterPublicInventory(.ohdsiFindResultTables(handle))
+  inventory <- .ohdsiFindResultTables(handle)
+  found <- .ohdsiFilterPublicInventory(inventory)
 
   registry <- .ohdsi_tool_registry()
   status <- list()
@@ -1260,7 +1281,10 @@
       n_tables = nrow(tool_tables),
       # Result-table row counts are not person counts (one person can generate
       # many rows) and have no person gate, so they are not released.
-      total_rows = NA_real_
+      total_rows = NA_real_,
+      schema_contracts = inventory[inventory$tool_id == tid,
+        c("table_name", "schema_status", "layout_id", "upstream_version", "structural_fingerprint"),
+        drop = FALSE]
     )
   }
 

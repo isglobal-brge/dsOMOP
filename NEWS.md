@@ -1,5 +1,13 @@
 # dsOMOP / dsOMOPClient 2.10.5 (development)
 
+* **Corrected / newly refused:** physical-result discovery reports structural
+  fingerprints and layout status without inferring upstream package versions.
+  Per-tool status includes schema contracts, including admin-only and recognized
+  unsupported layouts. Duplicate inline result identities now refuse before
+  caller filters or row limits; re-export one row per contracted identity.
+  Optional columns with incompatible physical types refuse before row access.
+  These historical inline contracts do not certify a modern upstream export.
+
 * **Corrected:** imported-vocabulary capability and preflight traversal now
   distinguishes declaration registries from advisory metadata. Event and
   concept-set names such as `meta`, `metadata`, and `circe_provenance` retain
