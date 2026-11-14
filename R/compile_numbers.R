@@ -218,6 +218,7 @@
 .numberOutputCovariates <- function(ctx,node,inputs,co) {
   if(node$format %in% c("wide","long","intervals","joined"))return(co)
   vars<-setdiff(.irOutputVariables(ctx$ir,.compileNodeName(node,"output")),.dateOutputVariables(ctx,node))
+  if(!length(vars))return(co)
   # Typed scalar numeric reducers are covariates even without an explicit
   # number_spec. Defaults must not decide whether a requested column exists.
   existing <- unique(unlist(lapply(co$components,function(part)names(part$fragment$columns))))

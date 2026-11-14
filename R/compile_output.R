@@ -202,8 +202,12 @@
     part <- co$components[[component]]
     if (!is.null(part$frame)) {
       ordered_keys <- .presentationVariableOrder(names(part$frame),ctx$ir$variables,node$columns)
-      part$frame <- part$frame[ordered_keys]
-      part$fragment$columns <- part$fragment$columns[ordered_keys]
+      if(!identical(ordered_keys,names(part$frame))) {
+        metadata <- attributes(part$frame)
+        part$frame <- part$frame[ordered_keys]
+        for(tag in setdiff(names(metadata),c("names","row.names","class")))attr(part$frame,tag) <- metadata[[tag]]
+        part$fragment$columns <- part$fragment$columns[ordered_keys]
+      }
       index <- NULL
       if (!is.null(inputs$population) && "cohort_row_id" %in% names(part$frame)) {
         roster <- .reduceRosterFrame(ctx, inputs$population$roster)
