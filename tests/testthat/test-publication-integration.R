@@ -127,10 +127,14 @@ test_that("publication closes private state even when rollback itself fails", {
 })
 
 test_that("patient roots may use names also used for reference companions", {
+  handle <- create_test_handle()
+  on.exit(cleanup_handle(handle), add = TRUE)
+  people <- list(type = "event_level", table = "person", columns = "person_id")
   for (root in c("covariateRef", "timeRef", "transitionRef", "transition_ref")) {
     ctx <- .publication_test_context()
+    ctx$handle <- handle
     ctx$return_private <- TRUE
-    ctx$ir <- list(outputs = stats::setNames(list(list(type = "event_level")), root),
+    ctx$ir <- list(outputs = stats::setNames(list(people), root),
                     options = list(translate_concepts = FALSE))
     status <- .publishOutputs(ctx, stats::setNames(list(data.frame(person_id = 1:5)), root),
                                stats::setNames(list(root), root))
@@ -144,7 +148,8 @@ test_that("private computed inputs are not gated or published", {
   on.exit(cleanup_handle(handle), add = TRUE)
   .setLegacyTestPersonKey(handle, "publication-integration", .local_envir = environment())
   target <- new.env(parent = emptyenv())
-  plan <- list(publish = "final", outputs = list(private = list(), final = list()),
+  people <- list(type = "event_level", table = "person", columns = "person_id")
+  plan <- list(publish = "final", outputs = list(private = people, final = people),
                options = list(translate_concepts = FALSE))
   ctx <- .planContext(handle, plan, target_env = target)
   on.exit(.planContextClose(ctx), add = TRUE)
