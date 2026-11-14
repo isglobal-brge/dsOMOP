@@ -313,7 +313,7 @@ extend_reach_handle <- function(handle, with_defects = FALSE) {
   reviewed <- data.frame(
     concept_id = c(FIELD_DRUG, FIELD_PROC, 1147127L, USD, EUR, OP_LT, OP_GT),
     concept_name = c("drug_exposure.drug_exposure_id", "procedure_occurrence.procedure_occurrence_id",
-                     "condition_occurrence.condition_occurrence_id", "United States dollar", "Euro", "<", ">"),
+                     "condition_occurrence.condition_occurrence_id", "USD", "EUR", "<", ">"),
     domain_id = c("Metadata", "Metadata", "Metadata", "Currency", "Currency", "Meas Value Operator", "Meas Value Operator"),
     vocabulary_id = c("CDM", "CDM", "CDM", "Currency", "Currency", "SNOMED", "SNOMED"),
     concept_class_id = c("Field", "Field", "Field", "Currency", "Currency", "Qualifier Value", "Qualifier Value"),
