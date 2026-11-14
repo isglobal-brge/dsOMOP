@@ -578,6 +578,8 @@
 # outcome, the warnings, the canonical result and, for an assigning call, the
 # bindings it created. Staged files are removed after they were read.
 .a19_call <- function(handle, expr, target = NULL) {
+  # Reproduce the recorded CSV transport even when Arrow is installed.
+  local_mocked_bindings(.arrowAvailable = function() FALSE)
   db <- .b10_db_tables(handle$conn)$sha256
   before <- if (is.null(target)) character(0) else ls(target, all.names = TRUE)
   warnings <- character(0)

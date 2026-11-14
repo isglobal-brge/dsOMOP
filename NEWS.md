@@ -1,5 +1,9 @@
 # dsOMOP 2.10.5 (2026-11-14)
 
+- Corrected (integration): imported OHDSI validity has a complete dialect
+  capability mapping. Ordinary reducer schemas stay identical when a source
+  table is unavailable; category consumers retain missing-source provenance.
+
 - Corrected: pinned analysis loaders seal DP provenance after final publication
   presentation, within the original read snapshot. Re-run affected loaders to
   obtain a valid fixed-synopsis input; provenance verification remains strict.

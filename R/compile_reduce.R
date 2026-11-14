@@ -910,7 +910,11 @@
   for (col in names(record$columns)) {
     attr(record$columns[[col]], "concept_owner") <- name
     if(.categoryFlag(node,record$columns[[col]]))attr(record$columns[[col]],"semantic_flag")<-TRUE
-    attr(record$columns[[col]], "category_available") <- record$available
+    # Availability is execution state for category consumers, not part of a
+    # plain reducer's declared schema (which is stable across missing tables).
+    if (length(.categoryCapabilities(ctx$ir))) {
+      attr(record$columns[[col]], "category_available") <- record$available
+    }
   }
   record
 }

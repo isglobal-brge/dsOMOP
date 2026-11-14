@@ -88,6 +88,7 @@
                               "integer_literal", "window_functions",
                               "lossless_key", "nulls_last")
 .SQL_OPERATION_CONSTRUCTS <- list(
+  vocabulary.ohdsi_import_validity = character(0),
   concept_set = character(0),
   event = c("date_add_days"),
   event.unit = character(0),

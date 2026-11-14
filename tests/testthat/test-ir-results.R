@@ -599,6 +599,8 @@ test_that("safe-class v1 plans reproduce their 2.10.2 results on the default fix
 })
 
 test_that("safe-class v1 plans reproduce their 2.10.2 staged results on admissible fixtures", {
+  # The immutable baseline was captured without Arrow, using CSV bytes.
+  local_mocked_bindings(.arrowAvailable = function() FALSE)
   fx <- .b10_pins("ir-v1-results-staged.json")
   for (pin in fx$pins) {
     info <- paste0(pin$id, " (", pin$key, ", ", pin$fn, ", staged)")
