@@ -112,7 +112,7 @@ test_that("the retained estimands distinguish first-episode time, persons, recor
 })
 
 test_that("published protected incidence uses the independent first-episode oracle", {
-  .release_state(mode = "dp")
+  .release_state(mode = "auto")
   h <- .audit_estimand_handle()
   on.exit(cleanup_handle(h), add = TRUE)
   symbol <- "audit_estimand"

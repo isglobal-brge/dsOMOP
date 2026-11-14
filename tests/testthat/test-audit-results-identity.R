@@ -113,3 +113,23 @@ test_that("integer identity contract validates exact representations without coe
   expect_error(.ohdsiValidateResultIdentity(data.frame(database_id = 1L),
     "database_id", character()), "results_schema_integrity")
 })
+
+test_that("only contracted optional columns are completed with their declared type", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  DBI::dbExecute(h$conn, "ALTER TABLE cm_result DROP COLUMN rr")
+  DBI::dbExecute(h$conn, "ALTER TABLE index_event_breakdown DROP COLUMN concept_name")
+  .buildBlueprint(h)
+  for (empty in c(FALSE, TRUE)) {
+    if (empty) {
+      DBI::dbExecute(h$conn, "DELETE FROM cm_result")
+      DBI::dbExecute(h$conn, "DELETE FROM index_event_breakdown")
+    }
+    cm <- .ohdsiGetResults(h, "cm_result")
+    cd <- .ohdsiGetResults(h, "index_event_breakdown")
+    expect_type(cm$rr, "double")
+    expect_type(cd$concept_name, "character")
+    expect_true(all(is.na(cm$rr)))
+    expect_true(all(is.na(cd$concept_name)))
+  }
+})

@@ -65,6 +65,14 @@
       event_complement = pairs(statistic_basis$event_complement)
     )
   }
+  optional <- setdiff(normalise(public_columns),
+                     unique(c(normalise(filter_columns), normalise(count_columns),
+                              normalise(person_columns))))
+  optional_types <- stats::setNames(rep("double", length(optional)), optional)
+  optional_types[intersect(optional, c("concept_name", "visit_context"))] <- "character"
+  if (length(setdiff(optional, c(normalise(statistic_columns), "concept_name", "visit_context")))) {
+    stop("An optional physical result column requires an explicit type contract.", call. = FALSE)
+  }
   list(
     release = release,
     unit = unit,
@@ -74,7 +82,9 @@
     count_columns = normalise(count_columns),
     person_columns = normalise(person_columns),
     statistic_columns = normalise(statistic_columns),
-    statistic_basis = basis
+    statistic_basis = basis,
+    optional_columns = optional,
+    optional_types = optional_types
   )
 }
 
@@ -965,7 +975,13 @@
   finish <- function(x) {
     if (strict && is.null(columns) && is.data.frame(x)) {
       for (column in setdiff(contract$public_columns, names(x))) {
-        x[[column]] <- rep(NA, nrow(x))
+        if (!column %in% contract$optional_columns) {
+          stop("results_schema_integrity: required physical-result columns cannot be completed; ",
+               "use a complete supported physical export.", call. = FALSE)
+        }
+        missing_value <- switch(contract$optional_types[[column]],
+                                character = NA_character_, double = NA_real_)
+        x[[column]] <- rep(missing_value, nrow(x))
       }
       x <- x[, contract$public_columns, drop = FALSE]
     }

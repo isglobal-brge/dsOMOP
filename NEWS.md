@@ -6,6 +6,11 @@
   SQLite storage is checked before driver coercion; BIGINT keys remain exact
   decimal text beyond the int32 range. Re-export malformed identities using
   exact integer storage; do not round identifiers to repair an export.
+* **Corrected:** absent optional physical-result statistics and labels are
+  completed only under their closed column contract, with numeric or text NA
+  of the declared type, including empty results. Required identities and
+  support columns cannot be completed. Re-read supported exports to obtain
+  the corrected optional-column types.
 
 * **Newly refused:** incidence `clean_window` values other than zero and
   `fe.prevalence` `time_windows` values other than zero now fail with a bounded
