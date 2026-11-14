@@ -1121,7 +1121,7 @@
     # round BIGINT. Do not turn a BLOB or REAL into a valid integer identity.
     for (key in integer_keys) {
       query_expr[query_cols == key] <- paste0(
-        "CASE WHEN TYPEOF(", key, ") IN ('integer', 'text') THEN CAST(",
+        "CASE WHEN TYPEOF(", key, ") = 'integer' THEN CAST(",
         key, " AS TEXT) ELSE NULL END AS ", key)
     }
   }
