@@ -245,7 +245,9 @@
           names(part$fragment$columns)[!vapply(names(part$fragment$columns), function(k)
             .numberEligibleColumn(part$fragment$columns[[k]], k, node) ||
               !is.null(attr(part$fragment$columns[[k]], "number_contract")), logical(1))]
-        structural <- setdiff(structural, c(declared_columns, additions))
+        inherited_variables <- names(part$fragment$columns)[vapply(part$fragment$columns,
+          function(column) !is.null(attr(column, "concept_owner")), logical(1))]
+        structural <- setdiff(structural, c(declared_columns, inherited_variables, additions))
         keep <- .categorySelectedColumns(node$columns, ctx$ir$variables, structural, names(part$frame))
         part$frame <- part$frame[keep]
         part$fragment$columns <- part$fragment$columns[keep]
