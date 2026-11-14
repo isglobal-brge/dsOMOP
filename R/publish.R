@@ -435,7 +435,9 @@
     }
     if (is.data.frame(value)) {
       translate <- .reduceTranslate(ctx)
-      attr(value, "omop_concept_reference") <- if (translate && identical(pc$grain, "none")) TRUE else NULL
+      # Public reference provenance does not depend on concept translation.
+      # Codebook reconciliation also visits untranslated reference components.
+      attr(value, "omop_concept_reference") <- if (identical(pc$grain, "none")) TRUE else NULL
       columns <- attr(value, "omop_column_contract")
       if (is.null(columns) && !.dsomopDpIsV2(ctx$ir)) columns <- .conceptLegacyColumns(ctx, value, pc$output, pc$component)
       if (!is.null(columns)) value <- .conceptPresent(ctx, value, columns)
