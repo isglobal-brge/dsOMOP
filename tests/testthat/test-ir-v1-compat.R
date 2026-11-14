@@ -343,6 +343,14 @@ for (.compat_case in .compat_fx$cases) local({
     disposition <- case[["disposition"]]
     run <- .compat_execute(fx, case, plan)
     info <- paste0(case$id, " (", .compat_baseline_text(case), ")")
+    if (identical(case[["template"]], "baseline.age_breaks.item") &&
+        identical(case$baseline$status, "ok") && is.null(run$error)) {
+      # Exactly the sixteen successful historical age-break variants. Their
+      # hashes still compare all values with the original independent capture;
+      # only the separately checked A-27/A-28 category presentation is removed.
+      run$value$demo <- .compat_with(fx, case, function()
+        .expect_legacy_age_text(run$value$demo, plan$outputs$demo$age_breaks, info))
+    }
     if (is.list(disposition)) {
       # Each changed case has an explicit reviewed structural/publication
       # contract and an outcome assertion; no blanket compatibility waiver.

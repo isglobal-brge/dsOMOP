@@ -203,6 +203,8 @@ test_that("baseline coverage: unique values exact, uncovered NA, ambiguous dropp
   })
   withr::with_options(list(nfilter.subset = 2L), {
     published <- .planExecute(handle, plan, list(demo = "demo_df"))$demo
+    published <- .expect_legacy_age_text(published, NULL,
+      "A-E6 coverage preserves exact values under A-27/A-28 age presentation")
     expect_equal(published[, names(out)], out)
   })
 })

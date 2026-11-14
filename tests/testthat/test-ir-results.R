@@ -543,6 +543,23 @@ test_that("safe-class v1 plans reproduce their 2.10.2 results on the default fix
       fail(paste0(info, ": refused: ", conditionMessage(got)))
       next
     }
+    if (identical(pin$id, "r003")) {
+      # A-27 makes the fixed sex_mf domain an unordered factor. Check both
+      # public levels, then retain the complete historical value comparison.
+      expect_identical(pin$key,
+        "dsOMOP:test-extraction.R:planExecute with mixed derived columns (age + dcsi + hfrs)")
+      expect_identical(class(got$wide$sex), c("dsomop_concept_factor", "factor"))
+      expect_identical(levels(got$wide$sex), c("F", "M"))
+      expect_setequal(names(attributes(got$wide$sex)), c("levels", "class"))
+      got$wide$sex <- as.character(got$wide$sex)
+    }
+    if (pin$id %in% c("r004", "r005", "r021")) {
+      # Named baseline age captures: retain their independent F-26/control
+      # values after checking the A-27/A-28 presentation contract in full.
+      plan <- .b10_decode(pin$plan)
+      got$demo <- withr::with_options(.b10_options(pin, fx$option_pattern),
+        .expect_legacy_age_text(got$demo, plan$outputs$demo$age_breaks, info))
+    }
     if (identical(pin$id, "r006")) {
       # A-27 corrects this translated column from text to an unordered factor.
       # Assert the new class and identity contract before comparing the full
