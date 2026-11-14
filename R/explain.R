@@ -5,7 +5,7 @@
 .RECIPE_OPERATIONS <- c(
   "vocabulary.ohdsi_import_validity",
   "category.presentation", "category.rollup", "category.indicators", "category.reduce", "layout.repeated", "output.codebook_metadata",
-  "number.presentation", "number.rows", "number.count", "number.change", "number.expression", "number.columns",
+  "number.daily", "number.presentation", "number.rows", "number.count", "number.change", "number.expression", "number.columns",
   "date.presentation", "date.elapsed", "output.concept_labels", "concept_set", "event", "event.unit", "event.on_missing_table", "interval",
   "interval.ingredient", "interval.stockpile", "population.index",
   "population.first_eligible", "population.any_of", "population.criteria",
@@ -47,6 +47,7 @@
   category.rollup = ".categoryRollupMap",
   category.indicators = ".categoryIndicatorRecord",
   category.presentation = c(".categoryPresent", ".categoryResolveRecords"),
+  number.daily = c(".numberDailyRecord", ".numberReducerCheck"),
   number.presentation = c(".numberPresent", ".numberOutputColumns"),
   number.rows = ".numberEventRecord", number.count = ".numberEventRecord",
   number.change = c(".numberEventRecord", ".numberChangeValues"),

@@ -1,5 +1,5 @@
 # A-29. Closed numeric declarations shared by the client and server.
-.NUMBER_KINDS <- c("number_rows", "number_count", "number_change", "number_derive", "number_column")
+.NUMBER_KINDS <- c("number_rows", "number_count", "number_change", "number_derive", "number_column", "number_daily")
 .NUMBER_GRIDS <- list(count_1_2_5=c(-Inf,0,1,2,5,10,20,50,100,Inf),
   proportion_quarters=c(-Inf,0,.25,.5,.75,1,Inf), signed_decades=c(-Inf,-100,-10,-1,0,1,10,100,Inf))
 .numberReject <- function(message, reason="number_spec_invalid") {
@@ -232,7 +232,7 @@
     if(!is.null(v$number_spec))ops<<-c(ops,"number.presentation")
     if(!is.null(v$number_columns))ops<<-c(ops,"number.columns")
     k<-v$kind %||% ""
-    if(k %in% .NUMBER_KINDS)ops<<-c(ops,switch(k,number_rows="number.rows",number_count="number.count",number_change="number.change",number_derive="number.expression",number_column="number.columns"))
+    if(k %in% .NUMBER_KINDS)ops<<-c(ops,switch(k,number_rows="number.rows",number_count="number.count",number_change="number.change",number_derive="number.expression",number_column="number.columns",number_daily="number.daily"))
     if(k=="expression")ops<<-c(ops,"number.expression")
     lapply(v,walk);invisible(NULL)
   }
@@ -258,6 +258,12 @@
       aliases<-vapply(d$inputs,function(i)i$alias,"");.numberNames(aliases)
       d$result<-.numberExpressionShape(d$exprs,d$result,aliases)
       d$inputs<-lapply(d$inputs,function(i){i$variable<-normalize(i$variable,NULL,depth+1L,column_scope);i})
+    }
+    if(identical(d$kind,"number_daily")) {
+      .numberReducerCheck(d$reducer)
+      .numberChoice(d$within_day,c("mean","max","first"))
+      .numberChoice(d$missing,c("skip","propagate"))
+      d$input<-normalize(d$input,NULL,depth+1L,column_scope)
     }
     if(!is.null(d$variable))d$variable<-normalize(d$variable,NULL,depth+1L,column_scope)
     if(identical(d$kind,"repeated")) {
@@ -425,7 +431,7 @@
   walk<-function(v) {
     if(!is.list(v))return(NULL)
     if(!is.null(v$reducer)||!is.null(v$derived)||!is.null(v$raw)||!is.null(v$population_column))result[[length(result)+1L]]<<-v
-    if(identical(v$kind,"number_derive")&&!is.null(v$reducer))result[[length(result)+1L]]<<-list(reducer=v$reducer)
+    if((v$kind %||% "") %in% c("number_derive","number_daily")&&!is.null(v$reducer))result[[length(result)+1L]]<<-list(reducer=v$reducer)
     lapply(v,walk);NULL
   }
   walk(x);result
@@ -460,8 +466,8 @@
 
 .numberDeclaredUnit <- function(plan,node,value_role=NULL) {
   d<-node$derived;r<-node$reducer;fn<-r$fn %||% ""
-  if(identical(d$kind,"number_derive")) {
-    u<-d$unit
+  if((d$kind %||% "") %in% c("number_derive","number_daily")) {
+    u<-if(d$kind=="number_daily") .numberPresentedUnit(plan,d$input) else d$unit
     return(if(identical(d$reducer$fn,"cv"))"1" else if(identical(d$reducer$fn,"slope"))paste0(u,"/days") else u)
   }
   if(fn %in% c("binary","any","all","abnormal_high","abnormal_low","cv")||identical(d$kind,"died"))return("1")
@@ -522,4 +528,17 @@
     sparse=,temporal_covariates=c("covariate_id","analysis_id","time_id","start_day","end_day"),
     person_period=c("period_id","bin_id","time_id"),
     survival=c("event","event_code","event_id","status","stratum_id","interval_number","transition_id","from_state","to_state","weight","sampling_weight","from","to","trans","state_visit_number","event_number","outcome_event_number"),character()))
+}
+
+# The coordinate after explicit operand stages, without outer display defaults.
+.numberPresentedUnit <- function(plan, node) {
+  unit <- .numberDeclaredUnit(plan,node)
+  for(step in .numberEffective(node$number_spec)$pipeline) {
+    if(step$kind=="event_unit") unit<-paste0("unit:",step$spec$target)
+    if(step$kind=="fixed_unit") unit<-step$to
+    if(step$kind=="expression") unit<-step$unit %||% .numberExpressionUnit(step$exprs,step$result,unit)
+    if(step$kind %in% c("flag","present","missing")) unit<-"1"
+    if(step$kind %in% c("bins","category")) unit<-"categorical"
+  }
+  unit
 }
