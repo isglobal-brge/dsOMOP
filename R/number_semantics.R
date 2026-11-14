@@ -347,6 +347,13 @@
     "Public bins/categories retain full ordered levels and polynomial contrasts; quantitative trends require a numeric sibling. Reference categories are relative to each selected observation's paired local ranges.",
     "Nonfinite/domain-invalid rows become typed NA without diagnostics; unavailable sources remain unavailable. Counts retain available empty zero; threshold time is first observed attainment, never interpolation.",
     paste0("Required numeric capabilities: ",paste(.numberCapabilities(plan),collapse=", ")))
+  if(!is.null(plan$options$number_spec)) {
+    lines<-c(lines,paste0("Recipe numeric defaults (including generated analytic slots): ",.jcsCanonical(.pnv2Plain(plan$options$number_spec))))
+    for(step in .numberEffective(NULL,plan$options$number_spec)$pipeline) {
+      levels<-.numberDeclaredLevels(step)
+      if(length(levels))lines<-c(lines,paste0("  default ",step$kind," -> ordered factor; complete public levels: ",paste(levels,collapse=" | ")))
+    }
+  }
   for(n in names(plan$variables)) {
     v<-plan$variables[[n]]
     if(is.null(v$number_spec)&&is.null(plan$options$number_spec)&&!(v$derived$kind %||% "") %in% .NUMBER_KINDS)next
