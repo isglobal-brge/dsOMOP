@@ -572,9 +572,9 @@ test_that("applyDateHandling binned truncates dates by month", {
 })
 
 test_that("datetime conversion uses the controller timezone deterministically", {
-  instant <- as.POSIXct("2020-12-31 23:30:00", tz = "America/New_York")
+  instant <- as.POSIXct("2020-12-31 23:30:00", tz = "EST5EDT")
   df <- data.frame(person_id = 1L, event_datetime = instant)
-  withr::with_options(list(dsomop.datetime_timezone = "America/New_York"), {
+  withr::with_options(list(dsomop.datetime_timezone = "EST5EDT"), {
     local <- .applyDateHandling(
       df, list(mode = "binned", bin_width = "month"))
     expect_identical(local$event_datetime, "2020-12-01")

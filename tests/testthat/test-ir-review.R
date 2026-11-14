@@ -1,5 +1,5 @@
-# WS-2 cross-review regressions (design/2.10.3/astra-ws2-review.md): each
-# block reproduces one of Astra's probes (design/2.10.3/astra-scratch/ws2-*)
+# WS-2 cross-review regressions (design/2.10.3/regression-ws2-review.md): each
+# block reproduces one of regression probes (design/2.10.3/regression-scratch/ws2-*)
 # with the contract it requires, plus controls that must keep passing.
 
 .rv_example <- function(name) {

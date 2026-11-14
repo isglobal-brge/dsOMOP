@@ -1,4 +1,4 @@
-# WS-2 tooling (dsOMOP 2.10.3), Astra's WS-2 re-review R1/R3 and amendment
+# WS-2 tooling (dsOMOP 2.10.3), regression's WS-2 re-review R1/R3 and amendment
 # A-19 item 7: v1 COMPATIBILITY differential capture.
 #
 # Not part of the package tests. It produces independent ground truth of what a
@@ -70,7 +70,7 @@
 #   ir        on a build with .irPrepare(): accept / refuse (classes, message)
 #             of .irPrepare(plan) without a handle.
 #
-# Sections (Astra re-review R1/R3; A-19 item 7):
+# Sections (regression re-review R1/R3; A-19 item 7):
 #   A  every integer/number scalar of the closed v1 envelope (the .v1sInt(),
 #      .v1sScalar("integer"), .v1sNum(), .v1sScalar("number"), .v1sCohortId()
 #      and .v1sPlanCohortId() positions of R/ir_v1_shape.R, the filter-tree leaf
@@ -1200,7 +1200,7 @@
   fixture <- list(
     version = 2L,
     description = paste(
-      "v1 compatibility differential fixture (Astra WS-2 re-review R1/R3, amendment A-19 item 7):",
+      "v1 compatibility differential fixture (regression WS-2 re-review R1/R3, amendment A-19 item 7):",
       "independent BASELINE (dsOMOP 2.10.2) outcomes of v1 plans whose scalar fields or predicate",
       "literals are written in a historically coercible or invalid form. A baseline `ok` must keep",
       "executing with an identical lossless canonical result; a baseline `error` may be refused (typed",

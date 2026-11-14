@@ -1,4 +1,4 @@
-# WS-2 acceptance, Astra's WS-2 re-review R1/R3 and amendment A-19 item 7:
+# WS-2 acceptance, regression WS-2 re-review R1/R3 and amendment A-19 item 7:
 # v1 COMPATIBILITY differential replay.
 #
 # fixtures/ir-v1-compat.json holds independent BASELINE (dsOMOP 2.10.2,

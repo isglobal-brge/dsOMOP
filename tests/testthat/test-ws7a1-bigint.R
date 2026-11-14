@@ -96,7 +96,7 @@ test_that("public BIGINT mode agrees with stored SQL integers in both publicatio
     plan <- .ws7_scenario_plan(list(
       m = list(source = list(event = "lab"), reducer = list(fn = "mode", value = "r2_amount")),
       nd = list(source = list(event = "lab"), reducer = list(fn = "n_distinct", value = "r2_amount"))))
-    handle_name <- paste0("astra_r2_bigint_", b)
+    handle_name <- paste0("regression_r2_bigint_", b)
     .setHandle(handle_name, h)
     on.exit(rm(list = paste0("handle_", handle_name), envir = .dsomop_env), add = TRUE)
     restore <- .ws7_seed_cohort(h, .ws7_scenario_frame(c(7001, 7003, 7004, 7005, 7006)))
@@ -179,7 +179,7 @@ test_that("All-NULL and empty BIGINT streams retain their publication type", {
       local({
         run <- .ws7_ctx(h, plan)
         on.exit(.ws7_close(run), add = TRUE)
-        f <- .fragment("astra_a1_null_fetch", "stream", "none",
+        f <- .fragment("regression_a1_null_fetch", "stream", "none",
           paste0("SELECT a1_amount AS amount FROM ", table), list(amount = .fragmentColumn("bigint", TRUE, "measure")))
         .fragmentRegister(run$cctx, f)
         rows <- .reduceFetch(run$cctx, f)

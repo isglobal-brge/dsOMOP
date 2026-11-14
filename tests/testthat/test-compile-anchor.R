@@ -250,7 +250,7 @@ test_that("anchor fragments are named by the IR anchor inventory", {
   .ws4_expect_rejection(.compileWindow(ctx, list(start = 1.5), cand, "candidate"), pattern = "integer")
 })
 
-# --- consumer association (A-20 (a), item 6; Astra's WS-5 review B3) ----------------------
+# --- consumer association (A-20 (a), item 6; regression WS-5 review B3) ----------------------
 
 test_that("index-visit sources join the roster's index visit, in streams and anchors (B3)", {
   for (b in names(.ws5_an_backends)) {

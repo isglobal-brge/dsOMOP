@@ -98,7 +98,7 @@ test_that("integer arithmetic is exact before range checks and promotes past 32 
 
 test_that("datetime branch prototypes preserve class, instants and timezone", {
   withr::local_options(.mfix_options)
-  stamp <- as.POSIXct("2020-01-01 12:00:00", tz = "America/New_York") + 1:5
+  stamp <- as.POSIXct("2020-01-01 12:00:00", tz = "EST5EDT") + 1:5
   for (kind in c("POSIXct", "POSIXlt")) {
     x <- .mfix_frame(flag = c(1L, 0L, 1L, 0L, NA))
     x$stamp <- if (kind == "POSIXlt") as.POSIXlt(stamp) else stamp

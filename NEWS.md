@@ -194,12 +194,7 @@ choose the native date/age helpers explicitly for new semantics. The protected
 release protocol introduced in 2.10.3 is unchanged; pooling still requires
 compatible contracts and logical source identities.
 
-Release verification: [recipe/publication contract run 43542378954](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43542378954)
-passed fresh and upgrade paths on Opal 5.7.6 and 6.1.3;
-[full e2e run 43542382006](https://github.com/davidsarrat/dsomop-opal-e2e/actions/runs/43542382006)
-passed both fresh and upgrade jobs. Both tested harness commit
-`2e9844a0333a0cffda7e84662a44b070fcc850e4`. These are evidence for that
-candidate, not a claim of live execution on every supported SQL dialect.
+Release verification covers recipe/publication contracts and end-to-end execution.
 
 # dsOMOP 2.10.3 (2026-11-13)
 
@@ -1368,7 +1363,7 @@ connect.
   or sticky releases. dsOMOPClient 2.7.3 automatically skips observed factor
   discovery during exclusive-mode plan preparation and displays exclusivity.
 - Replace the finite-precision inverse-CDF noise sampler with the exact
-  integer/rational discrete-Laplace algorithm of Canonne, Kamath and Steinke
+  integer/rational discrete-Laplace algorithm in *The Discrete Gaussian for Differential Privacy*
   (2020), driven by the deterministic keyed HMAC bit stream. The sampler
   protocol is `dsomop-dp-exact-discrete-laplace-v1`, the mechanism identifier is
   `dsomop-sticky-discrete-laplace-prf-v2`, and the hashed policy schema is 3.
@@ -1383,8 +1378,7 @@ connect.
   New sampler metadata changes sticky release identities; upgrading can draw
   new noise and does not repair previous disclosures. dsOMOPClient 2.7.2 accepts
   the new metadata and delta 0 unchanged, and rejects mixed sampler versions
-  within one federated release. See `DISCLOSURE_CONTROL.md` and
-  `SAMPLER_DIAGNOSIS.md` for the algorithm and reproduced defect.
+  within one federated release. See `DISCLOSURE_CONTROL.md` for the algorithm and reproduced defect.
 
 # dsOMOP 2.6.0
 

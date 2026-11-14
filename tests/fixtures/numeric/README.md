@@ -17,19 +17,19 @@ useful for other examples but has no numeric measurement values.
 Load on the R test pod (DBI, RPostgres, duckdb, openssl, jsonlite):
 
 ```sh
-Rscript tests/fixtures/numeric/load.R /root/rt/numeric-data
+Rscript tests/fixtures/numeric/load.R /tmp/numeric-data
 ```
 
 The default PostgreSQL target is host `omopdb`, database `omop`, user/password
 `omop`/`omop`, schema `numeric_cdm`, with TLS disabled. Override connection
 settings with `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`.
-The DuckDB file is `/root/rt/numeric-data/numeric_cdm.duckdb`.
+The DuckDB file is `/tmp/numeric-data/numeric_cdm.duckdb`.
 Set `NUMERIC_POSTGRES=0` or `NUMERIC_DUCKDB=0` to omit one backend.
 Repeated loads replace only the imported tables in that schema/file. The manifest
 records the pin, license, source row counts and measured coverage. CSV extraction
 is temporary; neither CSVs nor binary databases belong in git.
 
-Enable tests with `DSOMOP_TEST_NUMERIC_CDM=/root/rt/numeric-data`. Once enabled,
+Enable tests with `DSOMOP_TEST_NUMERIC_CDM=/tmp/numeric-data`. Once enabled,
 missing files, backends, Arrow, or dsBase dependencies **fail**, rather than skip.
 The client requires the matching server source as a sibling worktree. Server
 checks use both databases; client checks use three disjoint PostgreSQL views,

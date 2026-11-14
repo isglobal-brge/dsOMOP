@@ -1,5 +1,5 @@
 # Record summaries without a registered scale keep a protected value
-# distribution (Astra re-review section 6 / R07), their strata are cells of a
+# distribution (regression re-review section 6 / R07), their strata are cells of a
 # declared public domain (section 4), displayed records stay within
 # [N, K N] and labels report the allocation union of the components actually
 # drawn. Helpers in helper-tools-release.R.
@@ -31,7 +31,7 @@
     .env = .local_envir)
 }
 
-test_that("Astra section6: unregistered record summaries retain protected histogram", {
+test_that("regression section6: unregistered record summaries retain protected histogram", {
   .release_state()
   h <- create_test_handle(n_persons = 60)
   on.exit(cleanup_handle(h), add = TRUE)

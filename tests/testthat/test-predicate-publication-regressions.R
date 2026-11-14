@@ -65,14 +65,14 @@ test_that("harmonized factor predicates use exact labels throughout publication"
 
 test_that("datetime scalar and membership predicates share local civil midnight", {
   withr::local_options(.pp_options)
-  for (zone in c("America/New_York", "Asia/Tokyo")) {
+  for (zone in c("EST5EDT", "Etc/GMT-9")) {
     # Include the instant of UTC midnight: it must not equal local midnight.
-    utc_midnight <- if (zone == "America/New_York") "2019-12-31 19:00:00" else
+    utc_midnight <- if (zone == "EST5EDT") "2019-12-31 19:00:00" else
       "2020-01-01 09:00:00"
     stamp <- as.POSIXct(c(rep("2020-01-01 00:00:00", 3), rep(utc_midnight, 3),
       "2019-12-31 23:59:59", "2020-01-01 23:59:59", "2020-01-02 00:00:00", NA), tz = zone)
     equal <- c(rep(TRUE, 3), rep(FALSE, 6), NA)
-    between <- c(rep(TRUE, 3), rep(zone == "Asia/Tokyo", 3), FALSE, TRUE, FALSE, NA)
+    between <- c(rep(TRUE, 3), rep(zone == "Etc/GMT-9", 3), FALSE, TRUE, FALSE, NA)
     for (kind in c("POSIXct", "POSIXlt")) {
       x <- .pp_frame(if (kind == "POSIXlt") as.POSIXlt(stamp) else stamp, "stamp")
       original <- serialize(x, NULL)
@@ -103,10 +103,10 @@ test_that("datetime scalar and membership predicates share local civil midnight"
 test_that("inclusive datetime ranges follow calendar boundaries across DST", {
   withr::local_options(.pp_options)
   fixtures <- list(
-    list(zone = "America/New_York", day = "2020-03-08", hours = 23),
-    list(zone = "America/New_York", day = "2020-11-01", hours = 25),
-    list(zone = "Europe/Berlin", day = "2020-03-29", hours = 23),
-    list(zone = "Europe/Berlin", day = "2020-10-25", hours = 25))
+    list(zone = "EST5EDT", day = "2020-03-08", hours = 23),
+    list(zone = "EST5EDT", day = "2020-11-01", hours = 25),
+    list(zone = "CET", day = "2020-03-29", hours = 23),
+    list(zone = "CET", day = "2020-10-25", hours = 25))
   for (fixture in fixtures) {
     day <- fixture$day
     before <- as.character(as.Date(day) - 1L)
@@ -135,7 +135,7 @@ test_that("inclusive datetime ranges follow calendar boundaries across DST", {
 
 test_that("datetime predicates retain the UTC fallback and reject invalid dates", {
   withr::local_options(.pp_options)
-  withr::local_envvar(TZ = "Pacific/Honolulu")
+  withr::local_envvar(TZ = "Etc/GMT+10")
   for (timezone in list(NULL, character(), "")) {
     stamp <- as.POSIXct(c(rep("2020-01-01 00:00:00", 3), "2019-12-31 23:59:59", NA), tz = "UTC")
     attr(stamp, "tzone") <- timezone

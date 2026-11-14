@@ -1,4 +1,4 @@
-# Exact discrete-Laplace sampling, following Canonne, Kamath and Steinke
+# Exact discrete-Laplace sampling, following The Discrete Gaussian for Differential Privacy
 # (2020), https://arxiv.org/abs/2004.00010, section 5, Algorithms 1 and 2.
 # All arithmetic affecting sampling probabilities or unbounded integers is
 # exact (privacy_bigint.R). The source of randomness is the domain-separated

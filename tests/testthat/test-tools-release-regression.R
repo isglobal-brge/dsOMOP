@@ -1,23 +1,23 @@
-# Astra's literal original-size reproductions (astra-p0-review.md N03): the
+# regression literal original-size reproductions (regression-p0-review.md N03): the
 # 12/13-person E1 adjacent-scope algebra and the original 1000-person
 # min_days / reference-year / SCCS attacker algorithms, run on the actual
 # endpoints. Their defect-witness assertions are inverted where the review
 # required the fix (B09: no standard min_days transition; B13: protected
 # measurement moments exist but the 7.85 equation has no solution). Fixtures
-# in tests/fixtures/astra (Astra's scratch data). Helpers in
+# in tests/fixtures/regression (regression scratch data). Helpers in
 # helper-tools-release.R.
 
-.astra_fixture <- function(name) {
-  for (path in c(file.path("..", "fixtures", "astra", name),
-                 file.path("tests", "fixtures", "astra", name))) {
+.regression_fixture <- function(name) {
+  for (path in c(file.path("..", "fixtures", "regression", name),
+                 file.path("tests", "fixtures", "regression", name))) {
     if (file.exists(path)) return(utils::read.csv(path))
   }
-  stop("Missing Astra fixture ", name)
+  stop("Missing regression fixture ", name)
 }
 
 # The adjacent-scope solver of the review: persons n and value x that make two
 # released (mean, SD) pairs consistent with one added person.
-.astra_solve <- function(a, b) {
+.regression_solve <- function(a, b) {
   if (anyNA(c(a$avg_value, a$stdev_value, b$avg_value, b$stdev_value))) {
     return(data.frame())
   }
@@ -46,15 +46,15 @@ test_that("E1 original 12/13-person age-34 reconstruction is closed", {
   exact <- function(x) data.frame(count_value = 5 * floor(length(x) / 5),
                                   avg_value = mean(x), stdev_value = sd(x))
   # The 2.10.2 algebra recovers the added person exactly.
-  old <- .astra_solve(exact(ages[1:12]), exact(ages))
+  old <- .regression_solve(exact(ages[1:12]), exact(ages))
   expect_true(any(old$n == 12 & abs(old$x - 34) < 1e-8))
-  a <- .release_cohort(h, "astra_e1_a", 1:12)
-  b <- .release_cohort(h, "astra_e1_b", 1:13)
+  a <- .release_cohort(h, "regression_e1_a", 1:12)
+  b <- .release_cohort(h, "regression_e1_b", 1:13)
   ra <- .release_run(h, "dsomop:achilles.103", scope = a)
   rb <- .release_run(h, "dsomop:achilles.103", scope = b)
   expect_identical(attr(ra, "dsomop_protection")$protection, "realised_sticky")
   expect_identical(attr(rb, "dsomop_protection")$protection, "realised_sticky")
-  now <- .astra_solve(ra, rb)
+  now <- .regression_solve(ra, rb)
   expect_false(nrow(now) > 0 && any(now$n == 12 & abs(now$x - 34) < 1e-8))
   # Standard mode releases no exact scoped moments at all.
   withr::local_options(list(dsomop.tools.mode = "standard"))
@@ -78,10 +78,10 @@ test_that("E2 original 29/30-person HbA1c-7.85 reconstruction is closed", {
     unit_concept_id = 8554L, range_low = 4, range_high = 6,
     visit_occurrence_id = NA_integer_), append = TRUE)
   exact <- function(x) data.frame(avg_value = mean(x), stdev_value = sd(x))
-  old <- .astra_solve(exact(values[1:29]), exact(values))
+  old <- .regression_solve(exact(values[1:29]), exact(values))
   expect_true(any(old$n == 29 & abs(old$x - 7.85) < 1e-8))
-  a <- .release_cohort(h, "astra_e2_a", 1:29)
-  b <- .release_cohort(h, "astra_e2_b", 1:30)
+  a <- .release_cohort(h, "regression_e2_a", 1:29)
+  b <- .release_cohort(h, "regression_e2_b", 1:30)
   run <- function(scope) .release_run(h, "dsomop:fe.continuous", list(
     metric = "measurement_value", domain_code = "3"), scope = scope)
   ra <- run(a)
@@ -90,13 +90,13 @@ test_that("E2 original 29/30-person HbA1c-7.85 reconstruction is closed", {
   expect_equal(nrow(rb), 1L)
   # B13: HbA1c in % is a registered scale, so protected moments are released
   # (from noisy S and Q components); the original equation has no solution.
-  now <- .astra_solve(ra, rb)
+  now <- .regression_solve(ra, rb)
   expect_false(nrow(now) > 0 && any(now$n == 29 & abs(now$x - 7.85) < 1e-6))
 })
 
 test_that("the original min_days and reference-year attacker algorithms fail", {
-  lens <- .astra_fixture("observation_lengths.csv")$len
-  years <- .astra_fixture("birth_years.csv")$yob
+  lens <- .regression_fixture("observation_lengths.csv")$len
+  years <- .regression_fixture("birth_years.csv")$yob
   for (mode in c("auto", "standard")) {
     .release_state(mode = mode)
     h <- create_test_handle(n_persons = length(lens))
@@ -106,11 +106,11 @@ test_that("the original min_days and reference-year attacker algorithms fail", {
       observation_period_start_date = "2000-01-01",
       observation_period_end_date = as.character(as.Date("2000-01-01") + lens),
       period_type_concept_id = 44814724L), append = TRUE)
-    DBI::dbWriteTable(h$conn, "astra_birth",
+    DBI::dbWriteTable(h$conn, "regression_birth",
                       data.frame(person_id = seq_along(years), yob = years))
     DBI::dbExecute(h$conn, paste(
-      "UPDATE person SET year_of_birth = (SELECT yob FROM astra_birth",
-      "WHERE astra_birth.person_id = person.person_id)"))
+      "UPDATE person SET year_of_birth = (SELECT yob FROM regression_birth",
+      "WHERE regression_birth.person_id = person.person_id)"))
     rel <- function(d) {
       r <- .release_run(h, "dsomop:observation_period.long_period_count",
                         list(min_days = as.character(d)))

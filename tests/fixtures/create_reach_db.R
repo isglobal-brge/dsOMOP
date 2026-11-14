@@ -543,8 +543,8 @@ build_reach_handle <- function(n_persons = 100L) {
     episode_end_date=character(0), stringsAsFactors=FALSE))
   write("episode_event", data.frame(episode_id=integer(0), event_id=integer(0),
     episode_event_field_concept_id=integer(0), stringsAsFactors=FALSE))
-  write("location", data.frame(location_id=persons, address_1="x", city="BCN",
-    state="CT", zip="08000", county="BCN", latitude=rep(41.4,n_persons),
+  write("location", data.frame(location_id=persons, address_1="x", city="city_a",
+    state="region_a", zip="00000", county="county_a", latitude=rep(41.4,n_persons),
     longitude=rep(2.1,n_persons), stringsAsFactors=FALSE))
 
   # =========================================================================
