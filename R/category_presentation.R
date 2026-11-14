@@ -13,11 +13,11 @@
   }
   flag
 }
-.categoryConceptProducer <- function(contract) {
-  if(length(contract$spec$recode$map) && any(!grepl("^concept:",unlist(contract$spec$recode$levels,use.names=FALSE))))return(FALSE)
+.categoryConceptProducer <- function(contract, recoded=TRUE) {
+  if(recoded && length(contract$spec$recode$map) && any(!grepl("^concept:",unlist(contract$spec$recode$levels,use.names=FALSE))))return(FALSE)
   producer<-contract$producer
   if(identical(producer$kind,"concept"))return(TRUE)
-  if((producer$kind %||% "") %in% c("category","category_reduce"))return(.categoryConceptProducer(producer$input))
+  if((producer$kind %||% "") %in% c("category","category_reduce"))return(.categoryConceptProducer(producer$input,recoded))
   FALSE
 }
 .categoryPresent <- function(ctx,frame,columns) {
@@ -38,8 +38,11 @@
       if(!is.null(explicit$binary)) .categoryReject("binary requires semantic flag lineage; use an explicit threshold flag.","category_type_unsupported")
       s$binary <- NULL
     }
-    concept <- !flag && (is.null(c$kind) || identical(c$kind,"category") && .categoryConceptProducer(c$category))
+    concept <- !flag && (is.null(c$kind) || identical(c$kind,"category") && .categoryConceptProducer(c$category,recoded=FALSE))
     s <- .categoryApplicableVocabulary(s, explicit, concept)
+    # Styling can retain concept labels in a mixed recode; hierarchy requires
+    # an entirely concept-valued input. Defaults do not reinterpret that recode.
+    if (identical(c$kind,"category") && !.categoryConceptProducer(c$category) && is.null(explicit$rollup)) s$rollup <- NULL
     if(!is.null(s$rollup) && s$rollup$kind!="none" && identical(s$rollup$multiple,"all")) .categoryReject("Multiple hierarchy targets require category_indicators.","category_type_unsupported")
     available <- attr(col,"category_available") %||% attr(col,"number_origin")$available %||% TRUE
     defined<-attr(col,"category_defined") %||% attr(frame[[n]],"category_defined")
