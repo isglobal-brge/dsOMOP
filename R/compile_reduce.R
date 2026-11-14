@@ -1370,7 +1370,7 @@
   .sqlAssertTypedSql(h, f$select_body)
   .fragmentRegister(ctx, f)
   rows <- .reduceFetch(ctx, f, order = "row_key", field = paste0("/outputs/", cons$output))
-  rows$available <- !is.null(role)
+  rows$available <- rep(!is.null(role), nrow(rows))
   assign(key, rows, envir = memo)
   rows
 }

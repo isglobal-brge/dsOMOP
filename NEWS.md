@@ -169,6 +169,13 @@
   Use registered numeric measures, explicit numeric date representations,
   declared broadcasts/reducers, and typed wide/long companions as applicable.
 
+
+- Corrected: death reduction preserves zero-row population frames, including
+  populations emptied by eligibility criteria. Empty survival outputs now reach
+  the ordinary final support gate: default federation rollback, or explicit
+  small-site skipping with supported sites retained. Re-run affected recipes
+  with the corrected server; no recipe or owner configuration changes are needed.
+
 # dsOMOP 2.10.4 (2026-11-13)
 
 - Corrected: derived sex is a factor with the public `F`, `M` domain, including
