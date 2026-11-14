@@ -7,6 +7,14 @@
   science. Use a validated native risk/window recipe when that setting matters;
   dropping a required window is not an equivalent analysis. Explicit null,
   nonfinite/fractional values and malformed selectors are invalid settings.
+* **Newly refused:** physical OHDSI readers and pooling discovery require the
+  inline identity columns of their reviewed layout. CohortMethod's
+  `target_comparator_id` lookup layout is recognized and refused until a
+  versioned adapter exists; target/comparator IDs cannot be filled with NA.
+  Missing row identities and unrecognized negative count encodings also refuse
+  with generic integrity/suppression messages. Use the documented supported
+  physical layout; live analysis remains a separate explicitly requested route.
+
 * **Corrected:** incidence discovery describes the first-target-episode,
   full-window person-day estimand and separates contribution bounds from risk
   windows. FE prevalence describes all-history events among scoped members,

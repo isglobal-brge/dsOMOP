@@ -127,7 +127,7 @@ test_that("physical OHDSI pooling contracts fail closed", {
   )
   expect_error(
     .ohdsiResultPoolingContract(handle, "cd_cohort_count"),
-    "complete contracted pooling schema: cohort_id"
+    "unsupported_results_schema: mandatory physical-result identity"
   )
 })
 

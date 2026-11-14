@@ -891,6 +891,8 @@
   actual_cols <- .ohdsiBlueprintColumns(
     physical$blueprint, physical$table_name, handle
   )
+  identity_cols <- .ohdsiIdentitySchema(resolved, actual_cols)
+  .ohdsiIdentityTypes(handle, physical, identity_cols)
   required_basis <- unique(c(resolved$contract$count_columns,
                              resolved$contract$person_columns))
   missing_basis <- setdiff(required_basis, actual_cols)
@@ -996,6 +998,9 @@
          "'.", call. = FALSE)
   }
 
+  identity_cols <- .ohdsiIdentitySchema(resolved, actual_cols)
+  .ohdsiIdentityTypes(handle, physical, identity_cols)
+
   if (strict) {
     table_count_cols <- contract$count_columns
     table_person_cols <- contract$person_columns
@@ -1081,7 +1086,7 @@
                           actual_cols)
   output_cols <- select_cols
   query_cols <- unique(c(select_cols, table_count_cols, table_person_cols,
-                         basis_cols))
+                         basis_cols, identity_cols))
 
   # Express the row cap in OHDSI/SQL Server form, then translate it through the
   # package's dialect layer (TOP for SQL Server, FETCH FIRST for Oracle, LIMIT
@@ -1159,6 +1164,7 @@
            call. = FALSE)
     }
   )
+  .ohdsiValidateResultIdentity(result, identity_cols, table_count_cols)
   if (nrow(result) == 0) {
     return(finish(
       result[, intersect(output_cols, names(result)), drop = FALSE]
