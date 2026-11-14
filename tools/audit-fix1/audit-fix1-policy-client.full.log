@@ -1,0 +1,85 @@
+audit-circe-support: .........................................................................
+audit-concept-import: ...............................................................................................................................
+audit-vocabulary-policy: 1...23
+recipe-circe: ............................................................................4...........................................5..............................................
+recipe-declarative: ............................................................................................................................................................................................................................................................................................
+recipe-episode-policy: ..............
+recipe-executable-contract: ........................................................................................................................................
+recipe-schema: ...................................................
+recipe-setops: ................................................................................
+recipe: ..............................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+v2-plan: ..................................................................................................................
+v2-review: ............................................................................
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Error ('test-audit-vocabulary-policy.R:12:3'): both imported groups retain
+Error: invalid_concept_expression: $.expression; provide one nonempty items array
+Backtrace:
+    ▆
+ 1. └─dsOMOPClient (local) .policy_recipe() at test-audit-vocabulary-policy.R:12:3
+ 2.   └─dsOMOPClient::recipe_import_concept_sets(...) at test-audit-vocabulary-policy.R:4:3
+ 3.     └─dsOMOPClient:::.ohdsi_concept_items(e$expression %||% e) at dsOMOPClient/R/recipe_v2.R:263:3
+ 4.       └─dsOMOPClient (local) fail("invalid_concept_expression", "", "provide one nonempty items array") at dsOMOPClient/R/ohdsi_concept_items.R:53:5
+ 5.         └─dsOMOPClient:::.ohdsi_definition_error(...) at dsOMOPClient/R/ohdsi_concept_items.R:49:3
+
+── 2. Error ('test-audit-vocabulary-policy.R:46:3'): Circe policy survives legac
+Error: recipe_to_plan(version = 1): the recipe uses language-2 construct(s) with no v1 equivalent: imported vocabulary validity policy.
+Backtrace:
+    ▆
+ 1. └─dsOMOPClient::recipe_to_plan(r, version = 1) at test-audit-vocabulary-policy.R:46:3
+
+── 3. Error ('test-audit-vocabulary-policy.R:54:3'): an incapable server refuses
+Error: invalid_concept_expression: $.expression; provide one nonempty items array
+Backtrace:
+    ▆
+ 1. ├─dsOMOPClient::recipe_to_plan(.policy_recipe()) at test-audit-vocabulary-policy.R:54:3
+ 2. │ └─base::inherits(recipe, "omop_recipe") at dsOMOPClient/R/recipe.R:3817:3
+ 3. └─dsOMOPClient (local) .policy_recipe()
+ 4.   └─dsOMOPClient::recipe_import_concept_sets(...) at test-audit-vocabulary-policy.R:4:3
+ 5.     └─dsOMOPClient:::.ohdsi_concept_items(e$expression %||% e) at dsOMOPClient/R/recipe_v2.R:263:3
+ 6.       └─dsOMOPClient (local) fail("invalid_concept_expression", "", "provide one nonempty items array") at dsOMOPClient/R/ohdsi_concept_items.R:53:5
+ 7.         └─dsOMOPClient:::.ohdsi_definition_error(...) at dsOMOPClient/R/ohdsi_concept_items.R:49:3
+
+── 4. Error ('test-recipe-circe.R:198:3'): the supported Circe subset round-trip
+Error: recipe_to_plan(version = 1): the recipe uses language-2 construct(s) with no v1 equivalent: imported vocabulary validity policy.
+Backtrace:
+    ▆
+ 1. ├─testthat::expect_silent(...) at test-recipe-circe.R:198:3
+ 2. │ └─testthat:::quasi_capture(enquo(object), NULL, evaluate_promise)
+ 3. │   ├─testthat (local) .capture(...)
+ 4. │   │ ├─withr::with_output_sink(...)
+ 5. │   │ │ └─base::force(code)
+ 6. │   │ ├─base::withCallingHandlers(...)
+ 7. │   │ └─base::withVisible(code)
+ 8. │   └─rlang::eval_bare(quo_get_expr(.quo), quo_get_env(.quo))
+ 9. └─dsOMOPClient:::recipe_to_plan(r2, version = 1)
+
+── 5. Error ('test-recipe-circe.R:449:3'): an externally-authored minimal Circe 
+Error: recipe_to_plan(version = 1): the recipe uses language-2 construct(s) with no v1 equivalent: imported vocabulary validity policy.
+Backtrace:
+    ▆
+ 1. ├─testthat::expect_silent(dsOMOPClient:::recipe_to_plan(r, version = 1)) at test-recipe-circe.R:449:3
+ 2. │ └─testthat:::quasi_capture(enquo(object), NULL, evaluate_promise)
+ 3. │   ├─testthat (local) .capture(...)
+ 4. │   │ ├─withr::with_output_sink(...)
+ 5. │   │ │ └─base::force(code)
+ 6. │   │ ├─base::withCallingHandlers(...)
+ 7. │   │ └─base::withVisible(code)
+ 8. │   └─rlang::eval_bare(quo_get_expr(.quo), quo_get_env(.quo))
+ 9. └─dsOMOPClient:::recipe_to_plan(r, version = 1)
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                           file blocks failed errors
+ test-audit-vocabulary-policy.R      3      0      3
+            test-recipe-circe.R      2      0      2
+
+FAILING TESTS
+test-audit-vocabulary-policy.R | both imported groups retain policy in wire, save/load, code, bind and merge | failed=0 error=TRUE
+test-audit-vocabulary-policy.R | Circe policy survives legacy lowering and generated code | failed=0 error=TRUE
+test-audit-vocabulary-policy.R | an incapable server refuses the distinct policy without fallback | failed=0 error=TRUE
+test-recipe-circe.R | the supported Circe subset round-trips to an equivalent recipe population | failed=0 error=TRUE
+test-recipe-circe.R | an externally-authored minimal Circe JSON imports to a runnable recipe population | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 5 skipped: 0 passed: 1841 

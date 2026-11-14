@@ -1,0 +1,18 @@
+/workspace/dsomop/wt/audit/dsOMOP
+1490d727e5cd92ebfe6378bc96ce44850b8f84f1
+
+feat/2.10.5-audit
+
+
+Version: 2.10.5
+f8415d4545b27eb1dbcdfb4b0d8e515f8ac84196aa713755544de337922f7f20  R/ohdsi_validity.R
+71ea07de1de4078efb84408214cd49993b4a37feb21e79f2c1843a80c2c103d8  inst/schema/plan-v2.json
+/workspace/dsomop/wt/audit/dsOMOPClient
+0de81b226e91f2853dec3246f8a5816bd0232b9b
+
+feat/2.10.5-audit
+
+
+Version: 2.10.5
+f8415d4545b27eb1dbcdfb4b0d8e515f8ac84196aa713755544de337922f7f20  R/ohdsi_validity.R
+71ea07de1de4078efb84408214cd49993b4a37feb21e79f2c1843a80c2c103d8  inst/schema/plan-v2.json

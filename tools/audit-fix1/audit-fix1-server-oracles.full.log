@@ -1,0 +1,98 @@
+dsOMOP v2.10.5 loaded. OMOP CDM resource resolver registered.
+audit-circe-oracle: ...12.34
+audit-settings: ......................................................................................................................................[dsomop-audit] 2026-11-14T13:11:00+0000 method=omopAnalysisRunDS detail={"name":"dsomop:incidence.rate","params":{"outcome_concept_id":"201820","tar_start_offset":"0","tar_end_offset":"0","tar_anchor_start":"start","tar_anchor_end":"end"},"scope_present":true,"scope_table_count":0,"combine":"union"}
+5[dsomop-audit] 2026-11-14T13:11:03+0000 method=omopAnalysisRunDS detail={"name":"dsomop:fe.prevalence","params":{"domain_code":"0"},"scope_present":true,"scope_table_count":0,"combine":"union"}
+..[dsomop-audit] 2026-11-14T13:11:05+0000 method=omopAnalysisRunDS detail={"name":"dsomop:fe.prevalence","params":{"domain_code":"0","time_windows":0},"scope_present":true,"scope_table_count":0,"combine":"union"}
+.....
+
+══ Failed ══════════════════════════════════════════════════════════════════════
+── 1. Failure ('test-audit-circe-oracle.R:52:3'): PhenotypeLibrary 304 matches i
+Expected `reference$subject_id` to equal `1:30`.
+Differences:
+  `actual`:                      and 20 more...
+`expected`: 1 2 3 4 5 6 7 8 9 10            ...
+
+
+── 2. Failure ('test-audit-circe-oracle.R:53:3'): PhenotypeLibrary 304 matches i
+Expected `as.character(reference$cohort_start_date)` to equal `c(...)`.
+Differences:
+    actual | expected                    
+           - "2020-01-10" [1]            
+           - "2020-01-10" [2]            
+           - "2020-01-10" [3]            
+           - "2020-01-10" [4]            
+           - "2020-01-10" [5]            
+           - "2020-01-10" [6]            
+           - "2020-01-10" [7]            
+           - "2020-01-10" [8]            
+           - "2020-01-10" [9]            
+           - "2020-01-10" [10]           
+... ...      ...          and 20 more ...
+
+
+── 3. Failure ('test-audit-circe-oracle.R:64:3'): PhenotypeLibrary 304 matches i
+Expected `actual` to equal `reference`.
+Differences:
+  `actual[[1]]`: 1 2 3 4 5 6 7 8 9 10 and 20 more...
+`expected[[1]]`:                                 ...
+
+     actual[[2]]  | expected[[2]]                
+ [1] "2020-01-10" -                              
+ [2] "2020-01-10" -                              
+ [3] "2020-01-10" -                              
+ [4] "2020-01-10" -                              
+ [5] "2020-01-10" -                              
+ [6] "2020-01-10" -                              
+ [7] "2020-01-10" -                              
+ [8] "2020-01-10" -                              
+ [9] "2020-01-10" -                              
+[10] "2020-01-10" -                              
+ ... ...            ...           and 20 more ...
+
+     actual[[3]]  | expected[[3]]                
+ [1] "2020-12-31" -                              
+ [2] "2020-12-31" -                              
+ [3] "2020-12-31" -                              
+ [4] "2020-12-31" -                              
+ [5] "2020-12-31" -                              
+ [6] "2020-12-31" -                              
+ [7] "2020-12-31" -                              
+ [8] "2020-12-31" -                              
+ [9] "2020-12-31" -                              
+[10] "2020-12-31" -                              
+ ... ...            ...           and 20 more ...
+
+
+── 4. Error ('test-audit-circe-oracle.R:1:1'): PhenotypeLibrary 304 matches its 
+Error: Could not release the compiler temporary table(s) dsomop_pop_cand_p_raw, dsomop_pop_op_periods, dsomop_pop_pop_p; they stay registered for a retry.
+Backtrace:
+    ▆
+ 1. └─.ws7_close(run)
+ 2.   └─dsOMOP:::.planContextClose(run$ctx) at tests/testthat/helper-ws7.R:86:3
+
+── 5. Error ('test-audit-settings.R:137:3'): published protected incidence uses 
+Error: This release has no fixed-synopsis protection: DP-only mode (dsomop.tools.mode = "dp" or dsomop.dp.exclusive = TRUE) accepts only unscoped questions over a public basis, keyed on the person-membership generation of the connected database. In auto mode the same question is answered with heuristic realised-contribution protection.
+Backtrace:
+    ▆
+ 1. ├─base::suppressWarnings(...) at test-audit-settings.R:137:3
+ 2. │ └─base::withCallingHandlers(...)
+ 3. └─dsOMOP::omopAnalysisRunDS(...)
+ 4.   └─dsOMOP:::.omopAnalysisRun(...) at dsOMOP/R/interface.R:2830:3
+ 5.     └─dsOMOP:::.dsomopWithReadSnapshot(...) at dsOMOP/R/analysis_catalog.R:5351:5
+ 6.       └─base::tryCatch(...) at dsOMOP/R/read_snapshot.R:155:3
+ 7.         └─base (local) tryCatchList(expr, classes, parentenv, handlers)
+ 8.           └─base (local) tryCatchOne(expr, names, parentenv, handlers[[1L]])
+ 9.             └─value[[3L]](cond)
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+
+FAILURES BY FILE
+                      file blocks failed errors
+ test-audit-circe-oracle.R      1      3      1
+     test-audit-settings.R      1      0      1
+
+FAILING TESTS
+test-audit-circe-oracle.R | PhenotypeLibrary 304 matches its pinned upstream generated SQL | failed=3 error=TRUE
+test-audit-settings.R | published protected incidence uses the independent first-episode oracle | failed=0 error=TRUE
+
+RESULT failed: 3 errors: 2 skipped: 0 passed: 145 

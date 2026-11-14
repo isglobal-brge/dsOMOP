@@ -1,0 +1,11 @@
+FAILURES BY FILE
+                      file blocks failed errors
+ test-audit-circe-oracle.R      1      3      1
+     test-audit-settings.R      1      0      1
+
+FAILING TESTS
+test-audit-circe-oracle.R | PhenotypeLibrary 304 matches its pinned upstream generated SQL | failed=3 error=TRUE
+test-audit-settings.R | published protected incidence uses the independent first-episode oracle | failed=0 error=TRUE
+
+RESULT failed: 3 errors: 2 skipped: 0 passed: 145 
+RESULT failed: 3 errors: 2 skipped: 0 passed: 145 

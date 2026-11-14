@@ -1,0 +1,7 @@
+b2b5a030599caca1dd86a8d4816e05e89534e02606c7ccbc601836256ba5c765  /root/rt/audit-fix1-deps/java/openjdk-17-jdk-headless_17.0.21.0.3+1-1~22.04.1_amd64.deb
+8371fcaa159fe02b4e9181a221f34c730746a7f6b212f952e07e2fb52418d7ac  /root/rt/audit-fix1-deps/java/openjdk-17-jre-headless_17.0.21.0.3+1-1~22.04.1_amd64.deb
+394790331	/root/rt/audit-fix1-deps
+24298185	/root/rt/wt/audit/dsOMOP
+15167720	/root/rt/wt/audit/dsOMOPClient
+5194879	/root/rt/lib/wt_audit_dsOMOP
+11186564	/root/rt/lib/wt_audit_dsOMOPClient

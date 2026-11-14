@@ -1,0 +1,11 @@
+FAILURES BY FILE
+                           file blocks failed errors
+ test-audit-vocabulary-policy.R      3      0      3
+
+FAILING TESTS
+test-audit-vocabulary-policy.R | both imported groups retain policy in wire, save/load, code, bind and merge | failed=0 error=TRUE
+test-audit-vocabulary-policy.R | Circe policy survives legacy lowering and generated code | failed=0 error=TRUE
+test-audit-vocabulary-policy.R | an incapable server refuses the distinct policy without fallback | failed=0 error=TRUE
+
+RESULT failed: 0 errors: 3 skipped: 0 passed: 2290 
+RESULT failed: 0 errors: 3 skipped: 0 passed: 2290 
