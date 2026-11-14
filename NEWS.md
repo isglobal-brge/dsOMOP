@@ -1,5 +1,15 @@
 # dsOMOP 2.10.5 (2026-11-14)
 
+- Corrected (A-29 second review): integer numeric expressions retain a
+  conservative signed64 result type through nested formulas, selectors and
+  publication, including empty inputs. Re-run affected recipes; integer
+  expression results now consistently use integer64 storage.
+- Newly refused: native numeric arithmetic and mixed numeric branches/coalesce
+  reject inexact integer-to-binary64 conversions even for inline intermediates.
+  Retain raw/count identity representation or use exactly representable inputs;
+  naming an intermediate does not change admission. Legacy mutate semantics
+  and the closed expression grammar are unchanged.
+
 - Corrected (A-29 review): independently normalized numeric siblings retain
   their original event-row binding in long and intervals outputs. BIGINT
   longitudinal arithmetic now checks exact conversion before calculation;

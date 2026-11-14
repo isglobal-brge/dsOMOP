@@ -93,17 +93,20 @@
   }
   switch(op,lt=x<t,le=x<=t,gt=x>t,ge=x>=t,eq=x==t,ne=x!=t)
 }
-.numberExpression <- function(exprs,frame,result=NULL) {
+.numberExpression <- function(exprs,frame,result=NULL,type_only=FALSE) {
   result<-.numberExpressionShape(exprs,result,names(frame))
   assignments<-.mutateValidate(exprs,frame,"numeric expression")
   selected<-assignments[[match(result,vapply(assignments,function(a)a$name,""))]]
   if(!selected$type %in% c("numeric","integer")) .numberReject("Expression result must be numeric; use native bins or flags for classification.","number_expression_invalid")
+  # The grammar's integer domain is signed64, regardless of empty/observed
+  # values or whether an intermediate happens to fit R's smaller integers.
+  type<-if(selected$type=="integer")"bigint" else "numeric"
+  if(type_only)return(type)
   types<-vapply(frame,.verbColumnType,"")
   for(a in assignments) {
-    if(a$type=="numeric")for(n in names(frame))if(inherits(frame[[n]],"integer64")) .numberDouble(frame[[n]])
-    frame[[a$name]]<-.mutateEval(a$expr,frame,types);types[[a$name]]<-a$type
+    frame[[a$name]]<-.mutateEvalChecked(a$expr,frame,types,.numberDouble);types[[a$name]]<-a$type
   }
-  frame[[result]]
+  .numberMaterialize(frame[[result]],type)
 }
 .numberPresent <- function(x,s,unit="1",ranges=NULL,available=TRUE,offset_allowed=TRUE,canonical=FALSE,trace=FALSE) {
   if(!is.numeric(x)||inherits(x,c("Date","POSIXt","factor"))) .numberReject("Numeric presentation requires a registered numeric analytic value.","number_type_unsupported")

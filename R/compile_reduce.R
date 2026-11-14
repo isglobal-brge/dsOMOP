@@ -676,6 +676,9 @@
   d <- x[["start_date"]]
   n <- length(d)
   v <- x[["v"]]
+  # Runtime integer64 is authoritative even if a caller supplied a narrower
+  # prototype. Selectors stay exact and arithmetic must admit the conversion.
+  if (inherits(v, "integer64")) value_type <- "bigint"
   skip <- identical(r[["missing"]] %||% "skip", "skip")
   candidates <- function() {
     rows <- seq_len(n)

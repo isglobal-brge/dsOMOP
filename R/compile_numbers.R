@@ -139,8 +139,7 @@
     x
   }
   empty<-setNames(lapply(seq_along(records),function(j)operand(.numberMaterialize(.reduceTypedNA(records[[j]]$columns[[1]]$type,0L),records[[j]]$columns[[1]]$type),j)),vapply(inputs,function(i)i$alias,""))
-  probe<-.numberExpression(d$exprs,as.data.frame(empty),d$result)
-  expression_type<-if(inherits(probe,"integer64"))"bigint" else if(is.integer(probe))"integer" else "numeric"
+  expression_type<-.numberExpression(d$exprs,as.data.frame(empty),d$result,type_only=TRUE)
   r<-d$reducer;type<-if(is.null(r))expression_type else .reduceValueType(r$fn,expression_type)
   out_names<-if(is.null(r))name else .reduceColumnNames(name,r)
   columns<-setNames(lapply(out_names,function(n).fragmentColumn(type,TRUE,"measure")),out_names)
