@@ -14,7 +14,8 @@
   overlap = FALSE,
   use = "course",
   coverage = "recorded",
-  quality = FALSE
+  quality = FALSE,
+  dated = TRUE
 )
 }
 \arguments{

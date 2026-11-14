@@ -277,3 +277,28 @@ test_that("N28 temporal and coverage reducers retain their canonical identity be
     }
   }
 })
+
+test_that("N36 mapped source mean precedes log, exact rounding and bins", {
+  h<-.ws4_reach_handle();on.exit(DBI::dbDisconnect(h$conn),add=TRUE)
+  .ws7_extend(h$conn);h$blueprint<-NULL;h$role_registry<-NULL
+  DBI::dbExecute(h$conn,"DELETE FROM measurement WHERE person_id = 7001 AND measurement_id NOT IN (970001,970003)")
+  DBI::dbExecute(h$conn,"UPDATE measurement SET value_as_number = CASE measurement_id WHEN 970001 THEN 5 ELSE 15 END WHERE person_id = 7001")
+  s<-list(unit=list(kind="event_unit",spec=list(target=8840L,convert=list(`8554`=list(factor=2,offset=10)))),transform=list(method="log"),rounding=list(method="decimals",digits=2))
+  p<-.ws7_scenario_plan(list(logged=.number_svar("mean",s),band=.number_svar("mean",c(s,list(representation="bins",breaks=list(3,4,5))))))
+  got<-.ws7_scenario_run(h,p)$frame
+  expect_equal(.ws7_value(got,7001,"logged"),3.4)
+  expect_identical(as.character(.ws7_value(got,7001,"band")),"[3,4)")
+})
+
+test_that("N59 explicit scalar broadcast aligns to existing event rows", {
+  scalar<-.number_svar("mean");scalar$broadcast<-TRUE
+  rows<-list(derived=list(kind="number_rows",source=list(event="lab"),value="value"))
+  req<-list(version=1L,assign=list(list(name="centered",expr=list(op="-",args=list(list(col="x"),list(col="m"))))))
+  v<-list(derived=list(kind="number_derive",inputs=list(list(alias="x",variable=rows,stage="canonical"),list(alias="m",variable=scalar,stage="canonical")),exprs=req,unit="coordinate:centered"))
+  p<-.ws7_scenario_plan(list(centered=v),output=list(format="long",sources=list(list(event="lab")),columns=list("centered"),options=list(columns_derived=list("value"))))
+  got<-.ws7_scenario_run(.number_backends[[1L]]$handle,p)$frame
+  expected<-ave(got$value,got$person_id,FUN=function(x)x-mean(x,na.rm=TRUE))
+  expect_equal(got$centered,expected)
+  p$variables$centered$derived$inputs[[2]]$variable$broadcast<-FALSE
+  expect_error(.ws7_scenario_run(.number_backends[[1L]]$handle,p),"explicit broadcast")
+})

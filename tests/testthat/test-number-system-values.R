@@ -82,3 +82,17 @@ test_that("N13 N49 exact integer comparisons retain fractional public boundaries
   expect_identical(as.character(.numberPresent(x,S(representation="category",thresholds=c(5.5,6.5)))),c("low","normal",NA))
   expect_identical(as.character(.numberPresent(x,S(representation="category"),ranges=list(low=c(5.5,5.5,NA),high=c(6.5,6.5,7)))),c("low","normal",NA))
 })
+
+test_that("N50 N51 each ordered prefix and merged middle bins retains its declared type", {
+  u<-list(kind="fixed_unit",from="unit:9002",to="unit:9001",factor=2,offset=0)
+  b<-list(kind="bins",breaks=c(-Inf,5,10,Inf))
+  c<-list(kind="category",range="bins",category_map=c("low","normal","high"))
+  expect_equal(.numberPresent(4.98,P(u),unit="unit:9002"),9.96)
+  expect_equal(.numberPresent(4.98,P(u,Rn("decimals",digits=1)),unit="unit:9002"),10)
+  expect_identical(as.character(.numberPresent(4.98,P(u,Rn("decimals",digits=1),b),unit="unit:9002")),"[10,Inf)")
+  traced<-.numberPresent(c(4.98,NA),P(u,Rn("decimals",digits=1),b,c),unit="unit:9002",trace=TRUE)
+  expect_identical(vapply(traced$stages,function(s)s$result_type,""),c("numeric","numeric","ordered_factor","ordered_factor"))
+  expect_identical(as.character(traced$value),c("high",NA))
+  merged<-P(list(kind="bins",breaks=c(-Inf,0,5,10,Inf),labels=c("a","z","b","q")),list(kind="category",range="bins",category_map=c("low","normal","normal","high")))
+  expect_identical(as.character(.numberPresent(c(-1,1,8,12),merged)),c("low","normal","normal","high"))
+})
