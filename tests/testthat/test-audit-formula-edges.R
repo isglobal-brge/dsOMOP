@@ -1,8 +1,8 @@
-.audit_egfr_plan <- function() {
+.audit_egfr_plan <- function(factor=1) {
   api<-function(n)getExportedValue("dsOMOPClient",n)
   e<-api("omop_event")("measurement",.WS7$LAB,name="lab",unit=api("omop_unit")(8554L))
   raw<-api("omop_variable")(event=e,reducer=api("omop_reduce")("first_value",missing="keep"))
-  scr<-api("omop_number")(raw,api("omop_number_spec")(unit=api("omop_number_unit")("unit:8554","coordinate:idms_creatinine_mg_dl",1)))
+  scr<-api("omop_number")(raw,api("omop_number_spec")(unit=api("omop_number_unit")("unit:8554","coordinate:idms_creatinine_mg_dl",factor)))
   age<-api("omop_age_at")(api("omop_anchor")(e,"first",scope="episode"))
   sex<-api("omop_variable")(table="person",column="gender_concept_id")
   v<-api("omop_formula_egfr_ckdepi2021")(scr,age,sex,list(female="concept:8532",male="concept:8507"))
@@ -33,6 +33,12 @@ test_that("Q14 adult boundaries and invalid input eligibility execute in the emi
     expect_identical(release$status$status,"ok")
     expect_identical(attr(release$values$o$o,"omop_numbers")$egfr$privacy_class,2L)
   })
+  # Independently declared micromol/L conversion: 88.4 equals 1 mg/dL.
+  DBI::dbExecute(h$conn,"UPDATE measurement SET value_as_number=1")
+  mg<-.ws7_scenario_run(h,.audit_egfr_plan())$frame
+  DBI::dbExecute(h$conn,"UPDATE measurement SET value_as_number=88.4")
+  micro<-.ws7_scenario_run(h,.audit_egfr_plan(1/88.4))$frame
+  expect_equal(micro$egfr,mg$egfr,tolerance=1e-10)
   # An absent source stays unavailable, even if all other operands are valid.
   p$events$lab$on_missing_table<-"unavailable"
   DBI::dbExecute(h$conn,"DROP TABLE measurement");h$blueprint<-NULL;h$role_registry<-NULL

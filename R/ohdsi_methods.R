@@ -16,17 +16,33 @@
   if(grepl("score|charlson|chads|hfrs|dcsi",id))return(list(estimand="route-declared score weights/window",evaluation="local implementation",limit="one-point burden approximation and traced extraction score are distinct; no automatic upstream equivalence"))
   list(estimand="route-declared analysis",evaluation="unresolved",limit="no validated upstream equivalence, negative-control calibration or network-module claim")
 }
-.ohdsiRouteDeclaration <- function(entry,settings=NULL,protection="unresolved") {
+.ohdsiRouteDeclaration <- function(entry,settings=NULL,protection="unresolved",scope=NULL,combine="union") {
   id<-entry$meta$alias_target %||% entry$name
   scope<-.ohdsiMethodScope(id,entry$meta$adapter %||% "unknown")
   defaults<-setNames(lapply(entry$params,function(p)p$default %||% "unresolved"),vapply(entry$params,function(p)p$name,""))
   settings<-settings %||% defaults
+  roles<-list(status="unresolved",arms="ordered scope: target then comparator where the route accepts two cohorts",
+    outcome="concept-filter where outcome_concept_id is declared; never a cohort-definition ID")
+  public_ids<-function(x) {
+    if(is.list(x)) {
+      if(is.object(x)||!all(vapply(x,function(v)!is.object(v)&&is.atomic(v)&&length(v)==1L&&(is.numeric(v)||is.character(v)),logical(1))))return(NULL)
+      x<-unlist(x,use.names=FALSE)
+    }
+    if(is.numeric(x)&&!is.object(x)&&all(is.finite(x))&&all(x==trunc(x))&&all(abs(x)<=9007199254740991))return(as.list(format(x,scientific=FALSE,trim=TRUE,digits=22)))
+    if(is.character(x)&&length(x)&&!anyNA(x)&&all(grepl("^(0|[1-9][0-9]*)$",x)))return(as.list(x))
+    NULL
+  }
+  ids<-public_ids(scope)
+  if(length(ids))roles<-list(status="declared",ordered_cohort_definitions=ids,combine=combine,
+    target=ids[[1]],comparator=if(length(ids)>1L)ids[[2]] else "not_applicable",
+    outcome_definition=list(kind=if("outcome_concept_id" %in% names(settings))"concept-filter" else "unresolved",
+      definition=settings$outcome_concept_id %||% "unresolved"))
   d<-list(schema_version="ohdsi-declaration-1",compatibility=scope$compatibility %||% "local_port",
     method_id=id,method_version="1.0.0",adapter_version="2.10.5",
-    settings_digest=paste(openssl::sha256(charToRaw(.jcsCanonical(.pnv2Plain(settings))))),
+    settings_digest=paste(openssl::sha256(charToRaw(.jcsCanonical(.pnv2Plain(list(settings=settings,roles=roles)))))),
     upstream=list(package=entry$meta$pack_package %||% "unknown",version=entry$meta$pack_version %||% "unknown",fixture="unresolved",source_definition_hash="unresolved"),
     identity=list(namespace=if(grepl("fe[.]",id))"dsomop.catalogue_concept.v1" else "not_applicable",scope_kind="analysis_settings",definition=settings),
-    study_roles=list(status="unresolved",arms="ordered scope: target then comparator where the route accepts two cohorts",outcome="concept-filter where outcome_concept_id is declared; never a cohort-definition ID"),
+    study_roles=roles,
     temporal_contract=list(settings=settings,closure="route-specific; see method and parameter declarations"),
     era_contract=list(status="not_applicable"),vocabulary_contract=list(cdm_version=entry$meta$cdm_version %||% "unresolved",vocabulary_version="unresolved"),
     estimation_contract=list(estimand=scope$estimand,evaluation=scope$evaluation,limits=scope$limit,

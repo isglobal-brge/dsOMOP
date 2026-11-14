@@ -74,3 +74,21 @@ test_that("Q15 temporal selection, stable ties, ranges and publication preserve 
   expect_identical(got$status$status,"refused")
   })
 })
+
+test_that("Q15 multiple concepts remain separate days and foreign event operands refuse", {
+  h<-.audit_daily_handle();on.exit(DBI::dbDisconnect(h$conn))
+  DBI::dbExecute(h$conn,"UPDATE measurement SET measurement_date='2020-01-01',measurement_concept_id=990999 WHERE measurement_id=970004")
+  p<-.audit_daily_plan();p$events$lab$concept_set$concepts<-list(.WS7$LAB,990999L)
+  expect_error(.ws7_scenario_run(h,p),"number_daily_quantity")
+  p$variables$daily$derived$input$number_spec<-list(unit=list(kind="fixed_unit",from="unit:8554",to="coordinate:common_quantity",factor=1,offset=0))
+  # Concept A mean 5 and concept B mean 15 are two concept-days, even
+  # though both share one calendar date and an asserted common coordinate.
+  expect_equal(.ws7_value(.ws7_scenario_run(h,p)$frame,7001,"daily"),10)
+  q<-.audit_daily_plan();q$events$foreign<-q$events$lab
+  x<-q$variables$daily$derived$input;y<-x;y$derived$source$event<-"foreign"
+  q$variables$daily$derived$input<-list(derived=list(kind="number_derive",inputs=list(
+    list(alias="x",variable=x,stage="canonical"),list(alias="y",variable=y,stage="canonical")),
+    exprs=list(version=1L,assign=list(list(name="answer",expr=list(op="+",args=list(list(col="x"),list(col="y")))))),
+    unit="coordinate:common_quantity",result="answer"))
+  expect_error(.ws7_scenario_run(h,q),"number_dependency_invalid")
+})

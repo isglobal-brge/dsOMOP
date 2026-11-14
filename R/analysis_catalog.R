@@ -5653,6 +5653,6 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   effective<-.omopAnalysisSanitizeParams(entry,.auditEffectiveSettings(name,params))
   effective<-.omopToolsSnapReleaseParams(entry,effective)$effective
   attr(out,"interoperability")<-.ohdsiRouteDeclaration(entry,effective,
-    attr(out,"dsomop_protection")$protection %||% "standard")
+    attr(out,"dsomop_protection")$protection %||% "standard",scope=scope,combine=combine)
   out
 }

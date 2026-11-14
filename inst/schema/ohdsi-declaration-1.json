@@ -46,25 +46,488 @@
       "pattern": "^[a-f0-9]{64}$"
     },
     "upstream": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "package": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "fixture": {
+          "type": "string"
+        },
+        "source_definition_hash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "package",
+        "version",
+        "fixture",
+        "source_definition_hash"
+      ]
     },
     "identity": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "namespace": {
+          "type": "string"
+        },
+        "scope_kind": {
+          "type": "string"
+        },
+        "scope_digest": {
+          "type": "string"
+        },
+        "local_id_representation": {
+          "type": "string"
+        },
+        "definition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "external_namespaces": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "legacy": {
+              "type": "string"
+            },
+            "native": {
+              "type": "string"
+            },
+            "catalogue": {
+              "type": "string"
+            },
+            "upstream": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "legacy",
+            "native",
+            "catalogue",
+            "upstream"
+          ]
+        }
+      },
+      "required": [
+        "namespace",
+        "scope_kind",
+        "scope_digest",
+        "definition"
+      ]
     },
     "study_roles": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "unresolved",
+            "declared",
+            "not_applicable"
+          ]
+        },
+        "population_definitions": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "output_definitions": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "arms": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "ordered_cohort_definitions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "combine": {
+          "enum": [
+            "union",
+            "intersect"
+          ]
+        },
+        "target": {
+          "type": "string"
+        },
+        "comparator": {
+          "type": "string"
+        },
+        "outcome_definition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "definition"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "concept-filter",
+                "cohort",
+                "unresolved"
+              ]
+            },
+            "definition": {
+              "type": [
+                "string",
+                "integer",
+                "array"
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "status"
+      ]
     },
     "temporal_contract": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "anchor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "window": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coverage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "population_policies": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "settings": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inclusivity": {
+          "type": "string"
+        },
+        "closure": {
+          "type": "string"
+        }
+      },
+      "required": []
     },
     "era_contract": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "recorded_namespace": {
+          "type": "string"
+        },
+        "derived_namespace": {
+          "type": "string"
+        },
+        "declarations": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "native_defaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "gap": {
+              "type": "integer"
+            },
+            "persistence": {
+              "type": "integer"
+            },
+            "by": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "gap",
+            "persistence",
+            "by"
+          ]
+        },
+        "split": {
+          "type": "string"
+        },
+        "persistence": {
+          "type": "string"
+        },
+        "days_supply_end": {
+          "type": "string"
+        }
+      },
+      "required": []
     },
     "vocabulary_contract": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cdm_version": {
+          "type": "string"
+        },
+        "vocabulary_version": {
+          "type": "string"
+        },
+        "mapping_direction": {
+          "type": "string"
+        },
+        "expansion_digest": {
+          "type": "string"
+        },
+        "definitions": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "events": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "cdm_version",
+        "vocabulary_version"
+      ]
     },
     "estimation_contract": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "unit_of_analysis": {
+          "type": "string"
+        },
+        "numerator": {
+          "type": "string"
+        },
+        "denominator": {
+          "type": "string"
+        },
+        "rate_multiplier": {
+          "type": "string"
+        },
+        "estimator": {
+          "type": "string"
+        },
+        "protection": {
+          "type": "string"
+        },
+        "contribution_caps": {
+          "type": "string"
+        },
+        "approximation": {
+          "type": "string"
+        },
+        "estimand": {
+          "type": "string"
+        },
+        "evaluation": {
+          "type": "string"
+        },
+        "limits": {
+          "type": "string"
+        },
+        "scientific_settings": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "unit_of_analysis",
+        "protection",
+        "contribution_caps"
+      ]
     }
   }
 }
