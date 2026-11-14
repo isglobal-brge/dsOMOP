@@ -39,6 +39,9 @@
 \item{coverage}{Coverage relation for interval rows.}
 
 \item{quality}{Apply the direct-event coverage quality policy.}
+
+\item{dated}{Require a nonmissing event start date. Set FALSE for native
+numeric event operands that retain undated rows when no window excludes them.}
 }
 \value{
 The stream fragment.

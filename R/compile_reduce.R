@@ -487,6 +487,8 @@
 #' @param use Course or recorded/effective rows of an interval.
 #' @param coverage Coverage relation for interval rows.
 #' @param quality Apply the direct-event coverage quality policy.
+#' @param dated Require a nonmissing event start date. Set FALSE for native
+#'   numeric event operands that retain undated rows when no window excludes them.
 #' @return The stream fragment.
 #' @keywords internal
 .reduceStream <- function(ctx, cons, src, window, name, extra = list(), overlap = FALSE,
