@@ -1891,12 +1891,13 @@
     tryCatch({
       manifest <- .readStagingManifestEnvelope(file.path(path, "manifest.json"))
       all(vapply(manifest$outputs, function(entry) {
-        if (!is.list(entry) || !is.list(entry$metadata) ||
-            !identical(entry$staged_token, basename(path))) return(FALSE)
-        file <- .stagedScalarString(entry$metadata$file, "file")
+        entry <- .stagedManifestDescriptor(entry)
+        contract <- .validateStagedDescriptorContract(entry)
+        if (!identical(contract$token, basename(path))) return(FALSE)
+        file <- contract$file
         if (!identical(file, file.path(path, basename(file))) ||
             .isSymbolicLink(file)) return(FALSE)
-        expiry <- .stagedExpiry(entry$expires_at)
+        expiry <- contract$expires
         # Consumption removes the committed data file; revocation removes the
         # manifest member. One remaining live member preserves the whole dir.
         expiry <= now || (!file.exists(file) && !dir.exists(file))
@@ -2084,6 +2085,42 @@
   manifest
 }
 
+# Restore the same JSON descriptor representation for readers and lifecycle
+# inspection before either validates the full structural contract.
+.stagedManifestDescriptor <- function(entry) {
+  if (!is.list(entry) || !is.list(entry$metadata)) {
+    stop("Invalid staged descriptor in manifest.", call. = FALSE)
+  }
+  entry$metadata$columns <- unname(as.character(
+    unlist(entry$metadata$columns, use.names = FALSE)
+  ))
+  if (!is.null(entry$metadata$column_types)) {
+    entry$metadata$column_types <- unlist(
+      entry$metadata$column_types, use.names = TRUE
+    )
+  }
+  if (!is.null(entry$metadata$parts)) {
+    entry$metadata$parts <- unname(as.character(unlist(
+      entry$metadata$parts, use.names = FALSE
+    )))
+  }
+  if (!is.null(entry$metadata$semantic_contract$age_breaks)) {
+    entry$metadata$semantic_contract$age_breaks <- unname(as.integer(
+      unlist(entry$metadata$semantic_contract$age_breaks, use.names = FALSE)
+    ))
+  }
+  if (!is.null(entry$metadata$bundle_contract$semantic_contract$age_breaks)) {
+    entry$metadata$bundle_contract$semantic_contract$age_breaks <-
+      unname(as.integer(unlist(
+        entry$metadata$bundle_contract$semantic_contract$age_breaks,
+        use.names = FALSE
+      )))
+  }
+  class(entry) <- c("FlowerDatasetDescriptor",
+                    "OMOPStagedDatasetDescriptor")
+  entry
+}
+
 #' Read and validate a v2 staging manifest
 #'
 #' Reconstructs descriptor classes and canonical vector fields after JSON
@@ -2098,36 +2135,7 @@
   manifest <- .readStagingManifestEnvelope(manifest_path)
 
   outputs <- lapply(manifest$outputs, function(entry) {
-    if (!is.list(entry) || !is.list(entry$metadata)) {
-      stop("Invalid staged descriptor in manifest.", call. = FALSE)
-    }
-    entry$metadata$columns <- unname(as.character(
-      unlist(entry$metadata$columns, use.names = FALSE)
-    ))
-    if (!is.null(entry$metadata$column_types)) {
-      entry$metadata$column_types <- unlist(
-        entry$metadata$column_types, use.names = TRUE
-      )
-    }
-    if (!is.null(entry$metadata$parts)) {
-      entry$metadata$parts <- unname(as.character(unlist(
-        entry$metadata$parts, use.names = FALSE
-      )))
-    }
-    if (!is.null(entry$metadata$semantic_contract$age_breaks)) {
-      entry$metadata$semantic_contract$age_breaks <- unname(as.integer(
-        unlist(entry$metadata$semantic_contract$age_breaks, use.names = FALSE)
-      ))
-    }
-    if (!is.null(entry$metadata$bundle_contract$semantic_contract$age_breaks)) {
-      entry$metadata$bundle_contract$semantic_contract$age_breaks <-
-        unname(as.integer(unlist(
-          entry$metadata$bundle_contract$semantic_contract$age_breaks,
-          use.names = FALSE
-        )))
-    }
-    class(entry) <- c("FlowerDatasetDescriptor",
-                      "OMOPStagedDatasetDescriptor")
+    entry <- .stagedManifestDescriptor(entry)
     invisible(.omopStagedDatasetPath(entry, check_manifest = FALSE))
     entry
   })

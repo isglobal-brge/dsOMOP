@@ -1,5 +1,10 @@
 # dsOMOP 2.10.5 (2026-11-14)
 
+- Corrected (STG-R1-01): staging cleanup validates every committed descriptor
+  before classifying expired or consumed output. Parseable malformed manifests
+  preserve the entire directory and its ownership tracking. Re-run affected
+  recipes after upgrading; public readers still reject invalid or expired data.
+
 - Newly permitted (CR-33 / A-32): repeated staged executions no longer stop at
   a per-handle directory count. Before reserving a directory, the server reclaims
   only handle-owned staging whose committed outputs are all expired, consumed
