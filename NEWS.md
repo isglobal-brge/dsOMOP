@@ -1,5 +1,12 @@
 # dsOMOP 2.10.5 (2026-11-14)
 
+- Newly permitted (CR-33 / A-32): repeated staged executions no longer stop at
+  a per-handle directory count. Before reserving a directory, the server reclaims
+  only handle-owned staging whose committed outputs are all expired, consumed
+  (data files removed), or revoked. Live outputs and active executions remain
+  intact; byte and row caps still protect staging. Re-run affected recipes;
+  `dsomop.max_staging_dirs_per_handle` is retired and ignored.
+
 - Corrected (A-29 second review): integer numeric expressions retain a
   conservative signed64 result type through nested formulas, selectors and
   publication, including empty inputs. Re-run affected recipes; integer

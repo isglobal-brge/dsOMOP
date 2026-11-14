@@ -623,6 +623,7 @@ omopStagedRevokeDS <- function(exec_symbol) {
 #' @keywords internal
 .publishStagingDir <- function(ctx) {
   if (!is.null(ctx$private_dir)) return(ctx$private_dir)
+  .cleanupInactiveHandleStaging(ctx$handle)
   ctx$staging_token <- ctx$id
   ctx$staging_dir <- .createStagingDir(ctx$staging_token)
   ctx$owned$directories <- union(ctx$owned$directories, ctx$staging_dir)

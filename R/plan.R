@@ -1872,6 +1872,40 @@
   invisible(NULL)
 }
 
+# Reclaim only tracked, terminal directories. Missing/malformed manifests are
+# inconclusive (including in-flight work), never evidence that a directory died.
+.cleanupInactiveHandleStaging <- function(handle) {
+  tracked <- unique(handle$staging_dirs %||% character(0))
+  if (!length(tracked)) return(invisible(NULL))
+  base <- .stagingBaseDir()
+  active <- unlist(lapply(ls(.planContextRegistry, all.names = TRUE), function(id) {
+    ctx <- get(id, .planContextRegistry, inherits = FALSE)
+    if (!isTRUE(ctx$closed)) ctx$owned$directories else character(0)
+  }), use.names = FALSE)
+  now <- Sys.time()
+  removable <- vapply(tracked, function(path) {
+    state <- .inspectOwnedStagingPath(path, base)$state
+    # Delegate absent/unsafe paths to the existing idempotence and safety checks.
+    if (state != "directory") return(TRUE)
+    if (path %in% active) return(FALSE)
+    tryCatch({
+      manifest <- .readStagingManifestEnvelope(file.path(path, "manifest.json"))
+      all(vapply(manifest$outputs, function(entry) {
+        if (!is.list(entry) || !is.list(entry$metadata) ||
+            !identical(entry$staged_token, basename(path))) return(FALSE)
+        file <- .stagedScalarString(entry$metadata$file, "file")
+        if (!identical(file, file.path(path, basename(file))) ||
+            .isSymbolicLink(file)) return(FALSE)
+        expiry <- .stagedExpiry(entry$expires_at)
+        # Consumption removes the committed data file; revocation removes the
+        # manifest member. One remaining live member preserves the whole dir.
+        expiry <= now || (!file.exists(file) && !dir.exists(file))
+      }, logical(1)))
+    }, error = function(e) FALSE)
+  }, logical(1))
+  .cleanupHandleStaging(handle, paths = tracked[removable])
+}
+
 #' Build a server-local staged dataset descriptor
 #'
 #' @param output_name Character; name of the output
@@ -2003,17 +2037,10 @@
   invisible(manifest_path)
 }
 
-#' Read and validate a v2 staging manifest
-#'
-#' Reconstructs descriptor classes and canonical vector fields after JSON
-#' parsing, then runs the same fail-closed resolver used by downstream server
-#' packages. This is the supported manifest round-trip; consumers must not
-#' reconstruct descriptors from a partial JSON projection.
-#'
-#' @param manifest_path Absolute path returned by \code{.writeStagingManifest}.
-#' @return A manifest list whose \code{outputs} are validated staged descriptors.
-#' @keywords internal
-.readStagingManifest <- function(manifest_path) {
+# Read only the authenticated manifest envelope, without resolving files or
+# rejecting expired descriptors. Cleanup needs those terminal states; readers
+# still validate every descriptor below before returning any output.
+.readStagingManifestEnvelope <- function(manifest_path) {
   manifest_path <- .stagedScalarString(manifest_path, "manifest path")
   if (!.stagedIsAbsolutePath(manifest_path) ||
       !file.exists(manifest_path) || .isSymbolicLink(manifest_path) ||
@@ -2053,6 +2080,22 @@
   if (length(created) != 1L || is.na(created)) {
     stop("Invalid staging manifest creation timestamp.", call. = FALSE)
   }
+
+  manifest
+}
+
+#' Read and validate a v2 staging manifest
+#'
+#' Reconstructs descriptor classes and canonical vector fields after JSON
+#' parsing, then runs the same fail-closed resolver used by downstream server
+#' packages. This is the supported manifest round-trip; consumers must not
+#' reconstruct descriptors from a partial JSON projection.
+#'
+#' @param manifest_path Absolute path returned by \code{.writeStagingManifest}.
+#' @return A manifest list whose \code{outputs} are validated staged descriptors.
+#' @keywords internal
+.readStagingManifest <- function(manifest_path) {
+  manifest <- .readStagingManifestEnvelope(manifest_path)
 
   outputs <- lapply(manifest$outputs, function(entry) {
     if (!is.list(entry) || !is.list(entry$metadata)) {
@@ -3084,37 +3127,11 @@
     max_outputs <- suppressWarnings(as.numeric(
       getOption("dsomop.max_staged_outputs", 100L)
     ))
-    max_dirs <- suppressWarnings(as.numeric(
-      getOption("dsomop.max_staging_dirs_per_handle", 8L)
-    ))
     if (length(max_outputs) != 1L || is.na(max_outputs) ||
         !is.finite(max_outputs) || max_outputs != floor(max_outputs) ||
-        max_outputs < 1L || length(outputs) > max_outputs ||
-        length(max_dirs) != 1L || is.na(max_dirs) || !is.finite(max_dirs) ||
-        max_dirs != floor(max_dirs) || max_dirs < 1L) {
-      stop("Staged output/directory caps must be positive server integers and ",
-           "the plan must stay within them.", call. = FALSE)
-    }
-    live_dirs <- unique(handle$staging_dirs %||% character(0))
-    if (length(live_dirs) > 0L) {
-      base <- .stagingBaseDir()
-      states <- vapply(
-        live_dirs,
-        function(path) .inspectOwnedStagingPath(path, base)$state,
-        character(1)
-      )
-      not_live <- live_dirs[states != "directory"]
-      if (length(not_live) > 0L) {
-        # Valid paths already absent are removed idempotently. Invalid paths and
-        # symlinks remain owned and abort preflight so they cannot be forgotten.
-        .cleanupHandleStaging(handle, paths = not_live)
-      }
-      live_dirs <- unique(handle$staging_dirs %||% character(0))
-    }
-    if (length(live_dirs) >= max_dirs) {
-      stop("This OMOP handle has reached its staged-directory cap; clean up ",
-           "expired/consumed staged outputs before creating more.",
-           call. = FALSE)
+        max_outputs < 1L || length(outputs) > max_outputs) {
+      stop("The staged output cap must be a positive server integer and ",
+           "the plan must stay within it.", call. = FALSE)
     }
     staging_dir <- .publishStagingDir(ctx)
     staging_token <- ctx$staging_token
