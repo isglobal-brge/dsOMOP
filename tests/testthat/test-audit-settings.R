@@ -63,9 +63,8 @@ test_that("fully qualified rejected settings do not even construct the catalogue
   }
 })
 
-test_that("the retained estimands distinguish first-episode time, persons, records and all history", {
+.audit_estimand_handle <- function() {
   h <- create_test_handle(n_persons = 40L)
-  on.exit(cleanup_handle(h))
   cohort <- data.frame(subject_id = rep(1:40, each = 2L),
     cohort_start_date = rep(c("2020-01-01", "2020-02-01"), 40),
     cohort_end_date = rep(c("2020-01-10", "2020-02-10"), 40))
@@ -83,6 +82,13 @@ test_that("the retained estimands distinguish first-episode time, persons, recor
                              rep("2020-02-03", 40), rep("2019-12-01", 40)))
   DBI::dbWriteTable(h$conn, "condition_occurrence", events, append = TRUE)
   .buildBlueprint(h)
+  register_test_temp(h, "audit_cohort")
+  h
+}
+
+test_that("the retained estimands distinguish first-episode time, persons, records and all history", {
+  h <- .audit_estimand_handle()
+  on.exit(cleanup_handle(h))
   source <- list(table = "condition_occurrence", person_col = "person_id",
                  concept_col = "condition_concept_id", date_col = "condition_start_date",
                  id_list = "201820")
@@ -103,4 +109,80 @@ test_that("the retained estimands distinguish first-episode time, persons, recor
   # This retained catalogue route includes every December-only member even
   # though no cohort period contains that date; its selector cannot limit it.
   expect_equal(outside$average, 1)
+})
+
+test_that("published protected incidence uses the independent first-episode oracle", {
+  .release_state(mode = "protected")
+  h <- .audit_estimand_handle()
+  on.exit(cleanup_handle(h), add = TRUE)
+  symbol <- "audit_estimand"
+  .setHandle(symbol, h)
+  on.exit(.removeHandle(symbol), add = TRUE)
+  real <- .dsomopReleaseBuildC6Tree
+  captured <- NULL
+  expected <- NULL
+  local_mocked_bindings(.dsomopReleaseBuildC6Tree = function(policy, protection, owner, sub, ...) {
+    captured <<- sub
+    # Independent scientific oracle passed through the unchanged production
+    # protection mechanism. No noise is disabled and no published gate is mocked.
+    oracle <- sub
+    oracle$event <- as.integer(as.integer(oracle$person_id) <= 20L)
+    oracle$time <- rep(10, 40L)
+    oracle$recurrent <- 2 * oracle$event
+    expected <<- real(policy, protection, owner, oracle, ...)
+    real(policy, protection, owner, sub, ...)
+  })
+  params <- list(outcome_concept_id = "201820", tar_start_offset = "0",
+    tar_end_offset = "0", tar_anchor_start = "start", tar_anchor_end = "end")
+  published <- suppressWarnings(omopAnalysisRunDS(symbol, "dsomop:incidence.rate",
+    params = params, scope = "audit_cohort"))
+  expect_equal(nrow(captured), 40L)
+  expect_equal(sum(captured$event), 20)
+  expect_equal(sum(captured$time), 400)
+  expect_equal(sum(captured$recurrent), 40)
+  expect_equal(nrow(published), 1L)
+  expect_true(attr(published, "dsomop_protection")$protection %in% c("fixed_synopsis", "realised_sticky"))
+  cells <- .dsomopReleaseC6TreeView(expected, FALSE, FALSE, FALSE, 10L)$cells
+  expect_equal(published$persons_at_risk, .dsomopReleaseRound(cells$N_d))
+  expect_equal(published$person_outcomes, .dsomopReleaseRound(cells$E_d))
+  expect_equal(published$outcomes, .dsomopReleaseRound(cells$R_d))
+  expect_equal(published$person_days, .dsomopReleaseRound(cells$T_d))
+  expect_equal(published$rate, .dsomopReleaseRound(ifelse(published$person_days > 0,
+    published$person_outcomes / published$person_days, NA_real_)))
+  explicit <- suppressWarnings(omopAnalysisRunDS(symbol, "dsomop:incidence.rate",
+    params = c(params, list(clean_window = 0L)), scope = "audit_cohort"))
+  expect_identical(.release_values(published), .release_values(explicit))
+  expect_identical(attr(published, "dsomop_release"), attr(explicit, "dsomop_release"))
+})
+
+test_that("a bounded native feature excludes the catalogue's outside-period events", {
+  .release_state()
+  h <- .audit_estimand_handle()
+  on.exit(cleanup_handle(h), add = TRUE)
+  .ws7_keys(list(h))
+  symbol <- "audit_fe_window"
+  .setHandle(symbol, h)
+  on.exit(.removeHandle(symbol), add = TRUE)
+  catalogue <- suppressWarnings(omopAnalysisRunDS(symbol, "dsomop:fe.prevalence",
+    list(domain_code = "0"), scope = "audit_cohort"))
+  outside <- catalogue[catalogue$covariate_id == 201826L, ]
+  expect_equal(nrow(outside), 1L)
+  expect_gt(outside$sum_value, 0)
+  explicit <- suppressWarnings(omopAnalysisRunDS(symbol, "dsomop:fe.prevalence",
+    list(domain_code = "0", time_windows = 0L), scope = "audit_cohort"))
+  expect_identical(.release_values(catalogue), .release_values(explicit))
+  plan <- .ws7_scenario_plan(list(
+    bounded = list(source = list(event = "outside"), reducer = list(fn = "count",
+      window = list(start = 0L, end = 9L, anchor = "index"))),
+    history = list(source = list(event = "outside"), reducer = list(fn = "count"))))
+  plan$events <- list(outside = list(table = "condition_occurrence",
+    concept_set = list(concepts = list(201826L))))
+  cohort <- DBI::dbReadTable(h$conn, "audit_cohort")
+  cohort$cohort_start_date <- as.Date(cohort$cohort_start_date)
+  cohort$cohort_end_date <- as.Date(cohort$cohort_end_date)
+  actual <- .ws7_scenario_run(h, plan, frame = cohort)$frame
+  expect_equal(nrow(actual), 80L)
+  expect_true(all(actual$bounded == 0L))
+  expect_true(all(actual$history == 1L))
+  expect_equal(length(unique(actual$pid)), 40L)
 })
