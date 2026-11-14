@@ -89,6 +89,9 @@
         },
         "number_spec": {
           "$ref": "#/$defs/number_spec"
+        },
+        "category_spec": {
+          "$ref": "#/$defs/category_spec"
         }
       }
     },
@@ -2434,6 +2437,9 @@
             },
             "number_spec": {
               "$ref": "#/$defs/number_spec"
+            },
+            "category_spec": {
+              "$ref": "#/$defs/category_spec"
             }
           }
         },
@@ -2726,6 +2732,9 @@
             },
             "number_spec": {
               "$ref": "#/$defs/number_spec"
+            },
+            "category_spec": {
+              "$ref": "#/$defs/category_spec"
             }
           }
         },
@@ -2783,6 +2792,9 @@
             },
             "number_spec": {
               "$ref": "#/$defs/number_spec"
+            },
+            "category_spec": {
+              "$ref": "#/$defs/category_spec"
             }
           }
         },
@@ -2837,6 +2849,9 @@
             },
             "number_spec": {
               "$ref": "#/$defs/number_spec"
+            },
+            "category_spec": {
+              "$ref": "#/$defs/category_spec"
             }
           }
         },
@@ -3026,6 +3041,9 @@
             },
             "number_spec": {
               "$ref": "#/$defs/number_spec"
+            },
+            "category_spec": {
+              "$ref": "#/$defs/category_spec"
             }
           }
         },
@@ -3035,6 +3053,45 @@
           "properties": {
             "derived": {
               "$ref": "#/$defs/number_derived"
+            },
+            "number_spec": {
+              "$ref": "#/$defs/number_spec"
+            },
+            "broadcast": {
+              "type": "boolean",
+              "default": false
+            },
+            "labels": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "column_names": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "category_spec": {
+              "$ref": "#/$defs/category_spec"
+            }
+          },
+          "required": [
+            "derived"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "derived": {
+              "$ref": "#/$defs/category_derived"
+            },
+            "category_spec": {
+              "$ref": "#/$defs/category_spec"
             },
             "number_spec": {
               "$ref": "#/$defs/number_spec"
@@ -4058,6 +4115,16 @@
           "description": "the v1 person_level output-level custom filter, ANDed into every raw person/death table of the output before the outer merge"
         },
         "number_columns": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/variable"
+          }
+        },
+        "category_columns": {
           "type": "object",
           "minProperties": 1,
           "propertyNames": {
@@ -6681,6 +6748,623 @@
             "column"
           ]
         }
+      ]
+    },
+    "category_key": {
+      "type": "string",
+      "pattern": "^(concept:(0|[1-9][0-9]*)|bin:[1-9][0-9]*|category:([1-9][0-9]*|[A-Za-z][A-Za-z0-9_]{0,63})|period:[^ ]+|flag:[01]|special:(missing|unknown))$"
+    },
+    "category_order": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "category_order"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/category_key"
+          },
+          "uniqueItems": true
+        },
+        "metadata": {
+          "oneOf": [
+            {
+              "enum": [
+                "identity",
+                "producer"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "$ref": "#/$defs/name"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "keys": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/category_key"
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "id",
+                "version",
+                "sha256",
+                "keys"
+              ]
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "category_recode": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "category_recode"
+        },
+        "map": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/category_key"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^category:[A-Za-z][A-Za-z0-9_]{0,63}$"
+          }
+        },
+        "levels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/category_key"
+          },
+          "uniqueItems": true
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "ordered": {
+          "type": "boolean"
+        },
+        "unmatched": {
+          "enum": [
+            "keep",
+            "missing"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "map",
+        "levels",
+        "ordered",
+        "unmatched"
+      ]
+    },
+    "category_rollup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "none",
+            "atc",
+            "icd10",
+            "snomed",
+            "ancestors"
+          ]
+        },
+        "level": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            },
+            {
+              "enum": [
+                "chapter",
+                "block"
+              ]
+            }
+          ]
+        },
+        "ancestors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/category_key"
+          },
+          "uniqueItems": true
+        },
+        "separation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "distance": {
+          "enum": [
+            "min",
+            "max"
+          ]
+        },
+        "vocabulary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "domain": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/category_key"
+          },
+          "uniqueItems": true
+        },
+        "multiple": {
+          "enum": [
+            "error",
+            "priority",
+            "all"
+          ]
+        },
+        "priority": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/category_key"
+          },
+          "uniqueItems": true
+        },
+        "unmatched": {
+          "enum": [
+            "keep",
+            "missing"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "category_language": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "category_language"
+        },
+        "language_concept_id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        }
+      },
+      "required": [
+        "kind",
+        "language_concept_id"
+      ]
+    },
+    "category_missing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "category_missing"
+        },
+        "na": {
+          "enum": [
+            "keep",
+            "level"
+          ]
+        },
+        "unknown": {
+          "enum": [
+            "keep",
+            "level",
+            "missing"
+          ]
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "missing": {
+              "type": "string",
+              "minLength": 1
+            },
+            "unknown": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "missing",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "na",
+        "unknown",
+        "labels"
+      ]
+    },
+    "category_binary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "category_binary"
+        },
+        "as": {
+          "enum": [
+            "integer",
+            "logical",
+            "factor"
+          ]
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "kind",
+        "as",
+        "labels"
+      ]
+    },
+    "category_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "levels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/category_key"
+          },
+          "uniqueItems": true
+        },
+        "order": {
+          "$ref": "#/$defs/category_order"
+        },
+        "ordered": {
+          "type": "boolean"
+        },
+        "reference": {
+          "$ref": "#/$defs/category_key"
+        },
+        "recode": {
+          "$ref": "#/$defs/category_recode"
+        },
+        "rollup": {
+          "$ref": "#/$defs/category_rollup"
+        },
+        "label_style": {
+          "enum": [
+            "name",
+            "code",
+            "code_name",
+            "vocabulary_code",
+            "source_code"
+          ]
+        },
+        "language": {
+          "oneOf": [
+            {
+              "enum": [
+                "en"
+              ]
+            },
+            {
+              "$ref": "#/$defs/category_language"
+            }
+          ]
+        },
+        "missing": {
+          "$ref": "#/$defs/category_missing"
+        },
+        "binary": {
+          "$ref": "#/$defs/category_binary"
+        }
+      },
+      "required": []
+    },
+    "category_derived": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "category_rows"
+            },
+            "source": {
+              "$ref": "#/$defs/source_ref"
+            },
+            "value": {
+              "$ref": "#/$defs/column_name"
+            }
+          },
+          "required": [
+            "kind",
+            "source",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "category_indicators"
+            },
+            "variable": {
+              "$ref": "#/$defs/variable"
+            },
+            "key": {
+              "$ref": "#/$defs/category_key"
+            },
+            "missing": {
+              "enum": [
+                "propagate",
+                "zero"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "variable",
+            "key",
+            "missing"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "repeated"
+            },
+            "source": {
+              "$ref": "#/$defs/source_ref"
+            },
+            "values": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "$ref": "#/$defs/name"
+                  },
+                  "variable": {
+                    "$ref": "#/$defs/variable"
+                  }
+                },
+                "required": [
+                  "name",
+                  "variable"
+                ]
+              }
+            },
+            "timepoints": {
+              "$ref": "#/$defs/timepoints"
+            },
+            "visits": {
+              "$ref": "#/$defs/visits"
+            },
+            "missing": {
+              "enum": [
+                "keep",
+                "skip_all",
+                "skip_any"
+              ]
+            },
+            "point": {
+              "$ref": "#/$defs/name"
+            },
+            "value": {
+              "$ref": "#/$defs/name"
+            }
+          },
+          "required": [
+            "kind",
+            "source",
+            "values",
+            "missing",
+            "point",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "category_reduce"
+            },
+            "variable": {
+              "$ref": "#/$defs/variable"
+            },
+            "reducer": {
+              "$ref": "#/$defs/reducer"
+            }
+          },
+          "required": [
+            "kind",
+            "variable",
+            "reducer"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "category_column"
+            },
+            "column": {
+              "$ref": "#/$defs/name"
+            },
+            "component": {
+              "$ref": "#/$defs/name"
+            }
+          },
+          "required": [
+            "kind",
+            "column"
+          ]
+        }
+      ]
+    },
+    "timepoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "timepoint"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "unit": {
+          "enum": [
+            "days",
+            "weeks",
+            "months",
+            "years"
+          ]
+        },
+        "tolerance": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "anchor": {
+          "$ref": "#/$defs/date_source"
+        },
+        "select": {
+          "enum": [
+            "closest",
+            "first",
+            "last"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "offset",
+        "unit",
+        "tolerance",
+        "select"
+      ]
+    },
+    "timepoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "timepoints"
+        },
+        "anchor": {
+          "$ref": "#/$defs/date_source"
+        },
+        "reuse": {
+          "type": "boolean"
+        },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/name"
+              },
+              "point": {
+                "$ref": "#/$defs/timepoint"
+              }
+            },
+            "required": [
+              "name",
+              "point"
+            ]
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "anchor",
+        "reuse",
+        "points"
+      ]
+    },
+    "visits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "visits"
+        },
+        "numbers": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "source": {
+          "$ref": "#/$defs/source_ref"
+        },
+        "window": {
+          "$ref": "#/$defs/window"
+        },
+        "select": {
+          "enum": [
+            "first",
+            "last",
+            "closest"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "numbers",
+        "source",
+        "select"
       ]
     }
   }

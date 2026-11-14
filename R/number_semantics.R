@@ -259,6 +259,8 @@
       d$result<-.numberExpressionShape(d$exprs,d$result,aliases)
       d$inputs<-lapply(d$inputs,function(i){i$variable<-normalize(i$variable,NULL,depth+1L,column_scope);i})
     }
+    if(!is.null(d$variable))d$variable<-normalize(d$variable,NULL,depth+1L,column_scope)
+    if(identical(d$kind,"repeated"))d$values<-lapply(d$values,function(entry) {entry$variable<-normalize(entry$variable,NULL,depth+1L,column_scope);entry})
     if(identical(d$kind,"number_change")) {
       d<-.numberChangeCheck(d)
       if(identical(d$reference,"first"))d$reference<-list(kind="first_observation")

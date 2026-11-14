@@ -1,0 +1,187 @@
+# A-30 pure category declarations. Keep byte-identical in dsOMOPClient.
+.categoryReject <- function(message, reason = "category_spec_invalid") {
+  stop(structure(list(message = paste0(reason, ": ", message), call = NULL,
+    reason = reason, code = "validation_error"), class = c("dsomop_category_error", "dsomop_plan_rejection", "error", "condition")))
+}
+.categoryStrings <- function(x, unique = FALSE, empty = TRUE) {
+  if (is.list(x) && (is.null(names(x)) || !length(x))) x <- unlist(x, use.names = FALSE)
+  if (!length(x) && empty) return(character())
+  if (!is.character(x) || anyNA(x) || any(!nzchar(trimws(x))) ||
+      anyNA(iconv(x, to = "UTF-8")) || (unique && anyDuplicated(x)))
+    .categoryReject("Use nonempty UTF-8 strings and unique declared keys.")
+  enc2utf8(x)
+}
+.categoryKeys <- function(x, empty = TRUE, concept = FALSE) {
+  x <- .categoryStrings(x, TRUE, empty)
+  valid <- grepl("^concept:(0|[1-9][0-9]*)$", x)
+  ids <- sub("^concept:", "", x[valid])
+  if (any(nchar(ids) > 10L | (nchar(ids) == 10L & ids > "2147483647")))
+    .categoryReject("Concept keys must use the A-27 exact ID range.")
+  if (!concept) valid <- valid | grepl("^(bin:[1-9][0-9]*|category:([1-9][0-9]*|[A-Za-z][A-Za-z0-9_]{0,63})|period:[^[:space:]]+|flag:[01]|special:(missing|unknown))$", x)
+  if (any(!valid)) .categoryReject("Use canonical typed category keys.")
+  unname(x)
+}
+.categoryObject <- function(x, allowed, required = character()) {
+  if (!is.list(x) || (length(x) && (is.null(names(x)) || anyNA(names(x)) ||
+      anyDuplicated(names(x)))) || length(setdiff(names(x), allowed)) ||
+      length(setdiff(required, names(x)))) .categoryReject("Invalid closed category declaration.")
+  if (any(vapply(x, is.null, logical(1)))) .categoryReject("Omit absent fields.")
+  invisible(x)
+}
+.categoryChoice <- function(x, choices) {
+  if (!is.character(x) || length(x) != 1L || is.na(x) || !x %in% choices)
+    .categoryReject(paste0("Expected one of: ", paste(choices, collapse = ", "), "."))
+  x
+}
+.categoryBool <- function(x) {
+  if (!is.logical(x) || length(x) != 1L || is.na(x)) .categoryReject("Expected one Boolean.")
+  x
+}
+.categoryOrderCheck <- function(x) {
+  .categoryObject(x, c("kind", "keys", "metadata"), "kind")
+  if (!identical(x$kind, "category_order") || is.null(x$keys) == is.null(x$metadata))
+    .categoryReject("Order requires exactly keys or public metadata.")
+  if (!is.null(x$keys)) return(.categoryKeys(x$keys))
+  if (is.character(x$metadata)) return(.categoryChoice(x$metadata, c("identity", "producer")))
+  m <- x$metadata
+  .categoryObject(m, c("id", "version", "sha256", "keys"), c("id", "version", "sha256", "keys"))
+  if (length(m$id) != 1L || !grepl("^[A-Za-z][A-Za-z0-9_]{0,63}$", m$id) ||
+      length(.categoryStrings(m$version, empty = FALSE)) != 1L ||
+      length(m$sha256) != 1L || !grepl("^[0-9a-f]{64}$", m$sha256))
+    .categoryReject("Invalid ordinal metadata identity/version/hash.")
+  keys <- .categoryKeys(m$keys)
+  digest <- as.character(openssl::sha256(charToRaw(.jcsCanonical(unname(as.list(keys))))))
+  if (!identical(digest, m$sha256)) .categoryReject("Ordinal metadata key hash does not match.")
+  keys
+}
+.categoryRecodeCheck <- function(x) {
+  .categoryObject(x, c("kind", "map", "levels", "labels", "ordered", "unmatched"),
+    c("kind", "map", "levels", "ordered", "unmatched"))
+  if (!identical(x$kind, "category_recode")) .categoryReject("Use category_recode.")
+  map <- unlist(x$map, use.names = TRUE)
+  if (length(map)) {
+    if (is.null(names(map)) || anyDuplicated(names(map))) .categoryReject("Recode sources must be unique.")
+    .categoryKeys(names(map)); .categoryStrings(unname(map))
+    if (any(!grepl("^category:[A-Za-z][A-Za-z0-9_]{0,63}$", map))) .categoryReject("Recode targets must be nominal category keys, never sentinels.")
+  }
+  lev <- .categoryKeys(x$levels)
+  if (!all(map %in% lev)) .categoryReject("Declare every recode target level.")
+  if (!is.null(x$labels) && length(.categoryStrings(x$labels, TRUE)) != length(lev))
+    .categoryReject("Supply one unique label per recode level.")
+  .categoryBool(x$ordered); .categoryChoice(x$unmatched, c("keep", "missing"))
+  invisible(x)
+}
+.categoryRollupCheck <- function(x) {
+  .categoryObject(x, c("kind", "level", "ancestors", "separation", "distance", "vocabulary", "domain", "multiple", "priority", "unmatched"), "kind")
+  kind <- .categoryChoice(x$kind, c("none", "atc", "icd10", "snomed", "ancestors"))
+  if (kind == "none") {
+    if (length(x) != 1L) .categoryReject("rollup none has no other fields.")
+    return(invisible(x))
+  }
+  .categoryKeys(x$domain, FALSE, TRUE)
+  .categoryChoice(x$multiple, c("error", "priority", "all"))
+  .categoryChoice(x$unmatched, c("keep", "missing"))
+  if (kind == "atc") {
+    if (!is.numeric(x$level) || length(x$level) != 1L || is.na(x$level) || !x$level %in% 1:5 ||
+        any(c("ancestors", "separation", "distance", "vocabulary") %in% names(x))) .categoryReject("ATC requires a class level 1..5 only.")
+  } else if (kind == "icd10") {
+    .categoryChoice(x$level, c("chapter", "block"))
+    if (!identical(x$vocabulary, "ICD10") || any(c("ancestors", "separation", "distance") %in% names(x)))
+      .categoryReject("ICD classification requires vocabulary ICD10 and chapter/block.")
+  } else {
+    if (!is.null(x$level)) .categoryReject("Named ancestors/separation do not accept level.")
+    if (kind == "ancestors" && (!is.null(x$separation) || is.null(x$vocabulary))) .categoryReject("Named ancestors require vocabulary.")
+    if (kind == "snomed" && !is.null(x$vocabulary) && !identical(x$vocabulary, "SNOMED")) .categoryReject("SNOMED requires SNOMED vocabulary.")
+    if (is.null(x$ancestors) == is.null(x$separation)) .categoryReject("Declare exactly ancestors or separation.")
+    if (!is.null(x$ancestors)) {
+      .categoryKeys(x$ancestors, FALSE, TRUE)
+      if (!is.null(x$distance)) .categoryReject("distance requires separation.")
+    } else {
+      if (!is.numeric(x$separation) || length(x$separation) != 1L || is.na(x$separation) ||
+          !is.finite(x$separation) || x$separation < 0 || x$separation != trunc(x$separation)) .categoryReject("Separation must be a nonnegative integer.")
+      .categoryChoice(x$distance, c("min", "max"))
+    }
+  }
+  if (x$multiple == "priority") .categoryKeys(x$priority, FALSE, TRUE)
+  else if (!is.null(x$priority)) .categoryReject("priority requires multiple=priority.")
+  invisible(x)
+}
+.categorySpecCheck <- function(s) {
+  if (is.null(s)) return(invisible(NULL))
+  .categoryObject(s, c("levels", "order", "ordered", "reference", "recode", "rollup", "label_style", "language", "missing", "binary"))
+  if (!is.null(s$levels)) .categoryKeys(s$levels)
+  if (!is.null(s[["order"]])) .categoryOrderCheck(s[["order"]])
+  if (!is.null(s$ordered)) .categoryBool(s$ordered)
+  if (!is.null(s$reference) && length(.categoryKeys(s$reference, FALSE)) != 1L) .categoryReject("reference requires one key.")
+  if (!is.null(s$recode)) .categoryRecodeCheck(s$recode)
+  if (!is.null(s$rollup)) .categoryRollupCheck(s$rollup)
+  if (!is.null(s$label_style)) .categoryChoice(s$label_style, c("name", "code", "code_name", "vocabulary_code", "source_code"))
+  if (!is.null(s$language) && !identical(s$language, "en")) {
+    .categoryObject(s$language, c("kind", "language_concept_id"), c("kind", "language_concept_id"))
+    id <- s$language$language_concept_id
+    if (!identical(s$language$kind, "category_language") || length(id) != 1L ||
+        !is.numeric(id) || is.na(id) || id <= 0 || id > 2147483647 || id != trunc(id)) .categoryReject("Language needs one positive language concept ID.")
+  }
+  if (!is.null(s$missing)) {
+    m <- s$missing
+    .categoryObject(m, c("kind", "na", "unknown", "labels"), c("kind", "na", "unknown", "labels"))
+    if (!identical(m$kind, "category_missing")) .categoryReject("Use category_missing.")
+    .categoryChoice(m$na, c("keep", "level")); .categoryChoice(m$unknown, c("keep", "level", "missing"))
+    if (!setequal(names(m$labels), c("missing", "unknown")) ||
+        length(.categoryStrings(unlist(m$labels), TRUE, FALSE)) != 2L) .categoryReject("Missing labels require distinct missing and unknown labels.")
+  }
+  if (!is.null(s$binary)) {
+    b <- s$binary
+    .categoryObject(b, c("kind", "as", "labels"), c("kind", "as", "labels"))
+    if (!identical(b$kind, "category_binary")) .categoryReject("Use category_binary.")
+    .categoryChoice(b$as, c("integer", "logical", "factor"))
+    if (length(.categoryStrings(b$labels, TRUE, FALSE)) != 2L) .categoryReject("Binary labels require false then true.")
+  }
+  invisible(s)
+}
+.categoryEffective <- function(variable = NULL, recipe = NULL) {
+  .categorySpecCheck(variable); .categorySpecCheck(recipe)
+  c(unclass(variable), unclass(recipe)[setdiff(names(recipe), names(variable))])
+}
+.categoryKeyOrder <- function(keys) {
+  prefix <- sub(":.*", "", keys); tail <- sub("^[^:]+:", "", keys)
+  group <- match(prefix, c("concept", "bin", "category", "period", "flag", "special"))
+  numeric_key <- prefix %in% c("concept", "bin", "flag") | prefix == "category" & grepl("^[0-9]+$", tail)
+  width <- ifelse(numeric_key, nchar(tail), 0L)
+  subtype <- ifelse(prefix == "category" & !numeric_key, 1L, 0L)
+  order(group, subtype, width, tail, method = "radix")
+}
+.categoryPlanCheck <- function(plan) {
+  .categorySpecCheck(plan$options$category_spec)
+  walk <- function(x) {
+    if (!is.list(x)) return(invisible(NULL))
+    if (!is.null(x$category_spec)) .categorySpecCheck(x$category_spec)
+    for (v in x[setdiff(names(x), "category_spec")]) if (is.list(v)) walk(v)
+  }
+  walk(plan$variables); walk(plan$outputs)
+  invisible(plan)
+}
+
+.categoryCapabilities <- function(plan) {
+  ops <- character()
+  walk <- function(x) {
+    if(!is.list(x))return(invisible(NULL))
+    if(identical(x$kind,"repeated"))ops <<- union(ops,"layout.repeated")
+    if(identical(x$kind,"category_reduce"))ops <<- union(ops,"category.reduce")
+    if(!is.null(x$category_columns))ops <<- union(ops,"category.presentation")
+    if(identical(x$kind,"category_rows"))ops <<- union(ops,"category.presentation")
+    if(identical(x$kind,"category_indicators"))ops <<- union(ops,"category.indicators")
+    if(!is.null(x$category_spec)) {
+      ops <<- union(ops,"category.presentation")
+      if(!is.null(x$category_spec$rollup) && x$category_spec$rollup$kind!="none")ops <<- union(ops,"category.rollup")
+    }
+    for(v in x)if(is.list(v))walk(v)
+  }
+  walk(plan);if(length(ops))ops<-union(ops,"output.codebook_metadata");ops
+}
+
+# JSON null array members must retain their identity positions.
+.categoryNullableStrings <- function(x) {
+  if(is.list(x))return(vapply(x,function(v)if(is.null(v))NA_character_ else as.character(v),""))
+  as.character(x)
+}

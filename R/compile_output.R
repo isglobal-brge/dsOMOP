@@ -226,7 +226,9 @@
       numeric <- .numberOutputColumns(part$frame,part$fragment$columns,node,component,setdiff(names(co$components),co$reference_components),ctx$ir$options$number_spec,part$number_canonical,part$number_canonical_columns)
       part$number_canonical <- numeric$canonical; part$number_canonical_columns <- numeric$canonical_columns
       part$frame <- numeric$frame; part$fragment$columns <- numeric$columns
-      if(!is.null(node$columns)&&length(node$number_columns)) {
+      categories<-.categoryOutputColumns(part$frame,part$fragment$columns,node,component,names(co$components))
+      part$frame<-categories$frame;part$fragment$columns<-categories$columns
+      if(!is.null(node$columns)&&(length(node$number_columns)||length(node$category_columns))) {
         selected<-unlist(node$columns,use.names=FALSE)
         if(length(intersect(selected,names(ctx$ir$variables)))) {
           cons<-.reduceConsumer(ctx,name,inputs$population$roster,inputs$population$coverage,node$grain %||% "episode")
@@ -2390,7 +2392,7 @@
     for (v in vars) {
       vnode <- ir[["variables"]][[v]]
       rec <- .compileVariable(ctx, .irNamedNode(ir, "variable", v), pop$roster, bcons)
-      if ((!is.null(vnode[["reducer"]]) || (vnode$derived$kind %||% "") %in% c(.DATE_KINDS,.NUMBER_KINDS)) &&
+      if ((!is.null(vnode[["reducer"]]) || (vnode$derived$kind %||% "") %in% c(.DATE_KINDS,.NUMBER_KINDS,"category_rows","category_indicators","repeated")) &&
           !isTRUE(rec$event_grain) && !isTRUE(unlist(vnode[["broadcast"]]))) {
         .irReject(paste0("variable '", v, "' is scalar; a long output takes it only with broadcast = TRUE"),
                   field = paste0("/variables/", v, "/broadcast"))
@@ -2550,7 +2552,7 @@
                     end_days_from_index = .fragmentColumn("integer", TRUE, "measure")))
   for(v in .irOutputVariables(ctx$ir,name)) {
     vnode <- .irNamedNode(ctx$ir,"variable",v)
-    if(!(vnode$derived$kind %||% "") %in% .NUMBER_KINDS) next
+    if(!(vnode$derived$kind %||% "") %in% c(.NUMBER_KINDS,"category_rows","category_indicators","repeated")) next
     rec <- .compileVariable(ctx,vnode,pop$roster,cons)
     if(!isTRUE(rec$event_grain)) .numberReject("Intervals require an event numeric projection; use reduced wide for scalar values.","number_dependency_invalid")
     if(any(vapply(srcs,function(s)!is.null(s$interval),logical(1)))) .numberReject("Numeric event columns cannot join back after interval collapse; use long event rows.","number_dependency_invalid")

@@ -1,5 +1,19 @@
 # dsOMOP 2.10.5 (2026-11-14)
 
+- Newly permitted (A-30 / CR-31): native category specifications add typed
+  identity order, nominal recodes, hierarchy maps, language and code labels,
+  explicit Missing/Unknown levels and semantic-flag representations. Category
+  event projections, indicators and reductions preserve explicit identity.
+- Newly permitted: declared repeated time-point/visit columns and output-local
+  category copies; client codebooks use public plans and admitted release
+  metadata. These constructs require native language 2 and matching 2.10.5
+  capabilities. Use wide/long typed columns for factor analyses, with a numeric
+  sibling for quantitative arithmetic.
+- Newly refused: ambiguous hierarchy mappings require a declared priority or
+  membership indicators. A mixed zero/nonzero user-label merge cannot become
+  an Unknown sentinel: retain unknown=keep, use separate labels, or explicitly
+  recode its identities before sentinel handling.
+
 - Corrected (A-29 review): independently normalized numeric siblings retain
   their original event-row binding in long and intervals outputs. BIGINT
   longitudinal arithmetic now checks exact conversion before calculation;

@@ -1,5 +1,9 @@
 # Numeric computations remain private until the existing final publication gate.
 .numberSourceUnit <- function(ctx,node) {
+  if(identical(node$derived$kind,"repeated")) {
+    entries<-node$derived$values;at<-match(node$derived$value,vapply(entries,function(e)e$name,""))
+    return(.numberSourceUnit(ctx,entries[[at]]$variable))
+  }
   source<-node$source %||% node$derived$source
   value<-node$derived$value %||% node$reducer$value
   role<-NULL
@@ -37,7 +41,9 @@
   record$evaluate<-function() {
     frame<-evaluate()
     for(col in numeric_columns) {
+      defined<-attr(frame[[col]],"category_defined")
       frame[[col]]<-.numberMaterialize(frame[[col]],record$columns[[col]]$type)
+      if(!is.null(defined))frame[[col]]<-.categoryValue(frame[[col]],defined)
       if(identical(node$reducer$fn,"cv"))frame[[col]]<-frame[[col]]/100
     }
     frame
@@ -82,6 +88,7 @@
   }
   extra<-list(v=list(expr=paste0("e.",res$column),type=res$type))
   paired<-rows_mode&&d$value %in% c("value","value_as_number")&&all(c("range_low","range_high") %in% names(src$fragment$columns))
+  if("visit_id" %in% names(src$fragment$columns))extra$visit_id<-list(expr="e.visit_id",type="bigint",role="private")
   if(paired)for(k in c("range_low","range_high"))extra[[k]]<-list(expr=paste0("e.",k),type="numeric")
   stream<-.reduceStream(ctx,cons,src,d$window,.reduceName(ctx,cons,"s",name),extra=extra,dated=d$kind=="number_change")
   ordering<-.reduceSourceOrdering(src)
@@ -92,7 +99,7 @@
     rows$v<-.numberClean(rows$v)
     rows<-rows[.reduceOrderRows(rows,c("row_key",intersect(ordering,names(rows)))),,drop=FALSE]
     if(rows_mode) {
-      out<-rows[intersect(c("row_key","event_id","source_ns","start_date","end_date"),names(rows))]
+      out<-rows[intersect(c("row_key","event_id","source_ns","start_date","end_date","visit_id"),names(rows))]
       out[[name]]<-if(paired).numberRangeValue(rows$v,rows$range_low,rows$range_high) else rows$v
       return(out)
     }

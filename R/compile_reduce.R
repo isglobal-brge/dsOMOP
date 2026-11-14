@@ -94,6 +94,9 @@
     for (k in .REDUCE_OUTPUT_KINDS) out[[length(out) + 1L]] <- .fragmentIdentity("rd", o, k)
     expand <- function(v,n) {
       out <- n
+      if(!is.null(v$derived$variable))out<-c(out,expand(v$derived$variable,.numberDependencyName(n,if(identical(v$derived$kind,"category_reduce"))"operand" else "category")))
+      for(entry in v$derived$values %||% list())out<-c(out,expand(entry$variable,.numberDependencyName(n,entry$name)))
+      if(!is.null(v$derived$visits))out<-c(out,paste0(n,"visits"))
       for(i in v$derived$inputs %||% list()) out <- c(out,expand(i$variable,.numberDependencyName(n,i$alias)))
       out
     }
@@ -884,11 +887,18 @@
   record <- .compileVariableRecord(ctx, node, name, cons)
   record <- .datePresentRecord(record, node, ctx, name, cons)
   record <- .numberRecord(record, node, ctx, name, cons)
-  for (col in names(record$columns)) attr(record$columns[[col]], "concept_owner") <- name
+  for (col in names(record$columns)) {
+    attr(record$columns[[col]], "concept_owner") <- name
+    attr(record$columns[[col]], "category_available") <- record$available
+  }
   record
 }
 
 .compileVariableRecord <- function(ctx, node, name, cons) {
+  if(identical(node$derived$kind,"category_reduce"))return(.categoryReduceRecord(ctx,node,name,cons))
+  if(identical(node$derived$kind,"repeated"))return(.repeatedRecord(ctx,node,name,cons))
+  if(identical(node$derived$kind,"category_rows"))return(.categoryEventRecord(ctx,node,name,cons))
+  if(identical(node$derived$kind,"category_indicators"))return(.categoryIndicatorRecord(ctx,node,name,cons))
   if ((node$derived$kind %||% "") %in% .NUMBER_KINDS) return(.numberDerivedRecord(ctx,node,name,cons))
   if (!is.null(node[["source"]])) return(.reduceSourceVariable(ctx, node, name, cons))
   if (!is.null(node[["derived"]])) return(.reduceDerivedVariable(ctx, node, name, cons))

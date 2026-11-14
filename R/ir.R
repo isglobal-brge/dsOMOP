@@ -417,7 +417,7 @@
   vars <- names(ir[["variables"]] %||% list())
   cols <- node[["columns"]]
   if (!is.null(cols)) {
-    return(union(intersect(as.character(unlist(cols, use.names = FALSE)), vars), intersect(.numberColumnDependencies(node$number_columns),vars)))
+    return(union(intersect(as.character(unlist(cols, use.names = FALSE)), vars), intersect(c(.numberColumnDependencies(node$number_columns),.categoryColumnDependencies(node$category_columns)),vars)))
   }
   if (isTRUE(node[["format"]] %in% c("survival", "long", "intervals", "membership",
                                       "dictionary", "joined"))) {

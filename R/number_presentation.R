@@ -9,11 +9,14 @@
   if(is.null(s))return(list(value=value,column=column))
   attr(column,"number_origin")<-meta
   canonical<-value;canonical_column<-column
+  defined<-attr(value,"category_defined")
+  if(!is.null(defined))meta$available<-meta$available & defined
   effective<-.numberEffective(s)
   ranges<-attr(value,"number_ranges")
   presented<-.numberPresent(.numberUnwrap(value),effective,unit=meta$unit,ranges=ranges,
     available=meta$available,offset_allowed=meta$offset_allowed,trace=TRUE)
   value<-presented$value
+  if(!is.null(defined))attr(value,"category_defined")<-defined
   result_unit<-meta$unit
   for(step in effective$pipeline) {
     if(step$kind=="fixed_unit")result_unit<-step$to
