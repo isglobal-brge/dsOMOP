@@ -247,3 +247,10 @@
   }
   .numberDeclaredUnit(plan,node)
 }
+
+# Native normal forms can be inspected before .irNormalize adds provenance.
+# An explicitly lowered v1 origin still wins over its version-2 IR envelope.
+.categoryNative <- function(ir) {
+  version<-attr(ir,"source_version") %||% ir[["version"]]
+  identical(version,2L)||identical(version,2)
+}
