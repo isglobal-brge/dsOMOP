@@ -31,8 +31,12 @@
 }
 #' @export
 `[.dsomop_category_value` <- function(x,i,...) {
-  mask<-attr(x,"category_defined");missing_mask<-attr(x,"category_canonical_missing");out<-NextMethod("[")
+  mask<-attr(x,"category_defined");missing_mask<-attr(x,"category_canonical_missing");consumed<-attr(x,"category_consumed");out<-NextMethod("[")
   class(out)<-class(x)
+  if(!is.null(consumed)) {
+    if(!missing(i))consumed$ids<-consumed$ids[i]
+    attr(out,"category_consumed")<-consumed
+  }
   attr(out,"category_defined")<-if(missing(i))mask else mask[i]
   if(!is.null(missing_mask))attr(out,"category_canonical_missing")<-if(missing(i))missing_mask else missing_mask[i]
   out

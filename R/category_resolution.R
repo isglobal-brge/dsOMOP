@@ -13,6 +13,8 @@
   rows <- lapply(ids,function(id) {
     rr <- by_id[[id]]
     user <- Filter(function(r)r$origin %in% c("variable","recipe","producer","recode","sentinel"),rr)
+    recoded <- Filter(function(r)identical(r$origin,"recode"),user)
+    if(length(recoded))user<-recoded
     if (length(user)) {
       labels <- unique(vapply(user,function(r)r$label,""))
       if (length(labels)!=1L) .categoryReject("Conflicting public category labels.","category_domain_incompatible")
@@ -117,7 +119,7 @@
   ordered <- s$ordered %||% if(!is.null(recode) && length(recode$map))recode$ordered else isTRUE(contract$producer_ordered)
   list(kind="category",category=contract,ids=ids,labels=unname(effective_labels[keys]),
     levels=unname(effective_labels[domain]),keys=domain,aliases=setNames(keys,ids),ordered=ordered,
-    reference=reference,contrasts=list(kind=if(ordered)"polynomial" else "treatment",reference=reference),
+    reference=unname(reference),contrasts=list(kind=if(ordered)"polynomial" else "treatment",reference=unname(reference)),
     decisions=lapply(seq_along(ids),function(i)list(id=ids[i],label=unname(effective_labels[keys[i]]),rule=rows[[i]]$rule %||% "declared category identity",origin=rows[[i]]$origin,version=rows[[i]]$version,language=s$language %||% "en")))
 }
 .categoryFactor <- function(values,resolved) {
@@ -127,7 +129,7 @@
   if(length(keys)>1L) {
     contrast <- if(isTRUE(resolved$ordered)) stats::contr.poly(length(keys)) else {
       base <- match(resolved$reference,keys)
-      stats::contr.treatment(length(keys),base=if(is.na(base))1L else base)
+      stats::contr.treatment(length(keys),base=if(length(base)!=1L||is.na(base))1L else base)
     }
     rownames(contrast)<-levels(out);attr(out,"contrasts")<-contrast
   }

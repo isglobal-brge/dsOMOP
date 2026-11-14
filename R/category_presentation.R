@@ -67,7 +67,7 @@
       ids <- lev[match(c$ids,old_ids)];declared<-lev[match(c$declared,old_ids)]
       records <- setNames(lapply(seq_along(lev),function(i) {
         r<-c$records[[i]];r$id<-lev[i]
-        if(!is.null(c$kind))r$origin<-"producer"
+        if((c$kind %||% "") %in% c("date","number"))r$origin<-"producer"
         r
       }),lev)
       producer<-if(identical(c$kind,"category"))list(kind="category",input=c$category) else list(kind=c$kind %||% "concept",calendar=c$calendar,number=c$number)

@@ -260,7 +260,15 @@
       d$inputs<-lapply(d$inputs,function(i){i$variable<-normalize(i$variable,NULL,depth+1L,column_scope);i})
     }
     if(!is.null(d$variable))d$variable<-normalize(d$variable,NULL,depth+1L,column_scope)
-    if(identical(d$kind,"repeated"))d$values<-lapply(d$values,function(entry) {entry$variable<-normalize(entry$variable,NULL,depth+1L,column_scope);entry})
+    if(identical(d$kind,"repeated")) {
+      d$values<-lapply(d$values,function(entry) {entry$variable<-normalize(entry$variable,NULL,depth+1L,column_scope);entry})
+      for(entry in d$values) {
+        operand<-entry$variable
+        while(!is.null(operand$derived$variable))operand<-operand$derived$variable
+        source<-operand$source %||% operand$derived$source
+        if(!is.null(source)&&!identical(.jcsCanonical(source),.jcsCanonical(d$source))) .categoryReject("Repeated values require one identical candidate stream; use a shared event unit map or separate bundles.","repeated_grain_incompatible")
+      }
+    }
     if(identical(d$kind,"number_change")) {
       d<-.numberChangeCheck(d)
       if(identical(d$reference,"first"))d$reference<-list(kind="first_observation")
@@ -279,6 +287,7 @@
     eff<-if(!is.null(spec)||!is.null(defaults)) .numberEffective(spec,defaults) else NULL
     maps<-Filter(function(p)p$kind=="event_unit",eff$pipeline %||% list())
     if(length(maps)) {
+      if(identical(d$kind,"repeated")) .categoryReject("Declare source-unit normalization on the shared repeated event, not the selected scalar.","repeated_grain_incompatible")
       if(is.null(source$event)) {
         if(!is.null(spec)) .numberReject("Source maps require a numeric event unit role.","number_unit_conflict")
       } else {
