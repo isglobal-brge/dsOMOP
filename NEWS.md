@@ -22,6 +22,9 @@
 - Corrected: native matrix and person-period outputs no longer implicitly
   consume unrelated recipe variables. Select analytic columns explicitly;
   use a typed wide companion for factor/logical matrix covariates.
+- Corrected: explicit outer vocabulary styling and hierarchy stages use the
+  effective concept retained by category reduction, preserving original
+  admission evidence and upstream equivalences.
 - Corrected: undefined anchors remain NA through repeated subsetting and
   Missing presentation. Staged empty category contracts preserve nullable
   references, declared levels and contrast specifications.

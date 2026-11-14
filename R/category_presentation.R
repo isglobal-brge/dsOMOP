@@ -13,6 +13,13 @@
   }
   flag
 }
+.categoryConceptProducer <- function(contract) {
+  if(length(contract$spec$recode$map) && any(!grepl("^concept:",unlist(contract$spec$recode$levels,use.names=FALSE))))return(FALSE)
+  producer<-contract$producer
+  if(identical(producer$kind,"concept"))return(TRUE)
+  if((producer$kind %||% "") %in% c("category","category_reduce"))return(.categoryConceptProducer(producer$input))
+  FALSE
+}
 .categoryPresent <- function(ctx,frame,columns) {
   contracts <- attr(frame,"omop_concepts") %||% list()
   for(n in intersect(names(frame),names(columns))) {
@@ -85,9 +92,20 @@
         records<-.categoryVocabularyLabels(ctx$handle,records,s)
       }
     }
+    if(!flag && identical(c$kind,"category") && (!is.null(s$label_style)||!is.null(s$language))) {
+      # A consumed display is not a fresh vocabulary name. Rebind automatic
+      # names to the effective concept before applying an explicit outer style.
+      for(key in names(records)) {
+        r<-records[[key]];identity<-r$effective_id %||% key
+        if(!grepl("^concept:",identity)||r$origin %in% c("variable","recipe","recode","producer","sentinel"))next
+        fresh<-.conceptVocabulary(ctx$handle,sub("^concept:","",identity))[[1L]]
+        fresh$id<-key;fresh$effective_id<-identity;records[[key]]<-fresh
+      }
+      records<-.categoryVocabularyLabels(ctx$handle,records,s)
+    }
     rollup <- NULL
     if(!is.null(s$rollup) && s$rollup$kind!="none") {
-      if(producer$kind!="concept") .categoryReject("Hierarchy rollup requires concept identities.")
+      if(!.categoryConceptProducer(list(producer=producer))) .categoryReject("Hierarchy rollup requires concept identities.")
       rollup <- .categoryRollupMap(ctx$handle,s$rollup)
       targets <- unique(unlist(rollup$mapping,use.names=FALSE))
       target_records <- if(length(targets)).conceptVocabulary(ctx$handle,sub("^concept:","",targets)) else list()
@@ -99,14 +117,16 @@
         if(id %in% names(map)) {target_records[[key]]$origin<-"variable";target_records[[key]]$label<-map[[id]]}
       }
       target_records <- .categoryVocabularyLabels(ctx$handle,target_records,s)
-      source_ids <- ids
-      # Out-of-domain and unmatched-missing cells become ordinary NA privately.
-      ids <- vapply(ids,function(id)if(is.na(id)||!length(rollup$mapping[[id]]))NA_character_ else id,"")
-      records <- records[intersect(names(records),names(rollup$mapping))]
-      records <- records[lengths(rollup$mapping[names(records)])>0L]
+      effective<-vapply(records,function(r)r$effective_id %||% r$id,"")
+      targets_for<-lapply(effective,function(key)if(grepl("^special:",key))key else rollup$mapping[[key]])
+      names(targets_for)<-names(records)
+      # Preserve original admission keys while mapping the consumed identity.
+      ids <- vapply(ids,function(id)if(is.na(id)||!length(targets_for[[id]]))NA_character_ else id,"")
+      records <- records[lengths(targets_for)>0L]
       for(key in names(records)) {
-        target <- rollup$mapping[[key]][1L]
-        r<-target_records[[target]];r$id<-key;r$effective_id<-target;records[[key]]<-r
+        target <- targets_for[[key]][1L]
+        r<-if(grepl("^special:",target))records[[key]] else target_records[[target]]
+        r$id<-key;r$effective_id<-target;records[[key]]<-r
       }
       for(key in setdiff(targets,names(records)))records[[key]]<-target_records[[key]]
       declared <- union(intersect(declared,names(records)),targets)
@@ -115,7 +135,15 @@
     if(is.list(s[["order"]]$metadata))effective_spec[["order"]]<-list(kind="category_order",keys=as.list(.categoryOrderCheck(s[["order"]])))
     contract<-list(spec=effective_spec,producer=producer,producer_order=as.list(producer_order),producer_ordered=producer_ordered)
     if(!is.null(rollup))contract$rollup<-rollup
-    if(!flag && identical(c$kind,"category"))contract$producer_aliases<-.categoryMergedAliases(c$resolved$aliases)
+    if(!flag && identical(c$kind,"category")) {
+      inherited<-.categoryNullableStrings(.categoryMergedAliases(c$resolved$aliases))
+      if(!is.null(rollup))inherited<-vapply(inherited,function(key) {
+        if(is.na(key))return(NA_character_)
+        if(grepl("^special:",key))return(key)
+        rollup$mapping[[key]][1L] %||% NA_character_
+      },"")
+      contract$producer_aliases<-.categoryMergedAliases(inherited)
+    }
 
     # Open concept/period order is resolved only from admitted metadata later.
     # Keep observed identities private here; failure never includes their keys.
@@ -161,7 +189,8 @@
   if(style=="name" && (is.null(s$language)||identical(s$language,"en")))return(records)
   bp<-.buildBlueprint(handle);tables<-bp$tables$table_name[bp$tables$present_in_db]
   if(!"concept" %in% tables)return(records)
-  ids<-sub("^concept:","",names(records));ids<-ids[grepl("^[0-9]+$",ids)]
+  identities<-vapply(records,function(r)r$effective_id %||% r$id,"")
+  ids<-sub("^concept:","",identities);ids<-ids[grepl("^[0-9]+$",ids)]
   if(!length(ids))return(records)
   table<-.qualifyTable(handle,"concept",.resolveTableSchema(handle,"concept","Vocabulary"))
   fields<-intersect(c("concept_id","concept_code","vocabulary_id"),bp$columns$concept$column_name)
@@ -173,15 +202,17 @@
   }
   for(k in names(records)) {
     r<-records[[k]];if(r$origin %in% c("variable","recipe"))next
-    i<-match(sub("^concept:","",k),as.character(data$concept_id))
-    name<-r$name %||% sub("^concept:","",k)
-    candidates<-as.character(synonyms$concept_synonym_name[as.character(synonyms$concept_id)==sub("^concept:","",k)])
+    identity<-identities[[k]]
+    if(!grepl("^concept:",identity))next
+    i<-match(sub("^concept:","",identity),as.character(data$concept_id))
+    name<-r$name %||% sub("^concept:","",identity)
+    candidates<-as.character(synonyms$concept_synonym_name[as.character(synonyms$concept_id)==sub("^concept:","",identity)])
     candidates<-candidates[!is.na(candidates)&nzchar(trimws(candidates))]
     if(length(candidates)){name<-sort(unique(enc2utf8(candidates)),method="radix")[1L];r$label_origin<-"synonym"}
     code<-if(!is.na(i)&&"concept_code" %in% names(data))as.character(data$concept_code[i]) else NA_character_
     vocab<-if(!is.na(i)&&"vocabulary_id" %in% names(data))as.character(data$vocabulary_id[i]) else NA_character_
-    if(is.na(code)||!nzchar(code))code<-sub("^concept:","",k)
-    if(is.na(vocab)||!nzchar(vocab))vocab<-sub("^concept:","",k)
+    if(is.na(code)||!nzchar(code))code<-sub("^concept:","",identity)
+    if(is.na(vocab)||!nzchar(vocab))vocab<-sub("^concept:","",identity)
     r$name<-switch(style,name=name,code=code,code_name=paste(code,name,sep=" - "),vocabulary_code=paste(vocab,code,sep=":"))
     r$label<-r$name;records[[k]]<-r
   }
