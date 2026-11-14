@@ -1,0 +1,5 @@
+outcome_id,outcome_of_interest,true_effect_size,target_id,comparator_id
+3,1,NA,1,2
+4,0,1,1,2
+3,1,NA,998,999
+4,0,1,998,999

@@ -6,12 +6,16 @@
   d<-variable$derived;r<-variable$reducer %||% d$reducer
   identity<-list(namespace=if(identical(key,"covariate_id"))"dsomop.native_covariate.v2" else "not_applicable",
     scope_kind="plan",scope_digest=digest,local_id_representation="exact integer or canonical decimal text; never a display label",
+    external_namespaces=list(legacy="dsomop.legacy_covariate.v1: local concept-plus-suffix encoding; retain source definition",
+      native="dsomop.native_covariate.v2: plan-local registry; join with scope digest and definition",
+      catalogue="dsomop.catalogue_concept.v1: raw concept identity, not upstream FE covariate arithmetic",
+      upstream="ohdsi.feature_extraction: retain exact BIGINT decimal text and upstream analysis/reference definitions"),
     definition=public(list(source=variable$source %||% d$source,quantity=d$unit,
       analysis=r,window=r$window %||% d$window,reference=d$reference)))
   list(schema_version="ohdsi-declaration-1",compatibility="native",
     method_id=if(identical(d$kind,"number_daily"))"dsomop.number.daily" else "dsomop.native_recipe.v2",
     method_version="1.0.0",adapter_version="not_applicable",
-    settings_digest=as.character(openssl::sha256(charToRaw(.jcsCanonical(.pnv2Plain(variable))))),
+    settings_digest=paste(openssl::sha256(charToRaw(.jcsCanonical(.pnv2Plain(variable))))),
     upstream=list(package="not_applicable",version="not_applicable",fixture="unresolved",source_definition_hash="not_applicable"),
     identity=identity,
     study_roles=list(status="unresolved",population_definitions=public(plan$populations),output_definitions=public(plan$outputs)),

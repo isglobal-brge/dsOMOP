@@ -25,7 +25,14 @@ test_that("Q14 adult boundaries and invalid input eligibility execute in the emi
   # Independent power equation, not the builder's log/exp DAG.
   expected<-c(142*.9938^18*1.012,142*.9938^80,rep(NA_real_,6))
   expect_equal(got$egfr[match(7001:7008,got$pid)],expected,tolerance=1e-10)
-  expect_identical(attr(result$compiled$components$o$columns$egfr,"privacy_class"),2L)
+  .ws7_keys(list(h))
+  local({
+    run<-.ws7_ctx(h,p);on.exit(.ws7_close(run))
+    pop<-.ws7_population(run,"t",.ws7_scenario_frame())
+    release<-.ws7_publish(run,list(t=pop))
+    expect_identical(release$status$status,"ok")
+    expect_identical(attr(release$values$o$o,"omop_numbers")$egfr$privacy_class,2L)
+  })
   # An absent source stays unavailable, even if all other operands are valid.
   p$events$lab$on_missing_table<-"unavailable"
   DBI::dbExecute(h$conn,"DROP TABLE measurement");h$blueprint<-NULL;h$role_registry<-NULL
