@@ -197,11 +197,15 @@ test_that("selected roles keep supply and unrelated coordinates independent of m
   expect_identical(attr(cs$days,"number_contract")$unit,"days")
   expect_identical(attr(cs$weeks,"number_contract")$unit,"weeks")
   expect_identical(attr(cs$quantity,"number_contract")$unit,"1")
-  other<-review_rows();other$derived$value<-"unit_unknown"
+  DBI::dbExecute(h$conn,"ALTER TABLE measurement ADD COLUMN quantity REAL")
+  DBI::dbExecute(h$conn,"UPDATE measurement SET quantity = 3")
+  h$blueprint<-NULL;h$role_registry<-NULL
+  other<-review_rows();other$derived$value<-"quantity"
   p<-.ws7_scenario_plan(list(other=other),output=list(format="long",sources=list(list(event="lab"))))
   p$events$lab$unit<-list(target=8840L,convert=list(`8554`=list(factor=2,offset=0)))
   got<-.ws7_scenario_run(h,p)
   expect_identical(attr(got$compiled$components$o$fragment$columns$other,"number_contract")$unit,"1")
+  expect_true(all(got$frame$other==3))
   p$variables$other$number_spec<-list(unit=list(kind="fixed_unit",from="unit:8840",to="coordinate:x",factor=2))
   expect_error(.ws7_scenario_run(h,p),"matching declared units")
 })
@@ -226,4 +230,30 @@ test_that("temporal reducers and relation copies keep class 2 through publicatio
     expect_true(is.ordered(f$band))
     expect_equal(contracts[[if(p$outputs$o$format=="wide")"slope" else "days_to_nextlab"]]$unit,if(p$outputs$o$format=="wide")"coordinate:test/days" else "days")
   })
+})
+
+test_that("BIGINT source changes survive compiler scalar materialization", {
+  h<-review_handle();on.exit(DBI::dbDisconnect(h$conn))
+  DBI::dbExecute(h$conn,"ALTER TABLE measurement ADD COLUMN exact_value BIGINT")
+  DBI::dbExecute(h$conn,"UPDATE measurement SET exact_value = CASE measurement_id WHEN 970001 THEN 10 WHEN 970003 THEN 20 END")
+  vars<-lapply(c("difference","percent_change","ratio","slope"),function(m)
+    list(derived=list(kind="number_change",source=list(event="lab"),value="exact_value",method=m,missing="skip")))
+  names(vars)<-c("difference","percent_change","ratio","slope")
+  p<-.ws7_scenario_plan(vars)
+  got<-.ws7_scenario_run(h,p)$frame
+  expected<-c(difference=10,percent_change=100,ratio=2,slope=2.5)
+  for(n in names(vars))expect_equal(.ws7_value(got,7001,n),unname(expected[n]),tolerance=0)
+  DBI::dbExecute(h$conn,"UPDATE measurement SET exact_value = CASE measurement_id WHEN 970001 THEN 9007199254740993 WHEN 970003 THEN 9007199254740995 END")
+  expect_error(.ws7_scenario_run(h,p),"retain raw/count")
+})
+
+test_that("output formula contracts retain exact integer result types", {
+  x<-bit64::as.integer64(c("9007199254740993","9007199254740995"))
+  leaf<-list(derived=list(kind="number_column",column="x"))
+  node<-list(format="wide",number_columns=list(y=review_derive(leaf)))
+  column<-.numberGenerated(.fragmentColumn("bigint",TRUE,"measure"),"1")
+  got<-.numberOutputColumns(data.frame(x=x),list(x=column),node,"o","o")
+  expect_identical(got$frame$y,x)
+  expect_identical(attr(got$columns$y,"number_contract")$input_type,"bigint")
+  expect_identical(attr(got$columns$y,"number_contract")$result_type,"integer64")
 })
