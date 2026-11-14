@@ -11,15 +11,15 @@
     value<-frame[[name]]
     semantic<-if(!is.null(category))category$kind %||% "concept" else if(.categoryFlag(v,c))"flag" else if(role %in% c("person_key","episode_key","analytic_key"))"key" else if(role %in% c("measure","value"))"numeric" else if(inherits(value,"Date"))"date" else "structural"
     unit<-number$unit %||% attr(c,"number_origin")$unit %||% if(!is.null(v)&&semantic %in% c("flag","numeric")) .categoryDeclaredUnit(ctx$ir,v) else "not_applicable"
-    list(stable_key=key,name=name,meaning=if(length(owner))paste("Declared variable",owner) else paste("Output role",role),
+    presentation <- .presentationDescribe(value,domains=FALSE)
+    c(list(stable_key=key,name=name,meaning=if(length(owner))paste("Declared variable",owner) else paste("Output role",role),
       semantic_type=semantic,
-      r_type=if(is.ordered(value))"ordered_factor" else if(is.factor(value))"factor" else if(inherits(value,"Date"))"Date" else if(inherits(value,"integer64"))"integer64" else typeof(value),
-      storage_type=typeof(value),unit=unit,
+      unit=unit,
       derivation=list(variable=v,number=number,repeated=attr(c,"repeated_contract"),category_input=attr(c,"category_input_contract")),
       privacy_class=attr(c,"privacy_class") %||% if(role %in% c("person_key","episode_key","analytic_key"))1L else if(!is.null(v$date_spec)||role %in% c("start","end"))2L else if((!is.null(c)&&.conceptColumn(c))||.categoryFlag(v,c)||role %in% c("measure","value"))3L else "unresolved",
       aggregate_policy="Existing endpoint admission and protection; unresolved for unrequested endpoints",
       missing_policy="Ordinary available NA follows the declaration; unavailable and undefined anchors remain NA",
-      provenance=list(source="bound plan and admitted release schema"),completeness="reconciled")
+      provenance=list(source="bound plan and admitted release schema"),completeness="reconciled"),presentation)
   })
   list(columns=cols,row_grain=if("cohort_row_id" %in% names(frame))"episode" else if("person_id" %in% names(frame))"person" else "none",row_keys=names(columns)[vapply(columns,function(c)c$role %in% c("person_key","episode_key","analytic_key"),logical(1))])
 }

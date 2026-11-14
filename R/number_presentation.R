@@ -107,21 +107,6 @@
   }
   list(frame=frame,columns=columns,canonical=original,canonical_columns=original_columns)
 }
-.numberCapture <- function(frame,columns) {
-  contracts<-attr(frame,"omop_concepts") %||% list();numbers<-attr(frame,"omop_numbers") %||% list()
-  for(n in intersect(names(columns),names(frame))) {
-    c<-attr(columns[[n]],"number_contract")
-    if(is.null(c))next
-    numbers[[n]]<-c
-    if(!is.factor(frame[[n]]))next
-    labels<-levels(frame[[n]]);ids<-paste0("N",seq_along(labels))
-    records<-setNames(lapply(seq_along(labels),function(i)list(kind="number",id=ids[i],label=labels[i],number=c,order=i)),ids)
-    contracts[[n]]<-list(kind="number",number=c,ids=ids[match(as.character(frame[[n]]),labels)],records=records,declared=ids,resolved=.numberResolveRecords(unname(records),c))
-  }
-  if(length(contracts))attr(frame,"omop_concepts")<-contracts
-  if(length(numbers))attr(frame,"omop_numbers")<-numbers
-  frame
-}
 .numberGenerated <- function(column,unit,privacy=3L,available=TRUE) {
   attr(column,"number_origin")<-list(unit=unit,available=available,offset_allowed=FALSE)
   attr(column,"privacy_class")<-privacy;column

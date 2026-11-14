@@ -492,8 +492,9 @@
   frame <- .outputIdentity(roster)
   columns <- .outputIdentityColumns(cons)
   opts <- node[["options"]] %||% list()
-  if ("legacy_cohort_definition_id" %in% names(opts) ||
-      identical(attr(ctx[["ir"]], "source_version", exact = TRUE), 1L)) {
+  inventory <- .presentationMembershipColumns(ctx$ir$populations[[node$rows]], opts,
+    identical(attr(ctx[["ir"]], "source_version", exact=TRUE),1L))
+  if ("cohort_definition_id" %in% names(inventory)) {
     # A-26: the root label is independent of this output's roster. Presence
     # distinguishes integer NA (explicit null) from the historical missing-ID
     # failure. Raw v1 input is used only to replay coercion diagnostics.
@@ -504,11 +505,11 @@
     frame$cohort_definition_id <- as.integer(label)
     columns$cohort_definition_id <- .fragmentColumn("integer", TRUE, "measure")
   }
-  for (col in c("cohort_start_date", "cohort_end_date")) {
+  for (col in names(inventory)[inventory=="Date"]) {
     frame[[col]] <- if (col %in% names(roster)) roster[[col]] else as.Date(rep(NA_character_, nrow(roster)))
     columns[[col]] <- .fragmentColumn("date", TRUE, if (identical(col, "cohort_start_date")) "start" else "end")
   }
-  if ("index_source" %in% names(roster)) {
+  if ("index_source" %in% names(inventory)) {
     frame$index_source <- as.character(roster$index_source)
     columns$index_source <- .fragmentColumn("text", TRUE, "measure")
   }

@@ -308,6 +308,8 @@ Security release: the P0 fixes of the OHDSI-tools audit.
 
 ## Corrected
 
+- Prospective codebooks now evaluate empty public prototypes through the same numeric, date and categorical presentation functions used for execution. Membership inventory and released type extraction are shared. Rebuild existing codebooks; recipes need no migration.
+
 - Snapshot source certification now checks generated-column expressions and
   their column dependencies, including behind nested definer views. Volatile,
   stateful or unverifiable expressions refuse the whole request; deterministic
