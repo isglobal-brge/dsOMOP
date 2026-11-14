@@ -26,6 +26,8 @@ test_that("Q15 record and calendar-day weights are distinct private computations
 })
 test_that("Q15 missing stages, input conversion and final presentation do not commute", {
   h<-.audit_daily_handle();on.exit(DBI::dbDisconnect(h$conn))
+  converted<-.audit_daily_plan(spec=list(unit=list(kind="fixed_unit",from="unit:8554",to="coordinate:declared_quantity",factor=2,offset=0)))
+  expect_equal(.ws7_value(.ws7_scenario_run(h,converted)$frame,7001,"daily"),20)
   DBI::dbExecute(h$conn,"UPDATE measurement SET value_as_number=NULL WHERE measurement_id=970002")
   skip<-.ws7_scenario_run(h,.audit_daily_plan())$frame
   prop<-.ws7_scenario_run(h,.audit_daily_plan(missing="propagate"))$frame
@@ -35,6 +37,27 @@ test_that("Q15 missing stages, input conversion and final presentation do not co
   expect_equal(.ws7_value(.ws7_scenario_run(h,p)$frame,7001,"daily"),8)
   p<-.audit_daily_plan();p$variables$daily$number_spec<-list(transform=list(list(method="clip",lower=0,upper=10)))
   expect_equal(.ws7_value(.ws7_scenario_run(h,p)$frame,7001,"daily"),10)
+})
+
+test_that("Q15 episode windows and publication failures retain their private boundaries", {
+  h<-.audit_daily_handle();on.exit(DBI::dbDisconnect(h$conn));.ws7_keys(list(h))
+  p<-.audit_daily_plan();p$variables$daily$derived$reducer$window<-list(start=0L,end=0L,anchor="index")
+  episodes<-.ws7_scenario_frame(c(7001L,7001L),index=c("2020-01-01","2020-01-02"))
+  f<-.ws7_scenario_run(h,p,episodes)$frame
+  expect_equal(sort(f$daily),c(5,15))
+  for(mode in c("memory","staged"))local({
+    target<-new.env(parent=emptyenv());target$untouched<-"original"
+    run<-.ws7_ctx(h,.audit_daily_plan(),mode=mode,target=target);on.exit(.ws7_close(run))
+    pop<-.ws7_population(run,"t",.ws7_scenario_frame())
+    run$ctx$failure_hook<-function(step)if(step=="assign")stop("injected daily assignment failure")
+    expect_error(.ws7_publish(run,list(t=pop)),"injected daily assignment failure")
+    expect_identical(ls(target),"untouched")
+    expect_identical(target$untouched,"original")
+    expect_true(run$ctx$closed)
+  })
+  p<-.audit_daily_plan();p$events$lab$on_missing_table<-"unavailable"
+  DBI::dbExecute(h$conn,"DROP TABLE measurement");h$blueprint<-NULL;h$role_registry<-NULL
+  expect_true(all(is.na(.ws7_scenario_run(h,p)$frame$daily)))
 })
 test_that("Q15 refuses scalar inputs and unresolved units without a fallback", {
   h<-.audit_daily_handle();on.exit(DBI::dbDisconnect(h$conn))
