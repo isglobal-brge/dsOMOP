@@ -113,3 +113,31 @@ requested live-analysis alias is a separate method, never an automatic fallback.
 No changes add state, privacy budgets, call limits, TLS requirements, owner
 privacy configuration or a new release gate. Development uses targeted tests;
 complete A-31 implementation and integration/release acceptance remain outstanding.
+
+## Third audit repair: explicit edits and closed physical columns
+
+An explicit `population$coverage` overrides the imported Circe translation's
+coverage default. For example, after import, assigning
+`r$populations$p$coverage <- omop_coverage("earliest")` selects the earliest
+covering observation period, including after JSON/YAML save/load and generated
+R code. Removing the override restores the translated policy. Index/filter
+edits do not reset a separate coverage choice. Original bytes and hashes stay
+in provenance; the edited declaration has its own derivative digest. A Circe
+export that cannot express the policy refuses with a native save/code remedy.
+The checker inspects each independent clause inside nested groups, while still
+refusing execution of the unsupported group.
+
+Physical layout matching now rejects uncontracted columns before result reads,
+including when the caller projects those columns away. Known private legacy
+incidence measures and SCCS event/time counts have explicit numeric contracts;
+they remain excluded from release and cannot replace person support. Unknown
+semantic dimensions produce unknown layout status and a bounded schema refusal.
+Version-evidence reconciliation, reference associations, and actual old/current
+physical-export acceptance still require further work.
+
+The audit pair now includes pinned A-29/A-30 and 24-entry library prerequisites.
+Integration retains the imported vocabulary policy in category domains and
+corrects prospective generated-date factor ordering under category defaults.
+These integrations do not supply the missing A-31 formula builders, daily
+aggregation, study bundle, complete interoperability declarations, teaching or
+deployment/consumer acceptance. This branch is not certified as complete A-31.
