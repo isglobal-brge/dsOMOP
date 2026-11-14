@@ -201,7 +201,7 @@
     synonyms<-.executeQuery(handle,paste0("SELECT concept_id, concept_synonym_name FROM ",table," WHERE language_concept_id = ",s$language$language_concept_id," AND concept_id IN (",.sqlIdList(ids),")"))
   }
   for(k in names(records)) {
-    r<-records[[k]];if(r$origin %in% c("variable","recipe"))next
+    r<-records[[k]];if(r$origin %in% c("variable","recipe","recode","producer","sentinel"))next
     identity<-identities[[k]]
     if(!grepl("^concept:",identity))next
     i<-match(sub("^concept:","",identity),as.character(data$concept_id))
