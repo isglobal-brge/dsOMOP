@@ -1,7 +1,6 @@
 # dsOMOP 2.10.3 plan schemas (WS-0 frozen artefacts)
 
-Generated from the endorsed design (`design-2.10.3.endorsed.md`, SHA-256
-`0988b2da...7940`) by `tools/ws0/gen_schema_artefacts.py`:
+The package ships these versioned schema contracts:
 
 - `plan-v2.json` — the closed wire schema (design section 4.1 plus amendments A-7
   `when_index_source` and A-14 `source_analyses`);
@@ -17,14 +16,13 @@ Generated from the endorsed design (`design-2.10.3.endorsed.md`, SHA-256
 - `normalized/`, `normalized-vectors.json` — the normal form (amendment A-11) of
   examples A/B and the acceptance plans with their normalised-document hashes
   and semantic digests: the digests the federation signature and the DP capsule
-  bind; produced by `tools/ws0/normalize_reference.py`, reproduced by the
+  bind; produced by `tests/fixtures/contracts/normalize_reference.py`, reproduced by the
   vendored `R/plan_normalize_v2.R`;
 - `SHA256SUMS` — checksums; `dsOMOPClient/inst/schema/` vendors byte-identical
   copies (without `ir-v2.json`).
 
-Changes need both reviewers (design section 12.1).
+Validate schema changes with the R tests and the independent Python contract checker.
 
 A-28/CR-29 adds closed date_spec/date_source and four native derived variants.
-`tools/ws0/date_schema.py` is the approved amendment application. Omitted
-legacy date policies remain absent for native presentation; unchanged plans
+Omitted legacy date policies remain absent for native presentation; unchanged plans
 retain their previous normal forms and digests.

@@ -173,7 +173,7 @@ test_that("the independent Python oracle agrees when it is available", {
   has <- system2(py, c("-c", shQuote("import jsonschema")), stdout = FALSE, stderr = FALSE) == 0L
   skip_if(!has, "python jsonschema not available")
   pkg <- Find(dir.exists, c(file.path(testthat::test_path(), "..", ".."), "."))
-  out <- system2(py, c(file.path(pkg, "tools", "ws0", "check_contracts.py"), pkg), stdout = TRUE, stderr = TRUE)
+  out <- system2(py, c(file.path(pkg, "tests", "fixtures", "contracts", "check_contracts.py"), pkg), stdout = TRUE, stderr = TRUE)
   expect_true(any(grepl("all contract checks passed", out)), info = paste(out, collapse = "\n"))
 })
 

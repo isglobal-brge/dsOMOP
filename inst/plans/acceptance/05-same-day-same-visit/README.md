@@ -1,6 +1,6 @@
 # 05 same-day-same-visit
 
-Status: plan validated against plan-v2.json; expected.json computed by tools/ws0/acceptance_expected.R on the extended reach fixture (tests/fixtures/create_reach_db.R + extend_reach_db.R), an independent SQL/base-R computation.
+Status: plan validated against plan-v2.json; expected.json computed by tests/fixtures/contracts/acceptance_expected.R on the extended reach fixture (tests/fixtures/create_reach_db.R + extend_reach_db.R), an independent SQL/base-R computation.
 
 ## Semantics of the expected results
 One episode per MI row (4329847, descendants included; the alternative code 312327 is a

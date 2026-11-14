@@ -1,9 +1,0 @@
-FAILURES BY FILE
-                           file blocks failed errors
- test-audit-vocabulary-policy.R      1      0      1
-
-FAILING TESTS
-test-audit-vocabulary-policy.R | Circe origin and wire meta cannot introduce executable policy requirements | failed=0 error=TRUE
-
-RESULT failed: 0 errors: 1 skipped: 0 passed: 569 
-RESULT failed: 0 errors: 1 skipped: 0 passed: 569 

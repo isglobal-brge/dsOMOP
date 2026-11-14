@@ -1,9 +1,0 @@
-FAILURES BY FILE
-                  file blocks failed errors
- test-audit-settings.R      1      0      1
-
-FAILING TESTS
-test-audit-settings.R | published protected incidence uses the independent first-episode oracle | failed=0 error=TRUE
-
-RESULT failed: 0 errors: 1 skipped: 0 passed: 141 
-RESULT failed: 0 errors: 1 skipped: 0 passed: 141 

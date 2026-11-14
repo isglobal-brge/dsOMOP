@@ -4,7 +4,7 @@
 # fixtures/ir-v1-compat.json holds independent BASELINE (dsOMOP 2.10.2,
 # 30b7905) outcomes of v1 plans whose scalar fields or predicate literals are
 # written in a historically coercible or invalid form (sections A-F of
-# tools/ws2/capture_compat.R, which captured them twice in fresh R processes
+# the historical baseline capture, which captured them twice in fresh R processes
 # and built the fixture). The coordinator's decision (A-19 item 7): v1 plans
 # preserve 2.10.2 behaviour -- what 2.10.2 executed (deterministically) keeps
 # executing with an identical result through validated compatibility
@@ -19,8 +19,7 @@
 #   - baseline `ok`: .planExecute() succeeds and the sha256 of the b10
 #     canonical form of its value at 17 significant digits equals
 #     the baseline's; on a mismatch the failure lists the rows and columns of
-#     both, and tools/ws2/capture_compat.R (run on both builds, then diff)
-#     recomputes the full canonical difference. Date/POSIX objects are refused
+#     both for comparison of the canonical values. Date/POSIX objects are refused
 #     before hashing until an independent numeric-payload capture pins them;
 #   - baseline `error`: the current code refuses the plan; where the case
 #     carries `typed_refusal` (the R1 malformed shapes 2.10.2 refused with an R
@@ -45,7 +44,7 @@
 
 # >>> b10-canonical: the .b10_canon() family copied verbatim from the
 # b10-canonical block of tests/testthat/test-ir-results.R (at cb5907c), as in
-# tools/ws2/capture_compat.R; always called here with 17 significant digits.
+# the historical baseline capture; always called here with 17 significant digits.
 .b10_num <- function(v, digits) {
   v <- as.vector(unclass(v))
   s <- sprintf(paste0("%.", digits, "g"), v)
@@ -119,7 +118,7 @@
 
 .compat_or <- function(a, b) if (is.null(a)) b else a
 
-# the serialisation of tools/ws2/capture_compat.R (.cc_json) and its sha256
+# the serialisation of the historical baseline capture (.cc_json) and its sha256
 .compat_json <- function(x) {
   as.character(jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", na = "null",
                                 digits = NA, force = TRUE))
@@ -406,7 +405,7 @@ for (.compat_case in .compat_fx$cases) local({
                       ", baseline ", substr(case$baseline$result_sha256, 1L, 12L), "); outputs ",
                       .compat_json(.compat_outputs(run$value)), ", baseline ",
                       .compat_json(case$baseline$outputs),
-                      "; tools/ws2/capture_compat.R run + diff recomputes the full canonical forms"))
+                      "; compare the canonical output values with the pinned baseline"))
         }
       }
     } else {

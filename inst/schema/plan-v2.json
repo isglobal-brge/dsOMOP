@@ -4279,7 +4279,7 @@
           "$ref": "#/$defs/number_ast_predicate_leaf"
         }
       ],
-      "$comment": "copied from plan-v2.json#/$defs/predicate by tools/ws0/gen_schema_artefacts.py; `var` and `col` use the assigned-name grammar (amendment A-6)"
+      "$comment": "copied from plan-v2.json#/$defs/predicate by the schema extraction generator; `var` and `col` use the assigned-name grammar (amendment A-6)"
     },
     "number_ast_predicate_leaf": {
       "oneOf": [

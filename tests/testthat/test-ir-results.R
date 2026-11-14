@@ -1,8 +1,8 @@
 # WS-2 acceptance, review B10: result fidelity of the safe-class v1 corpus.
 #
 # Two fixtures pin BASELINE (dsOMOP 2.10.2) canonical results, captured with
-# tools/ws2/capture_results.R in two independent runs of the 2.10.2 suites and
-# selected by `tools/ws2/compare_results.py pin` (selection rules and provenance
+# the historical baseline capture in two independent runs of the 2.10.2 suites and
+# selected from matching baseline captures (selection rules and provenance
 # are recorded in each fixture):
 #   fixtures/ir-v1-results.json         safe-class v1 plans the 2.10.2 server
 #     suite executed directly with .planExecute() on an unmodified default
@@ -48,8 +48,8 @@
 # v1-corpus-classes.csv. The A-19 differential and admissible-support fixtures
 # are replayed by test-ir-results-a19.R.
 
-# >>> b10-canonical: verbatim copy of the block in tools/ws2/capture_results.R
-# (compare_results.py checks the copies agree)
+# >>> b10-canonical: verbatim copy of the block in the historical baseline capture
+# (shared by the result fidelity tests)
 .b10_or <- function(a, b) if (is.null(a)) b else a
 .b10_num <- function(v, digits) {
   v <- as.vector(unclass(v))
@@ -209,7 +209,7 @@
   vals
 }
 # The canonical form of a returned or assigned value with its volatile parts
-# neutralised (see the header of tools/ws2/capture_results.R): list(tree, volatile).
+# neutralised: list(tree, volatile).
 .b10_value <- function(x) {
   tmp_prefix <- normalizePath(tempdir(), winslash = "/", mustWork = FALSE)
   pid_rx <- paste0("(?<=_)", Sys.getpid(), "(?![0-9A-Za-z])")
@@ -471,7 +471,7 @@
 # The baseline result with each reviewed correction applied, checked first
 # against the baseline values it keeps.
 .b10_corrected <- function(pin, want, conn, info) {
-  # the 2.10.2 build itself (compare_results.py validate --side baseline)
+  # the 2.10.2 build itself
   # predates F-26 and is checked against its own pins unchanged
   if (!exists(".bandAges", mode = "function")) return(want)
   for (cr in Filter(function(x) identical(x$key, pin$key), .B10_CORRECTIONS)) {

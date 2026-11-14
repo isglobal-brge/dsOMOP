@@ -1,161 +1,0 @@
-debconf: delaying package configuration, since apt-utils is not installed
-Selecting previously unselected package java-common.
-(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 29407 files and directories currently installed.)
-Preparing to unpack .../java-common_0.72build2_all.deb ...
-Unpacking java-common (0.72build2) ...
-Selecting previously unselected package libpcsclite1:amd64.
-Preparing to unpack .../libpcsclite1_1.9.5-3ubuntu1_amd64.deb ...
-Unpacking libpcsclite1:amd64 (1.9.5-3ubuntu1) ...
-Selecting previously unselected package openjdk-11-jre-headless:amd64.
-Preparing to unpack .../openjdk-11-jre-headless_11.0.33+9-1ubuntu1~22.04.1_amd64.deb ...
-Unpacking openjdk-11-jre-headless:amd64 (11.0.33+9-1ubuntu1~22.04.1) ...
-Selecting previously unselected package default-jre-headless.
-Preparing to unpack .../default-jre-headless_2%3a1.11-72build2_amd64.deb ...
-Unpacking default-jre-headless (2:1.11-72build2) ...
-Selecting previously unselected package ca-certificates-java.
-Preparing to unpack .../ca-certificates-java_20190909ubuntu1.5_all.deb ...
-Unpacking ca-certificates-java (20190909ubuntu1.5) ...
-Setting up java-common (0.72build2) ...
-Setting up libpcsclite1:amd64 (1.9.5-3ubuntu1) ...
-Setting up ca-certificates-java (20190909ubuntu1.5) ...
-head: cannot open '/etc/ssl/certs/java/cacerts' for reading: No such file or directory
-Adding debian:ACCVRAIZ1.pem
-Adding debian:AC_RAIZ_FNMT-RCM.pem
-Adding debian:AC_RAIZ_FNMT-RCM_SERVIDORES_SEGUROS.pem
-Adding debian:ANF_Secure_Server_Root_CA.pem
-Adding debian:Actalis_Authentication_Root_CA.pem
-Adding debian:Amazon_Root_CA_1.pem
-Adding debian:Amazon_Root_CA_2.pem
-Adding debian:Amazon_Root_CA_3.pem
-Adding debian:Amazon_Root_CA_4.pem
-Adding debian:Autoridad_de_Certificacion_Firmaprofesional_CIF_A62634068.pem
-Adding debian:Buypass_Class_2_Root_CA.pem
-Adding debian:Buypass_Class_3_Root_CA.pem
-Adding debian:CA_Disig_Root_R2.pem
-Adding debian:CFCA_EV_ROOT.pem
-Adding debian:COMODO_ECC_Certification_Authority.pem
-Adding debian:COMODO_RSA_Certification_Authority.pem
-Adding debian:Certainly_Root_E1.pem
-Adding debian:Certainly_Root_R1.pem
-Adding debian:Certigna_Root_CA.pem
-Adding debian:Certum_EC-384_CA.pem
-Adding debian:Certum_Trusted_Network_CA.pem
-Adding debian:Certum_Trusted_Network_CA_2.pem
-Adding debian:Certum_Trusted_Root_CA.pem
-Adding debian:D-TRUST_BR_Root_CA_1_2020.pem
-Adding debian:D-TRUST_EV_Root_CA_1_2020.pem
-Adding debian:D-TRUST_Root_Class_3_CA_2_2009.pem
-Adding debian:D-TRUST_Root_Class_3_CA_2_EV_2009.pem
-Adding debian:DigiCert_Assured_ID_Root_G2.pem
-Adding debian:DigiCert_Assured_ID_Root_G3.pem
-Adding debian:DigiCert_Global_Root_G2.pem
-Adding debian:DigiCert_Global_Root_G3.pem
-Adding debian:DigiCert_TLS_ECC_P384_Root_G5.pem
-Adding debian:DigiCert_TLS_RSA4096_Root_G5.pem
-Adding debian:DigiCert_Trusted_Root_G4.pem
-Adding debian:GDCA_TrustAUTH_R5_ROOT.pem
-Adding debian:GTS_Root_R1.pem
-Adding debian:GTS_Root_R3.pem
-Adding debian:GTS_Root_R4.pem
-Adding debian:GlobalSign_ECC_Root_CA_-_R4.pem
-Adding debian:GlobalSign_ECC_Root_CA_-_R5.pem
-Adding debian:GlobalSign_Root_CA_-_R3.pem
-Adding debian:GlobalSign_Root_CA_-_R6.pem
-Adding debian:GlobalSign_Root_E46.pem
-Adding debian:GlobalSign_Root_R46.pem
-Adding debian:Go_Daddy_Root_Certificate_Authority_-_G2.pem
-Adding debian:HARICA_TLS_ECC_Root_CA_2021.pem
-Adding debian:HARICA_TLS_RSA_Root_CA_2021.pem
-Adding debian:Hellenic_Academic_and_Research_Institutions_ECC_RootCA_2015.pem
-Adding debian:Hellenic_Academic_and_Research_Institutions_RootCA_2015.pem
-Adding debian:HiPKI_Root_CA_-_G1.pem
-Adding debian:Hongkong_Post_Root_CA_3.pem
-Adding debian:ISRG_Root_X1.pem
-Adding debian:ISRG_Root_X2.pem
-Adding debian:IdenTrust_Commercial_Root_CA_1.pem
-Adding debian:IdenTrust_Public_Sector_Root_CA_1.pem
-Adding debian:Izenpe.com.pem
-Adding debian:Microsec_e-Szigno_Root_CA_2009.pem
-Adding debian:Microsoft_ECC_Root_Certificate_Authority_2017.pem
-Adding debian:Microsoft_RSA_Root_Certificate_Authority_2017.pem
-Adding debian:NAVER_Global_Root_Certification_Authority.pem
-Adding debian:NetLock_Arany_=Class_Gold=_Főtanúsítvány.pem
-Adding debian:OISTE_WISeKey_Global_Root_GB_CA.pem
-Adding debian:OISTE_WISeKey_Global_Root_GC_CA.pem
-Adding debian:QuoVadis_Root_CA_1_G3.pem
-Adding debian:QuoVadis_Root_CA_2_G3.pem
-Adding debian:QuoVadis_Root_CA_3_G3.pem
-Adding debian:SSL.com_EV_Root_Certification_Authority_ECC.pem
-Adding debian:SSL.com_EV_Root_Certification_Authority_RSA_R2.pem
-Adding debian:SSL.com_Root_Certification_Authority_ECC.pem
-Adding debian:SSL.com_Root_Certification_Authority_RSA.pem
-Adding debian:SZAFIR_ROOT_CA2.pem
-Adding debian:Security_Communication_ECC_RootCA1.pem
-Adding debian:Security_Communication_RootCA2.pem
-Adding debian:Starfield_Root_Certificate_Authority_-_G2.pem
-Adding debian:Starfield_Services_Root_Certificate_Authority_-_G2.pem
-Adding debian:T-TeleSec_GlobalRoot_Class_2.pem
-Adding debian:T-TeleSec_GlobalRoot_Class_3.pem
-Adding debian:TUBITAK_Kamu_SM_SSL_Kok_Sertifikasi_-_Surum_1.pem
-Adding debian:TWCA_Global_Root_CA.pem
-Adding debian:TWCA_Root_Certification_Authority.pem
-Adding debian:Telia_Root_CA_v2.pem
-Adding debian:TunTrust_Root_CA.pem
-Adding debian:UCA_Extended_Validation_Root.pem
-Adding debian:UCA_Global_G2_Root.pem
-Adding debian:USERTrust_ECC_Certification_Authority.pem
-Adding debian:USERTrust_RSA_Certification_Authority.pem
-Adding debian:certSIGN_Root_CA_G2.pem
-Adding debian:e-Szigno_Root_CA_2017.pem
-Adding debian:emSign_ECC_Root_CA_-_C3.pem
-Adding debian:emSign_Root_CA_-_C1.pem
-Adding debian:emSign_Root_CA_-_G1.pem
-Adding debian:vTrus_ECC_Root_CA.pem
-Adding debian:vTrus_Root_CA.pem
-Adding debian:ssl-cert-snakeoil.pem
-Adding debian:Atos_TrustedRoot_Root_CA_ECC_TLS_2021.pem
-Adding debian:Atos_TrustedRoot_Root_CA_RSA_TLS_2021.pem
-Adding debian:BJCA_Global_Root_CA1.pem
-Adding debian:BJCA_Global_Root_CA2.pem
-Adding debian:D-TRUST_BR_Root_CA_2_2023.pem
-Adding debian:D-TRUST_EV_Root_CA_2_2023.pem
-Adding debian:OISTE_Server_Root_ECC_G1.pem
-Adding debian:OISTE_Server_Root_RSA_G1.pem
-Adding debian:SECOM_TLS_ECC_Root_CA_2024.pem
-Adding debian:SECOM_TLS_RSA_Root_CA_2024.pem
-Adding debian:SSL.com_TLS_ECC_Root_CA_2022.pem
-Adding debian:SSL.com_TLS_RSA_Root_CA_2022.pem
-Adding debian:Sectigo_Public_Server_Authentication_Root_E46.pem
-Adding debian:Sectigo_Public_Server_Authentication_Root_R46.pem
-Adding debian:SecureSign_Root_CA14.pem
-Adding debian:SecureSign_Root_CA15.pem
-Adding debian:SwissSign_RSA_TLS_Root_CA_2022_-_1.pem
-Adding debian:TWCA_CYBER_Root_CA.pem
-Adding debian:Telekom_Security_TLS_ECC_Root_2020.pem
-Adding debian:Telekom_Security_TLS_RSA_Root_2023.pem
-Adding debian:Telia_EC_TLS_Root_CA_v3.pem
-Adding debian:Telia_RSA_TLS_Root_CA_v3.pem
-Adding debian:TrustAsia_Global_Root_CA_G3.pem
-Adding debian:TrustAsia_Global_Root_CA_G4.pem
-Adding debian:TrustAsia_TLS_ECC_Root_CA.pem
-Adding debian:TrustAsia_TLS_RSA_Root_CA.pem
-Adding debian:e-Szigno_TLS_Root_CA_2023.pem
-done.
-Setting up default-jre-headless (2:1.11-72build2) ...
-Setting up openjdk-11-jre-headless:amd64 (11.0.33+9-1ubuntu1~22.04.1) ...
-update-alternatives: using /usr/lib/jvm/java-11-openjdk-amd64/bin/java to provide /usr/bin/java (java) in auto mode
-update-alternatives: using /usr/lib/jvm/java-11-openjdk-amd64/bin/jjs to provide /usr/bin/jjs (jjs) in auto mode
-update-alternatives: using /usr/lib/jvm/java-11-openjdk-amd64/bin/keytool to provide /usr/bin/keytool (keytool) in auto mode
-update-alternatives: using /usr/lib/jvm/java-11-openjdk-amd64/bin/rmid to provide /usr/bin/rmid (rmid) in auto mode
-update-alternatives: using /usr/lib/jvm/java-11-openjdk-amd64/bin/rmiregistry to provide /usr/bin/rmiregistry (rmiregistry) in auto mode
-update-alternatives: using /usr/lib/jvm/java-11-openjdk-amd64/bin/pack200 to provide /usr/bin/pack200 (pack200) in auto mode
-update-alternatives: using /usr/lib/jvm/java-11-openjdk-amd64/bin/unpack200 to provide /usr/bin/unpack200 (unpack200) in auto mode
-update-alternatives: using /usr/lib/jvm/java-11-openjdk-amd64/lib/jexec to provide /usr/bin/jexec (jexec) in auto mode
-Processing triggers for ca-certificates (20260816ubuntu0.22.04.2) ...
-Updating certificates in /etc/ssl/certs...
-0 added, 0 removed; done.
-Running hooks in /etc/ca-certificates/update.d...
-
-done.
-done.
-Processing triggers for libc-bin (2.35-0ubuntu3.15) ...

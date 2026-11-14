@@ -5,8 +5,7 @@
 # fields this file declares; never a test's in-place insert) and compares them
 # with fixtures/ir-v1-results-a19.json: the canonical records of the same blocks
 # captured at the 2.10.2 baseline (30b7905) in two independent runs that agreed
-# at 17 significant digits (`tools/ws2/compare_results.py capture --side baseline
-# --add-tests tests/testthat/test-ir-results-a19.R`, then `pin-a19`). The
+# at 17 significant digits, using these test blocks on the baseline. The
 # canonical form and its volatile-field rules are the shared `b10-canonical`
 # block (lossless: 17-digit doubles; staged descriptors compared field by field
 # except the staging token, the tempdir/tempfile parts of `metadata$file` and
@@ -15,7 +14,7 @@
 # raw values). Every call also checks that the fixture content equals the
 # baseline call's (`db_sha256`).
 #
-# On the 2.10.2 build (compare_results.py validate --side baseline) every call
+# On the 2.10.2 build every call
 # must reproduce its pin. On the current code each item asserts its reviewed
 # A-19 disposition:
 #   item 2  recurrent survival plan on an admissible-support fixture (every
@@ -48,8 +47,8 @@
 # The last block checks that v1-corpus-classes.csv carries the A-19
 # dispositions of the rows these fixtures evidence.
 
-# >>> b10-canonical: verbatim copy of the block in tools/ws2/capture_results.R
-# (compare_results.py checks the copies agree)
+# >>> b10-canonical: verbatim copy of the block in the historical baseline capture
+# (shared by the result fidelity tests)
 .b10_or <- function(a, b) if (is.null(a)) b else a
 .b10_num <- function(v, digits) {
   v <- as.vector(unclass(v))
@@ -209,7 +208,7 @@
   vals
 }
 # The canonical form of a returned or assigned value with its volatile parts
-# neutralised (see the header of tools/ws2/capture_results.R): list(tree, volatile).
+# neutralised: list(tree, volatile).
 .b10_value <- function(x) {
   tmp_prefix <- normalizePath(tempdir(), winslash = "/", mustWork = FALSE)
   pid_rx <- paste0("(?<=_)", Sys.getpid(), "(?![0-9A-Za-z])")

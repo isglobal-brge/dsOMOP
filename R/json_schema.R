@@ -15,7 +15,7 @@
 # default, examples, $defs) are ignored. Any other keyword is an error, both
 # when a packaged schema is loaded (.jsonSchemaLint walks every branch) and
 # when a branch is visited. The independent Python jsonschema check of
-# tools/ws0/check_contracts.py is the mandatory second oracle for the
+# tests/fixtures/contracts/check_contracts.py is the mandatory second oracle for the
 # packaged schemas, examples and probes (run in CI).
 #
 # Instances are R values as produced by jsonlite::fromJSON(simplifyVector =

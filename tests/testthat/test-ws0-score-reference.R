@@ -1,6 +1,6 @@
 # WS-0 (CR-2 / amendment A-2): paired v1/v2 comorbidity-score expectations.
 # The frozen file inst/plans/acceptance/score-reference.json is written by the
-# independent oracle (tools/ws0/acceptance_expected.R -> tests/fixtures/
+# independent oracle (tests/fixtures/contracts/acceptance_expected.R -> tests/fixtures/
 # score_reference.R). These tests (1) recompute it from the fixture, (2) check
 # that the v1 engine still produces the `legacy` column (all-time history, age
 # at the explicit reference date, no silent default) and (3) pin the documented

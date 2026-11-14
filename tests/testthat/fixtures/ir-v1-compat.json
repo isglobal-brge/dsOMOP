@@ -1,7 +1,7 @@
 {
   "version": 2,
   "description": "v1 compatibility differential fixture (regression WS-2 re-review R1/R3, amendment A-19 item 7): independent BASELINE (dsOMOP 2.10.2) outcomes of v1 plans whose scalar fields or predicate literals are written in a historically coercible or invalid form. A baseline `ok` must keep executing with an identical lossless canonical result; a baseline `error` may be refused (typed where `typed_refusal`). Replayed by tests/testthat/test-ir-v1-compat.R.",
-  "generated_by": "tools/ws2/capture_compat.R (run x2 at the baseline, then fixture)",
+  "generated_by": "Independent repeated captures from the pinned 2.10.2 baseline",
   "baseline": {
     "dsOMOP": "30b7905617dbe3de5d06699c324095635c68011f",
     "dsOMOPClient": "7eb2f6c8c2b49e5492e1f778916b84319626341d",
@@ -12,7 +12,7 @@
     "catalogue_sha256": "0fc5a741b31ea1ae1523497d3189560fbeb197b10d5044cb868806fbc11176b7"
   },
   "plan_decoding": "a case with `template` has the plan templates[[template]]$template with @V@ replaced by its `value` (a JSON literal); any other case has `plan`. Either is the transport JSON, decoded exactly as .ds_arg() decodes it: jsonlite::fromJSON(<plan>, simplifyVector = FALSE). `plan_sha256` is the sha256 of the decoded plan's 17-digit b10 canonical form.",
-  "result_encoding": "baseline `ok`: `result_sha256` is the sha256 of the b10 canonical form of the .planExecute() value at 17 significant digits (lossless) as serialised by jsonlite::toJSON(auto_unbox = TRUE, null = 'null', na = 'null', digits = NA, force = TRUE); `outputs` has each output's rows and columns for diagnostics. The full canonical forms are recomputed with tools/ws2/capture_compat.R (run on the baseline and on the current code, then diff).",
+  "result_encoding": "baseline `ok`: `result_sha256` is the sha256 of the b10 canonical form of the .planExecute() value at 17 significant digits (lossless) as serialised by jsonlite::toJSON(auto_unbox = TRUE, null = 'null', na = 'null', digits = NA, force = TRUE); `outputs` has each output's rows and columns for diagnostics. Canonical forms use the same lossless encoding on baseline and current results.",
   "execution": ".planExecute(handle, plan, out_symbols) with every output name mapped to '<name>_df', on a fresh create_test_handle() after the case's `setup` (setups[[setup]]; issue_bins: .test_issue_safe_bins()), under `option_state` plus the case's `options` (`default_options` when absent); every other nfilter.* / dsomop.* / dsstaging.* / datashield.* option unset.",
   "fields": {
     "baseline": "status ok (result_sha256, outputs) or error (class, message, stage, refused_before_query, origin, data_statements_before, call); warnings; sql: the data statements of the concept_col cases",

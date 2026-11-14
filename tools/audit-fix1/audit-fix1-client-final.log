@@ -1,9 +1,0 @@
-FAILURES BY FILE
-                           file blocks failed errors
- test-audit-vocabulary-policy.R      1      0      1
-
-FAILING TESTS
-test-audit-vocabulary-policy.R | both imported groups retain policy in wire, save/load, code, bind and merge | failed=0 error=TRUE
-
-RESULT failed: 0 errors: 1 skipped: 0 passed: 2415 
-RESULT failed: 0 errors: 1 skipped: 0 passed: 2415 

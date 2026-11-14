@@ -1,7 +1,0 @@
-{"deleted": "/root/rt/wt/audit/dsOMOP", "bytes": 24298185, "absent": true}
-{"deleted": "/root/rt/wt/audit/dsOMOPClient", "bytes": 15167720, "absent": true}
-{"deleted": "/root/rt/lib/wt_audit_dsOMOP", "bytes": 5194879, "absent": true}
-{"deleted": "/root/rt/lib/wt_audit_dsOMOPClient", "bytes": 11186564, "absent": true}
-{"deleted": "/root/rt/audit-fix1-deps", "bytes": 394790331, "absent": true}
-Shared /root/rt/numeric-deps and /root/rt/labels-deps retained.
-Pod last.log/install logs retained; final test logs copied to design evidence before cleanup.

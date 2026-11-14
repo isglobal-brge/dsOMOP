@@ -1,9 +1,0 @@
-FAILURES BY FILE
-                          file blocks failed errors
- test-audit-results-identity.R      1      2      0
-
-FAILING TESTS
-test-audit-results-identity.R | invalid keys outside a caller slice cannot bypass whole-relation integrity | failed=2 error=FALSE
-
-RESULT failed: 2 errors: 0 skipped: 0 passed: 2055 
-RESULT failed: 2 errors: 0 skipped: 0 passed: 2055 

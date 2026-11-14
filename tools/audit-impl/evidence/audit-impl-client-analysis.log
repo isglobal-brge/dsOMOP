@@ -1,9 +1,0 @@
-FAILURES BY FILE
-                   file blocks failed errors
- test-analysis-client.R      1      0      1
-
-FAILING TESTS
-test-analysis-client.R | ds.omop.prevalence delegates to fe.prevalence with mapped params | failed=0 error=TRUE
-
-RESULT failed: 0 errors: 1 skipped: 7 passed: 133 
-RESULT failed: 0 errors: 1 skipped: 7 passed: 133 

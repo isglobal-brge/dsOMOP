@@ -1,9 +1,0 @@
-FAILURES BY FILE
-                 file blocks failed errors
- test-ohdsi-results.R      1      0      1
-
-FAILING TESTS
-test-ohdsi-results.R | physical OHDSI pooling contracts fail closed | failed=0 error=TRUE
-
-RESULT failed: 0 errors: 1 skipped: 0 passed: 1817 
-RESULT failed: 0 errors: 1 skipped: 0 passed: 1817 

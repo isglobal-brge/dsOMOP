@@ -2,7 +2,7 @@
 #
 # This file is a frozen WS-0 artefact vendored BYTE-IDENTICALLY in dsOMOP and
 # dsOMOPClient (test-ws0-schema.R pins the identity); the Python reference is
-# tools/ws0/normalize_reference.py and inst/schema/normalized-vectors.json pins
+# tests/fixtures/contracts/normalize_reference.py and inst/schema/normalized-vectors.json pins
 # the normal forms of the canonical examples and the acceptance plans. The
 # semantic digest (R/semantic_digest.R) hashes this normal form, so the
 # federation harmonisation signature and the DP provenance capsule agree on

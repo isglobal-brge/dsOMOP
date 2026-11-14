@@ -1,4 +1,4 @@
-# Generated from the existing mutate-v1 checker by tools/numbers/vendor_expression_types.py.
+# Generated from the existing mutate-v1 checker.
 # Only admission adapters differ: all initial columns are declared private aliases.
 .numberAstCheck <- local({
 .verbReject <- function(caller,message,field=NULL) .numberReject(message,"number_expression_invalid")

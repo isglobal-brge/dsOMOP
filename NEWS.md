@@ -92,7 +92,7 @@
   their original numeric declarations; already rounded coefficients cannot be
   recovered from saved text.
 - Scope: broader A-31 deliverables are deferred as listed in
-  `POST_2.10.5_ROADMAP.md`. Real Opal acceptance belongs to integration e2e.
+  the issue tracker. Real Opal acceptance belongs to integration e2e.
 
 - Corrected (audit prerequisite integration): imported vocabulary validity
   remains executable in category rollup domains, including exclusions.
@@ -1226,8 +1226,7 @@ refused behavior, including migration paths.
   baseline suite executed on the default fixture; `test-ir-results.R`
   re-executes them with this code and requires identical results, except
   the two reviewed F-26 age-band corrections, checked against the design's
-  rule (`tools/ws2/capture_results.R` and `compare_results.py` capture and
-  compare every suite call against the baseline).
+  rule (independent captures compared every suite call against the baseline).
 
 ## Contracts shipped by WS-0
 
@@ -1247,9 +1246,9 @@ refused behavior, including migration paths.
   and CHA2DS2-VASc expectations with fixed and index-resolved reference dates
   (CR-2 / A-2); `tests/testthat/fixtures/v1-corpus-classes.csv`: one explicit
   reviewed disposition per test block of both 2.10.2 suites (helper-built
-  plans included, mixed blocks split; `tools/ws0/corpus_decisions.csv`), keyed
+  plans included, mixed blocks split; `tests/fixtures/contracts/corpus_decisions.csv`), keyed
   by `package:file:<test description>` against the pinned 2.10.2 commits of
-  `tools/ws0/corpus_baseline.json` (CR-7): live test edits never move or break
+  `tests/fixtures/contracts/corpus_baseline.json` (CR-7): live test edits never move or break
   the corpus; a reclassification is a decisions-file change.
 - Semantic digest: the ECMAScript shortest round-trip decimal is found for
   every finite double (powers of two have asymmetric rounding intervals;

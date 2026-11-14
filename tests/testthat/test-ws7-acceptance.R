@@ -1,6 +1,6 @@
 # WS-7 acceptance (design-2.10.3 sections 10.7, 12.2): the real population,
 # matching, reducer and output compilers reproduce the independent WS-0
-# oracle (tools/ws0/acceptance_expected.R -> expected.json) on every available
+# oracle (tests/fixtures/contracts/acceptance_expected.R -> expected.json) on every available
 # backend (SQLite, DuckDB, PostgreSQL, MariaDB, MySQL). Expected rows are used
 # only for assertions; no roster is constructed from them. The separate
 # client test-ws7-client-acceptance gate runs these recipes through the public

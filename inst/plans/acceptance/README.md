@@ -22,7 +22,7 @@ Each directory holds `recipe.R` (public-client recipe in the frozen 2.10.3 API; 
 
 ## Paired score reference (CR-2 / amendment A-2)
 
-`score-reference.json` (written by `tools/ws0/acceptance_expected.R` from
+`score-reference.json` (written by `tests/fixtures/contracts/acceptance_expected.R` from
 `tests/fixtures/score_reference.R`, plain SQL + base R, no engine) freezes the
 Charlson, CHADS2 and CHA2DS2-VASc scores of every member of cohort 1 (index
 2020-01-01) and cohort 1002 (index 2019-07-01) under both semantics:
