@@ -410,6 +410,7 @@
     defaults = .irEffectiveDefaults(ir),
     roles = roles,
     column_classes = .irOutputColumnClasses(ir, handle),
+    interoperability = .ohdsiDeclaration(.irDocument(ir)),
     concept_presentation = .conceptExplain(ir),
     number_presentation = .numberExplain(ir),
     concept_classes = .conceptExplainClasses(ir, handle),

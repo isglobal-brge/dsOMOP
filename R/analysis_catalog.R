@@ -4426,6 +4426,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
   e <- .omopAnalysisResolve(handle, name)
   out <- list(
     name        = e$name,
+    interoperability = .ohdsiRouteDeclaration(e),
     description = e$description,
     domain      = e$domain,
     mode        = e$mode,
@@ -5337,7 +5338,7 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
 #' @return For aggregate: a disclosure-controlled data frame. For assign: the
 #'   server-side assignment result.
 #' @keywords internal
-.omopAnalysisRun <- function(handle, name, params = list(), scope = NULL,
+.omopAnalysisRunImpl <- function(handle, name, params = list(), scope = NULL,
                              combine = "union", assign = FALSE,
                              assign_date_handling = NULL) {
   params <- .auditEffectiveSettings(name, params)
@@ -5642,4 +5643,16 @@ omopAnalysisReconcileRatio <- function(df, numerator_col, denominator_col,
     if (is.list(value)) meta[[name]] <- value
   }
   meta
+}
+
+# Attach only public effective declarations after the existing admission path.
+.omopAnalysisRun <- function(handle,name,params=list(),scope=NULL,combine="union",assign=FALSE,assign_date_handling=NULL) {
+  out<-.omopAnalysisRunImpl(handle,name,params,scope,combine,assign,assign_date_handling)
+  if(assign)return(out)
+  entry<-.omopAnalysisResolve(handle,name)
+  effective<-.omopAnalysisSanitizeParams(entry,.auditEffectiveSettings(name,params))
+  effective<-.omopToolsSnapReleaseParams(entry,effective)$effective
+  attr(out,"interoperability")<-.ohdsiRouteDeclaration(entry,effective,
+    attr(out,"dsomop_protection")$protection %||% "standard")
+  out
 }
