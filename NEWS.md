@@ -1,5 +1,9 @@
 # dsOMOP / dsOMOPClient 2.10.5 (development)
 
+- Newly refused: physical OHDSI result layouts with uncontracted columns are
+  unknown and cannot be released or pooled. Use a listed supported export
+  layout; dropping columns from a request cannot establish schema compatibility.
+
 * **Corrected / newly refused:** physical-result discovery reports structural
   fingerprints and layout status without inferring upstream package versions.
   Per-tool status includes schema contracts, including admin-only and recognized

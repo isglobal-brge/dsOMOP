@@ -230,3 +230,27 @@ test_that("invalid keys outside a caller slice cannot bypass whole-relation inte
   expect_identical(attr(result, "dsomop.results_schema")$status, "supported")
   expect_identical(attr(result, "dsomop.results_schema")$upstream_version, "unknown")
 })
+
+test_that("uncontracted columns make the physical layout unknown before any result access", {
+  h <- create_test_handle()
+  on.exit(cleanup_handle(h))
+  original <- .ohdsiInspectResultSchema(h, "cm_result")
+  expect_identical(original$status, "supported")
+  DBI::dbExecute(h$conn, "ALTER TABLE cm_result ADD COLUMN uncontracted_semantic_dimension INTEGER")
+  .buildBlueprint(h)
+  queries <- character()
+  real <- .executeQuery
+  local_mocked_bindings(.executeQuery = function(handle, sql, ...) {
+    queries <<- c(queries, sql)
+    real(handle, sql, ...)
+  })
+  observed <- .ohdsiInspectResultSchema(h, "cm_result")
+  expect_identical(observed$status, "unknown")
+  expect_false(identical(original$structural_fingerprint, observed$structural_fingerprint))
+  expect_false(.ohdsiStatus(h)$cohort_method$available)
+  expect_false(any(grepl("FROM [\"`]?cm_result", queries)))
+  local_mocked_bindings(.executeQuery = function(...) stop("RESULT_ROWS_READ"))
+  expect_error(.ohdsiGetResults(h, "cm_result"), "^unsupported_results_schema:")
+  expect_error(.ohdsiGetResults(h, "cm_result", columns = "rr"), "^unsupported_results_schema:")
+  expect_error(.ohdsiResultPoolingContract(h, "cm_result"), "^unsupported_results_schema:")
+})

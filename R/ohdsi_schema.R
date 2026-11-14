@@ -191,7 +191,15 @@
     result$layout_id <- contract$layout_id
     return(result)
   }
+  # A known subset is not a known layout. An extra dimension can change the
+  # identity/meaning of every row, even when callers project that column away.
+  # Private statistic support columns are explicitly contracted numeric fields.
+  allowed <- unique(c(names(contract$required_columns),
+    names(contract$optional_columns), contract$private_basis))
+  if (length(setdiff(columns, allowed))) return(result)
   types <- stats::setNames(.ohdsiSchemaType(info$data_type), columns)
+  basis <- intersect(contract$private_basis, columns)
+  if (length(basis) && any(!types[basis] %in% c("integer", "number"))) return(result)
   required <- contract$required_columns
   if (length(setdiff(names(required), columns)) ||
       !all(ifelse(required == "number", types[names(required)] %in% c("integer", "number"),
