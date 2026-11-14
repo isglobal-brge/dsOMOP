@@ -5675,46 +5675,174 @@
       ]
     },
     "number_transform": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "method": {
-          "enum": [
-            "identity",
-            "log",
-            "log10",
-            "log2",
-            "log1p",
-            "sqrt",
-            "abs",
-            "exp",
-            "expm1",
-            "affine",
-            "standardize",
-            "clip"
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "identity"
+            }
+          },
+          "required": [
+            "method"
           ]
         },
-        "factor": {
-          "type": "number"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log"
+            }
+          },
+          "required": [
+            "method"
+          ]
         },
-        "offset": {
-          "type": "number"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log10"
+            }
+          },
+          "required": [
+            "method"
+          ]
         },
-        "center": {
-          "type": "number"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log2"
+            }
+          },
+          "required": [
+            "method"
+          ]
         },
-        "scale": {
-          "type": "number"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log1p"
+            }
+          },
+          "required": [
+            "method"
+          ]
         },
-        "lower": {
-          "type": "number"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "sqrt"
+            }
+          },
+          "required": [
+            "method"
+          ]
         },
-        "upper": {
-          "type": "number"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "abs"
+            }
+          },
+          "required": [
+            "method"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "exp"
+            }
+          },
+          "required": [
+            "method"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "expm1"
+            }
+          },
+          "required": [
+            "method"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "affine"
+            },
+            "factor": {
+              "type": "number"
+            },
+            "offset": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "method",
+            "factor"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "standardize"
+            },
+            "center": {
+              "type": "number"
+            },
+            "scale": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "method",
+            "center",
+            "scale"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "clip"
+            },
+            "lower": {
+              "type": "number"
+            },
+            "upper": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "method",
+            "lower",
+            "upper"
+          ]
         }
-      },
-      "required": [
-        "method"
       ]
     },
     "number_round": {
@@ -5794,20 +5922,151 @@
           "additionalProperties": false,
           "properties": {
             "method": {
-              "enum": [
-                "identity",
-                "log",
-                "log10",
-                "log2",
-                "log1p",
-                "sqrt",
-                "abs",
-                "exp",
-                "expm1",
-                "affine",
-                "standardize",
-                "clip"
-              ]
+              "const": "identity"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log10"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log2"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "log1p"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "sqrt"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "abs"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "exp"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "expm1"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "affine"
             },
             "factor": {
               "type": "number"
@@ -5815,11 +6074,46 @@
             "offset": {
               "type": "number"
             },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "factor",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "standardize"
+            },
             "center": {
               "type": "number"
             },
             "scale": {
               "type": "number"
+            },
+            "kind": {
+              "const": "transform"
+            }
+          },
+          "required": [
+            "method",
+            "center",
+            "scale",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "clip"
             },
             "lower": {
               "type": "number"
@@ -5833,6 +6127,8 @@
           },
           "required": [
             "method",
+            "lower",
+            "upper",
             "kind"
           ]
         },
@@ -6053,122 +6349,135 @@
       ]
     },
     "number_spec": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "unit": {
-          "$ref": "#/$defs/number_unit"
-        },
-        "transform": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/number_transform"
-          },
-          "minItems": 1
-        },
-        "rounding": {
-          "$ref": "#/$defs/number_round"
-        },
-        "representation": {
-          "enum": [
-            "number",
-            "bins",
-            "category",
-            "flag",
-            "present",
-            "missing"
-          ]
-        },
-        "breaks": {
-          "type": "array",
-          "items": {
-            "oneOf": [
-              {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "unit": {
+              "$ref": "#/$defs/number_unit"
+            },
+            "transform": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/number_transform"
+              },
+              "minItems": 1
+            },
+            "rounding": {
+              "$ref": "#/$defs/number_round"
+            },
+            "representation": {
+              "enum": [
+                "number",
+                "bins",
+                "category",
+                "flag",
+                "present",
+                "missing"
+              ]
+            },
+            "breaks": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "enum": [
+                      "-Inf",
+                      "Inf"
+                    ]
+                  }
+                ]
+              },
+              "minItems": 2
+            },
+            "grid": {
+              "enum": [
+                "count_1_2_5",
+                "proportion_quarters",
+                "signed_decades"
+              ]
+            },
+            "closed": {
+              "enum": [
+                "left",
+                "right"
+              ]
+            },
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            },
+            "range": {
+              "enum": [
+                "reference",
+                "thresholds",
+                "bins"
+              ]
+            },
+            "thresholds": {
+              "type": "array",
+              "items": {
                 "type": "number"
               },
-              {
-                "enum": [
-                  "-Inf",
-                  "Inf"
-                ]
-              }
-            ]
+              "minItems": 1,
+              "maxItems": 2
+            },
+            "op": {
+              "enum": [
+                "lt",
+                "le",
+                "gt",
+                "ge",
+                "eq",
+                "ne",
+                "inside",
+                "outside"
+              ]
+            },
+            "category_map": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            },
+            "levels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            }
           },
-          "minItems": 2
+          "required": []
         },
-        "grid": {
-          "enum": [
-            "count_1_2_5",
-            "proportion_quarters",
-            "signed_decades"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "pipeline": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/number_stage"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "pipeline"
           ]
-        },
-        "closed": {
-          "enum": [
-            "left",
-            "right"
-          ]
-        },
-        "labels": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "minItems": 1
-        },
-        "range": {
-          "enum": [
-            "reference",
-            "thresholds",
-            "bins"
-          ]
-        },
-        "thresholds": {
-          "type": "array",
-          "items": {
-            "type": "number"
-          },
-          "minItems": 1,
-          "maxItems": 2
-        },
-        "op": {
-          "enum": [
-            "lt",
-            "le",
-            "gt",
-            "ge",
-            "eq",
-            "ne",
-            "inside",
-            "outside"
-          ]
-        },
-        "category_map": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "minItems": 1
-        },
-        "levels": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "minItems": 1
-        },
-        "pipeline": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/number_stage"
-          },
-          "minItems": 1
         }
-      },
-      "required": []
+      ]
     },
     "number_derived": {
       "oneOf": [

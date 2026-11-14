@@ -175,13 +175,14 @@
   if(length(.dateOutputVariables(ctx,node)) && node$format %in% c("sparse","temporal_covariates","dictionary")) .dateReject(paste0("Format '",node$format,"' has no roster date-variable slot; use a wide typed companion output and join it for analysis."))
   invisible(NULL)
 }
-.dateOutputCovariates <- function(ctx,node,inputs,co) {
-  vars<-.dateOutputVariables(ctx,node)
+.dateOutputCovariates <- function(ctx,node,inputs,co,vars=.dateOutputVariables(ctx,node)) {
   if(!length(vars)) return(co)
   pop<-inputs$population;name<-.compileNodeName(node,"output")
   cons<-.reduceConsumer(ctx,name,pop$roster,pop$coverage,node$grain)
   for(v in vars) {
-    rec<-.compileVariable(ctx,.irNamedNode(ctx$ir,"variable",v),pop$roster,cons);values<-rec$evaluate()
+    rec<-.compileVariable(ctx,.irNamedNode(ctx$ir,"variable",v),pop$roster,cons)
+    if(isTRUE(rec$event_grain)) .numberReject("Roster covariates require explicit event reduction.","number_dependency_invalid")
+    values<-rec$evaluate()
     for(cn in names(co$components)) {
       part<-co$components[[cn]];frame<-part$frame
       if("cohort_row_id" %in% names(frame)) {

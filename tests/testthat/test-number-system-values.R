@@ -67,3 +67,12 @@ test_that("N04 N05 N50 N51 N53 units and ordered stages compose once", {
   expect_error(.numberEffective(P(b,list(kind="category",range="bins",category_map=c("high","normal","low")))),"nondecreasing")
   expect_equal(.numberEffective(list(rounding=list(method="none")),list(rounding=list(method="floor")))$pipeline[[1]]$method,"none")
 })
+
+test_that("N38 N49 precision bounds and count widths are lossless", {
+  for(d in c(-309,309))expect_error(.numberRoundCheck(list(method="decimals",digits=d)),"digits")
+  for(d in c(0,18))expect_error(.numberRoundCheck(list(method="significant",digits=d)),"digits")
+  expect_identical(as.character(.reduceCoerce(list(2147483648),"integer")),"2147483648")
+  expect_s3_class(.reduceCoerce(list(2147483648),"integer"),"integer64")
+  expect_equal(.numberRoundOne(2^-1074,"significant",1),2^-1074)
+  expect_equal(.numberRoundOne(.Machine$double.xmax,"significant",17),.Machine$double.xmax)
+})

@@ -396,6 +396,7 @@
     roles = roles,
     column_classes = .irOutputColumnClasses(ir, handle),
     concept_presentation = .conceptExplain(ir),
+    number_presentation = .numberExplain(ir),
     concept_classes = .conceptExplainClasses(ir, handle),
     site_findings = site_findings,
     unavailable = unavailable,

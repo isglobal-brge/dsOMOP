@@ -75,7 +75,10 @@
   selected<-assignments[[match(result,vapply(assignments,function(a)a$name,""))]]
   if(!selected$type %in% c("numeric","integer")) .numberReject("Expression result must be numeric; use native bins or flags for classification.","number_expression_invalid")
   types<-vapply(frame,.verbColumnType,"")
-  for(a in assignments) {frame[[a$name]]<-.mutateEval(a$expr,frame,types);types[[a$name]]<-a$type}
+  for(a in assignments) {
+    if(a$type=="numeric")for(n in names(frame))if(inherits(frame[[n]],"integer64")) .numberDouble(frame[[n]])
+    frame[[a$name]]<-.mutateEval(a$expr,frame,types);types[[a$name]]<-a$type
+  }
   frame[[result]]
 }
 .numberPresent <- function(x,s,unit="1",ranges=NULL,available=TRUE,offset_allowed=TRUE,canonical=FALSE) {

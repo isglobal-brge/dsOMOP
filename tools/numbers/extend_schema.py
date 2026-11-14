@@ -17,14 +17,16 @@ for filename in ['plan-v2.json','ir-v2.json']:
  d['number_exprs']=relocate({k:v for k,v in m.items() if k not in ['$defs','$id','$schema']})
  d['number_unit']={'oneOf':[obj({'kind':{'const':'source'}},['kind']),obj({'kind':{'const':'event_unit'},'spec':ref('unit')},['kind','spec']),obj(dict(kind={'const':'fixed_unit'},**{k:string for k in ['from','to']},factor=dict(type='number',exclusiveMinimum=0),offset=num),['kind','from','to','factor'])]}
  d['number_transform']=obj(dict(method=enum('identity','log','log10','log2','log1p','sqrt','abs','exp','expm1','affine','standardize','clip'),**{k:num for k in ['factor','offset','center','scale','lower','upper']}),['method'])
+ d['number_transform']={'oneOf':[obj(dict(method={'const':method},**{k:num for k in keys}),['method']+[k for k in keys if not(method=='affine' and k=='offset')]) for method,keys in [(m,[]) for m in ['identity','log','log10','log2','log1p','sqrt','abs','exp','expm1']]+[('affine',['factor','offset']),('standardize',['center','scale']),('clip',['lower','upper'])]]}
  d['number_round']=obj(dict(method=enum('none','decimals','significant','floor','ceiling','trunc'),digits={'type':'integer','minimum':-308,'maximum':308}),['method'])
  fields=dict(unit=ref('number_unit'),transform=arr(ref('number_transform'),minItems=1),rounding=ref('number_round'),representation=enum('number','bins','category','flag','present','missing'),breaks=arr({'oneOf':[num,enum('-Inf','Inf')]},minItems=2),grid=enum('count_1_2_5','proportion_quarters','signed_decades'),closed=enum('left','right'),labels=arr(string,minItems=1),range=enum('reference','thresholds','bins'),thresholds=arr(num,minItems=1,maxItems=2),op=enum('lt','le','gt','ge','eq','ne','inside','outside'),category_map=arr(string,minItems=1),levels=arr(string,minItems=1))
  stages=copy.deepcopy(d['number_unit']['oneOf'][1:])
  for kind,key in [('transform','number_transform'),('round','number_round')]:
-  t=copy.deepcopy(d[key]);t['properties']['kind']={'const':kind};t['required']+=['kind'];stages.append(t)
+  for branch in d[key].get('oneOf',[d[key]]):
+   t=copy.deepcopy(branch);t['properties']['kind']={'const':kind};t['required']+=['kind'];stages.append(t)
  stages.append(obj(dict(kind={'const':'expression'},exprs=ref('number_exprs'),result=ref('name'),unit=string),['kind','exprs']))
  for kind,keys in dict(bins=['breaks','grid','closed','labels'],category=['range','thresholds','labels','category_map','levels'],flag=['op','thresholds','closed'],present=[],missing=[]).items():stages.append(obj(dict(kind={'const':kind},**{k:fields[k] for k in keys}),['kind']))
- d['number_stage']={'oneOf':stages};fields['pipeline']=arr(ref('number_stage'),minItems=1);d['number_spec']=obj(fields)
+ d['number_stage']={'oneOf':stages};fields['pipeline']=arr(ref('number_stage'),minItems=1);d['number_spec']={'oneOf':[obj({k:v for k,v in fields.items() if k!='pipeline'}),obj({'pipeline':fields['pipeline']},['pipeline'])]}
  s['properties']['options']['properties']['number_spec']=ref('number_spec')
  for branch in d['variable']['oneOf']:branch['properties']['number_spec']=ref('number_spec')
  variants=[]

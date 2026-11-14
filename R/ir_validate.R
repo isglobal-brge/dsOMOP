@@ -323,7 +323,7 @@
     out <- outs[[o]]
     if (!out[["rows"]] %in% names(pops)) add("/outputs/", o, "/rows: dangling population '", out[["rows"]], "'")
     for (v in unlist(out[["columns"]] %||% list(), use.names = FALSE)) {
-      if (!v %in% names(vars)) add("/outputs/", o, "/columns: dangling variable '", v, "'")
+      if (!v %in% c(names(vars),names(out$number_columns))) add("/outputs/", o, "/columns: dangling variable '", v, "'")
     }
     opts <- out[["options"]] %||% list()
     if (identical(out[["format"]], "joined")) {
@@ -703,7 +703,7 @@
   }
   anchors <- .irCollectAnchors(ir[c("populations", "variables", "outputs")])
   if (length(anchors)) op("window.anchor.source")
-  for (v in ir[["variables"]] %||% list()) {
+  for (v in .numberVariables(ir)) {
     if (!is.null(v[["reducer"]])) {
       op("variable.reducer")
       if (identical(v[["reducer"]][["fn"]], "supply_days")) op("reducer.supply_days")

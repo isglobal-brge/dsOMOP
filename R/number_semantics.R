@@ -65,16 +65,15 @@
   m<-.numberChoice(r$method,c("none","decimals","significant","floor","ceiling","trunc"))
   if(m %in% c("decimals","significant")) {
     d<-.numberFinite(r$digits)
-    if(d!=trunc(d)||d<if(m=="decimals")-308 else 1||d>if(m=="decimals")308 else 17) .numberReject("digits must be an integer in the documented range.")
+    if(d!=trunc(d)||d<(if(m=="decimals")-308 else 1)||d>(if(m=="decimals")308 else 17)) .numberReject("digits must be an integer in the documented range.")
   } else if(!is.null(r$digits)) .numberReject("Only decimals/significant accept digits.")
   r
 }
 .numberBreaks <- function(x) {
-  x<-unlist(x,use.names=FALSE)
-  if(is.character(x)) {
-    if(any(!x %in% c("-Inf","Inf") & is.na(suppressWarnings(as.numeric(x))))) .numberReject("Invalid bin boundary.")
-    x<-as.numeric(x)
-  }
+  if(is.list(x)) {
+    if(any(!vapply(x,function(v)is.numeric(v)&&length(v)==1L||is.character(v)&&length(v)==1L&&v %in% c("-Inf","Inf"),logical(1)))) .numberReject("Bin boundaries are numeric literals with optional infinite tails.")
+    x<-vapply(x,function(v)if(is.character(v))if(v=="-Inf")-Inf else Inf else v,0)
+  } else if(is.character(x)) .numberReject("Bin boundaries must be numeric, not text.")
   if(!is.numeric(x)||length(x)<2L||anyNA(x)||any(diff(x)<=0)||
      any(!is.finite(x[-c(1L,length(x))]))||x[1L]==Inf||tail(x,1L)==-Inf) .numberReject("Breaks must strictly increase, with optional infinite tails only.")
   x
@@ -156,7 +155,7 @@
       started<-TRUE;t<-s;t$kind<-NULL
       if(k=="transform") s<-c(list(kind=k),.numberTransformCheck(t))
       else if(k=="round") s<-c(list(kind=k),.numberRoundCheck(t))
-      else if(k=="expression") {.numberObject(t,c("exprs","result","unit"),"exprs");if(!is.null(t$unit)).numberUnitToken(t$unit);.numberExpressionShape(t$exprs,t$result,"x")}
+      else if(k=="expression") {.numberObject(t,c("exprs","result","unit"),"exprs");if(!is.null(t$unit)).numberUnitToken(t$unit);s$result<-.numberExpressionShape(t$exprs,t$result,"x")}
       else {
         t<-.numberSpecCheck(c(list(representation=k),t))
         t<-.numberClassifyCheck(t,if(length(out))tail(out,1)[[1]] else NULL)
@@ -170,6 +169,7 @@
 }
 .numberEffective <- function(variable=NULL, recipe=NULL) {
   v<-.numberSpecCheck(variable);r<-.numberSpecCheck(recipe)
+  if(!is.null(v)&&!length(v))v<-NULL
   if(!is.null(v$pipeline)) return(list(pipeline=.numberPipelineCheck(v$pipeline)))
   if(is.null(v)&&!is.null(r$pipeline)) return(list(pipeline=.numberPipelineCheck(r$pipeline)))
   if(!is.null(r$pipeline)) r<-list()
@@ -202,6 +202,7 @@
   if(anyDuplicated(names)||any(names %in% aliases)) .numberReject("Assignments cannot duplicate or shadow inputs.","number_expression_invalid")
   result<-result %||% tail(names,1L)
   if(!result %in% names) .numberReject("result must select a declared assignment.","number_expression_invalid")
+  .numberAstCheck(exprs,aliases,result)
   result
 }
 .numberChangeCheck <- function(d) {
@@ -246,14 +247,16 @@
 .numberPlanNormalize <- function(plan) {
   if(!.numberHas(plan))return(plan)
   recipe<-plan$options$number_spec
+  producers<-plan$variables
   if(!is.null(recipe)) .numberSpecCheck(recipe)
-  normalize<-function(v,defaults=NULL,depth=0L) {
+  normalize<-function(v,defaults=NULL,depth=0L,column_scope=FALSE) {
     if(depth>32L).numberReject("Numeric dependencies exceed the existing expression nesting bound.","number_dependency_invalid")
     d<-v$derived
     if(!is.null(d$inputs)) {
+      if(!is.null(d$reducer)) .numberReducerCheck(d$reducer)
       aliases<-vapply(d$inputs,function(i)i$alias,"");.numberNames(aliases)
       d$result<-.numberExpressionShape(d$exprs,d$result,aliases)
-      d$inputs<-lapply(d$inputs,function(i){i$variable<-normalize(i$variable,NULL,depth+1L);i})
+      d$inputs<-lapply(d$inputs,function(i){i$variable<-normalize(i$variable,NULL,depth+1L,column_scope);i})
     }
     if(identical(d$kind,"number_change")) {
       d<-.numberChangeCheck(d)
@@ -262,6 +265,7 @@
     if(identical(d$kind,"number_rows")&&isTRUE(v$broadcast)) .numberReject("Event rows need explicit reduction for scalar outputs.","number_dependency_invalid")
     if(!is.null(d))v$derived<-d
     spec<-v$number_spec
+    if(column_scope && identical(d$kind,"number_column")) spec<-.numberOverlay(spec,producers[[d$column]]$number_spec)
     # Recipe scalar defaults are resolved at the final analytic slot. Source
     # maps must fork before predicates/reduction, including private operands.
     source<-v$source %||% d$source
@@ -272,7 +276,10 @@
         if(!is.null(spec)) .numberReject("Source maps require a numeric event unit role.","number_unit_conflict")
       } else {
         ev<-plan$events[[source$event]]
-        if(is.null(ev)||!ev$table %in% c("measurement","observation")) .numberReject("Source maps require a registered unit-bearing source.","number_unit_conflict")
+        if(is.null(ev)||!ev$table %in% c("measurement","observation")) {
+          if(!is.null(spec)) .numberReject("Source maps require a registered unit-bearing source.","number_unit_conflict")
+          return(v)
+        }
         value<-d$value %||% v$reducer$value %||% "value"
         if(!value %in% c("value","value_as_number","range_low","range_high")) .numberReject("A measurement unit map cannot convert unrelated roles.","number_unit_conflict")
         map<-maps[[1L]]$spec
@@ -283,16 +290,104 @@
         if(!is.null(v$source))v$source<-source else v$derived$source<-source
       }
     }
-    if(!is.null(spec))v$number_spec<-.numberWireFinite(.numberEffective(spec))
+    if(!is.null(spec))v$number_spec<-.numberWireFinite(.numberEffective(spec,defaults))
     v
   }
   for(n in names(plan$variables))plan$variables[[n]]<-normalize(plan$variables[[n]],recipe)
   for(o in names(plan$outputs)) {
+    out<-plan$outputs[[o]]
+    if(!is.null(recipe)) {
+      map_source<-function(src) {
+        if(is.null(src$event))return(src)
+        pseudo<-normalize(list(source=src,reducer=list(fn="mean")),recipe)
+        pseudo$source
+      }
+      if(!is.null(out$sources))out$sources<-lapply(out$sources,map_source)
+      if(!is.null(out$options$sources))out$options$sources<-lapply(out$options$sources,map_source)
+      plan$outputs[[o]]<-out
+    }
     cols<-plan$outputs[[o]]$number_columns
     if(!is.null(cols)) {
       .numberNames(names(cols))
-      plan$outputs[[o]]$number_columns<-lapply(cols,normalize)
+      plan$outputs[[o]]$number_columns<-lapply(cols,function(v)normalize(v,recipe,column_scope=TRUE))
     }
   }
   plan
+}
+.numberResolveRecords <- function(records,identity=NULL) {
+  records<-unname(records)
+  if(is.null(identity)&&length(records))identity<-records[[1L]]$number
+  if(length(records)&&any(vapply(records,function(r)!identical(r$kind,"number")||!identical(.jcsCanonical(r$number),.jcsCanonical(identity)),logical(1)))) .numberReject("Numeric representation contracts differ across retained sites.","number_representation_conflict")
+  records<-records[!duplicated(vapply(records,function(r)r$id,""))]
+  records<-records[order(vapply(records,function(r)r$order,0))]
+  ids<-vapply(records,function(r)r$id,"");labels<-vapply(records,function(r)r$label,"")
+  list(kind="number",number=identity,ids=ids,labels=labels,levels=labels,decisions=list())
+}
+.numberValidateResolution <- function(shared,records) {
+  expected<-.numberResolveRecords(unname(records))
+  for(k in c("kind","number","ids","labels","levels")) if(!identical(.jcsCanonical(.pnv2Plain(as.list(shared[[k]]))),.jcsCanonical(.pnv2Plain(as.list(expected[[k]]))))) .numberReject("Incomplete or incompatible shared numeric domain.","number_representation_conflict")
+  invisible(TRUE)
+}
+.numberValidateShared <- function(local,shared) {
+  if(!identical(.jcsCanonical(local %||% list()),.jcsCanonical(shared %||% list()))) .numberReject("Numeric column semantics differ across retained sites.","number_representation_conflict")
+  invisible(TRUE)
+}
+.numberExplain <- function(plan) {
+  if(!.numberHas(plan))return(character())
+  lines<-c("Numeric presentation: source unit normalization before predicates and reduction; fixed conversion, then declared scalar stages, before sealing.",
+    "Precedence: variable/wrapper > recipe > design; pipelines are atomic. Canonical inputs bypass transforms/rounds/categories and outer recipe defaults.",
+    "Rounding: nearest exact decimal multiple of the actual binary64 input, ties to even; identity/none preserve exact integer widths.",
+    "Public bins/categories retain full ordered levels and polynomial contrasts; quantitative trends require a numeric sibling. Reference categories are relative to each selected observation's paired local ranges.",
+    "Nonfinite/domain-invalid rows become typed NA without diagnostics; unavailable sources remain unavailable. Counts retain available empty zero; threshold time is first observed attainment, never interpolation.",
+    paste0("Required numeric capabilities: ",paste(.numberCapabilities(plan),collapse=", ")))
+  for(n in names(plan$variables)) {
+    v<-plan$variables[[n]]
+    if(is.null(v$number_spec)&&is.null(plan$options$number_spec)&&!(v$derived$kind %||% "") %in% .NUMBER_KINDS)next
+    lines<-c(lines,paste0("Numeric variable '",n,"': ",.jcsCanonical(.pnv2Plain(v)),"; source/reducer grain retained; broadcast=",isTRUE(v$broadcast),"; date/class-2 lineage never declassified."))
+  }
+  for(n in names(plan$outputs))if(!is.null(plan$outputs[[n]]$number_columns))lines<-c(lines,paste0("Output '",n,"' original-frame numeric bindings: ",.jcsCanonical(plan$outputs[[n]]$number_columns),"; exact row identity; recipe display defaults inactive inside formulas."))
+  lines
+}
+.numberOverlay <- function(high,low) {
+  high<-.numberSpecCheck(high);low<-.numberSpecCheck(low)
+  if(!is.null(high$pipeline))return(high)
+  if(is.null(high)||!length(high))return(low %||% list())
+  if(!is.null(low$pipeline))low<-list()
+  if(!is.null(high$representation)) {
+    r<-high$representation
+    allowed<-c("unit","representation",if(!r %in% c("present","missing"))c("transform","rounding"),
+      switch(r,bins=c("breaks","grid","closed","labels"),category=c("range","thresholds","labels","category_map","levels"),flag=c("op","thresholds","closed"),character()))
+    low<-low[intersect(names(low),allowed)]
+  }
+  out<-low %||% list();for(k in names(high))out[[k]]<-high[[k]]
+  if(!is.null(high$breaks))out$grid<-NULL
+  if(!is.null(high$grid))out$breaks<-NULL
+  if(!is.null(high$thresholds)&&is.null(high$range))out$range<-if(identical(out$representation,"category"))"thresholds" else NULL
+  if(!is.null(high$category_map)&&is.null(high$range))out$range<-"bins"
+  out
+}
+
+.numberColumnDependencies <- function(x) {
+  found<-character()
+  walk<-function(v) {
+    if(!is.list(v))return(NULL)
+    if(identical(v$kind,"number_column"))found<<-c(found,v$column)
+    lapply(v,walk);NULL
+  }
+  walk(x);unique(found)
+}
+.numberVariables <- function(x) {
+  result<-list()
+  walk<-function(v) {
+    if(!is.list(v))return(NULL)
+    if(!is.null(v$reducer)||!is.null(v$derived)||!is.null(v$raw)||!is.null(v$population_column))result[[length(result)+1L]]<<-v
+    if(identical(v$kind,"number_derive")&&!is.null(v$reducer))result[[length(result)+1L]]<<-list(reducer=v$reducer)
+    lapply(v,walk);NULL
+  }
+  walk(x);result
+}
+
+.numberReducerCheck <- function(r) {
+  if(!r$fn %in% c("first_value","last_value","nth_value","closest_value","mean","min","max","sum","sd","cv","median","quantile","mode","slope")||!is.null(r$value)||!is.null(r$unit)&&!identical(r$unit,"day")) .numberReject("Expression reducers require an admitted numeric reducer with value and unit omitted.","number_expression_invalid")
+  invisible(r)
 }

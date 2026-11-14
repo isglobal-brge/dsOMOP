@@ -92,7 +92,13 @@
   for (o in names(ir[["outputs"]] %||% list())) {
     for (source in .dateComponentSources(ir)) out[[length(out) + 1L]] <- .fragmentIdentity("rd", o, paste0("dc_", .dateSourceKey(source)))
     for (k in .REDUCE_OUTPUT_KINDS) out[[length(out) + 1L]] <- .fragmentIdentity("rd", o, k)
-    for (v in .irOutputVariables(ir, o)) {
+    expand <- function(v,n) {
+      out <- n
+      for(i in v$derived$inputs %||% list()) out <- c(out,expand(i$variable,.numberDependencyName(n,i$alias)))
+      out
+    }
+    variables <- unlist(lapply(.irOutputVariables(ir,o),function(n)expand(ir$variables[[n]],n)),use.names=FALSE)
+    for (v in variables) {
       for (k in .REDUCE_VARIABLE_KINDS) {
         out[[length(out) + 1L]] <- .fragmentIdentity("rd", o, paste0(k, "_", v))
       }
@@ -484,7 +490,7 @@
 #' @return The stream fragment.
 #' @keywords internal
 .reduceStream <- function(ctx, cons, src, window, name, extra = list(), overlap = FALSE,
-                          use = "course", coverage = "recorded", quality = FALSE) {
+                          use = "course", coverage = "recorded", quality = FALSE, dated = TRUE) {
   existing <- .fragmentGet(ctx, name)
   if (!is.null(existing)) return(existing)
   h <- .compileDialect(ctx)
@@ -502,7 +508,7 @@
   }
   tw_pred <- c(if (!is.null(tw$lower)) paste0("e.start_date >= ", tw$lower),
                if (!is.null(tw$upper)) paste0("e.start_date <= ", tw$upper))
-  on <- c(source$predicates, "e.start_date IS NOT NULL", pred, tw_pred,
+  on <- c(source$predicates, if(dated) "e.start_date IS NOT NULL", pred, tw_pred,
           if (quality && identical(src$kind, "event")) .eventCoverageQualitySql(h, src$meta, "e"))
   f <- source$fragment
   ordered_src <- src
@@ -675,14 +681,23 @@
     rows
   }
   numeric_v <- function() {
-    vv <- suppressWarnings(as.numeric(v))
+    vv <- if(identical(value_type,"bigint")) .numberDouble(bit64::as.integer64(v)) else suppressWarnings(as.numeric(v))
     vv[!is.na(vv)]
   }
   distinct_count <- function(by) switch(by,
-    row = as.integer(n),
+    row = n,
     day = length(unique(d[!is.na(d)])),
     visit = { vi <- x[["visit_id"]]; length(unique(vi[!is.na(vi)])) },
     concept = { ci <- x[["concept_id"]]; length(unique(ci[!is.na(ci)])) })
+  if(identical(value_type,"bigint")&&fn %in% c("first_value","last_value","nth_value","closest_value","min","max")) {
+    indices<-x;indices$v<-seq_along(v);indices$v[is.na(v)]<-NA_integer_
+    if(fn %in% c("min","max")) {
+      exact<-bit64::as.integer64(v);exact<-exact[!is.na(exact)]
+      return(if(length(exact))as.character(if(fn=="min")min(exact) else max(exact)) else NA_character_)
+    }
+    at<-.reduceOne(fn,indices,r,anchor,"numeric")
+    return(as.character(v[at]))
+  }
   switch(fn,
     binary = as.integer(n > 0L),
     count = distinct_count(r[["distinct"]] %||% "row"),
@@ -794,7 +809,7 @@
 # Column type of a reducer's values.
 .reduceValueType <- function(fn, value_type = "numeric") {
   if (fn %in% .REDUCER_INTEGER_FNS) return("integer")
-  if (identical(fn, "mode") || (value_type == "date" && fn %in% c("first_value", "last_value", "nth_value", "closest_value", "min", "max"))) return(value_type)
+  if (identical(fn, "mode") || (value_type %in% c("date","bigint") && fn %in% c("first_value", "last_value", "nth_value", "closest_value", "min", "max"))) return(value_type)
   "numeric"
 }
 
@@ -866,11 +881,13 @@
   }
   record <- .compileVariableRecord(ctx, node, name, cons)
   record <- .datePresentRecord(record, node, ctx, name, cons)
+  record <- .numberRecord(record, node, ctx, name, cons)
   for (col in names(record$columns)) attr(record$columns[[col]], "concept_owner") <- name
   record
 }
 
 .compileVariableRecord <- function(ctx, node, name, cons) {
+  if ((node$derived$kind %||% "") %in% .NUMBER_KINDS) return(.numberDerivedRecord(ctx,node,name,cons))
   if (!is.null(node[["source"]])) return(.reduceSourceVariable(ctx, node, name, cons))
   if (!is.null(node[["derived"]])) return(.reduceDerivedVariable(ctx, node, name, cons))
   if (!is.null(node[["raw"]])) return(.reduceRawVariable(ctx, node, name, cons))
@@ -900,7 +917,7 @@
   if (is.list(x)) x <- unlist(lapply(x, function(e) if (is.null(e) || length(e) == 0L) NA else e))
   if (is.null(x)) x <- .reduceTypedNA(type, 0L)
   switch(type,
-    integer = suppressWarnings(as.integer(x)),
+    integer = if(any(!is.na(x)&suppressWarnings(abs(as.numeric(x)))>.Machine$integer.max)) bit64::as.integer64(x) else suppressWarnings(as.integer(x)),
     numeric = { y <- suppressWarnings(as.numeric(x)); y[!is.finite(y)] <- NA_real_; y },
     text = as.character(x),
     bigint = if (is.character(x)) x else if (inherits(x, "integer64")) as.character(x) else x,
@@ -980,6 +997,9 @@
       extra$concept_id <- list(expr = "e.concept_id", type = "integer")
     }
   }
+  paired <- fn %in% c("first_value","last_value","nth_value","closest_value") &&
+    requested %in% c("value","value_as_number") && .numberHas(ctx$ir) && all(c("range_low","range_high") %in% names(src$fragment$columns))
+  if (paired) for(k in c("range_low","range_high")) extra[[k]] <- list(expr=paste0("e.",k),type="numeric")
   if (fn %in% c("abnormal_high", "abnormal_low")) {
     col <- if (identical(fn, "abnormal_high")) "range_high" else "range_low"
     .predicateResolve(src$catalogue, col, field)
@@ -1008,11 +1028,13 @@
     rows <- .reduceTemporal(got$rows, cons$temporal, ordering)
     anchors <- if (anchor_needed) .reduceAnchorDates(ctx, cons, anchor, field) else NULL
     vals <- kernel(rows, keys, anchors)
+    selected <- if(paired) .numberRangeSelection(rows,keys,r,ordering,anchors) else NULL
     defined <- got$bounds$defined
     out <- data.frame(row_key = keys, stringsAsFactors = FALSE)
     for (j in seq_along(columns)) {
       x <- .reduceCoerce(vals[[j]], columns[[j]]$type)
       x[!defined %in% TRUE] <- .reduceTypedNA(columns[[j]]$type, 1L)
+      if(paired) {at<-as.integer(selected[[j]]);x<-.numberRangeValue(x,rows$range_low[at],rows$range_high[at])}
       out[[names(columns)[[j]]]] <- x
     }
     out
