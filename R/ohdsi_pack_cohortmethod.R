@@ -1700,7 +1700,7 @@
 
   .omopAnalysisEntry(
     name        = name,
-    description = paste0("CohortMethod band-derived survival summary (live, R-in-session; not a fitted Kaplan-Meier release): ",
+    description = paste0("CohortMethod Kaplan-Meier curve (live, R-in-session): ",
                          "per-arm survival over a scoped target+comparator pair, ",
                          "computed by survival::survfit on the in-session ",
                          "per-subject (time,event) frame and reported on a coarse ",

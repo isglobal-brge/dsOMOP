@@ -1,5 +1,25 @@
 # dsOMOP / dsOMOPClient 2.10.5 (development)
 
+- Newly permitted: four exact-version client formula constructors (BMI,
+  arithmetic MAP, ratio, and race-free CKD-EPI 2021 creatinine eGFR) expand into
+  existing typed private operations. Declare source selection, canonical units
+  or explicit conversions, and the eGFR sex mapping/calendar-age anchor. Invalid
+  values yield typed NA; structural unit/anchor/version errors refuse. Formula
+  identity and derivative provenance survive JSON, YAML and generated R.
+- Newly permitted: `omop_number_daily()` selects original events, applies input
+  presentation, collapses within recorded concept-days, then applies the outer
+  numeric reducer and final presentation. Mean/max/first and skip/propagate are
+  explicit. Use this route for equal-day weighting instead of ordinary record
+  weighting. It requires the server's `number.daily` capability; old servers
+  refuse before assignment. No absent days, reference ranges or support counts
+  are invented.
+- Corrected: YAML and generated R retain small binary64 coefficients exactly,
+  including the eGFR age factor. Regenerate affected serialized recipes from
+  their original numeric declarations; already rounded coefficients cannot be
+  recovered from saved text.
+- Scope: broader A-31 deliverables are deferred as listed in
+  `POST_2.10.5_ROADMAP.md`. Real Opal acceptance belongs to integration e2e.
+
 - Corrected (audit prerequisite integration): imported vocabulary validity
   remains executable in category rollup domains, including exclusions.
   Use a server advertising vocabulary.ohdsi_import_validity for these domains.

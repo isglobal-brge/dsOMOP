@@ -45,3 +45,16 @@ test_that("Q14 adult boundaries and invalid input eligibility execute in the emi
   missing<-.ws7_scenario_run(h,p)$frame
   expect_true(all(is.na(missing$egfr)))
 })
+
+test_that("Q14 formulas refuse independent event streams instead of aligning by position", {
+  h<-.ws4_reach_handle();on.exit(DBI::dbDisconnect(h$conn));.ws7_extend(h$conn)
+  h$blueprint<-NULL;h$role_registry<-NULL
+  e<-dsOMOPClient::omop_event("measurement",.WS7$LAB,name="weight",unit=dsOMOPClient::omop_unit(8554L))
+  other<-e;other$name<-"height"
+  rows<-function(event,unit)dsOMOPClient::omop_number_rows(event,
+    number_spec=dsOMOPClient::omop_number_spec(unit=dsOMOPClient::omop_number_unit("unit:8554",unit,1)))
+  bmi<-dsOMOPClient::omop_formula_bmi(rows(e,"coordinate:kg"),rows(other,"coordinate:metres"))
+  built<-dsOMOPClient::recipe_to_plan(dsOMOPClient::omop_recipe(variables=list(bmi=bmi)),version=2)
+  p<-.ws7_scenario_plan(built$variables);p$events<-built$events
+  expect_error(.ws7_scenario_run(h,p),"number_dependency_invalid")
+})

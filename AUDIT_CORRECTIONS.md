@@ -3,6 +3,29 @@
 This document describes the implemented import, setting and identity corrections.
 It does not certify all A-31 acceptance obligations or an upstream HADES adapter.
 
+## Fix 4: scoped formula and daily additions
+
+The 14 November coordinator decision narrows this release to the released
+corrections above plus Q14/Q15. All four formula constructors and the closed
+`number_daily` route are now present. The client expands formulas into existing
+operations; no formula opcode, arbitrary evaluator or remote definition lookup
+is introduced. The eGFR formula uses completed calendar age at the explicitly
+selected creatinine event, a declared IDMS assay/unit interpretation and an
+explicit disjoint mapping to its two equation branches. Missing/unknown sex,
+underage people and nonpositive creatinine produce private NA.
+
+Daily collapse retains source/concept/coordinate/date and consumer-episode
+identity. It strips selected-row range/visit metadata, uses genuine person
+lineage at publication, and cannot turn many days from one person into release
+support. Multi-concept input needs an explicit common-quantity declaration and
+still produces concept-day observations. Input and final presentation are
+separate. Old servers without `number.daily` fail capability preflight.
+
+Historical statements below that formula/day routes are absent describe the
+pre-fix-4 tree. Deferred bundle/interoperability/teaching/export/consumer work
+is tracked in [the post-2.10.5 roadmap](POST_2.10.5_ROADMAP.md). No endorsement
+of those deferred routes or deployed Opal behavior is implied.
+
 ## Importing public OHDSI concept definitions
 
 Both `recipe_import_circe()` and `recipe_import_concept_sets()` require an

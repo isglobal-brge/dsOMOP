@@ -1068,7 +1068,6 @@
          "use a listed supported export.", call. = FALSE)
   }
   .ohdsiValidateUniqueResultKeys(handle, physical, identity_cols)
-  .ohdsiValidateCmInlineReferences(handle, physical, schema_contract$layout_id)
 
   # Build SELECT columns
   if (is.null(columns)) {

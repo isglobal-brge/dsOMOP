@@ -151,20 +151,13 @@
       public_release = contract$release,
       status = if (identical(contract$release, "public")) "supported" else "admin_only")
   }
-  out$cm_inline_export <- list(family="cohort_method",layout_id="cm-inline-export-5.5.2-1",
-    upstream_version="unknown",verified_export_versions="5.5.2",contract_version="physical-results-1",
-    table="cm_result",required_columns=.ohdsiCmInlineExportColumns(),
-    identity=identities$cm_result,relationships=list(unique_row=identities$cm_result,
-      references=.ohdsiCmInlineReferences("cm_result"),database="one exact database identity",estimator="ate or att, interpreted with the associated cm_analysis definition"),
-    public_release="existing cm_result projection and coupled protection",status="supported",
-    evidence="tests/fixtures/ohdsi-audit/physical-exports.json")
   out$cm_lookup <- list(family = "cohort_method", layout_id = "cm-target-comparator-lookup-1",
     upstream_version = "6.0.3", contract_version = "physical-results-1",
     table = "cm_result", reference_table = "cm_target_comparator",
     identity = c("analysis_id", "target_comparator_id", "outcome_id"),
     relationships = list(reference = "cm_target_comparator.target_comparator_id"),
     public_release = "none", status = "recognized_unsupported",
-    evidence = "Pinned actual upstream Eunomia export and schema; tests/fixtures/ohdsi-audit/physical-exports.json")
+    evidence = "Pinned upstream schema only; physical export acceptance pending")
   out
 }
 
@@ -200,18 +193,6 @@
     # Recognizing a structural variant does not prove which upstream release
     # produced this database; the pinned schema version is not observed here.
     return(result)
-  }
-  if (identical(canonical,"cm_result")) {
-    refs<-.ohdsiCmInlineStructure(handle,table_name,info)
-    if(!is.null(refs)) {
-      metadata$references<-refs
-      result$structural_fingerprint<-paste(openssl::sha256(charToRaw(.jcsCanonical(metadata))))
-      result$status<-"supported";result$layout_id<-"cm-inline-export-5.5.2-1"
-      result$verified_export_version<-"5.5.2"
-      # The fixture proves an accepted export version, not the producing
-      # version of a live database which supplies no version metadata.
-      return(result)
-    }
   }
   if (identical(contract$status, "admin_only")) {
     result$status <- "admin_only"

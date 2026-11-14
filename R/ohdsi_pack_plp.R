@@ -620,7 +620,7 @@
 
   .omopAnalysisEntry(
     name        = name,
-    description = paste0("Patient-Level Prediction in_sample/resubstitution discrimination performance ",
+    description = paste0("Patient-Level Prediction discrimination performance ",
                          "(AUROC, AUPRC) of a logistic model fit IN-SESSION over ",
                          "the scoped target population; scalar metrics only, NA ",
                          "below disclosure thresholds. No per-subject risk leaves ",
