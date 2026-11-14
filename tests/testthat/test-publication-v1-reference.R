@@ -199,18 +199,23 @@ test_that("legacy reference proof reaches public memory and staged inventories",
     expect_identical(status$status, "ok")
     expect_identical(status$published$ref$ref$grain, "none")
     value <- get(status$published$ref$ref$symbol, target)
+    expected_mode <- expected
     if (mode == "staged") {
       expect_s3_class(value, "FlowerDatasetDescriptor")
+      # SQL streams use character identifier columns so later BIGINT batches
+      # cannot change their physical schema. Check that existing transport
+      # contract explicitly, without coercing the returned file's values.
+      expect_identical(unname(unlist(value$metadata$column_types)["concept_id"]),
+                       "character|character")
+      expected_mode$concept_id <- as.character(expected_mode$concept_id)
       value <- if (identical(value$metadata$format, "parquet")) {
         as.data.frame(arrow::read_parquet(value$metadata$file))
       } else {
-        frame <- utils::read.csv(value$metadata$file, colClasses = "character",
-                                 check.names = FALSE)
-        frame$concept_id <- as.integer(frame$concept_id)
-        frame
+        utils::read.csv(value$metadata$file, colClasses = "character",
+                       check.names = FALSE)
       }
     }
-    expect_identical(value, expected)
+    expect_identical(value, expected_mode)
     expect_true(evalq(omopStagedRevokeDS("exec"), target))
     expect_identical(ls(target), character(0))
   }
