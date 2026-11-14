@@ -41,7 +41,9 @@
     unit<-.numberSourceUnit(ctx,node)
     attr(c,"number_origin")<-list(unit=unit,spec=spec,source=node$source,derived=node$derived,reducer=node$reducer,
       available=isTRUE(record$available),offset_allowed=.numberOffsetAllowed(node))
-    if(identical(node$derived$kind,"number_change")||identical(node$reducer$fn,"slope")) attr(c,"privacy_class")<-2L
+    temporal_reducers<-c("days_since","days_until","time_since","duration_sum","covered_days","supply_days","drug_duration","gap_max","gap_mean","era_days","first_era_days","slope")
+    temporal_derived<-c("number_change","time_between","age_at","observed_days","days_to_death","prior_obs","followup","obs_duration","age")
+    if((node$derived$kind %||% "") %in% temporal_derived||(node$reducer$fn %||% "") %in% temporal_reducers)attr(c,"privacy_class")<-2L
     record$columns[[col]]<-c
   }
   evaluate<-record$evaluate
