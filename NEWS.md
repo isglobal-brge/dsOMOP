@@ -1,5 +1,12 @@
 # dsOMOP / dsOMOPClient 2.10.5 (development)
 
+* **Corrected:** physical result row identities now follow their declared text
+  or exact integer contract. Fractional, malformed and inexact numeric keys
+  refuse with a generic integrity message even when keys are projected away.
+  SQLite storage is checked before driver coercion; BIGINT keys remain exact
+  decimal text beyond the int32 range. Re-export malformed identities using
+  exact integer storage; do not round identifiers to repair an export.
+
 * **Newly refused:** incidence `clean_window` values other than zero and
   `fe.prevalence` `time_windows` values other than zero now fail with a bounded
   setting-specific remedy before patient computation on ordinary, protected

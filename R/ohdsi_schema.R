@@ -34,12 +34,47 @@
   keys
 }
 
+.ohdsiTextIdentityKeys <- function() {
+  c("database_id", "development_database_id", "validation_database_id",
+    "domain_field", "series_type")
+}
+
+# Exact signed BIGINT decimal spelling, checked without a double conversion.
+# Leading zeros, plus signs, exponents and whitespace are not wire identities.
+.ohdsiExactIntegerIdentity <- function(x) {
+  if (anyNA(x)) return(FALSE)
+  if (inherits(x, "integer64")) x <- as.character(x)
+  if (is.object(x)) return(FALSE)
+  if (is.integer(x)) return(TRUE)
+  if (is.double(x)) {
+    return(all(is.finite(x) & x == trunc(x) & abs(x) <= 9007199254740991))
+  }
+  if (!is.character(x) || any(!grepl("^(0|[1-9][0-9]*|-[1-9][0-9]*)$", x))) {
+    return(FALSE)
+  }
+  magnitude <- sub("^-", "", x)
+  bound <- ifelse(startsWith(x, "-"), "9223372036854775808", "9223372036854775807")
+  # Compare equal-length decimal strings digit by digit, independent of locale.
+  all(vapply(seq_along(x), function(i) {
+    n <- nchar(magnitude[[i]], type = "bytes")
+    if (n != 19L) return(n < 19L)
+    delta <- utf8ToInt(magnitude[[i]]) - utf8ToInt(bound[[i]])
+    first <- which(delta != 0L)
+    !length(first) || delta[[first[[1L]]]] < 0L
+  }, logical(1)))
+}
+
 .ohdsiValidateResultIdentity <- function(result, keys, count_columns) {
   if (!length(keys)) return(invisible(NULL))
   bad <- !all(keys %in% names(result)) || any(vapply(result[keys], anyNA, logical(1)))
   if (!bad) {
-    bad <- any(vapply(result[keys], function(x) {
-      if (is.character(x)) any(!nzchar(x)) else if (is.numeric(x)) any(!is.finite(x)) else FALSE
+    bad <- any(vapply(keys, function(key) {
+      x <- result[[key]]
+      if (key %in% .ohdsiTextIdentityKeys()) {
+        !is.character(x) || is.object(x) || any(!nzchar(x))
+      } else {
+        !.ohdsiExactIntegerIdentity(x)
+      }
     }, logical(1)))
   }
   if (bad) {
@@ -67,8 +102,7 @@
     info <- .listColumnsRaw(handle, physical$table_name, .effectiveResultsSchema(handle))
   }
   kinds <- tolower(as.character(info$data_type[match(keys, tolower(info$column_name))]))
-  text_keys <- c("database_id", "development_database_id", "validation_database_id",
-                 "domain_field", "series_type")
+  text_keys <- .ohdsiTextIdentityKeys()
   for (i in seq_along(keys)) {
     valid <- if (keys[[i]] %in% text_keys) {
       grepl("^(text|varchar|char|character|nvarchar|nchar|string)(\\(| |$)", kinds[[i]])

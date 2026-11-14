@@ -1097,8 +1097,20 @@
     stop("limit must be one positive integer.", call. = FALSE)
   }
   limit <- min(as.integer(limit_num), 5000L)
+  query_expr <- query_cols
+  integer_keys <- setdiff(identity_cols, .ohdsiTextIdentityKeys())
+  if (identical(handle$target_dialect, "sqlite")) {
+    # SQLite's INTEGER declaration does not constrain storage classes. Fetch
+    # exact text before DBI can truncate a mixed INTEGER/REAL/TEXT column or
+    # round BIGINT. Do not turn a BLOB or REAL into a valid integer identity.
+    for (key in integer_keys) {
+      query_expr[query_cols == key] <- paste0(
+        "CASE WHEN TYPEOF(", key, ") IN ('integer', 'text') THEN CAST(",
+        key, " AS TEXT) ELSE NULL END AS ", key)
+    }
+  }
   sql <- paste0("SELECT TOP ", limit, " ",
-                paste(query_cols, collapse = ", "), " FROM ", qualified)
+                paste(query_expr, collapse = ", "), " FROM ", qualified)
 
   # WHERE clause
   where_parts <- character(0)
@@ -1165,6 +1177,17 @@
     }
   )
   .ohdsiValidateResultIdentity(result, identity_cols, table_count_cols)
+  if (identical(handle$target_dialect, "sqlite")) {
+    # Retain the established int32 representation where it is exact. Larger
+    # keys stay canonical decimal text, including values beyond binary64.
+    for (key in integer_keys) {
+      x <- result[[key]]
+      if (is.character(x) && all(nchar(sub("^-", "", x)) <= 10L)) {
+        small <- as.numeric(x)
+        if (all(abs(small) <= 2147483647)) result[[key]] <- as.integer(small)
+      }
+    }
+  }
   if (nrow(result) == 0) {
     return(finish(
       result[, intersect(output_cols, names(result)), drop = FALSE]
